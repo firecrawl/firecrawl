@@ -193,6 +193,9 @@ export async function agentController(
       status: passthrough.status,
       text,
     });
+
+    // TODO: should we try to insert a failed agent row here, since a request is already created? - Mogery
+
     return res.status(500).json({
       success: false,
       error: "Failed to passthrough agent request.",

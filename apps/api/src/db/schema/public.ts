@@ -51,6 +51,18 @@ export const agent_sponsors = pgTable("agent_sponsors", {
   updated_at: ts("updated_at").defaultNow(),
 });
 
+export const agent_session_settings = pgTable("agent_session_settings", {
+  id: uuid("id").notNull(),
+  session_id: uuid("session_id").notNull(),
+  team_id: uuid("team_id").notNull(),
+  hidden: boolean("hidden").default(false),
+  starred: boolean("starred").default(false),
+  label: text("label"),
+  created_at: ts("created_at").defaultNow(),
+  updated_at: ts("updated_at").defaultNow(),
+  share_id: uuid("share_id"),
+});
+
 export const agents = pgTable("agents", {
   id: uuid("id").notNull(),
   request_id: uuid("request_id").notNull(),

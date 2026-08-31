@@ -111,6 +111,7 @@ import {
   slackOAuthStartController,
   slackStatusController,
 } from "../controllers/v2/slack";
+import { agentListController } from "../controllers/v2/agent-list";
 export const v2Router = express.Router();
 expressWs(express()).applyTo(v2Router);
 
@@ -374,6 +375,12 @@ v2Router.get(
   deprecationMiddleware("v2_extract_status"),
   validateJobIdParam,
   wrap(extractStatusController),
+);
+
+v2Router.get(
+  "/agent",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  wrap(agentListController),
 );
 
 v2Router.post(
