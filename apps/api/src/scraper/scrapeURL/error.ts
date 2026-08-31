@@ -692,6 +692,16 @@ export class EngineUnsuccessfulError extends Error {
   }
 }
 
+export class EngineBlockedError extends Error {
+  name = "EngineBlockedError";
+  public engine: Engine;
+
+  constructor(engine: Engine) {
+    super(`Engine ${engine} was blocked by anti-bot`);
+    this.engine = engine;
+  }
+}
+
 export class WaterfallNextEngineSignal extends Error {
   name = "WaterfallNextEngineSignal";
 
@@ -765,3 +775,25 @@ export class ScrapeRetryLimitError extends TransportableError {
     return x;
   }
 }
+
+export class ScrapeBlockedError extends TransportableError {
+  constructor(
+    message: string = "The scrape was blocked by the website's anti-bot protection (e.g. Cloudflare, DataDome, CAPTCHA, or HTTP 403 Forbidden).",
+  ) {
+    super("SCRAPE_FAILED_BLOCKED", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ScrapeBlockedError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+

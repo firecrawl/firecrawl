@@ -598,6 +598,17 @@ export async function parseController(
             });
           }
 
+          if (e.code === "SCRAPE_FAILED_BLOCKED") {
+            setSpanAttributes(span, {
+              "parse.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           const statusCode = timeoutErr ? 408 : 500;
           setSpanAttributes(span, {
             "parse.status_code": statusCode,

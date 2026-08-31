@@ -138,11 +138,10 @@ export async function specialtyScrapeCheck(
 
   // Check for document types first (before PDF to prioritize documents)
   if (isDocument) {
-    throw new AddFeatureError(
-      ["document"],
-      undefined,
-      await feResToDocumentPrefetch(logger, feRes, contentType),
-    );
+    const prefetch = await feResToDocumentPrefetch(logger, feRes, contentType);
+    if (prefetch) {
+      throw new AddFeatureError(["document"], undefined, prefetch);
+    }
   }
 
   // Check for octet-stream with document signature
@@ -151,17 +150,20 @@ export async function specialtyScrapeCheck(
   if (isOctetStream) {
     const isZipSignature =
       feRes?.file?.content?.startsWith("UEsD") ||
-      feRes?.content.startsWith("PK");
+      feRes?.content?.startsWith("PK");
     const isOleSignature =
       feRes?.file?.content?.startsWith("0M8R4K") ||
-      feRes?.content.startsWith("\xD0\xCF\x11\xE0");
+      feRes?.content?.startsWith("\xD0\xCF\x11\xE0");
 
     if (isZipSignature) {
-      throw new AddFeatureError(
-        ["document"],
-        undefined,
-        await feResToDocumentPrefetch(logger, feRes, contentType),
+      const prefetch = await feResToDocumentPrefetch(
+        logger,
+        feRes,
+        contentType,
       );
+      if (prefetch) {
+        throw new AddFeatureError(["document"], undefined, prefetch);
+      }
     }
     if (isOleSignature) {
       // OLE2 signature is shared by .doc/.xls/.ppt files
@@ -171,32 +173,45 @@ export async function specialtyScrapeCheck(
       const effectiveContentType = isDocUrl
         ? "application/msword"
         : contentType;
-      throw new AddFeatureError(
-        ["document"],
-        undefined,
-        await feResToDocumentPrefetch(logger, feRes, effectiveContentType),
+      const prefetch = await feResToDocumentPrefetch(
+        logger,
+        feRes,
+        effectiveContentType,
       );
+      if (prefetch) {
+        throw new AddFeatureError(["document"], undefined, prefetch);
+      }
     }
   }
 
   // Check for PDF (references were already handled above the header guard).
   if (isPdf) {
-    throw new AddFeatureError(
-      ["pdf"],
-      await feResToPdfPrefetch(logger, feRes, signal, maxFileBytes),
+    const prefetch = await feResToPdfPrefetch(
+      logger,
+      feRes,
+      signal,
+      maxFileBytes,
     );
+    if (prefetch) {
+      throw new AddFeatureError(["pdf"], prefetch);
+    }
   }
 
   // Check for octet-stream with PDF signature
   if (
     isOctetStream &&
     (feRes?.file?.content?.startsWith("JVBERi0") ||
-      feRes?.content.startsWith("%PDF-"))
+      feRes?.content?.startsWith("%PDF-"))
   ) {
-    throw new AddFeatureError(
-      ["pdf"],
-      await feResToPdfPrefetch(logger, feRes, signal, maxFileBytes),
+    const prefetch = await feResToPdfPrefetch(
+      logger,
+      feRes,
+      signal,
+      maxFileBytes,
     );
+    if (prefetch) {
+      throw new AddFeatureError(["pdf"], prefetch);
+    }
   }
 
   // Reject unsupported binary content types (images, video, audio, archives, etc.)
