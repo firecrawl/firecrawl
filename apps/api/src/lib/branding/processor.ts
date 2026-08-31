@@ -3,6 +3,7 @@ import {
   contrastYIQ,
   isGrayish,
   isNearBlack,
+  isUsableCtaBackground,
   pickBrandPrimary,
 } from "./color-roles";
 import { BrandingScriptReturn, InputSnapshot } from "./types";
@@ -140,7 +141,7 @@ function inferPalette(
     bump(hexify(s.colors.border, pageBackground), 0.3);
     if (s.isButton) {
       const buttonBg = hexify(s.colors.background, pageBackground);
-      if (buttonBg && !isGrayish(buttonBg)) {
+      if (buttonBg && isUsableCtaBackground(buttonBg)) {
         bump(buttonBg, s.hasCTAIndicator ? 80 : 25);
       }
     }
@@ -179,9 +180,21 @@ function inferPalette(
     }
   }
 
+  const ctaButtons = snapshots.filter(s => s.isButton);
+  const ctaPool = ctaButtons.some(s => s.hasCTAIndicator)
+    ? ctaButtons.filter(s => s.hasCTAIndicator)
+    : ctaButtons;
+  const cta = ctaPool
+    .map(s => hexify(s.colors.background, pageBackground))
+    .find(
+      (hex): hex is string =>
+        !!hex && hex !== background && isUsableCtaBackground(hex),
+    );
+
   const primary = pickBrandPrimary(ranked, {
     background,
     colorScheme,
+    cta,
   });
   const textPrimary =
     ranked.find(

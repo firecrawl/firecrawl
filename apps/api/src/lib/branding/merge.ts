@@ -1,6 +1,7 @@
 import { BrandingProfile } from "../../types/branding";
 import {
   isUsableBrandPrimary,
+  isUsableCtaBackground,
   normalizeRoleHex,
   shouldApplyLlmColorRoles,
 } from "./color-roles";
@@ -281,8 +282,10 @@ export function mergeBrandingResults(
     const llmAccent = normalizeRoleHex(llm.colorRoles.accentColor);
     const llmBackground = normalizeRoleHex(llm.colorRoles.backgroundColor);
     const llmText = normalizeRoleHex(llm.colorRoles.textPrimary);
+    const cta = normalizeRoleHex(merged.components?.buttonPrimary?.background);
     const usablePrimary =
-      llmPrimary && isUsableBrandPrimary(llmPrimary, merged.colorScheme)
+      llmPrimary &&
+      isUsableBrandPrimary(llmPrimary, merged.colorScheme, { cta })
         ? llmPrimary
         : undefined;
     const rawSecondary = llm.colorRoles.secondaryColor;
@@ -316,6 +319,15 @@ export function mergeBrandingResults(
         confidence: llm.colorRoles.confidence,
       };
     }
+  }
+
+  // Identity/CTA wins primary — including black buttons. A lilac wash or
+  // default-link blue from the LLM must not replace a detected CTA fill.
+  const ctaPrimary = normalizeRoleHex(
+    merged.components?.buttonPrimary?.background,
+  );
+  if (ctaPrimary && isUsableCtaBackground(ctaPrimary)) {
+    merged.colors = { ...merged.colors, primary: ctaPrimary };
   }
 
   if (llm.personality) {
