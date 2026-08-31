@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { config } from "../../config";
 import { db } from "../../db/connection";
 import { agent_session_settings } from "../../db/schema";
@@ -181,7 +181,12 @@ export async function agentListController(
   const sessionSettings = await db
     .select()
     .from(agent_session_settings)
-    .where(inArray(agent_session_settings.session_id, allIds));
+    .where(
+      and(
+        inArray(agent_session_settings.session_id, allIds),
+        eq(agent_session_settings.team_id, req.auth.team_id),
+      ),
+    );
 
   const sessionSettingsMap = new Map(
     sessionSettings.map(x => [x.session_id, x]),
