@@ -304,7 +304,7 @@ export async function searchController(
     const logStart = Date.now();
     await logRequestPromise;
     const waited = Date.now() - logStart;
-    if (waited > 0)
+    if (waited > 50)
       logger.warn("Had to wait for log request promise to complete", {
         timeMs: waited,
       });
