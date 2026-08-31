@@ -23,6 +23,19 @@ export async function agentListController(
   req: RequestWithAuth<{}, AgentListResponse>,
   res: Response<AgentListResponse>,
 ) {
+  const limit = 20;
+
+  const parsedBefore = req.query.before
+    ? parseInt(req.query.before as string)
+    : undefined;
+
+  if (isNaN(parsedBefore) || !isFinite(parsedBefore) || parsedBefore < 0) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid before timestamp.",
+    });
+  }
+
   if (!config.USE_DB_AUTHENTICATION) {
     return res.status(501).json({
       success: false,
@@ -72,11 +85,13 @@ export async function agentListController(
     (async () => {
       const requestsRes = await clickhouseClient.query({
         query:
-          "SELECT id, created_at, target_hint, origin, integration FROM public_requests WHERE team_id = {teamId: UUID} AND kind = 'agent' AND created_at < {createdAt: DateTime} ORDER BY created_at DESC LIMIT {limit: UInt32};",
+          "SELECT id, created_at, target_hint, origin, integration FROM public_requests WHERE team_id = {teamId: UUID} AND kind = 'agent' AND created_at < {before: DateTime} ORDER BY created_at DESC LIMIT {limit: UInt32};",
         query_params: {
           teamId: req.auth.team_id,
-          limit: 10,
-          createdAt: new Date(),
+          limit,
+          before: parsedBefore
+            ? new Date(parsedBefore).toISOString()
+            : new Date().toISOString(),
         },
         format: "JSONEachRow",
       });
@@ -219,5 +234,9 @@ export async function agentListController(
   return res.json({
     success: true,
     agents,
+    next:
+      agents.length < limit
+        ? undefined
+        : `${req.protocol}://${req.host}/v2/agent?before=${new Date(agents.slice(-1)[0].createdAt).valueOf()}`,
   });
 }
