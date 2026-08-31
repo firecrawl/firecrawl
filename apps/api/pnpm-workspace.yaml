@@ -12,6 +12,7 @@ minimumReleaseAgeExclude:
   - "@typescript/typescript6"
   - "@typescript/typescript-*"
 overrides:
+  ip-address: "10.3.1"
   "@types/express": "^5.0.6"
   bigint-buffer: "npm:four-flap-bigint-buffer@1.1.6"
   diff: "^8.0.3"

@@ -161,5 +161,10 @@
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,css,md}": "prettier --write"
   },
-  "packageManager": "pnpm@11.4.0"
+  "packageManager": "pnpm@11.4.0",
+  "pnpm": {
+    "overrides": {
+      "ip-address": "10.3.1"
+    }
+  }
 }
