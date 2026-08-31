@@ -163,7 +163,14 @@ describe.each([
     await flush();
 
     expect(res.status).not.toHaveBeenCalledWith(403);
-    expect(mocks.fetchResearchUpstream).toHaveBeenCalled();
+    expect(mocks.fetchResearchUpstream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "firecrawl-team-id":
+            "preview_keyless_sha256_fec52565aa0cf18f57d7cf5b",
+        }),
+      }),
+    );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ success: true }),

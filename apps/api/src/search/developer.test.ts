@@ -58,6 +58,25 @@ describe("searchDeveloperCategory", () => {
     expect(firstCall()[1].headers).toEqual({ "firecrawl-team-id": "t1" });
   });
 
+  it("pseudonymizes a keyless team before sending the upstream header", async () => {
+    fetchMock.mockResolvedValue(upstreamOk({ results: [] }));
+
+    await searchDeveloperCategory(
+      {
+        query: "retries",
+        limit: 7,
+        teamId: "preview_keyless_203.0.113.8",
+        timeout: 500,
+      },
+      logger,
+    );
+
+    expect(firstCall()[1].headers).toEqual({
+      "firecrawl-team-id":
+        "preview_keyless_sha256_ddbea5471056690e5b1dcfe0",
+    });
+  });
+
   it("maps results to the exact web schema and leaks nothing upstream", async () => {
     const license = { state: "licensed", spdx_id: "MIT" };
     fetchMock.mockResolvedValue(

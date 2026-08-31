@@ -1,12 +1,3 @@
-// The keyless usage log is the only place a keyless caller's IP is persisted —
-// `requests.team_id` collapses all keyless traffic onto one preview team. The
-// end-to-end coverage for the zero-credit Research Index endpoints lives in
-// snips/v2/research.test.ts, but that suite only runs where a research upstream
-// is configured. These tests pin the library-level contract everywhere: a
-// zero-credit keyless request emits the canonical `keyless/usage` log line
-// carrying the client IP (the durable `keyless_credit_usage` row is deferred
-// to the firecrawl-db migration), writes no DB row, and charges nothing;
-// billable requests keep writing rows exactly as before.
 const { dbInsert, insertValues, redisIncrby, redisExpire } = vi.hoisted(() => {
   const insertValues = vi.fn().mockResolvedValue(undefined);
   return {
@@ -38,13 +29,14 @@ import { config } from "../../config";
 import {
   chargeKeylessCredits,
   keylessTeamId,
-  keylessTeamUuid,
   logKeylessCreditUsage,
 } from "../keyless";
 import { logger } from "../logger";
 
 const IP = "203.0.113.99";
 const KEYLESS_TEAM = keylessTeamId(IP);
+const KEYLESS_PSEUDONYM =
+  "preview_keyless_sha256_4486f6066fbb206e1db1becf";
 
 let previousDbAuth: boolean | undefined;
 
@@ -60,27 +52,21 @@ afterEach(() => {
 });
 
 describe("logKeylessCreditUsage", () => {
-  // Zero-credit operations are recorded as a canonical log line for now; the
-  // durable `keyless_credit_usage` row is deferred to the firecrawl-db
-  // migration (high write volume needs its own review).
-  it("logs the client IP for a zero-credit keyless operation without a DB write", async () => {
+  it("logs a pseudonym for a zero-credit keyless operation without a DB write", async () => {
     const info = vi.spyOn(logger, "info").mockImplementation(() => logger);
 
     await logKeylessCreditUsage(KEYLESS_TEAM, 0);
 
     expect(dbInsert).not.toHaveBeenCalled();
-    // The IP rides in the message body (console transports only serialize
-    // metadata for warn/error) AND in the structured fields (the Cloud
-    // Logging query contract).
     expect(info).toHaveBeenCalledWith(
-      expect.stringContaining(`Keyless zero-credit usage ip=${IP}`),
-      expect.objectContaining({
+      `Keyless zero-credit usage team=${KEYLESS_PSEUDONYM}`,
+      {
         canonicalLog: "keyless/usage",
-        ip: IP,
-        teamId: keylessTeamUuid(KEYLESS_TEAM),
+        teamId: KEYLESS_PSEUDONYM,
         creditsUsed: 0,
-      }),
+      },
     );
+    expect(JSON.stringify(info.mock.calls)).not.toContain(IP);
   });
 
   it("logs no zero-credit line when DB auth is off (same gate as billable rows)", async () => {
@@ -149,8 +135,12 @@ describe("chargeKeylessCredits", () => {
     expect(dbInsert).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith(
       expect.stringContaining("Keyless zero-credit usage"),
-      expect.objectContaining({ ip: IP, creditsUsed: 0 }),
+      expect.objectContaining({
+        teamId: KEYLESS_PSEUDONYM,
+        creditsUsed: 0,
+      }),
     );
+    expect(JSON.stringify(info.mock.calls)).not.toContain(IP);
   });
 
   it("charges the credit budget for a billable request", async () => {

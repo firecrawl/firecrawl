@@ -2,6 +2,7 @@ import { chInsert } from "./clickhouse-client";
 import {
   buildMonitorTargetInterestRows,
   trackMonitorTargetInterest,
+  trackSearchRequest,
 } from "./tracking";
 import type { MonitorTarget } from "../services/monitoring/types";
 
@@ -38,6 +39,36 @@ const searchTarget: MonitorTarget = {
   depth: "deep",
   maxResults: 10,
 };
+
+describe("search request tracking", () => {
+  it("pseudonymizes a keyless team before the ClickHouse event", async () => {
+    await trackSearchRequest({
+      searchId: "search-1",
+      requestId: "request-1",
+      teamId: "preview_keyless_203.0.113.8",
+      query: "retries",
+      origin: "api",
+      kind: "search",
+      apiVersion: "v2",
+      sources: ["web"],
+      numResults: 1,
+      searchCredits: 2,
+      scrapeCredits: 0,
+      totalCredits: 2,
+      hasScrapeFormats: false,
+      scrapeFormats: [],
+      isSuccessful: true,
+      timeTaken: 0.1,
+      zeroDataRetention: false,
+    });
+
+    expect(chInsert).toHaveBeenCalledWith("search_requests", [
+      expect.objectContaining({
+        team_id: "preview_keyless_sha256_ddbea5471056690e5b1dcfe0",
+      }),
+    ]);
+  });
+});
 
 describe("monitor target interest tracking", () => {
   beforeEach(() => {

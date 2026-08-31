@@ -202,9 +202,11 @@ describe("authenticateUser", () => {
       expect.objectContaining({
         event: "keyless_exhausted",
         reason: "requests",
+        teamId: "preview_keyless_sha256_ddbea5471056690e5b1dcfe0",
         conversionCohort: keylessConversionCohort("203.0.113.8"),
       }),
     );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("203.0.113.8");
   });
 
   it("writes normal API-key ACUC entries to the general-purpose cache", async () => {
