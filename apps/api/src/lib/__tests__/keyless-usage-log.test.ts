@@ -57,14 +57,11 @@ describe("logKeylessCreditUsage", () => {
     await logKeylessCreditUsage(KEYLESS_TEAM, 0);
 
     expect(dbInsert).not.toHaveBeenCalled();
-    expect(info).toHaveBeenCalledWith(
-      `Keyless zero-credit usage team=${KEYLESS_PSEUDONYM}`,
-      {
-        canonicalLog: "keyless/usage",
-        teamId: KEYLESS_PSEUDONYM,
-        creditsUsed: 0,
-      },
-    );
+    expect(info).toHaveBeenCalledWith("Keyless zero-credit usage", {
+      canonicalLog: "keyless/usage",
+      teamId: KEYLESS_PSEUDONYM,
+      creditsUsed: 0,
+    });
     expect(JSON.stringify(info.mock.calls)).not.toContain(IP);
   });
 

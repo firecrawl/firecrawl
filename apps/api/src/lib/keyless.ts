@@ -416,7 +416,7 @@ export async function logKeylessCreditUsage(
 
   if (creditsUsed <= 0) {
     const teamPseudonym = keylessTeamPseudonym(teamId);
-    logger.info(`Keyless zero-credit usage team=${teamPseudonym}`, {
+    logger.info("Keyless zero-credit usage", {
       canonicalLog: "keyless/usage",
       teamId: teamPseudonym,
       creditsUsed: 0,

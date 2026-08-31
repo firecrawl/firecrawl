@@ -236,7 +236,7 @@ export async function logRequest(request: LoggedRequest) {
   // Skip zero-data-retention requests — don't send their metadata to PostHog.
   if (!request.zeroDataRetention) {
     trackFirstSurfaceUse({
-      teamId: keylessTeamPseudonym(request.team_id),
+      teamId: request.team_id,
       origin: request.origin,
       integration: request.integration,
       kind: request.kind,
