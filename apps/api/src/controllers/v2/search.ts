@@ -301,7 +301,13 @@ export async function searchController(
     // `searches` insert, to avoid a request_id FK violation. The insert has
     // been in flight since the top of the controller, so this is ~free in
     // practice; robustInsert never rejects, so this await cannot throw.
+    const logStart = Date.now();
     await logRequestPromise;
+    const waited = Date.now() - logStart;
+    if (waited > 0)
+      logger.warn("Had to wait for log request promise to complete", {
+        timeMs: waited,
+      });
 
     logSearch(
       {
