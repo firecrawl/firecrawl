@@ -11,6 +11,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
+  keylessTeamPseudonym,
   logKeylessCreditUsage,
   reserveKeylessCredits,
 } from "../../lib/keyless";
@@ -57,7 +58,7 @@ export async function searchController(
   const teamForcedKind = getSearchForcedKind(req.acuc?.flags);
   let logger = _logger.child({
     jobId,
-    teamId: req.auth.team_id,
+    teamId: keylessTeamPseudonym(req.auth.team_id),
     module: "api/v2",
     method: "searchController",
     zeroDataRetention: teamForcedKind !== null,
@@ -276,7 +277,7 @@ export async function searchController(
         { ...billing, chargeId: jobId },
       ).catch(error =>
         logger.error("Failed to bill team for search credits", {
-          teamId: req.auth.team_id,
+          teamId: keylessTeamPseudonym(req.auth.team_id),
           searchCredits: result.searchCredits,
           error,
         }),

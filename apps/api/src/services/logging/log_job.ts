@@ -17,7 +17,7 @@ import {
   saveSearchToGCS,
 } from "../../lib/gcs-jobs";
 import { hasFormatOfType } from "../../lib/format-utils";
-import { keylessTeamUuid } from "../../lib/keyless";
+import { keylessTeamPseudonym, keylessTeamUuid } from "../../lib/keyless";
 import type { Document, ScrapeOptions } from "../../controllers/v2/types";
 import type { CostTracking } from "../../lib/cost-tracking";
 import type { Logger } from "winston";
@@ -227,7 +227,7 @@ export async function logRequest(request: LoggedRequest) {
     module: "log_job",
     method: "logRequest",
     requestId: request.id,
-    teamId: request.team_id,
+    teamId: keylessTeamPseudonym(request.team_id),
     zeroDataRetention: request.zeroDataRetention,
   });
 
@@ -236,7 +236,7 @@ export async function logRequest(request: LoggedRequest) {
   // Skip zero-data-retention requests — don't send their metadata to PostHog.
   if (!request.zeroDataRetention) {
     trackFirstSurfaceUse({
-      teamId: request.team_id,
+      teamId: keylessTeamPseudonym(request.team_id),
       origin: request.origin,
       integration: request.integration,
       kind: request.kind,
@@ -505,7 +505,7 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
     method: "logSearch",
     searchId: search.id,
     requestId: search.request_id,
-    teamId: search.team_id,
+    teamId: keylessTeamPseudonym(search.team_id),
     zeroDataRetention: search.zeroDataRetention,
   });
 
@@ -585,7 +585,7 @@ export async function logResearchEndpoint(
     method: "logResearchEndpoint",
     researchId: research.id,
     requestId: research.request_id,
-    teamId: research.team_id,
+    teamId: keylessTeamPseudonym(research.team_id),
     zeroDataRetention: research.zeroDataRetention,
   });
 

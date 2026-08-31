@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { isIPv4 } from "node:net";
 import { v5 as uuidv5 } from "uuid";
 import { config } from "../config";
@@ -73,6 +73,7 @@ export function keylessExhaustionTelemetry(ip: string): Record<string, string> {
 // and GCS persistence are skipped automatically, with a dedicated infix so the
 // IP can be recovered when charging credits after a request completes.
 const KEYLESS_TEAM_PREFIX = "preview_keyless_";
+const KEYLESS_TEAM_PSEUDONYM_PREFIX = "preview_keyless_sha256_";
 
 export function keylessTeamId(ip: string): string {
   return `${KEYLESS_TEAM_PREFIX}${ip}`;
@@ -82,6 +83,17 @@ function keylessIpFromTeamId(teamId: string): string | null {
   return teamId.startsWith(KEYLESS_TEAM_PREFIX)
     ? teamId.slice(KEYLESS_TEAM_PREFIX.length)
     : null;
+}
+
+export function keylessTeamPseudonym(teamId: string): string {
+  if (teamId.startsWith(KEYLESS_TEAM_PSEUDONYM_PREFIX)) return teamId;
+  const ip = keylessIpFromTeamId(teamId);
+  if (!ip || !isKeylessIpEligible(ip)) return teamId;
+  const digest = createHash("sha256")
+    .update(normalizeKeylessIpv4(ip))
+    .digest("hex")
+    .slice(0, 24);
+  return `${KEYLESS_TEAM_PSEUDONYM_PREFIX}${digest}`;
 }
 
 // Fixed namespace for deriving a stable per-keyless-team UUID. Tables like
@@ -374,22 +386,16 @@ export async function checkKeylessEligibility(ip: string): Promise<{
 }
 
 /**
- * Record a completed keyless request — the only place a keyless caller's IP is
- * persisted (`requests.team_id` collapses all keyless traffic onto one preview
- * team).
+ * Record a completed keyless request.
  *
- * Billable requests append a row to `keyless_credit_usage` exactly as before.
+ * Billable requests append a row to `keyless_credit_usage`. This table is the
+ * only durable store for the raw IP.
  *
- * Zero-credit operations are recorded too, but as a canonical log line rather
- * than a DB row: the free Research Index paper endpoints bill nothing, so
- * skipping them meant their client IP was never written anywhere and abuse on
- * them was invisible (during the corpus-harvest incident only 3.0% of the
- * traffic had a resolvable IP). Zero-credit volume is orders of magnitude
- * higher than billable volume, so the durable row for it is deferred until the
- * companion firecrawl-db migration lands; until then the log line carries the
- * same fields.
+ * Zero-credit operations emit a canonical log with a stable SHA-256 pseudonym.
+ * The pseudonym supports rate analysis without putting the raw IP in logs. A
+ * durable zero-credit row waits for the companion firecrawl-db migration.
  *
- * No-op for non-keyless teams. Best-effort — never throws.
+ * No-op for non-keyless teams. Best-effort. Never throws.
  */
 export async function logKeylessCreditUsage(
   teamId: string,
@@ -409,15 +415,10 @@ export async function logKeylessCreditUsage(
   if (config.USE_DB_AUTHENTICATION !== true) return;
 
   if (creditsUsed <= 0) {
-    // TODO(firecrawl-db): switch to a `keyless_credit_usage` row once the
-    // zero-credit usage migration is merged. The IP is repeated in the
-    // message body because the console transport only serializes metadata
-    // for warn/error lines; the structured fields are the contract for
-    // Cloud Logging queries.
-    logger.info(`Keyless zero-credit usage ip=${ip} team=${teamUuid}`, {
+    const teamPseudonym = keylessTeamPseudonym(teamId);
+    logger.info(`Keyless zero-credit usage team=${teamPseudonym}`, {
       canonicalLog: "keyless/usage",
-      ip,
-      teamId: teamUuid,
+      teamId: teamPseudonym,
       creditsUsed: 0,
     });
     return;

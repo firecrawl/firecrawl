@@ -17,6 +17,7 @@ import {
   keylessExhaustionTelemetry,
   isKeylessIpEligible,
   keylessTeamId,
+  keylessTeamPseudonym,
   normalizeKeylessIpv4,
 } from "../lib/keyless";
 import { isKeylessIpSuspicious } from "../lib/spur";
@@ -466,6 +467,9 @@ async function handleKeylessAuth(
   // one quota bucket, and one team id regardless of how the socket reported it.
   ip = normalizeKeylessIpv4(ip);
 
+  const teamId = keylessTeamId(ip);
+  const teamPseudonym = keylessTeamPseudonym(teamId);
+
   // Optional Spur Context check (only when SPUR_API_KEY is set): refuse keyless
   // for IPs fronting anonymizing/rotating infrastructure (VPN/proxy/TOR), the
   // main way the per-IP caps get bypassed. Fails open on any Spur error, and
@@ -473,7 +477,7 @@ async function handleKeylessAuth(
   if (await isKeylessIpSuspicious(ip)) {
     logger.warn("Keyless request blocked: suspicious IP", {
       canonicalLog: "keyless/consume",
-      ip,
+      teamId: teamPseudonym,
       origin: req.body?.origin,
       integration: req.body?.integration,
       blocked: true,
@@ -487,8 +491,6 @@ async function handleKeylessAuth(
       agentAuthDiscovery: true,
     };
   }
-
-  const teamId = keylessTeamId(ip);
   const modeLabel =
     mode === RateLimiterMode.Search
       ? "search"
@@ -509,20 +511,18 @@ async function handleKeylessAuth(
     // limiter can't enforce quotas.
     logger.warn("Keyless quota check failed", {
       canonicalLog: "keyless/consume",
-      ip,
       mode: modeLabel,
-      teamId,
+      teamId: teamPseudonym,
       error,
     });
     return unauthorized;
   }
   const baseLog = {
     canonicalLog: "keyless/consume",
-    ip,
     origin,
     integration,
     mode: modeLabel,
-    teamId,
+    teamId: teamPseudonym,
     requestsUsed: result.requestsUsed,
     creditsUsed: result.creditsUsed,
   };

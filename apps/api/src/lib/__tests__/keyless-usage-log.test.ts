@@ -35,8 +35,7 @@ import { logger } from "../logger";
 
 const IP = "203.0.113.99";
 const KEYLESS_TEAM = keylessTeamId(IP);
-const KEYLESS_PSEUDONYM =
-  "preview_keyless_sha256_4486f6066fbb206e1db1becf";
+const KEYLESS_PSEUDONYM = "preview_keyless_sha256_4486f6066fbb206e1db1becf";
 
 let previousDbAuth: boolean | undefined;
 

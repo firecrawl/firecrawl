@@ -72,8 +72,7 @@ describe("searchDeveloperCategory", () => {
     );
 
     expect(firstCall()[1].headers).toEqual({
-      "firecrawl-team-id":
-        "preview_keyless_sha256_ddbea5471056690e5b1dcfe0",
+      "firecrawl-team-id": "preview_keyless_sha256_ddbea5471056690e5b1dcfe0",
     });
   });
 

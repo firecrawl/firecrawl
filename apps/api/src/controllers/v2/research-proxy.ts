@@ -4,7 +4,7 @@ import { z } from "zod";
 import { v7 as uuidv7 } from "uuid";
 import { logger as rootLogger } from "../../lib/logger";
 import { fetchResearchUpstream } from "../../lib/research-upstream";
-import { chargeKeylessCredits } from "../../lib/keyless";
+import { chargeKeylessCredits, keylessTeamPseudonym } from "../../lib/keyless";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getSearchForcedKind } from "../../lib/zdr-helpers";
 import {
@@ -265,7 +265,7 @@ async function fetchForRequest(
     const v = req.headers[h];
     if (typeof v === "string") headers[h] = v;
   }
-  headers["firecrawl-team-id"] = req.auth.team_id;
+  headers["firecrawl-team-id"] = keylessTeamPseudonym(req.auth.team_id);
 
   return fetchResearchUpstream({
     path,
@@ -293,7 +293,7 @@ function createResearchController(
       module: "api/v2/research",
       method: endpoint.action,
       jobId,
-      teamId: authedReq.auth.team_id,
+      teamId: keylessTeamPseudonym(authedReq.auth.team_id),
     });
 
     const source = req.method === "POST" ? (req.body ?? {}) : req.query;
@@ -445,7 +445,9 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
     router.use((req, _res, next) => {
       rootLogger.warn("Legacy research endpoint used", {
         module: "api/v2/research",
-        teamId: (req as RequestWithAuth<any, any, any>).auth?.team_id,
+        teamId: keylessTeamPseudonym(
+          (req as RequestWithAuth<any, any, any>).auth?.team_id ?? "",
+        ),
         method: req.method,
         path: req.originalUrl,
         requestId: req.headers["x-request-id"],

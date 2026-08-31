@@ -1,5 +1,6 @@
 import type { Logger } from "winston";
 import type { WebSearchResult } from "../lib/entities";
+import { keylessTeamPseudonym } from "../lib/keyless";
 import { fetchResearchUpstream } from "../lib/research-upstream";
 import type { CategoryOption } from "../lib/search-query-builder";
 
@@ -22,7 +23,9 @@ export async function searchDeveloperCategory(
       path: "/v2/code/search",
       params: { query: options.query, k: options.limit },
       queryKeys: DEVELOPER_QUERY_KEYS,
-      headers: { "firecrawl-team-id": options.teamId },
+      headers: {
+        "firecrawl-team-id": keylessTeamPseudonym(options.teamId),
+      },
       timeoutMs: options.timeout,
     });
     if (upstream === null) {

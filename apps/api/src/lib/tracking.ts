@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { chInsert } from "./clickhouse-client";
 import type { SearchV2Response } from "./entities";
+import { keylessTeamPseudonym } from "./keyless";
 import type { MonitorTarget } from "../services/monitoring/types";
 
 function extractDomain(url: string): string {
@@ -54,7 +55,7 @@ export async function trackScrape(opts: TrackScrapeParams): Promise<void> {
     {
       scrape_id: opts.scrapeId,
       request_id: opts.requestId,
-      team_id: opts.teamId,
+      team_id: keylessTeamPseudonym(opts.teamId),
       url: opts.url,
       url_domain: extractDomain(opts.url),
       origin: opts.origin,
@@ -184,7 +185,7 @@ export function buildMonitorTargetInterestRows(
     return {
       event_time: eventTime,
       event_type: opts.eventType,
-      team_id: opts.teamId,
+      team_id: keylessTeamPseudonym(opts.teamId),
       monitor_id: opts.monitorId,
       target_id: target.id,
       check_id: opts.checkId ?? null,
@@ -259,7 +260,7 @@ export async function trackSearchRequest(
     {
       search_id: opts.searchId,
       request_id: opts.requestId,
-      team_id: opts.teamId,
+      team_id: keylessTeamPseudonym(opts.teamId),
       query: opts.query,
       origin: opts.origin,
       kind: opts.kind,
@@ -338,7 +339,7 @@ export async function trackSearchResults(
     "search_results",
     urls.map(({ url, type, index }) => ({
       search_id: opts.searchId,
-      team_id: opts.teamId,
+      team_id: keylessTeamPseudonym(opts.teamId),
       url,
       url_domain: extractDomain(url),
       result_type: type,
