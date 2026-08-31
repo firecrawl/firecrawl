@@ -1,4 +1,5 @@
 import { TeamFlags } from "../controllers/v2/types";
+import type { ErrorCodes } from "./error";
 import {
   getScrapeZDR,
   getIgnoreRobots,
@@ -45,7 +46,7 @@ export function checkPermissions(
   request: APIRequest,
   flags?: TeamFlags,
   options?: PermissionOptions,
-): { error?: string } {
+): { error?: string; code?: ErrorCodes } {
   // zdr perms — scrapeZDR must be 'allowed' or 'forced' for request-scoped ZDR
   const scrapeMode = getScrapeZDR(flags);
   if (

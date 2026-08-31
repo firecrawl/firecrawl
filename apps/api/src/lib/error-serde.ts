@@ -48,6 +48,9 @@ import { UnsafeDomainBlockedError } from "./threat-protection/error";
 const errorMap: Record<ErrorCodes, any> = {
   // Terms responses are API-level, never transported through workers.
   THIRD_PARTY_DATA_TERMS_REQUIRED: null,
+  // Safe Mode request-time rejections are API-level (403 before enqueue),
+  // never transported through workers.
+  SAFE_MODE_BLOCKED: null,
   SCRAPE_TIMEOUT: ScrapeJobTimeoutError,
   MAP_TIMEOUT: MapTimeoutError,
   UNKNOWN_ERROR: UnknownError,

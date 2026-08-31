@@ -43,6 +43,7 @@ export type ErrorCodes =
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST"
   | "CONCURRENCY_QUEUE_TIMEOUT"
+  | "SAFE_MODE_BLOCKED"
   // Threat protection (enterprise domain risk blocking). Lowercase by design:
   // this is the documented, user-facing error code for the feature.
   | "unsafe_domain_blocked"

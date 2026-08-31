@@ -127,6 +127,7 @@ export async function scrapeController(
         });
         return res.status(403).json({
           success: false,
+          code: permissions.code,
           error: permissions.error,
         });
       }

@@ -80,6 +80,7 @@ export async function batchScrapeController(
   if (permissions.error) {
     return res.status(403).json({
       success: false,
+      code: permissions.code,
       error: permissions.error,
     });
   }

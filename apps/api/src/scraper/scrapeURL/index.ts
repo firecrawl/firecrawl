@@ -113,6 +113,7 @@ import {
   type ThreatDecision,
   type ThreatProtectionPolicy,
 } from "../../lib/threat-protection";
+import type { ResolvedSafeMode } from "../../lib/safe-mode";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 
@@ -622,6 +623,14 @@ export type InternalOptions = {
    * redirect destinations are re-checked. Absent => zero enforcement overhead.
    */
   threatProtection?: ThreatProtectionPolicy;
+
+  /**
+   * Resolved Safe Mode bundle for this scrape (org flags + request bypass,
+   * resolved at the controller layer like threatProtection). Rides the job
+   * payload so crawl children and sub-scrapes inherit it. Absent => Safe Mode
+   * is off or bypassed for this request.
+   */
+  safeMode?: ResolvedSafeMode;
 
   v1Agent?: ScrapeOptionsV1["agent"];
   v1JSONAgent?: Exclude<ScrapeOptionsV1["jsonOptions"], undefined>["agent"];
