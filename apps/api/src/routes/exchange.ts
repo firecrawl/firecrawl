@@ -232,3 +232,9 @@ exchangeRouter.delete(
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
+
+exchangeRouter.post(
+  "/records/fetch",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
+);
