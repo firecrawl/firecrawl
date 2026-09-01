@@ -156,6 +156,12 @@ exchangeRouter.get(
 );
 
 exchangeRouter.get(
+  "/publisher/supply/key",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.get(
   "/publisher{/*path}",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
@@ -195,12 +201,6 @@ exchangeRouter.post(
   "/claims/:id/verify",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
-
-exchangeRouter.get(
-  "/publisher/supply/key",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
 exchangeRouter.post(
