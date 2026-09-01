@@ -123,7 +123,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     meta.internalOptions.forceEngine === undefined &&
     meta.pdfPrefetch == null
   ) {
-    if (!meta.featureFlags.has("pdf")) {
+    // A cross-type handoff (a .pdf URL serving a docx) lands in
+    // documentPrefetch: the file is in hand, just not for this engine —
+    // decline so the waterfall reaches the engine that can parse it.
+    if (meta.documentPrefetch != null || !meta.featureFlags.has("pdf")) {
       throw new EngineUnsuccessfulError("pdf");
     }
     throw new PDFAntibotError();

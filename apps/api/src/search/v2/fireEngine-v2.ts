@@ -7,10 +7,7 @@ import {
 import * as Sentry from "@sentry/node";
 import { logger } from "../../lib/logger";
 import { executeWithRetry, attemptRequest } from "../../lib/retry-utils";
-
-const useFireEngine =
-  config.FIRE_ENGINE_BETA_URL !== "" &&
-  config.FIRE_ENGINE_BETA_URL !== undefined;
+import { useFireEngine } from "../../scraper/scrapeURL/engines/fire-engine/available";
 
 function normalizeSearchTypes(
   type?: SearchResultType | SearchResultType[],

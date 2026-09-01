@@ -1,9 +1,9 @@
 import type { Logger } from "winston";
-import { config } from "../../config";
 import { scrapeOptions, ScrapeOptions } from "../../controllers/v2/types";
 import { logger as _logger } from "../../lib/logger";
 import { Engine } from "../scrapeURL/engines";
 import { scrapeURL } from "../scrapeURL";
+import { useFireEngine } from "../scrapeURL/engines/fire-engine/available";
 import { CostTracking } from "../../lib/cost-tracking";
 import {
   processSitemap,
@@ -14,10 +14,6 @@ import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
 import { SitemapError } from "../../lib/error";
 import { useIndex } from "../../services";
-
-const useFireEngine =
-  config.FIRE_ENGINE_BETA_URL !== "" &&
-  config.FIRE_ENGINE_BETA_URL !== undefined;
 
 type SitemapScrapeOptions = {
   url: string;
