@@ -1470,6 +1470,9 @@ class AgentExchangeSummary(BaseModel):
     model_config = {"populate_by_name": True, "extra": "allow"}
 
     enabled: Optional[bool] = None
+    # What the run resolved to after thread inheritance, not what it requested.
+    toolkits: Optional[List[str]] = None
+    require_approval: Optional[bool] = Field(default=None, alias="requireApproval")
     paid_calls: Optional[int] = Field(default=None, alias="paidCalls")
     credits_used: Optional[int] = Field(default=None, alias="creditsUsed")
 

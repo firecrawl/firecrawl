@@ -1589,8 +1589,13 @@ export type AgentPendingApproval = {
   };
 };
 
+// What a run did with Exchange, as the agent service reports it. `toolkits` and
+// `requireApproval` are what the run resolved to after thread inheritance, so
+// they describe the run rather than echoing the request.
 export type AgentExchangeSummary = {
   enabled: boolean;
+  toolkits?: string[];
+  requireApproval?: boolean;
   paidCalls: number;
   creditsUsed: number | null;
 };
