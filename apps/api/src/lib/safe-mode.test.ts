@@ -1,4 +1,23 @@
-import { getSafeMode, resolveSafeMode, SafeModeConfig } from "./safe-mode";
+import {
+  applySafeModeLockdown,
+  applySafeModeProxyLimit,
+  forceSafeModeThreatProtection,
+  getSafeMode,
+  resolveSafeMode,
+  ResolvedSafeMode,
+  SafeModeConfig,
+  safeModeEffectiveFlags,
+} from "./safe-mode";
+import { THREAT_PROTECTION_POLICY_DEFAULTS } from "./threat-protection/types";
+
+const strict: ResolvedSafeMode = {
+  lockdown: false,
+  checkRobots: true,
+  domainControls: true,
+  proxyLimit: "basic",
+  noCaptchaBypass: true,
+  blockAuthPaths: true,
+};
 
 describe("getSafeMode", () => {
   it("is false for absent or null flags", () => {
@@ -103,5 +122,99 @@ describe("resolveSafeMode — org flag on", () => {
     );
     expect(result.safeMode).toBeDefined();
     expect(result.bypassed).toBeUndefined();
+  });
+});
+
+describe("applySafeModeProxyLimit", () => {
+  it("pins auto to basic under a basic limit", () => {
+    const options = { proxy: "auto" as const };
+    applySafeModeProxyLimit(strict, options);
+    expect(options.proxy).toBe("basic");
+  });
+
+  it("leaves non-auto values and other configs untouched", () => {
+    for (const [safeMode, proxy] of [
+      [strict, "basic"],
+      [{ ...strict, proxyLimit: "stealth" }, "auto"],
+      [{ ...strict, lockdown: true }, "auto"],
+      [undefined, "auto"],
+    ] as const) {
+      const options = { proxy: proxy as "basic" | "auto" };
+      applySafeModeProxyLimit(safeMode, options);
+      expect(options.proxy).toBe(proxy);
+    }
+  });
+});
+
+describe("applySafeModeLockdown", () => {
+  it("forces lockdown and the 2-year maxAge when unset", () => {
+    const options: { lockdown?: boolean; maxAge?: number } = {};
+    applySafeModeLockdown({ ...strict, lockdown: true }, options);
+    expect(options.lockdown).toBe(true);
+    expect(options.maxAge).toBe(2 * 365 * 24 * 60 * 60 * 1000);
+  });
+
+  it("keeps a request-supplied maxAge", () => {
+    const options = { maxAge: 5000 };
+    applySafeModeLockdown({ ...strict, lockdown: true }, options);
+    expect(options).toEqual({ lockdown: true, maxAge: 5000 });
+  });
+
+  it("no-ops when lockdown was already requested or is off", () => {
+    const alreadyOn = { lockdown: true };
+    applySafeModeLockdown({ ...strict, lockdown: true }, alreadyOn);
+    expect(alreadyOn).toEqual({ lockdown: true });
+
+    const off: { lockdown?: boolean } = {};
+    applySafeModeLockdown(strict, off);
+    applySafeModeLockdown(undefined, off);
+    expect(off).toEqual({});
+  });
+});
+
+describe("forceSafeModeThreatProtection", () => {
+  const enforcing = {
+    mode: "normal" as const,
+    ...THREAT_PROTECTION_POLICY_DEFAULTS,
+    blacklist: ["evil.example.com"],
+  };
+
+  it("returns an already-enforcing policy untouched", () => {
+    expect(forceSafeModeThreatProtection(enforcing, null)).toBe(enforcing);
+  });
+
+  it("falls back to normal-mode defaults for unconfigured orgs", () => {
+    expect(forceSafeModeThreatProtection(null, null)).toEqual({
+      mode: "normal",
+      ...THREAT_PROTECTION_POLICY_DEFAULTS,
+    });
+  });
+
+  it("keeps the org's saved lists when only the mode was off", () => {
+    const saved = { ...enforcing, mode: "off" as const };
+    expect(forceSafeModeThreatProtection(null, saved)).toEqual({
+      ...saved,
+      mode: "normal",
+    });
+  });
+});
+
+describe("safeModeEffectiveFlags", () => {
+  it("passes flags through when domainControls is not forcing", () => {
+    expect(safeModeEffectiveFlags(null, undefined)).toBeNull();
+    const flags = { safeMode: true };
+    expect(
+      safeModeEffectiveFlags(flags, { ...strict, domainControls: false }),
+    ).toBe(flags);
+  });
+
+  it("injects a forced threatProtection flag under domainControls", () => {
+    expect(
+      safeModeEffectiveFlags({ safeMode: true, scrapeZDR: "allowed" }, strict),
+    ).toEqual({
+      safeMode: true,
+      scrapeZDR: "allowed",
+      threatProtection: "forced",
+    });
   });
 });

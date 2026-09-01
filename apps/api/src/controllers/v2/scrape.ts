@@ -17,7 +17,13 @@ import {
 } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
-import { applySafeModeProxyLimit, resolveSafeMode } from "../../lib/safe-mode";
+import {
+  applySafeModeLockdown,
+  applySafeModeProxyLimit,
+  forceSafeModeThreatProtection,
+  resolveSafeMode,
+  safeModeEffectiveFlags,
+} from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -86,28 +92,9 @@ export async function scrapeController(
         });
       });
 
-      // Threat protection: resolve the effective policy (org config +
-      // per-request override). No-ops (null policy, zero I/O) for teams
-      // without the flag.
-      const threatProtection = await resolveThreatProtection({
-        teamId: req.auth.team_id,
-        orgId: req.acuc?.org_id ?? null,
-        flags: req.acuc?.flags ?? null,
-        override: req.body.threatProtection,
-      });
-      if (threatProtection.error) {
-        setSpanAttributes(span, {
-          "scrape.error": threatProtection.error,
-          "scrape.status_code": 403,
-        });
-        return res.status(403).json({
-          success: false,
-          error: threatProtection.error,
-        });
-      }
-
       // Safe Mode: resolve the org bundle + request bypass. No-ops for
-      // teams without the flag.
+      // teams without the flag. Resolved before threat protection because
+      // domainControls forces the TP flag for the rest of the request.
       const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
       if (safeMode.error) {
         setSpanAttributes(span, {
@@ -124,12 +111,42 @@ export async function scrapeController(
         "scrape.safe_mode": safeMode.safeMode !== undefined,
         "scrape.safe_mode_bypassed": safeMode.bypassed === true,
       });
+      const effectiveFlags = safeModeEffectiveFlags(
+        req.acuc?.flags,
+        safeMode.safeMode,
+      );
+
+      // Threat protection: resolve the effective policy (org config +
+      // per-request override). No-ops (null policy, zero I/O) for teams
+      // without the flag.
+      const threatProtection = await resolveThreatProtection({
+        teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
+        flags: effectiveFlags,
+        override: req.body.threatProtection,
+      });
+      if (threatProtection.error) {
+        setSpanAttributes(span, {
+          "scrape.error": threatProtection.error,
+          "scrape.status_code": 403,
+        });
+        return res.status(403).json({
+          success: false,
+          error: threatProtection.error,
+        });
+      }
+      const threatPolicy = safeMode.safeMode?.domainControls
+        ? forceSafeModeThreatProtection(
+            threatProtection.policy,
+            threatProtection.orgConfig?.policy,
+          )
+        : threatProtection.policy;
 
       // Permission check span
       const permissions = await withSpan(
         "api.scrape.check_permissions",
         async permSpan => {
-          const perms = checkPermissions(req.body, req.acuc?.flags, {
+          const perms = checkPermissions(req.body, effectiveFlags, {
             threatProtectionOrgConfig: threatProtection.orgConfig,
             safeMode: safeMode.safeMode ?? null,
           });
@@ -171,6 +188,7 @@ export async function scrapeController(
       }
 
       applySafeModeProxyLimit(safeMode.safeMode, req.body);
+      applySafeModeLockdown(safeMode.safeMode, req.body);
 
       const zeroDataRetention =
         getScrapeZDR(req.acuc?.flags) === "forced" ||
@@ -377,7 +395,7 @@ export async function scrapeController(
                       orgId: req.acuc?.org_id ?? null,
                       teamConcurrency: baseConcurrency,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
-                      threatProtection: threatProtection.policy ?? undefined,
+                      threatProtection: threatPolicy ?? undefined,
                       safeMode: safeMode.safeMode,
                     },
                     skipNuq: true,

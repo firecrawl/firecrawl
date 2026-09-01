@@ -1,3 +1,4 @@
+import request from "supertest";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
@@ -5,6 +6,7 @@ import {
   idmux,
   Identity,
   scrapeTimeout,
+  TEST_API_URL,
 } from "../lib";
 import { scrape, scrapeRaw } from "./lib";
 
@@ -198,6 +200,94 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
           { url: createTestIdUrl(), headers: { Authorization: "x" } },
           identity,
         );
+      },
+      scrapeTimeout,
+    );
+  });
+
+  describe("org config lockdown: true (lockdown supersedes)", () => {
+    let identity: Identity;
+
+    beforeAll(async () => {
+      identity = await idmux({
+        name: "safe-mode/lockdown",
+        flags: { safeMode: true, safeModeConfig: { lockdown: true } },
+      });
+    }, 10000);
+
+    it.concurrent(
+      "uncached URLs return the lockdown cache-miss error",
+      async () => {
+        const res = await scrapeRaw({ url: createTestIdUrl() }, identity);
+        expect(res.statusCode).toBe(404);
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe("SCRAPE_LOCKDOWN_CACHE_MISS");
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "accepts and ignores params the other controls would reject",
+      async () => {
+        // Not a 403: under lockdown the params are inert, so the request
+        // proceeds into lockdown machinery and fails only on the cache miss.
+        const res = await scrapeRaw(
+          {
+            url: createTestIdUrl(),
+            proxy: "stealth",
+            profile: { name: "ignored" },
+            headers: { Cookie: "ignored" },
+          },
+          identity,
+        );
+        expect(res.body.code).toBe("SCRAPE_LOCKDOWN_CACHE_MISS");
+        expect(res.body.code).not.toBe("SAFE_MODE_BLOCKED");
+      },
+      scrapeTimeout,
+    );
+  });
+
+  describe("domainControls forces threat protection", () => {
+    let identity: Identity;
+
+    beforeAll(async () => {
+      // threatProtection: "allowed" lets the test save a TP config; Safe
+      // Mode's domainControls must enforce it even with mode: "off".
+      identity = await idmux({
+        name: "safe-mode/domain-controls",
+        flags: { safeMode: true, threatProtection: "allowed" },
+      });
+      const res = await request(TEST_API_URL)
+        .put("/v2/team/threat-protection")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .set("Content-Type", "application/json")
+        .send({ mode: "off", blacklist: ["blocked.example.com"] });
+      expect(res.statusCode).toBe(200);
+    }, 15000);
+
+    it.concurrent(
+      "blocks blacklisted domains even though the TP config mode is off",
+      async () => {
+        const res = await scrapeRaw(
+          { url: "https://blocked.example.com/page" },
+          identity,
+        );
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe("unsafe_domain_blocked");
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "rejects a request-level threat protection opt-out",
+      async () => {
+        const res = await scrapeRaw(
+          { url: createTestIdUrl(), threatProtection: { mode: "off" } },
+          identity,
+        );
+        expect(res.statusCode).toBe(403);
+        expect(res.body.success).toBe(false);
+        expect(res.body.error).toMatch(/threat protection/i);
       },
       scrapeTimeout,
     );
