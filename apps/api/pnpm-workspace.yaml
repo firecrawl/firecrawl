@@ -66,5 +66,9 @@ allowBuilds:
   msgpackr-extract: true
   oxc-resolver: true
   protobufjs: true
+  # Optional native accelerator for fast-crc32c (pulled in by
+  # @google-cloud/bigtable); the pure-JS fallback is fine for our payload
+  # sizes, so no native compilation.
+  sse4_crc32: false
   utf-8-validate: true
   wordpos: true
