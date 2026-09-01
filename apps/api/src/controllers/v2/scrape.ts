@@ -48,6 +48,7 @@ import {
 import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
@@ -95,12 +96,29 @@ export async function scrapeController(
       // Safe Mode: resolve the org bundle + request bypass. No-ops for
       // teams without the flag. Resolved before threat protection because
       // domainControls forces the TP flag for the rest of the request.
+      // Compliance audit trail: safe-mode rejections are SIEM-visible for
+      // orgs with siemLogging (the emitter no-ops for everyone else).
+      const emitSafeModeRejection = (message: string) =>
+        emitRejectedScrapeActivityEvent({
+          scrapeId: jobId,
+          requestId: jobId,
+          endpoint: "scrape",
+          teamId: req.auth.team_id,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+          url: req.body.url,
+          error: new TransportableError("SAFE_MODE_BLOCKED", message),
+          origin: req.body.origin ?? "api",
+          integration: req.body.integration,
+          zeroDataRetention: req.body.zeroDataRetention ?? false,
+        });
+
       const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
       if (safeMode.error) {
         setSpanAttributes(span, {
           "scrape.error": safeMode.error,
           "scrape.status_code": 403,
         });
+        emitSafeModeRejection(safeMode.error);
         return res.status(403).json({
           success: false,
           code: safeMode.code,
@@ -163,6 +181,9 @@ export async function scrapeController(
           "scrape.error": permissions.error,
           "scrape.status_code": 403,
         });
+        if (permissions.code === "SAFE_MODE_BLOCKED") {
+          emitSafeModeRejection(permissions.error);
+        }
         return res.status(403).json({
           success: false,
           code: permissions.code,
