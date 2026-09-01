@@ -20,9 +20,7 @@ import { checkPermissions } from "../../lib/permissions";
 import {
   applySafeModeLockdown,
   applySafeModeProxyLimit,
-  forceSafeModeThreatProtection,
   resolveSafeMode,
-  safeModeEffectiveFlags,
 } from "../../lib/safe-mode";
 import {
   actionTypesOf,
@@ -95,7 +93,7 @@ export async function scrapeController(
 
       // Safe Mode: resolve the org bundle + request bypass. No-ops for
       // teams without the flag. Resolved before threat protection because
-      // domainControls forces the TP flag for the rest of the request.
+      // domainControls forces threat protection on.
       // Compliance audit trail: safe-mode rejections are SIEM-visible for
       // orgs with siemLogging (the emitter no-ops for everyone else).
       const emitSafeModeRejection = (message: string) =>
@@ -129,19 +127,16 @@ export async function scrapeController(
         "scrape.safe_mode": safeMode.safeMode !== undefined,
         "scrape.safe_mode_bypassed": safeMode.bypassed === true,
       });
-      const effectiveFlags = safeModeEffectiveFlags(
-        req.acuc?.flags,
-        safeMode.safeMode,
-      );
 
       // Threat protection: resolve the effective policy (org config +
       // per-request override). No-ops (null policy, zero I/O) for teams
-      // without the flag.
+      // without the flag; Safe Mode's domainControls forces it on.
       const threatProtection = await resolveThreatProtection({
         teamId: req.auth.team_id,
         orgId: req.acuc?.org_id ?? null,
-        flags: effectiveFlags,
+        flags: req.acuc?.flags ?? null,
         override: req.body.threatProtection,
+        force: safeMode.safeMode?.domainControls === true,
       });
       if (threatProtection.error) {
         setSpanAttributes(span, {
@@ -158,18 +153,11 @@ export async function scrapeController(
           error: threatProtection.error,
         });
       }
-      const threatPolicy = safeMode.safeMode?.domainControls
-        ? forceSafeModeThreatProtection(
-            threatProtection.policy,
-            threatProtection.orgConfig?.policy,
-          )
-        : threatProtection.policy;
-
       // Permission check span
       const permissions = await withSpan(
         "api.scrape.check_permissions",
         async permSpan => {
-          const perms = checkPermissions(req.body, effectiveFlags, {
+          const perms = checkPermissions(req.body, req.acuc?.flags, {
             threatProtectionOrgConfig: threatProtection.orgConfig,
             safeMode: safeMode.safeMode ?? null,
           });
@@ -421,7 +409,7 @@ export async function scrapeController(
                       orgId: req.acuc?.org_id ?? null,
                       teamConcurrency: baseConcurrency,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
-                      threatProtection: threatPolicy ?? undefined,
+                      threatProtection: threatProtection.policy ?? undefined,
                       safeMode: safeMode.safeMode,
                     },
                     skipNuq: true,

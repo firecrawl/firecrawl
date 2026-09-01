@@ -79,6 +79,32 @@ describe("checkPermissions — safe mode", () => {
     ).toEqual({});
   });
 
+  it("treats threat protection as forced under domainControls", () => {
+    // Override rejected even though the org's own TP flag is only "allowed"
+    const result = checkPermissions(
+      { threatProtection: { mode: "off" } },
+      { threatProtection: "allowed" },
+      { safeMode: strictSafeMode },
+    );
+    expect(result.error).toMatch(/cannot be disabled|disable/i);
+
+    // ...and even when the org has no TP flag at all — including under
+    // lockdown (domainControls still filters cached content)
+    const noFlag = checkPermissions(
+      { threatProtection: { mode: "off" } },
+      null,
+      { safeMode: { ...strictSafeMode, lockdown: true } },
+    );
+    expect(noFlag.error).toBeDefined();
+
+    // Non-disabling overrides stay allowed
+    expect(
+      checkPermissions({ threatProtection: { mode: "normal" } }, null, {
+        safeMode: strictSafeMode,
+      }),
+    ).toEqual({});
+  });
+
   it("skips every rule under effective lockdown", () => {
     expect(
       checkPermissions(

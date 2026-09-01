@@ -3,10 +3,6 @@ import {
   TeamFlags,
 } from "../controllers/v2/types";
 import type { ErrorCodes } from "./error";
-import {
-  THREAT_PROTECTION_POLICY_DEFAULTS,
-  type ThreatProtectionPolicy,
-} from "./threat-protection/types";
 
 const SUPPORT_EMAIL = "support@firecrawl.com";
 
@@ -77,39 +73,6 @@ export function applySafeModeLockdown(
   if (scrapeOptions.maxAge === undefined) {
     scrapeOptions.maxAge = LOCKDOWN_DEFAULT_MAX_AGE_MS;
   }
-}
-
-/**
- * Guarantees an enforcing threat-protection policy under domainControls.
- * The resolver nulls the policy when the effective mode is "off" (including
- * unconfigured orgs); Safe Mode still wants real protection there, so the
- * org's saved policy (or the policy defaults) is forced into "normal" mode.
- * A policy that already enforces is returned untouched.
- */
-export function forceSafeModeThreatProtection(
-  resolvedPolicy: ThreatProtectionPolicy | null,
-  orgPolicy: ThreatProtectionPolicy | null | undefined,
-): ThreatProtectionPolicy {
-  if (resolvedPolicy) return resolvedPolicy;
-  const base = orgPolicy ?? {
-    mode: "off" as const,
-    ...THREAT_PROTECTION_POLICY_DEFAULTS,
-  };
-  return { ...base, mode: base.mode === "off" ? "normal" : base.mode };
-}
-
-/**
- * Team flags as threat-protection resolution should see them under Safe
- * Mode: domainControls forces the TP flag to "forced", which makes the
- * existing machinery reject per-request `mode: "off"` overrides and blocks
- * v0-style disablement without any new rules.
- */
-export function safeModeEffectiveFlags(
-  flags: TeamFlags | null | undefined,
-  safeMode: ResolvedSafeMode | undefined,
-): TeamFlags {
-  if (!safeMode?.domainControls) return flags ?? null;
-  return { ...(flags ?? {}), threatProtection: "forced" };
 }
 
 export function resolveSafeMode(

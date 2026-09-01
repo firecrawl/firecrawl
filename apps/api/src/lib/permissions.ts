@@ -103,18 +103,26 @@ export function checkPermissions(
   // threat protection perms — the flag must be 'allowed' or 'forced' for any
   // per-request threatProtection option, the org must not have locked down
   // request-level overrides, and a 'forced' team may never disable the
-  // feature per-request.
+  // feature per-request. Safe Mode's domainControls forces the feature the
+  // same way (even under lockdown — domain checks also filter cached content).
   const threatProtectionOption =
     request.threatProtection ?? request.scrapeOptions?.threatProtection;
   if (threatProtectionOption !== undefined) {
-    const threatMode = getThreatProtection(flags);
-    if (threatMode !== "allowed" && threatMode !== "forced") {
+    // Safe Mode's domainControls is equivalent to the flag being "forced".
+    const effectiveThreatMode =
+      options?.safeMode?.domainControls === true
+        ? "forced"
+        : getThreatProtection(flags);
+    if (effectiveThreatMode !== "allowed" && effectiveThreatMode !== "forced") {
       return { error: THREAT_PROTECTION_NOT_ENABLED_MESSAGE };
     }
     if (options?.threatProtectionOrgConfig?.allowRequestOverrides === false) {
       return { error: THREAT_PROTECTION_OVERRIDES_DISABLED_MESSAGE };
     }
-    if (threatMode === "forced" && threatProtectionOption.mode === "off") {
+    if (
+      effectiveThreatMode === "forced" &&
+      threatProtectionOption.mode === "off"
+    ) {
       return { error: THREAT_PROTECTION_CANNOT_DISABLE_MESSAGE };
     }
   }

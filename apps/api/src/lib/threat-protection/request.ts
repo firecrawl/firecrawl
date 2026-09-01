@@ -67,16 +67,25 @@ interface ResolvedThreatProtection {
  * - Flag "forced": an override may never set `mode: "off"` → 403.
  * - Effective mode "off" resolves to `policy: null` so callers can skip all
  *   enforcement work.
+ * - `force: true` (Safe Mode's domainControls): the org's policy if they have
+ *   one, protective defaults if they don't, and requests can tighten but
+ *   never loosen — the feature always runs, so this never resolves to
+ *   `policy: null`.
  */
 export async function resolveThreatProtection(args: {
   teamId: string;
   orgId?: string | null;
   flags: TeamFlags;
   override?: Partial<ThreatProtectionPolicy>;
+  force?: boolean;
 }): Promise<ResolvedThreatProtection> {
-  const flagMode = getThreatProtection(args.flags);
+  // `force` is equivalent to the team flag being "forced": the feature runs
+  // and the request may not disable it. Everything below reasons about this
+  // one effective mode.
+  const effectiveFlagMode =
+    args.force === true ? "forced" : getThreatProtection(args.flags);
 
-  if (flagMode !== "allowed" && flagMode !== "forced") {
+  if (effectiveFlagMode !== "allowed" && effectiveFlagMode !== "forced") {
     if (args.override !== undefined) {
       return {
         error: THREAT_PROTECTION_NOT_ENABLED_MESSAGE,
@@ -98,7 +107,7 @@ export async function resolveThreatProtection(args: {
         orgConfig,
       };
     }
-    if (flagMode === "forced" && args.override.mode === "off") {
+    if (effectiveFlagMode === "forced" && args.override.mode === "off") {
       return {
         error: THREAT_PROTECTION_CANNOT_DISABLE_MESSAGE,
         policy: null,
@@ -107,7 +116,12 @@ export async function resolveThreatProtection(args: {
     }
   }
 
-  const policy = resolveEffectivePolicy(orgConfig, args.override);
+  let policy = resolveEffectivePolicy(orgConfig, args.override);
+  if (args.force === true && policy.mode === "off") {
+    // Overrides that disable were already rejected above, so an "off" here
+    // comes from the org config (or the unconfigured defaults).
+    policy = { ...policy, mode: "normal" };
+  }
 
   // "zscaler" mode without a connection can only happen via a per-request
   // override on an org that never saved credentials (the config API refuses

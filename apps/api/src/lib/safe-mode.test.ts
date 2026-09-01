@@ -1,14 +1,11 @@
 import {
   applySafeModeLockdown,
   applySafeModeProxyLimit,
-  forceSafeModeThreatProtection,
   getSafeMode,
   resolveSafeMode,
   ResolvedSafeMode,
   SafeModeConfig,
-  safeModeEffectiveFlags,
 } from "./safe-mode";
-import { THREAT_PROTECTION_POLICY_DEFAULTS } from "./threat-protection/types";
 
 const strict: ResolvedSafeMode = {
   lockdown: false,
@@ -178,52 +175,5 @@ describe("applySafeModeLockdown", () => {
     applySafeModeLockdown(strict, off);
     applySafeModeLockdown(undefined, off);
     expect(off).toEqual({});
-  });
-});
-
-describe("forceSafeModeThreatProtection", () => {
-  const enforcing = {
-    mode: "normal" as const,
-    ...THREAT_PROTECTION_POLICY_DEFAULTS,
-    blacklist: ["evil.example.com"],
-  };
-
-  it("returns an already-enforcing policy untouched", () => {
-    expect(forceSafeModeThreatProtection(enforcing, null)).toBe(enforcing);
-  });
-
-  it("falls back to normal-mode defaults for unconfigured orgs", () => {
-    expect(forceSafeModeThreatProtection(null, null)).toEqual({
-      mode: "normal",
-      ...THREAT_PROTECTION_POLICY_DEFAULTS,
-    });
-  });
-
-  it("keeps the org's saved lists when only the mode was off", () => {
-    const saved = { ...enforcing, mode: "off" as const };
-    expect(forceSafeModeThreatProtection(null, saved)).toEqual({
-      ...saved,
-      mode: "normal",
-    });
-  });
-});
-
-describe("safeModeEffectiveFlags", () => {
-  it("passes flags through when domainControls is not forcing", () => {
-    expect(safeModeEffectiveFlags(null, undefined)).toBeNull();
-    const flags = { safeMode: true };
-    expect(
-      safeModeEffectiveFlags(flags, { ...strict, domainControls: false }),
-    ).toBe(flags);
-  });
-
-  it("injects a forced threatProtection flag under domainControls", () => {
-    expect(
-      safeModeEffectiveFlags({ safeMode: true, scrapeZDR: "allowed" }, strict),
-    ).toEqual({
-      safeMode: true,
-      scrapeZDR: "allowed",
-      threatProtection: "forced",
-    });
   });
 });
