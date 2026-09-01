@@ -38,6 +38,7 @@ function lockDeniedReason(value: unknown): LockDeniedReason | undefined {
 // ~3.5s worst case, so this is deliberately looser than the 2s timeout on the
 // direct Autumn client.
 const FIREBILL_TIMEOUT_MS = 5000;
+const FIREBILL_CHECK_TIMEOUT_MS = 200;
 
 // A gated lock legitimately does more: firebill asks the partner (2.5s ceiling)
 // before the Autumn hold (2s), on top of the funding lookup. Giving up at 5s
@@ -354,7 +355,7 @@ export async function firebillCheck({
         value,
         properties,
       }),
-      signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
+      signal: AbortSignal.timeout(FIREBILL_CHECK_TIMEOUT_MS),
     });
 
     if (!response.ok) {

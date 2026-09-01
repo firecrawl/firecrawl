@@ -924,6 +924,24 @@ describe("firebill routing", () => {
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
+  it("limits the fail-open check to the interactive request budget", async () => {
+    state.configRef = firebillConfig();
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const svc = makeService();
+
+    try {
+      await svc.checkCredits({
+        teamId: "team-1",
+        value: 100,
+        properties: {},
+      });
+
+      expect(timeout).toHaveBeenCalledWith(200);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it("checks directly in Autumn for orgs NOT on the allowlist", async () => {
     state.configRef = {
       ...firebillConfig(),
