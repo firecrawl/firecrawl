@@ -1,6 +1,6 @@
 import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
-import { changeTrackingInsertScrape } from "../../db/rpc";
+import { changeTrackingInsertScrape } from "../../lib/change-tracking-store";
 import { config } from "../../config";
 import "dotenv/config";
 import { logger as _logger } from "../../lib/logger";
@@ -379,8 +379,8 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
           team_id: scrape.team_id,
           url: scrape.url,
           job_id: scrape.id,
-          change_tracking_tag: hasChangeTracking ? hasChangeTracking.tag : null,
-          date_added: new Date().toISOString(),
+          tag: hasChangeTracking ? hasChangeTracking.tag : null,
+          date_added: new Date(),
         });
         _logger.debug("Change tracking record inserted successfully");
       } catch (error) {
