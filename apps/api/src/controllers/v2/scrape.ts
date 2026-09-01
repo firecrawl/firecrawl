@@ -17,6 +17,7 @@ import {
 } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
+import { applySafeModeProxyLimit, resolveSafeMode } from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -105,12 +106,32 @@ export async function scrapeController(
         });
       }
 
+      // Safe Mode: resolve the org bundle + request bypass. No-ops for
+      // teams without the flag.
+      const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
+      if (safeMode.error) {
+        setSpanAttributes(span, {
+          "scrape.error": safeMode.error,
+          "scrape.status_code": 403,
+        });
+        return res.status(403).json({
+          success: false,
+          code: safeMode.code,
+          error: safeMode.error,
+        });
+      }
+      setSpanAttributes(span, {
+        "scrape.safe_mode": safeMode.safeMode !== undefined,
+        "scrape.safe_mode_bypassed": safeMode.bypassed === true,
+      });
+
       // Permission check span
       const permissions = await withSpan(
         "api.scrape.check_permissions",
         async permSpan => {
           const perms = checkPermissions(req.body, req.acuc?.flags, {
             threatProtectionOrgConfig: threatProtection.orgConfig,
+            safeMode: safeMode.safeMode ?? null,
           });
           setSpanAttributes(permSpan, {
             "permissions.success": !perms.error,
@@ -148,6 +169,8 @@ export async function scrapeController(
           error: keyRestriction.error,
         });
       }
+
+      applySafeModeProxyLimit(safeMode.safeMode, req.body);
 
       const zeroDataRetention =
         getScrapeZDR(req.acuc?.flags) === "forced" ||
@@ -216,6 +239,13 @@ export async function scrapeController(
       });
 
       const middlewareTime = controllerStartTime - middlewareStartTime;
+
+      if (safeMode.bypassed) {
+        // Audit trail: the request opted out of Safe Mode via allowBypass.
+        logger.info("Safe Mode bypassed by request", {
+          apiKeyId: req.acuc?.api_key_id,
+        });
+      }
 
       logger.debug("Scrape " + jobId + " starting", {
         version: "v2",
@@ -348,6 +378,7 @@ export async function scrapeController(
                       teamConcurrency: baseConcurrency,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
                       threatProtection: threatProtection.policy ?? undefined,
+                      safeMode: safeMode.safeMode,
                     },
                     skipNuq: true,
                     origin,

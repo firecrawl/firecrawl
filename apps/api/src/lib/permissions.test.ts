@@ -1,4 +1,99 @@
 import { checkPermissions } from "./permissions";
+import { ResolvedSafeMode } from "./safe-mode";
+
+const strictSafeMode: ResolvedSafeMode = {
+  lockdown: false,
+  checkRobots: true,
+  domainControls: true,
+  proxyLimit: "basic",
+  noCaptchaBypass: true,
+  blockAuthPaths: true,
+};
+
+describe("checkPermissions — safe mode", () => {
+  it("passes untouched requests through", () => {
+    expect(checkPermissions({}, null, { safeMode: strictSafeMode })).toEqual(
+      {},
+    );
+  });
+
+  it("does nothing when safe mode is absent", () => {
+    expect(
+      checkPermissions({ proxy: "stealth" }, null, { safeMode: null }),
+    ).toEqual({});
+  });
+
+  it.each(["stealth", "enhanced"])(
+    "rejects %s proxy under a basic proxy limit",
+    proxy => {
+      const result = checkPermissions({ proxy }, null, {
+        safeMode: strictSafeMode,
+      });
+      expect(result.error).toMatch(/prox/i);
+      expect(result.code).toBe("SAFE_MODE_BLOCKED");
+    },
+  );
+
+  it("allows stealth when the proxy limit is stealth", () => {
+    expect(
+      checkPermissions({ proxy: "stealth" }, null, {
+        safeMode: { ...strictSafeMode, proxyLimit: "stealth" },
+      }),
+    ).toEqual({});
+  });
+
+  it("rejects ignoreRobotsTxt even when the org flag would allow it", () => {
+    const result = checkPermissions(
+      { crawlerOptions: { ignoreRobotsTxt: true } },
+      { ignoreRobots: "allowed" },
+      { safeMode: strictSafeMode },
+    );
+    expect(result.code).toBe("SAFE_MODE_BLOCKED");
+  });
+
+  it("rejects profile, login actions, and credential headers", () => {
+    const requests: Parameters<typeof checkPermissions>[0][] = [
+      { profile: { name: "p" } },
+      { actions: [{ type: "press" }] },
+      { headers: { AUTHORIZATION: "x" } },
+      { headers: { "Proxy-Authorization": "x" } },
+    ];
+    for (const request of requests) {
+      const result = checkPermissions(request, null, {
+        safeMode: strictSafeMode,
+      });
+      expect(result.code).toBe("SAFE_MODE_BLOCKED");
+    }
+  });
+
+  it("allows benign actions and headers", () => {
+    expect(
+      checkPermissions(
+        {
+          actions: [{ type: "scroll" }, { type: "screenshot" }],
+          headers: { "User-Agent": "test" },
+        },
+        null,
+        { safeMode: strictSafeMode },
+      ),
+    ).toEqual({});
+  });
+
+  it("skips every rule under effective lockdown", () => {
+    expect(
+      checkPermissions(
+        {
+          proxy: "stealth",
+          profile: { name: "p" },
+          actions: [{ type: "write" }],
+          headers: { Cookie: "x" },
+        },
+        null,
+        { safeMode: { ...strictSafeMode, lockdown: true } },
+      ),
+    ).toEqual({});
+  });
+});
 
 describe("checkPermissions — threat protection", () => {
   const requestWithOption = { threatProtection: { mode: "normal" } };

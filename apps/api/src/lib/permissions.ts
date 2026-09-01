@@ -1,5 +1,6 @@
 import { TeamFlags } from "../controllers/v2/types";
 import type { ErrorCodes } from "./error";
+import type { ResolvedSafeMode } from "./safe-mode";
 import {
   getScrapeZDR,
   getIgnoreRobots,
@@ -29,6 +30,10 @@ interface APIRequest {
   // Per-request threat protection policy override (field-level override of
   // the org config). Presence of any value gates on the team flag.
   threatProtection?: ThreatProtectionOption;
+  proxy?: string;
+  profile?: unknown;
+  actions?: { type: string }[];
+  headers?: Record<string, string>;
 }
 
 interface PermissionOptions {
@@ -38,7 +43,21 @@ interface PermissionOptions {
    * threatProtection option is rejected.
    */
   threatProtectionOrgConfig?: { allowRequestOverrides: boolean } | null;
+  /**
+   * Resolved Safe Mode bundle for this request (null/absent when the org
+   * doesn't have the flag or the request was allowed to bypass). Under
+   * effective lockdown the live-scrape rules are skipped: the params they
+   * would reject are inert when no outbound traffic can occur.
+   */
+  safeMode?: ResolvedSafeMode | null;
 }
+
+const SAFE_MODE_CREDENTIAL_HEADERS = [
+  "authorization",
+  "cookie",
+  "proxy-authorization",
+];
+const SAFE_MODE_LOGIN_ACTIONS = ["write", "press", "executeJavascript"];
 
 const SUPPORT_EMAIL = "support@firecrawl.com";
 
@@ -97,6 +116,57 @@ export function checkPermissions(
     }
     if (threatMode === "forced" && threatProtectionOption.mode === "off") {
       return { error: THREAT_PROTECTION_CANNOT_DISABLE_MESSAGE };
+    }
+  }
+
+  // Safe Mode perms — fail-closed request-time rules for the resolved
+  // bundle. Skipped entirely under effective lockdown: no outbound traffic
+  // occurs, so the params these rules reject are inert.
+  const safeMode = options?.safeMode;
+  if (safeMode && !safeMode.lockdown) {
+    if (
+      safeMode.proxyLimit === "basic" &&
+      (request.proxy === "stealth" || request.proxy === "enhanced")
+    ) {
+      return {
+        error:
+          'Safe Mode: stealth and enhanced proxies are not allowed for your organization. Remove the proxy option or use proxy: "basic".',
+        code: "SAFE_MODE_BLOCKED",
+      };
+    }
+    if (safeMode.checkRobots && request.crawlerOptions?.ignoreRobotsTxt) {
+      return {
+        error:
+          "Safe Mode: robots.txt is always honored for your organization; the ignoreRobotsTxt parameter is not allowed.",
+        code: "SAFE_MODE_BLOCKED",
+      };
+    }
+    if (safeMode.blockAuthPaths) {
+      if (request.profile !== undefined) {
+        return {
+          error:
+            "Safe Mode: browser profiles are not allowed for your organization (nothing behind a login).",
+          code: "SAFE_MODE_BLOCKED",
+        };
+      }
+      const loginAction = (request.actions ?? []).find(a =>
+        SAFE_MODE_LOGIN_ACTIONS.includes(a.type),
+      );
+      if (loginAction) {
+        return {
+          error: `Safe Mode: the ${loginAction.type} action is not allowed for your organization (nothing behind a login).`,
+          code: "SAFE_MODE_BLOCKED",
+        };
+      }
+      const credentialHeader = Object.keys(request.headers ?? {}).find(h =>
+        SAFE_MODE_CREDENTIAL_HEADERS.includes(h.toLowerCase()),
+      );
+      if (credentialHeader) {
+        return {
+          error: `Safe Mode: the ${credentialHeader} header is not allowed for your organization (nothing behind a login).`,
+          code: "SAFE_MODE_BLOCKED",
+        };
+      }
     }
   }
 

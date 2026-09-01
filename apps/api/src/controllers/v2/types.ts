@@ -812,6 +812,10 @@ const baseScrapeOptions = z.strictObject({
   minAge: z.int().gte(0).optional(),
   storeInCache: z.boolean().prefault(true),
   lockdown: z.boolean().prefault(false),
+  // Tri-state on purpose (never .prefault(false)): `false` is an explicit
+  // request to bypass Safe Mode, gated on the org's allowBypass setting;
+  // absent means "follow the org flags".
+  safeMode: z.boolean().optional(),
   redactPII: redactPIISchema,
   // Enterprise: per-request field-level override of the org's threat
   // protection policy. Gated on the team flag + org config (checkPermissions).

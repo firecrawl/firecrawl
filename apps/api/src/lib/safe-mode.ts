@@ -35,6 +35,26 @@ export function getSafeMode(flags: TeamFlags | null | undefined): boolean {
   return flags?.safeMode === true;
 }
 
+/**
+ * Pins `proxy: "auto"` to `"basic"` under a basic proxy limit, so the
+ * stealth-escalation paths (all gated on `proxy === "auto"`) never fire and
+ * the reported proxyUsed stays truthful. Explicit stealth/enhanced requests
+ * are rejected in checkPermissions instead. Mutates the passed options.
+ */
+export function applySafeModeProxyLimit(
+  safeMode: ResolvedSafeMode | undefined,
+  scrapeOptions: { proxy?: "basic" | "stealth" | "enhanced" | "auto" },
+): void {
+  if (
+    safeMode &&
+    !safeMode.lockdown &&
+    safeMode.proxyLimit === "basic" &&
+    scrapeOptions.proxy === "auto"
+  ) {
+    scrapeOptions.proxy = "basic";
+  }
+}
+
 export function resolveSafeMode(
   flags: TeamFlags | null | undefined,
   requestSafeMode: boolean | undefined,
