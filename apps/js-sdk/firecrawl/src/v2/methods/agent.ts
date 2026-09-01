@@ -1,4 +1,4 @@
-import { type AgentEffort, type AgentListOptions, type AgentListResponse, type AgentResponse, type AgentSnapshotResponse, type AgentStatusResponse, type AgentTraceResponse, type AgentWebhookConfig, type AuditMetadata, type ThreatProtectionOptions } from "../types";
+import { type AgentEffort, type AgentExchangeOptions, type AgentListOptions, type AgentListResponse, type AgentMode, type AgentResponse, type AgentSnapshotResponse, type AgentStatusResponse, type AgentThreadResponse, type AgentTraceResponse, type AgentWebhookConfig, type AuditMetadata, type ThreatProtectionOptions } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
 import { isZodSchema, zodSchemaToJsonSchema } from "../../utils/zodSchemaToJson";
@@ -17,6 +17,9 @@ function prepareAgentPayload(args: {
   webhook?: string | AgentWebhookConfig;
   threatProtection?: ThreatProtectionOptions;
   auditMetadata?: AuditMetadata;
+  threadId?: string;
+  mode?: AgentMode;
+  exchange?: AgentExchangeOptions;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   if (args.urls) body.urls = args.urls;
@@ -35,6 +38,9 @@ function prepareAgentPayload(args: {
     body.threatProtection = args.threatProtection;
   if (args.auditMetadata != null)
     body.auditMetadata = args.auditMetadata;
+  if (args.threadId != null) body.threadId = args.threadId;
+  if (args.mode != null) body.mode = args.mode;
+  if (args.exchange != null) body.exchange = args.exchange;
   return body;
 }
 
@@ -125,6 +131,22 @@ export async function getAgentSnapshot(
     return res.data;
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "agent snapshot");
+    throw err;
+  }
+}
+
+export async function getAgentThread(
+  http: HttpClient,
+  threadId: string,
+  options?: { includeData?: boolean }
+): Promise<AgentThreadResponse> {
+  try {
+    const query = options?.includeData ? "?includeData=true" : "";
+    const res = await http.get<AgentThreadResponse>(`/v2/agent/threads/${threadId}${query}`);
+    if (res.status !== 200) throwForBadResponse(res, "agent thread");
+    return res.data;
+  } catch (err: any) {
+    if (err?.isAxiosError) return normalizeAxiosError(err, "agent thread");
     throw err;
   }
 }

@@ -26,7 +26,7 @@ import {
   batchScrape as batchWaiter,
 } from "./methods/batch";
 import { startExtract, getExtractStatus, extract as extractWaiter } from "./methods/extract";
-import { startAgent, getAgentStatus, getAgentTrace, getAgentSnapshot, cancelAgent, listAgents, agent as agentWaiter } from "./methods/agent";
+import { startAgent, getAgentStatus, getAgentThread, getAgentTrace, getAgentSnapshot, cancelAgent, listAgents, agent as agentWaiter } from "./methods/agent";
 import {
   browser as browserMethod,
   browserExecute,
@@ -70,6 +70,7 @@ import type {
   AgentStatusResponse,
   AgentTraceResponse,
   AgentSnapshotResponse,
+  AgentThreadResponse,
   AgentListOptions,
   AgentListResponse,
   CrawlOptions,
@@ -565,6 +566,14 @@ export class FirecrawlClient {
    */
   async getAgentSnapshot(jobId: string, snapshotId: string): Promise<AgentSnapshotResponse> {
     return getAgentSnapshot(this.http, jobId, snapshotId);
+  }
+  /**
+   * Get a thread and its runs, oldest turn first.
+   * @param threadId Thread id, as returned by startAgent or getAgentStatus.
+   * @param options.includeData Inline each succeeded run's data.
+   */
+  async getAgentThread(threadId: string, options?: { includeData?: boolean }): Promise<AgentThreadResponse> {
+    return getAgentThread(this.http, threadId, options);
   }
 
   // Browser

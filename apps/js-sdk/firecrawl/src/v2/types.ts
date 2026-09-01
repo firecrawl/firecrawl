@@ -1311,10 +1311,62 @@ export interface ExtractResponse {
   creditsUsed?: number;
 }
 
+/** Conversation mode for an agent run. Defaults to "extract" server-side. */
+export type AgentMode = "extract" | "chat";
+
+/** Options forwarded verbatim to the agent; the server owns every default. */
+export interface AgentExchangeOptions {
+  enabled?: boolean;
+  /** At most 5. */
+  toolkits?: string[];
+  maxCalls?: number;
+  requireApproval?: boolean;
+  /** Answers a pendingApproval from the previous turn of the thread. */
+  approve?: { approvalId: string; callIds?: string[]; always?: boolean };
+  decline?: { approvalId: string };
+}
+
+/** Per-run summary reported on a status response. */
+export interface AgentExchangeSummary {
+  enabled: boolean;
+  paidCalls: number;
+  creditsUsed: number | null;
+}
+
+/** A follow-up the agent offers for the next turn of the thread. */
+export interface AgentSuggestion {
+  label: string;
+  prompt: string;
+}
+
+/** A turn that ended waiting for the caller to allow or refuse paid calls. */
+export interface PendingApproval {
+  id: string;
+  reason: string;
+  calls: {
+    id: string;
+    provider: string;
+    capability: string;
+    input: Record<string, unknown>;
+    more?: Record<string, unknown>[];
+    creditsEstimate: number | null;
+  }[];
+  resolution: null | {
+    approved: boolean;
+    callIds: string[];
+    always: boolean;
+    byRunId: string;
+  };
+}
+
 export interface AgentResponse {
   success: boolean;
   id: string;
   error?: string;
+  /** Thread this run belongs to; pass it back to continue the conversation. */
+  threadId?: string;
+  /** 1-based position of this run in its thread. */
+  threadTurn?: number;
 }
 
 export interface AgentStatusResponse {
@@ -1335,6 +1387,55 @@ export interface AgentStatusResponse {
   effort?: "low" | "medium" | "high";
   expiresAt: string;
   creditsUsed?: number;
+  threadId?: string;
+  threadTurn?: number;
+  mode?: AgentMode;
+  /** Assistant text reply. Chat-mode runs answer here instead of in `data`. */
+  message?: string;
+  suggestions?: AgentSuggestion[];
+  pendingApproval?: PendingApproval;
+  exchange?: AgentExchangeSummary;
+}
+
+/** A single run of a thread, as returned by getAgentThread. */
+export interface AgentThreadRun {
+  id: string;
+  turn: number;
+  mode: AgentMode;
+  prompt: string;
+  urls?: string[];
+  schema?: unknown;
+  effort?: "low" | "medium" | "high";
+  status:
+    | "processing"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | "refused"
+    | "credit_limit_reached";
+  createdAt: string;
+  finishedAt: string | null;
+  creditsUsed: number | null;
+  message: string | null;
+  /** Only present when the request asked for includeData. */
+  data?: unknown;
+  suggestions?: AgentSuggestion[] | null;
+  pendingApproval?: PendingApproval | null;
+  exchange?: AgentExchangeSummary | null;
+}
+
+export interface AgentThread {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "idle" | "running";
+  runs: AgentThreadRun[];
+}
+
+export interface AgentThreadResponse {
+  success: boolean;
+  thread?: AgentThread;
+  error?: string;
 }
 
 /** Reasoning effort for agent jobs. Every level runs spark-2. */
