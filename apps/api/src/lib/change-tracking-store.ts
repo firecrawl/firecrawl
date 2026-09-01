@@ -1,4 +1,4 @@
-import { Bigtable, Table } from "@google-cloud/bigtable";
+import type { Bigtable, Table } from "@google-cloud/bigtable";
 import crypto from "crypto";
 import { config } from "../config";
 import { logger } from "./logger";
@@ -13,7 +13,8 @@ import {
 // configured, every write is double-written to the Bigtable layout the
 // endpoint uses: one row per (team_id, url, tag) holding the latest
 // scrape's job id, cell timestamp = date_added, family GC max_versions=1.
-// The Bigtable side is never read yet and its failures are non-fatal.
+// The Bigtable side is never read yet; its writes are detached and
+// best-effort.
 //
 // Row key: team_id || sha256(url) || sha256(tag)
 // - team_id first: team-scoped prefix operations (bulk delete on cleanup)
@@ -61,8 +62,12 @@ function bigtableConfigured(): boolean {
 let bigtableClient: Bigtable | null = null;
 let table: Table | null = null;
 
-function getChangeTrackingTable(): Table {
+// The Bigtable package is loaded lazily: log_job imports this module on
+// the primary scrape-logging path, so a broken or slow package load must
+// never take that path down -- failures surface only in the double-write.
+async function getChangeTrackingTable(): Promise<Table> {
   if (!bigtableClient) {
+    const { Bigtable } = await import("@google-cloud/bigtable");
     bigtableClient = new Bigtable({
       projectId: config.BIGTABLE_PROJECT_ID,
       ...(config.BIGTABLE_APP_PROFILE_ID
@@ -83,6 +88,74 @@ function getChangeTrackingTable(): Table {
   return table;
 }
 
+// The double-write is best-effort: it runs detached with a bounded
+// timeout so a slow or hung Bigtable can never add failure latency to
+// the already-successful Postgres write.
+const BIGTABLE_DOUBLE_WRITE_TIMEOUT_MS = 10_000;
+
+function doubleWriteToBigtable(params: {
+  team_id: string;
+  url: string;
+  job_id: string;
+  tag: string | null;
+  date_added: Date;
+}): void {
+  void (async () => {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const write = getChangeTrackingTable().then(table =>
+        // Runtime accepts Buffer keys (converted verbatim); the .d.ts
+        // only declares string.
+        table.mutate([
+          {
+            key: changeTrackingRowKey(
+              params.team_id,
+              params.url,
+              params.tag,
+            ) as unknown as string,
+            // Required by Mutation.parse -- without it the entry
+            // carries no setCell mutations.
+            method: "insert" as const,
+            data: {
+              [FAMILY]: {
+                [QUALIFIER]: {
+                  value: params.job_id,
+                  timestamp: params.date_added,
+                },
+              },
+            },
+          },
+        ]),
+      );
+      // Keep the write handled in case the race below settles on the
+      // timeout first and it rejects later.
+      write.catch(() => {});
+      await Promise.race([
+        write,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `Bigtable change tracking double-write timed out after ${BIGTABLE_DOUBLE_WRITE_TIMEOUT_MS}ms`,
+                ),
+              ),
+            BIGTABLE_DOUBLE_WRITE_TIMEOUT_MS,
+          );
+          timer.unref();
+        }),
+      ]);
+    } catch (error) {
+      logger.warn("Error inserting change tracking record into Bigtable", {
+        error,
+        teamId: params.team_id,
+      });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  })();
+}
+
 export async function changeTrackingInsertScrape(params: {
   team_id: string;
   url: string;
@@ -100,35 +173,7 @@ export async function changeTrackingInsertScrape(params: {
   });
 
   if (bigtableConfigured()) {
-    try {
-      // Runtime accepts Buffer keys (converted verbatim); the .d.ts only
-      // declares string.
-      await getChangeTrackingTable().mutate([
-        {
-          key: changeTrackingRowKey(
-            params.team_id,
-            params.url,
-            params.tag,
-          ) as unknown as string,
-          // Required by Mutation.parse -- without it the entry carries
-          // no setCell mutations.
-          method: "insert" as const,
-          data: {
-            [FAMILY]: {
-              [QUALIFIER]: {
-                value: params.job_id,
-                timestamp: params.date_added,
-              },
-            },
-          },
-        },
-      ]);
-    } catch (error) {
-      logger.warn("Error inserting change tracking record into Bigtable", {
-        error,
-        teamId: params.team_id,
-      });
-    }
+    doubleWriteToBigtable(params);
   }
 }
 
