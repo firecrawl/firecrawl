@@ -999,6 +999,27 @@ const agentWebhookSchema = createWebhookSchema([
   "cancelled",
 ]);
 
+// Forwarded verbatim to the agent service, which owns every default and the
+// per-thread inheritance rules; the gateway only validates the shape.
+const agentExchangeSchema = z.strictObject({
+  enabled: z.boolean().optional(),
+  toolkits: z.array(z.string()).max(5).optional(),
+  maxCalls: z.number().int().min(1).max(30).optional(),
+  requireApproval: z.boolean().optional(),
+  approve: z
+    .strictObject({
+      approvalId: z.string().uuid(),
+      callIds: z.array(z.string()).optional(),
+      always: z.boolean().optional(),
+    })
+    .optional(),
+  decline: z
+    .strictObject({
+      approvalId: z.string().uuid(),
+    })
+    .optional(),
+});
+
 export const agentRequestSchema = z
   .strictObject({
     urls: URL.array().optional(),
@@ -1037,6 +1058,10 @@ export const agentRequestSchema = z
     effort: z.enum(["low", "medium", "high"]).optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     auditMetadata: auditMetadataSchema.optional(),
+    // Continue an existing thread. Omitted starts a new one.
+    threadId: z.string().uuid().optional(),
+    mode: z.enum(["extract", "chat"]).optional(),
+    exchange: agentExchangeSchema.optional(),
   })
   // spark-1 is retired and spark-2 is the default. The spark-1 preset names
   // remain valid input and silently resolve to spark-2, so every request —
@@ -1538,11 +1563,48 @@ export type AgentListResponse =
       next?: string;
     };
 
+export type AgentMode = "extract" | "chat";
+
+export type AgentSuggestion = {
+  label: string;
+  prompt: string;
+};
+
+export type AgentPendingApproval = {
+  id: string;
+  reason: string;
+  calls: {
+    id: string;
+    provider: string;
+    capability: string;
+    input: Record<string, unknown>;
+    more?: Record<string, unknown>[];
+    creditsEstimate: number | null;
+  }[];
+  resolution: null | {
+    approved: boolean;
+    callIds: string[];
+    always: boolean;
+    byRunId: string;
+  };
+};
+
+export type AgentExchangeSummary = {
+  enabled: boolean;
+  paidCalls: number;
+  creditsUsed: number | null;
+};
+
 export type AgentResponse =
-  | ErrorResponse
+  | (ErrorResponse & {
+      // Set on a 409 thread_busy: the run currently holding the thread.
+      runId?: string;
+    })
   | {
       success: boolean;
       id: string;
+      threadId?: string;
+      threadTurn?: number;
     };
 
 export type AgentStatusResponse =
@@ -1556,6 +1618,54 @@ export type AgentStatusResponse =
       effort?: "low" | "medium" | "high";
       expiresAt: string;
       creditsUsed?: number;
+      threadId?: string;
+      threadTurn?: number;
+      mode?: AgentMode;
+      message?: string;
+      suggestions?: AgentSuggestion[];
+      pendingApproval?: AgentPendingApproval;
+      exchange?: AgentExchangeSummary;
+    };
+
+type AgentThreadRun = {
+  id: string;
+  turn: number;
+  mode: AgentMode;
+  prompt: string;
+  urls?: string[];
+  schema?: unknown;
+  effort?: "low" | "medium" | "high";
+  status:
+    | "processing"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | "refused"
+    | "credit_limit_reached";
+  createdAt: string;
+  finishedAt: string | null;
+  creditsUsed: number | null;
+  message: string | null;
+  // Only present when the request asked for includeData.
+  data?: unknown;
+  suggestions?: AgentSuggestion[] | null;
+  pendingApproval?: AgentPendingApproval | null;
+  exchange?: AgentExchangeSummary | null;
+};
+
+export type AgentThread = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "idle" | "running";
+  runs: AgentThreadRun[];
+};
+
+export type AgentThreadResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      thread: AgentThread;
     };
 
 export type AgentTraceResponse =
