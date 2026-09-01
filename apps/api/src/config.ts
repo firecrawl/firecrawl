@@ -235,20 +235,13 @@ const configSchema = z.object({
   PARSE_UPLOAD_REF_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   PARSE_UPLOAD_PUBLIC_BASE_URL: z.string().url().optional(),
 
-  // Cloud Bigtable (change tracking bookkeeping store)
+  // Cloud Bigtable (change tracking bookkeeping store). The client
+  // auto-detects BIGTABLE_EMULATOR_HOST, so local dev only needs the
+  // emulator plus these vars.
   BIGTABLE_PROJECT_ID: z.string().optional(),
   BIGTABLE_INSTANCE_ID: z.string().optional(),
   BIGTABLE_APP_PROFILE_ID: z.string().optional(),
   BIGTABLE_CHANGE_TRACKING_TABLE: z.string().optional(),
-  // Change tracking store backend. postgres: append rows to
-  // change_tracking_scrapes via RPC (current behavior). bigtable:
-  // latest-wins rows keyed by (team, url, tag). dual: write both, read
-  // postgres -- the rollout middle step. The bigtable client auto-detects
-  // BIGTABLE_EMULATOR_HOST, so local dev only needs the emulator + these
-  // vars.
-  CHANGE_TRACKING_BACKEND: z
-    .enum(["postgres", "bigtable", "dual"])
-    .default("postgres"),
 
   // ClickHouse (Search Analytics)
   CLICKHOUSE_ANALYTICS_URL: z.string().optional(),

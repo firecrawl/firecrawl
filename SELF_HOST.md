@@ -47,8 +47,8 @@ RabbitMQ, NuQ PostgreSQL, and FoundationDB services for the optional queue
 backend. Only the API is published to the host by default, on port `3002`.
 A Bigtable emulator is also defined (profile `bigtable`) for local development
 of the change tracking store; start it with `docker compose --profile bigtable up`
-and set `CHANGE_TRACKING_BACKEND=bigtable` plus the `BIGTABLE_*` variables
-(point `BIGTABLE_EMULATOR_HOST` at `bigtable-emulator:8086`).
+and set the `BIGTABLE_*` variables (point `BIGTABLE_EMULATOR_HOST` at
+`bigtable-emulator:8086`).
 
 Self-hosting gives you source and infrastructure control. You also own
 security, availability, capacity, upgrades, data retention, and compliance.

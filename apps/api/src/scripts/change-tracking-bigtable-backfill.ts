@@ -14,8 +14,8 @@ import {
 // make latest-wins upserts.
 //
 // Usage:
-//   CHANGE_TRACKING_BACKEND is irrelevant here (reads PG directly, writes
-//   Bigtable directly). Requires DATABASE_URL + the BIGTABLE_* vars.
+//   Requires DATABASE_URL + the BIGTABLE_* vars (reads Postgres directly,
+//   writes Bigtable directly).
 // Env knobs:
 //   BACKFILL_TEAM_CURSOR  resume strictly after this team_id
 //   BACKFILL_DRY_RUN      "1" to read + count without writing

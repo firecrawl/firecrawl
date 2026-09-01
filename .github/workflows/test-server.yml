@@ -264,8 +264,8 @@ jobs:
 
       - name: Start Bigtable emulator
         run: |
-          docker run -d -p 8086:8086 --name bigtable-emulator gcr.io/google.com/cloudsdktool/cloud-sdk-emulator/bigtable
-          pnpx wait-on tcp:8086 -t 30s
+          docker run -d -p 8086:8086 --name bigtable-emulator gcr.io/google.com/cloudsdktool/cloud-sdk:slim bash -c "apt-get update -qq 2>/dev/null; apt-get install -y -qq google-cloud-cli-bigtable-emulator >/dev/null 2>&1; gcloud beta emulators bigtable start --host-port=0.0.0.0:8086"
+          pnpx wait-on tcp:8086 -t 60s
 
       - name: Run tests
         run: pnpm harness pnpm test:snips

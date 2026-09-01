@@ -1,7 +1,6 @@
 import { Bigtable, Table } from "@google-cloud/bigtable";
 import crypto from "crypto";
 import { config } from "../config";
-import { logger } from "./logger";
 
 // Change tracking bookkeeping, Bigtable variant. One row per
 // (team_id, url, tag) holding the latest scrape's job id; content itself
@@ -71,6 +70,11 @@ let tableReady: Promise<Table> | null = null;
 export function ensureChangeTrackingTable(): Promise<Table> {
   if (!tableReady) {
     tableReady = (async () => {
+      if (!changeTrackingBigtableConfigured()) {
+        throw new Error(
+          "BIGTABLE_INSTANCE_ID is not configured; change tracking requires the Bigtable store",
+        );
+      }
       const table = getBigtable()
         .instance(config.BIGTABLE_INSTANCE_ID!)
         .table(TABLE_ID);
@@ -202,36 +206,4 @@ export async function changeTrackingGetLastScrapeBigtable(params: {
     job_id: String(cell.value),
     date_added: dateAdded.toISOString(),
   };
-}
-
-// ============================================================================
-// Backend routing
-// ============================================================================
-
-type ChangeTrackingWriteBackend = "postgres" | "bigtable" | "dual";
-
-let warnedFallback = false;
-
-/**
- * Which store(s) log_job should write to. bigtable/dual degrade to
- * postgres when Bigtable is not configured so a bad env cannot silently
- * disable change tracking.
- */
-export function changeTrackingWriteBackend(): ChangeTrackingWriteBackend {
-  const backend = config.CHANGE_TRACKING_BACKEND;
-  if (backend !== "postgres" && !changeTrackingBigtableConfigured()) {
-    if (!warnedFallback) {
-      warnedFallback = true;
-      logger.warn(
-        "CHANGE_TRACKING_BACKEND is set to use Bigtable but BIGTABLE_INSTANCE_ID is not configured; falling back to postgres",
-      );
-    }
-    return "postgres";
-  }
-  return backend;
-}
-
-/** Which store deriveDiff should read from. dual reads postgres until flip. */
-export function changeTrackingReadBackend(): "postgres" | "bigtable" {
-  return changeTrackingWriteBackend() === "bigtable" ? "bigtable" : "postgres";
 }

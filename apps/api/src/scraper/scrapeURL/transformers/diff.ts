@@ -1,8 +1,4 @@
-import { diffGetLastScrape } from "../../../db/rpc";
-import {
-  changeTrackingGetLastScrapeBigtable,
-  changeTrackingReadBackend,
-} from "../../../lib/change-tracking-store";
+import { changeTrackingGetLastScrapeBigtable } from "../../../lib/change-tracking-store";
 import { Document } from "../../../controllers/v1/types";
 import { Meta } from "../index";
 import { generateCompletions } from "./llmExtract";
@@ -101,23 +97,14 @@ export async function deriveDiff(
       | null;
     try {
       const url = document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url;
-      if (changeTrackingReadBackend() === "bigtable") {
-        const res = await changeTrackingGetLastScrapeBigtable({
-          team_id: meta.internalOptions.teamId!,
-          url,
-          tag: changeTrackingFormat?.tag ?? null,
-        });
-        data = res
-          ? { o_job_id: res.job_id, o_date_added: res.date_added }
-          : undefined;
-      } else {
-        const resData = await diffGetLastScrape(
-          meta.internalOptions.teamId!,
-          url,
-          changeTrackingFormat?.tag ?? null,
-        );
-        data = resData[0];
-      }
+      const res = await changeTrackingGetLastScrapeBigtable({
+        team_id: meta.internalOptions.teamId!,
+        url,
+        tag: changeTrackingFormat?.tag ?? null,
+      });
+      data = res
+        ? { o_job_id: res.job_id, o_date_added: res.date_added }
+        : undefined;
     } catch (error) {
       meta.logger.error("Error fetching previous scrape", { error });
       document.warning =

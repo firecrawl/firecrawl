@@ -59,7 +59,7 @@ x-common-env: &common-env
   NUQ_BACKEND: ${NUQ_BACKEND}
   FDB_CLUSTER_FILE: ${NUQ_BACKEND:+/var/fdb/fdb.cluster}
   # Cloud Bigtable change tracking store (optional; see SELF_HOST.md).
-  # Enabled via CHANGE_TRACKING_BACKEND. Point at the bundled emulator with
+  # Point at the bundled emulator with
   # BIGTABLE_EMULATOR_HOST=bigtable-emulator:8086 and run compose with the
   # `bigtable` profile, or set your own instance vars.
   BIGTABLE_EMULATOR_HOST: ${BIGTABLE_EMULATOR_HOST:-}
@@ -67,7 +67,6 @@ x-common-env: &common-env
   BIGTABLE_INSTANCE_ID: ${BIGTABLE_INSTANCE_ID:-}
   BIGTABLE_APP_PROFILE_ID: ${BIGTABLE_APP_PROFILE_ID:-}
   BIGTABLE_CHANGE_TRACKING_TABLE: ${BIGTABLE_CHANGE_TRACKING_TABLE:-}
-  CHANGE_TRACKING_BACKEND: ${CHANGE_TRACKING_BACKEND:-postgres}
 
 services:
   playwright-service:
@@ -223,7 +222,11 @@ services:
   # Cloud Bigtable emulator for local development of the change tracking
   # store. Only starts with `docker compose --profile bigtable up`.
   bigtable-emulator:
-    image: gcr.io/google.com/cloudsdktool/cloud-sdk-emulator/bigtable
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    command: >
+      bash -c "apt-get update -qq 2>/dev/null;
+      apt-get install -y -qq google-cloud-cli-bigtable-emulator >/dev/null 2>&1;
+      gcloud beta emulators bigtable start --host-port=0.0.0.0:8086"
     networks:
       - backend
     logging:
