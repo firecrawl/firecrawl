@@ -1,0 +1,69 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference.ts
+  s_3a865ed3798c21::t_d2daf2e9fb8d8f 1-2,4-19,133-135,165-167,169-177,179-180
+  s_3a865ed3798c21::t_b14142ee20b0aa 3
+  s_3a865ed3798c21::t_cef5a88ec48001 20,109
+  s_3a865ed3798c21::t_3a4bf43745469a 21-23,25,27-30,32-45,47-66,68-69,76-108
+  s_3a865ed3798c21::t_2409664a7028cd 70-71
+  s_3a865ed3798c21::t_1bc63d3059cb07 110-132
+  s_3a865ed3798c21::t_ec71633038bcaf 136-137,146-147,149-151
+  s_3a865ed3798c21::t_3ffd18544c222b 138-145,148,168
+  s_3a865ed3798c21::t_27b0ca2f206bb1 152-157
+  s_3a865ed3798c21::t_0fc1c654c2fb93 158-164
+  s_3a865ed3798c21::t_e96e945bcf9e76 181-183
+apps/api/src/config.ts
+  s_3a865ed3798c21::t_cdeacb519d49db 345-350
+  s_3a865ed3798c21::t_1232b203db5259 351
+  s_3a865ed3798c21::t_2e0bf97669de0d 362-364
+apps/api/src/scraper/scrapeURL/engines/fire-engine/checkStatus.ts
+  s_3a865ed3798c21::t_6e2ec675749ab6 107-111,115-118
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/fireEngineHandoff.test.ts
+  s_3a865ed3798c21::t_936748f87a82ab 2-66
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_3a865ed3798c21::t_a39bbb457d582a 13
+  s_3a865ed3798c21::t_6b33b66abdf3ff 15
+  s_3a865ed3798c21::t_ff3193272c5fbe 30
+  s_3a865ed3798c21::t_3e31b9d7fe998e 31
+  s_3a865ed3798c21::t_2e712254eb1d20 45
+  s_3a865ed3798c21::t_de36e6e60033d2 46-47,50
+  s_3a865ed3798c21::t_5571bb996c7eac 48
+  s_3a865ed3798c21::t_e845eeb6080b9e 49
+  s_3a865ed3798c21::t_6a946c2d9306e4 100-106
+  s_3a865ed3798c21::t_bf493b2aa8c560 154-157,165-166,181-183
+  s_3a865ed3798c21::t_e1731371df436b 158-164,167-168
+  s_3a865ed3798c21::t_4d40c36a20b6a0 421-428,434-439,442-448,452-455,457-468,470-482,489-494
+  s_3a865ed3798c21::t_bfa9b750280b22 429-433,441
+  s_3a865ed3798c21::t_1df215398f6ed1 440
+  s_3a865ed3798c21::t_e0eaf4ed6e0036 449-451,456
+  s_3a865ed3798c21::t_d800cf18eae021 483-488,495-524
+  s_3a865ed3798c21::t_ec099d3c961b87 525-535
+  s_3a865ed3798c21::t_444c15c1c2d38d 543
+  s_3a865ed3798c21::t_bc6cf5e625cd13 570-576
+  s_3a865ed3798c21::t_f70144dbcdc9ff 735
+apps/api/src/scraper/scrapeURL/engines/fire-engine/index.ts
+  s_3a865ed3798c21::t_7fd697fec6fabc 220-223
+apps/api/src/scraper/scrapeURL/engines/utils/downloadGcsFile.ts
+  s_3a865ed3798c21::t_948a0b8a6575d6 1-11,13-18,20-39,42-52,54,56-58,60-63,79-80,83,85-92
+  s_3a865ed3798c21::t_107ddb7dd54aea 12
+  s_3a865ed3798c21::t_4c874c10cd2362 40
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_3a865ed3798c21::t_f3765c48975c2b 9,18-19,28-51,59-61
+  s_3a865ed3798c21::t_5ad8230124d5de 149-153
+apps/api/src/scraper/scrapeURL/index.ts
+  s_3a865ed3798c21::t_4c5552867b0874 154-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3967d5cb0f9d6c943bc735db2c478d5c1369261b",
+  "prompts": {},
+  "sessions": {
+    "s_3a865ed3798c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "505fa387-89c1-4431-8ded-ab301ee7e38b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

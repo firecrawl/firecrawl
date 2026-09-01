@@ -1,0 +1,19 @@
+apps/api/native/Cargo.toml
+  s_bfa8d0b4317c62::t_3cf9a8a1a3b14f 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1ca1421b27262a268d90eab12ed10d2eaa1742e0",
+  "prompts": {},
+  "sessions": {
+    "s_bfa8d0b4317c62": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "067835da-191d-4135-b813-c82f4eda3339",
+        "model": "grok-4.6"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

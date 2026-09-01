@@ -1,0 +1,25 @@
+apps/api/src/__tests__/lib/branding/declared-logo.test.ts
+  s_276b4c08717d82::t_f29003fa5b0b1c 78-143
+apps/api/src/__tests__/lib/branding/color-roles.test.ts
+  s_276b4c08717d82::t_f07fa113d731b3 46,53-58
+apps/api/src/lib/branding/color-roles.ts
+  s_276b4c08717d82::t_949123a87ad458 30-32
+apps/api/src/lib/branding/declared-logo.ts
+  s_276b4c08717d82::t_915ebc6a9570c9 20-32,34,37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "13ef7114b78a695be900b1d2f05af996c56d7cb5",
+  "prompts": {},
+  "sessions": {
+    "s_276b4c08717d82": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1d304c28-c922-49de-99ff-ecb38727bc8a",
+        "model": "grok-4.6"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

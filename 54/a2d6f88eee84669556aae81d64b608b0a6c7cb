@@ -1,0 +1,21 @@
+apps/api/src/lib/deterministicJson/pipeline/validate.ts
+  s_ee73fa7b6c83ba::t_a85d5f92b80986 268-276
+apps/api/src/lib/deterministicJson/pipeline/validate.test.ts
+  s_ee73fa7b6c83ba::t_9ee52dc923cf8d 148-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "54a2d6f88eee84669556aae81d64b608b0a6c7cb",
+  "prompts": {},
+  "sessions": {
+    "s_ee73fa7b6c83ba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3732695-3c07-45b8-b6b9-5191ef8da86d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

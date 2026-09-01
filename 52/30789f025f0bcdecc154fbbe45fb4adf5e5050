@@ -1,0 +1,42 @@
+apps/api/src/scraper/scrapeURL/engines/fire-engine/index.ts
+  s_3a865ed3798c21::t_7fd697fec6fabc 220-223
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_3a865ed3798c21::t_a39bbb457d582a 13
+  s_3a865ed3798c21::t_5571bb996c7eac 48
+  s_3a865ed3798c21::t_6a946c2d9306e4 98-104
+  s_3a865ed3798c21::t_b8a7586d04293d 476-483,486-487,489-491
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_3a865ed3798c21::t_f3765c48975c2b 9,18-19,28-51,59-61
+  s_3a865ed3798c21::t_5ad8230124d5de 149-153
+apps/api/src/scraper/scrapeURL/engines/fire-engine/checkStatus.ts
+  s_3a865ed3798c21::t_6e2ec675749ab6 107-111,115-118
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/fireEngineHandoff.test.ts
+  s_3a865ed3798c21::t_936748f87a82ab 2-64
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference.ts
+  s_3a865ed3798c21::t_3a4bf43745469a 21-23,25,27-30,32-45,47-69,76-108
+  s_3a865ed3798c21::t_2409664a7028cd 70-71
+apps/api/src/scraper/scrapeURL/index.ts
+  s_3a865ed3798c21::t_4c5552867b0874 154-158
+apps/api/src/scraper/scrapeURL/engines/utils/downloadGcsFile.ts
+  s_3a865ed3798c21::t_948a0b8a6575d6 1-11,13-18,20-39,42-52,54,56-58,60-63,79-80,83,85-92
+  s_3a865ed3798c21::t_107ddb7dd54aea 12
+  s_3a865ed3798c21::t_4c874c10cd2362 40
+apps/api/src/config.ts
+  s_3a865ed3798c21::t_2e0bf97669de0d 362-364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5230789f025f0bcdecc154fbbe45fb4adf5e5050",
+  "prompts": {},
+  "sessions": {
+    "s_3a865ed3798c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "505fa387-89c1-4431-8ded-ab301ee7e38b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

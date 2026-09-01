@@ -1,0 +1,30 @@
+apps/api/src/lib/branding/merge.ts
+  s_ab4dc55a1d8fda::t_016c56e058583f 285-291
+  s_ab4dc55a1d8fda::t_da4fd9b19336a4 332-333,337-342
+apps/api/src/__tests__/lib/branding/color-roles.test.ts
+  s_ab4dc55a1d8fda::t_f1ca58de24f630 82-94
+  s_ab4dc55a1d8fda::t_d7a96498f49b7d 6-7
+  s_ab4dc55a1d8fda::t_3e47edc56ba992 195-231
+  s_ab4dc55a1d8fda::t_37e495c4ddada5 394-444
+apps/api/src/lib/branding/color-roles.ts
+  s_ab4dc55a1d8fda::t_b6548ee30c4ff8 63
+  s_ab4dc55a1d8fda::t_2ec367e96d774f 36-44
+apps/api/src/lib/branding/processor.ts
+  s_ab4dc55a1d8fda::t_41ec8d9c448555 187-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "cc48a06c0fbabdfe6e9f2d8e7f93fe9a845773fc",
+  "prompts": {},
+  "sessions": {
+    "s_ab4dc55a1d8fda": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "12017ca4-e243-4e59-b27e-06adac59fde4",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

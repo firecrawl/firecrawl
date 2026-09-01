@@ -1,0 +1,21 @@
+apps/js-sdk/firecrawl/package.json
+  s_276b4c08717d82::t_b03fde339dde47 3
+apps/python-sdk/firecrawl/__init__.py
+  s_276b4c08717d82::t_e7650114baab84 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3112a2a8641aecab563b82ee446a3a75018827c2",
+  "prompts": {},
+  "sessions": {
+    "s_276b4c08717d82": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1d304c28-c922-49de-99ff-ecb38727bc8a",
+        "model": "grok-4.6"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
