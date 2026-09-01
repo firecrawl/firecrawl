@@ -37,7 +37,7 @@ function ensureTargetIds(targets: Array<Record<string, any>>): MonitorTarget[] {
 }
 
 const BASE_SCRAPE_CREDITS_PER_PAGE = 1;
-const JSON_SCRAPE_CREDITS_PER_PAGE = 5;
+const JSON_SCRAPE_CREDIT_BONUS = 4;
 const DETERMINISTIC_JSON_SCRAPE_CREDITS_PER_PAGE = 7;
 const SCRAPE_OPTION_CREDIT_BONUS = 4;
 const JUDGE_CREDITS_PER_PAGE = 1;
@@ -76,6 +76,18 @@ function hasAnyFormatOfType(formats: unknown, types: string[]): boolean {
   return types.some(type => hasFormatOfType(formats, type));
 }
 
+function requestsPromptInjectionCheck(formats: unknown): boolean {
+  if (!Array.isArray(formats)) return false;
+  return formats.some(
+    format =>
+      !!format &&
+      typeof format === "object" &&
+      formatType(format) === "json" &&
+      "checkPromptInjection" in format &&
+      format.checkPromptInjection === true,
+  );
+}
+
 function requestsJsonChangeTracking(formats: unknown): boolean {
   if (!Array.isArray(formats)) return false;
   return formats.some(format => {
@@ -105,11 +117,19 @@ function estimateBaseCreditsPerPage(
     credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
-  // Deterministic JSON costs more than plain JSON; both override the base scrape credit.
+  // Deterministic JSON is a flat per-page rate that overrides the base scrape
+  // credit. Plain JSON adds its premium on top, so an earlier surcharge such
+  // as lockdown survives. This mirrors calculateCreditsToBeBilled.
   if (usesDeterministicJson) {
     credits = DETERMINISTIC_JSON_SCRAPE_CREDITS_PER_PAGE;
   } else if (usesJsonCredits) {
-    credits = JSON_SCRAPE_CREDITS_PER_PAGE;
+    credits += JSON_SCRAPE_CREDIT_BONUS;
+  }
+
+  // The prompt injection guard bills +4 in calculateCreditsToBeBilled. The
+  // estimate cannot know whether the guard ran, so it assumes it does.
+  if (requestsPromptInjectionCheck(formats)) {
+    credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
   if (hasAnyFormatOfType(formats, ["question", "query"])) {
