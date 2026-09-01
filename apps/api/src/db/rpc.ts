@@ -88,18 +88,6 @@ export function billTeam7(params: {
   );
 }
 
-export async function changeTrackingInsertScrape(params: {
-  team_id: string;
-  url: string;
-  job_id: string;
-  change_tracking_tag: string | null;
-  date_added: string;
-}): Promise<void> {
-  await db.execute(
-    sql`select change_tracking_insert_scrape(p_team_id => ${params.team_id}, p_url => ${params.url}, p_job_id => ${params.job_id}, p_change_tracking_tag => ${params.change_tracking_tag}, p_date_added => ${params.date_added}::timestamptz)`,
-  );
-}
-
 // `database` is a parameter because callers split between the primary and the
 // read replica: status controllers (informational `creditsUsed`) read from the
 // replica, while crawl finalization (crawl-logic) reads its own recent billing
