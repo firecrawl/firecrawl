@@ -44,6 +44,7 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { exchangeScrapeController } from "./scrape-exchange";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -61,6 +62,10 @@ export async function scrapeController(
 
       const jobId = uuidv7();
       const preNormalizedBody = { ...req.body };
+
+      if (Array.isArray((req.body as { exchange?: unknown }).exchange)) {
+        return exchangeScrapeController(req, res, jobId);
+      }
 
       // Set initial span attributes
       setSpanAttributes(span, {

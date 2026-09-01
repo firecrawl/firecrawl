@@ -164,6 +164,22 @@ export async function searchController(
       }
     }
 
+    const wantsExchange = (req.body.sources as Array<{ type: string }>).some(
+      source => source.type === "exchange",
+    );
+    if (wantsExchange && !req.acuc?.flags?.exchangeRetrieve) {
+      return res.status(403).json({
+        success: false,
+        error: "The exchange source is not enabled for this team.",
+      });
+    }
+    if (wantsExchange && !config.FIRE_EXCHANGE_URL) {
+      return res.status(503).json({
+        success: false,
+        error: "The exchange source is not available.",
+      });
+    }
+
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;

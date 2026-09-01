@@ -21,6 +21,7 @@ import {
 } from "./highlights";
 import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
+import { searchExchangeCatalog } from "./exchange-source";
 import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
@@ -106,7 +107,16 @@ export async function executeSearch(
 
   logger.info("Searching for results");
 
-  const searchTypes = [...new Set(sources.map((s: any) => s.type))];
+  const wantsExchange = sources.some((s: any) => s.type === "exchange");
+  const searchTypes = [
+    ...new Set(sources.map((s: any) => s.type).filter(t => t !== "exchange")),
+  ];
+  const exchangeResultsPromise = wantsExchange
+    ? searchExchangeCatalog(
+        { query, limit, teamId, requestId: context.requestId },
+        logger,
+      )
+    : null;
   const { query: searchQuery, categoryMap } = buildSearchQuery(
     query,
     categories,
@@ -124,26 +134,31 @@ export async function executeSearch(
       )
     : null;
 
-  const searchResponse = hasOnlyDeveloperCategory(categories)
-    ? ({} as SearchV2Response)
-    : ((await search({
-        query: searchQuery,
-        logger,
-        requestId: context.requestId,
-        advanced: false,
-        num_results: num_results_buffer,
-        tbs: options.tbs,
-        filter: options.filter,
-        lang: options.lang,
-        country: options.country,
-        location: options.location,
-        safe: options.safe,
-        type: searchTypes,
-        enterprise: options.enterprise,
-      })) as SearchV2Response);
+  const searchResponse =
+    hasOnlyDeveloperCategory(categories) || searchTypes.length === 0
+      ? ({} as SearchV2Response)
+      : ((await search({
+          query: searchQuery,
+          logger,
+          requestId: context.requestId,
+          advanced: false,
+          num_results: num_results_buffer,
+          tbs: options.tbs,
+          filter: options.filter,
+          lang: options.lang,
+          country: options.country,
+          location: options.location,
+          safe: options.safe,
+          type: searchTypes,
+          enterprise: options.enterprise,
+        })) as SearchV2Response);
   let developerResults = developerResultsPromise
     ? await developerResultsPromise
     : [];
+  if (exchangeResultsPromise) {
+    const exchange = await exchangeResultsPromise;
+    if (exchange !== null) searchResponse.exchange = exchange;
+  }
 
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are

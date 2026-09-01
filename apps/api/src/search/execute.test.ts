@@ -2,6 +2,7 @@ const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   searchDeveloperCategory: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
+  searchExchangeCatalog: vi.fn(),
 }));
 
 vi.mock("./v2", () => ({ search: mocks.search }));
@@ -13,6 +14,9 @@ vi.mock("./developer", () => ({
         : category.type === "developer",
     ),
   searchDeveloperCategory: mocks.searchDeveloperCategory,
+}));
+vi.mock("./exchange-source", () => ({
+  searchExchangeCatalog: mocks.searchExchangeCatalog,
 }));
 vi.mock("./scrape", () => ({
   getItemsToScrape: vi.fn(() => []),
@@ -94,12 +98,29 @@ describe("executeSearch developer category", () => {
     expect(result.developerResultsCount).toBe(1);
   });
 
-
   it("filters blocked developer results via threat protection and renumbers", async () => {
     mocks.searchDeveloperCategory.mockResolvedValue([
-      { url: "https://ok.example/a", title: "A", description: "", position: 1, category: "developer" },
-      { url: "https://blocked.example/b", title: "B", description: "", position: 2, category: "developer" },
-      { url: "https://ok.example/c", title: "C", description: "", position: 3, category: "developer" },
+      {
+        url: "https://ok.example/a",
+        title: "A",
+        description: "",
+        position: 1,
+        category: "developer",
+      },
+      {
+        url: "https://blocked.example/b",
+        title: "B",
+        description: "",
+        position: 2,
+        category: "developer",
+      },
+      {
+        url: "https://ok.example/c",
+        title: "C",
+        description: "",
+        position: 3,
+        category: "developer",
+      },
     ]);
     mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
       decisionsByUrl: new Map([
@@ -138,5 +159,112 @@ describe("executeSearch developer category", () => {
       categories: ["developer"],
     });
     expect(sole.success).toBe(true);
+  });
+});
+
+describe("executeSearch exchange source", () => {
+  const webResult = {
+    url: "https://example.com/a",
+    title: "A",
+    description: "a",
+    position: 1,
+  };
+  const capability = {
+    provider: "financial-datasets",
+    capability: "prices/latest",
+    concept: "prices",
+    cohorts: ["finance"],
+    creditsCost: 1,
+    similarity: 0.9,
+  };
+
+  function sources(types: string[]) {
+    return {
+      query: "latest stock price by ticker",
+      limit: 10,
+      sources: types.map(type => ({ type })),
+      timeout: 1_000,
+    } as any;
+  }
+
+  beforeEach(() => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.searchExchangeCatalog.mockResolvedValue([capability]);
+  });
+
+  it("leaves a web-only search exactly as it was: upstream called with web, no catalogue call, no exchange key", async () => {
+    const result = await executeSearch(sources(["web"]), context, logger);
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search.mock.calls[0][0].type).toEqual(["web"]);
+    expect(mocks.searchExchangeCatalog).not.toHaveBeenCalled();
+    expect(result.response).toEqual({ web: [webResult] });
+    expect(result.response).not.toHaveProperty("exchange");
+    expect(result.totalResultsCount).toBe(1);
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("keeps the exchange type away from the upstream when mixed with web, and adds the catalogue beside the web results", async () => {
+    const result = await executeSearch(
+      sources(["web", "exchange"]),
+      context,
+      logger,
+    );
+
+    expect(mocks.search.mock.calls[0][0].type).toEqual(["web"]);
+    expect(mocks.searchExchangeCatalog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "latest stock price by ticker",
+        limit: 10,
+        teamId: "team-1",
+        requestId: "request-1",
+      }),
+      logger,
+    );
+    expect(result.response).toEqual({
+      web: [webResult],
+      exchange: [capability],
+    });
+    expect(result.totalResultsCount).toBe(1);
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("runs no upstream search and bills nothing for an exchange-only search", async () => {
+    const result = await executeSearch(sources(["exchange"]), context, logger);
+
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.response).toEqual({ exchange: [capability] });
+    expect(result.totalResultsCount).toBe(0);
+    expect(result.searchCredits).toBe(0);
+    expect(result.totalCredits).toBe(0);
+  });
+
+  it("omits the key rather than publishing an empty catalogue when the Exchange did not answer", async () => {
+    mocks.searchExchangeCatalog.mockResolvedValue(null);
+
+    const result = await executeSearch(
+      sources(["web", "exchange"]),
+      context,
+      logger,
+    );
+
+    expect(result.response).toEqual({ web: [webResult] });
+    expect(result.response).not.toHaveProperty("exchange");
+  });
+
+  it("still passes news and images through to the upstream untouched", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult], news: [], images: [] });
+
+    await executeSearch(
+      sources(["web", "news", "images", "exchange"]),
+      context,
+      logger,
+    );
+
+    expect(mocks.search.mock.calls[0][0].type).toEqual([
+      "web",
+      "news",
+      "images",
+    ]);
   });
 });
