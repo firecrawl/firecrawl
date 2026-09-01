@@ -1,6 +1,9 @@
 import { Meta } from "../..";
 import { EngineScrapeResult } from "..";
-import { fetchFileToBuffer, isProxyFetchFailure } from "../utils/downloadFile";
+import {
+  fetchFileGuardingProxyFailure,
+  fetchFileToBuffer,
+} from "../utils/downloadFile";
 import { convertDocumentToMarkdown } from "@mendable/firecrawl-rs";
 import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
 import type { Response } from "undici";
@@ -121,31 +124,22 @@ export function documentMaxReasonableTime(meta: Meta): number {
 }
 
 /**
- * Converts a proxy tunneling failure from the document engine's direct undici
- * download into DocumentFetchProxyError, which the scrapeURL retry loop
- * handles exactly like DocumentAntibotError: clear the "document" flag and
- * re-run the waterfall so the browser engine fetches the file through
- * fire-engine's own proxy infrastructure instead of ours.
- *
- * Only converts when the document engine is the flag-mandated handler and no
- * prefetch has been attempted yet (`documentPrefetch === undefined` — a null
- * prefetch means the browser round trip already ran and came back empty, so
- * retrying would just loop; the antibot case guards the same way).
+ * Guards the document engine's direct undici download: a proxy tunneling
+ * failure converts into DocumentFetchProxyError, which the scrapeURL retry
+ * loop handles exactly like DocumentAntibotError (clear the "document" flag,
+ * re-run the waterfall, browser engine fetches the file). See
+ * fetchFileGuardingProxyFailure for the conversion eligibility rules.
  */
-async function fetchDocumentFileGuardingProxyFailure<T>(
+function fetchDocumentFileGuardingProxyFailure<T>(
   meta: Meta,
   fetch: () => Promise<T>,
 ): Promise<T> {
-  try {
-    return await fetch();
-  } catch (error) {
-    if (
-      meta.documentPrefetch === undefined &&
-      meta.featureFlags.has("document") &&
-      isProxyFetchFailure(error)
-    ) {
-      throw new DocumentFetchProxyError();
-    }
-    throw error;
-  }
+  return fetchFileGuardingProxyFailure(
+    {
+      prefetch: meta.documentPrefetch,
+      flagMandated: meta.featureFlags.has("document"),
+      makeError: () => new DocumentFetchProxyError(),
+    },
+    fetch,
+  );
 }

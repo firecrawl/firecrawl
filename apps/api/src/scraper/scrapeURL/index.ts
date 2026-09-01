@@ -1340,6 +1340,14 @@ export async function scrapeURL(
             error instanceof PDFFetchProxyError &&
             meta.internalOptions.forceEngine === undefined
           ) {
+            // Note: a browser prefetch that came back empty leaves
+            // meta.pdfPrefetch at undefined (the AddFeatureError handler drops
+            // null so the antibot path can retry transient handoff failures),
+            // so an empty prefetch does NOT fail fast here — it re-runs the
+            // browser once more, exactly like the antibot case in the same
+            // state. The retryTracker's shared antibot+proxy budget bounds
+            // that loop; preserving null instead would silently change the
+            // antibot behavior.
             if (meta.pdfPrefetch !== undefined) {
               meta.logger.error(
                 "PDF was prefetched and the direct fetch still failed at the proxy, failing",

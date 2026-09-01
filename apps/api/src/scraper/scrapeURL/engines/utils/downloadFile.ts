@@ -35,7 +35,7 @@ const PROXY_TUNNEL_FAILURE_MESSAGE =
  * retry the download through a different transport (e.g. the browser engine's
  * own proxy infra) instead of failing the scrape.
  */
-export function isProxyFetchFailure(error: unknown): boolean {
+function isProxyFetchFailure(error: unknown): boolean {
   let current: unknown = error;
   // Bounded walk with a visited guard: cause chains are short in practice,
   // but a malformed/cyclic chain must never spin or crash the scrape.
@@ -56,6 +56,46 @@ export function isProxyFetchFailure(error: unknown): boolean {
     current = (current as { cause?: unknown }).cause;
   }
   return false;
+}
+
+/**
+ * Wraps a file engine's direct undici download so a proxy tunneling failure
+ * converts into an engine-level error that the scrapeURL retry loop treats
+ * exactly like the antibot case: clear the file flag and re-run the waterfall,
+ * letting the browser engine fetch the file through fire-engine's own proxy
+ * infrastructure instead of ours (see PDFFetchProxyError /
+ * DocumentFetchProxyError).
+ *
+ * Only converts when the engine is the flag-mandated handler for the file
+ * type and no prefetch has been attempted yet (`prefetch === undefined` — a
+ * browser round trip that came back empty is indistinguishable here from "no
+ * round trip yet", because the retry loop drops null prefetches so the
+ * antibot path can retry transient handoff failures; the retryTracker's
+ * shared antibot+proxy budget bounds that loop either way).
+ */
+export async function fetchFileGuardingProxyFailure<T>(
+  opts: {
+    /** meta's prefetch state for this file type; undefined = not attempted. */
+    prefetch: unknown;
+    /** Whether the engine is the flag-mandated handler for this file type. */
+    flagMandated: boolean;
+    /** Error that triggers the browser-engine fallback in the retry loop. */
+    makeError: () => Error;
+  },
+  fetch: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fetch();
+  } catch (error) {
+    if (
+      opts.prefetch === undefined &&
+      opts.flagMandated &&
+      isProxyFetchFailure(error)
+    ) {
+      throw opts.makeError();
+    }
+    throw error;
+  }
 }
 
 const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {

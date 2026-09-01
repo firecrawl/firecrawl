@@ -3,8 +3,8 @@ import { config } from "../../../../config";
 import { EngineScrapeResult } from "..";
 import {
   downloadFile,
+  fetchFileGuardingProxyFailure,
   fetchFileToBuffer,
-  isProxyFetchFailure,
 } from "../utils/downloadFile";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import {
@@ -75,33 +75,24 @@ function getIneligibleReason(
 }
 
 /**
- * Converts a proxy tunneling failure from the PDF engine's direct undici
- * download into PDFFetchProxyError, which the scrapeURL retry loop handles
- * exactly like PDFAntibotError: clear the "pdf" flag and re-run the waterfall
- * so the browser engine fetches the file through fire-engine's own proxy
- * infrastructure instead of ours.
- *
- * Only converts when the pdf engine is the flag-mandated handler and no
- * prefetch has been attempted yet (`pdfPrefetch === undefined` — a null
- * prefetch means the browser round trip already ran and came back empty,
- * so retrying would just loop; the antibot case guards the same way).
+ * Guards the pdf engine's direct undici downloads: a proxy tunneling
+ * failure converts into PDFFetchProxyError, which the scrapeURL retry loop
+ * handles exactly like PDFAntibotError (clear the "pdf" flag, re-run the
+ * waterfall, browser engine fetches the file). See
+ * fetchFileGuardingProxyFailure for the conversion eligibility rules.
  */
-async function fetchPdfFileGuardingProxyFailure<T>(
+function fetchPdfFileGuardingProxyFailure<T>(
   meta: Meta,
   fetch: () => Promise<T>,
 ): Promise<T> {
-  try {
-    return await fetch();
-  } catch (error) {
-    if (
-      meta.pdfPrefetch === undefined &&
-      meta.featureFlags.has("pdf") &&
-      isProxyFetchFailure(error)
-    ) {
-      throw new PDFFetchProxyError();
-    }
-    throw error;
-  }
+  return fetchFileGuardingProxyFailure(
+    {
+      prefetch: meta.pdfPrefetch,
+      flagMandated: meta.featureFlags.has("pdf"),
+      makeError: () => new PDFFetchProxyError(),
+    },
+    fetch,
+  );
 }
 
 export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
