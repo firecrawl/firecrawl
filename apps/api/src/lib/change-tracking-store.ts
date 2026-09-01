@@ -2,11 +2,11 @@ import { Bigtable, Table } from "@google-cloud/bigtable";
 import crypto from "crypto";
 import { config } from "../config";
 
-// Change tracking bookkeeping, Bigtable variant. One row per
-// (team_id, url, tag) holding the latest scrape's job id; content itself
-// lives in GCS. Cell timestamp = date_added, family GC rule
-// max_versions=1, so reads return the highest date_added and regressed
-// (out-of-order) writes are shadowed then collected at compaction.
+// Change tracking bookkeeping. One row per (team_id, url, tag) holding the
+// latest scrape's job id; content itself lives in GCS. Cell timestamp =
+// date_added, family GC rule max_versions=1, so reads return the highest
+// date_added and regressed (out-of-order) writes are shadowed then collected
+// at compaction.
 //
 // Row key: team_id || sha256(url) || sha256(tag)
 // - team_id first: team-scoped prefix operations (bulk delete on cleanup)
@@ -17,6 +17,8 @@ import { config } from "../config";
 //   team's bulk traffic into one contiguous sub-band.
 // - tag null is encoded injectively (0x00 vs 0x01+tag) so null and ""
 //   stay distinct keys, mirroring the Postgres semantics.
+//
+// The table + column family are created out-of-band (see PR description).
 
 const FAMILY = "m";
 const QUALIFIER = "job";
@@ -47,102 +49,53 @@ export function changeTrackingRowKey(
   ]);
 }
 
-export function changeTrackingBigtableConfigured(): boolean {
-  return !!config.BIGTABLE_INSTANCE_ID;
-}
-
 let bigtableClient: Bigtable | null = null;
-function getBigtable(): Bigtable {
-  if (!bigtableClient) {
-    bigtableClient = new Bigtable({
-      projectId: config.BIGTABLE_PROJECT_ID,
-      ...(config.BIGTABLE_APP_PROFILE_ID
-        ? { appProfileId: config.BIGTABLE_APP_PROFILE_ID }
-        : {}),
-    });
+let table: Table | null = null;
+
+function getChangeTrackingTable(): Table {
+  if (!table) {
+    if (!config.BIGTABLE_INSTANCE_ID) {
+      throw new Error(
+        "BIGTABLE_INSTANCE_ID is not configured; change tracking requires the Bigtable store",
+      );
+    }
+    if (!bigtableClient) {
+      bigtableClient = new Bigtable({
+        projectId: config.BIGTABLE_PROJECT_ID,
+        ...(config.BIGTABLE_APP_PROFILE_ID
+          ? { appProfileId: config.BIGTABLE_APP_PROFILE_ID }
+          : {}),
+        // The client's Cloud Monitoring metrics handler requires the
+        // OTel 1.x line, which GHSA-8988-4f7v-96qf only patches on 2.x;
+        // we don't consume client-side metrics, so disable the handler
+        // and let the dependency overrides move the tree to 2.x.
+        metricsEnabled: false,
+      });
+    }
+    table = bigtableClient
+      .instance(config.BIGTABLE_INSTANCE_ID)
+      .table(TABLE_ID);
   }
-  return bigtableClient;
+  return table;
 }
 
-let tableReady: Promise<Table> | null = null;
-
-/** Idempotently provisions the table + column family (GC: max 1 version). */
-export function ensureChangeTrackingTable(): Promise<Table> {
-  if (!tableReady) {
-    tableReady = (async () => {
-      if (!changeTrackingBigtableConfigured()) {
-        throw new Error(
-          "BIGTABLE_INSTANCE_ID is not configured; change tracking requires the Bigtable store",
-        );
-      }
-      const table = getBigtable()
-        .instance(config.BIGTABLE_INSTANCE_ID!)
-        .table(TABLE_ID);
-      const [tableExists] = await table.exists();
-      if (!tableExists) {
-        try {
-          await table.create({
-            families: [{ name: FAMILY, rule: { versions: 1 } }],
-          });
-        } catch (error: any) {
-          // Concurrent creation by another process is fine.
-          if (
-            !String(error?.message || "").match(/already\s+exists/i) &&
-            !String(error?.code || "").match(/ALREADY_EXISTS/)
-          ) {
-            throw error;
-          }
-        }
-      } else {
-        const family = table.family(FAMILY);
-        const [familyExists] = await family.exists();
-        if (!familyExists) {
-          try {
-            await table.createFamily(FAMILY, { rule: { versions: 1 } });
-          } catch (error: any) {
-            if (
-              !String(error?.message || "").match(/already\s+exists/i) &&
-              !String(error?.code || "").match(/ALREADY_EXISTS/)
-            ) {
-              throw error;
-            }
-          }
-        }
-      }
-      return table;
-    })().catch(error => {
-      // Reset so the next caller retries provisioning instead of being
-      // stuck with a rejected promise forever.
-      tableReady = null;
-      throw error;
-    });
-  }
-  return tableReady;
-}
-
-type ChangeTrackingScrapeRow = {
+export function changeTrackingInsertScrape(params: {
   team_id: string;
   url: string;
   job_id: string;
   tag: string | null;
   /** When the scrape was logged; becomes the cell timestamp. */
   date_added: Date;
-};
-
-/** Upserts latest-scrape pointers. Older date_added cannot clobber newer. */
-export async function changeTrackingInsertScrapesBigtable(
-  rows: ChangeTrackingScrapeRow[],
-): Promise<void> {
-  if (rows.length === 0) return;
-  const table = await ensureChangeTrackingTable();
-  await table.mutate(
-    rows.map(row => ({
-      // Runtime accepts Buffer keys (converted verbatim); the .d.ts only
-      // declares string.
+}): Promise<void> {
+  const tbl = getChangeTrackingTable();
+  // Runtime accepts Buffer keys (converted verbatim); the .d.ts only
+  // declares string.
+  return tbl.mutate([
+    {
       key: changeTrackingRowKey(
-        row.team_id,
-        row.url,
-        row.tag,
+        params.team_id,
+        params.url,
+        params.tag,
       ) as unknown as string,
       // Required by Mutation.parse -- without it the entry carries no
       // setCell mutations.
@@ -150,39 +103,27 @@ export async function changeTrackingInsertScrapesBigtable(
       data: {
         [FAMILY]: {
           [QUALIFIER]: {
-            value: row.job_id,
-            timestamp: row.date_added,
+            value: params.job_id,
+            timestamp: params.date_added,
           },
         },
       },
-    })),
-  );
+    },
+  ]) as unknown as Promise<void>;
 }
-
-export async function changeTrackingInsertScrapeBigtable(
-  row: ChangeTrackingScrapeRow,
-): Promise<void> {
-  await changeTrackingInsertScrapesBigtable([row]);
-}
-
-type ChangeTrackingLastScrape = {
-  job_id: string;
-  /** date_added of the winning cell, as an ISO string. */
-  date_added: string;
-};
 
 /**
  * Point lookup of the latest scrape for (team_id, url, tag). Returns null
  * when the team never scraped this url+tag combination.
  */
-export async function changeTrackingGetLastScrapeBigtable(params: {
+export async function changeTrackingGetLastScrape(params: {
   team_id: string;
   url: string;
   tag: string | null;
-}): Promise<ChangeTrackingLastScrape | null> {
-  const table = await ensureChangeTrackingTable();
+}): Promise<{ job_id: string; date_added: string } | null> {
+  const tbl = getChangeTrackingTable();
   const key = changeTrackingRowKey(params.team_id, params.url, params.tag);
-  const [rows] = await table.getRows({
+  const [rows] = await tbl.getRows({
     keys: [key as unknown as string],
     // Qualifier regex + latest-version-only, expressed via the column
     // filter's cellLimit (there is no standalone `versions` filter key).

@@ -47,8 +47,15 @@ overrides:
   "js-cookie@<3.0.7": "3.0.7"
   "shell-quote@<=1.8.4": "1.10.0"
   "esbuild@>=0.17.0 <0.28.1": "0.28.1"
-  "@opentelemetry/core@>=2.0.0 <2.8.0": "2.8.0"
   "query-string@>=9.0.0 <10.0.0": ">=9.5.0 <10.0.0"
+  # GHSA-8988-4f7v-96qf (@opentelemetry/core): only patched on the 2.x
+  # line. @google-cloud/bigtable@7 resolves its metrics chain onto OTel
+  # 1.x; Google's own exporter 0.22 already peers with 2.x, so force the
+  # trio onto the patched line the rest of the tree already uses.
+  "@google-cloud/opentelemetry-cloud-monitoring-exporter": "^0.22.0"
+  "@opentelemetry/core@<2.9.0": "2.9.0"
+  "@opentelemetry/resources@<2.9.0": "2.9.0"
+  "@opentelemetry/sdk-metrics@<2.9.0": "2.9.0"
 patchedDependencies:
   "node-fetch@2.7.0": "patches/node-fetch@2.7.0.patch"
 allowBuilds:

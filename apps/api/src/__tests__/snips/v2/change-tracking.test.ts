@@ -1,7 +1,4 @@
-import "../bigtable-test-env";
-
 import crypto from "crypto";
-import { changeTrackingRowKey } from "../../../lib/change-tracking-store";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   TEST_PRODUCTION,
@@ -9,239 +6,220 @@ import {
   createTestIdUrl,
   describeIf,
 } from "../lib";
+import {
+  changeTrackingGetLastScrape,
+  changeTrackingInsertScrape,
+  changeTrackingRowKey,
+} from "../../../lib/change-tracking-store";
 import { idmux, scrape, scrapeTimeout, Identity } from "./lib";
 
-const HAS_BIGTABLE_EMULATOR = !!process.env.BIGTABLE_EMULATOR_HOST;
-
 // ============================================================================
-// Store semantics against the Bigtable emulator
-// (run with BIGTABLE_EMULATOR_HOST set; CI starts one -- see test-server.yml)
+// Store semantics
 // ============================================================================
 
-describeIf(HAS_BIGTABLE_EMULATOR)(
-  "Change tracking Bigtable store (emulator)",
-  () => {
-    let store: typeof import("../../../lib/change-tracking-store.js");
-    let identity: Identity;
+describeIf(TEST_PRODUCTION)("Change tracking store", () => {
+  const teamId = () => crypto.randomUUID();
 
-    beforeAll(async () => {
-      identity = await idmux({
-        name: "change-tracking-store",
-        concurrency: 100,
-        credits: 1000000,
+  it.concurrent(
+    "writes a scrape and reads back job_id + date_added",
+    async () => {
+      const team = teamId();
+      const dateAdded = new Date("2026-09-01T12:00:00.000Z");
+      await changeTrackingInsertScrape({
+        team_id: team,
+        url: "https://example.com/page",
+        job_id: crypto.randomUUID(),
+        tag: null,
+        date_added: dateAdded,
+      });
+      const res = await changeTrackingGetLastScrape({
+        team_id: team,
+        url: "https://example.com/page",
+        tag: null,
+      });
+      expect(res).not.toBeNull();
+      expect(res!.job_id).toBeDefined();
+      expect(new Date(res!.date_added).getTime()).toBe(dateAdded.getTime());
+    },
+    30000,
+  );
+
+  it.concurrent(
+    "newer scrape wins regardless of write order",
+    async () => {
+      const team = teamId();
+      const url = "https://example.com/wins";
+      const older = { job: crypto.randomUUID(), at: new Date(1000000000000) };
+      const newer = { job: crypto.randomUUID(), at: new Date(2000000000000) };
+
+      await changeTrackingInsertScrape({
+        team_id: team,
+        url,
+        job_id: older.job,
+        tag: null,
+        date_added: older.at,
+      });
+      await changeTrackingInsertScrape({
+        team_id: team,
+        url,
+        job_id: newer.job,
+        tag: null,
+        date_added: newer.at,
       });
 
-      // The store provisions the table but never the instance (a prod
-      // instance is a billing decision); the emulator accepts any instance
-      // name in data/table requests and does not implement instance admin,
-      // so no instance creation is needed here.
-      store = await import("../../../lib/change-tracking-store.js");
-    }, 30000);
+      const res = await changeTrackingGetLastScrape({
+        team_id: team,
+        url,
+        tag: null,
+      });
+      expect(res!.job_id).toBe(newer.job);
+      expect(new Date(res!.date_added).getTime()).toBe(newer.at.getTime());
+    },
+    30000,
+  );
 
-    const teamId = () => crypto.randomUUID();
+  it.concurrent(
+    "regressed write is shadowed (older date_added cannot clobber newer)",
+    async () => {
+      const team = teamId();
+      const url = "https://example.com/regressed";
+      const newer = { job: crypto.randomUUID(), at: new Date(2000000000000) };
+      const older = { job: crypto.randomUUID(), at: new Date(1000000000000) };
 
-    it.concurrent(
-      "writes a scrape and reads back job_id + date_added",
-      async () => {
-        const team = teamId();
-        const dateAdded = new Date("2026-09-01T12:00:00.000Z");
-        await store.changeTrackingInsertScrapeBigtable({
-          team_id: team,
-          url: "https://example.com/page",
-          job_id: crypto.randomUUID(),
-          tag: null,
-          date_added: dateAdded,
-        });
-        const res = await store.changeTrackingGetLastScrapeBigtable({
-          team_id: team,
-          url: "https://example.com/page",
-          tag: null,
-        });
-        expect(res).not.toBeNull();
-        expect(res!.job_id).toBeDefined();
-        expect(new Date(res!.date_added).getTime()).toBe(dateAdded.getTime());
-      },
-      30000,
-    );
+      await changeTrackingInsertScrape({
+        team_id: team,
+        url,
+        job_id: newer.job,
+        tag: null,
+        date_added: newer.at,
+      });
+      // Arrives last, but stamped earlier: must never become visible.
+      await changeTrackingInsertScrape({
+        team_id: team,
+        url,
+        job_id: older.job,
+        tag: null,
+        date_added: older.at,
+      });
 
-    it.concurrent(
-      "newer scrape wins regardless of write order",
-      async () => {
-        const team = teamId();
-        const url = "https://example.com/wins";
-        const older = { job: crypto.randomUUID(), at: new Date(1000000000000) };
-        const newer = { job: crypto.randomUUID(), at: new Date(2000000000000) };
+      const res = await changeTrackingGetLastScrape({
+        team_id: team,
+        url,
+        tag: null,
+      });
+      expect(res!.job_id).toBe(newer.job);
+    },
+    30000,
+  );
 
-        await store.changeTrackingInsertScrapeBigtable({
-          team_id: team,
-          url,
-          job_id: older.job,
-          tag: null,
-          date_added: older.at,
-        });
-        await store.changeTrackingInsertScrapeBigtable({
-          team_id: team,
-          url,
-          job_id: newer.job,
-          tag: null,
-          date_added: newer.at,
-        });
-
-        const res = await store.changeTrackingGetLastScrapeBigtable({
+  it.concurrent(
+    "null tag, empty tag and named tag are distinct rows",
+    async () => {
+      const team = teamId();
+      const url = "https://example.com/tags";
+      for (const tag of [null, "", "watch"] as const) {
+        await changeTrackingInsertScrape({
           team_id: team,
           url,
-          tag: null,
-        });
-        expect(res!.job_id).toBe(newer.job);
-        expect(new Date(res!.date_added).getTime()).toBe(newer.at.getTime());
-      },
-      30000,
-    );
-
-    it.concurrent(
-      "regressed write is shadowed (older date_added cannot clobber newer)",
-      async () => {
-        const team = teamId();
-        const url = "https://example.com/regressed";
-        const newer = { job: crypto.randomUUID(), at: new Date(2000000000000) };
-        const older = { job: crypto.randomUUID(), at: new Date(1000000000000) };
-
-        await store.changeTrackingInsertScrapeBigtable({
-          team_id: team,
-          url,
-          job_id: newer.job,
-          tag: null,
-          date_added: newer.at,
-        });
-        // Arrives last, but stamped earlier: must never become visible.
-        await store.changeTrackingInsertScrapeBigtable({
-          team_id: team,
-          url,
-          job_id: older.job,
-          tag: null,
-          date_added: older.at,
-        });
-
-        const res = await store.changeTrackingGetLastScrapeBigtable({
-          team_id: team,
-          url,
-          tag: null,
-        });
-        expect(res!.job_id).toBe(newer.job);
-      },
-      30000,
-    );
-
-    it.concurrent(
-      "null tag, empty tag and named tag are distinct rows",
-      async () => {
-        const team = teamId();
-        const url = "https://example.com/tags";
-        for (const tag of [null, "", "watch"] as const) {
-          await store.changeTrackingInsertScrapeBigtable({
-            team_id: team,
-            url,
-            job_id: `job-${tag === null ? "null" : tag === "" ? "empty" : tag}`,
-            tag,
-            date_added: new Date(),
-          });
-        }
-
-        const resNull = await store.changeTrackingGetLastScrapeBigtable({
-          team_id: team,
-          url,
-          tag: null,
-        });
-        const resEmpty = await store.changeTrackingGetLastScrapeBigtable({
-          team_id: team,
-          url,
-          tag: "",
-        });
-        const resWatch = await store.changeTrackingGetLastScrapeBigtable({
-          team_id: team,
-          url,
-          tag: "watch",
-        });
-        expect(resNull!.job_id).toBe("job-null");
-        expect(resEmpty!.job_id).toBe("job-empty");
-        expect(resWatch!.job_id).toBe("job-watch");
-      },
-      30000,
-    );
-
-    it.concurrent(
-      "teams are isolated from each other",
-      async () => {
-        const url = "https://example.com/isolated";
-        const teamA = teamId();
-        const teamB = teamId();
-        await store.changeTrackingInsertScrapeBigtable({
-          team_id: teamA,
-          url,
-          job_id: "job-a",
-          tag: null,
+          job_id: `job-${tag === null ? "null" : tag === "" ? "empty" : tag}`,
+          tag,
           date_added: new Date(),
         });
+      }
 
-        const resB = await store.changeTrackingGetLastScrapeBigtable({
-          team_id: teamB,
-          url,
-          tag: null,
-        });
-        const resA = await store.changeTrackingGetLastScrapeBigtable({
-          team_id: teamA,
-          url,
-          tag: null,
-        });
-        expect(resB).toBeNull();
-        expect(resA!.job_id).toBe("job-a");
-      },
-      30000,
-    );
+      const resNull = await changeTrackingGetLastScrape({
+        team_id: team,
+        url,
+        tag: null,
+      });
+      const resEmpty = await changeTrackingGetLastScrape({
+        team_id: team,
+        url,
+        tag: "",
+      });
+      const resWatch = await changeTrackingGetLastScrape({
+        team_id: team,
+        url,
+        tag: "watch",
+      });
+      expect(resNull!.job_id).toBe("job-null");
+      expect(resEmpty!.job_id).toBe("job-empty");
+      expect(resWatch!.job_id).toBe("job-watch");
+    },
+    30000,
+  );
 
-    it.concurrent(
-      "missing row returns null",
-      async () => {
-        const res = await store.changeTrackingGetLastScrapeBigtable({
-          team_id: teamId(),
-          url: "https://example.com/never-scraped",
-          tag: null,
-        });
-        expect(res).toBeNull();
-      },
-      30000,
-    );
+  it.concurrent(
+    "teams are isolated from each other",
+    async () => {
+      const url = "https://example.com/isolated";
+      const teamA = teamId();
+      const teamB = teamId();
+      await changeTrackingInsertScrape({
+        team_id: teamA,
+        url,
+        job_id: "job-a",
+        tag: null,
+        date_added: new Date(),
+      });
 
-    it.concurrent(
-      "row key layout is fixed-width and injective",
-      async () => {
-        const key = changeTrackingRowKey(
-          "0b6e6ed2-4d0e-4d8c-8d2f-0a1b2c3d4e5f",
-          "https://example.com/page?testId=" + crypto.randomUUID(),
-          null,
-        );
-        expect(key.length).toBe(36 + 32 + 32);
-        expect(
-          Buffer.compare(
-            changeTrackingRowKey("team", "https://example.com", null),
-            changeTrackingRowKey("team", "https://example.com", ""),
-          ),
-        ).not.toBe(0);
-        expect(
-          Buffer.compare(
-            changeTrackingRowKey("team", "https://example.com", "a"),
-            changeTrackingRowKey("team", "https://example.com/", "a"),
-          ),
-        ).not.toBe(0);
-      },
-      30000,
-    );
-  },
-);
+      const resB = await changeTrackingGetLastScrape({
+        team_id: teamB,
+        url,
+        tag: null,
+      });
+      const resA = await changeTrackingGetLastScrape({
+        team_id: teamA,
+        url,
+        tag: null,
+      });
+      expect(resB).toBeNull();
+      expect(resA!.job_id).toBe("job-a");
+    },
+    30000,
+  );
+
+  it.concurrent(
+    "missing row returns null",
+    async () => {
+      const res = await changeTrackingGetLastScrape({
+        team_id: teamId(),
+        url: "https://example.com/never-scraped",
+        tag: null,
+      });
+      expect(res).toBeNull();
+    },
+    30000,
+  );
+
+  it.concurrent(
+    "row key layout is fixed-width and injective",
+    async () => {
+      const key = changeTrackingRowKey(
+        "0b6e6ed2-4d0e-4d8c-8d2f-0a1b2c3d4e5f",
+        "https://example.com/page?testId=" + crypto.randomUUID(),
+        null,
+      );
+      expect(key.length).toBe(36 + 32 + 32);
+      expect(
+        Buffer.compare(
+          changeTrackingRowKey("team", "https://example.com", null),
+          changeTrackingRowKey("team", "https://example.com", ""),
+        ),
+      ).not.toBe(0);
+      expect(
+        Buffer.compare(
+          changeTrackingRowKey("team", "https://example.com", "a"),
+          changeTrackingRowKey("team", "https://example.com/", "a"),
+        ),
+      ).not.toBe(0);
+    },
+    30000,
+  );
+});
 
 // ============================================================================
-// E2E through the scrape pipeline (requires the DB-authenticated test stack:
-// change tracking insert + GCS previous-job retrieval)
+// E2E through the scrape pipeline
 // ============================================================================
 
 describeIf(ALLOW_TEST_SUITE_WEBSITE && TEST_PRODUCTION)(

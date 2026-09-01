@@ -62,10 +62,6 @@ jobs:
       NUQ_BACKEND: ${{ matrix.nuq == 'fdb' && 'fdb' || '' }}
       FDB_CLUSTER_FILE: ${{ matrix.nuq == 'fdb' && '/tmp/fdb.cluster' || '' }}
       FDB_VERSION: 7.3.63
-      # Bigtable emulator for the change tracking store snips
-      BIGTABLE_EMULATOR_HOST: localhost:8086
-      BIGTABLE_PROJECT_ID: firecrawl-ci
-      BIGTABLE_INSTANCE_ID: firecrawl-ci-instance
       USE_GO_MARKDOWN_PARSER: true
       ALLOW_LOCAL_WEBHOOKS: true
       FIRECRAWL_LOG_TO_FILE: true
@@ -261,11 +257,6 @@ jobs:
           done
           docker exec fdb fdbcli --exec "configure new single memory"
           echo "docker:docker@127.0.0.1:4500" > /tmp/fdb.cluster
-
-      - name: Start Bigtable emulator
-        run: |
-          docker run -d -p 8086:8086 --name bigtable-emulator gcr.io/google.com/cloudsdktool/cloud-sdk:slim bash -c "apt-get update -qq 2>/dev/null; apt-get install -y -qq google-cloud-cli-bigtable-emulator >/dev/null 2>&1; gcloud beta emulators bigtable start --host-port=0.0.0.0:8086"
-          pnpx wait-on tcp:8086 -t 60s
 
       - name: Run tests
         run: pnpm harness pnpm test:snips

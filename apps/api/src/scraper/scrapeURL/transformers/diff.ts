@@ -1,4 +1,4 @@
-import { changeTrackingGetLastScrapeBigtable } from "../../../lib/change-tracking-store";
+import { changeTrackingGetLastScrape } from "../../../lib/change-tracking-store";
 import { Document } from "../../../controllers/v1/types";
 import { Meta } from "../index";
 import { generateCompletions } from "./llmExtract";
@@ -88,23 +88,13 @@ export async function deriveDiff(
     }
 
     const start = Date.now();
-    let data:
-      | {
-          o_job_id: string;
-          o_date_added: string;
-        }
-      | undefined
-      | null;
+    let last: Awaited<ReturnType<typeof changeTrackingGetLastScrape>>;
     try {
-      const url = document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url;
-      const res = await changeTrackingGetLastScrapeBigtable({
+      last = await changeTrackingGetLastScrape({
         team_id: meta.internalOptions.teamId!,
-        url,
+        url: document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url,
         tag: changeTrackingFormat?.tag ?? null,
       });
-      data = res
-        ? { o_job_id: res.job_id, o_date_added: res.date_added }
-        : undefined;
     } catch (error) {
       meta.logger.error("Error fetching previous scrape", { error });
       document.warning =
@@ -123,17 +113,17 @@ export async function deriveDiff(
       });
     }
 
-    const rawJob = data?.o_job_id ? await getJobFromGCS(data.o_job_id) : null;
+    const rawJob = last?.job_id ? await getJobFromGCS(last.job_id) : null;
     const job: Document | null = rawJob?.[0] ?? null;
 
     meta.logger.debug("Change tracking debugging", {
-      isDataPresent: !!data,
-      data,
+      isDataPresent: !!last,
+      data: last,
       isRawJobPresent: !!rawJob,
       isJobPresent: !!job,
     });
 
-    if (data && job) {
+    if (last && job) {
       const previousMarkdown = job.markdown!;
       const currentMarkdown = document.markdown!;
 
@@ -151,7 +141,7 @@ export async function deriveDiff(
             : "same";
 
       document.changeTracking = {
-        previousScrapeAt: data.o_date_added,
+        previousScrapeAt: last.date_added,
         changeStatus,
         visibility: meta.internalOptions.urlInvisibleInCurrentCrawl
           ? "hidden"

@@ -1,6 +1,6 @@
 import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
-import { changeTrackingInsertScrapeBigtable } from "../../lib/change-tracking-store";
+import { changeTrackingInsertScrape } from "../../lib/change-tracking-store";
 import { config } from "../../config";
 import "dotenv/config";
 import { logger as _logger } from "../../lib/logger";
@@ -375,16 +375,16 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
 
     if (hasMarkdown || hasChangeTracking) {
       try {
-        await changeTrackingInsertScrapeBigtable({
+        await changeTrackingInsertScrape({
           team_id: scrape.team_id,
           url: scrape.url,
           job_id: scrape.id,
           tag: hasChangeTracking ? hasChangeTracking.tag : null,
           date_added: new Date(),
         });
-        _logger.debug("Change tracking record inserted into Bigtable");
+        _logger.debug("Change tracking record inserted successfully");
       } catch (error) {
-        _logger.warn("Error inserting change tracking record into Bigtable", {
+        _logger.warn("Error inserting into change_tracking_scrapes", {
           error,
           scrapeId: scrape.id,
           teamId: scrape.team_id,
