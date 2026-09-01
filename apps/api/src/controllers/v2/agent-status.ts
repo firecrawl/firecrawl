@@ -57,6 +57,9 @@ type StoredAgentResult = {
   message: string | null;
   suggestions?: AgentSuggestion[];
   pendingApproval?: AgentPendingApproval;
+  // The per-run summary rides the envelope because options holds what the run
+  // was asked to do, not what it did.
+  exchange?: AgentExchangeSummary;
 };
 
 function isStoredAgentResult(value: unknown): value is StoredAgentResult {
@@ -74,7 +77,6 @@ type ThreadOptions = {
   threadId?: string;
   threadTurn?: number;
   mode?: AgentMode;
-  exchange?: AgentExchangeSummary;
 };
 
 function readThreadOptions(options: any): ThreadOptions {
@@ -82,7 +84,6 @@ function readThreadOptions(options: any): ThreadOptions {
     threadId: options?.threadId,
     threadTurn: options?.threadTurn,
     mode: options?.mode,
-    exchange: options?.exchange,
   };
 }
 
@@ -173,6 +174,7 @@ export async function agentStatusController(
   let message: string | undefined;
   let suggestions: AgentSuggestion[] | undefined;
   let pendingApproval: AgentPendingApproval | undefined;
+  let exchange: AgentExchangeSummary | undefined;
   if (agent?.is_successful) {
     const stored: unknown = await getJobFromGCS(agent.id);
     if (isStoredAgentResult(stored)) {
@@ -180,6 +182,7 @@ export async function agentStatusController(
       message = stored.message ?? undefined;
       suggestions = stored.suggestions;
       pendingApproval = stored.pendingApproval;
+      exchange = stored.exchange;
     } else {
       data = stored;
     }
@@ -202,7 +205,7 @@ export async function agentStatusController(
     message,
     suggestions,
     pendingApproval,
-    exchange: thread.exchange,
+    exchange,
     expiresAt: new Date(
       new Date(agent?.created_at ?? agentRequest.created_at).getTime() +
         1000 * 60 * 60 * 24,
