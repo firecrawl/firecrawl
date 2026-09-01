@@ -26,6 +26,7 @@ import {
   isXTwitterUrl,
 } from "./x-twitter";
 import { queryEngpickerVerdict, useIndex } from "../../../services";
+import { useFireEngine } from "./fire-engine/available";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import {
   getPDFBlocks,
@@ -62,9 +63,6 @@ export type Engine =
   | "wikipedia"
   | "x-twitter";
 
-const useFireEngine =
-  config.FIRE_ENGINE_BETA_URL !== "" &&
-  config.FIRE_ENGINE_BETA_URL !== undefined;
 const usePlaywright =
   config.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
   config.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
@@ -738,6 +736,101 @@ export async function buildFallbackList(meta: Meta): Promise<
     if (indexDocumentsIndex !== -1) {
       _engines.splice(indexDocumentsIndex, 1);
     }
+  }
+
+  // File-fetch routing: when fire-engine is available, PDF and document
+  // downloads always go through the browser engines, which fetch the file
+  // through fire-engine's proxy infrastructure and hand it back to this
+  // waterfall via AddFeatureError (specialtyScrapeCheck) — the same route
+  // the PDFAntibotError/PDFFetchProxyError and document-equivalent
+  // recoveries have always taken, just taken immediately instead of after
+  // a wasted direct download. The file engines (pdf, document) then run
+  // as pure parsers on the prefetched file, and their own direct undici
+  // downloads stay reachable only in self-hosted deployments (no
+  // fire-engine) or under an explicit forceEngine pin.
+  //
+  // This is a bespoke list rather than a flag tweak because the pdf and
+  // document flags (priority 100) exist precisely to keep every
+  // non-file-capable engine out of the waterfall via the supportScore
+  // threshold — the browser engines declare pdf/document: false, so they
+  // can never qualify while the flag is set. Clearing the flag instead
+  // would let fastMode/atsv requests admit tlsclient, which cannot hand
+  // off files at all (the file download handler is chrome-cdp only) and
+  // would burn prefetch round trips on null handoffs.
+  const fileFetchFlag: FeatureFlag | null = meta.featureFlags.has("document")
+    ? "document"
+    : meta.featureFlags.has("pdf")
+      ? "pdf"
+      : null;
+
+  // A handoff of either file type ends the fetch leg: a .pdf URL can
+  // legitimately serve a docx (and vice versa), so either prefetch being
+  // set means the file is already in hand and the normal waterfall below
+  // routes it to the right parser.
+  if (
+    useFireEngine &&
+    fileFetchFlag !== null &&
+    meta.pdfPrefetch === undefined &&
+    meta.documentPrefetch === undefined &&
+    // Lockdown and agentIndexOnly pin forceEngine above, so their
+    // index-only semantics win; every other explicit pin is the escape
+    // hatch that keeps the file engines' direct downloads working.
+    meta.internalOptions.forceEngine === undefined
+  ) {
+    // Branding needs a rendered HTML page; preserve the historical
+    // clean error (this early return would otherwise skip the check at
+    // the bottom of this function).
+    if (meta.featureFlags.has("branding")) {
+      throw new BrandingNotSupportedError(
+        fileFetchFlag === "pdf"
+          ? "Branding extraction is only supported for HTML web pages. PDFs are not supported."
+          : "Branding extraction is only supported for HTML web pages. Documents (docx, xlsx, etc.) are not supported.",
+      );
+    }
+
+    const browserEngines: Engine[] = meta.featureFlags.has("stealthProxy")
+      ? // Explicit stealth: only the stealth variants can honor it. The
+        // auto path escalates here on its own via AddFeatureError(["stealthProxy"]).
+        [
+          "fire-engine;chrome-cdp;stealth",
+          "fire-engine(retry);chrome-cdp;stealth",
+        ]
+      : [
+          "fire-engine;chrome-cdp",
+          "fire-engine(retry);chrome-cdp",
+          "fire-engine;chrome-cdp;stealth",
+          "fire-engine(retry);chrome-cdp;stealth",
+        ];
+
+    const selectedEngines = [
+      // Cache first: an index;documents hit serves the file without any
+      // fetch at all. (Plain "index" is the same lookup, but the pdf
+      // flag has always threshold-filtered it out for file URLs.)
+      ...(shouldUseIndex(meta) ? (["index;documents"] as Engine[]) : []),
+      ...browserEngines,
+    ].map(engine => {
+      const supportedFlags = new Set([
+        ...Object.entries(engineOptions[engine].features)
+          .filter(
+            ([k, v]) => meta.featureFlags.has(k as FeatureFlag) && v === true,
+          )
+          .map(([k, _]) => k),
+      ]);
+      const unsupportedFeatures = new Set([...meta.featureFlags]);
+      for (const flag of meta.featureFlags) {
+        if (supportedFlags.has(flag)) {
+          unsupportedFeatures.delete(flag);
+        }
+      }
+      return { engine, unsupportedFeatures };
+    });
+
+    meta.logger.info("Selected engines", {
+      selectedEngines,
+      fileFetchRoute: fileFetchFlag,
+    });
+
+    return selectedEngines;
   }
 
   // When fire-engine is available, drop tlsclient and fetch from the general
