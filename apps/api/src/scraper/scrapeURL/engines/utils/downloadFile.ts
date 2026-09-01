@@ -66,18 +66,20 @@ function isProxyFetchFailure(error: unknown): boolean {
  * infrastructure instead of ours (see PDFFetchProxyError /
  * DocumentFetchProxyError).
  *
- * Only converts when the engine is the flag-mandated handler for the file
- * type and no prefetch has been attempted yet (`prefetch === undefined` — a
- * browser round trip that came back empty is indistinguishable here from "no
- * round trip yet", because the retry loop drops null prefetches so the
- * antibot path can retry transient handoff failures; the retryTracker's
- * shared antibot+proxy budget bounds that loop either way).
+ * Converts when the engine is the flag-mandated handler for the file type
+ * and no usable prefetch exists. The retry loop distinguishes the two empty
+ * prefetch states: `undefined` ("browser never attempted") triggers the
+ * browser fallback; `null` ("browser attempted, delivered no file") fails
+ * fast with this error rather than burning another prefetch round trip.
+ * A real prefetch object never reaches the direct download at all.
  */
 export async function fetchFileGuardingProxyFailure<T>(
   opts: {
-    /** meta's prefetch state for this file type; undefined = not attempted. */
+    /** meta's prefetch state for this file type; undefined = not attempted,
+     *  null = attempted and came back empty, object = use the file. */
     prefetch: unknown;
-    /** Whether the engine is the flag-mandated handler for this file type. */
+    /** Whether the engine is the flag-mandated handler for this file type
+     *  (feature flag, or a scalar forceEngine pinning this engine). */
     flagMandated: boolean;
     /** Error that triggers the browser-engine fallback in the retry loop. */
     makeError: () => Error;
@@ -88,7 +90,7 @@ export async function fetchFileGuardingProxyFailure<T>(
     return await fetch();
   } catch (error) {
     if (
-      opts.prefetch === undefined &&
+      opts.prefetch == null &&
       opts.flagMandated &&
       isProxyFetchFailure(error)
     ) {

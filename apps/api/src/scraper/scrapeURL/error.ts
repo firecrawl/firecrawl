@@ -273,7 +273,7 @@ export class PDFFetchProxyError extends TransportableError {
   constructor() {
     const message = isSelfHosted()
       ? "Failed to download the PDF file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
-      : "Failed to download the PDF file through Firecrawl's proxy (the proxy rejected the tunneling request). When browser engines are available, Firecrawl automatically retries the download through its browser engine. Please retry your request, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
+      : "Failed to download the PDF file — Firecrawl could not establish a connection to the website while downloading it. Please retry your request, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
 
     super("SCRAPE_PDF_FETCH_PROXY_ERROR", message);
   }
@@ -495,7 +495,7 @@ export class DocumentFetchProxyError extends TransportableError {
   constructor() {
     const message = isSelfHosted()
       ? "Failed to download the document file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
-      : "Failed to download the document file through Firecrawl's proxy (the proxy rejected the tunneling request). When browser engines are available, Firecrawl automatically retries the download through its browser engine. Please retry your request, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
+      : "Failed to download the document file — Firecrawl could not establish a connection to the website while downloading it. Please retry your request, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
 
     super("SCRAPE_DOCUMENT_FETCH_PROXY_ERROR", message);
   }

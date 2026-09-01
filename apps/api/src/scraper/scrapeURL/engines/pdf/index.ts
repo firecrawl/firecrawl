@@ -88,7 +88,13 @@ function fetchPdfFileGuardingProxyFailure<T>(
   return fetchFileGuardingProxyFailure(
     {
       prefetch: meta.pdfPrefetch,
-      flagMandated: meta.featureFlags.has("pdf"),
+      // Scalar forceEngine=pdf pins this engine with no browser fallback in
+      // the list — the converted error surfaces to the user, so it must
+      // convert here too (an array forceEngine leaves the waterfall able to
+      // continue, so the raw error is preserved there).
+      flagMandated:
+        meta.featureFlags.has("pdf") ||
+        meta.internalOptions.forceEngine === "pdf",
       makeError: () => new PDFFetchProxyError(),
     },
     fetch,
@@ -158,7 +164,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
       if (!isPdfBuffer(file.buffer)) {
         // downloaded content isn't a valid PDF
-        if (meta.pdfPrefetch === undefined) {
+        // (null prefetch = browser round trip ran but delivered no file —
+        // still PDFAntibotError so the retry loop can give the browser
+        // another shot, exactly like the no-prefetch case)
+        if (meta.pdfPrefetch == null) {
           // for non-PDF URLs, this is expected, not anti-bot
           if (!meta.featureFlags.has("pdf")) {
             throw new EngineUnsuccessfulError("pdf");
@@ -246,7 +255,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     if (!isPdfBuffer(header.subarray(0, headerBytesRead))) {
-      if (meta.pdfPrefetch === undefined) {
+      // (null prefetch = browser round trip ran but delivered no file —
+      // still PDFAntibotError so the retry loop can give the browser
+      // another shot, exactly like the no-prefetch case)
+      if (meta.pdfPrefetch == null) {
         if (!meta.featureFlags.has("pdf")) {
           throw new EngineUnsuccessfulError("pdf");
         } else {

@@ -170,6 +170,9 @@ export type Meta = {
       }
     | null
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty
+  // (null is preserved through the retry loop's AddFeatureError handler so
+  // antibot/proxy-failure handling can tell "never attempted" apart from
+  // "attempted, browser delivered no file")
   /** Live state of a by-reference FirePDF job (large PDFs) this scrape
    * submitted or adopted. Such jobs outlive an abandoned scrape BY
    * DESIGN (see fire-pdf/async.ts's cancel policy), so a SCRAPE_TIMEOUT
@@ -206,6 +209,7 @@ export type Meta = {
       }
     | null
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty
+  // (null preserved through the retry loop, same as pdfPrefetch)
   fetchPrefetch:
     | {
         url?: string;
@@ -722,8 +726,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     // document/pdf engine to parse it, which does not support actions.
     if (
       meta.featureFlags.has("actions") &&
-      meta.pdfPrefetch === undefined &&
-      meta.documentPrefetch === undefined
+      meta.pdfPrefetch == null &&
+      meta.documentPrefetch == null
     ) {
       if (
         fallbackList.length === 0 ||
@@ -1298,9 +1302,17 @@ export async function scrapeURL(
             );
             if (error.pdfPrefetch) {
               meta.pdfPrefetch = error.pdfPrefetch;
+            } else if (error.pdfPrefetch === null) {
+              // Browser round trip ran but delivered no file. Preserve the
+              // null sentinel: the antibot branches below still retry (the
+              // empty handoff may be transient), but the proxy-failure
+              // branches fail fast instead of re-running the browser.
+              meta.pdfPrefetch = null;
             }
             if (error.documentPrefetch) {
               meta.documentPrefetch = error.documentPrefetch;
+            } else if (error.documentPrefetch === null) {
+              meta.documentPrefetch = null;
             }
           } else if (
             error instanceof RemoveFeatureError &&
@@ -1322,7 +1334,10 @@ export async function scrapeURL(
             error instanceof PDFAntibotError &&
             meta.internalOptions.forceEngine === undefined
           ) {
-            if (meta.pdfPrefetch !== undefined) {
+            // null = browser ran but delivered no file (possibly transient) —
+            // still worth one more browser round trip, so only a real
+            // prefetch object fails here.
+            if (meta.pdfPrefetch != null) {
               meta.logger.error(
                 "PDF was prefetched and still blocked by antibot, failing",
               );
@@ -1340,14 +1355,11 @@ export async function scrapeURL(
             error instanceof PDFFetchProxyError &&
             meta.internalOptions.forceEngine === undefined
           ) {
-            // Note: a browser prefetch that came back empty leaves
-            // meta.pdfPrefetch at undefined (the AddFeatureError handler drops
-            // null so the antibot path can retry transient handoff failures),
-            // so an empty prefetch does NOT fail fast here — it re-runs the
-            // browser once more, exactly like the antibot case in the same
-            // state. The retryTracker's shared antibot+proxy budget bounds
-            // that loop; preserving null instead would silently change the
-            // antibot behavior.
+            // meta.pdfPrefetch distinguishes "browser never attempted"
+            // (undefined — clear the pdf flag so the browser engine fetches
+            // the file through fire-engine's proxies) from "browser attempted,
+            // came back empty" (null — fail fast: another round trip would
+            // only burn the shared antibot+proxy prefetch budget).
             if (meta.pdfPrefetch !== undefined) {
               meta.logger.error(
                 "PDF was prefetched and the direct fetch still failed at the proxy, failing",
@@ -1366,7 +1378,10 @@ export async function scrapeURL(
             error instanceof DocumentAntibotError &&
             meta.internalOptions.forceEngine === undefined
           ) {
-            if (meta.documentPrefetch !== undefined) {
+            // null = browser ran but delivered no file (possibly transient) —
+            // still worth one more browser round trip, so only a real
+            // prefetch object fails here.
+            if (meta.documentPrefetch != null) {
               meta.logger.error(
                 "Document was prefetched and still blocked by antibot, failing",
               );
@@ -1384,6 +1399,7 @@ export async function scrapeURL(
             error instanceof DocumentFetchProxyError &&
             meta.internalOptions.forceEngine === undefined
           ) {
+            // Same undefined-vs-null distinction as the PDF branch above.
             if (meta.documentPrefetch !== undefined) {
               meta.logger.error(
                 "Document was prefetched and the direct fetch still failed at the proxy, failing",

@@ -137,7 +137,11 @@ function fetchDocumentFileGuardingProxyFailure<T>(
   return fetchFileGuardingProxyFailure(
     {
       prefetch: meta.documentPrefetch,
-      flagMandated: meta.featureFlags.has("document"),
+      // Scalar forceEngine=document pins this engine with no browser
+      // fallback in the list — see the pdf engine's rationale.
+      flagMandated:
+        meta.featureFlags.has("document") ||
+        meta.internalOptions.forceEngine === "document",
       makeError: () => new DocumentFetchProxyError(),
     },
     fetch,
