@@ -88,12 +88,17 @@ function fetchPdfFileGuardingProxyFailure<T>(
   return fetchFileGuardingProxyFailure(
     {
       prefetch: meta.pdfPrefetch,
-      // Scalar forceEngine=pdf pins this engine with no browser fallback in
-      // the list — the converted error surfaces to the user, so it must
-      // convert here too (an array forceEngine leaves the waterfall able to
-      // continue, so the raw error is preserved there).
+      // Convert only where the outcome is actionable: with forceEngine
+      // unset, the retry loop recovers PDFFetchProxyError via the browser
+      // fallback; with a scalar forceEngine=pdf, this engine is pinned
+      // with no fallback in the list, so the clean error surfaces instead
+      // of the raw TypeError. An ARRAY forceEngine must NOT convert — the
+      // retry loop bypasses recovery for any forceEngine, and the raw
+      // error is what lets the waterfall continue through the remaining
+      // forced engines.
       flagMandated:
-        meta.featureFlags.has("pdf") ||
+        (meta.internalOptions.forceEngine === undefined &&
+          meta.featureFlags.has("pdf")) ||
         meta.internalOptions.forceEngine === "pdf",
       makeError: () => new PDFFetchProxyError(),
     },

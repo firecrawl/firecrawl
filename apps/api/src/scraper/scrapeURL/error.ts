@@ -810,7 +810,14 @@ export class ScrapeRetryLimitError extends TransportableError {
     _: ErrorCodes,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
-    const x = new ScrapeRetryLimitError(data.reason, data.stats);
+    // Counters added after this error first shipped default to 0: during a
+    // rolling deploy, workers on the older build serialize stats payloads
+    // without them, and the ScrapeRetryStats contract types them as numbers.
+    const x = new ScrapeRetryLimitError(data.reason, {
+      ...data.stats,
+      pdfFetchProxyAttempts: data.stats.pdfFetchProxyAttempts ?? 0,
+      documentFetchProxyAttempts: data.stats.documentFetchProxyAttempts ?? 0,
+    });
     x.stack = data.stack;
     return x;
   }
