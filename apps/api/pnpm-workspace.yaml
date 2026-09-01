@@ -48,6 +48,7 @@ overrides:
   "shell-quote@<=1.8.4": "1.10.0"
   "esbuild@>=0.17.0 <0.28.1": "0.28.1"
   "@opentelemetry/core@>=2.0.0 <2.8.0": "2.8.0"
+  "decode-uri-component@<=0.4.2": ">=0.4.3 <1.0.0"
 patchedDependencies:
   "node-fetch@2.7.0": "patches/node-fetch@2.7.0.patch"
 allowBuilds:

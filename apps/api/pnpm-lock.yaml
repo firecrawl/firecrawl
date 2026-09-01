@@ -42,6 +42,7 @@ overrides:
   shell-quote@<=1.8.4: 1.10.0
   esbuild@>=0.17.0 <0.28.1: 0.28.1
   '@opentelemetry/core@>=2.0.0 <2.8.0': 2.8.0
+  decode-uri-component@<=0.4.2: '>=0.4.3 <1.0.0'
 
 patchedDependencies:
   node-fetch@2.7.0: cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b
@@ -2487,8 +2488,8 @@ packages:
   decimal.js@10.6.0:
     resolution: {integrity: sha512-YpgQiITW3JXGntzdUmyUR1V812Hn8T1YVXhCu+wO3OpS4eU9l4YdD3qjyiKdV6mvV29zapkMeD390UVEf2lkUg==}
 
-  decode-uri-component@0.4.1:
-    resolution: {integrity: sha512-+8VxcR21HhTy8nOt6jf20w0c9CADrw1O8d+VZ/YzzCt4bJ3uBjw+D1q2osAB8RnpwwaeYBxy0HyKQxD5JBMuuQ==}
+  decode-uri-component@0.5.0:
+    resolution: {integrity: sha512-1BiQVoK8C9gUbQU6NzAtO/tkz2qOFpEObMWpcFvhx4fYnj4Oc5yzaJN/LD36ihkVUdXyh5ZekzX+yM+ty/SrPg==}
     engines: {node: '>=14.16'}
 
   deepmerge@4.3.1:
@@ -3787,6 +3788,7 @@ packages:
   prom-client@15.1.3:
     resolution: {integrity: sha512-6ZiOBfCywsD4k1BN9IX0uZhF+tJkV8q8llP64G5Hajs4JOeVLPCwpPVcpXy3BwYiUGgyJzsJJQeOIv7+hDSq8g==}
     engines: {node: ^16 || ^18 || >=20}
+    deprecated: prom-client has been replaced by @prometheus-io/client
 
   proto-list@1.2.4:
     resolution: {integrity: sha512-vtK/94akxsTMhe0/cbfpR+syPuszcuwhqVjJq26CuNDgFGj682oRBXOP5MJpv2r7JtE8MsiepGIqvvOTBwn2vA==}
@@ -6375,7 +6377,7 @@ snapshots:
 
   decimal.js@10.6.0: {}
 
-  decode-uri-component@0.4.1: {}
+  decode-uri-component@0.5.0: {}
 
   deepmerge@4.3.1: {}
 
@@ -7633,7 +7635,7 @@ snapshots:
 
   query-string@9.3.1:
     dependencies:
-      decode-uri-component: 0.4.1
+      decode-uri-component: 0.5.0
       filter-obj: 5.1.0
       split-on-first: 3.0.0
 
