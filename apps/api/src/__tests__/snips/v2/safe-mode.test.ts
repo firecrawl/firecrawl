@@ -3,10 +3,12 @@ import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
   createTestIdUrl,
+  describeIf,
   idmux,
   Identity,
   scrapeTimeout,
   TEST_API_URL,
+  TEST_PRODUCTION,
 } from "../lib";
 import { scrape, scrapeRaw } from "./lib";
 
@@ -54,7 +56,9 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
     );
   });
 
-  describe("org flag on (strict defaults)", () => {
+  // Per-team flags require idmux, which the self-hosted fallback identity
+  // cannot provide — every flag-dependent suite is production-only.
+  describeIf(TEST_PRODUCTION)("org flag on (strict defaults)", () => {
     let identity: Identity;
 
     beforeAll(async () => {
@@ -127,6 +131,30 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
       scrapeTimeout,
     );
 
+    it.concurrent(
+      "reports basic proxy for auto requests (no stealth escalation)",
+      async () => {
+        const doc = await scrape(
+          { url: createTestIdUrl(), proxy: "auto" },
+          identity,
+        );
+        expect(doc.metadata?.proxyUsed).toBe("basic");
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "allows benign actions",
+      async () => {
+        const doc = await scrape(
+          { url: createTestIdUrl(), actions: [{ type: "scroll" }] },
+          identity,
+        );
+        expect(doc.markdown).toBeDefined();
+      },
+      scrapeTimeout,
+    );
+
     concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
       "allows benign headers",
       async () => {
@@ -167,7 +195,7 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
     );
   });
 
-  describe("org flag on with allowBypass", () => {
+  describeIf(TEST_PRODUCTION)("org flag on with allowBypass", () => {
     let identity: Identity;
 
     beforeAll(async () => {
@@ -205,49 +233,52 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
     );
   });
 
-  describe("org config lockdown: true (lockdown supersedes)", () => {
-    let identity: Identity;
+  describeIf(TEST_PRODUCTION)(
+    "org config lockdown: true (lockdown supersedes)",
+    () => {
+      let identity: Identity;
 
-    beforeAll(async () => {
-      identity = await idmux({
-        name: "safe-mode/lockdown",
-        flags: { safeMode: true, safeModeConfig: { lockdown: true } },
-      });
-    }, 10000);
+      beforeAll(async () => {
+        identity = await idmux({
+          name: "safe-mode/lockdown",
+          flags: { safeMode: true, safeModeConfig: { lockdown: true } },
+        });
+      }, 10000);
 
-    it.concurrent(
-      "uncached URLs return the lockdown cache-miss error",
-      async () => {
-        const res = await scrapeRaw({ url: createTestIdUrl() }, identity);
-        expect(res.statusCode).toBe(404);
-        expect(res.body.success).toBe(false);
-        expect(res.body.code).toBe("SCRAPE_LOCKDOWN_CACHE_MISS");
-      },
-      scrapeTimeout,
-    );
+      it.concurrent(
+        "uncached URLs return the lockdown cache-miss error",
+        async () => {
+          const res = await scrapeRaw({ url: createTestIdUrl() }, identity);
+          expect(res.statusCode).toBe(404);
+          expect(res.body.success).toBe(false);
+          expect(res.body.code).toBe("SCRAPE_LOCKDOWN_CACHE_MISS");
+        },
+        scrapeTimeout,
+      );
 
-    it.concurrent(
-      "accepts and ignores params the other controls would reject",
-      async () => {
-        // Not a 403: under lockdown the params are inert, so the request
-        // proceeds into lockdown machinery and fails only on the cache miss.
-        const res = await scrapeRaw(
-          {
-            url: createTestIdUrl(),
-            proxy: "stealth",
-            profile: { name: "ignored" },
-            headers: { Cookie: "ignored" },
-          },
-          identity,
-        );
-        expect(res.body.code).toBe("SCRAPE_LOCKDOWN_CACHE_MISS");
-        expect(res.body.code).not.toBe("SAFE_MODE_BLOCKED");
-      },
-      scrapeTimeout,
-    );
-  });
+      it.concurrent(
+        "accepts and ignores params the other controls would reject",
+        async () => {
+          // Not a 403: under lockdown the params are inert, so the request
+          // proceeds into lockdown machinery and fails only on the cache miss.
+          const res = await scrapeRaw(
+            {
+              url: createTestIdUrl(),
+              proxy: "stealth",
+              profile: { name: "ignored" },
+              headers: { Cookie: "ignored" },
+            },
+            identity,
+          );
+          expect(res.body.code).toBe("SCRAPE_LOCKDOWN_CACHE_MISS");
+          expect(res.body.code).not.toBe("SAFE_MODE_BLOCKED");
+        },
+        scrapeTimeout,
+      );
+    },
+  );
 
-  describe("domainControls forces threat protection", () => {
+  describeIf(TEST_PRODUCTION)("domainControls forces threat protection", () => {
     let identity: Identity;
 
     beforeAll(async () => {

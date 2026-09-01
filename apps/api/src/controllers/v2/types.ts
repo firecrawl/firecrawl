@@ -902,10 +902,7 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
   }
 
   if (obj.lockdown && obj.maxAge === undefined) {
-    // 2 years in ms. Number.MAX_SAFE_INTEGER lands ~285,000 years which
-    // overflows Postgres TIMESTAMP arithmetic in the index lookup and silently
-    // returns no rows. 2 years covers any practical cache retention window.
-    result = { ...result, maxAge: 2 * 365 * 24 * 60 * 60 * 1000 };
+    result = { ...result, maxAge: LOCKDOWN_DEFAULT_MAX_AGE_MS };
   }
 
   return result as T extends undefined ? undefined : T;
@@ -1891,6 +1888,13 @@ type AuthObject = {
 type Account = {
   remainingCredits: number;
 };
+
+// Lockdown's default cache window: 2 years in ms. Number.MAX_SAFE_INTEGER
+// lands ~285,000 years which overflows Postgres TIMESTAMP arithmetic in the
+// index lookup and silently returns no rows. 2 years covers any practical
+// cache retention window. Shared by the parse-time transform (request-sent
+// lockdown) and applySafeModeLockdown (org-forced lockdown).
+export const LOCKDOWN_DEFAULT_MAX_AGE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 
 export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";

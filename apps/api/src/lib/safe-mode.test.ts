@@ -107,6 +107,15 @@ describe("resolveSafeMode — org flag on", () => {
     }
   });
 
+  it("enforces the bypass gate even under org-configured lockdown", () => {
+    const result = resolveSafeMode(
+      { safeMode: true, safeModeConfig: { lockdown: true } },
+      false,
+    );
+    expect(result.error).toMatch(/disable Safe Mode/i);
+    expect(result.code).toBe("SAFE_MODE_BLOCKED");
+  });
+
   it("honors a bypass when allowBypass is true", () => {
     const result = resolveSafeMode(
       { safeMode: true, safeModeConfig: { allowBypass: true } },

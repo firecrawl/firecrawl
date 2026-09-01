@@ -148,6 +148,11 @@ export async function scrapeController(
           "scrape.error": threatProtection.error,
           "scrape.status_code": 403,
         });
+        // A TP rejection under forced domainControls is a safe-mode
+        // rejection too — keep it on the same audit trail.
+        if (safeMode.safeMode?.domainControls) {
+          emitSafeModeRejection(threatProtection.error);
+        }
         return res.status(403).json({
           success: false,
           error: threatProtection.error,

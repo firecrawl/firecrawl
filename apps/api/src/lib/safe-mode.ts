@@ -1,4 +1,7 @@
-import { TeamFlags } from "../controllers/v2/types";
+import {
+  LOCKDOWN_DEFAULT_MAX_AGE_MS,
+  TeamFlags,
+} from "../controllers/v2/types";
 import type { ErrorCodes } from "./error";
 import {
   THREAT_PROTECTION_POLICY_DEFAULTS,
@@ -72,7 +75,7 @@ export function applySafeModeLockdown(
   if (!safeMode?.lockdown || scrapeOptions.lockdown) return;
   scrapeOptions.lockdown = true;
   if (scrapeOptions.maxAge === undefined) {
-    scrapeOptions.maxAge = 2 * 365 * 24 * 60 * 60 * 1000;
+    scrapeOptions.maxAge = LOCKDOWN_DEFAULT_MAX_AGE_MS;
   }
 }
 
