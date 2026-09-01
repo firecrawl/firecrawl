@@ -724,10 +724,16 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     // Skip when the content was already prefetched (a browser engine already
     // ran the actions and downloaded the file); the re-run only needs the
     // document/pdf engine to parse it, which does not support actions.
+    // Skip when a browser engine already ran the actions — i.e. any
+    // prefetch state exists, including the null sentinel (browser ran,
+    // delivered no file): the re-run only needs the pdf/document engine
+    // to parse the file, and the actions check must not preempt the
+    // antibot/proxy recovery paths below with a misleading
+    // ActionsNotSupportedError after the actions already executed.
     if (
       meta.featureFlags.has("actions") &&
-      meta.pdfPrefetch == null &&
-      meta.documentPrefetch == null
+      meta.pdfPrefetch === undefined &&
+      meta.documentPrefetch === undefined
     ) {
       if (
         fallbackList.length === 0 ||
