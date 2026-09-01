@@ -73,6 +73,15 @@ async function getChangeTrackingTable(): Promise<Table> {
       ...(config.BIGTABLE_APP_PROFILE_ID
         ? { appProfileId: config.BIGTABLE_APP_PROFILE_ID }
         : {}),
+      // Mirrors GCS_CREDENTIALS: base64-encoded service-account JSON.
+      // Parsed here (not at module load) so a malformed value can only
+      // fail the non-fatal double-write, never the primary path. Unset
+      // falls back to Application Default Credentials.
+      ...(config.BIGTABLE_CREDENTIALS
+        ? {
+            credentials: JSON.parse(atob(config.BIGTABLE_CREDENTIALS)),
+          }
+        : {}),
       // The client's Cloud Monitoring metrics handler requires the
       // OTel 1.x line, which GHSA-8988-4f7v-96qf only patches on 2.x;
       // we don't consume client-side metrics, so disable the handler

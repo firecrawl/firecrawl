@@ -237,11 +237,14 @@ const configSchema = z.object({
 
   // Cloud Bigtable (change tracking bookkeeping store). The client
   // auto-detects BIGTABLE_EMULATOR_HOST, so local dev only needs the
-  // emulator plus these vars.
+  // emulator plus these vars. BIGTABLE_CREDENTIALS mirrors
+  // GCS_CREDENTIALS: base64-encoded service-account JSON; unset falls
+  // back to Application Default Credentials.
   BIGTABLE_PROJECT_ID: z.string().optional(),
   BIGTABLE_INSTANCE_ID: z.string().optional(),
   BIGTABLE_APP_PROFILE_ID: z.string().optional(),
   BIGTABLE_CHANGE_TRACKING_TABLE: z.string().optional(),
+  BIGTABLE_CREDENTIALS: z.string().optional(),
 
   // ClickHouse (Search Analytics)
   CLICKHOUSE_ANALYTICS_URL: z.string().optional(),
