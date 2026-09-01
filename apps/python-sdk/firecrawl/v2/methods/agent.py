@@ -2,9 +2,11 @@ from typing import Any, Dict, List, Literal, Optional, Union
 import time
 
 from ..types import (
+    AgentExchangeOptions,
     AgentListResponse,
     AgentResponse,
     AgentSnapshotResponse,
+    AgentThreadResponse,
     AgentTraceResponse,
     AgentWebhookConfig,
     AuditMetadata,
@@ -28,6 +30,9 @@ def _prepare_agent_request(
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
     audit_metadata: Optional[AuditMetadata] = None,
+    thread_id: Optional[str] = None,
+    mode: Optional[Literal["extract", "chat"]] = None,
+    exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -63,6 +68,16 @@ def _prepare_agent_request(
         )
     if audit_metadata is not None:
         body["auditMetadata"] = audit_metadata.model_dump()
+    if thread_id is not None:
+        body["threadId"] = thread_id
+    if mode is not None:
+        body["mode"] = mode
+    if exchange is not None:
+        body["exchange"] = (
+            exchange
+            if isinstance(exchange, dict)
+            else exchange.model_dump(by_alias=True, exclude_none=True)
+        )
     return body
 
 
@@ -89,6 +104,9 @@ def start_agent(
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
     audit_metadata: Optional[AuditMetadata] = None,
+    thread_id: Optional[str] = None,
+    mode: Optional[Literal["extract", "chat"]] = None,
+    exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
 ) -> AgentResponse:
     body = _prepare_agent_request(
         urls,
@@ -102,6 +120,9 @@ def start_agent(
         webhook=webhook,
         threat_protection=threat_protection,
         audit_metadata=audit_metadata,
+        thread_id=thread_id,
+        mode=mode,
+        exchange=exchange,
     )
     resp = client.post("/v2/agent", body)
     if not resp.ok:
@@ -178,6 +199,9 @@ def agent(
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
     audit_metadata: Optional[AuditMetadata] = None,
+    thread_id: Optional[str] = None,
+    mode: Optional[Literal["extract", "chat"]] = None,
+    exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
 ) -> AgentResponse:
     started = start_agent(
         client,
@@ -192,6 +216,9 @@ def agent(
         webhook=webhook,
         threat_protection=threat_protection,
         audit_metadata=audit_metadata,
+        thread_id=thread_id,
+        mode=mode,
+        exchange=exchange,
     )
     job_id = getattr(started, "id", None)
     if not job_id:
@@ -219,6 +246,28 @@ def get_agent_trace(
     if not resp.ok:
         handle_response_error(resp, "agent-trace")
     return AgentTraceResponse(**resp.json())
+
+
+def get_agent_thread(
+    client: HttpClient,
+    thread_id: str,
+    *,
+    include_data: bool = False,
+) -> AgentThreadResponse:
+    """Get a thread and its runs, oldest turn first.
+
+    Args:
+        client: HTTP client instance
+        thread_id: Thread ID, as returned by start_agent or get_agent_status
+        include_data: Inline each succeeded run's data
+    """
+    endpoint = f"/v2/agent/threads/{thread_id}"
+    if include_data:
+        endpoint += "?includeData=true"
+    resp = client.get(endpoint)
+    if not resp.ok:
+        handle_response_error(resp, "agent-thread")
+    return AgentThreadResponse(**resp.json())
 
 
 def get_agent_snapshot(

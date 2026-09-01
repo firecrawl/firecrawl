@@ -1449,8 +1449,79 @@ class ExtractResponse(BaseModel):
     tokens_used: Optional[int] = None
 
 
+class AgentExchangeOptions(BaseModel):
+    """Options forwarded verbatim to the agent; the server owns every default."""
+
+    model_config = {"populate_by_name": True}
+
+    enabled: Optional[bool] = None
+    # At most 5.
+    toolkits: Optional[List[str]] = None
+    max_calls: Optional[int] = Field(default=None, alias="maxCalls")
+    require_approval: Optional[bool] = Field(default=None, alias="requireApproval")
+    # Answers a pending_approval from the previous turn of the thread.
+    approve: Optional[Dict[str, Any]] = None
+    decline: Optional[Dict[str, Any]] = None
+
+
+class AgentExchangeSummary(BaseModel):
+    """Per-run summary reported on a status response."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    enabled: Optional[bool] = None
+    paid_calls: Optional[int] = Field(default=None, alias="paidCalls")
+    credits_used: Optional[int] = Field(default=None, alias="creditsUsed")
+
+
+class AgentSuggestion(BaseModel):
+    """A follow-up the agent offers for the next turn of the thread."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    label: Optional[str] = None
+    prompt: Optional[str] = None
+
+
+class PendingApprovalCall(BaseModel):
+    """One call held back by a pending approval."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    id: Optional[str] = None
+    provider: Optional[str] = None
+    capability: Optional[str] = None
+    input: Optional[Dict[str, Any]] = None
+    more: Optional[List[Dict[str, Any]]] = None
+    credits_estimate: Optional[int] = Field(default=None, alias="creditsEstimate")
+
+
+class PendingApprovalResolution(BaseModel):
+    """How a pending approval was answered by a later turn."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    approved: Optional[bool] = None
+    call_ids: Optional[List[str]] = Field(default=None, alias="callIds")
+    always: Optional[bool] = None
+    by_run_id: Optional[str] = Field(default=None, alias="byRunId")
+
+
+class PendingApproval(BaseModel):
+    """A turn that ended waiting for the caller to allow or refuse paid calls."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    id: Optional[str] = None
+    reason: Optional[str] = None
+    calls: Optional[List[PendingApprovalCall]] = None
+    resolution: Optional[PendingApprovalResolution] = None
+
+
 class AgentResponse(BaseModel):
     """Response for agent operations (start/status/final)."""
+
+    model_config = {"populate_by_name": True}
 
     success: Optional[bool] = None
     id: Optional[str] = None
@@ -1465,6 +1536,18 @@ class AgentResponse(BaseModel):
     effort: Optional[Literal["low", "medium", "high"]] = None
     expires_at: Optional[datetime] = None
     credits_used: Optional[int] = None
+    # Thread this run belongs to; pass it back to continue the conversation.
+    thread_id: Optional[str] = Field(default=None, alias="threadId")
+    # 1-based position of this run in its thread.
+    thread_turn: Optional[int] = Field(default=None, alias="threadTurn")
+    mode: Optional[Literal["extract", "chat"]] = None
+    # Assistant text reply. Chat-mode runs answer here instead of in `data`.
+    message: Optional[str] = None
+    suggestions: Optional[List[AgentSuggestion]] = None
+    pending_approval: Optional[PendingApproval] = Field(
+        default=None, alias="pendingApproval"
+    )
+    exchange: Optional[AgentExchangeSummary] = None
 
 
 class AgentListItemSettings(BaseModel):
@@ -1513,6 +1596,56 @@ class AgentListResponse(BaseModel):
     agents: Optional[List[AgentListItem]] = None
     # Absolute URL of the next page; only present when more pages exist.
     next: Optional[str] = None
+    error: Optional[str] = None
+
+
+class AgentThreadRun(BaseModel):
+    """A single run of a thread, as returned by get_agent_thread."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    id: Optional[str] = None
+    turn: Optional[int] = None
+    mode: Optional[Literal["extract", "chat"]] = None
+    prompt: Optional[str] = None
+    urls: Optional[List[str]] = None
+    # Trailing underscore because `schema` shadows a BaseModel attribute.
+    schema_: Optional[Any] = Field(default=None, alias="schema")
+    effort: Optional[Literal["low", "medium", "high"]] = None
+    # Plain str, not a Literal: the run vocabulary is server-owned.
+    status: Optional[str] = None
+    created_at: Optional[str] = Field(default=None, alias="createdAt")
+    finished_at: Optional[str] = Field(default=None, alias="finishedAt")
+    credits_used: Optional[int] = Field(default=None, alias="creditsUsed")
+    message: Optional[str] = None
+    # Only present when the request asked for include_data.
+    data: Optional[Any] = None
+    suggestions: Optional[List[AgentSuggestion]] = None
+    pending_approval: Optional[PendingApproval] = Field(
+        default=None, alias="pendingApproval"
+    )
+    exchange: Optional[AgentExchangeSummary] = None
+
+
+class AgentThread(BaseModel):
+    """A thread and its runs, oldest turn first."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    id: Optional[str] = None
+    created_at: Optional[str] = Field(default=None, alias="createdAt")
+    updated_at: Optional[str] = Field(default=None, alias="updatedAt")
+    status: Optional[Literal["idle", "running"]] = None
+    runs: Optional[List[AgentThreadRun]] = None
+
+
+class AgentThreadResponse(BaseModel):
+    """Response from GET /v2/agent/threads/{thread_id}."""
+
+    model_config = {"populate_by_name": True}
+
+    success: Optional[bool] = None
+    thread: Optional[AgentThread] = None
     error: Optional[str] = None
 
 
