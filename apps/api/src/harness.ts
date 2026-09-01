@@ -920,12 +920,13 @@ async function startServices(command?: string[]): Promise<Services> {
       )
     : undefined;
 
-  // tests hammer the API instantly, so we need to ensure it's running before launching tests
+  // tests hammer the API instantly, so we need to ensure it's running before
+  // launching tests — including the narrow `pnpm exec vitest run <path>` form.
   if (
     command &&
     Array.isArray(command) &&
     command[0] === "pnpm" &&
-    command[1].startsWith("test:snips")
+    (command[1].startsWith("test:snips") || command[1] === "exec")
   ) {
     logger.info(`Waiting for API on localhost:${PORT}`);
     await waitForPort(Number(PORT), "localhost");
