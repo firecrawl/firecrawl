@@ -1,10 +1,15 @@
 import { Meta } from "../..";
 import { config } from "../../../../config";
 import { EngineScrapeResult } from "..";
-import { downloadFile, fetchFileToBuffer } from "../utils/downloadFile";
+import {
+  downloadFile,
+  fetchFileToBuffer,
+  isProxyFetchFailure,
+} from "../utils/downloadFile";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import {
   PDFAntibotError,
+  PDFFetchProxyError,
   PDFInsufficientTimeError,
   PDFOCRRequiredError,
   PDFPrefetchFailed,
@@ -69,6 +74,36 @@ function getIneligibleReason(
   return null;
 }
 
+/**
+ * Converts a proxy tunneling failure from the PDF engine's direct undici
+ * download into PDFFetchProxyError, which the scrapeURL retry loop handles
+ * exactly like PDFAntibotError: clear the "pdf" flag and re-run the waterfall
+ * so the browser engine fetches the file through fire-engine's own proxy
+ * infrastructure instead of ours.
+ *
+ * Only converts when the pdf engine is the flag-mandated handler and no
+ * prefetch has been attempted yet (`pdfPrefetch === undefined` — a null
+ * prefetch means the browser round trip already ran and came back empty,
+ * so retrying would just loop; the antibot case guards the same way).
+ */
+async function fetchPdfFileGuardingProxyFailure<T>(
+  meta: Meta,
+  fetch: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fetch();
+  } catch (error) {
+    if (
+      meta.pdfPrefetch === undefined &&
+      meta.featureFlags.has("pdf") &&
+      isProxyFetchFailure(error)
+    ) {
+      throw new PDFFetchProxyError();
+    }
+    throw error;
+  }
+}
+
 export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const shouldParse = shouldParsePDF(meta.options.parsers);
   const maxPages = getPDFMaxPages(meta.options.parsers);
@@ -118,14 +153,16 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         proxyUsed: meta.pdfPrefetch.proxyUsed,
       };
     } else {
-      const file = await fetchFileToBuffer(
-        meta.rewrittenUrl ?? meta.url,
-        meta.options.skipTlsVerification,
-        {
-          headers: meta.options.headers,
-          signal: meta.abort.asSignal(),
-        },
-        PDF_DOWNLOAD_MAX_FILE_SIZE,
+      const file = await fetchPdfFileGuardingProxyFailure(meta, () =>
+        fetchFileToBuffer(
+          meta.rewrittenUrl ?? meta.url,
+          meta.options.skipTlsVerification,
+          {
+            headers: meta.options.headers,
+            signal: meta.abort.asSignal(),
+          },
+          PDF_DOWNLOAD_MAX_FILE_SIZE,
+        ),
       );
 
       if (!isPdfBuffer(file.buffer)) {
@@ -183,20 +220,22 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const { response, tempFilePath } =
     meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
       ? { response: meta.pdfPrefetch, tempFilePath: meta.pdfPrefetch.filePath }
-      : await downloadFile(
-          meta.id,
-          meta.rewrittenUrl ?? meta.url,
-          meta.options.skipTlsVerification,
-          {
-            headers: meta.options.headers,
-            signal: meta.abort.asSignal(),
-          },
-          // Parse path streams to disk and can hand large files to FirePDF
-          // by GCS reference, so it admits more than the raw fetch path —
-          // up to the requesting team's large-PDF limit.
-          byReferenceReachable
-            ? largePdfLimitBytes(meta)
-            : PDF_DOWNLOAD_MAX_FILE_SIZE,
+      : await fetchPdfFileGuardingProxyFailure(meta, () =>
+          downloadFile(
+            meta.id,
+            meta.rewrittenUrl ?? meta.url,
+            meta.options.skipTlsVerification,
+            {
+              headers: meta.options.headers,
+              signal: meta.abort.asSignal(),
+            },
+            // Parse path streams to disk and can hand large files to FirePDF
+            // by GCS reference, so it admits more than the raw fetch path —
+            // up to the requesting team's large-PDF limit.
+            byReferenceReachable
+              ? largePdfLimitBytes(meta)
+              : PDF_DOWNLOAD_MAX_FILE_SIZE,
+          ),
         );
 
   try {

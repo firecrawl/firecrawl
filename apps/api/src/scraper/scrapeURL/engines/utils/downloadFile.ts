@@ -16,6 +16,48 @@ import * as undici from "undici";
 import { getSecureDispatcher } from "./safeFetch";
 import { logger } from "../../../../lib/logger";
 
+/**
+ * Matches undici ProxyAgent tunnel failures: the proxy's CONNECT response was
+ * not 200 (502, 407, ...). undici emits `RequestAbortedError` (code
+ * UND_ERR_ABORTED) with the message "Proxy response (NNN) !== 200 when HTTP
+ * Tunneling" — see undici's lib/dispatcher/proxy-agent.js.
+ */
+const PROXY_TUNNEL_FAILURE_MESSAGE =
+  /Proxy response \(\d+\) !== 200 when HTTP Tunneling/;
+
+/**
+ * Detects a proxy tunneling failure anywhere in an error's cause chain.
+ *
+ * undici wraps these several levels deep —
+ * TypeError("fetch failed") → DOMException("Request was cancelled.") →
+ * RequestAbortedError("Proxy response (502) !== 200 when HTTP Tunneling") —
+ * so, unlike mapUndiciError, we walk the whole chain. Callers use this to
+ * retry the download through a different transport (e.g. the browser engine's
+ * own proxy infra) instead of failing the scrape.
+ */
+export function isProxyFetchFailure(error: unknown): boolean {
+  let current: unknown = error;
+  // Bounded walk with a visited guard: cause chains are short in practice,
+  // but a malformed/cyclic chain must never spin or crash the scrape.
+  const visited = new Set<unknown>();
+  while (
+    typeof current === "object" &&
+    current !== null &&
+    !visited.has(current)
+  ) {
+    visited.add(current);
+    const message = (current as { message?: unknown }).message;
+    if (
+      typeof message === "string" &&
+      PROXY_TUNNEL_FAILURE_MESSAGE.test(message)
+    ) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
   const code = e?.code ?? e?.cause?.code ?? e?.errno ?? e?.name;
   if (e?.name === "AbortError") {

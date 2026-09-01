@@ -22,6 +22,8 @@ export class ScrapeRetryTracker {
     removeFeatureAttempts: 0,
     pdfAntibotAttempts: 0,
     documentAntibotAttempts: 0,
+    pdfFetchProxyAttempts: 0,
+    documentFetchProxyAttempts: 0,
   };
 
   constructor(
@@ -62,6 +64,24 @@ export class ScrapeRetryTracker {
         this.stats.documentAntibotAttempts += 1;
         if (
           this.stats.documentAntibotAttempts > this.config.maxDocumentPrefetches
+        ) {
+          this.throwLimit(reason, lastError);
+        }
+        break;
+      // Proxy-failure retries share the prefetch budgets with the antibot
+      // cases: both consume the same resource (one browser-engine prefetch
+      // round trip), so they must not be able to double it.
+      case "pdf_fetch_proxy":
+        this.stats.pdfFetchProxyAttempts += 1;
+        if (this.stats.pdfFetchProxyAttempts > this.config.maxPdfPrefetches) {
+          this.throwLimit(reason, lastError);
+        }
+        break;
+      case "document_fetch_proxy":
+        this.stats.documentFetchProxyAttempts += 1;
+        if (
+          this.stats.documentFetchProxyAttempts >
+          this.config.maxDocumentPrefetches
         ) {
           this.throwLimit(reason, lastError);
         }

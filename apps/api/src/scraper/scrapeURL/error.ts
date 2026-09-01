@@ -269,6 +269,29 @@ export class PDFAntibotError extends TransportableError {
   }
 }
 
+export class PDFFetchProxyError extends TransportableError {
+  constructor() {
+    const message = isSelfHosted()
+      ? "Failed to download the PDF file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
+      : "Failed to download the PDF file because Firecrawl's proxy could not establish a connection to the website. Firecrawl retried the download through its browser engine, but it did not succeed. Please retry, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
+
+    super("SCRAPE_PDF_FETCH_PROXY_ERROR", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new PDFFetchProxyError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class PDFInsufficientTimeError extends TransportableError {
   constructor(
     public pageCount: number,
@@ -463,6 +486,29 @@ export class DocumentAntibotError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new DocumentAntibotError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class DocumentFetchProxyError extends TransportableError {
+  constructor() {
+    const message = isSelfHosted()
+      ? "Failed to download the document file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
+      : "Failed to download the document file because Firecrawl's proxy could not establish a connection to the website. Firecrawl retried the download through its browser engine, but it did not succeed. Please retry, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
+
+    super("SCRAPE_DOCUMENT_FETCH_PROXY_ERROR", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new DocumentFetchProxyError();
     x.stack = data.stack;
     return x;
   }
@@ -727,7 +773,9 @@ export type ScrapeRetryLimitReason =
   | "feature_toggle"
   | "feature_removal"
   | "pdf_antibot"
-  | "document_antibot";
+  | "document_antibot"
+  | "pdf_fetch_proxy"
+  | "document_fetch_proxy";
 
 export type ScrapeRetryStats = {
   totalAttempts: number;
@@ -735,6 +783,8 @@ export type ScrapeRetryStats = {
   removeFeatureAttempts: number;
   pdfAntibotAttempts: number;
   documentAntibotAttempts: number;
+  pdfFetchProxyAttempts: number;
+  documentFetchProxyAttempts: number;
 };
 
 export class ScrapeRetryLimitError extends TransportableError {

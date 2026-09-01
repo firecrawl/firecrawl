@@ -1,10 +1,14 @@
 import { Meta } from "../..";
 import { EngineScrapeResult } from "..";
-import { fetchFileToBuffer } from "../utils/downloadFile";
+import { fetchFileToBuffer, isProxyFetchFailure } from "../utils/downloadFile";
 import { convertDocumentToMarkdown } from "@mendable/firecrawl-rs";
 import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
 import type { Response } from "undici";
-import { DocumentAntibotError, EngineUnsuccessfulError } from "../../error";
+import {
+  DocumentAntibotError,
+  DocumentFetchProxyError,
+  EngineUnsuccessfulError,
+} from "../../error";
 import {
   documentContentTypeFromExtension,
   documentExtensionFromContentType,
@@ -39,13 +43,15 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
       proxyUsed = meta.documentPrefetch.proxyUsed;
     } else {
       // Fetch the document normally
-      const result = await fetchFileToBuffer(
-        meta.rewrittenUrl ?? meta.url,
-        meta.options.skipTlsVerification,
-        {
-          headers: meta.options.headers,
-          signal: meta.abort.asSignal(),
-        },
+      const result = await fetchDocumentFileGuardingProxyFailure(meta, () =>
+        fetchFileToBuffer(
+          meta.rewrittenUrl ?? meta.url,
+          meta.options.skipTlsVerification,
+          {
+            headers: meta.options.headers,
+            signal: meta.abort.asSignal(),
+          },
+        ),
       );
       response = result.response;
       buffer = result.buffer;
@@ -112,4 +118,34 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
 
 export function documentMaxReasonableTime(meta: Meta): number {
   return 15000;
+}
+
+/**
+ * Converts a proxy tunneling failure from the document engine's direct undici
+ * download into DocumentFetchProxyError, which the scrapeURL retry loop
+ * handles exactly like DocumentAntibotError: clear the "document" flag and
+ * re-run the waterfall so the browser engine fetches the file through
+ * fire-engine's own proxy infrastructure instead of ours.
+ *
+ * Only converts when the document engine is the flag-mandated handler and no
+ * prefetch has been attempted yet (`documentPrefetch === undefined` — a null
+ * prefetch means the browser round trip already ran and came back empty, so
+ * retrying would just loop; the antibot case guards the same way).
+ */
+async function fetchDocumentFileGuardingProxyFailure<T>(
+  meta: Meta,
+  fetch: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fetch();
+  } catch (error) {
+    if (
+      meta.documentPrefetch === undefined &&
+      meta.featureFlags.has("document") &&
+      isProxyFetchFailure(error)
+    ) {
+      throw new DocumentFetchProxyError();
+    }
+    throw error;
+  }
 }

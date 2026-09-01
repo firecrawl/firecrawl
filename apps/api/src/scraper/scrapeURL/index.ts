@@ -32,7 +32,9 @@ import {
   EngineError,
   NoEnginesLeftError,
   PDFAntibotError,
+  PDFFetchProxyError,
   DocumentAntibotError,
+  DocumentFetchProxyError,
   RemoveFeatureError,
   SiteError,
   UnsupportedFileError,
@@ -881,8 +883,10 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof ActionError ||
               error.error instanceof UnsupportedFileError ||
               error.error instanceof PDFAntibotError ||
+              error.error instanceof PDFFetchProxyError ||
               error.error instanceof PDFOCRRequiredError ||
               error.error instanceof DocumentAntibotError ||
+              error.error instanceof DocumentFetchProxyError ||
               error.error instanceof PDFInsufficientTimeError ||
               error.error instanceof ProxySelectionError ||
               error.error instanceof NoCachedDataError ||
@@ -1333,6 +1337,24 @@ export async function scrapeURL(
               );
             }
           } else if (
+            error instanceof PDFFetchProxyError &&
+            meta.internalOptions.forceEngine === undefined
+          ) {
+            if (meta.pdfPrefetch !== undefined) {
+              meta.logger.error(
+                "PDF was prefetched and the direct fetch still failed at the proxy, failing",
+              );
+              throw error;
+            } else {
+              retryTracker.record("pdf_fetch_proxy", error);
+              meta.logger.debug(
+                "PDF direct download failed at the proxy, prefetching with chrome-cdp",
+              );
+              meta.featureFlags = new Set(
+                [...meta.featureFlags].filter(x => x !== "pdf"),
+              );
+            }
+          } else if (
             error instanceof DocumentAntibotError &&
             meta.internalOptions.forceEngine === undefined
           ) {
@@ -1345,6 +1367,24 @@ export async function scrapeURL(
               retryTracker.record("document_antibot", error);
               meta.logger.debug(
                 "Document was blocked by anti-bot, prefetching with chrome-cdp",
+              );
+              meta.featureFlags = new Set(
+                [...meta.featureFlags].filter(x => x !== "document"),
+              );
+            }
+          } else if (
+            error instanceof DocumentFetchProxyError &&
+            meta.internalOptions.forceEngine === undefined
+          ) {
+            if (meta.documentPrefetch !== undefined) {
+              meta.logger.error(
+                "Document was prefetched and the direct fetch still failed at the proxy, failing",
+              );
+              throw error;
+            } else {
+              retryTracker.record("document_fetch_proxy", error);
+              meta.logger.debug(
+                "Document direct download failed at the proxy, prefetching with chrome-cdp",
               );
               meta.featureFlags = new Set(
                 [...meta.featureFlags].filter(x => x !== "document"),
@@ -1558,6 +1598,18 @@ export async function scrapeURL(
         errorType = "DocumentPrefetchFailed";
         meta.logger.warn(
           "scrapeURL: Failed to prefetch document that is protected by anti-bot",
+          { error },
+        );
+      } else if (error instanceof PDFFetchProxyError) {
+        errorType = "PDFFetchProxyError";
+        meta.logger.warn(
+          "scrapeURL: PDF download failed at the proxy and could not be recovered via browser prefetch",
+          { error },
+        );
+      } else if (error instanceof DocumentFetchProxyError) {
+        errorType = "DocumentFetchProxyError";
+        meta.logger.warn(
+          "scrapeURL: Document download failed at the proxy and could not be recovered via browser prefetch",
           { error },
         );
       } else if (error instanceof BrandingNotSupportedError) {
