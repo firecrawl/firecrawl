@@ -297,66 +297,68 @@ export async function searchController(
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
-    // Ensure the parent `requests` row is committed before the child
-    // `searches` insert, to avoid a request_id FK violation. The insert has
-    // been in flight since the top of the controller, so this is ~free in
-    // practice; robustInsert never rejects, so this await cannot throw.
     const logStart = Date.now();
-    await logRequestPromise;
-    const waited = Date.now() - logStart;
-    if (waited >= 5)
-      logger.warn("Had to wait for log request promise to complete", {
-        timeMs: waited,
-      });
+    void Promise.resolve(logRequestPromise)
+      .then(() => {
+        const waited = Date.now() - logStart;
+        if (waited >= 5) {
+          logger.warn("Request ledger insert completed after the response", {
+            timeMs: waited,
+          });
+        }
 
-    logSearch(
-      {
-        id: jobId,
-        request_id: agentRequestId ?? jobId,
-        query: req.body.query,
-        is_successful: true,
-        error: undefined,
-        results: result.response as any,
-        num_results: result.totalResultsCount,
-        time_taken: timeTakenInSeconds,
-        team_id: req.auth.team_id,
-        options: req.body,
-        // Don't record preview tokens as billed in the ledger — only record
-        // credits when billing is actually applied.
-        credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
-        zeroDataRetention,
-      },
-      false,
-    );
-
-    if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
-      logResearchEndpoint({
-        table: "code_searches",
-        id: uuidv7(),
-        request_id: agentRequestId ?? jobId,
-        team_id: req.auth.team_id,
-        target: req.body.query,
-        options: {
-          origin: requestOrigin({ origin: rawOrigin }, req),
-          integration: req.body.integration ?? null,
-          api_version: "v2",
-          categories: req.body.categories,
-          via: "search_category",
-        },
-        response: null,
-        num_results: result.developerResultsCount,
-        time_taken: timeTakenInSeconds,
-        // Ensure preview-mode searches don't get a non-zero credits_cost
-        // in the research ledger when preview tokens are used.
-        credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
-        is_successful: true,
-        zeroDataRetention,
-      }).catch(ledgerError => {
-        logger.warn("Failed to log developer category usage", {
-          error: ledgerError,
+        void logSearch(
+          {
+            id: jobId,
+            request_id: agentRequestId ?? jobId,
+            query: req.body.query,
+            is_successful: true,
+            error: undefined,
+            results: result.response as any,
+            num_results: result.totalResultsCount,
+            time_taken: timeTakenInSeconds,
+            team_id: req.auth.team_id,
+            options: req.body,
+            credits_cost:
+              !isSearchPreview && shouldBill ? result.searchCredits : 0,
+            zeroDataRetention,
+          },
+          false,
+        ).catch(logError => {
+          logger.warn("Failed to log search", { error: logError });
         });
+
+        if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
+          void logResearchEndpoint({
+            table: "code_searches",
+            id: uuidv7(),
+            request_id: agentRequestId ?? jobId,
+            team_id: req.auth.team_id,
+            target: req.body.query,
+            options: {
+              origin: requestOrigin({ origin: rawOrigin }, req),
+              integration: req.body.integration ?? null,
+              api_version: "v2",
+              categories: req.body.categories,
+              via: "search_category",
+            },
+            response: null,
+            num_results: result.developerResultsCount,
+            time_taken: timeTakenInSeconds,
+            credits_cost:
+              !isSearchPreview && shouldBill ? result.searchCredits : 0,
+            is_successful: true,
+            zeroDataRetention,
+          }).catch(ledgerError => {
+            logger.warn("Failed to log developer category usage", {
+              error: ledgerError,
+            });
+          });
+        }
+      })
+      .catch(logError => {
+        logger.warn("Failed to order search logs", { error: logError });
       });
-    }
 
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;

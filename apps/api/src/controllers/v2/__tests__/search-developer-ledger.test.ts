@@ -305,6 +305,38 @@ describe("developer category code_searches ledger", () => {
     expect(body.creditsUsed).toBe(2);
   });
 
+  it("returns before the request ledger insert completes", async () => {
+    let finishLogRequest!: () => void;
+    mockLogRequest.mockReturnValue(
+      new Promise<void>(resolve => {
+        finishLogRequest = resolve;
+      }),
+    );
+    const req = makeReq({
+      query: "vector database client",
+      categories: ["developer"],
+    });
+    const res = makeRes();
+
+    const controllerPromise = searchController(req, res);
+    await flushAsync();
+    const returnedBeforeInsert = res.status.mock.calls.some(
+      ([status]) => status === 200,
+    );
+    const loggedChildrenBeforeInsert =
+      mockLogSearch.mock.calls.length +
+      mockLogResearchEndpoint.mock.calls.length;
+
+    finishLogRequest();
+    await controllerPromise;
+    await flushAsync();
+
+    expect(returnedBeforeInsert).toBe(true);
+    expect(loggedChildrenBeforeInsert).toBe(0);
+    expect(mockLogSearch).toHaveBeenCalledTimes(1);
+    expect(mockLogResearchEndpoint).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the developer category for a team with no flags", async () => {
     mockExecuteSearch.mockResolvedValue(
       executeResult({ response: { web: [] } }),
