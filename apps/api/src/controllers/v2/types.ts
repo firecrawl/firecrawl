@@ -1003,7 +1003,7 @@ const agentWebhookSchema = createWebhookSchema([
 // per-thread inheritance rules; the gateway only validates the shape.
 const agentExchangeSchema = z.strictObject({
   enabled: z.boolean().optional(),
-  toolkits: z.array(z.string()).max(5).optional(),
+  toolkits: z.array(z.string()).optional(),
   maxCalls: z.number().int().min(1).max(30).optional(),
   requireApproval: z.boolean().optional(),
   approve: z
