@@ -197,6 +197,10 @@ const configSchema = z.object({
   DATABASE_URL: z.string().optional(),
   DATABASE_REPLICA_URL: z.string().optional(),
   INDEX_DATABASE_URL: z.string().optional(),
+  // Pool sizing preset for this process (see db/pool-profiles.ts). Unset keeps
+  // the historical pool settings; deployments opt into `api`, `worker` or
+  // `utility` to keep connections warm within the pooler's client budget.
+  DB_POOL_PROFILE: emptyStringAsUndefined(z.enum(["api", "worker", "utility"])),
   INDEX_CACHE_REDIS_URL: z.string().optional(),
   // Negative (miss) caching TTL for index URL->id lookups, in ms. 0 disables
   // it; the cache then only shields lookups that find data. A positive value
