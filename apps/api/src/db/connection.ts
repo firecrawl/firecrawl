@@ -41,10 +41,13 @@ function makeDb(
     poolName,
     poolMaxLifetimeSeconds,
   );
-  // A pool that is not kept warm still gets the profile's timeouts and
-  // lifetime, but drains like before so it does not double-count against the
-  // pooler's client budget.
-  if (!keepWarm) options.min = 0;
+  // A pool that is not kept warm keeps the profile's connect timeout,
+  // lifetime and keepalive but drains like before (no floor, 10 s idle
+  // eviction) so it never double-counts against the pooler's client budget.
+  if (!keepWarm) {
+    options.min = 0;
+    options.idleTimeoutMillis = 10_000;
+  }
   const pool = new Pool({
     connectionString,
     application_name: applicationName,
