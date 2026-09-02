@@ -501,8 +501,10 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
     );
 
     it(
-      "returns the raw image when parsing is disabled",
+      "OCRs images regardless of the pdf parsers option",
       async () => {
+        // `parsers` describes PDFs: an empty list disables PDF parsing, but
+        // images have no text layer to fall back on and are still OCR'd.
         const response = await scrape(
           {
             url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
@@ -512,9 +514,25 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
           identity,
         );
 
-        // Base64 of the PNG signature.
-        expect(response.markdown).toMatch(/^iVBORw0KGgo/);
+        expect(response.markdown).toMatch(/fire/i);
         expect(response.metadata.contentType).toBe("image/png");
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "serves the raw image through the rawBase64 format",
+      async () => {
+        const response = await scrape(
+          {
+            url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
+            formats: ["rawBase64"],
+          },
+          identity,
+        );
+
+        // Base64 of the PNG signature.
+        expect(response.rawBase64).toMatch(/^iVBORw0KGgo/);
       },
       scrapeTimeout,
     );

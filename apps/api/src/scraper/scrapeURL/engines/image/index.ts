@@ -5,17 +5,7 @@ import { EngineUnsuccessfulError, UnsupportedFileError } from "../../error";
 import { readFile, stat, unlink } from "node:fs/promises";
 import { useFireEngine } from "../fire-engine/available";
 import { scrapePDFWithFirePDF } from "../pdf/firePDF";
-import { toPublicBlocks } from "../pdf/blocks";
-import {
-  FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE,
-  PDF_DOWNLOAD_MAX_FILE_SIZE,
-} from "../pdf/types";
-import {
-  getPDFBlocks,
-  getPDFPageMarkdown,
-  getPDFPageMarkers,
-  shouldParsePDF,
-} from "../../../../controllers/v2/types";
+import { FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE } from "../pdf/types";
 import {
   imageExtensionFromUrlPath,
   sniffImageContentType,
@@ -25,10 +15,12 @@ import {
  * Raster images are OCR'd as one-page scanned documents through the FirePDF
  * pipeline. FirePDF opens the bytes as a single-page image document
  * (PNG/JPEG/TIFF/GIF/BMP), finds no text layer, and runs the same layout +
- * OCR path a scanned PDF page takes. The
- * pdf parser's `mode` is deliberately not consulted: an image has no text
- * layer to extract, so OCR is the only way to read it and `fast` would just
- * be a guaranteed failure.
+ * OCR path a scanned PDF page takes.
+ *
+ * The `parsers` option is deliberately not consulted: it describes PDFs, and
+ * an image has no text layer to fall back on, so every image is OCR'd. A
+ * caller who wants the bytes instead uses the `rawBase64` format, which the
+ * browser engine serves without ever reaching this engine.
  */
 
 // Images reach fire-pdf inline (base64 JSON) and have no by-reference
@@ -142,29 +134,7 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
       throw new UnsupportedFileError(contentType);
     }
 
-    if (!shouldParsePDF(meta.options.parsers)) {
-      // `parsers: []` asks for the raw file, mirroring the pdf engine down to
-      // its tighter cap: the bytes go back base64'd inline in the response,
-      // so the cap is checked before the base64 string is built.
-      if (buffer.length > PDF_DOWNLOAD_MAX_FILE_SIZE) {
-        throw new UnsupportedFileError("File exceeds size limit");
-      }
-      const rawBase64 = buffer.toString("base64");
-      return {
-        url,
-        statusCode,
-        html: rawBase64,
-        markdown: rawBase64,
-        contentType,
-        proxyUsed,
-      };
-    }
-
     const base64Content = buffer.toString("base64");
-
-    const includePageMarkdown = getPDFPageMarkdown(meta.options.parsers);
-    const includeBlocks = getPDFBlocks(meta.options.parsers);
-    const pageMarkers = getPDFPageMarkers(meta.options.parsers);
 
     let result: Awaited<ReturnType<typeof scrapePDFWithFirePDF>>;
     try {
@@ -179,9 +149,6 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
         undefined,
         1,
         "ocr",
-        includePageMarkdown,
-        includeBlocks,
-        pageMarkers,
       );
     } catch (error) {
       // FirePDF answers 400 when it cannot open the bytes (truncated or
@@ -200,17 +167,6 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
       statusCode,
       html: result.html,
       markdown: result.markdown,
-      ...(includePageMarkdown && result.pageMarkdown
-        ? {
-            pages: result.pageMarkdown.map(page => ({
-              pageNumber: page.page,
-              markdown: page.markdown,
-            })),
-          }
-        : {}),
-      ...(includeBlocks && result.blocks
-        ? { blocks: toPublicBlocks(result.blocks) }
-        : {}),
       contentType,
       proxyUsed,
     };
