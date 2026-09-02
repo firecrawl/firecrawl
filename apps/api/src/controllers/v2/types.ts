@@ -1704,7 +1704,8 @@ export type AgentSkillResponse =
         name: string;
         spec: object;
         skillMd: string;
-        workflow: string;
+        /** One runnable script per language the dashboard offers. */
+        workflows: Record<string, string>;
         schema: string;
       };
       blueprint: object;
