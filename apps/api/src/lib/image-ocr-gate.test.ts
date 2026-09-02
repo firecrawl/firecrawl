@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { config } from "../config";
 import { getACUCTeam } from "../controllers/auth";
-import { isImageOcrEnabled, resolveImageOcrEnabled } from "./image-ocr-gate";
+import { imageOcrGate, isImageOcrEnabled } from "./image-ocr-gate";
 
 vi.mock("../config", () => ({
   config: {
@@ -40,39 +40,36 @@ describe("isImageOcrEnabled", () => {
   });
 });
 
-describe("resolveImageOcrEnabled", () => {
+describe("imageOcrGate", () => {
   beforeEach(() => {
     mockedGetACUCTeam.mockReset();
   });
 
   it("uses the flags carried on the job without a lookup", async () => {
-    await expect(
-      resolveImageOcrEnabled("team", { imageOcr: true }),
-    ).resolves.toBe(true);
-    await expect(resolveImageOcrEnabled("team", null)).resolves.toBe(false);
+    await expect(imageOcrGate("team", { imageOcr: true })()).resolves.toBe(
+      true,
+    );
+    await expect(imageOcrGate("team", null)()).resolves.toBe(false);
     expect(mockedGetACUCTeam).not.toHaveBeenCalled();
   });
 
-  it("falls back to the cached team ACUC when the job carries no flags", async () => {
+  it("falls back to the cached team ACUC once per scrape when the job carries no flags", async () => {
     mockedGetACUCTeam.mockResolvedValueOnce({
       flags: { imageOcr: true },
     } as Awaited<ReturnType<typeof getACUCTeam>>);
-    await expect(resolveImageOcrEnabled("team", undefined)).resolves.toBe(true);
+    const gate = imageOcrGate("team", undefined);
+    await expect(gate()).resolves.toBe(true);
+    await expect(gate()).resolves.toBe(true);
+    expect(mockedGetACUCTeam).toHaveBeenCalledTimes(1);
     expect(mockedGetACUCTeam).toHaveBeenCalledWith("team");
 
     mockedGetACUCTeam.mockResolvedValueOnce(null);
-    await expect(resolveImageOcrEnabled("team", undefined)).resolves.toBe(
-      false,
-    );
+    await expect(imageOcrGate("team", undefined)()).resolves.toBe(false);
   });
 
   it("leaves image OCR off when the lookup fails or there is no team", async () => {
     mockedGetACUCTeam.mockRejectedValueOnce(new Error("redis down"));
-    await expect(resolveImageOcrEnabled("team", undefined)).resolves.toBe(
-      false,
-    );
-    await expect(resolveImageOcrEnabled(undefined, undefined)).resolves.toBe(
-      false,
-    );
+    await expect(imageOcrGate("team", undefined)()).resolves.toBe(false);
+    await expect(imageOcrGate(undefined, undefined)()).resolves.toBe(false);
   });
 });

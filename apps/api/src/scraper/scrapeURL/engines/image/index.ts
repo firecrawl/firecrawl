@@ -40,51 +40,53 @@ import {
 const IMAGE_MAX_FILE_SIZE = FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE;
 
 export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
-  // With fire-engine available this engine never downloads files itself:
-  // buildFallbackList routes image URLs through the browser engines and the
-  // file arrives here via imagePrefetch (specialtyScrapeCheck). Reaching
-  // this point without one means a cross-type handoff landed in another
-  // prefetch slot (a .png URL serving a PDF) or the browser round trip
-  // delivered no file; neither has a browser-retry remedy worth another
-  // round trip for an image, so decline and let the waterfall continue.
-  // Self-hosted deployments (no fire-engine) and explicit forceEngine pins
-  // (parse uploads) take the direct path below.
-  if (
-    useFireEngine &&
-    meta.internalOptions.forceEngine === undefined &&
-    meta.imagePrefetch == null
-  ) {
-    throw new EngineUnsuccessfulError("image");
-  }
-
-  if (!meta.imageOcrEnabled) {
-    // Image OCR is per team (imageOcr flag, with FirePDF configured): images
-    // are only routed here for enabled teams.
-    // Reaching this without it means a forceEngine pin (parse upload) or a
-    // self-hosted waterfall tail: surface the unsupported-file error only
-    // when an image was actually expected, and just decline otherwise.
-    // Anything that identifies the request as an image (a handoff, the flag,
-    // a pin, or an image-extension URL on a self-hosted waterfall tail) gets
-    // the unsupported-file error the URL path has always produced; an
-    // ordinary HTML tail just declines so the waterfall can finish.
-    const looksLikeImage =
-      meta.imagePrefetch != null ||
-      meta.featureFlags.has("image") ||
-      meta.internalOptions.forceEngine === "image" ||
-      imageExtensionFromUrlPath(
-        new URL(meta.rewrittenUrl ?? meta.url).pathname,
-      ) !== null;
-    if (looksLikeImage) {
-      throw new UnsupportedFileError(
-        meta.imagePrefetch?.contentType ?? "image",
-      );
-    }
-    throw new EngineUnsuccessfulError("image");
-  }
-
-  let tempFilePath: string | null = null;
+  // A browser handoff's temp file must be removed on every exit, including
+  // the gates below, so the cleanup scope opens before anything can throw.
+  let tempFilePath: string | null = meta.imagePrefetch?.filePath ?? null;
 
   try {
+    // With fire-engine available this engine never downloads files itself:
+    // buildFallbackList routes image URLs through the browser engines and the
+    // file arrives here via imagePrefetch (specialtyScrapeCheck). Reaching
+    // this point without one means a cross-type handoff landed in another
+    // prefetch slot (a .png URL serving a PDF) or the browser round trip
+    // delivered no file; neither has a browser-retry remedy worth another
+    // round trip for an image, so decline and let the waterfall continue.
+    // Self-hosted deployments (no fire-engine) and explicit forceEngine pins
+    // (parse uploads) take the direct path below.
+    if (
+      useFireEngine &&
+      meta.internalOptions.forceEngine === undefined &&
+      meta.imagePrefetch == null
+    ) {
+      throw new EngineUnsuccessfulError("image");
+    }
+
+    if (!(await meta.imageOcrEnabled())) {
+      // Image OCR is per team (imageOcr flag, with FirePDF configured): images
+      // are only routed here for enabled teams.
+      // Reaching this without it means a forceEngine pin (parse upload) or a
+      // self-hosted waterfall tail: surface the unsupported-file error only
+      // when an image was actually expected, and just decline otherwise.
+      // Anything that identifies the request as an image (a handoff, the flag,
+      // a pin, or an image-extension URL on a self-hosted waterfall tail) gets
+      // the unsupported-file error the URL path has always produced; an
+      // ordinary HTML tail just declines so the waterfall can finish.
+      const looksLikeImage =
+        meta.imagePrefetch != null ||
+        meta.featureFlags.has("image") ||
+        meta.internalOptions.forceEngine === "image" ||
+        imageExtensionFromUrlPath(
+          new URL(meta.rewrittenUrl ?? meta.url).pathname,
+        ) !== null;
+      if (looksLikeImage) {
+        throw new UnsupportedFileError(
+          meta.imagePrefetch?.contentType ?? "image",
+        );
+      }
+      throw new EngineUnsuccessfulError("image");
+    }
+
     let buffer: Buffer;
     let url: string;
     let statusCode: number;

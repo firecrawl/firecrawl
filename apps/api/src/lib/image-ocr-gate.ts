@@ -15,14 +15,30 @@ export function isImageOcrEnabled(
   return !!config.FIRE_PDF_BASE_URL && teamFlags?.imageOcr === true;
 }
 
+/** Per-scrape gate: resolved lazily on first call and memoized. */
+export type ImageOcrGate = () => Promise<boolean>;
+
 /**
- * Resolves the per-scrape decision. Single scrapes and parse uploads carry
- * the authenticated team's flags in their internalOptions; batch-scrape and
- * crawl jobs do not, so for those the flags come from the cached team ACUC
- * (the same lookup the crawler already does per job). Any lookup failure
- * keeps the pre-existing behaviour rather than failing the scrape.
+ * Builds the per-scrape gate. Single scrapes and parse uploads carry the
+ * authenticated team's flags in their internalOptions and resolve without any
+ * I/O; batch-scrape and crawl jobs do not, so for those the flags come from
+ * the cached team ACUC. The lookup is deferred until a caller actually needs
+ * the answer (an image-extension URL, an image handoff, the image engine) and
+ * memoized, so the ordinary HTML documents that make up almost every crawl
+ * never pay for it. Any lookup failure keeps the pre-existing behaviour.
  */
-export async function resolveImageOcrEnabled(
+export function imageOcrGate(
+  teamId: string | undefined,
+  teamFlags: TeamFlags | null | undefined,
+): ImageOcrGate {
+  let pending: Promise<boolean> | undefined;
+  return () => {
+    pending ??= resolveImageOcrEnabled(teamId, teamFlags);
+    return pending;
+  };
+}
+
+async function resolveImageOcrEnabled(
   teamId: string | undefined,
   teamFlags: TeamFlags | null | undefined,
 ): Promise<boolean> {

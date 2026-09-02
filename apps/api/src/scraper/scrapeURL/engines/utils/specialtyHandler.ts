@@ -11,6 +11,7 @@ import {
   imageExtensionFromContentType,
   sniffImageContentTypeFromBase64,
 } from "../../../../lib/image-formats";
+import type { ImageOcrGate } from "../../../../lib/image-ocr-gate";
 
 async function feResToFilePrefetch(
   logger: Logger,
@@ -120,14 +121,17 @@ async function feResToImagePrefetch(
  * enabled for the requesting team — in which case the caller falls through
  * to the historical unsupported-file rejection.
  */
-function sniffImageHandoff(
+async function sniffImageHandoff(
   feRes: FireEngineCheckStatusSuccess | undefined,
-  imageOcrEnabled: boolean,
-): string | null {
-  if (!imageOcrEnabled) return null;
+  imageOcrEnabled: ImageOcrGate,
+): Promise<string | null> {
   const content = feRes?.file?.content;
   if (content === undefined) return null;
-  return sniffImageContentTypeFromBase64(content);
+  const contentType = sniffImageContentTypeFromBase64(content);
+  if (contentType === null) return null;
+  // Only now consult the per-team gate: this is the one lookup an image
+  // request may cost, and non-image responses never reach it.
+  return (await imageOcrEnabled()) ? contentType : null;
 }
 
 export async function specialtyScrapeCheck(
@@ -141,10 +145,10 @@ export async function specialtyScrapeCheck(
    * the FirePDF by-reference route is unreachable for this request, so an
    * unusable large handoff never consumes network and temp disk. */
   maxFileBytes?: number,
-  /** Whether the requesting team may OCR raster images (imageOcr team flag
-   * with FirePDF configured); off means images keep the unsupported-file
+  /** Per-team image OCR gate (lazy, memoized), consulted only once the bytes
+   * sniff as a supported image; off means images keep the unsupported-file
    * rejection below. */
-  imageOcrEnabled = false,
+  imageOcrEnabled: ImageOcrGate = async () => false,
 ) {
   const contentType = (Object.entries(headers ?? {}).find(
     x => x[0].toLowerCase() === "content-type",
@@ -163,7 +167,7 @@ export async function specialtyScrapeCheck(
 
   if (!contentType) {
     // A header-less binary is still recognizable by its magic bytes.
-    const headerlessImage = sniffImageHandoff(feRes, imageOcrEnabled);
+    const headerlessImage = await sniffImageHandoff(feRes, imageOcrEnabled);
     if (headerlessImage !== null) {
       throw new AddFeatureError(
         ["image"],
@@ -257,7 +261,7 @@ export async function specialtyScrapeCheck(
     mediaType.startsWith("image/") ||
     mediaType === "application/octet-stream"
   ) {
-    const imageType = sniffImageHandoff(feRes, imageOcrEnabled);
+    const imageType = await sniffImageHandoff(feRes, imageOcrEnabled);
     if (imageType !== null) {
       throw new AddFeatureError(
         ["image"],

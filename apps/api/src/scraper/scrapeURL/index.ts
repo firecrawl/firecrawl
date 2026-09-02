@@ -97,7 +97,7 @@ import {
   imageExtensionFromContentType,
   imageExtensionFromUrlPath,
 } from "../../lib/image-formats";
-import { resolveImageOcrEnabled } from "../../lib/image-ocr-gate";
+import { imageOcrGate, type ImageOcrGate } from "../../lib/image-ocr-gate";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -155,9 +155,10 @@ export type Meta = {
   featureFlags: Set<FeatureFlag>;
   mock: MockState | null;
   /** Whether this scrape's team may OCR raster images (imageOcr team flag
-   * with FirePDF configured). Resolved once in buildMetaObject so the
-   * URL-extension routing, the browser handoff and the image engine agree. */
-  imageOcrEnabled: boolean;
+   * with FirePDF configured). Lazy and memoized: the browser handoff and the
+   * image engine only ask once a request actually looks like an image, so
+   * plain documents never pay for the team lookup. */
+  imageOcrEnabled: ImageOcrGate;
   pdfPrefetch:
     | {
         filePath: string;
@@ -518,10 +519,15 @@ async function buildMetaObject(
   }
 
   const effectiveOptions = applyScrapeOptionsDefaults(options);
-  const imageOcrEnabled = await resolveImageOcrEnabled(
+  const imageOcrEnabled = imageOcrGate(
     internalOptions.teamId,
     internalOptions.teamFlags,
   );
+  // Only an image-extension URL needs the answer up front; everything else
+  // resolves lazily on an image handoff, if one ever happens.
+  const imageOcrForUrl =
+    imageExtensionFromUrlPath(new URL(url).pathname) !== null &&
+    (await imageOcrEnabled());
 
   return {
     id,
@@ -548,7 +554,7 @@ async function buildMetaObject(
       url,
       effectiveOptions,
       internalOptions,
-      imageOcrEnabled,
+      imageOcrForUrl,
     ),
     mock:
       options.useMock !== undefined
