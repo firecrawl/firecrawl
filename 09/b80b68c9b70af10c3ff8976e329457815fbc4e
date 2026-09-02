@@ -1,0 +1,93 @@
+apps/api/src/controllers/v2/parse-upload.ts
+  s_21cf538fb36a61::t_87cde0651c524c 13,163-170,279-280,284,485-488,504-508,550-554,628-631
+  s_21cf538fb36a61::t_67b7497faeafd6 474-484,510-515,556-566
+  s_21cf538fb36a61::t_5744c646c79f75 12
+apps/api/src/controllers/v1/types.ts
+  s_21cf538fb36a61::t_87cde0651c524c 1349-1351
+apps/api/src/lib/image-ocr-gate.test.ts
+  s_21cf538fb36a61::t_5d4c89a46423f9 1,3-4,12-21,42-76
+  s_21cf538fb36a61::t_87cde0651c524c 2,5-11,22-41
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_21cf538fb36a61::t_87cde0651c524c 120-121,125,127,144-147,166,260
+  s_21cf538fb36a61::t_de0b3aa65910c6 252
+  s_21cf538fb36a61::t_5fc573fff4b6c3 10-13,23-25,105-109,112-119,122-124,126,128-132,165,167-174,250-251,253-255,261-271
+  s_21cf538fb36a61::t_b40ce6e2667eac 256-259
+  s_21cf538fb36a61::t_2dde1c4150b195 110-111
+apps/api/src/scraper/scrapeURL/engines/image/index.ts
+  s_21cf538fb36a61::t_4962577fec2552 34-36,38-40,124-125
+  s_21cf538fb36a61::t_85e4bf9a6ea48a 5,96-103,143-144,148,152-153,159
+  s_21cf538fb36a61::t_d8cb9a6d2da112 1-4,6-8,13-18,23-25,29-33,41-59,83-95,104-123,127-135,139-141,149-151,154-158,161-164,166-182,184-227,233,248-252
+  s_21cf538fb36a61::t_de0b3aa65910c6 26-28,37,126,183
+  s_21cf538fb36a61::t_5d4c89a46423f9 60
+  s_21cf538fb36a61::t_87cde0651c524c 61-62
+  s_21cf538fb36a61::t_b40ce6e2667eac 63-65,71-72,78-82
+  s_21cf538fb36a61::t_505be8c88dbb47 19-22,66-70,73-77,228-232,234-247
+  s_21cf538fb36a61::t_2dde1c4150b195 136-138,165
+  s_21cf538fb36a61::t_67b7497faeafd6 10-12,142,145-147
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_21cf538fb36a61::t_5744c646c79f75 126-133
+apps/api/src/scraper/scrapeURL/error.ts
+  s_21cf538fb36a61::t_5fc573fff4b6c3 68,74,80,235
+apps/api/src/scraper/scrapeURL/engines/document/index.ts
+  s_21cf538fb36a61::t_5744c646c79f75 39-46
+apps/api/src/controllers/v2/types.ts
+  s_21cf538fb36a61::t_4962577fec2552 1103-1104
+  s_21cf538fb36a61::t_5fc573fff4b6c3 907
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_21cf538fb36a61::t_5fc573fff4b6c3 12,62,111,137,208,235,258,280,302,324,346,368,390,412,434,456,478,500,522-544,566,588,811-813,815,824,837-839
+  s_21cf538fb36a61::t_87cde0651c524c 98-101
+  s_21cf538fb36a61::t_4b66900b486bf2 794-796
+apps/api/src/controllers/v2/parse.ts
+  s_21cf538fb36a61::t_a2ca4be87da8be 48
+  s_21cf538fb36a61::t_b40ce6e2667eac 92-93
+  s_21cf538fb36a61::t_5744c646c79f75 52,55,60-61
+  s_21cf538fb36a61::t_5fc573fff4b6c3 44-47,90,94-98,127-130,136,145-146
+  s_21cf538fb36a61::t_87cde0651c524c 56-59,66,88-89,91,262-271,276
+apps/api/src/lib/image-ocr-gate.ts
+  s_21cf538fb36a61::t_5d4c89a46423f9 3-4,17-41
+  s_21cf538fb36a61::t_87cde0651c524c 2,7-10,12-15
+  s_21cf538fb36a61::t_a2ca4be87da8be 1,5-6,11,16
+apps/api/src/scraper/scrapeURL/index.ts
+  s_21cf538fb36a61::t_87cde0651c524c 331-333
+  s_21cf538fb36a61::t_5fc573fff4b6c3 94-99,224-236,334,384-391,449,484-504,559,807-808,1395-1398
+  s_21cf538fb36a61::t_5d4c89a46423f9 100,157-160,259,330,521-524,547-552,561
+  s_21cf538fb36a61::t_9b62fb2a1a5041 619
+apps/api/src/__tests__/snips/v2/parse.test.ts
+  s_21cf538fb36a61::t_b40ce6e2667eac 696-698
+apps/api/src/__tests__/snips/v2/scrape-image-ocr.test.ts
+  s_21cf538fb36a61::t_cc43f1cee34044 1-5,7,9-11,13-18,20-21,23-26,33-36,42-139,477-489,494-519,540-541,562-579,588,597
+  s_21cf538fb36a61::t_5d4c89a46423f9 8,520-538
+  s_21cf538fb36a61::t_87cde0651c524c 6,19,22,27-32,37-41,631,633,646,653-672
+  s_21cf538fb36a61::t_b40ce6e2667eac 12,630,632,634-645,647-652,674
+  s_21cf538fb36a61::t_67b7497faeafd6 580-587,589-596,601-605,629
+  s_21cf538fb36a61::t_b76eeefd8a1b3a 490-493
+  s_21cf538fb36a61::t_6d77aa47839b53 140-476,606-623,625
+  s_21cf538fb36a61::t_505be8c88dbb47 546-547,598-600,624
+apps/api/src/lib/image-formats.ts
+  s_21cf538fb36a61::t_d8cb9a6d2da112 6-13,15-62,67-96
+  s_21cf538fb36a61::t_de0b3aa65910c6 1-5
+  s_21cf538fb36a61::t_b40ce6e2667eac 14,63-66
+apps/api/src/lib/image-formats.test.ts
+  s_21cf538fb36a61::t_b40ce6e2667eac 17-19,30,70-73
+  s_21cf538fb36a61::t_2dde1c4150b195 66-68
+  s_21cf538fb36a61::t_d8cb9a6d2da112 1-16,20-29,31-35,38-65,69,74-88
+  s_21cf538fb36a61::t_6d77aa47839b53 36-37
+apps/api/src/scraper/scrapeURL/engines/fire-engine/index.ts
+  s_21cf538fb36a61::t_5d4c89a46423f9 232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "09b80b68c9b70af10c3ff8976e329457815fbc4e",
+  "prompts": {},
+  "sessions": {
+    "s_21cf538fb36a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f58f4301-49e1-4d20-a621-6398be6cfd71",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
