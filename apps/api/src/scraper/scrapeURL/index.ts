@@ -52,11 +52,14 @@ import {
   EngineSnipedError,
   WaterfallNextEngineSignal,
   EngineUnsuccessfulError,
+  EngineBlockedError,
   ProxySelectionError,
   ScrapeRetryLimitError,
+  ScrapeBlockedError,
   BrandingNotSupportedError,
   XTwitterConfigurationError,
 } from "./error";
+import { isAntiBotBlock } from "./lib/antibot";
 import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
@@ -740,16 +743,21 @@ async function scrapeURLLoopIter(
     const isLikelyProxyError = [401, 403, 429].includes(
       engineResult.statusCode,
     );
+    const isAntiBot = isAntiBotBlock(
+      engineResult.statusCode,
+      engineResult.html,
+      checkMarkdown,
+    );
 
     if (
-      isLikelyProxyError &&
+      (isLikelyProxyError || isAntiBot) &&
       meta.options.proxy === "auto" &&
       !meta.featureFlags.has("stealthProxy")
     ) {
       meta.logger.info(
         "Scrape via " +
           engine +
-          " deemed unsuccessful due to proxy inadequacy. Adding stealthProxy flag.",
+          " deemed unsuccessful due to anti-bot block / proxy inadequacy. Adding stealthProxy flag.",
         {
           factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
           statusCode: engineResult.statusCode,
@@ -757,6 +765,18 @@ async function scrapeURLLoopIter(
         },
       );
       throw new AddFeatureError(["stealthProxy"]);
+    }
+
+    if (isAntiBot || isLikelyProxyError) {
+      meta.logger.warn(
+        "Scrape via " + engine + " deemed blocked by anti-bot.",
+        {
+          factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+          statusCode: engineResult.statusCode,
+          length: engineResult.html?.trim().length ?? 0,
+        },
+      );
+      throw new EngineBlockedError(engine);
     }
 
     // NOTE: TODO: what to do when status code is bad is tough...
@@ -855,6 +875,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     const remainingEngines = [...fallbackList];
     let enginePromises: EngineBundlePromise[] = [];
     const enginesAttempted: string[] = [];
+    const blockedEngines: string[] = [];
 
     meta.abort.throwIfAborted();
 
@@ -942,7 +963,13 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           break;
         } catch (error) {
           if (error instanceof WrappedEngineError) {
-            if (error.engine === "x-twitter") {
+            if (error.error instanceof EngineBlockedError) {
+              blockedEngines.push(error.engine);
+              meta.logger.warn(
+                "Engine " + error.engine + " was blocked by anti-bot.",
+                { error: error.error },
+              );
+            } else if (error.engine === "x-twitter") {
               meta.logger.warn("X/Twitter scrape failed fatally.", {
                 error: error.error,
               });
@@ -1078,9 +1105,16 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       setSpanAttributes(span, {
         "engine.no_engines_left": true,
         "engine.engines_attempted": enginesAttempted.join(","),
+        "engine.engines_blocked": blockedEngines.join(","),
       });
       if (meta.options.lockdown) {
         throw new LockdownMissError();
+      }
+      if (
+        blockedEngines.length > 0 &&
+        blockedEngines.length === enginesAttempted.length
+      ) {
+        throw new ScrapeBlockedError();
       }
       throw new NoEnginesLeftError(fallbackList.map(x => x.engine));
     }
@@ -1380,11 +1414,7 @@ export async function scrapeURL(
           result = await scrapeURLLoop(meta);
           break;
         } catch (error) {
-          if (
-            error instanceof AddFeatureError &&
-            (meta.internalOptions.forceEngine === undefined ||
-              Array.isArray(meta.internalOptions.forceEngine))
-          ) {
+          if (error instanceof AddFeatureError) {
             retryTracker.record("feature_toggle", error);
             meta.logger.debug(
               "More feature flags requested by scraper: adding " +
@@ -1413,11 +1443,7 @@ export async function scrapeURL(
             } else if (error.imagePrefetch === null) {
               meta.imagePrefetch = null;
             }
-          } else if (
-            error instanceof RemoveFeatureError &&
-            (meta.internalOptions.forceEngine === undefined ||
-              Array.isArray(meta.internalOptions.forceEngine))
-          ) {
+          } else if (error instanceof RemoveFeatureError) {
             retryTracker.record("feature_removal", error);
             meta.logger.debug(
               "Incorrect feature flags reported by scraper: removing " +
@@ -1440,7 +1466,7 @@ export async function scrapeURL(
               meta.logger.error(
                 "PDF was prefetched and still blocked by antibot, failing",
               );
-              throw error;
+              throw new ScrapeBlockedError();
             } else {
               retryTracker.record("pdf_antibot", error);
               meta.logger.debug(
@@ -1484,7 +1510,7 @@ export async function scrapeURL(
               meta.logger.error(
                 "Document was prefetched and still blocked by antibot, failing",
               );
-              throw error;
+              throw new ScrapeBlockedError();
             } else {
               retryTracker.record("document_antibot", error);
               meta.logger.debug(
@@ -1752,6 +1778,12 @@ export async function scrapeURL(
           error,
           retryStats: error.stats,
         });
+      } else if (error instanceof ScrapeBlockedError) {
+        errorType = "ScrapeBlockedError";
+        meta.logger.warn(
+          "scrapeURL: Scrape blocked by website anti-bot protection",
+          { error },
+        );
       } else if (error instanceof UnsafeDomainBlockedError) {
         errorType = "UnsafeDomainBlockedError";
         meta.logger.warn(

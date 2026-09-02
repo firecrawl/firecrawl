@@ -304,6 +304,14 @@ export async function scrapeController(
         });
       }
 
+      if (e.code === "SCRAPE_FAILED_BLOCKED") {
+        return res.status(403).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
       if (e.code === "SCRAPE_MEDIA_ACCESS_DENIED") {
         return res.status(403).json({
           success: false,

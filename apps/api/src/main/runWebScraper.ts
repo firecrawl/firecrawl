@@ -2,6 +2,11 @@ import { ScrapeJobSingleUrls, RunWebScraperParams } from "../types";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 import { scrapeURL, ScrapeUrlResponse } from "../scraper/scrapeURL";
+import {
+  ScrapeBlockedError,
+  ScrapeRetryLimitError,
+} from "../scraper/scrapeURL/error";
+import { TransportableError } from "../lib/error";
 import type { NuQJob } from "../services/worker/nuq";
 import { CostTracking } from "../lib/cost-tracking";
 configDotenv();
@@ -120,6 +125,14 @@ async function runWebScraper({
       }
     } catch (_error) {
       error = _error;
+      if (
+        error instanceof ScrapeBlockedError ||
+        error instanceof ScrapeRetryLimitError ||
+        (error instanceof TransportableError &&
+          error.code === "SCRAPE_FAILED_BLOCKED")
+      ) {
+        break;
+      }
     }
   }
 

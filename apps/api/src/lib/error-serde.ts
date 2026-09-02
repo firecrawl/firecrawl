@@ -40,6 +40,7 @@ import {
   PromptInjectionDetectedError,
   JsonExtractionContentTooLargeError,
   XTwitterConfigurationError,
+  ScrapeBlockedError,
 } from "../scraper/scrapeURL/error";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
 
@@ -84,6 +85,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_X_TWITTER_CONFIGURATION_ERROR: XTwitterConfigurationError,
   MAP_FAILED: MapFailedError,
   CONCURRENCY_QUEUE_TIMEOUT: ConcurrencyQueueTimeoutError,
+  SCRAPE_FAILED_BLOCKED: ScrapeBlockedError,
   unsafe_domain_blocked: UnsafeDomainBlockedError,
 
   // Zod errors
