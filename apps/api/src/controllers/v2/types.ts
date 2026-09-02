@@ -904,7 +904,7 @@ export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
 
 export type ScrapeOptions = BaseScrapeOptions;
 
-export type UploadedParseFileKind = "html" | "pdf" | "document";
+export type UploadedParseFileKind = "html" | "pdf" | "document" | "image";
 
 export type UploadedParseFile = {
   buffer: Buffer;
@@ -1100,7 +1100,8 @@ const uploadedParseFileSchema = z.custom<UploadedParseFile>(
       (value as any).kind === undefined ||
       (value as any).kind === "html" ||
       (value as any).kind === "pdf" ||
-      (value as any).kind === "document"),
+      (value as any).kind === "document" ||
+      (value as any).kind === "image"),
   {
     error: "A file upload is required.",
   },

@@ -7,6 +7,10 @@ import { writeFile } from "fs/promises";
 import { Meta } from "../..";
 import { documentExtensionFromContentType } from "../../../../lib/document-formats";
 import { downloadFireEngineGcsFile } from "./downloadGcsFile";
+import {
+  imageExtensionFromContentType,
+  sniffImageContentTypeFromBase64,
+} from "../../../../lib/image-formats";
 
 async function feResToFilePrefetch(
   logger: Logger,
@@ -16,7 +20,9 @@ async function feResToFilePrefetch(
   contentType?: string,
   signal?: AbortSignal,
   maxFileBytes?: number,
-): Promise<Meta["pdfPrefetch"] | Meta["documentPrefetch"]> {
+): Promise<
+  Meta["pdfPrefetch"] | Meta["documentPrefetch"] | Meta["imagePrefetch"]
+> {
   const file = feRes?.file;
   if (!file || (file.content === undefined && file.gcs_uri === undefined)) {
     logger.warn(`No file in ${fileType} prefetch`);
@@ -96,6 +102,34 @@ async function feResToDocumentPrefetch(
   return feResToFilePrefetch(logger, feRes, extension, "document", contentType);
 }
 
+async function feResToImagePrefetch(
+  logger: Logger,
+  feRes: FireEngineCheckStatusSuccess | undefined,
+  contentType: string,
+): Promise<Meta["imagePrefetch"]> {
+  const extension =
+    imageExtensionFromContentType(contentType)?.slice(1) ?? "img";
+
+  return feResToFilePrefetch(logger, feRes, extension, "image", contentType);
+}
+
+/**
+ * Sniffs a browser handoff for a raster image the image engine can OCR.
+ * Returns the canonical content type from the magic bytes, or null when the
+ * payload is missing, is not a supported format, or image OCR is not
+ * enabled for the requesting team — in which case the caller falls through
+ * to the historical unsupported-file rejection.
+ */
+function sniffImageHandoff(
+  feRes: FireEngineCheckStatusSuccess | undefined,
+  imageOcrEnabled: boolean,
+): string | null {
+  if (!imageOcrEnabled) return null;
+  const content = feRes?.file?.content;
+  if (content === undefined) return null;
+  return sniffImageContentTypeFromBase64(content);
+}
+
 export async function specialtyScrapeCheck(
   logger: Logger,
   headers: Record<string, string> | undefined,
@@ -107,6 +141,10 @@ export async function specialtyScrapeCheck(
    * the FirePDF by-reference route is unreachable for this request, so an
    * unusable large handoff never consumes network and temp disk. */
   maxFileBytes?: number,
+  /** Whether the requesting team may OCR raster images (imageOcr team flag
+   * with FirePDF configured); off means images keep the unsupported-file
+   * rejection below. */
+  imageOcrEnabled = false,
 ) {
   const contentType = (Object.entries(headers ?? {}).find(
     x => x[0].toLowerCase() === "content-type",
@@ -124,6 +162,16 @@ export async function specialtyScrapeCheck(
   }
 
   if (!contentType) {
+    // A header-less binary is still recognizable by its magic bytes.
+    const headerlessImage = sniffImageHandoff(feRes, imageOcrEnabled);
+    if (headerlessImage !== null) {
+      throw new AddFeatureError(
+        ["image"],
+        undefined,
+        undefined,
+        await feResToImagePrefetch(logger, feRes, headerlessImage),
+      );
+    }
     logger.warn("Failed to check contentType -- was not present in headers", {
       headers,
     });
@@ -199,7 +247,28 @@ export async function specialtyScrapeCheck(
     );
   }
 
-  // Reject unsupported binary content types (images, video, audio, archives, etc.)
+  // Raster images are OCR'd as one-page scanned documents by the image
+  // engine (see engines/image). The header must claim an image or an opaque
+  // octet-stream AND the bytes must confirm a format FirePDF can open, so a
+  // mislabeled HTML error page served as image/jpeg is never sent to OCR
+  // and WebP/SVG/AVIF keep failing fast below.
+  const mediaType = contentType.split(";")[0].trim().toLowerCase();
+  if (
+    mediaType.startsWith("image/") ||
+    mediaType === "application/octet-stream"
+  ) {
+    const imageType = sniffImageHandoff(feRes, imageOcrEnabled);
+    if (imageType !== null) {
+      throw new AddFeatureError(
+        ["image"],
+        undefined,
+        undefined,
+        await feResToImagePrefetch(logger, feRes, imageType),
+      );
+    }
+  }
+
+  // Reject unsupported binary content types (unsupported images, video, audio, archives, etc.)
   const unsupportedBinaryPrefixes = [
     "image/",
     "video/",

@@ -1,0 +1,78 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { config } from "../config";
+import { getACUCTeam } from "../controllers/auth";
+import { isImageOcrEnabled, resolveImageOcrEnabled } from "./image-ocr-gate";
+
+vi.mock("../config", () => ({
+  config: {
+    FIRE_PDF_BASE_URL: "http://fire-pdf.test",
+  },
+}));
+
+vi.mock("../controllers/auth", () => ({
+  getACUCTeam: vi.fn(),
+}));
+
+vi.mock("./logger", () => ({
+  logger: { warn: vi.fn() },
+}));
+
+const mockedGetACUCTeam = vi.mocked(getACUCTeam);
+
+describe("isImageOcrEnabled", () => {
+  it("requires the imageOcr team flag", () => {
+    expect(isImageOcrEnabled(null)).toBe(false);
+    expect(isImageOcrEnabled(undefined)).toBe(false);
+    expect(isImageOcrEnabled({})).toBe(false);
+    expect(isImageOcrEnabled({ imageOcr: false })).toBe(false);
+    expect(isImageOcrEnabled({ imageOcr: true })).toBe(true);
+  });
+
+  it("requires FirePDF to be configured even for flagged teams", () => {
+    const mutable = config as { FIRE_PDF_BASE_URL?: string };
+    const previous = mutable.FIRE_PDF_BASE_URL;
+    mutable.FIRE_PDF_BASE_URL = undefined;
+    try {
+      expect(isImageOcrEnabled({ imageOcr: true })).toBe(false);
+    } finally {
+      mutable.FIRE_PDF_BASE_URL = previous;
+    }
+  });
+});
+
+describe("resolveImageOcrEnabled", () => {
+  beforeEach(() => {
+    mockedGetACUCTeam.mockReset();
+  });
+
+  it("uses the flags carried on the job without a lookup", async () => {
+    await expect(
+      resolveImageOcrEnabled("team", { imageOcr: true }),
+    ).resolves.toBe(true);
+    await expect(resolveImageOcrEnabled("team", null)).resolves.toBe(false);
+    expect(mockedGetACUCTeam).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the cached team ACUC when the job carries no flags", async () => {
+    mockedGetACUCTeam.mockResolvedValueOnce({
+      flags: { imageOcr: true },
+    } as Awaited<ReturnType<typeof getACUCTeam>>);
+    await expect(resolveImageOcrEnabled("team", undefined)).resolves.toBe(true);
+    expect(mockedGetACUCTeam).toHaveBeenCalledWith("team");
+
+    mockedGetACUCTeam.mockResolvedValueOnce(null);
+    await expect(resolveImageOcrEnabled("team", undefined)).resolves.toBe(
+      false,
+    );
+  });
+
+  it("leaves image OCR off when the lookup fails or there is no team", async () => {
+    mockedGetACUCTeam.mockRejectedValueOnce(new Error("redis down"));
+    await expect(resolveImageOcrEnabled("team", undefined)).resolves.toBe(
+      false,
+    );
+    await expect(resolveImageOcrEnabled(undefined, undefined)).resolves.toBe(
+      false,
+    );
+  });
+});

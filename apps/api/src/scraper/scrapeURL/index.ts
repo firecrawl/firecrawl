@@ -91,6 +91,13 @@ import {
   documentExtensionFromContentType,
   documentExtensionFromUrlPath,
 } from "../../lib/document-formats";
+import {
+  IMAGE_EXTENSIONS,
+  imageContentTypeFromExtension,
+  imageExtensionFromContentType,
+  imageExtensionFromUrlPath,
+} from "../../lib/image-formats";
+import { resolveImageOcrEnabled } from "../../lib/image-ocr-gate";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -147,6 +154,10 @@ export type Meta = {
   abort: AbortManager;
   featureFlags: Set<FeatureFlag>;
   mock: MockState | null;
+  /** Whether this scrape's team may OCR raster images (imageOcr team flag
+   * with FirePDF configured). Resolved once in buildMetaObject so the
+   * URL-extension routing, the browser handoff and the image engine agree. */
+  imageOcrEnabled: boolean;
   pdfPrefetch:
     | {
         filePath: string;
@@ -210,6 +221,19 @@ export type Meta = {
     | null
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty
   // (null preserved through the retry loop, same as pdfPrefetch)
+  /** Raster image handed off by the browser engine for OCR (see
+   * engines/image). Same shape and null/undefined semantics as
+   * documentPrefetch. */
+  imagePrefetch:
+    | {
+        filePath: string;
+        url?: string;
+        status: number;
+        proxyUsed: "basic" | "stealth";
+        contentType?: string;
+      }
+    | null
+    | undefined;
   fetchPrefetch:
     | {
         url?: string;
@@ -232,6 +256,7 @@ function buildFeatureFlags(
   url: string,
   options: ScrapeOptions,
   internalOptions: InternalOptions,
+  imageOcrEnabled: boolean,
 ): Set<FeatureFlag> {
   const flags: Set<FeatureFlag> = new Set();
 
@@ -302,6 +327,11 @@ function buildFeatureFlags(
   } else if (lowerPath.endsWith(".pdf") || lowerPath.includes(".pdf/")) {
     // Only add PDF flag if it's not a document
     flags.add("pdf");
+  } else if (imageExtensionFromUrlPath(lowerPath) !== null && imageOcrEnabled) {
+    // Raster images are OCR'd through FirePDF for teams with the imageOcr
+    // flag (see engines/image). Everyone else stays on the ordinary
+    // waterfall and fails as an unsupported file, exactly as before.
+    flags.add("image");
   }
 
   if (options.blockAds === false) {
@@ -348,6 +378,14 @@ function isDocumentUpload(filename: string, contentType?: string): boolean {
   return (
     DOCUMENT_EXTENSIONS.has(ext) ||
     documentExtensionFromContentType(contentType) !== null
+  );
+}
+
+function isImageUpload(filename: string, contentType?: string): boolean {
+  const ext = path.extname(filename).toLowerCase();
+  return (
+    IMAGE_EXTENSIONS.has(ext) ||
+    imageExtensionFromContentType(contentType) !== null
   );
 }
 
@@ -408,6 +446,7 @@ async function buildMetaObject(
 
   let pdfPrefetch: Meta["pdfPrefetch"] = undefined;
   let documentPrefetch: Meta["documentPrefetch"] = undefined;
+  let imagePrefetch: Meta["imagePrefetch"] = undefined;
   let fetchPrefetch: Meta["fetchPrefetch"] = undefined;
 
   if (internalOptions.uploadedFile) {
@@ -442,6 +481,27 @@ async function buildMetaObject(
           documentContentTypeFromExtension(fallbackExtension) ||
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       };
+    } else if (isImageUpload(filename, contentType)) {
+      const ext = path.extname(filename).toLowerCase();
+      const fallbackExtension =
+        ext && IMAGE_EXTENSIONS.has(ext)
+          ? ext
+          : (imageExtensionFromContentType(contentType) ?? ".png");
+      const filePath = await writeUploadedFileToTemp(
+        filename,
+        buffer,
+        fallbackExtension,
+      );
+      imagePrefetch = {
+        filePath,
+        status: 200,
+        url: prefetchUrl,
+        proxyUsed: "basic",
+        contentType:
+          contentType ||
+          imageContentTypeFromExtension(fallbackExtension) ||
+          "image/png",
+      };
     } else if (isHtmlUpload(filename, contentType)) {
       fetchPrefetch = {
         url: prefetchUrl,
@@ -458,6 +518,10 @@ async function buildMetaObject(
   }
 
   const effectiveOptions = applyScrapeOptionsDefaults(options);
+  const imageOcrEnabled = await resolveImageOcrEnabled(
+    internalOptions.teamId,
+    internalOptions.teamFlags,
+  );
 
   return {
     id,
@@ -480,14 +544,21 @@ async function buildMetaObject(
           }
         : undefined,
     ),
-    featureFlags: buildFeatureFlags(url, effectiveOptions, internalOptions),
+    featureFlags: buildFeatureFlags(
+      url,
+      effectiveOptions,
+      internalOptions,
+      imageOcrEnabled,
+    ),
     mock:
       options.useMock !== undefined
         ? await loadMock(options.useMock, _logger)
         : null,
     pdfPrefetch,
     documentPrefetch,
+    imagePrefetch,
     fetchPrefetch,
+    imageOcrEnabled,
     costTracking,
     threatDecisions: [],
     largePdfProcessing: {},
@@ -545,7 +616,7 @@ export type InternalOptions = {
     buffer: Buffer;
     filename: string;
     contentType?: string;
-    kind?: "html" | "pdf" | "document";
+    kind?: "html" | "pdf" | "document" | "image";
   };
 };
 
@@ -733,7 +804,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     if (
       meta.featureFlags.has("actions") &&
       meta.pdfPrefetch === undefined &&
-      meta.documentPrefetch === undefined
+      meta.documentPrefetch === undefined &&
+      meta.imagePrefetch === undefined
     ) {
       if (
         fallbackList.length === 0 ||
@@ -1319,6 +1391,11 @@ export async function scrapeURL(
               meta.documentPrefetch = error.documentPrefetch;
             } else if (error.documentPrefetch === null) {
               meta.documentPrefetch = null;
+            }
+            if (error.imagePrefetch) {
+              meta.imagePrefetch = error.imagePrefetch;
+            } else if (error.imagePrefetch === null) {
+              meta.imagePrefetch = null;
             }
           } else if (
             error instanceof RemoveFeatureError &&

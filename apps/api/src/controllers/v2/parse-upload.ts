@@ -9,7 +9,8 @@ import { logger as _logger } from "../../lib/logger";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { getRedisConnection } from "../../services/queue-service";
 import { RequestWithAuth, UploadedParseFile } from "./types";
-import { detectUploadedFileKind, SUPPORTED_PARSE_FILE_TYPES } from "./parse";
+import { detectUploadedFileKind, getSupportedParseFileTypes } from "./parse";
+import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
 
 const PARSE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -159,8 +160,14 @@ function sanitizeFilename(filename: string): string {
   return base || "upload";
 }
 
-function isSupportedParseUpload(filename: string, contentType?: string) {
-  return detectUploadedFileKind(filename, contentType) !== null;
+function isSupportedParseUpload(
+  filename: string,
+  contentType: string | undefined,
+  imageOcrEnabled: boolean,
+) {
+  return (
+    detectUploadedFileKind(filename, contentType, imageOcrEnabled) !== null
+  );
 }
 
 function cleanupExpiredLocalUploads(now = Date.now()) {
@@ -269,11 +276,12 @@ export async function parseUploadUrlController(
     }
 
     const { filename, contentType, declaredSizeBytes } = parsed.data;
-    if (!isSupportedParseUpload(filename, contentType)) {
+    const imageOcrEnabled = isImageOcrEnabled(req.acuc?.flags);
+    if (!isSupportedParseUpload(filename, contentType, imageOcrEnabled)) {
       return res.status(400).json({
         success: false,
         code: "UNSUPPORTED_FILE_TYPE",
-        error: `Unsupported upload type. Supported file extensions include ${SUPPORTED_PARSE_FILE_TYPES}, or matching supported MIME types.`,
+        error: `Unsupported upload type. Supported file extensions include ${getSupportedParseFileTypes(imageOcrEnabled)}, or matching supported MIME types.`,
       });
     }
 
@@ -463,7 +471,21 @@ export function parseLocalUploadStorageGuard(
   next();
 }
 
-async function resolveUploadRef(payload: ParseUploadRefPayload): Promise<{
+async function releaseRejectedUploadRef(payload: ParseUploadRefPayload) {
+  try {
+    await releaseUnparsedUploadRef(payload.teamId, payload.uploadId);
+  } catch (error) {
+    _logger.warn("Failed to release rejected parse upload", {
+      error,
+      uploadId: payload.uploadId,
+    });
+  }
+}
+
+async function resolveUploadRef(
+  payload: ParseUploadRefPayload,
+  imageOcrEnabled: boolean,
+): Promise<{
   file: UploadedParseFile;
   cleanup: () => Promise<void>;
 }> {
@@ -479,8 +501,18 @@ async function resolveUploadRef(payload: ParseUploadRefPayload): Promise<{
       throw new Error("Uploaded file exceeds maximum size of 50MB.");
     }
 
-    const kind = detectUploadedFileKind(payload.filename, payload.contentType);
+    const kind = detectUploadedFileKind(
+      payload.filename,
+      payload.contentType,
+      imageOcrEnabled,
+    );
     if (!kind) {
+      // The type was accepted when the upload URL was minted, so this only
+      // happens when eligibility changed in between (e.g. the imageOcr team
+      // flag was turned off). Discard the upload instead of stranding it and
+      // its quota reservation.
+      localUploads.delete(payload.uploadId);
+      await releaseRejectedUploadRef(payload);
       throw new Error("Unsupported upload type.");
     }
 
@@ -515,8 +547,23 @@ async function resolveUploadRef(payload: ParseUploadRefPayload): Promise<{
     throw new Error("Uploaded file exceeds maximum size of 50MB.");
   }
 
-  const kind = detectUploadedFileKind(payload.filename, payload.contentType);
+  const kind = detectUploadedFileKind(
+    payload.filename,
+    payload.contentType,
+    imageOcrEnabled,
+  );
   if (!kind) {
+    // Same rollout race as the local driver: discard the object and release
+    // the reservation rather than stranding them.
+    try {
+      await file.delete({ ignoreNotFound: true });
+    } catch (error) {
+      _logger.warn("Failed to delete rejected parse upload object", {
+        error,
+        uploadId: payload.uploadId,
+      });
+    }
+    await releaseRejectedUploadRef(payload);
     throw new Error("Unsupported upload type.");
   }
 
@@ -578,7 +625,10 @@ export async function parseUploadRefPayloadMiddleware(
   }
 
   try {
-    const resolved = await resolveUploadRef(payload);
+    const resolved = await resolveUploadRef(
+      payload,
+      isImageOcrEnabled(req.acuc?.flags),
+    );
     const { uploadRef: _uploadRef, ...options } = req.body;
     req.body = {
       ...options,
