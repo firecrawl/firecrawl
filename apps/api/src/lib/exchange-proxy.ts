@@ -56,9 +56,23 @@ export function exchangeUpstreamBase(): string | null {
   return config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
 }
 
+const UNDICI_TIMEOUT_CODES = new Set([
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+]);
+
+function isTimeout(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === "TimeoutError") {
+    return true;
+  }
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && UNDICI_TIMEOUT_CODES.has(code);
+}
+
 export async function forwardToExchange(input: {
   teamId: string;
-  method: "GET" | "POST";
+  method: string;
   path: string;
   body?: unknown;
   timeoutMs: number;
@@ -68,11 +82,13 @@ export async function forwardToExchange(input: {
   const base = exchangeUpstreamBase();
   if (!base) throw new ExchangeProxyError("unconfigured");
 
-  const hasBody = input.method !== "GET";
+  const method = input.method.toUpperCase();
+  const hasBody = method !== "GET" && method !== "HEAD";
   let upstream: Awaited<ReturnType<typeof fetch>>;
+  let text: string;
   try {
     upstream = await fetch(base + input.path, {
-      method: input.method,
+      method,
       headers: {
         ...(input.accept === undefined ? {} : { accept: input.accept }),
         ...(input.requestId === undefined
@@ -85,14 +101,14 @@ export async function forwardToExchange(input: {
       signal: AbortSignal.timeout(input.timeoutMs),
       dispatcher: dispatcherFor(input.timeoutMs),
     });
+    text = await upstream.text();
   } catch (error: unknown) {
-    if (error instanceof DOMException && error.name === "TimeoutError") {
+    if (isTimeout(error)) {
       throw new ExchangeProxyError("timeout", error);
     }
     throw new ExchangeProxyError("unreachable", error);
   }
 
-  const text = await upstream.text();
   let body: unknown;
   try {
     body = text ? JSON.parse(text) : null;

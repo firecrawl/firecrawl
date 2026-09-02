@@ -69,6 +69,71 @@ describe("exchange search source", () => {
     ]);
   });
 
+  it("keeps the valid capabilities when one entry is malformed", async () => {
+    forward.mockResolvedValueOnce({
+      status: 200,
+      contentType: null,
+      requestId: null,
+      body: {
+        capabilities: [
+          {
+            address: "prices/latest",
+            provider: "financial-datasets",
+            creditsCost: 1,
+          },
+          { address: "broken", provider: "x", creditsCost: 1.5 },
+          { provider: "no-address", creditsCost: 1 },
+        ],
+      },
+    });
+    const results = await searchExchangeCatalog(
+      { query: "q", limit: 5, teamId: "t" },
+      logger,
+    );
+    expect(results?.map(r => r.capability)).toEqual(["prices/latest"]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Exchange catalogue search dropped malformed entries",
+      { dropped: 2, kept: 1 },
+    );
+  });
+
+  it("answers null rather than throwing on a query that cannot be encoded", async () => {
+    const lone = "price \ud800";
+    expect(
+      await searchExchangeCatalog(
+        { query: lone, limit: 5, teamId: "t" },
+        logger,
+      ),
+    ).toBeNull();
+    expect(forward).not.toHaveBeenCalled();
+  });
+
+  it("never waits longer than the caller's own timeout", async () => {
+    forward.mockResolvedValueOnce({
+      status: 200,
+      contentType: null,
+      requestId: null,
+      body: { capabilities: [] },
+    });
+    await searchExchangeCatalog(
+      { query: "q", limit: 5, teamId: "t", timeoutMs: 3_000 },
+      logger,
+    );
+    expect(forward.mock.calls[0]![0].timeoutMs).toBe(3_000);
+
+    forward.mockResolvedValueOnce({
+      status: 200,
+      contentType: null,
+      requestId: null,
+      body: { capabilities: [] },
+    });
+    await searchExchangeCatalog(
+      { query: "q", limit: 5, teamId: "t", timeoutMs: 60_000 },
+      logger,
+    );
+    expect(forward.mock.calls[1]![0].timeoutMs).toBe(10_000);
+  });
+
   it("clamps the limit to the Exchange's ceiling", async () => {
     forward.mockResolvedValueOnce({
       status: 200,

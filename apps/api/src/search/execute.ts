@@ -107,13 +107,18 @@ export async function executeSearch(
 
   logger.info("Searching for results");
 
-  const wantsExchange = sources.some((s: any) => s.type === "exchange");
-  const searchTypes = [
-    ...new Set(sources.map((s: any) => s.type).filter(t => t !== "exchange")),
-  ];
+  const requestedTypes = [...new Set(sources.map((s: any) => s.type))];
+  const wantsExchange = requestedTypes.includes("exchange");
+  const searchTypes = requestedTypes.filter(t => t !== "exchange");
   const exchangeResultsPromise = wantsExchange
     ? searchExchangeCatalog(
-        { query, limit, teamId, requestId: context.requestId },
+        {
+          query,
+          limit,
+          teamId,
+          requestId: context.requestId,
+          timeoutMs: options.timeout,
+        },
         logger,
       )
     : null;
@@ -367,7 +372,7 @@ export async function executeSearch(
     apiVersion: context.apiVersion,
     lang: options.lang,
     country: options.country,
-    sources: searchTypes,
+    sources: requestedTypes,
     numResults: totalResultsCount,
     searchCredits,
     scrapeCredits,

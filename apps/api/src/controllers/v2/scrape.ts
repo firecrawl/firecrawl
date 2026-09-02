@@ -63,10 +63,6 @@ export async function scrapeController(
       const jobId = uuidv7();
       const preNormalizedBody = { ...req.body };
 
-      if (Array.isArray((req.body as { exchange?: unknown }).exchange)) {
-        return exchangeScrapeController(req, res, jobId);
-      }
-
       // Set initial span attributes
       setSpanAttributes(span, {
         "scrape.job_id": jobId,
@@ -75,6 +71,12 @@ export async function scrapeController(
         "scrape.api_key_id": req.acuc?.api_key_id,
         "scrape.middleware_time_ms": controllerStartTime - middlewareStartTime,
       });
+
+      if (
+        Array.isArray((req.body as { exchange?: unknown } | null)?.exchange)
+      ) {
+        return exchangeScrapeController(req, res, jobId);
+      }
 
       // Validation span
       await withSpan("api.scrape.validate", async validateSpan => {

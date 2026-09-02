@@ -53,7 +53,7 @@ function exchangeProxy(
     try {
       const upstream = await forwardToExchange({
         teamId: authedReq.auth.team_id,
-        method: req.method === "GET" ? "GET" : "POST",
+        method: req.method,
         path: req.originalUrl.replace(/^\/exchange/, "/v1"),
         body: req.body,
         timeoutMs: timeout,

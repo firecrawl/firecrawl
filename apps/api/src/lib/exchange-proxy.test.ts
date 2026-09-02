@@ -108,6 +108,76 @@ describe("forwardToExchange", () => {
     expect(error.kind).toBe("unreachable");
   });
 
+  it("forwards the method verbatim, including PUT and DELETE", async () => {
+    for (const method of ["PUT", "DELETE", "GET", "POST"]) {
+      fetchMock.mockResolvedValueOnce(upstream(200, { ok: true }));
+      await forwardToExchange({
+        teamId: "t",
+        method,
+        path: "/v1/supply/x",
+        timeoutMs: 1,
+        body: { a: 1 },
+      });
+      const init = fetchMock.mock.calls.at(-1)![1] as any;
+      expect(init.method).toBe(method);
+      expect(init.body === undefined).toBe(method === "GET");
+    }
+  });
+
+  it("treats undici's own timeout codes as timeouts", async () => {
+    for (const code of [
+      "UND_ERR_CONNECT_TIMEOUT",
+      "UND_ERR_HEADERS_TIMEOUT",
+      "UND_ERR_BODY_TIMEOUT",
+    ]) {
+      fetchMock.mockRejectedValueOnce(Object.assign(new Error(code), { code }));
+      await expect(
+        forwardToExchange({
+          teamId: "t",
+          method: "GET",
+          path: "/v1/x",
+          timeoutMs: 1,
+        }),
+      ).rejects.toMatchObject({ kind: "timeout" });
+    }
+  });
+
+  it("maps a failure while reading the body the same way as one before it", async () => {
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      headers: new Headers(),
+      text: async () => {
+        throw Object.assign(new Error("body"), {
+          code: "UND_ERR_BODY_TIMEOUT",
+        });
+      },
+    } as any);
+    await expect(
+      forwardToExchange({
+        teamId: "t",
+        method: "GET",
+        path: "/v1/x",
+        timeoutMs: 1,
+      }),
+    ).rejects.toMatchObject({ kind: "timeout" });
+
+    fetchMock.mockResolvedValueOnce({
+      status: 200,
+      headers: new Headers(),
+      text: async () => {
+        throw new Error("socket hang up");
+      },
+    } as any);
+    await expect(
+      forwardToExchange({
+        teamId: "t",
+        method: "GET",
+        path: "/v1/x",
+        timeoutMs: 1,
+      }),
+    ).rejects.toMatchObject({ kind: "unreachable" });
+  });
+
   it("relays a non-JSON body as text rather than failing", async () => {
     fetchMock.mockResolvedValueOnce({
       status: 502,

@@ -41,6 +41,7 @@ vi.mock("../lib/scrape-billing", () => ({
 }));
 
 import { executeSearch } from "./execute";
+import { trackSearchRequest } from "../lib/tracking";
 import { searchRequestSchema } from "../controllers/v2/types";
 
 const logger = {
@@ -250,6 +251,27 @@ describe("executeSearch exchange source", () => {
 
     expect(result.response).toEqual({ web: [webResult] });
     expect(result.response).not.toHaveProperty("exchange");
+  });
+
+  it("records every requested source in tracking, exchange included", async () => {
+    await executeSearch(sources(["web", "exchange"]), context, logger);
+    expect(vi.mocked(trackSearchRequest).mock.calls.at(-1)![0].sources).toEqual(
+      ["web", "exchange"],
+    );
+
+    await executeSearch(sources(["exchange"]), context, logger);
+    expect(vi.mocked(trackSearchRequest).mock.calls.at(-1)![0].sources).toEqual(
+      ["exchange"],
+    );
+  });
+
+  it("caps the catalogue wait at the caller's timeout", async () => {
+    await executeSearch(
+      { ...sources(["exchange"]), timeout: 2_500 },
+      context,
+      logger,
+    );
+    expect(mocks.searchExchangeCatalog.mock.calls[0][0].timeoutMs).toBe(2_500);
   });
 
   it("still passes news and images through to the upstream untouched", async () => {

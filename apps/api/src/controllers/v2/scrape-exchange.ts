@@ -132,6 +132,10 @@ export async function exchangeScrapeController(
         .status(failure.status)
         .json({ success: false, error: failure.error });
     }
-    throw error;
+    logger.error("Exchange scrape failed", { error });
+    const failure = exchangeProxyFailureResponse("unreachable");
+    return res
+      .status(failure.status)
+      .json({ success: false, error: failure.error });
   }
 }

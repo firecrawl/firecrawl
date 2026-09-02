@@ -136,6 +136,17 @@ describe("scrape({ exchange })", () => {
     });
   });
 
+  it("answers 502 rather than 500 for a failure the proxy did not classify", async () => {
+    forward.mockRejectedValueOnce(new Error("something unexpected"));
+    const { r, out } = res();
+    await exchangeScrapeController(req({ exchange: [CALL] }), r, "job-7");
+    expect(out.status).toBe(502);
+    expect(out.body).toEqual({
+      success: false,
+      error: "The request could not be completed.",
+    });
+  });
+
   it("maps proxy failures to the proxy's statuses", async () => {
     forward.mockRejectedValueOnce(new ExchangeProxyError("timeout"));
     const { r, out } = res();
