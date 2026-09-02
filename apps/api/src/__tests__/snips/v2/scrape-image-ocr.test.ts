@@ -474,6 +474,83 @@ const OCR_FIXTURE_JPEG_BASE64 =
   "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE" +
   "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBB//2Q==";
 
+// The same fixture re-encoded as a grayscale JPEG 2000 (JP2 container).
+const OCR_FIXTURE_JP2_BASE64 =
+  "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" +
+  "2Q==";
+
 describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
   describeIf(ALLOW_TEST_SUITE_WEBSITE)("test-site fixtures", () => {
     it(
@@ -606,6 +683,27 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
   );
 
   it(
+    "OCRs a JPEG 2000 URL through the scrape path",
+    async () => {
+      // A JPEG 2000 conformance image from the OpenJPEG test data: exercises
+      // the JP2 signature sniff on a browser handoff served as image/jp2,
+      // the container digitized book scans usually arrive in. Same stable
+      // assertions as the JPEG photo above.
+      const response = await scrape(
+        {
+          url: "https://raw.githubusercontent.com/uclouvain/openjpeg-data/master/input/conformance/file1.jp2",
+          formats: ["markdown"],
+        },
+        identity,
+      );
+
+      expect(response.metadata.contentType).toBe("image/jp2");
+      expect(response.metadata.statusCode).toBe(200);
+    },
+    scrapeTimeout,
+  );
+
+  it(
     "keeps rejecting image formats OCR cannot open",
     async () => {
       const response = await scrapeWithFailure(
@@ -669,6 +767,56 @@ describeIf(SHOULD_RUN)("Image OCR parse upload (fire-pdf dependent)", () => {
 
       expect(result.markdown).toMatch(/firecrawl/i);
       expect(result.metadata.contentType).toBe("image/jpeg");
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "OCRs an uploaded JPEG 2000",
+    async () => {
+      const result = await parse(
+        {
+          options: {
+            formats: ["markdown"],
+          },
+          file: {
+            content: Buffer.from(OCR_FIXTURE_JP2_BASE64, "base64"),
+            filename: "ocr-fixture.jp2",
+            contentType: "image/jp2",
+          },
+        },
+        identity,
+      );
+
+      expect(result.markdown).toMatch(/firecrawl/i);
+      expect(result.metadata.contentType).toBe("image/jp2");
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "advertises JPEG 2000 among the supported upload types",
+    async () => {
+      // The rejection message lists every accepted extension, so an
+      // unsupported upload is the cheapest way to read the advertised set.
+      const failure = await parseWithFailure(
+        {
+          options: {
+            formats: ["markdown"],
+          },
+          file: {
+            content: Buffer.from("MZ"),
+            filename: "upload.exe",
+            contentType: "application/octet-stream",
+          },
+        },
+        identity,
+      );
+
+      expect(failure.code).toBe("UNSUPPORTED_FILE_TYPE");
+      expect(failure.error).toContain(".jp2");
+      expect(failure.error).toContain(".jpx");
+      expect(failure.error).toContain(".j2k");
     },
     scrapeTimeout,
   );

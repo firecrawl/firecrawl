@@ -523,10 +523,10 @@ const pdfParserWithOptions = z
   });
 
 /**
- * Raster image OCR (PNG, JPEG, TIFF, GIF, BMP). Like `pdf` it is part of the
- * default list, so a request that says nothing about parsers OCRs image URLs
- * (behind the imageOcr team flag while it rolls out); an explicit list that
- * omits it (`["pdf"]`, `[]`) opts out and keeps the historical
+ * Raster image OCR (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP). Like `pdf` it is
+ * part of the default list, so a request that says nothing about parsers OCRs
+ * image URLs (behind the imageOcr team flag while it rolls out); an explicit
+ * list that omits it (`["pdf"]`, `[]`) opts out and keeps the historical
  * unsupported-file rejection. The object form carries no options yet; it
  * exists so options can be added later without a breaking change.
  */

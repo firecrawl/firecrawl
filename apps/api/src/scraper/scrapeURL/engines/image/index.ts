@@ -14,8 +14,8 @@ import {
 /**
  * Raster images are OCR'd as one-page scanned documents through the FirePDF
  * pipeline. FirePDF opens the bytes as a single-page image document
- * (PNG/JPEG/TIFF/GIF/BMP), finds no text layer, and runs the same layout +
- * OCR path a scanned PDF page takes.
+ * (PNG/JPEG/JPEG 2000/TIFF/GIF/BMP), finds no text layer, and runs the same
+ * layout + OCR path a scanned PDF page takes.
  *
  * OCR is on by default and opt-out per request (a `parsers` list without
  * `image`; a parse upload of an image always counts), and rolled out per
