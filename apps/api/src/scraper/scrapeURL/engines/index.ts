@@ -489,6 +489,11 @@ const engineOptions: {
     },
     quality: 5,
   },
+  // The file engines (pdf, document, image) pass skipTlsVerification through
+  // to their direct downloads, and a browser handoff already applied it
+  // upstream, so they declare it supported: otherwise every cache-miss file
+  // scrape carries a misleading "may be partial" warning, since v2 defaults
+  // the option to true.
   pdf: {
     features: {
       actions: false,
@@ -503,7 +508,7 @@ const engineOptions: {
       atsv: false,
       location: false,
       mobile: false,
-      skipTlsVerification: false,
+      skipTlsVerification: true,
       useFastMode: true,
       stealthProxy: true, // kinda...
       branding: false,
@@ -525,7 +530,7 @@ const engineOptions: {
       atsv: false,
       location: false,
       mobile: false,
-      skipTlsVerification: false,
+      skipTlsVerification: true,
       useFastMode: true,
       stealthProxy: true, // kinda...
       branding: false,
@@ -547,7 +552,7 @@ const engineOptions: {
       atsv: false,
       location: false,
       mobile: false,
-      skipTlsVerification: false,
+      skipTlsVerification: true,
       useFastMode: true,
       stealthProxy: true, // kinda...
       branding: false,

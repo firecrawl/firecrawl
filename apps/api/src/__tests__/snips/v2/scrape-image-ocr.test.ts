@@ -495,6 +495,7 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
         expect(response.metadata.statusCode).toBe(200);
         // An image is not a PDF: no page count is reported for it.
         expect(response.metadata.numPages).toBeUndefined();
+        expect(response.warning).toBeUndefined();
       },
       scrapeTimeout,
     );
