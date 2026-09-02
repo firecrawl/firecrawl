@@ -62,29 +62,25 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
       throw new EngineUnsuccessfulError("image");
     }
 
-    if (!(await meta.imageOcrEnabled())) {
-      // Image OCR is per team (imageOcr flag, with FirePDF configured): images
-      // are only routed here for enabled teams.
-      // Reaching this without it means a forceEngine pin (parse upload) or a
-      // self-hosted waterfall tail: surface the unsupported-file error only
-      // when an image was actually expected, and just decline otherwise.
-      // Anything that identifies the request as an image (a handoff, the flag,
-      // a pin, or an image-extension URL on a self-hosted waterfall tail) gets
-      // the unsupported-file error the URL path has always produced; an
-      // ordinary HTML tail just declines so the waterfall can finish.
-      const looksLikeImage =
-        meta.imagePrefetch != null ||
-        meta.featureFlags.has("image") ||
-        meta.internalOptions.forceEngine === "image" ||
-        imageExtensionFromUrlPath(
-          new URL(meta.rewrittenUrl ?? meta.url).pathname,
-        ) !== null;
-      if (looksLikeImage) {
-        throw new UnsupportedFileError(
-          meta.imagePrefetch?.contentType ?? "image",
-        );
-      }
-      throw new EngineUnsuccessfulError("image");
+    // Requests already identified as images (a browser handoff, the image
+    // flag, a forceEngine pin, or an image-extension URL) resolve the
+    // per-team gate up front. Anything else is a waterfall tail that has to
+    // sniff its bytes first, so an ordinary failed page never pays for a
+    // team lookup here.
+    const knownImage =
+      meta.imagePrefetch != null ||
+      meta.featureFlags.has("image") ||
+      meta.internalOptions.forceEngine === "image" ||
+      imageExtensionFromUrlPath(
+        new URL(meta.rewrittenUrl ?? meta.url).pathname,
+      ) !== null;
+    if (knownImage && !(await meta.imageOcrEnabled())) {
+      // Image OCR is per team (imageOcr flag, with FirePDF configured); a
+      // team without it gets the unsupported-file error the URL path has
+      // always produced.
+      throw new UnsupportedFileError(
+        meta.imagePrefetch?.contentType ?? "image",
+      );
     }
 
     let buffer: Buffer;
@@ -138,6 +134,12 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
       throw new UnsupportedFileError(
         headerContentType ?? "unknown image format",
       );
+    }
+
+    // A tail request whose bytes turned out to be an image: consult the gate
+    // now that the lookup is warranted.
+    if (!knownImage && !(await meta.imageOcrEnabled())) {
+      throw new UnsupportedFileError(contentType);
     }
 
     if (!shouldParsePDF(meta.options.parsers)) {
