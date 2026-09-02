@@ -1,0 +1,38 @@
+apps/api/src/__tests__/pdf-parser-options.test.ts
+  s_21cf538fb36a61::t_ea1ea29b805887 3,7-8,69-106
+apps/api/src/lib/image-ocr-gate.ts
+  s_21cf538fb36a61::t_1f0f6abf53e388 21-22,24-32,34-38,43,45
+apps/api/src/__tests__/snips/v2/scrape-image-ocr.test.ts
+  s_21cf538fb36a61::t_93c0e03717dc01 486,505,507-508,513,524-545,572,595,613,703,709
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_21cf538fb36a61::t_aa567b9003e422 120-122,132-133,148-150
+apps/api/src/scraper/scrapeURL/error.ts
+  s_21cf538fb36a61::t_aa567b9003e422 235
+apps/api/src/controllers/v2/types.ts
+  s_21cf538fb36a61::t_99fc863d17c83a 525-535,537-544,560-572
+apps/api/src/scraper/scrapeURL/index.ts
+  s_21cf538fb36a61::t_0099f2366fc1df 11,158-163,335-338,526-528,532-533
+apps/api/src/lib/image-ocr-gate.test.ts
+  s_21cf538fb36a61::t_077263547ef372 52,57-59,81-83
+  s_21cf538fb36a61::t_1f0f6abf53e388 48-51,53-55,60,68,75,80
+apps/api/src/scraper/scrapeURL/engines/index/index.ts
+  s_21cf538fb36a61::t_0099f2366fc1df 570-581
+apps/api/src/scraper/scrapeURL/engines/image/index.ts
+  s_21cf538fb36a61::t_aa567b9003e422 20-26,73-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1519f530ec38933ef57fc1cf7f51d2addc33db57",
+  "prompts": {},
+  "sessions": {
+    "s_21cf538fb36a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f58f4301-49e1-4d20-a621-6398be6cfd71",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
