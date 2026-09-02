@@ -4,7 +4,7 @@ allowBuilds:
 overrides:
   "@humanfs/node@<0.16.8": ">=0.16.8 <0.17.0"
   ajv: "^8.18.0"
-  fast-uri: ">=3.1.5 <4.0.0"
+  fast-uri: "3.1.6"
   "flatted@<3.4.2": ">=3.4.2"
   "minimatch@<10.2.3": ">=10.2.3"
   "rollup@<4.59.0": ">=4.59.0"
