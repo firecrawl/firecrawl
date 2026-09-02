@@ -1690,6 +1690,28 @@ export type AgentTraceResponse =
       }>;
     };
 
+/**
+ * A finished run distilled into something reusable: a SKILL.md to paste into a
+ * coding agent, and a workflow script that reproduces the run through the API.
+ * The upstream shape is passed through verbatim.
+ */
+export type AgentSkillResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      id: string;
+      skill: {
+        name: string;
+        spec: object;
+        skillMd: string;
+        workflow: string;
+        schema: string;
+      };
+      blueprint: object;
+      generatedAt: string;
+      generated: boolean;
+    };
+
 export type AgentSnapshotResponse =
   | ErrorResponse
   | {
