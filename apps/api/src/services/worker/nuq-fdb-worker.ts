@@ -1,7 +1,6 @@
 import "dotenv/config";
 import "../sentry";
 import { setSentryServiceTag } from "../sentry";
-import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import { getCrawl } from "../../lib/crawl-redis";
 import { finishCrawlSuper } from "./crawl-logic";
@@ -11,6 +10,7 @@ import {
   nuqFdbHealthCheck,
   scrapeQueueFdb,
 } from "./nuq-fdb";
+import { startCrawlFinishedLoop } from "./nuq-fdb-worker-runtime";
 import { runNuqWorker } from "./nuq-worker-runner";
 import type { NuQJob } from "./nuq";
 
@@ -44,94 +44,6 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
   await finishCrawlSuper(anyJob as any);
 }
 
-function startCrawlFinishedLoop() {
-  let shuttingDown = false;
-
-  const loop = (async () => {
-    let noJobTimeout = 1500;
-
-    while (!shuttingDown) {
-      const job = await crawlFinishedQueueFdb.getJobToProcess();
-
-      if (job === null) {
-        await new Promise(resolve => setTimeout(resolve, noJobTimeout));
-        if (!config.NUQ_RABBITMQ_URL) {
-          noJobTimeout = Math.min(noJobTimeout * 2, 10000);
-        }
-        continue;
-      }
-
-      noJobTimeout = 500;
-
-      const logger = _logger.child({
-        module: "nuq-fdb-worker",
-        method: "crawlFinishedLoop",
-        jobId: job.id,
-        crawlId: job.groupId,
-      });
-
-      logger.info("Acquired crawl finished job");
-
-      const lockRenewInterval = setInterval(async () => {
-        try {
-          logger.info("Renewing crawl finished lock");
-          if (
-            !(await crawlFinishedQueueFdb.renewLock(job.id, job.lock!, logger))
-          ) {
-            logger.warn("Failed to renew crawl finished lock");
-            clearInterval(lockRenewInterval);
-          }
-        } catch (error) {
-          logger.warn("Failed to renew crawl finished lock", { error });
-          clearInterval(lockRenewInterval);
-        }
-      }, 15000);
-
-      try {
-        await processFinishCrawlJobInternal(job as any);
-        if (
-          !(await crawlFinishedQueueFdb.jobFinish(
-            job.id,
-            job.lock!,
-            null,
-            logger,
-          ))
-        ) {
-          logger.warn("Could not update crawl finished job status");
-        }
-      } catch (error) {
-        logger.error("Crawl finished job failed", { error });
-        if (
-          !(await crawlFinishedQueueFdb.jobFail(
-            job.id,
-            job.lock!,
-            error instanceof Error ? error.message : JSON.stringify(error),
-            logger,
-          ))
-        ) {
-          logger.warn("Could not update crawl finished job status");
-        }
-      } finally {
-        clearInterval(lockRenewInterval);
-      }
-    }
-  })();
-
-  const done = loop.catch(error => {
-    _logger.error("Crawl finished loop stopped unexpectedly", {
-      module: "nuq-fdb-worker",
-      error,
-    });
-  });
-
-  return {
-    stop() {
-      shuttingDown = true;
-    },
-    done,
-  };
-}
-
 (async () => {
   setSentryServiceTag("nuq-fdb-worker");
 
@@ -142,17 +54,36 @@ function startCrawlFinishedLoop() {
     serviceName: "nuq-fdb-worker",
     queue: scrapeQueueFdb as any,
     healthCheck: () => nuqFdbHealthCheck(),
+    livenessCheck: () => crawlFinishedLoop?.isHealthy() ?? false,
+    // These are process-local metrics. Queue-wide FDB ranges are deliberately
+    // not scanned from every worker's Prometheus scrape callback.
+    metrics: () => crawlFinishedLoop?.metrics() ?? "",
     beforeStart: () => {
       getNuqFdbSweeper().start();
-      crawlFinishedLoop = startCrawlFinishedLoop();
+      crawlFinishedLoop = startCrawlFinishedLoop({
+        queue: crawlFinishedQueueFdb as any,
+        processJob: processFinishCrawlJobInternal,
+        logger: _logger.child({
+          module: "nuq-fdb-worker",
+          method: "crawlFinishedLoop",
+        }),
+        onFence: reason => {
+          if (reason === "shutdown") return;
+          _logger.error(
+            "Worker lost crawl-finished ownership; terminating stale process",
+            { module: "nuq-fdb-worker", reason },
+          );
+          setImmediate(() => process.exit(1));
+        },
+      });
     },
-    beforeShutdown: async () => {
+    onShutdownRequested: () => {
+      // Stop both dequeue loops immediately, then let their in-flight jobs keep
+      // renewing and drain within runNuqWorker's bounded grace period.
       crawlFinishedLoop?.stop();
-      try {
-        await crawlFinishedLoop?.done;
-      } finally {
-        getNuqFdbSweeper().stop();
-      }
     },
+    drain: () => crawlFinishedLoop?.done,
+    onShutdownDeadline: () => crawlFinishedLoop?.forceStop(),
+    shutdown: () => getNuqFdbSweeper().stop(),
   });
 })();

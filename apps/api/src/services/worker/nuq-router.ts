@@ -33,6 +33,7 @@ import {
   NuQFdbQueue,
   NuQFdbJob,
 } from "./nuq-fdb";
+import type { QueueOperationOptions } from "./nuq-worker-runtime";
 
 // Dual-backend router for the NuQ migration to FoundationDB. Exports the same
 // `scrapeQueue` / `crawlFinishedQueue` / `crawlGroup` names as ./nuq so call
@@ -328,11 +329,12 @@ class RoutedScrapeQueue {
 
   public async getJobToProcess(
     logger: Logger = _logger,
+    operation?: QueueOperationOptions,
   ): Promise<NuQJob<ScrapeJobData> | null> {
     if (fdbQueueEnabled()) {
       try {
         const job = await optionalFdb(() =>
-          scrapeQueueFdb.getJobToProcess(logger),
+          scrapeQueueFdb.getJobToProcess(logger, operation),
         );
         if (job) {
           this.inflightBackend.set(job.id, "fdb");
@@ -352,11 +354,12 @@ class RoutedScrapeQueue {
     id: string,
     lock: string,
     logger: Logger = _logger,
+    operation?: QueueOperationOptions,
   ): Promise<boolean> {
     if (this.backendFor(id) === "fdb") {
       try {
         return await optionalFdb(() =>
-          scrapeQueueFdb.renewLock(id, lock, logger),
+          scrapeQueueFdb.renewLock(id, lock, logger, operation),
         );
       } catch (error) {
         if (fdbForced()) throw error;
@@ -372,13 +375,14 @@ class RoutedScrapeQueue {
     lock: string,
     returnvalue: any | null,
     logger: Logger = _logger,
+    operation?: QueueOperationOptions,
   ): Promise<boolean> {
     const backend = this.backendFor(id);
     this.inflightBackend.delete(id);
     if (backend === "fdb") {
       try {
         return await optionalFdb(() =>
-          scrapeQueueFdb.jobFinish(id, lock, returnvalue, logger),
+          scrapeQueueFdb.jobFinish(id, lock, returnvalue, logger, operation),
         );
       } catch (error) {
         if (fdbForced()) throw error;
@@ -394,13 +398,14 @@ class RoutedScrapeQueue {
     lock: string,
     failedReason: string,
     logger: Logger = _logger,
+    operation?: QueueOperationOptions,
   ): Promise<boolean> {
     const backend = this.backendFor(id);
     this.inflightBackend.delete(id);
     if (backend === "fdb") {
       try {
         return await optionalFdb(() =>
-          scrapeQueueFdb.jobFail(id, lock, failedReason, logger),
+          scrapeQueueFdb.jobFail(id, lock, failedReason, logger, operation),
         );
       } catch (error) {
         if (fdbForced()) throw error;
@@ -554,11 +559,12 @@ class RoutedCrawlFinishedQueue {
 
   public async getJobToProcess(
     logger: Logger = _logger,
+    operation?: QueueOperationOptions,
   ): Promise<NuQJob<any> | null> {
     if (fdbQueueEnabled()) {
       try {
         const job = await optionalFdb(() =>
-          crawlFinishedQueueFdb.getJobToProcess(logger),
+          crawlFinishedQueueFdb.getJobToProcess(logger, operation),
         );
         if (job) {
           this.inflightBackend.set(job.id, "fdb");
@@ -578,11 +584,12 @@ class RoutedCrawlFinishedQueue {
     id: string,
     lock: string,
     logger: Logger = _logger,
+    operation?: QueueOperationOptions,
   ): Promise<boolean> {
     if (this.inflightBackend.get(id) === "fdb") {
       try {
         return await optionalFdb(() =>
-          crawlFinishedQueueFdb.renewLock(id, lock, logger),
+          crawlFinishedQueueFdb.renewLock(id, lock, logger, operation),
         );
       } catch (error) {
         if (fdbForced()) throw error;
@@ -598,13 +605,20 @@ class RoutedCrawlFinishedQueue {
     lock: string,
     returnvalue: any | null,
     logger: Logger = _logger,
+    operation?: QueueOperationOptions,
   ): Promise<boolean> {
     const backend = this.inflightBackend.get(id) ?? "pg";
     this.inflightBackend.delete(id);
     if (backend === "fdb") {
       try {
         return await optionalFdb(() =>
-          crawlFinishedQueueFdb.jobFinish(id, lock, returnvalue, logger),
+          crawlFinishedQueueFdb.jobFinish(
+            id,
+            lock,
+            returnvalue,
+            logger,
+            operation,
+          ),
         );
       } catch (error) {
         if (fdbForced()) throw error;
@@ -620,13 +634,20 @@ class RoutedCrawlFinishedQueue {
     lock: string,
     failedReason: string,
     logger: Logger = _logger,
+    operation?: QueueOperationOptions,
   ): Promise<boolean> {
     const backend = this.inflightBackend.get(id) ?? "pg";
     this.inflightBackend.delete(id);
     if (backend === "fdb") {
       try {
         return await optionalFdb(() =>
-          crawlFinishedQueueFdb.jobFail(id, lock, failedReason, logger),
+          crawlFinishedQueueFdb.jobFail(
+            id,
+            lock,
+            failedReason,
+            logger,
+            operation,
+          ),
         );
       } catch (error) {
         if (fdbForced()) throw error;

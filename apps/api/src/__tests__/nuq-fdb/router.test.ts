@@ -85,12 +85,16 @@ describeIf("NuQ router (forced FDB mode)", () => {
     expect(backloggedCount).toBe(0);
 
     const wait = scrapeQueue.waitForJob(jobId, 15_000);
+    const operation = { timeoutMs: 5_000 };
+    const takeSpy = vi.spyOn(scrapeQueueFdb, "getJobToProcess");
+    const renewSpy = vi.spyOn(scrapeQueueFdb, "renewLock");
+    const finishSpy = vi.spyOn(scrapeQueueFdb, "jobFinish");
 
     // routed take must find the FDB job without ever polling PG (no PG here)
     let taken: any = null;
     for (let i = 0; i < 10 && !taken; i++) {
       try {
-        taken = await scrapeQueue.getJobToProcess();
+        taken = await scrapeQueue.getJobToProcess(undefined, operation);
       } catch {
         // PG fallback poll can throw without a database; FDB must still win
       }
@@ -98,11 +102,36 @@ describeIf("NuQ router (forced FDB mode)", () => {
     expect(taken).not.toBeNull();
     expect(taken.id).toBe(jobId);
     expect((taken as any).backend).toBe("fdb");
+    expect(takeSpy).toHaveBeenCalledWith(expect.anything(), operation);
 
-    expect(await scrapeQueue.renewLock(jobId, taken.lock!)).toBe(true);
-    expect(await scrapeQueue.jobFinish(jobId, taken.lock!, { ok: true })).toBe(
-      true,
+    expect(
+      await scrapeQueue.renewLock(jobId, taken.lock!, undefined, operation),
+    ).toBe(true);
+    expect(renewSpy).toHaveBeenCalledWith(
+      jobId,
+      taken.lock!,
+      expect.anything(),
+      operation,
     );
+    expect(
+      await scrapeQueue.jobFinish(
+        jobId,
+        taken.lock!,
+        { ok: true },
+        undefined,
+        operation,
+      ),
+    ).toBe(true);
+    expect(finishSpy).toHaveBeenCalledWith(
+      jobId,
+      taken.lock!,
+      { ok: true },
+      expect.anything(),
+      operation,
+    );
+    takeSpy.mockRestore();
+    renewSpy.mockRestore();
+    finishSpy.mockRestore();
 
     await expect(wait).resolves.toBeDefined();
 

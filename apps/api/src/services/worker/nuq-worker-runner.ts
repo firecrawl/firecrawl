@@ -7,21 +7,40 @@ import { register } from "prom-client";
 import Express from "express";
 import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
+import type { Server } from "http";
+import {
+  nextIdlePollDelay,
+  runLeasedJob,
+  settleDrain,
+  waitForAbortableDelay,
+  withOperationTimeout,
+  type QueueOperationOptions,
+} from "./nuq-worker-runtime";
 
 export type WorkerQueue = {
-  getJobToProcess(logger?: any): Promise<NuQJob<any, any> | null>;
-  renewLock(id: string, lock: string, logger?: any): Promise<boolean>;
+  getJobToProcess(
+    logger?: any,
+    operation?: QueueOperationOptions,
+  ): Promise<NuQJob<any, any> | null>;
+  renewLock(
+    id: string,
+    lock: string,
+    logger?: any,
+    operation?: QueueOperationOptions,
+  ): Promise<boolean>;
   jobFinish(
     id: string,
     lock: string,
     returnvalue: any | null,
     logger?: any,
+    operation?: QueueOperationOptions,
   ): Promise<boolean>;
   jobFail(
     id: string,
     lock: string,
     failedReason: string,
     logger?: any,
+    operation?: QueueOperationOptions,
   ): Promise<boolean>;
 };
 
@@ -46,14 +65,26 @@ async function withTimeout<T>(
   }
 }
 
+function closeServer(server: Server) {
+  return new Promise<void>((resolve, reject) => {
+    server.close(error => (error ? reject(error) : resolve()));
+  });
+}
+
 export async function runNuqWorker(options: {
   serviceName: string;
   queue: WorkerQueue;
   healthCheck: () => Promise<boolean>;
+  livenessCheck?: () => boolean;
   metrics?: () => string | Promise<string>;
   beforeStart?: () => void | Promise<void>;
+  onShutdownRequested?: () => void | Promise<void>;
+  drain?: () => void | Promise<void>;
+  onShutdownDeadline?: () => void | Promise<void>;
   beforeShutdown?: () => void | Promise<void>;
   shutdown?: () => void | Promise<void>;
+  shutdownGraceMs?: number;
+  processJob?: (job: NuQJob<any, any>, signal: AbortSignal) => Promise<any>;
 }) {
   try {
     await initializeBlocklist();
@@ -68,17 +99,40 @@ export async function runNuqWorker(options: {
   }
 
   let isShuttingDown = false;
+  let shutdownStartedAt: number | null = null;
+  let activeJobs = 0;
+  const idleController = new AbortController();
+  const forceActiveJobController = new AbortController();
+  let resolveShutdownRequested!: () => void;
+  const shutdownRequested = new Promise<void>(resolve => {
+    resolveShutdownRequested = resolve;
+  });
 
   const app = Express();
 
   app.get("/metrics", async (_, res) => {
-    const localMetrics = options.metrics ? await options.metrics() : "";
-    res
-      .contentType("text/plain")
-      .send(localMetrics + "\n" + (await register.metrics()));
+    try {
+      const localMetrics = options.metrics ? await options.metrics() : "";
+      const runtimeMetrics = `# HELP firecrawl_nuq_worker_active_jobs Number of jobs executing in this worker process\n# TYPE firecrawl_nuq_worker_active_jobs gauge\nfirecrawl_nuq_worker_active_jobs{service="${options.serviceName}"} ${activeJobs}\n`;
+      res
+        .contentType("text/plain")
+        .send(
+          localMetrics + "\n" + runtimeMetrics + (await register.metrics()),
+        );
+    } catch (error) {
+      _logger.warn("NuQ worker metrics collection failed", {
+        module: options.serviceName,
+        error,
+      });
+      res.status(500).send("Metrics unavailable");
+    }
   });
   app.get("/health", async (_, res) => {
     try {
+      if (options.livenessCheck && !options.livenessCheck()) {
+        res.status(500).send("Not OK");
+        return;
+      }
       if (await withTimeout(options.healthCheck(), 1000, "NuQ health check")) {
         res.status(200).send("OK");
       } else {
@@ -108,103 +162,215 @@ export async function runNuqWorker(options: {
     });
   });
 
-  function shutdown() {
+  function requestShutdown() {
+    if (isShuttingDown) return;
     isShuttingDown = true;
-  }
-
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
-
-  let noJobTimeout = 1500;
-
-  while (!isShuttingDown) {
-    const job = await options.queue.getJobToProcess();
-
-    if (job === null) {
-      _logger.info("No jobs to process", { module: "nuq/metrics" });
-      await new Promise(resolve => setTimeout(resolve, noJobTimeout));
-      if (!config.NUQ_RABBITMQ_URL) {
-        noJobTimeout = Math.min(noJobTimeout * 2, 10000);
-      }
-      continue;
-    }
-
-    noJobTimeout = 500;
-
-    const logger = _logger.child({
-      module: options.serviceName,
-      scrapeId: job.id,
-      zeroDataRetention: job.data?.zeroDataRetention ?? false,
+    shutdownStartedAt = Date.now();
+    idleController.abort();
+    resolveShutdownRequested();
+    void Promise.resolve(options.onShutdownRequested?.()).catch(error => {
+      _logger.error("NuQ worker shutdown notification failed", {
+        module: options.serviceName,
+        error,
+      });
     });
+  }
 
-    logger.info("Acquired job");
+  process.on("SIGINT", requestShutdown);
+  process.on("SIGTERM", requestShutdown);
 
-    const lockRenewInterval = setInterval(async () => {
+  const loop = (async () => {
+    let idleBaseMs = 500;
+    let dequeueErrorBaseMs = 500;
+
+    while (!isShuttingDown) {
+      let job: NuQJob<any, any> | null;
       try {
-        logger.info("Renewing lock");
-        if (!(await options.queue.renewLock(job.id, job.lock!, logger))) {
-          logger.warn("Failed to renew lock");
-          clearInterval(lockRenewInterval);
-          return;
-        }
-        logger.info("Renewed lock");
+        job = await withOperationTimeout(
+          options.queue.getJobToProcess(undefined, { timeoutMs: 5_000 }),
+          5_000,
+          "job dequeue",
+        );
+        dequeueErrorBaseMs = 500;
       } catch (error) {
-        logger.warn("Failed to renew lock", { error });
-        clearInterval(lockRenewInterval);
+        _logger.error("Failed to dequeue NuQ job", {
+          module: options.serviceName,
+          error,
+        });
+        const idle = nextIdlePollDelay(dequeueErrorBaseMs);
+        dequeueErrorBaseMs = idle.nextBaseMs;
+        await waitForAbortableDelay(idle.delayMs, idleController.signal);
+        continue;
       }
-    }, 15000);
 
-    let processResult:
-      | { ok: true; data: Awaited<ReturnType<typeof processJobInternal>> }
-      | { ok: false; error: any };
+      if (job === null) {
+        const idle = nextIdlePollDelay(idleBaseMs);
+        idleBaseMs = idle.nextBaseMs;
+        await waitForAbortableDelay(idle.delayMs, idleController.signal);
+        continue;
+      }
 
-    const endJobTimer = jobDurationSeconds.startTimer({ type: job.data.mode });
+      if (isShuttingDown) {
+        _logger.warn(
+          "Dequeued a job while shutdown was requested; leaving its lease for recovery",
+          { module: options.serviceName, jobId: job.id },
+        );
+        break;
+      }
 
-    try {
-      processResult = { ok: true, data: await processJobInternal(job) };
-    } catch (error) {
-      processResult = { ok: false, error };
+      idleBaseMs = 500;
+
+      const logger = _logger.child({
+        module: options.serviceName,
+        scrapeId: job.id,
+        zeroDataRetention: job.data?.zeroDataRetention ?? false,
+      });
+
+      logger.info("Acquired job");
+      activeJobs = 1;
+      const endJobTimer = jobDurationSeconds.startTimer({
+        type: job.data.mode,
+      });
+      try {
+        const result = await runLeasedJob({
+          queue: options.queue,
+          job,
+          logger,
+          shutdownSignal: forceActiveJobController.signal,
+          onFence: reason => {
+            if (reason === "shutdown") return;
+            logger.error(
+              "Worker lost job ownership; terminating to abort stale side effects",
+              { reason },
+            );
+            // processJobInternal does not yet accept an AbortSignal. Exiting the
+            // single-job worker is the only hard cancellation boundary that
+            // prevents the stale owner from continuing crawl/scrape effects.
+            setImmediate(() => process.exit(1));
+          },
+          process: signal =>
+            options.processJob
+              ? options.processJob(job!, signal)
+              : processJobInternal(job!),
+        });
+
+        if (result.status === "completed") {
+          endJobTimer({ status: "success" });
+        } else {
+          endJobTimer({ status: "failed" });
+          if (result.status === "fenced") {
+            logger.warn("Job was fenced and will not be finalized", {
+              reason: result.reason,
+            });
+          }
+        }
+      } catch (error) {
+        endJobTimer({ status: "failed" });
+        logger.error("Unexpected NuQ job lifecycle failure; continuing", {
+          error,
+        });
+      } finally {
+        activeJobs = 0;
+      }
     }
+  })();
 
-    clearInterval(lockRenewInterval);
+  // Wait indefinitely during normal operation. Once shutdown is requested,
+  // stop dequeuing and let the active job retain/renew its lease while it drains.
+  await Promise.race([loop, shutdownRequested]);
+  let drained = false;
+  if (isShuttingDown) {
+    const drain = settleDrain(
+      [loop, Promise.resolve().then(() => options.drain?.())],
+      error => {
+        _logger.error("NuQ worker drain failed", {
+          module: options.serviceName,
+          error,
+        });
+      },
+    );
+    const graceController = new AbortController();
+    drained =
+      (await Promise.race([
+        drain,
+        waitForAbortableDelay(
+          Math.max(
+            0,
+            (options.shutdownGraceMs ?? 30_000) -
+              (shutdownStartedAt === null ? 0 : Date.now() - shutdownStartedAt),
+          ),
+          graceController.signal,
+        ).then(() => false),
+      ])) === true;
+    graceController.abort();
+  } else {
+    await loop;
+    drained = true;
+  }
 
-    if (processResult.ok) {
-      endJobTimer({ status: "success" });
-      if (
-        !(await options.queue.jobFinish(
-          job.id,
-          job.lock!,
-          processResult.data,
-          logger,
-        ))
-      ) {
-        logger.warn("Could not update job status");
-      }
-    } else {
-      endJobTimer({ status: "failed" });
-      if (
-        !(await options.queue.jobFail(
-          job.id,
-          job.lock!,
-          processResult.error instanceof Error
-            ? processResult.error.message
-            : typeof processResult.error === "string"
-              ? processResult.error
-              : JSON.stringify(processResult.error),
-          logger,
-        ))
-      ) {
-        logger.warn("Could not update job status");
-      }
+  if (!drained) {
+    _logger.warn("NuQ worker drain deadline exceeded; fencing active job", {
+      module: options.serviceName,
+    });
+    forceActiveJobController.abort();
+    try {
+      void Promise.resolve(options.onShutdownDeadline?.()).catch(error => {
+        _logger.error("NuQ worker deadline hook failed", {
+          module: options.serviceName,
+          error,
+        });
+      });
+    } catch (error) {
+      _logger.error("NuQ worker deadline hook failed", {
+        module: options.serviceName,
+        error,
+      });
     }
   }
 
-  _logger.info("NuQ worker shutting down", { module: options.serviceName });
-
-  server.close(async () => {
-    await options.beforeShutdown?.();
-    await options.shutdown?.();
-    _logger.info("NuQ worker shut down", { module: options.serviceName });
-    process.exit(0);
+  _logger.info("NuQ worker shutting down", {
+    module: options.serviceName,
+    drained,
   });
+
+  process.off("SIGINT", requestShutdown);
+  process.off("SIGTERM", requestShutdown);
+
+  const remainingShutdownMs = () =>
+    shutdownStartedAt === null
+      ? 10_000
+      : Math.max(
+          0,
+          (options.shutdownGraceMs ?? 30_000) -
+            (Date.now() - shutdownStartedAt),
+        );
+  try {
+    await withTimeout(
+      closeServer(server),
+      Math.min(10_000, remainingShutdownMs()),
+      "HTTP shutdown",
+    );
+  } catch (error) {
+    _logger.warn("NuQ worker HTTP shutdown did not complete cleanly", {
+      module: options.serviceName,
+      error,
+    });
+  }
+  try {
+    await withTimeout(
+      Promise.resolve(options.beforeShutdown?.()).then(() =>
+        options.shutdown?.(),
+      ),
+      Math.min(10_000, remainingShutdownMs()),
+      "worker cleanup",
+    );
+  } catch (error) {
+    _logger.error("NuQ worker cleanup failed", {
+      module: options.serviceName,
+      error,
+    });
+  }
+
+  _logger.info("NuQ worker shut down", { module: options.serviceName });
+  process.exit(0);
 }

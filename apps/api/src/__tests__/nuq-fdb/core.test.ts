@@ -93,6 +93,7 @@ describeIf("NuQ FDB core", () => {
 
     const taken = await takeAll(queue, 1);
     expect(taken.length).toBe(1);
+    expect(taken[0].backend).toBe("fdb");
     expect(taken[0].id).toBe(id);
     expect(taken[0].lock).toBeDefined();
     expect(taken[0].data.url).toBe("https://example.com");
@@ -101,6 +102,7 @@ describeIf("NuQ FDB core", () => {
     expect(ok).toBe(true);
 
     const job = await queue.getJob(id);
+    expect(job?.backend).toBe("fdb");
     expect(job?.status).toBe("completed");
     if (expectInlineReturnvalue) {
       expect(job?.returnvalue).toEqual({ result: "yay" });
@@ -421,7 +423,9 @@ describeIf("NuQ FDB core", () => {
     let j = await queue.getJob(id);
     expect(j?.status).toBe("queued");
 
-    // worker that lost its lease can no longer finish
+    // Worker that lost its lease can neither renew nor finish. The conflictful
+    // renewal read also enforces this when renewal races the sweeper commit.
+    expect(await queue.renewLock(id, job.lock!)).toBe(false);
     expect(await queue.jobFinish(id, job.lock!, null)).toBe(false);
 
     // stall it to death
