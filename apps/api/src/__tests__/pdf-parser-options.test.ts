@@ -67,18 +67,23 @@ describe("deprecated pageMarkdown alias", () => {
   });
 });
 
-describe("image parser opt-in", () => {
-  it("is never on by default", () => {
-    expect(shouldParseImages(undefined)).toBe(false);
+describe("image parser", () => {
+  it("is on by default, like pdf", () => {
+    expect(scrapeOptions.parse({}).parsers).toEqual(["pdf", "image"]);
+    expect(shouldParseImages(undefined)).toBe(true);
+    expect(shouldParseImages(["pdf", "image"])).toBe(true);
+    expect(shouldParsePDF(["pdf", "image"])).toBe(true);
+  });
+
+  it("opts out with an explicit list that omits it", () => {
     expect(shouldParseImages([])).toBe(false);
     expect(shouldParseImages(["pdf"])).toBe(false);
     expect(shouldParseImages([{ type: "pdf", mode: "ocr" }])).toBe(false);
-    expect(scrapeOptions.parse({}).parsers).toEqual(["pdf"]);
+    expect(scrapeOptions.parse({ parsers: ["pdf"] }).parsers).toEqual(["pdf"]);
   });
 
   it("accepts the string and object forms", () => {
     expect(shouldParseImages(["image"])).toBe(true);
-    expect(shouldParseImages(["pdf", "image"])).toBe(true);
     expect(shouldParseImages([{ type: "image" }])).toBe(true);
     expect(shouldParseImages([{ type: "pdf", mode: "ocr" }, "image"])).toBe(
       true,
@@ -90,7 +95,7 @@ describe("image parser opt-in", () => {
 
   it("leaves the pdf parser alone", () => {
     expect(shouldParsePDF(["image"])).toBe(false);
-    expect(shouldParsePDF(["pdf", "image"])).toBe(true);
+    expect(getPDFMode(["pdf", "image"])).toBe("auto");
     expect(getPDFMode([{ type: "image" }, { type: "pdf", mode: "ocr" }])).toBe(
       "ocr",
     );

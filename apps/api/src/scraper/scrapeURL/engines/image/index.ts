@@ -17,13 +17,13 @@ import {
  * (PNG/JPEG/TIFF/GIF/BMP), finds no text layer, and runs the same layout +
  * OCR path a scanned PDF page takes.
  *
- * OCR is opt-in per request (`parsers: ["image"]`; a parse upload of an
- * image opts in implicitly) and rolled out per team (imageOcr flag); both
- * are folded into `meta.imageOcrEnabled`. The pdf parser's options (mode,
- * maxPages, pages, blocks, pageMarkers) are not consulted: an image has no
- * text layer to fall back on, so every admitted image is OCR'd. A caller who
- * wants the bytes instead uses the `rawBase64` format, which the browser
- * engine serves without ever reaching this engine.
+ * OCR is on by default and opt-out per request (a `parsers` list without
+ * `image`; a parse upload of an image always counts), and rolled out per
+ * team (imageOcr flag); both are folded into `meta.imageOcrEnabled`. The pdf
+ * parser's options (mode, maxPages, pages, blocks, pageMarkers) are not
+ * consulted: an image has no text layer to fall back on, so every admitted
+ * image is OCR'd. A caller who wants the bytes instead uses the `rawBase64`
+ * format, which the browser engine serves without ever reaching this engine.
  */
 
 // Images reach fire-pdf inline (base64 JSON) and have no by-reference
@@ -70,9 +70,9 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
         new URL(meta.rewrittenUrl ?? meta.url).pathname,
       ) !== null;
     if (knownImage && !(await meta.imageOcrEnabled())) {
-      // No opt-in (image parser) or no team flag: the request gets the
-      // unsupported-file error the URL path has always produced, whose
-      // message names the parser to add.
+      // Opted out (parsers without image) or no team flag: the request gets
+      // the unsupported-file error the URL path has always produced, whose
+      // message names the parser.
       throw new UnsupportedFileError(
         meta.imagePrefetch?.contentType ?? "image",
       );

@@ -523,11 +523,12 @@ const pdfParserWithOptions = z
   });
 
 /**
- * Raster image OCR (PNG, JPEG, TIFF, GIF, BMP) is opt-in: unlike `pdf`, the
- * `image` parser is never part of the default list, so a request that does
- * not ask for it keeps the historical unsupported-file rejection for image
- * URLs. The object form carries no options yet; it exists so options can be
- * added later without a breaking change.
+ * Raster image OCR (PNG, JPEG, TIFF, GIF, BMP). Like `pdf` it is part of the
+ * default list, so a request that says nothing about parsers OCRs image URLs
+ * (behind the imageOcr team flag while it rolls out); an explicit list that
+ * omits it (`["pdf"]`, `[]`) opts out and keeps the historical
+ * unsupported-file rejection. The object form carries no options yet; it
+ * exists so options can be added later without a breaking change.
  */
 const imageParserWithOptions = z.strictObject({
   type: z.literal("image"),
@@ -542,7 +543,7 @@ const parsersSchema = z
       imageParserWithOptions,
     ]),
   )
-  .prefault(["pdf"]);
+  .prefault(["pdf", "image"]);
 
 type Parsers = z.infer<typeof parsersSchema>;
 
@@ -558,11 +559,12 @@ export function shouldParsePDF(parsers?: Parsers): boolean {
 }
 
 /**
- * Whether the request opted into raster image OCR. Unlike PDFs, images are
- * never parsed by default: `undefined` and `[]` both mean no.
+ * Whether the request wants raster image OCR. Like PDFs, images are parsed
+ * by default: `undefined` means the default list, while an explicit list
+ * that omits `image` (including `[]`) opts out.
  */
 export function shouldParseImages(parsers?: Parsers): boolean {
-  if (!parsers) return false;
+  if (!parsers) return true;
   return parsers.some(
     parser =>
       parser === "image" ||
@@ -2030,7 +2032,7 @@ export function fromV0ScrapeOptions(
       parsers:
         pageOptions.parsePDF !== undefined
           ? pageOptions.parsePDF
-            ? ["pdf"]
+            ? ["pdf", "image"]
             : []
           : undefined,
       actions: pageOptions.actions,
@@ -2153,7 +2155,7 @@ export function fromV1ScrapeOptions(
       parsers:
         v1ScrapeOptions.parsePDF !== undefined
           ? v1ScrapeOptions.parsePDF
-            ? ["pdf"]
+            ? ["pdf", "image"]
             : []
           : undefined,
     }),

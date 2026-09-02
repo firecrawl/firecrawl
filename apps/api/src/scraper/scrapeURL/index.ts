@@ -155,12 +155,12 @@ export type Meta = {
   abort: AbortManager;
   featureFlags: Set<FeatureFlag>;
   mock: MockState | null;
-  /** Whether this scrape may OCR raster images: the request opted in with
-   * the `image` parser (or is a parse upload of an image) and the team has
-   * the imageOcr flag with FirePDF configured. Lazy and memoized: the
-   * browser handoff, the image engine and the index only ask once a request
-   * actually looks like an image, so plain documents never pay for the team
-   * lookup. */
+  /** Whether this scrape may OCR raster images: the request's parsers
+   * include `image` (the default; a parse upload of an image always counts)
+   * and the team has the imageOcr flag with FirePDF configured. Lazy and
+   * memoized: the browser handoff, the image engine and the index only ask
+   * once a request actually looks like an image, so plain documents never
+   * pay for the team lookup. */
   imageOcrEnabled: ImageOcrGate;
   pdfPrefetch:
     | {
@@ -332,8 +332,8 @@ function buildFeatureFlags(
     // Only add PDF flag if it's not a document
     flags.add("pdf");
   } else if (imageExtensionFromUrlPath(lowerPath) !== null && imageOcrEnabled) {
-    // Raster images are OCR'd through FirePDF when the request opted in with
-    // the `image` parser and the team has the imageOcr flag (see
+    // Raster images are OCR'd through FirePDF when the request's parsers
+    // include `image` (the default) and the team has the imageOcr flag (see
     // engines/image). Everyone else stays on the ordinary waterfall and
     // fails as an unsupported file, exactly as before.
     flags.add("image");
@@ -523,9 +523,10 @@ async function buildMetaObject(
   }
 
   const effectiveOptions = applyScrapeOptionsDefaults(options);
-  // Image OCR is opt-in: the request has to carry the `image` parser. A parse
-  // upload of an image is an explicit request to parse that file, so it opts
-  // in on its own. The team flag is checked lazily behind this.
+  // Image OCR follows the parsers option: on by default, off when the caller
+  // sends a list without `image`. A parse upload of an image is a request to
+  // parse that file, so it counts regardless. The team flag is checked lazily
+  // behind this.
   const imageOcrEnabled = imageOcrGate(
     internalOptions.teamId,
     internalOptions.teamFlags,

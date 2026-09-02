@@ -479,11 +479,12 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
     it(
       "OCRs a PNG URL as a one-page document",
       async () => {
+        // Image OCR is on by default for a flagged team: no parsers option
+        // needed.
         const response = await scrape(
           {
             url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
             formats: ["markdown"],
-            parsers: ["pdf", "image"],
           },
           identity,
         );
@@ -522,17 +523,18 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
     );
 
     it(
-      "does not OCR images unless the image parser is requested",
+      "does not OCR images when the parsers list omits the image parser",
       async () => {
-        // The default parsers list is ["pdf"]: image OCR is opt-in, so a
-        // request that did not ask for it keeps the unsupported-file
-        // rejection, and the error names the parser to add. The tests above
-        // OCR'd this URL already, so this also checks that the index does
-        // not hand that cached output to a request that did not opt in.
+        // An explicit list without "image" opts out: the request keeps the
+        // unsupported-file rejection, and the error names the parser. The
+        // tests above OCR'd this URL already, so this also checks that the
+        // index does not hand that cached output to a request that opted
+        // out.
         const response = await scrapeWithFailure(
           {
             url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
             formats: ["markdown"],
+            parsers: ["pdf"],
           },
           identity,
         );
@@ -569,7 +571,6 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
           {
             urls: [`${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`],
             formats: ["markdown"],
-            parsers: ["image"],
           },
           identity,
         );
@@ -587,12 +588,13 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
     async () => {
       // A long-lived public sample photo: exercises the image/jpeg browser
       // handoff. The scrape itself only succeeds with non-empty markdown, so
-      // the assertions stick to the stable handoff properties.
+      // the assertions stick to the stable handoff properties. The bare
+      // string form of the image parser is exercised here.
       const response = await scrape(
         {
           url: "https://www.gstatic.com/webp/gallery/1.jpg",
           formats: ["markdown"],
-          parsers: ["pdf", "image"],
+          parsers: ["image"],
         },
         identity,
       );
@@ -610,7 +612,6 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
         {
           url: "https://www.gstatic.com/webp/gallery/1.webp",
           formats: ["markdown"],
-          parsers: ["pdf", "image"],
         },
         identity,
       );

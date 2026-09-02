@@ -23,10 +23,10 @@ const OFF: Promise<boolean> = Promise.resolve(false);
 /**
  * Builds the per-scrape gate: whether this request may OCR raster images.
  *
- * Two conditions fold into it. OCR is opt-in per request — the caller has to
- * ask for the `image` parser (a parse upload of an image asks implicitly) —
- * and rolled out per team through the `imageOcr` flag. A request that did
- * not opt in is settled up front without any I/O.
+ * Two conditions fold into it. The request's `parsers` must include the
+ * `image` parser — it does by default, and a parse upload of an image counts
+ * regardless — and the team must have the `imageOcr` flag while the feature
+ * rolls out. A request that opted out is settled up front without any I/O.
  *
  * For the team side, single scrapes and parse uploads carry the
  * authenticated team's flags in their internalOptions and resolve without
