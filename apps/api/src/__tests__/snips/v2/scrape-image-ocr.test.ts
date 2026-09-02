@@ -551,6 +551,182 @@ const OCR_FIXTURE_JP2_BASE64 =
   "wWiAJ85RZmEBZOZjEmoF5XbgcZNIN1VUf9NE0kbl4iaExL0bNMcDTVp6KQ88SmFhCkEGf+JB6x//" +
   "2Q==";
 
+// The same fixture as lossless WebP.
+const OCR_FIXTURE_WEBP_BASE64 =
+  "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";
+
+// The same fixture as AVIF.
+const OCR_FIXTURE_AVIF_BASE64 =
+  "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";
+
 describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
   describeIf(ALLOW_TEST_SUITE_WEBSITE)("test-site fixtures", () => {
     it(
@@ -644,6 +820,58 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
     );
 
     it(
+      "OCRs a WebP fixture",
+      async () => {
+        const response = await scrape(
+          {
+            url: `${TEST_SUITE_WEBSITE}/ocr-fixture.webp`,
+            formats: ["markdown"],
+          },
+          identity,
+        );
+
+        expect(response.markdown).toMatch(/firecrawl/i);
+        expect(response.metadata.contentType).toBe("image/webp");
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "OCRs an AVIF fixture",
+      async () => {
+        const response = await scrape(
+          {
+            url: `${TEST_SUITE_WEBSITE}/ocr-fixture.avif`,
+            formats: ["markdown"],
+          },
+          identity,
+        );
+
+        expect(response.markdown).toMatch(/firecrawl/i);
+        expect(response.metadata.contentType).toBe("image/avif");
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "keeps rejecting image formats OCR cannot open",
+      async () => {
+        // SVG is a vector format: nothing to rasterize on the OCR path.
+        const response = await scrapeWithFailure(
+          {
+            url: `${TEST_SUITE_WEBSITE}/tiny.svg`,
+            formats: ["markdown"],
+          },
+          identity,
+        );
+
+        expect(response.error).toContain("cannot process");
+        expect(response.error).toContain("image/svg+xml");
+      },
+      scrapeTimeout,
+    );
+
+    it(
       "serves the raw image through the rawBase64 format",
       async () => {
         const response = await scrape(
@@ -725,9 +953,13 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
   );
 
   it(
-    "keeps rejecting image formats OCR cannot open",
+    "OCRs a WebP URL through the scrape path",
     async () => {
-      const response = await scrapeWithFailure(
+      // A long-lived public sample: WebP is what CDNs serve to a browser
+      // that advertises it, whatever the URL's extension says. FirePDF
+      // transcodes it to PNG before OCR. Stable assertions only, as for the
+      // JPEG photo above.
+      const response = await scrape(
         {
           url: "https://www.gstatic.com/webp/gallery/1.webp",
           formats: ["markdown"],
@@ -735,8 +967,26 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
         identity,
       );
 
-      expect(response.error).toContain("cannot process");
-      expect(response.error).toContain("image/webp");
+      expect(response.metadata.contentType).toBe("image/webp");
+      expect(response.metadata.statusCode).toBe(200);
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "OCRs an AVIF URL through the scrape path",
+    async () => {
+      // A conformance sample from the AVIF sample-images repository.
+      const response = await scrape(
+        {
+          url: "https://raw.githubusercontent.com/link-u/avif-sample-images/master/fox.profile0.8bpc.yuv420.avif",
+          formats: ["markdown"],
+        },
+        identity,
+      );
+
+      expect(response.metadata.contentType).toBe("image/avif");
+      expect(response.metadata.statusCode).toBe(200);
     },
     scrapeTimeout,
   );
@@ -811,6 +1061,52 @@ describeIf(SHOULD_RUN)("Image OCR parse upload (fire-pdf dependent)", () => {
 
       expect(result.markdown).toMatch(/firecrawl/i);
       expect(result.metadata.contentType).toBe("image/jp2");
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "OCRs an uploaded WebP",
+    async () => {
+      const result = await parse(
+        {
+          options: {
+            formats: ["markdown"],
+          },
+          file: {
+            content: Buffer.from(OCR_FIXTURE_WEBP_BASE64, "base64"),
+            filename: "ocr-fixture.webp",
+            contentType: "image/webp",
+          },
+        },
+        identity,
+      );
+
+      expect(result.markdown).toMatch(/firecrawl/i);
+      expect(result.metadata.contentType).toBe("image/webp");
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "OCRs an uploaded AVIF",
+    async () => {
+      const result = await parse(
+        {
+          options: {
+            formats: ["markdown"],
+          },
+          file: {
+            content: Buffer.from(OCR_FIXTURE_AVIF_BASE64, "base64"),
+            filename: "ocr-fixture.avif",
+            contentType: "image/avif",
+          },
+        },
+        identity,
+      );
+
+      expect(result.markdown).toMatch(/firecrawl/i);
+      expect(result.metadata.contentType).toBe("image/avif");
     },
     scrapeTimeout,
   );

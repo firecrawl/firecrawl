@@ -28,7 +28,9 @@ describe("image-formats", () => {
     expect(imageExtensionFromContentType("image/j2k")).toBe(".jp2");
     expect(imageExtensionFromContentType("image/j2c")).toBe(".jp2");
     expect(imageExtensionFromContentType("image/x-j2c")).toBe(".jp2");
-    expect(imageExtensionFromContentType("image/webp")).toBeNull();
+    expect(imageExtensionFromContentType("image/webp")).toBe(".webp");
+    expect(imageExtensionFromContentType("image/avif")).toBe(".avif");
+    expect(imageExtensionFromContentType("image/svg+xml")).toBeNull();
     expect(imageExtensionFromContentType("image/svg+xml")).toBeNull();
     expect(imageExtensionFromContentType(undefined)).toBeNull();
   });
@@ -44,7 +46,9 @@ describe("image-formats", () => {
     expect(imageContentTypeFromExtension(".jpf")).toBe("image/jp2");
     expect(imageContentTypeFromExtension(".j2k")).toBe("image/jp2");
     expect(imageContentTypeFromExtension(".j2c")).toBe("image/jp2");
-    expect(imageContentTypeFromExtension(".webp")).toBeNull();
+    expect(imageContentTypeFromExtension(".webp")).toBe("image/webp");
+    expect(imageContentTypeFromExtension(".AVIF")).toBe("image/avif");
+    expect(imageContentTypeFromExtension(".svg")).toBeNull();
   });
 
   it("detects image extensions only at the end of a URL path", () => {
@@ -56,7 +60,8 @@ describe("image-formats", () => {
     expect(imageExtensionFromUrlPath("/tiles/region.j2c")).toBe(".j2c");
     expect(imageExtensionFromUrlPath("/photos/frame.jpf")).toBe(".jpf");
     expect(imageExtensionFromUrlPath("/img.png/viewer")).toBeNull();
-    expect(imageExtensionFromUrlPath("/photo.webp")).toBeNull();
+    expect(imageExtensionFromUrlPath("/photo.webp")).toBe(".webp");
+    expect(imageExtensionFromUrlPath("/icons/logo.svg")).toBeNull();
     expect(imageExtensionFromUrlPath("/paper.pdf")).toBeNull();
   });
 
@@ -97,11 +102,36 @@ describe("image-formats", () => {
     ).toBeNull();
   });
 
+  it("sniffs WebP and AVIF containers through their length fields", () => {
+    // RIFF header, a chunk size that differs per file, then the WEBP tag.
+    expect(
+      sniffImageContentType(Buffer.from("RIFF\x76\x11\x00\x00WEBPVP8L")),
+    ).toBe("image/webp");
+    expect(
+      sniffImageContentType(Buffer.from("RIFF\x00\x00\x00\x00WEBPVP8 ")),
+    ).toBe("image/webp");
+    // ftyp box of any size, still-image and image-sequence brands.
+    expect(
+      sniffImageContentType(Buffer.from("\x00\x00\x00\x20ftypavif\x00\x00")),
+    ).toBe("image/avif");
+    expect(sniffImageContentType(Buffer.from("\x00\x00\x00\x1cftypavis"))).toBe(
+      "image/avif",
+    );
+    // The tag alone, without its container header, is not a match.
+    expect(sniffImageContentType(Buffer.from("WEBPVP8 "))).toBeNull();
+    expect(sniffImageContentType(Buffer.from("ftypavif"))).toBeNull();
+  });
+
   it("rejects non-image and truncated payloads", () => {
     expect(sniffImageContentType(Buffer.from("<!DOCTYPE html>"))).toBeNull();
     expect(sniffImageContentType(Buffer.from("%PDF-1.7"))).toBeNull();
+    // A RIFF container that is not WebP (WAVE audio).
     expect(
-      sniffImageContentType(Buffer.from("RIFF\x00\x00\x00\x00WEBPVP8 ")),
+      sniffImageContentType(Buffer.from("RIFF\x24\x00\x00\x00WAVEfmt ")),
+    ).toBeNull();
+    // An ISO media file that is not AVIF (MP4 video).
+    expect(
+      sniffImageContentType(Buffer.from("\x00\x00\x00\x18ftypisom")),
     ).toBeNull();
     expect(sniffImageContentType(Buffer.from([0x89, 0x50]))).toBeNull();
     // Only the first six PNG bytes: not a file mupdf-style loaders accept.

@@ -1,8 +1,9 @@
 // Raster image formats the image engine can hand to FirePDF for OCR: the
 // formats FirePDF opens as a one-page image document (PNG, JPEG, JPEG 2000,
-// TIFF, GIF, BMP). WebP, SVG, AVIF and HEIC are deliberately absent: FirePDF
-// cannot open them, so they keep failing fast as unsupported files instead of
-// burning a round trip.
+// TIFF, GIF, BMP), plus WebP and AVIF, which FirePDF transcodes to PNG before
+// opening them. SVG and HEIC are deliberately absent: FirePDF cannot open
+// them, so they keep failing fast as unsupported files instead of burning a
+// round trip.
 
 const CONTENT_TYPE_TO_EXTENSION = new Map<string, string>([
   ["image/png", ".png"],
@@ -25,6 +26,10 @@ const CONTENT_TYPE_TO_EXTENSION = new Map<string, string>([
   ["image/j2k", ".jp2"],
   ["image/j2c", ".jp2"],
   ["image/x-j2c", ".jp2"],
+  // WebP and AVIF: what CDNs serve to a browser that advertises them in
+  // Accept, whatever the URL's extension says. FirePDF transcodes both.
+  ["image/webp", ".webp"],
+  ["image/avif", ".avif"],
 ]);
 
 const EXTENSION_ALIASES = new Map<string, string>([
@@ -72,8 +77,13 @@ export function imageExtensionFromUrlPath(urlPath: string): string | null {
 
 // Magic-byte signatures for the supported formats. Servers mislabel freely
 // (`image/png;charset=UTF-8`, HTML error pages served as `image/jpeg`), so
-// the bytes are the source of truth for whether OCR can open the file.
-const MAGIC_SIGNATURES: Array<{ contentType: string; bytes: number[] }> = [
+// the bytes are the source of truth for whether OCR can open the file. A
+// `null` position matches any byte: container formats carry a length field
+// ahead of their tag.
+const MAGIC_SIGNATURES: Array<{
+  contentType: string;
+  bytes: Array<number | null>;
+}> = [
   {
     contentType: "image/png",
     bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
@@ -93,6 +103,60 @@ const MAGIC_SIGNATURES: Array<{ contentType: string; bytes: number[] }> = [
     ],
   },
   { contentType: "image/jp2", bytes: [0xff, 0x4f, 0xff, 0x51] },
+  // WebP: RIFF header, 4-byte chunk size, then the WEBP form type.
+  {
+    contentType: "image/webp",
+    bytes: [
+      0x52,
+      0x49,
+      0x46,
+      0x46,
+      null,
+      null,
+      null,
+      null,
+      0x57,
+      0x45,
+      0x42,
+      0x50,
+    ],
+  },
+  // AVIF: an ISO media file whose first box is `ftyp` with the `avif` brand
+  // (still image) or `avis` (image sequence; the first frame is OCR'd).
+  {
+    contentType: "image/avif",
+    bytes: [
+      null,
+      null,
+      null,
+      null,
+      0x66,
+      0x74,
+      0x79,
+      0x70,
+      0x61,
+      0x76,
+      0x69,
+      0x66,
+    ],
+  },
+  {
+    contentType: "image/avif",
+    bytes: [
+      null,
+      null,
+      null,
+      null,
+      0x66,
+      0x74,
+      0x79,
+      0x70,
+      0x61,
+      0x76,
+      0x69,
+      0x73,
+    ],
+  },
 ];
 
 const SNIFF_WINDOW = Math.max(...MAGIC_SIGNATURES.map(s => s.bytes.length));
@@ -102,7 +166,7 @@ export function sniffImageContentType(bytes: Uint8Array): string | null {
     if (bytes.length < magic.length) continue;
     let matches = true;
     for (let i = 0; i < magic.length; i++) {
-      if (bytes[i] !== magic[i]) {
+      if (magic[i] !== null && bytes[i] !== magic[i]) {
         matches = false;
         break;
       }
