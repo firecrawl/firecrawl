@@ -20,7 +20,7 @@
  * nothing; the profile is switched on per deployment.
  */
 
-export type DbPoolProfile = "api" | "worker" | "utility";
+type DbPoolProfile = "api" | "worker" | "utility";
 export type DbPoolName = "main" | "replica" | "index";
 
 interface DbPoolOptions {
@@ -92,15 +92,13 @@ const KEEPALIVE_DELAY_MS = 30_000;
  * moment, fleet-wide, just before the next burst — re-creating the cold-pool
  * problem on a schedule.
  */
-export const MAX_LIFETIME_MIN_SECONDS = 4 * 3600;
-export const MAX_LIFETIME_SPREAD_SECONDS = 4 * 3600;
+const MAX_LIFETIME_MIN_SECONDS = 4 * 3600;
+const MAX_LIFETIME_SPREAD_SECONDS = 4 * 3600;
 
-export function pickMaxLifetimeSeconds(
-  random: () => number = Math.random,
-): number {
+export function pickMaxLifetimeSeconds(): number {
   return (
     MAX_LIFETIME_MIN_SECONDS +
-    Math.floor(random() * MAX_LIFETIME_SPREAD_SECONDS)
+    Math.floor(Math.random() * MAX_LIFETIME_SPREAD_SECONDS)
   );
 }
 
