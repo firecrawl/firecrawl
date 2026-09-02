@@ -24,6 +24,7 @@ import {
   scrapeURLWithEngine,
   shouldUseIndex,
 } from "./engines";
+import { applyHandoffFeatureFlags } from "./lib/handoffFeatureFlags";
 import { parseMarkdown } from "../../lib/html-to-markdown";
 import { hasFormatOfType } from "../../lib/format-utils";
 import {
@@ -1386,14 +1387,24 @@ export async function scrapeURL(
               Array.isArray(meta.internalOptions.forceEngine))
           ) {
             retryTracker.record("feature_toggle", error);
+            // A file handoff names the one parser that can open the file;
+            // the file flag the URL extension implied earlier gives way to it.
+            const nextFeatureFlags = applyHandoffFeatureFlags(
+              meta.featureFlags,
+              error.featureFlags,
+            );
             meta.logger.debug(
               "More feature flags requested by scraper: adding " +
                 error.featureFlags.join(", "),
-              { error, existingFlags: meta.featureFlags },
+              {
+                error,
+                existingFlags: meta.featureFlags,
+                droppedFlags: [...meta.featureFlags].filter(
+                  flag => !nextFeatureFlags.has(flag),
+                ),
+              },
             );
-            meta.featureFlags = new Set(
-              [...meta.featureFlags].concat(error.featureFlags),
-            );
+            meta.featureFlags = nextFeatureFlags;
             if (error.pdfPrefetch) {
               meta.pdfPrefetch = error.pdfPrefetch;
             } else if (error.pdfPrefetch === null) {
