@@ -483,6 +483,7 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
           {
             url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
             formats: ["markdown"],
+            parsers: ["pdf", "image"],
           },
           identity,
         );
@@ -501,21 +502,43 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
     );
 
     it(
-      "OCRs images regardless of the pdf parsers option",
+      "OCRs images with the image parser alone",
       async () => {
-        // `parsers` describes PDFs: an empty list disables PDF parsing, but
-        // images have no text layer to fall back on and are still OCR'd.
+        // The object form is reserved for future options, and the pdf parser
+        // is not needed for an image.
         const response = await scrape(
           {
             url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
             formats: ["markdown"],
-            parsers: [],
+            parsers: [{ type: "image" }],
           },
           identity,
         );
 
         expect(response.markdown).toMatch(/fire/i);
         expect(response.metadata.contentType).toBe("image/png");
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "does not OCR images unless the image parser is requested",
+      async () => {
+        // The default parsers list is ["pdf"]: image OCR is opt-in, so a
+        // request that did not ask for it keeps the unsupported-file
+        // rejection, and the error names the parser to add. The tests above
+        // OCR'd this URL already, so this also checks that the index does
+        // not hand that cached output to a request that did not opt in.
+        const response = await scrapeWithFailure(
+          {
+            url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
+            formats: ["markdown"],
+          },
+          identity,
+        );
+
+        expect(response.error).toContain("cannot process");
+        expect(response.error).toContain('"image"');
       },
       scrapeTimeout,
     );
@@ -546,6 +569,7 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
           {
             urls: [`${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`],
             formats: ["markdown"],
+            parsers: ["image"],
           },
           identity,
         );
@@ -568,6 +592,7 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
         {
           url: "https://www.gstatic.com/webp/gallery/1.jpg",
           formats: ["markdown"],
+          parsers: ["pdf", "image"],
         },
         identity,
       );
@@ -585,6 +610,7 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
         {
           url: "https://www.gstatic.com/webp/gallery/1.webp",
           formats: ["markdown"],
+          parsers: ["pdf", "image"],
         },
         identity,
       );
@@ -674,12 +700,13 @@ describe("Image OCR for a team without the imageOcr flag", () => {
     "scrape (f-e dependent)",
     () => {
       it(
-        "keeps failing image URLs as unsupported files",
+        "keeps failing image URLs as unsupported files even with the image parser",
         async () => {
           const response = await scrapeWithFailure(
             {
               url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
               formats: ["markdown"],
+              parsers: ["pdf", "image"],
             },
             ungatedIdentity,
           );

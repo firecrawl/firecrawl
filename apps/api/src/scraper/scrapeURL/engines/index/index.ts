@@ -567,6 +567,18 @@ export async function scrapeURLWithIndex(
     }
   }
 
+  // A cached image document is OCR output. The live path only OCRs images
+  // for requests that opted in with the image parser on a team with the
+  // flag, so serving that output to any other request would hand out what a
+  // fresh scrape refuses: report a miss and let the waterfall decide.
+  if (
+    doc.contentType?.startsWith("image/") &&
+    !(await meta.imageOcrEnabled())
+  ) {
+    logLookup("debug", "hit", { imageMismatch: "cached_ocr_not_requested" });
+    throw new IndexMissError();
+  }
+
   logLookup("debug", "hit", {
     age: Date.now() - new Date(selectedRow.created_at).getTime(),
     status: selectedRow.status,

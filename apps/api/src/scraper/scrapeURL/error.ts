@@ -232,7 +232,7 @@ export class UnsupportedFileError extends TransportableError {
   constructor(public reason: string) {
     super(
       "SCRAPE_UNSUPPORTED_FILE_ERROR",
-      `The URL returned a file type that Firecrawl cannot process: ${reason}. Firecrawl supports HTML web pages, PDFs, and common document formats, and OCRs raster images (PNG, JPEG, TIFF, GIF, BMP) where image parsing is available. Other binary files like videos, executables, archives, and other image formats are not supported. If you expected this URL to return a web page, the server may be misconfigured or returning the wrong content type.`,
+      `The URL returned a file type that Firecrawl cannot process: ${reason}. Firecrawl supports HTML web pages, PDFs, and common document formats. Raster images (PNG, JPEG, TIFF, GIF, BMP) are OCR'd only when "image" is included in the parsers option, where image parsing is available. Other binary files like videos, executables, archives, and other image formats are not supported. If you expected this URL to return a web page, the server may be misconfigured or returning the wrong content type.`,
     );
   }
 

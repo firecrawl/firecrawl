@@ -117,9 +117,9 @@ async function feResToImagePrefetch(
 /**
  * Sniffs a browser handoff for a raster image the image engine can OCR.
  * Returns the canonical content type from the magic bytes, or null when the
- * payload is missing, is not a supported format, or image OCR is not
- * enabled for the requesting team — in which case the caller falls through
- * to the historical unsupported-file rejection.
+ * payload is missing, is not a supported format, or the request may not OCR
+ * images (no image parser, or a team without the flag) — in which case the
+ * caller falls through to the historical unsupported-file rejection.
  */
 async function sniffImageHandoff(
   feRes: FireEngineCheckStatusSuccess | undefined,
@@ -129,8 +129,8 @@ async function sniffImageHandoff(
   if (content === undefined) return null;
   const contentType = sniffImageContentTypeFromBase64(content);
   if (contentType === null) return null;
-  // Only now consult the per-team gate: this is the one lookup an image
-  // request may cost, and non-image responses never reach it.
+  // Only now consult the gate (image parser + team flag): this is the one
+  // lookup an image request may cost, and non-image responses never reach it.
   return (await imageOcrEnabled()) ? contentType : null;
 }
 
@@ -145,9 +145,9 @@ export async function specialtyScrapeCheck(
    * the FirePDF by-reference route is unreachable for this request, so an
    * unusable large handoff never consumes network and temp disk. */
   maxFileBytes?: number,
-  /** Per-team image OCR gate (lazy, memoized), consulted only once the bytes
-   * sniff as a supported image; off means images keep the unsupported-file
-   * rejection below. */
+  /** Per-request image OCR gate (image parser + team flag; lazy, memoized),
+   * consulted only once the bytes sniff as a supported image; off means
+   * images keep the unsupported-file rejection below. */
   imageOcrEnabled: ImageOcrGate = async () => false,
 ) {
   const contentType = (Object.entries(headers ?? {}).find(

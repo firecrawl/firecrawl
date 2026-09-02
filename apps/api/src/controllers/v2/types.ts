@@ -522,8 +522,26 @@ const pdfParserWithOptions = z
     return normalized;
   });
 
+/**
+ * Raster image OCR (PNG, JPEG, TIFF, GIF, BMP) is opt-in: unlike `pdf`, the
+ * `image` parser is never part of the default list, so a request that does
+ * not ask for it keeps the historical unsupported-file rejection for image
+ * URLs. The object form carries no options yet; it exists so options can be
+ * added later without a breaking change.
+ */
+const imageParserWithOptions = z.strictObject({
+  type: z.literal("image"),
+});
+
 const parsersSchema = z
-  .array(z.union([z.literal("pdf"), pdfParserWithOptions]))
+  .array(
+    z.union([
+      z.literal("pdf"),
+      pdfParserWithOptions,
+      z.literal("image"),
+      imageParserWithOptions,
+    ]),
+  )
   .prefault(["pdf"]);
 
 type Parsers = z.infer<typeof parsersSchema>;
@@ -537,6 +555,21 @@ export function shouldParsePDF(parsers?: Parsers): boolean {
     }
     return false;
   });
+}
+
+/**
+ * Whether the request opted into raster image OCR. Unlike PDFs, images are
+ * never parsed by default: `undefined` and `[]` both mean no.
+ */
+export function shouldParseImages(parsers?: Parsers): boolean {
+  if (!parsers) return false;
+  return parsers.some(
+    parser =>
+      parser === "image" ||
+      (typeof parser === "object" &&
+        parser !== null &&
+        parser.type === "image"),
+  );
 }
 
 export function getPDFMaxPages(parsers?: Parsers): number | undefined {

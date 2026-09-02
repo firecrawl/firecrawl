@@ -45,11 +45,19 @@ describe("imageOcrGate", () => {
     mockedGetACUCTeam.mockReset();
   });
 
+  it("is off without the image parser and never looks the team up", async () => {
+    await expect(
+      imageOcrGate("team", { imageOcr: true }, false)(),
+    ).resolves.toBe(false);
+    await expect(imageOcrGate("team", undefined, false)()).resolves.toBe(false);
+    expect(mockedGetACUCTeam).not.toHaveBeenCalled();
+  });
+
   it("uses the flags carried on the job without a lookup", async () => {
-    await expect(imageOcrGate("team", { imageOcr: true })()).resolves.toBe(
-      true,
-    );
-    await expect(imageOcrGate("team", null)()).resolves.toBe(false);
+    await expect(
+      imageOcrGate("team", { imageOcr: true }, true)(),
+    ).resolves.toBe(true);
+    await expect(imageOcrGate("team", null, true)()).resolves.toBe(false);
     expect(mockedGetACUCTeam).not.toHaveBeenCalled();
   });
 
@@ -57,19 +65,21 @@ describe("imageOcrGate", () => {
     mockedGetACUCTeam.mockResolvedValueOnce({
       flags: { imageOcr: true },
     } as Awaited<ReturnType<typeof getACUCTeam>>);
-    const gate = imageOcrGate("team", undefined);
+    const gate = imageOcrGate("team", undefined, true);
     await expect(gate()).resolves.toBe(true);
     await expect(gate()).resolves.toBe(true);
     expect(mockedGetACUCTeam).toHaveBeenCalledTimes(1);
     expect(mockedGetACUCTeam).toHaveBeenCalledWith("team");
 
     mockedGetACUCTeam.mockResolvedValueOnce(null);
-    await expect(imageOcrGate("team", undefined)()).resolves.toBe(false);
+    await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(false);
   });
 
   it("leaves image OCR off when the lookup fails or there is no team", async () => {
     mockedGetACUCTeam.mockRejectedValueOnce(new Error("redis down"));
-    await expect(imageOcrGate("team", undefined)()).resolves.toBe(false);
-    await expect(imageOcrGate(undefined, undefined)()).resolves.toBe(false);
+    await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(false);
+    await expect(imageOcrGate(undefined, undefined, true)()).resolves.toBe(
+      false,
+    );
   });
 });
