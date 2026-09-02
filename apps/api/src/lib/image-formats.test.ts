@@ -31,7 +31,6 @@ describe("image-formats", () => {
     expect(imageExtensionFromContentType("image/webp")).toBe(".webp");
     expect(imageExtensionFromContentType("image/avif")).toBe(".avif");
     expect(imageExtensionFromContentType("image/svg+xml")).toBeNull();
-    expect(imageExtensionFromContentType("image/svg+xml")).toBeNull();
     expect(imageExtensionFromContentType(undefined)).toBeNull();
   });
 
