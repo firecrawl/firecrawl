@@ -16,8 +16,8 @@ const CONTENT_TYPE_TO_EXTENSION = new Map<string, string>([
   ["image/bmp", ".bmp"],
   ["image/x-ms-bmp", ".bmp"],
   // JPEG 2000: the JP2 container digitized book scans and IIIF tile sources
-  // are served in, and its extended JPX sibling. Raw codestreams (.j2k)
-  // share the type: FirePDF opens them the same way.
+  // are served in, and its extended JPX sibling. Raw codestreams (.j2k,
+  // .j2c) share the type: FirePDF opens them the same way.
   ["image/jp2", ".jp2"],
   ["image/jpx", ".jp2"],
 ]);
@@ -27,6 +27,7 @@ const EXTENSION_ALIASES = new Map<string, string>([
   [".tiff", ".tif"],
   [".jpx", ".jp2"],
   [".j2k", ".jp2"],
+  [".j2c", ".jp2"],
 ]);
 
 export const IMAGE_EXTENSIONS = new Set([
