@@ -1,0 +1,19 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/pdfParse.ts
+  s_e981ae7ab67cf7::t_5abd49ef262b65 15,22-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "cdf12d11b69e51142ba54a7789450e3bdfcec5e8",
+  "prompts": {},
+  "sessions": {
+    "s_e981ae7ab67cf7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b2459489-f069-49c9-8fb3-0352ad1340d2",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
