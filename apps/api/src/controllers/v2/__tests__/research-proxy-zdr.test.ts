@@ -21,6 +21,7 @@ vi.mock("../../../services/billing/credit_billing", () => ({
 
 vi.mock("../../../lib/keyless", () => ({
   chargeKeylessCredits: vi.fn().mockResolvedValue(undefined),
+  keylessTeamPseudonym: (teamId: string) => teamId,
 }));
 
 vi.mock("../../../lib/logger", () => ({

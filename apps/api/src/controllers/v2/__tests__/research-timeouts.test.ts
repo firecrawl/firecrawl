@@ -22,6 +22,7 @@ vi.mock("../../../services/billing/credit_billing", () => ({
 
 vi.mock("../../../lib/keyless", () => ({
   chargeKeylessCredits: mocks.chargeKeylessCredits,
+  keylessTeamPseudonym: (teamId: string) => teamId,
 }));
 
 vi.mock("../../../lib/logger", () => ({
