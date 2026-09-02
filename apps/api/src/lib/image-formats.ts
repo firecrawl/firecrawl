@@ -20,12 +20,18 @@ const CONTENT_TYPE_TO_EXTENSION = new Map<string, string>([
   // .j2c) share the type: FirePDF opens them the same way.
   ["image/jp2", ".jp2"],
   ["image/jpx", ".jp2"],
+  // Raw codestreams have no registered type; these are the labels servers
+  // use for them.
+  ["image/j2k", ".jp2"],
+  ["image/j2c", ".jp2"],
+  ["image/x-j2c", ".jp2"],
 ]);
 
 const EXTENSION_ALIASES = new Map<string, string>([
   [".jpeg", ".jpg"],
   [".tiff", ".tif"],
   [".jpx", ".jp2"],
+  [".jpf", ".jp2"],
   [".j2k", ".jp2"],
   [".j2c", ".jp2"],
 ]);

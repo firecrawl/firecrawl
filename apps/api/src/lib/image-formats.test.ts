@@ -25,6 +25,9 @@ describe("image-formats", () => {
     expect(imageExtensionFromContentType("image/tiff")).toBe(".tif");
     expect(imageExtensionFromContentType("image/jp2")).toBe(".jp2");
     expect(imageExtensionFromContentType("image/jpx")).toBe(".jp2");
+    expect(imageExtensionFromContentType("image/j2k")).toBe(".jp2");
+    expect(imageExtensionFromContentType("image/j2c")).toBe(".jp2");
+    expect(imageExtensionFromContentType("image/x-j2c")).toBe(".jp2");
     expect(imageExtensionFromContentType("image/webp")).toBeNull();
     expect(imageExtensionFromContentType("image/svg+xml")).toBeNull();
     expect(imageExtensionFromContentType(undefined)).toBeNull();
@@ -38,6 +41,7 @@ describe("image-formats", () => {
     expect(imageContentTypeFromExtension(".png")).toBe("image/png");
     expect(imageContentTypeFromExtension(".jp2")).toBe("image/jp2");
     expect(imageContentTypeFromExtension(".JPX")).toBe("image/jp2");
+    expect(imageContentTypeFromExtension(".jpf")).toBe("image/jp2");
     expect(imageContentTypeFromExtension(".j2k")).toBe("image/jp2");
     expect(imageContentTypeFromExtension(".j2c")).toBe("image/jp2");
     expect(imageContentTypeFromExtension(".webp")).toBeNull();
@@ -50,6 +54,7 @@ describe("image-formats", () => {
     expect(imageExtensionFromUrlPath("/scans/page-0001.jp2")).toBe(".jp2");
     expect(imageExtensionFromUrlPath("/tiles/region.j2k")).toBe(".j2k");
     expect(imageExtensionFromUrlPath("/tiles/region.j2c")).toBe(".j2c");
+    expect(imageExtensionFromUrlPath("/photos/frame.jpf")).toBe(".jpf");
     expect(imageExtensionFromUrlPath("/img.png/viewer")).toBeNull();
     expect(imageExtensionFromUrlPath("/photo.webp")).toBeNull();
     expect(imageExtensionFromUrlPath("/paper.pdf")).toBeNull();

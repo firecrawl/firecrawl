@@ -816,6 +816,7 @@ describeIf(SHOULD_RUN)("Image OCR parse upload (fire-pdf dependent)", () => {
       expect(failure.code).toBe("UNSUPPORTED_FILE_TYPE");
       expect(failure.error).toContain(".jp2");
       expect(failure.error).toContain(".jpx");
+      expect(failure.error).toContain(".jpf");
       expect(failure.error).toContain(".j2k");
       expect(failure.error).toContain(".j2c");
     },
