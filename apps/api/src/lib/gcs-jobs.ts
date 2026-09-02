@@ -11,6 +11,7 @@ import type {
   LoggedSearch,
 } from "../services/logging/log_job";
 import { config } from "../config";
+import { keylessTeamPseudonym } from "./keyless";
 import crypto from "crypto";
 import { Logger } from "winston";
 
@@ -95,7 +96,7 @@ async function saveJobToGCS(params: {
       "gcs.operation": "save_job",
       "job.id": params.id,
       "job.request_id": params.request_id,
-      "job.team_id": params.team_id,
+      "job.team_id": keylessTeamPseudonym(params.team_id),
       "job.mode": params.mode,
       "job.success": params.is_successful,
       "job.num_docs": params.num_docs,
