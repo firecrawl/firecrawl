@@ -24,6 +24,7 @@ overrides:
   socket.io-parser@>=4.0.0 <4.2.7: 4.2.7
   '@grpc/grpc-js@>=1.14.0 <2.0.0': 1.14.4
   '@opentelemetry/core@>=2.0.0 <2.8.0': 2.8.0
+  '@faker-js/faker@>=10.0.0 <11.0.0': 10.5.0
 
 importers:
 
@@ -294,8 +295,8 @@ packages:
     resolution: {integrity: sha512-QLqTtVETsa2GN/YabSnSNhCfJP/cMaQRr3mYML9L76mH6JoNWERUpXzIko6uVmvvYS+QYvbmj8gQSu/RGwZEVQ==}
     engines: {node: '>=12.0.0'}
 
-  '@faker-js/faker@10.4.0':
-    resolution: {integrity: sha512-sDBWI3yLy8EcDzgobvJTWq1MJYzAkQdpjXuPukga9wXonhpMRvd1Izuo2Qgwey2OiEoRIBr35RMU9HJRoOHzpw==}
+  '@faker-js/faker@10.5.0':
+    resolution: {integrity: sha512-bsxD8WLS5lIj7aaoCx1YJkktqYj5vlBUE6HWzu2Q51ksrGJ0H737ECCKlFU7Yf8Br45z9t99frBp/J7kzbMPAg==}
     engines: {node: ^20.19.0 || ^22.13.0 || ^23.5.0 || >=24.0.0, npm: '>=10'}
 
   '@grpc/grpc-js@1.14.4':
@@ -1610,6 +1611,7 @@ packages:
   prom-client@14.2.0:
     resolution: {integrity: sha512-sF308EhTenb/pDRPakm+WgiN+VdM/T1RaHj1x+MvAuT8UiQP8JmOEbxVqtkbfR4LrvOg5n7ic01kRBDGXjYikA==}
     engines: {node: '>=10'}
+    deprecated: prom-client has been replaced by @prometheus-io/client
 
   protobufjs@7.6.5:
     resolution: {integrity: sha512-/FPD0nUc9jH6rfFjji9IBqOz4pcSE3CsT1m7Ep6Mdb0LxSUMj8hgl6GomOvZzpNpAqqGaXA0P3VSrZLFzIhQrw==}
@@ -2544,7 +2546,7 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@faker-js/faker@10.4.0': {}
+  '@faker-js/faker@10.5.0': {}
 
   '@grpc/grpc-js@1.14.4':
     dependencies:
@@ -3093,7 +3095,7 @@ snapshots:
 
   artillery-plugin-fake-data@1.24.0:
     dependencies:
-      '@faker-js/faker': 10.4.0
+      '@faker-js/faker': 10.5.0
 
   artillery-plugin-metrics-by-endpoint@1.27.0:
     dependencies:

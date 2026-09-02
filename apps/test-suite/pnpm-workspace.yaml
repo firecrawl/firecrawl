@@ -22,3 +22,4 @@ overrides:
   "socket.io-parser@>=4.0.0 <4.2.7": "4.2.7"
   "@grpc/grpc-js@>=1.14.0 <2.0.0": "1.14.4"
   "@opentelemetry/core@>=2.0.0 <2.8.0": "2.8.0"
+  "@faker-js/faker@>=10.0.0 <11.0.0": "10.5.0"
