@@ -25,8 +25,10 @@ beforeAll(async () => {
 // routes them to a parser by content type — and servers mislabel. Static
 // hosts serve a `.jp2` file as image/jp2 whatever its bytes are, so
 // mislabeled-pdf.jp2 reproduces a PDF served with an image content type,
-// while tiny-image.jp2 is a real JPEG 2000 image. Only fire-engine performs
-// the handoff, hence the gate.
+// while tiny-image.jp2 is a real JPEG 2000 image. This identity has no
+// imageOcr team flag, so the real image must keep the historical rejection
+// (the flagged behaviour lives in scrape-image-ocr.test.ts). Only
+// fire-engine performs the handoff, hence the gate.
 describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
   "Mislabeled file handoff (f-e dependent)",
   () => {
@@ -50,7 +52,7 @@ describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
     );
 
     it(
-      "keeps rejecting a real JPEG 2000 image as unsupported",
+      "keeps rejecting a real JPEG 2000 image for a team without image OCR",
       async () => {
         const response = await scrapeWithFailure(
           {

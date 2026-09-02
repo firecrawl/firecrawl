@@ -623,6 +623,27 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
     );
 
     it(
+      "returns an empty document for an image without text",
+      async () => {
+        // A 16x16 JPEG 2000 image: the browser hands it to image OCR, which
+        // finds nothing to read. That is a complete, empty result billed like
+        // any other image, not an engine failure that exhausts the waterfall.
+        const response = await scrape(
+          {
+            url: `${TEST_SUITE_WEBSITE}/tiny-image.jp2`,
+            formats: ["markdown"],
+          },
+          identity,
+        );
+
+        expect(response.metadata.contentType).toBe("image/jp2");
+        expect(response.metadata.statusCode).toBe(200);
+        expect((response.markdown ?? "").trim()).toBe("");
+      },
+      scrapeTimeout,
+    );
+
+    it(
       "serves the raw image through the rawBase64 format",
       async () => {
         const response = await scrape(

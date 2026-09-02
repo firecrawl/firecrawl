@@ -735,9 +735,16 @@ async function scrapeURLLoopIter(
       (engineResult.statusCode >= 200 && engineResult.statusCode < 300) ||
       engineResult.statusCode === 304;
     const hasNoPageError = engineResult.error === undefined;
+    // A parsed image is a complete result even when OCR found no text: the
+    // image engine has already verified the bytes and run them through OCR,
+    // so a blank scan or a photo legitimately comes back as an empty document.
+    // Without this it would be "deemed unsuccessful" below and, as the last
+    // engine in its waterfall, surface as an all-engines failure.
+    const isParsedImage =
+      engine === "image" && isGoodStatusCode && hasNoPageError;
     const hasRequiredOutput = hasRawBase64
       ? engineResult.rawBase64 !== undefined
-      : isLongEnough || !isGoodStatusCode;
+      : isParsedImage || isLongEnough || !isGoodStatusCode;
     const isLikelyProxyError = [401, 403, 429].includes(
       engineResult.statusCode,
     );
@@ -765,7 +772,12 @@ async function scrapeURLLoopIter(
     // should we just use all the fallbacks and pick the one with the longest text? - mogery
     if (hasRequiredOutput) {
       meta.logger.info("Scrape via " + engine + " deemed successful.", {
-        factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+        factors: {
+          isLongEnough,
+          isGoodStatusCode,
+          hasNoPageError,
+          isParsedImage,
+        },
       });
       return engineResult;
     } else {
