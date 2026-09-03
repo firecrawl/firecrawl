@@ -173,6 +173,9 @@ describe("detectPdfJsViewerShell", () => {
         "l10n",
       ]),
     );
+    // Unlocalized markup carries no visible toolbar text: the vocabulary
+    // signal must come from strings, never from ids or l10n keys.
+    expect(shell!.signals).not.toContain("toolbar");
   });
 
   it("leaves a pdfjs-dist build the resolver could not open alone", () => {
@@ -404,6 +407,15 @@ describe("locatePdfJsViewerDocument", () => {
       url: expected,
       source: "embed",
     });
+  });
+
+  it("ignores lazy-loading hints that are not the displayed document", () => {
+    expect(
+      locatePdfJsViewerDocument(
+        page(`<iframe data-src="/lazy/preview.pdf"></iframe>`),
+        VIEWER_URL,
+      ),
+    ).toBeNull();
   });
 
   it("returns null when the page does not name a document", () => {

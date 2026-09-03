@@ -262,8 +262,10 @@ const SCRIPT_DOCUMENT_PATTERNS = [
 ];
 
 const EMBED_TAG_RE = /<(embed|object|iframe)\b([^>]*)>/gi;
+// Anchored at an attribute boundary so `data-src` (a lazy-loading hint for a
+// document the page is not displaying) is not read as `src`.
 const ATTRIBUTE_RE =
-  /\b(src|data|type)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
+  /(?:^|\s)(src|data|type)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
 
 function decodeAttribute(value: string): string {
   return value

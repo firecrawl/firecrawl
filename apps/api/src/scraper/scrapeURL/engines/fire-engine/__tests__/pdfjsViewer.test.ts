@@ -451,6 +451,25 @@ describe("resolvePdfJsViewerShell", () => {
     expect(prefetch.url).toBe(VIEWER_URL);
   });
 
+  it("ignores a response that arrived after a redirect to a non-public host", async () => {
+    const { outcome, calls } = await resolve(
+      shell({ url: DOCUMENT_URL, source: "script" }),
+      [
+        // The browser followed a redirect to an internal host, which
+        // answered 403: that status must neither be reported nor escalated.
+        async () =>
+          page("http://10.0.0.9/login", 403, "<html>forbidden</html>"),
+        async () => probe({ ok: false, reason: "no_document", url: null }),
+      ],
+    );
+
+    expect(calls).toHaveLength(2);
+    expect(outcome).toBeInstanceOf(PDFViewerUnresolvedError);
+    const error = outcome as PDFViewerUnresolvedError;
+    expect(error.statusCode).toBeUndefined();
+    expect(error.detail).toContain("refused after redirect");
+  });
+
   it("probes the viewer when the named document's handoff came back empty", async () => {
     const { outcome, calls } = await resolve(
       shell({ url: DOCUMENT_URL, source: "script" }),
