@@ -6,6 +6,9 @@ const EXTRACT_QUEUE = "extract.jobs";
 const EXTRACT_DLX = "extract.dlx";
 const EXTRACT_DLQ = "extract.dlq";
 
+const CONNECT_TIMEOUT = 5000;
+const DRAIN_TIMEOUT = 30000;
+
 export type ExtractJobData = {
   extractId: string;
   request: any;
@@ -17,10 +20,22 @@ export type ExtractJobData = {
 
 let connection: amqp.ChannelModel | null = null;
 let channel: amqp.Channel | null = null;
+let connectPromise: Promise<amqp.Channel> | null = null;
 
 async function getChannel(): Promise<amqp.Channel> {
   if (channel) return channel;
+  if (connectPromise) return connectPromise;
 
+  connectPromise = _establishChannel();
+
+  try {
+    return await connectPromise;
+  } finally {
+    connectPromise = null;
+  }
+}
+
+async function _establishChannel(): Promise<amqp.Channel> {
   const url = config.NUQ_RABBITMQ_URL;
   if (!url) {
     throw new Error("NUQ_RABBITMQ_URL is not configured");
@@ -53,16 +68,79 @@ async function getChannel(): Promise<amqp.Channel> {
   });
 
   connection.on("close", () => {
-    _logger.warn("Extract queue connection closed");
+    _logger.warn("Extract queue connection closed", {
+      module: "extract-queue",
+    });
     connection = null;
     channel = null;
+    connectPromise = null;
+    setTimeout(
+      () =>
+        getChannel().catch(err =>
+          _logger.error("Extract queue reconnection failed", {
+            module: "extract-queue",
+            err,
+          }),
+        ),
+      CONNECT_TIMEOUT,
+    );
   });
 
   connection.on("error", err => {
-    _logger.error("Extract queue connection error", { error: err });
+    _logger.error("Extract queue connection error", {
+      module: "extract-queue",
+      error: err,
+    });
+  });
+
+  channel.on("error", err => {
+    _logger.error("Extract queue channel error", {
+      module: "extract-queue",
+      error: err,
+    });
   });
 
   return channel;
+}
+
+function waitForDrain(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!channel) {
+      return reject(new Error("Channel not available"));
+    }
+
+    const listeners: Record<string, any> = {};
+
+    const cleanup = () => {
+      clearTimeout(listeners.timeout);
+      if (!channel) return;
+      channel.removeListener("drain", listeners.drain);
+      channel.removeListener("error", listeners.error);
+      channel.removeListener("close", listeners.close);
+    };
+
+    listeners.drain = () => {
+      cleanup();
+      resolve();
+    };
+    listeners.error = (err: Error) => {
+      cleanup();
+      reject(err);
+    };
+    listeners.close = () => {
+      cleanup();
+      reject(new Error("Channel closed during drain"));
+    };
+
+    listeners.timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Drain timeout after ${DRAIN_TIMEOUT}ms`));
+    }, DRAIN_TIMEOUT);
+
+    channel.on("drain", listeners.drain);
+    channel.on("error", listeners.error);
+    channel.on("close", listeners.close);
+  });
 }
 
 export async function addExtractJob(
@@ -70,10 +148,24 @@ export async function addExtractJob(
   data: ExtractJobData,
 ): Promise<void> {
   const ch = await getChannel();
-  ch.sendToQueue(EXTRACT_QUEUE, Buffer.from(JSON.stringify(data)), {
-    persistent: true,
-    messageId: extractId,
-  });
+  const canSendMore = ch.sendToQueue(
+    EXTRACT_QUEUE,
+    Buffer.from(JSON.stringify(data)),
+    {
+      persistent: true,
+      messageId: extractId,
+    },
+  );
+
+  if (!canSendMore) {
+    _logger.warn("Extract queue buffer full, waiting for drain", {
+      module: "extract-queue",
+      extractId,
+      teamId: data.teamId,
+    });
+    await waitForDrain();
+  }
+
   _logger.info("Extract job added to queue", { extractId });
 }
 
