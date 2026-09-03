@@ -488,21 +488,31 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     }
 
     if (job.data.crawl_id) {
-      const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
+      const sc = await getCrawl(job.data.crawl_id);
+
+      if (!sc) {
+        logger.warn(
+          "Crawl data not found in Redis, skipping crawl post-processing",
+          {
+            crawlId: job.data.crawl_id,
+          },
+        );
+      }
 
       let crawler: WebCrawler | null = null;
-      if (job.data.crawlerOptions !== null) {
+      if (sc && job.data.crawlerOptions !== null) {
         const teamFlags = (await getACUCTeam(job.data.team_id))?.flags ?? null;
         crawler = crawlToCrawler(
           job.data.crawl_id,
           sc,
           teamFlags,
-          sc.originUrl!,
+          sc.originUrl,
           job.data.crawlerOptions,
         );
       }
 
       if (
+        sc &&
         doc.metadata.url !== undefined &&
         doc.metadata.sourceURL !== undefined &&
         normalizeURL(doc.metadata.url, sc) !==
@@ -570,7 +580,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         }
       }
 
-      if (crawler) {
+      if (sc && crawler) {
         if (!sc.cancelled) {
           crawler.setBaseUrl(
             doc.metadata.url ?? doc.metadata.sourceURL ?? sc.originUrl!,
