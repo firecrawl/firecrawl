@@ -849,6 +849,11 @@ export interface SearchRequest {
   limit?: number;
   tbs?: string;
   location?: string;
+  /**
+   * ISO country code for geo-targeted search results (e.g. `"US"`, `"DE"`).
+   * Documented on `/v2/search`; forwarded to the API when set.
+   */
+  country?: string;
   ignoreInvalidURLs?: boolean;
   timeout?: number; // ms
   /** Generate query-relevant highlights for search results. Defaults to true. */
