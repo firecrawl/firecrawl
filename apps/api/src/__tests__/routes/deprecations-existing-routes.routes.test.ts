@@ -2,9 +2,11 @@ import express from "express";
 import request from "supertest";
 import { deprecationMiddleware } from "../../lib/deprecations";
 
-// Every pre-existing deprecation entry, and what a client saw from it before
-// the middleware learned about per-entry dates and stopped mutating bodies.
-// Pinned so the github entry cannot change anyone else's wire output.
+// Every pre-existing deprecation entry and its replacement. Pinned so the
+// github entry cannot change anyone else's wire output. All 13 shipped in
+// #3469 on 2026-05-06, which is the date they now emit.
+const LEGACY_DEPRECATED_AT = "@1778025600";
+
 const EXISTING = {
   v1_extract: "/v2/scrape",
   v1_extract_status: "/v2/scrape",
@@ -52,10 +54,10 @@ const BODIES: Record<string, unknown> = {
 describe("pre-existing deprecated routes are unchanged", () => {
   for (const key of Object.keys(EXISTING) as Key[]) {
     describe(key, () => {
-      it("still emits Deprecation: true and no Sunset", async () => {
+      it("emits the shared 2026-05-06 Deprecation date and no Sunset", async () => {
         const res = await request(appFor(key, BODIES.plain)).get("/probe");
 
-        expect(res.headers["deprecation"]).toBe("true");
+        expect(res.headers["deprecation"]).toBe(LEGACY_DEPRECATED_AT);
         expect(res.headers["sunset"]).toBeUndefined();
         expect(res.headers["warning"]).toMatch(/^299 - "/);
         if (EXISTING[key]) {
@@ -89,5 +91,7 @@ describe("pre-existing deprecated routes are unchanged", () => {
   it("arrays and strings pass straight through", async () => {
     const arr = await request(appFor("v0_search", [1, 2])).get("/probe");
     expect(arr.text).toBe("[1,2]");
+    const str = await request(appFor("v0_search", "hello")).get("/probe");
+    expect(str.text).toBe('"hello"');
   });
 });
