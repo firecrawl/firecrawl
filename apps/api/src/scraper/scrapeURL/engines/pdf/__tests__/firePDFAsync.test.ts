@@ -212,7 +212,9 @@ describe("scrapePDFWithFirePDFAsync", () => {
         },
       },
     ]);
-    const fallback = vi.fn(async () => ({ markdown: "sync result" }));
+    const fallback = vi.fn(async (..._args: unknown[]) => ({
+      markdown: "sync result",
+    }));
     const doc = await scrapePDFWithFirePDFAsync(
       makeMeta(),
       "BASE64",
@@ -226,6 +228,59 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect((doc as any).markdown).toBe("sync result");
     // Exactly one request: the rejected POST. No polling, no cancel.
     expect(calls).toHaveLength(1);
+  });
+
+  it("does not send an admission policy when the fast-fail flag is off", async () => {
+    const original = (config as any).FIRE_PDF_ASYNC_LIVE_FASTFAIL;
+    (config as any).FIRE_PDF_ASYNC_LIVE_FASTFAIL = false;
+    try {
+      const { fetchImpl, calls } = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs$/,
+          matchMethod: "POST",
+          response: {
+            status: 202,
+            body: {
+              scrape_id: "scrape-id-test",
+              status: "queued",
+              retry_after_ms: 1,
+            },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test$/,
+          response: {
+            status: 200,
+            body: { scrape_id: "scrape-id-test", status: "done" },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test\/result$/,
+          response: {
+            status: 200,
+            body: {
+              schema_version: 1,
+              markdown: "ok",
+              pages_processed: 1,
+              failed_pages: null,
+              partial_pages: null,
+            },
+          },
+        },
+      ]);
+      await scrapePDFWithFirePDFAsync(
+        makeMeta(),
+        "BASE64",
+        undefined,
+        undefined,
+        undefined,
+        { fetchImpl, sleepImpl: noopSleep },
+      );
+      // The default deployment keeps fire-pdf's own admission policy.
+      expect("admission" in (calls[0].body as any)).toBe(false);
+    } finally {
+      (config as any).FIRE_PDF_ASYNC_LIVE_FASTFAIL = original;
+    }
   });
 
   it("asks fire-pdf to enforce admission only for live inline submits when enabled", async () => {
