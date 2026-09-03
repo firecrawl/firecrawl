@@ -314,6 +314,26 @@ describe("detectPdfJsViewerShell", () => {
     });
   });
 
+  it("does not count lazy-loading hints on script and link tags as assets", () => {
+    const lazy = stockViewer()
+      .replace(
+        '<link rel="stylesheet" href="viewer.css">',
+        '<link rel="stylesheet" data-href="viewer.css">',
+      )
+      .replace(
+        '<script src="../build/pdf.mjs" type="module"></script>',
+        '<script data-src="../build/pdf.mjs" type="module"></script>',
+      )
+      .replace(
+        '<script src="viewer.mjs" type="module"></script>',
+        '<script data-src="viewer.mjs" type="module"></script>',
+      );
+    const shell = detectPdfJsViewerShell(lazy, VIEWER_URL);
+    // Still the stock viewer by its markup, but no asset was actually loaded.
+    expect(shell).not.toBeNull();
+    expect(shell!.signals).not.toContain("scripts");
+  });
+
   it("does not classify a page that merely mentions pdf.js", () => {
     expect(
       detectPdfJsViewerShell(
@@ -443,6 +463,17 @@ describe("locatePdfJsViewerDocument", () => {
       url: expected,
       source: "embed",
     });
+  });
+
+  it("does not read file= from a frame that is not a viewer", () => {
+    expect(
+      locatePdfJsViewerDocument(
+        page(
+          `<iframe src="https://forms.example.com/upload?file=report.pdf"></iframe>`,
+        ),
+        VIEWER_URL,
+      ),
+    ).toBeNull();
   });
 
   it("ignores lazy-loading hints that are not the displayed document", () => {

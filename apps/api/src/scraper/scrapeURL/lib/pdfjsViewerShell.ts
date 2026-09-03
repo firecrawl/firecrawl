@@ -91,8 +91,10 @@ const RUNTIME_API_RE = /\bPDFViewerApplication\b/;
 /** The library alone: a custom build the resolver cannot drive. */
 const PDFJS_LIB_RE = /\bpdfjsLib\b|GlobalWorkerOptions\.workerSrc/;
 const L10N_ID_RE = /data-l10n-id=["']pdfjs-/g;
+// `src`/`href` must start after whitespace so a lazy-loading `data-src` or
+// `data-href` hint is not counted as a loaded asset.
 const SCRIPT_OR_LINK_SRC_RE =
-  /<(?:script|link)\b[^>]*?\b(?:src|href)\s*=\s*["']([^"']+)["']/gi;
+  /<(?:script|link)\b[^>]*?\s(?:src|href)\s*=\s*["']([^"']+)["']/gi;
 /** Paths pdf.js builds are served from, tested against each script/link URL. */
 const SCRIPT_PATH_PATTERNS = [
   /pdfjs-dist/i,
@@ -295,6 +297,20 @@ function resolveHttpUrl(raw: string, base: string): string | null {
   }
 }
 
+/** Whether a URL's path is where pdf.js viewers live (`…/web/viewer.html`,
+ * a `pdfjs` directory, a `pdf_viewer` build). */
+function isViewerLikeUrl(url: string): boolean {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return (
+      /(?:^|\/)viewer\.x?html?$/.test(pathname) ||
+      /pdfjs|pdf\.js|pdf_viewer/.test(pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** The standard viewer takes its document from `viewer.html?file=…`. */
 function documentUrlFromViewerUrl(pageUrl: string): string | null {
   try {
@@ -323,9 +339,13 @@ function documentUrlFromEmbeds(html: string, pageUrl: string): string | null {
       return url;
     }
     // A nested standard viewer (`<iframe src="…/viewer.html?file=…">`): the
-    // document is the frame's `file=` parameter, relative to the frame.
-    const nested = documentUrlFromViewerUrl(url);
-    if (nested !== null) return nested;
+    // document is the frame's `file=` parameter, relative to the frame. Only
+    // frames that look like a viewer qualify; an unrelated frame that happens
+    // to carry a `file=` parameter is not displaying a document.
+    if (isViewerLikeUrl(url)) {
+      const nested = documentUrlFromViewerUrl(url);
+      if (nested !== null) return nested;
+    }
   }
   return null;
 }
