@@ -37,6 +37,7 @@ export type FallbackReason =
   | "http_413"
   | "http_502"
   | "http_503"
+  | "admission_rejected"
   | "http_429"
   | "http_5xx"
   | "network_error"
