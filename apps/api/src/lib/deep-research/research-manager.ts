@@ -68,6 +68,7 @@ export class ResearchStateManager {
   }
 
   async addSources(sources: DeepResearchSource[]): Promise<void> {
+    this.sources = [...this.sources, ...sources];
     await updateDeepResearch(this.researchId, {
       sources: sources,
     });
