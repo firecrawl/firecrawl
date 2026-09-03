@@ -26,6 +26,10 @@ strsim = "0.11"
 texting_robots = "0.2.2"
 url = "2.5.7"
 tokio = "1.48.0"
+# Transitive dep (pdf-inspector -> unicode-normalization -> tinyvec). Pinned because
+# tinyvec 1.13.0 fails to compile (https://github.com/Lokathor/tinyvec/issues/225)
+# and Cargo.lock is not committed, so fresh builds would otherwise pick it up.
+tinyvec = ">=1.12, <1.13"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"] }
 
