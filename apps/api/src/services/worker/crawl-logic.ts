@@ -126,10 +126,18 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
           source: doc?.metadata?.sourceURL ?? doc?.url ?? "",
         }));
         if (sc.crawlerOptions !== null) {
-          sender.send(WebhookEvent.CRAWL_COMPLETED, {
-            success: true,
-            data: documents,
-          });
+          if (sc.cancelled) {
+            sender.send(WebhookEvent.CRAWL_CANCELLED, {
+              success: false,
+              error: "Crawl was cancelled",
+              data: [],
+            });
+          } else {
+            sender.send(WebhookEvent.CRAWL_COMPLETED, {
+              success: true,
+              data: documents,
+            });
+          }
         } else {
           sender.send(WebhookEvent.BATCH_SCRAPE_COMPLETED, {
             success: true,
@@ -198,10 +206,18 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       });
       if (sender) {
         if (sc.crawlerOptions !== null) {
-          sender.send(WebhookEvent.CRAWL_COMPLETED, {
-            success: true,
-            data: [],
-          });
+          if (sc.cancelled) {
+            sender.send(WebhookEvent.CRAWL_CANCELLED, {
+              success: false,
+              error: "Crawl was cancelled",
+              data: [],
+            });
+          } else {
+            sender.send(WebhookEvent.CRAWL_COMPLETED, {
+              success: true,
+              data: [],
+            });
+          }
         } else {
           sender.send(WebhookEvent.BATCH_SCRAPE_COMPLETED, {
             success: true,
