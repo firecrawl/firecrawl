@@ -51,6 +51,14 @@ defmodule Firecrawl.Generator do
   defp fetch_spec do
     Application.ensure_all_started(:req)
 
+    # Set FIRECRAWL_OPENAPI_SPEC to a local file to generate without the network.
+    case System.get_env("FIRECRAWL_OPENAPI_SPEC") do
+      nil -> fetch_remote_spec()
+      path -> {:ok, path |> File.read!() |> Jason.decode!()}
+    end
+  end
+
+  defp fetch_remote_spec do
     case Req.get(@openapi_url) do
       {:ok, %Req.Response{status: 200, body: body}} when is_map(body) ->
         {:ok, body}
@@ -349,6 +357,7 @@ defmodule Firecrawl.Generator do
       )
 
     # Build typespecs
+    deprecated_code = build_deprecated(operation)
     spec_code = build_typespec(func_name, path_params, has_body || has_query_schema, false)
     bang_spec_code = build_typespec(func_name, path_params, has_body || has_query_schema, true)
 
@@ -358,11 +367,13 @@ defmodule Firecrawl.Generator do
       query_schema_code,
       query_key_mapping_code,
       doc,
+      deprecated_code,
       spec_code,
       "  #{sig}",
       body,
       "",
       doc_bang(func_name),
+      deprecated_code,
       bang_spec_code,
       "  #{bang_sig}",
       bang_body,
@@ -434,6 +445,7 @@ defmodule Firecrawl.Generator do
     {sig, body} = build_multipart_function_body(func_name, method, path, meta, has_options?, false)
     {bang_sig, bang_body} = build_multipart_function_body(func_name, method, path, meta, has_options?, true)
 
+    deprecated_code = build_deprecated(operation)
     spec_code = build_multipart_typespec(func_name, has_options?, false)
     bang_spec_code = build_multipart_typespec(func_name, has_options?, true)
 
@@ -441,11 +453,13 @@ defmodule Firecrawl.Generator do
       body_schema_code,
       body_key_mapping_code,
       doc,
+      deprecated_code,
       spec_code,
       "  #{sig}",
       body,
       "",
       doc_bang(func_name),
+      deprecated_code,
       bang_spec_code,
       "  #{bang_sig}",
       bang_body,
@@ -796,6 +810,18 @@ defmodule Firecrawl.Generator do
   # ---------------------------------------------------------------------------
   # Doc Generation
   # ---------------------------------------------------------------------------
+
+  # OpenAPI marks a retiring operation with `deprecated: true`. Elixir's
+  # @deprecated turns that into a compiler warning at the caller.
+  defp build_deprecated(operation) do
+    if Map.get(operation, "deprecated", false) do
+      note =
+        Map.get(operation, "x-deprecation-note") ||
+          "Deprecated in the Firecrawl API. See the function docs for the replacement."
+
+      "  @deprecated \"#{String.replace(note, "\"", "\\\"")}\""
+    end
+  end
 
   defp build_doc(
          summary,
