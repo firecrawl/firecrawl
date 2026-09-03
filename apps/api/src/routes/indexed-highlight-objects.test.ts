@@ -2,9 +2,10 @@ import express from "express";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../config", () => ({
-  config: { SEARCH_INDEX_LOOKUP_TOKEN: "resolver-secret" },
+const mockConfig = vi.hoisted(() => ({
+  SEARCH_INDEX_LOOKUP_TOKEN: "resolver-secret" as string | undefined,
 }));
+vi.mock("../config", () => ({ config: mockConfig }));
 vi.mock("../lib/logger", () => ({
   logger: { info: vi.fn() },
 }));
@@ -28,7 +29,10 @@ const pages = [
   { id: "2", url: "https://example.com/c" },
 ];
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  mockConfig.SEARCH_INDEX_LOOKUP_TOKEN = "resolver-secret";
+});
 
 describe("POST /internal/indexed-highlight-objects", () => {
   it("returns one ordered outcome per URL when siblings hit, miss, and fail", async () => {
@@ -68,6 +72,17 @@ describe("POST /internal/indexed-highlight-objects", () => {
     const response = await request(app())
       .post("/internal/indexed-highlight-objects")
       .set("Authorization", "Bearer wrong")
+      .send({ pages: pages.slice(0, 1) });
+
+    expect(response.status).toBe(401);
+    expect(resolveHighlightIndexObject).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the service token is not configured", async () => {
+    mockConfig.SEARCH_INDEX_LOOKUP_TOKEN = undefined;
+
+    const response = await request(app())
+      .post("/internal/indexed-highlight-objects")
       .send({ pages: pages.slice(0, 1) });
 
     expect(response.status).toBe(401);

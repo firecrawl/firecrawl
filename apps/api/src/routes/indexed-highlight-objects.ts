@@ -62,7 +62,7 @@ function tokenMatches(provided: string | null, expected: string) {
 function authenticate(req: Request, res: Response, next: NextFunction) {
   const expected = config.SEARCH_INDEX_LOOKUP_TOKEN;
   if (
-    !expected ||
+    expected &&
     tokenMatches(bearerToken(req.headers.authorization), expected)
   ) {
     next();
