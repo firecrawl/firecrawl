@@ -1,0 +1,162 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firecrawl.redis.fullname" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "firecrawl.redis.fullname" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "firecrawl.redis.fullname" . }}
+    spec:
+      {{- with .Values.redis }}
+      {{- if .imagePullSecrets.open }}
+      imagePullSecrets:
+        - name: {{ .imagePullSecrets.name }}
+      {{- end }}
+      containers:
+        - name: redis
+          image: "{{ .repo }}/{{ .image}}"
+          imagePullPolicy: {{ .pullPolicy }}
+          command:
+            - redis-server
+            - --bind
+            - 0.0.0.0
+          ports:
+            - name: tcp
+              containerPort: {{.port}}
+              protocol: TCP
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firecrawl.api.fullname" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "firecrawl.api.fullname" .}}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "firecrawl.api.fullname" . }}
+    spec:
+      {{- with .Values.api }}
+      {{- if .imagePullSecrets.open }}
+      imagePullSecrets:
+        - name: {{ .imagePullSecrets.name }}
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: api
+        {{- with .Values.api }}
+          image: "{{ .repo }}/{{.image}}"
+          imagePullPolicy: {{ .pullPolicy }}
+        {{- end }}
+          env:
+            {{- range $key, $value := .Values.commonEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "3002"
+            - name: FLY_PROCESS_GROUP
+              value: "app"
+          ports:
+            - name: http
+              containerPort: {{.Values.api.port}}
+              protocol: TCP
+          args:
+            - pnpm
+            - run
+            - start:production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firecrawl.worker.fullname" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "firecrawl.worker.fullname" .}}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "firecrawl.worker.fullname" .}}
+    spec:
+      {{- with .Values.worker }}
+      {{- if .imagePullSecrets.open }}
+      imagePullSecrets:
+        - name: {{ .imagePullSecrets.name }}
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: worker
+          {{- with .Values.worker }}
+          image: "{{ .repo }}/{{ .image}}"
+          imagePullPolicy: {{ .pullPolicy }}
+          {{- end}}
+          env:
+            {{- range $key, $value := .Values.commonEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            - name: FLY_PROCESS_GROUP
+              value: "worker"
+          args:
+            - pnpm
+            - run
+            - workers
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firecrawl.playwright-service.fullname" .}}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "firecrawl.playwright-service.fullname" .}}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "firecrawl.playwright-service.fullname" .}}
+    spec:
+      {{- with .Values.playwrightService }}
+      {{- if .imagePullSecrets.open }}
+      imagePullSecrets:
+        - name: {{ .imagePullSecrets.name }}
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: playwright-service
+          {{- with .Values.playwrightService }}
+          image: "{{ .repo }}/{{ .image}}"
+          imagePullPolicy: {{ .pullPolicy }}
+          {{- end}}
+          ports:
+            - name: http
+              containerPort: {{.Values.playwrightService.port}}
+              protocol: TCP
+          env:
+            {{- range $key, $value := .Values.commonEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            - name: PORT
+              value: "3000"
+            - name: PROXY_SERVER
+              value: {{ .Values.commonEnv.PROXY_SERVER }}
+            - name: PROXY_USERNAME
+              value: {{ .Values.commonEnv.PROXY_USERNAME }}
+            - name: PROXY_PASSWORD
+              value: {{ .Values.commonEnv.PROXY_PASSWORD }}
+            - name: BLOCK_MEDIA
+              value: {{ .Values.commonEnv.BLOCK_MEDIA }}

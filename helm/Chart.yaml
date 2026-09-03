@@ -1,0 +1,6 @@
+apiVersion: v2
+name: firecrawl
+description: A Helm chart for Firecrawl
+type: application
+version: 0.1.0
+appVersion: "1.0"
