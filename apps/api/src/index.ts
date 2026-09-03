@@ -33,6 +33,7 @@ import { v2Router } from "./routes/v2";
 import { exchangeRouter } from "./routes/exchange";
 import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
+import { registerIndexedHighlightObjectRoute } from "./routes/indexed-highlight-objects";
 import { startMcpActionLogRetentionWorkerIfEnabled } from "./services/mcp/action-logs";
 import { db } from "./db/connection";
 import { nuqShutdown } from "./services/worker/nuq";
@@ -89,6 +90,7 @@ const captureRawBody = (
 };
 
 registerMcpActionLogIngestRoute(app);
+registerIndexedHighlightObjectRoute(app);
 
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));

@@ -54,51 +54,52 @@ export function searchHighlightsMode(options: {
 // this many more-recent error entries, in which case we surface the newest one.
 const ERROR_COUNT_TO_REGISTER = 3;
 
+type RecentIndexRow = NonNullable<
+  Awaited<ReturnType<typeof indexGetRecent5>>
+>[number];
+
+export function selectHighlightIndexRow(
+  rows: RecentIndexRow[],
+): RecentIndexRow | null {
+  if (rows.length === 0) return null;
+  const newest200Index = rows.findIndex(x => x.status >= 200 && x.status < 300);
+  return newest200Index >= ERROR_COUNT_TO_REGISTER || newest200Index === -1
+    ? rows[0]
+    : rows[newest200Index];
+}
+
+export async function resolveHighlightIndexObject(
+  url: string,
+): Promise<{ name: string; createdAt: string | null } | null> {
+  if (!useIndex) return null;
+  const normalizedURL = normalizeURLForIndex(url);
+  const urlHash = hashURL(normalizedURL);
+  const rows = await indexGetRecent5({
+    url_hash: urlHash,
+    max_age_ms: HIGHLIGHTS_INDEX_MAX_AGE_MS,
+    is_mobile: false,
+    block_ads: true,
+    feature_screenshot: false,
+    feature_screenshot_fullscreen: false,
+    location_country: null,
+    location_languages: null,
+    wait_time_ms: 0,
+    is_stealth: false,
+    min_age_ms: null,
+  });
+  const selected = selectHighlightIndexRow(rows ?? []);
+  return selected
+    ? { name: selected.id + ".json", createdAt: selected.created_at }
+    : null;
+}
+
 async function getIndexObjectForURL(
   url: string,
   logger: Logger,
   logUrl = true,
 ): Promise<{ name: string; createdAt: string | null } | null> {
-  if (!useIndex) {
-    return null;
-  }
-
   try {
-    const normalizedURL = normalizeURLForIndex(url);
-    const urlHash = hashURL(normalizedURL);
-
-    // Match the most common index variant (default scrape options) to maximize
-    // hit rate: desktop, ads blocked, no screenshot, no location, no stealth.
-    const rows = await indexGetRecent5({
-      url_hash: urlHash,
-      max_age_ms: HIGHLIGHTS_INDEX_MAX_AGE_MS,
-      is_mobile: false,
-      block_ads: true,
-      feature_screenshot: false,
-      feature_screenshot_fullscreen: false,
-      location_country: null,
-      location_languages: null,
-      wait_time_ms: 0,
-      is_stealth: false,
-      min_age_ms: null,
-    });
-
-    if (!rows || rows.length === 0) {
-      return null;
-    }
-
-    const newest200Index = rows.findIndex(
-      x => x.status >= 200 && x.status < 300,
-    );
-    const selected =
-      newest200Index >= ERROR_COUNT_TO_REGISTER || newest200Index === -1
-        ? rows[0]
-        : rows[newest200Index];
-
-    return {
-      name: selected.id + ".json",
-      createdAt: selected.created_at,
-    };
+    return await resolveHighlightIndexObject(url);
   } catch (error) {
     logger.warn("highlights: index lookup failed", {
       error: error instanceof Error ? error.message : String(error),

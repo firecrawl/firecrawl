@@ -36,11 +36,15 @@ vi.mock("./highlight-model", () => ({
 
 import { generateHighlightsIndexedBatch } from "./highlight-model";
 import { config } from "../config";
+import { indexGetRecent5 } from "../db/rpc";
+import { hashURL, normalizeURLForIndex } from "../services";
 import { logger as rootLogger } from "../lib/logger";
 import {
   highlightsEnvReady,
+  resolveHighlightIndexObject,
   runIndexedSearchHighlights,
   searchHighlightsMode,
+  selectHighlightIndexRow,
 } from "./highlights";
 
 const logger = {
@@ -55,6 +59,47 @@ const logger = {
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+describe("indexed highlight lookup", () => {
+  it("uses the exact recent desktop index variant", async () => {
+    await resolveHighlightIndexObject("http://www.example.com/index.html");
+
+    expect(normalizeURLForIndex).toHaveBeenCalledWith(
+      "http://www.example.com/index.html",
+    );
+    expect(hashURL).toHaveBeenCalledWith("http://www.example.com/index.html");
+    expect(indexGetRecent5).toHaveBeenCalledWith({
+      url_hash: "http://www.example.com/index.html",
+      max_age_ms: 2_592_000_000,
+      is_mobile: false,
+      block_ads: true,
+      feature_screenshot: false,
+      feature_screenshot_fullscreen: false,
+      location_country: null,
+      location_languages: null,
+      wait_time_ms: 0,
+      is_stealth: false,
+      min_age_ms: null,
+    });
+  });
+
+  it.each([
+    { successIndex: 0, selected: "ok" },
+    { successIndex: 1, selected: "ok" },
+    { successIndex: 2, selected: "ok" },
+    { successIndex: 3, selected: "error-0" },
+  ])(
+    "selects the expected row when the newest 2xx is at $successIndex",
+    ({ successIndex, selected }) => {
+      const rows = [0, 1, 2, 3].map(index => ({
+        id: index === successIndex ? "ok" : `error-${index}`,
+        status: index === successIndex ? 200 : 500,
+        created_at: null,
+      })) as any;
+      expect(selectHighlightIndexRow(rows)?.id).toBe(selected);
+    },
+  );
 });
 
 describe("runIndexedSearchHighlights", () => {
