@@ -43,7 +43,8 @@
     "mongo-docker-console": "docker exec -it mongodb mongosh",
     "sentry:sourcemaps": "sentry-cli sourcemaps inject --org caleb-peffer --project firecrawl-scraper-js ./dist && sentry-cli sourcemaps upload --org caleb-peffer --project firecrawl-scraper-js ./dist",
     "prepare": "cd ../.. && husky ./apps/api/.husky",
-    "knip": "knip"
+    "knip": "knip",
+    "openapi:v2": "tsx src/openapi/generate-v2.ts"
   },
   "author": "",
   "license": "ISC",

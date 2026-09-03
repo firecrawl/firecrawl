@@ -1801,6 +1801,12 @@ export type CrawlStatusParams = {
   jobId: string;
 };
 
+// Zod schema for route params used in v2 routes (e.g. /crawl/:jobId).
+// This matches validateJobIdParam middleware (uuid validation).
+export const jobIdParamsSchema = z.object({
+  jobId: z.string().uuid(),
+});
+
 export type ConcurrencyCheckParams = {
   teamId: string;
 };
