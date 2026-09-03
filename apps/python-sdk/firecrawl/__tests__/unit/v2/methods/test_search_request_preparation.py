@@ -19,6 +19,16 @@ class TestSearchRequestPreparation:
         # Check that snake_case fields are not present
         assert "ignore_invalid_urls" not in data
         assert "scrape_options" not in data
+        assert "country" not in data
+
+    def test_country_forwarded_to_payload(self):
+        """country is a documented /v2/search field and must reach the API."""
+        request = SearchRequest(query="restaurants", country="DE", limit=5)
+        data = _prepare_search_request(request)
+
+        assert data["country"] == "DE"
+        assert data["query"] == "restaurants"
+        assert data["limit"] == 5
 
     def test_all_fields_conversion(self):
         """Test request preparation with all possible fields."""

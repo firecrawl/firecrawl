@@ -2175,6 +2175,8 @@ class SearchRequest(BaseModel):
     limit: Optional[int] = 5
     tbs: Optional[str] = None
     location: Optional[str] = None
+    # ISO country code for geo-targeted search (e.g. "US", "DE"). Documented on /v2/search.
+    country: Optional[str] = None
     ignore_invalid_urls: Optional[bool] = None
     timeout: Optional[int] = 300000
     highlights: Optional[bool] = None
