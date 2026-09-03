@@ -24,6 +24,7 @@ interface ScrapeReplayContext {
   targetUrl: string;
   waitForMs: number;
   actions: ReplayAction[];
+  mobile: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,12 +169,14 @@ export function buildReplayContextFromScrape(scrape: ScrapeContextRow): {
 
   const waitForMs = clampPositiveInteger(scrape.options.waitFor, 60_000) ?? 0;
   const actions = sanitizeReplayActions(scrape.options.actions);
+  const mobile = scrape.options.mobile === true;
 
   return {
     context: {
       targetUrl,
       waitForMs,
       actions,
+      mobile,
     },
   };
 }
@@ -278,6 +281,16 @@ const syncReplayPage = async () => {
     await page.bringToFront();
   } catch {}
 };
+
+// When the original scrape used mobile mode, resize the viewport to match
+// the mobile device metrics (360x800) before navigating.
+if (replay.mobile) {
+  try {
+    await page.setViewportSize({ width: 360, height: 800 });
+  } catch (error) {
+    console.log("[firecrawl-replay] failed to set mobile viewport:", error);
+  }
+}
 
 try {
   await page.goto(replay.targetUrl, { waitUntil: "domcontentloaded" });
