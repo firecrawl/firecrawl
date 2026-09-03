@@ -490,6 +490,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       persistentStorage: meta.options.profile
         ? {
             uniqueId: `${createHash("sha256").update(meta.internalOptions.teamId).digest("hex").slice(0, 16)}_${meta.options.profile.name}`,
+            write: meta.options.profile.saveChanges !== false,
           }
         : undefined,
     };
