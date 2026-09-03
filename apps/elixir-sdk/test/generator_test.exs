@@ -84,6 +84,42 @@ defmodule Firecrawl.GeneratorTest do
     end
   end
 
+  test "the hostile payload really is a live interpolation, not a reference to @marker" do
+    assert String.contains?(@hostile, @marker)
+    refute String.contains?(@hostile, "@marker")
+
+    # Unescaped, it must fire, or none of the tests below prove anything.
+    compile_quietly("""
+    defmodule Firecrawl.GeneratorTest.Unescaped do
+      @doc "#{@hostile}"
+      def f, do: :ok
+    end
+    """)
+
+    assert File.exists?(@marker)
+  end
+
+  describe "escape_string_literal/1" do
+    test "leaves an ordinary path untouched" do
+      assert Firecrawl.Generator.escape_string_literal("/search/research/papers/{id}") ==
+               "/search/research/papers/{id}"
+    end
+
+    test "a hostile path inside a url literal cannot run or break out" do
+      path = Firecrawl.Generator.escape_string_literal(~S(/x" <> ) <> @hostile <> ~S( <> "/y))
+
+      [{mod, _}] =
+        Code.compile_string("""
+        defmodule Firecrawl.GeneratorTest.HostilePath do
+          def url, do: "#{path}"
+        end
+        """)
+
+      refute File.exists?(@marker), "the path was evaluated while compiling"
+      assert mod.url() =~ "firecrawl_generator_test_pwned"
+    end
+  end
+
   describe "escape_source_text/1" do
     test "leaves ordinary spec text untouched" do
       assert Firecrawl.Generator.escape_source_text("Scrape a single URL") ==

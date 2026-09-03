@@ -115,7 +115,7 @@ defmodule Firecrawl.Generator do
 
     defmodule Firecrawl do
       @moduledoc \"\"\"
-      Auto-generated Firecrawl API #{api_version} client.
+      Auto-generated Firecrawl API #{escape_source_text(api_version)} client.
 
       Generated from the OpenAPI spec at:
       #{@openapi_url}
@@ -152,7 +152,7 @@ defmodule Firecrawl.Generator do
 
       @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
-      @base_url "#{base_url}"
+      @base_url #{inspect(base_url)}
       # Sourced from mix.exs at compile time so the origin header cannot drift
       # from the published package version.
       @version Mix.Project.config()[:version]
@@ -486,7 +486,7 @@ defmodule Firecrawl.Generator do
     options_part_text =
       cond do
         has_options? and not is_nil(options_field) ->
-          "{\"#{options_field}\", Jason.encode!(to_body(params, @#{func_name}_key_mapping))}, "
+          "{#{inspect(options_field)}, Jason.encode!(to_body(params, @#{func_name}_key_mapping))}, "
 
         true ->
           ""
@@ -517,7 +517,7 @@ defmodule Firecrawl.Generator do
       "",
       "#{indent}multipart = [#{options_part_text}#{file_part_text}]",
       "",
-      "#{indent}Req.#{req_fn}(client(opts), url: \"#{path}\", form_multipart: multipart)"
+      "#{indent}Req.#{req_fn}(client(opts), url: \"#{escape_string_literal(path)}\", form_multipart: multipart)"
     ]
 
     core = Enum.join(core_lines, "\n")
@@ -558,12 +558,12 @@ defmodule Firecrawl.Generator do
       "  @doc \"\"\"",
       "  #{escape_source_text(summary)}",
       "",
-      "  #{bt}#{http_method} #{path}#{bt}",
+      "  #{bt}#{escape_source_text(http_method)} #{escape_source_text(path)}#{bt}",
       "",
       "  Sends a #{bt}multipart/form-data#{bt} request."
     ]
 
-    parts = if tag != "", do: parts ++ ["", "  Tag: #{tag}"], else: parts
+    parts = if tag != "", do: parts ++ ["", "  Tag: #{escape_source_text(tag)}"], else: parts
 
     parts =
       parts ++
@@ -699,7 +699,7 @@ defmodule Firecrawl.Generator do
       properties
       |> Enum.map(fn {name, _} ->
         snake = to_snake_case(name)
-        "#{snake}: \"#{name}\""
+        "#{snake}: #{inspect(name)}"
       end)
       |> Enum.join(", ")
 
@@ -738,7 +738,7 @@ defmodule Firecrawl.Generator do
       |> Enum.map(fn param ->
         name = Map.get(param, "name")
         snake = to_snake_case(name)
-        "#{snake}: \"#{name}\""
+        "#{snake}: #{inspect(name)}"
       end)
       |> Enum.join(", ")
 
@@ -834,6 +834,17 @@ defmodule Firecrawl.Generator do
     |> String.replace(~S("""), ~S(\"\"\"))
   end
 
+  # Same job for text that lands inside a generated "..." literal, where a
+  # quote or #{} would end or execute it. Path templates keep their {param}
+  # holes untouched so build_elixir_path can turn them into interpolations.
+  def escape_string_literal(text) do
+    text
+    |> to_string()
+    |> String.replace("\\", "\\\\")
+    |> String.replace("\"", "\\\"")
+    |> String.replace(~S(#{), ~S(\#{))
+  end
+
   defp build_doc(
          summary,
          http_method,
@@ -851,16 +862,16 @@ defmodule Firecrawl.Generator do
       "  @doc \"\"\"",
       "  #{escape_source_text(summary)}",
       "",
-      "  #{bt}#{http_method} #{path}#{bt}"
+      "  #{bt}#{escape_source_text(http_method)} #{escape_source_text(path)}#{bt}"
     ]
 
-    parts = if tag != "", do: parts ++ ["", "  Tag: #{tag}"], else: parts
+    parts = if tag != "", do: parts ++ ["", "  Tag: #{escape_source_text(tag)}"], else: parts
 
     parts =
       if path_params != [] do
         param_docs =
           Enum.map(path_params, fn p ->
-            "    * #{bt}#{to_snake_case(p)}#{bt} - Path parameter #{bt}#{p}#{bt}"
+            "    * #{bt}#{to_snake_case(p)}#{bt} - Path parameter #{bt}#{escape_source_text(p)}#{bt}"
           end)
 
         parts ++ ["", "  ## Path Parameters", ""] ++ param_docs
@@ -886,7 +897,7 @@ defmodule Firecrawl.Generator do
       if has_query_schema do
         param_docs =
           Enum.map(query_param_names, fn p ->
-            "    * #{bt}#{to_snake_case(p)}#{bt} — query parameter #{bt}#{p}#{bt}"
+            "    * #{bt}#{to_snake_case(p)}#{bt} — query parameter #{bt}#{escape_source_text(p)}#{bt}"
           end)
 
         parts ++ ["", "  ## Query Parameters", ""] ++ param_docs
@@ -1055,10 +1066,10 @@ defmodule Firecrawl.Generator do
     end
   end
 
-  defp build_elixir_path(path, []), do: path
+  defp build_elixir_path(path, []), do: escape_string_literal(path)
 
   defp build_elixir_path(path, path_params) do
-    Enum.reduce(path_params, path, fn param, acc ->
+    Enum.reduce(path_params, escape_string_literal(path), fn param, acc ->
       snake = to_snake_case(param)
       String.replace(acc, "{#{param}}", "\#{#{snake}}")
     end)
@@ -1073,7 +1084,7 @@ defmodule Firecrawl.Generator do
     if Regex.match?(~r/^[a-zA-Z_][a-zA-Z0-9_]*$/, value) do
       ":#{value}"
     else
-      ":\"#{value}\""
+      ":" <> inspect(to_string(value))
     end
   end
 
@@ -1148,4 +1159,4 @@ defmodule Firecrawl.Generator do
   end
 end
 
-unless System.get_env("MIX_ENV") == "test", do: Firecrawl.Generator.run()
+unless Code.ensure_loaded?(Mix) and Mix.env() == :test, do: Firecrawl.Generator.run()
