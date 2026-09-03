@@ -61,6 +61,7 @@ const tableMap: Record<string, PgTable> = {
 
 let pubSubClient: PubSub | null | undefined;
 const pubSubTopics = new Map<string, Topic>();
+let pubSubShutdown: Promise<void> | undefined;
 const PUBSUB_PUBLISH_TIMEOUT_MS = 60_000;
 
 function getPubSubClient(logger: Logger): PubSub | null {
@@ -109,6 +110,46 @@ async function publishLog(table: string, data: any, logger: Logger) {
     logger.error("Failed to publish log to Pub/Sub", { error });
     Sentry.captureException(error, {
       tags: { table, operation: "publishPubSubLog" },
+    });
+  }
+}
+
+export function shutdownPubSubLogging(): Promise<void> {
+  if (pubSubShutdown) return pubSubShutdown;
+
+  pubSubShutdown = shutdownPubSubLoggingOnce();
+  return pubSubShutdown;
+}
+
+async function shutdownPubSubLoggingOnce(): Promise<void> {
+  const client = pubSubClient;
+  if (!client) return;
+
+  const logger = _logger.child({
+    module: "log_job",
+    method: "shutdownPubSubLogging",
+  });
+  const results = await Promise.allSettled(
+    [...pubSubTopics.values()].map(topic => topic.flush()),
+  );
+  const errors = results.flatMap(result =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+
+  if (errors.length > 0) {
+    logger.error("Failed to flush Pub/Sub log publisher", { errors });
+    Sentry.captureException(errors[0], {
+      tags: { operation: "flushPubSubLogPublisher" },
+      extra: { failures: errors.length },
+    });
+  }
+
+  try {
+    await client.close();
+  } catch (error) {
+    logger.error("Failed to close Pub/Sub log publisher", { error });
+    Sentry.captureException(error, {
+      tags: { operation: "closePubSubLogPublisher" },
     });
   }
 }

@@ -11,6 +11,8 @@ const {
   topic,
   publishes,
   publishMessage,
+  flush,
+  close,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -22,6 +24,8 @@ const {
   const values = vi.fn<(data: any) => Promise<void>>();
   const insert = vi.fn(() => ({ values }));
   const publishMessage = vi.fn(async (_message: any) => "message-id");
+  const flush = vi.fn(async () => {});
+  const close = vi.fn(async () => {});
   const publishes: { name: string; options: any }[] = [];
   const topic = vi.fn((name: string, options: any) => {
     return {
@@ -29,6 +33,7 @@ const {
         publishes.push({ name, options });
         return publishMessage(message);
       },
+      flush,
     };
   });
   return {
@@ -39,12 +44,15 @@ const {
     topic,
     publishes,
     publishMessage,
+    flush,
+    close,
   };
 });
 
 vi.mock("@google-cloud/pubsub", () => ({
   PubSub: class {
     topic = topic;
+    close = close;
   },
 }));
 
@@ -87,7 +95,12 @@ vi.mock("../posthog", () => ({
   trackFirstSurfaceUse: vi.fn(),
 }));
 
-import { logRequest, logSearch, type LoggedSearch } from "./log_job";
+import {
+  logRequest,
+  logSearch,
+  shutdownPubSubLogging,
+  type LoggedSearch,
+} from "./log_job";
 import * as schema from "../../db/schema";
 
 function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
@@ -255,5 +268,14 @@ describe("logRequest", () => {
     // 1024 two-byte characters: 2048 bytes exactly — allowed.
     await logRequest(makeRequest("é".repeat(1024)));
     expect(values.mock.calls[1][0].external_request_id).toBe("é".repeat(1024));
+  });
+
+  it("flushes Pub/Sub messages during shutdown", async () => {
+    await logRequest(makeRequest(null));
+
+    await Promise.all([shutdownPubSubLogging(), shutdownPubSubLogging()]);
+
+    expect(flush).toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
   });
 });

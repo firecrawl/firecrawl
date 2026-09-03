@@ -20,7 +20,7 @@ import {
   shutdownExtractQueue,
   ExtractJobData,
 } from "./extract-queue";
-import { logExtract } from "./logging/log_job";
+import { logExtract, shutdownPubSubLogging } from "./logging/log_job";
 import { jobDurationSeconds } from "../lib/job-metrics";
 import { register } from "prom-client";
 
@@ -215,6 +215,7 @@ app.listen(workerPort, (error?: Error) => {
 async function shutdown() {
   _logger.info("Shutting down extract worker...");
   await shutdownExtractQueue();
+  await shutdownPubSubLogging();
   _logger.info("Extract worker shut down");
   process.exit(0);
 }
