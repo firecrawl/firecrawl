@@ -76,7 +76,45 @@ from .methods.research_docs import (
     doc,
 )
 
-from .client import _SCRAPE_OPTION_KEYS
+from inspect import signature as _signature
+
+from .client import _SCRAPE_OPTION_KEYS, FirecrawlClient as _SyncClient
+
+
+def _sync_kwargs(method) -> frozenset:
+    """The keyword names the sync client accepts for the same call.
+
+    This module's docstring says it mirrors the regular client surface, so the set of
+    accepted options is defined as the sync signature rather than restated here. It
+    cannot drift when a new option is added to one side only.
+    """
+    return frozenset(
+        name for name in _signature(method).parameters if name != "self"
+    )
+
+
+def _reject_unknown(method_name: str, kwargs: dict, allowed: frozenset) -> None:
+    """Raise on an unknown keyword, the way the sync client already does.
+
+    The sync methods list every option explicitly, so a misspelled one is a TypeError at
+    the call site. The async methods take **kwargs and hand them to a pydantic model,
+    and pydantic ignores unknown fields by default, so the same typo silently produced a
+    request with default settings instead.
+    """
+    unknown = sorted(set(kwargs) - allowed)
+    if unknown:
+        raise TypeError(
+            f"AsyncFirecrawlClient.{method_name}() got an unexpected keyword argument "
+            f"{unknown[0]!r}"
+        )
+
+
+_SCRAPE_KWARGS = _sync_kwargs(_SyncClient.scrape)
+_SEARCH_KWARGS = _sync_kwargs(_SyncClient.search)
+_START_CRAWL_KWARGS = _sync_kwargs(_SyncClient.start_crawl) | frozenset(_SCRAPE_OPTION_KEYS) | {"ignore_sitemap"}
+_CRAWL_KWARGS = _START_CRAWL_KWARGS | {"poll_interval", "timeout", "request_timeout"}
+_START_BATCH_KWARGS = _sync_kwargs(_SyncClient.start_batch_scrape) | {"options"}
+_BATCH_KWARGS = _START_BATCH_KWARGS | {"poll_interval", "timeout"}
 from .watcher_async import AsyncWatcher
 
 class AsyncFirecrawlClient:
@@ -119,6 +157,7 @@ class AsyncFirecrawlClient:
         auto_resume: Optional[bool] = None,
         **kwargs,
     ):
+        _reject_unknown("scrape", kwargs, _SCRAPE_KWARGS)
         options = ScrapeOptions(**{k: v for k, v in kwargs.items() if v is not None}) if kwargs else None
         return await async_scrape.scrape(
             self.async_http_client, url, options, auto_resume=auto_resume
@@ -262,6 +301,7 @@ class AsyncFirecrawlClient:
         query: str,
         **kwargs,
     ) -> SearchData:
+        _reject_unknown("search", kwargs, _SEARCH_KWARGS)
         request = SearchRequest(query=query, **{k: v for k, v in kwargs.items() if v is not None})
         return await async_search.search(self.async_http_client, request)
 
@@ -303,6 +343,7 @@ class AsyncFirecrawlClient:
         )
 
     async def start_crawl(self, url: str, **kwargs) -> CrawlResponse:
+        _reject_unknown("start_crawl", kwargs, _START_CRAWL_KWARGS)
         if kwargs.get("scrape_options") is None:
             scrape_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in _SCRAPE_OPTION_KEYS and kwargs[k] is not None}
             if scrape_kwargs:
@@ -364,6 +405,7 @@ class AsyncFirecrawlClient:
             await asyncio.sleep(poll_interval)
 
     async def crawl(self, **kwargs) -> CrawlJob:
+        _reject_unknown("crawl", kwargs, _CRAWL_KWARGS)
         # wrapper combining start and wait
         resp = await self.start_crawl(
             **{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout", "request_timeout")}
@@ -588,6 +630,23 @@ class AsyncFirecrawlClient:
         )
 
     async def start_batch_scrape(self, urls: List[str], **kwargs) -> Any:
+        _reject_unknown("start_batch_scrape", kwargs, _START_BATCH_KWARGS)
+        # Fold flat scrape options into ScrapeOptions, as the sync client and
+        # start_crawl above both do. Without this they stay loose keywords and the
+        # batch payload builder, which only reads `options` plus a fixed key list,
+        # drops them: formats=["markdown"] silently returned the default format.
+        if kwargs.get("options") is None:
+            scrape_kwargs = {
+                k: kwargs.pop(k)
+                for k in list(kwargs)
+                if k in _SCRAPE_OPTION_KEYS and kwargs[k] is not None
+            }
+            if scrape_kwargs:
+                kwargs["options"] = ScrapeOptions(**scrape_kwargs)
+        else:
+            for k in list(kwargs):
+                if k in _SCRAPE_OPTION_KEYS:
+                    kwargs.pop(k)
         return await async_batch.start_batch_scrape(self.async_http_client, urls, **kwargs)
 
     async def wait_batch_scrape(self, job_id: str, poll_interval: int = 2, timeout: Optional[int] = None) -> Any:
@@ -601,6 +660,7 @@ class AsyncFirecrawlClient:
             await asyncio.sleep(poll_interval)
 
     async def batch_scrape(self, urls: List[str], **kwargs) -> Any:
+        _reject_unknown("batch_scrape", kwargs, _BATCH_KWARGS)
         # waiter wrapper
         start = await self.start_batch_scrape(urls, **{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout")})
         job_id = start.id
