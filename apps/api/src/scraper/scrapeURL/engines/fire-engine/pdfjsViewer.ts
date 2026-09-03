@@ -29,9 +29,12 @@ import type { InternalAction } from "../../../../controllers/v1/types";
  * displays, using the browser that just rendered the shell:
  *
  *  1. When the page or its URL names the document (`viewer.html?file=…`, a
- *     literal URL in a script, an embed), navigate chrome-cdp to it. The
- *     download handler captures the PDF and specialtyScrapeCheck hands it
- *     to the pdf engine, exactly like a scrape of the PDF's own URL.
+ *     literal URL in a script, an embed) and it lives on the viewer's own
+ *     origin, navigate chrome-cdp to it. The download handler captures the
+ *     PDF and specialtyScrapeCheck hands it to the pdf engine, exactly like
+ *     a scrape of the PDF's own URL. The browser is never sent to a host the
+ *     page did not already load the viewer from: a document on another
+ *     origin is left to route 2, where the viewer fetches it itself.
  *  2. Otherwise — or when that URL did not yield a PDF — load the viewer
  *     again with stylesheets enabled and ask it for the bytes it fetched
  *     (`PDFViewerApplication.pdfDocument.getData()`). This covers viewers
@@ -263,6 +266,15 @@ async function documentUrlRefusal(documentUrl: string): Promise<string | null> {
   return null;
 }
 
+/** Whether two URLs share an origin; unparseable input never does. */
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -389,6 +401,23 @@ export async function resolvePdfJsViewerShell(
     documentUrl: string,
     how: string,
   ): Promise<void> => {
+    // The browser only navigates within the origin it already loaded the
+    // viewer from. A document elsewhere is not fetched by us at all: the
+    // viewer fetches it and the probe extracts the bytes, so the page can
+    // never direct the browser (or a DNS lookup) at a host of its choosing.
+    if (!sameOrigin(documentUrl, viewerUrl)) {
+      logger.info("Leaving a cross-origin document to the viewer itself", {
+        viewerUrl,
+        documentUrl,
+        how,
+      });
+      failures.push({
+        reason: "document_fetch_failed",
+        documentUrl,
+        detail: "refused: the document is on another origin than the viewer",
+      });
+      return;
+    }
     const refusal = await documentUrlRefusal(documentUrl);
     if (refusal !== null) {
       logger.warn("Refusing to fetch the viewer's document", {
@@ -404,26 +433,17 @@ export async function resolvePdfJsViewerShell(
       });
       return;
     }
-    // The page chose this URL. Caller-supplied headers (an Authorization
-    // header meant for the viewer's host, say) stay with the viewer's
-    // origin and never travel to a different one.
-    const sameOrigin =
-      new URL(documentUrl).origin === new URL(viewerUrl).origin;
     logger.info("Fetching the viewer's document through the browser", {
       viewerUrl,
       documentUrl,
       how,
-      crossOrigin: !sameOrigin,
     });
     let response: FireEngineCheckStatusSuccess;
     try {
+      // Same origin as the viewer, so the caller's headers stay where the
+      // caller aimed them.
       response = await performScrape(
-        {
-          ...followUp(),
-          url: documentUrl,
-          actions: undefined,
-          ...(sameOrigin ? {} : { headers: undefined }),
-        },
+        { ...followUp(), url: documentUrl, actions: undefined },
         logger.child({ method: "resolvePdfJsViewerShell/fetchDocument" }),
       );
     } catch (error) {

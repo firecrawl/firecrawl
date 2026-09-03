@@ -352,21 +352,22 @@ describe("resolvePdfJsViewerShell", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("drops caller headers when the named document lives on another origin", async () => {
+  it("leaves a document on another origin to the viewer itself", async () => {
     const elsewhere = "https://cdn.other.example/files/doc.pdf";
     const { outcome, calls } = await resolve(
       shell({ url: elsewhere, source: "embed" }),
       [
-        async () => {
-          throw handoff(elsewhere);
-        },
+        async () =>
+          probe({ ok: true, base64: PDF.toString("base64"), size: PDF.length }),
       ],
     );
 
-    expect(outcome).toBeInstanceOf(AddFeatureError);
+    // The browser is never sent to the other origin; the viewer probe runs.
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe(elsewhere);
-    expect(calls[0].headers).toBeUndefined();
+    expect(calls[0].url).toBe(VIEWER_URL);
+    expect(outcome).toBeInstanceOf(AddFeatureError);
+    const prefetch = (outcome as AddFeatureError).pdfPrefetch!;
+    tempFiles.push(prefetch.filePath);
   });
 
   it.each([
@@ -380,37 +381,51 @@ describe("resolvePdfJsViewerShell", () => {
     "https://files.corp.internal/report.pdf",
     "https://files.corp.internal./report.pdf",
   ])("refuses to fetch a document from a non-public host: %s", async url => {
-    const { outcome, calls } = await resolve(shell({ url, source: "script" }), [
-      async () => probe({ ok: false, reason: "no_document", url: null }),
-    ]);
+    // Same origin as the viewer, so only the host policy stands in the way.
+    const viewer = new URL("/viewer.html", url).href;
+    const { outcome, calls } = await resolve(
+      shell({ url, source: "script" }),
+      [async () => probe({ ok: false, reason: "no_document", url: null })],
+      {},
+      page(viewer),
+    );
 
     // Never navigated there: the only navigation is the viewer probe.
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe(VIEWER_URL);
+    expect(calls[0].url).toBe(viewer);
     expect(outcome).toBeInstanceOf(PDFViewerUnresolvedError);
     expect((outcome as PDFViewerUnresolvedError).detail).toContain("refused");
+    expect((outcome as PDFViewerUnresolvedError).detail).not.toContain(
+      "another origin",
+    );
   });
 
   it("refuses a public-looking host that resolves to a private address", async () => {
+    const viewer = "https://rebound.example/viewer.html";
     const { outcome, calls } = await resolve(
       shell({ url: "https://rebound.example/report.pdf", source: "script" }),
       [async () => probe({ ok: false, reason: "no_document", url: null })],
+      {},
+      page(viewer),
     );
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe(VIEWER_URL);
+    expect(calls[0].url).toBe(viewer);
     expect((outcome as PDFViewerUnresolvedError).detail).toContain(
       "resolves to a non-public address",
     );
   });
 
   it("refuses a host that does not resolve", async () => {
+    const viewer = "https://docs.unresolvable.example/viewer.html";
     const { outcome, calls } = await resolve(
       shell({
         url: "https://docs.unresolvable.example/report.pdf",
         source: "script",
       }),
       [async () => probe({ ok: false, reason: "no_document", url: null })],
+      {},
+      page(viewer),
     );
 
     expect(calls).toHaveLength(1);
