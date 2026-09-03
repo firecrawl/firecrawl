@@ -35,6 +35,18 @@ export const checkAndUpdateURL = (url: string) => {
     throw new Error("Invalid URL");
   }
 
+  // Strip username and password (basic auth credentials)
+  // Modern browsers don't allow this syntax
+  if (typedUrlObj.username || typedUrlObj.password) {
+    typedUrlObj.username = "";
+    typedUrlObj.password = "";
+    url = typedUrlObj.toString();
+    // Remove trailing slash again if toString() added it back
+    if (url.endsWith("/")) {
+      url = url.slice(0, -1);
+    }
+  }
+
   return { urlObj: typedUrlObj, url: url };
 };
 
@@ -150,6 +162,18 @@ export const checkAndUpdateURLForMap = (
 
   if (typedUrlObj.protocol !== "http:" && typedUrlObj.protocol !== "https:") {
     throw new Error("Invalid URL");
+  }
+
+  // Strip username and password (basic auth credentials)
+  // Modern browsers don't allow this syntax
+  if (typedUrlObj.username || typedUrlObj.password) {
+    typedUrlObj.username = "";
+    typedUrlObj.password = "";
+    url = typedUrlObj.toString();
+    // Remove trailing slash again if it was added by toString()
+    if (url.endsWith("/")) {
+      url = url.slice(0, -1);
+    }
   }
 
   // remove any query params
