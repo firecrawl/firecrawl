@@ -61,7 +61,6 @@ const tableMap: Record<string, PgTable> = {
 
 let pubSubClient: PubSub | null | undefined;
 const pubSubTopics = new Map<string, Topic>();
-const PUBSUB_PUBLISH_WAIT_MS = 250;
 const PUBSUB_PUBLISH_TIMEOUT_MS = 60_000;
 
 function getPubSubClient(logger: Logger): PubSub | null {
@@ -96,19 +95,6 @@ function getTopic(client: PubSub, table: string): Topic {
     pubSubTopics.set(table, topic);
   }
   return topic;
-}
-
-// Resolves when the promise settles or after `ms`, whichever is first.
-// The promise is not cancelled if it loses.
-function waitAtMost(promise: Promise<unknown>, ms: number): Promise<void> {
-  return new Promise(resolve => {
-    const timer = setTimeout(resolve, ms);
-    const done = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    promise.then(done, done);
-  });
 }
 
 async function publishLog(table: string, data: any, logger: Logger) {
@@ -149,7 +135,7 @@ async function robustInsert(
 
   const target = tableMap[table];
   data = { ...data, created_at: data.created_at ?? new Date() };
-  const publish = publishLog(table, data, logger);
+  void publishLog(table, data, logger);
 
   const attempts: { error: any; timeMs: number; backoffMs: number }[] = [];
 
@@ -228,9 +214,6 @@ async function robustInsert(
       });
     }
   }
-
-  // The insert above ran to completion; give the publish a bounded wait.
-  await waitAtMost(publish, PUBSUB_PUBLISH_WAIT_MS);
 }
 
 type LoggedRequest = {

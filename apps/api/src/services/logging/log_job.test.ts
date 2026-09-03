@@ -227,18 +227,10 @@ describe("logRequest", () => {
   });
 
   it("does not hold the caller on a slow publish", async () => {
-    vi.useFakeTimers();
-    try {
-      publishMessage.mockReturnValueOnce(new Promise(() => {}));
+    publishMessage.mockReturnValueOnce(new Promise(() => {}));
 
-      const pending = logRequest(makeRequest(null));
-      await vi.advanceTimersByTimeAsync(250);
-
-      await expect(pending).resolves.toBeUndefined();
-      expect(values).toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
+    await expect(logRequest(makeRequest(null))).resolves.toBeUndefined();
+    expect(values).toHaveBeenCalled();
   });
 
   it("stores null, not a truncation, when the id exceeds the byte cap", async () => {
