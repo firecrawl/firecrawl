@@ -92,6 +92,7 @@ async function resolve(
   viewerShell: PdfJsViewerShell,
   scrapes: Scrape[],
   meta: Record<string, unknown> = {},
+  shellResponse: FireEngineCheckStatusSuccess = page(VIEWER_URL),
 ) {
   const calls: ChromeCdpRequest[] = [];
   const performScrape = vi.fn(async (req: ChromeCdpRequest) => {
@@ -109,7 +110,7 @@ async function resolve(
     } as any,
     logger,
     request,
-    page(VIEWER_URL),
+    shellResponse,
     viewerShell,
     performScrape,
   ).then(
@@ -325,6 +326,108 @@ describe("resolvePdfJsViewerShell", () => {
 
     expect(outcome).toBe(abort);
     expect(calls).toHaveLength(1);
+  });
+
+  it("drops caller headers when the named document lives on another origin", async () => {
+    const elsewhere = "https://cdn.other.example/files/doc.pdf";
+    const { outcome, calls } = await resolve(
+      shell({ url: elsewhere, source: "embed" }),
+      [
+        async () => {
+          throw handoff(elsewhere);
+        },
+      ],
+    );
+
+    expect(outcome).toBeInstanceOf(AddFeatureError);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(elsewhere);
+    expect(calls[0].headers).toBeUndefined();
+  });
+
+  it.each([
+    "http://169.254.169.254/latest/meta-data/",
+    "http://10.0.0.7/report.pdf",
+    "http://[::1]:8080/report.pdf",
+    "http://localhost/report.pdf",
+    "http://intranet/report.pdf",
+    "https://files.corp.internal/report.pdf",
+  ])("refuses to fetch a document from a non-public host: %s", async url => {
+    const { outcome, calls } = await resolve(shell({ url, source: "script" }), [
+      async () => probe({ ok: false, reason: "no_document", url: null }),
+    ]);
+
+    // Never navigated there: the only navigation is the viewer probe.
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(VIEWER_URL);
+    expect(outcome).toBeInstanceOf(PDFViewerUnresolvedError);
+    expect((outcome as PDFViewerUnresolvedError).detail).toContain("refused");
+  });
+
+  it("does not let a non-PDF 200 page hide a blocked document", async () => {
+    const { outcome } = await resolve(
+      shell({ url: DOCUMENT_URL, source: "query" }),
+      [
+        async () => page(DOCUMENT_URL, 200, "<html>Please sign in</html>"),
+        async () =>
+          probe({
+            ok: false,
+            reason: "load_failed",
+            message: "Unexpected server response (403) while retrieving PDF",
+            url: DOCUMENT_URL,
+          }),
+      ],
+    );
+
+    // The 403 the viewer saw drives the outcome: stealth gets its round trip.
+    expect(outcome).toBeInstanceOf(AddFeatureError);
+    expect((outcome as AddFeatureError).featureFlags).toEqual(["stealthProxy"]);
+  });
+
+  it("carries the shell's screenshot into the handoff", async () => {
+    const screenshot = "data:image/png;base64,c2hvdA==";
+    const meta = {
+      options: {
+        proxy: "auto",
+        formats: [
+          { type: "screenshot", fullPage: false },
+          { type: "markdown" },
+        ],
+      },
+    };
+    const shellWithScreenshot = {
+      ...page(VIEWER_URL),
+      screenshots: [screenshot],
+    };
+
+    // Extracted in page.
+    const extracted = await resolve(
+      shell(null),
+      [
+        async () =>
+          probe({ ok: true, base64: PDF.toString("base64"), size: PDF.length }),
+      ],
+      meta,
+      shellWithScreenshot,
+    );
+    const prefetch = (extracted.outcome as AddFeatureError).pdfPrefetch!;
+    tempFiles.push(prefetch.filePath);
+    expect(prefetch.screenshot).toBe(screenshot);
+
+    // Downloaded through the browser.
+    const downloaded = await resolve(
+      shell({ url: DOCUMENT_URL, source: "query" }),
+      [
+        async () => {
+          throw handoff(DOCUMENT_URL);
+        },
+      ],
+      meta,
+      shellWithScreenshot,
+    );
+    expect(
+      (downloaded.outcome as AddFeatureError).pdfPrefetch?.screenshot,
+    ).toBe(screenshot);
   });
 
   it("reports a viewer that could not be loaded again", async () => {

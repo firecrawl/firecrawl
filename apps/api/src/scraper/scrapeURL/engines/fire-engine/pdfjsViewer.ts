@@ -17,6 +17,8 @@ import {
 import { AbortManagerThrownError } from "../../lib/abortManager";
 import type { PdfJsViewerShell } from "../../lib/pdfjsViewerShell";
 import { isPdfBuffer } from "../pdf/pdfUtils";
+import { isIPPrivate } from "../utils/safeFetch";
+import { hasFormatOfType } from "../../../../lib/format-utils";
 import type { InternalAction } from "../../../../controllers/v1/types";
 
 /**
@@ -197,6 +199,42 @@ function statusCodeFromMessage(
   return match ? Number(match[1]) : undefined;
 }
 
+/** Hostname suffixes that name internal infrastructure, never a public document. */
+const INTERNAL_HOST_SUFFIXES = [".localhost", ".local", ".internal", ".arpa"];
+
+/**
+ * Why a document URL taken from page content must not be fetched, or null
+ * when it may be. The page chose this URL, so it is held to the standard of
+ * a redirect target: a public http(s) host. Hostnames are judged without
+ * DNS (the browser resolves them), which catches literal private, loopback
+ * and link-local addresses and internal-looking names.
+ */
+function documentUrlRefusal(documentUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(documentUrl);
+  } catch {
+    return "not a valid URL";
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return `scheme ${url.protocol} is not http(s)`;
+  }
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (
+    host === "localhost" ||
+    INTERNAL_HOST_SUFFIXES.some(suffix => host.endsWith(suffix))
+  ) {
+    return `host ${host} is internal`;
+  }
+  if (isIPPrivate(host)) {
+    return `host ${host} is not a public address`;
+  }
+  if (!host.includes(".") && !host.includes(":")) {
+    return `host ${host} is not a public hostname`;
+  }
+  return null;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -280,6 +318,24 @@ export async function resolvePdfJsViewerShell(
     ...request,
     timeout: meta.abort.scrapeTimeout() ?? request.timeout,
   });
+  // The shell navigation honored a screenshot format, if the request had
+  // one (the format's screenshot is the last one taken, as the engine
+  // reads it). Carry it into the handoff so the pdf engine can return it:
+  // it is the screenshot of the URL the caller asked for.
+  const shellScreenshot =
+    hasFormatOfType(meta.options.formats, "screenshot") !== undefined
+      ? shellResponse.screenshots?.slice(-1)[0]
+      : undefined;
+  const withShellScreenshot = (error: unknown): unknown => {
+    if (
+      error instanceof AddFeatureError &&
+      error.pdfPrefetch &&
+      shellScreenshot !== undefined
+    ) {
+      error.pdfPrefetch.screenshot = shellScreenshot;
+    }
+    return error;
+  };
 
   // Navigates the browser to the document. A PDF never returns from here:
   // fire-engine's download handler captures it and specialtyScrapeCheck
@@ -289,19 +345,45 @@ export async function resolvePdfJsViewerShell(
     documentUrl: string,
     how: string,
   ): Promise<void> => {
+    const refusal = documentUrlRefusal(documentUrl);
+    if (refusal !== null) {
+      logger.warn("Refusing to fetch the viewer's document", {
+        viewerUrl,
+        documentUrl,
+        how,
+        refusal,
+      });
+      failures.push({
+        reason: "document_fetch_failed",
+        documentUrl,
+        detail: `refused: ${refusal}`,
+      });
+      return;
+    }
+    // The page chose this URL. Caller-supplied headers (an Authorization
+    // header meant for the viewer's host, say) stay with the viewer's
+    // origin and never travel to a different one.
+    const sameOrigin =
+      new URL(documentUrl).origin === new URL(viewerUrl).origin;
     logger.info("Fetching the viewer's document through the browser", {
       viewerUrl,
       documentUrl,
       how,
+      crossOrigin: !sameOrigin,
     });
     let response: FireEngineCheckStatusSuccess;
     try {
       response = await performScrape(
-        { ...followUp(), url: documentUrl, actions: undefined },
+        {
+          ...followUp(),
+          url: documentUrl,
+          actions: undefined,
+          ...(sameOrigin ? {} : { headers: undefined }),
+        },
         logger.child({ method: "resolvePdfJsViewerShell/fetchDocument" }),
       );
     } catch (error) {
-      if (isControlFlowError(error)) throw error;
+      if (isControlFlowError(error)) throw withShellScreenshot(error);
       failures.push({
         reason: "document_fetch_failed",
         documentUrl,
@@ -309,11 +391,22 @@ export async function resolvePdfJsViewerShell(
       });
       return;
     }
-    failures.push({
-      reason: "document_fetch_failed",
-      documentUrl,
-      statusCode: response.pageStatusCode,
-    });
+    // Only an error status says why the document was unavailable; a 2xx
+    // page that is not a PDF (a login wall, a listing) must not pose as a
+    // status worth reporting or hide a later 403/429 from the viewer.
+    failures.push(
+      response.pageStatusCode >= 400
+        ? {
+            reason: "document_fetch_failed",
+            documentUrl,
+            statusCode: response.pageStatusCode,
+          }
+        : {
+            reason: "document_fetch_failed",
+            documentUrl,
+            detail: `did not return a PDF (HTTP ${response.pageStatusCode})`,
+          },
+    );
   };
 
   if (shell.document !== null) {
@@ -375,6 +468,7 @@ export async function resolvePdfJsViewerShell(
           status: 200,
           proxyUsed: probeResponse.usedMobileProxy ? "stealth" : "basic",
           contentType: "application/pdf",
+          screenshot: shellScreenshot,
         });
       }
     } else if (probe.reason === "too_large" && httpUrl(probe.url, viewerUrl)) {
@@ -386,7 +480,7 @@ export async function resolvePdfJsViewerShell(
       failures.push(describeProbeFailure(probe, viewerUrl));
     }
   } catch (error) {
-    if (isControlFlowError(error)) throw error;
+    if (isControlFlowError(error)) throw withShellScreenshot(error);
     failures.push({
       reason: "viewer_unavailable",
       detail: errorMessage(error),
