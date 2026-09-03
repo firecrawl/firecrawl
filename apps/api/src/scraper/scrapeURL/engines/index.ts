@@ -925,10 +925,13 @@ export async function buildFallbackList(meta: Meta): Promise<
   }
 
   if (
-    !isWikimediaUrl(meta.url) ||
-    (Math.random() >= 0.5 &&
-      !meta.internalOptions.teamFlags?.checkRobotsOnScrape)
+    isWikimediaUrl(meta.url) &&
+    useWikipedia &&
+    !!meta.internalOptions.teamFlags?.checkRobotsOnScrape
   ) {
+    _engines.length = 0;
+    _engines.push("wikipedia");
+  } else if (!isWikimediaUrl(meta.url) || Math.random() >= 0.5) {
     const wikiIndex = _engines.indexOf("wikipedia");
     if (wikiIndex !== -1) {
       _engines.splice(wikiIndex, 1);
