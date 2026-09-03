@@ -238,8 +238,14 @@ export async function getMapResults({
       return [page1Result, ...remainingPages];
     };
 
+    // When search is active, fetch more index candidates so cosine similarity
+    // can rank them before the limit is applied.
+    const indexLimit = search
+      ? Math.min(MAX_MAP_LIMIT, Math.max(limit, maxFireEngineResults))
+      : limit;
+
     const [indexResults, searchResults] = await Promise.all([
-      queryIndex(url, limit, useIndex, includeSubdomains),
+      queryIndex(url, indexLimit, useIndex, includeSubdomains),
       fetchAllPages(),
     ]);
 
@@ -300,14 +306,16 @@ export async function getMapResults({
       );
     }
 
-    const minimumCutoff = Math.min(MAX_MAP_LIMIT, limit);
-    if (mapResults.length > minimumCutoff) {
-      mapResults = mapResults.slice(0, minimumCutoff);
-    }
-
+    // Apply cosine similarity ranking BEFORE the limit cutoff so that the
+    // most relevant results are kept rather than the first N by link order.
     if (search) {
       const searchQuery = search.toLowerCase();
       mapResults = performCosineSimilarityV2(mapResults, searchQuery);
+    }
+
+    const minimumCutoff = Math.min(MAX_MAP_LIMIT, limit);
+    if (mapResults.length > minimumCutoff) {
+      mapResults = mapResults.slice(0, minimumCutoff);
     }
   }
 
