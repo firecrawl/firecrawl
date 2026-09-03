@@ -239,6 +239,9 @@ const configSchema = z.object({
   PARSE_UPLOAD_REF_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   PARSE_UPLOAD_PUBLIC_BASE_URL: z.string().url().optional(),
 
+  // Google Cloud Pub/Sub
+  PUBSUB_CREDENTIALS: z.string().optional(),
+
   // Cloud Bigtable (change tracking bookkeeping store). The client
   // auto-detects BIGTABLE_EMULATOR_HOST, so local dev only needs the
   // emulator plus these vars. BIGTABLE_CREDENTIALS mirrors

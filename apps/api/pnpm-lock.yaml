@@ -93,6 +93,9 @@ importers:
       '@google-cloud/bigtable':
         specifier: ^7.2.0
         version: 7.2.0(@opentelemetry/core@2.9.0(@opentelemetry/api@1.9.1))
+      '@google-cloud/pubsub':
+        specifier: ^6.0.1
+        version: 6.0.1
       '@google-cloud/storage':
         specifier: ^7.21.0
         version: 7.21.0
@@ -834,6 +837,10 @@ packages:
     resolution: {integrity: sha512-DJS3s0OVH4zFDB1PzjxAsHqJT6sKVbRwwML0ZBP9PbU7Yebtu/7SWMRzvO2J3nUi9pRNITCfu4LJeooM2w4pjg==}
     engines: {node: '>=14.0.0'}
 
+  '@google-cloud/paginator@7.0.1':
+    resolution: {integrity: sha512-k32cWlHAF8yTgg8rciLI8mPMI6UzuJdKp53YRxISRwMFxUl2FYplvs+Mr2UHxKn0W7rXsqZnUZy73AOJFDP8iA==}
+    engines: {node: '>=22'}
+
   '@google-cloud/precise-date@4.0.0':
     resolution: {integrity: sha512-1TUx3KdaU3cN7nfCdNf+UVqA/PSX29Cjcox3fZZBtINlRrXVTmUkQnCKv2MbBUbCopbK4olAT1IHl76uZyCiVA==}
     engines: {node: '>=14.0.0'}
@@ -856,6 +863,14 @@ packages:
 
   '@google-cloud/promisify@6.0.1':
     resolution: {integrity: sha512-lpN2AtoQ/iimp7jjm5zJFWbpW7OJc5qWmQdt59CI4ENeoIRIx+yf2ShSR2kanQfjFOshA74eSbimXXuRaSCUVg==}
+    engines: {node: '>=22'}
+
+  '@google-cloud/pubsub-api@0.3.0':
+    resolution: {integrity: sha512-x1L+lrIHgaMwN5fAhnNVS7rh0BZn9eKmqOBXnOUM3jkilF4GE4ooETS9SYnCtPCVHwQtByDTh5b7KIMUW7XAHQ==}
+    engines: {node: '>=22'}
+
+  '@google-cloud/pubsub@6.0.1':
+    resolution: {integrity: sha512-Ms/cE5wyxWoHHj6IUWZO67j7nDhAKa7eAUkUYBJjRie0Yr1V82NclaaIntdqAmmpOgXbIzdDlrIyWXLVMeGSDg==}
     engines: {node: '>=22'}
 
   '@google-cloud/storage@7.21.0':
@@ -1542,6 +1557,10 @@ packages:
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
+
+  '@opentelemetry/semantic-conventions@1.39.0':
+    resolution: {integrity: sha512-R5R9tb2AXs2IRLNKLBJDynhkfmx7mX0vi8NkhZb3gUkPWHn6HXk5J8iQ/dql0U3ApfWym4kXXmBDRGO+oeOfjg==}
+    engines: {node: '>=14'}
 
   '@opentelemetry/semantic-conventions@1.43.0':
     resolution: {integrity: sha512-eSYWTm620tTk45EKSedaUL8MFYI8hW164hIXsgIHyxu3VobUB3fFCu5t0hQby6OoWRPsG1KkKUG2M5UadiLiVg==}
@@ -3200,6 +3219,10 @@ packages:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
 
+  heap-js@2.7.1:
+    resolution: {integrity: sha512-EQfezRg0NCZGNlhlDR3Evrw1FVL2G3LhU7EgPoxufQKruNBSYA8MiRPHeWbU+36o+Fhel0wMwM+sLEiBAlNLJA==}
+    engines: {node: '>=10.0.0'}
+
   html-encoding-sniffer@6.0.0:
     resolution: {integrity: sha512-CV9TW3Y3f8/wT0BRFc1/KAVQ3TUHiXmaAb6VW9vtiMFf7SLoMd1PdAc4W3KFOFETBJUb90KatHqlsZMWV+R9Gg==}
     engines: {node: ^20.19.0 || ^22.12.0 || >=24.0.0}
@@ -3326,6 +3349,9 @@ packages:
 
   is-promise@4.0.0:
     resolution: {integrity: sha512-hvpoI6korhJMnej285dSg6nu1+e6uxs7zG3BYAm5byqDsgJNWwxzM6z6iZiAgQR4TJ30JmBTOwqZUw3WlyH3AQ==}
+
+  is-stream-ended@0.1.4:
+    resolution: {integrity: sha512-xj0XPvmr7bQFTvirqnFr50o0hQIh6ZItDqloxt5aJrR4NQsYeSsyFQERYGCAzfindAcnKjINnwEEgLx4IqVzQw==}
 
   is-stream@2.0.1:
     resolution: {integrity: sha512-hFoiJiTl63nn+kstHGBtewWSKnQLpyb155KHheA1l39uvtO9nWIop1p3udqPcUd/xbF1VLMO4n7OI6p7RbngDg==}
@@ -3836,6 +3862,10 @@ packages:
     peerDependenciesMeta:
       oxlint-tsgolint:
         optional: true
+
+  p-defer@3.0.0:
+    resolution: {integrity: sha512-ugZxsxmtTln604yeYd29EGrNhazN2lywetzpKhfmQjW/VJmhpDmWbiX+h0zL8V91R0UXkhb3KtPmyq9PZw3aYw==}
+    engines: {node: '>=8'}
 
   p-finally@1.0.0:
     resolution: {integrity: sha512-LICb2p9CB7FS+0eR1oqWnHhp0FljGLZCWBE9aix0Uye9W8LTQPwMTYVGWQWIw9RdQiDg4+epXQODwIYJtSJaow==}
@@ -5253,6 +5283,10 @@ snapshots:
       arrify: 2.0.1
       extend: 3.0.2
 
+  '@google-cloud/paginator@7.0.1':
+    dependencies:
+      extend: 3.0.2
+
   '@google-cloud/precise-date@4.0.0': {}
 
   '@google-cloud/precise-date@6.0.1': {}
@@ -5264,6 +5298,35 @@ snapshots:
   '@google-cloud/promisify@4.0.0': {}
 
   '@google-cloud/promisify@6.0.1': {}
+
+  '@google-cloud/pubsub-api@0.3.0':
+    dependencies:
+      google-gax: 6.1.0
+    transitivePeerDependencies:
+      - supports-color
+
+  '@google-cloud/pubsub@6.0.1':
+    dependencies:
+      '@google-cloud/paginator': 7.0.1
+      '@google-cloud/precise-date': 6.0.1
+      '@google-cloud/projectify': 6.0.1
+      '@google-cloud/promisify': 6.0.1
+      '@google-cloud/pubsub-api': 0.3.0
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/core': 2.9.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/semantic-conventions': 1.39.0
+      arrify: 2.0.1
+      extend: 3.0.2
+      google-auth-library: 11.0.2
+      google-gax: 6.1.0
+      google-logging-utils: 2.0.1
+      heap-js: 2.7.1
+      is-stream-ended: 0.1.4
+      lodash.snakecase: 4.1.1
+      long: 5.3.2
+      p-defer: 3.0.0
+    transitivePeerDependencies:
+      - supports-color
 
   '@google-cloud/storage@7.21.0':
     dependencies:
@@ -5866,6 +5929,8 @@ snapshots:
       '@opentelemetry/core': 2.9.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.9.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
+
+  '@opentelemetry/semantic-conventions@1.39.0': {}
 
   '@opentelemetry/semantic-conventions@1.43.0': {}
 
@@ -7361,6 +7426,8 @@ snapshots:
 
   he@1.2.0: {}
 
+  heap-js@2.7.1: {}
+
   html-encoding-sniffer@6.0.0(@noble/hashes@1.8.0):
     dependencies:
       '@exodus/bytes': 1.15.1(@noble/hashes@1.8.0)
@@ -7509,6 +7576,8 @@ snapshots:
   is-potential-custom-element-name@1.0.1: {}
 
   is-promise@4.0.0: {}
+
+  is-stream-ended@0.1.4: {}
 
   is-stream@2.0.1: {}
 
@@ -7976,6 +8045,8 @@ snapshots:
       '@oxlint/linux-x64-musl': 1.14.0
       '@oxlint/win32-arm64': 1.14.0
       '@oxlint/win32-x64': 1.14.0
+
+  p-defer@3.0.0: {}
 
   p-finally@1.0.0: {}
 

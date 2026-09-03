@@ -23,6 +23,7 @@ import type { CostTracking } from "../../lib/cost-tracking";
 import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
+import { PubSub, type Topic } from "@google-cloud/pubsub";
 configDotenv();
 
 const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
@@ -58,6 +59,74 @@ const tableMap: Record<string, PgTable> = {
   deep_researches: schema.deep_researches,
 };
 
+let pubSubClient: PubSub | null | undefined;
+const pubSubTopics = new Map<string, Topic>();
+const PUBSUB_PUBLISH_WAIT_MS = 250;
+const PUBSUB_PUBLISH_TIMEOUT_MS = 60_000;
+
+function getPubSubClient(logger: Logger): PubSub | null {
+  if (pubSubClient !== undefined) return pubSubClient;
+  if (!config.PUBSUB_CREDENTIALS) return (pubSubClient = null);
+
+  try {
+    const credentials = JSON.parse(
+      Buffer.from(config.PUBSUB_CREDENTIALS, "base64").toString("utf8"),
+    );
+    return (pubSubClient = new PubSub({
+      projectId: credentials.project_id,
+      credentials,
+    }));
+  } catch (error) {
+    pubSubClient = null;
+    logger.error("Failed to initialize Pub/Sub log publisher", { error });
+    Sentry.captureException(error, {
+      tags: { operation: "initializePubSubLogPublisher" },
+    });
+    return null;
+  }
+}
+
+// One Topic per table so publishes share a batch.
+function getTopic(client: PubSub, table: string): Topic {
+  let topic = pubSubTopics.get(table);
+  if (!topic) {
+    topic = client.topic(table, {
+      gaxOpts: { timeout: PUBSUB_PUBLISH_TIMEOUT_MS },
+    });
+    pubSubTopics.set(table, topic);
+  }
+  return topic;
+}
+
+// Resolves when the promise settles or after `ms`, whichever is first.
+// The promise is not cancelled if it loses.
+function waitAtMost(promise: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise(resolve => {
+    const timer = setTimeout(resolve, ms);
+    const done = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    promise.then(done, done);
+  });
+}
+
+async function publishLog(table: string, data: any, logger: Logger) {
+  const client = getPubSubClient(logger);
+  if (!client) return;
+
+  try {
+    await getTopic(client, table).publishMessage({
+      data: Buffer.from(JSON.stringify(data)),
+    });
+  } catch (error) {
+    logger.error("Failed to publish log to Pub/Sub", { error });
+    Sentry.captureException(error, {
+      tags: { table, operation: "publishPubSubLog" },
+    });
+  }
+}
+
 async function robustInsert(
   table: string,
   data: any,
@@ -79,6 +148,8 @@ async function robustInsert(
   }
 
   const target = tableMap[table];
+  data = { ...data, created_at: data.created_at ?? new Date() };
+  const publish = publishLog(table, data, logger);
 
   const attempts: { error: any; timeMs: number; backoffMs: number }[] = [];
 
@@ -157,6 +228,9 @@ async function robustInsert(
       });
     }
   }
+
+  // The insert above ran to completion; give the publish a bounded wait.
+  await waitAtMost(publish, PUBSUB_PUBLISH_WAIT_MS);
 }
 
 type LoggedRequest = {
