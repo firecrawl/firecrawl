@@ -143,13 +143,15 @@ services:
     image: rabbitmq:3-management
     networks:
       - backend
-    command: rabbitmq-server
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "firecrawl-secret-cookie"
+    command: sh -c "rm -f /var/lib/rabbitmq/.erlang.cookie && rabbitmq-server"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
-      interval: 5s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
