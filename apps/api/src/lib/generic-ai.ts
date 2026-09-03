@@ -58,6 +58,15 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
     name = "gemini-2.5-pro";
   }
   const modelName = config.MODEL_NAME || name;
+  // Use Chat Completions endpoint when USE_RESPONSES_ENDPOINT=false.
+  // This is required for OpenAI-compatible proxies (e.g. LiteLLM, Azure OpenAI)
+  // that do not implement the Responses API.
+  if (
+    provider === "openai" &&
+    config.USE_RESPONSES_ENDPOINT === false
+  ) {
+    return providerList.openai.chat(modelName);
+  }
   // o3-mini returns empty text via the Responses API — force Chat Completions
   if (provider === "openai" && modelName.startsWith("o3-mini")) {
     return providerList.openai.chat(modelName);
