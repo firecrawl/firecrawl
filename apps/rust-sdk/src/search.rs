@@ -35,6 +35,9 @@ pub struct SearchOptions {
     /// Geographic location string for local search results.
     pub location: Option<String>,
 
+    /// ISO country code for geo-targeted search results (e.g. "US", "DE").
+    pub country: Option<String>,
+
     /// Whether to ignore invalid URLs in results.
     pub ignore_invalid_urls: Option<bool>,
 
@@ -46,6 +49,10 @@ pub struct SearchOptions {
 
     /// Scrape options to apply to each search result.
     pub scrape_options: Option<ScrapeOptions>,
+
+    /// Enterprise search modes. Use `["zdr"]` for Zero Data Retention or
+    /// `["anon"]` for anonymized search (must be enabled for the team).
+    pub enterprise: Option<Vec<String>>,
 
     /// Integration identifier for tracking.
     pub integration: Option<String>,
@@ -278,6 +285,23 @@ mod tests {
         assert_eq!(
             serde_json::to_value(options).unwrap(),
             json!({ "highlights": false })
+        );
+    }
+
+    #[test]
+    fn serializes_country_and_enterprise_options() {
+        let options = SearchOptions {
+            country: Some("DE".to_string()),
+            enterprise: Some(vec!["zdr".to_string()]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            serde_json::to_value(options).unwrap(),
+            json!({
+                "country": "DE",
+                "enterprise": ["zdr"]
+            })
         );
     }
 
