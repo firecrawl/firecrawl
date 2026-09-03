@@ -55,6 +55,10 @@ describe("POST /internal/indexed-highlight-objects", () => {
         { ...pages[2], outcome: "error" },
       ],
     });
+    expect(resolveHighlightIndexObject).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(resolveHighlightIndexObject).mock.calls).toEqual(
+      pages.map(page => [page.url]),
+    );
     expect(logger.info).toHaveBeenCalledTimes(1);
     expect(logger.info).toHaveBeenCalledWith(
       "Indexed highlight lookup completed",
