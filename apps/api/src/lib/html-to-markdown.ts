@@ -9,7 +9,12 @@ import { HTML_TO_MARKDOWN_PATH } from "../natives";
 import { convertHTMLToMarkdownWithHttpService } from "./html-to-markdown-client";
 import { postProcessMarkdown } from "@mendable/firecrawl-rs";
 
-// TODO: add a timeout to the Go parser
+class ConversionTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`HTML to Markdown conversion timed out after ${timeoutMs}ms`);
+    this.name = "ConversionTimeoutError";
+  }
+}
 
 class GoMarkdownConverter {
   private static instance: GoMarkdownConverter;
@@ -39,7 +44,12 @@ class GoMarkdownConverter {
   }
 
   public async convertHTMLToMarkdown(html: string): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
+    const timeoutMs = config.HTML_TO_MARKDOWN_TIMEOUT_MS;
+    let timeoutHandle: NodeJS.Timeout | undefined;
+
+    // The native call cannot be cancelled once started; the race only unblocks
+    // the caller so the scrape can fall back instead of stalling the worker.
+    const conversion = new Promise<string>((resolve, reject) => {
       this.convert.async(html, (err: Error, res: string) => {
         if (err) {
           reject(err);
@@ -48,6 +58,19 @@ class GoMarkdownConverter {
         }
       });
     });
+
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(
+        () => reject(new ConversionTimeoutError(timeoutMs)),
+        timeoutMs,
+      );
+    });
+
+    try {
+      return await Promise.race([conversion, timeout]);
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
   }
 }
 
@@ -99,7 +122,22 @@ export async function parseMarkdown(
       return markdownContent;
     }
   } catch (error) {
-    if (
+    if (error instanceof ConversionTimeoutError) {
+      contextLogger.warn(
+        "HTML to Markdown conversion timed out, falling back",
+        {
+          timeout_ms: config.HTML_TO_MARKDOWN_TIMEOUT_MS,
+          ...(zeroDataRetention ? {} : { input_size: html.length }),
+          ...(requestId && !zeroDataRetention ? { request_id: requestId } : {}),
+        },
+      );
+      Sentry.captureException(error, {
+        tags: {
+          conversion_timeout: "true",
+          ...(requestId && !zeroDataRetention ? { request_id: requestId } : {}),
+        },
+      });
+    } else if (
       !(error instanceof Error) ||
       error.message !== "Go shared library not found"
     ) {
