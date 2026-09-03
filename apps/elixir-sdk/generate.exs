@@ -23,6 +23,10 @@ defmodule Firecrawl.Generator do
     "getHistoricalTokenUsage"
   ])
 
+  # The method key becomes the Req function name in generated code, a position
+  # no escaping can protect, so anything else stops generation outright.
+  @http_methods ~w(get post put patch delete head options)
+
   def run do
     IO.puts("Fetching OpenAPI spec...")
     {:ok, spec} = fetch_spec()
@@ -96,6 +100,10 @@ defmodule Firecrawl.Generator do
         methods
         |> Enum.reject(fn {key, _} -> key == "parameters" end)
         |> Enum.map(fn {method, operation} ->
+          unless method in @http_methods do
+            raise ArgumentError, "refusing unknown HTTP method #{inspect(method)} at #{inspect(path)}"
+          end
+
           {method, path, operation, path_level_params}
         end)
       end)
@@ -492,7 +500,7 @@ defmodule Firecrawl.Generator do
           ""
       end
 
-    file_part_text = "{\"#{file_field}\", file_part}"
+    file_part_text = "{#{inspect(file_field)}, file_part}"
 
     indent = if not bang? and has_options?, do: "      ", else: "    "
 
@@ -586,7 +594,7 @@ defmodule Firecrawl.Generator do
             "  ## Parameters",
             "",
             "  Validated by #{bt}NimbleOptions#{bt}. Pass options as a keyword list with snake_case keys.",
-            "  These are JSON-encoded and sent as the #{bt}#{meta.options_field}#{bt} multipart field.",
+            "  These are JSON-encoded and sent as the #{bt}#{escape_source_text(meta.options_field)}#{bt} multipart field.",
             "  See #{bt}@#{func_name}_schema#{bt} for the full schema."
           ]
       else
