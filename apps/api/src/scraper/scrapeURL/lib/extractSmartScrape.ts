@@ -535,7 +535,7 @@ export async function extractData({
   } catch (error) {
     console.error(">>>>>>>extractSmartScrape.ts error>>>>>\n", error);
     if (error instanceof Error && error.message === "Cost limit exceeded") {
-      costLimitExceededTokenUsage = (error as any).cause.tokenUsage;
+      costLimitExceededTokenUsage = (error as any).cause?.tokenUsage ?? null;
       warning =
         "Smart scrape cost limit exceeded." + (warning ? " " + warning : "");
     } else {
