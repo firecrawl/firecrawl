@@ -522,9 +522,28 @@ const pdfParserWithOptions = z
     return normalized;
   });
 
+/**
+ * Raster image OCR (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP). Like `pdf` it is
+ * part of the default list, so a request that says nothing about parsers OCRs
+ * image URLs (behind the imageOcr team flag while it rolls out); an explicit
+ * list that omits it (`["pdf"]`, `[]`) opts out and keeps the historical
+ * unsupported-file rejection. The object form carries no options yet; it
+ * exists so options can be added later without a breaking change.
+ */
+const imageParserWithOptions = z.strictObject({
+  type: z.literal("image"),
+});
+
 const parsersSchema = z
-  .array(z.union([z.literal("pdf"), pdfParserWithOptions]))
-  .prefault(["pdf"]);
+  .array(
+    z.union([
+      z.literal("pdf"),
+      pdfParserWithOptions,
+      z.literal("image"),
+      imageParserWithOptions,
+    ]),
+  )
+  .prefault(["pdf", "image"]);
 
 type Parsers = z.infer<typeof parsersSchema>;
 
@@ -537,6 +556,22 @@ export function shouldParsePDF(parsers?: Parsers): boolean {
     }
     return false;
   });
+}
+
+/**
+ * Whether the request wants raster image OCR. Like PDFs, images are parsed
+ * by default: `undefined` means the default list, while an explicit list
+ * that omits `image` (including `[]`) opts out.
+ */
+export function shouldParseImages(parsers?: Parsers): boolean {
+  if (!parsers) return true;
+  return parsers.some(
+    parser =>
+      parser === "image" ||
+      (typeof parser === "object" &&
+        parser !== null &&
+        parser.type === "image"),
+  );
 }
 
 export function getPDFMaxPages(parsers?: Parsers): number | undefined {
@@ -904,7 +939,7 @@ export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
 
 export type ScrapeOptions = BaseScrapeOptions;
 
-export type UploadedParseFileKind = "html" | "pdf" | "document";
+export type UploadedParseFileKind = "html" | "pdf" | "document" | "image";
 
 export type UploadedParseFile = {
   buffer: Buffer;
@@ -1125,7 +1160,8 @@ const uploadedParseFileSchema = z.custom<UploadedParseFile>(
       (value as any).kind === undefined ||
       (value as any).kind === "html" ||
       (value as any).kind === "pdf" ||
-      (value as any).kind === "document"),
+      (value as any).kind === "document" ||
+      (value as any).kind === "image"),
   {
     error: "A file upload is required.",
   },
@@ -2019,7 +2055,7 @@ export function fromV0ScrapeOptions(
       parsers:
         pageOptions.parsePDF !== undefined
           ? pageOptions.parsePDF
-            ? ["pdf"]
+            ? ["pdf", "image"]
             : []
           : undefined,
       actions: pageOptions.actions,
@@ -2142,7 +2178,7 @@ export function fromV1ScrapeOptions(
       parsers:
         v1ScrapeOptions.parsePDF !== undefined
           ? v1ScrapeOptions.parsePDF
-            ? ["pdf"]
+            ? ["pdf", "image"]
             : []
           : undefined,
     }),

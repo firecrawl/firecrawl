@@ -44,6 +44,7 @@ import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 import { isKeylessConfigured } from "./lib/keyless";
+import { shutdownPubSubLogging } from "./services/logging/log_job";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -183,7 +184,8 @@ async function startServer(port = DEFAULT_PORT) {
       logger.info("Server closed.");
       nuqShutdown().finally(() => {
         shutdownWebhookQueue().finally(() => {
-          shutdownIndexerQueue().finally(() => {
+          shutdownIndexerQueue().finally(async () => {
+            await shutdownPubSubLogging();
             logger.info("NUQ shutdown complete");
             process.exit(0);
           });

@@ -285,6 +285,9 @@ export class FirecrawlClient {
    * Access the v2 research endpoints — Firecrawl's **research paper index**
    * (~43M paper abstracts) plus GitHub history/readmes.
    *
+   * `research.searchGithub()` is deprecated and stops responding after
+   * 2026-11-03. Use `developerSearch()` instead.
+   *
    * The paper corpus is roughly 90% biomedical and life sciences — PubMed,
    * bioRxiv and medRxiv — with arXiv covering physics, mathematics and
    * computer science.

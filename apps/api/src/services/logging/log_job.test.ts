@@ -3,7 +3,17 @@ import { vi } from "vitest";
 // vi.mock is hoisted; anything its factories reference must be created in
 // vi.hoisted() (also hoisted). Under Jest these worked because importing `jest`
 // from @jest/globals disables jest.mock hoisting.
-const { captureException, logger, values, insert } = vi.hoisted(() => {
+const {
+  captureException,
+  logger,
+  values,
+  insert,
+  topic,
+  publishes,
+  publishMessage,
+  flush,
+  close,
+} = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
     warn: vi.fn(),
@@ -13,8 +23,38 @@ const { captureException, logger, values, insert } = vi.hoisted(() => {
   };
   const values = vi.fn<(data: any) => Promise<void>>();
   const insert = vi.fn(() => ({ values }));
-  return { captureException: vi.fn(), logger, values, insert };
+  const publishMessage = vi.fn(async (_message: any) => "message-id");
+  const flush = vi.fn(async () => {});
+  const close = vi.fn(async () => {});
+  const publishes: { name: string; options: any }[] = [];
+  const topic = vi.fn((name: string, options: any) => {
+    return {
+      publishMessage: (message: any) => {
+        publishes.push({ name, options });
+        return publishMessage(message);
+      },
+      flush,
+    };
+  });
+  return {
+    captureException: vi.fn(),
+    logger,
+    values,
+    insert,
+    topic,
+    publishes,
+    publishMessage,
+    flush,
+    close,
+  };
 });
+
+vi.mock("@google-cloud/pubsub", () => ({
+  PubSub: class {
+    topic = topic;
+    close = close;
+  },
+}));
 
 vi.mock("@sentry/node", () => ({
   captureException,
@@ -23,6 +63,9 @@ vi.mock("@sentry/node", () => ({
 vi.mock("../../config", () => ({
   config: {
     GCS_BUCKET_NAME: undefined,
+    PUBSUB_CREDENTIALS: Buffer.from(
+      JSON.stringify({ project_id: "firecrawl" }),
+    ).toString("base64"),
     USE_DB_AUTHENTICATION: true,
   },
 }));
@@ -52,7 +95,12 @@ vi.mock("../posthog", () => ({
   trackFirstSurfaceUse: vi.fn(),
 }));
 
-import { logRequest, logSearch, type LoggedSearch } from "./log_job";
+import {
+  logRequest,
+  logSearch,
+  shutdownPubSubLogging,
+  type LoggedSearch,
+} from "./log_job";
 import * as schema from "../../db/schema";
 
 function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
@@ -79,6 +127,8 @@ describe("logSearch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     values.mockResolvedValue(undefined);
+    publishMessage.mockResolvedValue("message-id");
+    publishes.length = 0;
   });
 
   it("removes null bytes from search query log fields", async () => {
@@ -127,6 +177,8 @@ describe("logRequest", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     values.mockResolvedValue(undefined);
+    publishMessage.mockResolvedValue("message-id");
+    publishes.length = 0;
   });
 
   function makeRequest(externalRequestId: string | null) {
@@ -147,7 +199,51 @@ describe("logRequest", () => {
     await logRequest(makeRequest("op_integration_42"));
 
     expect(insert).toHaveBeenCalledWith(schema.requests);
-    expect(values.mock.calls[0][0].external_request_id).toBe("op_integration_42");
+    expect(values.mock.calls[0][0].external_request_id).toBe(
+      "op_integration_42",
+    );
+  });
+
+  it("writes the request to the database and its Pub/Sub topic", async () => {
+    await logRequest(makeRequest("op_integration_42"));
+
+    expect(insert).toHaveBeenCalledWith(schema.requests);
+    expect(publishes).toContainEqual({
+      name: "requests",
+      options: { gaxOpts: { timeout: 60_000 } },
+    });
+
+    const published = JSON.parse(
+      publishMessage.mock.calls[0][0].data.toString("utf8"),
+    );
+    expect(published.id).toBe("019e6f45-7778-727d-adf0-0abe9d5062b6");
+    expect(published.external_request_id).toBe("op_integration_42");
+    expect(new Date(published.created_at).toISOString()).toBe(
+      published.created_at,
+    );
+    expect(values.mock.calls[0][0].created_at.toISOString()).toBe(
+      published.created_at,
+    );
+  });
+
+  it("keeps the database write when Pub/Sub fails", async () => {
+    publishMessage.mockRejectedValueOnce(new Error("Pub/Sub unavailable"));
+
+    await expect(logRequest(makeRequest(null))).resolves.toBeUndefined();
+
+    expect(values).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      "Failed to publish log to Pub/Sub",
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
+    expect(captureException).toHaveBeenCalled();
+  });
+
+  it("does not hold the caller on a slow publish", async () => {
+    publishMessage.mockReturnValueOnce(new Promise(() => {}));
+
+    await expect(logRequest(makeRequest(null))).resolves.toBeUndefined();
+    expect(values).toHaveBeenCalled();
   });
 
   it("stores null, not a truncation, when the id exceeds the byte cap", async () => {
@@ -172,5 +268,14 @@ describe("logRequest", () => {
     // 1024 two-byte characters: 2048 bytes exactly — allowed.
     await logRequest(makeRequest("é".repeat(1024)));
     expect(values.mock.calls[1][0].external_request_id).toBe("é".repeat(1024));
+  });
+
+  it("flushes Pub/Sub messages during shutdown", async () => {
+    await logRequest(makeRequest(null));
+
+    await Promise.all([shutdownPubSubLogging(), shutdownPubSubLogging()]);
+
+    expect(flush).toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
   });
 });

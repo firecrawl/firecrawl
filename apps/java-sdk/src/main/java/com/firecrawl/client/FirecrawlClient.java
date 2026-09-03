@@ -602,10 +602,24 @@ public class FirecrawlClient {
         return http.get("/v2/search/research/papers/" + urlEncode(paperId) + "/similar" + researchQuery(params), ResearchModels.SimilarPapersResponse.class);
     }
 
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use the developer index at
+     *             GET or POST /v2/search/developer, which this SDK does not wrap
+     *             yet, so call it directly. It does not carry over the score
+     *             breakdown or the web fallback results.
+     */
+    @Deprecated
     public ResearchModels.GitHubSearchResponse searchGitHub(String query) {
         return searchGitHub(query, null);
     }
 
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use the developer index at
+     *             GET or POST /v2/search/developer, which this SDK does not wrap
+     *             yet, so call it directly. It does not carry over the score
+     *             breakdown or the web fallback results.
+     */
+    @Deprecated
     public ResearchModels.GitHubSearchResponse searchGitHub(String query, ResearchModels.SearchGitHubOptions options) {
         Objects.requireNonNull(query, "Query is required");
         Map<String, Object> params = new LinkedHashMap<>();
@@ -1056,6 +1070,13 @@ public class FirecrawlClient {
         return CompletableFuture.supplyAsync(() -> relatedPapers(paperId, intent, options), asyncExecutor);
     }
 
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use the developer index at
+     *             GET or POST /v2/search/developer, which this SDK does not wrap
+     *             yet, so call it directly. It does not carry over the score
+     *             breakdown or the web fallback results.
+     */
+    @Deprecated
     public CompletableFuture<ResearchModels.GitHubSearchResponse> searchGitHubAsync(String query, ResearchModels.SearchGitHubOptions options) {
         return CompletableFuture.supplyAsync(() -> searchGitHub(query, options), asyncExecutor);
     }

@@ -551,6 +551,7 @@ public class FirecrawlClient
     /// <summary>
     /// Searches GitHub research content.
     /// </summary>
+    [Obsolete("Stops responding after 2026-11-03. Use the developer index at GET or POST /v2/search/developer; this SDK does not wrap it yet, so call it directly. It does not carry over the score breakdown or the web fallback results.")]
     public async Task<GitHubSearchResponse> SearchGitHubAsync(
         string query,
         SearchGitHubOptions? options = null,

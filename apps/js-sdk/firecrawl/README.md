@@ -261,8 +261,13 @@ const related = await app.research.similarPapers('pmid:<id>', {
 });
 ```
 
-A companion `app.research.searchGithub` searches indexed GitHub issue/PR history
-and repository readmes.
+> **`app.research.searchGithub` is deprecated.** The research index GitHub
+> endpoint stops responding after 2026-11-03. Use `app.developerSearch`
+> instead: it searches GitHub issues, pull requests and readmes plus curated
+> documentation sources, returns matched passages, and adds filters for repo,
+> language, license and stars. It does not carry over the `scores` breakdown
+> or the `resultType: "web"` fallback results. See
+> [the developer index docs](https://docs.firecrawl.dev/features/developer).
 
 ### Scrape-bound interactive browsing (v2)
 

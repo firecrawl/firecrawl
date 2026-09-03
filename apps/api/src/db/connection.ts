@@ -2,42 +2,70 @@ import { Pool } from "pg";
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { config } from "../config";
 import { logger } from "../lib/logger";
+import {
+  keepPoolWarm,
+  pickMaxLifetimeSeconds,
+  resolveDbPoolOptions,
+  type DbPoolName,
+} from "./pool-profiles";
 
 type DB = NodePgDatabase;
-
-interface PoolSizing {
-  /** Max client connections this pool opens to the pooler. Default 20. */
-  max?: number;
-  /** Idle connections held open permanently. Default 0. */
-  min?: number;
-}
 
 // Registry of every pool we create, for /metrics exposure.
 const dbPools: { name: string; pool: Pool }[] = [];
 
+// One lifetime for every pool in this process; randomized per process so
+// recycling never lines up across the fleet (see pool-profiles.ts).
+const poolMaxLifetimeSeconds = pickMaxLifetimeSeconds();
+
 function makeDb(
   connectionString: string | undefined,
   applicationName: string,
-  sizing: PoolSizing = {},
+  poolName: DbPoolName,
+  { keepWarm = true }: { keepWarm?: boolean } = {},
 ): DB | null {
   if (!connectionString) {
     return null;
   }
 
+  // Sizing comes from the deployment's DB_POOL_PROFILE (pool-profiles.ts).
+  // Each process opens up to `max` client connections per pool against the
+  // (transaction) pooler. Supabase pins pgbouncer's max_client_conn at 12000,
+  // so the fleet-wide budget is `pods * max` per pool, and per-process pools
+  // stay small: the transaction pooler multiplexes server connections, so a
+  // large client pool buys little throughput but eats the global cap. `min`
+  // keeps connections warm across traffic dips so a burst never has the whole
+  // fleet re-opening connections at once.
+  const options = resolveDbPoolOptions(
+    config.DB_POOL_PROFILE,
+    poolName,
+    poolMaxLifetimeSeconds,
+  );
+  // A pool that is not kept warm keeps the profile's connect timeout,
+  // lifetime and keepalive but drains like before (no floor, 10 s idle
+  // eviction) so it never double-counts against the pooler's client budget.
+  if (!keepWarm) {
+    options.min = 0;
+    options.idleTimeoutMillis = 10_000;
+  }
   const pool = new Pool({
     connectionString,
     application_name: applicationName,
-    // Each process opens up to `max` client connections per pool against the
-    // (transaction) pooler. Supabase pins pgbouncer's max_client_conn at 12000,
-    // so the fleet-wide budget is `pods * sum(max across pools)`. Keep these
-    // small — the transaction pooler multiplexes server connections, so a large
-    // per-process client pool buys little throughput but eats the global cap.
-    // `min: 0` lets idle pods release connections instead of holding them.
-    max: sizing.max ?? 20,
-    min: sizing.min ?? 0,
+    max: options.max,
+    min: options.min,
+    idleTimeoutMillis: options.idleTimeoutMillis,
+    connectionTimeoutMillis: options.connectionTimeoutMillis,
+    maxLifetimeSeconds: options.maxLifetimeSeconds,
     keepAlive: true,
+    keepAliveInitialDelayMillis: options.keepAliveInitialDelayMillis,
   });
   dbPools.push({ name: applicationName, pool });
+  logger.info("Postgres pool configured", {
+    module: "db",
+    applicationName,
+    profile: config.DB_POOL_PROFILE ?? "default",
+    ...options,
+  });
   pool.on("error", err =>
     logger.error("Error in idle Postgres client", {
       err,
@@ -64,6 +92,17 @@ function makeDb(
         max,
       });
     }
+  });
+
+  keepPoolWarm(pool, options.min, {
+    initialDelayMs: Math.floor(Math.random() * 60_000),
+    intervalMs: 5_000 + Math.floor(Math.random() * 2_000),
+    onError: error =>
+      logger.warn("Postgres pool warm-up connect failed", {
+        module: "db",
+        applicationName,
+        error,
+      }),
   });
 
   return drizzle({ client: pool });
@@ -107,28 +146,43 @@ export function getDbPoolMetrics(): string {
       `db_pool_max_count{application_name="${name}"} ${pool.options.max ?? 20}`,
     );
   }
+  lines.push(
+    "# HELP db_pool_min_count Configured minimum (kept-warm) connections for this pool",
+    "# TYPE db_pool_min_count gauge",
+  );
+  for (const { name, pool } of dbPools) {
+    lines.push(
+      `db_pool_min_count{application_name="${name}"} ${pool.options.min ?? 0}`,
+    );
+  }
   return lines.join("\n");
 }
 
 const useDbAuthentication = config.USE_DB_AUTHENTICATION;
 
 const mainDb = useDbAuthentication
-  ? makeDb(config.DATABASE_URL, "firecrawl-api")
+  ? makeDb(config.DATABASE_URL, "firecrawl-api", "main")
   : null;
+// Without a distinct replica URL the "replica" pool points at the primary's
+// pooler, so it must not hold a second warm set of connections there.
 const replicaDb = useDbAuthentication
   ? makeDb(
       config.DATABASE_REPLICA_URL ?? config.DATABASE_URL,
       "firecrawl-api-rr",
+      "replica",
+      {
+        keepWarm:
+          config.DATABASE_REPLICA_URL !== undefined &&
+          config.DATABASE_REPLICA_URL !== config.DATABASE_URL,
+      },
     )
   : null;
 // The index pool was the sole consumer behind the 2026-06-11 pgbouncer
 // `08P01: no more connections allowed (max_client_conn)` incident. It runs
-// against the transaction pooler, so cap it well below the generic 20 to keep
-// the fleet-wide client-connection count under Supabase's 12000 ceiling.
-const indexDb = makeDb(config.INDEX_DATABASE_URL, "firecrawl-index", {
-  max: 6,
-  min: 0,
-});
+// against the transaction pooler, so every profile caps it well below the
+// generic pools to keep the fleet-wide client-connection count under
+// Supabase's 12000 ceiling.
+const indexDb = makeDb(config.INDEX_DATABASE_URL, "firecrawl-index", "index");
 
 if (useDbAuthentication && !mainDb) {
   logger.error(
