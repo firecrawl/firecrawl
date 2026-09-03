@@ -79,8 +79,12 @@ const HTML_ATTRIBUTES_RE =
   /<html\b[^>]*\b(?:mozdisallowselectionprint|moznomarginboxes)\b/i;
 const CONTAINERS_RE =
   /\bid=["']?(?:outerContainer|viewerContainer|sidebarContainer|toolbarContainer|toolbarViewer|toolbarSidebar|secondaryToolbar|viewerAlert)(?:["'\s>]|$)|\bclass=["'][^"']*\bpdfViewer\b/;
-/** The stock viewer's application object, which the resolver can drive. */
-const RUNTIME_API_RE = /\bPDFViewerApplication(?:Options)?\b/;
+/**
+ * The stock viewer's application object, which the resolver can drive. The
+ * exact identifier only: configuring `PDFViewerApplicationOptions` says
+ * nothing about the object itself being on the page.
+ */
+const RUNTIME_API_RE = /\bPDFViewerApplication\b/;
 /** The library alone: a custom build the resolver cannot drive. */
 const PDFJS_LIB_RE = /\bpdfjsLib\b|GlobalWorkerOptions\.workerSrc/;
 const L10N_ID_RE = /data-l10n-id=["']pdfjs-/g;

@@ -203,6 +203,16 @@ describe("detectPdfJsViewerShell", () => {
     ).toBeNull();
   });
 
+  it("does not take PDFViewerApplicationOptions for the application itself", () => {
+    const configured = CUSTOM_BUILD.replace(
+      "</body>",
+      '<script>PDFViewerApplicationOptions.set("workerSrc", "/static/pdfjs-dist/build/pdf.worker.min.js");</script></body>',
+    );
+    expect(
+      detectPdfJsViewerShell(configured, "https://records.example.org/view/42"),
+    ).toBeNull();
+  });
+
   it("recognizes a custom build that names its document", () => {
     const shell = detectPdfJsViewerShell(
       CUSTOM_BUILD.replace(
