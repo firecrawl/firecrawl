@@ -938,3 +938,7 @@ This project is primarily licensed under the GNU Affero General Public License v
     ↑ Back to Top ↑
   </a>
 </p>
+
+## Community Examples
+
+- [AI Competitor Intelligence Agent](https://github.com/sosal123tyu1/firecrawl-competitor-agent) - Autonomous Business Intelligence agent that monitors competitor websites and generates structured intelligence reports using Firecrawl + OpenAI.
