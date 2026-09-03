@@ -176,6 +176,10 @@ export type Meta = {
         status: number;
         proxyUsed: "basic" | "stealth";
         contentType?: string;
+        /** Screenshot the browser took of the page the file was handed off
+         * from (a resolved viewer shell), when the request asked for one.
+         * The pdf engine returns it so the format survives the handoff. */
+        screenshot?: string;
         /** Set when fire-engine handed the file off by GCS reference (large
          * PDFs): the object it uploaded, so the FirePDF by-reference path
          * can server-side copy it instead of re-uploading the bytes. The
@@ -756,8 +760,12 @@ async function scrapeURLLoopIter(
     // entry, tlsclient's raw HTML) is declined so the waterfall reaches an
     // engine that can, and remembered so an exhausted waterfall fails with
     // the specific error.
+    // Exchange content never falls back to other engines by design (see
+    // buildFallbackList), so a shell it returns cannot be resolved and is
+    // served as delivered rather than turned into a failure.
     const contentShell =
       hasRawBase64 ||
+      engine === "exchange" ||
       !wantsPageContent(meta.options.formats) ||
       meta.internalOptions.teamId === "sitemap" ||
       meta.internalOptions.teamId === "robots-txt"
@@ -1242,6 +1250,15 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         postprocessorsUsed: engineResult.postprocessorsUsed,
       },
     };
+
+    // A file handoff can carry the screenshot the browser took of the page
+    // it came from (a resolved viewer shell, see fire-engine/pdfjsViewer.ts).
+    // When it did, the screenshot format was honored even though the parsing
+    // engine declares no support for it.
+    if (engineResult.screenshot !== undefined) {
+      result.unsupportedFeatures.delete("screenshot");
+      result.unsupportedFeatures.delete("screenshot@fullScreen");
+    }
 
     if (result.unsupportedFeatures.size > 0) {
       const warning = `The engine used does not support the following features: ${[...result.unsupportedFeatures].join(", ")} -- your scrape may be partial.`;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   detectPdfJsViewerShell,
   locatePdfJsViewerDocument,
+  MAX_HOST_TEXT_LENGTH,
 } from "./pdfjsViewerShell";
 
 const VIEWER_URL = "https://archive.example.org/pdfjs/web/viewer.html";
@@ -174,17 +175,67 @@ describe("detectPdfJsViewerShell", () => {
     );
   });
 
-  it("recognizes a custom pdfjs-dist build with a small host page", () => {
+  it("leaves a pdfjs-dist build the resolver could not open alone", () => {
+    // Small host page, library markers, but no PDFViewerApplication and no
+    // document the page names: nothing to resolve, so it is not a shell and
+    // the scrape returns its HTML as before.
+    expect(
+      detectPdfJsViewerShell(
+        CUSTOM_BUILD,
+        "https://records.example.org/view/42",
+      ),
+    ).toBeNull();
+  });
+
+  it("recognizes a custom build that names its document", () => {
     const shell = detectPdfJsViewerShell(
-      CUSTOM_BUILD,
+      CUSTOM_BUILD.replace(
+        "pdfjsLib.getDocument({ data })",
+        'pdfjsLib.getDocument("statement.pdf")',
+      ),
       "https://records.example.org/view/42",
     );
     expect(shell).not.toBeNull();
     expect(shell!.signals).toEqual(
-      expect.arrayContaining(["containers", "scripts", "runtime-api"]),
+      expect.arrayContaining(["containers", "scripts", "pdfjs-lib"]),
     );
-    // The endpoint lives in a variable: nothing to locate statically.
+    expect(shell!.document).toEqual({
+      url: "https://records.example.org/view/statement.pdf",
+      source: "script",
+    });
+  });
+
+  it("recognizes a custom build driven through PDFViewerApplication", () => {
+    const shell = detectPdfJsViewerShell(
+      CUSTOM_BUILD.replace(
+        "</body>",
+        "<script>PDFViewerApplication.open({ url: endpoint });</script></body>",
+      ),
+      "https://records.example.org/view/42",
+    );
+    expect(shell).not.toBeNull();
+    expect(shell!.signals).toEqual(expect.arrayContaining(["runtime-api"]));
+    // The endpoint lives in a variable: the in-page probe has to fetch it.
     expect(shell!.document).toBeNull();
+  });
+
+  it("classifies by the host text a viewer page carries, up to the limit", () => {
+    // The stock viewer has no text of its own outside the widgets, so a
+    // header of exactly N characters is the page's whole host text.
+    const withHostText = (chars: number) =>
+      stockViewer().replace(
+        '<body tabindex="0">',
+        `<body tabindex="0"><header><p>${"a".repeat(chars)}</p></header>`,
+      );
+    expect(
+      detectPdfJsViewerShell(withHostText(MAX_HOST_TEXT_LENGTH), VIEWER_URL),
+    ).not.toBeNull();
+    expect(
+      detectPdfJsViewerShell(
+        withHostText(MAX_HOST_TEXT_LENGTH + 1),
+        VIEWER_URL,
+      ),
+    ).toBeNull();
   });
 
   it("reads the standard viewer's file= parameter as the document", () => {

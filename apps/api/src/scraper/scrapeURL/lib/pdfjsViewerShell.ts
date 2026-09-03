@@ -15,7 +15,10 @@ import { load } from "cheerio";
  * Detection is deliberately conservative: two or more independent signals
  * are required, and a page whose own text (outside the viewer widgets) is
  * substantial is left alone, so an article that mentions pdf.js or embeds
- * a viewer among real content is never treated as a shell.
+ * a viewer among real content is never treated as a shell. Only shells the
+ * resolver can open are classified: one that names its document, or one
+ * built on the stock viewer (whose runtime exposes PDFViewerApplication). A
+ * page driving pdfjs-dist directly keeps its HTML, as it always has.
  */
 
 export type PdfJsViewerSignal =
@@ -24,6 +27,7 @@ export type PdfJsViewerSignal =
   | "containers"
   | "scripts"
   | "runtime-api"
+  | "pdfjs-lib"
   | "l10n"
   | "toolbar";
 
@@ -57,7 +61,7 @@ const MIN_SIGNALS = 2;
  * heading or a few controls. A page with a real article around an embedded
  * viewer is far above this and keeps its own content.
  */
-const MAX_HOST_TEXT_LENGTH = 1500;
+export const MAX_HOST_TEXT_LENGTH = 1500;
 /** `data-l10n-id="pdfjs-…"` occurrences before the l10n signal counts. */
 const MIN_L10N_IDS = 3;
 /** Distinct toolbar/menu terms before the vocabulary signal counts. */
@@ -75,8 +79,10 @@ const HTML_ATTRIBUTES_RE =
   /<html\b[^>]*\b(?:mozdisallowselectionprint|moznomarginboxes)\b/i;
 const CONTAINERS_RE =
   /\bid=["']?(?:outerContainer|viewerContainer|sidebarContainer|toolbarContainer|toolbarViewer|toolbarSidebar|secondaryToolbar|viewerAlert)(?:["'\s>]|$)|\bclass=["'][^"']*\bpdfViewer\b/;
-const RUNTIME_API_RE =
-  /\bPDFViewerApplication(?:Options)?\b|\bpdfjsLib\b|GlobalWorkerOptions\.workerSrc/;
+/** The stock viewer's application object, which the resolver can drive. */
+const RUNTIME_API_RE = /\bPDFViewerApplication(?:Options)?\b/;
+/** The library alone: a custom build the resolver cannot drive. */
+const PDFJS_LIB_RE = /\bpdfjsLib\b|GlobalWorkerOptions\.workerSrc/;
 const L10N_ID_RE = /data-l10n-id=["']pdfjs-/g;
 const SCRIPT_OR_LINK_SRC_RE =
   /<(?:script|link)\b[^>]*?\b(?:src|href)\s*=\s*["']([^"']+)["']/gi;
@@ -161,6 +167,7 @@ function collectSignals(html: string): PdfJsViewerSignal[] {
   if (CONTAINERS_RE.test(html)) signals.push("containers");
   if (hasPdfJsScript(html)) signals.push("scripts");
   if (RUNTIME_API_RE.test(html)) signals.push("runtime-api");
+  if (PDFJS_LIB_RE.test(html)) signals.push("pdfjs-lib");
   if (countMatches(html, L10N_ID_RE) >= MIN_L10N_IDS) signals.push("l10n");
   if (TOOLBAR_TERMS.filter(re => re.test(html)).length >= MIN_TOOLBAR_TERMS) {
     signals.push("toolbar");
@@ -218,12 +225,27 @@ export function detectPdfJsViewerShell(
   if (signals.length < MIN_SIGNALS) return null;
   if (hostTextLength(html) > MAX_HOST_TEXT_LENGTH) return null;
 
-  return {
-    kind: "pdfjs-viewer",
-    signals,
-    document: locatePdfJsViewerDocument(html, pageUrl),
-  };
+  // Classify only what the resolver can open: a document the page names, or
+  // a viewer whose runtime exposes PDFViewerApplication (the stock viewer's
+  // markup, or a build that references it). A page that drives pdfjs-dist
+  // itself offers neither, and failing it would be worse than its HTML.
+  const document = locatePdfJsViewerDocument(html, pageUrl);
+  if (document === null && !signals.some(s => RESOLVABLE_SIGNALS.has(s))) {
+    return null;
+  }
+
+  return { kind: "pdfjs-viewer", signals, document };
 }
+
+/** Signals that imply PDFViewerApplication exists at runtime. */
+const RESOLVABLE_SIGNALS: ReadonlySet<PdfJsViewerSignal> =
+  new Set<PdfJsViewerSignal>([
+    "title",
+    "html-attributes",
+    "l10n",
+    "toolbar",
+    "runtime-api",
+  ]);
 
 /**
  * Script patterns a page uses to point the viewer at a document. Only
