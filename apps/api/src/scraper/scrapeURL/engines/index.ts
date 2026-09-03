@@ -20,6 +20,7 @@ import {
   scrapeURLWithWikipedia,
   wikipediaMaxReasonableTime,
   isWikimediaUrl,
+  useWikipedia,
 } from "./wikipedia";
 import {
   scrapeURLWithXTwitter,
@@ -68,11 +69,7 @@ export type Engine =
 const usePlaywright =
   config.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
   config.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
-const useWikipedia =
-  config.WIKIPEDIA_ENTERPRISE_USERNAME !== undefined &&
-  config.WIKIPEDIA_ENTERPRISE_USERNAME !== "" &&
-  config.WIKIPEDIA_ENTERPRISE_PASSWORD !== undefined &&
-  config.WIKIPEDIA_ENTERPRISE_PASSWORD !== "";
+
 const useXTwitter =
   (config.XAI_API_KEY !== undefined && config.XAI_API_KEY !== "") ||
   config.USE_DB_AUTHENTICATION === true;
@@ -927,7 +924,11 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
-  if (!isWikimediaUrl(meta.url) || Math.random() >= 0.5) {
+  if (
+    !isWikimediaUrl(meta.url) ||
+    (Math.random() >= 0.5 &&
+      !meta.internalOptions.teamFlags?.checkRobotsOnScrape)
+  ) {
     const wikiIndex = _engines.indexOf("wikipedia");
     if (wikiIndex !== -1) {
       _engines.splice(wikiIndex, 1);

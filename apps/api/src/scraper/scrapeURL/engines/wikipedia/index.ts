@@ -371,3 +371,9 @@ export function wikipediaMaxReasonableTime(_meta: Meta): number {
 export function isWikimediaUrl(url: string): boolean {
   return parseWikimediaUrl(url) !== null;
 }
+
+export const useWikipedia =
+  config.WIKIPEDIA_ENTERPRISE_USERNAME !== undefined &&
+  config.WIKIPEDIA_ENTERPRISE_USERNAME !== "" &&
+  config.WIKIPEDIA_ENTERPRISE_PASSWORD !== undefined &&
+  config.WIKIPEDIA_ENTERPRISE_PASSWORD !== "";
