@@ -25,6 +25,7 @@ import { extractData } from "../lib/extractSmartScrape";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { config } from "../../../config";
 
 // Smart model selection based on schema
 function detectRecursiveSchema(schema: any): boolean {
@@ -330,6 +331,19 @@ export async function generateCompletions({
   totalUsage: TokenUsage;
   model: string;
 }> {
+  if (config.OPENAI_COMPATIBLE_MODE) {
+    providerOptions = {
+      ...(providerOptions || {}),
+      openai: {
+        ...((providerOptions as any)?.openai || {}),
+        // When in OpenAI Compatible Mode, we disable strict 'structuredOutputs' (json_schema)
+        // because many local backends (e.g. Ollama) only support standard 'json_object' mode.
+        // Default behavior for official OpenAI remains unchanged.
+        structuredOutputs: false,
+      },
+    } as any;
+  }
+
   let extract: any;
   let warning: string | undefined;
   let currentModel = model;

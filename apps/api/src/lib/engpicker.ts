@@ -1,5 +1,6 @@
 import { generateObject } from "ai";
 import { z } from "zod";
+import { config } from "../config";
 import { scrapeOptions } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
 import type { Engine } from "../scraper/scrapeURL/engines";
@@ -25,7 +26,7 @@ type EngpickerJob = {
   created_at: string;
 };
 
-async function evaluateURL(
+export async function evaluateURL(
   id: string,
   url: string,
   engine: Engine,
@@ -67,16 +68,29 @@ async function evaluateURL(
 
   logger.info("Scrape completed, waiting for AI evaluation");
 
-  // Use GPT-4o-mini to evaluate if the scrape was actually successful
-  const evaluationResult = await generateObject({
-    model: getModel("gpt-4o-mini", "openai"),
-    schema: z.object({
-      is_successful: z.boolean(),
-    }),
-    messages: [
-      {
-        role: "system",
-        content: `You are a web scraping quality evaluator. Your job is to determine if a web scrape was successful based on the returned markdown content.
+  try {
+    // Use GPT-4o-mini to evaluate if the scrape was actually successful
+    const evaluationResult = await generateObject({
+      model: getModel("gpt-4o-mini", "openai"),
+      schema: z.object({
+        is_successful: z.boolean(),
+      }),
+      providerOptions: {
+        ...(config.OPENAI_COMPATIBLE_MODE
+          ? {
+              openai: {
+                // When in OpenAI Compatible Mode, we disable strict 'structuredOutputs' (json_schema)
+                // because many local backends (e.g. Ollama) only support standard 'json_object' mode.
+                // Default behavior for official OpenAI remains unchanged.
+                structuredOutputs: false,
+              },
+            }
+          : {}),
+      },
+      messages: [
+        {
+          role: "system",
+          content: `You are a web scraping quality evaluator. Your job is to determine if a web scrape was successful based on the returned markdown content.
 
 A scrape should be considered UNSUCCESSFUL if the content indicates any of the following:
 - Antibot/captcha challenges (e.g., Cloudflare, reCAPTCHA, hCaptcha, bot detection messages)
@@ -93,24 +107,39 @@ A scrape should be considered SUCCESSFUL if:
 A scrape may still be successful if:
 - Cookie consent walls block the actual content
 - Paywalls block the actual content`,
-      },
-      {
-        role: "user",
-        content: `Evaluate if this scraped markdown content represents a successful scrape:\n\n${markdown.slice(0, 4000)}`,
-      },
-    ],
-  });
+        },
+        {
+          role: "user",
+          content: `Evaluate if this scraped markdown content represents a successful scrape:\n\n${markdown.slice(0, 4000)}`,
+        },
+      ],
+    });
 
-  const isSuccess = evaluationResult.object.is_successful;
+    const isSuccess = evaluationResult.object.is_successful;
 
-  logger.info("AI evaluation completed", { isSuccess });
+    logger.info("AI evaluation completed", { isSuccess });
 
-  return {
-    engine,
-    stealth,
-    markdown,
-    result: isSuccess,
-  };
+    return {
+      engine,
+      stealth,
+      markdown,
+      result: isSuccess,
+    };
+  } catch (error) {
+    logger.warn("AI evaluation failed", {
+      error,
+      url,
+      engine,
+      compatibilityMode: config.OPENAI_COMPATIBLE_MODE,
+    });
+
+    return {
+      engine,
+      stealth,
+      markdown,
+      result: false,
+    };
+  }
 }
 
 export async function processEngpickerJob() {

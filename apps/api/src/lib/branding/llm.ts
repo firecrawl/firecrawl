@@ -97,6 +97,14 @@ export async function enhanceBrandingWithLLM(
           // Prefer loose schema so we use whatever the LLM returns (avoids validation
           // failures on minor schema drift or when model omits optional fields).
           strictJsonSchema: false,
+          ...(config.OPENAI_COMPATIBLE_MODE
+            ? {
+                // When in OpenAI Compatible Mode, we disable strict 'structuredOutputs' (json_schema)
+                // because many local backends (e.g. Ollama) only support standard 'json_object' mode.
+                // Default behavior for official OpenAI remains unchanged.
+                structuredOutputs: false,
+              }
+            : {}),
         },
       },
       messages: [

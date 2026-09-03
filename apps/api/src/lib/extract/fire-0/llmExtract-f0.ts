@@ -13,6 +13,7 @@ import { generateObject, generateText, LanguageModel } from "ai";
 import { jsonSchema } from "ai";
 import { getModel } from "../../../lib/generic-ai";
 import { z } from "zod";
+import { config } from "../../../config";
 
 // Get max tokens from model prices
 const getModelLimits_F0 = (model: string) => {
@@ -402,6 +403,16 @@ export async function generateCompletions_F0({
             teamId: metadata.teamId,
           },
         },
+        ...(config.OPENAI_COMPATIBLE_MODE
+          ? {
+              openai: {
+                // When in OpenAI Compatible Mode, we disable strict 'structuredOutputs' (json_schema)
+                // because many local backends (e.g. Ollama) only support standard 'json_object' mode.
+                // Default behavior for official OpenAI remains unchanged.
+                structuredOutputs: false,
+              },
+            }
+          : {}),
       },
       experimental_telemetry: {
         isEnabled: true,
