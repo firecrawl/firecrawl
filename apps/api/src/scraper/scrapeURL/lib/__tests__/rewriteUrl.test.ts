@@ -100,7 +100,7 @@ describe("rewriteUrl", () => {
       const url =
         "https://drive.google.com/file/d/1a2b3c4d5e6f7g8h9i0j/view?usp=sharing";
       expect(rewriteUrl(url)).toBe(
-        "https://drive.google.com/uc?export=download&id=1a2b3c4d5e6f7g8h9i0j",
+        "https://drive.usercontent.google.com/download?id=1a2b3c4d5e6f7g8h9i0j&export=download",
       );
     });
   });
