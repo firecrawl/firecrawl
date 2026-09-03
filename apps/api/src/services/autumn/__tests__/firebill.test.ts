@@ -7,6 +7,7 @@ import {
 import { logger } from "../../../lib/logger";
 import {
   firebillCheckTotal,
+  firebillFailureCauseTotal,
   firebillRetryTotal,
   firebillTrackTotal,
 } from "../metrics";
@@ -66,6 +67,7 @@ beforeEach(() => {
   firebillTrackTotal.reset();
   firebillRetryTotal.reset();
   firebillCheckTotal.reset();
+  firebillFailureCauseTotal.reset();
   vi.mocked(logger.info).mockClear();
   vi.mocked(logger.warn).mockClear();
   vi.mocked(logger.error).mockClear();
@@ -111,20 +113,31 @@ describe("shouldRouteToFirebill", () => {
   });
 });
 
-/** Outcome and cause together, as `outcome/cause`. */
+/**
+ * The outcome counter alone — the one the alerts read, which must keep exactly
+ * the labels it always had.
+ */
 const trackOutcomes = async () =>
   Object.fromEntries(
     (await firebillTrackTotal.get()).values.map(v => [
-      `${v.labels.outcome}/${v.labels.cause}`,
+      v.labels.outcome,
       v.value,
     ]),
   );
 
-/** The same, for the check counter. */
 const checkOutcomes = async () =>
   Object.fromEntries(
     (await firebillCheckTotal.get()).values.map(v => [
-      `${v.labels.outcome}/${v.labels.cause}`,
+      v.labels.outcome,
+      v.value,
+    ]),
+  );
+
+/** The separate cause counter, as `operation/cause`. */
+const failureCauses = async () =>
+  Object.fromEntries(
+    (await firebillFailureCauseTotal.get()).values.map(v => [
+      `${v.labels.operation}/${v.labels.cause}`,
       v.value,
     ]),
   );
@@ -191,13 +204,50 @@ describe("firebillTrack", () => {
       vi.fn().mockImplementation(async () => refused()),
     );
     await firebillTrack(params);
-    expect(await trackOutcomes()).toEqual({ "refused/refused": 1 });
+    expect(await trackOutcomes()).toEqual({ refused: 1 });
+    expect(await failureCauses()).toEqual({ "track/refused": 1 });
 
     firebillTrackTotal.reset();
+    firebillFailureCauseTotal.reset();
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("timeout")));
     await firebillTrack(params);
     // A timeout is not proof the usage was lost — firebill may have taken it.
-    expect(await trackOutcomes()).toEqual({ "ambiguous/connection": 1 });
+    expect(await trackOutcomes()).toEqual({ ambiguous: 1 });
+    expect(await failureCauses()).toEqual({ "track/connection": 1 });
+  });
+
+  // -----------------------------------------------------------------------
+  // The alerts' own series
+  // -----------------------------------------------------------------------
+
+  it("leaves the alerted counters with exactly the labels they had", async () => {
+    // `increase()` evaluates per series, so a `cause` label here would turn
+    // `increase(firecrawl_firebill_track_total{outcome="refused"}[15m]) > 0`
+    // into one threshold per cause. The detail lives beside it instead.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => refused()),
+    );
+    await firebillTrack(params);
+
+    const [series] = (await firebillTrackTotal.get()).values;
+    expect(Object.keys(series.labels).sort()).toEqual(["operation", "outcome"]);
+
+    const [cause] = (await firebillFailureCauseTotal.get()).values;
+    expect(Object.keys(cause.labels).sort()).toEqual(["cause", "operation"]);
+    expect(cause.labels).toMatchObject({
+      operation: "track",
+      cause: "refused",
+    });
+  });
+
+  it("counts a refund's cause under its own operation", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => refused()),
+    );
+    await firebillTrack({ ...params, value: -7 });
+    expect(await failureCauses()).toEqual({ "refund/refused": 1 });
   });
 
   // -----------------------------------------------------------------------
@@ -226,19 +276,79 @@ describe("firebillTrack", () => {
     );
 
     await expect(firebillTrack(params)).resolves.toBe(false);
-    expect(await trackOutcomes()).toEqual({ "ambiguous/ambiguous": 1 });
+    expect(await trackOutcomes()).toEqual({ ambiguous: 1 });
+    expect(await failureCauses()).toEqual({ "track/ambiguous": 1 });
   });
 
-  it("still calls a plain success:false a refusal", async () => {
-    // The one outcome that is proof the usage is gone, and the one the alert
-    // means. It must not widen just because a sibling case was added.
+  // **An answer we cannot read is not proof of anything.** firebill may have
+  // taken the event and said so in a shape we did not understand, so calling it
+  // `refused` would log billed usage as lost — the same class of untruth this
+  // PR exists to remove, one layer down.
+  it.each([
+    ["an empty 200", () => new Response("", { status: 200 })],
+    [
+      "a 200 that is not JSON",
+      () => new Response("<html>502</html>", { status: 200 }),
+    ],
+    [
+      "a 200 with no success field",
+      () => new Response(JSON.stringify({ queued: true }), { status: 200 }),
+    ],
+    [
+      "a 200 whose success is not a boolean",
+      () => new Response(JSON.stringify({ success: "yes" }), { status: 200 }),
+    ],
+  ])("reads %s as unusable, not as a refusal", async (_label, respond) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => respond()),
+    );
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+    expect(await trackOutcomes()).toEqual({ ambiguous: 1 });
+    expect(await failureCauses()).toEqual({ "track/unusable": 1 });
+    expect(vi.mocked(logger.error).mock.calls.map(c => c[0])).not.toContain(
+      "firebill refused a usage event; it will not be billed",
+    );
+  });
+
+  it("still reads success:false as a refusal", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(async () => refused()),
     );
 
     await expect(firebillTrack(params)).resolves.toBe(false);
-    expect(await trackOutcomes()).toEqual({ "refused/refused": 1 });
+    expect(await trackOutcomes()).toEqual({ refused: 1 });
+  });
+
+  // A body that never finished arriving is the network failing, not firebill
+  // answering — it has to reach the transport classifier, not be swallowed as
+  // an unusable body.
+  it("treats a body that dies mid-read as a transport failure", async () => {
+    const dying = () => {
+      const response = new Response(JSON.stringify({ success: true }), {
+        status: 200,
+      });
+      vi.spyOn(response, "json").mockRejectedValue(
+        Object.assign(new TypeError("terminated"), {
+          cause: Object.assign(new Error("aborted"), {
+            code: "UND_ERR_BODY_TIMEOUT",
+          }),
+        }),
+      );
+      return response;
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => dying()),
+    );
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+    expect(await failureCauses()).toEqual({ "track/timeout": 1 });
+    expect(vi.mocked(logger.warn).mock.calls.map(c => c[0])).toContain(
+      "firebill track request did not complete — client-side timeout or connection error; firebill did not answer",
+    );
   });
 
   it("logs an ambiguous answer as unknown rather than as unbilled usage", async () => {
@@ -287,7 +397,8 @@ describe("firebillTrack", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(error()));
 
     await expect(firebillTrack(params)).resolves.toBe(false);
-    expect(await trackOutcomes()).toEqual({ [`ambiguous/${cause}`]: 1 });
+    expect(await trackOutcomes()).toEqual({ ambiguous: 1 });
+    expect(await failureCauses()).toEqual({ [`track/${cause}`]: 1 });
   });
 
   it("stops blaming firebill for a request that never reached it", async () => {
@@ -325,10 +436,15 @@ describe("firebillTrack", () => {
     );
 
     await expect(firebillTrack(params)).resolves.toBe(false);
-    expect(await trackOutcomes()).toEqual({ "ambiguous/non_ok": 1 });
-    expect(vi.mocked(logger.warn).mock.calls.map(c => c[0])).toContain(
-      "firebill answered a non-OK status: 502",
+    expect(await trackOutcomes()).toEqual({ ambiguous: 1 });
+    expect(await failureCauses()).toEqual({ "track/non_ok": 1 });
+    // A static message; the status is context, so log search can group these.
+    const [message, fields] = vi.mocked(logger.warn).mock
+      .calls[0] as unknown as [string, Record<string, unknown>];
+    expect(message).toBe(
+      "firebill track attempt failed — firebill answered a non-OK status",
     );
+    expect(fields).toMatchObject({ status: 502 });
   });
 
   it("retries a thrown error too", async () => {
@@ -465,15 +581,11 @@ describe("firebillCheck", () => {
   });
 
   it.each([
-    [
-      "our own deadline firing",
-      () => wrapped(abortError()),
-      "unavailable/timeout",
-    ],
+    ["our own deadline firing", () => wrapped(abortError()), "check/timeout"],
     [
       "a refused connection",
       () => wrapped(connectionError("ECONNREFUSED")),
-      "unavailable/connection",
+      "check/connection",
     ],
   ])(
     "blames the client, not firebill, for %s",
@@ -483,28 +595,65 @@ describe("firebillCheck", () => {
       await expect(firebillCheck(checkParams)).resolves.toEqual({
         status: "unavailable",
       });
-      expect(await checkOutcomes()).toEqual({ [expected]: 1 });
+      expect(await checkOutcomes()).toEqual({ unavailable: 1 });
+      expect(await failureCauses()).toEqual({ [expected]: 1 });
       expect(vi.mocked(logger.error).mock.calls.map(c => c[0])).toContain(
         "firebill check unavailable — the request did not complete (client-side timeout or connection error); firebill did not answer",
       );
     },
   );
 
-  it("names the status when firebill answered one", async () => {
+  it("names the status in context when firebill answered one", async () => {
     answer({ success: true, allowed: true }, 503);
 
     await firebillCheck(checkParams);
 
-    expect(await checkOutcomes()).toEqual({ "unavailable/non_ok": 1 });
-    expect(vi.mocked(logger.error).mock.calls.map(c => c[0])).toContain(
-      "firebill check unavailable — firebill answered a non-OK status: 503",
+    expect(await checkOutcomes()).toEqual({ unavailable: 1 });
+    expect(await failureCauses()).toEqual({ "check/non_ok": 1 });
+    const [message, fields] = vi.mocked(logger.error).mock
+      .calls[0] as unknown as [string, Record<string, unknown>];
+    expect(message).toBe(
+      "firebill check unavailable — firebill answered a non-OK status",
     );
+    expect(fields).toMatchObject({ status: 503 });
   });
 
-  it("labels a real answer with no cause at all", async () => {
+  it("records no cause at all for a real answer", async () => {
     answer({ success: true, allowed: true, remaining: 500 });
     await firebillCheck(checkParams);
-    expect(await checkOutcomes()).toEqual({ "allowed/none": 1 });
+    expect(await checkOutcomes()).toEqual({ allowed: 1 });
+    expect(await failureCauses()).toEqual({});
+  });
+
+  // `refused` is documented as an explicit `success: false`. An answer we could
+  // not read is not one, and labelling it so would have anyone slicing by cause
+  // counting unreadable answers as declines.
+  it.each([
+    ["a missing allowed", { success: true }, 200],
+    ["a non-boolean allowed", { success: true, allowed: "yes" }, 200],
+  ])("calls %s unusable rather than refused", async (_label, body, status) => {
+    answer(body, status);
+    await firebillCheck(checkParams);
+    expect(await failureCauses()).toEqual({ "check/unusable": 1 });
+  });
+
+  it("calls an unreadable body unusable rather than refused", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(new Response("<html>502</html>", { status: 200 })),
+    );
+    await expect(firebillCheck(checkParams)).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(await failureCauses()).toEqual({ "check/unusable": 1 });
+  });
+
+  it("keeps refused for an explicit success:false", async () => {
+    answer({ success: false });
+    await firebillCheck(checkParams);
+    expect(await failureCauses()).toEqual({ "check/refused": 1 });
   });
 
   it("does not retry — this is on the request path", async () => {
