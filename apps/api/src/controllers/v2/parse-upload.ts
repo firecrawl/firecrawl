@@ -17,6 +17,10 @@ const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
 const PARSE_UPLOAD_UNPARSED_LIMIT = 10;
 const PARSE_UPLOAD_UNPARSED_WINDOW_MS = 24 * 60 * 60 * 1000;
 const PARSE_UPLOAD_UNPARSED_TTL_SECONDS = 25 * 60 * 60;
+const PARSE_UPLOAD_GCS_CLEANUP_KEY = "parse-upload-gcs-cleanup";
+const PARSE_UPLOAD_GCS_CLEANUP_LOCK_KEY =
+  "parse-upload-gcs-cleanup-lock";
+const PARSE_UPLOAD_GCS_CLEANUP_INTERVAL_MS = 60 * 1000;
 const uploadInitSchema = z.strictObject({
   filename: z.string().min(1).max(512),
   contentType: z.string().min(1).max(255).optional(),
@@ -52,6 +56,7 @@ type LocalUploadRecord = {
 };
 
 const localUploads = new Map<string, LocalUploadRecord>();
+let gcsCleanupTimer: NodeJS.Timeout | null = null;
 
 function getParseUploadDriver(): ParseUploadDriver {
   if (config.PARSE_UPLOAD_STORAGE_DRIVER === "gcs") return "gcs";
@@ -234,6 +239,92 @@ async function releaseUnparsedUploadRef(teamId: string, uploadId: string) {
     .exec();
 }
 
+type GcsUploadCleanupRecord = {
+  bucket: string;
+  objectPath: string;
+};
+
+function serializeGcsUploadCleanup(record: GcsUploadCleanupRecord) {
+  return JSON.stringify(record);
+}
+
+async function cleanupExpiredGcsUploads() {
+  const redis = getRedisConnection();
+  const locked = await redis.set(
+    PARSE_UPLOAD_GCS_CLEANUP_LOCK_KEY,
+    "1",
+    "EX",
+    55,
+    "NX",
+  );
+  if (locked !== "OK") return;
+
+  const records = await redis.zrangebyscore(
+    PARSE_UPLOAD_GCS_CLEANUP_KEY,
+    0,
+    Date.now(),
+    "LIMIT",
+    0,
+    100,
+  );
+
+  for (const rawRecord of records) {
+    try {
+      const record = z
+        .strictObject({ bucket: z.string().min(1), objectPath: z.string().min(1) })
+        .parse(JSON.parse(rawRecord));
+      await getStorageClient()
+        .bucket(record.bucket)
+        .file(record.objectPath)
+        .delete({ ignoreNotFound: true });
+      await redis.zrem(PARSE_UPLOAD_GCS_CLEANUP_KEY, rawRecord);
+    } catch (error) {
+      _logger.warn("Failed to clean up expired parse upload object", { error });
+    }
+  }
+}
+
+function ensureGcsUploadCleanupRunning() {
+  if (gcsCleanupTimer !== null) return;
+  gcsCleanupTimer = setInterval(() => {
+    cleanupExpiredGcsUploads().catch(error => {
+      _logger.warn("Failed to run parse upload cleanup", { error });
+    });
+  }, PARSE_UPLOAD_GCS_CLEANUP_INTERVAL_MS);
+  gcsCleanupTimer.unref();
+  void cleanupExpiredGcsUploads().catch(error => {
+    _logger.warn("Failed to run parse upload cleanup", { error });
+  });
+}
+
+async function scheduleGcsUploadCleanup(
+  bucket: string,
+  objectPath: string,
+  expiresAt: number,
+) {
+  ensureGcsUploadCleanupRunning();
+  await getRedisConnection().zadd(
+    PARSE_UPLOAD_GCS_CLEANUP_KEY,
+    expiresAt,
+    serializeGcsUploadCleanup({ bucket, objectPath }),
+  );
+}
+
+async function cancelGcsUploadCleanup(payload: ParseUploadRefPayload) {
+  if (payload.driver !== "gcs" || !config.GCS_PARSE_UPLOAD_BUCKET_NAME) return;
+  await getRedisConnection().zrem(
+    PARSE_UPLOAD_GCS_CLEANUP_KEY,
+    serializeGcsUploadCleanup({
+      bucket: config.GCS_PARSE_UPLOAD_BUCKET_NAME,
+      objectPath: payload.objectPath,
+    }),
+  );
+}
+
+if (config.GCS_PARSE_UPLOAD_BUCKET_NAME) {
+  ensureGcsUploadCleanupRunning();
+}
+
 async function reserveUnparsedUploadRefOrRespond(
   res: Response,
   teamId: string,
@@ -355,6 +446,11 @@ export async function parseUploadUrlController(
       ) {
         return;
       }
+      await scheduleGcsUploadCleanup(
+        config.GCS_PARSE_UPLOAD_BUCKET_NAME,
+        objectPath,
+        expiresAt,
+      );
 
       return res.status(200).json({
         success: true,
@@ -638,6 +734,7 @@ export async function parseUploadRefPayloadMiddleware(
       Promise.all([
         resolved.cleanup(),
         releaseUnparsedUploadRef(payload.teamId, payload.uploadId),
+        cancelGcsUploadCleanup(payload),
       ]).catch(error => {
         _logger.warn("Failed to clean up parse upload", {
           error,
