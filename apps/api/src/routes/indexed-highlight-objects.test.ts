@@ -96,16 +96,31 @@ describe("POST /internal/indexed-highlight-objects", () => {
       .set("Content-Type", "application/json")
       .send('{"pages": [');
     expect(malformed.status).toBe(400);
+    expect(malformed.body).toEqual({ error: "Invalid request body" });
 
+    // A schema-valid batch is at most 12 x 8 KiB, so the body limit is only
+    // reachable with padding. The parser-specific message proves the 400 came
+    // from the body limit and not from the strict schema.
     const oversized = await request(app())
+      .post("/internal/indexed-highlight-objects")
+      .set("Authorization", "Bearer resolver-secret")
+      .send({ pages: pages.slice(0, 1), padding: "a".repeat(129 * 1024) });
+    expect(oversized.status).toBe(400);
+    expect(oversized.body).toEqual({ error: "Invalid request body" });
+    expect(resolveHighlightIndexObject).not.toHaveBeenCalled();
+  });
+
+  it("rejects one URL over 8 KiB", async () => {
+    const response = await request(app())
       .post("/internal/indexed-highlight-objects")
       .set("Authorization", "Bearer resolver-secret")
       .send({
         pages: [
-          { id: "0", url: "https://example.com/" + "a".repeat(129 * 1024) },
+          { id: "0", url: "https://example.com/" + "a".repeat(8 * 1024) },
         ],
       });
-    expect(oversized.status).toBe(400);
+
+    expect(response.status).toBe(400);
     expect(resolveHighlightIndexObject).not.toHaveBeenCalled();
   });
 

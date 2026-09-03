@@ -77,23 +77,30 @@ function authenticate(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "Unauthorized" });
 }
 
-function rejectInvalid(req: Request, res: Response, start: number) {
+function rejectInvalid(
+  req: Request,
+  res: Response,
+  start: number,
+  error: "Invalid request body" | "Invalid request",
+) {
   logger.info("Indexed highlight lookup rejected", {
     canonicalLog: "internal/indexed-highlight-objects",
     outcome: "invalid",
     requestId: req.headers["x-request-id"],
     timeTakenMs: Date.now() - start,
   });
-  res.status(400).json({ error: "Invalid request" });
+  res.status(400).json({ error });
 }
 
 // Malformed JSON and bodies over BODY_LIMIT are the caller's fault. Answer
 // them here so they never reach the app-wide error handler or Sentry.
+const jsonBody = express.json({ limit: BODY_LIMIT, type: () => true });
+
 function parseBody(req: Request, res: Response, next: NextFunction) {
   const start = Date.now();
-  express.json({ limit: BODY_LIMIT, type: () => true })(req, res, error => {
+  jsonBody(req, res, error => {
     if (error) {
-      rejectInvalid(req, res, start);
+      rejectInvalid(req, res, start, "Invalid request body");
       return;
     }
     next();
@@ -104,7 +111,7 @@ async function resolve(req: Request, res: Response) {
   const start = Date.now();
   const parsed = requestSchema.safeParse(req.body);
   if (!parsed.success) {
-    rejectInvalid(req, res, start);
+    rejectInvalid(req, res, start, "Invalid request");
     return;
   }
 
