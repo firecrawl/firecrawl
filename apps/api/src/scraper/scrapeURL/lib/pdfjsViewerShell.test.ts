@@ -278,6 +278,42 @@ describe("detectPdfJsViewerShell", () => {
     });
   });
 
+  it("still classifies an old-style build that names its document", () => {
+    // Older viewer.html: no pdfjs- l10n ids, no moz attributes, assets named
+    // viewer.js/viewer.css, and none of the tokens the newer markup carries.
+    // Title, toolbar strings and a file= parameter are all it offers, and
+    // that must be enough to reach the signal pass.
+    const oldStyle = `<!DOCTYPE html>
+<html>
+<head>
+<title>PDF Viewer</title>
+<link rel="stylesheet" href="viewer.css">
+<script src="viewer.js"></script>
+</head>
+<body>
+<div id="toolbarContainer">
+  <button title="Zoom Out">Zoom Out</button>
+  <button title="Zoom In">Zoom In</button>
+  <select><option>Page Fit</option><option>Page Width</option><option>Actual Size</option></select>
+  <button>Presentation Mode</button>
+</div>
+<div id="viewer" class="pdfViewer"></div>
+</body>
+</html>`;
+    const shell = detectPdfJsViewerShell(
+      oldStyle,
+      "https://archive.example.org/legacy/web/viewer.html?file=%2Fdocs%2Fold.pdf",
+    );
+    expect(shell).not.toBeNull();
+    expect(shell!.signals).toEqual(
+      expect.arrayContaining(["title", "containers", "scripts", "toolbar"]),
+    );
+    expect(shell!.document).toEqual({
+      url: "https://archive.example.org/docs/old.pdf",
+      source: "query",
+    });
+  });
+
   it("does not classify a page that merely mentions pdf.js", () => {
     expect(
       detectPdfJsViewerShell(

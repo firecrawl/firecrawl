@@ -69,10 +69,13 @@ const MIN_TOOLBAR_TERMS = 5;
 
 /**
  * Cheap pre-filter so the regex pass only runs on pages that could possibly
- * be a viewer. Everything the signals look for contains one of these.
+ * be a viewer. Every signal except the toolbar vocabulary is built from
+ * tokens listed here, and the toolbar signal alone never classifies a page
+ * (two signals are required), so any page that could qualify contains at
+ * least one of these.
  */
 const QUICK_FILTER_RE =
-  /pdfjs|pdf\.js|PDFViewerApplication|viewerContainer|outerContainer|mozdisallowselectionprint|moznomarginboxes|pdf\.worker|pdf_viewer|pdf\.mjs|pdf\.min\.js|Automatic Zoom/i;
+  /pdfjs|pdf\.js|pdf\.mjs|pdf\.min\.m?js|pdf\.worker|pdf_viewer|\/build\/pdf|viewer\.m?js|viewer\.css|PDFViewerApplication|GlobalWorkerOptions|mozdisallowselectionprint|moznomarginboxes|outerContainer|viewerContainer|sidebarContainer|toolbarContainer|toolbarViewer|toolbarSidebar|secondaryToolbar|viewerAlert|pdfViewer|pdf(?:\.js)?\s*viewer/i;
 
 const TITLE_RE = /<title\b[^>]*>[^<]*\bpdf(?:\.js)?\s*viewer\b[^<]*<\/title>/i;
 const HTML_ATTRIBUTES_RE =
