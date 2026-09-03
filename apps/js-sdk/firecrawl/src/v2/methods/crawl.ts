@@ -151,7 +151,7 @@ export async function waitForCrawlCompletion(http: HttpClient, jobId: string, po
       throw new JobTimeoutError(jobId, timeout, 'crawl');
     }
     
-    await new Promise((r) => setTimeout(r, Math.max(1000, pollInterval * 1000)));
+    await new Promise((r) => setTimeout(r, Math.max(1000, pollInterval)));
   }
 }
 
