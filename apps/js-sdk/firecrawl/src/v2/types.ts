@@ -1917,7 +1917,14 @@ export interface SimilarPapersResponse {
   note?: string | null;
 }
 
-/** Component scores; each field is present only when that signal contributed. */
+/**
+ * Component scores; each field is present only when that signal contributed.
+ *
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. The developer index does not
+ * expose a score breakdown. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubScoreBreakdown {
   rrf?: number;
   semantic?: number;
@@ -1926,6 +1933,11 @@ export interface GitHubScoreBreakdown {
   rerank?: number;
 }
 
+/**
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubSearchItem {
   resultType?: "github_history" | "repo_readme" | "web";
   /** `owner/name`; empty for web results whose URL is not a repo page. */
@@ -1948,9 +1960,18 @@ export interface GitHubSearchItem {
   scores: GitHubScoreBreakdown;
 }
 
+/**
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubSearchResponse {
   success: boolean;
   results: GitHubSearchItem[];
+  /** Deprecation notice while the sunset window is live. */
+  warnings?: string[];
+  /** Replacement endpoint path, while the sunset window is live. */
+  replacement?: string;
 }
 
 /** Options for `research.searchPapers`. */
@@ -1989,7 +2010,13 @@ export interface SimilarPapersOptions {
   anchor?: string[];
 }
 
-/** Options for `research.searchGithub`. */
+/**
+ * Options for `research.searchGithub`.
+ *
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface SearchGithubOptions {
   /** Number of results to return (1–100, default 20). */
   k?: number;

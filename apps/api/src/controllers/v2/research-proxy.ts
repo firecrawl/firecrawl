@@ -17,6 +17,7 @@ import type {
 } from "../../services/logging/log_job";
 import type { RequestWithAuth } from "../v1/types";
 import { wrap } from "../../routes/shared";
+import { deprecationMiddleware } from "../../lib/deprecations";
 import { integrationSchema } from "../../utils/integration";
 import { requestOrigin } from "../../lib/request-origin";
 
@@ -521,8 +522,10 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
     }),
   );
 
+  // On the route, not the mounts, so the paper routes stay undeprecated.
   router.get(
     "/github",
+    deprecationMiddleware("v2_research_github_search"),
     wrap(
       createResearchController(
         githubSearchSchema,

@@ -3,6 +3,9 @@ import { NextFunction, Request, Response } from "express";
 interface Deprecation {
   message: string;
   replacement?: string;
+  // RFC 9745 requires a Date, e.g. "@1788393600". Entries without one keep
+  // emitting "true".
+  deprecatedAt?: string;
   sunset?: string;
   docs?: string;
 }
@@ -27,6 +30,14 @@ const DEPRECATIONS = {
     message:
       "/v2/extract/:jobId is deprecated. Use /v2/scrape with formats including a 'json' format object.",
     replacement: "/v2/scrape",
+  },
+  v2_research_github_search: {
+    message:
+      "The research index GitHub search (GET /v2/search/research/github, legacy GET /v2/research/github) is deprecated and stops responding after 2026-11-03. Use GET or POST /v2/search/developer instead: it searches GitHub issues, pull requests and READMEs plus curated documentation sources, returns matched passages, and adds filters for repo, language, license and stars. Response changes: 'snippet' becomes 'passages', results gain an 'id', and there is no score breakdown and no web fallback result type.",
+    replacement: "/v2/search/developer",
+    docs: "https://docs.firecrawl.dev/features/developer",
+    deprecatedAt: "@1788393600",
+    sunset: "Tue, 03 Nov 2026 23:59:59 GMT",
   },
   v1_deep_research: {
     message: "/v1/deep-research is deprecated. Use /v2/search instead.",
@@ -77,7 +88,7 @@ export function deprecationMiddleware(key: DeprecationKey) {
   const dep: Deprecation = DEPRECATIONS[key];
   return (req: Request, res: Response, next: NextFunction) => {
     // RFC 9745 Deprecation header.
-    res.setHeader("Deprecation", "true");
+    res.setHeader("Deprecation", dep.deprecatedAt ?? "true");
     // RFC 8594 Sunset header.
     if (dep.sunset) res.setHeader("Sunset", dep.sunset);
 
@@ -96,11 +107,16 @@ export function deprecationMiddleware(key: DeprecationKey) {
     const originalJson = res.json.bind(res);
     res.json = (body: any) => {
       if (body && typeof body === "object" && !Array.isArray(body)) {
+        // Copy: the research controllers log the same object after responding.
         const existing = Array.isArray(body.warnings) ? body.warnings : [];
-        body.warnings = [...existing, dep.message];
-        if (dep.replacement && body.replacement === undefined) {
-          body.replacement = dep.replacement;
+        const annotated: any = {
+          ...body,
+          warnings: [...existing, dep.message],
+        };
+        if (dep.replacement && annotated.replacement === undefined) {
+          annotated.replacement = dep.replacement;
         }
+        return originalJson(annotated);
       }
       return originalJson(body);
     };
