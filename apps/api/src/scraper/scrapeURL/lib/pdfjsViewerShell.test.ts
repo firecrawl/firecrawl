@@ -187,6 +187,22 @@ describe("detectPdfJsViewerShell", () => {
     ).toBeNull();
   });
 
+  it("leaves an unnamed custom build alone even when it borrows stock strings", () => {
+    // A title and toolbar vocabulary can be copied into any build; without
+    // PDFViewerApplication or the stock viewer's own markup there is nothing
+    // the resolver can drive, so the page is not classified.
+    const dressedUp = CUSTOM_BUILD.replace(
+      "<title>Document viewer</title>",
+      "<title>PDF Viewer</title>",
+    ).replace(
+      "<header>",
+      "<header><nav>Zoom In Zoom Out Automatic Zoom Page Fit Page Width Presentation Mode</nav>",
+    );
+    expect(
+      detectPdfJsViewerShell(dressedUp, "https://records.example.org/view/42"),
+    ).toBeNull();
+  });
+
   it("recognizes a custom build that names its document", () => {
     const shell = detectPdfJsViewerShell(
       CUSTOM_BUILD.replace(

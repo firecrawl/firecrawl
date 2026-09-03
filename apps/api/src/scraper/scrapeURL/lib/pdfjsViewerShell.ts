@@ -226,26 +226,22 @@ export function detectPdfJsViewerShell(
   if (hostTextLength(html) > MAX_HOST_TEXT_LENGTH) return null;
 
   // Classify only what the resolver can open: a document the page names, or
-  // a viewer whose runtime exposes PDFViewerApplication (the stock viewer's
-  // markup, or a build that references it). A page that drives pdfjs-dist
-  // itself offers neither, and failing it would be worse than its HTML.
+  // a viewer whose runtime exposes PDFViewerApplication. For an unnamed page
+  // that means a reference to the application object itself, or the stock
+  // viewer's own signature: Mozilla's `moz*` html attributes together with
+  // its `pdfjs-` l10n ids, markup that only viewer.html ships and that always
+  // comes with PDFViewerApplication on window. A title or toolbar strings a
+  // custom build may have copied are not evidence. A page that drives
+  // pdfjs-dist itself offers none of this and keeps its HTML, as before.
   const document = locatePdfJsViewerDocument(html, pageUrl);
-  if (document === null && !signals.some(s => RESOLVABLE_SIGNALS.has(s))) {
-    return null;
-  }
+  const resolvable =
+    document !== null ||
+    signals.includes("runtime-api") ||
+    (signals.includes("html-attributes") && signals.includes("l10n"));
+  if (!resolvable) return null;
 
   return { kind: "pdfjs-viewer", signals, document };
 }
-
-/** Signals that imply PDFViewerApplication exists at runtime. */
-const RESOLVABLE_SIGNALS: ReadonlySet<PdfJsViewerSignal> =
-  new Set<PdfJsViewerSignal>([
-    "title",
-    "html-attributes",
-    "l10n",
-    "toolbar",
-    "runtime-api",
-  ]);
 
 /**
  * Script patterns a page uses to point the viewer at a document. Only

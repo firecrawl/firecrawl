@@ -4,7 +4,9 @@ import { detectContentShell, wantsPageContent } from "./contentShell";
 const SHELL = `<!DOCTYPE html>
 <html dir="ltr" mozdisallowselectionprint>
 <head><title>PDF Viewer</title><script src="/pdfjs/build/pdf.min.js"></script></head>
-<body><div id="outerContainer"><div id="viewerContainer"><div id="viewer" class="pdfViewer"></div></div></div></body>
+<body><div id="outerContainer">
+<div id="toolbarViewer"><button data-l10n-id="pdfjs-zoom-out-button">Zoom Out</button><button data-l10n-id="pdfjs-zoom-in-button">Zoom In</button><button data-l10n-id="pdfjs-presentation-mode-button">Presentation Mode</button></div>
+<div id="viewerContainer"><div id="viewer" class="pdfViewer"></div></div></div></body>
 </html>`;
 
 describe("detectContentShell", () => {
