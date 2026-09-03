@@ -556,7 +556,7 @@ defmodule Firecrawl.Generator do
 
     parts = [
       "  @doc \"\"\"",
-      "  #{summary}",
+      "  #{escape_source_text(summary)}",
       "",
       "  #{bt}#{http_method} #{path}#{bt}",
       "",
@@ -813,14 +813,25 @@ defmodule Firecrawl.Generator do
 
   # OpenAPI marks a retiring operation with `deprecated: true`. Elixir's
   # @deprecated turns that into a compiler warning at the caller.
-  defp build_deprecated(operation) do
+  def build_deprecated(operation) do
     if Map.get(operation, "deprecated", false) do
       note =
         Map.get(operation, "x-deprecation-note") ||
           "Deprecated in the Firecrawl API. See the function docs for the replacement."
 
-      "  @deprecated \"#{String.replace(note, "\"", "\\\"")}\""
+      "  @deprecated #{inspect(to_string(note))}"
     end
+  end
+
+  # Spec text is fetched from the network and lands inside generated heredocs,
+  # where Elixir would run #{} as code at compile time. Neutralise that, the
+  # heredoc terminator, and stray backslashes.
+  def escape_source_text(text) do
+    text
+    |> to_string()
+    |> String.replace("\\", "\\\\")
+    |> String.replace(~S(#{), ~S(\#{))
+    |> String.replace(~S("""), ~S(\"\"\"))
   end
 
   defp build_doc(
@@ -838,7 +849,7 @@ defmodule Firecrawl.Generator do
 
     parts = [
       "  @doc \"\"\"",
-      "  #{summary}",
+      "  #{escape_source_text(summary)}",
       "",
       "  #{bt}#{http_method} #{path}#{bt}"
     ]
@@ -1137,4 +1148,4 @@ defmodule Firecrawl.Generator do
   end
 end
 
-Firecrawl.Generator.run()
+unless System.get_env("MIX_ENV") == "test", do: Firecrawl.Generator.run()
