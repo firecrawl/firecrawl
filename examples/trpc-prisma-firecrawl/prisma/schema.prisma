@@ -1,0 +1,54 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model ScrapeJob {
+  id          String   @id @default(cuid())
+  url         String
+  status      String   // pending, completed, failed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  completedAt DateTime?
+  
+  // Scraped data
+  title       String?
+  content     String?
+  markdown    String?
+  html        String?
+  metadata    String?  // Store additional metadata as JSON string
+  
+  // Error information
+  error       String?
+  
+  @@map("scrape_jobs")
+}
+
+model CrawlJob {
+  id          String   @id @default(cuid())
+  baseUrl     String
+  status      String   // pending, completed, failed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  completedAt DateTime?
+  
+  // Crawl configuration
+  maxPages    Int      @default(10)
+  allowExternalLinks Boolean @default(false)
+  
+  // Results
+  pages       String?  // Store array of scraped pages as JSON string
+  totalPages  Int      @default(0)
+  
+  // Error information
+  error       String?
+  
+  @@map("crawl_jobs")
+}
