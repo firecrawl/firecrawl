@@ -1,0 +1,19 @@
+{
+  "name": "firecrawl-agentskit-research-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env --import=tsx index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentskit/adapters": "^0.14.2",
+    "@agentskit/runtime": "^0.10.14",
+    "@agentskit/tools": "^0.13.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  }
+}
