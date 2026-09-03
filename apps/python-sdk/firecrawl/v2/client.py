@@ -284,16 +284,32 @@ class FirecrawlClient:
 
         Returns:
             BrowserExecuteResponse with execution result
+
+        Note:
+            Python (``language="python"``) can be flaky on scrape-bound sessions.
+            The page context may close before Python code runs. If you see
+            ``TargetClosedError``, retry the call (max 3 attempts).
         """
-        return scrape_module.interact(
-            self.http_client,
-            job_id,
-            code,
-            prompt=prompt,
-            language=language,
-            timeout=timeout,
-            origin=origin,
-        )
+        last_exc = None
+        for attempt in range(3):
+            try:
+                return scrape_module.interact(
+                    self.http_client,
+                    job_id,
+                    code,
+                    prompt=prompt,
+                    language=language,
+                    timeout=timeout,
+                    origin=origin,
+                )
+            except Exception as e:
+                if "TargetClosed" in str(e) and attempt < 2:
+                    import time
+                    time.sleep(1 * (attempt + 1))  # exponential backoff: 1s, 2s
+                    last_exc = e
+                    continue
+                raise
+        raise last_exc
 
     def stop_interaction(self, job_id: str):
         """
