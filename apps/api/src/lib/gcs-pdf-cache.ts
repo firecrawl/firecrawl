@@ -62,6 +62,7 @@ export async function savePdfResultToCache(
       try {
         await blob.save(JSON.stringify(result), {
           contentType: "application/json",
+          gzip: true,
           metadata: {
             source: `${provider}_pdf_conversion`,
             cache_type: "pdf_markdown",
