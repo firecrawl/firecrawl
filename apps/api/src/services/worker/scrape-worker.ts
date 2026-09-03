@@ -1440,13 +1440,16 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
     return { success: true };
   } catch (error) {
     logger.error("An error occurred!", { error });
-    await finishCrawlKickoff(job.data.crawl_id);
-    await setCrawlError(
-      job.data.crawl_id,
-      error instanceof Error
-        ? error.message
-        : "An unexpected error occurred during crawl setup",
-    );
+    try {
+      await setCrawlError(
+        job.data.crawl_id,
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred during crawl setup",
+      );
+    } finally {
+      await finishCrawlKickoff(job.data.crawl_id);
+    }
     return { success: false, error };
   }
 }

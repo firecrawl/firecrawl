@@ -4,7 +4,6 @@ import {
   CrawlStatusParams,
   CrawlStatusResponse,
   Document,
-  ErrorResponse,
   RequestWithAuth,
 } from "./types";
 import { WebSocket } from "ws";
@@ -16,12 +15,18 @@ import {
   getCrawlExpiry,
   getCrawlJobs,
   getDoneJobsOrdered,
+  isCrawlKickoffFinished,
 } from "../../lib/crawl-redis";
 import { getJobs, PseudoJob } from "./crawl-status";
 import * as Sentry from "@sentry/node";
 import { getConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
 import { scrapeQueue, NuQJobStatus } from "../../services/worker/nuq-router";
 import { getErrorContactMessage } from "../../lib/deployment";
+import {
+  CrawlWebSocketStatus,
+  deriveCrawlStatus,
+  shouldCloseCrawlStatusWS,
+} from "../../lib/crawl-status-ws";
 
 type ErrorMessage = {
   type: "error";
@@ -75,12 +80,67 @@ async function crawlStatusWS(
   let doneJobIDs: string[] = [];
   let finished = false;
 
+  const closeWithTerminalStatus = async (
+    status: "cancelled" | "failed",
+    jobCount: number,
+    error?: string,
+  ) => {
+    const expiresAt = (await getCrawlExpiry(req.params.jobId)).toISOString();
+    await send(ws, {
+      type: "catchup",
+      data:
+        status === "failed"
+          ? {
+              success: false,
+              error: error ?? "Crawl failed during kickoff",
+              status: "failed",
+              total: 0,
+              completed: 0,
+              creditsUsed: 0,
+              expiresAt,
+              data: [],
+            }
+          : {
+              success: true,
+              status: "cancelled",
+              total: jobCount,
+              completed: doneJobIDs.length,
+              creditsUsed: jobCount,
+              expiresAt,
+              data: [],
+            },
+    });
+
+    finished = true;
+    return close(ws, 1000, { type: "done" });
+  };
+
   const loop = async () => {
     if (finished) return;
 
+    const kickoffFinished = await isCrawlKickoffFinished(req.params.jobId);
     const jobIDs = await getCrawlJobs(req.params.jobId);
+    const currentCrawl = await getCrawl(req.params.jobId);
+    const crawlError = await getCrawlError(req.params.jobId);
 
-    if (jobIDs.length === doneJobIDs.length) {
+    if (
+      shouldCloseCrawlStatusWS({
+        jobCount: jobIDs.length,
+        completedJobCount: doneJobIDs.length,
+        kickoffFinished,
+        cancelled: currentCrawl?.cancelled === true,
+        hasCrawlError: crawlError !== null,
+      })
+    ) {
+      if (currentCrawl?.cancelled === true) {
+        return closeWithTerminalStatus("cancelled", jobIDs.length);
+      }
+
+      if (crawlError !== null) {
+        return closeWithTerminalStatus("failed", jobIDs.length, crawlError);
+      }
+
+      finished = true;
       return close(ws, 1000, { type: "done" });
     }
 
@@ -115,17 +175,20 @@ async function crawlStatusWS(
 
   setTimeout(loop, 1000);
 
-  let [_doneJobIDs, jobIDs, throttledJobsSet] = await Promise.all([
-    getDoneJobsOrdered(req.params.jobId),
-    getCrawlJobs(req.params.jobId),
-    getConcurrencyLimitedJobs(req.auth.team_id),
-  ]);
+  let [_doneJobIDs, jobIDs, throttledJobsSet, kickoffFinished] =
+    await Promise.all([
+      getDoneJobsOrdered(req.params.jobId),
+      getCrawlJobs(req.params.jobId),
+      getConcurrencyLimitedJobs(req.auth.team_id),
+      isCrawlKickoffFinished(req.params.jobId),
+    ]);
 
   doneJobIDs = _doneJobIDs;
   const jobs = new Map((await scrapeQueue.getJobs(jobIDs)).map(x => [x.id, x]));
 
   const validJobStatuses: [string, NuQJobStatus][] = [];
   const validJobIDs: string[] = [];
+  let failedJobCount = 0;
 
   for (const id of jobIDs) {
     if (throttledJobsSet.has(id)) {
@@ -136,6 +199,8 @@ async function crawlStatusWS(
       if (job && job.status !== "failed") {
         validJobStatuses.push([id, job.status]);
         validJobIDs.push(id);
+      } else if (job?.status === "failed") {
+        failedJobCount++;
       }
     }
   }
@@ -143,14 +208,15 @@ async function crawlStatusWS(
   // Check if the crawl failed during kickoff (e.g. queue full)
   const crawlError = await getCrawlError(req.params.jobId);
 
-  let status: Exclude<CrawlStatusResponse, ErrorResponse>["status"] =
-    sc.cancelled
-      ? "cancelled"
-      : validJobStatuses.every(x => x[1] === "completed")
-        ? "completed"
-        : "scraping";
+  let status: CrawlWebSocketStatus = deriveCrawlStatus({
+    cancelled: sc.cancelled === true,
+    kickoffFinished,
+    jobCount: jobIDs.length,
+    failedJobCount,
+    validJobStatuses,
+  });
 
-  if (crawlError && jobIDs.length === 0 && status === "completed") {
+  if (crawlError && jobIDs.length === 0 && status !== "cancelled") {
     status = "failed";
   }
 
