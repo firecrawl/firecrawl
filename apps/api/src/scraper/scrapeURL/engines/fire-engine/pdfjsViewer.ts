@@ -471,6 +471,28 @@ export async function resolvePdfJsViewerShell(
       });
       return;
     }
+    // The browser may have been redirected before it answered. A final URL
+    // on a non-public host is refused whatever came back, so an internal
+    // service's status is never reported or escalated on.
+    const finalUrl = response.url;
+    const finalRefusal =
+      finalUrl !== undefined && finalUrl !== documentUrl
+        ? await documentUrlRefusal(finalUrl)
+        : null;
+    if (finalRefusal !== null) {
+      logger.warn("Refusing the viewer's document after a redirect", {
+        viewerUrl,
+        documentUrl,
+        finalUrl,
+        refusal: finalRefusal,
+      });
+      failures.push({
+        reason: "document_fetch_failed",
+        documentUrl,
+        detail: `refused after redirect to ${finalUrl}: ${finalRefusal}`,
+      });
+      return;
+    }
     // Only an error status says why the document was unavailable; a 2xx
     // page that is not a PDF (a login wall, a listing) must not pose as a
     // status worth reporting or hide a later 403/429 from the viewer.
