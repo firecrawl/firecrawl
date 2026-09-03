@@ -1,0 +1,110 @@
+[
+  {
+    "name": "scheme",
+    "url": "http://example.com/docs",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "www",
+    "url": "https://www.example.com/docs",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "default port 443",
+    "url": "https://example.com:443/docs",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "default port 80",
+    "url": "http://example.com:80/docs",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "non-default port kept",
+    "url": "https://example.com:8443/docs",
+    "normalized": "https://example.com:8443/docs",
+    "sha256": "4f398aba8448a77354205e434a646b3abb21fa58ef9805ca2c11fe68095c4cc0"
+  },
+  {
+    "name": "terminal index.html",
+    "url": "https://example.com/docs/index.html",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "terminal index.php",
+    "url": "https://example.com/docs/index.php",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "terminal index.htm",
+    "url": "https://example.com/docs/index.htm",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "terminal index.shtml",
+    "url": "https://example.com/docs/index.shtml",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "terminal index.xml",
+    "url": "https://example.com/docs/index.xml",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "trailing slash",
+    "url": "https://example.com/docs/",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "root",
+    "url": "https://example.com/",
+    "normalized": "https://example.com/",
+    "sha256": "0f115db062b7c0dd030b16878c99dea5c354b49dc37b38eb8846179c7783e9d7"
+  },
+  {
+    "name": "ordinary fragment",
+    "url": "https://example.com/docs#section-2",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "short hash-router fragment",
+    "url": "https://example.com/docs#/",
+    "normalized": "https://example.com/docs",
+    "sha256": "de106e607d0e711199de3fb7eb98fe5d412ee49ac326eadd3db848ee272ad2cb"
+  },
+  {
+    "name": "hash-router fragment",
+    "url": "https://example.com/app#/settings/profile",
+    "normalized": "https://example.com/app#/settings/profile",
+    "sha256": "d0c7a556841c649a87ee45a439d90db90ae9e5c9b84684405b459e5f029bfa7e"
+  },
+  {
+    "name": "hash-bang fragment",
+    "url": "https://example.com/app#!/settings",
+    "normalized": "https://example.com/app#!/settings",
+    "sha256": "ccb5872f48e1ce7501d8a7dc2281ef653f95e1708c80e66b6a216319c2660f80"
+  },
+  {
+    "name": "query kept",
+    "url": "https://example.com/search?q=cancer+drug&page=2",
+    "normalized": "https://example.com/search?q=cancer+drug&page=2",
+    "sha256": "35be3ec952a4ab2ba41ef0624ec632b87d148f70258da2875c613f473c97a7d8"
+  },
+  {
+    "name": "combined",
+    "url": "http://www.example.com:80/guide/index.html?lang=en#top",
+    "normalized": "https://example.com/guide?lang=en",
+    "sha256": "13c4c849744b60fe7521d671d302207ba7dcf72e3886c56f31439ff806b92568"
+  }
+]

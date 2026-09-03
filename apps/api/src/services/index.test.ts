@@ -60,7 +60,45 @@ vi.mock("./index-cache", () => ({
 
 vi.mock("../db/schema", () => ({}));
 
-import { getIndexFromGCS, saveIndexToGCS } from "./index";
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import {
+  getIndexFromGCS,
+  hashURL,
+  normalizeURLForIndex,
+  saveIndexToGCS,
+} from "./index";
+
+// The indexed highlight resolver (Search -> /internal/indexed-highlight-objects)
+// looks an index row up by SHA-256(normalizeURLForIndex(url)). The recorded
+// pairs pin that identity: a normalization "cleanup" that changes any of them
+// silently turns every previously indexed page into a lookup miss.
+describe("normalizeURLForIndex recorded lookup identity", () => {
+  const recordedHashes: {
+    name: string;
+    url: string;
+    normalized: string;
+    sha256: string;
+  }[] = JSON.parse(
+    fs.readFileSync(
+      path.join(
+        __dirname,
+        "../search/__fixtures__/indexed-highlight-lookup/normalized-url-hashes.json",
+      ),
+      "utf8",
+    ),
+  );
+
+  it.each(recordedHashes)("$name: $url", ({ url, normalized, sha256 }) => {
+    const actual = normalizeURLForIndex(url);
+    expect(actual).toBe(normalized);
+    expect(hashURL(actual).toString("hex")).toBe(sha256);
+    expect(crypto.createHash("sha256").update(normalized).digest("hex")).toBe(
+      sha256,
+    );
+  });
+});
 
 describe("index GCS documents", () => {
   beforeEach(() => {

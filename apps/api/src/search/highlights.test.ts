@@ -63,8 +63,14 @@ afterEach(() => {
 
 describe("indexed highlight lookup", () => {
   it("uses the exact recent desktop index variant", async () => {
-    await resolveHighlightIndexObject("http://www.example.com/index.html");
+    const resolved = await resolveHighlightIndexObject(
+      "http://www.example.com/index.html",
+    );
 
+    expect(resolved).toEqual({
+      name: "index:http://www.example.com/index.html.json",
+      createdAt: new Date("2026-07-11T00:00:00Z"),
+    });
     expect(normalizeURLForIndex).toHaveBeenCalledWith(
       "http://www.example.com/index.html",
     );
@@ -82,6 +88,24 @@ describe("indexed highlight lookup", () => {
       is_stealth: false,
       min_age_ms: null,
     });
+  });
+
+  it("misses when the index has no recent row", async () => {
+    vi.mocked(indexGetRecent5).mockResolvedValueOnce([]);
+
+    await expect(
+      resolveHighlightIndexObject("https://example.com/missing"),
+    ).resolves.toBeNull();
+  });
+
+  it("selects nothing from no rows and the newest row when no row is 2xx", () => {
+    expect(selectHighlightIndexRow([])).toBeNull();
+    const errors = [0, 1, 2].map(index => ({
+      id: `error-${index}`,
+      status: 500 + index,
+      created_at: null,
+    })) as any;
+    expect(selectHighlightIndexRow(errors)?.id).toBe("error-0");
   });
 
   it.each([

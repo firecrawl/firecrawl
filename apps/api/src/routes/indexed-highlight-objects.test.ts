@@ -89,6 +89,26 @@ describe("POST /internal/indexed-highlight-objects", () => {
     expect(resolveHighlightIndexObject).not.toHaveBeenCalled();
   });
 
+  it("rejects malformed JSON and an oversized body without a lookup", async () => {
+    const malformed = await request(app())
+      .post("/internal/indexed-highlight-objects")
+      .set("Authorization", "Bearer resolver-secret")
+      .set("Content-Type", "application/json")
+      .send('{"pages": [');
+    expect(malformed.status).toBe(400);
+
+    const oversized = await request(app())
+      .post("/internal/indexed-highlight-objects")
+      .set("Authorization", "Bearer resolver-secret")
+      .send({
+        pages: [
+          { id: "0", url: "https://example.com/" + "a".repeat(129 * 1024) },
+        ],
+      });
+    expect(oversized.status).toBe(400);
+    expect(resolveHighlightIndexObject).not.toHaveBeenCalled();
+  });
+
   it.each([
     { pages: [...pages, ...pages, ...pages, ...pages, pages[0]] },
     { pages: [pages[0], pages[0]] },
