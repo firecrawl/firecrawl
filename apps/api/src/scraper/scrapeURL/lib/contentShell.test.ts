@@ -51,13 +51,18 @@ describe("wantsPageContent", () => {
     expect(wantsPageContent(undefined)).toBe(true);
     expect(wantsPageContent([])).toBe(true);
     expect(wantsPageContent([{ type: "markdown" }])).toBe(true);
-    expect(wantsPageContent([{ type: "screenshot" }, { type: "links" }])).toBe(
-      true,
-    );
+    expect(
+      wantsPageContent([
+        { type: "screenshot", fullPage: false },
+        { type: "links" },
+      ]),
+    ).toBe(true);
   });
 
   it("is false when only the rendered page is wanted", () => {
-    expect(wantsPageContent([{ type: "screenshot" }])).toBe(false);
+    expect(wantsPageContent([{ type: "screenshot", fullPage: false }])).toBe(
+      false,
+    );
     expect(
       wantsPageContent([
         { type: "screenshot", fullPage: true },
