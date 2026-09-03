@@ -2218,11 +2218,6 @@ export function fromV0Combo(
 
 const webSearchSourceOptions = z.strictObject({
   type: z.literal("web"),
-  tbs: z.string().optional(), // Time-based search (e.g., "qdr:d" for past day)
-  filter: z.string().optional(), // Search filter
-  lang: z.string().optional(), // Language override for this source
-  country: z.string().optional(), // Country override for this source
-  location: z.string().optional(), // Location override for this source
 });
 
 const imagesSearchSourceOptions = z.strictObject({
@@ -2429,37 +2424,8 @@ export const searchRequestSchema = z
     if (sources && Array.isArray(sources) && sources.length > 0) {
       // Check if it's a string array by checking the first element
       if (typeof sources[0] === "string") {
-        // It's a string array, transform to object array
-        sources = (sources as string[]).map(s => {
-          switch (s) {
-            case "web":
-              return {
-                type: "web" as const,
-                tbs: x.tbs,
-                filter: x.filter,
-                lang: x.lang,
-                country,
-                location: x.location,
-              };
-            case "images":
-              return {
-                type: "images" as const,
-                // Images don't inherit global params in the simple format
-              };
-            case "news":
-              return {
-                type: "news" as const,
-                tbs: x.tbs,
-                lang: x.lang,
-                country,
-                location: x.location,
-              };
-            default:
-              return { type: s as any };
-          }
-        });
+        sources = (sources as string[]).map(s => ({ type: s as any }));
       }
-      // Otherwise it's already an object array, keep as is
     }
 
     // Transform string array categories to object format
