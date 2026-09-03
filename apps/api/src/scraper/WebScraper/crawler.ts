@@ -557,6 +557,13 @@ export class WebCrawler {
     let deliveredCount = 0;
 
     const normalizeUrl = (url: string) => {
+      try {
+        const urlObject = new URL(url);
+        urlObject.username = "";
+        urlObject.password = "";
+        url = urlObject.href;
+      } catch {}
+
       url = url.replace(/^https?:\/\//, "").replace(/^www\./, "");
       if (url.endsWith("/")) {
         url = url.slice(0, -1);
