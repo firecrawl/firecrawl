@@ -1,5 +1,24 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { readFile, unlink } from "node:fs/promises";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { access, readFile, unlink, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+// The resolver resolves page-chosen hostnames before letting the browser
+// navigate to them. Answer for the fixtures' hosts here: example hosts are
+// public, one rebinds to a private address, one does not exist.
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(async (host: string) => {
+    if (host.endsWith(".unresolvable.example")) {
+      throw Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), {
+        code: "ENOTFOUND",
+      });
+    }
+    if (host === "rebound.example") return [{ address: "10.0.0.5", family: 4 }];
+    return [{ address: "93.184.216.34", family: 4 }];
+  }),
+}));
+
+import { config } from "../../../../../config";
 import { AddFeatureError, PDFViewerUnresolvedError } from "../../../error";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
 import type { PdfJsViewerShell } from "../../../lib/pdfjsViewerShell";
@@ -119,6 +138,11 @@ async function resolve(
   );
   return { outcome, calls };
 }
+
+// The host checks are lifted for local deployments; this suite tests them.
+beforeAll(() => {
+  config.ALLOW_LOCAL_WEBHOOKS = false;
+});
 
 const tempFiles: string[] = [];
 afterEach(async () => {
@@ -365,6 +389,66 @@ describe("resolvePdfJsViewerShell", () => {
     expect(calls[0].url).toBe(VIEWER_URL);
     expect(outcome).toBeInstanceOf(PDFViewerUnresolvedError);
     expect((outcome as PDFViewerUnresolvedError).detail).toContain("refused");
+  });
+
+  it("refuses a public-looking host that resolves to a private address", async () => {
+    const { outcome, calls } = await resolve(
+      shell({ url: "https://rebound.example/report.pdf", source: "script" }),
+      [async () => probe({ ok: false, reason: "no_document", url: null })],
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(VIEWER_URL);
+    expect((outcome as PDFViewerUnresolvedError).detail).toContain(
+      "resolves to a non-public address",
+    );
+  });
+
+  it("refuses a host that does not resolve", async () => {
+    const { outcome, calls } = await resolve(
+      shell({
+        url: "https://docs.unresolvable.example/report.pdf",
+        source: "script",
+      }),
+      [async () => probe({ ok: false, reason: "no_document", url: null })],
+    );
+
+    expect(calls).toHaveLength(1);
+    expect((outcome as PDFViewerUnresolvedError).detail).toContain(
+      "could not be resolved",
+    );
+  });
+
+  it("discards a document whose download was redirected to a non-public host", async () => {
+    const redirected = path.join(
+      os.tmpdir(),
+      `pdfjs-viewer-test-${Date.now()}.pdf`,
+    );
+    await writeFile(redirected, PDF);
+    tempFiles.push(redirected);
+
+    const { outcome, calls } = await resolve(
+      shell({ url: DOCUMENT_URL, source: "script" }),
+      [
+        async () => {
+          throw new AddFeatureError(["pdf"], {
+            filePath: redirected,
+            url: "http://10.0.0.9/final.pdf",
+            status: 200,
+            proxyUsed: "basic",
+          });
+        },
+        async () =>
+          probe({ ok: true, base64: PDF.toString("base64"), size: PDF.length }),
+      ],
+    );
+
+    // The redirected file is gone and the probe's own extraction won.
+    await expect(access(redirected)).rejects.toThrow();
+    expect(calls).toHaveLength(2);
+    const prefetch = (outcome as AddFeatureError).pdfPrefetch!;
+    tempFiles.push(prefetch.filePath);
+    expect(prefetch.url).toBe(VIEWER_URL);
   });
 
   it("probes the viewer when the named document's handoff came back empty", async () => {

@@ -2,7 +2,9 @@ import { Logger } from "winston";
 import { z } from "zod";
 import path from "path";
 import os from "os";
-import { writeFile } from "fs/promises";
+import { unlink, writeFile } from "fs/promises";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import type { Meta } from "../..";
 import type {
   FireEngineScrapeRequestChromeCDP,
@@ -18,6 +20,7 @@ import { AbortManagerThrownError } from "../../lib/abortManager";
 import type { PdfJsViewerShell } from "../../lib/pdfjsViewerShell";
 import { isPdfBuffer } from "../pdf/pdfUtils";
 import { isIPPrivate } from "../utils/safeFetch";
+import { config } from "../../../../config";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 import type { InternalAction } from "../../../../controllers/v1/types";
 
@@ -205,11 +208,18 @@ const INTERNAL_HOST_SUFFIXES = [".localhost", ".local", ".internal", ".arpa"];
 /**
  * Why a document URL taken from page content must not be fetched, or null
  * when it may be. The page chose this URL, so it is held to the standard of
- * a redirect target: a public http(s) host. Hostnames are judged without
- * DNS (the browser resolves them), which catches literal private, loopback
- * and link-local addresses and internal-looking names.
+ * a redirect target: a public http(s) host. Literal private, loopback and
+ * link-local addresses and internal-looking names are refused outright; a
+ * public-looking name is resolved and refused when any address it resolves
+ * to is non-public, since the browser would follow it there. Rebinding
+ * between this lookup and the navigation is out of the API's reach, as it
+ * is for every redirect a scraped page performs.
+ *
+ * Local deployments may point viewers at internal document servers on
+ * purpose; ALLOW_LOCAL_WEBHOOKS lifts the host checks here exactly as it
+ * does for the API's own secure fetch.
  */
-function documentUrlRefusal(documentUrl: string): string | null {
+async function documentUrlRefusal(documentUrl: string): Promise<string | null> {
   let url: URL;
   try {
     url = new URL(documentUrl);
@@ -219,6 +229,7 @@ function documentUrlRefusal(documentUrl: string): string | null {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return `scheme ${url.protocol} is not http(s)`;
   }
+  if (config.ALLOW_LOCAL_WEBHOOKS === true) return null;
   // Brackets around an IPv6 literal and a trailing DNS root dot are both
   // spelling variants of the same host; judge the canonical form.
   const host = url.hostname
@@ -236,6 +247,18 @@ function documentUrlRefusal(documentUrl: string): string | null {
   }
   if (!host.includes(".") && !host.includes(":")) {
     return `host ${host} is not a public hostname`;
+  }
+  if (isIP(host) === 0) {
+    let addresses: { address: string }[];
+    try {
+      addresses = await lookup(host, { all: true });
+    } catch {
+      return `host ${host} could not be resolved`;
+    }
+    const nonPublic = addresses.find(a => isIPPrivate(a.address));
+    if (nonPublic !== undefined) {
+      return `host ${host} resolves to a non-public address (${nonPublic.address})`;
+    }
   }
   return null;
 }
@@ -366,7 +389,7 @@ export async function resolvePdfJsViewerShell(
     documentUrl: string,
     how: string,
   ): Promise<void> => {
-    const refusal = documentUrlRefusal(documentUrl);
+    const refusal = await documentUrlRefusal(documentUrl);
     if (refusal !== null) {
       logger.warn("Refusing to fetch the viewer's document", {
         viewerUrl,
@@ -415,6 +438,30 @@ export async function resolvePdfJsViewerShell(
           detail: "the browser captured no file from the document URL",
         });
         return;
+      }
+      if (error instanceof AddFeatureError && error.pdfPrefetch) {
+        // The navigation may have been redirected: the handoff's URL is
+        // where the bytes actually came from, held to the same standard.
+        const finalUrl = error.pdfPrefetch.url;
+        const finalRefusal =
+          finalUrl !== undefined && finalUrl !== documentUrl
+            ? await documentUrlRefusal(finalUrl)
+            : null;
+        if (finalRefusal !== null) {
+          await unlink(error.pdfPrefetch.filePath).catch(() => undefined);
+          logger.warn("Discarding the viewer's document after a redirect", {
+            viewerUrl,
+            documentUrl,
+            finalUrl,
+            refusal: finalRefusal,
+          });
+          failures.push({
+            reason: "document_fetch_failed",
+            documentUrl,
+            detail: `refused after redirect to ${finalUrl}: ${finalRefusal}`,
+          });
+          return;
+        }
       }
       if (isControlFlowError(error)) throw withShellScreenshot(error);
       failures.push({
