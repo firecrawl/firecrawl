@@ -219,7 +219,12 @@ function documentUrlRefusal(documentUrl: string): string | null {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return `scheme ${url.protocol} is not http(s)`;
   }
-  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  // Brackets around an IPv6 literal and a trailing DNS root dot are both
+  // spelling variants of the same host; judge the canonical form.
+  const host = url.hostname
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.+$/, "")
+    .toLowerCase();
   if (
     host === "localhost" ||
     INTERNAL_HOST_SUFFIXES.some(suffix => host.endsWith(suffix))
@@ -247,6 +252,22 @@ function errorMessage(error: unknown): string {
 function isControlFlowError(error: unknown): boolean {
   return (
     error instanceof AddFeatureError || error instanceof AbortManagerThrownError
+  );
+}
+
+/**
+ * The pdf handoff specialtyScrapeCheck throws when fire-engine reported a
+ * PDF response but delivered no file: a "pdf" flag with a null prefetch and
+ * no other file in hand. Distinct from a real handoff (a prefetch to parse)
+ * and from fire-engine's own stealth escalation (no "pdf" flag).
+ */
+function isEmptyPdfHandoff(error: unknown): boolean {
+  return (
+    error instanceof AddFeatureError &&
+    error.featureFlags.includes("pdf") &&
+    error.pdfPrefetch == null &&
+    error.documentPrefetch == null &&
+    error.imagePrefetch == null
   );
 }
 
@@ -383,6 +404,18 @@ export async function resolvePdfJsViewerShell(
         logger.child({ method: "resolvePdfJsViewerShell/fetchDocument" }),
       );
     } catch (error) {
+      if (isEmptyPdfHandoff(error)) {
+        // fire-engine saw a PDF but captured no file (an aborted or
+        // oversized download). Propagating the empty handoff would send
+        // the retry loop back to the viewer URL; the probe can still pull
+        // the bytes the viewer itself holds.
+        failures.push({
+          reason: "document_fetch_failed",
+          documentUrl,
+          detail: "the browser captured no file from the document URL",
+        });
+        return;
+      }
       if (isControlFlowError(error)) throw withShellScreenshot(error);
       failures.push({
         reason: "document_fetch_failed",

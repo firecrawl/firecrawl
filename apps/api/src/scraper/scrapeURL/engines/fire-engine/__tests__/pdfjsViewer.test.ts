@@ -348,10 +348,13 @@ describe("resolvePdfJsViewerShell", () => {
   it.each([
     "http://169.254.169.254/latest/meta-data/",
     "http://10.0.0.7/report.pdf",
+    "http://10.0.0.7./report.pdf",
     "http://[::1]:8080/report.pdf",
     "http://localhost/report.pdf",
+    "http://localhost./report.pdf",
     "http://intranet/report.pdf",
     "https://files.corp.internal/report.pdf",
+    "https://files.corp.internal./report.pdf",
   ])("refuses to fetch a document from a non-public host: %s", async url => {
     const { outcome, calls } = await resolve(shell({ url, source: "script" }), [
       async () => probe({ ok: false, reason: "no_document", url: null }),
@@ -362,6 +365,28 @@ describe("resolvePdfJsViewerShell", () => {
     expect(calls[0].url).toBe(VIEWER_URL);
     expect(outcome).toBeInstanceOf(PDFViewerUnresolvedError);
     expect((outcome as PDFViewerUnresolvedError).detail).toContain("refused");
+  });
+
+  it("probes the viewer when the named document's handoff came back empty", async () => {
+    const { outcome, calls } = await resolve(
+      shell({ url: DOCUMENT_URL, source: "script" }),
+      [
+        // specialtyScrapeCheck saw a PDF response but fire-engine captured
+        // no file: a "pdf" handoff with a null prefetch.
+        async () => {
+          throw new AddFeatureError(["pdf"], null);
+        },
+        async () =>
+          probe({ ok: true, base64: PDF.toString("base64"), size: PDF.length }),
+      ],
+    );
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1].url).toBe(VIEWER_URL);
+    expect(outcome).toBeInstanceOf(AddFeatureError);
+    const prefetch = (outcome as AddFeatureError).pdfPrefetch!;
+    tempFiles.push(prefetch.filePath);
+    expect(await readFile(prefetch.filePath)).toEqual(PDF);
   });
 
   it("does not let a non-PDF 200 page hide a blocked document", async () => {
