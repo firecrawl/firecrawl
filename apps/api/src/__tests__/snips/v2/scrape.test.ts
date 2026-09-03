@@ -1665,11 +1665,12 @@ describe("Scrape tests", () => {
           );
           expect(raw.body.code).toBe("SCRAPE_PDF_VIEWER_UNRESOLVED");
 
-          await new Promise(resolve => setTimeout(resolve, 20000));
+          // Same settlement window the other billing test in this file uses.
+          await new Promise(resolve => setTimeout(resolve, 40000));
           const after = (await creditUsage(shellIdentity)).remainingCredits;
           expect(before - after).toBe(0);
         },
-        scrapeTimeout + 40000,
+        scrapeTimeout + 60000,
       );
     });
 
