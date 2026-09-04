@@ -5,6 +5,7 @@ import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
 import { includesFormat } from "../../lib/format-utils";
+import { addPathRegexIssues } from "../../lib/crawl-regex";
 import {
   ExtractorOptions,
   PageOptions,
@@ -1315,6 +1316,10 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
 });
 
 export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
+  .superRefine((x, ctx) => {
+    addPathRegexIssues(x.includePaths, "includePaths", ctx);
+    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+  })
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const scrapeOptionsValue = x.scrapeOptions ?? baseScrapeOptions.parse({});
@@ -1364,7 +1369,12 @@ const mapRequestSchemaBase = crawlerOptions
     auditMetadata: auditMetadataSchema.optional(),
   });
 
-export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
+export const mapRequestSchema = strictWithMessage(
+  mapRequestSchemaBase,
+).superRefine((x, ctx) => {
+  addPathRegexIssues(x.includePaths, "includePaths", ctx);
+  addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+});
 
 // export type MapRequest = {
 //   url: string;

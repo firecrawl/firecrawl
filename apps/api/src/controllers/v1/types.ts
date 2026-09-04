@@ -4,6 +4,7 @@ import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
+import { addPathRegexIssues } from "../../lib/crawl-regex";
 import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
 import {
   ExtractorOptions,
@@ -922,6 +923,10 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
 
 export const crawlRequestSchema = crawlRequestSchemaBase
   .strict()
+  .superRefine((x, ctx) => {
+    addPathRegexIssues(x.includePaths, "includePaths", ctx);
+    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+  })
   .refine(
     x => (x.scrapeOptions ? extractRefine(x.scrapeOptions) : true),
     extractRefineOpts,
@@ -1000,7 +1005,12 @@ const mapRequestSchemaBase = crawlerOptions
     auditMetadata: auditMetadataSchema.optional(),
   });
 
-export const mapRequestSchema = mapRequestSchemaBase.strict();
+export const mapRequestSchema = mapRequestSchemaBase
+  .strict()
+  .superRefine((x, ctx) => {
+    addPathRegexIssues(x.includePaths, "includePaths", ctx);
+    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+  });
 
 // export type MapRequest = {
 //   url: string;

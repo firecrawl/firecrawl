@@ -45,6 +45,13 @@ pub struct FilterLinksResult {
   pub denial_reasons: HashMap<String, String>,
 }
 
+#[derive(Serialize)]
+#[napi(object)]
+pub struct RegexValidationError {
+  pub pattern: String,
+  pub error: String,
+}
+
 #[derive(Deserialize)]
 #[napi(object)]
 pub struct FilterUrlCall {
@@ -446,6 +453,24 @@ pub async fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult> {
     })?;
 
   res.map_err(|e| Error::new(Status::GenericFailure, format!("Filter links error: {e}")))
+}
+
+/// Validate regex patterns against the engine's regex flavor (the Rust `regex`
+/// crate), which is what link filtering compiles them with. Returns an entry for
+/// each pattern that fails to compile so callers can reject unsupported syntax
+/// (e.g. look-around, backreferences) instead of silently ignoring it.
+#[napi]
+pub fn validate_regexes(patterns: Vec<String>) -> Vec<RegexValidationError> {
+  patterns
+    .into_iter()
+    .filter_map(|pattern| match Regex::new(&pattern) {
+      Ok(_) => None,
+      Err(e) => Some(RegexValidationError {
+        pattern,
+        error: e.to_string(),
+      }),
+    })
+    .collect()
 }
 
 fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, String> {

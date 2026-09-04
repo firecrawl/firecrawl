@@ -529,6 +529,15 @@ describe("V1 Types Validation", () => {
       expect(result.scrapeOptions).toBeDefined();
       expect(result.scrapeOptions.formats).toEqual(["markdown"]);
     });
+
+    it("should reject path patterns using a negative lookahead", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["^/?(?!blog|works-with)[^/]+/.+"],
+        }),
+      ).toThrow(/does not support look-around/);
+    });
   });
 
   describe("mapRequestSchema", () => {
