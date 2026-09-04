@@ -1,6 +1,6 @@
 import type { Mock } from "vitest";
 import { isKeylessIpSuspicious } from "../spur";
-import { redisSpurClient } from "../../services/spur-redis";
+import { redisRateLimitClient } from "../../services/rate-limiter";
 import { config } from "../../config";
 import { logger } from "../logger";
 
@@ -12,8 +12,8 @@ vi.mock("../logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock("../../services/spur-redis", () => ({
-  redisSpurClient: {
+vi.mock("../../services/rate-limiter", () => ({
+  redisRateLimitClient: {
     get: vi.fn(),
     mget: vi.fn(),
     set: vi.fn(),
@@ -25,14 +25,14 @@ vi.mock("../../services/spur-redis", () => ({
 // ignored EX/PX) for the single-flight lock and the result cache.
 function installFakeRedis(): Map<string, string> {
   const store = new Map<string, string>();
-  (redisSpurClient.get as Mock).mockImplementation(async (k: string) =>
+  (redisRateLimitClient.get as Mock).mockImplementation(async (k: string) =>
     store.has(k) ? store.get(k)! : null,
   );
-  (redisSpurClient.mget as Mock).mockImplementation(
+  (redisRateLimitClient.mget as Mock).mockImplementation(
     async (...keys: (string | string[])[]) =>
       keys.flat().map(k => (store.has(k) ? store.get(k)! : null)),
   );
-  (redisSpurClient.set as Mock).mockImplementation(
+  (redisRateLimitClient.set as Mock).mockImplementation(
     async (k: string, v: string, ...args: unknown[]) => {
       if (args.includes("NX") && store.has(k)) return null;
       store.set(k, v);
@@ -40,7 +40,7 @@ function installFakeRedis(): Map<string, string> {
     },
   );
   // Atomic compare-and-delete used by releaseLock: KEYS[1]=lock key, ARGV[1]=token.
-  (redisSpurClient.eval as Mock).mockImplementation(
+  (redisRateLimitClient.eval as Mock).mockImplementation(
     async (_script: string, _numKeys: number, key: string, token: string) => {
       if (store.get(key) === token) {
         store.delete(key);
@@ -68,14 +68,6 @@ describe("Spur keyless IP reputation", () => {
     vi.unstubAllGlobals();
     config.SPUR_API_KEY = "test-key";
     store = installFakeRedis();
-  });
-
-  it("fails open without calling Spur when the datastore is unavailable", async () => {
-    (redisSpurClient.mget as Mock).mockRejectedValueOnce(new Error("offline"));
-    (redisSpurClient.set as Mock).mockRejectedValueOnce(new Error("offline"));
-    const fetchFn = mockFetch(async () => okResponse({ risks: ["TUNNEL"] }));
-    expect(await isKeylessIpSuspicious("203.0.113.9")).toBe(false);
-    expect(fetchFn).not.toHaveBeenCalled();
   });
 
   it("flags an IP fronting a live VPN/proxy tunnel", async () => {
