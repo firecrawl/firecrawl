@@ -32,14 +32,24 @@ export function addPathRegexIssues(
   ctx: z.RefinementCtx,
 ): void {
   if (!patterns || patterns.length === 0) return;
+  // Zod still runs this refinement when pathPatternsSchema has already reported
+  // a count or length violation, so re-check the caps here: they are what bound
+  // the total compile work a request can demand, and an over-cap request has
+  // already been rejected.
+  if (
+    patterns.length > MAX_PATH_PATTERNS ||
+    patterns.some(p => p.length > MAX_PATH_PATTERN_LENGTH)
+  ) {
+    return;
+  }
   for (const { pattern, error } of validateRegexes(patterns)) {
-    const hint = regexErrorHint(error);
+    const summary = summarizeRegexError(error);
     ctx.addIssue({
       code: "custom",
       path: [field],
       message:
-        `Invalid ${field} pattern ${JSON.stringify(pattern)}: ${summarizeRegexError(error)}. ` +
-        `${field} patterns use Rust regex (RE2-style) syntax.${hint}`,
+        `Invalid ${field} pattern ${JSON.stringify(pattern)}: ${summary}. ` +
+        `${field} patterns use Rust regex (RE2-style) syntax.${regexErrorHint(summary)}`,
     });
   }
 }
@@ -55,14 +65,16 @@ function summarizeRegexError(error: string): string {
 
 // The engine's own error already names the failing construct, so only add an
 // actionable hint for the errors where the fix is not obvious from the message.
-function regexErrorHint(error: string): string {
-  if (/look-around|look-ahead|look-behind|backreference/i.test(error)) {
+// Takes the summarized `error:` line, not the full diagnostic, which quotes the
+// user's pattern and could otherwise trigger a hint by containing these words.
+function regexErrorHint(summary: string): string {
+  if (/look-around|look-ahead|look-behind|backreference/i.test(summary)) {
     return " Rewrite the pattern using only constructs the engine supports, for example by listing the paths to keep in includePaths instead.";
   }
-  if (/exceeds size limit/i.test(error)) {
+  if (/exceeds size limit/i.test(summary)) {
     return " The pattern expands to too many states when compiled, usually because of large or stacked counted repetitions such as {1000} or {5}{5}{5}. Lower the counts or use unbounded quantifiers like + and * instead.";
   }
-  if (/Unicode not allowed/i.test(error)) {
+  if (/Unicode not allowed/i.test(summary)) {
     return " Patterns are matched against percent-encoded ASCII URLs, so Unicode-only constructs such as \\p{..} classes or non-ASCII characters inside [...] can never match. Remove them or match the percent-encoded form instead.";
   }
   return "";

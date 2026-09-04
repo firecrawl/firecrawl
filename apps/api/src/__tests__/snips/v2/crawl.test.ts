@@ -224,7 +224,10 @@ describe("Crawl tests", () => {
 
       expect(res.statusCode).toBe(400);
       expect(res.body.success).toBe(false);
-      expect(res.body.error).toMatch(/at most 100 patterns/);
+      // Schema-level (non-custom) issues are reported in details, not error.
+      expect(
+        res.body.details.map((issue: { message: string }) => issue.message),
+      ).toContainEqual(expect.stringMatching(/at most 100 patterns/));
     },
     scrapeTimeout,
   );

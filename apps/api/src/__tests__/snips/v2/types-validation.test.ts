@@ -1032,6 +1032,39 @@ describe("V2 Types Validation", () => {
       ).toThrow(/at most 100 patterns/);
     });
 
+    it("should not compile patterns once the count cap is exceeded", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: [
+            ...Array.from({ length: MAX_PATH_PATTERNS }, (_, i) => `^/p${i}`),
+            "[abc",
+          ],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/at most 100 patterns/);
+      expect(message).not.toMatch(/unclosed character class/);
+    });
+
+    it("should not derive hints from user pattern text", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["[exceeds size limit"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/unclosed character class/);
+      expect(message).not.toMatch(/stacked counted repetitions/);
+    });
+
     it("should reject path patterns longer than the maximum length", () => {
       expect(() =>
         crawlRequestSchema.parse({
