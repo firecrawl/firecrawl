@@ -16,6 +16,7 @@ const ANALYTICS_TIMEOUT_MS = 20_000;
 const APPLICATIONS_TIMEOUT_MS = 15_000;
 const CLAIMS_TIMEOUT_MS = 20_000;
 const SUPPLY_TIMEOUT_MS = 30_000;
+const INGEST_TIMEOUT_MS = 50_000;
 
 function exchangeError(res: Response, status: number, error: string) {
   return res.status(status).json({ success: false, error });
@@ -208,4 +209,28 @@ exchangeRouter.post(
   "/records/fetch",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
+);
+
+exchangeRouter.get(
+  "/ingest{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/ingest{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.patch(
+  "/ingest{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.delete(
+  "/ingest{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
