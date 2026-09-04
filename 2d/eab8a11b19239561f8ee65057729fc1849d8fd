@@ -1,0 +1,23 @@
+apps/api/src/scraper/scrapeURL/lib/pdfjsViewerShell.test.ts
+  s_6469a4ca1d4598::t_397445bba7ce34 190-205
+apps/api/src/scraper/scrapeURL/lib/contentShell.test.ts
+  ai_agent 7-9
+apps/api/src/scraper/scrapeURL/lib/pdfjsViewerShell.ts
+  s_6469a4ca1d4598::t_397445bba7ce34 229-235,237-241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2deab8a11b19239561f8ee65057729fc1849d8fd",
+  "prompts": {},
+  "sessions": {
+    "s_6469a4ca1d4598": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8800e181-647c-45c3-a3d9-ee28c3db4bc3",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

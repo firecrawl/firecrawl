@@ -1,0 +1,19 @@
+apps/test-site/public/mislabeled-pdf.jp2
+  s_d38078ce0208f0::t_305f3f99773995 15,17-62,76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fc2cf99aa8d332db455b329fc7e71992ed385d2a",
+  "prompts": {},
+  "sessions": {
+    "s_d38078ce0208f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eee5ae4d-fe57-4c2f-bfa0-de11634159f6",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
