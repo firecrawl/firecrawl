@@ -1299,7 +1299,7 @@ export async function scrapeURL(
       });
     }
 
-    if (shouldCheckRobots(options, internalOptions)) {
+    if (shouldCheckRobots(meta)) {
       await withSpan("scrape.robots_check", async robotsSpan => {
         const urlToCheck = meta.rewrittenUrl || meta.url;
         meta.logger.info("Checking robots.txt", { url: urlToCheck });
