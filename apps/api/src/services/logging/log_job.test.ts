@@ -13,6 +13,7 @@ const {
   publishMessage,
   flush,
   close,
+  metricInc,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -46,6 +47,7 @@ const {
     publishMessage,
     flush,
     close,
+    metricInc: vi.fn(),
   };
 });
 
@@ -67,6 +69,8 @@ vi.mock("../../config", () => ({
       JSON.stringify({ project_id: "firecrawl" }),
     ).toString("base64"),
     USE_DB_AUTHENTICATION: true,
+    PUBSUB_MAX_OUTSTANDING_MESSAGES: 10_000,
+    PUBSUB_MAX_OUTSTANDING_BYTES: 64 * 1024 * 1024,
   },
 }));
 
@@ -95,6 +99,10 @@ vi.mock("../posthog", () => ({
   trackFirstSurfaceUse: vi.fn(),
 }));
 
+vi.mock("../../lib/pubsub-log-metrics", () => ({
+  pubsubLogPublishTotal: { inc: metricInc },
+}));
+
 import {
   logRequest,
   logSearch,
@@ -102,6 +110,7 @@ import {
   type LoggedSearch,
 } from "./log_job";
 import * as schema from "../../db/schema";
+import { config } from "../../config";
 
 function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
   return {
@@ -208,10 +217,16 @@ describe("logRequest", () => {
     await logRequest(makeRequest("op_integration_42"));
 
     expect(insert).toHaveBeenCalledWith(schema.requests);
-    expect(publishes).toContainEqual({
-      name: "requests",
-      options: { gaxOpts: { timeout: 60_000 } },
+    expect(publishes[0].name).toBe("requests");
+    const gaxOpts = publishes[0].options.gaxOpts;
+    // A bare `timeout` would collapse the retry budget to one attempt.
+    expect(gaxOpts.timeout).toBeUndefined();
+    expect(gaxOpts.retry.backoffSettings).toMatchObject({
+      initialRpcTimeoutMillis: 15_000,
+      maxRpcTimeoutMillis: 15_000,
+      totalTimeoutMillis: 300_000,
     });
+    expect(gaxOpts.retry.retryCodes).toBeUndefined();
 
     const published = JSON.parse(
       publishMessage.mock.calls[0][0].data.toString("utf8"),
@@ -294,6 +309,52 @@ describe("logRequest", () => {
     expect(published.origin).toBe("api");
   });
 
+  it("drops publishes beyond the outstanding cap instead of queueing them", async () => {
+    // A fresh module instance: the outstanding counters are process-wide and
+    // an earlier test leaves a publish that never settles.
+    vi.resetModules();
+    const fresh = await import("./log_job.js");
+    // Hung channel: publishes never settle, so each one stays outstanding.
+    publishMessage.mockReturnValue(new Promise(() => {}));
+    config.PUBSUB_MAX_OUTSTANDING_MESSAGES = 2;
+    try {
+      await fresh.logRequest(makeRequest(null));
+      await fresh.logRequest(makeRequest(null));
+      await fresh.logRequest(makeRequest(null));
+    } finally {
+      config.PUBSUB_MAX_OUTSTANDING_MESSAGES = 10_000;
+    }
+
+    // The database write is never held back by the publisher.
+    expect(values).toHaveBeenCalledTimes(3);
+    expect(publishMessage).toHaveBeenCalledTimes(2);
+    expect(metricInc).toHaveBeenCalledWith({
+      table: "requests",
+      outcome: "dropped",
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Dropping Pub/Sub log: publisher backlog is full",
+      expect.objectContaining({ outstandingMessages: 2, droppedTotal: 1 }),
+    );
+  });
+
+  it("counts a published row and a failed row separately", async () => {
+    await logRequest(makeRequest(null));
+    await new Promise(resolve => setImmediate(resolve));
+    expect(metricInc).toHaveBeenCalledWith({
+      table: "requests",
+      outcome: "published",
+    });
+
+    publishMessage.mockRejectedValueOnce(new Error("Pub/Sub unavailable"));
+    await logRequest(makeRequest(null));
+    await new Promise(resolve => setImmediate(resolve));
+    expect(metricInc).toHaveBeenCalledWith({
+      table: "requests",
+      outcome: "failed",
+    });
+  });
+
   it("flushes Pub/Sub messages during shutdown", async () => {
     await logRequest(makeRequest(null));
 
@@ -301,5 +362,47 @@ describe("logRequest", () => {
 
     expect(flush).toHaveBeenCalled();
     expect(close).toHaveBeenCalledOnce();
+  });
+});
+
+describe("shutdownPubSubLogging deadline", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    values.mockResolvedValue(undefined);
+    publishMessage.mockResolvedValue("message-id");
+    publishes.length = 0;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("closes the client when a flush outlives the shutdown deadline", async () => {
+    // A fresh module instance: shutdown is memoized per process.
+    vi.resetModules();
+    const fresh = await import("./log_job.js");
+    await fresh.logRequest({
+      id: "019e6f45-7778-727d-adf0-0abe9d5062b6",
+      kind: "scrape",
+      api_version: "v2",
+      team_id: "team-id",
+      origin: "api",
+      target_hint: "https://example.com",
+      zeroDataRetention: false,
+      api_key_id: null,
+      external_request_id: null,
+    });
+
+    vi.useFakeTimers();
+    flush.mockReturnValueOnce(new Promise(() => {}));
+    const shutdown = fresh.shutdownPubSubLogging();
+    await vi.advanceTimersByTimeAsync(40_000);
+    await shutdown;
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Pub/Sub log flush did not finish before the shutdown deadline; closing anyway",
+      expect.objectContaining({ timeoutMs: 40_000 }),
+    );
   });
 });

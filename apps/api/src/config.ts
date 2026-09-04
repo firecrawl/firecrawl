@@ -250,6 +250,20 @@ const configSchema = z.object({
 
   // Google Cloud Pub/Sub
   PUBSUB_CREDENTIALS: z.string().optional(),
+  // Publisher backlog cap, per process. Log publishing is fire-and-forget and
+  // retries for up to five minutes, so during a stall the backlog is what
+  // grows; rows beyond the cap are dropped and counted rather than letting a
+  // hung channel take the process down.
+  PUBSUB_MAX_OUTSTANDING_MESSAGES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10_000),
+  PUBSUB_MAX_OUTSTANDING_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(64 * 1024 * 1024),
 
   // Cloud Bigtable (change tracking bookkeeping store). The client
   // auto-detects BIGTABLE_EMULATOR_HOST, so local dev only needs the
