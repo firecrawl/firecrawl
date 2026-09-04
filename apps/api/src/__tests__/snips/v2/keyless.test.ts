@@ -8,6 +8,7 @@ import {
   scrapeTimeout,
 } from "../lib";
 import { redisRateLimitClient } from "../../../services/rate-limiter";
+import { redisSpurClient } from "../../../services/spur-redis";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import { and, desc, eq, gt } from "drizzle-orm";
@@ -774,20 +775,33 @@ describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
 
   afterAll(async () => {
     delete config.USE_DB_AUTHENTICATION;
-    const keys = await redisRateLimitClient.keys("spur_context:*");
-    if (keys.length > 0) await redisRateLimitClient.del(...keys);
+    await redisSpurClient.del(spurKey("203.0.113.66"), spurKey("203.0.113.67"));
+    if (config.SPUR_REDIS_URL) {
+      await redisRateLimitClient.del(
+        spurKey("203.0.113.66"),
+        spurKey("203.0.113.67"),
+      );
+    }
   });
 
   it(
     "refuses keyless for an IP Spur flags as a VPN/proxy tunnel (403)",
     async () => {
       const ip = "203.0.113.66";
+      if (config.SPUR_REDIS_URL) {
+        await redisRateLimitClient.set(
+          spurKey(ip),
+          JSON.stringify({ risks: [] }),
+          "EX",
+          60,
+        );
+      }
       // Seed the Spur cache with a suspicious context (active VPN tunnel).
-      await redisRateLimitClient.set(
+      await redisSpurClient.set(
         spurKey(ip),
         JSON.stringify({
           ip,
-          tunnels: [{ type: "VPN", operator: "PROTON_VPN" }],
+          tunnels: [{ anonymous: true, type: "VPN", operator: "PROTON_VPN" }],
         }),
       );
 
@@ -817,8 +831,16 @@ describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
     "allows keyless for a clean (non-anonymizing) IP per Spur (200)",
     async () => {
       const ip = "203.0.113.67";
+      if (config.SPUR_REDIS_URL) {
+        await redisRateLimitClient.set(
+          spurKey(ip),
+          JSON.stringify({ risks: ["TUNNEL"] }),
+          "EX",
+          60,
+        );
+      }
       // Seed a clean context: datacenter alone is not "suspicious".
-      await redisRateLimitClient.set(
+      await redisSpurClient.set(
         spurKey(ip),
         JSON.stringify({ ip, infrastructure: "DATACENTER", risks: [] }),
       );
