@@ -208,8 +208,9 @@ async function clearFinishedOrStaleCurrentCheck(
     );
     if (!failed) return "lost_claim";
 
+    let released = true;
     if (failed.autumn_lock_id) {
-      await autumnService
+      released = await autumnService
         .finalizeCreditsLock({
           lockId: failed.autumn_lock_id,
           action: "release",
@@ -227,11 +228,16 @@ async function clearFinishedOrStaleCurrentCheck(
             checkId: failed.id,
             lockId: failed.autumn_lock_id,
           });
+          return false;
         });
     }
 
     const finalized = await updateMonitorCheck(failed.id, {
-      billing_status: failed.autumn_lock_id ? "released" : "not_applicable",
+      billing_status: failed.autumn_lock_id
+        ? released
+          ? "released"
+          : "failed"
+        : "not_applicable",
     });
     await updateMonitorScheduleAfterRun({
       monitor,

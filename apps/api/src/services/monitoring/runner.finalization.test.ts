@@ -316,6 +316,70 @@ describe("monitor check finalization ownership", () => {
     },
   );
 
+  it.each([
+    { kind: "stale", throws: false },
+    { kind: "stale", throws: true },
+    { kind: "orphan", throws: false },
+    { kind: "orphan", throws: true },
+    { kind: "handler", throws: false },
+    { kind: "handler", throws: true },
+  ])(
+    "records failed settlement for a $kind release that throws: $throws",
+    async ({ kind, throws }) => {
+      if (throws) {
+        vi.mocked(autumnService.finalizeCreditsLock).mockRejectedValue(
+          new Error("Release unavailable"),
+        );
+      } else {
+        vi.mocked(autumnService.finalizeCreditsLock).mockResolvedValue(false);
+      }
+      if (kind === "handler") {
+        monitor.targets = [];
+        const failure = new Error("Target write failed");
+        vi.mocked(autumnService.lockCredits).mockResolvedValue({
+          status: "locked",
+          lockId: "monitor_check-1",
+        });
+        const updateIfRunning = vi
+          .mocked(store.updateMonitorCheckIfRunning)
+          .getMockImplementation()!;
+        vi.mocked(store.updateMonitorCheckIfRunning).mockImplementation(
+          async (id, patch) => {
+            if (patch.target_results) throw failure;
+            return updateIfRunning(id, patch);
+          },
+        );
+        await expect(
+          processMonitorCheckJob({
+            checkId: current.id,
+            monitorId: monitor.id,
+            teamId: monitor.team_id,
+          }),
+        ).rejects.toThrow(failure);
+      } else {
+        if (kind === "stale") {
+          current.started_at = new Date(
+            Date.now() - 2 * 60 * 60 * 1000,
+          ).toISOString();
+        } else {
+          vi.mocked(store.getMonitorForUpdate).mockResolvedValue(null);
+        }
+        await reconcileRunningMonitorChecks();
+      }
+      expect(current).toMatchObject({
+        status: "failed",
+        billing_status: "failed",
+      });
+      expect(autumnService.finalizeCreditsLock).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          lockId: "monitor_check-1",
+          action: "release",
+        }),
+      );
+      expect(bill).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(["completed", "stale", "orphan"])(
     "settles the hold returned by the terminal claim for a %s check",
     async kind => {

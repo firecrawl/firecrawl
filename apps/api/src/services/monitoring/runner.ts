@@ -1177,21 +1177,34 @@ export async function processMonitorCheckJob(
 
     // The claim owns the persisted hold; a failed reservation write can also
     // leave this handler with a newly acquired hold that was never stored.
+    let released = true;
     for (const ownedLockId of new Set([failed.autumn_lock_id, lockId])) {
       if (!ownedLockId) continue;
-      await autumnService.finalizeCreditsLock({
-        lockId: ownedLockId,
-        action: "release",
-        properties: {
-          source: "monitorCheck",
-          endpoint: "monitor",
-          jobId: check.id,
-        },
-        teamId: monitor.team_id,
-      });
+      const settled = await autumnService
+        .finalizeCreditsLock({
+          lockId: ownedLockId,
+          action: "release",
+          properties: {
+            source: "monitorCheck",
+            endpoint: "monitor",
+            jobId: check.id,
+          },
+          teamId: monitor.team_id,
+        })
+        .catch(releaseError => {
+          logger.warn("Failed to release monitor check credit lock", {
+            error: releaseError,
+            monitorId: monitor.id,
+            checkId: check.id,
+            lockId: ownedLockId,
+          });
+          return false;
+        });
+      released = released && settled;
     }
     check = await updateMonitorCheck(failed.id, {
-      billing_status: failed.autumn_lock_id || lockId ? "released" : "failed",
+      billing_status:
+        (failed.autumn_lock_id || lockId) && released ? "released" : "failed",
     });
 
     if (
@@ -1364,8 +1377,9 @@ async function failStaleMonitorCheck(params: {
   });
   if (!claimed) return true;
 
+  let released = true;
   if (claimed.autumn_lock_id) {
-    await autumnService
+    released = await autumnService
       .finalizeCreditsLock({
         lockId: claimed.autumn_lock_id,
         action: "release",
@@ -1383,11 +1397,16 @@ async function failStaleMonitorCheck(params: {
           checkId: params.check.id,
           lockId: claimed.autumn_lock_id,
         });
+        return false;
       });
   }
 
   const finalized = await updateMonitorCheck(claimed.id, {
-    billing_status: claimed.autumn_lock_id ? "released" : "not_applicable",
+    billing_status: !claimed.autumn_lock_id
+      ? "not_applicable"
+      : released
+        ? "released"
+        : "failed",
   });
   let withNotifications = finalized;
   if (await claimMonitorNotification(params.check.id)) {
@@ -1490,8 +1509,9 @@ export async function reconcileRunningMonitorChecks(
         });
         if (!failed) continue;
 
+        let released = true;
         if (failed.autumn_lock_id) {
-          await autumnService
+          released = await autumnService
             .finalizeCreditsLock({
               lockId: failed.autumn_lock_id,
               action: "release",
@@ -1512,11 +1532,16 @@ export async function reconcileRunningMonitorChecks(
                   lockId: failed.autumn_lock_id,
                 },
               );
+              return false;
             });
         }
 
         await updateMonitorCheck(failed.id, {
-          billing_status: failed.autumn_lock_id ? "released" : "not_applicable",
+          billing_status: !failed.autumn_lock_id
+            ? "not_applicable"
+            : released
+              ? "released"
+              : "failed",
         });
         logger.warn("Failed orphaned monitor check", {
           monitorId: check.monitor_id,

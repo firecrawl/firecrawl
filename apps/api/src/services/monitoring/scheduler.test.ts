@@ -105,7 +105,7 @@ describe("monitoring scheduler", () => {
     mockUpdateMonitorScheduleAfterRun.mockResolvedValue(undefined);
     mockGetMonitorCheckForUpdate.mockResolvedValue(null);
     mockIsMonitorCheckStale.mockReturnValue(false);
-    mockFinalizeCreditsLock.mockResolvedValue(undefined as any);
+    mockFinalizeCreditsLock.mockResolvedValue(true);
   });
 
   it("dispatches and advances a scheduled monitor before enqueueing its job", async () => {
@@ -386,6 +386,49 @@ describe("monitoring scheduler", () => {
           billing_status: claimedLock ? "released" : "not_applicable",
         }),
       });
+    },
+  );
+
+  it.each(["success", "refused", "throw"] as const)(
+    "records a stale hold release outcome of %s before advancing the schedule",
+    async outcome => {
+      const current = {
+        id: "stale-check",
+        status: "running",
+        autumn_lock_id: "monitor_stale-check",
+      } as any;
+      const claimed = { ...current, status: "failed" };
+      mockClaimDueMonitors.mockResolvedValue([
+        { ...monitor, current_check_id: current.id },
+      ]);
+      mockGetMonitorCheckForUpdate.mockResolvedValue(current);
+      mockIsMonitorCheckStale.mockReturnValue(true);
+      vi.mocked(updateMonitorCheckIfStatus).mockResolvedValue(claimed);
+      mockUpdateMonitorCheck.mockImplementation(async (_id, patch) => ({
+        ...claimed,
+        ...patch,
+      }));
+      if (outcome === "throw") {
+        mockFinalizeCreditsLock.mockRejectedValue(
+          new Error("Release unavailable"),
+        );
+      } else {
+        mockFinalizeCreditsLock.mockResolvedValue(outcome === "success");
+      }
+
+      await expect(enqueueDueMonitorChecks()).resolves.toBe(1);
+
+      const billingStatus = outcome === "success" ? "released" : "failed";
+      expect(mockUpdateMonitorCheck).toHaveBeenCalledWith(current.id, {
+        billing_status: billingStatus,
+      });
+      expect(mockUpdateMonitorScheduleAfterRun).toHaveBeenCalledExactlyOnceWith(
+        {
+          monitor: expect.objectContaining({ id: monitor.id }),
+          check: { ...claimed, billing_status: billingStatus },
+        },
+      );
+      expect(mockAddMonitorCheckJob).toHaveBeenCalledTimes(1);
     },
   );
 });
