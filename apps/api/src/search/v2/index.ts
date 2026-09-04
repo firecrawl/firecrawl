@@ -5,24 +5,7 @@ import { searxng_search } from "./searxng";
 import { ddgSearch } from "./ddgsearch";
 import { Logger } from "winston";
 
-export async function search({
-  query,
-  logger,
-  requestId,
-  advanced = false,
-  num_results = 5,
-  tbs = undefined,
-  filter = undefined,
-  lang = "en",
-  country = "us",
-  location = undefined,
-  safe = undefined,
-  proxy = undefined,
-  sleep_interval = 0,
-  timeout = 5000,
-  type = undefined,
-  enterprise = undefined,
-}: {
+interface SearchV2Args {
   query: string;
   logger: Logger;
   requestId?: string;
@@ -39,7 +22,36 @@ export async function search({
   timeout?: number;
   type?: SearchResultType | SearchResultType[];
   enterprise?: ("default" | "anon" | "zdr")[];
-}): Promise<SearchV2Response> {
+}
+
+interface SearchV2Outcome {
+  response: SearchV2Response;
+  /**
+   * True when a provider served the query. False when every provider failed,
+   * so an empty `response` means "we do not know", not "nothing matched".
+   * Callers that bill must not charge for a failed search.
+   */
+  succeeded: boolean;
+}
+
+export async function searchWithOutcome({
+  query,
+  logger,
+  requestId,
+  advanced = false,
+  num_results = 5,
+  tbs = undefined,
+  filter = undefined,
+  lang = "en",
+  country = "us",
+  location = undefined,
+  safe = undefined,
+  proxy = undefined,
+  sleep_interval = 0,
+  timeout = 5000,
+  type = undefined,
+  enterprise = undefined,
+}: SearchV2Args): Promise<SearchV2Outcome> {
   try {
     if (config.FIRE_ENGINE_BETA_URL) {
       logger.info("Using fire engine search");
@@ -56,7 +68,12 @@ export async function search({
         enterprise,
       });
 
-      return results;
+      if (results === null) {
+        logger.error("Fire engine search failed on every attempt");
+        return { response: {}, succeeded: false };
+      }
+
+      return { response: results, succeeded: true };
     }
 
     if (config.SEARXNG_ENDPOINT) {
@@ -70,7 +87,8 @@ export async function search({
         location,
         safe,
       });
-      if (results.web && results.web.length > 0) return results;
+      if (results.web && results.web.length > 0)
+        return { response: results, succeeded: true };
     }
 
     logger.info("Using DuckDuckGo search");
@@ -81,12 +99,17 @@ export async function search({
       proxy,
       timeout,
     });
-    if (ddgResults.web && ddgResults.web.length > 0) return ddgResults;
+    if (ddgResults.web && ddgResults.web.length > 0)
+      return { response: ddgResults, succeeded: true };
 
-    // Fallback to empty response
-    return {};
+    // Every provider ran and nothing matched.
+    return { response: {}, succeeded: true };
   } catch (error) {
     logger.error(`Error in search function`, { error });
-    return {};
+    return { response: {}, succeeded: false };
   }
+}
+
+export async function search(args: SearchV2Args): Promise<SearchV2Response> {
+  return (await searchWithOutcome(args)).response;
 }

@@ -1,5 +1,5 @@
 import type { Logger } from "winston";
-import { search } from "./v2";
+import { searchWithOutcome } from "./v2";
 import { SearchV2Response } from "../lib/entities";
 import {
   buildSearchQuery,
@@ -73,6 +73,7 @@ interface SearchExecuteResult {
   scrapeCredits: number;
   totalCredits: number;
   shouldScrape: boolean;
+  searchSucceeded: boolean;
 }
 
 function hasOnlyDeveloperCategory(categories?: CategoryOption[]): boolean {
@@ -124,9 +125,12 @@ export async function executeSearch(
       )
     : null;
 
-  const searchResponse = hasOnlyDeveloperCategory(categories)
-    ? ({} as SearchV2Response)
-    : ((await search({
+  // `succeeded` is false when no provider served the query, and when the SERP
+  // is skipped entirely (developer-only). An empty response then means "we do
+  // not know", so it must not be billed.
+  const searchOutcome = hasOnlyDeveloperCategory(categories)
+    ? { response: {} as SearchV2Response, succeeded: false }
+    : await searchWithOutcome({
         query: searchQuery,
         logger,
         requestId: context.requestId,
@@ -140,7 +144,8 @@ export async function executeSearch(
         safe: options.safe,
         type: searchTypes,
         enterprise: options.enterprise,
-      })) as SearchV2Response);
+      });
+  const searchResponse = searchOutcome.response;
   let developerResults = developerResultsPromise
     ? await developerResultsPromise
     : [];
@@ -235,8 +240,16 @@ export async function executeSearch(
   // serving the search itself (every result domain is scanned before
   // filtering), so they bill against the same feature and show up in the
   // request's creditsUsed.
+  // A search that ran and matched nothing still costs one unit: we served the
+  // query upstream. `Math.ceil` already floors every non-empty search to one
+  // unit, so this only changes the empty case. A search no provider served
+  // bills nothing.
+  const billableResultCount = Math.max(
+    totalResultsCount,
+    searchOutcome.succeeded ? 1 : 0,
+  );
   const searchCredits =
-    Math.ceil(totalResultsCount / 10) * creditsPerTenResults +
+    Math.ceil(billableResultCount / 10) * creditsPerTenResults +
     threatScanCredits;
   let scrapeCredits = 0;
 
@@ -382,5 +395,6 @@ export async function executeSearch(
     scrapeCredits,
     totalCredits: searchCredits + scrapeCredits,
     shouldScrape: shouldScrape ?? false,
+    searchSucceeded: searchOutcome.succeeded,
   };
 }

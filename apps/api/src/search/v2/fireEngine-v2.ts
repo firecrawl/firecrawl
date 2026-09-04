@@ -50,7 +50,7 @@ export async function fire_engine_search_v2(
     enterprise?: ("default" | "anon" | "zdr")[];
   },
   abort?: AbortSignal,
-): Promise<SearchV2Response> {
+): Promise<SearchV2Response | null> {
   if (!useFireEngine) {
     logger.warn(
       "FIRE_ENGINE_BETA_URL is not configured, returning empty search results",
@@ -81,5 +81,7 @@ export async function fire_engine_search_v2(
     abort,
   );
 
-  return result ?? {};
+  // null means every attempt failed. Callers must not read that as an empty
+  // result set: an unserved search is not the same as one that matched nothing.
+  return result;
 }
