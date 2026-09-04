@@ -12,6 +12,7 @@ const ANALYTICS_TIMEOUT_MS = 20_000;
 const APPLICATIONS_TIMEOUT_MS = 15_000;
 const CLAIMS_TIMEOUT_MS = 20_000;
 const SUPPLY_TIMEOUT_MS = 30_000;
+const INGEST_TIMEOUT_MS = 50_000;
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
@@ -237,4 +238,28 @@ exchangeRouter.post(
   "/records/fetch",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
+);
+
+exchangeRouter.get(
+  "/ingest{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/ingest{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.patch(
+  "/ingest{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.delete(
+  "/ingest{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
