@@ -7,8 +7,9 @@ import {
   claimDueMonitors,
   createMonitorCheck,
   dispatchScheduledMonitorCheck,
-  getMonitorCheck,
+  getMonitorCheckForUpdate,
   updateMonitorCheck,
+  updateMonitorCheckIfStatus,
   updateMonitorScheduleAfterRun,
 } from "./store";
 import { autumnService } from "../autumn/autumn.service";
@@ -22,8 +23,9 @@ vi.mock("./store", () => ({
   claimDueMonitors: vi.fn(),
   createMonitorCheck: vi.fn(),
   dispatchScheduledMonitorCheck: vi.fn(),
-  getMonitorCheck: vi.fn(),
+  getMonitorCheckForUpdate: vi.fn(),
   updateMonitorCheck: vi.fn(),
+  updateMonitorCheckIfStatus: vi.fn(),
   updateMonitorScheduleAfterRun: vi.fn(),
 }));
 
@@ -52,8 +54,8 @@ const mockDispatchScheduledMonitorCheck =
   dispatchScheduledMonitorCheck as MockedFunction<
     typeof dispatchScheduledMonitorCheck
   >;
-const mockGetMonitorCheck = getMonitorCheck as MockedFunction<
-  typeof getMonitorCheck
+const mockGetMonitorCheckForUpdate = getMonitorCheckForUpdate as MockedFunction<
+  typeof getMonitorCheckForUpdate
 >;
 const mockIsMonitorCheckStale = isMonitorCheckStale as MockedFunction<
   typeof isMonitorCheckStale
@@ -94,7 +96,7 @@ describe("monitoring scheduler", () => {
     mockAddMonitorCheckJob.mockResolvedValue(undefined);
     mockAdvanceMonitorAfterSkippedCheck.mockResolvedValue(undefined);
     mockUpdateMonitorScheduleAfterRun.mockResolvedValue(undefined);
-    mockGetMonitorCheck.mockResolvedValue(null);
+    mockGetMonitorCheckForUpdate.mockResolvedValue(null);
     mockIsMonitorCheckStale.mockReturnValue(false);
     mockFinalizeCreditsLock.mockResolvedValue(undefined as any);
   });
@@ -195,21 +197,25 @@ describe("monitoring scheduler", () => {
     const staleCheck = { id: "stale-check", status: "running" } as any;
     const failedStaleCheck = { ...staleCheck, status: "failed" } as any;
     mockClaimDueMonitors.mockResolvedValue([monitorWithCurrentCheck]);
-    mockGetMonitorCheck.mockResolvedValue(staleCheck);
+    mockGetMonitorCheckForUpdate.mockResolvedValue(staleCheck);
     mockIsMonitorCheckStale.mockReturnValue(true);
-    mockUpdateMonitorCheck.mockResolvedValue(failedStaleCheck);
+    vi.mocked(updateMonitorCheckIfStatus).mockResolvedValue(failedStaleCheck);
 
     await expect(
       enqueueDueMonitorChecks({ workerId: "worker-1" }),
     ).resolves.toBe(1);
 
-    expect(mockUpdateMonitorCheck).toHaveBeenCalledWith(staleCheck.id, {
-      status: "failed",
-      finished_at: expect.any(String),
-      actual_credits: 0,
-      billing_status: "not_applicable",
-      error: "Monitor check exceeded the 1 hour running timeout.",
-    });
+    expect(updateMonitorCheckIfStatus).toHaveBeenCalledWith(
+      staleCheck.id,
+      "running",
+      {
+        status: "failed",
+        finished_at: expect.any(String),
+        actual_credits: 0,
+        billing_status: "not_applicable",
+        error: "Monitor check exceeded the 1 hour running timeout.",
+      },
+    );
     expect(mockUpdateMonitorScheduleAfterRun).toHaveBeenCalledWith({
       monitor: monitorWithCurrentCheck,
       check: failedStaleCheck,
@@ -227,5 +233,65 @@ describe("monitoring scheduler", () => {
       },
       { search: false },
     );
+  });
+  it.each(["running", "queued"] as const)(
+    "releases a stale %s hold only after claiming failure",
+    async status => {
+      const stale = {
+        id: "stale-check",
+        status,
+        autumn_lock_id: "monitor_stale-check",
+      } as any;
+      mockClaimDueMonitors.mockResolvedValue([
+        { ...monitor, current_check_id: stale.id },
+      ]);
+      mockGetMonitorCheckForUpdate.mockResolvedValue(stale);
+      mockIsMonitorCheckStale.mockReturnValue(true);
+      vi.mocked(updateMonitorCheckIfStatus).mockResolvedValue({
+        ...stale,
+        status: "failed",
+      });
+
+      await enqueueDueMonitorChecks();
+
+      expect(updateMonitorCheckIfStatus).toHaveBeenCalledWith(
+        stale.id,
+        status,
+        expect.objectContaining({ status: "failed" }),
+      );
+      expect(mockFinalizeCreditsLock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lockId: stale.autumn_lock_id,
+          action: "release",
+        }),
+      );
+      expect(
+        vi.mocked(updateMonitorCheckIfStatus).mock.invocationCallOrder[0],
+      ).toBeLessThan(mockFinalizeCreditsLock.mock.invocationCallOrder[0]);
+    },
+  );
+
+  it("does not release or rewrite a check when another finalizer wins the terminal claim", async () => {
+    const stale = {
+      id: "stale-check",
+      status: "running",
+      autumn_lock_id: "monitor_stale-check",
+    } as any;
+    mockClaimDueMonitors.mockResolvedValue([
+      { ...monitor, current_check_id: stale.id },
+    ]);
+    mockGetMonitorCheckForUpdate.mockResolvedValue(stale);
+    mockIsMonitorCheckStale.mockReturnValue(true);
+    vi.mocked(updateMonitorCheckIfStatus).mockResolvedValue(null);
+
+    await enqueueDueMonitorChecks();
+
+    expect(mockFinalizeCreditsLock).not.toHaveBeenCalled();
+    expect(mockUpdateMonitorScheduleAfterRun).not.toHaveBeenCalled();
+    expect(mockUpdateMonitorCheck).not.toHaveBeenCalledWith(
+      stale.id,
+      expect.anything(),
+    );
+    expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
   });
 });

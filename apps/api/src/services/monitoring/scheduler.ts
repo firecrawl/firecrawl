@@ -7,8 +7,9 @@ import {
   createMonitorCheck,
   deferMonitorClaim,
   dispatchScheduledMonitorCheck,
-  getMonitorCheck,
+  getMonitorCheckForUpdate,
   updateMonitorCheck,
+  updateMonitorCheckIfStatus,
   updateMonitorScheduleAfterRun,
 } from "./store";
 import { autumnService } from "../autumn/autumn.service";
@@ -181,7 +182,7 @@ async function clearFinishedOrStaleCurrentCheck(
 ): Promise<boolean> {
   if (!monitor.current_check_id) return true;
 
-  const current = await getMonitorCheck(
+  const current = await getMonitorCheckForUpdate(
     monitor.team_id,
     monitor.id,
     monitor.current_check_id,
@@ -191,6 +192,21 @@ async function clearFinishedOrStaleCurrentCheck(
   if (current.status === "running" || current.status === "queued") {
     if (!isMonitorCheckStale(current, new Date(), monitor.targets))
       return false;
+
+    // Compete with the reconciler before releasing its hold. A failed claim
+    // means another worker owns completion; leave its billing and schedule alone.
+    const failed = await updateMonitorCheckIfStatus(
+      current.id,
+      current.status,
+      {
+        status: "failed",
+        finished_at: new Date().toISOString(),
+        actual_credits: 0,
+        billing_status: current.autumn_lock_id ? "released" : "not_applicable",
+        error: MONITOR_CHECK_STALE_ERROR,
+      },
+    );
+    if (!failed) return false;
 
     if (current.autumn_lock_id) {
       await autumnService
@@ -214,13 +230,6 @@ async function clearFinishedOrStaleCurrentCheck(
         });
     }
 
-    const failed = await updateMonitorCheck(current.id, {
-      status: "failed",
-      finished_at: new Date().toISOString(),
-      actual_credits: 0,
-      billing_status: current.autumn_lock_id ? "released" : "not_applicable",
-      error: MONITOR_CHECK_STALE_ERROR,
-    });
     await updateMonitorScheduleAfterRun({
       monitor,
       check: failed,
