@@ -18,6 +18,8 @@ function prepareMapPayload(
       payload.includeSubdomains = options.includeSubdomains;
     if (options.ignoreQueryParameters != null)
       payload.ignoreQueryParameters = options.ignoreQueryParameters;
+    if (options.ignoreCache != null)
+      payload.ignoreCache = options.ignoreCache;
     if (options.limit != null) payload.limit = options.limit;
     if (options.timeout != null) payload.timeout = options.timeout;
     if (options.integration != null && options.integration.trim())
