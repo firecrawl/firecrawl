@@ -34,7 +34,7 @@ export async function analyzeSchemaAndPrompt_F0(
   const checkSchema = z
     .object({
       isMultiEntity: z.boolean(),
-      multiEntityKeys: z.array(z.string()).optional().prefault([]),
+      multiEntityKeys: z.array(z.string()),
       reasoning: z.string(),
       keyIndicators: z.array(z.string()),
     })

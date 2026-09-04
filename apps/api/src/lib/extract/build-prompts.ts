@@ -51,7 +51,7 @@ Examples:
 - "Is this company a non-profit?" -> Single-Answer
 - "Extract all product prices" -> Multi-Entity
 
-For Single-Answer, arrays may be present but are typically small. For Multi-Entity, if arrays have multiple items not from a single page, return keys with large arrays. If nested, return the full key (e.g., 'ecommerce.products').`;
+For Single-Answer, arrays may be present but are typically small; return an empty array for multiEntityKeys. For Multi-Entity, if arrays have multiple items not from a single page, return keys with large arrays in multiEntityKeys. If nested, return the full key (e.g., 'ecommerce.products').`;
 }
 
 export function buildAnalyzeSchemaUserPrompt(
@@ -59,6 +59,6 @@ export function buildAnalyzeSchemaUserPrompt(
   prompt: string,
   urls: string[],
 ): string {
-  return `Classify the query as Single-Answer or Multi-Entity. For Multi-Entity, return keys with large arrays; otherwise, return none:
+  return `Classify the query as Single-Answer or Multi-Entity. For Multi-Entity, return keys with large arrays in multiEntityKeys; otherwise, return an empty array for multiEntityKeys:
 Schema: ${schemaString}\nPrompt: ${prompt}\n URLs: ${urls}`;
 }
