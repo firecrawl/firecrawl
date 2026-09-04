@@ -13,14 +13,12 @@ export function addPathRegexIssues(
 ): void {
   if (!patterns || patterns.length === 0) return;
   for (const { pattern, error } of validateRegexes(patterns)) {
-    ctx.addIssue({
-      code: "custom",
-      path: [field],
-      message:
-        `Invalid ${field} pattern ${JSON.stringify(pattern)}: ${summarizeRegexError(error)}. ` +
-        `${field} patterns use Rust regex (RE2-style) syntax, which does not support ` +
-        `look-around ((?=...), (?!...), (?<=...), (?<!...)) or backreferences.`,
-    });
+    let message = `Invalid ${field} pattern ${JSON.stringify(pattern)}: ${summarizeRegexError(error)}. ${field} patterns use Rust regex (RE2-style) syntax.`;
+    if (/look-around|look-ahead|look-behind|backreference/i.test(error)) {
+      message +=
+        " Look-around ((?=...), (?!...), (?<=...), (?<!...)) and backreferences are not supported.";
+    }
+    ctx.addIssue({ code: "custom", path: [field], message });
   }
 }
 

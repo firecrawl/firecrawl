@@ -536,7 +536,9 @@ describe("V1 Types Validation", () => {
           url: "https://example.com",
           excludePaths: ["^/?(?!blog|works-with)[^/]+/.+"],
         }),
-      ).toThrow(/does not support look-around/);
+      ).toThrow(
+        /look-around, including look-ahead and look-behind, is not supported/,
+      );
     });
   });
 

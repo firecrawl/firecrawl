@@ -927,7 +927,9 @@ describe("V2 Types Validation", () => {
           url: "https://example.com",
           excludePaths: ["^/?(?!blog|works-with)[^/]+/.+"],
         }),
-      ).toThrow(/does not support look-around/);
+      ).toThrow(
+        /look-around, including look-ahead and look-behind, is not supported/,
+      );
     });
 
     it("should reject includePaths patterns using a backreference", () => {
@@ -937,6 +939,21 @@ describe("V2 Types Validation", () => {
           includePaths: ["(a)\\1"],
         }),
       ).toThrow(/backreferences/);
+    });
+
+    it("should report the real error without the look-around hint for unrelated syntax errors", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["[abc"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/unclosed character class/);
+      expect(message).not.toMatch(/Look-around/);
     });
   });
 
@@ -1001,7 +1018,9 @@ describe("V2 Types Validation", () => {
           url: "https://example.com",
           excludePaths: ["^/?(?!blog)[^/]+/.+"],
         }),
-      ).toThrow(/does not support look-around/);
+      ).toThrow(
+        /look-around, including look-ahead and look-behind, is not supported/,
+      );
     });
   });
 
