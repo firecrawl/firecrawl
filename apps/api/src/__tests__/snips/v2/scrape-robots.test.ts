@@ -5,7 +5,7 @@ import { CrawlDenialError } from "../../../lib/error";
 import * as robots from "../../../lib/robots-txt";
 import { scrapeURL } from "../../../scraper/scrapeURL";
 import * as engines from "../../../scraper/scrapeURL/engines";
-import { TEST_SUITE_WEBSITE } from "../lib";
+import { ALLOW_TEST_SUITE_WEBSITE, itIf, TEST_SUITE_WEBSITE } from "../lib";
 import { scrapeTimeout } from "./lib";
 
 // Exercise the pipeline directly so team flags are covered in self-hosted
@@ -53,7 +53,9 @@ describe("Scrape robots policy", () => {
     scrapeTimeout,
   );
 
-  it(
+  // External proxies cannot reach the local test site. Keep the denial test
+  // above unconditional because it must finish before any engine is invoked.
+  itIf(ALLOW_TEST_SUITE_WEBSITE)(
     "scrapes an allowed URL",
     async () => {
       vi.mocked(robots.fetchRobotsTxt).mockResolvedValue({
@@ -70,7 +72,7 @@ describe("Scrape robots policy", () => {
     scrapeTimeout,
   );
 
-  it(
+  itIf(ALLOW_TEST_SUITE_WEBSITE)(
     "scrapes without checking robots when the team flag is disabled",
     async () => {
       const result = await runScrape(false);
@@ -82,7 +84,7 @@ describe("Scrape robots policy", () => {
     scrapeTimeout,
   );
 
-  it(
+  itIf(ALLOW_TEST_SUITE_WEBSITE)(
     "allows scraping when robots.txt retrieval fails",
     async () => {
       vi.mocked(robots.fetchRobotsTxt).mockRejectedValue(
