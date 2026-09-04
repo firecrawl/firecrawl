@@ -281,11 +281,12 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       const rc2 = (await creditUsage(identity)).remaining_credits;
 
-      const resultCount = raw.body.data?.length ?? 0;
-      // A search that ran bills at least one unit.
-      const expectedCost = Math.ceil(Math.max(resultCount, 1) / 10) * 2;
+      // The probe query must match nothing, or the test never exercises the
+      // empty path it exists to cover.
+      expect(raw.body.data?.length ?? 0).toBe(0);
 
-      expect(rc1 - rc2).toBe(expectedCost);
+      // A search that ran bills one unit, even with no results.
+      expect(rc1 - rc2).toBe(2);
     },
     60000,
   );

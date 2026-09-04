@@ -375,19 +375,18 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
       expect(raw.statusCode).toBe(200);
       expect(raw.body.success).toBe(true);
 
-      const resultCount = raw.body.data?.web?.length ?? 0;
-      // A search that ran bills at least one unit. Asserting the floor rather
-      // than a hard 0 keeps the test honest if the provider ever does return
-      // something for this query.
-      const expectedCost = Math.ceil(Math.max(resultCount, 1) / 10) * 2;
+      // The probe query must match nothing, or the test never exercises the
+      // empty path it exists to cover.
+      expect(raw.body.data?.web?.length ?? 0).toBe(0);
 
-      expect(raw.body.creditsUsed).toBe(expectedCost);
+      // A search that ran bills one unit, even with no results.
+      expect(raw.body.creditsUsed).toBe(2);
 
       await sleepForBatchBilling();
 
       const rc2 = (await creditUsage(identity)).remainingCredits;
 
-      expect(rc1 - rc2).toBe(expectedCost);
+      expect(rc1 - rc2).toBe(2);
     },
     60000,
   );

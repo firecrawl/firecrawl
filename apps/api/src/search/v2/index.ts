@@ -76,6 +76,11 @@ export async function searchWithOutcome({
       return { response: results, succeeded: true };
     }
 
+    // Did any provider serve the query? An empty response from a provider
+    // that ran means "nothing matched" and bills. A provider that failed says
+    // nothing at all, so it must not bill.
+    let served = false;
+
     if (config.SEARXNG_ENDPOINT) {
       logger.info("Using searxng search");
       const results = await searxng_search(query, {
@@ -87,23 +92,34 @@ export async function searchWithOutcome({
         location,
         safe,
       });
-      if (results.web && results.web.length > 0)
-        return { response: results, succeeded: true };
+      if (results !== null) {
+        served = true;
+        if (results.web && results.web.length > 0)
+          return { response: results, succeeded: true };
+      }
     }
 
+    // Still try DuckDuckGo when searxng found nothing: the fallback is what
+    // keeps result quality up. But a DuckDuckGo failure must not erase a
+    // searxng that already served.
     logger.info("Using DuckDuckGo search");
-    const ddgResults = await ddgSearch(query, num_results, {
-      tbs,
-      lang,
-      country,
-      proxy,
-      timeout,
-    });
-    if (ddgResults.web && ddgResults.web.length > 0)
-      return { response: ddgResults, succeeded: true };
+    try {
+      const ddgResults = await ddgSearch(query, num_results, {
+        tbs,
+        lang,
+        country,
+        proxy,
+        timeout,
+      });
+      served = true;
+      if (ddgResults.web && ddgResults.web.length > 0)
+        return { response: ddgResults, succeeded: true };
+    } catch (error) {
+      logger.error("DuckDuckGo search failed", { error });
+    }
 
-    // Every provider ran and nothing matched.
-    return { response: {}, succeeded: true };
+    // Every provider that ran found nothing. `served` is false when none did.
+    return { response: {}, succeeded: served };
   } catch (error) {
     logger.error(`Error in search function`, { error });
     return { response: {}, succeeded: false };
