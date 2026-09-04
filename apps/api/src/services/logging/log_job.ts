@@ -24,20 +24,22 @@ import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
 import { PubSub, type Topic } from "@google-cloud/pubsub";
+import { sanitizeLogData, sanitizeText } from "./sanitize";
 configDotenv();
 
 const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
-const nullByteRegex = /\u0000/g;
 
 /**
- * Sanitize string fields by removing null bytes (\u0000)
- * PostgreSQL doesn't allow null bytes in text fields
- * This can come from user-provided data like URLs, origin, integration fields
+ * Null-aware wrapper around the shared text sanitizer, kept where a cleaned
+ * value feeds a later decision (the external_request_id byte cap). Every row
+ * is deep-sanitized again in robustInsert before it reaches either store, so
+ * nothing else depends on this being called; see ./sanitize.ts for what gets
+ * cleaned and why.
  */
 function sanitizeString(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
 
-  return value.replace(nullByteRegex, "");
+  return sanitizeText(value);
 }
 
 const tableMap: Record<string, PgTable> = {
@@ -175,7 +177,12 @@ async function robustInsert(
   }
 
   const target = tableMap[table];
-  data = { ...data, created_at: data.created_at ?? new Date() };
+  // The single point where a row leaves for both stores: clean it once so
+  // PostgreSQL and ClickHouse receive identical, accepted values.
+  data = sanitizeLogData({
+    ...data,
+    created_at: data.created_at ?? new Date(),
+  });
   void publishLog(table, data, logger);
 
   const attempts: { error: any; timeMs: number; backoffMs: number }[] = [];

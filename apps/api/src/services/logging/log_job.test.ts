@@ -146,7 +146,7 @@ describe("logSearch", () => {
     const inserted = values.mock.calls[0][0];
     expect(inserted.query).toBe("helloworld");
     expect(inserted.options.query).toBe("nestedquery");
-    expect(inserted.options.sources[0].location).toBe("New\u0000York");
+    expect(inserted.options.sources[0].location).toBe("NewYork");
     expect(search.options.query).toBe("nested\u0000query");
   });
 
@@ -268,6 +268,30 @@ describe("logRequest", () => {
     // 1024 two-byte characters: 2048 bytes exactly — allowed.
     await logRequest(makeRequest("é".repeat(1024)));
     expect(values.mock.calls[1][0].external_request_id).toBe("é".repeat(1024));
+  });
+
+  it("cleans NUL bytes and unpaired surrogates for both stores", async () => {
+    // "Łódź" mis-decoded by a client arrives as a lone low surrogate, which
+    // JSON.stringify would emit as "\udc81" and ClickPipes would reject as
+    // invalid JSON; PostgreSQL's driver stores it as U+FFFD. The row must
+    // reach both stores already cleaned, and identical.
+    const replacement = String.fromCharCode(0xfffd);
+    await logRequest({
+      ...makeRequest(null),
+      target_hint: "wyciek Å\udc81Ã³dÅº" + String.fromCharCode(0) + "!",
+      origin: "api" + String.fromCharCode(0),
+    });
+
+    const inserted = values.mock.calls[0][0];
+    expect(inserted.target_hint).toBe("wyciek Å" + replacement + "Ã³dÅº!");
+    expect(inserted.origin).toBe("api");
+
+    const raw = publishMessage.mock.calls[0][0].data.toString("utf8");
+    expect(raw).not.toMatch(/\\u[dD][89a-fA-F]/);
+    expect(raw).not.toMatch(/\\u0{4}/);
+    const published = JSON.parse(raw);
+    expect(published.target_hint).toBe(inserted.target_hint);
+    expect(published.origin).toBe("api");
   });
 
   it("flushes Pub/Sub messages during shutdown", async () => {
