@@ -13,12 +13,18 @@ export function addPathRegexIssues(
 ): void {
   if (!patterns || patterns.length === 0) return;
   for (const { pattern, error } of validateRegexes(patterns)) {
-    let message = `Invalid ${field} pattern ${JSON.stringify(pattern)}: ${summarizeRegexError(error)}. ${field} patterns use Rust regex (RE2-style) syntax.`;
-    if (/look-around|look-ahead|look-behind|backreference/i.test(error)) {
-      message +=
-        " Look-around ((?=...), (?!...), (?<=...), (?<!...)) and backreferences are not supported.";
-    }
-    ctx.addIssue({ code: "custom", path: [field], message });
+    // The engine's own error already names look-around/backreferences as
+    // unsupported, so only add the actionable rewrite hint in that case.
+    const hint = /look-around|look-ahead|look-behind|backreference/i.test(error)
+      ? " Rewrite the pattern using only constructs the engine supports, for example by listing the paths to keep in includePaths instead."
+      : "";
+    ctx.addIssue({
+      code: "custom",
+      path: [field],
+      message:
+        `Invalid ${field} pattern ${JSON.stringify(pattern)}: ${summarizeRegexError(error)}. ` +
+        `${field} patterns use Rust regex (RE2-style) syntax.${hint}`,
+    });
   }
 }
 

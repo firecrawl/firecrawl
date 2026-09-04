@@ -953,7 +953,22 @@ describe("V2 Types Validation", () => {
       }
 
       expect(message).toMatch(/unclosed character class/);
-      expect(message).not.toMatch(/Look-around/);
+      expect(message).not.toMatch(/Rewrite the pattern/);
+    });
+
+    it("should state the look-around limitation once and add a rewrite hint", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["^/?(?!blog)[^/]+/.+"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message.match(/not supported/g)).toHaveLength(1);
+      expect(message).toMatch(/Rewrite the pattern/);
     });
   });
 
