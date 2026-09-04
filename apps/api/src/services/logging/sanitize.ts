@@ -52,9 +52,12 @@ export function sanitizeLogData<T>(value: T): T {
   if (proto !== Object.prototype && proto !== null) {
     return value;
   }
-  const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    out[sanitizeText(key)] = sanitizeLogData(entry);
-  }
-  return out as T;
+  // Object.fromEntries defines own properties, so a key named `__proto__`
+  // stays a field instead of replacing the prototype.
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      sanitizeText(key),
+      sanitizeLogData(entry),
+    ]),
+  ) as T;
 }

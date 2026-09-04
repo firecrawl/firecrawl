@@ -85,6 +85,20 @@ describe("sanitizeLogData", () => {
     expect(out.none).toBeNull();
   });
 
+  it("keeps an own __proto__ key as a plain field", () => {
+    // JSON.parse creates an own property for this key. A plain assignment
+    // would set the prototype instead and drop the field.
+    const input = JSON.parse('{"__proto__":{"a":"x"},"b":1}');
+    input["__proto__"].a = `x${NUL}y`;
+
+    const out = sanitizeLogData(input);
+
+    expect(Object.keys(out)).toEqual(["__proto__", "b"]);
+    expect(out["__proto__"]).toEqual({ a: "xy" });
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect(JSON.stringify(out)).toBe('{"__proto__":{"a":"xy"},"b":1}');
+  });
+
   it("passes primitives through", () => {
     expect(sanitizeLogData(42)).toBe(42);
     expect(sanitizeLogData(null)).toBeNull();
