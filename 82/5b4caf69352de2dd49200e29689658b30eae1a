@@ -1,0 +1,19 @@
+apps/api/src/routes/exchange.ts
+  s_edece1ed2b87ec::t_bee20f06255dbb 15,242-264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "825b4caf69352de2dd49200e29689658b30eae1a",
+  "prompts": {},
+  "sessions": {
+    "s_edece1ed2b87ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc872-a3ad-76f0-8e0d-e2fa50f652f0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
