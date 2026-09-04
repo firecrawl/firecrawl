@@ -5,7 +5,7 @@ import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
 import { includesFormat } from "../../lib/format-utils";
-import { addPathRegexIssues } from "../../lib/crawl-regex";
+import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import {
   ExtractorOptions,
   PageOptions,
@@ -1268,8 +1268,8 @@ export type BatchScrapeRequestInput = Omit<
 };
 
 export const crawlerOptions = z.strictObject({
-  includePaths: z.string().array().prefault([]),
-  excludePaths: z.string().array().prefault([]),
+  includePaths: pathPatternsSchema.prefault([]),
+  excludePaths: pathPatternsSchema.prefault([]),
   maxDiscoveryDepth: z.number().optional(),
   limit: z.number().prefault(10000), // default?
   crawlEntireDomain: z.boolean().optional(),

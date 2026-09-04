@@ -4,7 +4,7 @@ import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
-import { addPathRegexIssues } from "../../lib/crawl-regex";
+import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
 import {
   ExtractorOptions,
@@ -873,8 +873,8 @@ export type BatchScrapeRequest = z.infer<typeof batchScrapeRequestSchema>;
 export type BatchScrapeRequestInput = z.input<typeof batchScrapeRequestSchema>;
 
 const crawlerOptions = z.strictObject({
-  includePaths: z.string().array().prefault([]),
-  excludePaths: z.string().array().prefault([]),
+  includePaths: pathPatternsSchema.prefault([]),
+  excludePaths: pathPatternsSchema.prefault([]),
   maxDepth: z.number().prefault(10), // default?
   maxDiscoveryDepth: z.number().optional(),
   limit: z.number().prefault(10000), // default?

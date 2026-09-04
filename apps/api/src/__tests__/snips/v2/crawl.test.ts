@@ -191,6 +191,44 @@ describe("Crawl tests", () => {
     10 * scrapeTimeout,
   );
 
+  it.concurrent(
+    "rejects path patterns that are too expensive to compile",
+    async () => {
+      // 19 characters that expand to a{15625}. Compiling patterns like this
+      // with the engine's default limits is a CPU denial-of-service vector.
+      const res = await crawlStart(
+        {
+          url: "https://firecrawl.dev",
+          excludePaths: ["a{5}{5}{5}{5}{5}{5}"],
+        },
+        identity,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toMatch(/exceeds size limit/);
+    },
+    scrapeTimeout,
+  );
+
+  it.concurrent(
+    "rejects more path patterns than the engine will compile",
+    async () => {
+      const res = await crawlStart(
+        {
+          url: "https://firecrawl.dev",
+          excludePaths: Array.from({ length: 101 }, (_, i) => `^/p${i}`),
+        },
+        identity,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toMatch(/at most 100 patterns/);
+    },
+    scrapeTimeout,
+  );
+
   // TODO: port to new dynamic url system
   // concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
   //   "filters URLs properly when using regexOnFullURL",
