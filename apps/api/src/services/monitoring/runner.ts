@@ -997,7 +997,7 @@ export async function processMonitorCheckJob(
 
     if (lock.status === "denied") {
       const revoked = lock.reason === "job_revoked";
-      check = await updateMonitorCheck(check.id, {
+      const skipped = await updateMonitorCheckIfRunning(check.id, {
         status: "skipped_no_credits",
         finished_at: new Date().toISOString(),
         actual_credits: 0,
@@ -1006,6 +1006,9 @@ export async function processMonitorCheckJob(
           ? MONITOR_CHECK_REVOKED_ERROR
           : MONITOR_CHECK_NO_CREDITS_ERROR,
       });
+
+      if (!skipped) return;
+      check = skipped;
 
       // A revoked job never becomes unrevoked; see MONITOR_GATE_REVOKED_STREAK
       // for why it is waited out rather than acted on at once.
@@ -1045,7 +1048,7 @@ export async function processMonitorCheckJob(
 
     lockId = lock.status === "locked" ? lock.lockId : null;
 
-    check = await updateMonitorCheck(check.id, {
+    const reserved = await updateMonitorCheckIfRunning(check.id, {
       autumn_lock_id: lockId,
       // A token already on the row wins: the gate was not re-asked, so there
       // is no newer one, and null would lose the authorized operation.
@@ -1056,10 +1059,14 @@ export async function processMonitorCheckJob(
       billing_status: lockId ? "reserved" : "not_applicable",
     });
 
+    if (!reserved) return;
+    check = reserved;
+
     const targetResults = monitor.targets.map(createMonitorTargetRun);
-    await updateMonitorCheck(check.id, {
+    const initialized = await updateMonitorCheckIfRunning(check.id, {
       target_results: targetResults,
     });
+    if (!initialized) return;
 
     for (const [index, target] of monitor.targets.entries()) {
       const targetRun = targetResults[index];
@@ -1097,7 +1104,7 @@ export async function processMonitorCheckJob(
         targetRun.searchCompleted = true;
         // Persist searchCompleted now so a crash/redelivery short-circuits via
         // findCompletedSearchTargetRun instead of re-running and re-billing.
-        await withFinalizeTimeout(
+        const persisted = await withFinalizeTimeout(
           signal =>
             signal.aborted
               ? Promise.resolve(null)
@@ -1108,10 +1115,11 @@ export async function processMonitorCheckJob(
                 }),
           "monitor search searchCompleted flush",
         );
+        if (!persisted) return;
       }
     }
 
-    await updateMonitorCheck(check.id, {
+    await updateMonitorCheckIfRunning(check.id, {
       target_results: targetResults,
     });
   } catch (error) {

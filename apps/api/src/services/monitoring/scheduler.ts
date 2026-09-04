@@ -63,8 +63,9 @@ export async function enqueueDueMonitorChecks(
       if (await deferForJitter(monitor)) continue;
 
       if (monitor.current_check_id) {
-        const cleared = await clearFinishedOrStaleCurrentCheck(monitor);
-        if (cleared) {
+        const resolution = await clearFinishedOrStaleCurrentCheck(monitor);
+        if (resolution === "lost_claim") continue;
+        if (resolution === "cleared") {
           monitor = { ...monitor, current_check_id: null };
         }
       }
@@ -179,19 +180,19 @@ async function deferForJitter(monitor: MonitorRow): Promise<boolean> {
 
 async function clearFinishedOrStaleCurrentCheck(
   monitor: MonitorRow,
-): Promise<boolean> {
-  if (!monitor.current_check_id) return true;
+): Promise<"cleared" | "active" | "lost_claim"> {
+  if (!monitor.current_check_id) return "cleared";
 
   const current = await getMonitorCheckForUpdate(
     monitor.team_id,
     monitor.id,
     monitor.current_check_id,
   );
-  if (!current) return false;
+  if (!current) return "active";
 
   if (current.status === "running" || current.status === "queued") {
     if (!isMonitorCheckStale(current, new Date(), monitor.targets))
-      return false;
+      return "active";
 
     // Compete with the reconciler before releasing its hold. A failed claim
     // means another worker owns completion; leave its billing and schedule alone.
@@ -206,7 +207,7 @@ async function clearFinishedOrStaleCurrentCheck(
         error: MONITOR_CHECK_STALE_ERROR,
       },
     );
-    if (!failed) return false;
+    if (!failed) return "lost_claim";
 
     if (current.autumn_lock_id) {
       await autumnService
@@ -234,12 +235,12 @@ async function clearFinishedOrStaleCurrentCheck(
       monitor,
       check: failed,
     });
-    return true;
+    return "cleared";
   }
 
   await updateMonitorScheduleAfterRun({
     monitor,
     check: current,
   });
-  return true;
+  return "cleared";
 }

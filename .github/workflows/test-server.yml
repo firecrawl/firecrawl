@@ -218,6 +218,16 @@ jobs:
         env:
           npm_config_ignore_scripts: 'true'
 
+      - name: Run monitor finalization regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/services/monitoring/runner.finalization.test.ts
+          src/services/monitoring/store.finalization.test.ts
+          src/services/monitoring/scheduler.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Install test site dependencies
         run: pnpm install --frozen-lockfile
         working-directory: apps/test-site

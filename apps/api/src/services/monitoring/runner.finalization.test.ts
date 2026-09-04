@@ -25,7 +25,7 @@ vi.mock("../notification/monitoring_email", () => ({}));
 vi.mock("../notification/monitoring_slack", () => ({}));
 vi.mock("./types", () => ({}));
 vi.mock("./interest", () => ({
-  trackMonitorCheckStartedInterest: vi.fn(async () => {}),
+  trackMonitorCheckStartedInterest: async () => {},
 }));
 vi.mock("./search/run", () => ({}));
 vi.mock("./search/judge", () => ({}));
@@ -333,4 +333,92 @@ describe("monitor check finalization ownership", () => {
     expect(store.markMonitorRunning).not.toHaveBeenCalled();
     expect(autumnService.lockCredits).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { status: "locked" as const, lockId: "monitor_check-1" },
+    { status: "skipped" as const },
+    { status: "denied" as const },
+  ])(
+    "preserves completion when a slow reservation returns $status",
+    async result => {
+      monitor.targets = [];
+      vi.mocked(autumnService.lockCredits).mockImplementation(async () => {
+        current = {
+          ...current,
+          status: "completed",
+          billing_status: "confirmed",
+        };
+        return result;
+      });
+      await processMonitorCheckJob({
+        checkId: current.id,
+        monitorId: monitor.id,
+        teamId: monitor.team_id,
+      });
+      expect(current).toMatchObject({
+        status: "completed",
+        billing_status: "confirmed",
+      });
+      expect(store.updateMonitorCheck).not.toHaveBeenCalled();
+      expect(store.updateMonitorScheduleAfterRun).not.toHaveBeenCalled();
+      expect(autumnService.finalizeCreditsLock).not.toHaveBeenCalled();
+    },
+  );
+  it.each([1, 2])(
+    "preserves finalized results when target write %i arrives late",
+    async lateWrite => {
+      monitor.targets = [];
+      vi.mocked(autumnService.lockCredits).mockResolvedValue({
+        status: "locked",
+        lockId: "monitor_check-1",
+      });
+      const finalizedResults = [
+        {
+          type: "scrape",
+          targetId: "target-1",
+          expectedJobs: ["finished-scrape"],
+        },
+      ];
+      let targetWrites = 0;
+      const finishBeforeWrite = (patch: Partial<MonitorCheckRow>) => {
+        if (patch.target_results && ++targetWrites === lateWrite) {
+          current = {
+            ...current,
+            status: "completed",
+            billing_status: "confirmed",
+            target_results: finalizedResults,
+          };
+        }
+      };
+      const update = vi
+        .mocked(store.updateMonitorCheck)
+        .getMockImplementation()!;
+      const updateIfRunning = vi
+        .mocked(store.updateMonitorCheckIfRunning)
+        .getMockImplementation()!;
+      vi.mocked(store.updateMonitorCheck).mockImplementation(
+        async (id, patch) => {
+          finishBeforeWrite(patch);
+          return update(id, patch);
+        },
+      );
+      vi.mocked(store.updateMonitorCheckIfRunning).mockImplementation(
+        async (id, patch) => {
+          finishBeforeWrite(patch);
+          return updateIfRunning(id, patch);
+        },
+      );
+      await processMonitorCheckJob({
+        checkId: current.id,
+        monitorId: monitor.id,
+        teamId: monitor.team_id,
+      });
+      expect(current).toMatchObject({
+        status: "completed",
+        billing_status: "confirmed",
+        target_results: finalizedResults,
+      });
+      expect(targetWrites).toBe(lateWrite);
+    },
+  );
 });

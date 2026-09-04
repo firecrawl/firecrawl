@@ -189,6 +189,36 @@ describe("monitoring scheduler", () => {
     });
   });
 
+  it("records an overlap while the current check is still active", async () => {
+    const active = { id: "active-check", status: "running" } as any;
+    const monitorWithCurrentCheck = {
+      ...monitor,
+      current_check_id: active.id,
+    };
+    const skipped = { id: check.id, status: "skipped_overlap" } as any;
+    mockClaimDueMonitors.mockResolvedValue([monitorWithCurrentCheck]);
+    mockGetMonitorCheckForUpdate.mockResolvedValue(active);
+    mockUpdateMonitorCheck.mockResolvedValue(skipped);
+
+    await expect(enqueueDueMonitorChecks()).resolves.toBe(0);
+
+    expect(mockCreateMonitorCheck).toHaveBeenCalledExactlyOnceWith({
+      monitor: monitorWithCurrentCheck,
+      trigger: "scheduled",
+      scheduledFor: monitor.next_run_at,
+      status: "skipped_overlap",
+    });
+    expect(mockAdvanceMonitorAfterSkippedCheck).toHaveBeenCalledExactlyOnceWith(
+      {
+        monitor: monitorWithCurrentCheck,
+        check: skipped,
+      },
+    );
+    expect(updateMonitorCheckIfStatus).not.toHaveBeenCalled();
+    expect(mockDispatchScheduledMonitorCheck).not.toHaveBeenCalled();
+    expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
+  });
+
   it("clears a stale current check before enqueueing a scheduled run", async () => {
     const monitorWithCurrentCheck = {
       ...monitor,
@@ -288,10 +318,10 @@ describe("monitoring scheduler", () => {
 
     expect(mockFinalizeCreditsLock).not.toHaveBeenCalled();
     expect(mockUpdateMonitorScheduleAfterRun).not.toHaveBeenCalled();
-    expect(mockUpdateMonitorCheck).not.toHaveBeenCalledWith(
-      stale.id,
-      expect.anything(),
-    );
+    expect(mockCreateMonitorCheck).not.toHaveBeenCalled();
+    expect(mockUpdateMonitorCheck).not.toHaveBeenCalled();
+    expect(mockAdvanceMonitorAfterSkippedCheck).not.toHaveBeenCalled();
+    expect(mockDispatchScheduledMonitorCheck).not.toHaveBeenCalled();
     expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
   });
 });
