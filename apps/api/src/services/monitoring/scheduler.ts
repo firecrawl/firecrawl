@@ -203,21 +203,20 @@ async function clearFinishedOrStaleCurrentCheck(
         status: "failed",
         finished_at: new Date().toISOString(),
         actual_credits: 0,
-        billing_status: current.autumn_lock_id ? "released" : "not_applicable",
         error: MONITOR_CHECK_STALE_ERROR,
       },
     );
     if (!failed) return "lost_claim";
 
-    if (current.autumn_lock_id) {
+    if (failed.autumn_lock_id) {
       await autumnService
         .finalizeCreditsLock({
-          lockId: current.autumn_lock_id,
+          lockId: failed.autumn_lock_id,
           action: "release",
           properties: {
             source: "monitorCheck",
             endpoint: "monitor",
-            jobId: current.id,
+            jobId: failed.id,
           },
           teamId: monitor.team_id,
         })
@@ -225,15 +224,18 @@ async function clearFinishedOrStaleCurrentCheck(
           logger.warn("Failed to release stale monitor check credit lock", {
             error,
             monitorId: monitor.id,
-            checkId: current.id,
-            lockId: current.autumn_lock_id,
+            checkId: failed.id,
+            lockId: failed.autumn_lock_id,
           });
         });
     }
 
+    const finalized = await updateMonitorCheck(failed.id, {
+      billing_status: failed.autumn_lock_id ? "released" : "not_applicable",
+    });
     await updateMonitorScheduleAfterRun({
       monitor,
-      check: failed,
+      check: finalized,
     });
     return "cleared";
   }

@@ -316,6 +316,52 @@ describe("monitor check finalization ownership", () => {
     },
   );
 
+  it.each(["completed", "stale", "orphan"])(
+    "settles the hold returned by the terminal claim for a %s check",
+    async kind => {
+      current.autumn_lock_id = null;
+      current.billing_status = "not_applicable";
+      if (kind === "stale") {
+        current.started_at = new Date(
+          Date.now() - 2 * 60 * 60 * 1000,
+        ).toISOString();
+      } else if (kind === "orphan") {
+        vi.mocked(store.getMonitorForUpdate).mockResolvedValue(null);
+      }
+      const updateIfRunning = vi
+        .mocked(store.updateMonitorCheckIfRunning)
+        .getMockImplementation()!;
+      vi.mocked(store.updateMonitorCheckIfRunning).mockImplementation(
+        async (id, patch) => {
+          if (patch.status) {
+            // Reservation persisted after the primary read, just before the claim.
+            current = {
+              ...current,
+              autumn_lock_id: "late-lock",
+              reserved_credits: 2,
+              partner_run_token: "late-token",
+              billing_status: "reserved",
+            };
+          }
+          return updateIfRunning(id, patch);
+        },
+      );
+      await reconcileRunningMonitorChecks();
+      expect(autumnService.finalizeCreditsLock).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          lockId: "late-lock",
+          action: kind === "completed" ? "confirm" : "release",
+          ...(kind === "completed"
+            ? { externalRequestId: "late-token", heldValue: 2 }
+            : {}),
+        }),
+      );
+      expect(current.billing_status).toBe(
+        kind === "completed" ? "confirmed" : "released",
+      );
+    },
+  );
+
   it("does not reopen a check that became terminal after the job handler read it", async () => {
     const queued = { ...current, status: "queued" as const };
     vi.mocked(store.getMonitorCheckForUpdate).mockResolvedValue(queued);
@@ -364,6 +410,220 @@ describe("monitor check finalization ownership", () => {
       expect(autumnService.finalizeCreditsLock).not.toHaveBeenCalled();
     },
   );
+  it.each([
+    {
+      name: "an unowned hold",
+      persistedLock: null,
+      deleted: false,
+      release: true,
+    },
+    {
+      name: "a different hold",
+      persistedLock: "other-lock",
+      deleted: false,
+      release: true,
+    },
+    {
+      name: "the finalizer's hold",
+      persistedLock: "monitor_check-1",
+      deleted: false,
+      release: false,
+    },
+    {
+      name: "a deleted check's hold",
+      persistedLock: null,
+      deleted: true,
+      release: true,
+    },
+  ])(
+    "cleans up $name when a reservation arrives after completion",
+    async ({ persistedLock, deleted, release }) => {
+      current.autumn_lock_id = null;
+      current.billing_status = "not_applicable";
+      monitor.targets = [];
+      vi.mocked(autumnService.lockCredits).mockImplementation(async () => {
+        current = {
+          ...current,
+          status: "completed",
+          billing_status: "confirmed",
+          autumn_lock_id: persistedLock,
+        };
+        if (deleted) {
+          vi.mocked(store.getMonitorCheckForUpdate).mockResolvedValueOnce(null);
+        }
+        return {
+          status: "locked",
+          lockId: "monitor_check-1",
+          operationToken: "operation-1",
+        };
+      });
+      await processMonitorCheckJob({
+        checkId: current.id,
+        monitorId: monitor.id,
+        teamId: monitor.team_id,
+      });
+      expect(current).toMatchObject({
+        status: "completed",
+        billing_status: "confirmed",
+        autumn_lock_id: persistedLock,
+      });
+      expect(store.updateMonitorScheduleAfterRun).not.toHaveBeenCalled();
+      if (release) {
+        expect(
+          autumnService.finalizeCreditsLock,
+        ).toHaveBeenCalledExactlyOnceWith({
+          lockId: "monitor_check-1",
+          action: "release",
+          properties: {
+            source: "monitorCheck",
+            endpoint: "monitor",
+            jobId: current.id,
+          },
+          teamId: monitor.team_id,
+        });
+      } else {
+        expect(autumnService.finalizeCreditsLock).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it.each(["queued", "running"] as const)(
+    "does not release a late reservation whose current row is %s",
+    async status => {
+      current.autumn_lock_id = null;
+      vi.mocked(autumnService.lockCredits).mockImplementation(async () => {
+        current.status = "completed";
+        vi.mocked(store.getMonitorCheckForUpdate).mockResolvedValueOnce({
+          ...current,
+          status,
+        });
+        return { status: "locked", lockId: "monitor_check-1" };
+      });
+      await processMonitorCheckJob({
+        checkId: current.id,
+        monitorId: monitor.id,
+        teamId: monitor.team_id,
+      });
+      expect(autumnService.finalizeCreditsLock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not release a late reservation without an authoritative ownership read", async () => {
+    current.autumn_lock_id = null;
+    const failure = new Error("Primary read unavailable");
+    vi.mocked(autumnService.lockCredits).mockImplementation(async () => {
+      current.status = "completed";
+      vi.mocked(store.getMonitorCheckForUpdate).mockRejectedValue(failure);
+      return { status: "locked", lockId: "monitor_check-1" };
+    });
+    await expect(
+      processMonitorCheckJob({
+        checkId: current.id,
+        monitorId: monitor.id,
+        teamId: monitor.team_id,
+      }),
+    ).rejects.toThrow(failure);
+    expect(autumnService.finalizeCreditsLock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { localLock: "monitor_check-1", persistedLock: "other-lock" },
+    { localLock: null, persistedLock: "other-lock" },
+    { localLock: "monitor_check-1", persistedLock: null },
+    { localLock: "monitor_check-1", persistedLock: "monitor_check-1" },
+  ])(
+    "releases owned holds after a handler failure with $localLock and $persistedLock",
+    async ({ localLock, persistedLock }) => {
+      monitor.targets = [];
+      const failure = new Error("Target write failed");
+      vi.mocked(autumnService.lockCredits).mockResolvedValue(
+        localLock
+          ? { status: "locked", lockId: localLock }
+          : { status: "skipped" },
+      );
+      const updateIfRunning = vi
+        .mocked(store.updateMonitorCheckIfRunning)
+        .getMockImplementation()!;
+      vi.mocked(store.updateMonitorCheckIfRunning).mockImplementation(
+        async (id, patch) => {
+          if (patch.target_results) {
+            current.autumn_lock_id = persistedLock;
+            throw failure;
+          }
+          return updateIfRunning(id, patch);
+        },
+      );
+      await expect(
+        processMonitorCheckJob({
+          checkId: current.id,
+          monitorId: monitor.id,
+          teamId: monitor.team_id,
+        }),
+      ).rejects.toThrow(failure);
+      const expectedLocks = [
+        ...new Set([localLock, persistedLock].filter(Boolean)),
+      ].sort();
+      expect(
+        vi
+          .mocked(autumnService.finalizeCreditsLock)
+          .mock.calls.map(([call]) => call.lockId)
+          .sort(),
+      ).toEqual(expectedLocks);
+      expect(
+        vi
+          .mocked(autumnService.finalizeCreditsLock)
+          .mock.calls.every(([call]) => call.action === "release"),
+      ).toBe(true);
+      expect(current).toMatchObject({
+        status: "failed",
+        billing_status: "released",
+      });
+    },
+  );
+
+  it.each([false, true])(
+    "releases an unpersisted hold when reservation storage throws and another finalizer wins: %s",
+    async terminal => {
+      current.autumn_lock_id = null;
+      const failure = new Error("Reservation write failed");
+      vi.mocked(autumnService.lockCredits).mockResolvedValue({
+        status: "locked",
+        lockId: "monitor_check-1",
+      });
+      const updateIfRunning = vi
+        .mocked(store.updateMonitorCheckIfRunning)
+        .getMockImplementation()!;
+      vi.mocked(store.updateMonitorCheckIfRunning).mockImplementation(
+        async (id, patch) => {
+          if (Object.hasOwn(patch, "autumn_lock_id")) {
+            if (terminal) {
+              current.status = "completed";
+              current.billing_status = "not_applicable";
+            }
+            throw failure;
+          }
+          return updateIfRunning(id, patch);
+        },
+      );
+      await expect(
+        processMonitorCheckJob({
+          checkId: current.id,
+          monitorId: monitor.id,
+          teamId: monitor.team_id,
+        }),
+      ).rejects.toThrow(failure);
+      expect(autumnService.finalizeCreditsLock).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          lockId: "monitor_check-1",
+          action: "release",
+        }),
+      );
+      expect(current.status).toBe(terminal ? "completed" : "failed");
+      if (terminal)
+        expect(store.updateMonitorScheduleAfterRun).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([1, 2])(
     "preserves finalized results when target write %i arrives late",
     async lateWrite => {

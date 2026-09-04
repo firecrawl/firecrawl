@@ -94,6 +94,13 @@ describe("monitoring scheduler", () => {
     mockCreateMonitorCheck.mockResolvedValue(check);
     mockDispatchScheduledMonitorCheck.mockResolvedValue(true);
     mockAddMonitorCheckJob.mockResolvedValue(undefined);
+    mockUpdateMonitorCheck.mockImplementation(
+      async (id, patch) =>
+        ({
+          id,
+          ...patch,
+        }) as any,
+    );
     mockAdvanceMonitorAfterSkippedCheck.mockResolvedValue(undefined);
     mockUpdateMonitorScheduleAfterRun.mockResolvedValue(undefined);
     mockGetMonitorCheckForUpdate.mockResolvedValue(null);
@@ -226,10 +233,15 @@ describe("monitoring scheduler", () => {
     } as any;
     const staleCheck = { id: "stale-check", status: "running" } as any;
     const failedStaleCheck = { ...staleCheck, status: "failed" } as any;
+    const finalizedStaleCheck = {
+      ...failedStaleCheck,
+      billing_status: "not_applicable",
+    };
     mockClaimDueMonitors.mockResolvedValue([monitorWithCurrentCheck]);
     mockGetMonitorCheckForUpdate.mockResolvedValue(staleCheck);
     mockIsMonitorCheckStale.mockReturnValue(true);
     vi.mocked(updateMonitorCheckIfStatus).mockResolvedValue(failedStaleCheck);
+    mockUpdateMonitorCheck.mockResolvedValue(finalizedStaleCheck);
 
     await expect(
       enqueueDueMonitorChecks({ workerId: "worker-1" }),
@@ -242,13 +254,12 @@ describe("monitoring scheduler", () => {
         status: "failed",
         finished_at: expect.any(String),
         actual_credits: 0,
-        billing_status: "not_applicable",
         error: "Monitor check exceeded the 1 hour running timeout.",
       },
     );
     expect(mockUpdateMonitorScheduleAfterRun).toHaveBeenCalledWith({
       monitor: monitorWithCurrentCheck,
-      check: failedStaleCheck,
+      check: finalizedStaleCheck,
     });
     expect(mockCreateMonitorCheck).toHaveBeenCalledWith({
       monitor: { ...monitorWithCurrentCheck, current_check_id: null },
@@ -324,4 +335,57 @@ describe("monitoring scheduler", () => {
     expect(mockDispatchScheduledMonitorCheck).not.toHaveBeenCalled();
     expect(mockAddMonitorCheckJob).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { previousLock: null, claimedLock: "current-lock" },
+    { previousLock: "previous-lock", claimedLock: null },
+    { previousLock: "previous-lock", claimedLock: "current-lock" },
+  ])(
+    "settles the claimed hold when it changes from $previousLock to $claimedLock",
+    async ({ previousLock, claimedLock }) => {
+      const current = {
+        id: "stale-check",
+        status: "running",
+        autumn_lock_id: previousLock,
+      } as any;
+      const claimed = {
+        ...current,
+        status: "failed",
+        autumn_lock_id: claimedLock,
+      };
+      mockClaimDueMonitors.mockResolvedValue([
+        { ...monitor, current_check_id: current.id },
+      ]);
+      mockGetMonitorCheckForUpdate.mockResolvedValue(current);
+      mockIsMonitorCheckStale.mockReturnValue(true);
+      vi.mocked(updateMonitorCheckIfStatus).mockResolvedValue(claimed);
+      mockUpdateMonitorCheck.mockImplementation(async (_id, patch) => ({
+        ...claimed,
+        ...patch,
+      }));
+
+      await enqueueDueMonitorChecks();
+
+      expect(
+        vi.mocked(updateMonitorCheckIfStatus).mock.calls[0][2],
+      ).not.toHaveProperty("billing_status");
+      if (claimedLock) {
+        expect(mockFinalizeCreditsLock).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ lockId: claimedLock, action: "release" }),
+        );
+      } else {
+        expect(mockFinalizeCreditsLock).not.toHaveBeenCalled();
+      }
+      expect(mockUpdateMonitorCheck).toHaveBeenCalledWith(current.id, {
+        billing_status: claimedLock ? "released" : "not_applicable",
+      });
+      expect(mockUpdateMonitorScheduleAfterRun).toHaveBeenCalledWith({
+        monitor: expect.objectContaining({ id: monitor.id }),
+        check: expect.objectContaining({
+          autumn_lock_id: claimedLock,
+          billing_status: claimedLock ? "released" : "not_applicable",
+        }),
+      });
+    },
+  );
 });

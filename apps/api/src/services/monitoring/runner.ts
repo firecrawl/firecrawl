@@ -930,6 +930,38 @@ export function findCompletedSearchTargetRun(
   return (match as Record<string, unknown>) ?? null;
 }
 
+async function releaseUnpersistedMonitorHold(
+  monitor: MonitorRow,
+  checkId: string,
+  lockId: string | null,
+): Promise<void> {
+  if (!lockId) return;
+  const latest = await getMonitorCheckForUpdate(
+    monitor.team_id,
+    monitor.id,
+    checkId,
+  );
+  // A duplicate delivery can receive the same lock ID as the finalizer.
+  // Only release an unpersisted hold after no running writer can adopt it.
+  if (
+    !latest ||
+    (latest.status !== "queued" &&
+      latest.status !== "running" &&
+      latest.autumn_lock_id !== lockId)
+  ) {
+    await autumnService.finalizeCreditsLock({
+      lockId,
+      action: "release",
+      properties: {
+        source: "monitorCheck",
+        endpoint: "monitor",
+        jobId: checkId,
+      },
+      teamId: monitor.team_id,
+    });
+  }
+}
+
 export async function processMonitorCheckJob(
   job: MonitorCheckJobData,
 ): Promise<void> {
@@ -1059,7 +1091,10 @@ export async function processMonitorCheckJob(
       billing_status: lockId ? "reserved" : "not_applicable",
     });
 
-    if (!reserved) return;
+    if (!reserved) {
+      await releaseUnpersistedMonitorHold(monitor, check.id, lockId);
+      return;
+    }
     check = reserved;
 
     const targetResults = monitor.targets.map(createMonitorTargetRun);
@@ -1131,18 +1166,21 @@ export async function processMonitorCheckJob(
     const failed = await updateMonitorCheckIfRunning(check.id, {
       status: "failed",
       finished_at: new Date().toISOString(),
-      billing_status: lockId ? "released" : "failed",
       error: error instanceof Error ? error.message : String(error),
     });
 
     if (!failed) {
+      await releaseUnpersistedMonitorHold(monitor, check.id, lockId);
       throw error;
     }
     check = failed;
 
-    if (lockId) {
+    // The claim owns the persisted hold; a failed reservation write can also
+    // leave this handler with a newly acquired hold that was never stored.
+    for (const ownedLockId of new Set([failed.autumn_lock_id, lockId])) {
+      if (!ownedLockId) continue;
       await autumnService.finalizeCreditsLock({
-        lockId,
+        lockId: ownedLockId,
         action: "release",
         properties: {
           source: "monitorCheck",
@@ -1152,6 +1190,9 @@ export async function processMonitorCheckJob(
         teamId: monitor.team_id,
       });
     }
+    check = await updateMonitorCheck(failed.id, {
+      billing_status: failed.autumn_lock_id || lockId ? "released" : "failed",
+    });
 
     if (
       await claimMonitorNotification(check.id).catch(error => {
@@ -1315,19 +1356,18 @@ async function failStaleMonitorCheck(params: {
     return false;
 
   const error = MONITOR_CHECK_STALE_ERROR;
-  const finalized = await updateMonitorCheckIfRunning(params.check.id, {
+  const claimed = await updateMonitorCheckIfRunning(params.check.id, {
     status: "failed",
     finished_at: new Date().toISOString(),
     actual_credits: 0,
-    billing_status: params.check.autumn_lock_id ? "released" : "not_applicable",
     error,
   });
-  if (!finalized) return true;
+  if (!claimed) return true;
 
-  if (params.check.autumn_lock_id) {
+  if (claimed.autumn_lock_id) {
     await autumnService
       .finalizeCreditsLock({
-        lockId: params.check.autumn_lock_id,
+        lockId: claimed.autumn_lock_id,
         action: "release",
         properties: {
           source: "monitorCheck",
@@ -1341,11 +1381,14 @@ async function failStaleMonitorCheck(params: {
           error: releaseError,
           monitorId: params.monitor.id,
           checkId: params.check.id,
-          lockId: params.check.autumn_lock_id,
+          lockId: claimed.autumn_lock_id,
         });
       });
   }
 
+  const finalized = await updateMonitorCheck(claimed.id, {
+    billing_status: claimed.autumn_lock_id ? "released" : "not_applicable",
+  });
   let withNotifications = finalized;
   if (await claimMonitorNotification(params.check.id)) {
     const notificationStatus = await sendNotifications({
@@ -1443,15 +1486,14 @@ export async function reconcileRunningMonitorChecks(
           status: "failed",
           finished_at: new Date().toISOString(),
           actual_credits: 0,
-          billing_status: check.autumn_lock_id ? "released" : "not_applicable",
           error: "Monitor no longer exists.",
         });
         if (!failed) continue;
 
-        if (check.autumn_lock_id) {
+        if (failed.autumn_lock_id) {
           await autumnService
             .finalizeCreditsLock({
-              lockId: check.autumn_lock_id,
+              lockId: failed.autumn_lock_id,
               action: "release",
               properties: {
                 source: "monitorCheck",
@@ -1467,12 +1509,15 @@ export async function reconcileRunningMonitorChecks(
                   error,
                   monitorId: check.monitor_id,
                   checkId: check.id,
-                  lockId: check.autumn_lock_id,
+                  lockId: failed.autumn_lock_id,
                 },
               );
             });
         }
 
+        await updateMonitorCheck(failed.id, {
+          billing_status: failed.autumn_lock_id ? "released" : "not_applicable",
+        });
         logger.warn("Failed orphaned monitor check", {
           monitorId: check.monitor_id,
           checkId: check.id,
@@ -1547,10 +1592,6 @@ export async function reconcileRunningMonitorChecks(
         status: errorCount > 0 ? "partial" : "completed",
         finished_at: new Date().toISOString(),
         actual_credits: actualCredits,
-        // Not `confirmed` yet — the settle has not been attempted. Claiming it
-        // here and then finding firebill refused leaves a run permanently
-        // recorded as billed that nobody billed, with no retry.
-        billing_status: check.autumn_lock_id ? "reserved" : "not_applicable",
         total_pages: totalPages,
         same_count: same,
         changed_count: changed,
@@ -1569,7 +1610,7 @@ export async function reconcileRunningMonitorChecks(
           monitor,
           check: finalized,
           actualCredits,
-          lockId: check.autumn_lock_id,
+          lockId: claimed.autumn_lock_id,
         });
       } catch (error) {
         logger.warn("Failed to bill monitor check during reconciliation", {
@@ -1582,14 +1623,14 @@ export async function reconcileRunningMonitorChecks(
       // A refusal and a throw are the same fact — the settle did not land — and
       // both must be recorded as such. `firebillFinalize` answers `false`
       // without throwing, so the catch alone never saw them.
-      if (check.autumn_lock_id) {
+      if (claimed.autumn_lock_id) {
         if (!settled) {
           logger.error(
             "Monitor check settle did not land; the hold is unsettled and this run is unbilled",
             {
               monitorId: monitor.id,
               checkId: finalized.id,
-              lockId: check.autumn_lock_id,
+              lockId: claimed.autumn_lock_id,
               actualCredits,
             },
           );
