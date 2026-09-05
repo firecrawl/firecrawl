@@ -21,6 +21,24 @@ import { useIndex } from "../../services";
 
 const gunzipAsync = promisify(gunzip);
 
+// Fetch/parsing fallbacks must not convert persistence failures into empty sitemaps.
+export function trackSitemapHandler(handler: (urls: string[]) => unknown) {
+  let failure: { error: unknown } | undefined;
+  return {
+    async handle(urls: string[]) {
+      try {
+        return await handler(urls);
+      } catch (error) {
+        failure ??= { error };
+        throw error;
+      }
+    },
+    rethrow() {
+      if (failure) throw failure.error;
+    },
+  };
+}
+
 export async function getLinksFromSitemap(
   {
     sitemapUrl,
@@ -55,6 +73,8 @@ export async function getLinksFromSitemap(
   }
 
   sitemapsHit.add(sitemapUrl);
+  const trackedHandler = trackSitemapHandler(urlsHandler);
+  urlsHandler = trackedHandler.handle;
 
   try {
     let content = "";
@@ -318,6 +338,7 @@ export async function getLinksFromSitemap(
 
     return count;
   } catch (error) {
+    trackedHandler.rethrow();
     logger.debug(`Error processing sitemapUrl: ${sitemapUrl}`, {
       method: "getLinksFromSitemap",
       mode,

@@ -3,7 +3,7 @@ import { AxiosError } from "axios";
 import { config } from "../../config";
 import { load } from "cheerio"; // rustified
 import { URL } from "url";
-import { getLinksFromSitemap } from "./sitemap";
+import { getLinksFromSitemap, trackSitemapHandler } from "./sitemap";
 import robotsParser, { Robot } from "robots-parser";
 import { getURLDepth } from "./utils/maxDepthUtils";
 import { logger as _logger } from "../../lib/logger";
@@ -565,7 +565,7 @@ export class WebCrawler {
       return url;
     };
 
-    const _urlsHandler = async (urls: string[]) => {
+    const trackedHandler = trackSitemapHandler(async (urls: string[]) => {
       this.logger.debug("urlsHandler invoked");
       if (fromMap && onlySitemap) {
         deliveredCount += urls.length;
@@ -611,7 +611,7 @@ export class WebCrawler {
           return await urlsHandler(uniqueURLs);
         }
       }
-    };
+    });
 
     let timeoutHandle: NodeJS.Timeout;
     const timeoutController = new AbortController();
@@ -655,7 +655,7 @@ export class WebCrawler {
               .map(source =>
                 this.tryFetchSitemapLinks(
                   source,
-                  _urlsHandler,
+                  trackedHandler.handle,
                   fetchAbort,
                   mock,
                   maxAge,
@@ -673,6 +673,7 @@ export class WebCrawler {
         },
       )) as number;
     } catch (error) {
+      trackedHandler.rethrow();
       if (error instanceof Error && error.message === "Sitemap fetch timeout") {
         this.logger.warn("Sitemap fetch timed out", {
           method: "tryGetSitemap",
@@ -688,30 +689,23 @@ export class WebCrawler {
       count = deliveredCount;
     }
 
-    try {
-      if (count > 0) {
-        if (
-          await redisEvictConnection.sadd(
-            "sitemap:" + this.jobId + ":links",
-            normalizeUrl(this.initialUrl),
-          )
-        ) {
-          urlsHandler([this.initialUrl]);
-        }
-        count++;
+    if (count > 0) {
+      if (
+        await redisEvictConnection.sadd(
+          "sitemap:" + this.jobId + ":links",
+          normalizeUrl(this.initialUrl),
+        )
+      ) {
+        await urlsHandler([this.initialUrl]);
       }
-
-      await redisEvictConnection.expire(
-        "sitemap:" + this.jobId + ":links",
-        3600,
-        "NX",
-      );
-    } catch (error) {
-      this.logger.error("Error dispatching initial URL after sitemap fetch", {
-        method: "tryGetSitemap",
-        error,
-      });
+      count++;
     }
+
+    await redisEvictConnection.expire(
+      "sitemap:" + this.jobId + ":links",
+      3600,
+      "NX",
+    );
 
     return count;
   }
@@ -888,6 +882,8 @@ export class WebCrawler {
     mock?: string,
     maxAge?: number,
   ): Promise<number> {
+    const trackedHandler = trackSitemapHandler(urlsHandler);
+    urlsHandler = trackedHandler.handle;
     const sitemapUrl =
       url.toLowerCase().endsWith(".xml") ||
       url.toLowerCase().endsWith(".xml.gz")
@@ -924,6 +920,7 @@ export class WebCrawler {
         mock,
       );
     } catch (error) {
+      trackedHandler.rethrow();
       if (error instanceof ScrapeJobTimeoutError) {
         throw error;
       } else {
@@ -999,6 +996,7 @@ export class WebCrawler {
               mock,
             );
           } catch (error) {
+            trackedHandler.rethrow();
             if (error instanceof ScrapeJobTimeoutError) {
               throw error;
             } else {
@@ -1011,6 +1009,7 @@ export class WebCrawler {
         }
       }
     } catch (error) {
+      trackedHandler.rethrow();
       if (error instanceof ScrapeJobTimeoutError) {
         throw error;
       } else {
@@ -1043,6 +1042,7 @@ export class WebCrawler {
           mock,
         );
       } catch (error) {
+        trackedHandler.rethrow();
         if (error instanceof ScrapeJobTimeoutError) {
           throw error;
         } else {

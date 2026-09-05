@@ -476,14 +476,7 @@ export function parseLocalUploadStorageGuard(
 }
 
 async function releaseRejectedUploadRef(payload: ParseUploadRefPayload) {
-  try {
-    await releaseUnparsedUploadRef(payload.teamId, payload.uploadId);
-  } catch (error) {
-    _logger.warn("Failed to release rejected parse upload", {
-      error,
-      uploadId: payload.uploadId,
-    });
-  }
+  await releaseUnparsedUploadRef(payload.teamId, payload.uploadId);
 }
 
 async function resolveUploadRef(
@@ -628,34 +621,36 @@ export async function parseUploadRefPayloadMiddleware(
     return;
   }
 
-  try {
-    const resolved = await resolveUploadRef(
-      payload,
-      isImageOcrEnabled(req.acuc?.flags),
-    );
-    const { uploadRef: _uploadRef, ...options } = req.body;
-    req.body = {
-      ...options,
-      file: resolved.file,
-    };
-    res.once("finish", () => {
-      Promise.all([
-        resolved.cleanup(),
-        releaseUnparsedUploadRef(payload.teamId, payload.uploadId),
-      ]).catch(error => {
-        _logger.warn("Failed to clean up parse upload", {
-          error,
-          uploadId: payload.uploadId,
-        });
+  const resolved = await resolveUploadRef(
+    payload,
+    isImageOcrEnabled(req.acuc?.flags),
+  );
+  // Release the Redis reservation before parsing can send a success response.
+  const [release] = await Promise.allSettled([
+    releaseUnparsedUploadRef(payload.teamId, payload.uploadId),
+  ]);
+  if (release.status === "rejected") {
+    const [cleanup] = await Promise.allSettled([resolved.cleanup()]);
+    if (cleanup.status === "rejected") {
+      throw new AggregateError(
+        [release.reason, cleanup.reason],
+        "Upload quota release and cleanup failed",
+      );
+    }
+    throw release.reason;
+  }
+  const { uploadRef: _uploadRef, ...options } = req.body;
+  req.body = {
+    ...options,
+    file: resolved.file,
+  };
+  res.once("finish", () => {
+    resolved.cleanup().catch(error => {
+      _logger.warn("Failed to clean up parse upload", {
+        error,
+        uploadId: payload.uploadId,
       });
     });
-    next();
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      code: "BAD_REQUEST",
-      error:
-        error instanceof Error ? error.message : "Failed to resolve uploadRef.",
-    });
-  }
+  });
+  next();
 }
