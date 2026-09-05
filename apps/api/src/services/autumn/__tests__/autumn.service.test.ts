@@ -1733,3 +1733,34 @@ describe("firebill routing", () => {
     expect(mockFinalize).toHaveBeenCalledTimes(1);
   });
 });
+describe("strict browser tracking", () => {
+  it("propagates the original direct tracking error when requested", async () => {
+    const original = new Error("direct tracking reply lost");
+    mockTrack.mockRejectedValueOnce(original);
+    await expect(
+      makeService().trackCredits(
+        { teamId: "team-1", value: 42 },
+        { throwOnError: true },
+      ),
+    ).rejects.toBe(original);
+  });
+  it("rejects a pinned pending charge before falling back to the direct route", async () => {
+    const svc = makeService();
+    await expect(
+      svc.trackCredits(
+        { teamId: "team-1", value: 42 },
+        { throwOnError: true, requireFirebill: true },
+      ),
+    ).rejects.toThrow("Billing route changed");
+    expect(mockTrack).not.toHaveBeenCalled();
+  });
+  it("preserves the explicit missing-client bypass in strict mode", async () => {
+    state.autumnClientRef = null;
+    await expect(
+      makeService().trackCredits(
+        { teamId: "team-1", value: 42 },
+        { throwOnError: true },
+      ),
+    ).resolves.toBe(false);
+  });
+});

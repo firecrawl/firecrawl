@@ -12,11 +12,7 @@ import {
   listBrowserSessions,
   updateBrowserSessionActivity,
   updateBrowserSessionStatus,
-  updateBrowserSessionCreditsUsed,
-  claimBrowserSessionDestroyed,
   invalidateActiveBrowserSessionCount,
-  didBrowserSessionUsePrompt,
-  clearBrowserSessionPromptFlag,
 } from "../../lib/browser-sessions";
 import {
   getCombinedTeamActiveCount,
@@ -25,16 +21,15 @@ import {
 } from "../../services/worker/nuq-router";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { RequestWithAuth } from "./types";
-import { billTeam } from "../../services/billing/credit_billing";
+import {
+  finalizeBrowserSession,
+  getBrowserSessionBillingDuration,
+} from "../../lib/browser-session-finalization";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { integrationSchema } from "../../utils/integration";
-import {
-  BROWSER_CREDITS_PER_HOUR,
-  INTERACT_CREDITS_PER_HOUR,
-  calculateBrowserSessionCredits,
-} from "../../lib/browser-billing";
+import { calculateBrowserSessionCredits } from "../../lib/browser-billing";
 import { autumnService } from "../../services/autumn/autumn.service";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
@@ -587,12 +582,21 @@ export async function browserDeleteController(
 
   logger.info("Deleting browser session");
 
+  const pendingDuration = await getBrowserSessionBillingDuration(session.id);
   let deleteResult: BrowserServiceDeleteResponse;
   try {
-    deleteResult = await browserServiceRequest<BrowserServiceDeleteResponse>(
-      "DELETE",
-      `/browsers/${session.browser_id}`,
-    );
+    deleteResult =
+      pendingDuration !== null ||
+      (session.status === "destroyed" && session.credits_used !== null)
+        ? {
+            ok: true,
+            cleanupQueued: true,
+            sessionDurationMs: pendingDuration ?? 0,
+          }
+        : await browserServiceRequest<BrowserServiceDeleteResponse>(
+            "DELETE",
+            `/browsers/${session.browser_id}`,
+          );
   } catch (err) {
     logger.error("Browser service did not confirm session release", {
       error: err,
@@ -633,60 +637,11 @@ export async function browserDeleteController(
   if (cleanupErrors.length > 1)
     throw new AggregateError(cleanupErrors, "Browser teardown cleanup failed");
 
-  const usedPrompt = await didBrowserSessionUsePrompt(session.id);
-  const claimed = await claimBrowserSessionDestroyed(session.id);
-
-  if (!claimed) {
-    if (session.credits_used !== null && session.credits_used !== undefined) {
-      await clearBrowserSessionPromptFlag(session.id);
-    }
-    // The webhook (or another DELETE call) already transitioned and billed.
-    logger.info("Session already destroyed by another path, skipping billing", {
-      sessionId: session.id,
-    });
-    return res.status(200).json({
-      success: true,
-      sessionDurationMs: durationMs,
-      cleanupQueued: true,
-    });
-  }
-
-  const rate = usedPrompt
-    ? INTERACT_CREDITS_PER_HOUR
-    : BROWSER_CREDITS_PER_HOUR;
-  const creditsBilled = session.should_bill
-    ? calculateBrowserSessionCredits(durationMs, rate)
-    : 0;
-
-  if (session.should_bill) {
-    const agentRequestId =
-      session.request_id && session.request_id !== session.id
-        ? session.request_id
-        : null;
-    const billingResult = await billTeam(
-      req.auth.team_id,
-      creditsBilled,
-      req.acuc?.api_key_id ?? null,
-      {
-        endpoint: agentRequestId
-          ? "agent"
-          : usedPrompt
-            ? "interact"
-            : "browser",
-        jobId: agentRequestId ?? session.id,
-        // Keyed on the session rather than on jobId, deliberately: one agent
-        // request can drive several sessions, and each is its own charge — a key
-        // built from the shared agent id would collapse them into one. The
-        // per-path suffix guards the other direction: the webhook teardown below
-        // bills the same session through a different path.
-        chargeId: `${session.id}:destroy`,
-      },
-    );
-    if (!billingResult.success) throw billingResult.error;
-  }
-
-  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
-  await clearBrowserSessionPromptFlag(session.id);
+  const { creditsBilled } = await finalizeBrowserSession(
+    session.id,
+    durationMs,
+    req.acuc?.api_key_id ?? null,
+  );
 
   logger.info("Browser session destroyed", {
     sessionDurationMs: durationMs,
@@ -798,47 +753,12 @@ export async function browserWebhookDestroyedController(
   if (cleanupErrors.length > 1)
     throw new AggregateError(cleanupErrors, "Browser teardown cleanup failed");
 
-  const usedPrompt = await didBrowserSessionUsePrompt(session.id);
-  const claimed = await claimBrowserSessionDestroyed(session.id);
-
-  if (!claimed) {
-    if (session.credits_used !== null && session.credits_used !== undefined) {
-      await clearBrowserSessionPromptFlag(session.id);
-    }
-    logger.info("Session already destroyed by another path, skipping billing", {
-      sessionId: session.id,
-      browserId,
-    });
-    return res.status(200).json({ ok: true });
-  }
-
   const durationMs = sessionDurationMs as number;
-
-  const rate = usedPrompt
-    ? INTERACT_CREDITS_PER_HOUR
-    : BROWSER_CREDITS_PER_HOUR;
-  const creditsBilled = session.should_bill
-    ? calculateBrowserSessionCredits(durationMs, rate)
-    : 0;
-
-  if (session.should_bill) {
-    const agentRequestId =
-      session.request_id && session.request_id !== session.id
-        ? session.request_id
-        : null;
-    const billingResult = await billTeam(session.team_id, creditsBilled, null, {
-      endpoint: agentRequestId ? "agent" : usedPrompt ? "interact" : "browser",
-      jobId: agentRequestId ?? session.id,
-      // Same reasoning as the destroy path above: keyed on the session, not on
-      // jobId, and suffixed per path so the two teardown routes cannot dedupe
-      // each other's charge away.
-      chargeId: `${session.id}:webhook`,
-    });
-    if (!billingResult.success) throw billingResult.error;
-  }
-
-  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
-  await clearBrowserSessionPromptFlag(session.id);
+  const { creditsBilled, usedPrompt, rate } = await finalizeBrowserSession(
+    session.id,
+    durationMs,
+    null,
+  );
 
   logger.info("Session marked as destroyed via webhook", {
     sessionId: session.id,

@@ -638,93 +638,112 @@ export class WebCrawler {
       }
     };
 
-    let count = 0;
-    try {
-      const robotsSitemaps = this.robots.getSitemaps();
-      this.logger.debug("Attempting to fetch sitemap links", {
-        method: "tryGetSitemap",
-        initialUrl: this.initialUrl,
-        robotsSitemapsCount: robotsSitemaps.length,
-        robotsSitemaps: robotsSitemaps,
-        hasRobotsTxt: this.robotsTxt.length > 0,
-      });
+    const [result] = await Promise.allSettled([
+      (async () => {
+        let count = 0;
+        try {
+          const robotsSitemaps = this.robots.getSitemaps();
+          this.logger.debug("Attempting to fetch sitemap links", {
+            method: "tryGetSitemap",
+            initialUrl: this.initialUrl,
+            robotsSitemapsCount: robotsSitemaps.length,
+            robotsSitemaps: robotsSitemaps,
+            hasRobotsTxt: this.robotsTxt.length > 0,
+          });
 
-      // Fetched in batches so children of early sitemap indexes claim
-      // SITEMAP_LIMIT slots before later top-level sitemaps do.
-      const sitemapSources = [this.initialUrl, ...robotsSitemaps];
+          // Fetched in batches so children of early sitemap indexes claim
+          // SITEMAP_LIMIT slots before later top-level sitemaps do.
+          const sitemapSources = [this.initialUrl, ...robotsSitemaps];
 
-      const fetchSources = async () => {
-        let linkCount = 0;
-        for (
-          let i = 0;
-          i < sitemapSources.length &&
-          this.sitemapsHit.size < SITEMAP_LIMIT &&
-          !fetchAbort.aborted;
-          i += SITEMAP_FETCH_CONCURRENCY
-        ) {
-          const results = await Promise.all(
-            sitemapSources
-              .slice(i, i + SITEMAP_FETCH_CONCURRENCY)
-              .map(source =>
-                this.tryFetchSitemapLinks(
-                  source,
-                  handleUrls,
-                  fetchAbort,
-                  mock,
-                  maxAge,
-                ),
-              ),
-          );
-          linkCount += results.reduce((a, x) => a + x, 0);
+          const fetchSources = async () => {
+            let linkCount = 0;
+            for (
+              let i = 0;
+              i < sitemapSources.length &&
+              this.sitemapsHit.size < SITEMAP_LIMIT &&
+              !fetchAbort.aborted;
+              i += SITEMAP_FETCH_CONCURRENCY
+            ) {
+              const results = await Promise.all(
+                sitemapSources
+                  .slice(i, i + SITEMAP_FETCH_CONCURRENCY)
+                  .map(source =>
+                    this.tryFetchSitemapLinks(
+                      source,
+                      handleUrls,
+                      fetchAbort,
+                      mock,
+                      maxAge,
+                    ),
+                  ),
+              );
+              linkCount += results.reduce((a, x) => a + x, 0);
+            }
+            return linkCount;
+          };
+
+          count = (await Promise.race([fetchSources(), timeoutPromise]).finally(
+            () => {
+              clearTimeout(timeoutHandle);
+            },
+          )) as number;
+        } catch (error) {
+          // Stop new callbacks and finish any Redis work already started before
+          // returning the sitemap timeout fallback.
+          acceptHandlers = false;
+          await Promise.allSettled(pendingHandlers);
+          trackedHandler.rethrow();
+          if (
+            error instanceof Error &&
+            error.message === "Sitemap fetch timeout"
+          ) {
+            this.logger.warn("Sitemap fetch timed out", {
+              method: "tryGetSitemap",
+              timeout,
+              deliveredCount,
+            });
+          } else {
+            this.logger.error("Error fetching sitemap", {
+              method: "tryGetSitemap",
+              error,
+            });
+          }
+          count = deliveredCount;
         }
-        return linkCount;
-      };
 
-      count = (await Promise.race([fetchSources(), timeoutPromise]).finally(
-        () => {
-          clearTimeout(timeoutHandle);
-        },
-      )) as number;
-    } catch (error) {
-      // Stop new callbacks and finish any Redis work already started before
-      // returning the sitemap timeout fallback.
-      acceptHandlers = false;
-      await Promise.allSettled(pendingHandlers);
-      trackedHandler.rethrow();
-      if (error instanceof Error && error.message === "Sitemap fetch timeout") {
-        this.logger.warn("Sitemap fetch timed out", {
-          method: "tryGetSitemap",
-          timeout,
-          deliveredCount,
-        });
-      } else {
-        this.logger.error("Error fetching sitemap", {
-          method: "tryGetSitemap",
-          error,
-        });
+        if (!abort?.aborted && count > 0) {
+          if (
+            await redisEvictConnection.sadd(
+              "sitemap:" + this.jobId + ":links",
+              normalizeUrl(this.initialUrl),
+            )
+          ) {
+            if (!abort?.aborted) await urlsHandler([this.initialUrl]);
+          }
+          count++;
+        }
+
+        return abort?.aborted ? 0 : count;
+      })(),
+    ]);
+    const [expiry] = await Promise.allSettled([
+      redisEvictConnection.expire(
+        "sitemap:" + this.jobId + ":links",
+        3600,
+        "NX",
+      ),
+    ]);
+    if (result.status === "rejected") {
+      if (expiry.status === "rejected") {
+        throw new AggregateError(
+          [result.reason, expiry.reason],
+          "Sitemap processing and expiry failed",
+        );
       }
-      count = deliveredCount;
+      throw result.reason;
     }
-
-    if (!abort?.aborted && count > 0) {
-      if (
-        await redisEvictConnection.sadd(
-          "sitemap:" + this.jobId + ":links",
-          normalizeUrl(this.initialUrl),
-        )
-      ) {
-        if (!abort?.aborted) await urlsHandler([this.initialUrl]);
-      }
-      count++;
-    }
-
-    await redisEvictConnection.expire(
-      "sitemap:" + this.jobId + ":links",
-      3600,
-      "NX",
-    );
-
-    return abort?.aborted ? 0 : count;
+    if (expiry.status === "rejected") throw expiry.reason;
+    return abort?.aborted ? 0 : result.value;
   }
 
   public async filterURL(href: string, url: string): Promise<FilterResult> {

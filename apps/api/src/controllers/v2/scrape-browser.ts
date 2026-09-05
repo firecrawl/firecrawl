@@ -9,14 +9,10 @@ import {
   markBrowserSessionCreationFailed,
   getBrowserSession,
   updateBrowserSessionActivity,
-  updateBrowserSessionCreditsUsed,
   updateBrowserSessionScrapeId,
-  claimBrowserSessionDestroyed,
   invalidateActiveBrowserSessionCount,
   getBrowserSessionFromScrape,
   markBrowserSessionUsedPrompt,
-  didBrowserSessionUsePrompt,
-  clearBrowserSessionPromptFlag,
 } from "../../lib/browser-sessions";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import {
@@ -45,7 +41,10 @@ import {
 import { sanitizeUrlForTrace } from "../../lib/scrape-interact/langsmith";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { RequestWithAuth, ScrapeOptions } from "./types";
-import { billTeam } from "../../services/billing/credit_billing";
+import {
+  finalizeBrowserSession,
+  getBrowserSessionBillingDuration,
+} from "../../lib/browser-session-finalization";
 import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   adjustKeylessCredits,
@@ -59,11 +58,7 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { integrationSchema } from "../../utils/integration";
 import { supabaseGetScrapeById } from "../../lib/supabase-jobs";
-import {
-  BROWSER_CREDITS_PER_HOUR,
-  INTERACT_CREDITS_PER_HOUR,
-  calculateBrowserSessionCredits,
-} from "../../lib/browser-billing";
+import { calculateBrowserSessionCredits } from "../../lib/browser-billing";
 import { autumnService } from "../../services/autumn/autumn.service";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
@@ -420,12 +415,21 @@ export async function scrapeStopInteractiveBrowserController(
   });
   logger.info("Deleting browser session");
 
+  const pendingDuration = await getBrowserSessionBillingDuration(session.id);
   let deleteResult: BrowserServiceDeleteResponse;
   try {
-    deleteResult = await browserServiceRequest<BrowserServiceDeleteResponse>(
-      "DELETE",
-      `/browsers/${session.browser_id}`,
-    );
+    deleteResult =
+      pendingDuration !== null ||
+      (session.status === "destroyed" && session.credits_used !== null)
+        ? {
+            ok: true,
+            cleanupQueued: true,
+            sessionDurationMs: pendingDuration ?? 0,
+          }
+        : await browserServiceRequest<BrowserServiceDeleteResponse>(
+            "DELETE",
+            `/browsers/${session.browser_id}`,
+          );
   } catch (err) {
     logger.error("Browser service did not confirm session release", {
       error: err,
@@ -465,52 +469,12 @@ export async function scrapeStopInteractiveBrowserController(
   if (cleanupErrors.length > 1)
     throw new AggregateError(cleanupErrors, "Browser teardown cleanup failed");
 
-  const usedPrompt = await didBrowserSessionUsePrompt(session.id);
-  const rate = usedPrompt
-    ? INTERACT_CREDITS_PER_HOUR
-    : BROWSER_CREDITS_PER_HOUR;
-  const creditsBilled = calculateBrowserSessionCredits(durationMs, rate);
-  const reservedCredits = calculateBrowserSessionCredits(
-    session.ttl_total * 1000,
-    BROWSER_CREDITS_PER_HOUR,
-  );
-  await adjustKeylessCredits(
-    req.auth.team_id,
-    creditsBilled - reservedCredits,
-    `${session.id}:scrape-browser`,
-  );
-  const claimed = await claimBrowserSessionDestroyed(session.id);
-
-  if (!claimed) {
-    if (session.credits_used !== null && session.credits_used !== undefined) {
-      await clearBrowserSessionPromptFlag(session.id);
-    }
-    logger.info("Session already destroyed by another path, skipping billing", {
-      sessionId: session.id,
-    });
-    return res.status(200).json({
-      success: true,
-      sessionDurationMs: durationMs,
-      cleanupQueued: true,
-    });
-  }
-
-  const billingResult = await billTeam(
-    req.auth.team_id,
-    creditsBilled,
+  const { creditsBilled, usedPrompt, rate } = await finalizeBrowserSession(
+    session.id,
+    durationMs,
     req.acuc?.api_key_id ?? null,
-    {
-      endpoint: "interact",
-      jobId: session.id,
-      chargeId: `${session.id}:scrape-browser`,
-    },
   );
-
-  if (!billingResult.success) throw billingResult.error;
   logKeylessCreditUsage(req.auth.team_id, creditsBilled).catch(() => {});
-
-  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
-  await clearBrowserSessionPromptFlag(session.id);
 
   logger.info("Browser session destroyed", {
     sessionDurationMs: durationMs,

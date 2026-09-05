@@ -72,6 +72,7 @@ export async function searchController(
   let zeroDataRetention = teamForcedKind !== null;
   let reservedKeylessCredits = 0;
   let reconciledKeylessCredits = false;
+  let attemptedKeylessCredits: number | undefined;
 
   try {
     const rawOrigin =
@@ -284,11 +285,13 @@ export async function searchController(
     }
 
     if (reservedKeylessCredits > 0) {
-      reconciledKeylessCredits = true;
+      attemptedKeylessCredits = result.totalCredits;
       await adjustKeylessCredits(
         req.auth.team_id,
         result.totalCredits - reservedKeylessCredits,
+        `${jobId}:reconcile`,
       );
+      reconciledKeylessCredits = true;
       logKeylessCreditUsage(req.auth.team_id, result.totalCredits).catch(
         () => {},
       );
@@ -384,9 +387,23 @@ export async function searchController(
     });
   } catch (error) {
     if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
-      reconciledKeylessCredits = true;
       const [refund] = await Promise.allSettled([
-        adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits),
+        (async () => {
+          // The failed reply may follow a committed adjustment. Resolve that
+          // ambiguity using the same id before refunding the resulting amount.
+          if (attemptedKeylessCredits !== undefined) {
+            await adjustKeylessCredits(
+              req.auth.team_id,
+              attemptedKeylessCredits - reservedKeylessCredits,
+              `${jobId}:reconcile`,
+            );
+          }
+          await adjustKeylessCredits(
+            req.auth.team_id,
+            -(attemptedKeylessCredits ?? reservedKeylessCredits),
+            `${jobId}:refund`,
+          );
+        })(),
       ]);
       if (refund.status === "rejected") {
         throw new AggregateError(

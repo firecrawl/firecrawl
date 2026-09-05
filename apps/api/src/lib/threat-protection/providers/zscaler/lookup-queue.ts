@@ -339,6 +339,7 @@ async function drainQueue(orgId: string): Promise<void> {
   }
 
   const failures: unknown[] = [];
+  let providerFailure: { error: unknown } | undefined;
   let entries: QueueEntry[] = [];
   try {
     const credentials = await getOrgZscalerCredentials(orgId);
@@ -418,6 +419,7 @@ async function drainQueue(orgId: string): Promise<void> {
           ),
         });
       } catch (error) {
+        providerFailure = { error };
         const zscalerError =
           error instanceof ZscalerError
             ? error
@@ -481,6 +483,11 @@ async function drainQueue(orgId: string): Promise<void> {
       await lock.release();
     } catch (error) {
       failures.push(error);
+    }
+    // A normal provider failure is delivered through the reply/failure policy.
+    // If publication or cleanup fails, retain its original cause too.
+    if (failures.length > 0 && providerFailure) {
+      failures.unshift(providerFailure.error);
     }
     if (failures.length === 1) throw failures[0];
     if (failures.length > 1)

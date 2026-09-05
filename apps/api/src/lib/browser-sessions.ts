@@ -238,32 +238,6 @@ export async function updateBrowserSessionStatus(
   }
 }
 
-export async function claimBrowserSessionDestroyed(
-  id: string,
-): Promise<boolean> {
-  const now = new Date().toISOString();
-  try {
-    const data = await db
-      .update(schema.browser_sessions)
-      .set({
-        status: "destroyed" as BrowserSessionStatus,
-        updated_at: now,
-        deleted_at: now,
-      })
-      .where(
-        and(
-          eq(schema.browser_sessions.id, id),
-          eq(schema.browser_sessions.status, "active"),
-        ),
-      )
-      .returning({ id: schema.browser_sessions.id });
-    return data.length > 0;
-  } catch (error) {
-    logger.warn("Failed to claim browser session destroyed", { error, id });
-    return false;
-  }
-}
-
 export async function updateBrowserSessionScrapeId(
   id: string,
   scrapeId: string,
@@ -280,19 +254,6 @@ export async function updateBrowserSessionScrapeId(
       scrapeId,
     });
   }
-}
-
-export async function updateBrowserSessionCreditsUsed(
-  id: string,
-  creditsUsed: number,
-): Promise<void> {
-  await db
-    .update(schema.browser_sessions)
-    .set({
-      credits_used: creditsUsed,
-      updated_at: new Date().toISOString(),
-    })
-    .where(eq(schema.browser_sessions.id, id));
 }
 
 // ---------------------------------------------------------------------------

@@ -663,3 +663,32 @@ describe("firebillCheck", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+describe("strict billing tracking", () => {
+  it("preserves the original transport error while default callers keep the boolean contract", async () => {
+    const original = new Error("connection failed");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(original));
+    await expect(firebillTrack(params, true)).rejects.toBe(original);
+    await expect(firebillTrack(params)).resolves.toBe(false);
+  });
+  it("retains distinct original errors from exhausted attempts", async () => {
+    const first = new Error("first connection failed"),
+      second = new Error("second connection failed");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValueOnce(first).mockRejectedValueOnce(second),
+    );
+    await expect(firebillTrack(params, true)).rejects.toMatchObject({
+      errors: [first, second],
+    });
+  });
+  it("allows a safe retry to succeed with the stable charge identity", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("reply lost"))
+      .mockImplementationOnce(ok);
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(firebillTrack(params, true)).resolves.toBe(true);
+    const bodies = fetchMock.mock.calls.map(call => JSON.parse(call[1].body));
+    expect(bodies[0].idempotency_key).toBe(bodies[1].idempotency_key);
+  });
+});

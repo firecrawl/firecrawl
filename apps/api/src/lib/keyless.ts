@@ -279,6 +279,7 @@ export async function adjustKeylessCredits(
   teamId: string,
   deltaCredits: number,
   adjustmentId?: string,
+  options?: { persistentReceipt: string },
 ): Promise<number | null> {
   const ip = keylessIpFromTeamId(teamId);
   if (!ip || !Number.isFinite(deltaCredits) || deltaCredits === 0) return null;
@@ -298,7 +299,10 @@ local next = current + delta
 if next < 0 then
   next = 0
 end
-if KEYS[2] then redis.call("SET", KEYS[2], "1", "EX", ttl) end
+if KEYS[2] then
+  if ARGV[3] == "persistent" then redis.call("SET", KEYS[2], "1")
+  else redis.call("SET", KEYS[2], "1", "EX", ttl) end
+end
 local result = redis.pcall("SET", KEYS[1], next, "EX", ttl)
 if type(result) == "table" and result.err then
   if KEYS[2] then redis.call("DEL", KEYS[2]) end
@@ -306,11 +310,16 @@ if type(result) == "table" and result.err then
 end
 return next
 `,
-    adjustmentId ? 2 : 1,
+    adjustmentId || options?.persistentReceipt ? 2 : 1,
     key,
-    ...(adjustmentId ? [`keyless_adjustment:${ip}:${adjustmentId}`] : []),
+    ...(options?.persistentReceipt
+      ? [options.persistentReceipt]
+      : adjustmentId
+        ? [`keyless_adjustment:${ip}:${adjustmentId}`]
+        : []),
     delta,
     DAY_SECONDS,
+    options?.persistentReceipt ? "persistent" : "expiring",
   )) as number;
 
   return Number(total);

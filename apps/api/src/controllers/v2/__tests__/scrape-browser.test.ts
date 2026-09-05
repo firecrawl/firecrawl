@@ -19,7 +19,6 @@ vi.mock("../../../lib/browser-sessions", () => ({
   updateBrowserSessionActivity: vi.fn(() => Promise.resolve()),
   updateBrowserSessionCreditsUsed: vi.fn(() => Promise.resolve()),
   updateBrowserSessionScrapeId: vi.fn(() => Promise.resolve()),
-  claimBrowserSessionDestroyed: vi.fn(),
   markBrowserSessionCreationFailed: vi.fn().mockResolvedValue(undefined),
   invalidateActiveBrowserSessionCount: vi.fn(() => Promise.resolve()),
   getBrowserSessionFromScrape: vi.fn(),
@@ -122,13 +121,25 @@ import { scrapeStopInteractiveBrowserController } from "../scrape-browser";
 import {
   getBrowserSessionFromScrape,
   invalidateActiveBrowserSessionCount,
-  didBrowserSessionUsePrompt,
-  claimBrowserSessionDestroyed,
 } from "../../../lib/browser-sessions";
 import { browserServiceRequest } from "../../../lib/scrape-interact/browser-service-client";
-import { adjustKeylessCredits } from "../../../lib/keyless";
+import { finalizeBrowserSession } from "../../../lib/browser-session-finalization";
+import { mirrorExternalSlotRelease } from "../../../services/worker/nuq-router";
+
+vi.mock("../../../lib/browser-session-finalization", () => ({
+  finalizeBrowserSession: vi.fn(),
+  getBrowserSessionBillingDuration: vi.fn().mockResolvedValue(null),
+}));
 
 describe("browser teardown Redis failures", () => {
+  const request = () =>
+    ({
+      params: { jobId: "scrape" },
+      auth: { team_id: "team" },
+      acuc: { api_key_id: 42 },
+    }) as any;
+  const response = () =>
+    ({ status: vi.fn().mockReturnThis(), json: vi.fn() }) as any;
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getBrowserSessionFromScrape).mockResolvedValue({
@@ -142,23 +153,48 @@ describe("browser teardown Redis failures", () => {
       cleanupQueued: true,
       sessionDurationMs: 60000,
     });
-    vi.mocked(didBrowserSessionUsePrompt).mockResolvedValue(true);
+    vi.mocked(finalizeBrowserSession).mockResolvedValue({
+      creditsBilled: 7,
+      usedPrompt: true,
+      rate: 420,
+    });
   });
-  it.each([
-    invalidateActiveBrowserSessionCount,
-    didBrowserSessionUsePrompt,
-    adjustKeylessCredits,
-  ])("propagates Redis failure before claiming billing", async operation => {
-    const error = new Error("original Redis failure");
-    vi.mocked(operation).mockRejectedValueOnce(error);
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
+  it("passes session identity and confirmed duration to finalization after team cleanup", async () => {
+    const res = response();
+    await scrapeStopInteractiveBrowserController(request(), res);
+    expect(getBrowserSessionFromScrape).toHaveBeenCalledWith("scrape");
+    expect(invalidateActiveBrowserSessionCount).toHaveBeenCalledWith("team");
+    expect(mirrorExternalSlotRelease).toHaveBeenCalledWith("team", "session");
+    expect(finalizeBrowserSession).toHaveBeenCalledWith("session", 60000, 42);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      sessionDurationMs: 60000,
+      creditsBilled: 7,
+      cleanupQueued: true,
+    });
+  });
+  it.each([invalidateActiveBrowserSessionCount, mirrorExternalSlotRelease])(
+    "propagates cleanup Redis failure before finalization",
+    async operation => {
+      const error = new Error("original Redis failure");
+      vi.mocked(operation).mockRejectedValueOnce(error);
+      const res = response();
+      await expect(
+        scrapeStopInteractiveBrowserController(request(), res),
+      ).rejects.toBe(error);
+      expect(finalizeBrowserSession).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    },
+  );
+  it("propagates the original finalization failure without a success response", async () => {
+    const error = new Error("original finalization failure");
+    vi.mocked(finalizeBrowserSession).mockRejectedValueOnce(error);
+    const res = response();
     await expect(
-      scrapeStopInteractiveBrowserController(
-        { params: { jobId: "scrape" }, auth: { team_id: "team" } } as any,
-        res,
-      ),
+      scrapeStopInteractiveBrowserController(request(), res),
     ).rejects.toBe(error);
-    expect(claimBrowserSessionDestroyed).not.toHaveBeenCalled();
+    expect(finalizeBrowserSession).toHaveBeenCalledWith("session", 60000, 42);
     expect(res.json).not.toHaveBeenCalled();
   });
 });

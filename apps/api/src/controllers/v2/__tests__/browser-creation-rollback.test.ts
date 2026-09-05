@@ -8,10 +8,14 @@ const mock = vi.hoisted(() => ({
   refund: vi.fn(),
   service: vi.fn(),
   get: vi.fn(),
+  getByBrowser: vi.fn(),
+  getFromScrape: vi.fn(),
   claim: vi.fn(),
   clear: vi.fn(),
   bill: vi.fn(),
   credits: vi.fn(),
+  finalize: vi.fn(),
+  duration: vi.fn(),
 }));
 vi.mock("uuid", () => ({ v7: () => "session" }));
 vi.mock("../../../config", () => ({
@@ -34,7 +38,7 @@ vi.mock("../../../lib/browser-sessions", () => ({
   insertBrowserSession: mock.insert,
   markBrowserSessionCreationFailed: mock.mark,
   getBrowserSession: mock.get,
-  getBrowserSessionByBrowserId: mock.get,
+  getBrowserSessionByBrowserId: mock.getByBrowser,
   listBrowserSessions: vi.fn(),
   updateBrowserSessionActivity: vi.fn(),
   updateBrowserSessionStatus: vi.fn(),
@@ -43,9 +47,13 @@ vi.mock("../../../lib/browser-sessions", () => ({
   invalidateActiveBrowserSessionCount: mock.invalidate,
   didBrowserSessionUsePrompt: async () => true,
   clearBrowserSessionPromptFlag: mock.clear,
-  getBrowserSessionFromScrape: mock.get,
+  getBrowserSessionFromScrape: mock.getFromScrape,
   updateBrowserSessionScrapeId: vi.fn(),
   markBrowserSessionUsedPrompt: vi.fn(),
+}));
+vi.mock("../../../lib/browser-session-finalization", () => ({
+  finalizeBrowserSession: mock.finalize,
+  getBrowserSessionBillingDuration: mock.duration,
 }));
 vi.mock("../../../services/worker/nuq-router", () => ({
   getCombinedTeamActiveCount: async () => 0,
@@ -111,6 +119,12 @@ const res = () => ({ status: vi.fn().mockReturnThis(), json: vi.fn() }) as any;
 beforeEach(() => {
   vi.resetAllMocks();
   mock.bill.mockResolvedValue({ success: true });
+  mock.finalize.mockResolvedValue({
+    creditsBilled: 2,
+    usedPrompt: true,
+    rate: 120,
+  });
+  mock.duration.mockResolvedValue(null);
   mock.service.mockImplementation(async (_method, path) =>
     path === "/browsers"
       ? { sessionId: "provider", cdpUrl: "ws://browser" }
@@ -192,64 +206,8 @@ it("teardown attempts slot release even when invalidation fails", async () => {
   expect(mock.release).toHaveBeenCalledWith("team", "session");
   expect(mock.claim).not.toHaveBeenCalled();
 });
-it("retries prompt cleanup for already completed billing", async () => {
-  mock.get.mockResolvedValue({
-    id: "session",
-    team_id: "team",
-    browser_id: "provider",
-    credits_used: 2,
-  });
-  mock.claim.mockResolvedValue(false);
-  await browserDeleteController(req(), res());
-  expect(mock.clear).toHaveBeenCalledWith("session");
-  expect(mock.bill).not.toHaveBeenCalled();
-});
-it("retains prompt billing state if billing did not complete", async () => {
-  mock.get.mockResolvedValue({
-    id: "session",
-    team_id: "team",
-    browser_id: "provider",
-    credits_used: null,
-  });
-  mock.claim.mockResolvedValue(false);
-  await browserDeleteController(req(), res());
-  expect(mock.clear).not.toHaveBeenCalled();
-});
-it("persists billing completion only after charging and before clearing the prompt flag", async () => {
-  mock.get.mockResolvedValue({
-    id: "session",
-    team_id: "team",
-    browser_id: "provider",
-    credits_used: null,
-    should_bill: true,
-  });
-  mock.claim.mockResolvedValue(true);
-  await browserDeleteController(req(), res());
-  expect(mock.bill.mock.invocationCallOrder[0]).toBeLessThan(
-    mock.credits.mock.invocationCallOrder[0],
-  );
-  expect(mock.credits.mock.invocationCallOrder[0]).toBeLessThan(
-    mock.clear.mock.invocationCallOrder[0],
-  );
-});
-it("does not mark billing complete or clear prompt rate after billing fails", async () => {
-  mock.get.mockResolvedValue({
-    id: "session",
-    team_id: "team",
-    browser_id: "provider",
-    credits_used: null,
-    should_bill: true,
-  });
-  mock.claim.mockResolvedValue(true);
-  const error = new Error("billing failed");
-  mock.bill.mockRejectedValue(error);
-  await expect(browserDeleteController(req(), res())).rejects.toBe(error);
-  expect(mock.credits).not.toHaveBeenCalled();
-  expect(mock.clear).not.toHaveBeenCalled();
-});
 
-it("propagates an unsuccessful billing result without recording completion", async () => {
-  const original = new Error("Redis billing queue failed");
+it("uses the session lookup and forwards finalization identity", async () => {
   mock.get.mockImplementation(async id =>
     id === "session"
       ? {
@@ -261,10 +219,47 @@ it("propagates an unsuccessful billing result without recording completion", asy
         }
       : null,
   );
-  mock.claim.mockResolvedValue(true);
-  mock.bill.mockResolvedValue({ success: false, error: original });
-  await expect(browserDeleteController(req(), res())).rejects.toBe(original);
+  await browserDeleteController(req(), res());
   expect(mock.get).toHaveBeenCalledWith("session");
-  expect(mock.credits).not.toHaveBeenCalled();
-  expect(mock.clear).not.toHaveBeenCalled();
+  expect(mock.getByBrowser).not.toHaveBeenCalled();
+  expect(mock.getFromScrape).not.toHaveBeenCalled();
+  expect(mock.finalize).toHaveBeenCalledWith("session", 1000, 1);
+});
+it("propagates an original finalization error without reporting success", async () => {
+  mock.get.mockResolvedValue({
+    id: "session",
+    team_id: "team",
+    browser_id: "provider",
+    credits_used: null,
+  });
+  const original = new Error("Redis billing queue failed");
+  mock.finalize.mockRejectedValue(original);
+  const response = res();
+  await expect(browserDeleteController(req(), response)).rejects.toBe(original);
+  expect(response.json).not.toHaveBeenCalled();
+});
+it("retries a persisted pending charge without deleting an already absent browser", async () => {
+  mock.get.mockResolvedValue({
+    id: "session",
+    team_id: "team",
+    browser_id: "provider",
+    status: "destroyed",
+    credits_used: null,
+  });
+  mock.duration.mockResolvedValue(9000);
+  await browserDeleteController(req(), res());
+  expect(fetch).not.toHaveBeenCalled();
+  expect(mock.finalize).toHaveBeenCalledWith("session", 9000, 1);
+});
+it("retries final cleanup for a completed destroyed session", async () => {
+  mock.get.mockResolvedValue({
+    id: "session",
+    team_id: "team",
+    browser_id: "provider",
+    status: "destroyed",
+    credits_used: 2,
+  });
+  await browserDeleteController(req(), res());
+  expect(fetch).not.toHaveBeenCalled();
+  expect(mock.finalize).toHaveBeenCalledWith("session", 0, 1);
 });

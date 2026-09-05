@@ -68,6 +68,7 @@ vi.mock("./client", () => ({
   },
 }));
 import { enqueueZscalerLookup } from "./lookup-queue";
+import { ZscalerError } from "./client";
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -178,4 +179,44 @@ describe("Zscaler drainer error propagation", () => {
       enqueueZscalerLookup("org", "https://example.com"),
     ).rejects.toBe(error);
   });
+});
+
+it("keeps normal provider failures on the reply failure-policy path", async () => {
+  const original = new Error("provider unavailable");
+  mock.lookup.mockRejectedValue(original);
+  await expect(
+    enqueueZscalerLookup("org", "https://example.com"),
+  ).rejects.toMatchObject({ kind: "api", message: original.message });
+  expect(mock.del).toHaveBeenCalledTimes(1);
+  expect(mock.release).toHaveBeenCalledTimes(1);
+});
+it("preserves the original provider failure when lock release fails", async () => {
+  const original = new ZscalerError("api", "provider unavailable");
+  const cleanup = new Error("release failed");
+  mock.lookup.mockRejectedValue(original);
+  mock.release.mockRejectedValue(cleanup);
+  await expect(
+    enqueueZscalerLookup("org", "https://example.com"),
+  ).rejects.toMatchObject({ errors: [original, cleanup] });
+});
+it("preserves the unwrapped provider failure when reply publication fails", async () => {
+  const original = new Error("provider unavailable");
+  const publication = new Error("reply failed");
+  mock.lookup.mockRejectedValue(original);
+  mock.exec.mockRejectedValueOnce(publication);
+  await expect(
+    enqueueZscalerLookup("org", "https://example.com"),
+  ).rejects.toMatchObject({ errors: [original, publication] });
+});
+it("retains provider, both publication attempts, and release failures", async () => {
+  const original = new Error("provider unavailable");
+  const publication = new Error("reply failed"),
+    retry = new Error("failure reply failed"),
+    cleanup = new Error("release failed");
+  mock.lookup.mockRejectedValue(original);
+  mock.exec.mockRejectedValueOnce(publication).mockRejectedValueOnce(retry);
+  mock.release.mockRejectedValue(cleanup);
+  await expect(
+    enqueueZscalerLookup("org", "https://example.com"),
+  ).rejects.toMatchObject({ errors: [original, publication, retry, cleanup] });
 });

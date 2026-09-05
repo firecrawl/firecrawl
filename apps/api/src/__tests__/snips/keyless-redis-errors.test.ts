@@ -4,6 +4,7 @@ vi.mock("../../services/rate-limiter", async () => {
   return {
     redisRateLimitClient: new Redis(
       process.env.REDIS_URL ?? "redis://127.0.0.1:6379",
+      { maxRetriesPerRequest: 1 },
     ),
   };
 });
@@ -18,11 +19,12 @@ describe("retryable Redis credit reconciliation", () => {
   const id = randomUUID();
   const key = `keyless_credits:${ip}`;
   const marker = `keyless_adjustment:${ip}:${id}`;
+  const persistentReceipt = `test:browser_session:keyless_billing:${id}`;
   beforeEach(async () => {
-    await redis.del(key, marker);
+    await redis.del(key, marker, persistentReceipt);
   });
   afterAll(async () => {
-    await redis.del(key, marker);
+    await redis.del(key, marker, persistentReceipt);
     await redis.quit();
   });
   it("applies the same session adjustment once before billing is claimed", async () => {
@@ -30,6 +32,19 @@ describe("retryable Redis credit reconciliation", () => {
     expect(await adjustKeylessCredits(team, -7, id)).toBe(13);
     expect(await adjustKeylessCredits(team, -7, id)).toBe(13);
     expect(await redis.ttl(marker)).toBeGreaterThan(0);
+  });
+  it("keeps a persistent receipt after the daily counter is replaced", async () => {
+    await redis.set(key, 20);
+    expect(
+      await adjustKeylessCredits(team, -7, id, { persistentReceipt }),
+    ).toBe(13);
+    expect(await redis.ttl(persistentReceipt)).toBe(-1);
+    await redis.del(key);
+    await redis.set(key, 50);
+    expect(
+      await adjustKeylessCredits(team, -7, id, { persistentReceipt }),
+    ).toBe(50);
+    expect(await redis.get(key)).toBe("50");
   });
   it("rejects an invalid counter without claiming the adjustment", async () => {
     await redis.hset(key, "invalid", "counter");

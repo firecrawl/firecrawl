@@ -332,6 +332,7 @@ function createResearchController(
     let responseBody: any = null;
     let error: string | undefined;
     let credits = 0;
+    const upstreamErrors: unknown[] = [];
 
     const sendResponse = await (async () => {
       try {
@@ -398,6 +399,7 @@ function createResearchController(
             : responseBody;
         return () => res.status(statusCode).json(response);
       } catch (err: unknown) {
+        upstreamErrors.push(err);
         if (isResearchTimeoutError(err)) {
           statusCode = 504;
           error = "Research service timed out";
@@ -419,7 +421,17 @@ function createResearchController(
         // upstream misses, so gating this on `credits > 0` left those requests
         // with no IP recorded anywhere. `credits` is still 0 on every non-2xx
         // path, so nothing extra is charged.
-        await chargeKeylessCredits(authedReq.auth.team_id, credits);
+        try {
+          await chargeKeylessCredits(authedReq.auth.team_id, credits);
+        } catch (chargeError) {
+          if (upstreamErrors.length > 0) {
+            throw new AggregateError(
+              [...upstreamErrors, chargeError],
+              "Research request and keyless charging failed",
+            );
+          }
+          throw chargeError;
+        }
 
         logResearchEndpoint({
           table: endpoint.table,

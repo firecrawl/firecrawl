@@ -190,3 +190,37 @@ describe("research upstream timeouts", () => {
     expect(res.end).toHaveBeenCalled();
   });
 });
+
+it("preserves upstream and charging failures together", async () => {
+  const upstream = new Error("upstream failed");
+  const charge = new Error("Redis failed");
+  mocks.fetchResearchUpstream.mockRejectedValueOnce(upstream);
+  mocks.chargeKeylessCredits.mockRejectedValueOnce(charge);
+  const next = vi.fn();
+  const res = makeRes();
+  routeHandler(createResearchRouter(), "/papers")(
+    makeReq({ query: "graphs" }),
+    res,
+    next,
+  );
+  await flush();
+  expect(next).toHaveBeenCalledWith(
+    expect.objectContaining({ errors: [upstream, charge] }),
+  );
+  expect(res.end).not.toHaveBeenCalled();
+});
+
+it("preserves a charging failure after a successful upstream request", async () => {
+  const charge = new Error("Redis failed");
+  mocks.chargeKeylessCredits.mockRejectedValueOnce(charge);
+  const next = vi.fn();
+  const res = makeRes();
+  routeHandler(createResearchRouter(), "/papers")(
+    makeReq({ query: "graphs" }),
+    res,
+    next,
+  );
+  await flush();
+  expect(next).toHaveBeenCalledWith(charge);
+  expect(res.json).not.toHaveBeenCalled();
+});

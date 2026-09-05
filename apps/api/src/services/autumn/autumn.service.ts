@@ -298,14 +298,18 @@ export class AutumnService {
     }
   }
 
-  private async track({
-    customerId,
-    entityId,
-    featureId,
-    value,
-    properties,
-    idempotencyKey,
-  }: TrackParams): Promise<boolean> {
+  private async track(
+    {
+      customerId,
+      entityId,
+      featureId,
+      value,
+      properties,
+      idempotencyKey,
+    }: TrackParams,
+    throwOnError = false,
+    requireFirebill = false,
+  ): Promise<boolean> {
     // Gradual rollout: allowlisted orgs, partner-provisioned orgs, and those in
     // sticky FIREBILL_ROLLOUT_PERCENT bucket bill through firebill. No fallback
     // to Autumn on failure — firebill may already own the event, and the SDK
@@ -317,15 +321,23 @@ export class AutumnService {
       : false;
     if (shouldRouteToFirebill(customerId, { gatewayProvisioned })) {
       billingRouteTotal.labels("firebill").inc();
-      return await firebillTrack({
-        customerId,
-        entityId,
-        featureId,
-        value,
-        properties,
-        idempotencyKey,
-      });
+      const tracked = await firebillTrack(
+        {
+          customerId,
+          entityId,
+          featureId,
+          value,
+          properties,
+          idempotencyKey,
+        },
+        throwOnError,
+      );
+      if (!tracked && throwOnError)
+        throw new Error("Billing tracking was not confirmed");
+      return tracked;
     }
+    if (requireFirebill)
+      throw new Error("Billing route changed while a charge is pending");
 
     billingRouteTotal.labels("direct").inc();
 
@@ -355,6 +367,7 @@ export class AutumnService {
         value,
         error,
       });
+      if (throwOnError) throw error;
       return false;
     }
   }
@@ -763,26 +776,36 @@ export class AutumnService {
   /**
    * Records a credit usage event directly in Autumn. Returns true on success.
    */
-  async trackCredits({
-    teamId,
-    value,
-    properties,
-    featureId = CREDITS_FEATURE_ID,
-    idempotencyKey,
-  }: TrackCreditsParams): Promise<boolean> {
+  async trackCredits(
+    {
+      teamId,
+      value,
+      properties,
+      featureId = CREDITS_FEATURE_ID,
+      idempotencyKey,
+    }: TrackCreditsParams,
+    {
+      throwOnError = false,
+      requireFirebill = false,
+    }: { throwOnError?: boolean; requireFirebill?: boolean } = {},
+  ): Promise<boolean> {
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
 
     try {
       const customerId = await this.ensureTrackingContext(teamId);
-      return await this.track({
-        customerId,
-        entityId: teamId,
-        featureId,
-        value,
-        properties,
-        idempotencyKey,
-      });
+      return await this.track(
+        {
+          customerId,
+          entityId: teamId,
+          featureId,
+          value,
+          properties,
+          idempotencyKey,
+        },
+        throwOnError,
+        requireFirebill,
+      );
     } catch (error) {
       logger.error(
         "Autumn trackCredits failed — billing API may be unavailable",
@@ -792,6 +815,7 @@ export class AutumnService {
           error,
         },
       );
+      if (throwOnError) throw error;
       return false;
     }
   }

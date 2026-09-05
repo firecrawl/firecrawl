@@ -1,8 +1,17 @@
 const mocks = vi.hoisted(() => ({
+  audit: vi.fn(),
   clear: vi.fn(),
   sync: vi.fn(),
   previous: vi.fn(),
   upsert: vi.fn(),
+}));
+vi.mock("../../../lib/logger", () => ({
+  logger: {
+    info: mocks.audit,
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn().mockReturnThis(),
+  },
 }));
 vi.mock("../../../lib/zdr-helpers", () => ({
   getThreatProtection: () => "allowed",
@@ -65,6 +74,10 @@ it("still syncs after clear rejection and preserves its original error", async (
   const { pending, res } = run();
   await expect(pending).rejects.toBe(error);
   expect(mocks.sync).toHaveBeenCalledWith("org");
+  expect(mocks.audit).toHaveBeenCalledWith(
+    "Threat protection config updated",
+    expect.objectContaining({ orgId: "org" }),
+  );
   expect(res.json).not.toHaveBeenCalled();
 });
 it("retains clear and replacement failures", async () => {
@@ -73,4 +86,5 @@ it("retains clear and replacement failures", async () => {
   mocks.clear.mockRejectedValue(clear);
   mocks.sync.mockRejectedValue(sync);
   await expect(run().pending).rejects.toMatchObject({ errors: [clear, sync] });
+  expect(mocks.audit).toHaveBeenCalledOnce();
 });

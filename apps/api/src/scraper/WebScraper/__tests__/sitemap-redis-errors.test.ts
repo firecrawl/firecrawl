@@ -239,3 +239,42 @@ it("skips initial URL dispatch if caller cancellation occurs during its Redis wr
   expect(handler).toHaveBeenCalledWith(["https://example.com/page"]);
   expect(mock.expire).toHaveBeenCalledWith("sitemap:test:links", 3600, "NX");
 });
+
+it("expires a partially written sitemap when a pipeline command fails", async () => {
+  const error = new Error("partial pipeline failure");
+  mock.exec.mockResolvedValue([
+    [null, 1],
+    [error, null],
+  ]);
+  await expect(crawler().tryGetSitemap(vi.fn())).rejects.toBe(error);
+  expect(mock.expire).toHaveBeenCalledWith("sitemap:test:links", 3600, "NX");
+});
+
+it("expires the sitemap after the initial URL handler fails", async () => {
+  const error = new Error("initial handler failed");
+  mock.sadd.mockResolvedValue(1);
+  await expect(
+    crawler().tryGetSitemap(async urls => {
+      if (urls[0] === "https://example.com") throw error;
+    }),
+  ).rejects.toBe(error);
+  expect(mock.expire).toHaveBeenCalledTimes(2);
+});
+
+it("preserves both a sitemap failure and its expiry failure", async () => {
+  const primary = new Error("partial pipeline failure");
+  const expiry = new Error("expiry failure");
+  mock.exec.mockResolvedValue([
+    [null, 1],
+    [primary, null],
+  ]);
+  mock.expire.mockRejectedValue(expiry);
+  await expect(crawler().tryGetSitemap(vi.fn())).rejects.toMatchObject({
+    errors: [primary, expiry],
+  });
+});
+
+it("expires a successful sitemap before returning its count", async () => {
+  await expect(crawler().tryGetSitemap(vi.fn())).resolves.toBe(2);
+  expect(mock.expire).toHaveBeenCalledTimes(2);
+});

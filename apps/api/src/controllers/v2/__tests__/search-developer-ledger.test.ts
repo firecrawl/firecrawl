@@ -1,5 +1,6 @@
 import { vi } from "vitest";
 
+const mockAdjustKeylessCredits = vi.fn();
 const mockLogRequest = vi.fn();
 const mockLogSearch = vi.fn();
 const mockLogResearchEndpoint = vi.fn();
@@ -29,7 +30,7 @@ vi.mock("../../../services/billing/credit_billing", () => ({
 
 vi.mock("../../../lib/keyless", () => ({
   KEYLESS_FREE_TIER_LIMIT_MESSAGE: "keyless limit reached",
-  adjustKeylessCredits: vi.fn().mockResolvedValue(undefined),
+  adjustKeylessCredits: (...args: any[]) => mockAdjustKeylessCredits(...args),
   keylessLimitBody: (...args: any[]) => mockKeylessLimitBody(...args),
   logKeylessCreditUsage: vi.fn().mockResolvedValue(undefined),
   reserveKeylessCredits: (...args: any[]) => mockReserveKeylessCredits(...args),
@@ -125,6 +126,7 @@ async function flushAsync() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockAdjustKeylessCredits.mockReset().mockResolvedValue(undefined);
   mockLogRequest.mockResolvedValue(undefined);
   mockLogSearch.mockResolvedValue(undefined);
   mockLogResearchEndpoint.mockResolvedValue(undefined);
@@ -325,4 +327,55 @@ describe("developer category code_searches ledger", () => {
     ]);
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
+});
+
+it("refunds the reservation when reconciliation fails", async () => {
+  mockProjectSearchTotalCredits.mockReturnValue(5);
+  const original = new Error("reconciliation failed");
+  mockAdjustKeylessCredits.mockRejectedValueOnce(original);
+  const res = makeRes();
+  await searchController(makeReq({ query: "graphs" }), res);
+  expect(mockAdjustKeylessCredits.mock.calls.map(call => call[1])).toEqual([
+    -3, -3, -2,
+  ]);
+  expect(mockAdjustKeylessCredits.mock.calls[0][2]).toBe(
+    mockAdjustKeylessCredits.mock.calls[1][2],
+  );
+  expect(res.status).toHaveBeenCalledWith(500);
+});
+
+it("preserves reconciliation and refund failures together", async () => {
+  mockProjectSearchTotalCredits.mockReturnValue(5);
+  const original = new Error("reconciliation failed");
+  const refund = new Error("refund failed");
+  mockAdjustKeylessCredits
+    .mockRejectedValueOnce(original)
+    .mockRejectedValueOnce(refund);
+  await expect(
+    searchController(makeReq({ query: "graphs" }), makeRes()),
+  ).rejects.toMatchObject({ errors: [original, refund] });
+});
+
+it("does not over-refund when Redis commits reconciliation before losing its reply", async () => {
+  mockProjectSearchTotalCredits.mockReturnValue(5);
+  let used = 15; // Includes 10 credits from unrelated requests.
+  const applied = new Set<string>();
+  let first = true;
+  mockAdjustKeylessCredits.mockImplementation(
+    async (_team: string, delta: number, id: string) => {
+      if (!applied.has(id)) {
+        used += delta;
+        applied.add(id);
+      }
+      if (first) {
+        first = false;
+        throw new Error("reply lost");
+      }
+      return used;
+    },
+  );
+  const res = makeRes();
+  await searchController(makeReq({ query: "graphs" }), res);
+  expect(used).toBe(10);
+  expect(res.status).toHaveBeenCalledWith(500);
 });

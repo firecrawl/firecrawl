@@ -215,14 +215,6 @@ export async function putTeamThreatProtectionController(
       syncErrors.push(error);
     }
   }
-  if (syncErrors.length === 1) throw syncErrors[0];
-  if (syncErrors.length > 1) {
-    throw new AggregateError(
-      syncErrors,
-      "Zscaler state clear and replacement sync failed",
-    );
-  }
-
   // Audit log — org-level security configuration change. The serialized view
   // never carries the secret, so a rotation gets an explicit marker.
   const auditChangedFields = changedFields(previous, updated);
@@ -235,6 +227,14 @@ export async function putTeamThreatProtectionController(
     mode: updated.policy.mode,
     changedFields: auditChangedFields,
   });
+
+  if (syncErrors.length === 1) throw syncErrors[0];
+  if (syncErrors.length > 1) {
+    throw new AggregateError(
+      syncErrors,
+      "Zscaler state clear and replacement sync failed",
+    );
+  }
 
   res.status(200).json({
     success: true,

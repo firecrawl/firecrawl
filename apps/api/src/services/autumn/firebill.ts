@@ -163,11 +163,12 @@ function isSyntaxError(error: unknown): boolean {
  */
 async function readJson(
   response: Response,
+  throwOnError = false,
 ): Promise<Record<string, unknown> | typeof UNUSABLE_BODY> {
   try {
     return (await response.json()) as Record<string, unknown>;
   } catch (error) {
-    if (!isSyntaxError(error)) throw error;
+    if (throwOnError || !isSyntaxError(error)) throw error;
     response.body?.cancel().catch(() => {});
     return UNUSABLE_BODY;
   }
@@ -271,7 +272,11 @@ function firebillUrl(path: string): string {
  * contract of the direct Autumn track path. A `false` means firebill never
  * took it: nothing is retrying, and the usage goes unbilled.
  */
-export async function firebillTrack(params: TrackParams): Promise<boolean> {
+export async function firebillTrack(
+  params: TrackParams,
+  throwOnError = false,
+): Promise<boolean> {
+  const errors: unknown[] = [];
   const operation = params.value < 0 ? "refund" : "track";
   const path = `/v1/${operation}`;
   // Both attempts must be the same event. Without a caller key firebill mints
@@ -284,16 +289,17 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
   };
 
   for (let attempt = 1; attempt < FIREBILL_ATTEMPTS; attempt++) {
-    const result = await firebillAttempt(path, attempted);
+    const result = await firebillAttempt(path, attempted, throwOnError);
     if (result.ok) {
       firebillTrackTotal.labels(operation, "accepted").inc();
       return true;
     }
+    if (result.originalError !== undefined) errors.push(result.originalError);
     firebillRetryTotal.labels(result.reason).inc();
     await new Promise(resolve => setTimeout(resolve, FIREBILL_RETRY_DELAY_MS));
   }
 
-  const last = await firebillAttempt(path, attempted);
+  const last = await firebillAttempt(path, attempted, throwOnError);
   if (last.ok) {
     firebillTrackTotal.labels(operation, "accepted").inc();
     return true;
@@ -337,6 +343,14 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
   // `increase()`, which evaluates per series, so a `cause` label on that counter
   // would quietly turn one threshold into one threshold per cause.
   firebillFailureCauseTotal.labels(operation, last.cause).inc();
+  if (throwOnError) {
+    if (last.originalError !== undefined) errors.push(last.originalError);
+    const originals = [...new Set(errors)];
+    if (originals.length === 1) throw originals[0];
+    if (originals.length > 1)
+      throw new AggregateError(originals, "Billing tracking attempts failed");
+    throw new Error(`Billing tracking was not confirmed (${last.reason})`);
+  }
   return false;
 }
 
@@ -354,6 +368,7 @@ type AttemptResult =
       status?: number;
       errorName?: string;
       errorCode?: string;
+      originalError?: unknown;
     };
 
 async function firebillAttempt(
@@ -366,6 +381,7 @@ async function firebillAttempt(
     properties,
     idempotencyKey,
   }: TrackParams,
+  throwOnError = false,
 ): Promise<AttemptResult> {
   const url = firebillUrl(path);
   try {
@@ -396,7 +412,7 @@ async function firebillAttempt(
     const context = { customerId, entityId, featureId, value, path };
 
     if (!response.ok) {
-      const body = await readJson(response);
+      const body = await readJson(response, throwOnError);
       if (saysAmbiguous(response.status, body)) {
         logger.warn("firebill did not know whether it took the event", {
           ...context,
@@ -424,7 +440,7 @@ async function firebillAttempt(
       };
     }
 
-    const body = await readJson(response);
+    const body = await readJson(response, throwOnError);
     // Belt and braces: a 200 that still says it does not know is not a refusal.
     if (saysAmbiguous(response.status, body)) {
       logger.warn("firebill did not know whether it took the event", context);
@@ -471,7 +487,7 @@ async function firebillAttempt(
         error,
       },
     );
-    return { ok: false, reason: "exception", ...failure };
+    return { ok: false, reason: "exception", ...failure, originalError: error };
   }
 }
 
