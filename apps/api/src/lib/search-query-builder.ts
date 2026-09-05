@@ -39,11 +39,12 @@ const DEFAULT_RESEARCH_SITES = [
 ];
 
 export function hasCategory(
-  categories: CategoryOption[] | undefined,
+  categories: unknown,
   type: CategoryInput["type"],
 ): boolean {
-  return (categories ?? []).some(
-    c => (typeof c === "string" ? c : c.type) === type,
+  return (
+    Array.isArray(categories) &&
+    categories.some(c => (typeof c === "string" ? c : c?.type) === type)
   );
 }
 

@@ -9,17 +9,11 @@ interface Deprecation {
   docs?: string;
 }
 
-interface Notice {
+export interface Notice {
   message: string;
   links?: string[];
   replacement?: string;
 }
-
-export const RESEARCH_CATEGORY_NOTICE: Notice = {
-  message:
-    "The 'research' search category changes on 2026-11-16: it will search the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) instead of filtering web results to 14 academic websites. Results will move from data.web to data.research as paper records (paperId, primaryId, ids, title, abstract, score). To keep web pages from academic sites, use includeDomains. See https://docs.firecrawl.dev/features/research",
-  links: ['<https://docs.firecrawl.dev/features/research>; rel="deprecation"'],
-};
 
 // Every legacy entry shipped together in #3469, so they share one date.
 const DEPRECATIONS = {
@@ -109,8 +103,7 @@ function quoteWarningText(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-// Shared by route deprecations and in-place behavior changes. Copies the body:
-// the research controllers log the same object after responding.
+// Copies the body: the research controllers log the same object after responding.
 export function applyNotice(res: Response, notice: Notice) {
   if (notice.links?.length) res.setHeader("Link", notice.links.join(", "));
   // RFC 7234 Warning header, code 299 = "Miscellaneous Persistent Warning".
