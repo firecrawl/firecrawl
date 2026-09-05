@@ -5,7 +5,7 @@ import {
   HAS_SEARCH,
   TEST_PRODUCTION,
 } from "../lib";
-import { search, searchWithFailure, idmux, Identity } from "./lib";
+import { search, searchRaw, searchWithFailure, idmux, Identity } from "./lib";
 import { config } from "../../../config";
 
 let identity: Identity;
@@ -339,6 +339,41 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.web).toBeDefined();
       expect(res.web?.length).toBeGreaterThan(0);
       expect(res.web?.length).toBeLessThanOrEqual(21);
+    },
+    60000,
+  );
+});
+
+// Runs without a search provider: the notice is decided before the search.
+describe("research category notice", () => {
+  it.concurrent(
+    "carries the notice on every response that uses the category",
+    async () => {
+      const raw = await searchRaw(
+        { query: "firecrawl", categories: ["research"] },
+        identity,
+      );
+      expect(raw.statusCode).toBe(200);
+      expect(raw.headers["warning"]).toMatch(/^299 - "/);
+      expect(raw.headers["link"]).toContain(
+        "https://docs.firecrawl.dev/features/research",
+      );
+      expect(raw.body.warnings).toHaveLength(1);
+      expect(raw.body.warnings[0]).toContain("2026-11-16");
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "stays silent for every other category",
+    async () => {
+      const raw = await searchRaw(
+        { query: "firecrawl", categories: ["github"] },
+        identity,
+      );
+      expect(raw.statusCode).toBe(200);
+      expect(raw.headers["warning"]).toBeUndefined();
+      expect(raw.body.warnings).toBeUndefined();
     },
     60000,
   );
