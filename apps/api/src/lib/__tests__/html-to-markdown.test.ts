@@ -1,3 +1,15 @@
+// The native @mendable/firecrawl-rs module is not available in this unit test
+// environment, so we mock only the minimal post-processing behavior needed by
+// parseMarkdown. These tests focus on Turndown fallback markdown generation.
+jest.mock(
+  "@mendable/firecrawl-rs",
+  () => ({
+    postProcessMarkdown: (val: string) =>
+      Promise.resolve(val.replace(/-   /g, "- ")),
+  }),
+  { virtual: true },
+);
+
 import { parseMarkdown } from "../html-to-markdown";
 
 describe("parseMarkdown", () => {
@@ -46,5 +58,41 @@ describe("parseMarkdown", () => {
     for (const { html, expected } of invalidHtmls) {
       await expect(parseMarkdown(html)).resolves.toBe(expected);
     }
+  });
+
+  it("should correctly preserve basic Arabic/RTL Unicode characters", async () => {
+    const html = "<p>مرحباً بك في عالم البرمجة!</p>";
+    const expectedMarkdown = "مرحباً بك في عالم البرمجة!";
+    await expect(parseMarkdown(html)).resolves.toBe(expectedMarkdown);
+  });
+
+  it("should correctly format mixed RTL/LTR text with links and bold tags", async () => {
+    const html =
+      '<p>للمزيد من التفاصيل، قم بزيارة <strong><a href="https://firecrawl.dev">موقع Firecrawl</a></strong> الآن.</p>';
+    const expectedMarkdown =
+      "للمزيد من التفاصيل، قم بزيارة **[موقع Firecrawl](https://firecrawl.dev)** الآن.";
+    await expect(parseMarkdown(html)).resolves.toBe(expectedMarkdown);
+  });
+
+  it("should correctly format Arabic lists and blockquotes", async () => {
+    const html =
+      "<div><blockquote>العلم نور</blockquote><ul><li>العنصر الأول</li><li>العنصر الثاني</li></ul></div>";
+    const expectedMarkdown = "> العلم نور\n\n- العنصر الأول\n- العنصر الثاني";
+    await expect(parseMarkdown(html)).resolves.toBe(expectedMarkdown);
+  });
+
+  it("keeps inline link formatting when the link is the final element of an RTL paragraph", async () => {
+    const html = `
+      <html lang="ar" dir="rtl">
+        <body>
+          <p>اقرأ المزيد في <a href="https://example.com">هذا الرابط</a></p>
+        </body>
+      </html>
+    `;
+
+    const markdown = await parseMarkdown(html);
+
+    expect(markdown).toContain("اقرأ المزيد في [هذا الرابط](https://example.com)");
+    expect(markdown).not.toContain("[هذا الرابط](https://example.com)\n");
   });
 });
