@@ -1,4 +1,3 @@
-import { redisErrorDetails } from "../../../redis-errors";
 import { RateLimiterRedis, RateLimiterRes } from "rate-limiter-flexible";
 import { z } from "zod";
 import { logger as _logger } from "../../../logger";
@@ -348,12 +347,7 @@ export async function syncOrgZscalerRules(
       return doc;
     }
   } finally {
-    await lock.release().catch(error => {
-      logger.warn("Failed to release Zscaler sync lock", {
-        ...redisErrorDetails(error),
-        orgId,
-      });
-    });
+    await lock.release();
   }
 }
 

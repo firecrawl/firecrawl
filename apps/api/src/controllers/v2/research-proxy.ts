@@ -304,7 +304,7 @@ function createResearchController(
       // The outer finally below never runs for validation failures, but a
       // malformed keyless request must still leave the canonical keyless/usage
       // trail — ID-enumeration abuse produces plenty of 400s.
-      chargeKeylessCredits(authedReq.auth.team_id, 0).catch(() => {});
+      await chargeKeylessCredits(authedReq.auth.team_id, 0);
       return researchError(
         res,
         400,
@@ -416,7 +416,7 @@ function createResearchController(
       // upstream misses, so gating this on `credits > 0` left those requests
       // with no IP recorded anywhere. `credits` is still 0 on every non-2xx
       // path, so nothing extra is charged.
-      chargeKeylessCredits(authedReq.auth.team_id, credits).catch(() => {});
+      await chargeKeylessCredits(authedReq.auth.team_id, credits);
 
       logResearchEndpoint({
         table: endpoint.table,

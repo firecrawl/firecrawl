@@ -288,7 +288,7 @@ export async function scrapeInteractController(
   if (prompt && !rawCode) {
     logger.info("Starting agent loop from prompt", { prompt, timeout });
 
-    markBrowserSessionUsedPrompt(session.id).catch(() => {});
+    await markBrowserSessionUsedPrompt(session.id);
 
     try {
       execResult = await executePromptViaBrowserAgent(
@@ -313,7 +313,7 @@ export async function scrapeInteractController(
       });
     }
 
-    enqueueBrowserSessionActivity({
+    await enqueueBrowserSessionActivity({
       team_id: req.auth.team_id,
       session_id: session.id,
       source: "interact",
@@ -348,7 +348,7 @@ export async function scrapeInteractController(
       });
     }
 
-    enqueueBrowserSessionActivity({
+    await enqueueBrowserSessionActivity({
       team_id: req.auth.team_id,
       session_id: session.id,
       source: "interact",
@@ -453,19 +453,24 @@ export async function scrapeStopInteractiveBrowserController(
 
   const durationMs = deleteResult.sessionDurationMs;
 
-  const claimed = await claimBrowserSessionDestroyed(session.id);
+  await invalidateActiveBrowserSessionCount(session.team_id);
+  await mirrorExternalSlotRelease(session.team_id, session.id);
 
-  invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
-  mirrorExternalSlotRelease(session.team_id, session.id).catch(error => {
-    logger.error(
-      "Failed to remove concurrency limiter entry for browser session",
-      {
-        error,
-        sessionId: session.id,
-        teamId: session.team_id,
-      },
-    );
-  });
+  const usedPrompt = await didBrowserSessionUsePrompt(session.id);
+  const rate = usedPrompt
+    ? INTERACT_CREDITS_PER_HOUR
+    : BROWSER_CREDITS_PER_HOUR;
+  const creditsBilled = calculateBrowserSessionCredits(durationMs, rate);
+  const reservedCredits = calculateBrowserSessionCredits(
+    session.ttl_total * 1000,
+    BROWSER_CREDITS_PER_HOUR,
+  );
+  await adjustKeylessCredits(
+    req.auth.team_id,
+    creditsBilled - reservedCredits,
+    `${session.id}:scrape-browser`,
+  );
+  const claimed = await claimBrowserSessionDestroyed(session.id);
 
   if (!claimed) {
     logger.info("Session already destroyed by another path, skipping billing", {
@@ -478,14 +483,6 @@ export async function scrapeStopInteractiveBrowserController(
     });
   }
 
-  const usedPrompt = await didBrowserSessionUsePrompt(session.id);
-  const rate = usedPrompt
-    ? INTERACT_CREDITS_PER_HOUR
-    : BROWSER_CREDITS_PER_HOUR;
-  const creditsBilled = calculateBrowserSessionCredits(durationMs, rate);
-
-  clearBrowserSessionPromptFlag(session.id).catch(() => {});
-
   updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch(error => {
     logger.error("Failed to update credits_used on browser session", {
       error,
@@ -494,26 +491,20 @@ export async function scrapeStopInteractiveBrowserController(
     });
   });
 
-  billTeam(req.auth.team_id, creditsBilled, req.acuc?.api_key_id ?? null, {
-    endpoint: "interact",
-    jobId: session.id,
-    chargeId: `${session.id}:scrape-browser`,
-  }).catch(error => {
-    logger.error("Failed to bill team for interact session", {
-      error,
-      creditsBilled,
-      durationMs,
-    });
-  });
+  await billTeam(
+    req.auth.team_id,
+    creditsBilled,
+    req.acuc?.api_key_id ?? null,
+    {
+      endpoint: "interact",
+      jobId: session.id,
+      chargeId: `${session.id}:scrape-browser`,
+    },
+  );
 
-  const reservedCredits = calculateBrowserSessionCredits(
-    session.ttl_total * 1000,
-    BROWSER_CREDITS_PER_HOUR,
-  );
-  adjustKeylessCredits(req.auth.team_id, creditsBilled - reservedCredits).catch(
-    () => {},
-  );
   logKeylessCreditUsage(req.auth.team_id, creditsBilled).catch(() => {});
+
+  await clearBrowserSessionPromptFlag(session.id);
 
   logger.info("Browser session destroyed", {
     sessionDurationMs: durationMs,
@@ -598,7 +589,7 @@ async function createSessionForScrape(
   });
 
   if (autumnResult !== null && !autumnResult.allowed) {
-    adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(() => {});
+    await adjustKeylessCredits(req.auth.team_id, -keylessReserved);
     return {
       status: 402,
       body: {
@@ -616,7 +607,7 @@ async function createSessionForScrape(
   );
   const activeCount = await getCombinedTeamActiveCount(req.auth.team_id);
   if (activeCount >= concurrencyLimit) {
-    adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(() => {});
+    await adjustKeylessCredits(req.auth.team_id, -keylessReserved);
     return {
       status: 429,
       body: {
@@ -664,9 +655,7 @@ async function createSessionForScrape(
       break;
     } catch (err) {
       if (err instanceof BrowserServiceError && err.status === 409) {
-        adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(
-          () => {},
-        );
+        await adjustKeylessCredits(req.auth.team_id, -keylessReserved);
         return {
           status: 409,
           body: {
@@ -690,7 +679,7 @@ async function createSessionForScrape(
   }
 
   if (!svcResponse) {
-    adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(() => {});
+    await adjustKeylessCredits(req.auth.team_id, -keylessReserved);
     logger.error("Failed to create browser session after all retries", {
       error: lastCreateError,
     });
@@ -792,23 +781,19 @@ async function createSessionForScrape(
       );
     }
   } catch (err) {
-    adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(() => {});
-    logger.error("Failed to initialize scrape browser session context", {
-      error: err,
-    });
-    await browserServiceRequest(
-      "DELETE",
-      `/browsers/${svcResponse.sessionId}`,
-    ).catch(() => {});
-    return {
-      status: 409,
-      body: {
-        success: false,
-        error:
-          "Failed to initialize browser session from the original scrape context. Please rerun the scrape and try again.",
-      },
-      error: true,
-    };
+    const cleanup = await Promise.allSettled([
+      adjustKeylessCredits(req.auth.team_id, -keylessReserved),
+      browserServiceRequest("DELETE", `/browsers/${svcResponse.sessionId}`),
+    ]);
+    const errors = cleanup.flatMap(result =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (errors.length > 0)
+      throw new AggregateError(
+        [err, ...errors],
+        "Browser creation and cleanup failed",
+      );
+    throw err;
   }
 
   // Persist in Supabase
@@ -844,28 +829,26 @@ async function createSessionForScrape(
       credits_used: null,
     });
 
-    invalidateActiveBrowserSessionCount(req.auth.team_id).catch(() => {});
+    await invalidateActiveBrowserSessionCount(req.auth.team_id);
 
     // Register in the shared concurrency limiter so this session counts
     // against the team's concurrent job limit while it's active.
-    mirrorExternalSlotAcquire(req.auth.team_id, sessionId, ttl * 1000).catch(
-      () => {},
-    );
+    await mirrorExternalSlotAcquire(req.auth.team_id, sessionId, ttl * 1000);
 
     return { session };
   } catch (err) {
-    adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(() => {});
-    logger.error("Failed to persist browser session, cleaning up", {
-      error: err,
-    });
-    await browserServiceRequest(
-      "DELETE",
-      `/browsers/${svcResponse.sessionId}`,
-    ).catch(() => {});
-    return {
-      status: 500,
-      body: { success: false, error: "Failed to persist browser session." },
-      error: true,
-    };
+    const cleanup = await Promise.allSettled([
+      adjustKeylessCredits(req.auth.team_id, -keylessReserved),
+      browserServiceRequest("DELETE", `/browsers/${svcResponse.sessionId}`),
+    ]);
+    const errors = cleanup.flatMap(result =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (errors.length > 0)
+      throw new AggregateError(
+        [err, ...errors],
+        "Browser creation and cleanup failed",
+      );
+    throw err;
   }
 }

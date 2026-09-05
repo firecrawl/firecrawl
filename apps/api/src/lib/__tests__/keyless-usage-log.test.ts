@@ -142,16 +142,11 @@ describe("logKeylessCreditUsage", () => {
 });
 
 describe("chargeKeylessCredits", () => {
-  it("logs failed charges without losing the usage record", async () => {
-    const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
-    redisEval.mockRejectedValueOnce(new Error("OOM private data"));
-    await expect(
-      chargeKeylessCredits(KEYLESS_TEAM, 4),
-    ).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledWith("Failed to charge keyless credits", {
-      redisError: "OOM",
-    });
-    expect(insertValues).toHaveBeenCalled();
+  it("propagates the original Redis charge failure", async () => {
+    const error = new Error("OOM original details");
+    redisEval.mockRejectedValueOnce(error);
+    await expect(chargeKeylessCredits(KEYLESS_TEAM, 4)).rejects.toBe(error);
+    expect(insertValues).not.toHaveBeenCalled();
   });
   it("records a zero-credit request without drawing down the credit budget", async () => {
     const info = vi.spyOn(logger, "info").mockImplementation(() => logger);

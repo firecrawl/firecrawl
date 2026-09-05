@@ -423,13 +423,11 @@ export async function browserCreateController(
   }
 
   // Invalidate cached count so next check reflects the new session
-  invalidateActiveBrowserSessionCount(req.auth.team_id).catch(() => {});
+  await invalidateActiveBrowserSessionCount(req.auth.team_id);
 
   // Register in the shared concurrency limiter so this session counts
   // against the team's concurrent job limit while it's active.
-  mirrorExternalSlotAcquire(req.auth.team_id, sessionId, ttl * 1000).catch(
-    () => {},
-  );
+  await mirrorExternalSlotAcquire(req.auth.team_id, sessionId, ttl * 1000);
 
   logger.info("Browser session created", {
     sessionId,
@@ -526,7 +524,7 @@ export async function browserExecuteController(
     stderrLength: execResult.stderr?.length,
   });
 
-  enqueueBrowserSessionActivity({
+  await enqueueBrowserSessionActivity({
     team_id: req.auth.team_id,
     session_id: id,
     source: "browser",
@@ -622,20 +620,12 @@ export async function browserDeleteController(
 
   const durationMs = deleteResult.sessionDurationMs;
 
-  const claimed = await claimBrowserSessionDestroyed(session.id);
-
   // Invalidate cached count so next check reflects the destroyed session
-  invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
-  mirrorExternalSlotRelease(session.team_id, session.id).catch(error => {
-    logger.error(
-      "Failed to remove concurrency limiter entry for browser session",
-      {
-        error,
-        sessionId: session.id,
-        teamId: session.team_id,
-      },
-    );
-  });
+  await invalidateActiveBrowserSessionCount(session.team_id);
+  await mirrorExternalSlotRelease(session.team_id, session.id);
+
+  const usedPrompt = await didBrowserSessionUsePrompt(session.id);
+  const claimed = await claimBrowserSessionDestroyed(session.id);
 
   if (!claimed) {
     // The webhook (or another DELETE call) already transitioned and billed.
@@ -649,15 +639,12 @@ export async function browserDeleteController(
     });
   }
 
-  const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const rate = usedPrompt
     ? INTERACT_CREDITS_PER_HOUR
     : BROWSER_CREDITS_PER_HOUR;
   const creditsBilled = session.should_bill
     ? calculateBrowserSessionCredits(durationMs, rate)
     : 0;
-
-  clearBrowserSessionPromptFlag(session.id).catch(() => {});
 
   await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
 
@@ -666,23 +653,28 @@ export async function browserDeleteController(
       session.request_id && session.request_id !== session.id
         ? session.request_id
         : null;
-    billTeam(req.auth.team_id, creditsBilled, req.acuc?.api_key_id ?? null, {
-      endpoint: agentRequestId ? "agent" : usedPrompt ? "interact" : "browser",
-      jobId: agentRequestId ?? session.id,
-      // Keyed on the session rather than on jobId, deliberately: one agent
-      // request can drive several sessions, and each is its own charge — a key
-      // built from the shared agent id would collapse them into one. The
-      // per-path suffix guards the other direction: the webhook teardown below
-      // bills the same session through a different path.
-      chargeId: `${session.id}:destroy`,
-    }).catch(error => {
-      logger.error("Failed to bill team for browser session", {
-        error,
-        creditsBilled,
-        durationMs,
-      });
-    });
+    await billTeam(
+      req.auth.team_id,
+      creditsBilled,
+      req.acuc?.api_key_id ?? null,
+      {
+        endpoint: agentRequestId
+          ? "agent"
+          : usedPrompt
+            ? "interact"
+            : "browser",
+        jobId: agentRequestId ?? session.id,
+        // Keyed on the session rather than on jobId, deliberately: one agent
+        // request can drive several sessions, and each is its own charge — a key
+        // built from the shared agent id would collapse them into one. The
+        // per-path suffix guards the other direction: the webhook teardown below
+        // bills the same session through a different path.
+        chargeId: `${session.id}:destroy`,
+      },
+    );
   }
+
+  await clearBrowserSessionPromptFlag(session.id);
 
   logger.info("Browser session destroyed", {
     sessionDurationMs: durationMs,
@@ -783,19 +775,11 @@ export async function browserWebhookDestroyedController(
     return res.status(200).json({ ok: true });
   }
 
-  const claimed = await claimBrowserSessionDestroyed(session.id);
+  await invalidateActiveBrowserSessionCount(session.team_id);
+  await mirrorExternalSlotRelease(session.team_id, session.id);
 
-  invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
-  mirrorExternalSlotRelease(session.team_id, session.id).catch(error => {
-    logger.error(
-      "Failed to remove concurrency limiter entry for browser session via webhook",
-      {
-        error,
-        sessionId: session.id,
-        teamId: session.team_id,
-      },
-    );
-  });
+  const usedPrompt = await didBrowserSessionUsePrompt(session.id);
+  const claimed = await claimBrowserSessionDestroyed(session.id);
 
   if (!claimed) {
     logger.info("Session already destroyed by another path, skipping billing", {
@@ -807,15 +791,12 @@ export async function browserWebhookDestroyedController(
 
   const durationMs = sessionDurationMs as number;
 
-  const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const rate = usedPrompt
     ? INTERACT_CREDITS_PER_HOUR
     : BROWSER_CREDITS_PER_HOUR;
   const creditsBilled = session.should_bill
     ? calculateBrowserSessionCredits(durationMs, rate)
     : 0;
-
-  clearBrowserSessionPromptFlag(session.id).catch(() => {});
 
   await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
 
@@ -824,23 +805,17 @@ export async function browserWebhookDestroyedController(
       session.request_id && session.request_id !== session.id
         ? session.request_id
         : null;
-    billTeam(session.team_id, creditsBilled, null, {
+    await billTeam(session.team_id, creditsBilled, null, {
       endpoint: agentRequestId ? "agent" : usedPrompt ? "interact" : "browser",
       jobId: agentRequestId ?? session.id,
       // Same reasoning as the destroy path above: keyed on the session, not on
       // jobId, and suffixed per path so the two teardown routes cannot dedupe
       // each other's charge away.
       chargeId: `${session.id}:webhook`,
-    }).catch(error => {
-      logger.error("Failed to bill team for browser session via webhook", {
-        error,
-        teamId: session.team_id,
-        sessionId: session.id,
-        creditsBilled,
-        durationMs,
-      });
     });
   }
+
+  await clearBrowserSessionPromptFlag(session.id);
 
   logger.info("Session marked as destroyed via webhook", {
     sessionId: session.id,

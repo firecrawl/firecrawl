@@ -285,10 +285,10 @@ export async function searchController(
 
     if (reservedKeylessCredits > 0) {
       reconciledKeylessCredits = true;
-      adjustKeylessCredits(
+      await adjustKeylessCredits(
         req.auth.team_id,
         result.totalCredits - reservedKeylessCredits,
-      ).catch(() => {});
+      );
       logKeylessCreditUsage(req.auth.team_id, result.totalCredits).catch(
         () => {},
       );
@@ -385,9 +385,7 @@ export async function searchController(
   } catch (error) {
     if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
       reconciledKeylessCredits = true;
-      adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
-        () => {},
-      );
+      await adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits);
     }
 
     if (error instanceof z.ZodError) {

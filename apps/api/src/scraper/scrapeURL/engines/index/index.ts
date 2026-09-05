@@ -270,48 +270,21 @@ export async function scrapeURLWithIndex(
     ) {
       maxAge = defaultMaxAge;
     } else {
-      try {
-        const resolved = await Promise.race([
-          (async (): Promise<{
-            value: number;
-            source: MaxAgeSource;
-          }> => {
-            try {
-              const domainHash = domainSplitsHash[level];
-              if (useIndexCache) {
-                const cached = await getCachedMaxAge(domainHash, meta.logger);
-                if (cached !== null) {
-                  return {
-                    value: cached.maxAge ?? defaultMaxAge,
-                    source: "dynamic_cached",
-                  };
-                }
-              }
-              const data = await queryMaxAge(domainHash);
-              const value =
-                !data || data.length === 0 ? null : (data[0].max_age ?? null);
-              if (useIndexCache) {
-                setCachedMaxAge(domainHash, value, meta.logger).catch(() => {});
-              }
-              return { value: value ?? defaultMaxAge, source: "dynamic_db" };
-            } catch (error) {
-              meta.logger.warn("Failed to get max age from DB", { error });
-              return { value: defaultMaxAge, source: "default" };
-            }
-          })(),
-          new Promise<{ value: number; source: MaxAgeSource }>(resolve =>
-            setTimeout(() => {
-              resolve({ value: defaultMaxAge, source: "default" });
-            }, 200),
-          ),
-        ]);
-        maxAge = resolved.value;
-        maxAgeSource = resolved.source;
-      } catch (e) {
-        meta.logger.warn("Failed to get max age from DB", {
-          error: e,
-        });
-        maxAge = defaultMaxAge;
+      const domainHash = domainSplitsHash[level];
+      const cached = useIndexCache
+        ? await getCachedMaxAge(domainHash, meta.logger)
+        : null;
+      if (cached !== null) {
+        maxAge = cached.maxAge ?? defaultMaxAge;
+        maxAgeSource = "dynamic_cached";
+      } else {
+        const data = await queryMaxAge(domainHash);
+        const value =
+          !data || data.length === 0 ? null : (data[0].max_age ?? null);
+        if (useIndexCache)
+          await setCachedMaxAge(domainHash, value, meta.logger);
+        maxAge = value ?? defaultMaxAge;
+        maxAgeSource = "dynamic_db";
       }
     }
   }
@@ -458,18 +431,14 @@ export async function scrapeURLWithIndex(
           has_screenshot_fullscreen: row.has_screenshot_fullscreen,
           wait_time_ms: row.wait_time_ms,
         }));
-        upsertCachedIndexEntries(variantKey, entries, meta.logger).catch(
-          () => {},
-        );
+        await upsertCachedIndexEntries(variantKey, entries, meta.logger);
       } else if (
         useIndexNegativeCache &&
         rows.length === 0 &&
         meta.options.minAge === undefined
       ) {
         // Confirmed empty for [dbStart - maxAge, dbStart]; record the left edge.
-        setCachedNegative(variantKey, dbStart - maxAge, meta.logger).catch(
-          () => {},
-        );
+        await setCachedNegative(variantKey, dbStart - maxAge, meta.logger);
       }
       data = rows;
     } catch (error) {
@@ -527,7 +496,7 @@ export async function scrapeURLWithIndex(
     if (servedFromCache) {
       // Self-heal: drop the poisoned cache entry so it can't keep serving an
       // id whose document is gone.
-      deleteCachedIndexEntry(variantKey, id, meta.logger).catch(() => {});
+      await deleteCachedIndexEntry(variantKey, id, meta.logger);
     }
     logLookup("warn", "hit", { gcsMiss: true, indexDocumentId: id });
     throw new EngineError("Document not found in GCS");

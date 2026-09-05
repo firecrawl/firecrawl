@@ -102,3 +102,56 @@ describe("scrapeInteractController", () => {
     });
   });
 });
+
+vi.mock("../../../lib/keyless", () => ({
+  adjustKeylessCredits: vi.fn().mockResolvedValue(null),
+  logKeylessCreditUsage: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("../../../services/worker/nuq-router", () => ({
+  mirrorExternalSlotAcquire: vi.fn().mockResolvedValue(undefined),
+  mirrorExternalSlotRelease: vi.fn().mockResolvedValue(undefined),
+}));
+import { scrapeStopInteractiveBrowserController } from "../scrape-browser";
+import {
+  getBrowserSessionFromScrape,
+  invalidateActiveBrowserSessionCount,
+  didBrowserSessionUsePrompt,
+  claimBrowserSessionDestroyed,
+} from "../../../lib/browser-sessions";
+import { browserServiceRequest } from "../../../lib/scrape-interact/browser-service-client";
+import { adjustKeylessCredits } from "../../../lib/keyless";
+
+describe("browser teardown Redis failures", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getBrowserSessionFromScrape).mockResolvedValue({
+      id: "session",
+      team_id: "team",
+      browser_id: "browser",
+      ttl_total: 60,
+    } as any);
+    vi.mocked(browserServiceRequest).mockResolvedValue({
+      ok: true,
+      cleanupQueued: true,
+      sessionDurationMs: 60000,
+    });
+    vi.mocked(didBrowserSessionUsePrompt).mockResolvedValue(true);
+  });
+  it.each([
+    invalidateActiveBrowserSessionCount,
+    didBrowserSessionUsePrompt,
+    adjustKeylessCredits,
+  ])("propagates Redis failure before claiming billing", async operation => {
+    const error = new Error("original Redis failure");
+    vi.mocked(operation).mockRejectedValueOnce(error);
+    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
+    await expect(
+      scrapeStopInteractiveBrowserController(
+        { params: { jobId: "scrape" }, auth: { team_id: "team" } } as any,
+        res,
+      ),
+    ).rejects.toBe(error);
+    expect(claimBrowserSessionDestroyed).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});

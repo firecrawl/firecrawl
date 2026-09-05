@@ -33,7 +33,7 @@ const READ_TIMEOUT_MS = 150;
 const indexCacheRedis: IORedis | null = config.INDEX_CACHE_REDIS_URL
   ? new IORedis(config.INDEX_CACHE_REDIS_URL, {
       enableAutoPipelining: true,
-      // The cache must fail fast and fall back to Postgres, never queue
+      // The cache must fail fast, never queue
       // commands while disconnected.
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
@@ -169,39 +169,29 @@ export async function getCachedIndexEntries(
     return { status: "error" };
   }
   const start = Date.now();
-  try {
-    const raw = await withTimeout(client.hgetall(key), READ_TIMEOUT_MS);
-    indexCacheReadDuration.observe((Date.now() - start) / 1000);
-    if (raw === TIMED_OUT) {
-      indexCacheErrorCounter.inc({ op: "read_timeout" });
-      return { status: "error" };
-    }
-    const fields = Object.values(raw);
-    if (fields.length === 0) {
-      return { status: "miss" };
-    }
-    const entries: IndexCacheEntry[] = [];
-    for (const field of fields) {
-      try {
-        entries.push(JSON.parse(field));
-      } catch {
-        // Skip unparseable entries; they age out via TTL/eviction.
-      }
-    }
-    if (entries.length === 0) {
-      return { status: "miss" };
-    }
-    return { status: "hit", entries };
-  } catch (error) {
-    indexCacheReadDuration.observe((Date.now() - start) / 1000);
-    indexCacheErrorCounter.inc({ op: "read" });
-    logger.warn("Index cache read failed", {
-      module: "index-cache",
-      error,
-      key,
-    });
-    return { status: "error" };
+
+  const raw = await withTimeout(client.hgetall(key), READ_TIMEOUT_MS);
+  indexCacheReadDuration.observe((Date.now() - start) / 1000);
+  if (raw === TIMED_OUT) {
+    indexCacheErrorCounter.inc({ op: "read_timeout" });
+    throw new Error("Index cache Redis read timed out");
   }
+  const fields = Object.values(raw);
+  if (fields.length === 0) {
+    return { status: "miss" };
+  }
+  const entries: IndexCacheEntry[] = [];
+  for (const field of fields) {
+    try {
+      entries.push(JSON.parse(field));
+    } catch {
+      // Skip unparseable entries; they age out via TTL/eviction.
+    }
+  }
+  if (entries.length === 0) {
+    return { status: "miss" };
+  }
+  return { status: "hit", entries };
 }
 
 export async function upsertCachedIndexEntries(
@@ -213,54 +203,43 @@ export async function upsertCachedIndexEntries(
   if (client === null || entries.length === 0) {
     return;
   }
-  try {
-    const fields: Record<string, string> = {};
-    for (const entry of entries) {
-      fields[entry.id] = JSON.stringify(entry);
-    }
-    const pipeline = client.pipeline();
-    for (const batch of chunk(
-      Object.entries(fields),
-      REDIS_COMMAND_CHUNK_SIZE,
-    )) {
-      pipeline.hset(key, Object.fromEntries(batch));
-    }
-    pipeline.expire(key, ENTRY_TTL_SECONDS);
-    // Writing positive entries invalidates any negative marker for this
-    // variant — this is what keeps a surviving negative marker a proof that
-    // nothing was inserted since it was set.
-    pipeline.del(negKeyFor(key));
-    pipeline.hlen(key);
-    const results = await checkedRedisExec(pipeline.exec(), "index cache");
-    const hlen = results.at(-1)?.[1];
-    if (typeof hlen === "number" && hlen > ENTRY_CAP) {
-      const raw = await client.hgetall(key);
-      const parsed = Object.entries(raw)
-        .map(([id, field]) => {
-          try {
-            return { id, created_at: JSON.parse(field).created_at as string };
-          } catch {
-            return { id, created_at: "1970-01-01T00:00:00Z" };
-          }
-        })
-        .sort(
-          (a, b) =>
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-        );
-      const toDelete = parsed.slice(ENTRY_CAP).map(x => x.id);
-      if (toDelete.length > 0) {
-        for (const batch of chunk(toDelete, REDIS_COMMAND_CHUNK_SIZE)) {
-          await client.hdel(key, ...batch);
+
+  const fields: Record<string, string> = {};
+  for (const entry of entries) {
+    fields[entry.id] = JSON.stringify(entry);
+  }
+  const pipeline = client.pipeline();
+  for (const batch of chunk(Object.entries(fields), REDIS_COMMAND_CHUNK_SIZE)) {
+    pipeline.hset(key, Object.fromEntries(batch));
+  }
+  pipeline.expire(key, ENTRY_TTL_SECONDS);
+  // Writing positive entries invalidates any negative marker for this
+  // variant — this is what keeps a surviving negative marker a proof that
+  // nothing was inserted since it was set.
+  pipeline.del(negKeyFor(key));
+  pipeline.hlen(key);
+  const results = await checkedRedisExec(pipeline.exec(), "index cache");
+  const hlen = results.at(-1)?.[1];
+  if (typeof hlen === "number" && hlen > ENTRY_CAP) {
+    const raw = await client.hgetall(key);
+    const parsed = Object.entries(raw)
+      .map(([id, field]) => {
+        try {
+          return { id, created_at: JSON.parse(field).created_at as string };
+        } catch {
+          return { id, created_at: "1970-01-01T00:00:00Z" };
         }
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+    const toDelete = parsed.slice(ENTRY_CAP).map(x => x.id);
+    if (toDelete.length > 0) {
+      for (const batch of chunk(toDelete, REDIS_COMMAND_CHUNK_SIZE)) {
+        await client.hdel(key, ...batch);
       }
     }
-  } catch (error) {
-    indexCacheErrorCounter.inc({ op: "write" });
-    logger.warn("Index cache write failed", {
-      module: "index-cache",
-      error,
-      key,
-    });
   }
 }
 
@@ -273,17 +252,8 @@ export async function deleteCachedIndexEntry(
   if (client === null) {
     return;
   }
-  try {
-    await client.hdel(key, id);
-  } catch (error) {
-    indexCacheErrorCounter.inc({ op: "delete" });
-    logger.warn("Index cache entry delete failed", {
-      module: "index-cache",
-      error,
-      key,
-      id,
-    });
-  }
+
+  await client.hdel(key, id);
 }
 
 // Caches query_max_age results per domain hash, including the "no signature"
@@ -296,27 +266,19 @@ export async function getCachedMaxAge(
   if (client === null) {
     return null;
   }
-  try {
-    const raw = await withTimeout(
-      client.get(MAX_AGE_KEY_PREFIX + domainHash.toString("hex")),
-      READ_TIMEOUT_MS,
-    );
-    if (raw === TIMED_OUT) {
-      indexCacheErrorCounter.inc({ op: "maxage_read_timeout" });
-      return null;
-    }
-    if (raw === null || raw === undefined) {
-      return null;
-    }
-    return { maxAge: JSON.parse(raw).max_age ?? null };
-  } catch (error) {
-    indexCacheErrorCounter.inc({ op: "maxage_read" });
-    logger.warn("Index cache max age read failed", {
-      module: "index-cache",
-      error,
-    });
+
+  const raw = await withTimeout(
+    client.get(MAX_AGE_KEY_PREFIX + domainHash.toString("hex")),
+    READ_TIMEOUT_MS,
+  );
+  if (raw === TIMED_OUT) {
+    indexCacheErrorCounter.inc({ op: "maxage_read_timeout" });
+    throw new Error("Index cache Redis read timed out");
+  }
+  if (raw === null || raw === undefined) {
     return null;
   }
+  return { maxAge: JSON.parse(raw).max_age ?? null };
 }
 
 export async function setCachedMaxAge(
@@ -328,20 +290,13 @@ export async function setCachedMaxAge(
   if (client === null) {
     return;
   }
-  try {
-    await client.set(
-      MAX_AGE_KEY_PREFIX + domainHash.toString("hex"),
-      JSON.stringify({ max_age: maxAge }),
-      "EX",
-      MAX_AGE_TTL_SECONDS,
-    );
-  } catch (error) {
-    indexCacheErrorCounter.inc({ op: "maxage_write" });
-    logger.warn("Index cache max age write failed", {
-      module: "index-cache",
-      error,
-    });
-  }
+
+  await client.set(
+    MAX_AGE_KEY_PREFIX + domainHash.toString("hex"),
+    JSON.stringify({ max_age: maxAge }),
+    "EX",
+    MAX_AGE_TTL_SECONDS,
+  );
 }
 
 // A negative marker records that, as of when it was written, there was no
@@ -366,28 +321,20 @@ export async function getCachedNegative(
   if (client === null || !useIndexNegativeCache) {
     return null;
   }
-  try {
-    const raw = await withTimeout(
-      client.get(negKeyFor(variantKey)),
-      READ_TIMEOUT_MS,
-    );
-    if (raw === TIMED_OUT) {
-      indexCacheErrorCounter.inc({ op: "negative_read_timeout" });
-      return null;
-    }
-    if (raw === null || raw === undefined) {
-      return null;
-    }
-    const emptyFrom = JSON.parse(raw).emptyFrom;
-    return typeof emptyFrom === "number" ? { emptyFrom } : null;
-  } catch (error) {
-    indexCacheErrorCounter.inc({ op: "negative_read" });
-    logger.warn("Index cache negative read failed", {
-      module: "index-cache",
-      error,
-    });
+
+  const raw = await withTimeout(
+    client.get(negKeyFor(variantKey)),
+    READ_TIMEOUT_MS,
+  );
+  if (raw === TIMED_OUT) {
+    indexCacheErrorCounter.inc({ op: "negative_read_timeout" });
+    throw new Error("Index cache Redis read timed out");
+  }
+  if (raw === null || raw === undefined) {
     return null;
   }
+  const emptyFrom = JSON.parse(raw).emptyFrom;
+  return typeof emptyFrom === "number" ? { emptyFrom } : null;
 }
 
 // emptyFrom is the left edge of the confirmed-empty window: queryTime - maxAge.
@@ -400,18 +347,11 @@ export async function setCachedNegative(
   if (client === null || !useIndexNegativeCache) {
     return;
   }
-  try {
-    await client.set(
-      negKeyFor(variantKey),
-      JSON.stringify({ emptyFrom }),
-      "PX",
-      NEGATIVE_TTL_MS,
-    );
-  } catch (error) {
-    indexCacheErrorCounter.inc({ op: "negative_write" });
-    logger.warn("Index cache negative write failed", {
-      module: "index-cache",
-      error,
-    });
-  }
+
+  await client.set(
+    negKeyFor(variantKey),
+    JSON.stringify({ emptyFrom }),
+    "PX",
+    NEGATIVE_TTL_MS,
+  );
 }

@@ -372,9 +372,7 @@ export async function scrapeController(
       } catch (e) {
         if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
           reconciledKeylessCredits = true;
-          adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
-            () => {},
-          );
+          await adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits);
         }
 
         const timeoutErr =
@@ -562,10 +560,10 @@ export async function scrapeController(
       if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
         reconciledKeylessCredits = true;
         const actualKeylessCredits = doc?.metadata?.creditsUsed ?? 0;
-        adjustKeylessCredits(
+        await adjustKeylessCredits(
           req.auth.team_id,
           actualKeylessCredits - reservedKeylessCredits,
-        ).catch(() => {});
+        );
         logKeylessCreditUsage(req.auth.team_id, actualKeylessCredits).catch(
           () => {},
         );

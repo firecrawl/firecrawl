@@ -220,9 +220,8 @@ describe("isNegativeStillValid", () => {
   });
 });
 
-describe("index cache fail-open", () => {
-  // Points at a port nothing listens on: every operation must resolve (not
-  // throw, not hang) so the read path can fall back to Postgres.
+describe("index cache error propagation", () => {
+  // A disconnected Redis client must reject cache operations.
   let deadClient: IORedis;
 
   beforeAll(() => {
@@ -240,34 +239,31 @@ describe("index cache fail-open", () => {
     deadClient.disconnect();
   });
 
-  it("getCachedIndexEntries resolves to error status", async () => {
-    const result = await getCachedIndexEntries(
-      "idxc:test",
-      undefined,
-      deadClient,
-    );
-    expect(result.status).toBe("error");
+  it("propagates read failures", async () => {
+    await expect(
+      getCachedIndexEntries("idxc:test", undefined, deadClient),
+    ).rejects.toThrow();
   }, 5000);
 
-  it("upsertCachedIndexEntries resolves without throwing", async () => {
+  it("propagates write failures", async () => {
     await expect(
       upsertCachedIndexEntries("idxc:test", [entry()], undefined, deadClient),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow();
   }, 5000);
 
-  it("getCachedMaxAge resolves to null", async () => {
+  it("propagates max age read failures", async () => {
     await expect(
       getCachedMaxAge(urlHash, undefined, deadClient),
-    ).resolves.toBeNull();
+    ).rejects.toThrow();
   }, 5000);
 
-  it("getCachedNegative resolves to null (disabled or dead) and never throws", async () => {
+  it("disabled negative cache returns null", async () => {
     await expect(
       getCachedNegative("idxc:test", undefined, deadClient),
     ).resolves.toBeNull();
   }, 5000);
 
-  it("setCachedNegative resolves without throwing", async () => {
+  it("disabled negative cache skips writes", async () => {
     await expect(
       setCachedNegative("idxc:test", Date.now(), undefined, deadClient),
     ).resolves.toBeUndefined();

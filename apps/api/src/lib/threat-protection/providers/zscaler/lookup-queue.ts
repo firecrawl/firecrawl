@@ -1,4 +1,4 @@
-import { redisErrorDetails, isRedlockContention } from "../../../redis-errors";
+import { isRedlockContention } from "../../../redis-errors";
 import { checkedRedisExec } from "../../../redis-errors";
 import { randomUUID } from "crypto";
 import { RateLimiterRedis, RateLimiterRes } from "rate-limiter-flexible";
@@ -180,15 +180,9 @@ export async function enqueueZscalerLookup(
   // ZIA tenant, which needs the org's credentials (60s-cached read).
   const credentials = await getOrgZscalerCredentials(orgId);
   if (credentials) {
-    const budgetState = await getHourlyBudget()
-      .get(zscalerBudgetKey(credentials))
-      .catch(error => {
-        logger.warn("Zscaler budget preflight failed", {
-          ...redisErrorDetails(error),
-          orgId,
-        });
-        return null;
-      });
+    const budgetState = await getHourlyBudget().get(
+      zscalerBudgetKey(credentials),
+    );
     if (budgetState && budgetState.consumedPoints >= LOOKUP_HOURLY_BUDGET) {
       throw new ZscalerError(
         "quota",
@@ -205,7 +199,7 @@ export async function enqueueZscalerLookup(
     at: Date.now(),
   };
   await redisRateLimitClient.rpush(queueKey(orgId), JSON.stringify(entry));
-  ensureQueueDrainer(orgId);
+  await ensureQueueDrainer(orgId);
 
   let lastDrainerCheck = Date.now();
   for (;;) {
@@ -218,9 +212,7 @@ export async function enqueueZscalerLookup(
 
     const raw = await redisRateLimitClient.get(replyKey(entry.id));
     if (raw !== null) {
-      redisRateLimitClient.del(replyKey(entry.id)).catch(error => {
-        logger.warn("Zscaler reply cleanup failed", redisErrorDetails(error));
-      });
+      await redisRateLimitClient.del(replyKey(entry.id));
       let payload: ReplyPayload;
       try {
         payload = JSON.parse(raw) as ReplyPayload;
@@ -260,7 +252,7 @@ export async function enqueueZscalerLookup(
     // within DRAIN_LOCK_TTL_MS); periodically try to become / revive it.
     if (Date.now() - lastDrainerCheck >= DRAINER_REENSURE_INTERVAL_MS) {
       lastDrainerCheck = Date.now();
-      ensureQueueDrainer(orgId);
+      await ensureQueueDrainer(orgId);
     }
 
     await sleep(REPLY_POLL_INTERVAL_MS);
@@ -271,22 +263,17 @@ export async function enqueueZscalerLookup(
 // Drainer side
 // =========================================
 
-const drainersInFlight = new Set<string>();
+const drainersInFlight = new Map<string, Promise<void>>();
 
-/** Fire-and-forget: try to become the org's queue drainer. */
-function ensureQueueDrainer(orgId: string): void {
-  if (drainersInFlight.has(orgId)) return;
-  drainersInFlight.add(orgId);
-  drainQueue(orgId)
-    .catch(error => {
-      logger.warn("Zscaler lookup queue drainer failed", {
-        ...redisErrorDetails(error),
-        orgId,
-      });
-    })
-    .finally(() => {
-      drainersInFlight.delete(orgId);
-    });
+/** Share the local drainer result so Redis failures reach waiting requests. */
+function ensureQueueDrainer(orgId: string): Promise<void> {
+  const existing = drainersInFlight.get(orgId);
+  if (existing) return existing;
+  const promise = drainQueue(orgId).finally(() => {
+    drainersInFlight.delete(orgId);
+  });
+  drainersInFlight.set(orgId, promise);
+  return promise;
 }
 
 async function popBatch(orgId: string): Promise<QueueEntry[]> {
@@ -346,15 +333,18 @@ async function drainQueue(orgId: string): Promise<void> {
       retryCount: 0,
     });
   } catch (error) {
-    // Contention is expected. Other lock failures must reach the drainer logger.
+    // Contention is expected. Other lock failures must reach the caller.
     if (await isRedlockContention(error)) return;
     throw error;
   }
 
+  const failures: unknown[] = [];
   try {
     const credentials = await getOrgZscalerCredentials(orgId);
 
-    for (;;) {
+    // Yield after one batch so waiting requests can consume their own replies
+    // even when other callers continuously add work to the org queue.
+    {
       let entries = await popBatch(orgId);
       if (entries.length === 0) {
         // A URL enqueued a moment after our pop should not wait for the next
@@ -371,91 +361,60 @@ async function drainQueue(orgId: string): Promise<void> {
         await replyAll(expired, () => ({
           status: "error",
           message: "The lookup request expired before the batch was sent",
-        })).catch(error => {
-          logger.warn("Failed to deliver Zscaler error replies", {
-            ...redisErrorDetails(error),
-            orgId,
-          });
-        });
+        }));
         entries = entries.filter(entry => !isExpired(entry));
-        if (entries.length === 0) continue;
+        if (entries.length === 0) return;
       }
 
       // From here on the popped entries are this drainer's responsibility:
-      // an unexpected throw (Redis blip, expired lock) must not orphan them
-      // into their full wait timeout — reply an error first, then unwind.
+      // Redis failures propagate to the requests awaiting this drainer.
+
+      lock = await lock.extend(DRAIN_LOCK_TTL_MS);
+
+      if (!credentials) {
+        await replyAll(entries, () => ({
+          status: "error",
+          message: "No Zscaler credentials are configured for this org",
+        }));
+        return;
+      }
+
+      // Hourly budget: one point per urlLookup CALL, keyed by the ZIA
+      // tenant. When it is gone, this loop keeps popping and answers
+      // everything "quota" without touching the tenant, so waiting scrapes
+      // resolve immediately via failurePolicy.
+      const budgetKey = zscalerBudgetKey(credentials);
       try {
-        lock = await lock.extend(DRAIN_LOCK_TTL_MS);
-
-        if (!credentials) {
-          await replyAll(entries, () => ({
-            status: "error",
-            message: "No Zscaler credentials are configured for this org",
-          }));
-          continue;
+        await getHourlyBudget().consume(budgetKey, 1);
+      } catch (rejection) {
+        if (rejection instanceof RateLimiterRes) {
+          await replyAll(entries, () => ({ status: "quota" }));
+          return;
         }
+        throw rejection;
+      }
 
-        // Hourly budget: one point per urlLookup CALL, keyed by the ZIA
-        // tenant. When it is gone, this loop keeps popping and answers
-        // everything "quota" without touching the tenant, so waiting scrapes
-        // resolve immediately via failurePolicy.
-        const budgetKey = zscalerBudgetKey(credentials);
+      // 1 call/second pacer.
+      for (;;) {
         try {
-          await getHourlyBudget().consume(budgetKey, 1);
+          await getPerSecondPacer().consume(budgetKey, 1);
+          break;
         } catch (rejection) {
           if (rejection instanceof RateLimiterRes) {
-            await replyAll(entries, () => ({ status: "quota" }));
+            await sleep(Math.max(rejection.msBeforeNext, 50));
             continue;
           }
           throw rejection;
         }
-
-        // 1 call/second pacer.
-        for (;;) {
-          try {
-            await getPerSecondPacer().consume(budgetKey, 1);
-            break;
-          } catch (rejection) {
-            if (rejection instanceof RateLimiterRes) {
-              await sleep(Math.max(rejection.msBeforeNext, 50));
-              continue;
-            }
-            throw rejection;
-          }
-        }
-      } catch (error) {
-        await replyAll(entries, () => ({
-          status: "error",
-          message: "Zscaler lookup drainer failed before the batch was sent",
-        })).catch(error => {
-          logger.warn("Failed to deliver Zscaler error replies", {
-            ...redisErrorDetails(error),
-            orgId,
-          });
-        });
-        throw error;
       }
 
       const uniqueUrls = [...new Set(entries.map(entry => entry.url))];
+      let results: Awaited<ReturnType<typeof zscalerLookupUrls>>;
       try {
-        const results = await zscalerLookupUrls(credentials, uniqueUrls, {
-          signal: AbortSignal.timeout(LOOKUP_CALL_TIMEOUT_MS),
-        });
-        const byUrl = new Map(results.map(result => [result.url, result]));
-        await replyAll(entries, entry => {
-          const result = byUrl.get(entry.url);
-          if (!result) {
-            return {
-              status: "error",
-              message: "Zscaler returned no verdict for this URL",
-            };
-          }
-          return {
-            status: "ok",
-            urlClassifications: result.urlClassifications,
-            urlClassificationsWithSecurityAlert:
-              result.urlClassificationsWithSecurityAlert,
-          };
+        results = await zscalerLookupUrls(credentials, uniqueUrls, {
+          signal: AbortSignal.timeout(
+            Math.min(LOOKUP_CALL_TIMEOUT_MS, ZSCALER_LOOKUP_TIMEOUT_MS),
+          ),
         });
       } catch (error) {
         const zscalerError =
@@ -485,14 +444,38 @@ async function drainQueue(orgId: string): Promise<void> {
           status: "error",
           message: zscalerError.message,
         }));
+        return;
       }
-    }
-  } finally {
-    await lock.release().catch(error => {
-      logger.warn("Failed to release Zscaler drainer lock", {
-        ...redisErrorDetails(error),
-        orgId,
+      const byUrl = new Map(results.map(result => [result.url, result]));
+      await replyAll(entries, entry => {
+        const result = byUrl.get(entry.url);
+        if (!result) {
+          return {
+            status: "error",
+            message: "Zscaler returned no verdict for this URL",
+          };
+        }
+        return {
+          status: "ok",
+          urlClassifications: result.urlClassifications,
+          urlClassificationsWithSecurityAlert:
+            result.urlClassificationsWithSecurityAlert,
+        };
       });
-    });
+    }
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    try {
+      await lock.release();
+    } catch (error) {
+      failures.push(error);
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(
+        failures,
+        "Zscaler lookup and lock release failed",
+      );
   }
 }

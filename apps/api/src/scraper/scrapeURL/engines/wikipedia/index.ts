@@ -1,4 +1,3 @@
-import { redisErrorDetails } from "../../../../lib/redis-errors";
 import * as undici from "undici";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
@@ -16,32 +15,17 @@ const REDIS_AUTH_LOCK_KEY = "lock:wikipedia_enterprise:auth";
 async function getAccessToken(logger: Meta["logger"]): Promise<string> {
   const redis = getRedisConnection();
 
-  try {
-    const cached = await redis.get(REDIS_TOKEN_KEY);
-    if (cached) {
-      return cached;
-    }
-  } catch (error) {
-    logger.warn(
-      "Failed to read Wikipedia token from Redis, will re-authenticate",
-      { error },
-    );
-  }
+  const cached = await redis.get(REDIS_TOKEN_KEY);
+  if (cached) return cached;
 
   // Acquire a distributed lock so only one instance authenticates at a time.
   // Others wait and then read the token from Redis.
   return await redlock.using([REDIS_AUTH_LOCK_KEY], 10000, async signal => {
     // Double-check: another instance may have authenticated while we waited for the lock
-    try {
-      const cached = await redis.get(REDIS_TOKEN_KEY);
-      if (cached) {
-        return cached;
-      }
-    } catch (error) {
-      logger.warn(
-        "Wikipedia token cache read failed",
-        redisErrorDetails(error),
-      );
+
+    const cached = await redis.get(REDIS_TOKEN_KEY);
+    if (cached) {
+      return cached;
     }
 
     const username = config.WIKIPEDIA_ENTERPRISE_USERNAME;
@@ -79,26 +63,14 @@ async function getAccessToken(logger: Meta["logger"]): Promise<string> {
 
     const ttlSeconds = Math.max(data.expires_in - 300, 60);
 
-    try {
-      await redis.set(REDIS_TOKEN_KEY, data.access_token, "EX", ttlSeconds);
-    } catch (error) {
-      logger.warn("Failed to cache Wikipedia token in Redis", { error });
-    }
+    await redis.set(REDIS_TOKEN_KEY, data.access_token, "EX", ttlSeconds);
 
     return data.access_token;
   });
 }
 
-function clearCachedToken(logger: Meta["logger"]): void {
-  try {
-    getRedisConnection()
-      .del(REDIS_TOKEN_KEY)
-      .catch(error => {
-        logger.warn("Failed to clear Wikipedia token from Redis", { error });
-      });
-  } catch {
-    logger.warn("Failed to clear Wikipedia token from Redis");
-  }
+async function clearCachedToken(): Promise<void> {
+  await getRedisConnection().del(REDIS_TOKEN_KEY);
 }
 
 // Maps Wikimedia project hostnames to project identifiers used by the Enterprise API.
@@ -290,7 +262,7 @@ export async function scrapeURLWithWikipedia(
   }
 
   if (response.status === 401 || response.status === 403) {
-    clearCachedToken(meta.logger);
+    await clearCachedToken();
     throw new EngineError(
       `Wikipedia Enterprise API authorization failed (${response.status}). Check credentials.`,
     );

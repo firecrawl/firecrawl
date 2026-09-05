@@ -184,12 +184,12 @@ describe("prompt usage tracking", () => {
       );
     });
 
-    it("does not throw on Redis failure", async () => {
+    it("propagates Redis failure", async () => {
       mockSetValue.mockRejectedValueOnce(new Error("Redis down"));
 
-      await expect(
-        markBrowserSessionUsedPrompt("session-123"),
-      ).resolves.not.toThrow();
+      await expect(markBrowserSessionUsedPrompt("session-123")).rejects.toThrow(
+        "Redis down",
+      );
     });
   });
 
@@ -211,11 +211,12 @@ describe("prompt usage tracking", () => {
       expect(result).toBe(false);
     });
 
-    it("returns false on Redis failure (graceful fallback to browser rate)", async () => {
+    it("propagates Redis read failure", async () => {
       mockGetValue.mockRejectedValueOnce(new Error("Redis down"));
 
-      const result = await didBrowserSessionUsePrompt("session-123");
-      expect(result).toBe(false);
+      await expect(didBrowserSessionUsePrompt("session-123")).rejects.toThrow(
+        "Redis down",
+      );
     });
   });
 
@@ -228,12 +229,12 @@ describe("prompt usage tracking", () => {
       );
     });
 
-    it("does not throw on Redis failure", async () => {
+    it("propagates Redis failure", async () => {
       mockDeleteKey.mockRejectedValueOnce(new Error("Redis down"));
 
       await expect(
         clearBrowserSessionPromptFlag("session-123"),
-      ).resolves.not.toThrow();
+      ).rejects.toThrow("Redis down");
     });
   });
 });
@@ -271,18 +272,10 @@ describe("billing rate selection", () => {
     expect(credits).toBe(10);
   });
 
-  it("falls back to 120/hr when Redis is down", async () => {
-    mockGetValue.mockRejectedValueOnce(new Error("Redis down"));
-
-    const usedPrompt = await didBrowserSessionUsePrompt("session-123");
-    const rate = usedPrompt
-      ? INTERACT_CREDITS_PER_HOUR
-      : BROWSER_CREDITS_PER_HOUR;
-    const credits = calculateBrowserSessionCredits(5 * 60_000, rate);
-
-    expect(usedPrompt).toBe(false);
-    expect(rate).toBe(120);
-    expect(credits).toBe(10);
+  it("propagates Redis failure instead of selecting a fallback billing rate", async () => {
+    const error = new Error("Redis down");
+    mockGetValue.mockRejectedValueOnce(error);
+    await expect(didBrowserSessionUsePrompt("session-123")).rejects.toBe(error);
   });
 
   it("full flow: mark → check → bill → clear", async () => {

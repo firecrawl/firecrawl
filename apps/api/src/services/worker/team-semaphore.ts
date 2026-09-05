@@ -1,4 +1,3 @@
-import { redisErrorDetails } from "../../lib/redis-errors";
 import {
   pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
@@ -182,33 +181,16 @@ function startHeartbeat(
     });
 
   const promise = (async () => {
-    try {
-      while (!stopped) {
-        await mirrorSlotAcquire(teamId, holderId, mirrorState).catch(error => {
-          _logger.warn("Failed to update concurrency limit active job", {
-            ...redisErrorDetails(error),
-            teamId,
-            jobId: holderId,
-          });
-        });
-        if (stopped) break;
-
-        const ok = await heartbeat(teamId, holderId);
-        if (!ok) {
-          throw new TransportableError("SCRAPE_TIMEOUT", "heartbeat_failed");
-        }
-        if (stopped) break;
-        await sleep(intervalMs);
+    while (!stopped) {
+      await mirrorSlotAcquire(teamId, holderId, mirrorState);
+      if (stopped) break;
+      const ok = await heartbeat(teamId, holderId);
+      if (!ok) {
+        throw new TransportableError("SCRAPE_TIMEOUT", "heartbeat_failed");
       }
-    } catch (error) {
-      if (!stopped) {
-        _logger.error("Error in semaphore heartbeat loop", { error });
-      }
+      if (stopped) break;
+      await sleep(intervalMs);
     }
-
-    return Promise.reject(
-      new Error("heartbeat loop stopped unexpectedly"),
-    ) as never;
   })();
 
   return {
@@ -216,7 +198,7 @@ function startHeartbeat(
     async stop() {
       stopped = true;
       wake?.();
-      await promise.catch(() => {});
+      await promise;
     },
   };
 }
@@ -248,6 +230,7 @@ async function mirrorSlotAcquire(
   state: MirrorState,
 ): Promise<void> {
   const backend = await resolveMirrorBackend(teamId);
+  state.touched.add(backend);
   if (backend === "fdb") {
     await optionalFdbSlot(() =>
       externalSlotsFdb.acquire(teamId, holderId, 60 * 1000),
@@ -309,37 +292,43 @@ async function withSemaphore<T>(
 
   const endTimer = semaphoreHoldDuration.startTimer();
   const mirrorState: MirrorState = { touched: new Set() };
-  let hb: ReturnType<typeof startHeartbeat> | null = null;
+  const heartbeatState: { current: ReturnType<typeof startHeartbeat> | null } =
+    { current: null };
 
   activeSemaphores.inc();
-  try {
-    await mirrorSlotAcquire(teamId, holderId, mirrorState);
-    hb = startHeartbeat(teamId, holderId, SEMAPHORE_TTL / 2, mirrorState);
-
-    const result = await Promise.race([func(limited), hb.promise]);
-    return result;
-  } finally {
-    await hb?.stop();
-
-    await mirrorSlotRelease(teamId, holderId, mirrorState).catch(error => {
-      _logger.warn("Failed to remove concurrency limit active job", {
-        ...redisErrorDetails(error),
+  const [work] = await Promise.allSettled([
+    (async () => {
+      await mirrorSlotAcquire(teamId, holderId, mirrorState);
+      heartbeatState.current = startHeartbeat(
         teamId,
-        jobId: holderId,
-      });
-    });
-
-    activeSemaphores.dec();
-    endTimer();
-
-    await release(teamId, holderId).catch(error => {
-      _logger.warn("Failed to release team semaphore", {
-        ...redisErrorDetails(error),
-        teamId,
-        jobId: holderId,
-      });
-    });
-  }
+        holderId,
+        SEMAPHORE_TTL / 2,
+        mirrorState,
+      );
+      return await Promise.race([
+        func(limited),
+        heartbeatState.current.promise.then(() => new Promise<never>(() => {})),
+      ]);
+    })(),
+  ]);
+  const stopped = await Promise.allSettled([heartbeatState.current?.stop()]);
+  const cleanup = await Promise.allSettled([
+    mirrorSlotRelease(teamId, holderId, mirrorState),
+    release(teamId, holderId),
+  ]);
+  activeSemaphores.dec();
+  endTimer();
+  const errors = [
+    ...new Set(
+      [work, ...stopped, ...cleanup].flatMap(result =>
+        result.status === "rejected" ? [result.reason] : [],
+      ),
+    ),
+  ];
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1)
+    throw new AggregateError(errors, "Semaphore work and cleanup failed");
+  return (work as PromiseFulfilledResult<T>).value;
 }
 
 const getMetrics = async () => {

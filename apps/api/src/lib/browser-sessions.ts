@@ -1,4 +1,3 @@
-import { redisErrorDetails } from "./redis-errors";
 import { and, desc, eq } from "drizzle-orm";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { db } from "../db/connection";
@@ -296,44 +295,20 @@ function promptFlagKey(sessionId: string): string {
 export async function markBrowserSessionUsedPrompt(
   sessionId: string,
 ): Promise<void> {
-  try {
-    await setValue(promptFlagKey(sessionId), "1", PROMPT_FLAG_TTL_SECONDS);
-  } catch (error) {
-    logger.warn(
-      "Failed to save browser prompt usage; using standard billing rate",
-      redisErrorDetails(error),
-    );
-    // Redis down — non-fatal, will fall back to standard rate at billing time
-  }
+  await setValue(promptFlagKey(sessionId), "1", PROMPT_FLAG_TTL_SECONDS);
 }
 
 export async function didBrowserSessionUsePrompt(
   sessionId: string,
 ): Promise<boolean> {
-  try {
-    const val = await getValue(promptFlagKey(sessionId));
-    return val === "1";
-  } catch (error) {
-    logger.warn(
-      "Failed to read browser prompt usage; using standard billing rate",
-      redisErrorDetails(error),
-    );
-    return false;
-  }
+  const val = await getValue(promptFlagKey(sessionId));
+  return val === "1";
 }
 
 export async function clearBrowserSessionPromptFlag(
   sessionId: string,
 ): Promise<void> {
-  try {
-    await deleteKey(promptFlagKey(sessionId));
-  } catch (error) {
-    logger.warn(
-      "Failed to clear browser prompt usage",
-      redisErrorDetails(error),
-    );
-    // non-fatal
-  }
+  await deleteKey(promptFlagKey(sessionId));
 }
 
 // ---------------------------------------------------------------------------
@@ -347,13 +322,5 @@ export async function clearBrowserSessionPromptFlag(
 export async function invalidateActiveBrowserSessionCount(
   teamId: string,
 ): Promise<void> {
-  try {
-    await deleteKey(activeBrowserCountKey(teamId));
-  } catch (error) {
-    logger.warn(
-      "Failed to invalidate browser session count",
-      redisErrorDetails(error),
-    );
-    // Redis down — non-fatal
-  }
+  await deleteKey(activeBrowserCountKey(teamId));
 }

@@ -1,4 +1,3 @@
-import { redisErrorDetails } from "./redis-errors";
 import { createHmac } from "node:crypto";
 import { isIPv4 } from "node:net";
 import { v5 as uuidv5 } from "uuid";
@@ -140,12 +139,7 @@ function positiveRedisTtl(ttl: number): number | undefined {
  * authentication failure.
  */
 async function retryAfterSecondsFor(key: string): Promise<number | undefined> {
-  try {
-    return positiveRedisTtl(await redisRateLimitClient.ttl(key));
-  } catch (error) {
-    logger.warn("Failed to read keyless quota TTL", redisErrorDetails(error));
-    return undefined;
-  }
+  return positiveRedisTtl(await redisRateLimitClient.ttl(key));
 }
 
 /** Structured response for projected-credit reservation exhaustion. */
@@ -286,6 +280,7 @@ return {1, total}
 export async function adjustKeylessCredits(
   teamId: string,
   deltaCredits: number,
+  adjustmentId?: string,
 ): Promise<number | null> {
   const ip = keylessIpFromTeamId(teamId);
   if (!ip || !Number.isFinite(deltaCredits) || deltaCredits === 0) return null;
@@ -300,15 +295,22 @@ export async function adjustKeylessCredits(
 local current = tonumber(redis.call("GET", KEYS[1]) or "0")
 local delta = tonumber(ARGV[1])
 local ttl = tonumber(ARGV[2])
+if KEYS[2] and redis.call("EXISTS", KEYS[2]) == 1 then return current end
 local next = current + delta
 if next < 0 then
   next = 0
 end
-redis.call("SET", KEYS[1], next, "EX", ttl)
+if KEYS[2] then redis.call("SET", KEYS[2], "1", "EX", ttl) end
+local result = redis.pcall("SET", KEYS[1], next, "EX", ttl)
+if type(result) == "table" and result.err then
+  if KEYS[2] then redis.call("DEL", KEYS[2]) end
+  return redis.error_reply(result.err)
+end
 return next
 `,
-    1,
+    adjustmentId ? 2 : 1,
     key,
+    ...(adjustmentId ? [`keyless_adjustment:${ip}:${adjustmentId}`] : []),
     delta,
     DAY_SECONDS,
   )) as number;
@@ -343,37 +345,31 @@ export async function checkKeylessEligibility(ip: string): Promise<{
   if (await isKeylessIpSuspicious(ip)) {
     return { eligible: false, reason: "suspicious" };
   }
-  try {
-    const requestsUsed = parseInt(
-      (await redisRateLimitClient.get(requestsKey(ip))) ?? "0",
-      10,
-    );
-    if (requestsUsed >= (KEYLESS_REQUESTS_PER_DAY ?? 0)) {
-      return {
-        eligible: false,
-        reason: "requests",
-        retryAfterSeconds: await retryAfterSecondsFor(requestsKey(ip)),
-      };
-    }
-    const creditKey = creditsKey(ip);
-    const creditsUsed = parseInt(
-      (await redisRateLimitClient.get(creditKey)) ?? "0",
-      10,
-    );
-    if (creditsUsed >= (KEYLESS_CREDITS_PER_DAY ?? 0)) {
-      return {
-        eligible: false,
-        reason: "credits",
-        retryAfterSeconds: await retryAfterSecondsFor(creditKey),
-      };
-    }
-    return { eligible: true };
-  } catch (error) {
-    logger.warn("Failed to check keyless quota", redisErrorDetails(error));
-    // Limiter store unavailable — fail closed so the MCP returns structured
-    // recovery rather than granting unbounded keyless access.
-    return { eligible: false, reason: "error" };
+
+  const requestsUsed = parseInt(
+    (await redisRateLimitClient.get(requestsKey(ip))) ?? "0",
+    10,
+  );
+  if (requestsUsed >= (KEYLESS_REQUESTS_PER_DAY ?? 0)) {
+    return {
+      eligible: false,
+      reason: "requests",
+      retryAfterSeconds: await retryAfterSecondsFor(requestsKey(ip)),
+    };
   }
+  const creditKey = creditsKey(ip);
+  const creditsUsed = parseInt(
+    (await redisRateLimitClient.get(creditKey)) ?? "0",
+    10,
+  );
+  if (creditsUsed >= (KEYLESS_CREDITS_PER_DAY ?? 0)) {
+    return {
+      eligible: false,
+      reason: "credits",
+      retryAfterSeconds: await retryAfterSecondsFor(creditKey),
+    };
+  }
+  return { eligible: true };
 }
 
 /**
@@ -441,8 +437,7 @@ export async function logKeylessCreditUsage(
  * Add the actual credits a completed request consumed to the IP's daily credit
  * counter, and record the request in `keyless_credit_usage`. The counter is only
  * touched for positive credits, so a zero-credit operation becomes observable
- * without drawing down any budget. No-op for non-keyless teams. Best-effort;
- * never throws. Used by the worker for the non-reserved path; the controllers
+ * without drawing down any budget. No-op for non-keyless teams. Redis failures propagate. Used by the worker for the non-reserved path; the controllers
  * reserve up front and call `logKeylessCreditUsage` directly at reconciliation.
  */
 export async function chargeKeylessCredits(
@@ -454,22 +449,17 @@ export async function chargeKeylessCredits(
 
   if (credits > 0) {
     const inc = Math.ceil(credits);
-    try {
-      const key = creditsKey(ip);
-      await redisRateLimitClient.eval(
-        `local total = redis.call("INCRBY", KEYS[1], ARGV[1])
+
+    const key = creditsKey(ip);
+    await redisRateLimitClient.eval(
+      `local total = redis.call("INCRBY", KEYS[1], ARGV[1])
          if total == tonumber(ARGV[1]) then redis.call("EXPIRE", KEYS[1], ARGV[2]) end
          return total`,
-        1,
-        key,
-        inc,
-        DAY_SECONDS,
-      );
-    } catch (error) {
-      logger.warn("Failed to charge keyless credits", redisErrorDetails(error));
-      // Counter is best-effort; a missed charge just means the IP gets a few
-      // extra free credits today.
-    }
+      1,
+      key,
+      inc,
+      DAY_SECONDS,
+    );
   }
 
   // Log the usage to keyless_credit_usage for abuse monitoring. Best-effort.

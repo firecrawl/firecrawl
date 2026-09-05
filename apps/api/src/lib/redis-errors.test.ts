@@ -1,8 +1,4 @@
-import {
-  checkedRedisExec,
-  redisErrorDetails,
-  isRedlockContention,
-} from "./redis-errors";
+import { checkedRedisExec, isRedlockContention } from "./redis-errors";
 import { ExecutionError, ResourceLockedError } from "redlock";
 
 describe("checkedRedisExec", () => {
@@ -17,35 +13,28 @@ describe("checkedRedisExec", () => {
     expect(await checkedRedisExec(Promise.resolve([]), "test")).toEqual([]);
   });
 
-  it("rejects a failed command even when adjacent commands succeeded", async () => {
+  it("throws the original command error even when adjacent commands succeeded", async () => {
+    const error = new Error("WRONGTYPE detailed command failure");
     await expect(
       checkedRedisExec(
         Promise.resolve([
           [null, 1],
-          [new Error("WRONGTYPE private-key"), null],
+          [error, null],
           [null, 1],
         ]),
         "test",
       ),
-    ).rejects.toThrow("test: command 1 failed (WRONGTYPE)");
+    ).rejects.toBe(error);
   });
 
-  it("rejects aborted transactions and transport errors without exposing payloads", async () => {
+  it("rejects aborted transactions and preserves original transport errors", async () => {
     await expect(
       checkedRedisExec(Promise.resolve(null), "test"),
     ).rejects.toThrow("no results");
-    await expect(
-      checkedRedisExec(Promise.reject(new Error("secret payload")), "test"),
-    ).rejects.toThrow("test: execution failed (unknown)");
-    expect(
-      JSON.stringify(
-        redisErrorDetails(
-          Object.assign(new Error("WRONGTYPE private-key"), {
-            command: { args: ["secret"] },
-          }),
-        ),
-      ),
-    ).not.toContain("secret");
+    const error = new Error("connection failed with original details");
+    await expect(checkedRedisExec(Promise.reject(error), "test")).rejects.toBe(
+      error,
+    );
   });
 
   it("distinguishes lock contention from command and mixed lock failures", async () => {
