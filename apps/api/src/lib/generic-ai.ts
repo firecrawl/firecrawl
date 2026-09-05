@@ -20,6 +20,7 @@ type Provider =
   | "deepinfra"
   | "vertex";
 const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
+const responsesOnlyOpenAIModelPrefixes = ["o1-pro", "o3-pro", "gpt-5-pro"];
 
 const providerList: Record<Provider, any> = {
   openai: createOpenAI({
@@ -58,8 +59,17 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
     name = "gemini-2.5-pro";
   }
   const modelName = config.MODEL_NAME || name;
-  // o3-mini returns empty text via the Responses API — force Chat Completions
-  if (provider === "openai" && modelName.startsWith("o3-mini")) {
+  const isResponsesOnlyOpenAIModel = responsesOnlyOpenAIModelPrefixes.some(
+    prefix => modelName === prefix || modelName.startsWith(`${prefix}-`),
+  );
+  // o3-mini returns empty text via the Responses API — force Chat Completions.
+  // Custom OpenAI-compatible backends (OPENAI_BASE_URL) often lack Responses API
+  // support and silently return empty `json` extractions — prefer Chat Completions.
+  if (
+    provider === "openai" &&
+    (modelName.startsWith("o3-mini") ||
+      (Boolean(config.OPENAI_BASE_URL) && !isResponsesOnlyOpenAIModel))
+  ) {
     return providerList.openai.chat(modelName);
   }
   return providerList[provider](modelName);
