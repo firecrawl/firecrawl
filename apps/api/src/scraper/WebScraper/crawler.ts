@@ -706,14 +706,14 @@ export class WebCrawler {
       count = deliveredCount;
     }
 
-    if (count > 0) {
+    if (!abort?.aborted && count > 0) {
       if (
         await redisEvictConnection.sadd(
           "sitemap:" + this.jobId + ":links",
           normalizeUrl(this.initialUrl),
         )
       ) {
-        await urlsHandler([this.initialUrl]);
+        if (!abort?.aborted) await urlsHandler([this.initialUrl]);
       }
       count++;
     }
@@ -724,7 +724,7 @@ export class WebCrawler {
       "NX",
     );
 
-    return count;
+    return abort?.aborted ? 0 : count;
   }
 
   public async filterURL(href: string, url: string): Promise<FilterResult> {

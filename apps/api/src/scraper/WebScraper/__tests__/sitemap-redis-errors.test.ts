@@ -205,3 +205,37 @@ it("returns the timeout fallback without waiting for a fetch and ignores its lat
     vi.useRealTimers();
   }
 });
+
+it("returns zero and skips the initial URL after caller cancellation discards sitemap URLs", async () => {
+  const abort = new AbortController();
+  mock.process.mockImplementation(async () => {
+    abort.abort();
+    return {
+      instructions: [{ action: "process", urls: ["https://example.com/page"] }],
+    };
+  });
+  mock.sadd.mockResolvedValue(1);
+  const handler = vi.fn();
+  await expect(
+    crawler().tryGetSitemap(handler, false, false, 1000, abort.signal),
+  ).resolves.toBe(0);
+  expect(mock.exec).not.toHaveBeenCalled();
+  expect(mock.sadd).not.toHaveBeenCalled();
+  expect(handler).not.toHaveBeenCalled();
+  expect(mock.expire).toHaveBeenCalledWith("sitemap:test:links", 3600, "NX");
+});
+
+it("skips initial URL dispatch if caller cancellation occurs during its Redis write", async () => {
+  const abort = new AbortController();
+  mock.sadd.mockImplementation(async () => {
+    abort.abort();
+    return 1;
+  });
+  const handler = vi.fn();
+  await expect(
+    crawler().tryGetSitemap(handler, false, false, 1000, abort.signal),
+  ).resolves.toBe(0);
+  expect(handler).toHaveBeenCalledOnce();
+  expect(handler).toHaveBeenCalledWith(["https://example.com/page"]);
+  expect(mock.expire).toHaveBeenCalledWith("sitemap:test:links", 3600, "NX");
+});
