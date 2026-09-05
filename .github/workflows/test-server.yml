@@ -418,7 +418,7 @@ jobs:
           cd logs
           zip -r logs.zip ./*
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: Logs (kubernetes, ${{ matrix.ai }}, ${{ matrix.search }}, ${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.nuq }})
@@ -584,7 +584,7 @@ jobs:
   #         echo "${{ secrets.LOG_ENCRYPTION_KEY }}" | gpg --batch --yes --passphrase-fd 0 -c logs.zip
   #         rm logs.zip
 
-  #     - uses: actions/upload-artifact@v4
+  #     - uses: actions/upload-artifact@v5
   #       if: always()
   #       with:
   #         name: Encrypted Logs
