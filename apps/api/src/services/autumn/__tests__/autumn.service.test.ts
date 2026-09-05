@@ -258,10 +258,13 @@ describe("ensureTeamProvisioned", () => {
     expect(mockEntityGet).toHaveBeenCalledTimes(1);
   });
 
-  it("marks team as ensured without a second getEntity when createEntity succeeds", async () => {
+  it.each([
+    { statusCode: 404 },
+    { status: 404 },
+    { response: { status: 404 } },
+  ])("creates and caches a missing entity after %j", async error => {
     const svc = makeService();
-    // First getEntity returns null → entity doesn't exist yet.
-    mockEntityGet.mockResolvedValue(null);
+    mockEntityGet.mockRejectedValue(error);
     mockEntityCreate.mockResolvedValue({ id: "team-1" });
 
     await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
@@ -269,14 +272,50 @@ describe("ensureTeamProvisioned", () => {
     // Only one getEntity call (no confirmation get).
     expect(mockEntityGet).toHaveBeenCalledTimes(1);
     expect(mockEntityCreate).toHaveBeenCalledTimes(1);
-    expect(mockEntityCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ featureId: "TEAM" }),
-    );
+    expect(mockEntityCreate).toHaveBeenCalledWith({
+      customerId: "org-1",
+      entityId: "team-1",
+      featureId: "TEAM",
+    });
+
+    await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
+    expect(mockEntityGet).toHaveBeenCalledTimes(1);
+    expect(mockEntityCreate).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    { statusCode: 429 },
+    { status: 429 },
+    { response: { status: 429 } },
+    { statusCode: 500 },
+    { status: 503 },
+    new Error("ECONNRESET"),
+  ])(
+    "does not create or cache an entity after lookup failure %j",
+    async error => {
+      const svc = makeService();
+      mockEntityGet.mockRejectedValueOnce(error);
+
+      // Provisioning remains best-effort: a lookup failure must not stop billing.
+      await expect(
+        svc.trackCredits({ teamId: "team-1", value: 5 }),
+      ).resolves.toBe(true);
+      expect(mockEntityCreate).not.toHaveBeenCalled();
+      expect(mockTrack).toHaveBeenCalledTimes(1);
+
+      // The failed lookup must not mark the team as provisioned; retry can recover.
+      await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
+      expect(mockEntityGet).toHaveBeenCalledTimes(2);
+      expect(mockEntityCreate).not.toHaveBeenCalled();
+
+      await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
+      expect(mockEntityGet).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("marks team as ensured on 409 conflict without a second getEntity", async () => {
     const svc = makeService();
-    mockEntityGet.mockResolvedValue(null);
+    mockEntityGet.mockRejectedValue({ statusCode: 404 });
     // createEntity returns null to simulate 409 — the mock throws a 409 error
     // to exercise the conflict branch inside createEntity.
     mockEntityCreate.mockRejectedValue(
@@ -294,7 +333,7 @@ describe("ensureTeamProvisioned", () => {
 
   it("does NOT mark team as ensured when createEntity has a genuine error", async () => {
     const svc = makeService();
-    mockEntityGet.mockResolvedValue(null);
+    mockEntityGet.mockRejectedValue({ statusCode: 404 });
     mockEntityCreate.mockRejectedValue(
       Object.assign(new Error("server error"), { status: 500 }),
     );

@@ -228,6 +228,11 @@ jobs:
           --reporter=default
         working-directory: apps/api
 
+      - name: Run Autumn entity provisioning regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: pnpm exec vitest run src/services/autumn/__tests__/autumn.service.test.ts --reporter=default
+        working-directory: apps/api
+
       - name: Install test site dependencies
         run: pnpm install --frozen-lockfile
         working-directory: apps/test-site

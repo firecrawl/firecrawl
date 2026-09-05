@@ -231,7 +231,9 @@ export class AutumnService {
         entityId,
         error,
       });
-      return null;
+      // Only a 404 establishes that the entity is missing. Let provisioning's
+      // catch handle other failures without attempting to create the entity.
+      throw error;
     }
   }
 
