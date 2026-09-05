@@ -59,11 +59,46 @@ function close(ws: WebSocket, code: number, msg: Message) {
   }
 }
 
+function isSocketOpen(ws: WebSocket) {
+  return ws.readyState === WebSocket.OPEN;
+}
+
 async function crawlStatusWS(
   ws: WebSocket,
   req: RequestWithAuth<CrawlStatusParams, undefined, undefined>,
 ) {
+  // Register lifecycle handlers before any await so a disconnect during
+  // getCrawl / catchup cannot miss the close event and leave polling running.
+  let doneJobIDs: string[] = [];
+  let finished = false;
+  let loopTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const stop = () => {
+    finished = true;
+    if (loopTimeout !== null) {
+      clearTimeout(loopTimeout);
+      loopTimeout = null;
+    }
+  };
+
+  // Prefer stop() on every early-exit path so a CLOSING socket clears any
+  // pending poll timeout even before the async `close` event runs.
+  const bailIfDisconnected = () => {
+    if (finished) return true;
+    if (!isSocketOpen(ws)) {
+      stop();
+      return true;
+    }
+    return false;
+  };
+
+  // Client disconnect / socket error must stop Redis+BullMQ polling (#4242).
+  ws.on("close", stop);
+  ws.on("error", stop);
+  if (bailIfDisconnected()) return;
+
   const sc = await getCrawl(req.params.jobId);
+  if (bailIfDisconnected()) return;
   if (!sc) {
     return close(ws, 1008, { type: "error", error: "Job not found" });
   }
@@ -72,15 +107,19 @@ async function crawlStatusWS(
     return close(ws, 3003, { type: "error", error: "Forbidden" });
   }
 
-  let doneJobIDs: string[] = [];
-  let finished = false;
+  const scheduleLoop = () => {
+    if (bailIfDisconnected()) return;
+    loopTimeout = setTimeout(loop, 1000);
+  };
 
   const loop = async () => {
-    if (finished) return;
+    if (bailIfDisconnected()) return;
 
     const jobIDs = await getCrawlJobs(req.params.jobId);
+    if (bailIfDisconnected()) return;
 
     if (jobIDs.length === doneJobIDs.length) {
+      stop();
       return close(ws, 1000, { type: "done" });
     }
 
@@ -92,11 +131,13 @@ async function crawlStatusWS(
         "failed",
       ])
     ).map(x => x.id);
+    if (bailIfDisconnected()) return;
 
     const newlyDoneJobs: PseudoJob<any>[] = await getJobs(
       newlyDoneJobIDs,
       logger,
     );
+    if (bailIfDisconnected()) return;
 
     for (const job of newlyDoneJobs) {
       if (job.returnvalue) {
@@ -110,19 +151,21 @@ async function crawlStatusWS(
     }
 
     doneJobIDs.push(...newlyDoneJobIDs);
-    setTimeout(loop, 1000);
+    scheduleLoop();
   };
 
-  setTimeout(loop, 1000);
+  scheduleLoop();
 
   let [_doneJobIDs, jobIDs, throttledJobsSet] = await Promise.all([
     getDoneJobsOrdered(req.params.jobId),
     getCrawlJobs(req.params.jobId),
     getConcurrencyLimitedJobs(req.auth.team_id),
   ]);
+  if (bailIfDisconnected()) return;
 
   doneJobIDs = _doneJobIDs;
   const jobs = new Map((await scrapeQueue.getJobs(jobIDs)).map(x => [x.id, x]));
+  if (bailIfDisconnected()) return;
 
   const validJobStatuses: [string, NuQJobStatus][] = [];
   const validJobIDs: string[] = [];
@@ -142,6 +185,7 @@ async function crawlStatusWS(
 
   // Check if the crawl failed during kickoff (e.g. queue full)
   const crawlError = await getCrawlError(req.params.jobId);
+  if (bailIfDisconnected()) return;
 
   let status: Exclude<CrawlStatusResponse, ErrorResponse>["status"] =
     sc.cancelled
@@ -157,6 +201,7 @@ async function crawlStatusWS(
   jobIDs = validJobIDs; // Use validJobIDs instead of jobIDs for further processing
 
   const doneJobs = await getJobs(doneJobIDs, logger);
+  if (bailIfDisconnected()) return;
   const data = doneJobs.map(x => x.returnvalue);
 
   if (status === "failed" && crawlError) {
@@ -173,7 +218,7 @@ async function crawlStatusWS(
         data: [],
       },
     });
-    finished = true;
+    stop();
     return close(ws, 1000, { type: "done" });
   }
 
@@ -189,9 +234,10 @@ async function crawlStatusWS(
       data: data,
     },
   });
+  if (bailIfDisconnected()) return;
 
   if (status !== "scraping") {
-    finished = true;
+    stop();
     return close(ws, 1000, { type: "done" });
   }
 }
@@ -201,8 +247,21 @@ export async function crawlStatusWSController(
   ws: WebSocket,
   req: RequestWithAuth<CrawlStatusParams, undefined, undefined>,
 ) {
+  // Observe disconnect during auth before crawlStatusWS registers its own
+  // handlers (close is not replayed).
+  let closedDuringAuth = false;
+  const markClosedDuringAuth = () => {
+    closedDuringAuth = true;
+  };
+  ws.on("close", markClosedDuringAuth);
+  ws.on("error", markClosedDuringAuth);
+
   try {
     const auth = await authenticateUser(req, null, RateLimiterMode.CrawlStatus);
+
+    if (closedDuringAuth || !isSocketOpen(ws)) {
+      return;
+    }
 
     if (!auth.success) {
       return close(ws, 3000, {
@@ -217,6 +276,10 @@ export async function crawlStatusWSController(
 
     await crawlStatusWS(ws, req);
   } catch (err) {
+    if (closedDuringAuth || !isSocketOpen(ws)) {
+      return;
+    }
+
     Sentry.captureException(err);
 
     const id = uuidv7();
@@ -243,5 +306,8 @@ export async function crawlStatusWSController(
       type: "error",
       error: getErrorContactMessage(id),
     });
+  } finally {
+    ws.off("close", markClosedDuringAuth);
+    ws.off("error", markClosedDuringAuth);
   }
 }
