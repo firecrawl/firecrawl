@@ -1,3 +1,4 @@
+import { redisErrorDetails } from "./redis-errors";
 import { and, desc, eq } from "drizzle-orm";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { db } from "../db/connection";
@@ -297,7 +298,11 @@ export async function markBrowserSessionUsedPrompt(
 ): Promise<void> {
   try {
     await setValue(promptFlagKey(sessionId), "1", PROMPT_FLAG_TTL_SECONDS);
-  } catch {
+  } catch (error) {
+    logger.warn(
+      "Failed to save browser prompt usage; using standard billing rate",
+      redisErrorDetails(error),
+    );
     // Redis down — non-fatal, will fall back to standard rate at billing time
   }
 }
@@ -308,7 +313,11 @@ export async function didBrowserSessionUsePrompt(
   try {
     const val = await getValue(promptFlagKey(sessionId));
     return val === "1";
-  } catch {
+  } catch (error) {
+    logger.warn(
+      "Failed to read browser prompt usage; using standard billing rate",
+      redisErrorDetails(error),
+    );
     return false;
   }
 }
@@ -318,7 +327,11 @@ export async function clearBrowserSessionPromptFlag(
 ): Promise<void> {
   try {
     await deleteKey(promptFlagKey(sessionId));
-  } catch {
+  } catch (error) {
+    logger.warn(
+      "Failed to clear browser prompt usage",
+      redisErrorDetails(error),
+    );
     // non-fatal
   }
 }
@@ -336,7 +349,11 @@ export async function invalidateActiveBrowserSessionCount(
 ): Promise<void> {
   try {
     await deleteKey(activeBrowserCountKey(teamId));
-  } catch {
+  } catch (error) {
+    logger.warn(
+      "Failed to invalidate browser session count",
+      redisErrorDetails(error),
+    );
     // Redis down — non-fatal
   }
 }

@@ -1,3 +1,5 @@
+import { redisErrorDetails, isRedlockContention } from "../../../redis-errors";
+import { checkedRedisExec } from "../../../redis-errors";
 import { randomUUID } from "crypto";
 import { RateLimiterRedis, RateLimiterRes } from "rate-limiter-flexible";
 import { logger as _logger } from "../../../logger";
@@ -180,7 +182,13 @@ export async function enqueueZscalerLookup(
   if (credentials) {
     const budgetState = await getHourlyBudget()
       .get(zscalerBudgetKey(credentials))
-      .catch(() => null);
+      .catch(error => {
+        logger.warn("Zscaler budget preflight failed", {
+          ...redisErrorDetails(error),
+          orgId,
+        });
+        return null;
+      });
     if (budgetState && budgetState.consumedPoints >= LOOKUP_HOURLY_BUDGET) {
       throw new ZscalerError(
         "quota",
@@ -210,7 +218,9 @@ export async function enqueueZscalerLookup(
 
     const raw = await redisRateLimitClient.get(replyKey(entry.id));
     if (raw !== null) {
-      redisRateLimitClient.del(replyKey(entry.id)).catch(() => {});
+      redisRateLimitClient.del(replyKey(entry.id)).catch(error => {
+        logger.warn("Zscaler reply cleanup failed", redisErrorDetails(error));
+      });
       let payload: ReplyPayload;
       try {
         payload = JSON.parse(raw) as ReplyPayload;
@@ -269,7 +279,10 @@ function ensureQueueDrainer(orgId: string): void {
   drainersInFlight.add(orgId);
   drainQueue(orgId)
     .catch(error => {
-      logger.warn("Zscaler lookup queue drainer failed", { error, orgId });
+      logger.warn("Zscaler lookup queue drainer failed", {
+        ...redisErrorDetails(error),
+        orgId,
+      });
     })
     .finally(() => {
       drainersInFlight.delete(orgId);
@@ -323,7 +336,7 @@ async function replyAll(
       REPLY_TTL_SECONDS,
     );
   }
-  await pipeline.exec();
+  await checkedRedisExec(pipeline.exec(), "Zscaler replies");
 }
 
 async function drainQueue(orgId: string): Promise<void> {
@@ -332,9 +345,10 @@ async function drainQueue(orgId: string): Promise<void> {
     lock = await redlock.acquire([drainLockKey(orgId)], DRAIN_LOCK_TTL_MS, {
       retryCount: 0,
     });
-  } catch {
-    // Another process is draining this org.
-    return;
+  } catch (error) {
+    // Contention is expected. Other lock failures must reach the drainer logger.
+    if (await isRedlockContention(error)) return;
+    throw error;
   }
 
   try {
@@ -357,7 +371,12 @@ async function drainQueue(orgId: string): Promise<void> {
         await replyAll(expired, () => ({
           status: "error",
           message: "The lookup request expired before the batch was sent",
-        })).catch(() => {});
+        })).catch(error => {
+          logger.warn("Failed to deliver Zscaler error replies", {
+            ...redisErrorDetails(error),
+            orgId,
+          });
+        });
         entries = entries.filter(entry => !isExpired(entry));
         if (entries.length === 0) continue;
       }
@@ -408,7 +427,12 @@ async function drainQueue(orgId: string): Promise<void> {
         await replyAll(entries, () => ({
           status: "error",
           message: "Zscaler lookup drainer failed before the batch was sent",
-        })).catch(() => {});
+        })).catch(error => {
+          logger.warn("Failed to deliver Zscaler error replies", {
+            ...redisErrorDetails(error),
+            orgId,
+          });
+        });
         throw error;
       }
 
@@ -464,6 +488,11 @@ async function drainQueue(orgId: string): Promise<void> {
       }
     }
   } finally {
-    await lock.release().catch(() => {});
+    await lock.release().catch(error => {
+      logger.warn("Failed to release Zscaler drainer lock", {
+        ...redisErrorDetails(error),
+        orgId,
+      });
+    });
   }
 }

@@ -1,3 +1,8 @@
+import { chunk } from "lodash";
+import {
+  checkedRedisExec,
+  REDIS_COMMAND_CHUNK_SIZE,
+} from "../lib/redis-errors";
 import crypto from "crypto";
 import IORedis from "ioredis";
 import { config } from "../config";
@@ -214,15 +219,20 @@ export async function upsertCachedIndexEntries(
       fields[entry.id] = JSON.stringify(entry);
     }
     const pipeline = client.pipeline();
-    pipeline.hset(key, fields);
+    for (const batch of chunk(
+      Object.entries(fields),
+      REDIS_COMMAND_CHUNK_SIZE,
+    )) {
+      pipeline.hset(key, Object.fromEntries(batch));
+    }
     pipeline.expire(key, ENTRY_TTL_SECONDS);
     // Writing positive entries invalidates any negative marker for this
     // variant — this is what keeps a surviving negative marker a proof that
     // nothing was inserted since it was set.
     pipeline.del(negKeyFor(key));
     pipeline.hlen(key);
-    const results = await pipeline.exec();
-    const hlen = results?.[3]?.[1];
+    const results = await checkedRedisExec(pipeline.exec(), "index cache");
+    const hlen = results.at(-1)?.[1];
     if (typeof hlen === "number" && hlen > ENTRY_CAP) {
       const raw = await client.hgetall(key);
       const parsed = Object.entries(raw)
@@ -239,7 +249,9 @@ export async function upsertCachedIndexEntries(
         );
       const toDelete = parsed.slice(ENTRY_CAP).map(x => x.id);
       if (toDelete.length > 0) {
-        await client.hdel(key, ...toDelete);
+        for (const batch of chunk(toDelete, REDIS_COMMAND_CHUNK_SIZE)) {
+          await client.hdel(key, ...batch);
+        }
       }
     }
   } catch (error) {

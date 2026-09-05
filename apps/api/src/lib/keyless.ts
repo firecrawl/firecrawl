@@ -1,3 +1,4 @@
+import { redisErrorDetails } from "./redis-errors";
 import { createHmac } from "node:crypto";
 import { isIPv4 } from "node:net";
 import { v5 as uuidv5 } from "uuid";
@@ -141,7 +142,8 @@ function positiveRedisTtl(ttl: number): number | undefined {
 async function retryAfterSecondsFor(key: string): Promise<number | undefined> {
   try {
     return positiveRedisTtl(await redisRateLimitClient.ttl(key));
-  } catch {
+  } catch (error) {
+    logger.warn("Failed to read keyless quota TTL", redisErrorDetails(error));
     return undefined;
   }
 }
@@ -366,7 +368,8 @@ export async function checkKeylessEligibility(ip: string): Promise<{
       };
     }
     return { eligible: true };
-  } catch {
+  } catch (error) {
+    logger.warn("Failed to check keyless quota", redisErrorDetails(error));
     // Limiter store unavailable — fail closed so the MCP returns structured
     // recovery rather than granting unbounded keyless access.
     return { eligible: false, reason: "error" };
@@ -453,11 +456,17 @@ export async function chargeKeylessCredits(
     const inc = Math.ceil(credits);
     try {
       const key = creditsKey(ip);
-      const total = await redisRateLimitClient.incrby(key, inc);
-      if (total === inc) {
-        await redisRateLimitClient.expire(key, DAY_SECONDS);
-      }
-    } catch {
+      await redisRateLimitClient.eval(
+        `local total = redis.call("INCRBY", KEYS[1], ARGV[1])
+         if total == tonumber(ARGV[1]) then redis.call("EXPIRE", KEYS[1], ARGV[2]) end
+         return total`,
+        1,
+        key,
+        inc,
+        DAY_SECONDS,
+      );
+    } catch (error) {
+      logger.warn("Failed to charge keyless credits", redisErrorDetails(error));
       // Counter is best-effort; a missed charge just means the IP gets a few
       // extra free credits today.
     }

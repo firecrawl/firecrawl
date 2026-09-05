@@ -1,3 +1,4 @@
+import { checkedRedisExec } from "../../lib/redis-errors";
 import { AxiosError } from "axios";
 import { config } from "../../config";
 import { load } from "cheerio"; // rustified
@@ -586,7 +587,10 @@ export class WebCrawler {
           pipeline.sadd("sitemap:" + this.jobId + ":links", normalizedUrl);
         });
 
-        const results = await pipeline.exec();
+        const results = await checkedRedisExec(
+          pipeline.exec(),
+          "sitemap deduplication",
+        );
 
         const uniqueURLs = filteredLinks.filter(
           (_, index) =>

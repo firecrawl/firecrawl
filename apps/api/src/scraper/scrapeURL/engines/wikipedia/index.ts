@@ -1,3 +1,4 @@
+import { redisErrorDetails } from "../../../../lib/redis-errors";
 import * as undici from "undici";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
@@ -36,7 +37,12 @@ async function getAccessToken(logger: Meta["logger"]): Promise<string> {
       if (cached) {
         return cached;
       }
-    } catch {}
+    } catch (error) {
+      logger.warn(
+        "Wikipedia token cache read failed",
+        redisErrorDetails(error),
+      );
+    }
 
     const username = config.WIKIPEDIA_ENTERPRISE_USERNAME;
     const password = config.WIKIPEDIA_ENTERPRISE_PASSWORD;

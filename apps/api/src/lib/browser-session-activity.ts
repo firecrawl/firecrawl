@@ -1,3 +1,4 @@
+import { redisErrorDetails } from "./redis-errors";
 import { redisEvictConnection } from "../services/redis";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
@@ -27,7 +28,12 @@ export function enqueueBrowserSessionActivity(
     created_at: new Date().toISOString(),
   };
 
-  redisEvictConnection.rpush(QUEUE_KEY, JSON.stringify(row)).catch(() => {});
+  redisEvictConnection.rpush(QUEUE_KEY, JSON.stringify(row)).catch(error => {
+    logger.warn(
+      "Failed to enqueue browser session activity",
+      redisErrorDetails(error),
+    );
+  });
 }
 
 export async function processBrowserSessionActivityJobs() {

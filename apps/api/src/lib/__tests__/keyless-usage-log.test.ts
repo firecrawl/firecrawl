@@ -7,15 +7,17 @@
 // carrying the client IP (the durable `keyless_credit_usage` row is deferred
 // to the firecrawl-db migration), writes no DB row, and charges nothing;
 // billable requests keep writing rows exactly as before.
-const { dbInsert, insertValues, redisIncrby, redisExpire } = vi.hoisted(() => {
-  const insertValues = vi.fn().mockResolvedValue(undefined);
-  return {
-    insertValues,
-    dbInsert: vi.fn(() => ({ values: insertValues })),
-    redisIncrby: vi.fn().mockResolvedValue(1),
-    redisExpire: vi.fn().mockResolvedValue(1),
-  };
-});
+const { dbInsert, insertValues, redisIncrby, redisExpire, redisEval } =
+  vi.hoisted(() => {
+    const insertValues = vi.fn().mockResolvedValue(undefined);
+    return {
+      insertValues,
+      dbInsert: vi.fn(() => ({ values: insertValues })),
+      redisEval: vi.fn().mockResolvedValue(1),
+      redisIncrby: vi.fn().mockResolvedValue(1),
+      redisExpire: vi.fn().mockResolvedValue(1),
+    };
+  });
 
 vi.mock("../../db/connection", () => ({
   db: { insert: dbInsert },
@@ -30,7 +32,7 @@ vi.mock("../../services/rate-limiter", () => ({
     get: vi.fn().mockResolvedValue(null),
     incr: vi.fn().mockResolvedValue(1),
     ttl: vi.fn().mockResolvedValue(-1),
-    eval: vi.fn().mockResolvedValue([1, 1]),
+    eval: redisEval,
   },
 }));
 
@@ -140,12 +142,23 @@ describe("logKeylessCreditUsage", () => {
 });
 
 describe("chargeKeylessCredits", () => {
+  it("logs failed charges without losing the usage record", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    redisEval.mockRejectedValueOnce(new Error("OOM private data"));
+    await expect(
+      chargeKeylessCredits(KEYLESS_TEAM, 4),
+    ).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith("Failed to charge keyless credits", {
+      redisError: "OOM",
+    });
+    expect(insertValues).toHaveBeenCalled();
+  });
   it("records a zero-credit request without drawing down the credit budget", async () => {
     const info = vi.spyOn(logger, "info").mockImplementation(() => logger);
 
     await chargeKeylessCredits(KEYLESS_TEAM, 0);
 
-    expect(redisIncrby).not.toHaveBeenCalled();
+    expect(redisEval).not.toHaveBeenCalled();
     expect(dbInsert).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith(
       expect.stringContaining("Keyless zero-credit usage"),
@@ -156,7 +169,13 @@ describe("chargeKeylessCredits", () => {
   it("charges the credit budget for a billable request", async () => {
     await chargeKeylessCredits(KEYLESS_TEAM, 4);
 
-    expect(redisIncrby).toHaveBeenCalledWith(`keyless_credits:${IP}`, 4);
+    expect(redisEval).toHaveBeenCalledWith(
+      expect.stringContaining("INCRBY"),
+      1,
+      `keyless_credits:${IP}`,
+      4,
+      86400,
+    );
     expect(insertValues).toHaveBeenCalledWith(
       expect.objectContaining({ ip: IP, credits_used: 4 }),
     );
@@ -165,7 +184,7 @@ describe("chargeKeylessCredits", () => {
   it("does nothing at all for a team that is not keyless", async () => {
     await chargeKeylessCredits("some-real-team-id", 5);
 
-    expect(redisIncrby).not.toHaveBeenCalled();
+    expect(redisEval).not.toHaveBeenCalled();
     expect(dbInsert).not.toHaveBeenCalled();
   });
 });

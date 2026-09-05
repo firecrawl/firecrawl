@@ -1,3 +1,5 @@
+import { chunk } from "lodash";
+import { checkedRedisExec, REDIS_COMMAND_CHUNK_SIZE } from "./redis-errors";
 import { InternalOptions } from "../scraper/scrapeURL";
 import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import { WebhookConfig } from "../services/webhook/types";
@@ -167,7 +169,7 @@ export async function addCrawlJob(
     pipeline.expire("crawl:" + id + ":jobs", 24 * 60 * 60);
     pipeline.sadd("crawl:" + id + ":jobs_qualified", job_id);
     pipeline.expire("crawl:" + id + ":jobs_qualified", 24 * 60 * 60);
-    await pipeline.exec();
+    await checkedRedisExec(pipeline.exec(), "crawl state");
   });
 }
 
@@ -185,11 +187,15 @@ export async function addCrawlJobs(
     crawlId: id,
   });
   const pipeline = redisEvictConnection.pipeline();
-  pipeline.sadd("crawl:" + id + ":jobs", ...job_ids);
+  for (const ids of chunk(job_ids, REDIS_COMMAND_CHUNK_SIZE)) {
+    pipeline.sadd("crawl:" + id + ":jobs", ...ids);
+  }
   pipeline.expire("crawl:" + id + ":jobs", 24 * 60 * 60);
-  pipeline.sadd("crawl:" + id + ":jobs_qualified", ...job_ids);
+  for (const ids of chunk(job_ids, REDIS_COMMAND_CHUNK_SIZE)) {
+    pipeline.sadd("crawl:" + id + ":jobs_qualified", ...ids);
+  }
   pipeline.expire("crawl:" + id + ":jobs_qualified", 24 * 60 * 60);
-  await pipeline.exec();
+  await checkedRedisExec(pipeline.exec(), "crawl state");
 }
 
 export async function addCrawlJobDone(
@@ -216,7 +222,7 @@ export async function addCrawlJobDone(
   }
 
   pipeline.expire("crawl:" + id + ":jobs_donez_ordered", 24 * 60 * 60);
-  await pipeline.exec();
+  await checkedRedisExec(pipeline.exec(), "crawl state");
 }
 
 export async function getDoneJobsOrderedLength(
@@ -520,7 +526,7 @@ export async function lockURL(
 
     pipeline.expire("crawl:" + id + ":visited", 24 * 60 * 60);
 
-    const results = await pipeline.exec();
+    const results = await checkedRedisExec(pipeline.exec(), "crawl state");
     const saddResult = results?.[0]?.[1] as number;
     const res = saddResult !== 0;
 
@@ -528,7 +534,7 @@ export async function lockURL(
       const uniquePipeline = redisEvictConnection.pipeline();
       uniquePipeline.sadd("crawl:" + id + ":visited_unique", normalizedUrl);
       uniquePipeline.expire("crawl:" + id + ":visited_unique", 24 * 60 * 60);
-      await uniquePipeline.exec();
+      await checkedRedisExec(uniquePipeline.exec(), "crawl unique URLs");
     }
 
     setSpanAttributes(span, { "crawl.url_locked": res });
@@ -557,23 +563,32 @@ export async function lockURLs(
   logger.debug("Locking " + urls.length + " URLs...");
 
   const pipeline = redisEvictConnection.pipeline();
-  pipeline.sadd("crawl:" + id + ":visited_unique", ...urls);
+  for (const batch of chunk(urls, REDIS_COMMAND_CHUNK_SIZE)) {
+    pipeline.sadd("crawl:" + id + ":visited_unique", ...batch);
+  }
   pipeline.expire("crawl:" + id + ":visited_unique", 24 * 60 * 60);
 
+  const visitedStart = Math.ceil(urls.length / REDIS_COMMAND_CHUNK_SIZE) + 1;
   if (!sc.crawlerOptions?.deduplicateSimilarURLs) {
-    pipeline.sadd("crawl:" + id + ":visited", ...urls);
+    for (const batch of chunk(urls, REDIS_COMMAND_CHUNK_SIZE)) {
+      pipeline.sadd("crawl:" + id + ":visited", ...batch);
+    }
   } else {
     const allPermutations = urls.map(
       url => generateURLPermutations(url)[0].href,
     );
     logger.debug("Adding " + allPermutations.length + " URL permutations...");
-    pipeline.sadd("crawl:" + id + ":visited", ...allPermutations);
+    for (const batch of chunk(allPermutations, REDIS_COMMAND_CHUNK_SIZE)) {
+      pipeline.sadd("crawl:" + id + ":visited", ...batch);
+    }
   }
 
   pipeline.expire("crawl:" + id + ":visited", 24 * 60 * 60);
 
-  const results = await pipeline.exec();
-  const saddResult = results?.[2]?.[1] as number;
+  const results = await checkedRedisExec(pipeline.exec(), "crawl state");
+  const saddResult = results
+    .slice(visitedStart, -1)
+    .reduce((sum, [, value]) => sum + (value as number), 0);
   const res = saddResult === urls.length;
 
   logger.debug("lockURLs final result: " + res, { res });

@@ -1,3 +1,4 @@
+import { redisErrorDetails } from "../../lib/redis-errors";
 import {
   pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
@@ -183,8 +184,9 @@ function startHeartbeat(
   const promise = (async () => {
     try {
       while (!stopped) {
-        await mirrorSlotAcquire(teamId, holderId, mirrorState).catch(() => {
+        await mirrorSlotAcquire(teamId, holderId, mirrorState).catch(error => {
           _logger.warn("Failed to update concurrency limit active job", {
+            ...redisErrorDetails(error),
             teamId,
             jobId: holderId,
           });
@@ -319,8 +321,9 @@ async function withSemaphore<T>(
   } finally {
     await hb?.stop();
 
-    await mirrorSlotRelease(teamId, holderId, mirrorState).catch(() => {
+    await mirrorSlotRelease(teamId, holderId, mirrorState).catch(error => {
       _logger.warn("Failed to remove concurrency limit active job", {
+        ...redisErrorDetails(error),
         teamId,
         jobId: holderId,
       });
@@ -329,7 +332,13 @@ async function withSemaphore<T>(
     activeSemaphores.dec();
     endTimer();
 
-    await release(teamId, holderId).catch(() => {});
+    await release(teamId, holderId).catch(error => {
+      _logger.warn("Failed to release team semaphore", {
+        ...redisErrorDetails(error),
+        teamId,
+        jobId: holderId,
+      });
+    });
   }
 }
 

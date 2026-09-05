@@ -1,3 +1,4 @@
+import { checkedRedisExec } from "../../lib/redis-errors";
 import crypto from "node:crypto";
 import path from "node:path";
 import { Request, Response, NextFunction } from "express";
@@ -226,12 +227,15 @@ async function reserveUnparsedUploadRef(teamId: string, uploadId: string) {
 async function releaseUnparsedUploadRef(teamId: string, uploadId: string) {
   const cutoff = Date.now() - PARSE_UPLOAD_UNPARSED_WINDOW_MS;
   const key = getUnparsedUploadsKey(teamId);
-  await getRedisConnection()
-    .pipeline()
-    .zremrangebyscore(key, "-inf", cutoff)
-    .zrem(key, uploadId)
-    .expire(key, PARSE_UPLOAD_UNPARSED_TTL_SECONDS)
-    .exec();
+  await checkedRedisExec(
+    getRedisConnection()
+      .pipeline()
+      .zremrangebyscore(key, "-inf", cutoff)
+      .zrem(key, uploadId)
+      .expire(key, PARSE_UPLOAD_UNPARSED_TTL_SECONDS)
+      .exec(),
+    "release upload quota",
+  );
 }
 
 async function reserveUnparsedUploadRefOrRespond(

@@ -1,3 +1,5 @@
+import { chunk } from "lodash";
+import { checkedRedisExec, REDIS_COMMAND_CHUNK_SIZE } from "./redis-errors";
 import { getRedisConnection } from "../services/queue-service";
 import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
@@ -83,7 +85,7 @@ export async function removeConcurrencyLimitedJobs(
     for (const id of chunk) {
       pipeline.del(constructJobKey(id));
     }
-    await pipeline.exec();
+    await checkedRedisExec(pipeline.exec(), "concurrency backlog");
   }
 }
 
@@ -141,9 +143,11 @@ export async function pushConcurrencyLimitedJobs(
     zaddArgs.push(now + cappedTimeout, job.id);
   }
 
-  pipeline.zadd(queueKey, ...zaddArgs);
+  for (const batch of chunk(zaddArgs, REDIS_COMMAND_CHUNK_SIZE * 2)) {
+    pipeline.zadd(queueKey, ...batch);
+  }
   pipeline.sadd("concurrency-limit-queues", queueKey);
-  await pipeline.exec();
+  await checkedRedisExec(pipeline.exec(), "concurrency backlog");
 }
 
 export async function getConcurrencyLimitedJobs(team_id: string) {
@@ -294,7 +298,9 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
       for (const { member, score } of crawlBlocked) {
         zaddArgs.push(score, member);
       }
-      await redis.zadd(queueKey, ...zaddArgs);
+      for (const batch of chunk(zaddArgs, REDIS_COMMAND_CHUNK_SIZE * 2)) {
+        await redis.zadd(queueKey, ...batch);
+      }
     }
   }
 }
