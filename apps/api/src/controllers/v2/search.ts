@@ -385,7 +385,15 @@ export async function searchController(
   } catch (error) {
     if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
       reconciledKeylessCredits = true;
-      await adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits);
+      const [refund] = await Promise.allSettled([
+        adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits),
+      ]);
+      if (refund.status === "rejected") {
+        throw new AggregateError(
+          [error, refund.reason],
+          "Request and keyless refund failed",
+        );
+      }
     }
 
     if (error instanceof z.ZodError) {

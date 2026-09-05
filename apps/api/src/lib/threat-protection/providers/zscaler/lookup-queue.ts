@@ -339,13 +339,14 @@ async function drainQueue(orgId: string): Promise<void> {
   }
 
   const failures: unknown[] = [];
+  let entries: QueueEntry[] = [];
   try {
     const credentials = await getOrgZscalerCredentials(orgId);
 
     // Yield after one batch so waiting requests can consume their own replies
     // even when other callers continuously add work to the org queue.
     {
-      let entries = await popBatch(orgId);
+      entries = await popBatch(orgId);
       if (entries.length === 0) {
         // A URL enqueued a moment after our pop should not wait for the next
         // re-ensure cycle; check once more before exiting.
@@ -367,7 +368,7 @@ async function drainQueue(orgId: string): Promise<void> {
       }
 
       // From here on the popped entries are this drainer's responsibility:
-      // Redis failures propagate to the requests awaiting this drainer.
+      // Notify remote requesters on failure as well as local drainer waiters.
 
       lock = await lock.extend(DRAIN_LOCK_TTL_MS);
 
@@ -465,6 +466,16 @@ async function drainQueue(orgId: string): Promise<void> {
     }
   } catch (error) {
     failures.push(error);
+    if (entries.length > 0) {
+      try {
+        await replyAll(entries, () => ({
+          status: "error",
+          message: "The Zscaler lookup batch could not be completed",
+        }));
+      } catch (publicationError) {
+        failures.push(publicationError);
+      }
+    }
   } finally {
     try {
       await lock.release();
@@ -475,7 +486,7 @@ async function drainQueue(orgId: string): Promise<void> {
     if (failures.length > 1)
       throw new AggregateError(
         failures,
-        "Zscaler lookup and lock release failed",
+        "Zscaler lookup, failure publication, or lock release failed",
       );
   }
 }

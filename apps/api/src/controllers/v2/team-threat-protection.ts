@@ -201,17 +201,10 @@ export async function putTeamThreatProtectionController(
       previous.zscaler.vanityDomain !== updated.zscaler.vanityDomain ||
       previous.zscaler.cloud !== updated.zscaler.cloud);
   if (previous?.zscaler && (!updated.zscaler || connectionIdentityChanged)) {
-    await clearZscalerSyncState(orgId).catch(error => {
-      logger.warn("Failed to clear Zscaler sync state", { error, orgId });
-    });
+    await clearZscalerSyncState(orgId);
   }
   if (updated.zscaler) {
-    syncOrgZscalerRules(orgId).catch(error => {
-      logger.warn("Background Zscaler sync after config save failed", {
-        error,
-        orgId,
-      });
-    });
+    await syncOrgZscalerRules(orgId);
   }
 
   // Audit log — org-level security configuration change. The serialized view

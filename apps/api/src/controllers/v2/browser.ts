@@ -6,6 +6,7 @@ import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import {
   insertBrowserSession,
+  markBrowserSessionCreationFailed,
   getBrowserSession,
   getBrowserSessionByBrowserId,
   listBrowserSessions,
@@ -407,27 +408,27 @@ export async function browserCreateController(
       ttl_without_activity: activityTtl ?? null,
       credits_used: null,
     });
+    await invalidateActiveBrowserSessionCount(req.auth.team_id);
+    await mirrorExternalSlotAcquire(req.auth.team_id, sessionId, ttl * 1000);
   } catch (err) {
-    // If we can't persist, tear down the browser session
-    logger.error("Failed to persist browser session, cleaning up", {
-      error: err,
-    });
-    await browserServiceRequest(
-      "DELETE",
-      `/browsers/${svcResponse.sessionId}`,
-    ).catch(() => {});
-    return res.status(500).json({
-      success: false,
-      error: "Failed to persist browser session.",
-    });
+    const marked = await Promise.allSettled([
+      markBrowserSessionCreationFailed(sessionId),
+    ]);
+    const cleanup = await Promise.allSettled([
+      browserServiceRequest("DELETE", `/browsers/${svcResponse.sessionId}`),
+      mirrorExternalSlotRelease(req.auth.team_id, sessionId),
+      invalidateActiveBrowserSessionCount(req.auth.team_id),
+    ]);
+    const errors = [...marked, ...cleanup].flatMap(result =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (errors.length > 0)
+      throw new AggregateError(
+        [err, ...errors],
+        "Browser creation and cleanup failed",
+      );
+    throw err;
   }
-
-  // Invalidate cached count so next check reflects the new session
-  await invalidateActiveBrowserSessionCount(req.auth.team_id);
-
-  // Register in the shared concurrency limiter so this session counts
-  // against the team's concurrent job limit while it's active.
-  await mirrorExternalSlotAcquire(req.auth.team_id, sessionId, ttl * 1000);
 
   logger.info("Browser session created", {
     sessionId,
@@ -621,13 +622,24 @@ export async function browserDeleteController(
   const durationMs = deleteResult.sessionDurationMs;
 
   // Invalidate cached count so next check reflects the destroyed session
-  await invalidateActiveBrowserSessionCount(session.team_id);
-  await mirrorExternalSlotRelease(session.team_id, session.id);
+  const cleanup = await Promise.allSettled([
+    invalidateActiveBrowserSessionCount(session.team_id),
+    mirrorExternalSlotRelease(session.team_id, session.id),
+  ]);
+  const cleanupErrors = cleanup.flatMap(result =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (cleanupErrors.length === 1) throw cleanupErrors[0];
+  if (cleanupErrors.length > 1)
+    throw new AggregateError(cleanupErrors, "Browser teardown cleanup failed");
 
   const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const claimed = await claimBrowserSessionDestroyed(session.id);
 
   if (!claimed) {
+    if (session.credits_used !== null && session.credits_used !== undefined) {
+      await clearBrowserSessionPromptFlag(session.id);
+    }
     // The webhook (or another DELETE call) already transitioned and billed.
     logger.info("Session already destroyed by another path, skipping billing", {
       sessionId: session.id,
@@ -645,8 +657,6 @@ export async function browserDeleteController(
   const creditsBilled = session.should_bill
     ? calculateBrowserSessionCredits(durationMs, rate)
     : 0;
-
-  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
 
   if (session.should_bill) {
     const agentRequestId =
@@ -674,6 +684,7 @@ export async function browserDeleteController(
     );
   }
 
+  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
   await clearBrowserSessionPromptFlag(session.id);
 
   logger.info("Browser session destroyed", {
@@ -775,13 +786,24 @@ export async function browserWebhookDestroyedController(
     return res.status(200).json({ ok: true });
   }
 
-  await invalidateActiveBrowserSessionCount(session.team_id);
-  await mirrorExternalSlotRelease(session.team_id, session.id);
+  const cleanup = await Promise.allSettled([
+    invalidateActiveBrowserSessionCount(session.team_id),
+    mirrorExternalSlotRelease(session.team_id, session.id),
+  ]);
+  const cleanupErrors = cleanup.flatMap(result =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (cleanupErrors.length === 1) throw cleanupErrors[0];
+  if (cleanupErrors.length > 1)
+    throw new AggregateError(cleanupErrors, "Browser teardown cleanup failed");
 
   const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const claimed = await claimBrowserSessionDestroyed(session.id);
 
   if (!claimed) {
+    if (session.credits_used !== null && session.credits_used !== undefined) {
+      await clearBrowserSessionPromptFlag(session.id);
+    }
     logger.info("Session already destroyed by another path, skipping billing", {
       sessionId: session.id,
       browserId,
@@ -798,8 +820,6 @@ export async function browserWebhookDestroyedController(
     ? calculateBrowserSessionCredits(durationMs, rate)
     : 0;
 
-  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
-
   if (session.should_bill) {
     const agentRequestId =
       session.request_id && session.request_id !== session.id
@@ -815,6 +835,7 @@ export async function browserWebhookDestroyedController(
     });
   }
 
+  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
   await clearBrowserSessionPromptFlag(session.id);
 
   logger.info("Session marked as destroyed via webhook", {

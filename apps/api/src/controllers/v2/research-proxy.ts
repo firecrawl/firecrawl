@@ -333,109 +333,114 @@ function createResearchController(
     let error: string | undefined;
     let credits = 0;
 
-    try {
-      const upstream = await fetchForRequest(
-        authedReq,
-        endpoint.upstreamPath(params, authedReq),
-        params,
-        queryKeys,
-        endpoint.timeoutMs,
-      );
-      if (!upstream) {
-        statusCode = 404;
-        error = "Research service is not configured";
-        return res.status(404).end();
-      }
-
-      statusCode = upstream.status;
-      for (const h of FORWARDED_RESPONSE_HEADERS) {
-        const value = upstream.headers.get(h);
-        if (value) res.setHeader(h, value);
-      }
-
-      const text = await upstream.text();
+    const sendResponse = await (async () => {
       try {
-        responseBody = text ? JSON.parse(text) : null;
-      } catch {
-        responseBody = text;
-      }
-
-      if (upstream.ok) {
-        credits = creditsFor(endpoint, responseBody, authedReq);
-        if (credits > 0) {
-          billTeam(
-            authedReq.auth.team_id,
-            credits,
-            authedReq.acuc?.api_key_id ?? null,
-            {
-              endpoint: endpoint.billAs === "scrape" ? "scrape" : "search",
-              jobId,
-              chargeId: jobId,
-            },
-          ).catch(billingError => {
-            logger.error("Failed to bill research request", {
-              error: billingError,
-              credits,
-            });
-          });
+        const upstream = await fetchForRequest(
+          authedReq,
+          endpoint.upstreamPath(params, authedReq),
+          params,
+          queryKeys,
+          endpoint.timeoutMs,
+        );
+        if (!upstream) {
+          statusCode = 404;
+          error = "Research service is not configured";
+          return () => res.status(404).end();
         }
-      } else {
-        error =
-          typeof responseBody === "object" && responseBody !== null
-            ? (responseBody.detail ?? responseBody.error ?? responseBody.title)
-            : undefined;
-      }
 
-      if (responseBody === null || typeof responseBody === "string") {
-        return res.status(statusCode).send(responseBody ?? "");
-      }
-      const response =
-        options.legacy && upstream.ok
-          ? addLegacySnakeCaseAliases(responseBody)
-          : responseBody;
-      return res.status(statusCode).json(response);
-    } catch (err: unknown) {
-      if (isResearchTimeoutError(err)) {
-        statusCode = 504;
-        error = "Research service timed out";
-        return res.status(504).end();
-      }
-      statusCode = 502;
-      error = "Research proxy error";
-      logger.error("Research proxy error", { error: err });
-      return res.status(502).end();
-    } finally {
-      const timeTaken = (Date.now() - started) / 1000;
+        statusCode = upstream.status;
+        for (const h of FORWARDED_RESPONSE_HEADERS) {
+          const value = upstream.headers.get(h);
+          if (value) res.setHeader(h, value);
+        }
 
-      // No-op for keyed teams. For keyless callers: billable credits are added
-      // to the per-IP daily budget and land as a `keyless_credit_usage` row;
-      // zero-credit outcomes emit the canonical `keyless/usage` log line
-      // instead (the durable zero-credit row waits on the firecrawl-db
-      // migration). It runs on every outcome, not just billable successes: the
-      // paper endpoints cost 0 credits and ID enumeration mostly produces
-      // upstream misses, so gating this on `credits > 0` left those requests
-      // with no IP recorded anywhere. `credits` is still 0 on every non-2xx
-      // path, so nothing extra is charged.
-      await chargeKeylessCredits(authedReq.auth.team_id, credits);
+        const text = await upstream.text();
+        try {
+          responseBody = text ? JSON.parse(text) : null;
+        } catch {
+          responseBody = text;
+        }
 
-      logResearchEndpoint({
-        table: endpoint.table,
-        id: jobId,
-        request_id: jobId,
-        team_id: authedReq.auth.team_id,
-        target: targetHint,
-        options: params,
-        response: responseBody,
-        num_results: resultCount(responseBody),
-        time_taken: timeTaken,
-        credits_cost: statusCode >= 200 && statusCode < 300 ? credits : 0,
-        is_successful: statusCode >= 200 && statusCode < 300,
-        error,
-        zeroDataRetention,
-      }).catch(logError => {
-        logger.warn("Research endpoint log failed", { error: logError });
-      });
-    }
+        if (upstream.ok) {
+          credits = creditsFor(endpoint, responseBody, authedReq);
+          if (credits > 0) {
+            billTeam(
+              authedReq.auth.team_id,
+              credits,
+              authedReq.acuc?.api_key_id ?? null,
+              {
+                endpoint: endpoint.billAs === "scrape" ? "scrape" : "search",
+                jobId,
+                chargeId: jobId,
+              },
+            ).catch(billingError => {
+              logger.error("Failed to bill research request", {
+                error: billingError,
+                credits,
+              });
+            });
+          }
+        } else {
+          error =
+            typeof responseBody === "object" && responseBody !== null
+              ? (responseBody.detail ??
+                responseBody.error ??
+                responseBody.title)
+              : undefined;
+        }
+
+        if (responseBody === null || typeof responseBody === "string") {
+          return () => res.status(statusCode).send(responseBody ?? "");
+        }
+        const response =
+          options.legacy && upstream.ok
+            ? addLegacySnakeCaseAliases(responseBody)
+            : responseBody;
+        return () => res.status(statusCode).json(response);
+      } catch (err: unknown) {
+        if (isResearchTimeoutError(err)) {
+          statusCode = 504;
+          error = "Research service timed out";
+          return () => res.status(504).end();
+        }
+        statusCode = 502;
+        error = "Research proxy error";
+        logger.error("Research proxy error", { error: err });
+        return () => res.status(502).end();
+      } finally {
+        const timeTaken = (Date.now() - started) / 1000;
+
+        // No-op for keyed teams. For keyless callers: billable credits are added
+        // to the per-IP daily budget and land as a `keyless_credit_usage` row;
+        // zero-credit outcomes emit the canonical `keyless/usage` log line
+        // instead (the durable zero-credit row waits on the firecrawl-db
+        // migration). It runs on every outcome, not just billable successes: the
+        // paper endpoints cost 0 credits and ID enumeration mostly produces
+        // upstream misses, so gating this on `credits > 0` left those requests
+        // with no IP recorded anywhere. `credits` is still 0 on every non-2xx
+        // path, so nothing extra is charged.
+        await chargeKeylessCredits(authedReq.auth.team_id, credits);
+
+        logResearchEndpoint({
+          table: endpoint.table,
+          id: jobId,
+          request_id: jobId,
+          team_id: authedReq.auth.team_id,
+          target: targetHint,
+          options: params,
+          response: responseBody,
+          num_results: resultCount(responseBody),
+          time_taken: timeTaken,
+          credits_cost: statusCode >= 200 && statusCode < 300 ? credits : 0,
+          is_successful: statusCode >= 200 && statusCode < 300,
+          error,
+          zeroDataRetention,
+        }).catch(logError => {
+          logger.warn("Research endpoint log failed", { error: logError });
+        });
+      }
+    })();
+    return sendResponse();
   };
 }
 

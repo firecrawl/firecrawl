@@ -199,6 +199,22 @@ export async function getBrowserSessionByBrowserId(
   }
 }
 
+export async function markBrowserSessionCreationFailed(
+  id: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db
+    .update(schema.browser_sessions)
+    .set({
+      status: "destroyed",
+      should_bill: false,
+      credits_used: 0,
+      updated_at: now,
+      deleted_at: now,
+    })
+    .where(eq(schema.browser_sessions.id, id));
+}
+
 export async function updateBrowserSessionStatus(
   id: string,
   status: BrowserSessionStatus,
@@ -265,21 +281,13 @@ export async function updateBrowserSessionCreditsUsed(
   id: string,
   creditsUsed: number,
 ): Promise<void> {
-  try {
-    await db
-      .update(schema.browser_sessions)
-      .set({
-        credits_used: creditsUsed,
-        updated_at: new Date().toISOString(),
-      })
-      .where(eq(schema.browser_sessions.id, id));
-  } catch (error) {
-    logger.warn("Failed to update browser session credits_used", {
-      error,
-      id,
-      creditsUsed,
-    });
-  }
+  await db
+    .update(schema.browser_sessions)
+    .set({
+      credits_used: creditsUsed,
+      updated_at: new Date().toISOString(),
+    })
+    .where(eq(schema.browser_sessions.id, id));
 }
 
 // ---------------------------------------------------------------------------

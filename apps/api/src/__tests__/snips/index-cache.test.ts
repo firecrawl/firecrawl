@@ -269,3 +269,10 @@ describe("index cache error propagation", () => {
     ).resolves.toBeUndefined();
   }, 5000);
 });
+
+it("ignores malformed max-age JSON after a successful Redis read", async () => {
+  const client = { get: vi.fn().mockResolvedValue("not JSON") } as any;
+  await expect(
+    getCachedMaxAge(Buffer.from("test"), undefined, client),
+  ).resolves.toBeNull();
+});

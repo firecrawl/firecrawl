@@ -262,10 +262,17 @@ export async function scrapeURLWithWikipedia(
   }
 
   if (response.status === 401 || response.status === 403) {
-    await clearCachedToken();
-    throw new EngineError(
+    const authorizationError = new EngineError(
       `Wikipedia Enterprise API authorization failed (${response.status}). Check credentials.`,
     );
+    const [cleanup] = await Promise.allSettled([clearCachedToken()]);
+    if (cleanup.status === "rejected") {
+      throw new AggregateError(
+        [authorizationError, cleanup.reason],
+        "Wikipedia authorization and token cleanup failed",
+      );
+    }
+    throw authorizationError;
   }
 
   if (!response.ok) {

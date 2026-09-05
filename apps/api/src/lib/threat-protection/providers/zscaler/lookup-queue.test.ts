@@ -125,11 +125,42 @@ describe("Zscaler drainer error propagation", () => {
   });
   it("propagates the original batch write error", async () => {
     const error = new Error("WRONGTYPE reply");
-    mock.exec.mockResolvedValue([[error, null]]);
+    mock.exec.mockResolvedValueOnce([[error, null]]);
     await expect(
       enqueueZscalerLookup("org", "https://example.com"),
     ).rejects.toBe(error);
     expect(mock.release).toHaveBeenCalledTimes(1);
+  });
+  it("publishes failure replies for remote entries after a lock extension failure", async () => {
+    const error = new Error("extend failed");
+    mock.queue.push(
+      JSON.stringify({
+        id: "remote",
+        url: "https://remote.example",
+        at: Date.now(),
+      }),
+    );
+    mock.extend.mockRejectedValue(error);
+    await expect(
+      enqueueZscalerLookup("org", "https://example.com"),
+    ).rejects.toBe(error);
+    expect(
+      JSON.parse(
+        mock.replies.get("threat-protection:zscaler:lookup-reply:remote")!,
+      ),
+    ).toMatchObject({ status: "error" });
+    expect(mock.lookup).not.toHaveBeenCalled();
+  });
+  it("preserves the batch, publication, and release failures", async () => {
+    const body = new Error("extend failed"),
+      publication = new Error("reply failed"),
+      cleanup = new Error("release failed");
+    mock.extend.mockRejectedValue(body);
+    mock.exec.mockRejectedValue(publication);
+    mock.release.mockRejectedValue(cleanup);
+    await expect(
+      enqueueZscalerLookup("org", "https://example.com"),
+    ).rejects.toMatchObject({ errors: [body, publication, cleanup] });
   });
   it("preserves both lookup Redis failure and lock cleanup failure", async () => {
     const body = new Error("read failed"),

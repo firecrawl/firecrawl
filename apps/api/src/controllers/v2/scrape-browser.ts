@@ -6,6 +6,7 @@ import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import {
   insertBrowserSession,
+  markBrowserSessionCreationFailed,
   getBrowserSession,
   updateBrowserSessionActivity,
   updateBrowserSessionCreditsUsed,
@@ -453,8 +454,16 @@ export async function scrapeStopInteractiveBrowserController(
 
   const durationMs = deleteResult.sessionDurationMs;
 
-  await invalidateActiveBrowserSessionCount(session.team_id);
-  await mirrorExternalSlotRelease(session.team_id, session.id);
+  const cleanup = await Promise.allSettled([
+    invalidateActiveBrowserSessionCount(session.team_id),
+    mirrorExternalSlotRelease(session.team_id, session.id),
+  ]);
+  const cleanupErrors = cleanup.flatMap(result =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (cleanupErrors.length === 1) throw cleanupErrors[0];
+  if (cleanupErrors.length > 1)
+    throw new AggregateError(cleanupErrors, "Browser teardown cleanup failed");
 
   const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const rate = usedPrompt
@@ -473,6 +482,9 @@ export async function scrapeStopInteractiveBrowserController(
   const claimed = await claimBrowserSessionDestroyed(session.id);
 
   if (!claimed) {
+    if (session.credits_used !== null && session.credits_used !== undefined) {
+      await clearBrowserSessionPromptFlag(session.id);
+    }
     logger.info("Session already destroyed by another path, skipping billing", {
       sessionId: session.id,
     });
@@ -482,14 +494,6 @@ export async function scrapeStopInteractiveBrowserController(
       cleanupQueued: true,
     });
   }
-
-  updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch(error => {
-    logger.error("Failed to update credits_used on browser session", {
-      error,
-      sessionId: session.id,
-      creditsBilled,
-    });
-  });
 
   await billTeam(
     req.auth.team_id,
@@ -504,6 +508,7 @@ export async function scrapeStopInteractiveBrowserController(
 
   logKeylessCreditUsage(req.auth.team_id, creditsBilled).catch(() => {});
 
+  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
   await clearBrowserSessionPromptFlag(session.id);
 
   logger.info("Browser session destroyed", {
@@ -837,11 +842,16 @@ async function createSessionForScrape(
 
     return { session };
   } catch (err) {
+    const marked = await Promise.allSettled([
+      markBrowserSessionCreationFailed(sessionId),
+    ]);
     const cleanup = await Promise.allSettled([
       adjustKeylessCredits(req.auth.team_id, -keylessReserved),
       browserServiceRequest("DELETE", `/browsers/${svcResponse.sessionId}`),
+      mirrorExternalSlotRelease(req.auth.team_id, sessionId),
+      invalidateActiveBrowserSessionCount(req.auth.team_id),
     ]);
-    const errors = cleanup.flatMap(result =>
+    const errors = [...marked, ...cleanup].flatMap(result =>
       result.status === "rejected" ? [result.reason] : [],
     );
     if (errors.length > 0)

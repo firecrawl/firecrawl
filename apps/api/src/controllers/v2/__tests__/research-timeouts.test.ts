@@ -45,7 +45,8 @@ function routeHandler(router: any, path: string) {
     (candidate: any) =>
       candidate.route?.path === path && candidate.route?.methods?.get,
   );
-  return layer.route.stack[0].handle;
+  // Exercise the controller after route middleware (including deprecation).
+  return layer.route.stack.at(-1).handle;
 }
 
 function makeReq(query: Record<string, unknown>, params = {}) {

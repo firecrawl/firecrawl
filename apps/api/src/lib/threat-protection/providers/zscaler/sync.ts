@@ -1,3 +1,4 @@
+import { isRedlockContention } from "../../../redis-errors";
 import { RateLimiterRedis, RateLimiterRes } from "rate-limiter-flexible";
 import { z } from "zod";
 import { logger as _logger } from "../../../logger";
@@ -32,7 +33,7 @@ import { zscalerBudgetKey } from "./lookup-queue";
 // in ../../store.ts).
 //
 // Sync runs lazily: any process that notices the document is older than the
-// org's sync interval kicks a re-sync in the background, guarded by a
+// org's sync interval awaits a re-sync, guarded by a
 // distributed lock so only one process calls the tenant per interval. There
 // is no dedicated sync worker to deploy or babysit. Each sync replaces the
 // whole document, so entries removed upstream disappear on the next pass.
@@ -124,8 +125,8 @@ export async function getZscalerSyncDocument(
   if (cached && cached.expiresAt > Date.now()) return cached.doc;
 
   let doc: ZscalerSyncDocument | null = null;
+  const raw = await redisRateLimitClient.get(syncDocKey(orgId));
   try {
-    const raw = await redisRateLimitClient.get(syncDocKey(orgId));
     if (raw !== null) {
       doc = syncDocumentSchema.parse(JSON.parse(raw));
     }
@@ -279,22 +280,13 @@ export async function syncOrgZscalerRules(
       retryCount: 0,
     });
   } catch (error) {
-    // Redlock reports contention and infrastructure failure with the same
-    // error; the lock key existing is what distinguishes "someone else is
-    // syncing" (return their in-progress state) from a Redis outage (which
-    // must surface, not masquerade as a successful no-op).
-    let lockHeld = false;
-    try {
-      lockHeld = (await redisRateLimitClient.exists(syncLockKey(orgId))) === 1;
-    } catch {
-      // Redis is down; fall through to rethrow the original error.
-    }
-    if (lockHeld) {
+    if (await isRedlockContention(error)) {
       return await getZscalerSyncDocument(orgId);
     }
     throw error;
   }
 
+  const failures: unknown[] = [];
   try {
     const previous = await getZscalerSyncDocument(orgId);
     const attemptedAt = new Date().toISOString();
@@ -307,33 +299,9 @@ export async function syncOrgZscalerRules(
       return previous;
     }
 
-    try {
-      await consumeZscalerCategoriesBudget(credentials);
-      const categories = await zscalerGetUrlCategories(credentials, {
-        signal: AbortSignal.timeout(60_000),
-      });
-      const { taxonomy, rules } = materializeCategories(categories);
-      const doc: ZscalerSyncDocument = {
-        version: SYNC_DOC_VERSION,
-        status: "ok",
-        syncedAt: attemptedAt,
-        attemptedAt,
-        error: null,
-        taxonomy,
-        rules,
-      };
-      await putZscalerSyncDocument(orgId, doc);
-      logger.info("Zscaler category sync succeeded", {
-        orgId,
-        categories: taxonomy.length,
-        rules: rules.length,
-      });
-      return doc;
-    } catch (error) {
+    const storeProviderFailure = async (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       logger.warn("Zscaler category sync failed", { error, orgId });
-      // Keep the last good rules — stale custom lists beat no custom lists —
-      // but surface the failure and its time for the dashboard.
       const doc: ZscalerSyncDocument = {
         version: SYNC_DOC_VERSION,
         status: "error",
@@ -345,24 +313,69 @@ export async function syncOrgZscalerRules(
       };
       await putZscalerSyncDocument(orgId, doc);
       return doc;
+    };
+    try {
+      await consumeZscalerCategoriesBudget(credentials);
+    } catch (error) {
+      if (error instanceof ZscalerError)
+        return await storeProviderFailure(error);
+      throw error;
     }
+    let categories: ZscalerUrlCategory[];
+    try {
+      categories = await zscalerGetUrlCategories(credentials, {
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (error) {
+      return await storeProviderFailure(error);
+    }
+    const { taxonomy, rules } = materializeCategories(categories);
+    const doc: ZscalerSyncDocument = {
+      version: SYNC_DOC_VERSION,
+      status: "ok",
+      syncedAt: attemptedAt,
+      attemptedAt,
+      error: null,
+      taxonomy,
+      rules,
+    };
+    await putZscalerSyncDocument(orgId, doc);
+    logger.info("Zscaler category sync succeeded", {
+      orgId,
+      categories: taxonomy.length,
+      rules: rules.length,
+    });
+    return doc;
+  } catch (error) {
+    failures.push(error);
+    throw error;
   } finally {
-    await lock.release();
+    try {
+      await lock.release();
+    } catch (error) {
+      failures.push(error);
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(
+        failures,
+        "Zscaler sync and lock release failed",
+      );
   }
 }
 
-const syncsInFlight = new Set<string>();
+const syncsInFlight = new Map<string, Promise<void>>();
 
 /**
- * Fire-and-forget staleness check used by the enforcement hot path: when the
+ * Shared staleness check used by the enforcement hot path: when the
  * synced document is missing or older than the org's sync interval, kick a
- * background re-sync (at most one per process at a time per org).
+ * re-sync (at most one per process at a time per org).
  */
-function ensureZscalerSyncFresh(
+async function ensureZscalerSyncFresh(
   orgId: string,
   syncIntervalMinutes: number,
   doc: ZscalerSyncDocument | null,
-): void {
+): Promise<void> {
   const intervalMs = syncIntervalMinutes * 60_000;
   if (
     doc &&
@@ -371,15 +384,15 @@ function ensureZscalerSyncFresh(
   ) {
     return;
   }
-  if (syncsInFlight.has(orgId)) return;
-  syncsInFlight.add(orgId);
-  syncOrgZscalerRules(orgId)
-    .catch(error => {
-      logger.warn("Background Zscaler sync failed", { error, orgId });
-    })
+  const existing = syncsInFlight.get(orgId);
+  if (existing) return existing;
+  const sync = syncOrgZscalerRules(orgId)
+    .then(() => undefined)
     .finally(() => {
       syncsInFlight.delete(orgId);
     });
+  syncsInFlight.set(orgId, sync);
+  await sync;
 }
 
 // =========================================
@@ -503,7 +516,7 @@ const CUSTOM_CATEGORY_ID_REGEX = /^CUSTOM_\d+$/i;
  * failurePolicy instead of silently allowing. A previously synced (stale)
  * document keeps enforcing.
  *
- * Never throws on storage failure; also kicks the lazy background re-sync.
+ * Storage and refresh failures propagate to the enforcing request.
  */
 export async function evaluateZscalerSyncedRules(
   url: string,
@@ -515,16 +528,9 @@ export async function evaluateZscalerSyncedRules(
     mode: ThreatProtectionPolicy["mode"];
   },
 ): Promise<ThreatDecision | null> {
-  let doc: ZscalerSyncDocument | null = null;
-  try {
-    doc = await getZscalerSyncDocument(zscaler.orgId);
-  } catch (error) {
-    logger.warn("Failed to load synced Zscaler rules", {
-      error,
-      orgId: zscaler.orgId,
-    });
-  }
-  ensureZscalerSyncFresh(zscaler.orgId, zscaler.syncIntervalMinutes, doc);
+  let doc = await getZscalerSyncDocument(zscaler.orgId);
+  await ensureZscalerSyncFresh(zscaler.orgId, zscaler.syncIntervalMinutes, doc);
+  doc = await getZscalerSyncDocument(zscaler.orgId);
 
   if (!doc || doc.syncedAt === null) {
     const deniesCustomCategories = zscaler.deniedCategories.some(id =>

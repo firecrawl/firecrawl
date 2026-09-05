@@ -8,7 +8,7 @@ vi.mock("../../services/rate-limiter", async () => {
   };
 });
 vi.mock("../../db/connection", () => ({ db: {} }));
-vi.mock("../../lib/spur", () => ({ getSpur: vi.fn() }));
+vi.mock("../../lib/spur", () => ({ isKeylessIpSuspicious: vi.fn() }));
 import { redisRateLimitClient as redis } from "../../services/rate-limiter";
 import { adjustKeylessCredits, keylessTeamId } from "../../lib/keyless";
 

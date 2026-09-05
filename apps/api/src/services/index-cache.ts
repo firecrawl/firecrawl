@@ -170,8 +170,15 @@ export async function getCachedIndexEntries(
   }
   const start = Date.now();
 
-  const raw = await withTimeout(client.hgetall(key), READ_TIMEOUT_MS);
+  const [read] = await Promise.allSettled([
+    withTimeout(client.hgetall(key), READ_TIMEOUT_MS),
+  ]);
   indexCacheReadDuration.observe((Date.now() - start) / 1000);
+  if (read.status === "rejected") {
+    indexCacheErrorCounter.inc({ op: "read" });
+    throw read.reason;
+  }
+  const raw = read.value;
   if (raw === TIMED_OUT) {
     indexCacheErrorCounter.inc({ op: "read_timeout" });
     throw new Error("Index cache Redis read timed out");
@@ -278,7 +285,11 @@ export async function getCachedMaxAge(
   if (raw === null || raw === undefined) {
     return null;
   }
-  return { maxAge: JSON.parse(raw).max_age ?? null };
+  try {
+    return { maxAge: JSON.parse(raw).max_age ?? null };
+  } catch {
+    return null;
+  }
 }
 
 export async function setCachedMaxAge(
@@ -333,8 +344,12 @@ export async function getCachedNegative(
   if (raw === null || raw === undefined) {
     return null;
   }
-  const emptyFrom = JSON.parse(raw).emptyFrom;
-  return typeof emptyFrom === "number" ? { emptyFrom } : null;
+  try {
+    const emptyFrom = JSON.parse(raw).emptyFrom;
+    return typeof emptyFrom === "number" ? { emptyFrom } : null;
+  } catch {
+    return null;
+  }
 }
 
 // emptyFrom is the left edge of the confirmed-empty window: queryTime - maxAge.

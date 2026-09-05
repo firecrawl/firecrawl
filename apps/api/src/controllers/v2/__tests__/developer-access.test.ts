@@ -177,3 +177,16 @@ describe.each([
     );
   });
 });
+
+it("propagates a Redis charging failure before sending the upstream success", async () => {
+  const error = new Error("original Redis charge failure");
+  mocks.chargeKeylessCredits.mockRejectedValueOnce(error);
+  const res = makeRes();
+  const next = vi.fn();
+  developerHandler()(makeKeylessReq(), res, next);
+  await flush();
+  expect(next).toHaveBeenCalledWith(error);
+  expect(res.json).not.toHaveBeenCalled();
+  expect(res.send).not.toHaveBeenCalled();
+  expect(res.end).not.toHaveBeenCalled();
+});
