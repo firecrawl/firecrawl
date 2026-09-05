@@ -139,3 +139,69 @@ it("propagates final expiry failure even when no sitemap exists", async () => {
   mock.expire.mockRejectedValue(error);
   await expect(crawler().tryGetSitemap(vi.fn())).rejects.toBe(error);
 });
+
+it("awaits an in-flight Redis callback after sitemap timeout and rejects its original error", async () => {
+  vi.useFakeTimers();
+  try {
+    const error = new Error("late Redis deduplication failure");
+    let finish!: (value: unknown) => void;
+    mock.exec.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finish = resolve;
+        }),
+    );
+    const result = crawler().tryGetSitemap(vi.fn(), false, false, 10);
+    const rejection = expect(result).rejects.toBe(error);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mock.exec).toHaveBeenCalledOnce();
+    let settled = false;
+    void result.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(10);
+    expect(settled).toBe(false);
+    finish([[error, null]]);
+    await rejection;
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("returns the timeout fallback without waiting for a fetch and ignores its later callbacks", async () => {
+  vi.useFakeTimers();
+  try {
+    const value = crawler();
+    let lateHandler!: (urls: string[]) => unknown;
+    let finish!: (value: number) => void;
+    vi.spyOn(
+      value as unknown as {
+        tryFetchSitemapLinks(
+          source: string,
+          handler: (urls: string[]) => unknown,
+        ): Promise<number>;
+      },
+      "tryFetchSitemapLinks",
+    ).mockImplementation((_source, handler) => {
+      lateHandler = handler;
+      return new Promise(resolve => {
+        finish = resolve;
+      });
+    });
+    const handler = vi.fn();
+    const result = value.tryGetSitemap(handler, false, false, 10);
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(result).resolves.toBe(0);
+    await lateHandler(["https://example.com/late"]);
+    finish(0);
+    expect(mock.exec).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});

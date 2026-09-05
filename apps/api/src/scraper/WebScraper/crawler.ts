@@ -625,6 +625,19 @@ export class WebCrawler {
       ? AbortSignal.any([abort, timeoutController.signal])
       : timeoutController.signal;
 
+    const pendingHandlers = new Set<Promise<unknown>>();
+    let acceptHandlers = true;
+    const handleUrls = async (urls: string[]) => {
+      if (!acceptHandlers || fetchAbort.aborted) return;
+      const pending = trackedHandler.handle(urls);
+      pendingHandlers.add(pending);
+      try {
+        return await pending;
+      } finally {
+        pendingHandlers.delete(pending);
+      }
+    };
+
     let count = 0;
     try {
       const robotsSitemaps = this.robots.getSitemaps();
@@ -655,7 +668,7 @@ export class WebCrawler {
               .map(source =>
                 this.tryFetchSitemapLinks(
                   source,
-                  trackedHandler.handle,
+                  handleUrls,
                   fetchAbort,
                   mock,
                   maxAge,
@@ -673,6 +686,10 @@ export class WebCrawler {
         },
       )) as number;
     } catch (error) {
+      // Stop new callbacks and finish any Redis work already started before
+      // returning the sitemap timeout fallback.
+      acceptHandlers = false;
+      await Promise.allSettled(pendingHandlers);
       trackedHandler.rethrow();
       if (error instanceof Error && error.message === "Sitemap fetch timeout") {
         this.logger.warn("Sitemap fetch timed out", {

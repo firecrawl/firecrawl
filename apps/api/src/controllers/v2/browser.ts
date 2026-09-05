@@ -663,7 +663,7 @@ export async function browserDeleteController(
       session.request_id && session.request_id !== session.id
         ? session.request_id
         : null;
-    await billTeam(
+    const billingResult = await billTeam(
       req.auth.team_id,
       creditsBilled,
       req.acuc?.api_key_id ?? null,
@@ -682,6 +682,7 @@ export async function browserDeleteController(
         chargeId: `${session.id}:destroy`,
       },
     );
+    if (!billingResult.success) throw billingResult.error;
   }
 
   await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
@@ -825,7 +826,7 @@ export async function browserWebhookDestroyedController(
       session.request_id && session.request_id !== session.id
         ? session.request_id
         : null;
-    await billTeam(session.team_id, creditsBilled, null, {
+    const billingResult = await billTeam(session.team_id, creditsBilled, null, {
       endpoint: agentRequestId ? "agent" : usedPrompt ? "interact" : "browser",
       jobId: agentRequestId ?? session.id,
       // Same reasoning as the destroy path above: keyed on the session, not on
@@ -833,6 +834,7 @@ export async function browserWebhookDestroyedController(
       // each other's charge away.
       chargeId: `${session.id}:webhook`,
     });
+    if (!billingResult.success) throw billingResult.error;
   }
 
   await updateBrowserSessionCreditsUsed(session.id, creditsBilled);

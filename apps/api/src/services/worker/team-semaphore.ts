@@ -49,7 +49,24 @@ async function optionalFdbSlot<T>(operation: () => Promise<T>): Promise<T> {
   if (!(await nuqFdbHealthCheck(FDB_OPTIONAL_SLOT_TIMEOUT_MS))) {
     throw new Error("FDB health check failed before optional slot operation");
   }
-  return await withFdbTimeout(operation(), FDB_OPTIONAL_SLOT_TIMEOUT_MS);
+  const pending = operation();
+  try {
+    return await withFdbTimeout(pending, FDB_OPTIONAL_SLOT_TIMEOUT_MS);
+  } catch (error) {
+    // A timeout does not cancel the FDB transaction. Join it before releasing
+    // the slot, otherwise a late acquire can commit after cleanup.
+    try {
+      await pending;
+    } catch (operationError) {
+      if (operationError !== error) {
+        throw new AggregateError(
+          [error, operationError],
+          "FDB slot timeout and operation failed",
+        );
+      }
+    }
+    throw error;
+  }
 }
 
 async function acquire(

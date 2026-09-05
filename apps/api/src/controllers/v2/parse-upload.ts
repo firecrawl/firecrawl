@@ -479,6 +479,8 @@ async function releaseRejectedUploadRef(payload: ParseUploadRefPayload) {
   await releaseUnparsedUploadRef(payload.teamId, payload.uploadId);
 }
 
+class UploadValidationError extends Error {}
+
 async function resolveUploadRef(
   payload: ParseUploadRefPayload,
   imageOcrEnabled: boolean,
@@ -490,12 +492,14 @@ async function resolveUploadRef(
     cleanupExpiredLocalUploads();
     const record = localUploads.get(payload.uploadId);
     if (!record || record.teamId !== payload.teamId || !record.buffer) {
-      throw new Error(
+      throw new UploadValidationError(
         "Uploaded file is not available. Upload the file before parsing.",
       );
     }
     if (record.buffer.length > payload.maxBytes) {
-      throw new Error("Uploaded file exceeds maximum size of 50MB.");
+      throw new UploadValidationError(
+        "Uploaded file exceeds maximum size of 50MB.",
+      );
     }
 
     const kind = detectUploadedFileKind(
@@ -510,7 +514,7 @@ async function resolveUploadRef(
       // its quota reservation.
       localUploads.delete(payload.uploadId);
       await releaseRejectedUploadRef(payload);
-      throw new Error("Unsupported upload type.");
+      throw new UploadValidationError("Unsupported upload type.");
     }
 
     return {
@@ -536,12 +540,16 @@ async function resolveUploadRef(
   const [metadata] = await file.getMetadata();
   const size = Number(metadata.size ?? 0);
   if (!Number.isFinite(size) || size > payload.maxBytes) {
-    throw new Error("Uploaded file exceeds maximum size of 50MB.");
+    throw new UploadValidationError(
+      "Uploaded file exceeds maximum size of 50MB.",
+    );
   }
 
   const [buffer] = await file.download();
   if (buffer.length > payload.maxBytes) {
-    throw new Error("Uploaded file exceeds maximum size of 50MB.");
+    throw new UploadValidationError(
+      "Uploaded file exceeds maximum size of 50MB.",
+    );
   }
 
   const kind = detectUploadedFileKind(
@@ -561,7 +569,7 @@ async function resolveUploadRef(
       });
     }
     await releaseRejectedUploadRef(payload);
-    throw new Error("Unsupported upload type.");
+    throw new UploadValidationError("Unsupported upload type.");
   }
 
   return {
@@ -572,14 +580,7 @@ async function resolveUploadRef(
       kind,
     },
     cleanup: async () => {
-      try {
-        await file.delete({ ignoreNotFound: true });
-      } catch (error) {
-        _logger.warn("Failed to clean up parse upload object", {
-          error,
-          uploadId: payload.uploadId,
-        });
-      }
+      await file.delete({ ignoreNotFound: true });
     },
   };
 }
@@ -621,10 +622,23 @@ export async function parseUploadRefPayloadMiddleware(
     return;
   }
 
-  const resolved = await resolveUploadRef(
-    payload,
-    isImageOcrEnabled(req.acuc?.flags),
-  );
+  let resolved: Awaited<ReturnType<typeof resolveUploadRef>>;
+  try {
+    resolved = await resolveUploadRef(
+      payload,
+      isImageOcrEnabled(req.acuc?.flags),
+    );
+  } catch (error) {
+    if (!(error instanceof UploadValidationError)) {
+      throw error;
+    }
+    res.status(400).json({
+      success: false,
+      code: "BAD_REQUEST",
+      error: error.message,
+    });
+    return;
+  }
   // Release the Redis reservation before parsing can send a success response.
   const [release] = await Promise.allSettled([
     releaseUnparsedUploadRef(payload.teamId, payload.uploadId),

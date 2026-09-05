@@ -495,7 +495,7 @@ export async function scrapeStopInteractiveBrowserController(
     });
   }
 
-  await billTeam(
+  const billingResult = await billTeam(
     req.auth.team_id,
     creditsBilled,
     req.acuc?.api_key_id ?? null,
@@ -506,6 +506,7 @@ export async function scrapeStopInteractiveBrowserController(
     },
   );
 
+  if (!billingResult.success) throw billingResult.error;
   logKeylessCreditUsage(req.auth.team_id, creditsBilled).catch(() => {});
 
   await updateBrowserSessionCreditsUsed(session.id, creditsBilled);

@@ -178,3 +178,23 @@ describe("billTeam", () => {
     expect(refundCredits).not.toHaveBeenCalled();
   });
 });
+it("retains the original queue error after successful compensation", async () => {
+  const error = new Error("Redis RPUSH failed");
+  queueBillingOperation.mockResolvedValue({ success: false, error });
+  const result = await billTeam("team", 1, null, {
+    endpoint: "browser",
+    jobId: "session",
+  });
+  expect(result).toMatchObject({ success: false, error });
+  expect(result.error).toBe(error);
+  expect(refundCredits).toHaveBeenCalledTimes(1);
+});
+it("preserves both queue and compensation errors", async () => {
+  const error = new Error("Redis RPUSH failed"),
+    compensation = new Error("refund failed");
+  queueBillingOperation.mockResolvedValue({ success: false, error });
+  refundCredits.mockRejectedValue(compensation);
+  await expect(
+    billTeam("team", 1, null, { endpoint: "browser", jobId: "session" }),
+  ).rejects.toMatchObject({ errors: [error, compensation] });
+});

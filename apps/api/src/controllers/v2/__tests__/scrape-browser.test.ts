@@ -20,6 +20,7 @@ vi.mock("../../../lib/browser-sessions", () => ({
   updateBrowserSessionCreditsUsed: vi.fn(() => Promise.resolve()),
   updateBrowserSessionScrapeId: vi.fn(() => Promise.resolve()),
   claimBrowserSessionDestroyed: vi.fn(),
+  markBrowserSessionCreationFailed: vi.fn().mockResolvedValue(undefined),
   invalidateActiveBrowserSessionCount: vi.fn(() => Promise.resolve()),
   getBrowserSessionFromScrape: vi.fn(),
   markBrowserSessionUsedPrompt: vi.fn(() => Promise.resolve()),
@@ -63,6 +64,20 @@ vi.mock("../../../services/autumn/autumn.service", () => ({
   },
 }));
 
+vi.mock("../../../lib/keyless", () => ({
+  keylessTeamUuid: vi.fn().mockReturnValue("keyless-team"),
+  reserveKeylessCredits: vi.fn().mockResolvedValue({ allowed: true }),
+  keylessLimitBody: vi.fn().mockReturnValue({ success: false }),
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE: "Free tier limit reached",
+  adjustKeylessCredits: vi.fn().mockResolvedValue(null),
+  logKeylessCreditUsage: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("../../../services/worker/nuq-router", () => ({
+  getCombinedTeamActiveCount: vi.fn().mockResolvedValue(0),
+  mirrorExternalSlotAcquire: vi.fn().mockResolvedValue(undefined),
+  mirrorExternalSlotRelease: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe("scrapeInteractController", () => {
   const previousUseDbAuthentication = config.USE_DB_AUTHENTICATION;
 
@@ -103,14 +118,6 @@ describe("scrapeInteractController", () => {
   });
 });
 
-vi.mock("../../../lib/keyless", () => ({
-  adjustKeylessCredits: vi.fn().mockResolvedValue(null),
-  logKeylessCreditUsage: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock("../../../services/worker/nuq-router", () => ({
-  mirrorExternalSlotAcquire: vi.fn().mockResolvedValue(undefined),
-  mirrorExternalSlotRelease: vi.fn().mockResolvedValue(undefined),
-}));
 import { scrapeStopInteractiveBrowserController } from "../scrape-browser";
 import {
   getBrowserSessionFromScrape,

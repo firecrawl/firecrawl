@@ -103,13 +103,14 @@ const req = () =>
     auth: { team_id: "team" },
     acuc: { api_key_id: 1 },
     body: { ttl: 600, code: "code", language: "node" },
-    params: { jobId: "scrape", id: "session" },
+    params: { jobId: "scrape", sessionId: "session" },
     headers: {},
     path: "/browser",
   }) as any;
 const res = () => ({ status: vi.fn().mockReturnThis(), json: vi.fn() }) as any;
 beforeEach(() => {
   vi.resetAllMocks();
+  mock.bill.mockResolvedValue({ success: true });
   mock.service.mockImplementation(async (_method, path) =>
     path === "/browsers"
       ? { sessionId: "provider", cdpUrl: "ws://browser" }
@@ -243,6 +244,27 @@ it("does not mark billing complete or clear prompt rate after billing fails", as
   const error = new Error("billing failed");
   mock.bill.mockRejectedValue(error);
   await expect(browserDeleteController(req(), res())).rejects.toBe(error);
+  expect(mock.credits).not.toHaveBeenCalled();
+  expect(mock.clear).not.toHaveBeenCalled();
+});
+
+it("propagates an unsuccessful billing result without recording completion", async () => {
+  const original = new Error("Redis billing queue failed");
+  mock.get.mockImplementation(async id =>
+    id === "session"
+      ? {
+          id,
+          team_id: "team",
+          browser_id: "provider",
+          credits_used: null,
+          should_bill: true,
+        }
+      : null,
+  );
+  mock.claim.mockResolvedValue(true);
+  mock.bill.mockResolvedValue({ success: false, error: original });
+  await expect(browserDeleteController(req(), res())).rejects.toBe(original);
+  expect(mock.get).toHaveBeenCalledWith("session");
   expect(mock.credits).not.toHaveBeenCalled();
   expect(mock.clear).not.toHaveBeenCalled();
 });

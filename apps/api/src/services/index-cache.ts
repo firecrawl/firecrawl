@@ -286,7 +286,22 @@ export async function getCachedMaxAge(
     return null;
   }
   try {
-    return { maxAge: JSON.parse(raw).max_age ?? null };
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return null;
+    }
+    const maxAge = (parsed as Record<string, unknown>).max_age;
+    if (
+      maxAge !== null &&
+      (typeof maxAge !== "number" || !Number.isFinite(maxAge))
+    ) {
+      return null;
+    }
+    return { maxAge };
   } catch {
     return null;
   }

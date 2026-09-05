@@ -1,5 +1,9 @@
 const mocks = vi.hoisted(() => ({
   run: vi.fn(),
+  fdbTeam: vi.fn(),
+  fdbAcquire: vi.fn(),
+  fdbRelease: vi.fn(),
+  fdbTimeout: vi.fn(),
   acquire: vi.fn(),
   release: vi.fn(),
 }));
@@ -21,16 +25,21 @@ vi.mock("../../lib/concurrency-limit", () => ({
   pushConcurrencyLimitActiveJob: mocks.acquire,
   removeConcurrencyLimitActiveJob: mocks.release,
 }));
-vi.mock("./nuq-router", () => ({ isFdbTeam: async () => false }));
+vi.mock("./nuq-router", () => ({ isFdbTeam: mocks.fdbTeam }));
 vi.mock("./nuq-fdb", () => ({
-  externalSlotsFdb: {},
-  nuqFdbHealthCheck: vi.fn(),
-  withFdbTimeout: vi.fn(),
+  externalSlotsFdb: { acquire: mocks.fdbAcquire, release: mocks.fdbRelease },
+  nuqFdbHealthCheck: async () => true,
+  withFdbTimeout: mocks.fdbTimeout,
 }));
 vi.mock("../../lib/deployment", () => ({ isSelfHosted: () => false }));
 import { teamConcurrencySemaphore } from "./team-semaphore";
 
+vi.mock("../../config", () => ({ config: { NUQ_BACKEND: "pg" } }));
 beforeEach(() => {
+  mocks.fdbTeam.mockReset().mockResolvedValue(false);
+  mocks.fdbAcquire.mockReset().mockResolvedValue(undefined);
+  mocks.fdbRelease.mockReset().mockResolvedValue(undefined);
+  mocks.fdbTimeout.mockReset().mockImplementation(promise => promise);
   mocks.acquire.mockReset().mockResolvedValue(undefined);
   mocks.release.mockReset().mockResolvedValue(undefined);
   mocks.run
@@ -85,4 +94,67 @@ it("retains work and cleanup failures together", async () => {
       throw workError;
     }),
   ).rejects.toMatchObject({ errors: [workError, cleanupError] });
+});
+
+it("joins a timed-out FDB acquire before releasing its slot", async () => {
+  const timeout = new Error("FDB timeout");
+  let finish!: () => void;
+  let timedOut!: () => void;
+  const timeoutObserved = new Promise<void>(resolve => {
+    timedOut = resolve;
+  });
+  const order: string[] = [];
+  mocks.fdbTeam.mockResolvedValue(true);
+  mocks.fdbAcquire.mockImplementation(
+    () =>
+      new Promise<void>(resolve => {
+        finish = () => {
+          order.push("commit");
+          resolve();
+        };
+      }),
+  );
+  mocks.fdbTimeout.mockImplementationOnce(async () => {
+    timedOut();
+    throw timeout;
+  });
+  mocks.fdbRelease.mockImplementation(async () => {
+    order.push("release");
+  });
+  const result = run(async () => "unused");
+  const rejected = expect(result).rejects.toBe(timeout);
+  await timeoutObserved;
+  await Promise.resolve();
+  expect(mocks.fdbRelease).not.toHaveBeenCalled();
+  finish();
+  await rejected;
+  expect(order).toEqual(["commit", "release"]);
+});
+it("retains a timeout and late FDB rejection", async () => {
+  const timeout = new Error("FDB timeout"),
+    original = new Error("FDB operation failed");
+  let reject!: (error: Error) => void;
+  let timedOut!: () => void;
+  const timeoutObserved = new Promise<void>(resolve => {
+    timedOut = resolve;
+  });
+  mocks.fdbTeam.mockResolvedValue(true);
+  mocks.fdbAcquire.mockImplementation(
+    () =>
+      new Promise<void>((_, fail) => {
+        reject = fail;
+      }),
+  );
+  mocks.fdbTimeout.mockImplementationOnce(async () => {
+    timedOut();
+    throw timeout;
+  });
+  const result = run(async () => "unused");
+  const rejected = expect(result).rejects.toMatchObject({
+    errors: [timeout, original],
+  });
+  await timeoutObserved;
+  reject(original);
+  await rejected;
+  expect(mocks.fdbRelease).toHaveBeenCalledTimes(1);
 });

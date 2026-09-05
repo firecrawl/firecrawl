@@ -212,7 +212,12 @@ export async function markBrowserSessionCreationFailed(
       updated_at: now,
       deleted_at: now,
     })
-    .where(eq(schema.browser_sessions.id, id));
+    .where(
+      and(
+        eq(schema.browser_sessions.id, id),
+        eq(schema.browser_sessions.status, "active"),
+      ),
+    );
 }
 
 export async function updateBrowserSessionStatus(

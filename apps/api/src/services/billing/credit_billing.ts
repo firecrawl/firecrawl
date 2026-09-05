@@ -50,27 +50,34 @@ export async function billTeam(
       );
 
       if (!result.success && trackedInRequest) {
-        if (await autumnService.isRoutedThroughFirebill(team_id)) {
-          // No compensating refund on the firebill route: the tracked charge
-          // is durable and correct, and a refund here poisons a retried
-          // request — its track would be deduped by Autumn against the same
-          // idempotency key (no new charge) while the ledger enqueue succeeds,
-          // leaving Autumn net-zero for billed work.
-          logger?.warn(
-            "billing enqueue failed on the firebill route; charge stands",
-            { team_id, credits, billing },
+        try {
+          if (await autumnService.isRoutedThroughFirebill(team_id)) {
+            // No compensating refund on the firebill route: the tracked charge
+            // is durable and correct, and a refund here poisons a retried
+            // request — its track would be deduped by Autumn against the same
+            // idempotency key (no new charge) while the ledger enqueue succeeds,
+            // leaving Autumn net-zero for billed work.
+            logger?.warn(
+              "billing enqueue failed on the firebill route; charge stands",
+              { team_id, credits, billing },
+            );
+          } else {
+            await autumnService.refundCredits({
+              teamId: team_id,
+              value: credits,
+              properties: autumnProperties,
+              featureId,
+              // Distinct from the track key: the refund is its own charge event.
+              idempotencyKey: billing.chargeId
+                ? `fc:refund:${billing.endpoint}:${billing.chargeId}`
+                : undefined,
+            });
+          }
+        } catch (compensationError) {
+          throw new AggregateError(
+            [result.error, compensationError],
+            "Billing queue and compensation failed",
           );
-        } else {
-          await autumnService.refundCredits({
-            teamId: team_id,
-            value: credits,
-            properties: autumnProperties,
-            featureId,
-            // Distinct from the track key: the refund is its own charge event.
-            idempotencyKey: billing.chargeId
-              ? `fc:refund:${billing.endpoint}:${billing.chargeId}`
-              : undefined,
-          });
         }
       }
 

@@ -134,9 +134,7 @@ function positiveRedisTtl(ttl: number): number | undefined {
 }
 
 /**
- * Quota denials remain valid when Redis cannot provide the optional TTL hint.
- * Keep that secondary lookup from changing a controlled 429 into a generic
- * authentication failure.
+ * Redis failures propagate when looking up the quota retry delay.
  */
 async function retryAfterSecondsFor(key: string): Promise<number | undefined> {
   return positiveRedisTtl(await redisRateLimitClient.ttl(key));
@@ -325,12 +323,7 @@ return next
  */
 export async function checkKeylessEligibility(ip: string): Promise<{
   eligible: boolean;
-  reason?:
-    | KeylessQuotaReason
-    | "disabled"
-    | "ineligible_ip"
-    | "suspicious"
-    | "error";
+  reason?: KeylessQuotaReason | "disabled" | "ineligible_ip" | "suspicious";
   retryAfterSeconds?: number;
 }> {
   if (!isKeylessConfigured()) return { eligible: false, reason: "disabled" };

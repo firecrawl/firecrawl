@@ -192,19 +192,35 @@ export async function putTeamThreatProtectionController(
   // Keep the sync plane consistent with the connection: a removed connection
   // drops the synced rules, and so does a change of connection identity — the
   // old tenant's custom rules must not keep enforcing while the new tenant's
-  // first sync runs. A (re)configured connection syncs in the background so
-  // custom-list rules and the category picker are ready shortly after save.
+  // first sync runs. Await the replacement sync even if clearing fails, then
+  // report every failure to the caller.
   const connectionIdentityChanged =
     previous?.zscaler &&
     updated.zscaler &&
     (previous.zscaler.clientId !== updated.zscaler.clientId ||
       previous.zscaler.vanityDomain !== updated.zscaler.vanityDomain ||
       previous.zscaler.cloud !== updated.zscaler.cloud);
+  const syncErrors: unknown[] = [];
   if (previous?.zscaler && (!updated.zscaler || connectionIdentityChanged)) {
-    await clearZscalerSyncState(orgId);
+    try {
+      await clearZscalerSyncState(orgId);
+    } catch (error) {
+      syncErrors.push(error);
+    }
   }
   if (updated.zscaler) {
-    await syncOrgZscalerRules(orgId);
+    try {
+      await syncOrgZscalerRules(orgId);
+    } catch (error) {
+      syncErrors.push(error);
+    }
+  }
+  if (syncErrors.length === 1) throw syncErrors[0];
+  if (syncErrors.length > 1) {
+    throw new AggregateError(
+      syncErrors,
+      "Zscaler state clear and replacement sync failed",
+    );
   }
 
   // Audit log — org-level security configuration change. The serialized view
