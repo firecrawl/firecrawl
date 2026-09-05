@@ -38,6 +38,15 @@ const DEFAULT_RESEARCH_SITES = [
   "medrxiv.org",
 ];
 
+export function hasCategory(
+  categories: CategoryOption[] | undefined,
+  type: CategoryInput["type"],
+): boolean {
+  return (categories ?? []).some(
+    c => (typeof c === "string" ? c : c.type) === type,
+  );
+}
+
 /**
  * Builds a search query with category filters
  * @param baseQuery The base search query

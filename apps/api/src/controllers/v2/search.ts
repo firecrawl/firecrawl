@@ -23,7 +23,7 @@ import {
 import { logger as _logger } from "../../lib/logger";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
-import { CategoryOption } from "../../lib/search-query-builder";
+import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import {
   applyZdrScope,
   captureExceptionWithZdrCheck,
@@ -42,6 +42,7 @@ import {
 } from "../../lib/key-restriction";
 import { wantsDeveloperCategory } from "../../search/developer";
 import { requestOrigin } from "../../lib/request-origin";
+import { applyNotice, RESEARCH_CATEGORY_NOTICE } from "../../lib/deprecations";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
 export async function searchController(
@@ -77,6 +78,9 @@ export async function searchController(
     const rawOrigin =
       typeof req.body?.origin === "string" ? req.body.origin : undefined;
     req.body = searchRequestSchema.parse(req.body);
+    if (hasCategory(req.body.categories as CategoryOption[], "research")) {
+      applyNotice(res, RESEARCH_CATEGORY_NOTICE);
+    }
 
     const requestedFormats = formatTypesOf(req.body.scrapeOptions?.formats);
     const keyRestriction = await checkKeyFormatRestriction(
