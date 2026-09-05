@@ -587,7 +587,9 @@ export async function browserDeleteController(
   try {
     deleteResult =
       pendingDuration !== null ||
-      (session.status === "destroyed" && session.credits_used !== null)
+      (session.status === "destroyed" &&
+        session.should_bill &&
+        session.credits_used !== null)
         ? {
             ok: true,
             cleanupQueued: true,

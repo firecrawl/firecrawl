@@ -692,3 +692,17 @@ describe("strict billing tracking", () => {
     expect(bodies[0].idempotency_key).toBe(bodies[1].idempotency_key);
   });
 });
+
+it("classifies strict malformed JSON as unusable and preserves the original parser error", async () => {
+  const original = new SyntaxError("malformed response JSON");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockRejectedValue(original),
+    }),
+  );
+  await expect(firebillTrack(params, true)).rejects.toBe(original);
+  expect(await failureCauses()).toEqual({ "track/unusable": 1 });
+});

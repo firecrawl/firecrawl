@@ -467,6 +467,22 @@ async function firebillAttempt(
     logger.info("firebill track succeeded", context);
     return { ok: true };
   } catch (error) {
+    if (isSyntaxError(error)) {
+      logger.warn("firebill answered with a body we could not read", {
+        customerId,
+        entityId,
+        featureId,
+        value,
+        path,
+        error,
+      });
+      return {
+        ok: false,
+        reason: "ambiguous",
+        cause: "unusable",
+        originalError: error,
+      };
+    }
     // DO NOT fall back to Autumn directly: firebill may have accepted the event
     // before this failed, and the Autumn SDK sends no idempotency key, so the
     // pair could not be deduped and the customer would be billed twice.

@@ -332,8 +332,6 @@ export class AutumnService {
         },
         throwOnError,
       );
-      if (!tracked && throwOnError)
-        throw new Error("Billing tracking was not confirmed");
       return tracked;
     }
     if (requireFirebill)

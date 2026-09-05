@@ -124,6 +124,7 @@ import {
 } from "../../../lib/browser-sessions";
 import { browserServiceRequest } from "../../../lib/scrape-interact/browser-service-client";
 import { finalizeBrowserSession } from "../../../lib/browser-session-finalization";
+import { logKeylessCreditUsage } from "../../../lib/keyless";
 import { mirrorExternalSlotRelease } from "../../../services/worker/nuq-router";
 
 vi.mock("../../../lib/browser-session-finalization", () => ({
@@ -154,6 +155,7 @@ describe("browser teardown Redis failures", () => {
       sessionDurationMs: 60000,
     });
     vi.mocked(finalizeBrowserSession).mockResolvedValue({
+      didFinalize: true,
       creditsBilled: 7,
       usedPrompt: true,
       rate: 420,
@@ -187,6 +189,37 @@ describe("browser teardown Redis failures", () => {
       expect(res.json).not.toHaveBeenCalled();
     },
   );
+  it("retains both cleanup errors and never finalizes after either failure", async () => {
+    const invalidate = new Error("invalidation failed"),
+      release = new Error("release failed");
+    vi.mocked(invalidateActiveBrowserSessionCount).mockRejectedValueOnce(
+      invalidate,
+    );
+    vi.mocked(mirrorExternalSlotRelease).mockRejectedValueOnce(release);
+    await expect(
+      scrapeStopInteractiveBrowserController(request(), response()),
+    ).rejects.toMatchObject({ errors: [invalidate, release] });
+    expect(finalizeBrowserSession).not.toHaveBeenCalled();
+  });
+  it("records keyless usage only for the caller that finalizes the session", async () => {
+    vi.mocked(finalizeBrowserSession)
+      .mockResolvedValueOnce({
+        creditsBilled: 7,
+        usedPrompt: true,
+        rate: 420,
+        didFinalize: true,
+      })
+      .mockResolvedValueOnce({
+        creditsBilled: 7,
+        usedPrompt: false,
+        rate: 0,
+        didFinalize: false,
+      });
+    await scrapeStopInteractiveBrowserController(request(), response());
+    await scrapeStopInteractiveBrowserController(request(), response());
+    expect(logKeylessCreditUsage).toHaveBeenCalledTimes(1);
+    expect(logKeylessCreditUsage).toHaveBeenCalledWith("team", 7);
+  });
   it("propagates the original finalization failure without a success response", async () => {
     const error = new Error("original finalization failure");
     vi.mocked(finalizeBrowserSession).mockRejectedValueOnce(error);

@@ -60,7 +60,12 @@ export async function finalizeBrowserSession(
   sessionId: string,
   durationMs: number,
   apiKeyId: number | null,
-): Promise<{ creditsBilled: number; usedPrompt: boolean; rate: number }> {
+): Promise<{
+  creditsBilled: number;
+  usedPrompt: boolean;
+  rate: number;
+  didFinalize: boolean;
+}> {
   // Persist the pending teardown before any external charge. Creation rollback
   // only updates active rows and must not erase a charge awaiting completion.
   const destroyedAt = new Date().toISOString();
@@ -86,6 +91,7 @@ export async function finalizeBrowserSession(
     if (!session) throw new Error("Browser session not found during teardown");
     if (session.credits_used !== null) {
       return {
+        didFinalize: false,
         creditsBilled: session.credits_used,
         usedPrompt: false,
         rate: 0,
@@ -231,6 +237,7 @@ export async function finalizeBrowserSession(
       })
       .where(eq(schema.browser_sessions.id, sessionId));
     return {
+      didFinalize: true,
       creditsBilled: plan.credits,
       usedPrompt: plan.usedPrompt,
       rate: plan.rate,

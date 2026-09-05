@@ -420,7 +420,9 @@ export async function scrapeStopInteractiveBrowserController(
   try {
     deleteResult =
       pendingDuration !== null ||
-      (session.status === "destroyed" && session.credits_used !== null)
+      (session.status === "destroyed" &&
+        session.should_bill &&
+        session.credits_used !== null)
         ? {
             ok: true,
             cleanupQueued: true,
@@ -469,12 +471,14 @@ export async function scrapeStopInteractiveBrowserController(
   if (cleanupErrors.length > 1)
     throw new AggregateError(cleanupErrors, "Browser teardown cleanup failed");
 
-  const { creditsBilled, usedPrompt, rate } = await finalizeBrowserSession(
-    session.id,
-    durationMs,
-    req.acuc?.api_key_id ?? null,
-  );
-  logKeylessCreditUsage(req.auth.team_id, creditsBilled).catch(() => {});
+  const { creditsBilled, usedPrompt, rate, didFinalize } =
+    await finalizeBrowserSession(
+      session.id,
+      durationMs,
+      req.acuc?.api_key_id ?? null,
+    );
+  if (didFinalize)
+    logKeylessCreditUsage(req.auth.team_id, creditsBilled).catch(() => {});
 
   logger.info("Browser session destroyed", {
     sessionDurationMs: durationMs,

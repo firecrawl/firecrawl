@@ -176,6 +176,8 @@ it("serializes concurrent DELETE and webhook finalization", async () => {
     finalizeBrowserSession(row.id, 120000, null),
   ]);
   expect(first.creditsBilled).toBe(second.creditsBilled);
+  expect(first.didFinalize).toBe(true);
+  expect(second.didFinalize).toBe(false);
   expect(mock.track).toHaveBeenCalledTimes(1);
   expect(await redis.llen(queue)).toBe(1);
 });

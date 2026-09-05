@@ -105,7 +105,10 @@ vi.mock("../../../lib/scrape-interact/langsmith", () => ({
 }));
 vi.mock("../../../lib/zdr-helpers", () => ({ getScrapeZDR: () => false }));
 import { browserCreateController, browserDeleteController } from "../browser";
-import { scrapeInteractController } from "../scrape-browser";
+import {
+  scrapeInteractController,
+  scrapeStopInteractiveBrowserController,
+} from "../scrape-browser";
 const req = () =>
   ({
     auth: { team_id: "team" },
@@ -120,6 +123,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mock.bill.mockResolvedValue({ success: true });
   mock.finalize.mockResolvedValue({
+    didFinalize: true,
     creditsBilled: 2,
     usedPrompt: true,
     rate: 120,
@@ -258,8 +262,77 @@ it("retries final cleanup for a completed destroyed session", async () => {
     browser_id: "provider",
     status: "destroyed",
     credits_used: 2,
+    should_bill: true,
   });
   await browserDeleteController(req(), res());
   expect(fetch).not.toHaveBeenCalled();
   expect(mock.finalize).toHaveBeenCalledWith("session", 0, 1);
 });
+
+for (const [label, create, destroy] of [
+  ["browser", browserCreateController, browserDeleteController],
+  [
+    "scrape browser",
+    scrapeInteractController,
+    scrapeStopInteractiveBrowserController,
+  ],
+] as const) {
+  it(`${label} retries provider deletion after failed creation rollback`, async () => {
+    const original = new Error("Redis acquire failed");
+    const deletion = new Error("provider deletion failed");
+    mock.acquire.mockRejectedValueOnce(original);
+    if (label === "browser") {
+      const implementation = vi.mocked(fetch).getMockImplementation()!;
+      vi.mocked(fetch).mockImplementation(async (...args) => {
+        if ((args[1] as RequestInit)?.method === "DELETE") throw deletion;
+        return implementation(...args);
+      });
+    } else {
+      const implementation = mock.service.getMockImplementation()!;
+      mock.service.mockImplementation(async (...args) => {
+        if (args[0] === "DELETE") throw deletion;
+        return implementation(...args);
+      });
+    }
+    await expect(create(req(), res())).rejects.toMatchObject({
+      errors: [original, deletion],
+    });
+    const failedRow = {
+      id: "session",
+      team_id: "team",
+      browser_id: "provider",
+      status: "destroyed",
+      credits_used: 0,
+      should_bill: false,
+    };
+    mock.get.mockResolvedValue(failedRow);
+    mock.getFromScrape.mockResolvedValue(failedRow);
+    if (label === "browser")
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          cleanupQueued: true,
+          sessionDurationMs: 1000,
+        }),
+      } as Response);
+    else
+      mock.service.mockResolvedValue({
+        ok: true,
+        cleanupQueued: true,
+        sessionDurationMs: 1000,
+      });
+    const before =
+      label === "browser"
+        ? vi.mocked(fetch).mock.calls.length
+        : mock.service.mock.calls.length;
+    await destroy(req(), res());
+    expect(
+      label === "browser"
+        ? vi.mocked(fetch).mock.calls.length
+        : mock.service.mock.calls.length,
+    ).toBe(before + 1);
+    expect(mock.finalize).toHaveBeenCalledWith("session", 1000, 1);
+  });
+}
