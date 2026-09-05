@@ -10,7 +10,15 @@ import {
   type ScrapeOptions,
   type ScreenshotFormat,
 } from "../types";
-import { isZodSchema, zodSchemaToJsonSchema, looksLikeZodShape } from "../../utils/zodSchemaToJson";
+import {
+  isZodSchema,
+  zodSchemaToJsonSchema,
+  looksLikeZodShape,
+} from "../../utils/zodSchemaToJson";
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
 
 export function ensureValidFormats(formats?: FormatOption[]): void {
   if (!formats) return;
@@ -79,7 +87,7 @@ export function ensureValidFormats(formats?: FormatOption[]): void {
     if ((fmt as ScreenshotFormat).type === "screenshot") {
       // no-op; already camelCase; validate numeric fields if present
       const s = fmt as ScreenshotFormat;
-      if (s.quality != null && (typeof s.quality !== "number" || s.quality < 0)) {
+      if (s.quality != null && (!isFiniteNumber(s.quality) || s.quality < 0)) {
         throw new Error("screenshot.quality must be a non-negative number");
       }
     }
@@ -88,10 +96,16 @@ export function ensureValidFormats(formats?: FormatOption[]): void {
 
 export function ensureValidScrapeOptions(options?: ScrapeOptions): void {
   if (!options) return;
-  if (options.timeout != null && options.timeout <= 0) {
+  if (
+    options.timeout != null &&
+    (!isFiniteNumber(options.timeout) || options.timeout <= 0)
+  ) {
     throw new Error("timeout must be positive");
   }
-  if (options.waitFor != null && options.waitFor < 0) {
+  if (
+    options.waitFor != null &&
+    (!isFiniteNumber(options.waitFor) || options.waitFor < 0)
+  ) {
     throw new Error("waitFor must be non-negative");
   }
   ensureValidFormats(options.formats);
@@ -180,7 +194,10 @@ export function ensureValidParseFormats(formats?: ParseFormatOption[]): void {
 
 export function ensureValidParseOptions(options?: ParseOptions): void {
   if (!options) return;
-  if (options.timeout != null && options.timeout <= 0) {
+  if (
+    options.timeout != null &&
+    (!isFiniteNumber(options.timeout) || options.timeout <= 0)
+  ) {
     throw new Error("timeout must be positive");
   }
 
