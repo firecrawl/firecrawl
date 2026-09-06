@@ -194,6 +194,199 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("falls back to the synchronous path when fire-pdf rejects admission", async () => {
+    // Live inline submit: fire-pdf says its queue cannot drain inside our
+    // window (503 admission_rejected). Nothing was accepted server-side, so
+    // the document must run synchronously now — never die unstarted.
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 503,
+          body: {
+            error: "admission_rejected",
+            message: "queue cannot drain within the submitted deadline",
+            reason: "estimated drain 90s exceeds deadline budget 45s",
+          },
+        },
+      },
+    ]);
+    const fallback = vi.fn(async (..._args: unknown[]) => ({
+      markdown: "sync result",
+    }));
+    const doc = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      undefined,
+      { fetchImpl, fallbackImpl: fallback as any, sleepImpl: noopSleep },
+    );
+    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(fallback.mock.calls[0]?.[1]).toBe("BASE64");
+    expect((doc as any).markdown).toBe("sync result");
+    // Exactly one request: the rejected POST. No polling, no cancel.
+    expect(calls).toHaveLength(1);
+  });
+
+  it("does not send an admission policy when the fast-fail flag is off", async () => {
+    const original = (config as any).FIRE_PDF_ASYNC_LIVE_FASTFAIL;
+    (config as any).FIRE_PDF_ASYNC_LIVE_FASTFAIL = false;
+    try {
+      const { fetchImpl, calls } = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs$/,
+          matchMethod: "POST",
+          response: {
+            status: 202,
+            body: {
+              scrape_id: "scrape-id-test",
+              status: "queued",
+              retry_after_ms: 1,
+            },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test$/,
+          response: {
+            status: 200,
+            body: { scrape_id: "scrape-id-test", status: "done" },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test\/result$/,
+          response: {
+            status: 200,
+            body: {
+              schema_version: 1,
+              markdown: "ok",
+              pages_processed: 1,
+              failed_pages: null,
+              partial_pages: null,
+            },
+          },
+        },
+      ]);
+      await scrapePDFWithFirePDFAsync(
+        makeMeta(),
+        "BASE64",
+        undefined,
+        undefined,
+        undefined,
+        { fetchImpl, sleepImpl: noopSleep },
+      );
+      // The default deployment keeps fire-pdf's own admission policy.
+      expect("admission" in (calls[0].body as any)).toBe(false);
+    } finally {
+      (config as any).FIRE_PDF_ASYNC_LIVE_FASTFAIL = original;
+    }
+  });
+
+  it("asks fire-pdf to enforce admission only for live inline submits when enabled", async () => {
+    const original = (config as any).FIRE_PDF_ASYNC_LIVE_FASTFAIL;
+    (config as any).FIRE_PDF_ASYNC_LIVE_FASTFAIL = true;
+    try {
+      const { fetchImpl, calls } = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs$/,
+          matchMethod: "POST",
+          response: {
+            status: 202,
+            body: {
+              scrape_id: "scrape-id-test",
+              status: "queued",
+              retry_after_ms: 1,
+            },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test$/,
+          response: {
+            status: 200,
+            body: { scrape_id: "scrape-id-test", status: "done" },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test\/result$/,
+          response: {
+            status: 200,
+            body: {
+              schema_version: 1,
+              markdown: "ok",
+              pages_processed: 1,
+              failed_pages: null,
+              partial_pages: null,
+            },
+          },
+        },
+      ]);
+      await scrapePDFWithFirePDFAsync(
+        makeMeta(),
+        "BASE64",
+        undefined,
+        undefined,
+        undefined,
+        { fetchImpl, sleepImpl: noopSleep },
+      );
+      expect((calls[0].body as any).admission).toBe("enforce");
+
+      // A crawl-origin submit never opts in: it has no synchronous fallback.
+      const second = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs$/,
+          matchMethod: "POST",
+          response: {
+            status: 202,
+            body: {
+              scrape_id: "scrape-id-test",
+              status: "queued",
+              retry_after_ms: 1,
+            },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test$/,
+          response: {
+            status: 200,
+            body: { scrape_id: "scrape-id-test", status: "done" },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test\/result$/,
+          response: {
+            status: 200,
+            body: {
+              schema_version: 1,
+              markdown: "ok",
+              pages_processed: 1,
+              failed_pages: null,
+              partial_pages: null,
+            },
+          },
+        },
+      ]);
+      await scrapePDFWithFirePDFAsync(
+        makeMeta({
+          internalOptions: {
+            zeroDataRetention: false,
+            teamId: "team-x",
+            teamConcurrency: 12,
+            crawlId: "crawl-1",
+          },
+        }),
+        "BASE64",
+        undefined,
+        undefined,
+        undefined,
+        { fetchImpl: second.fetchImpl, sleepImpl: noopSleep },
+      );
+      expect((second.calls[0].body as any).admission).toBeUndefined();
+    } finally {
+      (config as any).FIRE_PDF_ASYNC_LIVE_FASTFAIL = original;
+    }
+  });
+
   it("happy path: POST 202 queued → poll done → result returns markdown", async () => {
     const { fetchImpl, calls } = makeFetchFromSequence([
       {
