@@ -13,6 +13,20 @@ const delimitedList = (separator = ",") => {
 const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema.optional());
 
+// Like emptyStringAsUndefined but also coerces whitespace-only strings (e.g.
+// docker-compose `${VAR}` passthrough can produce "  "). Only used for fields
+// where a whitespace-only value is never meaningful and silent-disable is the
+// correct semantics — do NOT use for credential/URL fields that must fail
+// closed at boot (FIREBILL_*, KEYLESS_*, MCP_DELEGATED_*, ...).
+const emptyOrWhitespaceStringAsUndefined = <T extends z.ZodTypeAny>(
+  schema: T,
+) =>
+  z.preprocess(
+    value =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    schema.optional(),
+  );
+
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema);
 
@@ -82,13 +96,9 @@ const configSchema = z.object({
   FIRECRAWL_DASHBOARD_URL: z.url().default("https://www.firecrawl.dev"),
   SUPPORT_AGENT_URL: z.string().url().optional(),
   SUPPORT_AGENT_VERCEL_BYPASS_SECRET: z.string().optional(),
-  FIREBRAIN_TRACKS_URL: z.preprocess(
-    v => (typeof v === "string" && v.trim() === "" ? undefined : v),
-    z.string().url().optional(),
-  ),
-  FIREBRAIN_TRACKS_API_KEY: z.preprocess(
-    v => (typeof v === "string" && v.trim() === "" ? undefined : v),
-    z.string().trim().optional(),
+  FIREBRAIN_TRACKS_URL: emptyOrWhitespaceStringAsUndefined(z.string().url()),
+  FIREBRAIN_TRACKS_API_KEY: emptyOrWhitespaceStringAsUndefined(
+    z.string().trim(),
   ),
   RESEARCH_PROXY_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
@@ -164,8 +174,13 @@ const configSchema = z.object({
   S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY: emptyStringAsUndefined(
     z.string().trim().min(1),
   ),
-  OPENAI_API_KEY: z.string().optional(),
-  OPENAI_BASE_URL: z.string().optional(),
+  // Empty strings from docker-compose ${VAR} passthrough must become
+  // undefined. Note this alone is not enough: @ai-sdk/openai re-reads
+  // process.env at request time when the createOpenAI option is undefined
+  // (loadApiKey / loadOptionalSetting), so config.ts also deletes these keys
+  // from process.env below after parsing (see #4083).
+  OPENAI_API_KEY: emptyOrWhitespaceStringAsUndefined(z.string().trim()),
+  OPENAI_BASE_URL: emptyOrWhitespaceStringAsUndefined(z.string().trim()),
   OPENROUTER_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
@@ -612,3 +627,21 @@ const validatedConfigSchema = configSchema.superRefine((value, context) => {
 });
 
 export const config = validatedConfigSchema.parse(process.env);
+
+// @ai-sdk/openai resolves apiKey/baseURL lazily per request and falls back to
+// process.env when the createOpenAI option is undefined. Docker Compose passes
+// unset .env vars through as empty strings, so unless we remove them here the
+// SDK would resurrect "" and produce `Failed to parse URL from /responses` —
+// a silent json-format failure that still bills credits (see #4083).
+for (const key of ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const) {
+  if (config[key] === undefined && process.env[key] !== undefined) {
+    delete process.env[key];
+    // console.warn (not the winston logger): config.ts is imported before the
+    // logger exists, and logger.ts imports config — a cycle.
+    console.warn(
+      key === "OPENAI_API_KEY"
+        ? "[config] OPENAI_API_KEY is set but empty/whitespace-only; the OpenAI provider will be unavailable (see #4083)"
+        : "[config] OPENAI_BASE_URL is set but empty/whitespace-only; defaulting to https://api.openai.com/v1 (see #4083)",
+    );
+  }
+}
