@@ -258,7 +258,11 @@ function isForcedZdrTeam(
     return searchZDR === "forced-zdr" || searchZDR === "forced-anon";
   }
 
-  return getScrapeZDR(req.acuc?.flags) === "forced";
+  if (options.endpoint === "scrape" || options.endpoint === "parse") {
+    return getScrapeZDR(req.acuc?.flags) === "forced";
+  }
+
+  return false;
 }
 
 export async function recordEndpointFeedback(
