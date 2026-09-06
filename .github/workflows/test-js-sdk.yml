@@ -14,6 +14,7 @@ jobs:
   test:
     name: Run tests
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install pnpm
@@ -39,6 +40,10 @@ jobs:
       - name: Build
         run: pnpm run build
         working-directory: ./apps/js-sdk/firecrawl
-      - name: Run tests
+      # The live e2e suite runs against a deployed API, so failures may reflect
+      # the deployment rather than this PR. Reported, but not blocking until the
+      # suite is stably green (see CI redesign plan).
+      - name: Run e2e tests (non-blocking)
+        continue-on-error: true
         run: pnpm run test
         working-directory: ./apps/js-sdk/firecrawl
