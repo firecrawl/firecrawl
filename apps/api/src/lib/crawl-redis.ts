@@ -485,6 +485,33 @@ export function generateURLPermutations(url: string | URL): URL[] {
   return [...new Set(permutations.map(x => x.href))].map(x => new URL(x));
 }
 
+// Atomically checks the visited_unique limit and adds the URL to both sets.
+// Must be a single script: a separate SCARD check followed by SADD calls
+// leaves a TOCTOU window where concurrent workers can all pass the limit
+// check before any of them records their URL, overshooting the limit.
+const LOCK_URL_SCRIPT = `
+local visitedKey = KEYS[1]
+local uniqueKey = KEYS[2]
+local visitedMember = ARGV[1]
+local uniqueMember = ARGV[2]
+local limit = tonumber(ARGV[3])
+local ttl = tonumber(ARGV[4])
+
+if limit >= 0 and redis.call("SCARD", uniqueKey) >= limit then
+  return -1
+end
+
+local added = redis.call("SADD", visitedKey, visitedMember)
+redis.call("EXPIRE", visitedKey, ttl)
+
+if added ~= 0 then
+  redis.call("SADD", uniqueKey, uniqueMember)
+  redis.call("EXPIRE", uniqueKey, ttl)
+end
+
+return added
+`;
+
 export async function lockURL(
   id: string,
   sc: StoredCrawl,
@@ -499,38 +526,31 @@ export async function lockURL(
       operation: "lock_url",
     });
 
-    if (typeof sc.crawlerOptions?.limit === "number") {
-      if (
-        (await redisEvictConnection.scard("crawl:" + id + ":visited_unique")) >=
-        sc.crawlerOptions.limit
-      ) {
-        setSpanAttributes(span, { "crawl.limit_reached": true });
-        return false;
-      }
+    const visitedMember = !sc.crawlerOptions?.deduplicateSimilarURLs
+      ? normalizedUrl
+      : generateURLPermutations(normalizedUrl)[0].href;
+
+    const limit =
+      typeof sc.crawlerOptions?.limit === "number"
+        ? Math.max(sc.crawlerOptions.limit, 0)
+        : -1;
+
+    const added = (await redisEvictConnection.eval(
+      LOCK_URL_SCRIPT,
+      2,
+      "crawl:" + id + ":visited",
+      "crawl:" + id + ":visited_unique",
+      visitedMember,
+      normalizedUrl,
+      limit,
+      24 * 60 * 60,
+    )) as number;
+
+    const res = added > 0;
+
+    if (added === -1) {
+      setSpanAttributes(span, { "crawl.limit_reached": true });
     }
-
-    const pipeline = redisEvictConnection.pipeline();
-
-    if (!sc.crawlerOptions?.deduplicateSimilarURLs) {
-      pipeline.sadd("crawl:" + id + ":visited", normalizedUrl);
-    } else {
-      const permutation = generateURLPermutations(normalizedUrl)[0].href;
-      pipeline.sadd("crawl:" + id + ":visited", permutation);
-    }
-
-    pipeline.expire("crawl:" + id + ":visited", 24 * 60 * 60);
-
-    const results = await pipeline.exec();
-    const saddResult = results?.[0]?.[1] as number;
-    const res = saddResult !== 0;
-
-    if (res) {
-      const uniquePipeline = redisEvictConnection.pipeline();
-      uniquePipeline.sadd("crawl:" + id + ":visited_unique", normalizedUrl);
-      uniquePipeline.expire("crawl:" + id + ":visited_unique", 24 * 60 * 60);
-      await uniquePipeline.exec();
-    }
-
     setSpanAttributes(span, { "crawl.url_locked": res });
     return res;
   });
