@@ -182,6 +182,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
         contentType: "application/pdf",
         proxyUsed: meta.pdfPrefetch.proxyUsed,
+        screenshot: meta.pdfPrefetch.screenshot,
       };
     } else {
       const file = await fetchPdfFileGuardingProxyFailure(meta, () =>
@@ -944,6 +945,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // handoff may have come through the stealth proxy, while the direct
       // download always uses the basic route.
       proxyUsed: meta.pdfPrefetch?.proxyUsed ?? "basic",
+      // A handoff from a resolved viewer shell carries the screenshot of the
+      // page the caller asked for; a plain PDF has none.
+      screenshot: meta.pdfPrefetch?.screenshot,
     };
   } finally {
     // Always clean up temp file after we're done with it

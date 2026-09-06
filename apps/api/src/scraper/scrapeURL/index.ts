@@ -57,6 +57,7 @@ import {
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
   XTwitterConfigurationError,
+  PDFViewerUnresolvedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
@@ -87,6 +88,11 @@ import {
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
+import {
+  detectContentShell,
+  wantsPageContent,
+  type ContentShell,
+} from "./lib/contentShell";
 import {
   DOCUMENT_EXTENSIONS,
   documentContentTypeFromExtension,
@@ -170,6 +176,10 @@ export type Meta = {
         status: number;
         proxyUsed: "basic" | "stealth";
         contentType?: string;
+        /** Screenshot the browser took of the page the file was handed off
+         * from (a resolved viewer shell), when the request asked for one.
+         * The pdf engine returns it so the format survives the handoff. */
+        screenshot?: string;
         /** Set when fire-engine handed the file off by GCS reference (large
          * PDFs): the object it uploaded, so the FirePDF by-reference path
          * can server-side copy it instead of re-uploading the bytes. The
@@ -255,6 +265,14 @@ export type Meta = {
   audioCookies?: BrowserCookie[];
   /** Threat protection decisions made during this scrape, in order (mutable, like logs). */
   threatDecisions: ThreatDecision[];
+  /**
+   * The last engine result declined because the page was a viewer shell
+   * rather than content (see lib/contentShell). Lets an exhausted waterfall
+   * fail with the shell-specific error instead of the generic all-engines
+   * one. Written by scrapeURLLoopIter on the shared meta, like
+   * threatDecisions.
+   */
+  contentShell?: { kind: ContentShell["kind"]; url: string; engine: Engine };
 };
 
 function buildFeatureFlags(
@@ -735,6 +753,32 @@ async function scrapeURLLoopIter(
       (engineResult.statusCode >= 200 && engineResult.statusCode < 300) ||
       engineResult.statusCode === 304;
     const hasNoPageError = engineResult.error === undefined;
+    // A viewer shell — pdf.js chrome around a document the page never
+    // delivered — is not content, however long its toolbar text is. The
+    // browser engine resolves shells itself (fire-engine/pdfjsViewer.ts) and
+    // never returns one; any other engine's shell result (a stale index
+    // entry, tlsclient's raw HTML) is declined so the waterfall reaches an
+    // engine that can, and remembered so an exhausted waterfall fails with
+    // the specific error.
+    // Exchange content never falls back to other engines by design (see
+    // buildFallbackList), so a shell it returns cannot be resolved and is
+    // served as delivered rather than turned into a failure.
+    const contentShell =
+      hasRawBase64 ||
+      engine === "exchange" ||
+      !wantsPageContent(meta.options.formats) ||
+      meta.internalOptions.teamId === "sitemap" ||
+      meta.internalOptions.teamId === "robots-txt"
+        ? null
+        : detectContentShell(engineResult);
+    const isContentShell = contentShell !== null;
+    if (contentShell !== null) {
+      meta.contentShell = {
+        kind: contentShell.kind,
+        url: engineResult.url,
+        engine,
+      };
+    }
     // A parsed image is a complete result even when OCR found no text: the
     // image engine has already verified the bytes and run them through OCR,
     // so a blank scan or a photo legitimately comes back as an empty document.
@@ -744,7 +788,7 @@ async function scrapeURLLoopIter(
       engine === "image" && isGoodStatusCode && hasNoPageError;
     const hasRequiredOutput = hasRawBase64
       ? engineResult.rawBase64 !== undefined
-      : isParsedImage || isLongEnough || !isGoodStatusCode;
+      : !isContentShell && (isParsedImage || isLongEnough || !isGoodStatusCode);
     const isLikelyProxyError = [401, 403, 429].includes(
       engineResult.statusCode,
     );
@@ -777,12 +821,19 @@ async function scrapeURLLoopIter(
           isGoodStatusCode,
           hasNoPageError,
           isParsedImage,
+          isContentShell,
         },
       });
       return engineResult;
     } else {
       meta.logger.warn("Scrape via " + engine + " deemed unsuccessful.", {
-        factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+        factors: {
+          isLongEnough,
+          isGoodStatusCode,
+          hasNoPageError,
+          isContentShell,
+        },
+        contentShell: contentShell ?? undefined,
         length: engineResult.html?.trim().length ?? 0,
       });
       throw new EngineUnsuccessfulError(engine);
@@ -996,6 +1047,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof PDFAntibotError ||
               error.error instanceof PDFFetchProxyError ||
               error.error instanceof PDFOCRRequiredError ||
+              error.error instanceof PDFViewerUnresolvedError ||
               error.error instanceof DocumentAntibotError ||
               error.error instanceof DocumentFetchProxyError ||
               error.error instanceof PDFInsufficientTimeError ||
@@ -1095,6 +1147,19 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       if (meta.options.lockdown) {
         throw new LockdownMissError();
       }
+      if (
+        meta.contentShell !== undefined &&
+        !fallbackList.some(x => x.engine.includes("chrome-cdp"))
+      ) {
+        // The page is a viewer shell and no engine in this waterfall can
+        // resolve one (fast mode, self-hosted without fire-engine): say so
+        // rather than "all engines failed". With a browser engine present
+        // its own failure is the story, and the generic error keeps it.
+        throw new PDFViewerUnresolvedError(
+          meta.contentShell.url,
+          "no_resolving_engine",
+        );
+      }
       throw new NoEnginesLeftError(fallbackList.map(x => x.engine));
     }
 
@@ -1185,6 +1250,15 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         postprocessorsUsed: engineResult.postprocessorsUsed,
       },
     };
+
+    // A file handoff can carry the screenshot the browser took of the page
+    // it came from (a resolved viewer shell, see fire-engine/pdfjsViewer.ts).
+    // When it did, the screenshot format was honored even though the parsing
+    // engine declares no support for it.
+    if (engineResult.screenshot !== undefined) {
+      result.unsupportedFeatures.delete("screenshot");
+      result.unsupportedFeatures.delete("screenshot@fullScreen");
+    }
 
     if (result.unsupportedFeatures.size > 0) {
       const warning = `The engine used does not support the following features: ${[...result.unsupportedFeatures].join(", ")} -- your scrape may be partial.`;
@@ -1739,6 +1813,12 @@ export async function scrapeURL(
           {
             error,
           },
+        );
+      } else if (error instanceof PDFViewerUnresolvedError) {
+        errorType = "PDFViewerUnresolvedError";
+        meta.logger.warn(
+          "scrapeURL: Page is a PDF.js viewer shell whose document could not be retrieved",
+          { error, viewerUrl: error.viewerUrl, reason: error.reason },
         );
       } else if (error instanceof PDFPrefetchFailed) {
         errorType = "PDFPrefetchFailed";
