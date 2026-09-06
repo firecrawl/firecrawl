@@ -1,6 +1,10 @@
 import express, { Request, Response } from "express";
-import { Agent, fetch } from "undici";
-import { config } from "../config";
+import {
+  ExchangeProxyError,
+  exchangeProxyFailureResponse,
+  exchangeUpstreamBase,
+  forwardToExchange,
+} from "../lib/exchange-proxy";
 import { logger as rootLogger } from "../lib/logger";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
@@ -14,24 +18,8 @@ const CLAIMS_TIMEOUT_MS = 20_000;
 const SUPPLY_TIMEOUT_MS = 30_000;
 const INGEST_TIMEOUT_MS = 50_000;
 
-const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
-const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
-
-function dispatcherFor(timeout: number) {
-  return new Agent({
-    connectTimeout: timeout,
-    headersTimeout: timeout,
-    bodyTimeout: timeout,
-  });
-}
-
 function exchangeError(res: Response, status: number, error: string) {
   return res.status(status).json({ success: false, error });
-}
-
-function upstreamBase(): string | null {
-  if (!config.FIRE_EXCHANGE_URL) return null;
-  return config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
 }
 
 function exchangeProxy(
@@ -39,7 +27,6 @@ function exchangeProxy(
   options: { requiresRetrieveFlag?: boolean } = {},
 ) {
   const requiresRetrieveFlag = options.requiresRetrieveFlag !== false;
-  const dispatcher = dispatcherFor(timeout);
 
   return async function controller(req: Request, res: Response) {
     const authedReq = req as RequestWithAuth<any, any, any>;
@@ -50,8 +37,7 @@ function exchangeProxy(
       teamId: authedReq.auth.team_id,
     });
 
-    const base = upstreamBase();
-    if (!base) {
+    if (!exchangeUpstreamBase()) {
       return exchangeError(res, 503, "This endpoint is not available.");
     }
 
@@ -63,48 +49,33 @@ function exchangeProxy(
       );
     }
 
-    const hasBody = req.method !== "GET";
-    const path = req.originalUrl.replace(/^\/exchange/, "/v1");
-
+    const accept = req.headers["accept"];
+    const requestId = req.headers["x-request-id"];
     try {
-      const upstream = await fetch(base + path, {
+      const upstream = await forwardToExchange({
+        teamId: authedReq.auth.team_id,
         method: req.method,
-        headers: {
-          ...Object.fromEntries(
-            FORWARDED_REQUEST_HEADERS.flatMap(h => {
-              const value = req.headers[h];
-              return typeof value === "string" ? [[h, value]] : [];
-            }),
-          ),
-          ...(hasBody ? { "content-type": "application/json" } : {}),
-          "x-exchange-team-id": authedReq.auth.team_id,
-        },
-        body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
-        signal: AbortSignal.timeout(timeout),
-        dispatcher,
+        path: req.originalUrl.replace(/^\/exchange/, "/v1"),
+        body: req.body,
+        timeoutMs: timeout,
+        ...(typeof accept === "string" ? { accept } : {}),
+        ...(typeof requestId === "string" ? { requestId } : {}),
       });
 
-      for (const h of FORWARDED_RESPONSE_HEADERS) {
-        const value = upstream.headers.get(h);
-        if (value) res.setHeader(h, value);
-      }
+      if (upstream.contentType)
+        res.setHeader("content-type", upstream.contentType);
+      if (upstream.requestId) res.setHeader("x-request-id", upstream.requestId);
 
-      const text = await upstream.text();
-      let body: unknown;
-      try {
-        body = text ? JSON.parse(text) : null;
-      } catch {
-        body = text;
+      if (upstream.body === null || typeof upstream.body === "string") {
+        return res.status(upstream.status).send(upstream.body ?? "");
       }
-
-      if (body === null || typeof body === "string") {
-        return res.status(upstream.status).send(body ?? "");
-      }
-      return res.status(upstream.status).json(body);
+      return res.status(upstream.status).json(upstream.body);
     } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === "TimeoutError") {
-        logger.error("Exchange proxy timed out");
-        return exchangeError(res, 504, "The request timed out.");
+      if (error instanceof ExchangeProxyError) {
+        if (error.kind === "timeout") logger.error("Exchange proxy timed out");
+        else logger.error("Exchange proxy error", { error: error.cause });
+        const failure = exchangeProxyFailureResponse(error.kind);
+        return exchangeError(res, failure.status, failure.error);
       }
       logger.error("Exchange proxy error", { error });
       return exchangeError(res, 502, "The request could not be completed.");

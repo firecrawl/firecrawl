@@ -161,12 +161,22 @@ export interface WebSearchResult {
   highlights?: string;
 }
 
-export type SearchResultType = "web" | "images" | "news";
+export type SearchResultType = "web" | "images" | "news" | "exchange";
+
+export interface ExchangeSearchResult {
+  provider: string;
+  capability: string;
+  concept: string;
+  cohorts: string[];
+  creditsCost: number;
+  similarity: number;
+}
 
 export interface SearchV2Response {
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
+  exchange?: ExchangeSearchResult[];
 }
 
 export interface ScrapeActionContent {
