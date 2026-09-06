@@ -1,6 +1,7 @@
 import {
   context,
   createContextKey,
+  isSpanContextValid,
   propagation,
   SpanKind,
   SpanStatusCode,
@@ -32,6 +33,7 @@ import {
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 
 export { SpanKind } from "@opentelemetry/api";
+export type { Span } from "@opentelemetry/api";
 
 const TRACER_NAME = "firecrawl-api";
 
@@ -65,6 +67,28 @@ function isZeroDataRetentionContext(ctx: Context): boolean {
   return ctx.getValue(ZERO_DATA_RETENTION_CONTEXT_KEY) === true;
 }
 
+// Traces flagged ZDR after their root span started (a `*.zero_data_retention`
+// attribute set from inside the span). Descendants started afterwards are not
+// recorded and spans of these traces still in flight are dropped when they end.
+// Bounded FIFO; a trace evicted early only loses this fallback, its spans still
+// carry the context flag or attribute themselves.
+const ZERO_DATA_RETENTION_TRACE_LIMIT = 10_000;
+const zeroDataRetentionTraces = new Set<string>();
+
+function markTraceZeroDataRetention(traceId: string): void {
+  if (zeroDataRetentionTraces.has(traceId)) {
+    return;
+  }
+
+  zeroDataRetentionTraces.add(traceId);
+  if (zeroDataRetentionTraces.size > ZERO_DATA_RETENTION_TRACE_LIMIT) {
+    const oldest = zeroDataRetentionTraces.values().next().value;
+    if (oldest !== undefined) {
+      zeroDataRetentionTraces.delete(oldest);
+    }
+  }
+}
+
 function hasZeroDataRetentionAttribute(attributes: Attributes): boolean {
   for (const [key, value] of Object.entries(attributes)) {
     if (
@@ -89,9 +113,14 @@ class ZeroDataRetentionSampler implements Sampler {
     attributes: Attributes,
     links: Link[],
   ): SamplingResult {
+    if (hasZeroDataRetentionAttribute(attributes)) {
+      markTraceZeroDataRetention(traceId);
+      return { decision: SamplingDecision.NOT_RECORD };
+    }
+
     if (
       isZeroDataRetentionContext(ctx) ||
-      hasZeroDataRetentionAttribute(attributes)
+      zeroDataRetentionTraces.has(traceId)
     ) {
       return { decision: SamplingDecision.NOT_RECORD };
     }
@@ -122,7 +151,13 @@ class ZeroDataRetentionSpanProcessor implements SpanProcessor {
   }
 
   onEnd(span: ReadableSpan): void {
+    const traceId = span.spanContext().traceId;
     if (hasZeroDataRetentionAttribute(span.attributes)) {
+      markTraceZeroDataRetention(traceId);
+      return;
+    }
+
+    if (zeroDataRetentionTraces.has(traceId)) {
       return;
     }
 
@@ -290,7 +325,19 @@ export function setSpanAttributes(
   attributes: SpanAttributeInput,
 ): void {
   const cleaned = cleanAttributes(attributes);
-  if (cleaned) {
-    span.setAttributes(cleaned);
+  if (!cleaned) {
+    return;
+  }
+
+  span.setAttributes(cleaned);
+
+  // Flagging a live span as ZDR also covers everything started under it from
+  // now on, plus spans of the trace that are still in flight.
+  const spanContext = span.spanContext();
+  if (
+    hasZeroDataRetentionAttribute(cleaned) &&
+    isSpanContextValid(spanContext)
+  ) {
+    markTraceZeroDataRetention(spanContext.traceId);
   }
 }

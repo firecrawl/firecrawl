@@ -156,6 +156,29 @@ describe("otel-tracer", () => {
     ]);
   });
 
+  it("suppresses descendants once a live span is flagged zero data retention", async () => {
+    await withSpan("late.root", async span => {
+      setSpanAttributes(span, { "nuq.zero_data_retention": true });
+      await withSpan("late.child", async () => {});
+      trace.getTracer("ai").startSpan("ai.generateText").end();
+    });
+
+    expect(await exportedSpans()).toHaveLength(0);
+  });
+
+  it("drops in-flight spans of a trace flagged after they started", async () => {
+    await withSpan("late.root", async root => {
+      await withSpan("late.child", async () => {
+        setSpanAttributes(root, { "crawl.zero_data_retention": true });
+      });
+    });
+    await withSpan("other.root", async () => {});
+
+    expect((await exportedSpans()).map(span => span.name)).toEqual([
+      "other.root",
+    ]);
+  });
+
   it("continues a serialized trace and inherits the sampled decision", async () => {
     let serialized: SerializedTraceContext = {};
     let apiSpanId = "";

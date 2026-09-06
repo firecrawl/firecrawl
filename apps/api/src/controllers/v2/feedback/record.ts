@@ -2,6 +2,12 @@ import { v7 as uuidv7 } from "uuid";
 import { config } from "../../../config";
 import { logger as _logger } from "../../../lib/logger";
 import {
+  withSpan,
+  recordSpanException,
+  type Span,
+} from "../../../lib/otel-tracer";
+import { getScrapeZDR } from "../../../lib/zdr-helpers";
+import {
   autumnService,
   featureIdForBillingEndpoint,
 } from "../../../services/autumn/autumn.service";
@@ -241,6 +247,25 @@ export async function recordEndpointFeedback(
   req: RequestWithAuth<any, any, any>,
   options: FeedbackRecordOptions,
 ): Promise<FeedbackRecordResult> {
+  return withSpan(
+    "api.feedback.record",
+    span => recordEndpointFeedbackInner(req, options, span),
+    {
+      attributes: {
+        "feedback.endpoint": options.endpoint,
+        "feedback.job_id": options.jobId,
+        "feedback.team_id": req.auth.team_id,
+      },
+      zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+    },
+  );
+}
+
+async function recordEndpointFeedbackInner(
+  req: RequestWithAuth<any, any, any>,
+  options: FeedbackRecordOptions,
+  span: Span,
+): Promise<FeedbackRecordResult> {
   const logger = _logger.child({
     module: "api/v2",
     method: "recordEndpointFeedback",
@@ -367,6 +392,7 @@ export async function recordEndpointFeedback(
     logger.error("Unhandled error while recording endpoint feedback", {
       error,
     });
+    recordSpanException(span, error);
     return feedbackFailure(
       500,
       "INTERNAL",

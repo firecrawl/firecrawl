@@ -29,6 +29,13 @@ import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
+  withSpan,
+  setSpanAttributes,
+  recordSpanException,
+  SpanKind,
+  type Span,
+} from "../../lib/otel-tracer";
+import {
   adjustKeylessCredits,
   keylessLimitBody,
   logKeylessCreditUsage,
@@ -42,6 +49,31 @@ import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
+) {
+  // Resolved before the root span starts so the whole request trace stays
+  // unrecorded for zero-data-retention requests (see otel-tracer).
+  const zeroDataRetentionTrace =
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body?.zeroDataRetention === true;
+
+  return withSpan(
+    "api.scrape.request",
+    span => scrapeControllerInner(req, res, span),
+    {
+      kind: SpanKind.SERVER,
+      attributes: {
+        "api.version": "v1",
+        "scrape.team_id": req.auth.team_id,
+      },
+      zeroDataRetention: zeroDataRetentionTrace,
+    },
+  );
+}
+
+async function scrapeControllerInner(
+  req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
+  res: Response<ScrapeResponse>,
+  span: Span,
 ) {
   // Get timing data from middleware (includes all middleware processing time)
   const middlewareStartTime =
@@ -340,6 +372,11 @@ export async function scrapeController(
         errorId: id,
         path: req.path,
         teamId: req.auth.team_id,
+      });
+      recordSpanException(span, e);
+      setSpanAttributes(span, {
+        "scrape.status_code": 500,
+        "scrape.error_id": id,
       });
       return res.status(500).json({
         success: false,
