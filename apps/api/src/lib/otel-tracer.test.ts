@@ -22,8 +22,15 @@ import {
 describe("otel-tracer", () => {
   const exporter = new InMemorySpanExporter();
   let provider: NodeTracerProvider;
+  // The provider's env detector reads these; keep the suite hermetic.
+  const savedEnv = {
+    OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME,
+    OTEL_RESOURCE_ATTRIBUTES: process.env.OTEL_RESOURCE_ATTRIBUTES,
+  };
 
   beforeAll(() => {
+    delete process.env.OTEL_SERVICE_NAME;
+    delete process.env.OTEL_RESOURCE_ATTRIBUTES;
     provider = createTracerProvider({
       exporter,
       serviceName: "test-service",
@@ -37,6 +44,10 @@ describe("otel-tracer", () => {
     trace.disable();
     context.disable();
     propagation.disable();
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
   beforeEach(() => {

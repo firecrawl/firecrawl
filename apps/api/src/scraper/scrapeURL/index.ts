@@ -1,6 +1,10 @@
 import { Logger } from "winston";
 import { config } from "../../config";
-import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
+import {
+  withSpan,
+  setSpanAttributes,
+  recordSpanException,
+} from "../../lib/otel-tracer";
 
 import {
   applyScrapeOptionsDefaults,
@@ -1819,6 +1823,7 @@ export async function scrapeURL(
           throw error.inner;
         } else {
           meta.logger.error("scrapeURL: Unexpected error happened", { error });
+          recordSpanException(span, error);
           // TODO: results?
         }
 

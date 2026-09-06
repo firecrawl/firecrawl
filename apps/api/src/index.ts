@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { config } from "./config";
-import "./otel";
+import { shutdownTracing } from "./otel";
 import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
@@ -178,6 +178,7 @@ async function startServer(port = DEFAULT_PORT) {
         shutdownWebhookQueue().finally(() => {
           shutdownIndexerQueue().finally(async () => {
             await shutdownPubSubLogging();
+            await shutdownTracing();
             logger.info("NUQ shutdown complete");
             process.exit(0);
           });

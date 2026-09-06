@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { config } from "../config";
-import "../otel";
+import { shutdownTracing } from "../otel";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 import { ExtractResult } from "../lib/extract/types";
@@ -204,6 +204,7 @@ async function shutdown() {
   _logger.info("Shutting down extract worker...");
   await shutdownExtractQueue();
   await shutdownPubSubLogging();
+  await shutdownTracing();
   _logger.info("Extract worker shut down");
   process.exit(0);
 }

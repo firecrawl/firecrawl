@@ -90,6 +90,7 @@ import { scrapeSitemap } from "../../scraper/crawler/sitemap";
 import {
   withTraceContextAsync,
   withSpan,
+  withZeroDataRetention,
   setSpanAttributes,
 } from "../../lib/otel-tracer";
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
@@ -1619,29 +1620,27 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
     zeroDataRetention: job.data?.zeroDataRetention ?? false,
   });
 
-  // Restore trace context if available and execute within span
-  if (job.data.traceContext) {
-    return withTraceContextAsync(job.data.traceContext, () =>
-      withSpan(
-        "worker.scrape.process",
-        async span => {
-          setSpanAttributes(span, {
-            "worker.job_id": job.id,
-            "worker.mode": job.data.mode,
-            "worker.team_id": job.data.team_id,
-            "worker.crawl_id": job.data.crawl_id || "none",
-            "worker.url":
-              job.data.mode === "single_urls" ? job.data.url : "n/a",
-          });
+  // Restore trace context if available and execute within span. The ZDR
+  // context is applied either way so nothing below records for ZDR jobs.
+  return withZeroDataRetention(job.data.zeroDataRetention === true, () => {
+    if (!job.data.traceContext) {
+      return processJobWithTracing(job, logger);
+    }
 
-          return processJobWithTracing(job, logger);
-        },
-        { zeroDataRetention: job.data.zeroDataRetention },
-      ),
+    return withTraceContextAsync(job.data.traceContext, () =>
+      withSpan("worker.scrape.process", async span => {
+        setSpanAttributes(span, {
+          "worker.job_id": job.id,
+          "worker.mode": job.data.mode,
+          "worker.team_id": job.data.team_id,
+          "worker.crawl_id": job.data.crawl_id || "none",
+          "worker.url": job.data.mode === "single_urls" ? job.data.url : "n/a",
+        });
+
+        return processJobWithTracing(job, logger);
+      }),
     );
-  } else {
-    return processJobWithTracing(job, logger);
-  }
+  });
 };
 
 async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {

@@ -27,6 +27,7 @@ import { CategoryOption } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
+import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
@@ -41,6 +42,25 @@ import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
 export async function searchController(
+  req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
+  res: Response<SearchResponse>,
+) {
+  // Resolved before any span starts so the whole request stays unrecorded for
+  // zero-data-retention and anonymous searches (see otel-tracer).
+  const enterprise: unknown[] = Array.isArray(req.body?.enterprise)
+    ? req.body.enterprise
+    : [];
+  const zeroDataRetentionTrace =
+    Boolean(getSearchForcedKind(req.acuc?.flags)) ||
+    enterprise.includes("zdr") ||
+    enterprise.includes("anon");
+
+  return withZeroDataRetention(zeroDataRetentionTrace, () =>
+    searchControllerInner(req, res),
+  );
+}
+
+async function searchControllerInner(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
   res: Response<SearchResponse>,
 ) {

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { config } from "../config";
-import "../otel";
+import { shutdownTracing } from "../otel";
 import {
   getDeepResearchQueue,
   getGenerateLlmsTxtQueue,
@@ -491,5 +491,6 @@ app.listen(workerPort, (error?: Error) => {
 
   _logger.info("All jobs finished. Shutting down...");
   await shutdownPubSubLogging();
+  await shutdownTracing();
   process.exit(0);
 })();

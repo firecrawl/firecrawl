@@ -170,7 +170,7 @@ describe("processBillingBatch", () => {
     });
   });
 
-  it("captures exceptions and refunds when billing throws", async () => {
+  it("refunds when billing throws", async () => {
     queue = [makeOp({ autumnTrackInRequest: true })];
     billTeam7.mockRejectedValueOnce(new Error("rpc exploded"));
 

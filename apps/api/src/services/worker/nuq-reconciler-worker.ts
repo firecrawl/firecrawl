@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { config } from "../../config";
-import "../../otel";
+import { shutdownTracing } from "../../otel";
 import { logger as _logger } from "../../lib/logger";
 import { reconcileConcurrencyQueue } from "../../lib/concurrency-queue-reconciler";
 import { Counter, register } from "prom-client";
@@ -68,7 +68,8 @@ const reconcilerJobsRecoveredTotal = new Counter({
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    server.close(() => {
+    server.close(async () => {
+      await shutdownTracing();
       _logger.info("NuQ reconciler worker shut down");
       process.exit(0);
     });

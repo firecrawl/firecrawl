@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { config } from "../../config";
-import "../../otel";
+import { shutdownTracing } from "../../otel";
 import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger, logger } from "../../lib/logger";
 import {
@@ -682,6 +682,7 @@ const workerFun = async (
   }
   logger.info("All jobs finished. Worker exiting!");
   await shutdownPubSubLogging();
+  await shutdownTracing();
   process.exit(0);
 };
 

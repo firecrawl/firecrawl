@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { config } from "../config";
-import "../otel";
+import { shutdownTracing } from "../otel";
 import Express from "express";
 import { logger as _logger } from "../lib/logger";
 import {
@@ -48,7 +48,8 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
       await sleep(1000);
     }
 
-    server.close(() => {
+    server.close(async () => {
+      await shutdownTracing();
       _logger.info("cclog worker shut down");
       process.exit(0);
     });

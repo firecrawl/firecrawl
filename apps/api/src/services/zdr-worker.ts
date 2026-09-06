@@ -1,5 +1,5 @@
 import "dotenv/config";
-import "../otel";
+import { shutdownTracing } from "../otel";
 import { logger } from "../lib/logger";
 import { zdrcleaner } from "../lib/zdrcleaner";
 
@@ -20,6 +20,7 @@ process.on("SIGTERM", () => {
     await zdrcleaner();
   }
 
+  await shutdownTracing();
   logger.info("zdr-worker exiting");
   process.exit(0);
 })();

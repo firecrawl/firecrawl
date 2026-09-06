@@ -263,11 +263,7 @@ export async function withSpan<T>(
           span.setStatus({ code: SpanStatusCode.OK });
           return result;
         } catch (error) {
-          span.recordException(error instanceof Error ? error : String(error));
-          span.setStatus({
-            code: SpanStatusCode.ERROR,
-            message: error instanceof Error ? error.message : String(error),
-          });
+          recordSpanException(span, error);
           throw error;
         } finally {
           span.end();
@@ -275,6 +271,18 @@ export async function withSpan<T>(
       },
     ),
   );
+}
+
+/**
+ * Marks a span as failed and attaches the error as an exception event, for
+ * failures that are handled (returned) rather than thrown out of `withSpan`.
+ */
+export function recordSpanException(span: Span, error: unknown): void {
+  span.recordException(error instanceof Error ? error : String(error));
+  span.setStatus({
+    code: SpanStatusCode.ERROR,
+    message: error instanceof Error ? error.message : String(error),
+  });
 }
 
 export function setSpanAttributes(

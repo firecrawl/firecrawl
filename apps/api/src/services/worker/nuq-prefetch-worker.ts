@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { config } from "../../config";
-import "../../otel";
+import { shutdownTracing } from "../../otel";
 import {
   scrapeQueue,
   nuqGetLocalMetrics,
@@ -43,6 +43,7 @@ import { logger } from "../../lib/logger";
   async function shutdown() {
     server.close();
     await nuqShutdown();
+    await shutdownTracing();
     process.exit(0);
   }
 
