@@ -1,7 +1,14 @@
-import { Firecrawl, FirecrawlClient } from "../../../index";
+import FirecrawlAppDefault, { Firecrawl, FirecrawlApp, FirecrawlClient } from "../../../index";
 
 describe("V2 prototype discoverability", () => {
   const app = new Firecrawl({ apiKey: "fc-test", apiUrl: "http://localhost:9" });
+
+  it("exports FirecrawlApp alias and default", () => {
+    expect(FirecrawlApp).toBe(Firecrawl);
+    expect(FirecrawlAppDefault).toBe(Firecrawl);
+    const appFromAlias = new FirecrawlApp({ apiKey: "fc-test", apiUrl: "http://localhost:9" });
+    expect(appFromAlias).toBeInstanceOf(Firecrawl);
+  });
 
   it("exposes V2 methods on immediate Firecrawl prototype", () => {
     const names = Object.getOwnPropertyNames(Object.getPrototypeOf(app));

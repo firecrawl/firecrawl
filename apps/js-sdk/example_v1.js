@@ -1,10 +1,10 @@
-import { Firecrawl } from 'firecrawl';
+import FirecrawlApp from '@mendable/firecrawl-js';
 
 // Placeholder v1 example (JavaScript)
 // Mirrors the older SDK usage. Replace with your API key before running.
 
 async function main() {
-  const app = new Firecrawl({ apiKey: process.env.FIRECRAWL_API_KEY || 'fc-YOUR_API_KEY' });
+  const app = new FirecrawlApp({ apiKey: process.env.FIRECRAWL_API_KEY || 'fc-YOUR_API_KEY' });
 
   const scrape = await app.v1.scrapeUrl('firecrawl.dev');
   if (scrape && scrape.success) console.log(scrape.markdown);
