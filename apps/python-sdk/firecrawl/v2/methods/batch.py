@@ -319,10 +319,21 @@ def wait_for_batch_completion(
     start_time = time.monotonic()
     
     while True:
-        status_job = get_batch_scrape_status(client, job_id)
+        # Poll cheaply: do not paginate on status checks. Materializing every
+        # page of the batch on each poll is wasted work, since intermediate
+        # results are discarded as soon as the next poll happens.
+        status_job = get_batch_scrape_status(
+            client, job_id, pagination_config=PaginationConfig(auto_paginate=False)
+        )
         
         # Check if job is complete
         if status_job.status in ["completed", "failed", "cancelled"]:
+            if status_job.status == "completed":
+                # Final fetch with pagination so callers still receive the
+                # full result set once the job has finished.
+                return get_batch_scrape_status(
+                    client, job_id, pagination_config=PaginationConfig(auto_paginate=True)
+                )
             return status_job
         
         # Check timeout
