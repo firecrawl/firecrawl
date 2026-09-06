@@ -8,6 +8,7 @@ import {
   map,
   scrape,
   search,
+  searchRaw,
   tokenUsage,
 } from "./lib";
 
@@ -249,6 +250,43 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
       const resultCost = Math.ceil(resultCount / 10) * 2; // 2 credits per 10 results
 
       expect(creditDiff).toBe(resultCost);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "bills the base search cost when a search returns no results",
+    async () => {
+      const identity = await idmux({
+        name: "billing/v1 bills the base search cost when a search returns no results",
+        credits: 100,
+      });
+
+      const rc1 = (await creditUsage(identity)).remaining_credits;
+
+      // An exact-phrase query on nonsense tokens: the search succeeds and
+      // matches nothing. searchRaw, because the search helper asserts a
+      // non-empty result array.
+      const raw = await searchRaw(
+        {
+          query: '"zqxjkl-firecrawl-empty-result-probe-9f3a2c-wvbnpfghdtrs"',
+        },
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(200);
+      expect(raw.body.success).toBe(true);
+
+      await sleepForBatchBilling();
+
+      const rc2 = (await creditUsage(identity)).remaining_credits;
+
+      // The probe query must match nothing, or the test never exercises the
+      // empty path it exists to cover.
+      expect(raw.body.data?.length ?? 0).toBe(0);
+
+      // A search that ran bills one unit, even with no results.
+      expect(rc1 - rc2).toBe(2);
     },
     60000,
   );
