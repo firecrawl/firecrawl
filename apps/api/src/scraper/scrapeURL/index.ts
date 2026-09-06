@@ -64,6 +64,7 @@ import { LLMRefusalError } from "./transformers/llmExtract";
 import { urlSpecificParams } from "./lib/urlSpecificParams";
 import { shouldCheckRobots } from "./shouldCheckRobots";
 import { loadMock, MockState } from "./lib/mock";
+import { shouldEscalateToStealthProxy } from "./lib/stealthEscalation";
 import { CostTracking } from "../../lib/cost-tracking";
 import { getEngineForUrl } from "../WebScraper/utils/engine-forcing";
 import { useIndex } from "../../services/index";
@@ -317,10 +318,6 @@ function buildFeatureFlags(
 
   if (options.fastMode) {
     flags.add("useFastMode");
-  }
-
-  if (options.proxy === "stealth" || options.proxy === "enhanced") {
-    flags.add("stealthProxy");
   }
 
   const urlO = new URL(url);
@@ -749,11 +746,7 @@ async function scrapeURLLoopIter(
       engineResult.statusCode,
     );
 
-    if (
-      isLikelyProxyError &&
-      meta.options.proxy === "auto" &&
-      !meta.featureFlags.has("stealthProxy")
-    ) {
+    if (isLikelyProxyError && shouldEscalateToStealthProxy(meta)) {
       meta.logger.info(
         "Scrape via " +
           engine +
@@ -765,6 +758,25 @@ async function scrapeURLLoopIter(
         },
       );
       throw new AddFeatureError(["stealthProxy"]);
+    }
+
+    if (
+      isLikelyProxyError &&
+      meta.options.proxy === "auto" &&
+      !meta.featureFlags.has("stealthProxy")
+    ) {
+      // A proxy error that would have escalated, but cannot because a single
+      // engine is pinned: fail rather than return the blocked page.
+      meta.logger.warn(
+        "Scrape via " +
+          engine +
+          " deemed unsuccessful due to proxy inadequacy, without an escalation path.",
+        {
+          statusCode: engineResult.statusCode,
+          length: engineResult.html?.trim().length ?? 0,
+        },
+      );
+      throw new EngineUnsuccessfulError(engine);
     }
 
     // NOTE: TODO: what to do when status code is bad is tough...

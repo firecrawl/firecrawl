@@ -921,6 +921,32 @@ describe("/v2/parse", () => {
   );
 
   it(
+    "accepts basic proxy for parse uploads even though it collapses to auto",
+    async () => {
+      // The scrape options transform rewrites every proxy value to "auto", so
+      // the unsupported-option guard has to read the value the caller sent.
+      // "basic" is an accepted value and must not be rejected.
+      const result = await parse(
+        {
+          options: {
+            formats: ["markdown"],
+            proxy: "basic",
+          } as any,
+          file: {
+            content: htmlFixture,
+            filename: "upload.html",
+            contentType: "text/html",
+          },
+        },
+        identity,
+      );
+
+      expect(result.markdown).toContain("Parse HTML Upload Test");
+    },
+    scrapeTimeout,
+  );
+
+  it(
     "rejects screenshot format for parse uploads",
     async () => {
       const failure = await parseWithFailure(

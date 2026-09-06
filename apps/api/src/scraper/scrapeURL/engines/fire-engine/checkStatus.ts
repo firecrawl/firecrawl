@@ -19,6 +19,7 @@ import { fireEngineURL } from "./scrape";
 import { fireEngineFileSchema } from "./fileSchema";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
 import { Meta } from "../..";
+import { shouldEscalateToStealthProxy } from "../../lib/stealthEscalation";
 
 const browserCookieSchema = z
   .object({
@@ -193,8 +194,7 @@ export async function fireEngineCheckStatus(
     logger.debug("Scrape job failed", { status, jobId });
     if (
       failedParse.data.retryWithStealth &&
-      meta.options.proxy === "auto" &&
-      !meta.featureFlags.has("stealthProxy")
+      shouldEscalateToStealthProxy(meta)
     ) {
       logger.info(
         "Scrape job signaled retryWithStealth. Adding stealthProxy flag.",

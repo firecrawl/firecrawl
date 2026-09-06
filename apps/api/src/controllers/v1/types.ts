@@ -579,7 +579,26 @@ const extractTransformRequired = <T extends ScrapeOptions>(obj: T): T => {
   return extractTransform(obj) as T;
 };
 
+// The timeout a request will actually run with, derived from the timeout it
+// asked for. Single source of truth for the bumps applied by extractTransform,
+// so waitForRefine (which runs before the transform) can validate waitFor
+// against the effective timeout rather than the requested one.
+const effectiveTimeout = (obj: ScrapeOptionsBase): number | undefined => {
+  if ((obj as ScrapeOptions).agent) {
+    return 300000;
+  }
+  if (obj.timeout === 30000) {
+    return 120000;
+  }
+  return obj.timeout;
+};
+
 const extractTransform = (obj: ScrapeOptions) => {
+  // Resolved up front from the *requested* timeout: the json/changeTracking
+  // blocks below rewrite obj.timeout, and the auto-proxy bump must not be
+  // suppressed by them (v2 already decides this from the unmutated input).
+  const timeout = effectiveTimeout(obj);
+
   // Handle timeout
   if (
     (includesFormat(obj.formats, "extract") ||
@@ -602,17 +621,13 @@ const extractTransform = (obj: ScrapeOptions) => {
     obj = { ...obj, timeout: 60000 };
   }
 
-  if ((obj as ScrapeOptions).agent) {
-    obj = { ...obj, timeout: 300000 };
-  }
-
-  if (
-    (obj.proxy === "stealth" ||
-      obj.proxy === "enhanced" ||
-      obj.proxy === "auto") &&
-    obj.timeout === 30000
-  ) {
-    obj = { ...obj, timeout: 120000 };
+  // Proxy mode is no longer user-selectable in effect: basic/stealth/enhanced
+  // all collapse to auto, which starts on a basic proxy and escalates to
+  // stealth only when a proxy error is hit. Enhanced Mode carries no surcharge,
+  // so forcing auto only improves success rates.
+  obj = { ...obj, proxy: "auto" };
+  if (timeout !== undefined) {
+    obj = { ...obj, timeout };
   }
 
   if (includesFormat(obj.formats, "json")) {
@@ -660,7 +675,12 @@ const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
     if (typeof obj.timeout !== "number" || obj.timeout <= 0) {
       return false;
     }
-    return obj.waitFor <= obj.timeout / 2;
+    // Refinements run before the transform, so compare against the timeout the
+    // request will actually use. Math.max keeps this a pure loosening: an agent
+    // request is pinned to 300000, which can be below an explicitly requested
+    // timeout, and that must not start rejecting waitFor values we accepted.
+    const timeout = Math.max(obj.timeout, effectiveTimeout(obj) ?? obj.timeout);
+    return obj.waitFor <= timeout / 2;
   }
   return true;
 };

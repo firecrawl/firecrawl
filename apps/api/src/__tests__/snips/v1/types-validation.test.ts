@@ -28,7 +28,7 @@ describe("V1 Types Validation", () => {
       const result = scrapeRequestSchema.parse(input);
       expect(result.url).toBe("https://example.com");
       expect(result.origin).toBe("api");
-      expect(result.timeout).toBe(30000);
+      expect(result.timeout).toBe(120000); // Proxy is always auto, which bumps the default timeout
       expect(result.formats).toEqual(["markdown"]);
     });
 
@@ -150,7 +150,9 @@ describe("V1 Types Validation", () => {
       const result = scrapeRequestSchema.parse(input);
       expect(result.formats).toContain("extract");
       expect(result.extract).toBeDefined();
-      expect(result.timeout).toBe(60000); // Should be transformed from 30000
+      // The auto-proxy bump is decided from the requested 30000, so it wins
+      // over the json/extract 60000 bump, matching the equivalent v2 request.
+      expect(result.timeout).toBe(120000);
     });
 
     it("should reject json format without jsonOptions", () => {
@@ -182,7 +184,9 @@ describe("V1 Types Validation", () => {
       expect(result.formats).toContain("json");
       expect(result.formats).toContain("extract"); // Should be added by transform
       expect(result.jsonOptions).toBeDefined();
-      expect(result.timeout).toBe(60000); // Should be transformed from 30000
+      // The auto-proxy bump is decided from the requested 30000, so it wins
+      // over the json/extract 60000 bump, matching the equivalent v2 request.
+      expect(result.timeout).toBe(120000);
     });
 
     it("should reject extract options without extract format", () => {
@@ -225,6 +229,32 @@ describe("V1 Types Validation", () => {
       const result = scrapeRequestSchema.parse(input);
       expect(result.waitFor).toBe(400);
       expect(result.timeout).toBe(1000);
+    });
+
+    it("should accept waitFor measured against the effective timeout", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        timeout: 30000,
+        waitFor: 20000,
+      };
+
+      // A requested 30000 runs with an effective 120000, so waitFor is checked
+      // against 120000/2 instead of the pre-transform 30000/2.
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.waitFor).toBe(20000);
+      expect(result.timeout).toBe(120000);
+    });
+
+    it("should reject waitFor exceeding half of a timeout that is not bumped", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        timeout: 40000,
+        waitFor: 30000,
+      };
+
+      expect(() => scrapeRequestSchema.parse(input)).toThrow(
+        "waitFor must not exceed half of timeout",
+      );
     });
 
     it("should reject both agent and jsonOptions with fire-1 model", () => {
@@ -280,7 +310,7 @@ describe("V1 Types Validation", () => {
 
       const result = scrapeRequestSchema.parse(input);
       expect(result.origin).toBe("api");
-      expect(result.timeout).toBe(30000);
+      expect(result.timeout).toBe(120000); // Proxy is always auto, which bumps the default timeout
       expect(result.formats).toEqual(["markdown"]);
       expect(result.onlyMainContent).toBe(true);
       expect(result.onlyCleanContent).toBe(false);
@@ -290,7 +320,7 @@ describe("V1 Types Validation", () => {
       expect(result.removeBase64Images).toBe(true);
       expect(result.fastMode).toBe(false);
       expect(result.blockAds).toBe(true);
-      expect(result.proxy).toBe("basic");
+      expect(result.proxy).toBe("auto"); // basic default collapses to auto
       expect(result.storeInCache).toBe(true);
     });
 
@@ -760,8 +790,29 @@ describe("V1 Types Validation", () => {
       };
 
       const result = scrapeRequestSchema.parse(input);
-      expect(result.timeout).toBe(60000); // Should be transformed
+      // Same as v2: the auto-proxy bump is decided from the requested 30000,
+      // so it wins over the changeTracking 60000 bump.
+      expect(result.timeout).toBe(120000);
       expect(result.waitFor).toBeGreaterThanOrEqual(5000); // Should be at least 5000
+    });
+
+    it("should leave a json timeout that was not requested as 30000 alone", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        formats: ["json"],
+        jsonOptions: {
+          schema: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+            },
+          },
+        },
+        timeout: 45000,
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.timeout).toBe(45000);
     });
 
     it("should handle agent timeout transformation", () => {
@@ -798,6 +849,17 @@ describe("V1 Types Validation", () => {
       const result = scrapeRequestSchema.parse(input);
       expect(result.timeout).toBe(120000); // Should be transformed
     });
+
+    it.each(["basic", "stealth", "enhanced", "auto"] as const)(
+      "collapses proxy '%s' to auto",
+      proxy => {
+        const result = scrapeRequestSchema.parse({
+          url: "https://example.com",
+          proxy,
+        });
+        expect(result.proxy).toBe("auto");
+      },
+    );
 
     it("should handle location schema with valid country code", () => {
       const input: ScrapeRequestInput = {
