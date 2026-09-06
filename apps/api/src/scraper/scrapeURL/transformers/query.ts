@@ -68,6 +68,8 @@ ${escapePromptTags(indexedLines)}
       system: querySystemPrompt,
       prompt: queryPrompt,
       experimental_telemetry: {
+        recordInputs: false,
+        recordOutputs: false,
         isEnabled: true,
         metadata: {
           scrapeId: meta.id,
@@ -166,6 +168,8 @@ ${escapePromptTags(markdown)}
         system: querySystemPrompt,
         prompt: queryPrompt,
         experimental_telemetry: {
+          recordInputs: false,
+          recordOutputs: false,
           isEnabled: true,
           metadata: {
             scrapeId: meta.id,

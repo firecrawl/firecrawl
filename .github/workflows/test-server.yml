@@ -470,7 +470,6 @@ jobs:
   #     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
   #     VERTEX_CREDENTIALS: ${{ secrets.VERTEX_CREDENTIALS }}
   #     USE_GO_MARKDOWN_PARSER: true
-  #     SENTRY_ENVIRONMENT: dev
   #     IDMUX_URL: ${{ secrets.IDMUX_URL }}
   #     LOG_ENCRYPTION_KEY: ${{ secrets.LOG_ENCRYPTION_KEY }}
   #     TEST_SUITE_WEBSITE: ${{ secrets.TEST_SUITE_WEBSITE }}

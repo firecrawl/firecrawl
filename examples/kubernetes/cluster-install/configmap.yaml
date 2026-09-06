@@ -8,7 +8,6 @@ data:
   REDIS_RATE_LIMIT_URL: "redis://redis:6379"
   PLAYWRIGHT_MICROSERVICE_URL: "http://playwright-service:3000"
   USE_DB_AUTHENTICATION: "false"
-  SENTRY_ENVIRONMENT: "production"
   ENV: "production"
   LOGGING_LEVEL: "DEBUG"
   IS_KUBERNETES: "true"

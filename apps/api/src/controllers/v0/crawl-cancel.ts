@@ -3,7 +3,6 @@ import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
 import { logger } from "../../../src/lib/logger";
 import { getCrawl, saveCrawl } from "../../../src/lib/crawl-redis";
-import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { crawlGroup } from "../../services/worker/nuq-router";
@@ -83,7 +82,6 @@ export async function crawlCancelController(req: Request, res: Response) {
       status: "cancelled",
     });
   } catch (error) {
-    Sentry.captureException(error);
     logger.error(error);
     return res.status(500).json({ error: error.message });
   }

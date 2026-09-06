@@ -3,7 +3,6 @@ import { eq, inArray, and } from "drizzle-orm";
 import { db, dbRr } from "../db/connection";
 import * as schema from "../db/schema";
 import { logger } from "./logger";
-import * as Sentry from "@sentry/node";
 
 /**
  * Get a single scrape by ID from the scrapes table
@@ -38,7 +37,6 @@ export const supabaseGetScrapesById = async (
       .where(inArray(schema.scrapes.id, scrapeIds));
   } catch (error) {
     logger.error(`Error in supabaseGetScrapesById: ${error}`);
-    Sentry.captureException(error);
     return [];
   }
 };
@@ -58,7 +56,6 @@ export const supabaseGetScrapesByRequestId = async (
       .where(eq(schema.scrapes.request_id, requestId));
   } catch (error) {
     logger.error(`Error in supabaseGetScrapesByRequestId: ${error}`);
-    Sentry.captureException(error);
     return [];
   }
 };

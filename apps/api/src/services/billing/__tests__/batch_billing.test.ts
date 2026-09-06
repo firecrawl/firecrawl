@@ -4,33 +4,23 @@ import { vi } from "vitest";
 // reads at build time must be created in vi.hoisted(). (Jest left jest.mock
 // un-hoisted here because `jest` was imported from @jest/globals.) The `redis`
 // stub below stays module-level: its factory only captures it lazily.
-const {
-  captureException,
-  logger,
-  withAuth,
-  trackCredits,
-  refundCredits,
-  billTeam7,
-} = vi.hoisted(() => {
-  const logger: any = {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    child: vi.fn(() => logger),
-  };
-  return {
-    captureException: vi.fn(),
-    logger,
-    withAuth: vi.fn((fn: any) => fn),
-    trackCredits: vi.fn<(args: any) => Promise<boolean>>(),
-    refundCredits: vi.fn<(args: any) => Promise<void>>(),
-    billTeam7: vi.fn<(params: any) => Promise<{ api_key: string }[]>>(),
-  };
-});
-
-vi.mock("@sentry/node", () => ({
-  captureException,
-}));
+const { logger, withAuth, trackCredits, refundCredits, billTeam7 } = vi.hoisted(
+  () => {
+    const logger: any = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      child: vi.fn(() => logger),
+    };
+    return {
+      logger,
+      withAuth: vi.fn((fn: any) => fn),
+      trackCredits: vi.fn<(args: any) => Promise<boolean>>(),
+      refundCredits: vi.fn<(args: any) => Promise<void>>(),
+      billTeam7: vi.fn<(params: any) => Promise<{ api_key: string }[]>>(),
+    };
+  },
+);
 
 vi.mock("../../../lib/logger", () => ({
   logger,
@@ -151,7 +141,6 @@ describe("processBillingBatch", () => {
 
     expect(billTeam7).toHaveBeenCalled();
     expect(trackCredits).not.toHaveBeenCalled();
-    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("does not re-track even when the op was already tracked at request time", async () => {
@@ -179,10 +168,9 @@ describe("processBillingBatch", () => {
       },
       featureId: "CREDITS",
     });
-    expect(captureException).toHaveBeenCalled();
   });
 
-  it("captures exceptions and refunds when billing throws", async () => {
+  it("refunds when billing throws", async () => {
     queue = [makeOp({ autumnTrackInRequest: true })];
     billTeam7.mockRejectedValueOnce(new Error("rpc exploded"));
 
@@ -198,7 +186,6 @@ describe("processBillingBatch", () => {
       },
       featureId: "CREDITS",
     });
-    expect(captureException).toHaveBeenCalled();
   });
 
   it("continues processing later groups when an Autumn refund fails", async () => {
@@ -232,6 +219,5 @@ describe("processBillingBatch", () => {
     expect(billTeam7).toHaveBeenCalledTimes(2);
     // The batch never tracks usage to Autumn, regardless of the request-time flag.
     expect(trackCredits).not.toHaveBeenCalled();
-    expect(captureException).toHaveBeenCalled();
   });
 });

@@ -1,8 +1,10 @@
 import { Logger } from "winston";
 import { config } from "../../config";
-import * as Sentry from "@sentry/node";
-import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
-import { captureExceptionWithZdrCheck } from "../../services/sentry";
+import {
+  withSpan,
+  setSpanAttributes,
+  recordSpanException,
+} from "../../lib/otel-tracer";
 
 import {
   applyScrapeOptionsDefaults,
@@ -1227,597 +1229,621 @@ export async function scrapeURL(
   internalOptions: InternalOptions,
   costTracking: CostTracking,
 ): Promise<ScrapeUrlResponse> {
-  return withSpan("scrape.pipeline", async span => {
-    const meta = await buildMetaObject(
-      id,
-      url,
-      options,
-      internalOptions,
-      costTracking,
-    );
+  return withSpan(
+    "scrape.pipeline",
+    async span => {
+      const meta = await buildMetaObject(
+        id,
+        url,
+        options,
+        internalOptions,
+        costTracking,
+      );
 
-    const startTime = Date.now();
+      const startTime = Date.now();
 
-    // Set initial span attributes
-    setSpanAttributes(span, {
-      "scrape.id": id,
-      "scrape.url": url,
-      "scrape.team_id": internalOptions.teamId,
-      "scrape.crawl_id": internalOptions.crawlId,
-      "scrape.zero_data_retention": internalOptions.zeroDataRetention,
-      "scrape.force_engine": Array.isArray(internalOptions.forceEngine)
-        ? internalOptions.forceEngine.join(",")
-        : internalOptions.forceEngine,
-      "scrape.features": Array.from(meta.featureFlags).join(","),
-    });
-
-    meta.logger.info("scrapeURL entered");
-
-    // Threat protection: check the target URL BEFORE any engine selection
-    // or outbound fetch. The policy is resolved at the controller layer and
-    // threaded through internalOptions; absent policy = zero overhead.
-    // The dedup map is scoped to this one scrape: the initial check and any
-    // redirect re-check on the same URL share a single scan (one fee); a
-    // redirect to a different URL is a second scan and bills a second fee
-    // (see calculateThreatScanCredits).
-    const threatPolicy = internalOptions.threatProtection;
-    const threatDedup: ThreatCheckDedup = new Map();
-    if (threatPolicy && threatPolicy.mode !== "off") {
-      const initialUrl = meta.rewrittenUrl ?? meta.url;
-      const decision = await checkUrl(initialUrl, threatPolicy, {
-        teamId: internalOptions.teamId,
-        dedup: threatDedup,
-      });
-      meta.threatDecisions.push(decision);
-      if (!decision.allowed) {
-        meta.logger.info("URL blocked by threat protection policy", {
-          url: initialUrl,
-          domain: decision.domain,
-          rule: decision.rule,
-        });
-        setSpanAttributes(span, {
-          "scrape.blocked_by_threat_protection": true,
-        });
-        return {
-          success: false,
-          error: new UnsafeDomainBlockedError(initialUrl, decision),
-          threatDecisions: meta.threatDecisions,
-        };
-      }
-    }
-
-    if (meta.rewrittenUrl) {
-      meta.logger.info("Rewriting URL");
+      // Set initial span attributes
       setSpanAttributes(span, {
-        "scrape.rewritten_url": meta.rewrittenUrl,
+        "scrape.id": id,
+        "scrape.url": url,
+        "scrape.team_id": internalOptions.teamId,
+        "scrape.crawl_id": internalOptions.crawlId,
+        "scrape.zero_data_retention": internalOptions.zeroDataRetention,
+        "scrape.force_engine": Array.isArray(internalOptions.forceEngine)
+          ? internalOptions.forceEngine.join(",")
+          : internalOptions.forceEngine,
+        "scrape.features": Array.from(meta.featureFlags).join(","),
       });
-    }
 
-    if (internalOptions.isPreCrawl === true) {
-      setSpanAttributes(span, {
-        "scrape.is_precrawl": true,
-      });
-    }
+      meta.logger.info("scrapeURL entered");
 
-    if (shouldCheckRobots(options, internalOptions)) {
-      const result = await withSpan("scrape.robots_check", async robotsSpan => {
-        const urlToCheck = meta.rewrittenUrl || meta.url;
-        meta.logger.info("Checking robots.txt", { url: urlToCheck });
-
-        const urlObj = new URL(urlToCheck);
-        const isRobotsTxtPath = urlObj.pathname === "/robots.txt";
-
-        setSpanAttributes(robotsSpan, {
-          "robots.url": urlToCheck,
-          "robots.is_robots_txt_path": isRobotsTxtPath,
+      // Threat protection: check the target URL BEFORE any engine selection
+      // or outbound fetch. The policy is resolved at the controller layer and
+      // threaded through internalOptions; absent policy = zero overhead.
+      // The dedup map is scoped to this one scrape: the initial check and any
+      // redirect re-check on the same URL share a single scan (one fee); a
+      // redirect to a different URL is a second scan and bills a second fee
+      // (see calculateThreatScanCredits).
+      const threatPolicy = internalOptions.threatProtection;
+      const threatDedup: ThreatCheckDedup = new Map();
+      if (threatPolicy && threatPolicy.mode !== "off") {
+        const initialUrl = meta.rewrittenUrl ?? meta.url;
+        const decision = await checkUrl(initialUrl, threatPolicy, {
+          teamId: internalOptions.teamId,
+          dedup: threatDedup,
         });
-
-        if (!isRobotsTxtPath) {
-          try {
-            let robotsTxt: string | undefined;
-            if (internalOptions.crawlId) {
-              const crawl = await getCrawl(internalOptions.crawlId);
-              robotsTxt = crawl?.robots;
-            }
-
-            if (!robotsTxt) {
-              const { content } = await fetchRobotsTxt(
-                {
-                  url: urlToCheck,
-                  zeroDataRetention: internalOptions.zeroDataRetention || false,
-                  location: options.location,
-                },
-                id,
-                meta.logger,
-                meta.abort.asSignal(),
-              );
-              robotsTxt = content;
-            }
-
-            const checker = createRobotsChecker(urlToCheck, robotsTxt);
-            const isAllowed = isUrlAllowedByRobots(urlToCheck, checker.robots);
-
-            setSpanAttributes(robotsSpan, {
-              "robots.allowed": isAllowed,
-            });
-
-            if (!isAllowed) {
-              meta.logger.info("URL blocked by robots.txt", {
-                url: urlToCheck,
-              });
-              setSpanAttributes(span, {
-                "scrape.blocked_by_robots": true,
-              });
-              throw new CrawlDenialError("URL blocked by robots.txt");
-            }
-          } catch (error) {
-            if (error instanceof CrawlDenialError) {
-              throw error;
-            }
-            meta.logger.debug("Failed to fetch robots.txt, allowing scrape", {
-              error,
-              url: urlToCheck,
-            });
-            setSpanAttributes(robotsSpan, {
-              "robots.fetch_failed": true,
-            });
-          }
-        }
-      }).catch(error => {
-        if (error instanceof CrawlDenialError) {
+        meta.threatDecisions.push(decision);
+        if (!decision.allowed) {
+          meta.logger.info("URL blocked by threat protection policy", {
+            url: initialUrl,
+            domain: decision.domain,
+            rule: decision.rule,
+          });
+          setSpanAttributes(span, {
+            "scrape.blocked_by_threat_protection": true,
+          });
           return {
-            success: false as const,
-            error,
+            success: false,
+            error: new UnsafeDomainBlockedError(initialUrl, decision),
+            threatDecisions: meta.threatDecisions,
           };
         }
-        throw error;
-      });
-      if (result) {
-        return {
-          ...result,
-          threatDecisions: meta.threatDecisions,
-        };
-      }
-    }
-
-    // Initialize retry tracker with configured limits
-    const retryTracker = new ScrapeRetryTracker(
-      {
-        maxAttempts: config.SCRAPE_MAX_ATTEMPTS,
-        maxFeatureToggles: config.SCRAPE_MAX_FEATURE_TOGGLES,
-        maxFeatureRemovals: config.SCRAPE_MAX_FEATURE_REMOVALS,
-        maxPdfPrefetches: config.SCRAPE_MAX_PDF_PREFETCHES,
-        maxDocumentPrefetches: config.SCRAPE_MAX_DOCUMENT_PREFETCHES,
-      },
-      meta.logger,
-    );
-
-    try {
-      let result: ScrapeUrlResponse;
-      while (true) {
-        try {
-          result = await scrapeURLLoop(meta);
-          break;
-        } catch (error) {
-          if (
-            error instanceof AddFeatureError &&
-            (meta.internalOptions.forceEngine === undefined ||
-              Array.isArray(meta.internalOptions.forceEngine))
-          ) {
-            retryTracker.record("feature_toggle", error);
-            // A file handoff names the one parser that can open the file;
-            // the file flag the URL extension implied earlier gives way to it.
-            const nextFeatureFlags = applyHandoffFeatureFlags(
-              meta.featureFlags,
-              error.featureFlags,
-            );
-            meta.logger.debug(
-              "More feature flags requested by scraper: adding " +
-                error.featureFlags.join(", "),
-              {
-                error,
-                existingFlags: meta.featureFlags,
-                droppedFlags: [...meta.featureFlags].filter(
-                  flag => !nextFeatureFlags.has(flag),
-                ),
-              },
-            );
-            meta.featureFlags = nextFeatureFlags;
-            if (error.pdfPrefetch) {
-              meta.pdfPrefetch = error.pdfPrefetch;
-            } else if (error.pdfPrefetch === null) {
-              // Browser round trip ran but delivered no file. Preserve the
-              // null sentinel: the antibot branches below still retry (the
-              // empty handoff may be transient), but the proxy-failure
-              // branches fail fast instead of re-running the browser.
-              meta.pdfPrefetch = null;
-            }
-            if (error.documentPrefetch) {
-              meta.documentPrefetch = error.documentPrefetch;
-            } else if (error.documentPrefetch === null) {
-              meta.documentPrefetch = null;
-            }
-            if (error.imagePrefetch) {
-              meta.imagePrefetch = error.imagePrefetch;
-            } else if (error.imagePrefetch === null) {
-              meta.imagePrefetch = null;
-            }
-          } else if (
-            error instanceof RemoveFeatureError &&
-            (meta.internalOptions.forceEngine === undefined ||
-              Array.isArray(meta.internalOptions.forceEngine))
-          ) {
-            retryTracker.record("feature_removal", error);
-            meta.logger.debug(
-              "Incorrect feature flags reported by scraper: removing " +
-                error.featureFlags.join(","),
-              { error, existingFlags: meta.featureFlags },
-            );
-            meta.featureFlags = new Set(
-              [...meta.featureFlags].filter(
-                x => !error.featureFlags.includes(x),
-              ),
-            );
-          } else if (
-            error instanceof PDFAntibotError &&
-            meta.internalOptions.forceEngine === undefined
-          ) {
-            // null = browser ran but delivered no file (possibly transient) —
-            // still worth one more browser round trip, so only a real
-            // prefetch object fails here.
-            if (meta.pdfPrefetch != null) {
-              meta.logger.error(
-                "PDF was prefetched and still blocked by antibot, failing",
-              );
-              throw error;
-            } else {
-              retryTracker.record("pdf_antibot", error);
-              meta.logger.debug(
-                "PDF was blocked by anti-bot, prefetching with chrome-cdp",
-              );
-              meta.featureFlags = new Set(
-                [...meta.featureFlags].filter(x => x !== "pdf"),
-              );
-            }
-          } else if (
-            error instanceof PDFFetchProxyError &&
-            meta.internalOptions.forceEngine === undefined
-          ) {
-            // meta.pdfPrefetch distinguishes "browser never attempted"
-            // (undefined — clear the pdf flag so the browser engine fetches
-            // the file through fire-engine's proxies) from "browser attempted,
-            // came back empty" (null — fail fast: another round trip would
-            // only burn the shared antibot+proxy prefetch budget).
-            if (meta.pdfPrefetch !== undefined) {
-              meta.logger.error(
-                "PDF was prefetched and the direct fetch still failed at the proxy, failing",
-              );
-              throw error;
-            } else {
-              retryTracker.record("pdf_fetch_proxy", error);
-              meta.logger.debug(
-                "PDF direct download failed at the proxy, prefetching with chrome-cdp",
-              );
-              meta.featureFlags = new Set(
-                [...meta.featureFlags].filter(x => x !== "pdf"),
-              );
-            }
-          } else if (
-            error instanceof DocumentAntibotError &&
-            meta.internalOptions.forceEngine === undefined
-          ) {
-            // null = browser ran but delivered no file (possibly transient) —
-            // still worth one more browser round trip, so only a real
-            // prefetch object fails here.
-            if (meta.documentPrefetch != null) {
-              meta.logger.error(
-                "Document was prefetched and still blocked by antibot, failing",
-              );
-              throw error;
-            } else {
-              retryTracker.record("document_antibot", error);
-              meta.logger.debug(
-                "Document was blocked by anti-bot, prefetching with chrome-cdp",
-              );
-              meta.featureFlags = new Set(
-                [...meta.featureFlags].filter(x => x !== "document"),
-              );
-            }
-          } else if (
-            error instanceof DocumentFetchProxyError &&
-            meta.internalOptions.forceEngine === undefined
-          ) {
-            // Same undefined-vs-null distinction as the PDF branch above.
-            if (meta.documentPrefetch !== undefined) {
-              meta.logger.error(
-                "Document was prefetched and the direct fetch still failed at the proxy, failing",
-              );
-              throw error;
-            } else {
-              retryTracker.record("document_fetch_proxy", error);
-              meta.logger.debug(
-                "Document direct download failed at the proxy, prefetching with chrome-cdp",
-              );
-              meta.featureFlags = new Set(
-                [...meta.featureFlags].filter(x => x !== "document"),
-              );
-            }
-          } else {
-            throw error;
-          }
-        }
       }
 
-      // Threat protection: if the scrape ended up on a different URL than
-      // requested (redirect), re-check the destination URL. This closes the
-      // "clean URL redirects to a blocked URL" bypass vector — including
-      // same-domain redirects onto a flagged path.
-      if (threatPolicy && threatPolicy.mode !== "off" && result.success) {
-        const initialUrl = meta.rewrittenUrl ?? meta.url;
-        const finalUrl = result.document.metadata.url;
-        if (
-          finalUrl &&
-          canonicalizeUrl(finalUrl) !== canonicalizeUrl(initialUrl)
-        ) {
-          const decision = await checkUrl(finalUrl, threatPolicy, {
-            teamId: internalOptions.teamId,
-            dedup: threatDedup,
-          });
-          meta.threatDecisions.push(decision);
-          if (!decision.allowed) {
-            meta.logger.info(
-              "Redirect destination blocked by threat protection policy",
-              {
-                url: finalUrl,
-                domain: decision.domain,
-                initialUrl,
-                rule: decision.rule,
-              },
-            );
-            setSpanAttributes(span, {
-              "scrape.blocked_by_threat_protection": true,
+      if (meta.rewrittenUrl) {
+        meta.logger.info("Rewriting URL");
+        setSpanAttributes(span, {
+          "scrape.rewritten_url": meta.rewrittenUrl,
+        });
+      }
+
+      if (internalOptions.isPreCrawl === true) {
+        setSpanAttributes(span, {
+          "scrape.is_precrawl": true,
+        });
+      }
+
+      if (shouldCheckRobots(options, internalOptions)) {
+        const result = await withSpan(
+          "scrape.robots_check",
+          async robotsSpan => {
+            const urlToCheck = meta.rewrittenUrl || meta.url;
+            meta.logger.info("Checking robots.txt", { url: urlToCheck });
+
+            const urlObj = new URL(urlToCheck);
+            const isRobotsTxtPath = urlObj.pathname === "/robots.txt";
+
+            setSpanAttributes(robotsSpan, {
+              "robots.url": urlToCheck,
+              "robots.is_robots_txt_path": isRobotsTxtPath,
             });
-            throw new UnsafeDomainBlockedError(finalUrl, decision);
+
+            if (!isRobotsTxtPath) {
+              try {
+                let robotsTxt: string | undefined;
+                if (internalOptions.crawlId) {
+                  const crawl = await getCrawl(internalOptions.crawlId);
+                  robotsTxt = crawl?.robots;
+                }
+
+                if (!robotsTxt) {
+                  const { content } = await fetchRobotsTxt(
+                    {
+                      url: urlToCheck,
+                      zeroDataRetention:
+                        internalOptions.zeroDataRetention || false,
+                      location: options.location,
+                    },
+                    id,
+                    meta.logger,
+                    meta.abort.asSignal(),
+                  );
+                  robotsTxt = content;
+                }
+
+                const checker = createRobotsChecker(urlToCheck, robotsTxt);
+                const isAllowed = isUrlAllowedByRobots(
+                  urlToCheck,
+                  checker.robots,
+                );
+
+                setSpanAttributes(robotsSpan, {
+                  "robots.allowed": isAllowed,
+                });
+
+                if (!isAllowed) {
+                  meta.logger.info("URL blocked by robots.txt", {
+                    url: urlToCheck,
+                  });
+                  setSpanAttributes(span, {
+                    "scrape.blocked_by_robots": true,
+                  });
+                  throw new CrawlDenialError("URL blocked by robots.txt");
+                }
+              } catch (error) {
+                if (error instanceof CrawlDenialError) {
+                  throw error;
+                }
+                meta.logger.debug(
+                  "Failed to fetch robots.txt, allowing scrape",
+                  {
+                    error,
+                    url: urlToCheck,
+                  },
+                );
+                setSpanAttributes(robotsSpan, {
+                  "robots.fetch_failed": true,
+                });
+              }
+            }
+          },
+        ).catch(error => {
+          if (error instanceof CrawlDenialError) {
+            return {
+              success: false as const,
+              error,
+            };
           }
+          throw error;
+        });
+        if (result) {
+          return {
+            ...result,
+            threatDecisions: meta.threatDecisions,
+          };
         }
       }
 
-      meta.logger.debug("scrapeURL metrics", {
-        module: "scrapeURL/metrics",
-        timeTaken: Date.now() - startTime,
-        maxAgeValid: (meta.options.maxAge ?? 0) > 0,
-        shouldUseIndex: shouldUseIndex(meta),
-        success: result.success,
-        indexHit:
-          result.success && result.document.metadata.cacheState === "hit",
-      });
+      // Initialize retry tracker with configured limits
+      const retryTracker = new ScrapeRetryTracker(
+        {
+          maxAttempts: config.SCRAPE_MAX_ATTEMPTS,
+          maxFeatureToggles: config.SCRAPE_MAX_FEATURE_TOGGLES,
+          maxFeatureRemovals: config.SCRAPE_MAX_FEATURE_REMOVALS,
+          maxPdfPrefetches: config.SCRAPE_MAX_PDF_PREFETCHES,
+          maxDocumentPrefetches: config.SCRAPE_MAX_DOCUMENT_PREFETCHES,
+        },
+        meta.logger,
+      );
 
-      if (useIndex) {
-        meta.logger.debug("scrapeURL index metrics", {
-          module: "scrapeURL/index-metrics",
+      try {
+        let result: ScrapeUrlResponse;
+        while (true) {
+          try {
+            result = await scrapeURLLoop(meta);
+            break;
+          } catch (error) {
+            if (
+              error instanceof AddFeatureError &&
+              (meta.internalOptions.forceEngine === undefined ||
+                Array.isArray(meta.internalOptions.forceEngine))
+            ) {
+              retryTracker.record("feature_toggle", error);
+              // A file handoff names the one parser that can open the file;
+              // the file flag the URL extension implied earlier gives way to it.
+              const nextFeatureFlags = applyHandoffFeatureFlags(
+                meta.featureFlags,
+                error.featureFlags,
+              );
+              meta.logger.debug(
+                "More feature flags requested by scraper: adding " +
+                  error.featureFlags.join(", "),
+                {
+                  error,
+                  existingFlags: meta.featureFlags,
+                  droppedFlags: [...meta.featureFlags].filter(
+                    flag => !nextFeatureFlags.has(flag),
+                  ),
+                },
+              );
+              meta.featureFlags = nextFeatureFlags;
+              if (error.pdfPrefetch) {
+                meta.pdfPrefetch = error.pdfPrefetch;
+              } else if (error.pdfPrefetch === null) {
+                // Browser round trip ran but delivered no file. Preserve the
+                // null sentinel: the antibot branches below still retry (the
+                // empty handoff may be transient), but the proxy-failure
+                // branches fail fast instead of re-running the browser.
+                meta.pdfPrefetch = null;
+              }
+              if (error.documentPrefetch) {
+                meta.documentPrefetch = error.documentPrefetch;
+              } else if (error.documentPrefetch === null) {
+                meta.documentPrefetch = null;
+              }
+              if (error.imagePrefetch) {
+                meta.imagePrefetch = error.imagePrefetch;
+              } else if (error.imagePrefetch === null) {
+                meta.imagePrefetch = null;
+              }
+            } else if (
+              error instanceof RemoveFeatureError &&
+              (meta.internalOptions.forceEngine === undefined ||
+                Array.isArray(meta.internalOptions.forceEngine))
+            ) {
+              retryTracker.record("feature_removal", error);
+              meta.logger.debug(
+                "Incorrect feature flags reported by scraper: removing " +
+                  error.featureFlags.join(","),
+                { error, existingFlags: meta.featureFlags },
+              );
+              meta.featureFlags = new Set(
+                [...meta.featureFlags].filter(
+                  x => !error.featureFlags.includes(x),
+                ),
+              );
+            } else if (
+              error instanceof PDFAntibotError &&
+              meta.internalOptions.forceEngine === undefined
+            ) {
+              // null = browser ran but delivered no file (possibly transient) —
+              // still worth one more browser round trip, so only a real
+              // prefetch object fails here.
+              if (meta.pdfPrefetch != null) {
+                meta.logger.error(
+                  "PDF was prefetched and still blocked by antibot, failing",
+                );
+                throw error;
+              } else {
+                retryTracker.record("pdf_antibot", error);
+                meta.logger.debug(
+                  "PDF was blocked by anti-bot, prefetching with chrome-cdp",
+                );
+                meta.featureFlags = new Set(
+                  [...meta.featureFlags].filter(x => x !== "pdf"),
+                );
+              }
+            } else if (
+              error instanceof PDFFetchProxyError &&
+              meta.internalOptions.forceEngine === undefined
+            ) {
+              // meta.pdfPrefetch distinguishes "browser never attempted"
+              // (undefined — clear the pdf flag so the browser engine fetches
+              // the file through fire-engine's proxies) from "browser attempted,
+              // came back empty" (null — fail fast: another round trip would
+              // only burn the shared antibot+proxy prefetch budget).
+              if (meta.pdfPrefetch !== undefined) {
+                meta.logger.error(
+                  "PDF was prefetched and the direct fetch still failed at the proxy, failing",
+                );
+                throw error;
+              } else {
+                retryTracker.record("pdf_fetch_proxy", error);
+                meta.logger.debug(
+                  "PDF direct download failed at the proxy, prefetching with chrome-cdp",
+                );
+                meta.featureFlags = new Set(
+                  [...meta.featureFlags].filter(x => x !== "pdf"),
+                );
+              }
+            } else if (
+              error instanceof DocumentAntibotError &&
+              meta.internalOptions.forceEngine === undefined
+            ) {
+              // null = browser ran but delivered no file (possibly transient) —
+              // still worth one more browser round trip, so only a real
+              // prefetch object fails here.
+              if (meta.documentPrefetch != null) {
+                meta.logger.error(
+                  "Document was prefetched and still blocked by antibot, failing",
+                );
+                throw error;
+              } else {
+                retryTracker.record("document_antibot", error);
+                meta.logger.debug(
+                  "Document was blocked by anti-bot, prefetching with chrome-cdp",
+                );
+                meta.featureFlags = new Set(
+                  [...meta.featureFlags].filter(x => x !== "document"),
+                );
+              }
+            } else if (
+              error instanceof DocumentFetchProxyError &&
+              meta.internalOptions.forceEngine === undefined
+            ) {
+              // Same undefined-vs-null distinction as the PDF branch above.
+              if (meta.documentPrefetch !== undefined) {
+                meta.logger.error(
+                  "Document was prefetched and the direct fetch still failed at the proxy, failing",
+                );
+                throw error;
+              } else {
+                retryTracker.record("document_fetch_proxy", error);
+                meta.logger.debug(
+                  "Document direct download failed at the proxy, prefetching with chrome-cdp",
+                );
+                meta.featureFlags = new Set(
+                  [...meta.featureFlags].filter(x => x !== "document"),
+                );
+              }
+            } else {
+              throw error;
+            }
+          }
+        }
+
+        // Threat protection: if the scrape ended up on a different URL than
+        // requested (redirect), re-check the destination URL. This closes the
+        // "clean URL redirects to a blocked URL" bypass vector — including
+        // same-domain redirects onto a flagged path.
+        if (threatPolicy && threatPolicy.mode !== "off" && result.success) {
+          const initialUrl = meta.rewrittenUrl ?? meta.url;
+          const finalUrl = result.document.metadata.url;
+          if (
+            finalUrl &&
+            canonicalizeUrl(finalUrl) !== canonicalizeUrl(initialUrl)
+          ) {
+            const decision = await checkUrl(finalUrl, threatPolicy, {
+              teamId: internalOptions.teamId,
+              dedup: threatDedup,
+            });
+            meta.threatDecisions.push(decision);
+            if (!decision.allowed) {
+              meta.logger.info(
+                "Redirect destination blocked by threat protection policy",
+                {
+                  url: finalUrl,
+                  domain: decision.domain,
+                  initialUrl,
+                  rule: decision.rule,
+                },
+              );
+              setSpanAttributes(span, {
+                "scrape.blocked_by_threat_protection": true,
+              });
+              throw new UnsafeDomainBlockedError(finalUrl, decision);
+            }
+          }
+        }
+
+        meta.logger.debug("scrapeURL metrics", {
+          module: "scrapeURL/metrics",
           timeTaken: Date.now() - startTime,
-          changeTrackingEnabled: !!hasFormatOfType(
-            meta.options.formats,
-            "changeTracking",
-          ),
-          summaryEnabled: !!hasFormatOfType(meta.options.formats, "summary"),
-          jsonEnabled: !!hasFormatOfType(meta.options.formats, "json"),
-          screenshotEnabled: !!hasFormatOfType(
-            meta.options.formats,
-            "screenshot",
-          ),
-          imagesEnabled: !!hasFormatOfType(meta.options.formats, "images"),
-          brandingEnabled: !!hasFormatOfType(meta.options.formats, "branding"),
-          pdfMaxPages: getPDFMaxPages(meta.options.parsers),
-          maxAge: meta.options.maxAge,
-          headers: meta.options.headers
-            ? Object.keys(meta.options.headers).length
-            : 0,
-          actions: meta.options.actions?.length ?? 0,
-          proxy: meta.options.proxy,
+          maxAgeValid: (meta.options.maxAge ?? 0) > 0,
+          shouldUseIndex: shouldUseIndex(meta),
           success: result.success,
           indexHit:
             result.success && result.document.metadata.cacheState === "hit",
         });
-      }
 
-      setSpanAttributes(span, {
-        "scrape.success": true,
-        "scrape.duration_ms": Date.now() - startTime,
-        "scrape.index_hit":
-          result.success && result.document.metadata.cacheState === "hit",
-      });
+        if (useIndex) {
+          meta.logger.debug("scrapeURL index metrics", {
+            module: "scrapeURL/index-metrics",
+            timeTaken: Date.now() - startTime,
+            changeTrackingEnabled: !!hasFormatOfType(
+              meta.options.formats,
+              "changeTracking",
+            ),
+            summaryEnabled: !!hasFormatOfType(meta.options.formats, "summary"),
+            jsonEnabled: !!hasFormatOfType(meta.options.formats, "json"),
+            screenshotEnabled: !!hasFormatOfType(
+              meta.options.formats,
+              "screenshot",
+            ),
+            imagesEnabled: !!hasFormatOfType(meta.options.formats, "images"),
+            brandingEnabled: !!hasFormatOfType(
+              meta.options.formats,
+              "branding",
+            ),
+            pdfMaxPages: getPDFMaxPages(meta.options.parsers),
+            maxAge: meta.options.maxAge,
+            headers: meta.options.headers
+              ? Object.keys(meta.options.headers).length
+              : 0,
+            actions: meta.options.actions?.length ?? 0,
+            proxy: meta.options.proxy,
+            success: result.success,
+            indexHit:
+              result.success && result.document.metadata.cacheState === "hit",
+          });
+        }
 
-      return meta.threatDecisions.length > 0
-        ? { ...result, threatDecisions: meta.threatDecisions }
-        : result;
-    } catch (error) {
-      // if (Object.values(meta.results).length > 0 && Object.values(meta.results).every(x => x.state === "error" && x.error instanceof FEPageLoadFailed)) {
-      //   throw new FEPageLoadFailed();
-      // } else
-      // A timed-out large-PDF scrape leaves its fire-pdf job running by
-      // design (fire-pdf/async.ts cancel policy); upgrade the timeout
-      // error IN PLACE so the caller learns processing continues and
-      // when a retry of the same URL picks the result up. Covers both
-      // the engine race's own timer and the abort manager's inner
-      // timeout, which exits through the early rethrow below.
-      const timeoutCandidate =
-        error instanceof AbortManagerThrownError ? error.inner : error;
-      if (
-        meta.largePdfProcessing?.current &&
-        timeoutCandidate instanceof ScrapeJobTimeoutError &&
-        timeoutCandidate.processing === undefined
-      ) {
-        const composed = composeTimeoutProcessing({
-          ...meta.largePdfProcessing.current,
-          nowMs: Date.now(),
+        setSpanAttributes(span, {
+          "scrape.success": true,
+          "scrape.duration_ms": Date.now() - startTime,
+          "scrape.index_hit":
+            result.success && result.document.metadata.cacheState === "hit",
         });
-        timeoutCandidate.processing = composed.details;
-        timeoutCandidate.message = composed.message;
-      }
 
-      meta.logger.debug("scrapeURL metrics", {
-        module: "scrapeURL/metrics",
-        timeTaken: Date.now() - startTime,
-        maxAgeValid: (meta.options.maxAge ?? 0) > 0,
-        shouldUseIndex: shouldUseIndex(meta),
-        success: false,
-        indexHit: false,
-      });
+        return meta.threatDecisions.length > 0
+          ? { ...result, threatDecisions: meta.threatDecisions }
+          : result;
+      } catch (error) {
+        // if (Object.values(meta.results).length > 0 && Object.values(meta.results).every(x => x.state === "error" && x.error instanceof FEPageLoadFailed)) {
+        //   throw new FEPageLoadFailed();
+        // } else
+        // A timed-out large-PDF scrape leaves its fire-pdf job running by
+        // design (fire-pdf/async.ts cancel policy); upgrade the timeout
+        // error IN PLACE so the caller learns processing continues and
+        // when a retry of the same URL picks the result up. Covers both
+        // the engine race's own timer and the abort manager's inner
+        // timeout, which exits through the early rethrow below.
+        const timeoutCandidate =
+          error instanceof AbortManagerThrownError ? error.inner : error;
+        if (
+          meta.largePdfProcessing?.current &&
+          timeoutCandidate instanceof ScrapeJobTimeoutError &&
+          timeoutCandidate.processing === undefined
+        ) {
+          const composed = composeTimeoutProcessing({
+            ...meta.largePdfProcessing.current,
+            nowMs: Date.now(),
+          });
+          timeoutCandidate.processing = composed.details;
+          timeoutCandidate.message = composed.message;
+        }
 
-      if (useIndex) {
-        meta.logger.debug("scrapeURL index metrics", {
-          module: "scrapeURL/index-metrics",
+        meta.logger.debug("scrapeURL metrics", {
+          module: "scrapeURL/metrics",
           timeTaken: Date.now() - startTime,
-          changeTrackingEnabled: !!hasFormatOfType(
-            meta.options.formats,
-            "changeTracking",
-          ),
-          summaryEnabled: !!hasFormatOfType(meta.options.formats, "summary"),
-          jsonEnabled: !!hasFormatOfType(meta.options.formats, "json"),
-          screenshotEnabled: !!hasFormatOfType(
-            meta.options.formats,
-            "screenshot",
-          ),
-          imagesEnabled: !!hasFormatOfType(meta.options.formats, "images"),
-          brandingEnabled: !!hasFormatOfType(meta.options.formats, "branding"),
-          pdfMaxPages: getPDFMaxPages(meta.options.parsers),
-          maxAge: meta.options.maxAge,
-          headers: meta.options.headers
-            ? Object.keys(meta.options.headers).length
-            : 0,
-          actions: meta.options.actions?.length ?? 0,
-          proxy: meta.options.proxy,
+          maxAgeValid: (meta.options.maxAge ?? 0) > 0,
+          shouldUseIndex: shouldUseIndex(meta),
           success: false,
           indexHit: false,
         });
-      }
 
-      // Set error attributes on span
-      let errorType = "unknown";
-      if (error instanceof NoEnginesLeftError) {
-        errorType = "NoEnginesLeftError";
-        meta.logger.warn("scrapeURL: All scraping engines failed!", { error });
-      } else if (error instanceof LLMRefusalError) {
-        errorType = "LLMRefusalError";
-        meta.logger.warn("scrapeURL: LLM refused to extract content", {
-          error,
-        });
-      } else if (
-        error instanceof Error &&
-        error.message.includes("Invalid schema for response_format")
-      ) {
-        errorType = "LLMSchemaError";
-        // TODO: separate into custom error
-        meta.logger.warn("scrapeURL: LLM schema error", { error });
-        // TODO: results?
-      } else if (error instanceof SiteError) {
-        errorType = "SiteError";
-        meta.logger.warn("scrapeURL: Site failed to load in browser", {
-          error,
-        });
-      } else if (error instanceof SSLError) {
-        errorType = "SSLError";
-        meta.logger.warn("scrapeURL: SSL error", { error });
-      } else if (error instanceof ActionError) {
-        errorType = "ActionError";
-        meta.logger.warn("scrapeURL: Action(s) failed to complete", { error });
-      } else if (error instanceof UnsupportedFileError) {
-        errorType = "UnsupportedFileError";
-        meta.logger.warn("scrapeURL: Tried to scrape unsupported file", {
-          error,
-        });
-      } else if (error instanceof PDFInsufficientTimeError) {
-        errorType = "PDFInsufficientTimeError";
-        meta.logger.warn("scrapeURL: Insufficient time to process PDF", {
-          error,
-        });
-      } else if (error instanceof PDFOCRRequiredError) {
-        errorType = "PDFOCRRequiredError";
-        meta.logger.warn(
-          "scrapeURL: PDF requires OCR but fast mode was requested",
-          {
+        if (useIndex) {
+          meta.logger.debug("scrapeURL index metrics", {
+            module: "scrapeURL/index-metrics",
+            timeTaken: Date.now() - startTime,
+            changeTrackingEnabled: !!hasFormatOfType(
+              meta.options.formats,
+              "changeTracking",
+            ),
+            summaryEnabled: !!hasFormatOfType(meta.options.formats, "summary"),
+            jsonEnabled: !!hasFormatOfType(meta.options.formats, "json"),
+            screenshotEnabled: !!hasFormatOfType(
+              meta.options.formats,
+              "screenshot",
+            ),
+            imagesEnabled: !!hasFormatOfType(meta.options.formats, "images"),
+            brandingEnabled: !!hasFormatOfType(
+              meta.options.formats,
+              "branding",
+            ),
+            pdfMaxPages: getPDFMaxPages(meta.options.parsers),
+            maxAge: meta.options.maxAge,
+            headers: meta.options.headers
+              ? Object.keys(meta.options.headers).length
+              : 0,
+            actions: meta.options.actions?.length ?? 0,
+            proxy: meta.options.proxy,
+            success: false,
+            indexHit: false,
+          });
+        }
+
+        // Set error attributes on span
+        let errorType = "unknown";
+        if (error instanceof NoEnginesLeftError) {
+          errorType = "NoEnginesLeftError";
+          meta.logger.warn("scrapeURL: All scraping engines failed!", {
             error,
-          },
-        );
-      } else if (error instanceof PDFPrefetchFailed) {
-        errorType = "PDFPrefetchFailed";
-        meta.logger.warn(
-          "scrapeURL: Failed to prefetch PDF that is protected by anti-bot",
-          { error },
-        );
-      } else if (error instanceof DocumentPrefetchFailed) {
-        errorType = "DocumentPrefetchFailed";
-        meta.logger.warn(
-          "scrapeURL: Failed to prefetch document that is protected by anti-bot",
-          { error },
-        );
-      } else if (error instanceof PDFFetchProxyError) {
-        errorType = "PDFFetchProxyError";
-        meta.logger.warn(
-          "scrapeURL: PDF download failed at the proxy and could not be recovered via browser prefetch",
-          { error },
-        );
-      } else if (error instanceof DocumentFetchProxyError) {
-        errorType = "DocumentFetchProxyError";
-        meta.logger.warn(
-          "scrapeURL: Document download failed at the proxy and could not be recovered via browser prefetch",
-          { error },
-        );
-      } else if (error instanceof BrandingNotSupportedError) {
-        errorType = "BrandingNotSupportedError";
-        meta.logger.warn("scrapeURL: Branding not supported for this content", {
-          error,
-        });
-      } else if (error instanceof ProxySelectionError) {
-        errorType = "ProxySelectionError";
-        meta.logger.warn("scrapeURL: Proxy selection error", { error });
-      } else if (error instanceof DNSResolutionError) {
-        errorType = "DNSResolutionError";
-        meta.logger.warn("scrapeURL: DNS resolution error", { error });
-      } else if (error instanceof ScrapeRetryLimitError) {
-        errorType = "ScrapeRetryLimitError";
-        meta.logger.warn("scrapeURL: Retry limit reached", {
-          error,
-          retryStats: error.stats,
-        });
-      } else if (error instanceof UnsafeDomainBlockedError) {
-        errorType = "UnsafeDomainBlockedError";
-        meta.logger.warn(
-          "scrapeURL: Domain blocked by threat protection policy",
-          {
+          });
+        } else if (error instanceof LLMRefusalError) {
+          errorType = "LLMRefusalError";
+          meta.logger.warn("scrapeURL: LLM refused to extract content", {
             error,
-            domain: error.domain,
-            rule: error.decision.rule,
-          },
-        );
-      } else if (error instanceof AbortManagerThrownError) {
-        errorType = "AbortManagerThrownError";
-        throw error.inner;
-      } else {
-        captureExceptionWithZdrCheck(error, {
-          extra: {
-            zeroDataRetention: internalOptions.zeroDataRetention ?? false,
-          },
+          });
+        } else if (
+          error instanceof Error &&
+          error.message.includes("Invalid schema for response_format")
+        ) {
+          errorType = "LLMSchemaError";
+          // TODO: separate into custom error
+          meta.logger.warn("scrapeURL: LLM schema error", { error });
+          // TODO: results?
+        } else if (error instanceof SiteError) {
+          errorType = "SiteError";
+          meta.logger.warn("scrapeURL: Site failed to load in browser", {
+            error,
+          });
+        } else if (error instanceof SSLError) {
+          errorType = "SSLError";
+          meta.logger.warn("scrapeURL: SSL error", { error });
+        } else if (error instanceof ActionError) {
+          errorType = "ActionError";
+          meta.logger.warn("scrapeURL: Action(s) failed to complete", {
+            error,
+          });
+        } else if (error instanceof UnsupportedFileError) {
+          errorType = "UnsupportedFileError";
+          meta.logger.warn("scrapeURL: Tried to scrape unsupported file", {
+            error,
+          });
+        } else if (error instanceof PDFInsufficientTimeError) {
+          errorType = "PDFInsufficientTimeError";
+          meta.logger.warn("scrapeURL: Insufficient time to process PDF", {
+            error,
+          });
+        } else if (error instanceof PDFOCRRequiredError) {
+          errorType = "PDFOCRRequiredError";
+          meta.logger.warn(
+            "scrapeURL: PDF requires OCR but fast mode was requested",
+            {
+              error,
+            },
+          );
+        } else if (error instanceof PDFPrefetchFailed) {
+          errorType = "PDFPrefetchFailed";
+          meta.logger.warn(
+            "scrapeURL: Failed to prefetch PDF that is protected by anti-bot",
+            { error },
+          );
+        } else if (error instanceof DocumentPrefetchFailed) {
+          errorType = "DocumentPrefetchFailed";
+          meta.logger.warn(
+            "scrapeURL: Failed to prefetch document that is protected by anti-bot",
+            { error },
+          );
+        } else if (error instanceof PDFFetchProxyError) {
+          errorType = "PDFFetchProxyError";
+          meta.logger.warn(
+            "scrapeURL: PDF download failed at the proxy and could not be recovered via browser prefetch",
+            { error },
+          );
+        } else if (error instanceof DocumentFetchProxyError) {
+          errorType = "DocumentFetchProxyError";
+          meta.logger.warn(
+            "scrapeURL: Document download failed at the proxy and could not be recovered via browser prefetch",
+            { error },
+          );
+        } else if (error instanceof BrandingNotSupportedError) {
+          errorType = "BrandingNotSupportedError";
+          meta.logger.warn(
+            "scrapeURL: Branding not supported for this content",
+            {
+              error,
+            },
+          );
+        } else if (error instanceof ProxySelectionError) {
+          errorType = "ProxySelectionError";
+          meta.logger.warn("scrapeURL: Proxy selection error", { error });
+        } else if (error instanceof DNSResolutionError) {
+          errorType = "DNSResolutionError";
+          meta.logger.warn("scrapeURL: DNS resolution error", { error });
+        } else if (error instanceof ScrapeRetryLimitError) {
+          errorType = "ScrapeRetryLimitError";
+          meta.logger.warn("scrapeURL: Retry limit reached", {
+            error,
+            retryStats: error.stats,
+          });
+        } else if (error instanceof UnsafeDomainBlockedError) {
+          errorType = "UnsafeDomainBlockedError";
+          meta.logger.warn(
+            "scrapeURL: Domain blocked by threat protection policy",
+            {
+              error,
+              domain: error.domain,
+              rule: error.decision.rule,
+            },
+          );
+        } else if (error instanceof AbortManagerThrownError) {
+          errorType = "AbortManagerThrownError";
+          throw error.inner;
+        } else {
+          meta.logger.error("scrapeURL: Unexpected error happened", { error });
+          recordSpanException(span, error);
+          // TODO: results?
+        }
+
+        setSpanAttributes(span, {
+          "scrape.success": false,
+          "scrape.error":
+            error instanceof Error ? error.message : String(error),
+          "scrape.error_type": errorType,
+          "scrape.duration_ms": Date.now() - startTime,
         });
-        meta.logger.error("scrapeURL: Unexpected error happened", { error });
-        // TODO: results?
+
+        return {
+          success: false,
+          error,
+          ...(meta.threatDecisions.length > 0
+            ? { threatDecisions: meta.threatDecisions }
+            : {}),
+        };
       }
-
-      setSpanAttributes(span, {
-        "scrape.success": false,
-        "scrape.error": error instanceof Error ? error.message : String(error),
-        "scrape.error_type": errorType,
-        "scrape.duration_ms": Date.now() - startTime,
-      });
-
-      return {
-        success: false,
-        error,
-        ...(meta.threatDecisions.length > 0
-          ? { threatDecisions: meta.threatDecisions }
-          : {}),
-      };
-    }
-  });
+    },
+    { zeroDataRetention: internalOptions.zeroDataRetention },
+  );
 }

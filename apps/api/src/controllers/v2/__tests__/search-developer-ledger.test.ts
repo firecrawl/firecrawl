@@ -51,11 +51,6 @@ vi.mock("../../../lib/key-restriction", () => ({
   checkKeyEndpointRestriction: vi.fn().mockResolvedValue({ allowed: true }),
 }));
 
-vi.mock("../../../services/sentry", () => ({
-  applyZdrScope: vi.fn(),
-  captureExceptionWithZdrCheck: vi.fn(),
-}));
-
 vi.mock("../../../lib/logger", () => ({
   logger: {
     info: vi.fn(),

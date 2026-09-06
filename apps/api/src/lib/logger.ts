@@ -78,9 +78,7 @@ export const logger = winston.createLogger({
         winston.format.metadata({
           fillExcept: ["message", "level", "timestamp"],
         }),
-        ...((config.ENV === "production" &&
-          config.SENTRY_ENVIRONMENT === "dev") ||
-        config.ENV !== "production"
+        ...(config.ENV !== "production"
           ? [winston.format.colorize(), logFormat]
           : []),
       ),

@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { config } from "../config";
-import "./sentry";
-import { setSentryServiceTag } from "./sentry";
+import { shutdownTracing } from "../otel";
 import Express from "express";
 import { logger as _logger } from "../lib/logger";
 import {
@@ -17,8 +16,6 @@ const CCLOG_WORKER_LOCK_TTL_SECONDS = 55;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 (async () => {
-  setSentryServiceTag("cclog-worker");
-
   let isShuttingDown = false;
   let tickInFlight = false;
 
@@ -51,7 +48,8 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
       await sleep(1000);
     }
 
-    server.close(() => {
+    server.close(async () => {
+      await shutdownTracing();
       _logger.info("cclog worker shut down");
       process.exit(0);
     });

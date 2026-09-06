@@ -6,7 +6,6 @@ import "dotenv/config";
 import { logger as _logger } from "../../lib/logger";
 import { EXTERNAL_REQUEST_ID_MAX_BYTES } from "../../lib/external-request-id";
 import { configDotenv } from "dotenv";
-import * as Sentry from "@sentry/node";
 import type { PgTable } from "drizzle-orm/pg-core";
 import {
   saveDeepResearchToGCS,
@@ -121,9 +120,6 @@ function getPubSubClient(logger: Logger): PubSub | null {
   } catch (error) {
     pubSubClient = null;
     logger.error("Failed to initialize Pub/Sub log publisher", { error });
-    Sentry.captureException(error, {
-      tags: { operation: "initializePubSubLogPublisher" },
-    });
     return null;
   }
 }
@@ -169,9 +165,6 @@ async function publishLog(table: string, data: any, logger: Logger) {
   } catch (error) {
     pubsubLogPublishTotal.inc({ table, outcome: "failed" });
     logger.error("Failed to publish log to Pub/Sub", { error });
-    Sentry.captureException(error, {
-      tags: { table, operation: "publishPubSubLog" },
-    });
   } finally {
     outstandingMessages--;
     outstandingBytes -= payload.length;
@@ -222,10 +215,6 @@ async function shutdownPubSubLoggingOnce(): Promise<void> {
 
     if (errors.length > 0) {
       logger.error("Failed to flush Pub/Sub log publisher", { errors });
-      Sentry.captureException(errors[0], {
-        tags: { operation: "flushPubSubLogPublisher" },
-        extra: { failures: errors.length },
-      });
     }
   }
 
@@ -233,9 +222,6 @@ async function shutdownPubSubLoggingOnce(): Promise<void> {
     await client.close();
   } catch (error) {
     logger.error("Failed to close Pub/Sub log publisher", { error });
-    Sentry.captureException(error, {
-      tags: { operation: "closePubSubLogPublisher" },
-    });
   }
 }
 
@@ -302,25 +288,6 @@ async function robustInsert(
       });
     } else {
       logger.error("Failed to insert into database", { attempts });
-      // Report to Sentry with context
-      Sentry.captureException(
-        attempts[attempts.length - 1]?.error ||
-          new Error("Database insert failed after 10 attempts"),
-        {
-          tags: {
-            table,
-            operation: "robustInsert",
-          },
-          extra: {
-            table,
-            data: JSON.stringify(data).substring(0, 500), // Limit size
-            attempts: 10,
-            lastError: attempts[attempts.length - 1]?.error
-              ? JSON.stringify(attempts[attempts.length - 1].error)
-              : null,
-          },
-        },
-      );
     }
   } else {
     const start = Date.now();
@@ -331,18 +298,6 @@ async function robustInsert(
     } catch (error) {
       attempts.push({ error, timeMs: Date.now() - start, backoffMs: 0 });
       logger.error("Failed to insert into database", { attempts });
-      // Report to Sentry
-      Sentry.captureException(error, {
-        tags: {
-          table,
-          operation: "robustInsert",
-          force: "false",
-        },
-        extra: {
-          table,
-          data: JSON.stringify(data).substring(0, 500), // Limit size
-        },
-      });
     }
   }
 }

@@ -389,7 +389,7 @@ export class ActionsNotSupportedError extends TransportableError {
 
 /**
  * Error thrown when a job is cancelled (expected flow control, not a real error)
- * This should not be sent to Sentry as it's expected behavior when a crawl/batch is cancelled
+ * This is expected behavior when a crawl/batch is cancelled
  */
 export class JobCancelledError extends Error {
   constructor() {
