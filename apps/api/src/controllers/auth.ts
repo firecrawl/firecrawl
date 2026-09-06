@@ -184,7 +184,8 @@ async function getACUC(
         (error instanceof Error &&
           (error as any).address &&
           (error as any).code &&
-          error.name === "Error")
+          error.name === "Error") ||
+        (error instanceof Error && error.name === "MaxRetriesPerRequestError")
       ) {
         logger.warn(
           "Reading ACUC out of cache redis failed, treating as miss",
@@ -342,7 +343,8 @@ export async function getACUCTeam(
         (error instanceof Error &&
           (error as any).address &&
           (error as any).code &&
-          error.name === "Error")
+          error.name === "Error") ||
+        (error instanceof Error && error.name === "MaxRetriesPerRequestError")
       ) {
         logger.warn(
           "Reading ACUC out of cache redis failed, treating as miss",
