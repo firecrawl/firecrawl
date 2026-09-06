@@ -556,6 +556,15 @@ const configSchema = z.object({
   RESTRICTED_COUNTRIES: delimitedList(",").optional(),
   DISABLE_ENGPICKER: z.stringbool().optional(),
   DISABLE_MONITORING: z.stringbool().default(false),
+  // Threshold (minutes) for the monitor "unchanged pages are free" rule when
+  // the team's Autumn entity carries no MONITOR_UNCHANGED_MIN_THRESHOLD
+  // grant. Per-plan grants in Autumn override this; the default applies to
+  // ungranted teams and during Autumn errors.
+  MONITOR_UNCHANGED_FREE_DEFAULT_MIN_INTERVAL_MINUTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15),
 
   EXTRACT_V3_BETA_URL: z.string().optional(),
   AGENT_INTEROP_SECRET: z
