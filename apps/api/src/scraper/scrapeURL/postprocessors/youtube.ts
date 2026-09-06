@@ -65,7 +65,10 @@ function isYouTubeVideoPath(url: URL): boolean {
   }
 
   const pathParts = url.pathname.split("/").filter(Boolean);
-  return pathParts.length === 2 && pathParts[0] === "live";
+  return (
+    pathParts.length === 2 &&
+    (pathParts[0] === "live" || pathParts[0] === "shorts")
+  );
 }
 
 function buildMarkdown(
