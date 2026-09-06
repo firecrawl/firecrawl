@@ -11,6 +11,7 @@ const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally s
 let IS_DEV = false;
 let restartSignal: AbortController | null = null;
 let shuttingDown = false;
+let shutdownPromise: Promise<void> | null = null;
 let nuqPostgresContainer: {
   containerName: string;
   containerRuntime: string;
@@ -1142,8 +1143,12 @@ async function waitForTermination(services: Services): Promise<void> {
   });
 }
 
-async function gracefulShutdown() {
-  if (shuttingDown) return;
+function gracefulShutdown(): Promise<void> {
+  shutdownPromise ??= shutdownServices();
+  return shutdownPromise;
+}
+
+async function shutdownServices() {
   shuttingDown = true;
   restartSignal?.abort();
 
@@ -1202,10 +1207,15 @@ function printUsage() {
   console.error(`  --start-docker Start services (skip install, assume built)`);
 }
 
+async function handleShutdownSignal() {
+  await gracefulShutdown();
+  process.exit(serviceError ? 1 : 0);
+}
+
 async function main() {
   if (require.main === module) {
-    process.on("SIGINT", gracefulShutdown);
-    process.on("SIGTERM", gracefulShutdown);
+    process.on("SIGINT", handleShutdownSignal);
+    process.on("SIGTERM", handleShutdownSignal);
   }
 
   try {
