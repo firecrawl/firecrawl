@@ -179,7 +179,13 @@ async function getACUC(
     try {
       cachedACUC = await getValue(cacheKeyACUC);
     } catch (error) {
-      if (error instanceof ReplyError) {
+      if (
+        error instanceof ReplyError ||
+        (error instanceof Error &&
+          (error as any).address &&
+          (error as any).code &&
+          error.name === "Error")
+      ) {
         logger.warn(
           "Reading ACUC out of cache redis failed, treating as miss",
           {
@@ -331,7 +337,13 @@ export async function getACUCTeam(
     try {
       cachedACUC = await getValue(cacheKeyACUC);
     } catch (error) {
-      if (error instanceof ReplyError) {
+      if (
+        error instanceof ReplyError ||
+        (error instanceof Error &&
+          (error as any).address &&
+          (error as any).code &&
+          error.name === "Error")
+      ) {
         logger.warn(
           "Reading ACUC out of cache redis failed, treating as miss",
           {
