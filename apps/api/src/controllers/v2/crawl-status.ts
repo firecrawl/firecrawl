@@ -191,12 +191,64 @@ export async function crawlStatusController(
     });
   }
 
-  const start =
-    typeof req.query.skip === "string" ? parseInt(req.query.skip, 10) : 0;
-  const end =
-    typeof req.query.limit === "string"
-      ? start + parseInt(req.query.limit, 10) - 1
-      : undefined;
+  // Validate skip parameter: must be a single string that parses completely as a non-negative integer
+  const rawSkip = req.query.skip;
+  if (Array.isArray(rawSkip)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid pagination: skip must be a single value, not an array",
+    });
+  }
+  if (typeof rawSkip !== "string") {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid pagination: skip must be a string",
+    });
+  }
+  if (!/^\d+$/.test(rawSkip)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid pagination: skip must be a non-negative integer without trailing characters",
+    });
+  }
+  const start = parseInt(rawSkip, 10);
+  if (start < 0 || !Number.isFinite(start)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid pagination: skip must be a non-negative integer",
+    });
+  }
+
+  let end: number | undefined = undefined;
+  const rawLimit = req.query.limit;
+  if (rawLimit !== undefined) {
+    if (Array.isArray(rawLimit)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid pagination: limit must be a single value, not an array",
+      });
+    }
+    if (typeof rawLimit !== "string") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid pagination: limit must be a string",
+      });
+    }
+    if (!/^\d+$/.test(rawLimit)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid pagination: limit must be a positive integer without trailing characters",
+      });
+    }
+    const parsedLimit = parseInt(rawLimit, 10);
+    if (parsedLimit < 1 || parsedLimit > 1000 || !Number.isFinite(parsedLimit)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid pagination: limit must be an integer between 1 and 1000",
+      });
+    }
+    end = start + parsedLimit - 1;
+  }
 
   const group = await crawlGroup.getGroup(req.params.jobId);
   const groupAnyJob = await scrapeQueue.getGroupAnyJob(
