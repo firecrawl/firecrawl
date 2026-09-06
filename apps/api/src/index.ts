@@ -27,6 +27,7 @@ import {
 } from "./controllers/v1/types";
 import { ZodError } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
+import { formatZodIssues } from "./lib/zod-error-message";
 import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
@@ -242,11 +243,15 @@ app.use(
       const strictMessage =
         "Unrecognized key in body -- please review the v2 API documentation for request body changes";
 
+      // Anything that isn't a top-level unrecognized key or a leading custom
+      // refinement used to collapse to the bare string "Bad Request", leaving
+      // clients with nothing actionable -- the real issues only ever reached
+      // `details`. See issue #4054.
       const customErrorMessage = hasUnrecognizedKeys
         ? strictMessage
         : issues.length > 0 && issues[0].code === "custom"
           ? issues[0].message
-          : "Bad Request";
+          : (formatZodIssues(issues) ?? "Bad Request");
 
       res.status(400).json({
         success: false,
