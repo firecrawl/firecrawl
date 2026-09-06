@@ -19,9 +19,14 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function sendHeartbeat() {
   if (config.CCLOG_WORKER_HEARTBEAT_URL) {
     try {
-      await fetch(config.CCLOG_WORKER_HEARTBEAT_URL, {
+      const response = await fetch(config.CCLOG_WORKER_HEARTBEAT_URL, {
         signal: AbortSignal.timeout(5000),
       });
+      if (!response.ok) {
+        _logger.warn("cclog heartbeat got non-OK response", {
+          status: response.status,
+        });
+      }
     } catch (error) {
       _logger.warn("Failed to send cclog heartbeat", { error });
     }
