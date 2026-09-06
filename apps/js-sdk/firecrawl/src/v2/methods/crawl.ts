@@ -27,6 +27,7 @@ function prepareCrawlPayload(request: CrawlRequest): Record<string, unknown> {
   if (request.includePaths) data.includePaths = request.includePaths;
   if (request.maxDiscoveryDepth != null) data.maxDiscoveryDepth = request.maxDiscoveryDepth;
   if (request.sitemap != null) data.sitemap = request.sitemap;
+  if (request.ignoreRobotsTxt != null) data.ignoreRobotsTxt = request.ignoreRobotsTxt;
   if (request.robotsUserAgent != null) data.robotsUserAgent = request.robotsUserAgent;
   if (request.ignoreQueryParameters != null) data.ignoreQueryParameters = request.ignoreQueryParameters;
   if (request.deduplicateSimilarURLs != null) data.deduplicateSimilarURLs = request.deduplicateSimilarURLs;
@@ -123,9 +124,13 @@ export async function waitForCrawlCompletion(http: HttpClient, jobId: string, po
   
   while (true) {
     try {
-      const status = await getCrawlStatus(http, jobId);
-      
+      const status = await getCrawlStatus(http, jobId, { autoPaginate: false });
+
       if (["completed", "failed", "cancelled"].includes(status.status)) {
+        if (status.next) {
+          const data = await fetchAllPages(http, status.next, status.data);
+          return { ...status, next: null, data };
+        }
         return status;
       }
     } catch (err: any) {
