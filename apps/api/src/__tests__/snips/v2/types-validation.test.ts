@@ -1758,6 +1758,67 @@ describe("V2 Types Validation", () => {
     });
   });
 
+  describe("monitor scrape target compatibility", () => {
+    const baseMonitor = {
+      name: "Dify monitor",
+      schedule: { text: "every 30 minutes" },
+    };
+
+    it("normalizes singular scrape URLs to the canonical urls array", () => {
+      const result = createMonitorSchema.parse({
+        ...baseMonitor,
+        targets: [
+          { type: "scrape", url: "https://example.com" },
+          { type: "scrape", url: "https://example.org" },
+        ],
+      });
+
+      expect(result.targets).toEqual([
+        {
+          type: "scrape",
+          urls: ["https://example.com"],
+          scrapeOptions: {},
+        },
+        {
+          type: "scrape",
+          urls: ["https://example.org"],
+          scrapeOptions: {},
+        },
+      ]);
+    });
+
+    it("still validates a singular scrape URL", () => {
+      expect(() =>
+        createMonitorSchema.parse({
+          ...baseMonitor,
+          targets: [{ type: "scrape", url: "https://" }],
+        }),
+      ).toThrow();
+    });
+
+    it.each([
+      { type: "scrape" },
+      { type: "scrape", urls: [] },
+      {
+        type: "scrape",
+        url: "https://example.com",
+        urls: ["https://example.org"],
+      },
+      {
+        type: "scrape",
+        url: "https://example.com",
+        unsupported: true,
+      },
+    ])("keeps strict scrape target validation for %j", target => {
+      expect(() =>
+        createMonitorSchema.parse({
+          ...baseMonitor,
+          targets: [target],
+        }),
+      ).toThrow();
+    });
+  });
+
   describe("monitor search target goal validation", () => {
     const searchTargets = [
       { type: "search" as const, queries: ["firecrawl launch"] },
