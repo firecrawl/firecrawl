@@ -9,7 +9,7 @@ export async function scrapeStatusController(req: any, res: any) {
   if (!req.params.jobId || !uuidReg.test(req.params.jobId)) {
     return res.status(400).json({
       success: false,
-      error: "Invalid crawl ID",
+      error: "Invalid job ID format. Job ID must be a valid UUID.",
     });
   }
 
