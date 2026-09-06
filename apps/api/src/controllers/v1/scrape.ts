@@ -27,7 +27,6 @@ import { AbortManagerThrownError } from "../../scraper/scrapeURL/lib/abortManage
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
-import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   adjustKeylessCredits,
@@ -341,18 +340,6 @@ export async function scrapeController(
         errorId: id,
         path: req.path,
         teamId: req.auth.team_id,
-      });
-      captureExceptionWithZdrCheck(e, {
-        tags: {
-          errorId: id,
-          version: "v1",
-          teamId: req.auth.team_id,
-        },
-        extra: {
-          path: req.path,
-          url: req.body.url,
-        },
-        zeroDataRetention,
       });
       return res.status(500).json({
         success: false,

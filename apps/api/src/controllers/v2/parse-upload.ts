@@ -11,6 +11,7 @@ import { getRedisConnection } from "../../services/queue-service";
 import { RequestWithAuth, UploadedParseFile } from "./types";
 import { detectUploadedFileKind, getSupportedParseFileTypes } from "./parse";
 import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 const PARSE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -264,91 +265,117 @@ export async function parseUploadUrlController(
   req: RequestWithAuth<{}, any, any>,
   res: Response,
 ) {
-  return withSpan("api.parse.upload_url", async span => {
-    const parsed = uploadInitSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        code: "BAD_REQUEST",
-        error:
-          parsed.error.issues[0]?.message ?? "Invalid upload init request.",
-      });
-    }
-
-    const { filename, contentType, declaredSizeBytes } = parsed.data;
-    const imageOcrEnabled = isImageOcrEnabled(req.acuc?.flags);
-    if (!isSupportedParseUpload(filename, contentType, imageOcrEnabled)) {
-      return res.status(400).json({
-        success: false,
-        code: "UNSUPPORTED_FILE_TYPE",
-        error: `Unsupported upload type. Supported file extensions include ${getSupportedParseFileTypes(imageOcrEnabled)}, or matching supported MIME types.`,
-      });
-    }
-
-    cleanupExpiredLocalUploads();
-    const driver = getParseUploadDriver();
-    if (!getEffectiveRefSecret()) {
-      return res.status(503).json({
-        success: false,
-        code: "PARSE_UPLOAD_REF_SECRET_MISSING",
-        error: "Parse upload references are not configured.",
-      });
-    }
-
-    if (driver === "local" && !isLocalUploadAdapterAllowed()) {
-      return res.status(503).json({
-        success: false,
-        code: "PARSE_UPLOAD_STORAGE_DISABLED",
-        error:
-          "Local parse upload storage is disabled outside development/test.",
-      });
-    }
-
-    const uploadId = uuidv7();
-    const expiresAt = Date.now() + PARSE_UPLOAD_TTL_MS;
-    const objectPath = makeObjectPath(req.auth.team_id, uploadId, filename);
-    const refPayload: ParseUploadRefPayload = {
-      v: 1,
-      driver,
-      uploadId,
-      teamId: req.auth.team_id,
-      objectPath,
-      filename: sanitizeFilename(filename),
-      contentType,
-      expiresAt,
-      maxBytes: PARSE_UPLOAD_MAX_BYTES,
-    };
-    const uploadRef = signUploadRef(refPayload);
-
-    setSpanAttributes(span, {
-      "parse_upload.driver": driver,
-      "parse_upload.team_id": req.auth.team_id,
-      "parse_upload.declared_size": declaredSizeBytes,
-    });
-
-    if (driver === "gcs") {
-      if (!config.GCS_PARSE_UPLOAD_BUCKET_NAME) {
-        return res.status(503).json({
+  return withSpan(
+    "api.parse.upload_url",
+    async span => {
+      const parsed = uploadInitSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({
           success: false,
-          code: "PARSE_UPLOAD_STORAGE_DISABLED",
-          error: "Parse upload storage is not configured.",
+          code: "BAD_REQUEST",
+          error:
+            parsed.error.issues[0]?.message ?? "Invalid upload init request.",
         });
       }
 
-      const bucket = getStorageClient().bucket(
-        config.GCS_PARSE_UPLOAD_BUCKET_NAME,
-      );
-      const file = bucket.file(objectPath);
-      const [policy] = await file.generateSignedPostPolicyV4({
-        expires: expiresAt,
-        fields: {
-          "Content-Type": contentType || "application/octet-stream",
-        },
-        conditions: [
-          ["content-length-range", 1, PARSE_UPLOAD_MAX_BYTES],
-          ["eq", "$Content-Type", contentType || "application/octet-stream"],
-        ],
+      const { filename, contentType, declaredSizeBytes } = parsed.data;
+      const imageOcrEnabled = isImageOcrEnabled(req.acuc?.flags);
+      if (!isSupportedParseUpload(filename, contentType, imageOcrEnabled)) {
+        return res.status(400).json({
+          success: false,
+          code: "UNSUPPORTED_FILE_TYPE",
+          error: `Unsupported upload type. Supported file extensions include ${getSupportedParseFileTypes(imageOcrEnabled)}, or matching supported MIME types.`,
+        });
+      }
+
+      cleanupExpiredLocalUploads();
+      const driver = getParseUploadDriver();
+      if (!getEffectiveRefSecret()) {
+        return res.status(503).json({
+          success: false,
+          code: "PARSE_UPLOAD_REF_SECRET_MISSING",
+          error: "Parse upload references are not configured.",
+        });
+      }
+
+      if (driver === "local" && !isLocalUploadAdapterAllowed()) {
+        return res.status(503).json({
+          success: false,
+          code: "PARSE_UPLOAD_STORAGE_DISABLED",
+          error:
+            "Local parse upload storage is disabled outside development/test.",
+        });
+      }
+
+      const uploadId = uuidv7();
+      const expiresAt = Date.now() + PARSE_UPLOAD_TTL_MS;
+      const objectPath = makeObjectPath(req.auth.team_id, uploadId, filename);
+      const refPayload: ParseUploadRefPayload = {
+        v: 1,
+        driver,
+        uploadId,
+        teamId: req.auth.team_id,
+        objectPath,
+        filename: sanitizeFilename(filename),
+        contentType,
+        expiresAt,
+        maxBytes: PARSE_UPLOAD_MAX_BYTES,
+      };
+      const uploadRef = signUploadRef(refPayload);
+
+      setSpanAttributes(span, {
+        "parse_upload.driver": driver,
+        "parse_upload.team_id": req.auth.team_id,
+        "parse_upload.declared_size": declaredSizeBytes,
       });
+
+      if (driver === "gcs") {
+        if (!config.GCS_PARSE_UPLOAD_BUCKET_NAME) {
+          return res.status(503).json({
+            success: false,
+            code: "PARSE_UPLOAD_STORAGE_DISABLED",
+            error: "Parse upload storage is not configured.",
+          });
+        }
+
+        const bucket = getStorageClient().bucket(
+          config.GCS_PARSE_UPLOAD_BUCKET_NAME,
+        );
+        const file = bucket.file(objectPath);
+        const [policy] = await file.generateSignedPostPolicyV4({
+          expires: expiresAt,
+          fields: {
+            "Content-Type": contentType || "application/octet-stream",
+          },
+          conditions: [
+            ["content-length-range", 1, PARSE_UPLOAD_MAX_BYTES],
+            ["eq", "$Content-Type", contentType || "application/octet-stream"],
+          ],
+        });
+
+        if (
+          await reserveUnparsedUploadRefOrRespond(
+            res,
+            req.auth.team_id,
+            uploadId,
+          )
+        ) {
+          return;
+        }
+
+        return res.status(200).json({
+          success: true,
+          data: {
+            uploadUrl: policy.url,
+            uploadRef,
+            method: "POST",
+            headers: {},
+            fields: policy.fields,
+            expiresAt: new Date(expiresAt).toISOString(),
+            maxSizeBytes: PARSE_UPLOAD_MAX_BYTES,
+          },
+        });
+      }
 
       if (
         await reserveUnparsedUploadRefOrRespond(res, req.auth.team_id, uploadId)
@@ -356,48 +383,30 @@ export async function parseUploadUrlController(
         return;
       }
 
+      localUploads.set(uploadId, {
+        filename: sanitizeFilename(filename),
+        contentType,
+        teamId: req.auth.team_id,
+        expiresAt,
+        maxBytes: PARSE_UPLOAD_MAX_BYTES,
+      });
+
       return res.status(200).json({
         success: true,
         data: {
-          uploadUrl: policy.url,
+          uploadUrl: `${buildPublicBaseUrl(req)}/v2/parse/upload/${uploadId}?uploadRef=${encodeURIComponent(uploadRef)}`,
           uploadRef,
-          method: "POST",
-          headers: {},
-          fields: policy.fields,
+          method: "PUT",
+          headers: {
+            "Content-Type": contentType || "application/octet-stream",
+          },
           expiresAt: new Date(expiresAt).toISOString(),
           maxSizeBytes: PARSE_UPLOAD_MAX_BYTES,
         },
       });
-    }
-
-    if (
-      await reserveUnparsedUploadRefOrRespond(res, req.auth.team_id, uploadId)
-    ) {
-      return;
-    }
-
-    localUploads.set(uploadId, {
-      filename: sanitizeFilename(filename),
-      contentType,
-      teamId: req.auth.team_id,
-      expiresAt,
-      maxBytes: PARSE_UPLOAD_MAX_BYTES,
-    });
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        uploadUrl: `${buildPublicBaseUrl(req)}/v2/parse/upload/${uploadId}?uploadRef=${encodeURIComponent(uploadRef)}`,
-        uploadRef,
-        method: "PUT",
-        headers: {
-          "Content-Type": contentType || "application/octet-stream",
-        },
-        expiresAt: new Date(expiresAt).toISOString(),
-        maxSizeBytes: PARSE_UPLOAD_MAX_BYTES,
-      },
-    });
-  });
+    },
+    { zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced" },
+  );
 }
 
 export async function parseLocalUploadController(req: Request, res: Response) {

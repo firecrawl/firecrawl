@@ -1,8 +1,6 @@
 import "dotenv/config";
 import { config } from "../config";
-import "./sentry";
-import { setSentryServiceTag } from "./sentry";
-import * as Sentry from "@sentry/node";
+import "../otel";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 import { ExtractResult } from "../lib/extract/types";
@@ -11,7 +9,6 @@ import { performExtraction_F0 } from "../lib/extract/fire-0/extraction-service-f
 import { createWebhookSender, WebhookEvent } from "./webhook";
 import Express from "express";
 import { getErrorContactMessage } from "../lib/deployment";
-import { TransportableError } from "../lib/error";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import {
@@ -103,15 +100,6 @@ const processExtractJob = async (
     logger.error(`🚫 Extract job errored ${data.extractId} - ${error}`, {
       error,
     });
-
-    // Filter out TransportableErrors (flow control)
-    if (!(error instanceof TransportableError)) {
-      Sentry.captureException(error, {
-        data: {
-          extractId: data.extractId,
-        },
-      });
-    }
 
     await updateExtract(data.extractId, {
       status: "failed",
@@ -233,8 +221,6 @@ if (require.main === module) {
 }
 
 (async () => {
-  setSentryServiceTag("extract-worker");
-
   await initializeBlocklist().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);

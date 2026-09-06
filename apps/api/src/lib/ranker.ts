@@ -12,6 +12,8 @@ async function getEmbedding(
     model: getEmbeddingModel("text-embedding-3-small"),
     value: text,
     experimental_telemetry: {
+      recordInputs: false,
+      recordOutputs: false,
       isEnabled: true,
       metadata: {
         ...(metadata.extractId

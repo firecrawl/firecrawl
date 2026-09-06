@@ -17,7 +17,6 @@ import {
 } from "../../../lib/cost-tracking";
 import { calculateCost } from "../transformers/llmExtract";
 import { PromptInjectionDetectedError } from "../error";
-import { captureExceptionWithZdrCheck } from "../../../services/sentry";
 
 const GUARD_MODEL = "gpt-4o-mini";
 const GUARD_MAX_CHUNK_CHARS = 32000;
@@ -108,6 +107,8 @@ async function classifyChunk(
         },
       },
       experimental_telemetry: {
+        recordInputs: false,
+        recordOutputs: false,
         isEnabled: !zeroDataRetention,
         functionId: metadata.functionId
           ? metadata.functionId + "/promptInjectionGuard"
@@ -158,13 +159,6 @@ async function classifyChunk(
         usage?.inputTokens ?? 0,
         usage?.outputTokens ?? 0,
       );
-    }
-
-    if (!NoObjectGeneratedError.isInstance(error)) {
-      captureExceptionWithZdrCheck(error, {
-        tags: { feature: "prompt-injection-guard" },
-        extra: { teamId: metadata.teamId },
-      });
     }
 
     // Deliberately fail-open so a guard outage doesn't take down the whole scrape.

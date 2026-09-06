@@ -24,10 +24,6 @@ import { logger as _logger } from "../../lib/logger";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { CategoryOption } from "../../lib/search-query-builder";
-import {
-  applyZdrScope,
-  captureExceptionWithZdrCheck,
-} from "../../services/sentry";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
@@ -169,7 +165,6 @@ export async function searchController(
     const isZDROrAnon = isZDR || isAnon;
     zeroDataRetention = isZDROrAnon ?? false;
     logger = logger.child({ zeroDataRetention });
-    applyZdrScope(zeroDataRetention);
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
     if (isZDROrAnon && !teamForcedKind) {
@@ -407,9 +402,6 @@ export async function searchController(
       });
     }
 
-    captureExceptionWithZdrCheck(error, {
-      extra: { zeroDataRetention },
-    });
     logger.error("Unhandled error occurred in search", {
       version: "v2",
       error,

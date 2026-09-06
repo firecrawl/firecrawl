@@ -12,7 +12,6 @@ import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
-import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
 import {
   fromLegacyScrapeOptions,
@@ -261,7 +260,6 @@ export async function searchController(req: Request, res: Response) {
         return res.status(402).json({ error: "Insufficient credits" });
       }
     } catch (error) {
-      Sentry.captureException(error);
       logger.error(error);
       return res.status(500).json({ error: "Internal server error" });
     }
@@ -301,7 +299,6 @@ export async function searchController(req: Request, res: Response) {
       return res.status(408).json({ error: error.message });
     }
 
-    Sentry.captureException(error);
     logger.error("Unhandled error occurred in search", { error });
     return res.status(500).json({ error: error.message });
   }

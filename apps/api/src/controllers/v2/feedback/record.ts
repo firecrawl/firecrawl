@@ -5,7 +5,6 @@ import {
   autumnService,
   featureIdForBillingEndpoint,
 } from "../../../services/autumn/autumn.service";
-import { captureExceptionWithZdrCheck } from "../../../services/sentry";
 import {
   EndpointFeedbackErrorCode,
   RequestWithAuth,
@@ -365,7 +364,6 @@ export async function recordEndpointFeedback(
       },
     };
   } catch (error) {
-    captureExceptionWithZdrCheck(error);
     logger.error("Unhandled error while recording endpoint feedback", {
       error,
     });

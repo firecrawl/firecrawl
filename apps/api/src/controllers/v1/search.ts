@@ -20,7 +20,6 @@ import {
 } from "../../lib/key-restriction";
 import type { Logger } from "winston";
 import { ScrapeJobTimeoutError } from "../../lib/error";
-import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import { z } from "zod";
 import { executeSearch } from "../../search/execute";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
@@ -372,9 +371,6 @@ export async function searchController(
       });
     }
 
-    captureExceptionWithZdrCheck(error, {
-      extra: { zeroDataRetention },
-    });
     logger.error("Unhandled error occurred in search", {
       version: "v1",
       error,

@@ -6,9 +6,6 @@ vi.mock("ai", () => ({
 vi.mock("../../../lib/generic-ai", () => ({
   getModel: vi.fn().mockReturnValue({}),
 }));
-vi.mock("../../../services/sentry", () => ({
-  captureExceptionWithZdrCheck: vi.fn(),
-}));
 
 import { enhanceBrandingWithLLM } from "../../../lib/branding/llm";
 import { mergeBrandingResults } from "../../../lib/branding/merge";

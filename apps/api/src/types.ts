@@ -11,7 +11,7 @@ import { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/cost-tracking";
 import type { BillingMetadata } from "./services/billing/types";
 import { webhookSchema } from "./services/webhook/schema";
-import { SerializedTraceContext } from "./lib/otel-tracer";
+import type { SerializedTraceContext } from "./lib/otel-tracer";
 
 type ScrapeJobCommon = {
   concurrencyLimited?: boolean;
@@ -60,7 +60,6 @@ type ScrapeJobSingleUrlsUnique = {
   from_extract?: boolean;
   startTime?: number;
 
-  sentry?: any;
   is_extract?: boolean;
   apiKeyId: number | null;
 

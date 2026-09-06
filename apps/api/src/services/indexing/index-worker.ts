@@ -1,8 +1,6 @@
 import "dotenv/config";
 import { config } from "../../config";
-import "../sentry";
-import { setSentryServiceTag } from "../sentry";
-import * as Sentry from "@sentry/node";
+import "../../otel";
 import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger, logger } from "../../lib/logger";
 import {
@@ -125,7 +123,6 @@ const processBillingJobInternal = async (token: string, job: Job) => {
     await job.moveToCompleted({ success: true }, token, false);
   } catch (error) {
     logger.error("Error processing billing job", { error });
-    Sentry.captureException(error);
     err = error;
     await job.moveToFailed(error, token, false);
   } finally {
@@ -555,7 +552,6 @@ const processPrecrawlJob = async (token: string, job: Job) => {
             submittedCrawls++;
           } catch (e) {
             logger.error("Error adding precrawl job to queue", { error: e });
-            Sentry.captureException(e);
           }
         }
 
@@ -580,7 +576,6 @@ const processPrecrawlJob = async (token: string, job: Job) => {
     });
   } catch (e) {
     logger.error("Error processing precrawl job", { error: e });
-    Sentry.captureException(e);
     await job.moveToFailed(e, token, false);
   } finally {
     clearInterval(extendLockInterval);
@@ -699,8 +694,6 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
 
 // Start the workers
 (async () => {
-  setSentryServiceTag("index-worker");
-
   // Start billing worker and batch processing
   startBillingBatchProcessing();
   const billingWorkerPromise = workerFun(

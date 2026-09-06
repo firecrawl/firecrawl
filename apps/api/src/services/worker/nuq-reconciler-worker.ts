@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { config } from "../../config";
-import "../sentry";
-import { setSentryServiceTag } from "../sentry";
+import "../../otel";
 import { logger as _logger } from "../../lib/logger";
 import { reconcileConcurrencyQueue } from "../../lib/concurrency-queue-reconciler";
 import { Counter, register } from "prom-client";
@@ -25,8 +24,6 @@ const reconcilerJobsRecoveredTotal = new Counter({
 });
 
 (async () => {
-  setSentryServiceTag("nuq-reconciler-worker");
-
   let isShuttingDown = false;
   let reconcilerInFlight = false;
 

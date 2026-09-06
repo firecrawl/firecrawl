@@ -1,8 +1,6 @@
 import "dotenv/config";
 import { config } from "./config";
-import "./services/sentry";
-import { setSentryServiceTag } from "./services/sentry";
-import * as Sentry from "@sentry/node";
+import "./otel";
 import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
@@ -20,11 +18,7 @@ import http from "node:http";
 import https from "node:https";
 import { v1Router } from "./routes/v1";
 import expressWs from "express-ws";
-import {
-  ErrorResponse,
-  RequestWithMaybeACUC,
-  ResponseWithSentry,
-} from "./controllers/v1/types";
+import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v1/types";
 import { ZodError } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
@@ -73,8 +67,6 @@ const ws = expressWs(expressApp);
 const app = ws.app;
 
 global.isProduction = config.IS_PRODUCTION;
-
-setSentryServiceTag("api");
 
 // Capture the exact request bytes so integrations that sign the raw payload
 // (e.g. Slack's X-Slack-Signature) can verify it after body parsing. Typed with
@@ -260,13 +252,11 @@ app.use(
   },
 );
 
-Sentry.setupExpressErrorHandler(app);
-
 app.use(
   (
     err: unknown,
     req: RequestWithMaybeACUC<{}, ErrorResponse, undefined>,
-    res: ResponseWithSentry<ErrorResponse>,
+    res: Response<ErrorResponse>,
     next: NextFunction,
   ) => {
     if (
@@ -293,7 +283,7 @@ app.use(
       });
     }
 
-    const id = res.sentry ?? uuidv7();
+    const id = uuidv7();
 
     logger.error(
       "Error occurred in request! (" + req.path + ") -- ID " + id + " -- ",
