@@ -2,6 +2,7 @@
  * E2E tests for v2 batch scrape (translated from Python tests)
  */
 import Firecrawl from "../../../index";
+import { JobFailedError, type BatchScrapeJob } from "../../../v2/types";
 import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
 import { describe, test, expect, beforeAll } from "@jest/globals";
@@ -22,8 +23,16 @@ describe("v2.batch e2e", () => {
       "https://docs.firecrawl.dev",
       "https://firecrawl.dev",
     ];
-    const job = await client.batchScrape(urls, { options: { formats: ["markdown"] }, pollInterval: 1, timeout: 180 });
-    expect(["completed", "failed"]).toContain(job.status);
+    let job: BatchScrapeJob;
+    try {
+      job = await client.batchScrape(urls, { options: { formats: ["markdown"] }, pollInterval: 1, timeout: 180 });
+    } catch (e: any) {
+      // failed/cancelled now raise JobFailedError instead of returning a terminal job.
+      if (!(e instanceof JobFailedError)) throw e;
+      expect(["failed", "cancelled"]).toContain(e.job.status);
+      return;
+    }
+    expect(job.status).toBe("completed");
     expect(job.completed).toBeGreaterThanOrEqual(0);
     expect(job.total).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(job.data)).toBe(true);
@@ -60,24 +69,32 @@ describe("v2.batch e2e", () => {
   }, 120_000);
 
   test("wait batch with all params", async () => {
-    const urls = ["https://docs.firecrawl.dev", "https://firecrawl.dev"]; 
-    const job = await client.batchScrape(urls, {
-      options: {
-        formats: [
-          "markdown",
-          { type: "json", prompt: "Extract page title", schema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] } },
-          { type: "changeTracking", prompt: "Track changes", modes: ["json"] },
-        ],
-        onlyMainContent: true,
-        mobile: false,
-      },
-      ignoreInvalidURLs: true,
-      maxConcurrency: 2,
-      zeroDataRetention: false,
-      pollInterval: 1,
-      timeout: 180,
-    });
-    expect(["completed", "failed", "cancelled"]).toContain(job.status);
+    const urls = ["https://docs.firecrawl.dev", "https://firecrawl.dev"];
+    let job: BatchScrapeJob;
+    try {
+      job = await client.batchScrape(urls, {
+        options: {
+          formats: [
+            "markdown",
+            { type: "json", prompt: "Extract page title", schema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] } },
+            { type: "changeTracking", prompt: "Track changes", modes: ["json"] },
+          ],
+          onlyMainContent: true,
+          mobile: false,
+        },
+        ignoreInvalidURLs: true,
+        maxConcurrency: 2,
+        zeroDataRetention: false,
+        pollInterval: 1,
+        timeout: 180,
+      });
+    } catch (e: any) {
+      // failed/cancelled now raise JobFailedError instead of returning a terminal job.
+      if (!(e instanceof JobFailedError)) throw e;
+      expect(["failed", "cancelled"]).toContain(e.job.status);
+      return;
+    }
+    expect(job.status).toBe("completed");
     expect(job.completed).toBeGreaterThanOrEqual(0);
     expect(job.total).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(job.data)).toBe(true);

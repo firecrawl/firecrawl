@@ -689,7 +689,7 @@ export interface Document {
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
 export interface PaginationConfig {
-  /** When true (default), automatically follow `next` links and aggregate all documents. */
+  /** Unset lets the SDK decide: batch and crawl status paginate only once the job is completed. Explicit true/false always wins. */
   autoPaginate?: boolean;
   /** Maximum number of additional pages to fetch after the first response. */
   maxPages?: number;
@@ -932,6 +932,8 @@ export interface BatchScrapeJob {
   expiresAt?: string;
   next?: string | null;
   data: Document[];
+  /** API-provided error string, present when status is "failed". */
+  error?: string;
 }
 
 export interface MapData {
@@ -1743,6 +1745,21 @@ export class JobTimeoutError extends SdkError {
     );
     this.name = "JobTimeoutError";
     this.timeoutSeconds = timeoutSeconds;
+  }
+}
+
+export class JobFailedError extends SdkError {
+  job: BatchScrapeJob;
+  constructor(job: BatchScrapeJob, jobId: string, detail?: string) {
+    super(
+      `Batch scrape job ${jobId} ended with status ${job.status}${detail ? `: ${detail}` : ""}`,
+      undefined,
+      "JOB_FAILED",
+      undefined,
+      jobId,
+    );
+    this.name = "JobFailedError";
+    this.job = job;
   }
 }
 

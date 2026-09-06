@@ -21,7 +21,12 @@ export function isRetryableError(err: any): boolean {
   if (err instanceof JobTimeoutError) {
     return false;
   }
-  
+
+  // A page that responded 200 with success:false is a permanent response-level failure, not a transient blip.
+  if (err instanceof SdkError && err.code === "PAGINATION_RESPONSE_INVALID") {
+    return false;
+  }
+
   // If it's an SdkError with a status code, check if it's retryable
   if (err instanceof SdkError || (err && typeof err === 'object' && 'status' in err)) {
     const status = err.status;

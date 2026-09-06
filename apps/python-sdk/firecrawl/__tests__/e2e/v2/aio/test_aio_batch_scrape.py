@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from firecrawl import AsyncFirecrawl
+from firecrawl.v2.utils import JobFailedError
 
 
 @pytest.mark.asyncio
@@ -24,37 +25,43 @@ async def test_async_batch_start_and_status(api_key, api_url):
 @pytest.mark.asyncio
 async def test_async_batch_wait_minimal(api_key, api_url):
     client = AsyncFirecrawl(api_key=api_key, api_url=api_url)
-    job = await client.batch_scrape([
-        "https://docs.firecrawl.dev",
-        "https://firecrawl.dev",
-    ], formats=["markdown"], poll_interval=1, timeout=120)
-    assert job.status in ("completed", "failed")
+    try:
+        job = await client.batch_scrape([
+            "https://docs.firecrawl.dev",
+            "https://firecrawl.dev",
+        ], formats=["markdown"], poll_interval=1, timeout=120)
+        assert job.status == "completed"
+    except JobFailedError as e:
+        assert e.job.status in ("failed", "cancelled")
 
 
 @pytest.mark.asyncio
 async def test_async_batch_wait_with_all_params(api_key, api_url):
     client = AsyncFirecrawl(api_key=api_key, api_url=api_url)
     json_schema = {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
-    job = await client.batch_scrape(
-        [
-            "https://docs.firecrawl.dev",
-            "https://firecrawl.dev",
-        ],
-        formats=[
-            "markdown",
-            {"type": "json", "prompt": "Extract page title", "schema": json_schema},
-            {"type": "changeTracking", "prompt": "Track changes", "modes": ["json"]},
-        ],
-        only_main_content=True,
-        mobile=False,
-        ignore_invalid_urls=True,
-        max_concurrency=2,
-        zero_data_retention=False,
-        poll_interval=1,
-        timeout=180,
-        integration="_e2e-test",
-    )
-    assert job.status in ("completed", "failed")
+    try:
+        job = await client.batch_scrape(
+            [
+                "https://docs.firecrawl.dev",
+                "https://firecrawl.dev",
+            ],
+            formats=[
+                "markdown",
+                {"type": "json", "prompt": "Extract page title", "schema": json_schema},
+                {"type": "changeTracking", "prompt": "Track changes", "modes": ["json"]},
+            ],
+            only_main_content=True,
+            mobile=False,
+            ignore_invalid_urls=True,
+            max_concurrency=2,
+            zero_data_retention=False,
+            poll_interval=1,
+            timeout=180,
+            integration="_e2e-test",
+        )
+        assert job.status == "completed"
+    except JobFailedError as e:
+        assert e.job.status in ("failed", "cancelled")
 
 
 @pytest.mark.asyncio

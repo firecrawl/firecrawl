@@ -197,7 +197,11 @@ def get_monitor_check(
     data = _monitor_check_data_or_error(client.get(f"/v2/monitor/{monitor_id}/checks/{check_id}{suffix}"), "get monitor check")
     detail = MonitorCheckDetail(**data)
 
-    auto_paginate = pagination_config.auto_paginate if pagination_config else True
+    auto_paginate = (
+        pagination_config.auto_paginate
+        if (pagination_config is not None and pagination_config.auto_paginate is not None)
+        else True
+    )
     if auto_paginate and detail.next and not (
         pagination_config
         and pagination_config.max_results is not None
