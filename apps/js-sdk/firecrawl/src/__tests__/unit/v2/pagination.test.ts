@@ -1,6 +1,6 @@
 import { describe, test, expect, jest } from "@jest/globals";
-import { getCrawlStatus } from "../../../v2/methods/crawl";
-import { getBatchScrapeStatus } from "../../../v2/methods/batch";
+import { getCrawlStatus, waitForCrawlCompletion } from "../../../v2/methods/crawl";
+import { getBatchScrapeStatus, waitForBatchCompletion } from "../../../v2/methods/batch";
 import { getMonitorCheck } from "../../../v2/methods/monitor";
 
 describe("JS SDK v2 pagination", () => {
@@ -126,6 +126,56 @@ describe("JS SDK v2 pagination", () => {
       expect((http.get as jest.Mock).mock.calls.length).toBe(2);
     } finally {
       nowSpy.mockRestore();
+    }
+  });
+
+  test("crawl wait: does not paginate while scraping, then loads remaining pages once", async () => {
+    const scraping = { status: 200, data: { success: true, status: "scraping", completed: 1, total: 3, next: "https://api/n1", data: [{ markdown: "a" }] } };
+    const done = { status: 200, data: { success: true, status: "completed", completed: 3, total: 3, next: "https://api/n1", data: [{ markdown: "a" }] } };
+    const page2 = { status: 200, data: { success: true, next: null, data: [{ markdown: "b" }, { markdown: "c" }] } };
+    let polls = 0;
+    const http = makeHttp((url) => {
+      if (url.endsWith("n1")) return page2;
+      polls += 1;
+      return polls === 1 ? scraping : done;
+    });
+    const timeoutSpy = jest.spyOn(global, "setTimeout").mockImplementation((fn: any) => {
+      fn();
+      return 0 as any;
+    });
+    try {
+      const res = await waitForCrawlCompletion(http, "job1", 1);
+      expect(res.status).toBe("completed");
+      expect(res.data.map((d: any) => d.markdown)).toEqual(["a", "b", "c"]);
+      const urls = (http.get as jest.Mock).mock.calls.map((c: string[]) => c[0]);
+      expect(urls.filter((u: string) => u.endsWith("n1")).length).toBe(1);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  test("batch wait: does not paginate while scraping, then loads remaining pages once", async () => {
+    const scraping = { status: 200, data: { success: true, status: "scraping", completed: 1, total: 3, next: "https://api/b1", data: [{ markdown: "a" }] } };
+    const done = { status: 200, data: { success: true, status: "completed", completed: 3, total: 3, next: "https://api/b1", data: [{ markdown: "a" }] } };
+    const page2 = { status: 200, data: { success: true, next: null, data: [{ markdown: "b" }, { markdown: "c" }] } };
+    let polls = 0;
+    const http = makeHttp((url) => {
+      if (url.endsWith("b1")) return page2;
+      polls += 1;
+      return polls === 1 ? scraping : done;
+    });
+    const timeoutSpy = jest.spyOn(global, "setTimeout").mockImplementation((fn: any) => {
+      fn();
+      return 0 as any;
+    });
+    try {
+      const res = await waitForBatchCompletion(http, "jobB", 1);
+      expect(res.status).toBe("completed");
+      expect(res.data.map((d: any) => d.markdown)).toEqual(["a", "b", "c"]);
+      const urls = (http.get as jest.Mock).mock.calls.map((c: string[]) => c[0]);
+      expect(urls.filter((u: string) => u.endsWith("b1")).length).toBe(1);
+    } finally {
+      timeoutSpy.mockRestore();
     }
   });
 });
