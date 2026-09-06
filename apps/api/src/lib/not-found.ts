@@ -9,6 +9,10 @@ type LayerMatch = { path: string } | false;
 type Matcher = (path: string) => LayerMatch;
 type Layer = {
   matchers?: Matcher[];
+  // Set by Express for a router mounted with no path (`app.use(router)`).
+  // Express short-circuits on this flag and never consults `matchers`, whose
+  // patterns only match "/" for such a layer.
+  slash?: boolean;
   route?: { methods?: Record<string, boolean> };
   handle?: unknown;
 };
@@ -28,11 +32,24 @@ function walk(stack: Layer[], path: string, found: Set<string>): void {
       continue;
     }
 
+    // A root-mounted layer matches every path and consumes no prefix, so the
+    // full path is passed down. Reading the flag keeps the walk pure;
+    // `layer.match()` would assign `params`/`path` on the shared layer.
+    const matches: Exclude<LayerMatch, false>[] =
+      layer.slash === true
+        ? [{ path: "" }]
+        : matchers
+            .map(match => match(path))
+            .filter(
+              (match): match is Exclude<LayerMatch, false> => match !== false,
+            );
+
+    if (matches.length === 0) {
+      continue;
+    }
+
     if (layer.route) {
       const methods = layer.route.methods ?? {};
-      if (!matchers.some(match => match(path) !== false)) {
-        continue;
-      }
       for (const [method, enabled] of Object.entries(methods)) {
         if (enabled && method !== "_all") {
           found.add(method.toUpperCase());
@@ -45,11 +62,7 @@ function walk(stack: Layer[], path: string, found: Set<string>): void {
     if (!hasStack(layer.handle)) {
       continue;
     }
-    for (const match of matchers) {
-      const matched = match(path);
-      if (matched === false) {
-        continue;
-      }
+    for (const matched of matches) {
       const rest = path.slice(matched.path.length);
       walk(layer.handle.stack, rest === "" ? "/" : rest, found);
     }
