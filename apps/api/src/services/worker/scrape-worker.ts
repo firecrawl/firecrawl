@@ -1677,8 +1677,8 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
         }, jobLockExtendInterval);
       }
 
-      await addJobPriority(job.data.team_id, job.id);
       try {
+        await addJobPriority(job.data.team_id, job.id);
         if (job.data.mode === "kickoff") {
           const result = await processKickoffJob(
             job as NuQJob<ScrapeJobKickoff>,
