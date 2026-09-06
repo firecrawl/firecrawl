@@ -588,7 +588,9 @@ const configSchema = z.object({
 
   // PII Redaction (fire-privacy)
   FIRE_PRIVACY_URL: z.string().optional(),
-  FIRE_PRIVACY_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  // fire-privacy's model request budget is 30s; allow 2s for network and
+  // response handling so the caller does not abort a request still in flight.
+  FIRE_PRIVACY_TIMEOUT_MS: z.coerce.number().int().positive().default(32000),
 
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 
