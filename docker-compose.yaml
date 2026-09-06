@@ -126,7 +126,7 @@ services:
     # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
     # uncomment the Valkey statement and comment out the Redis statement.
     # Using Valkey with Firecrawl is untested and not guaranteed to work. Use with caution.
-    image: redis:alpine
+    image: redis:alpine@sha256:09160599abd229764c0fb44cb6be640294e1d360a54b19985ab4843dcf2d90f1
     # image: valkey/valkey:alpine
 
     networks:
@@ -140,7 +140,7 @@ services:
         compress: "true"
 
   rabbitmq:
-    image: rabbitmq:3-management
+    image: rabbitmq:3-management@sha256:e582c0bc7766f3342496d8485efb5a1df782b5ce3886ad017e2eaae442311f69
     networks:
       - backend
     command: rabbitmq-server
@@ -179,7 +179,7 @@ services:
   # NUQ_BACKEND=fdb; the api container reads the shared cluster file from the
   # fdb-cluster-file volume. Replaces nuq-postgres once stable.
   foundationdb:
-    image: foundationdb/foundationdb:7.3.63
+    image: foundationdb/foundationdb:7.3.63@sha256:df1a2310c6dbe0d56def526b73606cc8fd414ecc42c50fba2588f13292f82d48
     environment:
       FDB_NETWORKING_MODE: container
       FDB_COORDINATOR_PORT: 4500
@@ -197,7 +197,7 @@ services:
 
   # one-shot: creates the database on first boot (no-op afterwards)
   foundationdb-init:
-    image: foundationdb/foundationdb:7.3.63
+    image: foundationdb/foundationdb:7.3.63@sha256:df1a2310c6dbe0d56def526b73606cc8fd414ecc42c50fba2588f13292f82d48
     depends_on:
       - foundationdb
     entrypoint:
