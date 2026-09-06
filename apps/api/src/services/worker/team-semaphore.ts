@@ -181,6 +181,7 @@ function startHeartbeat(
     });
 
   const promise = (async () => {
+    let loopError: unknown = null;
     try {
       while (!stopped) {
         await mirrorSlotAcquire(teamId, holderId, mirrorState).catch(() => {
@@ -201,11 +202,19 @@ function startHeartbeat(
     } catch (error) {
       if (!stopped) {
         _logger.error("Error in semaphore heartbeat loop", { error });
+        loopError = error;
       }
     }
 
+    // Must always reject: withSemaphore races this promise against the job,
+    // so a resolution would be mistaken for the job's result. Preserve the
+    // TransportableError so callers surface a timeout instead of a 500.
     return Promise.reject(
-      new Error("heartbeat loop stopped unexpectedly"),
+      loopError instanceof TransportableError
+        ? loopError
+        : new TransportableError("SCRAPE_TIMEOUT", "heartbeat_stopped", {
+            cause: loopError ?? undefined,
+          }),
     ) as never;
   })();
 

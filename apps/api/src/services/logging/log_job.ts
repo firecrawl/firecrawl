@@ -43,6 +43,14 @@ function sanitizeString(value: string | null | undefined): string | null {
   return sanitizeText(value);
 }
 
+// drizzle-orm 1.0 wraps pg errors in DrizzleQueryError; the SQLSTATE lives on
+// error.cause.code, not error.code.
+function isConstraintViolation(error: unknown): boolean {
+  const code = (error as any)?.cause?.code ?? ((error as any)?.code as unknown);
+  // 23503 foreign_key_violation, 23505 unique_violation
+  return code === "23503" || code === "23505";
+}
+
 const tableMap: Record<string, PgTable> = {
   requests: schema.requests,
   scrapes: schema.scrapes,
@@ -302,25 +310,26 @@ async function robustInsert(
       });
     } else {
       logger.error("Failed to insert into database", { attempts });
-      // Report to Sentry with context
-      Sentry.captureException(
-        attempts[attempts.length - 1]?.error ||
-          new Error("Database insert failed after 10 attempts"),
-        {
-          tags: {
-            table,
-            operation: "robustInsert",
+      const lastError = attempts[attempts.length - 1]?.error;
+      // Constraint violations (missing parent request row, duplicate key)
+      // are known data races, not actionable bugs — logs only, no Sentry.
+      if (!isConstraintViolation(lastError)) {
+        Sentry.captureException(
+          lastError || new Error("Database insert failed after 10 attempts"),
+          {
+            tags: {
+              table,
+              operation: "robustInsert",
+            },
+            extra: {
+              table,
+              data: JSON.stringify(data).substring(0, 500), // Limit size
+              attempts: 10,
+              lastError: lastError ? JSON.stringify(lastError) : null,
+            },
           },
-          extra: {
-            table,
-            data: JSON.stringify(data).substring(0, 500), // Limit size
-            attempts: 10,
-            lastError: attempts[attempts.length - 1]?.error
-              ? JSON.stringify(attempts[attempts.length - 1].error)
-              : null,
-          },
-        },
-      );
+        );
+      }
     }
   } else {
     const start = Date.now();
@@ -331,18 +340,19 @@ async function robustInsert(
     } catch (error) {
       attempts.push({ error, timeMs: Date.now() - start, backoffMs: 0 });
       logger.error("Failed to insert into database", { attempts });
-      // Report to Sentry
-      Sentry.captureException(error, {
-        tags: {
-          table,
-          operation: "robustInsert",
-          force: "false",
-        },
-        extra: {
-          table,
-          data: JSON.stringify(data).substring(0, 500), // Limit size
-        },
-      });
+      if (!isConstraintViolation(error)) {
+        Sentry.captureException(error, {
+          tags: {
+            table,
+            operation: "robustInsert",
+            force: "false",
+          },
+          extra: {
+            table,
+            data: JSON.stringify(data).substring(0, 500), // Limit size
+          },
+        });
+      }
     }
   }
 }
