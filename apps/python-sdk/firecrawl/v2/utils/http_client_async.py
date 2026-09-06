@@ -21,7 +21,9 @@ class AsyncHttpClient:
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
 
-        headers = {}
+        headers = {
+            "User-Agent": f"FireCrawl/{version}",
+        }
 
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
