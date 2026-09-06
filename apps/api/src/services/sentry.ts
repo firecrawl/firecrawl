@@ -143,6 +143,12 @@ if (config.SENTRY_DSN) {
         : config.SENTRY_TRACE_SAMPLE_RATE;
     },
     sampleRate: config.SENTRY_ERROR_SAMPLE_RATE,
+    ignoreSpans: [
+      /^pg-pool\.connect$/,
+      /^firecrawl-redis-lock-url$/,
+      { op: /^middleware\.express$/ },
+      { op: /^router\.express$/ },
+    ],
     serverName: config.NUQ_POD_NAME,
     environment: config.SENTRY_ENVIRONMENT,
     beforeSend(event, hint) {
