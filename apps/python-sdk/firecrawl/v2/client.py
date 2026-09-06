@@ -435,7 +435,7 @@ class FirecrawlClient:
             timeout: Request timeout in milliseconds (default: 300000)
             highlights: Generate query-relevant highlights for search results
                 (default: true)
-            page_options: Options for scraping individual pages
+            scrape_options: Options for scraping individual pages
             enterprise: Enterprise search options. Use ["zdr"] for end-to-end
                 Zero Data Retention or ["anon"] for anonymized search. Must be
                 enabled for your team.
