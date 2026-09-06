@@ -1375,11 +1375,24 @@ class NuQ<JobData = any, JobReturnValue = any> {
         "nuq.job_id": id,
       });
 
+      // Postgres rejects JSON containing U+0000 (NUL bytes) with error code
+      // 22P05 ("untranslatable character"). Strip them from the serialised
+      // payload before the INSERT so scraped content with embedded NUL bytes
+      // (e.g. certain PDFs) does not crash the worker process.
+      // JSON.stringify encodes NUL as the literal 6-char sequence \u0000, so
+      // we strip that escape sequence from the serialised string before parsing
+      // back — this is safer than walking the object tree because it handles
+      // arbitrarily nested structures without recursion limits.
+      const sanitizedReturnvalue =
+        returnvalue != null
+          ? JSON.parse(JSON.stringify(returnvalue).replace(/\\u0000/g, ""))
+          : returnvalue;
+
       const start = Date.now();
       try {
         const result = await nuqPool.query(
           `UPDATE ${this.queueName} SET status = 'completed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), returnvalue = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`,
-          [id, lock, returnvalue],
+          [id, lock, sanitizedReturnvalue],
         );
 
         const success = result.rowCount !== 0;
