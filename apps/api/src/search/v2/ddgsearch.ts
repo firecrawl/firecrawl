@@ -30,13 +30,25 @@ interface SearchOptions {
   timeout?: number;
 }
 
-function cleanUrl(href: string): string {
-  if (href.includes("uddg=")) {
-    const url = new URL(href, "https://duckduckgo.com");
-    const uddg = url.searchParams.get("uddg");
-    return uddg ? decodeURIComponent(uddg) : href;
+export function cleanUrl(href: string): string {
+  try {
+    if (href.includes("uddg=")) {
+      const url = new URL(href, "https://duckduckgo.com");
+      const uddg = url.searchParams.get("uddg");
+      if (!uddg) return href;
+      return decodeURIComponent(uddg);
+    }
+    return href;
+  } catch (err) {
+    logger.warn(
+      "DuckDuckGo: unparseable or malformed result URL, returning href",
+      {
+        href,
+        error: (err as Error).message,
+      },
+    );
+    return href;
   }
-  return href;
 }
 
 function extractResults(
