@@ -68,11 +68,13 @@ function isZeroDataRetentionContext(ctx: Context): boolean {
 }
 
 // Traces flagged ZDR after their root span started (a `*.zero_data_retention`
-// attribute set from inside the span). Descendants started afterwards are not
-// recorded and spans of these traces still in flight are dropped when they end.
-// Bounded FIFO; a trace evicted early only loses this fallback, its spans still
-// carry the context flag or attribute themselves.
-const ZERO_DATA_RETENTION_TRACE_LIMIT = 10_000;
+// attribute set from inside a *recording* span). Descendants started afterwards
+// are not recorded and spans of these traces still in flight are dropped when
+// they end. Only recording spans register here: a non-recording span already
+// suppresses its descendants through parent-based sampling, so the registry
+// only sees the rare late-discovery case and stays far below its cap. The cap
+// is a memory guard, not an expected steady state.
+const ZERO_DATA_RETENTION_TRACE_LIMIT = 100_000;
 const zeroDataRetentionTraces = new Set<string>();
 
 function markTraceZeroDataRetention(traceId: string): void {
@@ -331,10 +333,13 @@ export function setSpanAttributes(
 
   span.setAttributes(cleaned);
 
-  // Flagging a live span as ZDR also covers everything started under it from
-  // now on, plus spans of the trace that are still in flight.
+  // Flagging a live, recording span as ZDR also covers everything started under
+  // it from now on, plus spans of the trace that are still in flight. A
+  // non-recording span needs no registry entry: its descendants are already
+  // dropped by parent-based sampling.
   const spanContext = span.spanContext();
   if (
+    span.isRecording() &&
     hasZeroDataRetentionAttribute(cleaned) &&
     isSpanContextValid(spanContext)
   ) {

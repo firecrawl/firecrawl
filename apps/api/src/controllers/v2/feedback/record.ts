@@ -3,10 +3,11 @@ import { config } from "../../../config";
 import { logger as _logger } from "../../../lib/logger";
 import {
   withSpan,
+  setSpanAttributes,
   recordSpanException,
   type Span,
 } from "../../../lib/otel-tracer";
-import { getScrapeZDR } from "../../../lib/zdr-helpers";
+import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
 import {
   autumnService,
   featureIdForBillingEndpoint,
@@ -243,6 +244,23 @@ async function refundCredits(params: {
   }
 }
 
+/**
+ * Team-level zero data retention for the endpoint the feedback refers to. Unlike
+ * `shouldSkipPersistenceForForcedZdr` this ignores the persistence override:
+ * the trace must stay unrecorded whenever the team is forced into ZDR.
+ */
+function isForcedZdrTeam(
+  req: RequestWithAuth<any, any, any>,
+  options: FeedbackRecordOptions,
+): boolean {
+  if (options.endpoint === "search") {
+    const searchZDR = getSearchZDR(req.acuc?.flags);
+    return searchZDR === "forced-zdr" || searchZDR === "forced-anon";
+  }
+
+  return getScrapeZDR(req.acuc?.flags) === "forced";
+}
+
 export async function recordEndpointFeedback(
   req: RequestWithAuth<any, any, any>,
   options: FeedbackRecordOptions,
@@ -256,7 +274,7 @@ export async function recordEndpointFeedback(
         "feedback.job_id": options.jobId,
         "feedback.team_id": req.auth.team_id,
       },
-      zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+      zeroDataRetention: isForcedZdrTeam(req, options),
     },
   );
 }
@@ -276,6 +294,7 @@ async function recordEndpointFeedbackInner(
 
   if (shouldSkipPersistenceForForcedZdr(req, options)) {
     logger.info("Skipping feedback persistence for forced ZDR team");
+    setSpanAttributes(span, { "feedback.zero_data_retention": true });
     return zdrFeedbackSuccess(options);
   }
 
@@ -289,7 +308,9 @@ async function recordEndpointFeedbackInner(
     if ("status" in jobOrFailure) return jobOrFailure;
 
     if (shouldSkipPersistenceForJobZdr(jobOrFailure, options)) {
+      // Learned late: the attribute drops this span and flags the trace.
       logger.info("Skipping feedback persistence for ZDR job");
+      setSpanAttributes(span, { "feedback.zero_data_retention": true });
       return zdrFeedbackSuccess(options);
     }
 
