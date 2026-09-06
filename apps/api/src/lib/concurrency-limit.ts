@@ -19,6 +19,7 @@ import {
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
 import { autumnService } from "../services/autumn/autumn.service";
+import { reportPipelineError } from "./redis-pipeline";
 
 // Fallback when Autumn can't give us a concurrency value.
 const DEFAULT_CONCURRENCY_LIMIT = 2;
@@ -83,7 +84,15 @@ export async function removeConcurrencyLimitedJobs(
     for (const id of chunk) {
       pipeline.del(constructJobKey(id));
     }
-    await pipeline.exec();
+    // Do not throw on command errors: cancel has already been recorded on
+    // the crawl, and the stale entries self-expire via their PX timeout.
+    // But never let the failure pass silently.
+    reportPipelineError(await pipeline.exec(), logger, {
+      module: "concurrency-limit",
+      method: "removeConcurrencyLimitedJobs",
+      teamId: team_id,
+      jobCount: chunk.length,
+    });
   }
 }
 
@@ -143,7 +152,16 @@ export async function pushConcurrencyLimitedJobs(
 
   pipeline.zadd(queueKey, ...zaddArgs);
   pipeline.sadd("concurrency-limit-queues", queueKey);
-  await pipeline.exec();
+  // Do not throw on command errors: the jobs are already durable in the
+  // NuQ backlog, and the concurrency-queue reconciler requeues anything
+  // missing from this derived Redis index on its next run. But never let
+  // the failure pass silently.
+  reportPipelineError(await pipeline.exec(), logger, {
+    module: "concurrency-limit",
+    method: "pushConcurrencyLimitedJobs",
+    teamId: team_id,
+    jobCount: jobs.length,
+  });
 }
 
 export async function getConcurrencyLimitedJobs(team_id: string) {
