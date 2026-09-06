@@ -1,4 +1,42 @@
-import { generateURLPermutations } from "./crawl-redis";
+import { randomUUID } from "node:crypto";
+import { redisEvictConnection } from "../services/redis";
+
+vi.mock("../scraper/WebScraper/crawler", () => ({ WebCrawler: class {} }));
+
+import {
+  generateURLPermutations,
+  lockURL,
+  type StoredCrawl,
+} from "./crawl-redis";
+
+describe("lockURL", () => {
+  it("does not exceed the crawl limit when URLs are locked concurrently", async () => {
+    const id = `lock-url-limit-${randomUUID()}`;
+    const visitedKey = `crawl:${id}:visited`;
+    const visitedUniqueKey = `crawl:${id}:visited_unique`;
+    const sc = {
+      crawlerOptions: { limit: 1, deduplicateSimilarURLs: false },
+      scrapeOptions: {},
+      internalOptions: {},
+      team_id: "test-team",
+      createdAt: Date.now(),
+    } as StoredCrawl;
+
+    try {
+      const results = await Promise.all(
+        Array.from({ length: 20 }, (_, index) =>
+          lockURL(id, sc, `https://example.com/page-${index}`),
+        ),
+      );
+
+      expect(results.filter(Boolean)).toHaveLength(1);
+      expect(await redisEvictConnection.scard(visitedKey)).toBe(1);
+      expect(await redisEvictConnection.scard(visitedUniqueKey)).toBe(1);
+    } finally {
+      await redisEvictConnection.del(visitedKey, visitedUniqueKey);
+    }
+  });
+});
 
 describe("generateURLPermutations", () => {
   it("generates permutations correctly", () => {
