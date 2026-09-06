@@ -148,6 +148,7 @@ class TestScrapeRequestPreparation:
                 200,
                 {
                     "success": True,
+                    "sessionId": "session-123",
                     "stdout": "ok",
                     "exitCode": 0,
                 },
@@ -160,6 +161,8 @@ class TestScrapeRequestPreparation:
             "console.log('ok')",
             timeout=45,
             origin="_unit-test",
+            ttl=1200,
+            activity_ttl=600,
         )
 
         assert client.last_post[0] == "/v2/scrape/job-123/interact"
@@ -168,8 +171,11 @@ class TestScrapeRequestPreparation:
             "language": "node",
             "timeout": 45,
             "origin": "_unit-test",
+            "ttl": 1200,
+            "activityTtl": 600,
         }
         assert response.success is True
+        assert response.session_id == "session-123"
         assert response.exit_code == 0
 
     def test_interact_with_prompt(self):
@@ -178,6 +184,7 @@ class TestScrapeRequestPreparation:
                 200,
                 {
                     "success": True,
+                    "sessionId": "session-456",
                     "output": "Clicked the button",
                     "cdpUrl": "wss://browser.example.com/cdp",
                     "liveViewUrl": "https://live.example.com/view",
@@ -192,14 +199,17 @@ class TestScrapeRequestPreparation:
             client,
             "job-456",
             prompt="Click the login button",
+            ttl=900,
         )
 
         assert client.last_post[0] == "/v2/scrape/job-456/interact"
         assert client.last_post[1] == {
             "language": "node",
             "prompt": "Click the login button",
+            "ttl": 900,
         }
         assert response.success is True
+        assert response.session_id == "session-456"
         assert response.output == "Clicked the button"
         assert response.cdp_url == "wss://browser.example.com/cdp"
         assert response.live_view_url == "https://live.example.com/view"
