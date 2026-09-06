@@ -11,6 +11,7 @@ import { getRedisConnection } from "../../services/queue-service";
 import { RequestWithAuth, UploadedParseFile } from "./types";
 import { detectUploadedFileKind, getSupportedParseFileTypes } from "./parse";
 import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
+import { reportPipelineError } from "../../lib/redis-pipeline";
 
 const PARSE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -226,12 +227,25 @@ async function reserveUnparsedUploadRef(teamId: string, uploadId: string) {
 async function releaseUnparsedUploadRef(teamId: string, uploadId: string) {
   const cutoff = Date.now() - PARSE_UPLOAD_UNPARSED_WINDOW_MS;
   const key = getUnparsedUploadsKey(teamId);
-  await getRedisConnection()
+  const results = await getRedisConnection()
     .pipeline()
     .zremrangebyscore(key, "-inf", cutoff)
     .zrem(key, uploadId)
     .expire(key, PARSE_UPLOAD_UNPARSED_TTL_SECONDS)
     .exec();
+  // Both call sites catch and log a throw here; a leaked ref self-expires
+  // via TTL.
+  const error = reportPipelineError(results, _logger, {
+    module: "parse-upload",
+    method: "releaseUnparsedUploadRef",
+    teamId,
+    uploadId,
+  });
+  if (error) {
+    throw new Error("Failed to release unparsed upload ref: " + error.message, {
+      cause: error,
+    });
+  }
 }
 
 async function reserveUnparsedUploadRefOrRespond(

@@ -2,6 +2,7 @@ import crypto from "crypto";
 import IORedis from "ioredis";
 import { config } from "../config";
 import { logger as _logger } from "../lib/logger";
+import { reportPipelineError } from "../lib/redis-pipeline";
 import {
   indexCacheErrorCounter,
   indexCacheReadDuration,
@@ -222,6 +223,23 @@ export async function upsertCachedIndexEntries(
     pipeline.del(negKeyFor(key));
     pipeline.hlen(key);
     const results = await pipeline.exec();
+    reportPipelineError(results, logger, {
+      module: "index-cache",
+      method: "upsertCachedIndexEntries",
+      key,
+    });
+
+    // If invalidating the negative marker failed, a surviving marker
+    // would falsely keep proving "nothing inserted since" — retry the DEL
+    // on its own. This is unconditional because deleting the marker is
+    // always safe (it only costs a DB read on the next lookup), and a
+    // connection failure can report the HSET as failed even when Redis
+    // applied it. A throw here is caught below and logged as a write
+    // failure.
+    if (results?.[2]?.[0]) {
+      await client.del(negKeyFor(key));
+    }
+
     const hlen = results?.[3]?.[1];
     if (typeof hlen === "number" && hlen > ENTRY_CAP) {
       const raw = await client.hgetall(key);
