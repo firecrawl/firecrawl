@@ -44,6 +44,7 @@ import {
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
 import { autumnService } from "../services/autumn/autumn.service";
+import { ReplyError } from "ioredis";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -84,7 +85,10 @@ async function setCachedACUC(
       await setValue(cacheKeyACUC, JSON.stringify(acuc), 600, true);
     });
   } catch (error) {
-    logger.error(`Error updating cached ACUC ${cacheKeyACUC}: ${error}`);
+    logger.error("Error updating cached ACUC", {
+      cacheKey: cacheKeyACUC,
+      error,
+    });
   }
 }
 
@@ -172,7 +176,23 @@ async function getACUC(
   const cacheKeyACUC = `acuc_${credentialPurpose}_${api_key}_${isExtract ? "extract" : "scrape"}`;
 
   if (useCache) {
-    const cachedACUC = await getValue(cacheKeyACUC);
+    let cachedACUC: string | null;
+    try {
+      cachedACUC = await getValue(cacheKeyACUC);
+    } catch (error) {
+      if (error instanceof ReplyError) {
+        logger.warn(
+          "Reading ACUC out of cache redis failed, treating as miss",
+          {
+            cacheKey: cacheKeyACUC,
+            error,
+          },
+        );
+        cachedACUC = null;
+      } else {
+        throw error;
+      }
+    }
     if (cachedACUC !== null) {
       try {
         return JSON.parse(cachedACUC);
@@ -279,7 +299,10 @@ async function setCachedACUCTeam(
       await setValue(cacheKeyACUC, JSON.stringify(acuc), 600, true);
     });
   } catch (error) {
-    logger.error(`Error updating cached ACUC ${cacheKeyACUC}: ${error}`);
+    logger.error("Error updating cached ACUC", {
+      cacheKey: cacheKeyACUC,
+      error,
+    });
   }
 }
 
@@ -308,7 +331,23 @@ export async function getACUCTeam(
   const cacheKeyACUC = `acuc_team_${team_id}_${isExtract ? "extract" : "scrape"}`;
 
   if (useCache) {
-    const cachedACUC = await getValue(cacheKeyACUC);
+    let cachedACUC: string | null;
+    try {
+      cachedACUC = await getValue(cacheKeyACUC);
+    } catch (error) {
+      if (error instanceof ReplyError) {
+        logger.warn(
+          "Reading ACUC out of cache redis failed, treating as miss",
+          {
+            cacheKey: cacheKeyACUC,
+            error,
+          },
+        );
+        cachedACUC = null;
+      } else {
+        throw error;
+      }
+    }
     if (cachedACUC !== null) {
       return JSON.parse(cachedACUC);
     }
