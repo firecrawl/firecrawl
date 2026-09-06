@@ -594,6 +594,8 @@ const configSchema = z.object({
 
   ZDRCLEANER_HEARTBEAT_URL: z.string().optional(),
 
+  CCLOG_WORKER_HEARTBEAT_URL: z.string().optional(),
+
   // Deterministic JSON extraction (reusable-json-mode)
   EXTRACT_CODEGEN_MODEL: z.string().default("gemini-3.1-flash-lite"),
   EXTRACT_ANCHOR_MODEL: z.string().default("openai/gpt-oss-120b"),

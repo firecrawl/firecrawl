@@ -16,6 +16,18 @@ const CCLOG_WORKER_LOCK_TTL_SECONDS = 55;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+async function sendHeartbeat() {
+  if (config.CCLOG_WORKER_HEARTBEAT_URL) {
+    try {
+      await fetch(config.CCLOG_WORKER_HEARTBEAT_URL, {
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch (error) {
+      _logger.warn("Failed to send cclog heartbeat", { error });
+    }
+  }
+}
+
 (async () => {
   setSentryServiceTag("cclog-worker");
 
@@ -88,6 +100,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
           at: at.toISOString(),
           ...summary,
         });
+        await sendHeartbeat();
       } else {
         _logger.info("Skipping cclog tick because another worker holds lock", {
           at: at.toISOString(),
