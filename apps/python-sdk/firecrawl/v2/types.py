@@ -1430,6 +1430,11 @@ class ExtractRequest(BaseModel):
     ignore_invalid_urls: Optional[bool] = None
     integration: Optional[str] = None
     agent: Optional[AgentOptions] = None
+    threat_protection: Optional[ThreatProtectionOptions] = Field(
+        default=None, alias="threatProtection"
+    )
+
+    model_config = {"populate_by_name": True}
 
 
 class ExtractResponse(BaseModel):
