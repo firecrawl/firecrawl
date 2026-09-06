@@ -3,6 +3,8 @@ import { mergeBrandingResults } from "../../../lib/branding/merge";
 import { processRawBranding } from "../../../lib/branding/processor";
 import {
   isNearBlack,
+  isUsableBrandPrimary,
+  isUsableCtaBackground,
   normalizeRoleHex,
   pickBrandPrimary,
   shouldApplyLlmColorRoles,
@@ -40,6 +42,26 @@ describe("pickBrandPrimary", () => {
     ).toBe("#22C55E");
   });
 
+  it("uses a black CTA as primary instead of a chromatic wash", () => {
+    expect(
+      pickBrandPrimary(["#CB9FD2", "#000000", "#FFFFFF"], {
+        background: "#FFFFFF",
+        colorScheme: "light",
+        cta: "#000000",
+      }),
+    ).toBe("#000000");
+  });
+
+  it("still prefers a chromatic CTA over navy header chrome", () => {
+    expect(
+      pickBrandPrimary(["#061B31", "#635BFF", "#FFFFFF"], {
+        background: "#FFFFFF",
+        colorScheme: "light",
+        cta: "#635BFF",
+      }),
+    ).toBe("#635BFF");
+  });
+
   it("does not treat saturated blue as near-black chrome", () => {
     expect(isNearBlack("#0000FF")).toBe(false);
     expect(isNearBlack("#061B31")).toBe(true);
@@ -56,6 +78,19 @@ describe("pickBrandPrimary", () => {
         colorScheme: "light",
       }),
     ).toBe("#635BFF");
+  });
+
+  it("keeps saturated bright fills as usable CTAs but rejects pale washes", () => {
+    expect(isUsableCtaBackground("#FFFF00")).toBe(true);
+    expect(isUsableCtaBackground("#FFFFFF")).toBe(false);
+    expect(isUsableCtaBackground("#F5F0E8")).toBe(false);
+  });
+
+  it("rejects a non-CTA near-black gray on dark pages", () => {
+    expect(isUsableBrandPrimary("#1A1A1A", "dark")).toBe(false);
+    expect(isUsableBrandPrimary("#1A1A1A", "dark", { cta: "#1A1A1A" })).toBe(
+      true,
+    );
   });
 });
 
@@ -120,6 +155,117 @@ describe("merge color roles", () => {
       [],
     );
     expect(merged.colors?.primary).toBe("#FF4C00");
+  });
+
+  it("promotes a black primary button over an LLM wash", () => {
+    const merged = mergeBrandingResults(
+      { colorScheme: "light", colors: { primary: "#CB9FD2" } },
+      {
+        ...emptyLlm,
+        buttonClassification: {
+          primaryButtonIndex: 0,
+          primaryButtonReasoning: "black get started",
+          secondaryButtonIndex: -1,
+          secondaryButtonReasoning: "n/a",
+          confidence: 0.9,
+        },
+        colorRoles: {
+          primaryColor: "#CB9FD2",
+          accentColor: "#1A73E8",
+          backgroundColor: "#FFFFFF",
+          textPrimary: "#000000",
+          confidence: 0.9,
+        },
+      },
+      [
+        {
+          index: 0,
+          text: "Get started",
+          html: "",
+          classes: "",
+          background: "#000000",
+          textColor: "#FFFFFF",
+        },
+      ],
+    );
+    expect(merged.colors?.primary).toBe("#000000");
+    expect(merged.components?.buttonPrimary?.background).toBe("#000000");
+  });
+
+  it("does not promote a ghost button matching the page background", () => {
+    const merged = mergeBrandingResults(
+      {
+        colorScheme: "dark",
+        colors: { primary: "#22C55E", background: "#0A0A0A" },
+      },
+      {
+        ...emptyLlm,
+        buttonClassification: {
+          primaryButtonIndex: 0,
+          primaryButtonReasoning: "outline button",
+          secondaryButtonIndex: -1,
+          secondaryButtonReasoning: "n/a",
+          confidence: 0.9,
+        },
+        colorRoles: {
+          primaryColor: "#22C55E",
+          accentColor: "#22C55E",
+          backgroundColor: "#0A0A0A",
+          textPrimary: "#FFFFFF",
+          confidence: 0.9,
+        },
+      },
+      [
+        {
+          index: 0,
+          text: "Learn more",
+          html: "",
+          classes: "",
+          background: "#0A0A0A",
+          textColor: "#FFFFFF",
+        },
+      ],
+    );
+    expect(merged.colors?.primary).toBe("#22C55E");
+  });
+
+  it("guards ghost buttons against the real page background, not the LLM's", () => {
+    const merged = mergeBrandingResults(
+      {
+        colorScheme: "dark",
+        colors: { primary: "#22C55E", background: "#0A0A0A" },
+      },
+      {
+        ...emptyLlm,
+        buttonClassification: {
+          primaryButtonIndex: 0,
+          primaryButtonReasoning: "outline button",
+          secondaryButtonIndex: -1,
+          secondaryButtonReasoning: "n/a",
+          confidence: 0.9,
+        },
+        colorRoles: {
+          primaryColor: "#22C55E",
+          accentColor: "#22C55E",
+          // LLM disagrees about the background; the ghost fill still matches
+          // the real page and must not become primary.
+          backgroundColor: "#111827",
+          textPrimary: "#FFFFFF",
+          confidence: 0.9,
+        },
+      },
+      [
+        {
+          index: 0,
+          text: "Learn more",
+          html: "",
+          classes: "",
+          background: "#0A0A0A",
+          textColor: "#FFFFFF",
+        },
+      ],
+    );
+    expect(merged.colors?.primary).toBe("#22C55E");
   });
 
   it("does not let a high-confidence navy LLM primary overwrite a brand color", () => {
@@ -229,6 +375,131 @@ describe("processRawBranding primary", () => {
         snap({
           tag: "button",
           text: "Get started",
+          isButton: true,
+          hasCTAIndicator: true,
+          rect: { w: 140, h: 44 },
+          colors: {
+            background: "rgb(99, 91, 255)",
+            text: "rgb(255, 255, 255)",
+          },
+        }),
+      ],
+      images: [],
+      typography: {
+        stacks: { body: ["Inter"], heading: ["Inter"], paragraph: ["Inter"] },
+        sizes: { h1: "32px", h2: "24px", body: "16px" },
+      },
+      frameworkHints: [],
+      colorScheme: "light",
+      pageBackground: "rgb(255, 255, 255)",
+    });
+
+    expect(profile.colors?.primary).toBe("#635BFF");
+  });
+
+  it("uses a black CTA as primary instead of a large lilac wash", () => {
+    const profile = processRawBranding({
+      cssData: { colors: [], spacings: [], radii: [] },
+      snapshots: [
+        snap({
+          tag: "section",
+          rect: { w: 1400, h: 600 },
+          colors: { background: "rgb(203, 159, 210)", text: "rgb(0, 0, 0)" },
+        }),
+        snap({
+          tag: "button",
+          text: "Get started",
+          isButton: true,
+          hasCTAIndicator: true,
+          rect: { w: 140, h: 44 },
+          colors: {
+            background: "rgb(0, 0, 0)",
+            text: "rgb(255, 255, 255)",
+          },
+        }),
+      ],
+      images: [],
+      typography: {
+        stacks: { body: ["Inter"], heading: ["Inter"], paragraph: ["Inter"] },
+        sizes: { h1: "32px", h2: "24px", body: "16px" },
+      },
+      frameworkHints: [],
+      colorScheme: "light",
+      pageBackground: "rgb(255, 255, 255)",
+    });
+
+    expect(profile.colors?.primary).toBe("#000000");
+  });
+
+  it("does not give the CTA-text bonus to substring matches like Country", () => {
+    const profile = processRawBranding({
+      cssData: { colors: [], spacings: [], radii: [] },
+      snapshots: [
+        snap({
+          tag: "button",
+          text: "Country",
+          isButton: true,
+          hasCTAIndicator: true,
+          rect: { w: 120, h: 40 },
+          colors: {
+            background: "rgb(51, 68, 51)",
+            text: "rgb(255, 255, 255)",
+          },
+        }),
+        snap({
+          tag: "button",
+          text: "Get started",
+          isButton: true,
+          hasCTAIndicator: true,
+          rect: { w: 140, h: 44 },
+          colors: {
+            background: "rgb(99, 91, 255)",
+            text: "rgb(255, 255, 255)",
+          },
+        }),
+      ],
+      images: [],
+      typography: {
+        stacks: { body: ["Inter"], heading: ["Inter"], paragraph: ["Inter"] },
+        sizes: { h1: "32px", h2: "24px", body: "16px" },
+      },
+      frameworkHints: [],
+      colorScheme: "light",
+      pageBackground: "rgb(255, 255, 255)",
+    });
+
+    expect(profile.colors?.primary).toBe("#635BFF");
+  });
+
+  it("ranks CTA fills instead of taking the first DOM-order button", () => {
+    const profile = processRawBranding({
+      cssData: { colors: [], spacings: [], radii: [] },
+      snapshots: [
+        snap({
+          tag: "a",
+          text: "Learn more",
+          isButton: true,
+          hasCTAIndicator: true,
+          rect: { w: 120, h: 40 },
+          colors: {
+            background: "rgb(51, 68, 51)",
+            text: "rgb(255, 255, 255)",
+          },
+        }),
+        snap({
+          tag: "button",
+          text: "Get started",
+          isButton: true,
+          hasCTAIndicator: true,
+          rect: { w: 140, h: 44 },
+          colors: {
+            background: "rgb(99, 91, 255)",
+            text: "rgb(255, 255, 255)",
+          },
+        }),
+        snap({
+          tag: "a",
+          text: "Sign up free",
           isButton: true,
           hasCTAIndicator: true,
           rect: { w: 140, h: 44 },
