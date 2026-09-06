@@ -81,6 +81,7 @@
     "@ai-sdk/google-vertex": "^4.0.165",
     "@ai-sdk/groq": "^3.0.41",
     "@ai-sdk/openai": "3.0.71",
+    "@ai-sdk/openai-compatible": "2.0.50",
     "@ai-sdk/xai": "^3.0.83",
     "@bull-board/api": "^6.21.3",
     "@bull-board/express": "^6.21.3",

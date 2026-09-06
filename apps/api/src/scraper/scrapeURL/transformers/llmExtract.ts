@@ -18,6 +18,7 @@ import {
   jsonSchema,
 } from "ai";
 import { getModel } from "../../../lib/generic-ai";
+import { config } from "../../../config";
 import { z } from "zod";
 import fs from "fs/promises";
 import Ajv from "ajv";
@@ -733,7 +734,13 @@ export async function generateCompletions({
           strictJsonSchema: true,
         },
       },
-      system: options.systemPrompt,
+      // Third-party OpenAI-compatible endpoints (e.g. Z.AI/GLM) get json_object
+      // mode but the schema is dropped by the SDK — so inject the exact schema
+      // that generateObject validates against into the system prompt.
+      system:
+        config.OPENAI_BASE_URL && schema && !(schema instanceof z.ZodType)
+          ? `${options.systemPrompt ?? ""}\n\nYou MUST respond with ONLY a single valid JSON object (no markdown code fences, no commentary) that strictly conforms to this JSON schema:\n${JSON.stringify(schema)}`
+          : options.systemPrompt,
       ...(schema && {
         schema: schema instanceof z.ZodType ? schema : jsonSchema(schema),
       }),
