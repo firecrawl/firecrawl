@@ -86,7 +86,6 @@ async function setCachedACUC(
     });
   } catch (error) {
     logger.error("Error updating cached ACUC", {
-      cacheKey: cacheKeyACUC,
       error,
     });
   }
@@ -184,7 +183,6 @@ async function getACUC(
         logger.warn(
           "Reading ACUC out of cache redis failed, treating as miss",
           {
-            cacheKey: cacheKeyACUC,
             error,
           },
         );
@@ -198,12 +196,10 @@ async function getACUC(
         return JSON.parse(cachedACUC);
       } catch (error) {
         logger.warn("Ignoring malformed ACUC cache entry", {
-          cacheKey: cacheKeyACUC,
           error,
         });
         void deleteKey(cacheKeyACUC).catch(deleteError => {
           logger.warn("Failed to delete malformed ACUC cache entry", {
-            cacheKey: cacheKeyACUC,
             error: deleteError,
           });
         });
