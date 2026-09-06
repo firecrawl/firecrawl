@@ -5,7 +5,7 @@ import {
   HAS_SEARCH,
   TEST_PRODUCTION,
 } from "../lib";
-import { search, searchWithFailure, idmux, Identity } from "./lib";
+import { search, searchRaw, searchWithFailure, idmux, Identity } from "./lib";
 import { config } from "../../../config";
 
 let identity: Identity;
@@ -343,3 +343,65 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60000,
   );
 });
+
+describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)(
+  "research category notice",
+  () => {
+    it.concurrent(
+      "carries the notice on every response that uses the category",
+      async () => {
+        const raw = await searchRaw(
+          { query: "firecrawl", categories: ["research"] },
+          identity,
+        );
+        expect(raw.statusCode).toBe(200);
+        expect(raw.headers["warning"]).toMatch(/^299 - "/);
+        expect(raw.body.warnings).toHaveLength(1);
+        expect(raw.body.warnings[0]).toContain("2026-11-16");
+      },
+      60000,
+    );
+
+    it.concurrent(
+      "reaches requests the schema rejects",
+      async () => {
+        const raw = await searchRaw(
+          { query: "firecrawl", categories: ["research"], limit: 0 },
+          identity,
+        );
+        expect(raw.statusCode).toBe(400);
+        expect(raw.body.success).toBe(false);
+        expect(raw.body.warnings).toHaveLength(1);
+      },
+      60000,
+    );
+
+    concurrentIf(TEST_PRODUCTION)(
+      "reaches requests auth rejects",
+      async () => {
+        const raw = await searchRaw(
+          { query: "firecrawl", categories: ["research"] },
+          { apiKey: "invalid-api-key", teamId: "" },
+        );
+        expect(raw.statusCode).toBe(401);
+        expect(raw.headers["warning"]).toContain("2026-11-16");
+        expect(raw.body.warnings).toHaveLength(1);
+      },
+      60000,
+    );
+
+    it.concurrent(
+      "stays silent for every other category",
+      async () => {
+        const raw = await searchRaw(
+          { query: "firecrawl", categories: ["github"] },
+          identity,
+        );
+        expect(raw.statusCode).toBe(200);
+        expect(raw.headers["warning"]).toBeUndefined();
+        expect(raw.body.warnings).toBeUndefined();
+      },
+      60000,
+    );
+  },
+);

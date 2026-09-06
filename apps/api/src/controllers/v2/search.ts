@@ -1,4 +1,4 @@
-import { Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import {
@@ -23,7 +23,7 @@ import {
 import { logger as _logger } from "../../lib/logger";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
-import { CategoryOption } from "../../lib/search-query-builder";
+import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import {
   applyZdrScope,
   captureExceptionWithZdrCheck,
@@ -43,6 +43,24 @@ import {
 import { wantsDeveloperCategory } from "../../search/developer";
 import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { applyNotice, type Notice } from "../../lib/deprecations";
+
+const RESEARCH_CATEGORY_NOTICE: Notice = {
+  message:
+    "The 'research' search category changes on 2026-11-16: it will search the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) instead of filtering web results to 14 academic websites. Results will move from data.web to data.research as paper records (paperId, primaryId, ids, title, abstract, score). To keep web pages from academic sites, use includeDomains. github, pdf and developer are unaffected. See https://docs.firecrawl.dev/features/research",
+};
+
+// Ahead of auth and validation so rejected requests carry the notice too.
+export function researchCategoryNoticeMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (hasCategory(req.body?.categories, "research")) {
+    applyNotice(res, RESEARCH_CATEGORY_NOTICE);
+  }
+  next();
+}
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
