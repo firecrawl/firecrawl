@@ -71,7 +71,8 @@
     "tsc-watch": "^7.1.1",
     "tsx": "^4.20.3",
     "undici-types": "^7.16.0",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "yaml": "^2.9.0"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.84",
