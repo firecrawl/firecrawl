@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { z } from "zod";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { sampled } from "../../lib/rollout";
@@ -188,6 +189,58 @@ function saysAmbiguous(
 ): boolean {
   return (body !== UNUSABLE_BODY && body.ambiguous === true) || status === 504;
 }
+
+/**
+ * firebill's answer bodies, as it actually serialises them (firebill
+ * `src/api.rs`). Parsing through these replaces the hand-written shape guards:
+ * a body that does not match is `unusable` — never a refusal — and that branch
+ * now falls out of a failed `safeParse` rather than a stack of `typeof` checks.
+ *
+ * `success` is the discriminant on the two endpoints that carry more than a
+ * bare boolean: firebill sends `allowed`/`remaining` (check) and
+ * `allowed`/`lock_id`/… (lock) exactly when `success: true`, and a plain
+ * `{ success: false }` otherwise. Keeping the two arms apart is what keeps an
+ * explicit `success: false` (`refused`) distinct from a shape we could not read
+ * (`unusable`): the former parses the `false` arm, the latter parses neither.
+ */
+
+/** `/v1/track` and `/v1/finalize`: the bare boolean. `ambiguous` is read off
+ * the raw body by {@link saysAmbiguous} before this, so it is not needed here. */
+const usageAnswerSchema = z.object({ success: z.boolean() });
+
+/**
+ * `/v1/check`. `remaining` is deliberately lenient: a missing or non-finite
+ * figure must fall back to the allowed-inverted default in the clamp below, not
+ * discard an otherwise-usable answer, so it is caught to `undefined` rather than
+ * failing the parse. `allowed` is not — a `success: true` without a usable
+ * `allowed` is `unusable`, exactly as the old `typeof` guard had it.
+ */
+const checkAnswerSchema = z.discriminatedUnion("success", [
+  z.object({
+    success: z.literal(true),
+    allowed: z.boolean(),
+    remaining: z.number().finite().optional().catch(undefined),
+  }),
+  z.object({ success: z.literal(false) }),
+]);
+
+/**
+ * `/v1/lock`. `reason` and `operation_token` stay `unknown`: an unrecognised
+ * reason is dropped by {@link lockDeniedReason} and the token is validated where
+ * it is read, so neither should fail the parse. `lock_id` is caught to
+ * `undefined` so a mis-shaped echo falls back to the caller's own id rather than
+ * turning a real lock into `unusable`.
+ */
+const lockAnswerSchema = z.discriminatedUnion("success", [
+  z.object({
+    success: z.literal(true),
+    allowed: z.boolean(),
+    lock_id: z.string().optional().catch(undefined),
+    reason: z.unknown().optional(),
+    operation_token: z.unknown().optional(),
+  }),
+  z.object({ success: z.literal(false) }),
+]);
 
 // FIREBILL_ORG_IDS is decoded once at startup by the config schema; the Set is
 // built lazily on first use and cached, keyed on the decoded array reference.
@@ -436,11 +489,13 @@ async function firebillAttempt(
     // telling us it took the event in a shape we did not understand — so it is
     // ambiguous, and the caller retries under the same key rather than logging
     // usage as lost.
-    if (body !== UNUSABLE_BODY && body.success === false) {
+    const parsed =
+      body === UNUSABLE_BODY ? undefined : usageAnswerSchema.safeParse(body);
+    if (parsed?.success && parsed.data.success === false) {
       logger.warn("firebill refused the event — it did not take it", context);
       return { ok: false, reason: "not_success", cause: "refused" };
     }
-    if (body === UNUSABLE_BODY || body.success !== true) {
+    if (!parsed?.success) {
       logger.warn("firebill answered with a body we could not read", {
         ...context,
         status: response.status,
@@ -582,29 +637,23 @@ export async function firebillCheck({
         status: response.status,
       });
     }
-    const body = answered as {
-      success?: boolean;
-      allowed?: boolean;
-      remaining?: number;
-    };
 
+    const parsed = checkAnswerSchema.safeParse(answered);
+    // Anything that matches neither arm is an answer we cannot read rather than
+    // one firebill gave — a missing `success`, or a `success: true` without a
+    // usable boolean `allowed`, which firebill does not send today and which
+    // read as a denial would 402 a paying customer. `refused` is documented as
+    // an explicit `success: false`; labelling an unreadable shape with it would
+    // have anyone slicing by cause counting these as declines. So it fails open.
+    if (!parsed.success) {
+      return unavailable("answered without a usable shape", "unusable");
+    }
     // `success: false` is firebill saying it does not know — an unanswered
     // balance, or a gateway lookup that failed. Never a denial.
-    if (body.success === false) {
+    if (parsed.data.success === false) {
       return unavailable("firebill could not answer", "refused");
     }
-    // Anything else that is not `success: true` is an answer we cannot read
-    // rather than one firebill gave: `refused` is documented as an explicit
-    // `success: false`, and labelling a shape we did not understand with it
-    // would have anyone slicing by cause counting these as declines.
-    if (body.success !== true) {
-      return unavailable("answered without a usable `success`", "unusable");
-    }
-    // A missing or mis-shaped `allowed` is not something firebill sends today.
-    // Reading it as a denial would 402 a paying customer, so it fails open.
-    if (typeof body.allowed !== "boolean") {
-      return unavailable("answered without a usable `allowed`", "unusable");
-    }
+    const body = parsed.data;
 
     // `remaining` clamps downstream limits, and the safe default inverts with
     // `allowed`, so there is no single one.
@@ -719,21 +768,19 @@ export async function firebillLock({
       firebillFailureCauseTotal.labels("lock", "unusable").inc();
       return { status: "unavailable" };
     }
-    const body = answered as {
-      success?: boolean;
-      allowed?: boolean;
-      lock_id?: string;
-      reason?: unknown;
-      operation_token?: unknown;
-    };
-
-    if (body.success !== true) {
+    const parsed = lockAnswerSchema.safeParse(answered);
+    // A `success: false` firebill sent on purpose is `refused`; a shape matching
+    // neither arm — no `success`, or a `success: true` without a boolean
+    // `allowed` firebill does not send today — is `unusable`. Both proceed
+    // unlocked, but the cause label has to tell them apart.
+    if (!parsed.success || parsed.data.success === false) {
       logger.error("firebill lock did not succeed", context);
       firebillFailureCauseTotal
-        .labels("lock", body.success === false ? "refused" : "unusable")
+        .labels("lock", parsed.success ? "refused" : "unusable")
         .inc();
       return { status: "unavailable" };
     }
+    const body = parsed.data;
 
     if (body.allowed === false) {
       const reason = lockDeniedReason(body.reason);
@@ -748,19 +795,11 @@ export async function firebillLock({
       return { status: "denied", ...(reason ? { reason } : {}) };
     }
 
-    // Only an explicit `allowed: false` is a denial. `success: true` with a
-    // missing or mis-shaped `allowed` is not an answer firebill sends today;
-    // treating it as a denial would hard-stop the check (skipped_no_credits),
-    // so it maps to unavailable — proceed unlocked — instead.
-    if (body.allowed !== true) {
-      logger.error(
-        "firebill lock answered without a usable `allowed`",
-        context,
-      );
-      firebillFailureCauseTotal.labels("lock", "unusable").inc();
-      return { status: "unavailable" };
-    }
-
+    // `allowed` is a schema-guaranteed boolean here, and the denial above took
+    // the `false`, so this is `allowed: true`. A `success: true` with a missing
+    // or mis-shaped `allowed` — which firebill does not send today, and which
+    // read as a denial would hard-stop the check (skipped_no_credits) — never
+    // reaches here: it fails the parse and is reported `unusable` above.
     const operationToken =
       typeof body.operation_token === "string" &&
       body.operation_token.length > 0
@@ -906,11 +945,13 @@ export async function firebillFinalize({
       firebillFailureCauseTotal.labels("finalize", "unusable").inc();
       return false;
     }
-    const body = answered as { success?: boolean };
-    if (body.success !== true) {
+    const parsed = usageAnswerSchema.safeParse(answered);
+    if (!parsed.success || parsed.data.success !== true) {
       logger.error("firebill finalize did not succeed", context);
       firebillFailureCauseTotal
-        .labels("finalize", body.success === false ? "refused" : "unusable")
+        // An explicit `success: false` is `refused`; a shape we could not read
+        // is `unusable`. The settle retries on the schedule either way.
+        .labels("finalize", parsed.success ? "refused" : "unusable")
         .inc();
       return false;
     }

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   firebillCheck,
+  firebillFinalize,
+  firebillLock,
   firebillTrack,
   shouldRouteToFirebill,
 } from "../firebill";
@@ -661,5 +663,153 @@ describe("firebillCheck", () => {
     vi.stubGlobal("fetch", fetchMock);
     await firebillCheck(checkParams);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("firebillLock", () => {
+  const lockParams = {
+    customerId: "org-1",
+    entityId: "team-1",
+    featureId: "CREDITS",
+    value: 10,
+    lockId: "monitor_check-1",
+    expiresAt: Date.now() + 60_000,
+  };
+
+  const answer = (body: unknown, status = 200) =>
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status })),
+    );
+
+  it("locks and carries the operation token back on a gated hold", async () => {
+    answer({
+      success: true,
+      allowed: true,
+      lock_id: "monitor_check-1",
+      operation_token: "op-tok",
+    });
+    await expect(firebillLock(lockParams)).resolves.toEqual({
+      status: "locked",
+      lockId: "monitor_check-1",
+      operationToken: "op-tok",
+    });
+  });
+
+  it("falls back to the caller's lock id when firebill echoes none", async () => {
+    answer({ success: true, allowed: true });
+    await expect(firebillLock(lockParams)).resolves.toEqual({
+      status: "locked",
+      lockId: "monitor_check-1",
+    });
+  });
+
+  it("reads a denial and its reason", async () => {
+    answer({ success: true, allowed: false, reason: "out_of_credits" });
+    await expect(firebillLock(lockParams)).resolves.toEqual({
+      status: "denied",
+      reason: "out_of_credits",
+    });
+  });
+
+  it("drops an unrecognised denial reason rather than passing it through", async () => {
+    answer({ success: true, allowed: false, reason: "some_new_reason" });
+    await expect(firebillLock(lockParams)).resolves.toEqual({
+      status: "denied",
+    });
+  });
+
+  // A shape firebill sent on purpose (`success: false`) is `refused`; one we
+  // could not read is `unusable`. Both proceed unlocked, but slicing the cause
+  // counter must tell them apart.
+  it("calls an explicit success:false refused", async () => {
+    answer({ success: false });
+    await expect(firebillLock(lockParams)).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(await failureCauses()).toEqual({ "lock/refused": 1 });
+  });
+
+  it.each([
+    ["a missing allowed", { success: true }],
+    ["a non-boolean allowed", { success: true, allowed: "yes" }],
+    ["a missing success", { locked: true }],
+  ])("calls %s unusable, not refused", async (_label, body) => {
+    answer(body);
+    await expect(firebillLock(lockParams)).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(await failureCauses()).toEqual({ "lock/unusable": 1 });
+  });
+
+  it("calls an unreadable body unusable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(new Response("<html>502</html>", { status: 200 })),
+    );
+    await expect(firebillLock(lockParams)).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(await failureCauses()).toEqual({ "lock/unusable": 1 });
+  });
+
+  it("names a non-OK status as its own cause", async () => {
+    answer({ success: true, allowed: true }, 503);
+    await expect(firebillLock(lockParams)).resolves.toEqual({
+      status: "unavailable",
+    });
+    expect(await failureCauses()).toEqual({ "lock/non_ok": 1 });
+  });
+});
+
+describe("firebillFinalize", () => {
+  const finalizeParams = {
+    lockId: "monitor_check-1",
+    action: "confirm" as const,
+  };
+
+  const answer = (body: unknown, status = 200) =>
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status })),
+    );
+
+  it("returns true when firebill accepted the settle", async () => {
+    answer({ success: true });
+    await expect(firebillFinalize(finalizeParams)).resolves.toBe(true);
+  });
+
+  it("calls an explicit success:false refused", async () => {
+    answer({ success: false });
+    await expect(firebillFinalize(finalizeParams)).resolves.toBe(false);
+    expect(await failureCauses()).toEqual({ "finalize/refused": 1 });
+  });
+
+  it.each([
+    ["a missing success", { queued: true }],
+    ["a non-boolean success", { success: "yes" }],
+  ])("calls %s unusable, not refused", async (_label, body) => {
+    answer(body);
+    await expect(firebillFinalize(finalizeParams)).resolves.toBe(false);
+    expect(await failureCauses()).toEqual({ "finalize/unusable": 1 });
+  });
+
+  it("calls an unreadable body unusable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(new Response("<html>502</html>", { status: 200 })),
+    );
+    await expect(firebillFinalize(finalizeParams)).resolves.toBe(false);
+    expect(await failureCauses()).toEqual({ "finalize/unusable": 1 });
+  });
+
+  it("reads a 504 as ambiguous rather than refused", async () => {
+    answer({ success: false, ambiguous: true }, 504);
+    await expect(firebillFinalize(finalizeParams)).resolves.toBe(false);
+    expect(await failureCauses()).toEqual({ "finalize/ambiguous": 1 });
   });
 });
