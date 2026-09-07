@@ -67,7 +67,7 @@ describe("not-found handler metric labels", () => {
     expect(new Set(routes)).toEqual(new Set(["unmatched"]));
   });
 
-  it("labels wrong-method hits on parameterised paths with the same constant", async () => {
+  it("labels wrong-method hits on a static path with the same constant", async () => {
     const app = appUnderTest();
 
     await request(app).get("/v2/scrape");
@@ -87,6 +87,15 @@ describe("not-found handler metric labels", () => {
 
     expect(res.status).toBe(405);
     expect(res.headers["allow"]).toBe("DELETE, GET, HEAD");
+    expect(res.body).toEqual({
+      success: false,
+      code: "METHOD_NOT_ALLOWED",
+      error:
+        "PATCH /v2/crawl/abc-123 is not supported. Use DELETE, GET, HEAD instead.",
+      allowed_methods: ["DELETE", "GET", "HEAD"],
+      documentation_url:
+        "https://docs.firecrawl.dev/api-reference/introduction",
+    });
 
     const routes = await recordedRoutes();
 
@@ -109,6 +118,13 @@ describe("terminal not-found handler security headers", () => {
 
     expect(res.status).toBe(404);
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    expect(res.body).toEqual({
+      success: false,
+      code: "NOT_FOUND",
+      error: "GET /v2/nonexistent-xyz is not a Firecrawl API endpoint.",
+      documentation_url:
+        "https://docs.firecrawl.dev/api-reference/introduction",
+    });
   });
 
   it("sets nosniff on the JSON 405", async () => {
@@ -116,5 +132,13 @@ describe("terminal not-found handler security headers", () => {
 
     expect(res.status).toBe(405);
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    expect(res.body).toEqual({
+      success: false,
+      code: "METHOD_NOT_ALLOWED",
+      error: "GET /v2/scrape is not supported. Use POST instead.",
+      allowed_methods: ["POST"],
+      documentation_url:
+        "https://docs.firecrawl.dev/api-reference/introduction",
+    });
   });
 });
