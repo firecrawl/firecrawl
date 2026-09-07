@@ -632,22 +632,24 @@ describe("scrapePDFWithFirePDFAsync", () => {
   });
 
   it.each([
-    ["401", 401, "http_401"],
-    ["404", 404, "http_404"],
-    ["410", 410, "http_410"],
-    ["413", 413, "http_413"],
-    ["429", 429, "http_429"],
-    ["502", 502, "http_502"],
-    ["503", 503, "http_503"],
-    ["generic 5xx", 500, "http_5xx"],
+    ["401", 401, "http_401", { error: "x" }],
+    ["404", 404, "http_404", { error: "x" }],
+    ["410", 410, "http_410", { error: "x" }],
+    ["413", 413, "http_413", { error: "x" }],
+    ["429", 429, "http_429", { error: "x" }],
+    ["502", 502, "http_502", { error: "x" }],
+    // A 503 is only fire-pdf's own when it carries one of its documented
+    // codes; any other 503 body is retried once (firePDFAsyncDeadline.test).
+    ["503", 503, "http_503", { error: "admission_unavailable" }],
+    ["generic 5xx", 500, "http_5xx", { error: "x" }],
   ])(
     "throws FirePdfAsyncFailure when POST /jobs returns %s",
-    async (_, status, reason) => {
+    async (_, status, reason, body) => {
       const { fetchImpl, calls } = makeFetchFromSequence([
         {
           matchUrl: /\/jobs$/,
           matchMethod: "POST",
-          response: { status, body: { error: "x" } },
+          response: { status, body },
         },
       ]);
       const fallback = vi.fn();
