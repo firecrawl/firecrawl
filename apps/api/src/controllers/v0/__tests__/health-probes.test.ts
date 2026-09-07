@@ -160,4 +160,26 @@ describe("readinessController", () => {
       failed: ["nuqPostgres"],
     });
   });
+
+  it("returns 503 when a check exceeds 4s", async () => {
+    vi.useFakeTimers();
+    db.execute.mockReturnValue(new Promise(() => {}));
+    const res = makeResponse();
+    const done = readinessController({} as Request, res);
+    await vi.advanceTimersByTimeAsync(4000);
+    await done;
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      status: "unhealthy",
+      failed: ["postgres"],
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Readiness check failed",
+      expect.objectContaining({
+        check: "postgres",
+        error: expect.objectContaining({ message: "postgres timed out" }),
+      }),
+    );
+    vi.useRealTimers();
+  });
 });

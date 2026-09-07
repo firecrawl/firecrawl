@@ -7,7 +7,9 @@ type RedisLike = {
   ping: () => Promise<unknown>;
 };
 
-export function redisEnded(client: RedisLike | null | undefined): boolean {
+export function redisEnded(
+  client: { status: string } | null | undefined,
+): boolean {
   return client?.status === "end";
 }
 
@@ -28,23 +30,17 @@ export async function collectUnhealthy(
   );
   const results = await Promise.all(
     active.map(async ([name, fn]) => {
+      let t: ReturnType<typeof setTimeout> | undefined;
       try {
-        await new Promise<void>((resolve, reject) => {
-          const t = setTimeout(
-            () => reject(new Error(`${name} timed out`)),
-            HEALTH_CHECK_TIMEOUT_MS,
-          );
-          Promise.resolve(fn()).then(
-            () => {
-              clearTimeout(t);
-              resolve();
-            },
-            e => {
-              clearTimeout(t);
-              reject(e);
-            },
-          );
-        });
+        await Promise.race([
+          Promise.resolve().then(() => fn()),
+          new Promise<never>((_, reject) => {
+            t = setTimeout(
+              () => reject(new Error(`${name} timed out`)),
+              HEALTH_CHECK_TIMEOUT_MS,
+            );
+          }),
+        ]);
         return null;
       } catch (error) {
         logger.warn("Readiness check failed", {
@@ -53,6 +49,8 @@ export async function collectUnhealthy(
           error,
         });
         return name;
+      } finally {
+        if (t !== undefined) clearTimeout(t);
       }
     }),
   );
