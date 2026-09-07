@@ -17,6 +17,12 @@ import {
   savePdfResultToCache,
 } from "../../../../../lib/gcs-pdf-cache";
 import { config } from "../../../../../config";
+import {
+  jsonResp,
+  makeFetchFromSequence,
+  makeMeta,
+  noopSleep,
+} from "./firePDFAsyncFixtures";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────
 
@@ -38,104 +44,6 @@ afterAll(() => {
     process.env[BASE_URL_ENV] = ORIGINAL_BASE_URL;
   }
 });
-
-type FakeResponse = {
-  status: number;
-  body: unknown;
-};
-
-function jsonResp({ status, body }: FakeResponse) {
-  return {
-    status,
-    json: async () => body,
-  } as any;
-}
-
-function makeMeta(overrides: Record<string, unknown> = {}) {
-  const noopLogger: any = {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-    child: vi.fn(function child() {
-      return noopLogger;
-    }),
-  };
-
-  return {
-    id: "scrape-id-test",
-    url: "https://example.com/doc.pdf",
-    rewrittenUrl: undefined,
-    logger: noopLogger,
-    mock: null,
-    abort: {
-      throwIfAborted: vi.fn(),
-      asSignal: vi.fn(() => new AbortController().signal),
-      scrapeTimeout: vi.fn(() => 60_000),
-    },
-    internalOptions: {
-      zeroDataRetention: false,
-      teamId: "team-x",
-      teamConcurrency: 12,
-      crawlId: undefined,
-    },
-    options: {
-      parsers: [{ type: "pdf", __firePdfAsync: true }],
-    },
-    largePdfProcessing: {},
-    ...overrides,
-  } as any;
-}
-
-function makeFetchFromSequence(
-  matchers: Array<{
-    matchUrl: RegExp;
-    matchMethod?: "DELETE" | "GET" | "POST";
-    response: FakeResponse | (() => FakeResponse);
-  }>,
-) {
-  const calls: Array<{
-    url: string;
-    method: string;
-    headers: Record<string, string> | undefined;
-    body: unknown;
-  }> = [];
-  const cursor = { idx: 0 };
-  const fetchImpl: any = async (url: string, init: any) => {
-    const method = (init?.method ?? "GET").toUpperCase();
-    let body: unknown;
-    try {
-      body = init?.body ? JSON.parse(init.body) : undefined;
-    } catch {
-      body = init?.body;
-    }
-    calls.push({ url, method, headers: init?.headers, body });
-    const matcher = matchers[cursor.idx++];
-    if (!matcher) {
-      throw new Error(
-        `unexpected request #${cursor.idx} to ${method} ${url} (no matcher left)`,
-      );
-    }
-    if (!matcher.matchUrl.test(url)) {
-      throw new Error(
-        `request ${cursor.idx} url mismatch: got ${url}, expected ${matcher.matchUrl}`,
-      );
-    }
-    if (matcher.matchMethod && matcher.matchMethod !== method) {
-      throw new Error(
-        `request ${cursor.idx} method mismatch: got ${method}, expected ${matcher.matchMethod}`,
-      );
-    }
-    const r =
-      typeof matcher.response === "function"
-        ? matcher.response()
-        : matcher.response;
-    return jsonResp(r);
-  };
-  return { fetchImpl, calls };
-}
-
-const noopSleep = async () => {};
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
@@ -785,7 +693,10 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect(err).toBeInstanceOf(FirePdfAsyncFailure);
     expect(err.reason).toBe("network_error");
     expect(fallback).not.toHaveBeenCalled();
+    // One retry on a fresh connection, then the ambiguous failure is
+    // treated as possibly accepted and the scrape_id is cancelled.
     expect(calls.map(({ url, method }) => ({ url, method }))).toEqual([
+      { method: "POST", url: "http://fire-pdf.test/jobs" },
       { method: "POST", url: "http://fire-pdf.test/jobs" },
       {
         method: "DELETE",
@@ -990,13 +901,13 @@ describe("scrapePDFWithFirePDFAsync", () => {
     ]);
     const fallback = vi.fn();
 
-    // 15s scrape budget → polling deadline = submit + 15s + 30s = 45s.
+    // 25s scrape budget → polling deadline = submit + 25s + 30s = 55s.
     // Each sleep advances time by 60s, blowing past the polling deadline.
     const meta = makeMeta({
       abort: {
         throwIfAborted: vi.fn(),
         asSignal: vi.fn(() => new AbortController().signal),
-        scrapeTimeout: vi.fn(() => 15_000),
+        scrapeTimeout: vi.fn(() => 25_000),
       },
     });
 

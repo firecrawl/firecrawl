@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { MIN_DEADLINE_MS } from "./schema";
+import { MIN_ASYNC_CALLER_WINDOW_MS } from "./schema";
 
-export const FIRE_PDF_ASYNC_MIN_REMAINING_MS = MIN_DEADLINE_MS + 10_000;
+export const FIRE_PDF_ASYNC_MIN_REMAINING_MS = MIN_ASYNC_CALLER_WINDOW_MS;
 
 type FirePdfAsyncRouteReason =
   | "zdr"
