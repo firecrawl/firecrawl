@@ -181,10 +181,7 @@ describe("createRequireBullAuth", () => {
         );
         expect(item.status).toBe(200);
         expect(item.text).toBe("q/1");
-        const miss = await get(
-          server,
-          `${adminPath(wrong)}/queues/api/queues`,
-        );
+        const miss = await get(server, `${adminPath(wrong)}/queues/api/queues`);
         expect(miss.status).toBe(404);
         expect(miss.text).toBe(JSON.stringify({ error: "Not found" }));
       } finally {
