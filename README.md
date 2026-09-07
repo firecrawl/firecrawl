@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/firecrawl-firecrawl-badge.png)](https://mseep.ai/app/firecrawl-firecrawl)
+
 <h3 align="center">
   <a name="readme-top"></a>
   <img
