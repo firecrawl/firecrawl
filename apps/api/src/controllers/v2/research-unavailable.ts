@@ -13,4 +13,6 @@ export function researchServiceUnavailable(_req: Request, res: Response) {
 export function mountUnconfiguredResearchRoutes(router: Router) {
   router.use("/search/research", researchServiceUnavailable);
   router.use("/research", researchServiceUnavailable);
+  router.use("/search/developer", researchServiceUnavailable);
+  router.use("/developer", researchServiceUnavailable);
 }

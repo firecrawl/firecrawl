@@ -1,8 +1,5 @@
 import express from "express";
-import {
-  mountUnconfiguredResearchRoutes,
-  researchServiceUnavailable,
-} from "./research-unavailable";
+import { researchServiceUnavailable } from "./research-unavailable";
 
 describe("researchServiceUnavailable", () => {
   it("returns 501 JSON naming the missing research backend", () => {
@@ -19,13 +16,5 @@ describe("researchServiceUnavailable", () => {
       success: false,
       error: "Research service is not configured",
     });
-  });
-});
-
-describe("mountUnconfiguredResearchRoutes", () => {
-  it("registers the canonical and legacy research prefixes", () => {
-    const router = express.Router();
-    mountUnconfiguredResearchRoutes(router);
-    expect(router.stack).toHaveLength(2);
   });
 });

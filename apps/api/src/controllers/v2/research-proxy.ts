@@ -20,10 +20,7 @@ import { wrap } from "../../routes/shared";
 import { deprecationMiddleware } from "../../lib/deprecations";
 import { integrationSchema } from "../../utils/integration";
 import { requestOrigin } from "../../lib/request-origin";
-import {
-  researchServiceUnavailable,
-  RESEARCH_SERVICE_UNAVAILABLE,
-} from "./research-unavailable";
+import { RESEARCH_SERVICE_UNAVAILABLE } from "./research-unavailable";
 
 const SEARCH_CREDITS_PER_TEN_RESULTS = 2;
 const ZDR_SEARCH_CREDITS_PER_TEN_RESULTS = 10;
@@ -348,7 +345,7 @@ function createResearchController(
       if (!upstream) {
         statusCode = 501;
         error = RESEARCH_SERVICE_UNAVAILABLE;
-        return researchServiceUnavailable(authedReq, res);
+        return researchError(res, 501, error);
       }
 
       statusCode = upstream.status;
