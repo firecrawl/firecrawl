@@ -1,6 +1,6 @@
 import express from "express";
 import http from "node:http";
-import { createRequireBullAuth } from "../bull-auth";
+import { bullAuthRoute, createRequireBullAuth } from "../bull-auth";
 
 function listen(app: express.Express): Promise<http.Server> {
   const server = http.createServer(app);
@@ -18,10 +18,20 @@ async function get(server: http.Server, path: string) {
 
 function mountHealth(app: express.Express, key: string) {
   app.get(
-    "/admin/*bullAuthKey/redis-health",
+    bullAuthRoute(key, "/redis-health"),
     createRequireBullAuth(key),
     (_req, res) => res.send("ok"),
   );
+}
+
+function mountQueues(app: express.Express, key: string) {
+  const inner = express.Router();
+  inner.get("/", (_req, res) => res.send("queues"));
+  inner.get("/api/queues", (_req, res) => res.send("api-queues"));
+  inner.get("/api/queues/:name/:id", (_req, res) =>
+    res.send(`${_req.params.name}/${_req.params.id}`),
+  );
+  app.use(bullAuthRoute(key, "/queues"), createRequireBullAuth(key), inner);
 }
 
 describe("createRequireBullAuth", () => {
@@ -35,6 +45,15 @@ describe("createRequireBullAuth", () => {
     }).toThrow(/Unexpected \)/);
   });
 
+  it("builds one param per key segment", () => {
+    expect(bullAuthRoute("secret)oops", "/redis-health")).toBe(
+      "/admin/:bullAuth0/redis-health",
+    );
+    expect(bullAuthRoute("abc/def", "/queues")).toBe(
+      "/admin/:bullAuth0/:bullAuth1/queues",
+    );
+  });
+
   it("serves a key containing )", async () => {
     const key = "secret)oops";
     const app = express();
@@ -46,6 +65,7 @@ describe("createRequireBullAuth", () => {
       expect(hit.text).toBe("ok");
       const miss = await get(server, "/admin/wrong/redis-health");
       expect(miss.status).toBe(404);
+      expect(miss.text).toBe(JSON.stringify({ error: "Not found" }));
     } finally {
       server.close();
     }
@@ -78,19 +98,43 @@ describe("createRequireBullAuth", () => {
     }
   });
 
-  it("mounts a Bull Board-style prefix with a ) key", async () => {
+  it("forwards Bull Board sub-paths for a ) key", async () => {
     const key = "secret)oops";
     const app = express();
-    const inner = express.Router();
-    inner.get("/", (_req, res) => res.send("queues"));
-    app.use("/admin/*bullAuthKey/queues", createRequireBullAuth(key), inner);
+    mountQueues(app, key);
     const server = await listen(app);
     try {
-      const hit = await get(server, `/admin/${key}/queues`);
-      expect(hit.status).toBe(200);
-      expect(hit.text).toBe("queues");
-      const miss = await get(server, "/admin/wrong/queues");
+      const shell = await get(server, `/admin/${key}/queues`);
+      expect(shell.status).toBe(200);
+      expect(shell.text).toBe("queues");
+      const api = await get(server, `/admin/${key}/queues/api/queues`);
+      expect(api.status).toBe(200);
+      expect(api.text).toBe("api-queues");
+      const item = await get(server, `/admin/${key}/queues/api/queues/q/1`);
+      expect(item.status).toBe(200);
+      expect(item.text).toBe("q/1");
+      const miss = await get(server, "/admin/wrong/queues/api/queues");
       expect(miss.status).toBe(404);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("forwards Bull Board sub-paths for a key containing a slash", async () => {
+    const key = "abc/def";
+    const app = express();
+    mountQueues(app, key);
+    const server = await listen(app);
+    try {
+      const api = await get(server, `/admin/${key}/queues/api/queues`);
+      expect(api.status).toBe(200);
+      expect(api.text).toBe("api-queues");
+      const item = await get(server, `/admin/${key}/queues/api/queues/q/1`);
+      expect(item.status).toBe(200);
+      expect(item.text).toBe("q/1");
+      const miss = await get(server, "/admin/xxx/yyy/queues/api/queues");
+      expect(miss.status).toBe(404);
+      expect(miss.text).toBe(JSON.stringify({ error: "Not found" }));
     } finally {
       server.close();
     }

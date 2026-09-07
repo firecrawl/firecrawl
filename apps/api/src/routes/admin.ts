@@ -1,5 +1,4 @@
 import express, { NextFunction, Request, Response } from "express";
-import crypto from "node:crypto";
 import { config } from "../config";
 import { acucCacheClearController } from "../controllers/v0/admin/acuc-cache-clear";
 import { autumnHealthController } from "../controllers/v0/admin/autumn-health";
@@ -25,93 +24,87 @@ import {
 import { logger } from "../lib/logger";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
-import { createRequireBullAuth } from "../lib/bull-auth";
+import {
+  bullAuthRoute,
+  createRequireBullAuth,
+  secretsMatch,
+} from "../lib/bull-auth";
 
 export const adminRouter = express.Router();
 
 if (config.BULL_AUTH_KEY) {
-  const requireBullAuth = createRequireBullAuth(config.BULL_AUTH_KEY);
+  const key = config.BULL_AUTH_KEY;
+  const requireBullAuth = createRequireBullAuth(key);
+  const bull = (rest: string) => bullAuthRoute(key, rest);
 
   adminRouter.get(
-    `/admin/*bullAuthKey/redis-health`,
+    bull("/redis-health"),
     requireBullAuth,
     redisHealthController,
   );
 
   adminRouter.get(
-    `/admin/*bullAuthKey/autumn-health`,
+    bull("/autumn-health"),
     requireBullAuth,
     autumnHealthController,
   );
 
   adminRouter.post(
-    `/admin/*bullAuthKey/acuc-cache-clear`,
+    bull("/acuc-cache-clear"),
     requireBullAuth,
     wrap(acucCacheClearController),
   );
 
   adminRouter.post(
-    `/admin/*bullAuthKey/ip-restriction-cache-clear`,
+    bull("/ip-restriction-cache-clear"),
     requireBullAuth,
     wrap(ipRestrictionCacheClearController),
   );
 
   adminRouter.post(
-    `/admin/*bullAuthKey/key-restriction-cache-clear`,
+    bull("/key-restriction-cache-clear"),
     requireBullAuth,
     wrap(keyRestrictionCacheClearController),
   );
 
-  adminRouter.get(
-    `/admin/*bullAuthKey/feng-check`,
-    requireBullAuth,
-    wrap(checkFireEngine),
-  );
+  adminRouter.get(bull("/feng-check"), requireBullAuth, wrap(checkFireEngine));
 
   adminRouter.get(
-    `/admin/*bullAuthKey/index-queue-prometheus`,
+    bull("/index-queue-prometheus"),
     requireBullAuth,
     wrap(indexQueuePrometheus),
   );
 
-  adminRouter.get(
-    `/admin/*bullAuthKey/precrawl`,
-    requireBullAuth,
-    wrap(triggerPrecrawl),
-  );
+  adminRouter.get(bull("/precrawl"), requireBullAuth, wrap(triggerPrecrawl));
+
+  adminRouter.get(bull("/metrics"), requireBullAuth, wrap(metricsController));
 
   adminRouter.get(
-    `/admin/*bullAuthKey/metrics`,
-    requireBullAuth,
-    wrap(metricsController),
-  );
-
-  adminRouter.get(
-    `/admin/*bullAuthKey/nuq-metrics`,
+    bull("/nuq-metrics"),
     requireBullAuth,
     wrap(nuqMetricsController),
   );
 
   adminRouter.get(
-    `/admin/*bullAuthKey/nuq-fdb-metrics`,
+    bull("/nuq-fdb-metrics"),
     requireBullAuth,
     wrap(nuqFdbMetricsController),
   );
 
   adminRouter.post(
-    `/admin/*bullAuthKey/fsearch`,
+    bull("/fsearch"),
     requireBullAuth,
     wrap(realtimeSearchController),
   );
 
   adminRouter.post(
-    `/admin/*bullAuthKey/concurrency-queue-backfill`,
+    bull("/concurrency-queue-backfill"),
     requireBullAuth,
     wrap(concurrencyQueueBackfillController),
   );
 
   adminRouter.post(
-    `/admin/*bullAuthKey/crawl-monitor`,
+    bull("/crawl-monitor"),
     requireBullAuth,
     authMiddleware(RateLimiterMode.Crawl),
     checkCreditsMiddleware(2),
@@ -123,13 +116,6 @@ if (config.S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY) {
   function bearerToken(value: string | string[] | undefined): string | null {
     const header = Array.isArray(value) ? value[0] : value;
     return header?.startsWith("Bearer ") ? header.slice(7) : null;
-  }
-
-  function secretsMatch(provided: string | null, expected?: string): boolean {
-    if (!provided || !expected) return false;
-    const left = Buffer.from(provided);
-    const right = Buffer.from(expected);
-    return left.length === right.length && crypto.timingSafeEqual(left, right);
   }
 
   function firecrawlIntegrationsMiddleware(

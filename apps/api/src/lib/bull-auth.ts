@@ -1,21 +1,37 @@
 import crypto from "node:crypto";
 import { NextFunction, Request, RequestHandler, Response } from "express";
 
-function bullAuthKeyFromRequest(req: Request): string | undefined {
-  const p = req.params.bullAuthKey;
-  if (Array.isArray(p)) return p.join("/");
-  return p;
+export function secretsMatch(
+  provided: string | null | undefined,
+  expected?: string,
+): boolean {
+  if (!provided || !expected) return false;
+  const left = Buffer.from(provided);
+  const right = Buffer.from(expected);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+/** Express path for `/admin/<key><rest>` with one `:bullAuthN` per key segment. */
+export function bullAuthRoute(key: string, rest: string): string {
+  const params = key
+    .split("/")
+    .map((_, i) => `:bullAuth${i}`)
+    .join("/");
+  return `/admin/${params}${rest}`;
 }
 
 export function createRequireBullAuth(expected: string): RequestHandler {
+  const n = expected.split("/").length;
   return (req: Request, res: Response, next: NextFunction) => {
-    const provided = bullAuthKeyFromRequest(req);
-    if (!provided) {
-      return res.status(404).json({ error: "Not found" });
+    const parts: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const p = req.params[`bullAuth${i}`];
+      if (typeof p !== "string") {
+        return res.status(404).json({ error: "Not found" });
+      }
+      parts.push(p);
     }
-    const left = Buffer.from(provided);
-    const right = Buffer.from(expected);
-    if (left.length !== right.length || !crypto.timingSafeEqual(left, right)) {
+    if (!secretsMatch(parts.join("/"), expected)) {
       return res.status(404).json({ error: "Not found" });
     }
     return next();
