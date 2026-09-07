@@ -25,53 +25,94 @@ import {
 import { logger } from "../lib/logger";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
+import { createRequireBullAuth } from "../lib/bull-auth";
 
 export const adminRouter = express.Router();
 
 if (config.BULL_AUTH_KEY) {
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/redis-health`, redisHealthController);
+  const requireBullAuth = createRequireBullAuth(config.BULL_AUTH_KEY);
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/autumn-health`, autumnHealthController);
+  adminRouter.get(
+    `/admin/:bullAuthKey/redis-health`,
+    requireBullAuth,
+    redisHealthController,
+  );
+
+  adminRouter.get(
+    `/admin/:bullAuthKey/autumn-health`,
+    requireBullAuth,
+    autumnHealthController,
+  );
 
   adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/acuc-cache-clear`,
+    `/admin/:bullAuthKey/acuc-cache-clear`,
+    requireBullAuth,
     wrap(acucCacheClearController),
   );
 
   adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/ip-restriction-cache-clear`,
+    `/admin/:bullAuthKey/ip-restriction-cache-clear`,
+    requireBullAuth,
     wrap(ipRestrictionCacheClearController),
   );
 
   adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/key-restriction-cache-clear`,
+    `/admin/:bullAuthKey/key-restriction-cache-clear`,
+    requireBullAuth,
     wrap(keyRestrictionCacheClearController),
   );
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/feng-check`, wrap(checkFireEngine));
+  adminRouter.get(
+    `/admin/:bullAuthKey/feng-check`,
+    requireBullAuth,
+    wrap(checkFireEngine),
+  );
 
   adminRouter.get(
-    `/admin/${config.BULL_AUTH_KEY}/index-queue-prometheus`,
+    `/admin/:bullAuthKey/index-queue-prometheus`,
+    requireBullAuth,
     wrap(indexQueuePrometheus),
   );
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/precrawl`, wrap(triggerPrecrawl));
+  adminRouter.get(
+    `/admin/:bullAuthKey/precrawl`,
+    requireBullAuth,
+    wrap(triggerPrecrawl),
+  );
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/metrics`, wrap(metricsController));
+  adminRouter.get(
+    `/admin/:bullAuthKey/metrics`,
+    requireBullAuth,
+    wrap(metricsController),
+  );
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/nuq-metrics`, wrap(nuqMetricsController));
+  adminRouter.get(
+    `/admin/:bullAuthKey/nuq-metrics`,
+    requireBullAuth,
+    wrap(nuqMetricsController),
+  );
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/nuq-fdb-metrics`, wrap(nuqFdbMetricsController));
-
-  adminRouter.post(`/admin/${config.BULL_AUTH_KEY}/fsearch`, wrap(realtimeSearchController));
+  adminRouter.get(
+    `/admin/:bullAuthKey/nuq-fdb-metrics`,
+    requireBullAuth,
+    wrap(nuqFdbMetricsController),
+  );
 
   adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/concurrency-queue-backfill`,
+    `/admin/:bullAuthKey/fsearch`,
+    requireBullAuth,
+    wrap(realtimeSearchController),
+  );
+
+  adminRouter.post(
+    `/admin/:bullAuthKey/concurrency-queue-backfill`,
+    requireBullAuth,
     wrap(concurrencyQueueBackfillController),
   );
 
   adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/crawl-monitor`,
+    `/admin/:bullAuthKey/crawl-monitor`,
+    requireBullAuth,
     authMiddleware(RateLimiterMode.Crawl),
     checkCreditsMiddleware(2),
     wrap(crawlMonitorController),
