@@ -368,6 +368,103 @@ describe("ensureTrackingContext warm-cache short-circuit", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Org moves: the team → org cache must expire and re-provision under the new org
+// ---------------------------------------------------------------------------
+
+describe("team org change", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("keeps billing the cached org while the mapping is fresh", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1" }),
+    );
+
+    // Org moves in the DB, but the cache has not expired yet (default 300s).
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    vi.advanceTimersByTime(299_000);
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1" }),
+    );
+  });
+
+  it("re-reads the org after the TTL and provisions the entity under the new org", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1", entityId: "team-1" }),
+    );
+    const entityGetsBefore = mockEntityGet.mock.calls.length;
+
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    // The entity does not exist under the new customer yet.
+    mockEntityGet.mockResolvedValue(null);
+    vi.advanceTimersByTime(301_000);
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+
+    // Provisioning ran again for the (org-2, team-1) pair...
+    expect(mockEntityGet.mock.calls.length).toBe(entityGetsBefore + 1);
+    expect(mockEntityGet).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2", entityId: "team-1" }),
+    );
+    expect(mockEntityCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: "org-2", entityId: "team-1" }),
+    );
+    // ...and usage is billed to the new org.
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2", entityId: "team-1" }),
+    );
+
+    // Warm again under org-2: no further provisioning calls.
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockEntityGet.mock.calls.length).toBe(entityGetsBefore + 1);
+  });
+
+  it("checkCredits follows the org move too", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.checkCredits({ teamId: "team-1", value: 1 });
+    expect(mockCheck).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1" }),
+    );
+
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    vi.advanceTimersByTime(301_000);
+
+    await svc.checkCredits({ teamId: "team-1", value: 1 });
+    expect(mockCheck).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2" }),
+    );
+  });
+
+  it("honours AUTUMN_ORG_CACHE_TTL_SECONDS", async () => {
+    vi.useFakeTimers();
+    state.configRef = { AUTUMN_ORG_CACHE_TTL_SECONDS: 10 };
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    vi.advanceTimersByTime(11_000);
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2" }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // lockCredits
 // ---------------------------------------------------------------------------
 
