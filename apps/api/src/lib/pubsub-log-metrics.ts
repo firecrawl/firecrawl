@@ -1,4 +1,4 @@
-import { Counter, Gauge, Histogram, register } from "prom-client";
+import { Counter, register } from "prom-client";
 
 const NAME = "pubsub_log_publish_total";
 
@@ -18,41 +18,4 @@ export const pubsubLogPublishTotal =
     name: NAME,
     help: "Log rows handed to the Pub/Sub publisher, by table and outcome",
     labelNames: ["table", "outcome"] as const,
-  });
-
-export const pubsubLogPendingMessages =
-  (register.getSingleMetric("pubsub_log_pending_messages") as
-    | Gauge
-    | undefined) ??
-  new Gauge({
-    name: "pubsub_log_pending_messages",
-    help: "Log publications awaiting Pub/Sub acknowledgment in this process",
-  });
-
-export const pubsubLogPendingBytes =
-  (register.getSingleMetric("pubsub_log_pending_bytes") as Gauge | undefined) ??
-  new Gauge({
-    name: "pubsub_log_pending_bytes",
-    help: "Payload bytes awaiting Pub/Sub acknowledgment in this process",
-  });
-
-export const pubsubLogPublishDuration =
-  (register.getSingleMetric("pubsub_log_publish_duration_seconds") as
-    | Histogram<"table" | "outcome">
-    | undefined) ??
-  new Histogram({
-    name: "pubsub_log_publish_duration_seconds",
-    help: "Time until a publication succeeds or fails, including client retries",
-    labelNames: ["table", "outcome"] as const,
-    buckets: [0.01, 0.1, 1, 5, 15, 40, 60, 120, 300],
-  });
-
-export const pubsubLogShutdownTotal =
-  (register.getSingleMetric("pubsub_log_shutdown_total") as
-    | Counter<"outcome">
-    | undefined) ??
-  new Counter({
-    name: "pubsub_log_shutdown_total",
-    help: "Publisher drains by outcome: completed, failed, or timeout",
-    labelNames: ["outcome"] as const,
   });

@@ -14,10 +14,6 @@ const {
   flush,
   close,
   metricInc,
-  pendingMessagesSet,
-  pendingBytesSet,
-  durationObserve,
-  shutdownInc,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -52,10 +48,6 @@ const {
     flush,
     close,
     metricInc: vi.fn(),
-    pendingMessagesSet: vi.fn(),
-    pendingBytesSet: vi.fn(),
-    durationObserve: vi.fn(),
-    shutdownInc: vi.fn(),
   };
 });
 
@@ -117,10 +109,6 @@ vi.mock("../posthog", () => ({
 
 vi.mock("../../lib/pubsub-log-metrics", () => ({
   pubsubLogPublishTotal: { inc: metricInc },
-  pubsubLogPendingMessages: { set: pendingMessagesSet },
-  pubsubLogPendingBytes: { set: pendingBytesSet },
-  pubsubLogPublishDuration: { observe: durationObserve },
-  pubsubLogShutdownTotal: { inc: shutdownInc },
 }));
 
 import {
@@ -483,17 +471,10 @@ describe("shutdownPubSubLogging deadline", () => {
     await new Promise(resolve => setImmediate(resolve));
     expect(flush).toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
-    expect(pendingMessagesSet).toHaveBeenLastCalledWith(1);
-    expect(pendingBytesSet).toHaveBeenLastCalledWith(
-      publishMessage.mock.calls[0][0].data.length,
-    );
 
     publication.resolve("message-id");
     await shutdown;
     expect(close).toHaveBeenCalledOnce();
-    expect(pendingMessagesSet).toHaveBeenLastCalledWith(0);
-    expect(pendingBytesSet).toHaveBeenLastCalledWith(0);
-    expect(shutdownInc).toHaveBeenCalledWith({ outcome: "completed" });
   });
 
   it("closes at the deadline when publication stays pending after flush", async () => {
@@ -523,7 +504,6 @@ describe("shutdownPubSubLogging deadline", () => {
         pendingLogSampleTruncated: false,
       }),
     );
-    expect(shutdownInc).toHaveBeenCalledWith({ outcome: "timeout" });
 
     publication.resolve("message-id");
     await publication.promise;
@@ -544,13 +524,6 @@ describe("shutdownPubSubLogging deadline", () => {
       table: "searches",
       outcome: "failed",
     });
-    expect(pendingMessagesSet).toHaveBeenLastCalledWith(0);
-    expect(pendingBytesSet).toHaveBeenLastCalledWith(0);
-    expect(shutdownInc).toHaveBeenCalledWith({ outcome: "failed" });
-    expect(durationObserve).toHaveBeenCalledWith(
-      { table: "searches", outcome: "failed" },
-      expect.any(Number),
-    );
   });
 
   it("bounds client close after draining so shutdown can finish", async () => {

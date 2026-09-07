@@ -24,13 +24,7 @@ import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
 import { PubSub, type PublishOptions, type Topic } from "@google-cloud/pubsub";
-import {
-  pubsubLogPublishTotal,
-  pubsubLogPendingMessages,
-  pubsubLogPendingBytes,
-  pubsubLogPublishDuration,
-  pubsubLogShutdownTotal,
-} from "../../lib/pubsub-log-metrics";
+import { pubsubLogPublishTotal } from "../../lib/pubsub-log-metrics";
 import { sanitizeLogData, sanitizeText } from "./sanitize";
 configDotenv();
 
@@ -186,27 +180,17 @@ async function publishLog(table: string, data: any, logger: Logger) {
     });
     pendingPublications.set(publication, { table, logId: data.id, startedAt });
     outstandingBytes += payload.length;
-    pubsubLogPendingMessages.set(pendingPublications.size);
-    pubsubLogPendingBytes.set(outstandingBytes);
+
     try {
       await publication;
       pubsubLogPublishTotal.inc({ table, outcome: "published" });
-      pubsubLogPublishDuration.observe(
-        { table, outcome: "published" },
-        (Date.now() - startedAt) / 1000,
-      );
     } finally {
       pendingPublications.delete(publication);
       outstandingBytes -= payload.length;
-      pubsubLogPendingMessages.set(pendingPublications.size);
-      pubsubLogPendingBytes.set(outstandingBytes);
     }
   } catch (error) {
     pubsubLogPublishTotal.inc({ table, outcome: "failed" });
-    pubsubLogPublishDuration.observe(
-      { table, outcome: "failed" },
-      (Date.now() - startedAt) / 1000,
-    );
+
     logger.error("Failed to publish log to Pub/Sub", {
       error,
       table,
@@ -258,7 +242,6 @@ async function shutdownPubSubLoggingOnce(): Promise<void> {
   clearTimeout(deadline);
 
   if (results === "timeout") {
-    pubsubLogShutdownTotal.inc({ outcome: "timeout" });
     logger.warn(
       "Pub/Sub log flush did not finish before the shutdown deadline; closing anyway",
       {
@@ -275,14 +258,12 @@ async function shutdownPubSubLoggingOnce(): Promise<void> {
     );
 
     if (errors.length > 0) {
-      pubsubLogShutdownTotal.inc({ outcome: "failed" });
       logger.error("Failed to drain Pub/Sub log publisher", { errors });
       Sentry.captureException(errors[0], {
         tags: { operation: "flushPubSubLogPublisher" },
         extra: { failures: errors.length },
       });
     } else {
-      pubsubLogShutdownTotal.inc({ outcome: "completed" });
       logger.info("Pub/Sub log publisher drained", {
         durationMs: Date.now() - startedAt,
       });
