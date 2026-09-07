@@ -1020,10 +1020,14 @@ const agentExchangeSchema = z.strictObject({
     .optional(),
 });
 
+// Roomier than other prompts: an agent prompt may carry a recorded skill
+// (a <firecrawl-blueprint> block) for the run to follow.
+const AGENT_PROMPT_MAX_CHARS = 50000;
+
 export const agentRequestSchema = z
   .strictObject({
     urls: URL.array().optional(),
-    prompt: z.string().max(10000),
+    prompt: z.string().max(AGENT_PROMPT_MAX_CHARS),
     schema: z
       .any()
       .optional()
