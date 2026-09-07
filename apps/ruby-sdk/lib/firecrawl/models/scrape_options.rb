@@ -7,7 +7,7 @@ module Firecrawl
       FIELDS = %i[
         formats headers include_tags exclude_tags only_main_content
         timeout wait_for mobile parsers actions location
-        skip_tls_verification remove_base64_images block_ads proxy
+        skip_tls_verification remove_base64_images only_clean_content block_ads proxy
         max_age store_in_cache lockdown redact_pii integration audit_metadata
       ].freeze
 
@@ -36,6 +36,7 @@ module Firecrawl
           "location" => location.is_a?(Hash) ? location : location&.to_h,
           "skipTlsVerification" => skip_tls_verification,
           "removeBase64Images" => remove_base64_images,
+          "onlyCleanContent" => only_clean_content,
           "blockAds" => block_ads,
           "proxy" => proxy,
           "maxAge" => max_age,

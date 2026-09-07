@@ -2294,6 +2294,11 @@
             "description": "Only return the main content of the page excluding headers, navs, footers, etc.",
             "default": true
           },
+          "onlyCleanContent": {
+            "type": "boolean",
+            "description": "LLM-clean the scraped markdown before returning it.",
+            "default": false
+          },
           "includeTags": {
             "type": "array",
             "items": {
