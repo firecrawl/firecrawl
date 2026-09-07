@@ -1,4 +1,5 @@
 import { FIRE_PDF_ASYNC_MIN_REMAINING_MS } from "../fire-pdf/routing";
+import { FIRE_PDF_SUBMIT_503_CODES } from "../fire-pdf/schema";
 import { classifyTransient503 } from "../fire-pdf/submit";
 import { alignPollDelay, computeInlineJobDeadlineMs } from "../fire-pdf/utils";
 
@@ -56,12 +57,19 @@ describe("classifyTransient503", () => {
     ).toBe("http_503_closing");
     expect(classifyTransient503(503, {})).toBe("http_503_unattributed");
     expect(classifyTransient503(503, null)).toBe("http_503_unattributed");
+    // An intermediary's own snake_case code is not a fire-pdf code.
+    expect(
+      classifyTransient503(503, {
+        error: "upstream_unavailable",
+        message: "no healthy upstream",
+      }),
+    ).toBe("http_503_unattributed");
   });
 
   it("leaves fire-pdf's own 503 codes and other statuses alone", () => {
-    expect(classifyTransient503(503, { error: "admission_rejected" })).toBe(
-      null,
-    );
+    for (const code of FIRE_PDF_SUBMIT_503_CODES) {
+      expect(classifyTransient503(503, { error: code })).toBe(null);
+    }
     expect(
       classifyTransient503(503, {
         error: "admission_unavailable",

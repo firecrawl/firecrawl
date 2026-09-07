@@ -10,7 +10,7 @@ import {
 import {
   SUBMIT_TRANSIENT_RETRY_DELAY_MS,
   fastifyClosingBodySchema,
-  firePdfErrorBodySchema,
+  firePdfSubmit503BodySchema,
   submitResponseSchema,
 } from "./schema";
 import {
@@ -65,19 +65,20 @@ export class SubmitJobMayHaveBeenAcceptedError extends Error {
 }
 
 /**
- * A 503 is retryable when it did not come from a fire-pdf handler: its
- * handlers always answer with a fire-pdf error body (firePdfErrorBodySchema),
- * so a 503 carrying anything else was produced in front of them — Fastify's
- * shutdown reply on a terminating instance, or a proxy — and the request was
- * never processed. Returns the retry trigger, or null for a real fire-pdf
- * 503 (admission and storage failures keep their existing handling).
+ * A 503 is retryable when it did not come from a fire-pdf handler: the
+ * handlers answer with one of their documented codes
+ * (firePdfSubmit503BodySchema), so a 503 carrying anything else was produced
+ * in front of them — Fastify's shutdown reply on a terminating instance, or a
+ * proxy — and the request was never processed. Returns the retry trigger, or
+ * null for a real fire-pdf 503 (admission and storage failures keep their
+ * existing handling).
  */
 export function classifyTransient503(
   status: number,
   body: unknown,
 ): Extract<SubmitRetryTrigger, `http_503_${string}`> | null {
   if (status !== 503) return null;
-  if (firePdfErrorBodySchema.safeParse(body).success) return null;
+  if (firePdfSubmit503BodySchema.safeParse(body).success) return null;
   return fastifyClosingBodySchema.safeParse(body).success
     ? "http_503_closing"
     : "http_503_unattributed";

@@ -50,12 +50,28 @@ export const TERMINAL_STATUSES = new Set([
   "cancelled",
 ]);
 
-/** Error body fire-pdf's own handlers send with a non-2xx status: a
- * snake_case code (`admission_rejected`, `gcs_upload_failed`, ...) plus a
- * human message. Anything else on a 503 did not come from a handler. */
-export const firePdfErrorBodySchema = z
+/** The 503 codes fire-pdf's submit handlers document (api/src/http/handlers
+ * handle-submit-job / handle-sharded-submit). Closed on purpose: a 503 with
+ * any other body did not come from one of them, so it is retried once. If
+ * fire-pdf adds a code before this list learns it, the failure mode is one
+ * idempotent extra POST — never a swallowed retry. */
+export const FIRE_PDF_SUBMIT_503_CODES = [
+  "admission_rejected",
+  "admission_unavailable",
+  "submit_preflight_failed",
+  "submit_txn_failed",
+  "page_markdown_not_ready",
+  "gcs_upload_failed",
+  "gcs_head_failed",
+  "lookup_failed",
+  "internal",
+] as const;
+
+/** Error body a fire-pdf submit handler sends with a 503: one of its
+ * documented codes plus a human message. */
+export const firePdfSubmit503BodySchema = z
   .object({
-    error: z.string().regex(/^[a-z][a-z0-9_]*$/),
+    error: z.enum(FIRE_PDF_SUBMIT_503_CODES),
     message: z.string().optional(),
   })
   .passthrough();
