@@ -1,4 +1,5 @@
 import type { Meta } from "../../..";
+import { config } from "../../../../../config";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
@@ -110,6 +111,12 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     ...(teamConcurrency !== undefined && {
       team_concurrency: teamConcurrency,
     }),
+    // Live inline submits have a synchronous fallback, so ask fire-pdf to
+    // reject up front when its queue cannot drain in our window rather
+    // than let the job die unstarted (see FIRE_PDF_ASYNC_LIVE_FASTFAIL).
+    ...(config.FIRE_PDF_ASYNC_LIVE_FASTFAIL &&
+      input.kind === "inline" &&
+      !meta.internalOptions.crawlId && { admission: "enforce" as const }),
     // Shared with the POST /jobs/lookup adoption client — the two must
     // build identical options or adoption never matches this job.
     options: buildFirePdfJobOptions({
@@ -146,7 +153,15 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
   if (status === 413) failAsync(meta, "http_413");
   if (status === 429) failAsync(meta, "http_429");
   if (status === 502) failAsync(meta, "http_502", { body: json });
-  if (status === 503) failAsync(meta, "http_503");
+  if (status === 503) {
+    const err = (json as { error?: unknown; reason?: unknown } | null)?.error;
+    if (err === "admission_rejected") {
+      failAsync(meta, "admission_rejected", {
+        reason: (json as { reason?: unknown }).reason,
+      });
+    }
+    failAsync(meta, "http_503");
+  }
 
   if (status === 409) {
     meta.logger.error(

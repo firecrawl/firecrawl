@@ -391,6 +391,13 @@ const configSchema = z.object({
   FIRE_PDF_ASYNC_FORCE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_DISABLE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_ALLOW_REQUEST_OVERRIDE: z.stringbool().default(false),
+  // Live (non-crawl) inline submits ask fire-pdf to ENFORCE lane admission:
+  // when the async queue cannot drain inside the caller's window, fire-pdf
+  // answers 503 admission_rejected and we run the document on the
+  // synchronous FirePDF path immediately instead of letting it die
+  // unstarted in the queue. Off by default; by-reference submits never
+  // opt in (they have no inline fallback).
+  FIRE_PDF_ASYNC_LIVE_FASTFAIL: z.stringbool().default(false),
   // Large-PDF by-reference submits (30-256MB files uploaded to GCS and
   // handed to fire-pdf via `input_gcs_uri`). This is an explicit on/off
   // switch, not a percentage: no alternative engine exists at this size,

@@ -226,20 +226,49 @@ export async function scrapePDFWithFirePDFAsync(
         };
       }
     } else {
-      const submit = await submitJob({
-        meta,
-        baseUrl,
-        input: wireInput,
-        maxPages,
-        pagesProcessed,
-        mode,
-        includePageMarkdown,
-        includeBlocks,
-        pageMarkers,
-        deadlineAt,
-        teamConcurrency,
-        fetchImpl,
-      });
+      let submit: Awaited<ReturnType<typeof submitJob>>;
+      try {
+        submit = await submitJob({
+          meta,
+          baseUrl,
+          input: wireInput,
+          maxPages,
+          pagesProcessed,
+          mode,
+          includePageMarkdown,
+          includeBlocks,
+          pageMarkers,
+          deadlineAt,
+          teamConcurrency,
+          fetchImpl,
+        });
+      } catch (error) {
+        // fire-pdf refused the job because its queue cannot drain inside
+        // our window (we asked it to enforce that — see submit.ts). Nothing
+        // was accepted server-side, so run the document synchronously now:
+        // the caller gets a result instead of a job that dies unstarted.
+        if (
+          error instanceof FirePdfAsyncFailure &&
+          error.reason === "admission_rejected" &&
+          wireInput.kind === "inline"
+        ) {
+          meta.logger.info(
+            "FirePDF async admission rejected — processing synchronously",
+            { scrapeId: meta.id, reason: error.extra.reason },
+          );
+          return fallbackImpl(
+            meta,
+            wireInput.base64Content,
+            maxPages,
+            pagesProcessed,
+            mode,
+            includePageMarkdown,
+            includeBlocks,
+            pageMarkers,
+          );
+        }
+        throw error;
+      }
       submissionAccepted = true;
       alreadyDone = submit.alreadyDone;
       initialDelay = submit.retryAfterMs ?? POLL_FLOOR_MS;
