@@ -184,7 +184,7 @@ function isProviderProxyBrowserError(errorCode: string): boolean {
   );
 }
 
-export type SiteErrorDetails = {
+type SiteErrorDetails = {
   browserErrorCode: string;
   retryable: boolean;
   origin: "provider_proxy" | "target_site";
