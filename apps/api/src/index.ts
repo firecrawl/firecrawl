@@ -122,7 +122,7 @@ const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
 if (config.BULL_AUTH_KEY) {
   serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
   app.use(
-    `/admin/:bullAuthKey/queues`,
+    `/admin/*bullAuthKey/queues`,
     createRequireBullAuth(config.BULL_AUTH_KEY),
     serverAdapter.getRouter(),
   );

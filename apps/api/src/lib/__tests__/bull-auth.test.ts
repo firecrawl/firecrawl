@@ -16,29 +16,29 @@ async function get(server: http.Server, path: string) {
   return { status: res.status, text: await res.text() };
 }
 
+function mountHealth(app: express.Express, key: string) {
+  app.get(
+    "/admin/*bullAuthKey/redis-health",
+    createRequireBullAuth(key),
+    (_req, res) => res.send("ok"),
+  );
+}
+
 describe("createRequireBullAuth", () => {
-  it("refuses to interpolate ) into an Express path", () => {
+  it("throws if the key is interpolated into the Express path", () => {
     const app = express();
     expect(() => {
       app.get("/admin/secret)oops/redis-health", (_req, res) => res.send("ok"));
     }).toThrow(/Unexpected \)/);
-  });
-
-  it("refuses to interpolate ) into app.use", () => {
-    const app = express();
     expect(() => {
       app.use("/admin/secret)oops/queues", (_req, _res, next) => next());
     }).toThrow(/Unexpected \)/);
   });
 
-  it("serves a key containing ) via :bullAuthKey", async () => {
+  it("serves a key containing )", async () => {
     const key = "secret)oops";
     const app = express();
-    app.get(
-      "/admin/:bullAuthKey/redis-health",
-      createRequireBullAuth(key),
-      (_req, res) => res.send("ok"),
-    );
+    mountHealth(app, key);
     const server = await listen(app);
     try {
       const hit = await get(server, `/admin/${key}/redis-health`);
@@ -51,14 +51,24 @@ describe("createRequireBullAuth", () => {
     }
   });
 
+  it("serves a key containing a slash, which a single-segment param would 404", async () => {
+    const key = "abc/def";
+    const app = express();
+    mountHealth(app, key);
+    const server = await listen(app);
+    try {
+      const hit = await get(server, `/admin/${key}/redis-health`);
+      expect(hit.status).toBe(200);
+      expect(hit.text).toBe("ok");
+    } finally {
+      server.close();
+    }
+  });
+
   it("serves a key containing braces", async () => {
     const key = "sec{ret}";
     const app = express();
-    app.get(
-      "/admin/:bullAuthKey/redis-health",
-      createRequireBullAuth(key),
-      (_req, res) => res.send("ok"),
-    );
+    mountHealth(app, key);
     const server = await listen(app);
     try {
       const hit = await get(server, `/admin/${key}/redis-health`);
@@ -73,11 +83,7 @@ describe("createRequireBullAuth", () => {
     const app = express();
     const inner = express.Router();
     inner.get("/", (_req, res) => res.send("queues"));
-    app.use(
-      "/admin/:bullAuthKey/queues",
-      createRequireBullAuth(key),
-      inner,
-    );
+    app.use("/admin/*bullAuthKey/queues", createRequireBullAuth(key), inner);
     const server = await listen(app);
     try {
       const hit = await get(server, `/admin/${key}/queues`);

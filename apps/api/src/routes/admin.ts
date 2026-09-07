@@ -33,85 +33,85 @@ if (config.BULL_AUTH_KEY) {
   const requireBullAuth = createRequireBullAuth(config.BULL_AUTH_KEY);
 
   adminRouter.get(
-    `/admin/:bullAuthKey/redis-health`,
+    `/admin/*bullAuthKey/redis-health`,
     requireBullAuth,
     redisHealthController,
   );
 
   adminRouter.get(
-    `/admin/:bullAuthKey/autumn-health`,
+    `/admin/*bullAuthKey/autumn-health`,
     requireBullAuth,
     autumnHealthController,
   );
 
   adminRouter.post(
-    `/admin/:bullAuthKey/acuc-cache-clear`,
+    `/admin/*bullAuthKey/acuc-cache-clear`,
     requireBullAuth,
     wrap(acucCacheClearController),
   );
 
   adminRouter.post(
-    `/admin/:bullAuthKey/ip-restriction-cache-clear`,
+    `/admin/*bullAuthKey/ip-restriction-cache-clear`,
     requireBullAuth,
     wrap(ipRestrictionCacheClearController),
   );
 
   adminRouter.post(
-    `/admin/:bullAuthKey/key-restriction-cache-clear`,
+    `/admin/*bullAuthKey/key-restriction-cache-clear`,
     requireBullAuth,
     wrap(keyRestrictionCacheClearController),
   );
 
   adminRouter.get(
-    `/admin/:bullAuthKey/feng-check`,
+    `/admin/*bullAuthKey/feng-check`,
     requireBullAuth,
     wrap(checkFireEngine),
   );
 
   adminRouter.get(
-    `/admin/:bullAuthKey/index-queue-prometheus`,
+    `/admin/*bullAuthKey/index-queue-prometheus`,
     requireBullAuth,
     wrap(indexQueuePrometheus),
   );
 
   adminRouter.get(
-    `/admin/:bullAuthKey/precrawl`,
+    `/admin/*bullAuthKey/precrawl`,
     requireBullAuth,
     wrap(triggerPrecrawl),
   );
 
   adminRouter.get(
-    `/admin/:bullAuthKey/metrics`,
+    `/admin/*bullAuthKey/metrics`,
     requireBullAuth,
     wrap(metricsController),
   );
 
   adminRouter.get(
-    `/admin/:bullAuthKey/nuq-metrics`,
+    `/admin/*bullAuthKey/nuq-metrics`,
     requireBullAuth,
     wrap(nuqMetricsController),
   );
 
   adminRouter.get(
-    `/admin/:bullAuthKey/nuq-fdb-metrics`,
+    `/admin/*bullAuthKey/nuq-fdb-metrics`,
     requireBullAuth,
     wrap(nuqFdbMetricsController),
   );
 
   adminRouter.post(
-    `/admin/:bullAuthKey/fsearch`,
+    `/admin/*bullAuthKey/fsearch`,
     requireBullAuth,
     wrap(realtimeSearchController),
   );
 
   adminRouter.post(
-    `/admin/:bullAuthKey/concurrency-queue-backfill`,
+    `/admin/*bullAuthKey/concurrency-queue-backfill`,
     requireBullAuth,
     wrap(concurrencyQueueBackfillController),
   );
 
   adminRouter.post(
-    `/admin/:bullAuthKey/crawl-monitor`,
+    `/admin/*bullAuthKey/crawl-monitor`,
     requireBullAuth,
     authMiddleware(RateLimiterMode.Crawl),
     checkCreditsMiddleware(2),
@@ -132,7 +132,11 @@ if (config.S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY) {
     return left.length === right.length && crypto.timingSafeEqual(left, right);
   }
 
-  function firecrawlIntegrationsMiddleware(req: Request, res: Response, next: NextFunction) {
+  function firecrawlIntegrationsMiddleware(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     if (
       !secretsMatch(
         bearerToken(req.headers.authorization),
@@ -141,7 +145,9 @@ if (config.S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY) {
     ) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    logger.info(`firecrawl-integrations service calling ${req.method} ${req.path}`);
+    logger.info(
+      `firecrawl-integrations service calling ${req.method} ${req.path}`,
+    );
     next();
   }
 
@@ -152,8 +158,17 @@ if (config.S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY) {
   );
 }
 
-adminRouter.post(`/admin/integration/create-user`, wrap(handleIntegrationAdminCreateUserProxy));
+adminRouter.post(
+  `/admin/integration/create-user`,
+  wrap(handleIntegrationAdminCreateUserProxy),
+);
 
-adminRouter.post(`/admin/integration/validate-api-key`, wrap(handleIntegrationAdminValidateProxy));
+adminRouter.post(
+  `/admin/integration/validate-api-key`,
+  wrap(handleIntegrationAdminValidateProxy),
+);
 
-adminRouter.post(`/admin/integration/rotate-api-key`, wrap(handleIntegrationAdminRotateProxy));
+adminRouter.post(
+  `/admin/integration/rotate-api-key`,
+  wrap(handleIntegrationAdminRotateProxy),
+);
