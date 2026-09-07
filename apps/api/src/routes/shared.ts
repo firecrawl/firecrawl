@@ -499,6 +499,7 @@ export function requestTimingMiddleware(version: string) {
           startTime,
           requestTime,
           statusCode: res.statusCode,
+          requestId: req.requestId,
         });
       }
 
