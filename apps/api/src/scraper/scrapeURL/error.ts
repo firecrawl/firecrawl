@@ -144,9 +144,7 @@ export class SiteError extends TransportableError {
         "The page has too many redirects. The website may be misconfigured.",
     };
 
-    const isProxyError =
-      errorCode === "ERR_TUNNEL_CONNECTION_FAILED" ||
-      errorCode === "ERR_PROXY_CONNECTION_FAILED";
+    const isProxyError = isProviderProxyBrowserError(errorCode);
 
     const explanation =
       errorExplanations[errorCode] ||
@@ -177,6 +175,30 @@ export class SiteError extends TransportableError {
     x.stack = data.stack;
     return x;
   }
+}
+
+function isProviderProxyBrowserError(errorCode: string): boolean {
+  return (
+    errorCode === "ERR_TUNNEL_CONNECTION_FAILED" ||
+    errorCode === "ERR_PROXY_CONNECTION_FAILED"
+  );
+}
+
+export type SiteErrorDetails = {
+  browserErrorCode: string;
+  retryable: boolean;
+  origin: "provider_proxy" | "target_site";
+};
+
+/** Structured cause for SCRAPE_SITE_ERROR HTTP responses. */
+export function getSiteErrorDetails(e: unknown): SiteErrorDetails | undefined {
+  if (!(e instanceof SiteError)) return undefined;
+  const proxy = isProviderProxyBrowserError(e.errorCode);
+  return {
+    browserErrorCode: e.errorCode,
+    retryable: proxy,
+    origin: proxy ? "provider_proxy" : "target_site",
+  };
 }
 
 export class ProxySelectionError extends TransportableError {

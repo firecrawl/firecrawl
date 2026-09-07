@@ -15,6 +15,7 @@ import {
   getTimeoutProcessingDetails,
   TransportableError,
 } from "../../lib/error";
+import { scrapeErrorPayload } from "./scrape-error-payload";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -510,12 +511,7 @@ export async function scrapeController(
           if (processing) {
             res.setHeader("Retry-After", String(processing.retryAfterSeconds));
           }
-          return res.status(statusCode).json({
-            success: false,
-            code: e.code,
-            error: e.message,
-            ...(processing && { details: processing }),
-          });
+          return res.status(statusCode).json(scrapeErrorPayload(e));
         } else {
           const id = uuidv7();
           logger.error(`Error in scrapeController`, {
