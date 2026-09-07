@@ -20,7 +20,7 @@ function getIncomingRequestId(req: Request): string | undefined {
   if (
     value.length === 0 ||
     Buffer.byteLength(value) > REQUEST_ID_MAX_BYTES ||
-    /[\x00-\x1f\x7f]/.test(value)
+    /[\x00-\x1f\x7f-\x9f]/.test(value)
   ) {
     return undefined;
   }

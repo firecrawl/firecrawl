@@ -51,4 +51,16 @@ describe("requestIdMiddleware", () => {
 
     expect(response.headers["x-request-id"]).not.toBe("a".repeat(257));
   });
+
+  it.each(["\x80", "\x9f"])(
+    "replaces an incoming ID containing C1 control character %s",
+    async controlCharacter => {
+      const requestId = `client${controlCharacter}request`;
+      const response = await request(createApp())
+        .get("/ok")
+        .set("X-Request-ID", requestId);
+
+      expect(response.headers["x-request-id"]).not.toBe(requestId);
+    },
+  );
 });
