@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { markRouteUnmatched } from "./http-metrics";
 
 const NOT_FOUND_DOCUMENTATION_URL =
   "https://docs.firecrawl.dev/api-reference/introduction";
@@ -104,6 +105,14 @@ export function notFoundHandler(
   res: Response,
   _next: NextFunction,
 ): void {
+  // `res.json` below is observed by the versioned timing middleware, which
+  // otherwise labels the sample with the raw request path — one time series per
+  // scanned URL. Collapse every unmatched request onto one label.
+  markRouteUnmatched(req);
+
+  // finalhandler's HTML page carried this; res.json does not set it.
+  res.setHeader("X-Content-Type-Options", "nosniff");
+
   const allowed = [...allowedMethodsForPath(req.app, req.path)]
     .filter(method => method !== req.method)
     .sort();

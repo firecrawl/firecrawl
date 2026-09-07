@@ -1,0 +1,101 @@
+import express from "express";
+import request from "supertest";
+
+vi.mock("../../services/autumn/autumn.service", () => ({
+  autumnService: { checkCredits: vi.fn() },
+  CREDITS_FEATURE_ID: "CREDITS",
+}));
+vi.mock("../../services/autumn/usage", () => ({
+  getTeamBalance: vi.fn(),
+}));
+vi.mock("../../controllers/auth", () => ({
+  authenticateUser: vi.fn(),
+}));
+vi.mock("../../services/idempotency/create", () => ({
+  createIdempotencyKey: vi.fn(),
+}));
+vi.mock("../../services/idempotency/validate", () => ({
+  validateIdempotencyKey: vi.fn(),
+}));
+vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
+
+import { notFoundHandler } from "../../lib/not-found";
+import { httpRequestDurationSeconds } from "../../lib/http-metrics";
+import { requestTimingMiddleware } from "../../routes/shared";
+
+// The real timing middleware patches res.json, so every JSON answer produced
+// after it runs -- including the terminal 404/405 -- is observed by the
+// histogram. Unmatched paths must not mint a new time series per URL.
+function appUnderTest() {
+  const app = express();
+
+  const v2 = express.Router();
+  v2.use(requestTimingMiddleware("v2"));
+  v2.post("/scrape", (_req, res) => res.status(200).json({ success: true }));
+
+  app.use("/v2", v2);
+  app.use(notFoundHandler);
+  return app;
+}
+
+async function recordedRoutes(): Promise<string[]> {
+  const metric = await httpRequestDurationSeconds.get();
+  return metric.values
+    .filter(value => value.metricName === "http_request_duration_seconds_count")
+    .map(value => String(value.labels.route));
+}
+
+describe("not-found handler metric labels", () => {
+  beforeEach(() => {
+    httpRequestDurationSeconds.reset();
+  });
+
+  it("labels unknown paths with a single constant instead of the raw path", async () => {
+    const app = appUnderTest();
+
+    await request(app).get("/v2/wp-login.php");
+    await request(app).get("/v2/.env");
+    await request(app).get("/v2/some/deep/scanner/path");
+
+    const routes = await recordedRoutes();
+
+    expect(routes.length).toBeGreaterThan(0);
+    expect(new Set(routes)).toEqual(new Set(["unmatched"]));
+  });
+
+  it("labels wrong-method hits on parameterised paths with the same constant", async () => {
+    const app = appUnderTest();
+
+    await request(app).get("/v2/scrape");
+    await request(app).delete("/v2/scrape");
+
+    const routes = await recordedRoutes();
+
+    expect(routes.length).toBeGreaterThan(0);
+    expect(new Set(routes)).toEqual(new Set(["unmatched"]));
+  });
+
+  it("leaves the label of a matched route untouched", async () => {
+    const app = appUnderTest();
+
+    await request(app).post("/v2/scrape");
+
+    expect(await recordedRoutes()).toEqual(["/scrape"]);
+  });
+});
+
+describe("terminal not-found handler security headers", () => {
+  it("sets nosniff on the JSON 404", async () => {
+    const res = await request(appUnderTest()).get("/v2/nonexistent-xyz");
+
+    expect(res.status).toBe(404);
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+  });
+
+  it("sets nosniff on the JSON 405", async () => {
+    const res = await request(appUnderTest()).get("/v2/scrape");
+
+    expect(res.status).toBe(405);
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+  });
+});
