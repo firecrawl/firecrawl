@@ -105,6 +105,10 @@ export class AutumnService {
     string,
     { orgId: string; expiresAt: number }
   >(50_000);
+  // One DB lookup in flight per team. Without this, N requests that all see
+  // an expired entry each read the DB, and if the org moved mid-flight an
+  // older read can land last and overwrite the newer org for another TTL.
+  private pendingOrgLookups = new Map<string, Promise<string>>();
   private gatewayTeams = new BoundedSet<string>(50_000);
   private nonGatewayTeamsUntil = new BoundedMap<string, number>(50_000);
   private ensuredOrgs = new BoundedSet<string>(50_000);
@@ -463,9 +467,20 @@ export class AutumnService {
   private async resolveOrgId(teamId: string): Promise<string> {
     const cached = this.customerOrgCache.get(teamId);
     if (cached && cached.expiresAt > Date.now()) return cached.orgId;
-    const orgId = await this.lookupOrgIdForTeam(teamId);
-    this.cacheOrgId(teamId, orgId);
-    return orgId;
+
+    const pending = this.pendingOrgLookups.get(teamId);
+    if (pending) return pending;
+
+    const lookup = this.lookupOrgIdForTeam(teamId)
+      .then(orgId => {
+        this.cacheOrgId(teamId, orgId);
+        return orgId;
+      })
+      .finally(() => {
+        this.pendingOrgLookups.delete(teamId);
+      });
+    this.pendingOrgLookups.set(teamId, lookup);
+    return lookup;
   }
 
   /**

@@ -72,7 +72,10 @@ const {
       return {
         from: () => ({
           where: () => ({
-            limit: () => Promise.resolve(rows),
+            limit: () =>
+              !isGatewayLookup && state.dbLimitOverride
+                ? state.dbLimitOverride()
+                : Promise.resolve(rows),
           }),
         }),
       };
@@ -101,6 +104,9 @@ const {
       gatewayStubRow: null as unknown,
       // Makes the gateway lookup throw, to prove a failure is never cached.
       gatewayStubThrows: false,
+      // When set, replaces the team → org_id query result (e.g. to hold a
+      // lookup open and observe how many are issued).
+      dbLimitOverride: null as (() => Promise<unknown[]>) | null,
       configRef: {} as Record<string, unknown>,
     },
   };
@@ -446,6 +452,39 @@ describe("team org change", () => {
     expect(mockCheck).toHaveBeenLastCalledWith(
       expect.objectContaining({ customerId: "org-2" }),
     );
+  });
+
+  it("collapses concurrent expired-cache refreshes into one DB lookup", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    vi.advanceTimersByTime(301_000);
+
+    // Make the org lookup observable and slow.
+    let resolveLookup!: (rows: unknown[]) => void;
+    let lookups = 0;
+    state.dbLimitOverride = () => {
+      lookups++;
+      return new Promise<unknown[]>(resolve => {
+        resolveLookup = resolve;
+      });
+    };
+
+    const a = svc.trackCredits({ teamId: "team-1", value: 1 });
+    const b = svc.trackCredits({ teamId: "team-1", value: 1 });
+    const c = svc.trackCredits({ teamId: "team-1", value: 1 });
+    await Promise.resolve();
+    expect(lookups).toBe(1);
+
+    state.dbLimitOverride = null;
+    resolveLookup([{ org_id: "org-2" }]);
+    await Promise.all([a, b, c]);
+
+    expect(lookups).toBe(1);
+    for (const call of mockTrack.mock.calls.slice(-3)) {
+      expect(call[0]).toEqual(expect.objectContaining({ customerId: "org-2" }));
+    }
   });
 
   it("honours AUTUMN_ORG_CACHE_TTL_SECONDS", async () => {
@@ -861,6 +900,7 @@ describe("firebill routing", () => {
     // Default every test to not partner-provisioned, which almost every team is.
     state.gatewayStubRow = null;
     state.gatewayStubThrows = false;
+    state.dbLimitOverride = null;
   });
 
   afterEach(() => {
