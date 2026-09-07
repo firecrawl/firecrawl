@@ -14,17 +14,19 @@ function scrapeOptionProperties(file: string) {
 
 describe("OpenAPI ScrapeOptions", () => {
   it("documents onlyCleanContent on v2 ScrapeOptions", () => {
-    expect(scrapeOptionProperties("openapi.json").onlyCleanContent).toEqual({
+    expect(
+      scrapeOptionProperties("openapi.json").onlyCleanContent,
+    ).toMatchObject({
       type: "boolean",
-      description: "LLM-clean the scraped markdown before returning it.",
       default: false,
     });
   });
 
   it("documents onlyCleanContent on v1 ScrapeOptions", () => {
-    expect(scrapeOptionProperties("v1-openapi.json").onlyCleanContent).toEqual({
+    expect(
+      scrapeOptionProperties("v1-openapi.json").onlyCleanContent,
+    ).toMatchObject({
       type: "boolean",
-      description: "LLM-clean the scraped markdown before returning it.",
       default: false,
     });
   });

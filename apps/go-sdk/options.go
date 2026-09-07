@@ -77,6 +77,7 @@ type ScrapeOptions struct {
 	IncludeTags         []string                 `json:"includeTags,omitempty"`
 	ExcludeTags         []string                 `json:"excludeTags,omitempty"`
 	OnlyMainContent     *bool                    `json:"onlyMainContent,omitempty"`
+	OnlyCleanContent    *bool                    `json:"onlyCleanContent,omitempty"`
 	Timeout             *int                     `json:"timeout,omitempty"`
 	WaitFor             *int                     `json:"waitFor,omitempty"`
 	Mobile              *bool                    `json:"mobile,omitempty"`

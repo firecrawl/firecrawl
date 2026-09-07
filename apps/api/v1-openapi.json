@@ -2116,7 +2116,7 @@
           },
           "onlyCleanContent": {
             "type": "boolean",
-            "description": "LLM-clean the scraped markdown before returning it.",
+            "description": "Use an LLM to strip navigation, ads and other boilerplate from the markdown.",
             "default": false
           },
           "includeTags": {

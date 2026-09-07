@@ -34,6 +34,9 @@ pub struct ScrapeOptions {
     /// Only extract the main content of the page.
     pub only_main_content: Option<bool>,
 
+    /// Use an LLM to strip navigation, ads and other boilerplate from the markdown.
+    pub only_clean_content: Option<bool>,
+
     /// Timeout in milliseconds before returning an error.
     pub timeout: Option<u32>,
 
