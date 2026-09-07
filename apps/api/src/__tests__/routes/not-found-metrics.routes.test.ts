@@ -32,6 +32,10 @@ function appUnderTest() {
   const v2 = express.Router();
   v2.use(requestTimingMiddleware("v2"));
   v2.post("/scrape", (_req, res) => res.status(200).json({ success: true }));
+  // Mirrors the real /v2/crawl/:jobId table (src/routes/v2.ts): only GET and
+  // DELETE are registered, never PATCH.
+  v2.get("/crawl/:jobId", (_req, res) => res.status(200).json({ success: true }));
+  v2.delete("/crawl/:jobId", (_req, res) => res.status(200).json({ success: true }));
 
   app.use("/v2", v2);
   app.use(notFoundHandler);
@@ -68,6 +72,21 @@ describe("not-found handler metric labels", () => {
 
     await request(app).get("/v2/scrape");
     await request(app).delete("/v2/scrape");
+
+    const routes = await recordedRoutes();
+
+    expect(routes.length).toBeGreaterThan(0);
+    expect(new Set(routes)).toEqual(new Set(["unmatched"]));
+  });
+
+  it("labels a wrong-method hit on a genuinely parameterised path with the same constant", async () => {
+    const app = appUnderTest();
+
+    // PATCH is not registered for /v2/crawl/:jobId -- only GET and DELETE are.
+    const res = await request(app).patch("/v2/crawl/abc-123");
+
+    expect(res.status).toBe(405);
+    expect(res.headers["allow"]).toBe("DELETE, GET, HEAD");
 
     const routes = await recordedRoutes();
 
