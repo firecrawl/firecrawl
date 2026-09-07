@@ -6,19 +6,19 @@ import { getRedisConnection } from "../../services/queue-service";
 import { redisEnded } from "./health-checks";
 
 export async function livenessController(_req: Request, res: Response) {
-  if (config.REDIS_RATE_LIMIT_URL && redisEnded(redisRateLimitClient)) {
+  const clients: Array<[string, { status: string } | null]> = [
+    [
+      "rateLimitRedis",
+      config.REDIS_RATE_LIMIT_URL ? redisRateLimitClient : null,
+    ],
+    ["queueRedis", config.REDIS_URL ? getRedisConnection() : null],
+  ];
+  for (const [check, client] of clients) {
+    if (!redisEnded(client)) continue;
     logger.warn("Liveness check failed", {
       module: "health",
-      check: "rateLimitRedis",
-      status: redisRateLimitClient.status,
-    });
-    return res.status(503).json({ status: "unhealthy" });
-  }
-  if (config.REDIS_URL && redisEnded(getRedisConnection())) {
-    logger.warn("Liveness check failed", {
-      module: "health",
-      check: "queueRedis",
-      status: "end",
+      check,
+      status: client!.status,
     });
     return res.status(503).json({ status: "unhealthy" });
   }

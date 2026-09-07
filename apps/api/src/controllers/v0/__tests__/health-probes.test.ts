@@ -109,6 +109,14 @@ describe("readinessController", () => {
     expect(nuqHealthCheck).toHaveBeenCalledTimes(1);
   });
 
+  it("pings the replica only when DATABASE_REPLICA_URL is distinct", async () => {
+    config.DATABASE_REPLICA_URL = "postgres://localhost/replica";
+    const res = makeResponse();
+    await readinessController({} as Request, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(dbRr.execute).toHaveBeenCalledTimes(1);
+  });
+
   it("returns 503 JSON when queue Redis is reconnecting", async () => {
     queueRedis.status = "reconnecting";
     const res = makeResponse();
