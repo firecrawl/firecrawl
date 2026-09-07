@@ -11,6 +11,14 @@ export function secretsMatch(
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
+/** Encode each non-empty key segment for client URLs (`setBasePath`). Empty segments stay literal. */
+export function bullAuthPublicPath(key: string): string {
+  return key
+    .split("/")
+    .map(s => (s === "" ? "" : encodeURIComponent(s)))
+    .join("/");
+}
+
 /** Express path for `/admin/<key><rest>` with one `:bullAuthN` per non-empty key segment. */
 export function bullAuthRoute(key: string, rest: string): string {
   const params = key

@@ -1,6 +1,10 @@
 import express from "express";
 import http from "node:http";
-import { bullAuthRoute, createRequireBullAuth } from "../bull-auth";
+import {
+  bullAuthPublicPath,
+  bullAuthRoute,
+  createRequireBullAuth,
+} from "../bull-auth";
 
 function listen(app: express.Express): Promise<http.Server> {
   const server = http.createServer(app);
@@ -14,6 +18,10 @@ async function get(server: http.Server, path: string) {
   if (!addr || typeof addr === "string") throw new Error("no port");
   const res = await fetch(`http://127.0.0.1:${addr.port}${path}`);
   return { status: res.status, text: await res.text() };
+}
+
+function adminPath(key: string): string {
+  return `/admin/${bullAuthPublicPath(key)}`;
 }
 
 function mountHealth(app: express.Express, key: string) {
@@ -60,13 +68,22 @@ describe("createRequireBullAuth", () => {
     );
   });
 
+  it("percent-encodes non-empty segments for client URLs", () => {
+    expect(bullAuthPublicPath("foo?bar")).toBe("foo%3Fbar");
+    expect(bullAuthPublicPath("a%2Fb")).toBe("a%252Fb");
+    expect(bullAuthPublicPath("abc/def")).toBe("abc/def");
+    expect(bullAuthPublicPath("a//b")).toBe("a//b");
+    expect(bullAuthPublicPath("trail/")).toBe("trail/");
+    expect(bullAuthPublicPath("secret)oops")).toBe("secret)oops");
+  });
+
   it("serves a key containing )", async () => {
     const key = "secret)oops";
     const app = express();
     mountHealth(app, key);
     const server = await listen(app);
     try {
-      const hit = await get(server, `/admin/${key}/redis-health`);
+      const hit = await get(server, `${adminPath(key)}/redis-health`);
       expect(hit.status).toBe(200);
       expect(hit.text).toBe("ok");
       const miss = await get(server, "/admin/wrong/redis-health");
@@ -83,7 +100,7 @@ describe("createRequireBullAuth", () => {
     mountHealth(app, key);
     const server = await listen(app);
     try {
-      const hit = await get(server, `/admin/${key}/redis-health`);
+      const hit = await get(server, `${adminPath(key)}/redis-health`);
       expect(hit.status).toBe(200);
       expect(hit.text).toBe("ok");
     } finally {
@@ -97,7 +114,7 @@ describe("createRequireBullAuth", () => {
     mountHealth(app, key);
     const server = await listen(app);
     try {
-      const hit = await get(server, `/admin/${key}/redis-health`);
+      const hit = await get(server, `${adminPath(key)}/redis-health`);
       expect(hit.status).toBe(200);
     } finally {
       server.close();
@@ -110,13 +127,13 @@ describe("createRequireBullAuth", () => {
     mountQueues(app, key);
     const server = await listen(app);
     try {
-      const shell = await get(server, `/admin/${key}/queues`);
+      const shell = await get(server, `${adminPath(key)}/queues`);
       expect(shell.status).toBe(200);
       expect(shell.text).toBe("queues");
-      const api = await get(server, `/admin/${key}/queues/api/queues`);
+      const api = await get(server, `${adminPath(key)}/queues/api/queues`);
       expect(api.status).toBe(200);
       expect(api.text).toBe("api-queues");
-      const item = await get(server, `/admin/${key}/queues/api/queues/q/1`);
+      const item = await get(server, `${adminPath(key)}/queues/api/queues/q/1`);
       expect(item.status).toBe(200);
       expect(item.text).toBe("q/1");
       const miss = await get(server, "/admin/wrong/queues/api/queues");
@@ -132,10 +149,10 @@ describe("createRequireBullAuth", () => {
     mountQueues(app, key);
     const server = await listen(app);
     try {
-      const api = await get(server, `/admin/${key}/queues/api/queues`);
+      const api = await get(server, `${adminPath(key)}/queues/api/queues`);
       expect(api.status).toBe(200);
       expect(api.text).toBe("api-queues");
-      const item = await get(server, `/admin/${key}/queues/api/queues/q/1`);
+      const item = await get(server, `${adminPath(key)}/queues/api/queues/q/1`);
       expect(item.status).toBe(200);
       expect(item.text).toBe("q/1");
       const miss = await get(server, "/admin/xxx/yyy/queues/api/queues");
@@ -147,20 +164,68 @@ describe("createRequireBullAuth", () => {
   });
 
   it("forwards Bull Board sub-paths for a key with empty segments", async () => {
-    for (const key of ["a//b", "trail/"]) {
+    for (const [key, wrong] of [
+      ["a//b", "x//y"],
+      ["trail/", "wrong/"],
+    ] as const) {
       const app = express();
       mountQueues(app, key);
       const server = await listen(app);
       try {
-        const api = await get(server, `/admin/${key}/queues/api/queues`);
+        const api = await get(server, `${adminPath(key)}/queues/api/queues`);
         expect(api.status).toBe(200);
         expect(api.text).toBe("api-queues");
-        const item = await get(server, `/admin/${key}/queues/api/queues/q/1`);
+        const item = await get(
+          server,
+          `${adminPath(key)}/queues/api/queues/q/1`,
+        );
         expect(item.status).toBe(200);
         expect(item.text).toBe("q/1");
+        const miss = await get(
+          server,
+          `${adminPath(wrong)}/queues/api/queues`,
+        );
+        expect(miss.status).toBe(404);
+        expect(miss.text).toBe(JSON.stringify({ error: "Not found" }));
       } finally {
         server.close();
       }
+    }
+  });
+
+  it("serves a key containing ? via the encoded client URL", async () => {
+    const key = "foo?bar";
+    const app = express();
+    mountHealth(app, key);
+    mountQueues(app, key);
+    const server = await listen(app);
+    try {
+      const hit = await get(server, `${adminPath(key)}/redis-health`);
+      expect(hit.status).toBe(200);
+      expect(hit.text).toBe("ok");
+      const api = await get(server, `${adminPath(key)}/queues/api/queues`);
+      expect(api.status).toBe(200);
+      expect(api.text).toBe("api-queues");
+      const asQuery = await get(server, `/admin/${key}/redis-health`);
+      expect(asQuery.status).toBe(404);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("serves a key containing a literal %2F via the encoded client URL", async () => {
+    const key = "a%2Fb";
+    const app = express();
+    mountHealth(app, key);
+    const server = await listen(app);
+    try {
+      const hit = await get(server, `${adminPath(key)}/redis-health`);
+      expect(hit.status).toBe(200);
+      expect(hit.text).toBe("ok");
+      const decodedSlash = await get(server, "/admin/a%2Fb/redis-health");
+      expect(decodedSlash.status).toBe(404);
+    } finally {
+      server.close();
     }
   });
 });

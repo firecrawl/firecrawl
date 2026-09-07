@@ -16,7 +16,11 @@ import { v0Router } from "./routes/v0";
 import os from "os";
 import { logger } from "./lib/logger";
 import { adminRouter } from "./routes/admin";
-import { bullAuthRoute, createRequireBullAuth } from "./lib/bull-auth";
+import {
+  bullAuthPublicPath,
+  bullAuthRoute,
+  createRequireBullAuth,
+} from "./lib/bull-auth";
 import http from "node:http";
 import https from "node:https";
 import { v1Router } from "./routes/v1";
@@ -120,7 +124,9 @@ const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
 });
 
 if (config.BULL_AUTH_KEY) {
-  serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
+  serverAdapter.setBasePath(
+    `/admin/${bullAuthPublicPath(config.BULL_AUTH_KEY)}/queues`,
+  );
   app.use(
     bullAuthRoute(config.BULL_AUTH_KEY, "/queues"),
     createRequireBullAuth(config.BULL_AUTH_KEY),
