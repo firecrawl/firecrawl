@@ -52,6 +52,12 @@ describe("createRequireBullAuth", () => {
     expect(bullAuthRoute("abc/def", "/queues")).toBe(
       "/admin/:bullAuth0/:bullAuth1/queues",
     );
+    expect(bullAuthRoute("a//b", "/queues")).toBe(
+      "/admin/:bullAuth0//:bullAuth2/queues",
+    );
+    expect(bullAuthRoute("trail/", "/queues")).toBe(
+      "/admin/:bullAuth0//queues",
+    );
   });
 
   it("serves a key containing )", async () => {
@@ -137,6 +143,24 @@ describe("createRequireBullAuth", () => {
       expect(miss.text).toBe(JSON.stringify({ error: "Not found" }));
     } finally {
       server.close();
+    }
+  });
+
+  it("forwards Bull Board sub-paths for a key with empty segments", async () => {
+    for (const key of ["a//b", "trail/"]) {
+      const app = express();
+      mountQueues(app, key);
+      const server = await listen(app);
+      try {
+        const api = await get(server, `/admin/${key}/queues/api/queues`);
+        expect(api.status).toBe(200);
+        expect(api.text).toBe("api-queues");
+        const item = await get(server, `/admin/${key}/queues/api/queues/q/1`);
+        expect(item.status).toBe(200);
+        expect(item.text).toBe("q/1");
+      } finally {
+        server.close();
+      }
     }
   });
 });

@@ -11,20 +11,24 @@ export function secretsMatch(
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-/** Express path for `/admin/<key><rest>` with one `:bullAuthN` per key segment. */
+/** Express path for `/admin/<key><rest>` with one `:bullAuthN` per non-empty key segment. */
 export function bullAuthRoute(key: string, rest: string): string {
   const params = key
     .split("/")
-    .map((_, i) => `:bullAuth${i}`)
+    .map((s, i) => (s === "" ? "" : `:bullAuth${i}`))
     .join("/");
   return `/admin/${params}${rest}`;
 }
 
 export function createRequireBullAuth(expected: string): RequestHandler {
-  const n = expected.split("/").length;
+  const segs = expected.split("/");
   return (req: Request, res: Response, next: NextFunction) => {
     const parts: string[] = [];
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < segs.length; i++) {
+      if (segs[i] === "") {
+        parts.push("");
+        continue;
+      }
       const p = req.params[`bullAuth${i}`];
       if (typeof p !== "string") {
         return res.status(404).json({ error: "Not found" });
