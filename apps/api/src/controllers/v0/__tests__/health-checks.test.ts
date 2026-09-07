@@ -1,4 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { logger } = vi.hoisted(() => ({
+  logger: { warn: vi.fn(), info: vi.fn() },
+}));
+
+vi.mock("../../../lib/logger", () => ({ logger }));
+
 import { collectUnhealthy, pingIfReady, redisEnded } from "../health-checks";
 
 describe("redisEnded", () => {
@@ -27,21 +34,27 @@ describe("pingIfReady", () => {
 });
 
 describe("collectUnhealthy", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("returns an empty list when every check passes", async () => {
     const failed = await collectUnhealthy([
       ["queueRedis", async () => undefined],
       ["postgres", async () => undefined],
     ]);
     expect(failed).toEqual([]);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it("names each failing check", async () => {
+  it("names each failing check and logs the error", async () => {
+    const pgErr = new Error("connection refused");
     const failed = await collectUnhealthy([
       ["queueRedis", async () => undefined],
       [
         "postgres",
         async () => {
-          throw new Error("connection refused");
+          throw pgErr;
         },
       ],
       [
@@ -52,6 +65,15 @@ describe("collectUnhealthy", () => {
       ],
     ]);
     expect(failed).toEqual(["postgres", "nuqPostgres"]);
+    expect(logger.warn).toHaveBeenCalledWith("Readiness check failed", {
+      module: "health",
+      check: "postgres",
+      error: pgErr,
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Readiness check failed",
+      expect.objectContaining({ check: "nuqPostgres" }),
+    );
   });
 
   it("skips null checks so unconfigured deps are not required", async () => {

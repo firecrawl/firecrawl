@@ -19,10 +19,6 @@ nuqPool.on("error", err =>
   logger.error("Error in NuQ idle client", { err, module: "nuq" }),
 );
 
-export async function nuqSelect1(): Promise<void> {
-  await nuqPool.query("SELECT 1");
-}
-
 export type NuQJobStatus =
   | "queued"
   | "active"

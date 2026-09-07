@@ -1,25 +1,11 @@
-const HEALTH_CHECK_TIMEOUT_MS = 1000;
+import { logger } from "../../lib/logger";
+
+const HEALTH_CHECK_TIMEOUT_MS = 4000;
 
 type RedisLike = {
   status: string;
   ping: () => Promise<unknown>;
 };
-
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
-    p.then(
-      v => {
-        clearTimeout(t);
-        resolve(v);
-      },
-      e => {
-        clearTimeout(t);
-        reject(e);
-      },
-    );
-  });
-}
 
 export function redisEnded(client: RedisLike | null | undefined): boolean {
   return client?.status === "end";
@@ -43,9 +29,29 @@ export async function collectUnhealthy(
   const results = await Promise.all(
     active.map(async ([name, fn]) => {
       try {
-        await withTimeout(Promise.resolve(fn()), HEALTH_CHECK_TIMEOUT_MS, name);
+        await new Promise<void>((resolve, reject) => {
+          const t = setTimeout(
+            () => reject(new Error(`${name} timed out`)),
+            HEALTH_CHECK_TIMEOUT_MS,
+          );
+          Promise.resolve(fn()).then(
+            () => {
+              clearTimeout(t);
+              resolve();
+            },
+            e => {
+              clearTimeout(t);
+              reject(e);
+            },
+          );
+        });
         return null;
-      } catch {
+      } catch (error) {
+        logger.warn("Readiness check failed", {
+          module: "health",
+          check: name,
+          error,
+        });
         return name;
       }
     }),

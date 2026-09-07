@@ -6,7 +6,8 @@ const {
   db,
   dbRr,
   getRedisConnection,
-  nuqSelect1,
+  logger,
+  nuqHealthCheck,
   queueRedis,
   redisRateLimitClient,
 } = vi.hoisted(() => {
@@ -23,12 +24,15 @@ const {
       REDIS_URL: "redis://localhost",
       REDIS_RATE_LIMIT_URL: "redis://localhost",
       USE_DB_AUTHENTICATION: true,
+      DATABASE_URL: "postgres://localhost/main",
+      DATABASE_REPLICA_URL: undefined as string | undefined,
       NUQ_DATABASE_URL: "postgres://localhost/nuq",
     },
     db: { execute: vi.fn<() => Promise<unknown>>() },
     dbRr: { execute: vi.fn<() => Promise<unknown>>() },
     getRedisConnection: vi.fn(() => queueRedis),
-    nuqSelect1: vi.fn<() => Promise<void>>(),
+    logger: { warn: vi.fn(), info: vi.fn() },
+    nuqHealthCheck: vi.fn<() => Promise<boolean>>(),
     queueRedis,
     redisRateLimitClient,
   };
@@ -36,9 +40,10 @@ const {
 
 vi.mock("../../../config", () => ({ config }));
 vi.mock("../../../db/connection", () => ({ db, dbRr }));
+vi.mock("../../../lib/logger", () => ({ logger }));
 vi.mock("../../../services/queue-service", () => ({ getRedisConnection }));
 vi.mock("../../../services/rate-limiter", () => ({ redisRateLimitClient }));
-vi.mock("../../../services/worker/nuq", () => ({ nuqSelect1 }));
+vi.mock("../../../services/worker/nuq", () => ({ nuqHealthCheck }));
 
 import { livenessController } from "../liveness";
 import { readinessController } from "../readiness";
@@ -61,8 +66,9 @@ beforeEach(() => {
   redisRateLimitClient.ping.mockResolvedValue("PONG");
   db.execute.mockResolvedValue([]);
   dbRr.execute.mockResolvedValue([]);
-  nuqSelect1.mockResolvedValue(undefined);
+  nuqHealthCheck.mockResolvedValue(true);
   getRedisConnection.mockReturnValue(queueRedis);
+  config.DATABASE_REPLICA_URL = undefined;
 });
 
 describe("livenessController", () => {
@@ -73,6 +79,7 @@ describe("livenessController", () => {
     expect(res.json).toHaveBeenCalledWith({ status: "ok" });
     expect(queueRedis.ping).not.toHaveBeenCalled();
     expect(redisRateLimitClient.ping).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it("returns 503 when the rate-limit Redis client is ended", async () => {
@@ -81,6 +88,11 @@ describe("livenessController", () => {
     await livenessController({} as Request, res);
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).toHaveBeenCalledWith({ status: "unhealthy" });
+    expect(logger.warn).toHaveBeenCalledWith("Liveness check failed", {
+      module: "health",
+      check: "rateLimitRedis",
+      status: "end",
+    });
   });
 });
 
@@ -93,8 +105,8 @@ describe("readinessController", () => {
     expect(queueRedis.ping).toHaveBeenCalledTimes(1);
     expect(redisRateLimitClient.ping).toHaveBeenCalledTimes(1);
     expect(db.execute).toHaveBeenCalledTimes(1);
-    expect(dbRr.execute).toHaveBeenCalledTimes(1);
-    expect(nuqSelect1).toHaveBeenCalledTimes(1);
+    expect(dbRr.execute).not.toHaveBeenCalled();
+    expect(nuqHealthCheck).toHaveBeenCalledTimes(1);
   });
 
   it("returns 503 JSON when queue Redis is reconnecting", async () => {
@@ -107,16 +119,37 @@ describe("readinessController", () => {
       failed: ["queueRedis"],
     });
     expect(queueRedis.ping).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Readiness check failed",
+      expect.objectContaining({ check: "queueRedis" }),
+    );
   });
 
   it("returns 503 JSON when Postgres SELECT 1 fails", async () => {
-    db.execute.mockRejectedValue(new Error("connection refused"));
+    const err = new Error("connection refused");
+    db.execute.mockRejectedValue(err);
     const res = makeResponse();
     await readinessController({} as Request, res);
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).toHaveBeenCalledWith({
       status: "unhealthy",
       failed: ["postgres"],
+    });
+    expect(logger.warn).toHaveBeenCalledWith("Readiness check failed", {
+      module: "health",
+      check: "postgres",
+      error: err,
+    });
+  });
+
+  it("returns 503 when nuqHealthCheck returns false", async () => {
+    nuqHealthCheck.mockResolvedValue(false);
+    const res = makeResponse();
+    await readinessController({} as Request, res);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      status: "unhealthy",
+      failed: ["nuqPostgres"],
     });
   });
 });
