@@ -545,6 +545,8 @@ export async function mapController(
     results: result.links,
     credits_cost: creditsToBill,
     zeroDataRetention: false, // not supported
+  }).catch(error => {
+    logger.error("Failed to log map", { error, mapId });
   });
 
   // Log final timing information

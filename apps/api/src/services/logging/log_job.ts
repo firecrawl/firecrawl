@@ -24,7 +24,13 @@ import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
 import { PubSub, type PublishOptions, type Topic } from "@google-cloud/pubsub";
-import { pubsubLogPublishTotal } from "../../lib/pubsub-log-metrics";
+import {
+  pubsubLogPublishTotal,
+  pubsubLogPendingMessages,
+  pubsubLogPendingBytes,
+  pubsubLogPublishDuration,
+  pubsubLogShutdownTotal,
+} from "../../lib/pubsub-log-metrics";
 import { sanitizeLogData, sanitizeText } from "./sanitize";
 configDotenv();
 
@@ -70,8 +76,8 @@ let pubSubShutdown: Promise<void> | undefined;
 // whole retry budget to that one value (CallSettings.merge), so a stalled RPC
 // used to be a single 60 s attempt and then a lost row. An explicit `retry`
 // is applied after that override and replaces the backoff settings wholesale.
-// Short attempts detect a hung channel quickly; the total budget covers every
-// stall measured in production so far, all of which cleared within 140 s.
+// Short attempts detect a stalled RPC quickly. The total budget allows
+// retries across a longer connection disruption.
 // Retry codes stay the client's defaults for Publish (DEADLINE_EXCEEDED,
 // UNAVAILABLE, INTERNAL, UNKNOWN, ABORTED, CANCELLED, RESOURCE_EXHAUSTED).
 // A retry can deliver a batch twice when the first attempt was persisted but
@@ -94,14 +100,15 @@ const PUBSUB_PUBLISH_OPTIONS: PublishOptions = {
 };
 
 // Shutdown waits this long for in-flight publishes before closing the client.
-// It must fit inside the pods' termination grace period (60 s for nuq
-// workers); a stall that outlives it loses what is still in flight, which is
-// the same outcome as today and what a durable relay is for.
+// The drain shares the existing pod grace period with active work and exit.
+// Memory kills and work that exceeds the pod grace period can still lose logs.
 const PUBSUB_SHUTDOWN_FLUSH_TIMEOUT_MS = 40_000;
 
-// Rows waiting on Pub/Sub across all topics. Publishing is fire-and-forget,
-// so during a stall this is what grows; see PUBSUB_MAX_OUTSTANDING_* in config.
-let outstandingMessages = 0;
+// Track publication promises because topic.flush() can finish before an active RPC.
+const pendingPublications = new Map<
+  Promise<string>,
+  { table: string; logId: string; startedAt: number }
+>();
 let outstandingBytes = 0;
 let droppedTotal = 0;
 let lastDropWarningAt = 0;
@@ -139,42 +146,77 @@ function getTopic(client: PubSub, table: string): Topic {
 }
 
 async function publishLog(table: string, data: any, logger: Logger) {
-  const client = getPubSubClient(logger);
-  if (!client) return;
-
-  const payload = Buffer.from(JSON.stringify(data));
-  if (
-    outstandingMessages >= config.PUBSUB_MAX_OUTSTANDING_MESSAGES ||
-    outstandingBytes + payload.length > config.PUBSUB_MAX_OUTSTANDING_BYTES
-  ) {
-    droppedTotal++;
-    pubsubLogPublishTotal.inc({ table, outcome: "dropped" });
-    const now = Date.now();
-    if (now - lastDropWarningAt >= 60_000) {
-      lastDropWarningAt = now;
-      logger.warn("Dropping Pub/Sub log: publisher backlog is full", {
-        outstandingMessages,
-        outstandingBytes,
-        droppedTotal,
-      });
-    }
-    return;
-  }
-
-  outstandingMessages++;
-  outstandingBytes += payload.length;
+  const startedAt = Date.now();
   try {
-    await getTopic(client, table).publishMessage({ data: payload });
-    pubsubLogPublishTotal.inc({ table, outcome: "published" });
+    if (pubSubShutdown) {
+      throw new Error("Pub/Sub log publisher is shutting down");
+    }
+    const client = getPubSubClient(logger);
+    if (!client) {
+      if (config.PUBSUB_CREDENTIALS) {
+        throw new Error("Pub/Sub log publisher initialization failed");
+      }
+      return;
+    }
+
+    const payload = Buffer.from(JSON.stringify(data));
+    if (
+      pendingPublications.size >= config.PUBSUB_MAX_OUTSTANDING_MESSAGES ||
+      outstandingBytes + payload.length > config.PUBSUB_MAX_OUTSTANDING_BYTES
+    ) {
+      droppedTotal++;
+      pubsubLogPublishTotal.inc({ table, outcome: "dropped" });
+      const now = Date.now();
+      if (now - lastDropWarningAt >= 60_000) {
+        lastDropWarningAt = now;
+        logger.warn("Dropping Pub/Sub log: publisher backlog is full", {
+          table,
+          logId: data.id,
+          payloadBytes: payload.length,
+          outstandingMessages: pendingPublications.size,
+          outstandingBytes,
+          droppedTotal,
+        });
+      }
+      return;
+    }
+
+    const publication = getTopic(client, table).publishMessage({
+      data: payload,
+    });
+    pendingPublications.set(publication, { table, logId: data.id, startedAt });
+    outstandingBytes += payload.length;
+    pubsubLogPendingMessages.set(pendingPublications.size);
+    pubsubLogPendingBytes.set(outstandingBytes);
+    try {
+      await publication;
+      pubsubLogPublishTotal.inc({ table, outcome: "published" });
+      pubsubLogPublishDuration.observe(
+        { table, outcome: "published" },
+        (Date.now() - startedAt) / 1000,
+      );
+    } finally {
+      pendingPublications.delete(publication);
+      outstandingBytes -= payload.length;
+      pubsubLogPendingMessages.set(pendingPublications.size);
+      pubsubLogPendingBytes.set(outstandingBytes);
+    }
   } catch (error) {
     pubsubLogPublishTotal.inc({ table, outcome: "failed" });
-    logger.error("Failed to publish log to Pub/Sub", { error });
+    pubsubLogPublishDuration.observe(
+      { table, outcome: "failed" },
+      (Date.now() - startedAt) / 1000,
+    );
+    logger.error("Failed to publish log to Pub/Sub", {
+      error,
+      table,
+      logId: data.id,
+      durationMs: Date.now() - startedAt,
+    });
     Sentry.captureException(error, {
       tags: { table, operation: "publishPubSubLog" },
+      extra: { logId: data.id },
     });
-  } finally {
-    outstandingMessages--;
-    outstandingBytes -= payload.length;
   }
 }
 
@@ -193,9 +235,18 @@ async function shutdownPubSubLoggingOnce(): Promise<void> {
     module: "log_job",
     method: "shutdownPubSubLogging",
   });
-  const flushed = Promise.allSettled(
-    [...pubSubTopics.values()].map(topic => topic.flush()),
-  );
+  const startedAt = Date.now();
+  logger.info("Draining Pub/Sub log publisher", {
+    outstandingMessages: pendingPublications.size,
+    outstandingBytes,
+    timeoutMs: PUBSUB_SHUTDOWN_FLUSH_TIMEOUT_MS,
+  });
+  // Callers stop accepting work before shutdown. Reject new publications so
+  // this snapshot includes every publication that can still use the client.
+  const flushed = Promise.allSettled([
+    ...[...pubSubTopics.values()].map(async topic => topic.flush()),
+    ...pendingPublications.keys(),
+  ]);
   let deadline: NodeJS.Timeout | undefined;
   const timedOut = new Promise<"timeout">(resolve => {
     deadline = setTimeout(
@@ -207,12 +258,15 @@ async function shutdownPubSubLoggingOnce(): Promise<void> {
   clearTimeout(deadline);
 
   if (results === "timeout") {
+    pubsubLogShutdownTotal.inc({ outcome: "timeout" });
     logger.warn(
       "Pub/Sub log flush did not finish before the shutdown deadline; closing anyway",
       {
         timeoutMs: PUBSUB_SHUTDOWN_FLUSH_TIMEOUT_MS,
-        outstandingMessages,
+        outstandingMessages: pendingPublications.size,
         outstandingBytes,
+        pendingLogSample: [...pendingPublications.values()].slice(0, 50),
+        pendingLogSampleTruncated: pendingPublications.size > 50,
       },
     );
   } else {
@@ -221,21 +275,38 @@ async function shutdownPubSubLoggingOnce(): Promise<void> {
     );
 
     if (errors.length > 0) {
-      logger.error("Failed to flush Pub/Sub log publisher", { errors });
+      pubsubLogShutdownTotal.inc({ outcome: "failed" });
+      logger.error("Failed to drain Pub/Sub log publisher", { errors });
       Sentry.captureException(errors[0], {
         tags: { operation: "flushPubSubLogPublisher" },
         extra: { failures: errors.length },
       });
+    } else {
+      pubsubLogShutdownTotal.inc({ outcome: "completed" });
+      logger.info("Pub/Sub log publisher drained", {
+        durationMs: Date.now() - startedAt,
+      });
     }
   }
 
+  let closeDeadline: NodeJS.Timeout | undefined;
   try {
-    await client.close();
+    await Promise.race([
+      client.close(),
+      new Promise<never>((_, reject) => {
+        closeDeadline = setTimeout(
+          () => reject(new Error("Pub/Sub client close exceeded 5 seconds")),
+          5_000,
+        );
+      }),
+    ]);
   } catch (error) {
     logger.error("Failed to close Pub/Sub log publisher", { error });
     Sentry.captureException(error, {
       tags: { operation: "closePubSubLogPublisher" },
     });
+  } finally {
+    clearTimeout(closeDeadline);
   }
 }
 
@@ -266,6 +337,7 @@ async function robustInsert(
     ...data,
     created_at: data.created_at ?? new Date(),
   });
+  // Publish in the background. Customer responses must not wait for Pub/Sub.
   void publishLog(table, data, logger);
 
   const attempts: { error: any; timeMs: number; backoffMs: number }[] = [];

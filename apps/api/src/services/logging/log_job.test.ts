@@ -14,6 +14,10 @@ const {
   flush,
   close,
   metricInc,
+  pendingMessagesSet,
+  pendingBytesSet,
+  durationObserve,
+  shutdownInc,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -48,6 +52,10 @@ const {
     flush,
     close,
     metricInc: vi.fn(),
+    pendingMessagesSet: vi.fn(),
+    pendingBytesSet: vi.fn(),
+    durationObserve: vi.fn(),
+    shutdownInc: vi.fn(),
   };
 });
 
@@ -82,6 +90,14 @@ vi.mock("../../db/connection", () => ({
   db: { insert },
 }));
 
+vi.mock("../../lib/change-tracking-store", () => ({
+  changeTrackingInsertScrape: vi.fn(),
+}));
+
+vi.mock("../../lib/keyless", () => ({
+  keylessTeamUuid: vi.fn(() => null),
+}));
+
 vi.mock("../../lib/gcs-jobs", () => ({
   saveDeepResearchToGCS: vi.fn(),
   saveExtractToGCS: vi.fn(),
@@ -101,6 +117,10 @@ vi.mock("../posthog", () => ({
 
 vi.mock("../../lib/pubsub-log-metrics", () => ({
   pubsubLogPublishTotal: { inc: metricInc },
+  pubsubLogPendingMessages: { set: pendingMessagesSet },
+  pubsubLogPendingBytes: { set: pendingBytesSet },
+  pubsubLogPublishDuration: { observe: durationObserve },
+  pubsubLogShutdownTotal: { inc: shutdownInc },
 }));
 
 import {
@@ -111,6 +131,16 @@ import {
 } from "./log_job";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
   return {
@@ -179,6 +209,23 @@ describe("logSearch", () => {
     };
     expect(context.extra.data).not.toContain("\\u0000");
     expect(context.extra.data).toContain("badquery");
+  });
+
+  it("reports serialization failures without losing the PostgreSQL attempt", async () => {
+    const search = makeSearch({ options: { unsupported: 1n } });
+
+    await expect(logSearch(search)).resolves.toBeUndefined();
+
+    expect(values).toHaveBeenCalledOnce();
+    expect(publishMessage).not.toHaveBeenCalled();
+    expect(metricInc).toHaveBeenCalledWith({
+      table: "searches",
+      outcome: "failed",
+    });
+    expect(logger.error).toHaveBeenCalledWith(
+      "Failed to publish log to Pub/Sub",
+      expect.objectContaining({ logId: search.id, error: expect.any(Error) }),
+    );
   });
 });
 
@@ -255,10 +302,36 @@ describe("logRequest", () => {
   });
 
   it("does not hold the caller on a slow publish", async () => {
-    publishMessage.mockReturnValueOnce(new Promise(() => {}));
+    const publication = deferred<string>();
+    publishMessage.mockReturnValueOnce(publication.promise);
 
     await expect(logRequest(makeRequest(null))).resolves.toBeUndefined();
     expect(values).toHaveBeenCalled();
+    expect(metricInc).not.toHaveBeenCalled();
+
+    publication.resolve("message-id");
+    await publication.promise;
+    expect(metricInc).toHaveBeenCalledWith({
+      table: "requests",
+      outcome: "published",
+    });
+  });
+
+  it("waits for PostgreSQL when publication finishes first", async () => {
+    const insertion = deferred<void>();
+    values.mockReturnValueOnce(insertion.promise);
+    let finished = false;
+    const logging = logRequest(makeRequest(null)).then(() => {
+      finished = true;
+    });
+
+    await new Promise(resolve => setImmediate(resolve));
+    expect(publishMessage).toHaveBeenCalledOnce();
+    expect(finished).toBe(false);
+
+    insertion.resolve();
+    await logging;
+    expect(finished).toBe(true);
   });
 
   it("stores null, not a truncation, when the id exceeds the byte cap", async () => {
@@ -310,12 +383,10 @@ describe("logRequest", () => {
   });
 
   it("drops publishes beyond the outstanding cap instead of queueing them", async () => {
-    // A fresh module instance: the outstanding counters are process-wide and
-    // an earlier test leaves a publish that never settles.
     vi.resetModules();
     const fresh = await import("./log_job.js");
-    // Hung channel: publishes never settle, so each one stays outstanding.
-    publishMessage.mockReturnValue(new Promise(() => {}));
+    const publication = deferred<string>();
+    publishMessage.mockImplementation(async () => publication.promise);
     config.PUBSUB_MAX_OUTSTANDING_MESSAGES = 2;
     try {
       await fresh.logRequest(makeRequest(null));
@@ -323,6 +394,8 @@ describe("logRequest", () => {
       await fresh.logRequest(makeRequest(null));
     } finally {
       config.PUBSUB_MAX_OUTSTANDING_MESSAGES = 10_000;
+      publication.resolve("message-id");
+      await fresh.shutdownPubSubLogging();
     }
 
     // The database write is never held back by the publisher.
@@ -334,7 +407,12 @@ describe("logRequest", () => {
     });
     expect(logger.warn).toHaveBeenCalledWith(
       "Dropping Pub/Sub log: publisher backlog is full",
-      expect.objectContaining({ outstandingMessages: 2, droppedTotal: 1 }),
+      expect.objectContaining({
+        table: "requests",
+        logId: makeRequest(null).id,
+        outstandingMessages: 2,
+        droppedTotal: 1,
+      }),
     );
   });
 
@@ -353,6 +431,23 @@ describe("logRequest", () => {
       table: "requests",
       outcome: "failed",
     });
+  });
+
+  it("releases the backlog capacity after a failed publication", async () => {
+    const originalCap = config.PUBSUB_MAX_OUTSTANDING_MESSAGES;
+    config.PUBSUB_MAX_OUTSTANDING_MESSAGES = 1;
+    try {
+      publishMessage.mockRejectedValueOnce(new Error("Pub/Sub unavailable"));
+      await logRequest(makeRequest(null));
+      await logRequest(makeRequest(null));
+      expect(publishMessage).toHaveBeenCalledTimes(2);
+      expect(metricInc).not.toHaveBeenCalledWith({
+        table: "requests",
+        outcome: "dropped",
+      });
+    } finally {
+      config.PUBSUB_MAX_OUTSTANDING_MESSAGES = originalCap;
+    }
   });
 
   it("flushes Pub/Sub messages during shutdown", async () => {
@@ -375,6 +470,122 @@ describe("shutdownPubSubLogging deadline", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("waits for pending publications even when flush returns early", async () => {
+    vi.resetModules();
+    const fresh = await import("./log_job.js");
+    const publication = deferred<string>();
+    publishMessage.mockReturnValueOnce(publication.promise);
+    await fresh.logSearch(makeSearch());
+
+    const shutdown = fresh.shutdownPubSubLogging();
+    await new Promise(resolve => setImmediate(resolve));
+    expect(flush).toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(pendingMessagesSet).toHaveBeenLastCalledWith(1);
+    expect(pendingBytesSet).toHaveBeenLastCalledWith(
+      publishMessage.mock.calls[0][0].data.length,
+    );
+
+    publication.resolve("message-id");
+    await shutdown;
+    expect(close).toHaveBeenCalledOnce();
+    expect(pendingMessagesSet).toHaveBeenLastCalledWith(0);
+    expect(pendingBytesSet).toHaveBeenLastCalledWith(0);
+    expect(shutdownInc).toHaveBeenCalledWith({ outcome: "completed" });
+  });
+
+  it("closes at the deadline when publication stays pending after flush", async () => {
+    vi.resetModules();
+    const fresh = await import("./log_job.js");
+    const publication = deferred<string>();
+    publishMessage.mockReturnValueOnce(publication.promise);
+    await fresh.logSearch(makeSearch());
+
+    vi.useFakeTimers();
+    const shutdown = fresh.shutdownPubSubLogging();
+    await vi.advanceTimersByTimeAsync(39_999);
+    expect(close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await shutdown;
+    expect(close).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Pub/Sub log flush did not finish before the shutdown deadline; closing anyway",
+      expect.objectContaining({
+        outstandingMessages: 1,
+        pendingLogSample: [
+          expect.objectContaining({
+            table: "searches",
+            logId: makeSearch().id,
+          }),
+        ],
+        pendingLogSampleTruncated: false,
+      }),
+    );
+    expect(shutdownInc).toHaveBeenCalledWith({ outcome: "timeout" });
+
+    publication.resolve("message-id");
+    await publication.promise;
+  });
+
+  it("reports publication failures during shutdown and still closes", async () => {
+    vi.resetModules();
+    const fresh = await import("./log_job.js");
+    const publication = deferred<string>();
+    publishMessage.mockReturnValueOnce(publication.promise);
+    await fresh.logSearch(makeSearch());
+    const shutdown = fresh.shutdownPubSubLogging();
+
+    publication.reject(new Error("Pub/Sub unavailable"));
+    await shutdown;
+    expect(close).toHaveBeenCalledOnce();
+    expect(metricInc).toHaveBeenCalledWith({
+      table: "searches",
+      outcome: "failed",
+    });
+    expect(pendingMessagesSet).toHaveBeenLastCalledWith(0);
+    expect(pendingBytesSet).toHaveBeenLastCalledWith(0);
+    expect(shutdownInc).toHaveBeenCalledWith({ outcome: "failed" });
+    expect(durationObserve).toHaveBeenCalledWith(
+      { table: "searches", outcome: "failed" },
+      expect.any(Number),
+    );
+  });
+
+  it("bounds client close after draining so shutdown can finish", async () => {
+    vi.resetModules();
+    const fresh = await import("./log_job.js");
+    await fresh.logSearch(makeSearch());
+    close.mockReturnValueOnce(new Promise(() => {}));
+    vi.useFakeTimers();
+    const shutdown = fresh.shutdownPubSubLogging();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await shutdown;
+    expect(logger.error).toHaveBeenCalledWith(
+      "Failed to close Pub/Sub log publisher",
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
+  });
+
+  it("reports late logs instead of publishing after shutdown starts", async () => {
+    vi.resetModules();
+    const fresh = await import("./log_job.js");
+    await fresh.logSearch(makeSearch());
+    const flushing = deferred<void>();
+    flush.mockReturnValueOnce(flushing.promise);
+    const shutdown = fresh.shutdownPubSubLogging();
+
+    await fresh.logSearch(makeSearch());
+    expect(publishMessage).toHaveBeenCalledOnce();
+    expect(values).toHaveBeenCalledTimes(2);
+    expect(metricInc).toHaveBeenCalledWith({
+      table: "searches",
+      outcome: "failed",
+    });
+
+    flushing.resolve();
+    await shutdown;
   });
 
   it("closes the client when a flush outlives the shutdown deadline", async () => {
