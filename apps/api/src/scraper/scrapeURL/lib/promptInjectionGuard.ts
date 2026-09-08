@@ -107,8 +107,6 @@ async function classifyChunk(
         },
       },
       experimental_telemetry: {
-        recordInputs: false,
-        recordOutputs: false,
         isEnabled: !zeroDataRetention,
         functionId: metadata.functionId
           ? metadata.functionId + "/promptInjectionGuard"

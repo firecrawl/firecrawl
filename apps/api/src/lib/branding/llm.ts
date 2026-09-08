@@ -119,8 +119,6 @@ export async function enhanceBrandingWithLLM(
       ],
       temperature: 0.1,
       experimental_telemetry: {
-        recordInputs: false,
-        recordOutputs: false,
         isEnabled: true,
         functionId: "enhanceBrandingWithLLM",
         metadata: {

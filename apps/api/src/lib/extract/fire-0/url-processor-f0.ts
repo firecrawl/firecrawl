@@ -33,8 +33,6 @@ export async function generateBasicCompletion_FO(
       },
     },
     experimental_telemetry: {
-      recordInputs: false,
-      recordOutputs: false,
       isEnabled: true,
       functionId: "generateBasicCompletion_F0",
       metadata: {

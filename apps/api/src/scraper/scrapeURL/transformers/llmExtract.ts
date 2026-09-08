@@ -373,8 +373,6 @@ export async function generateCompletions({
             },
           },
           experimental_telemetry: {
-            recordInputs: false,
-            recordOutputs: false,
             isEnabled: !zeroDataRetention,
             functionId: metadata.functionId
               ? metadata.functionId + "/generateText"
@@ -481,8 +479,6 @@ export async function generateCompletions({
                 },
               },
               experimental_telemetry: {
-                recordInputs: false,
-                recordOutputs: false,
                 isEnabled: !zeroDataRetention,
                 functionId: metadata.functionId
                   ? metadata.functionId + "/generateText"
@@ -654,8 +650,6 @@ export async function generateCompletions({
               },
             },
             experimental_telemetry: {
-              recordInputs: false,
-              recordOutputs: false,
               isEnabled: !zeroDataRetention,
               functionId: metadata.functionId
                 ? metadata.functionId + "/repairText"
@@ -752,8 +746,6 @@ export async function generateCompletions({
         },
       }),
       experimental_telemetry: {
-        recordInputs: false,
-        recordOutputs: false,
         isEnabled: !zeroDataRetention,
         functionId: metadata.functionId,
         metadata: {

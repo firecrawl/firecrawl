@@ -250,8 +250,6 @@ export async function generateCompletions_F0({
           },
         },
         experimental_telemetry: {
-          recordInputs: false,
-          recordOutputs: false,
           isEnabled: true,
           functionId: metadata.functionId,
           metadata: {
@@ -357,8 +355,6 @@ export async function generateCompletions_F0({
             },
           },
           experimental_telemetry: {
-            recordInputs: false,
-            recordOutputs: false,
             isEnabled: true,
             functionId: metadata.functionId,
             metadata: {
@@ -408,8 +404,6 @@ export async function generateCompletions_F0({
         },
       },
       experimental_telemetry: {
-        recordInputs: false,
-        recordOutputs: false,
         isEnabled: true,
         functionId: metadata.functionId,
         metadata: {
