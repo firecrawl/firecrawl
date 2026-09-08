@@ -2,6 +2,7 @@ import Firecrawl from "../../../index";
 import { config } from "dotenv";
 import { describe, test, expect, beforeAll } from "@jest/globals";
 import { getIdentity } from "./utils/idmux";
+import { withRateLimitRetry } from "./utils/rateLimit";
 
 config();
 
@@ -10,7 +11,7 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-watcher" });
-  client = new Firecrawl({ apiKey, apiUrl: API_URL });
+  client = withRateLimitRetry(new Firecrawl({ apiKey, apiUrl: API_URL }));
 });
 
 describe("v2.watcher e2e", () => {

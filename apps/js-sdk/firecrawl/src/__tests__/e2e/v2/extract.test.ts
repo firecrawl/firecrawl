@@ -4,6 +4,7 @@
 import Firecrawl from "../../../index";
 import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
+import { withRateLimitRetry } from "./utils/rateLimit";
 import { describe, test, expect, beforeAll } from "@jest/globals";
 import { z } from "zod";
 
@@ -14,7 +15,7 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-extract" });
-  client = new Firecrawl({ apiKey, apiUrl: API_URL });
+  client = withRateLimitRetry(new Firecrawl({ apiKey, apiUrl: API_URL }));
 });
 
 describe("v2.extract e2e", () => {

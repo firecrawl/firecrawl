@@ -5,6 +5,7 @@ import Firecrawl from "../../../index";
 import type { Document, SearchResultWeb, SearchResultNews, SearchResultImages } from "../../../index";
 import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
+import { withRateLimitRetry } from "./utils/rateLimit";
 import { describe, test, expect, beforeAll } from "@jest/globals";
 
 config();
@@ -14,7 +15,7 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-search" });
-  client = new Firecrawl({ apiKey, apiUrl: API_URL });
+  client = withRateLimitRetry(new Firecrawl({ apiKey, apiUrl: API_URL }));
 });
 
 function collectTexts(entries: any[] | undefined): string[] {
