@@ -1,4 +1,4 @@
-import { useState, ChangeEvent, FormEvent, useEffect } from "react";
+import { useState, ChangeEvent, FormEvent, KeyboardEvent, useEffect } from "react";
 import {
   Card,
   CardHeader,
@@ -16,6 +16,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { handleNumberInputPageKey } from "@/lib/utils";
 
 //! Hardcoded values (not recommended for production)
 //! Highly recommended to move all Firecrawl API calls to the backend (e.g. Next.js API route)
@@ -145,6 +146,23 @@ export default function FirecrawlComponentV1() {
       }
 
       return newData;
+    });
+  };
+
+  const handleNumberKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    handleNumberInputPageKey(e, (name, value) => {
+      setFormData((prevData) => {
+        const newData = {
+          ...prevData,
+          [name]: value,
+        };
+
+        if (name === "limit") {
+          newData.crawlSubPages = !!value || !!newData.search;
+        }
+
+        return newData;
+      });
     });
   };
 
@@ -444,9 +462,12 @@ export default function FirecrawlComponentV1() {
                     <Input
                       id="limit"
                       name="limit"
+                      type="number"
+                      min={0}
                       placeholder="10"
                       value={formData.limit}
                       onChange={handleChange}
+                      onKeyDown={handleNumberKeyDown}
                     />
                   </div>
                 </div>
