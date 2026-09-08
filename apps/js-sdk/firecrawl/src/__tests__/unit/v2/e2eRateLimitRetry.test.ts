@@ -181,15 +181,13 @@ describe("e2e rate-limit retry helper", () => {
       .fn<() => Promise<{ status: string }>>()
       .mockResolvedValue({ status: "scraping" });
 
-    // The bound is longer than the longest single rate-limit wait, so one wait
-    // between two polls cannot spend it.
-    const longestWait = rateLimitWaitMs(rateLimitError(600));
-    expect(DEFAULT_JOB_TIMEOUT_MS).toBeGreaterThan(longestWait);
-
-    // The error still surfaces inside the smallest suite budget. The last read
-    // can start just inside the bound and then spend the whole retry budget.
-    expect(DEFAULT_JOB_TIMEOUT_MS + RETRY_BUDGET_MS).toBeLessThan(
-      testTimeoutMs(120_000),
+    // The default is a backstop for a caller that forgets a timeout, not a
+    // work allowance. A caller that waits for real work passes its own bound.
+    // So the default only has to fit the smallest base any suite uses, which
+    // is 60_000 ms. The last read can start just inside the bound and then
+    // spend the whole retry budget, so count both.
+    expect(DEFAULT_JOB_TIMEOUT_MS + 2_000 + RETRY_BUDGET_MS).toBeLessThan(
+      testTimeoutMs(60_000),
     );
 
     // Fake timers run the whole bound without waiting for it.

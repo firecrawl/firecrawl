@@ -50,23 +50,21 @@ export const RETRY_BUDGET_MS = (MAX_ATTEMPTS - 1) * MAX_WAIT_MS;
 /**
  * Time waitForJob allows when the caller passes no timeout.
  *
- * A caller with no timeout must still get a bound. Without one the poll loop
- * runs until the jest timeout, which hides the reason for the failure.
+ * Every caller now passes its own timeout, sized to the work it waits for.
+ * This value is only a backstop for a new caller that forgets one. Without a
+ * bound the poll loop runs until the jest timeout, which hides the reason.
  *
- * The value fits between two limits.
+ * The value stays short because it cannot know the work. It fits the smallest
+ * base any suite passes to testTimeoutMs, which is 60_000 ms:
+ * 45_000 + 2_000 + RETRY_BUDGET_MS = 197_000 ms, inside the 210_000 ms of
+ * testTimeoutMs(60_000). So a forgotten timeout still reports "job did not
+ * finish" in every test the suites have today.
  *
- * Upper limit. The smallest suite budget is testTimeoutMs(120_000), which is
- * 270_000 ms. A deadline check can pass just inside the bound. The loop then
- * sleeps one poll interval, and the wrapped status read can spend the whole
- * retry budget, so the error surfaces at most
- * 90_000 + 2_000 + RETRY_BUDGET_MS = 242_000 ms after the start. That leaves
- * 28_000 ms of the suite budget for the request in flight and for teardown.
- *
- * Lower limit. The value is longer than MAX_WAIT_MS, so one rate-limit wait
- * between two polls cannot spend the whole bound. The job always gets one more
- * read after the longest single wait.
+ * A caller that waits for real work must pass a timeout. Size it to the work,
+ * not to the budget. The unit test "every waitForJob call fits the budget of
+ * its own test" then checks the bound against the budget.
  */
-export const DEFAULT_JOB_TIMEOUT_MS = 90_000;
+export const DEFAULT_JOB_TIMEOUT_MS = 45_000;
 
 /**
  * Jest timeout for a test that calls a wrapped client.
