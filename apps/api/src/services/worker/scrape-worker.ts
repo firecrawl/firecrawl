@@ -18,6 +18,7 @@ import {
   addCrawlJobs,
   addCrawlJobDone,
   crawlToCrawler,
+  queueCrawlJobDoneRepair,
   recordRobotsBlocked,
   recordThreatBlocked,
   finishCrawlKickoff,
@@ -834,7 +835,22 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       await recordMonitorScrapeSuccess(job, doc);
 
       logger.debug("Declaring job as done...");
-      await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
+      try {
+        await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
+      } catch (e) {
+        // The scrape succeeded and its success webhook already went out —
+        // a bookkeeping failure must not route this job through the
+        // failure path (contradictory failure webhook, misrecorded job).
+        // Already logged canonically inside addCrawlJobDone.
+        logger.error("Failed to mark successful crawl job as done", {
+          crawlId: job.data.crawl_id,
+          jobId: job.id,
+          error: e,
+        });
+        // Durable fallback so the crawl's completion marker is retried by
+        // the reconciler instead of being lost for good.
+        await queueCrawlJobDoneRepair(job.data.crawl_id, job.id, true, logger);
+      }
     } else {
       try {
         signal?.throwIfAborted();
@@ -944,7 +960,18 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 
       logger.debug("Declaring job as done...");
-      await addCrawlJobDone(job.data.crawl_id, job.id, false, logger);
+      try {
+        await addCrawlJobDone(job.data.crawl_id, job.id, false, logger);
+      } catch (e) {
+        // Already logged canonically inside addCrawlJobDone; a throw here
+        // must not escape the error handler and fail the job a second time.
+        logger.error("Failed to declare failed crawl job as done", {
+          crawlId: job.data.crawl_id,
+          jobId: job.id,
+          error: e,
+        });
+        await queueCrawlJobDoneRepair(job.data.crawl_id, job.id, false, logger);
+      }
       await redisEvictConnection.srem(
         "crawl:" + job.data.crawl_id + ":visited_unique",
         normalizeURL(job.data.url, sc),

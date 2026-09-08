@@ -297,10 +297,7 @@ export async function searchController(
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
-    // Ensure the parent `requests` row is committed before the child
-    // `searches` insert, to avoid a request_id FK violation. The insert has
-    // been in flight since the top of the controller, so this is ~free in
-    // practice; robustInsert never rejects, so this await cannot throw.
+    // Wait for the parent log before inserting the child search log.
     const logStart = Date.now();
     await logRequestPromise;
     const waited = Date.now() - logStart;
@@ -327,7 +324,9 @@ export async function searchController(
         zeroDataRetention,
       },
       false,
-    );
+    ).catch(error => {
+      logger.error("Failed to log search", { error, jobId });
+    });
 
     if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
       logResearchEndpoint({

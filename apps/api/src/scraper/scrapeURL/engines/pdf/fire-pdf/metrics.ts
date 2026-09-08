@@ -24,11 +24,30 @@ export const firePdfAsyncTotalDurationSeconds = new Histogram({
   buckets: [0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200, 1800],
 });
 
+export const firePdfAsyncSubmitRetriesTotal = new Counter({
+  name: "firecrawl_fire_pdf_async_submit_retries_total",
+  help: "Count of POST /jobs retries after a transient failure that never reached fire-pdf's handler",
+  labelNames: ["trigger"],
+});
+
+export const firePdfAsyncAbandonedTotal = new Counter({
+  name: "firecrawl_fire_pdf_async_abandoned_total",
+  help: "Count of fire-pdf async attempts abandoned because the caller's scrape window closed first",
+  labelNames: ["phase"],
+});
+
 export const firePdfAsyncPollCount = new Histogram({
   name: "firecrawl_fire_pdf_async_poll_count",
   help: "Number of GET /jobs/:id polls performed per fire-pdf async job",
   buckets: [1, 2, 5, 10, 20, 50, 100, 200, 500],
 });
+
+export type SubmitRetryTrigger =
+  | "transport_error"
+  | "http_503_closing"
+  | "http_503_unattributed";
+
+export type AbandonedPhase = "submit" | "poll" | "result";
 
 export type FallbackReason =
   | "http_401"

@@ -1,3 +1,4 @@
+import { bountyBlocklistMiddleware } from "./exchange-blocklist";
 import express, { Request, Response } from "express";
 import { Agent, fetch } from "undici";
 import { config } from "../config";
@@ -164,6 +165,44 @@ exchangeRouter.get(
 
 exchangeRouter.get(
   "/publisher{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/publisher/bounties",
+  authMiddleware(RateLimiterMode.Labs),
+  bountyBlocklistMiddleware,
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.put(
+  "/publisher/bounties/:id",
+  authMiddleware(RateLimiterMode.Labs),
+  bountyBlocklistMiddleware,
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.delete(
+  "/publisher/bounties/:id",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/publisher/bounties/:id/claim",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/publisher/bounties/:id/submit",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/publisher/bounties/:id/skill",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );

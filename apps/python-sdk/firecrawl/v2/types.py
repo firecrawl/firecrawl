@@ -2175,6 +2175,7 @@ class SearchRequest(BaseModel):
     limit: Optional[int] = 5
     tbs: Optional[str] = None
     location: Optional[str] = None
+    country: Optional[str] = None
     ignore_invalid_urls: Optional[bool] = None
     timeout: Optional[int] = 300000
     highlights: Optional[bool] = None
