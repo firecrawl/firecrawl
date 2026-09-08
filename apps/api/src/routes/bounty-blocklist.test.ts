@@ -12,7 +12,7 @@ import { bountyBlocklistMiddleware, bountyDomains } from "./bounty-blocklist";
 function app(flags: { unblockedDomains?: string[] } = {}) {
   const app = express();
   app.use(express.json());
-  app.post(
+  app.all(
     "/exchange/publisher/bounties",
     (req, _res, next) => {
       Object.assign(req, {
@@ -86,6 +86,13 @@ describe("Bounty domain blocklist", () => {
     expect(
       blocked.mock.calls.every(([url]) => new URL(url).pathname === "/"),
     ).toBe(true);
+  });
+  it("rejects blocked domains on updates", async () => {
+    const result = await request(app())
+      .put("/exchange/publisher/bounties")
+      .send({ description: "Use blocked.example profiles" });
+    expect(result.status).toBe(403);
+    expect(forwarded).not.toHaveBeenCalled();
   });
   it("does not apply scrape exemptions to bounty publication", async () => {
     const flags = { unblockedDomains: ["blocked.example"] };

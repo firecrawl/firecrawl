@@ -176,6 +176,13 @@ exchangeRouter.post(
   wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
+exchangeRouter.put(
+  "/publisher/bounties/:id",
+  authMiddleware(RateLimiterMode.Labs),
+  bountyBlocklistMiddleware,
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
 exchangeRouter.post(
   "/publisher/bounties/:id/claim",
   authMiddleware(RateLimiterMode.Labs),
