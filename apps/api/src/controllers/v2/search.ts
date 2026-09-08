@@ -27,7 +27,13 @@ import { CategoryOption } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
-import { withSpan, SpanKind } from "../../lib/otel-tracer";
+import {
+  withSpan,
+  setSpanAttributes,
+  recordSpanException,
+  SpanKind,
+  type Span,
+} from "../../lib/otel-tracer";
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
@@ -55,19 +61,24 @@ export async function searchController(
     enterprise.includes("zdr") ||
     enterprise.includes("anon");
 
-  return withSpan("api.search.request", () => searchControllerInner(req, res), {
-    kind: SpanKind.SERVER,
-    attributes: {
-      "api.version": "v2",
-      "search.team_id": req.auth.team_id,
+  return withSpan(
+    "api.search.request",
+    span => searchControllerInner(req, res, span),
+    {
+      kind: SpanKind.SERVER,
+      attributes: {
+        "api.version": "v2",
+        "search.team_id": req.auth.team_id,
+      },
+      zeroDataRetention: zeroDataRetentionTrace,
     },
-    zeroDataRetention: zeroDataRetentionTrace,
-  });
+  );
 }
 
 async function searchControllerInner(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
   res: Response<SearchResponse>,
+  span: Span,
 ) {
   const middlewareStartTime =
     (req as any).requestTiming?.startTime || new Date().getTime();
@@ -430,6 +441,8 @@ async function searchControllerInner(
       version: "v2",
       error,
     });
+    recordSpanException(span, error);
+    setSpanAttributes(span, { "search.status_code": 500 });
     return res.status(500).json({
       success: false,
       error: error.message,
