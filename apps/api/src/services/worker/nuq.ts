@@ -10,6 +10,86 @@ import { nuqRedis } from "./redis";
 
 // === Basics
 
+/**
+ * Strips NUL bytes (\u0000) from any value before it is persisted to Postgres.
+ *
+ * Postgres JSON/JSONB columns reject embedded NUL with error code 22P05
+ * ("... cannot be converted to text"), which previously threw out of jobFinish
+ * and crash-looped the worker when scraped content contained a NUL byte (#4113).
+ *
+ * The transform is loss-free: only \u0000 is removed. NUL-free input is returned
+ * byte-identical (no whitespace collapse, no trimming, other control chars pass
+ * through). Every string is sanitized — including object keys, since Postgres
+ * rejects NUL in keys as well as values — so the protection is not bypassed at
+ * any depth. It walks the structure iteratively with an explicit stack rather
+ * than recursing, so a pathologically deep object cannot overflow the call
+ * stack (which would itself crash the worker, the same blast radius as #4113).
+ * Output objects use a null prototype so an input key like "__proto__" survives
+ * as a normal own property instead of being silently dropped, and the value is
+ * cloned rather than mutated.
+ */
+export function stripNulBytes<T>(value: T): T {
+  if (typeof value === "string") {
+    return value.replace(/\u0000/g, "") as T;
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  // Root container (array or object). Walk it with an explicit stack so depth
+  // is bounded by heap, not the call stack, and every nested string/key is
+  // sanitized regardless of depth (no recursion ceiling to bypass).
+  const root: unknown = Array.isArray(value)
+    ? new Array(value.length)
+    : Object.create(null);
+
+  // Each frame holds a destination container and the (slot, source-value) pairs
+  // still to write into it. `slot` is an array index or a sanitized object key.
+  type Slot = number | string;
+  type Frame = {
+    dst: unknown[] | Record<string, unknown>;
+    pending: Array<{ slot: Slot; src: unknown }>;
+  };
+  const pendingFor = (src: unknown): Array<{ slot: Slot; src: unknown }> =>
+    Array.isArray(src)
+      ? src.map((v, i) => ({ slot: i, src: v }))
+      : Object.entries(src as Record<string, unknown>).map(([k, v]) => ({
+          slot: k.replace(/\u0000/g, ""),
+          src: v,
+        }));
+  const stack: Frame[] = [
+    { dst: root as Frame["dst"], pending: pendingFor(value) },
+  ];
+
+  while (stack.length > 0) {
+    const frame = stack.pop()!;
+    for (const { slot, src } of frame.pending) {
+      let sanitized: unknown;
+      if (typeof src === "string") {
+        sanitized = src.replace(/\u0000/g, "");
+      } else if (src !== null && typeof src === "object") {
+        // New container: a fresh array or a null-prototype object (so an input
+        // "__proto__" key is preserved as a normal own property, not dropped).
+        sanitized = Array.isArray(src)
+          ? new Array(src.length)
+          : Object.create(null);
+        stack.push({
+          dst: sanitized as Frame["dst"],
+          pending: pendingFor(src),
+        });
+      } else {
+        sanitized = src;
+      }
+      if (typeof slot === "number") {
+        (frame.dst as unknown[])[slot] = sanitized;
+      } else {
+        (frame.dst as Record<string, unknown>)[slot] = sanitized;
+      }
+    }
+  }
+  return root as T;
+}
+
 const nuqPool = new Pool({
   connectionString: config.NUQ_DATABASE_URL, // may be a pgbouncer transaction pooler URL
   application_name: "nuq",
@@ -1377,9 +1457,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
       const start = Date.now();
       try {
+        const sanitizedReturnvalue = stripNulBytes(returnvalue);
         const result = await nuqPool.query(
           `UPDATE ${this.queueName} SET status = 'completed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), returnvalue = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`,
-          [id, lock, returnvalue],
+          [id, lock, sanitizedReturnvalue],
         );
 
         const success = result.rowCount !== 0;
@@ -1435,9 +1516,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
       const start = Date.now();
       try {
+        const sanitizedFailedReason = stripNulBytes(failedReason);
         const result = await nuqPool.query(
           `UPDATE ${this.queueName} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`,
-          [id, lock, failedReason],
+          [id, lock, sanitizedFailedReason],
         );
 
         const success = result.rowCount !== 0;
