@@ -72,7 +72,10 @@ const {
       return {
         from: () => ({
           where: () => ({
-            limit: () => Promise.resolve(rows),
+            limit: () =>
+              !isGatewayLookup && state.dbLimitOverride
+                ? state.dbLimitOverride()
+                : Promise.resolve(rows),
           }),
         }),
       };
@@ -101,6 +104,9 @@ const {
       gatewayStubRow: null as unknown,
       // Makes the gateway lookup throw, to prove a failure is never cached.
       gatewayStubThrows: false,
+      // When set, replaces the team → org_id query result (e.g. to hold a
+      // lookup open and observe how many are issued).
+      dbLimitOverride: null as (() => Promise<unknown[]>) | null,
       configRef: {} as Record<string, unknown>,
     },
   };
@@ -364,6 +370,136 @@ describe("ensureTrackingContext warm-cache short-circuit", () => {
 
     // No additional getEntity calls for provisioning.
     expect(mockEntityGet.mock.calls.length).toBe(callsAfterWarm);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Org moves: the team → org cache must expire and re-provision under the new org
+// ---------------------------------------------------------------------------
+
+describe("team org change", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("keeps billing the cached org while the mapping is fresh", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1" }),
+    );
+
+    // Org moves in the DB, but the cache has not expired yet (default 300s).
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    vi.advanceTimersByTime(299_000);
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1" }),
+    );
+  });
+
+  it("re-reads the org after the TTL and provisions the entity under the new org", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1", entityId: "team-1" }),
+    );
+    const entityGetsBefore = mockEntityGet.mock.calls.length;
+
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    // The entity does not exist under the new customer yet.
+    mockEntityGet.mockResolvedValue(null);
+    vi.advanceTimersByTime(301_000);
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+
+    // Provisioning ran again for the (org-2, team-1) pair...
+    expect(mockEntityGet.mock.calls.length).toBe(entityGetsBefore + 1);
+    expect(mockEntityGet).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2", entityId: "team-1" }),
+    );
+    expect(mockEntityCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: "org-2", entityId: "team-1" }),
+    );
+    // ...and usage is billed to the new org.
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2", entityId: "team-1" }),
+    );
+
+    // Warm again under org-2: no further provisioning calls.
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockEntityGet.mock.calls.length).toBe(entityGetsBefore + 1);
+  });
+
+  it("checkCredits follows the org move too", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.checkCredits({ teamId: "team-1", value: 1 });
+    expect(mockCheck).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1" }),
+    );
+
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    vi.advanceTimersByTime(301_000);
+
+    await svc.checkCredits({ teamId: "team-1", value: 1 });
+    expect(mockCheck).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2" }),
+    );
+  });
+
+  it("collapses concurrent expired-cache refreshes into one DB lookup", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    vi.advanceTimersByTime(301_000);
+
+    // Make the org lookup observable and slow.
+    let resolveLookup!: (rows: unknown[]) => void;
+    let lookups = 0;
+    state.dbLimitOverride = () => {
+      lookups++;
+      return new Promise<unknown[]>(resolve => {
+        resolveLookup = resolve;
+      });
+    };
+
+    const a = svc.trackCredits({ teamId: "team-1", value: 1 });
+    const b = svc.trackCredits({ teamId: "team-1", value: 1 });
+    const c = svc.trackCredits({ teamId: "team-1", value: 1 });
+    await Promise.resolve();
+    expect(lookups).toBe(1);
+
+    state.dbLimitOverride = null;
+    resolveLookup([{ org_id: "org-2" }]);
+    await Promise.all([a, b, c]);
+
+    expect(lookups).toBe(1);
+    for (const call of mockTrack.mock.calls.slice(-3)) {
+      expect(call[0]).toEqual(expect.objectContaining({ customerId: "org-2" }));
+    }
+  });
+
+  it("honours AUTUMN_ORG_CACHE_TTL_SECONDS", async () => {
+    vi.useFakeTimers();
+    state.configRef = { AUTUMN_ORG_CACHE_TTL_SECONDS: 10 };
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    vi.advanceTimersByTime(11_000);
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2" }),
+    );
   });
 });
 
@@ -764,6 +900,7 @@ describe("firebill routing", () => {
     // Default every test to not partner-provisioned, which almost every team is.
     state.gatewayStubRow = null;
     state.gatewayStubThrows = false;
+    state.dbLimitOverride = null;
   });
 
   afterEach(() => {

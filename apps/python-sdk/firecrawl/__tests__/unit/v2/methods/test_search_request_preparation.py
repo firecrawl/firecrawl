@@ -1,4 +1,7 @@
+from unittest.mock import Mock
+
 import pytest
+from firecrawl.v2.client import FirecrawlClient
 from firecrawl.v2.types import SearchRequest, ScrapeOptions, Source
 from firecrawl.v2.methods.search import _prepare_search_request
 
@@ -42,6 +45,7 @@ class TestSearchRequestPreparation:
             limit=10,
             tbs="qdr:w",
             location="US",
+            country="de",
             ignore_invalid_urls=False,
             timeout=30000,
             highlights=False,
@@ -56,6 +60,7 @@ class TestSearchRequestPreparation:
         assert data["limit"] == 10
         assert data["tbs"] == "qdr:w"
         assert data["location"] == "US"
+        assert data["country"] == "de"
         assert data["timeout"] == 30000
         assert data["highlights"] is False
         
@@ -109,6 +114,35 @@ class TestSearchRequestPreparation:
         # When limit and timeout are explicitly None, they should be excluded
         assert "query" in data
         assert len(data) == 1  # Only query should be present
+
+    def test_country_is_included_when_set(self):
+        """Test that country reaches the prepared body."""
+        request = SearchRequest(query="test", country="de")
+        data = _prepare_search_request(request)
+
+        assert data["country"] == "de"
+
+    def test_country_is_omitted_when_unset(self):
+        """Test that the body omits country when it is not set."""
+        request = SearchRequest(query="test")
+        data = _prepare_search_request(request)
+
+        assert "country" not in data
+
+    def test_client_search_forwards_country(self):
+        """Test that the sync client puts country in the posted body."""
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"success": True, "data": {}}
+
+        client = FirecrawlClient(api_key="fc-test")
+        client.http_client.post = Mock(return_value=response)
+
+        client.search("test", country="de")
+
+        path, body = client.http_client.post.call_args[0]
+        assert path == "/v2/search"
+        assert body["country"] == "de"
 
     def test_domain_filters_are_mutually_exclusive(self):
         """Test that include_domains and exclude_domains cannot both be set."""

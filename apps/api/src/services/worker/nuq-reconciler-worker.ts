@@ -3,6 +3,7 @@ import { config } from "../../config";
 import { shutdownTracing } from "../../otel";
 import { logger as _logger } from "../../lib/logger";
 import { reconcileConcurrencyQueue } from "../../lib/concurrency-queue-reconciler";
+import { repairCrawlJobDoneMarkers } from "../../lib/crawl-redis";
 import { Counter, register } from "prom-client";
 import Express from "express";
 
@@ -83,6 +84,12 @@ const reconcilerJobsRecoveredTotal = new Counter({
   while (!isShuttingDown) {
     if (!reconcilerInFlight) {
       reconcilerInFlight = true;
+
+      try {
+        await repairCrawlJobDoneMarkers(_logger);
+      } catch (error) {
+        _logger.error("Crawl completion marker repair run failed", { error });
+      }
 
       try {
         const summary = await reconcileConcurrencyQueue({

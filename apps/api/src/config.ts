@@ -171,6 +171,16 @@ const configSchema = z.object({
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
+  // How long a team → org mapping is trusted in-process before it is re-read
+  // from the DB. Bounded because a team's org changes when accounts are merged
+  // or moved: every warm pod otherwise keeps billing the old Autumn customer
+  // (and 404s on the entity that no longer lives there) until it restarts.
+  AUTUMN_ORG_CACHE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(3600)
+    .default(300),
   RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
@@ -597,6 +607,8 @@ const configSchema = z.object({
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 
   ZDRCLEANER_HEARTBEAT_URL: z.string().optional(),
+
+  CCLOG_WORKER_HEARTBEAT_URL: z.string().optional(),
 
   // Deterministic JSON extraction (reusable-json-mode)
   EXTRACT_CODEGEN_MODEL: z.string().default("gemini-3.1-flash-lite"),

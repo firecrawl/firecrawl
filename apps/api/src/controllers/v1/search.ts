@@ -327,7 +327,9 @@ export async function searchController(
         zeroDataRetention,
       },
       false,
-    );
+    ).catch(error => {
+      logger.error("Failed to log search", { error, jobId });
+    });
 
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;
