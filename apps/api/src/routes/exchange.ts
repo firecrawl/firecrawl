@@ -79,7 +79,8 @@ function exchangeProxy(
           ),
           ...(hasBody ? { "content-type": "application/json" } : {}),
           "x-exchange-team-id": authedReq.auth.team_id,
-          "x-exchange-retrieval-enabled": authedReq.acuc?.flags?.exchangeRetrieve === true ? "true" : "false",
+          "x-exchange-retrieval-enabled":
+            authedReq.acuc?.flags?.exchangeRetrieve === true ? "true" : "false",
         },
         body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
         signal: AbortSignal.timeout(timeout),
@@ -114,192 +115,94 @@ function exchangeProxy(
   };
 }
 
+const authenticate = authMiddleware(RateLimiterMode.Labs);
+const discover = wrap(exchangeProxy(DISCOVER_TIMEOUT_MS));
+const retrieve = wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS));
+const analytics = wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS));
+const management = wrap(
+  exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false }),
+);
+const supply = wrap(
+  exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false }),
+);
+const applications = wrap(
+  exchangeProxy(APPLICATIONS_TIMEOUT_MS, { requiresRetrieveFlag: false }),
+);
+const claims = wrap(
+  exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false }),
+);
+const ingest = wrap(
+  exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false }),
+);
+
 export const exchangeRouter = express.Router();
 
-exchangeRouter.get(
-  "/discover{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
-);
+exchangeRouter.get("/discover{/*path}", authenticate, discover);
 
-exchangeRouter.post(
-  "/retrieve",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
-);
+exchangeRouter.post("/retrieve", authenticate, retrieve);
 
-exchangeRouter.get(
-  "/analytics{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS)),
-);
+exchangeRouter.get("/analytics{/*path}", authenticate, analytics);
 
-exchangeRouter.get(
-  "/platform{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter
+  .route("/platform{/*path}")
+  .get(authenticate, management)
+  .post(authenticate, management);
 
-exchangeRouter.post(
-  "/platform{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter
+  .route("/rates/lookup")
+  .post(authenticate, management)
+  .get(authenticate, management);
 
-exchangeRouter.post(
-  "/rates/lookup",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter
+  .route("/publisher/supply/key")
+  .get(authenticate, supply)
+  .post(authenticate, supply);
 
-exchangeRouter.get(
-  "/rates/lookup",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
-
-exchangeRouter.get(
-  "/publisher/supply/key",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
-
-exchangeRouter.get(
-  "/publisher{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter.get("/publisher{/*path}", authenticate, management);
 
 exchangeRouter.post(
   "/publisher/bounties",
-  authMiddleware(RateLimiterMode.Labs),
+  authenticate,
   bountyBlocklistMiddleware,
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+  management,
 );
 
-exchangeRouter.put(
-  "/publisher/bounties/:id",
-  authMiddleware(RateLimiterMode.Labs),
-  bountyBlocklistMiddleware,
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter
+  .route("/publisher/bounties/:id")
+  .put(authenticate, bountyBlocklistMiddleware, management)
+  .delete(authenticate, management);
 
-exchangeRouter.delete(
-  "/publisher/bounties/:id",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter.post("/publisher/bounties/:id/claim", authenticate, management);
 
-exchangeRouter.post(
-  "/publisher/bounties/:id/claim",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter.post("/publisher/bounties/:id/submit", authenticate, management);
 
-exchangeRouter.post(
-  "/publisher/bounties/:id/submit",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter.post("/publisher/bounties/:id/skill", authenticate, management);
 
-exchangeRouter.post(
-  "/publisher/bounties/:id/skill",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter.post("/applications", authenticate, applications);
 
-exchangeRouter.post(
-  "/applications",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(APPLICATIONS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter.post("/applications/:id/withdraw", authenticate, applications);
 
-exchangeRouter.post(
-  "/applications/:id/withdraw",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(APPLICATIONS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter
+  .route("/claims")
+  .get(authenticate, claims)
+  .post(authenticate, claims);
 
-exchangeRouter.get(
-  "/claims",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter.post("/claims/:id/release", authenticate, claims);
 
-exchangeRouter.post(
-  "/claims",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter.post("/claims/:id/verify", authenticate, claims);
 
-exchangeRouter.post(
-  "/claims/:id/release",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter
+  .route("/supply{/*path}")
+  .get(authenticate, supply)
+  .post(authenticate, supply)
+  .put(authenticate, supply)
+  .delete(authenticate, supply);
 
-exchangeRouter.post(
-  "/claims/:id/verify",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter.post("/records/fetch", authenticate, retrieve);
 
-exchangeRouter.post(
-  "/publisher/supply/key",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
-
-exchangeRouter.get(
-  "/supply{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
-
-exchangeRouter.post(
-  "/supply{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
-
-exchangeRouter.put(
-  "/supply{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
-
-exchangeRouter.delete(
-  "/supply{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
-
-exchangeRouter.post(
-  "/records/fetch",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
-);
-
-exchangeRouter.get(
-  "/ingest{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
-
-exchangeRouter.post(
-  "/ingest{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
-
-exchangeRouter.patch(
-  "/ingest{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
-
-exchangeRouter.delete(
-  "/ingest{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
-);
+exchangeRouter
+  .route("/ingest{/*path}")
+  .get(authenticate, ingest)
+  .post(authenticate, ingest)
+  .patch(authenticate, ingest)
+  .delete(authenticate, ingest);
