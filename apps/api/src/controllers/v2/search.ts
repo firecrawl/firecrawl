@@ -27,7 +27,7 @@ import { CategoryOption } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
-import { withZeroDataRetention } from "../../lib/otel-tracer";
+import { withSpan, SpanKind } from "../../lib/otel-tracer";
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
@@ -55,9 +55,14 @@ export async function searchController(
     enterprise.includes("zdr") ||
     enterprise.includes("anon");
 
-  return withZeroDataRetention(zeroDataRetentionTrace, () =>
-    searchControllerInner(req, res),
-  );
+  return withSpan("api.search.request", () => searchControllerInner(req, res), {
+    kind: SpanKind.SERVER,
+    attributes: {
+      "api.version": "v2",
+      "search.team_id": req.auth.team_id,
+    },
+    zeroDataRetention: zeroDataRetentionTrace,
+  });
 }
 
 async function searchControllerInner(
