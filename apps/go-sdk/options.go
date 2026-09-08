@@ -171,6 +171,7 @@ type SearchOptions struct {
 	Limit             *int           `json:"limit,omitempty"`
 	TBS               *string        `json:"tbs,omitempty"`
 	Location          *string        `json:"location,omitempty"`
+	Country           *string        `json:"country,omitempty"`
 	IgnoreInvalidURLs *bool          `json:"ignoreInvalidURLs,omitempty"`
 	Timeout           *int           `json:"timeout,omitempty"`
 	Highlights        *bool          `json:"highlights,omitempty"`
