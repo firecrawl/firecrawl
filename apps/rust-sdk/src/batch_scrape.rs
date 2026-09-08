@@ -485,6 +485,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_batch_scrape_status_accepts_negative_credits_used() {
+        // Self-hosted instances without a billing record report creditsUsed: -1.
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/batch/scrape/batch-selfhosted")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "status": "completed",
+                    "total": 1,
+                    "completed": 1,
+                    "creditsUsed": -1,
+                    "data": [{ "markdown": "# Page" }]
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), None::<&str>).unwrap();
+        let status = client
+            .get_batch_scrape_status("batch-selfhosted")
+            .await
+            .unwrap();
+
+        assert_eq!(status.status, JobStatus::Completed);
+        assert_eq!(status.credits_used, Some(-1));
+        assert_eq!(status.data.len(), 1);
+        mock.assert();
+    }
+
+    #[tokio::test]
     async fn test_batch_scrape_with_invalid_urls() {
         let mut server = mockito::Server::new_async().await;
 
