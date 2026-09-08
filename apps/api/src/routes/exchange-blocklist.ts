@@ -3,7 +3,7 @@ import { parse } from "tldts";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import type { RequestWithAuth } from "../controllers/v1/types";
 
-export function bountyDomains(body: Record<string, unknown>): string[] {
+function bountyDomains(body: Record<string, unknown>): string[] {
   const fields = [
     body.title,
     body.description,

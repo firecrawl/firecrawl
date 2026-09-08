@@ -36,7 +36,7 @@ export const SUBMIT_TRANSIENT_RETRY_DELAY_MS = 250;
 // Slack for the submit round trip: fire-pdf validates `deadline_at - now`
 // against MIN_DEADLINE_MS on arrival, so the advertised deadline must clear
 // it by at least the request's flight time.
-export const INLINE_SUBMIT_SLACK_MS = 5_000;
+const INLINE_SUBMIT_SLACK_MS = 5_000;
 // The smallest caller window async accepts. Below it, the margin would push
 // the inline job deadline to (or under) fire-pdf's minimum and the submit
 // would be rejected on arrival; such requests take the sync path instead.
