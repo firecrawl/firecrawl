@@ -6,6 +6,7 @@ import {
   type BatchScrapeOptions,
   type PaginationConfig,
   JobTimeoutError,
+  JobFailedError,
   SdkError,
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
@@ -86,12 +87,18 @@ export async function getBatchScrapeStatus(
       expiresAt?: string;
       next?: string | null;
       data?: Document[];
+      error?: string;
     }>(`/v2/batch/scrape/${jobId}`);
-    if (res.status !== 200 || !res.data?.success)
+    // A kickoff failure responds 200 with success:false and status:"failed"; parse it as a
+    // normal terminal job instead of throwing, so the waiter can raise JobFailedError.
+    const isKickoffFailure = res.status === 200 && res.data?.success === false && res.data?.status === "failed";
+    if (!isKickoffFailure && (res.status !== 200 || !res.data?.success))
       throwForBadResponse(res, "get batch scrape status");
     const body = res.data;
     const initialDocs = (body.data || []) as Document[];
-    const auto = pagination?.autoPaginate ?? true;
+    // Unset autoPaginate paginates only once the job is completed, so a failed/cancelled
+    // job's result pages are never fetched before the waiter can raise JobFailedError.
+    const auto = pagination?.autoPaginate ?? (body.status === "completed");
     if (!auto || !body.next) {
       return {
         id: jobId,
@@ -102,6 +109,7 @@ export async function getBatchScrapeStatus(
         expiresAt: body.expiresAt,
         next: body.next ?? null,
         data: initialDocs,
+        error: body.error,
       };
     }
 
@@ -118,8 +126,9 @@ export async function getBatchScrapeStatus(
       total: body.total ?? 0,
       creditsUsed: body.creditsUsed,
       expiresAt: body.expiresAt,
-      next: null,
-      data: aggregated,
+      next: aggregated.next,
+      data: aggregated.documents,
+      error: body.error,
     };
   } catch (err: any) {
     if (err?.isAxiosError)
@@ -176,16 +185,12 @@ export async function waitForBatchCompletion(
   const start = Date.now();
 
   while (true) {
+    let status: BatchScrapeJob | null = null;
     try {
-      const status = await getBatchScrapeStatus(http, jobId);
-
-      if (["completed", "failed", "cancelled"].includes(status.status)) {
-        return status;
-      }
+      status = await getBatchScrapeStatus(http, jobId);
     } catch (err: any) {
       // Don't retry on permanent errors (4xx) - re-throw immediately with jobId context
       if (!isRetryableError(err)) {
-        // Create new error with jobId for better debugging (non-retryable errors like 404)
         if (err instanceof SdkError) {
           const errorWithJobId = new SdkError(
             err.message,
@@ -199,6 +204,13 @@ export async function waitForBatchCompletion(
         throw err;
       }
       // Otherwise, retry after delay - error might be transient (network issue, timeout, 5xx, etc.)
+    }
+
+    if (status) {
+      if (status.status === "completed") return status;
+      if (status.status === "failed" || status.status === "cancelled") {
+        throw new JobFailedError(status, jobId, status.error);
+      }
     }
 
     if (timeout != null && Date.now() - start > timeout * 1000) {

@@ -4,6 +4,7 @@ import pytest
 from dotenv import load_dotenv
 from firecrawl import Firecrawl
 from firecrawl.v2.types import ScrapeOptions, PaginationConfig
+from firecrawl.v2.utils import JobFailedError
 
 load_dotenv()
 
@@ -27,12 +28,14 @@ class TestBatchScrapeE2E:
             "https://firecrawl.dev",
         ]
 
-        job = self.client.batch_scrape(urls, formats=["markdown"], poll_interval=1, wait_timeout=120)
-
-        assert job.status in ["completed", "failed"]
-        assert job.completed >= 0
-        assert job.total >= 0
-        assert isinstance(job.data, list)
+        try:
+            job = self.client.batch_scrape(urls, formats=["markdown"], poll_interval=1, wait_timeout=120)
+            assert job.status == "completed"
+            assert job.completed >= 0
+            assert job.total >= 0
+            assert isinstance(job.data, list)
+        except JobFailedError as e:
+            assert e.job.status in ["failed", "cancelled"]
 
     def test_start_batch_minimal_and_status(self):
         """Start via start_batch_scrape (minimal), then fetch status once."""
@@ -107,23 +110,25 @@ class TestBatchScrapeE2E:
             mobile=False,
         )
 
-        job = self.client.batch_scrape(
-            urls,
-            formats=opts.formats,
-            only_main_content=opts.only_main_content,
-            mobile=opts.mobile,
-            ignore_invalid_urls=True,
-            max_concurrency=2,
-            zero_data_retention=False,
-            poll_interval=1,
-            wait_timeout=180,
-            integration="_e2e-test",
-        )
-
-        assert job.status in ["completed", "failed"]
-        assert job.completed >= 0
-        assert job.total >= 0
-        assert isinstance(job.data, list)
+        try:
+            job = self.client.batch_scrape(
+                urls,
+                formats=opts.formats,
+                only_main_content=opts.only_main_content,
+                mobile=opts.mobile,
+                ignore_invalid_urls=True,
+                max_concurrency=2,
+                zero_data_retention=False,
+                poll_interval=1,
+                wait_timeout=180,
+                integration="_e2e-test",
+            )
+            assert job.status == "completed"
+            assert job.completed >= 0
+            assert job.total >= 0
+            assert isinstance(job.data, list)
+        except JobFailedError as e:
+            assert e.job.status in ["failed", "cancelled"]
 
     def test_cancel_batch(self):
         """Start a batch and cancel it."""

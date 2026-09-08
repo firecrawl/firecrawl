@@ -15,6 +15,14 @@ class FirecrawlError(Exception):
         self.response = response
 
 
+class JobFailedError(FirecrawlError):
+    """Raised when a waited-on job reaches a failed or cancelled terminal state."""
+
+    def __init__(self, message: str, job=None):
+        super().__init__(message)
+        self.job = job
+
+
 class BadRequestError(FirecrawlError):
     """Raised when the request is invalid (400)."""
     pass

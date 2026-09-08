@@ -1123,6 +1123,7 @@ class BatchScrapeJob(BaseModel):
     expires_at: Optional[datetime] = None
     next: Optional[str] = None
     data: List[Document] = []
+    error: Optional[str] = None
 
 
 class BatchScrapeStatusRequest(BaseModel):
@@ -2366,7 +2367,7 @@ class ClientConfig(BaseModel):
 class PaginationConfig(BaseModel):
     """Configuration for pagination behavior."""
 
-    auto_paginate: bool = True
+    auto_paginate: Optional[bool] = None  # None: SDK decides per endpoint
     max_pages: Optional[int] = Field(default=None, ge=0)
     max_results: Optional[int] = Field(default=None, ge=0)
     max_wait_time: Optional[int] = Field(default=None, ge=0)  # seconds
