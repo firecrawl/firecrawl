@@ -1,4 +1,4 @@
-import { bountyBlocklistMiddleware } from "./bounty-blocklist";
+import { bountyBlocklistMiddleware } from "./exchange-blocklist";
 import express, { Request, Response } from "express";
 import { Agent, fetch } from "undici";
 import { config } from "../config";
