@@ -24,10 +24,13 @@ describe("v2.extract e2e", () => {
    * request retryable: the wrapper cannot run client.extract again, because a
    * second run would start a second job.
    *
-   * The bound is 160s, which is the time an extract needs. Extract is the
-   * slowest job here, so every test below gives it the same 180_000 ms base.
-   * The worst case is 160s, plus one poll interval, plus the retry budget,
-   * which is 312s of the 330s that testTimeoutMs(180_000) allows.
+   * The bound is 180s, the time an extract needs, and the same bound batch
+   * uses. Extract is the slowest job here, so every test below gives it a
+   * 240_000 ms base, as batch does.
+   *
+   * The guard is B + poll < base, because the last read can start just inside
+   * the bound and then spend the whole retry budget. Here the worst case is
+   * 180 + 2 + 150 = 332s of the 390s that testTimeoutMs(240_000) allows.
    */
   async function extractAndWait(
     args: Parameters<typeof client.startExtract>[0],
@@ -35,14 +38,14 @@ describe("v2.extract e2e", () => {
     const started = await client.startExtract(args);
     if (!started.id) return started;
     return waitForJob(() => client.getExtractStatus(started.id!), {
-      timeout: 160,
+      timeout: 180,
     });
   }
 
   test("extract minimal with prompt", async () => {
     const resp = await extractAndWait({ urls: ["https://docs.firecrawl.dev"], prompt: "Extract the main page title" });
     expect(typeof resp.success === "boolean" || resp.success == null).toBe(true);
-  }, testTimeoutMs(180_000));
+  }, testTimeoutMs(240_000));
 
   test("extract with schema", async () => {
     const schema = {
@@ -65,7 +68,7 @@ describe("v2.extract e2e", () => {
       expect(typeof resp.data).toBe("object");
       expect((resp.data as any).title).toBeTruthy();
     }
-  }, testTimeoutMs(180_000));
+  }, testTimeoutMs(240_000));
 
   test("extract with zod schema", async () => {
     const schema = z.object({
@@ -86,6 +89,6 @@ describe("v2.extract e2e", () => {
       expect(typeof resp.data).toBe("object");
       expect(schema.safeParse(resp.data).success).toBe(true);
     }
-  }, testTimeoutMs(180_000));
+  }, testTimeoutMs(240_000));
 });
 

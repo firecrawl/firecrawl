@@ -219,8 +219,16 @@ describe("e2e rate-limit retry helper", () => {
       for (let i = 0; i < lines.length; i++) {
         if (!lines[i].includes("waitForJob(")) continue;
 
-        const timeout = lines[i].match(/timeout:\s*(\d+)/);
-        const poll = lines[i].match(/pollInterval:\s*(\d+)/);
+        // The options can sit on the call line or on the lines below it, so
+        // read the whole call. Stop at the line that closes it.
+        let call = lines[i];
+        for (let j = i + 1; j < lines.length && j <= i + 4; j++) {
+          call += `\n${lines[j]}`;
+          if (/\)\s*;/.test(lines[j])) break;
+        }
+
+        const timeout = call.match(/timeout:\s*(\d+)/);
+        const poll = call.match(/pollInterval:\s*(\d+)/);
         const boundMs = timeout
           ? Number(timeout[1]) * 1000
           : DEFAULT_JOB_TIMEOUT_MS;
