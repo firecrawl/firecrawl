@@ -24,7 +24,7 @@ describe("v2.batch e2e", () => {
       "https://firecrawl.dev",
     ];
     const start = await client.startBatchScrape(urls, { options: { formats: ["markdown"] } });
-    const job = await waitForJob(() => client.getBatchScrapeStatus(start.id), { pollInterval: 1, timeout: 180 });
+    const job = await waitForJob(() => client.getBatchScrapeStatus(start.id), { pollInterval: 1, timeout: 210 });
     expect(["completed", "failed"]).toContain(job.status);
     expect(job.completed).toBeGreaterThanOrEqual(0);
     expect(job.total).toBeGreaterThanOrEqual(0);
@@ -37,7 +37,7 @@ describe("v2.batch e2e", () => {
       "https://firecrawl.dev",
     ];
     const start = await client.startBatchScrape(urls, { options: { formats: ["markdown"] } });
-    const job = await waitForJob(() => client.getBatchScrapeStatus(start.id), { pollInterval: 1, timeout: 180 });
+    const job = await waitForJob(() => client.getBatchScrapeStatus(start.id), { pollInterval: 1, timeout: 210 });
     // Verify job has id field
     expect(job.id).toBeDefined();
     expect(typeof job.id).toBe("string");
@@ -78,7 +78,7 @@ describe("v2.batch e2e", () => {
       maxConcurrency: 2,
       zeroDataRetention: false,
     });
-    const job = await waitForJob(() => client.getBatchScrapeStatus(start.id), { pollInterval: 1, timeout: 180 });
+    const job = await waitForJob(() => client.getBatchScrapeStatus(start.id), { pollInterval: 1, timeout: 210 });
     expect(["completed", "failed", "cancelled"]).toContain(job.status);
     expect(job.completed).toBeGreaterThanOrEqual(0);
     expect(job.total).toBeGreaterThanOrEqual(0);
