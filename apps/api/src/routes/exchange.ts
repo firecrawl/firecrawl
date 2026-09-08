@@ -79,6 +79,7 @@ function exchangeProxy(
           ),
           ...(hasBody ? { "content-type": "application/json" } : {}),
           "x-exchange-team-id": authedReq.auth.team_id,
+          "x-exchange-retrieval-enabled": authedReq.acuc?.flags?.exchangeRetrieve === true ? "true" : "false",
         },
         body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
         signal: AbortSignal.timeout(timeout),
