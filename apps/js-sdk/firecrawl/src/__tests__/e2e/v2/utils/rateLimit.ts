@@ -10,6 +10,20 @@
  * This helper wraps a client so every call waits for the limit window to reset
  * and then runs again. It is test-only code. The shipped SDK keeps its own retry
  * behaviour.
+ *
+ * Batch scrape creation counts against the scrape limit, not a limit of its
+ * own. Job status reads use the 500/min limit, so they almost never wait.
+ *
+ * The wrapper only runs a call again when the refused request created nothing.
+ * A single request is safe: the API rejected it, so no job exists. A composite
+ * method is not safe. It starts a job, then polls that job. The poll can hit
+ * the limit after the job exists, and a second run of the method would start a
+ * second job. The wrapper passes these methods straight through, so they get no
+ * retry. See COMPOSITE_METHODS.
+ *
+ * A suite that needs a job therefore does the two steps itself: it calls the
+ * start method, then waitForJob. Both calls go through the wrapper, so both
+ * retry, and the job starts once.
  */
 
 /** Attempts per call, including the first one. */
@@ -23,6 +37,92 @@ const MAX_WAIT_MS = 75_000;
 
 /** Added to the reset time so the retry lands after the window, not on it. */
 const WAIT_BUFFER_MS = 1_000;
+
+/**
+ * Worst-case time the retry adds to one call.
+ *
+ * The first attempt does not wait. Every later attempt waits first, and one
+ * wait is never longer than MAX_WAIT_MS. The value comes from the two bounds
+ * above, so it cannot drift from them.
+ */
+export const RETRY_BUDGET_MS = (MAX_ATTEMPTS - 1) * MAX_WAIT_MS;
+
+/**
+ * Jest timeout for a test that calls a wrapped client.
+ *
+ * Pass the time the test needs when the API answers at once. The result adds
+ * the retry budget, so a test that hits the limit still finishes inside its
+ * own timeout instead of failing on it.
+ */
+export function testTimeoutMs(baseMs: number): number {
+  return baseMs + RETRY_BUDGET_MS;
+}
+
+/**
+ * Client methods that start a job and then poll it.
+ *
+ * These never run again after a rate-limit error. A retry would call the whole
+ * method, which starts a second job. The single-request methods that the job
+ * waiters use inside, such as startCrawl and getCrawlStatus, keep their retry
+ * when a test calls them directly.
+ */
+export const COMPOSITE_METHODS: ReadonlySet<string> = new Set([
+  "crawl",
+  "crawlUrl",
+  "batchScrape",
+  "batchScrapeUrls",
+  "extract",
+  "agent",
+]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/** States a job stops in. Matches the waiters in src/v2/methods. */
+const TERMINAL_STATES = ["completed", "failed", "cancelled"];
+
+/** The part of a job snapshot this module reads. */
+interface JobSnapshot {
+  status?: string;
+}
+
+/**
+ * Polls a job that a test already started.
+ *
+ * The composite client methods, such as crawl, start a job and then poll it in
+ * one call, so the wrapper cannot run them again. A test uses this instead: it
+ * starts the job with the start method, then polls with the status method. Both
+ * calls go through the wrapper, so both keep their retry, and the job starts
+ * once. Compare waitForCrawlCompletion in src/v2/methods/crawl.ts, which this
+ * mirrors.
+ *
+ * @param getStatus Reads the job state. Call the wrapped client here.
+ * @param opts.pollInterval Seconds between reads. Least value is 1.
+ * @param opts.timeout Seconds to allow. Throws when the job runs longer.
+ */
+export async function waitForJob<T extends JobSnapshot>(
+  getStatus: () => Promise<T>,
+  opts: { pollInterval?: number; timeout?: number } = {},
+): Promise<T> {
+  const pollIntervalMs = Math.max(1000, (opts.pollInterval ?? 2) * 1000);
+  const startedAt = Date.now();
+
+  let snapshot = await getStatus();
+  while (!TERMINAL_STATES.includes(snapshot.status ?? "")) {
+    if (
+      opts.timeout != null &&
+      Date.now() - startedAt > opts.timeout * 1000
+    ) {
+      throw new Error(
+        `job did not finish in ${opts.timeout}s. Last status: ${snapshot.status}`,
+      );
+    }
+    await sleep(pollIntervalMs);
+    snapshot = await getStatus();
+  }
+  return snapshot;
+}
 
 function isPromiseLike(value: unknown): value is Promise<unknown> {
   return (
@@ -72,10 +172,6 @@ export function rateLimitWaitMs(err: unknown): number {
   return Math.min(waitMs, MAX_WAIT_MS);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 async function runWithRetry<T>(
   first: Promise<T>,
   again: () => Promise<T>,
@@ -104,7 +200,8 @@ async function runWithRetry<T>(
  * Wraps a client so each method call retries after a rate-limit error.
  *
  * The wrapper only covers the calls the test makes. Methods that return a value
- * other than a promise pass through unchanged.
+ * other than a promise pass through unchanged, and so do the composite methods
+ * listed in COMPOSITE_METHODS.
  */
 export function withRateLimitRetry<T extends object>(client: T): T {
   return new Proxy(client, {
@@ -112,15 +209,19 @@ export function withRateLimitRetry<T extends object>(client: T): T {
       const value = (target as Record<string | symbol, unknown>)[prop];
       if (typeof value !== "function") return value;
 
+      const name = String(prop);
+
       return (...args: unknown[]) => {
         const call = () =>
           (value as (...a: unknown[]) => unknown).apply(target, args);
         const result = call();
+        // A composite method already created a job, so never run it again.
+        if (COMPOSITE_METHODS.has(name)) return result;
         if (!isPromiseLike(result)) return result;
         return runWithRetry(
           result,
           call as () => Promise<unknown>,
-          String(prop),
+          name,
         );
       };
     },

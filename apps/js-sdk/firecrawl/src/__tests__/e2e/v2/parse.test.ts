@@ -1,7 +1,7 @@
 import Firecrawl from "../../../index";
 import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
-import { withRateLimitRetry } from "./utils/rateLimit";
+import { testTimeoutMs, withRateLimitRetry } from "./utils/rateLimit";
 import { describe, test, expect, beforeAll } from "@jest/globals";
 
 config();
@@ -42,7 +42,7 @@ describe("v2.parse e2e", () => {
       expect(doc.markdown).toContain("JS SDK Parse E2E");
       expect(doc.metadata?.creditsUsed).toBe(1);
     },
-    60_000,
+    testTimeoutMs(60_000),
   );
 
   test(
@@ -63,6 +63,6 @@ describe("v2.parse e2e", () => {
         ),
       ).rejects.toThrow();
     },
-    60_000,
+    testTimeoutMs(60_000),
   );
 });

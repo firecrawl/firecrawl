@@ -1,9 +1,18 @@
 import { describe, expect, jest, test } from "@jest/globals";
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import Firecrawl from "../../../index";
 import {
+  COMPOSITE_METHODS,
+  RETRY_BUDGET_MS,
   isRateLimitError,
   rateLimitWaitMs,
+  testTimeoutMs,
+  waitForJob,
   withRateLimitRetry,
 } from "../../e2e/v2/utils/rateLimit";
+
+type AsyncCall = () => Promise<string>;
 
 /** Reproduces the error the API returns when the per-minute limit is spent. */
 function rateLimitError(seconds: number): Error & { status: number } {
@@ -61,6 +70,119 @@ describe("e2e rate-limit retry helper", () => {
 
     await expect(client.scrape()).rejects.toThrow("invalid url");
     expect(scrape).toHaveBeenCalledTimes(1);
+  });
+
+  test("never runs a composite method again after a rate-limit error", async () => {
+    for (const name of COMPOSITE_METHODS) {
+      const method = jest.fn<AsyncCall>().mockRejectedValue(rateLimitError(1));
+      const client = withRateLimitRetry<Record<string, AsyncCall>>({
+        [name]: method,
+      });
+
+      const startedAt = Date.now();
+      await expect(client[name]()).rejects.toThrow(/Rate limit exceeded/);
+
+      // One call only. A second call would start a second job.
+      expect(method).toHaveBeenCalledTimes(1);
+      // The error surfaces at once, so no wait ran either.
+      expect(Date.now() - startedAt).toBeLessThan(1_000);
+    }
+  });
+
+  test("returns the result of a composite method that succeeds", async () => {
+    const crawl = jest.fn<AsyncCall>().mockResolvedValue("job");
+    const client = withRateLimitRetry({ crawl });
+
+    await expect(client.crawl()).resolves.toBe("job");
+    expect(crawl).toHaveBeenCalledTimes(1);
+  });
+
+  test("every composite name is a method on the client", () => {
+    const client = new Firecrawl({ apiKey: "test-key" }) as unknown as Record<
+      string,
+      unknown
+    >;
+
+    for (const name of COMPOSITE_METHODS) {
+      expect(typeof client[name]).toBe("function");
+    }
+  });
+
+  test("the client has no composite method the list misses", () => {
+    // Guard for a new waiter method. A composite starts a job through a
+    // *Waiter call, or forwards to another composite on this.
+    const source = readFileSync(
+      path.resolve(process.cwd(), "src/v2/client.ts"),
+      "utf-8",
+    );
+
+    const found = new Set<string>();
+    let current: string | undefined;
+    for (const line of source.split("\n")) {
+      const signature = line.match(/^\s{2}(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(/);
+      if (signature) current = signature[1];
+      if (!current) continue;
+      const startsJob =
+        /\b\w+Waiter\s*\(/.test(line) ||
+        new RegExp(`this\\.(${[...COMPOSITE_METHODS].join("|")})\\s*\\(`).test(
+          line,
+        );
+      if (startsJob) found.add(current);
+    }
+
+    // The scan must see the known composites, or it stopped working.
+    expect([...found].sort()).toEqual([...COMPOSITE_METHODS].sort());
+  });
+
+  test("no e2e suite calls a composite method", () => {
+    // A composite call in a suite has no retry, so a rate limit fails the test
+    // at once. The suites start the job and poll it instead.
+    const dir = path.resolve(process.cwd(), "src/__tests__/e2e/v2");
+    const suites = readdirSync(dir).filter(name => name.endsWith(".test.ts"));
+    expect(suites.length).toBeGreaterThan(0);
+
+    const calls = new RegExp(
+      `client\\.(${[...COMPOSITE_METHODS].join("|")})\\s*\\(`,
+    );
+    const offenders = suites.filter(name =>
+      calls.test(readFileSync(path.join(dir, name), "utf-8")),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  test("waitForJob polls until the job reaches a terminal state", async () => {
+    const getStatus = jest
+      .fn<() => Promise<{ status: string }>>()
+      .mockResolvedValueOnce({ status: "scraping" })
+      .mockResolvedValueOnce({ status: "scraping" })
+      .mockResolvedValueOnce({ status: "completed" });
+
+    // pollInterval floors at 1s, so three reads take about two seconds.
+    await expect(
+      waitForJob(getStatus, { pollInterval: 1, timeout: 30 }),
+    ).resolves.toEqual({ status: "completed" });
+    expect(getStatus).toHaveBeenCalledTimes(3);
+  }, 30_000);
+
+  test("waitForJob gives up when the job outlives its timeout", async () => {
+    const getStatus = jest
+      .fn<() => Promise<{ status: string }>>()
+      .mockResolvedValue({ status: "scraping" });
+
+    await expect(
+      waitForJob(getStatus, { pollInterval: 1, timeout: 1 }),
+    ).rejects.toThrow(/did not finish in 1s/);
+  }, 30_000);
+
+  test("the test timeout fits the worst-case serial retry", () => {
+    // Two waits at the 75s cap follow the first attempt.
+    expect(RETRY_BUDGET_MS).toBe(150_000);
+    expect(testTimeoutMs(60_000)).toBe(210_000);
+
+    // No pair of waits the helper can ask for exceeds the budget.
+    const longestWait = rateLimitWaitMs(rateLimitError(600));
+    expect(longestWait * 2).toBeLessThanOrEqual(RETRY_BUDGET_MS);
   });
 
   test("leaves values that are not promises alone", () => {

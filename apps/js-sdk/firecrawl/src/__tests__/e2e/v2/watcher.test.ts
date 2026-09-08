@@ -2,7 +2,7 @@ import Firecrawl from "../../../index";
 import { config } from "dotenv";
 import { describe, test, expect, beforeAll } from "@jest/globals";
 import { getIdentity } from "./utils/idmux";
-import { withRateLimitRetry } from "./utils/rateLimit";
+import { testTimeoutMs, withRateLimitRetry } from "./utils/rateLimit";
 
 config();
 
@@ -53,7 +53,7 @@ describe("v2.watcher e2e", () => {
     expect(snapshots).toBeGreaterThanOrEqual(1);
     expect(documents).toBeGreaterThanOrEqual(0);
     watcher.close();
-  }, 240_000);
+  }, testTimeoutMs(240_000));
 
   test("batch watcher with options (kind, pollInterval, timeout)", async () => {
     // client is initialized in beforeAll
@@ -92,6 +92,6 @@ describe("v2.watcher e2e", () => {
     expect(snapshots).toBeGreaterThanOrEqual(1);
     expect(gotCompleted || final.status !== "completed").toBe(true);
     watcher.close();
-  }, 300_000);
+  }, testTimeoutMs(300_000));
 });
 

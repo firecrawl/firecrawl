@@ -4,7 +4,7 @@
 import Firecrawl from "../../../index";
 import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
-import { withRateLimitRetry } from "./utils/rateLimit";
+import { testTimeoutMs, waitForJob, withRateLimitRetry } from "./utils/rateLimit";
 import { describe, test, expect, beforeAll } from "@jest/globals";
 import { z } from "zod";
 
@@ -19,10 +19,23 @@ beforeAll(async () => {
 });
 
 describe("v2.extract e2e", () => {
+  /**
+   * Starts an extract, then polls it. Mirrors client.extract, but keeps every
+   * request retryable: the wrapper cannot run client.extract again, because a
+   * second run would start a second job.
+   */
+  async function extractAndWait(
+    args: Parameters<typeof client.startExtract>[0],
+  ) {
+    const started = await client.startExtract(args);
+    if (!started.id) return started;
+    return waitForJob(() => client.getExtractStatus(started.id!));
+  }
+
   test("extract minimal with prompt", async () => {
-    const resp = await client.extract({ urls: ["https://docs.firecrawl.dev"], prompt: "Extract the main page title" });
+    const resp = await extractAndWait({ urls: ["https://docs.firecrawl.dev"], prompt: "Extract the main page title" });
     expect(typeof resp.success === "boolean" || resp.success == null).toBe(true);
-  }, 120_000);
+  }, testTimeoutMs(120_000));
 
   test("extract with schema", async () => {
     const schema = {
@@ -30,7 +43,7 @@ describe("v2.extract e2e", () => {
       properties: { title: { type: "string" } },
       required: ["title"],
     } as const;
-    const resp = await client.extract({
+    const resp = await extractAndWait({
       urls: ["https://docs.firecrawl.dev"],
       schema,
       prompt: "Extract the main page title",
@@ -45,13 +58,13 @@ describe("v2.extract e2e", () => {
       expect(typeof resp.data).toBe("object");
       expect((resp.data as any).title).toBeTruthy();
     }
-  }, 180_000);
+  }, testTimeoutMs(180_000));
 
   test("extract with zod schema", async () => {
     const schema = z.object({
       title: z.string(),
     });
-    const resp = await client.extract({
+    const resp = await extractAndWait({
       urls: ["https://docs.firecrawl.dev"],
       schema: schema,
       prompt: "Extract the main page title",
@@ -66,6 +79,6 @@ describe("v2.extract e2e", () => {
       expect(typeof resp.data).toBe("object");
       expect(schema.safeParse(resp.data).success).toBe(true);
     }
-  }, 180_000);
+  }, testTimeoutMs(180_000));
 });
 

@@ -5,7 +5,7 @@ import Firecrawl from "../../../index";
 import { z } from "zod";
 import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
-import { withRateLimitRetry } from "./utils/rateLimit";
+import { testTimeoutMs, withRateLimitRetry } from "./utils/rateLimit";
 import { describe, test, expect, beforeAll } from "@jest/globals";
 
 config();
@@ -31,7 +31,7 @@ describe("v2.scrape e2e", () => {
     if (!client) throw new Error();
     const doc = await client.scrape("https://docs.firecrawl.dev");
     assertValidDocument(doc);
-  }, 60_000);
+  }, testTimeoutMs(60_000));
 
   test("maximal: scrape with all options", async () => {
     if (!client) throw new Error();
@@ -72,7 +72,7 @@ describe("v2.scrape e2e", () => {
       maxAge: 60_000,
     });
     assertValidDocument(doc);
-  }, 90_000);
+  }, testTimeoutMs(90_000));
 
   test("json format with zod schema (auto-converted internally)", async () => {
     if (!client) throw new Error();
@@ -91,14 +91,14 @@ describe("v2.scrape e2e", () => {
       ],
     });
     expect(doc).toBeTruthy();
-  }, 90_000);
+  }, testTimeoutMs(90_000));
 
   test("summary format returns summary string", async () => {
     if (!client) throw new Error();
     const doc = await client.scrape("https://firecrawl.dev", { formats: ["summary"] });
     expect(typeof doc.summary).toBe("string");
     expect((doc.summary || "").length).toBeGreaterThan(10);
-  }, 90_000);
+  }, testTimeoutMs(90_000));
 
   test.each([
     ["markdown", "markdown"],
@@ -120,7 +120,7 @@ describe("v2.scrape e2e", () => {
       expect(Array.isArray(doc.links)).toBe(true);
       expect((doc.links || []).length).toBeGreaterThan(0);
     }
-  }, 90_000);
+  }, testTimeoutMs(90_000));
 
   test("images format: extract all images from webpage", async () => {
     if (!client) throw new Error();
@@ -132,7 +132,7 @@ describe("v2.scrape e2e", () => {
     expect(doc.images?.length).toBeGreaterThan(0);
     // Should find firecrawl logo/branding images
     expect(doc.images?.some(img => img.includes("firecrawl") || img.includes("logo"))).toBe(true);
-  }, 60_000);
+  }, testTimeoutMs(60_000));
 
   test("images format: works with multiple formats", async () => {
     if (!client) throw new Error();
@@ -153,7 +153,7 @@ describe("v2.scrape e2e", () => {
     
     // Should discover additional images beyond those with obvious extensions
     expect(doc.images?.length).toBeGreaterThanOrEqual(linkImages.length);
-  }, 60_000);
+  }, testTimeoutMs(60_000));
 
   test("invalid url should throw", async () => {
     if (!client) throw new Error();
