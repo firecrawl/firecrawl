@@ -51,5 +51,22 @@ describe("v2.map e2e", () => {
       expect(link.url.startsWith("http")).toBe(true);
     }
   }, 120_000);
+
+  test("with ignoreCache", async () => {
+    if (!client) throw new Error();
+    const resp = await client.map("https://docs.firecrawl.dev", {
+      ignoreCache: true,
+      limit: 10,
+    });
+
+    expect(resp).toBeTruthy();
+    expect(Array.isArray(resp.links)).toBe(true);
+    expect(resp.links.length).toBeLessThanOrEqual(10);
+
+    for (const link of resp.links as any[]) {
+      expect(typeof link.url).toBe("string");
+      expect(link.url.startsWith("http")).toBe(true);
+    }
+  }, 90_000);
 });
 
