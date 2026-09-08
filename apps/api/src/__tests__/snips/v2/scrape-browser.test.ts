@@ -64,9 +64,8 @@ describe("Scrape browser interact replay", () => {
     (TEST_PRODUCTION || HAS_FIRE_ENGINE);
 
   itIf(canRunReplayHappyPath)(
-    "replays scrape URL/waitFor/actions before interactive code runs",
+    "replays scrape URL, waitFor, and supported actions before interactive code runs",
     async () => {
-      const marker = crypto.randomUUID();
       const url = `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
       let scrapeId: string | null = null;
 
@@ -78,8 +77,8 @@ describe("Scrape browser interact replay", () => {
             waitFor: 500,
             actions: [
               {
-                type: "executeJavascript",
-                script: `window.__firecrawlReplayMarker = "${marker}";`,
+                type: "click",
+                selector: `a[href="/about"]`,
               },
             ],
           },
@@ -97,8 +96,7 @@ describe("Scrape browser interact replay", () => {
             language: "node",
             timeout: 60,
             code: `
-              const replayMarker = await page.evaluate(() => window.__firecrawlReplayMarker ?? null);
-              console.log(replayMarker ?? "missing-marker");
+              console.log(page.url());
             `,
           },
           identity,
@@ -106,7 +104,7 @@ describe("Scrape browser interact replay", () => {
 
         expect(executeResponse.statusCode).toBe(200);
         expect(executeResponse.body.success).toBe(true);
-        expect(executeResponse.body.stdout).toContain(marker);
+        expect(executeResponse.body.stdout).toContain("/about");
         expect(typeof executeResponse.body.cdpUrl).toBe("string");
         expect(executeResponse.body.cdpUrl.length).toBeGreaterThan(0);
       } finally {
@@ -131,8 +129,8 @@ describe("Scrape browser interact replay", () => {
             origin: "website-replay-test",
             actions: [
               {
-                type: "executeJavascript",
-                script: "window.open('about:blank', '_blank');",
+                type: "click",
+                selector: `a[href="https://github.com/firecrawl/firecrawl"]`,
               },
             ],
           },
@@ -182,6 +180,58 @@ describe("Scrape browser interact replay", () => {
 
         expect(visibleUrl).not.toBe("about:blank");
         expect(visibleUrl).toContain(TEST_SUITE_WEBSITE);
+      } finally {
+        if (scrapeId) {
+          await scrapeStopInteractiveBrowserRaw(scrapeId, identity);
+        }
+      }
+    },
+    scrapeTimeout,
+  );
+
+  itIf(canRunReplayHappyPath)(
+    "does not replay executeJavascript actions into the interactive browser session",
+    async () => {
+      const marker = crypto.randomUUID();
+      const url = `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
+      let scrapeId: string | null = null;
+
+      try {
+        const scrapeResponse = await scrapeRaw(
+          {
+            url,
+            origin: "website-replay-test",
+            actions: [
+              {
+                type: "executeJavascript",
+                script: `window.__firecrawlReplayMarker = "${marker}";`,
+              },
+            ],
+          },
+          identity,
+        );
+
+        expect(scrapeResponse.statusCode).toBe(200);
+        expect(scrapeResponse.body.success).toBe(true);
+        expect(typeof scrapeResponse.body.scrape_id).toBe("string");
+        scrapeId = scrapeResponse.body.scrape_id as string;
+
+        const executeResponse = await interactWithReplicaRetry(
+          scrapeId,
+          {
+            language: "node",
+            timeout: 60,
+            code: `
+              const replayMarker = await page.evaluate(() => window.__firecrawlReplayMarker ?? null);
+              console.log(replayMarker ?? "missing-marker");
+            `,
+          },
+          identity,
+        );
+
+        expect(executeResponse.statusCode).toBe(200);
+        expect(executeResponse.body.success).toBe(true);
+        expect(executeResponse.body.stdout).toContain("missing-marker");
       } finally {
         if (scrapeId) {
           await scrapeStopInteractiveBrowserRaw(scrapeId, identity);
