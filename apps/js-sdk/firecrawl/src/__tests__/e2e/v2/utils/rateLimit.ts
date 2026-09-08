@@ -48,6 +48,27 @@ const WAIT_BUFFER_MS = 1_000;
 export const RETRY_BUDGET_MS = (MAX_ATTEMPTS - 1) * MAX_WAIT_MS;
 
 /**
+ * Time waitForJob allows when the caller passes no timeout.
+ *
+ * A caller with no timeout must still get a bound. Without one the poll loop
+ * runs until the jest timeout, which hides the reason for the failure.
+ *
+ * The value fits between two limits.
+ *
+ * Upper limit. The smallest suite budget is testTimeoutMs(120_000), which is
+ * 270_000 ms. A deadline check can pass just inside the bound. The loop then
+ * sleeps one poll interval, and the wrapped status read can spend the whole
+ * retry budget, so the error surfaces at most
+ * 90_000 + 2_000 + RETRY_BUDGET_MS = 242_000 ms after the start. That leaves
+ * 28_000 ms of the suite budget for the request in flight and for teardown.
+ *
+ * Lower limit. The value is longer than MAX_WAIT_MS, so one rate-limit wait
+ * between two polls cannot spend the whole bound. The job always gets one more
+ * read after the longest single wait.
+ */
+export const DEFAULT_JOB_TIMEOUT_MS = 90_000;
+
+/**
  * Jest timeout for a test that calls a wrapped client.
  *
  * Pass the time the test needs when the API answers at once. The result adds
@@ -100,22 +121,24 @@ interface JobSnapshot {
  * @param getStatus Reads the job state. Call the wrapped client here.
  * @param opts.pollInterval Seconds between reads. Least value is 1.
  * @param opts.timeout Seconds to allow. Throws when the job runs longer.
+ *   Defaults to DEFAULT_JOB_TIMEOUT_MS, so the loop always has a bound.
  */
 export async function waitForJob<T extends JobSnapshot>(
   getStatus: () => Promise<T>,
   opts: { pollInterval?: number; timeout?: number } = {},
 ): Promise<T> {
   const pollIntervalMs = Math.max(1000, (opts.pollInterval ?? 2) * 1000);
+  const timeoutMs =
+    opts.timeout != null ? opts.timeout * 1000 : DEFAULT_JOB_TIMEOUT_MS;
   const startedAt = Date.now();
 
   let snapshot = await getStatus();
   while (!TERMINAL_STATES.includes(snapshot.status ?? "")) {
-    if (
-      opts.timeout != null &&
-      Date.now() - startedAt > opts.timeout * 1000
-    ) {
+    if (Date.now() - startedAt > timeoutMs) {
       throw new Error(
-        `job did not finish in ${opts.timeout}s. Last status: ${snapshot.status}`,
+        `job did not finish in ${timeoutMs / 1000}s. Last status: ${
+          snapshot.status
+        }`,
       );
     }
     await sleep(pollIntervalMs);

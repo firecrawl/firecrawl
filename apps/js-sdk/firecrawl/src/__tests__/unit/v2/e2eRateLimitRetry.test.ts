@@ -4,6 +4,7 @@ import path from "node:path";
 import Firecrawl from "../../../index";
 import {
   COMPOSITE_METHODS,
+  DEFAULT_JOB_TIMEOUT_MS,
   RETRY_BUDGET_MS,
   isRateLimitError,
   rateLimitWaitMs,
@@ -173,6 +174,37 @@ describe("e2e rate-limit retry helper", () => {
     await expect(
       waitForJob(getStatus, { pollInterval: 1, timeout: 1 }),
     ).rejects.toThrow(/did not finish in 1s/);
+  }, 30_000);
+
+  test("waitForJob bounds a caller that passes no timeout", async () => {
+    const getStatus = jest
+      .fn<() => Promise<{ status: string }>>()
+      .mockResolvedValue({ status: "scraping" });
+
+    // The bound is longer than the longest single rate-limit wait, so one wait
+    // between two polls cannot spend it.
+    const longestWait = rateLimitWaitMs(rateLimitError(600));
+    expect(DEFAULT_JOB_TIMEOUT_MS).toBeGreaterThan(longestWait);
+
+    // The error still surfaces inside the smallest suite budget. The last read
+    // can start just inside the bound and then spend the whole retry budget.
+    expect(DEFAULT_JOB_TIMEOUT_MS + RETRY_BUDGET_MS).toBeLessThan(
+      testTimeoutMs(120_000),
+    );
+
+    // Fake timers run the whole bound without waiting for it.
+    jest.useFakeTimers();
+    try {
+      const settled = expect(waitForJob(getStatus)).rejects.toThrow(
+        new RegExp(`did not finish in ${DEFAULT_JOB_TIMEOUT_MS / 1000}s`),
+      );
+      await jest.advanceTimersByTimeAsync(DEFAULT_JOB_TIMEOUT_MS + 5_000);
+      await settled;
+    } finally {
+      jest.useRealTimers();
+    }
+
+    expect(getStatus).toHaveBeenCalled();
   }, 30_000);
 
   test("the test timeout fits the worst-case serial retry", () => {
