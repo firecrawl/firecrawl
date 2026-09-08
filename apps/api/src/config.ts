@@ -513,6 +513,8 @@ const configSchema = z.object({
   SYS_INFO_MAX_CACHE_DURATION: z.coerce.number().default(150),
   USE_GO_MARKDOWN_PARSER: z.stringbool().optional(),
 
+  SENTRY_ENVIRONMENT: z.string().default("production"),
+
   // OpenTelemetry. Tracing is off unless an OTLP endpoint is set; spans are then
   // exported over http/protobuf at 100% sampling, and the SDK honors the
   // standard OTEL_EXPORTER_OTLP_* / OTEL_BSP_* / OTEL_RESOURCE_ATTRIBUTES
