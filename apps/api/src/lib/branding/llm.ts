@@ -120,6 +120,9 @@ export async function enhanceBrandingWithLLM(
       temperature: 0.1,
       experimental_telemetry: {
         isEnabled: true,
+        // The input carries the page screenshot / raw page content; too large
+        // for span attributes. Outputs stay recorded.
+        recordInputs: false,
         functionId: "enhanceBrandingWithLLM",
         metadata: {
           teamId: input.teamId || "unknown",

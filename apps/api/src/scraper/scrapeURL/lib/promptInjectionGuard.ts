@@ -108,6 +108,9 @@ async function classifyChunk(
       },
       experimental_telemetry: {
         isEnabled: !zeroDataRetention,
+        // The input carries the page screenshot / raw page content; too large
+        // for span attributes. Outputs stay recorded.
+        recordInputs: false,
         functionId: metadata.functionId
           ? metadata.functionId + "/promptInjectionGuard"
           : "promptInjectionGuard",
