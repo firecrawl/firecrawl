@@ -207,6 +207,50 @@ describe("e2e rate-limit retry helper", () => {
     expect(getStatus).toHaveBeenCalled();
   }, 30_000);
 
+  test("every waitForJob call fits the budget of its own test", () => {
+    // Guard for a new call site. A bound that outlasts its jest budget hides
+    // the specific message again, which is the fault this default fixes.
+    const dir = path.resolve(process.cwd(), "src/__tests__/e2e/v2");
+    const suites = readdirSync(dir).filter(name => name.endsWith(".test.ts"));
+    expect(suites.length).toBeGreaterThan(0);
+
+    let checked = 0;
+    for (const name of suites) {
+      const lines = readFileSync(path.join(dir, name), "utf-8").split("\n");
+
+      for (let i = 0; i < lines.length; i++) {
+        if (!lines[i].includes("waitForJob(")) continue;
+
+        const timeout = lines[i].match(/timeout:\s*(\d+)/);
+        const poll = lines[i].match(/pollInterval:\s*(\d+)/);
+        const boundMs = timeout
+          ? Number(timeout[1]) * 1000
+          : DEFAULT_JOB_TIMEOUT_MS;
+        const pollMs = Math.max(1000, (poll ? Number(poll[1]) : 2) * 1000);
+
+        // The budget belongs to the test that holds the call, so read the
+        // next testTimeoutMs below the call.
+        let budgetMs: number | undefined;
+        for (let j = i; j < lines.length; j++) {
+          const budget = lines[j].match(/testTimeoutMs\((\d[\d_]*)\)/);
+          if (budget) {
+            budgetMs = testTimeoutMs(Number(budget[1].replace(/_/g, "")));
+            break;
+          }
+        }
+        expect(budgetMs).toBeDefined();
+
+        // The last read can start just inside the bound and then spend the
+        // whole retry budget, so the error must still surface in the budget.
+        expect(boundMs + pollMs + RETRY_BUDGET_MS).toBeLessThan(budgetMs!);
+        checked++;
+      }
+    }
+
+    // The scan must see the known call sites, or it stopped working.
+    expect(checked).toBeGreaterThanOrEqual(7);
+  });
+
   test("the test timeout fits the worst-case serial retry", () => {
     // Two waits at the 75s cap follow the first attempt.
     expect(RETRY_BUDGET_MS).toBe(150_000);
