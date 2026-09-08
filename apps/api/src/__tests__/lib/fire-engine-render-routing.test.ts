@@ -1,4 +1,7 @@
-import { shouldForceNonRender } from "../../scraper/scrapeURL/engines/fire-engine";
+import {
+  buildFullPageScrollActions,
+  shouldForceNonRender,
+} from "../../scraper/scrapeURL/engines/fire-engine";
 
 const fmt = (types: string[]) => types.map(type => ({ type })) as any;
 
@@ -107,5 +110,30 @@ describe("shouldForceNonRender", () => {
         youtubePostprocessorWillRun: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("buildFullPageScrollActions", () => {
+  it("scrolls down then back up, pausing after each scroll", () => {
+    const actions = buildFullPageScrollActions();
+    const scrolls = actions.filter(a => a.type === "scroll");
+    const waits = actions.filter(a => a.type === "wait");
+
+    expect(scrolls.length).toBeGreaterThan(0);
+    expect(scrolls.length).toBe(waits.length);
+    expect(scrolls.length % 2).toBe(0);
+
+    const directions = scrolls.map(a => (a as any).direction);
+    const half = directions.length / 2;
+    expect(directions.slice(0, half).every(d => d === "down")).toBe(true);
+    expect(directions.slice(half).every(d => d === "up")).toBe(true);
+
+    for (let i = 0; i < actions.length; i += 2) {
+      expect(actions[i].type).toBe("scroll");
+      expect(actions[i + 1].type).toBe("wait");
+    }
+    expect(actions.every(a => a.metadata?.__firecrawl_internal === true)).toBe(
+      true,
+    );
   });
 });

@@ -63,6 +63,26 @@ const BRANDING_DEFAULT_WAIT_MS = 2000;
 
 const MAX_GUNZIPPED_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
+/** Number of viewport scrolls performed before a fullPage screenshot to trigger lazy loading. */
+const FULLPAGE_SCROLL_STEPS = 5;
+/** Pause (ms) after each pre-screenshot scroll so lazy content can load. */
+const FULLPAGE_SCROLL_WAIT_MS = 400;
+
+export function buildFullPageScrollActions(): InternalAction[] {
+  const step = (direction: "up" | "down"): InternalAction[] => [
+    { type: "scroll", direction, metadata: { __firecrawl_internal: true } },
+    {
+      type: "wait",
+      milliseconds: FULLPAGE_SCROLL_WAIT_MS,
+      metadata: { __firecrawl_internal: true },
+    },
+  ];
+  return [
+    ...Array.from({ length: FULLPAGE_SCROLL_STEPS }, () => step("down")).flat(),
+    ...Array.from({ length: FULLPAGE_SCROLL_STEPS }, () => step("up")).flat(),
+  ];
+}
+
 // This function does not take `Meta` on purpose. It may not access any
 // meta values to construct the request -- that must be done by the
 // `scrapeURLWithFireEngine*` functions.
@@ -400,6 +420,14 @@ export async function scrapeURLWithFireEngineChromeCDP(
         return rest;
       }),
 
+      // Scroll through the page before a full-page screenshot so lazy-loaded
+      // content (images, IntersectionObserver-driven sections) is rendered,
+      // then return to the top so the capture starts at the page head.
+      ...(!wantsRawBase64 &&
+      hasFormatOfType(meta.options.formats, "screenshot")?.fullPage
+        ? buildFullPageScrollActions()
+        : []),
+
       // Transform screenshot format into an action (unsupported by chrome-cdp)
       ...(hasFormatOfType(meta.options.formats, "screenshot")
         ? [
@@ -707,6 +735,9 @@ export function fireEngineMaxReasonableTime(
         (a, x) => (x.type === "wait" ? (x.milliseconds ?? 2500) + a : 250 + a),
         0,
       ) ?? 0) +
+      (hasFormatOfType(meta.options.formats, "screenshot")?.fullPage
+        ? FULLPAGE_SCROLL_STEPS * 2 * (FULLPAGE_SCROLL_WAIT_MS + 250)
+        : 0) +
       30000
     );
   }
