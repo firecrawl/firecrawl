@@ -27,10 +27,66 @@ function rateLimitError(seconds: number): Error & { status: number } {
 }
 
 /**
+ * Source with comments blanked out, newlines kept.
+ *
+ * The scans below count brackets and calls. A comment holding `waitForJob(`,
+ * a client call or a lone brace would corrupt both, so drop comments first.
+ * Strings are not comments: a suite passes paths such as "/blog/*", and a
+ * scan that took that for a comment would swallow the rest of the file.
+ */
+function stripComments(source: string): string {
+  let out = "";
+  let quote: string | undefined;
+
+  for (let i = 0; i < source.length; i++) {
+    const c = source[i];
+
+    if (quote !== undefined) {
+      out += c;
+      if (c === "\\") {
+        out += source[i + 1] ?? "";
+        i += 1;
+      } else if (c === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+
+    if (c === "'" || c === '"' || c === "`") {
+      quote = c;
+      out += c;
+      continue;
+    }
+
+    if (source.startsWith("/*", i)) {
+      const close = source.indexOf("*/", i + 2);
+      const end = close < 0 ? source.length : close + 2;
+      // Keep the newlines so line structure survives.
+      out += source.slice(i, end).replace(/[^\n]/g, "");
+      i = end - 1;
+      continue;
+    }
+
+    if (source.startsWith("//", i)) {
+      const line = source.indexOf("\n", i);
+      if (line < 0) break;
+      i = line - 1;
+      continue;
+    }
+
+    out += c;
+  }
+
+  return out;
+}
+
+/**
  * Text of each `name(...)` call in source, by matching parentheses.
  *
  * A regex cannot do this. The calls hold arrow functions, objects and
  * template strings, so the closing bracket is not the first one.
+ *
+ * Pass source that stripComments has already cleaned.
  */
 function callsOf(source: string, name: string): string[] {
   const found: string[] = [];
@@ -50,12 +106,6 @@ function callsOf(source: string, name: string): string[] {
       }
       if (c === "'" || c === '"' || c === "`") {
         quote = c;
-        continue;
-      }
-      if (source.startsWith("//", i)) {
-        const line = source.indexOf("\n", i);
-        if (line < 0) break;
-        i = line;
         continue;
       }
       if (c === "(" || c === "[" || c === "{") depth += 1;
@@ -337,6 +387,46 @@ describe("e2e rate-limit retry helper", () => {
     expect(getStatus).toHaveBeenCalled();
   }, 30_000);
 
+  test("the scan reads past comments and strings", () => {
+    // The guard is only as good as its parser, so hold the parser too. Each
+    // trap below broke an earlier version: a block comment with a call and a
+    // lone brace, a commented-out call, and a path that starts with "/*".
+    const suite = [
+      'describe("fixture", () => {',
+      '  test("one start and one wait", async () => {',
+      '    /* waitForJob( here, with an unbalanced { brace */',
+      '    // client.notCounted(',
+      '    const started = await client.startThing({',
+      '      includePaths: ["/blog/*", "/docs/*"],',
+      '    });',
+      '    const job = await waitForJob(() => client.getThing(started.id), {',
+      '      pollInterval: 1,',
+      '      timeout: 60,',
+      '    });',
+      '    expect(job.status).toBe("completed");',
+      '  }, testTimeoutMs(220_000));',
+      "});",
+    ].join("\n");
+
+    const source = stripComments(suite);
+
+    // The traps are gone, and the code around them survived.
+    expect(source).not.toMatch(/waitForJob\( here/);
+    expect(source).not.toMatch(/notCounted/);
+    expect(source).toContain('includePaths: ["/blog/*", "/docs/*"]');
+    expect(source).toContain("timeout: 60,");
+
+    const bodies = testBodies(source);
+    expect(bodies).toHaveLength(1);
+
+    // One start call at the retry budget, and one wait at bound plus poll
+    // plus the retry budget of its status read.
+    const { calls, ms } = worstCaseMs(bodies[0], new Map());
+    expect(calls).toBe(2);
+    expect(ms).toBe(RETRY_BUDGET_MS + 60_000 + 1_000 + RETRY_BUDGET_MS);
+    expect(ms).toBeLessThan(testTimeoutMs(220_000));
+  });
+
   test("every wrapped call in a test fits its budget", () => {
     // Guard for the whole class of budget faults. A test spends the retry
     // budget once per wrapped call, not once in total, so the budget has to
@@ -350,7 +440,9 @@ describe("e2e rate-limit retry helper", () => {
     let widest = 0;
 
     for (const name of suites) {
-      const source = readFileSync(path.join(dir, name), "utf-8");
+      const source = stripComments(
+        readFileSync(path.join(dir, name), "utf-8"),
+      );
       const helpers = localHelpers(source);
 
       // A helper that calls another helper would hide calls from the sum.
