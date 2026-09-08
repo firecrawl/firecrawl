@@ -174,6 +174,12 @@ exchangeRouter.post(
   wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
+exchangeRouter.delete(
+  "/publisher/bounties/:id",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
 exchangeRouter.post(
   "/publisher/bounties/:id/claim",
   authMiddleware(RateLimiterMode.Labs),
