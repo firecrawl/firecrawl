@@ -9,7 +9,7 @@ vi.mock("../scraper/WebScraper/utils/blocklist", () => ({
   isUrlBlocked: blocked,
 }));
 import { bountyBlocklistMiddleware, bountyDomains } from "./bounty-blocklist";
-function app() {
+function app(flags: { unblockedDomains?: string[] } = {}) {
   const app = express();
   app.use(express.json());
   app.post(
@@ -19,7 +19,7 @@ function app() {
         auth: { team_id: "publisher" },
         acuc: {
           org_id: "organization",
-          flags: { unblockedDomains: ["blocked.example"] },
+          flags,
         },
       });
       next();
@@ -44,8 +44,10 @@ function app() {
 }
 beforeEach(() => {
   vi.clearAllMocks();
-  blocked.mockImplementation((url: string) =>
-    new URL(url).hostname.endsWith("blocked.example"),
+  blocked.mockImplementation(
+    (url: string, flags: { unblockedDomains?: string[] } = {}) =>
+      !flags.unblockedDomains?.includes("blocked.example") &&
+      new URL(url).hostname.endsWith("blocked.example"),
   );
 });
 describe("Bounty domain blocklist", () => {
@@ -84,6 +86,21 @@ describe("Bounty domain blocklist", () => {
     expect(
       blocked.mock.calls.every(([url]) => new URL(url).pathname === "/"),
     ).toBe(true);
+  });
+  it("does not apply scrape exemptions to bounty publication", async () => {
+    const flags = { unblockedDomains: ["blocked.example"] };
+    expect(blocked("https://blocked.example/", flags)).toBe(false);
+    blocked.mockClear();
+    const result = await request(app(flags))
+      .post("/exchange/publisher/bounties")
+      .send({ title: "blocked.example profiles" });
+    expect(result.status).toBe(403);
+    expect(forwarded).not.toHaveBeenCalled();
+    expect(blocked).toHaveBeenCalledWith(
+      "https://blocked.example/",
+      {},
+      expect.any(Object),
+    );
   });
   it("does not forward when the blocklist is unavailable", async () => {
     blocked.mockImplementation(() => {
