@@ -26,6 +26,138 @@ function rateLimitError(seconds: number): Error & { status: number } {
   return err;
 }
 
+/**
+ * Text of each `name(...)` call in source, by matching parentheses.
+ *
+ * A regex cannot do this. The calls hold arrow functions, objects and
+ * template strings, so the closing bracket is not the first one.
+ */
+function callsOf(source: string, name: string): string[] {
+  const found: string[] = [];
+
+  for (const match of source.matchAll(new RegExp(`\\b${name}\\(`, "g"))) {
+    const from = match.index!;
+    let i = from + match[0].length - 1;
+    let depth = 0;
+    let quote: string | undefined;
+
+    for (; i < source.length; i++) {
+      const c = source[i];
+      if (quote !== undefined) {
+        if (c === "\\") i += 1;
+        else if (c === quote) quote = undefined;
+        continue;
+      }
+      if (c === "'" || c === '"' || c === "`") {
+        quote = c;
+        continue;
+      }
+      if (source.startsWith("//", i)) {
+        const line = source.indexOf("\n", i);
+        if (line < 0) break;
+        i = line;
+        continue;
+      }
+      if (c === "(" || c === "[" || c === "{") depth += 1;
+      else if (c === ")" || c === "]" || c === "}") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    found.push(source.slice(from, i + 1));
+  }
+
+  return found;
+}
+
+/**
+ * Body of each test in a suite, including the test.each form.
+ *
+ * test.each takes the cases first and the test second, so the test body is
+ * the group after the cases.
+ */
+function testBodies(source: string): string[] {
+  const found: string[] = [];
+
+  for (const match of source.matchAll(/\btest(\.each)?\s*\(/g)) {
+    if (!match[1]) {
+      found.push(callsOf(source.slice(match.index!), "test")[0]);
+      continue;
+    }
+    const cases = callsOf(source.slice(match.index!), "test.each")[0];
+    const rest = source.slice(match.index! + cases.length);
+    const open = rest.indexOf("(");
+    // Reuse the matcher by giving it a name to anchor on.
+    const group = callsOf(`each${rest.slice(open)}`, "each")[0];
+    found.push(group);
+  }
+
+  return found;
+}
+
+/** Local async helpers in a suite, by name, with the body each one runs. */
+function localHelpers(source: string): Map<string, string> {
+  const found = new Map<string, string>();
+
+  for (const match of source.matchAll(/\n(\s*)async function (\w+)\(/g)) {
+    const start = match.index! + 1;
+    const close = source.indexOf(`\n${match[1]}}`, start);
+    found.set(match[2], source.slice(start, close < 0 ? undefined : close));
+  }
+
+  return found;
+}
+
+/**
+ * Worst case of one test body, and the wrapped calls it counts.
+ *
+ * Each waitForJob costs its bound, one poll interval and the retry budget of
+ * the status read. Each other wrapped client call costs the retry budget on
+ * its own. A local helper runs inside the test, so its calls count too.
+ */
+function worstCaseMs(
+  body: string,
+  helpers: Map<string, string>,
+): { calls: number; ms: number } {
+  let calls = 0;
+  let ms = 0;
+
+  const waits = callsOf(body, "waitForJob");
+  for (const wait of waits) {
+    const timeout = wait.match(/timeout:\s*(\d+)/);
+    const poll = wait.match(/pollInterval:\s*(\d+)/);
+    const bound = timeout
+      ? Number(timeout[1]) * 1000
+      : DEFAULT_JOB_TIMEOUT_MS;
+    ms +=
+      bound +
+      Math.max(1000, (poll ? Number(poll[1]) : 2) * 1000) +
+      RETRY_BUDGET_MS;
+    calls += 1;
+  }
+
+  // The status read sits inside waitForJob, so drop those calls before
+  // counting the rest. Longest first, so a shorter call is not cut twice.
+  let rest = body;
+  for (const wait of [...waits].sort((a, b) => b.length - a.length)) {
+    rest = rest.split(wait).join("");
+  }
+
+  const direct = rest.match(/client\.\w+\s*\(/g) ?? [];
+  ms += direct.length * RETRY_BUDGET_MS;
+  calls += direct.length;
+
+  for (const [name, helperBody] of helpers) {
+    const uses = rest.match(new RegExp(`\\b${name}\\s*\\(`, "g")) ?? [];
+    if (uses.length === 0) continue;
+    const inner = worstCaseMs(helperBody, new Map());
+    ms += uses.length * inner.ms;
+    calls += uses.length * inner.calls;
+  }
+
+  return { calls, ms };
+}
+
 describe("e2e rate-limit retry helper", () => {
   test("recognises the rate-limit error and reads its reset time", () => {
     expect(isRateLimitError(rateLimitError(1))).toBe(true);
@@ -205,56 +337,56 @@ describe("e2e rate-limit retry helper", () => {
     expect(getStatus).toHaveBeenCalled();
   }, 30_000);
 
-  test("every waitForJob call fits the budget of its own test", () => {
-    // Guard for a new call site. A bound that outlasts its jest budget hides
-    // the specific message again, which is the fault this default fixes.
+  test("every wrapped call in a test fits its budget", () => {
+    // Guard for the whole class of budget faults. A test spends the retry
+    // budget once per wrapped call, not once in total, so the budget has to
+    // cover the sum. Otherwise jest fires first and hides the specific
+    // message this helper exists to surface.
     const dir = path.resolve(process.cwd(), "src/__tests__/e2e/v2");
     const suites = readdirSync(dir).filter(name => name.endsWith(".test.ts"));
     expect(suites.length).toBeGreaterThan(0);
 
     let checked = 0;
+    let widest = 0;
+
     for (const name of suites) {
-      const lines = readFileSync(path.join(dir, name), "utf-8").split("\n");
+      const source = readFileSync(path.join(dir, name), "utf-8");
+      const helpers = localHelpers(source);
 
-      for (let i = 0; i < lines.length; i++) {
-        if (!lines[i].includes("waitForJob(")) continue;
-
-        // The options can sit on the call line or on the lines below it, so
-        // read the whole call. Stop at the line that closes it.
-        let call = lines[i];
-        for (let j = i + 1; j < lines.length && j <= i + 4; j++) {
-          call += `\n${lines[j]}`;
-          if (/\)\s*;/.test(lines[j])) break;
+      // A helper that calls another helper would hide calls from the sum.
+      for (const [self, body] of helpers) {
+        for (const other of helpers.keys()) {
+          if (other === self) continue;
+          expect(body).not.toMatch(new RegExp(`\\b${other}\\s*\\(`));
         }
+      }
 
-        const timeout = call.match(/timeout:\s*(\d+)/);
-        const poll = call.match(/pollInterval:\s*(\d+)/);
-        const boundMs = timeout
-          ? Number(timeout[1]) * 1000
-          : DEFAULT_JOB_TIMEOUT_MS;
-        const pollMs = Math.max(1000, (poll ? Number(poll[1]) : 2) * 1000);
+      const bodies = testBodies(source);
+      // The scan must see every test, or a budget goes unchecked.
+      expect(bodies.length).toBe(
+        (source.match(/\btest(?:\.each)?\s*\(/g) ?? []).length,
+      );
 
-        // The budget belongs to the test that holds the call, so read the
-        // next testTimeoutMs below the call.
-        let budgetMs: number | undefined;
-        for (let j = i; j < lines.length; j++) {
-          const budget = lines[j].match(/testTimeoutMs\((\d[\d_]*)\)/);
-          if (budget) {
-            budgetMs = testTimeoutMs(Number(budget[1].replace(/_/g, "")));
-            break;
-          }
-        }
-        expect(budgetMs).toBeDefined();
+      for (const body of bodies) {
+        const { calls, ms } = worstCaseMs(body, helpers);
+        if (calls === 0) continue;
 
-        // The last read can start just inside the bound and then spend the
-        // whole retry budget, so the error must still surface in the budget.
-        expect(boundMs + pollMs + RETRY_BUDGET_MS).toBeLessThan(budgetMs!);
-        checked++;
+        // A test that calls the wrapped client needs a budget of its own.
+        // Without one jest allows 5s, which any single wait outlasts.
+        const budgets = body.match(/testTimeoutMs\((\d[\d_]*)\)/g);
+        expect(budgets).not.toBeNull();
+
+        const base = Number(budgets![budgets!.length - 1].replace(/\D/g, ""));
+        expect(ms).toBeLessThan(testTimeoutMs(base));
+
+        checked += 1;
+        widest = Math.max(widest, calls);
       }
     }
 
-    // The scan must see the known call sites, or it stopped working.
-    expect(checked).toBeGreaterThanOrEqual(7);
+    // The scan must see the known tests, or it stopped working.
+    expect(checked).toBeGreaterThanOrEqual(45);
+    expect(widest).toBeGreaterThanOrEqual(3);
   });
 
   test("the test timeout fits the worst-case serial retry", () => {

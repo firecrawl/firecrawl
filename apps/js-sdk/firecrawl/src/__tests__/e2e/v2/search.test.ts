@@ -213,7 +213,7 @@ describe("v2.search e2e", () => {
     expect(results2).toBeTruthy();
     expect(results1.web).toBeTruthy();
     expect(results2.web).toBeTruthy();
-  }, testTimeoutMs(90_000));
+  }, testTimeoutMs(151_000));
 
   test("with json format object", async () => {
     if (!client) throw new Error();

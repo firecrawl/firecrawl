@@ -51,14 +51,14 @@ describe("v2.crawl e2e", () => {
     expect(status.id).toBe(start.id);
     // next/expiresAt may be null/undefined depending on state; check shape
     expect(Array.isArray(status.data)).toBe(true);
-  }, testTimeoutMs(120_000));
+  }, testTimeoutMs(151_000));
 
   test("cancel crawl", async () => {
     if (!client) throw new Error();
     const start = await client.startCrawl("https://docs.firecrawl.dev", { limit: 3 });
     const ok = await client.cancelCrawl(start.id);
     expect(ok).toBe(true);
-  }, testTimeoutMs(120_000));
+  }, testTimeoutMs(151_000));
 
   test("get crawl errors", async () => {
     if (!client) throw new Error();
@@ -74,7 +74,7 @@ describe("v2.crawl e2e", () => {
       expect(typeof e.url === "string" || e.url == null).toBe(true);
       expect(typeof e.error === "string" || e.error == null).toBe(true);
     }
-  }, testTimeoutMs(120_000));
+  }, testTimeoutMs(151_000));
 
   test("get crawl errors with invalid id should throw", async () => {
     if (!client) throw new Error();
@@ -105,7 +105,7 @@ describe("v2.crawl e2e", () => {
     const ids = active.crawls.map(c => c.id);
     expect(ids.includes(start.id)).toBe(true);
     await client.cancelCrawl(start.id);
-  }, testTimeoutMs(120_000));
+  }, testTimeoutMs(301_000));
 
   test("crawl with wait", async () => {
     if (!client) throw new Error();
@@ -115,7 +115,7 @@ describe("v2.crawl e2e", () => {
     expect(job.completed).toBeGreaterThanOrEqual(0);
     expect(job.total).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(job.data)).toBe(true);
-  }, testTimeoutMs(180_000));
+  }, testTimeoutMs(272_000));
 
   test("crawl with wait returns job id for error retrieval", async () => {
     if (!client) throw new Error();
@@ -130,7 +130,7 @@ describe("v2.crawl e2e", () => {
     expect(errors).toHaveProperty("robotsBlocked");
     expect(Array.isArray(errors.errors)).toBe(true);
     expect(Array.isArray(errors.robotsBlocked)).toBe(true);
-  }, testTimeoutMs(180_000));
+  }, testTimeoutMs(422_000));
 
   test("crawl with prompt and wait", async () => {
     if (!client) throw new Error();
@@ -140,7 +140,7 @@ describe("v2.crawl e2e", () => {
     expect(job.completed).toBeGreaterThanOrEqual(0);
     expect(job.total).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(job.data)).toBe(true);
-  }, testTimeoutMs(180_000));
+  }, testTimeoutMs(272_000));
 
   test("crawl with scrape options", async () => {
     if (!client) throw new Error();

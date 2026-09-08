@@ -159,6 +159,6 @@ describe("v2.scrape e2e", () => {
     if (!client) throw new Error();
     await expect(client.scrape("")).rejects.toThrow("URL cannot be empty");
     await expect(client.scrape("   ")).rejects.toThrow("URL cannot be empty");
-  });
+  }, testTimeoutMs(151_000));
 });
 

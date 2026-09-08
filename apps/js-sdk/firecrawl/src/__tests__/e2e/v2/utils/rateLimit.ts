@@ -61,17 +61,24 @@ export const RETRY_BUDGET_MS = (MAX_ATTEMPTS - 1) * MAX_WAIT_MS;
  * finish" in every test the suites have today.
  *
  * A caller that waits for real work must pass a timeout. Size it to the work,
- * not to the budget. The unit test "every waitForJob call fits the budget of
- * its own test" then checks the bound against the budget.
+ * not to the budget, then set the budget from the sum of the calls the test
+ * makes. The unit test "every wrapped call in a test fits its budget" holds
+ * that rule: it counts this bound, one poll interval, and the retry budget of
+ * every wrapped call in the test, and requires the sum to fit.
  */
 export const DEFAULT_JOB_TIMEOUT_MS = 45_000;
 
 /**
  * Jest timeout for a test that calls a wrapped client.
  *
- * Pass the time the test needs when the API answers at once. The result adds
- * the retry budget, so a test that hits the limit still finishes inside its
- * own timeout instead of failing on it.
+ * Pass the base: the time the test needs when the API answers at once. The
+ * result adds one retry budget on top, so a test whose single call hits the
+ * limit still finishes inside its own timeout instead of failing on it.
+ *
+ * One retry budget covers one call. A test that makes several wrapped calls
+ * can spend the budget once per call, so the base must carry the rest. Do not
+ * pick the base by hand: take the number the unit test "every wrapped call in
+ * a test fits its budget" computes, which sums every call in the test.
  */
 export function testTimeoutMs(baseMs: number): number {
   return baseMs + RETRY_BUDGET_MS;

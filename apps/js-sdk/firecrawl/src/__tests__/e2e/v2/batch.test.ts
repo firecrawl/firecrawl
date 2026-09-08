@@ -29,7 +29,7 @@ describe("v2.batch e2e", () => {
     expect(job.completed).toBeGreaterThanOrEqual(0);
     expect(job.total).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(job.data)).toBe(true);
-  }, testTimeoutMs(240_000));
+  }, testTimeoutMs(362_000));
 
   test("batch scrape with wait returns job id for error retrieval", async () => {
     const urls = [
@@ -47,7 +47,7 @@ describe("v2.batch e2e", () => {
     expect(errors).toHaveProperty("robotsBlocked");
     expect(Array.isArray(errors.errors)).toBe(true);
     expect(Array.isArray(errors.robotsBlocked)).toBe(true);
-  }, testTimeoutMs(240_000));
+  }, testTimeoutMs(512_000));
 
   test("start batch minimal and status", async () => {
     const urls = ["https://docs.firecrawl.dev", "https://firecrawl.dev"]; 
@@ -60,7 +60,7 @@ describe("v2.batch e2e", () => {
     // Verify status includes id field
     expect(status.id).toBeDefined();
     expect(status.id).toBe(start.id);
-  }, testTimeoutMs(120_000));
+  }, testTimeoutMs(151_000));
 
   test("wait batch with all params", async () => {
     const urls = ["https://docs.firecrawl.dev", "https://firecrawl.dev"]; 
@@ -83,7 +83,7 @@ describe("v2.batch e2e", () => {
     expect(job.completed).toBeGreaterThanOrEqual(0);
     expect(job.total).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(job.data)).toBe(true);
-  }, testTimeoutMs(300_000));
+  }, testTimeoutMs(362_000));
 
   test("cancel batch", async () => {
     const urls = ["https://docs.firecrawl.dev", "https://firecrawl.dev"]; 
@@ -91,6 +91,6 @@ describe("v2.batch e2e", () => {
     expect(typeof start.id).toBe("string");
     const cancelled = await client.cancelBatchScrape(start.id);
     expect(cancelled).toBe(true);
-  }, testTimeoutMs(120_000));
+  }, testTimeoutMs(151_000));
 });
 
