@@ -83,8 +83,8 @@ pub struct BatchScrapeJob {
     pub completed: u32,
     /// Total number of URLs to scrape.
     pub total: u32,
-    /// Credits used by the batch scrape.
-    pub credits_used: Option<u32>,
+    /// Credits used by the batch scrape; `-1` when no billing record exists.
+    pub credits_used: Option<i64>,
     /// Expiry time of the batch data.
     pub expires_at: Option<String>,
     /// URL for the next page of results.
