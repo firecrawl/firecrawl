@@ -145,48 +145,44 @@ impl Client {
         action: impl AsRef<str>,
     ) -> Result<T, FirecrawlError> {
         let (is_success, status) = (response.status().is_success(), response.status());
-
-        let response = response
+        let body = response
             .text()
             .await
-            .map_err(FirecrawlError::ResponseParseErrorText)
-            .and_then(|response_json| {
-                serde_json::from_str::<Value>(&response_json)
-                    .map_err(FirecrawlError::ResponseParseError)
-            })
+            .map_err(FirecrawlError::ResponseParseErrorText)?;
+
+        let response = serde_json::from_str::<Value>(&body)
+            .map_err(FirecrawlError::ResponseParseError)
             .and_then(|response_value| {
-                // Check for success field, or allow responses without it for status checks
-                if action.as_ref().contains("status")
-                    || action.as_ref().contains("cancel")
-                    || response_value["success"].as_bool().unwrap_or(false)
-                    || response_value.get("success").is_none()
-                {
-                    serde_json::from_value::<T>(response_value)
-                        .map_err(FirecrawlError::ResponseParseError)
-                } else {
+                // Only an explicit success: false routes to APIError; everything else parses as T.
+                if response_value["success"].as_bool() == Some(false) {
                     Err(FirecrawlError::APIError(
                         action.as_ref().to_string(),
                         serde_json::from_value(response_value)
                             .map_err(FirecrawlError::ResponseParseError)?,
                     ))
+                } else {
+                    serde_json::from_value::<T>(response_value)
+                        .map_err(FirecrawlError::ResponseParseError)
                 }
             });
 
-        match &response {
-            Ok(_) => response,
-            Err(FirecrawlError::ResponseParseError(_))
-            | Err(FirecrawlError::ResponseParseErrorText(_)) => {
-                if is_success {
-                    response
+        match response {
+            // A non-2xx response that isn't a Firecrawl error body: report the real reason and body, not just the code.
+            Err(FirecrawlError::ResponseParseError(_)) if !is_success => {
+                let reason = status.canonical_reason().unwrap_or("unknown status");
+                let snippet: String = body.chars().take(200).collect();
+                let detail = if snippet.is_empty() {
+                    reason.to_string()
                 } else {
-                    Err(FirecrawlError::HttpRequestFailed(
-                        action.as_ref().to_string(),
-                        status.as_u16(),
-                        status.as_str().to_string(),
-                    ))
-                }
+                    format!("{reason}: {snippet}")
+                };
+                Err(FirecrawlError::HttpRequestFailed(
+                    action.as_ref().to_string(),
+                    status.as_u16(),
+                    detail,
+                ))
             }
-            Err(_) => response,
+            other => other,
         }
     }
 
