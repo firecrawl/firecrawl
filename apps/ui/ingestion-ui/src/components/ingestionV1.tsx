@@ -1,4 +1,4 @@
-import { useState, ChangeEvent, FormEvent, useEffect } from "react";
+import { useState, ChangeEvent, FormEvent, useEffect, KeyboardEvent } from "react";
 import {
   Card,
   CardHeader,
@@ -142,6 +142,37 @@ export default function FirecrawlComponentV1() {
       // Automatically check "Crawl Sub-pages" if limit or search have content
       if (name === "limit" || name === "search") {
         newData.crawlSubPages = !!value || !!newData.limit || !!newData.search;
+      }
+
+      return newData;
+    });
+  };
+
+  const handleNumberInputPageKeyDown = (
+    e: KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (e.key !== "PageUp" && e.key !== "PageDown") {
+      return;
+    }
+
+    const { name, value } = e.currentTarget;
+    const currentValue = value === "" ? 0 : Number(value);
+    if (Number.isNaN(currentValue)) {
+      return;
+    }
+
+    const nextValue =
+      e.key === "PageUp" ? currentValue + 10 : Math.max(0, currentValue - 10);
+    e.preventDefault();
+
+    setFormData((prevData) => {
+      const newData = {
+        ...prevData,
+        [name]: String(nextValue),
+      };
+
+      if (name === "limit") {
+        newData.crawlSubPages = !!newData.limit || !!newData.search;
       }
 
       return newData;
@@ -442,11 +473,15 @@ export default function FirecrawlComponentV1() {
                       Limit *
                     </Label>
                     <Input
+                      type="number"
                       id="limit"
                       name="limit"
+                      min="0"
+                      step="1"
                       placeholder="10"
                       value={formData.limit}
                       onChange={handleChange}
+                      onKeyDown={handleNumberInputPageKeyDown}
                     />
                   </div>
                 </div>
