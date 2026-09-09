@@ -73,7 +73,7 @@ export async function scrapeController(
       });
 
       if (
-        Array.isArray((req.body as { exchange?: unknown } | null)?.exchange)
+        (req.body as { exchange?: unknown } | null)?.exchange !== undefined
       ) {
         return exchangeScrapeController(req, res, jobId);
       }

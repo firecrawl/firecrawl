@@ -7,6 +7,9 @@ vi.mock("../../lib/exchange-proxy", async importOriginal => ({
   ...(await importOriginal<typeof import("../../lib/exchange-proxy")>()),
   forwardToExchange: vi.fn(),
 }));
+vi.mock("../../services/exchange/settle", () => ({
+  settleExchangeCall: vi.fn(),
+}));
 vi.mock("../../services/logging/log_job", () => ({
   logRequest: vi.fn(async () => {}),
 }));
@@ -14,8 +17,8 @@ vi.mock("../../lib/external-request-id", () => ({
   externalRequestId: () => "ext",
 }));
 
-import { forwardToExchange } from "../../lib/exchange-proxy";
-const forward = vi.mocked(forwardToExchange);
+import { settleExchangeCall } from "../../services/exchange/settle";
+const forward = vi.mocked(settleExchangeCall);
 
 const CALL = {
   provider: "financial-datasets",
@@ -55,7 +58,7 @@ describe("scrape({ exchange })", () => {
     config.FIRE_EXCHANGE_URL = "https://exchange.example";
   });
 
-  it("forwards every call as one batch under the team, and relays results with the cost", async () => {
+  it.each([CALL, [CALL]])("normalizes request %j and relays the cost", async exchange => {
     forward.mockResolvedValueOnce({
       status: 200,
       contentType: "application/json",
@@ -68,13 +71,12 @@ describe("scrape({ exchange })", () => {
     });
     const { r, out } = res();
 
-    await exchangeScrapeController(req({ exchange: [CALL] }), r, "job-1");
+    await exchangeScrapeController(req({ exchange }), r, "job-1");
 
     expect(forward).toHaveBeenCalledWith(
       expect.objectContaining({
         teamId: "team_a",
-        method: "POST",
-        path: "/v1/retrieve",
+        apiKeyId: 7,
         body: { requests: [CALL] },
         requestId: "job-1",
       }),

@@ -1474,16 +1474,19 @@ export type ScrapeResponse =
   | ExchangeScrapeResponse;
 
 export const exchangeScrapeRequestSchema = z.strictObject({
-  exchange: z
-    .array(
-      z.strictObject({
-        provider: z.string().min(1),
-        capability: z.string().min(1),
-        options: z.record(z.string(), z.unknown()).optional(),
-      }),
-    )
-    .min(1)
-    .max(10),
+  exchange: z.preprocess(
+    value => (Array.isArray(value) ? value : [value]),
+    z
+      .array(
+        z.strictObject({
+          provider: z.string().min(1),
+          capability: z.string().min(1),
+          options: z.record(z.string(), z.unknown()).optional(),
+        }),
+      )
+      .min(1)
+      .max(10),
+  ),
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   timeout: z.int().positive().finite().optional(),

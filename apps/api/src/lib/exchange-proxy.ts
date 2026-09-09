@@ -78,6 +78,7 @@ export async function forwardToExchange(input: {
   timeoutMs: number;
   accept?: string;
   requestId?: string;
+  deadline?: number;
 }): Promise<ExchangeUpstream> {
   const base = exchangeUpstreamBase();
   if (!base) throw new ExchangeProxyError("unconfigured");
@@ -96,6 +97,9 @@ export async function forwardToExchange(input: {
           : { "x-request-id": input.requestId }),
         ...(hasBody ? { "content-type": "application/json" } : {}),
         "x-exchange-team-id": input.teamId,
+        ...(input.deadline === undefined
+          ? {}
+          : { "x-exchange-deadline": String(input.deadline) }),
       },
       body: hasBody ? JSON.stringify(input.body ?? {}) : undefined,
       signal: AbortSignal.timeout(input.timeoutMs),

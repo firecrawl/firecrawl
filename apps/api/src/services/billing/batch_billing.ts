@@ -1,3 +1,4 @@
+import { reportExchangeUsageBilling } from "../exchange/report";
 import { logger } from "../../lib/logger";
 import { getRedisConnection } from "../queue-service";
 import { billTeam7 } from "../../db/rpc";
@@ -66,13 +67,18 @@ async function confirmExchangeOutcomes(
         }
         const op = operations[index];
         await withExchangeConfirmSlot(() =>
-          reportExchangeBilling({
-            accessEventId: op.exchange_access_event_id!,
-            status: "confirmed",
-            ...(op.billing_reference === undefined
-              ? {}
-              : { billingReference: op.billing_reference }),
-          }),
+          op.exchange_usage_request_id
+            ? reportExchangeUsageBilling(
+                op.exchange_usage_request_id,
+                op.billing_reference,
+              )
+            : reportExchangeBilling({
+                accessEventId: op.exchange_access_event_id!,
+                status: "confirmed",
+                ...(op.billing_reference === undefined
+                  ? {}
+                  : { billingReference: op.billing_reference }),
+              }),
         );
       }
     }),
@@ -100,6 +106,7 @@ interface BillingOperation {
   // confirmed once the debit commits. Failed or ambiguous commits leave
   // the event pending for reconciliation rather than voiding it.
   exchange_access_event_id?: string;
+  exchange_usage_request_id?: string;
   billing_reference?: string;
 }
 
@@ -288,7 +295,9 @@ export async function processBillingBatch() {
         // once the batch lock is released.
         committedExchangeOps.push(
           ...group.operations.filter(
-            op => op.exchange_access_event_id !== undefined,
+            op =>
+              op.exchange_access_event_id !== undefined ||
+              op.exchange_usage_request_id !== undefined,
           ),
         );
       } catch (error) {
@@ -346,6 +355,10 @@ export function startBillingBatchProcessing() {
  *
  * Internal billing operations are batched and committed to Supabase.
  */
+export type ExchangeBillingReceipt =
+  | { accessEventId: string; billingReference?: string }
+  | { usageRequestId: string; billingReference?: string };
+
 export async function queueBillingOperation(
   team_id: string,
   credits: number,
@@ -353,7 +366,7 @@ export async function queueBillingOperation(
   billing: BillingMetadata,
   is_extract: boolean = false,
   autumnTrackInRequest: boolean = false,
-  exchange?: { accessEventId: string; billingReference?: string },
+  exchange?: ExchangeBillingReceipt,
 ) {
   // Skip queuing for preview teams
   if (team_id === "preview" || team_id.startsWith("preview_")) {
@@ -380,7 +393,9 @@ export async function queueBillingOperation(
       ...(exchange === undefined
         ? {}
         : {
-            exchange_access_event_id: exchange.accessEventId,
+            ...("accessEventId" in exchange
+              ? { exchange_access_event_id: exchange.accessEventId }
+              : { exchange_usage_request_id: exchange.usageRequestId }),
             ...(exchange.billingReference === undefined
               ? {}
               : { billing_reference: exchange.billingReference }),

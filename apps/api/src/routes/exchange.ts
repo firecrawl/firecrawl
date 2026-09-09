@@ -1,3 +1,4 @@
+import { settleExchangeCall } from "../services/exchange/settle";
 import express, { Request, Response } from "express";
 import {
   ExchangeProxyError,
@@ -8,7 +9,7 @@ import {
 import { logger as rootLogger } from "../lib/logger";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
-import { authMiddleware, wrap } from "./shared";
+import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
 
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
@@ -51,15 +52,25 @@ function exchangeProxy(
     const accept = req.headers["accept"];
     const requestId = req.headers["x-request-id"];
     try {
-      const upstream = await forwardToExchange({
-        teamId: authedReq.auth.team_id,
-        method: req.method,
-        path: req.originalUrl.replace(/^\/exchange/, "/v1"),
-        body: req.body,
-        timeoutMs: timeout,
-        ...(typeof accept === "string" ? { accept } : {}),
-        ...(typeof requestId === "string" ? { requestId } : {}),
-      });
+      const upstream =
+        req.method === "POST" && req.path === "/retrieve"
+          ? await settleExchangeCall({
+              teamId: authedReq.auth.team_id,
+              apiKeyId: authedReq.acuc?.api_key_id ?? null,
+              body: req.body,
+              timeoutMs: timeout,
+              requestId: typeof requestId === "string" ? requestId : undefined,
+              logger,
+            })
+          : await forwardToExchange({
+              teamId: authedReq.auth.team_id,
+              method: req.method,
+              path: req.originalUrl.replace(/^\/exchange/, "/v1"),
+              body: req.body,
+              timeoutMs: timeout,
+              ...(typeof accept === "string" ? { accept } : {}),
+              ...(typeof requestId === "string" ? { requestId } : {}),
+            });
 
       if (upstream.contentType)
         res.setHeader("content-type", upstream.contentType);
@@ -93,6 +104,7 @@ exchangeRouter.get(
 exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
+  checkCreditsMiddleware(1),
   wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
 );
 

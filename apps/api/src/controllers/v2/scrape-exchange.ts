@@ -1,3 +1,4 @@
+import { settleExchangeCall } from "../../services/exchange/settle";
 import { Response } from "express";
 import { z } from "zod";
 import { config } from "../../config";
@@ -6,7 +7,6 @@ import {
   EXCHANGE_RETRIEVE_TIMEOUT_MS,
   ExchangeProxyError,
   exchangeProxyFailureResponse,
-  forwardToExchange,
 } from "../../lib/exchange-proxy";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
@@ -79,13 +79,16 @@ export async function exchangeScrapeController(
   );
 
   try {
-    const upstream = await forwardToExchange({
+    const upstream = await settleExchangeCall({
       teamId: req.auth.team_id,
-      method: "POST",
-      path: "/v1/retrieve",
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      logger,
       body: { requests: body.exchange },
       timeoutMs,
-      requestId: jobId,
+      requestId:
+        typeof req.headers["x-request-id"] === "string"
+          ? req.headers["x-request-id"]
+          : jobId,
     });
 
     if (upstream.status < 200 || upstream.status >= 300) {
