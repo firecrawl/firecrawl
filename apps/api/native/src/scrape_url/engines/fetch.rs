@@ -8,8 +8,12 @@ use regex::Regex;
 use url::Url;
 use wreq::header::{HeaderMap, HeaderName, HeaderValue};
 
-use super::super::{error::ScrapeURLError, feature_flags::ConstFeatureFlags, meta::Meta};
-use super::{Engine, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult, EngineSignal};
+use super::super::{
+  error::{GuardError, ScrapeURLError},
+  feature_flags::ConstFeatureFlags,
+  meta::Meta,
+};
+use super::{Engine, EngineOutcome, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult};
 
 pub struct FetchEngine;
 
@@ -49,9 +53,9 @@ fn is_ip_private(addr: IpAddr) -> bool {
 }
 
 /// Checks if a literal-IP URL is private or not
-pub fn guard_url_with_ip_host(uri: &wreq::Uri) -> Result<(), ScrapeURLError> {
-  let host = url::Host::parse(uri.host().ok_or(ScrapeURLError::InvalidURLError)?)
-    .map_err(|_| ScrapeURLError::InvalidURLError)?;
+pub fn guard_url_with_ip_host(uri: &wreq::Uri) -> Result<(), GuardError> {
+  let host = url::Host::parse(uri.host().ok_or(GuardError::InvalidUrl)?)
+    .map_err(|_| GuardError::InvalidUrl)?;
   let ip = match host {
     url::Host::Ipv4(v4) => Some(IpAddr::V4(v4)),
     url::Host::Ipv6(v6) => Some(IpAddr::V6(v6)),
@@ -61,7 +65,7 @@ pub fn guard_url_with_ip_host(uri: &wreq::Uri) -> Result<(), ScrapeURLError> {
   if let Some(ip) = ip
     && is_ip_private(ip)
   {
-    Err(ScrapeURLError::InsecureConnectionError)
+    Err(GuardError::PrivateAddress)
   } else {
     Ok(())
   }
@@ -73,15 +77,17 @@ impl wreq::dns::Resolve for GuardedResolver {
   fn resolve(&self, name: wreq::dns::Name) -> wreq::dns::Resolving {
     Box::pin(async move {
       let host = name.as_str().to_owned();
-      let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0)).await?.collect();
+      let addrs: Vec<SocketAddr> = match tokio::net::lookup_host((host.as_str(), 0)).await {
+        Ok(addrs) => addrs.collect(),
+        Err(_) => {
+          return Err(Box::new(GuardError::Dns(host.clone())) as _);
+        }
+      };
 
       if addrs.is_empty() {
-        Err(Box::new(std::io::Error::new(
-          std::io::ErrorKind::NotFound,
-          format!("no addresses for {host}"),
-        )) as _)
+        Err(Box::new(GuardError::Dns(host)) as _)
       } else if addrs.iter().any(|a| is_ip_private(a.ip())) {
-        Err(Box::new(ScrapeURLError::InsecureConnectionError) as _)
+        Err(Box::new(GuardError::PrivateAddress) as _)
       } else {
         Ok(Box::new(addrs.into_iter()) as wreq::dns::Addrs)
       }
@@ -133,32 +139,31 @@ impl Engine for FetchEngine {
     &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
-  ) -> Result<EngineScrapeResult, EngineSignal> {
+  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError> {
     // Not sure how safe or performant it is to construct a new wreq every turn? - mogery
     let client = safe_wreq_builder(meta.options.should_skip_tls_verification(), true);
 
+    let mut headers = HeaderMap::with_capacity(meta.options.headers.len());
+    for (name, value) in &meta.options.headers {
+      headers.insert(HeaderName::from_str(name)?, HeaderValue::from_str(value)?);
+    }
+
     let res = client
       .get(meta.get_url().as_str())
-      .headers(HeaderMap::from_iter(meta.options.headers.iter().map(|x| {
-        (
-          HeaderName::from_str(x.0).unwrap(),  // TODO: error handling
-          HeaderValue::from_str(x.1).unwrap(), // TODO: error handling
-        )
-      })))
+      .headers(headers)
       .send()
-      .await
-      .unwrap(); // TODO: error handling
+      .await?;
 
-    let url = Url::parse(&res.uri().to_string()).unwrap(); // TODO: error handling
+    let url = Url::parse(&res.uri().to_string())?;
     let status_code = res.status().as_u16();
     let content_type = res
       .headers()
       .get("content-type")
-      .map(|x| x.to_str().unwrap().to_string())
+      .and_then(|x| x.to_str().ok().map(str::to_string))
       .unwrap_or_else(|| "application/octet-stream".to_string());
-    let bytes = res.bytes().await.unwrap(); // TODO: error handling
+    let bytes = res.bytes().await?;
 
-    Ok(EngineScrapeResult {
+    Ok(EngineOutcome::Scraped(EngineScrapeResult {
       url,
       status_code,
       content: EngineScrapeContent::Bytes(bytes),
@@ -169,6 +174,6 @@ impl Engine for FetchEngine {
       timezone: None,
       filename: None, // TODO: get out of header maybe?
       cached_at: None,
-    })
+    }))
   }
 }

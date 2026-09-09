@@ -2,6 +2,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use tracing::instrument;
 
+use super::super::super::error::ScrapeURLError;
 use super::{
   FireEngine,
   scrape::{FireEngineScrapeCompleted, FireEngineScrapeFailed, FireEngineScrapeProcessing},
@@ -26,19 +27,21 @@ pub enum FireEngineScrapeStatus {
 }
 
 impl FireEngine {
-  #[instrument(name = "FireEngine::call_check_status")]
-  pub(super) async fn call_check_status(&self, job_id: &str) -> FireEngineScrapeStatus {
+  #[instrument(name = "FireEngine::call_check_status", err)]
+  pub(super) async fn call_check_status(
+    &self,
+    job_id: &str,
+  ) -> Result<FireEngineScrapeStatus, ScrapeURLError> {
     let client = Client::new(); // TODO: should we cache this
     // TODO: retries may be good here
     let res = client
       .get(format!("{}/scrape/{}", self.url, job_id))
       .send()
-      .await
-      .unwrap(); // TODO: error handling
+      .await?;
 
     // NOTE: Explicitly do not check status code here.
     // Fire-engine can send 500 for things that we want to parse.
 
-    res.json::<FireEngineScrapeStatus>().await.unwrap() // TODO: error handling
+    Ok(res.json::<FireEngineScrapeStatus>().await?)
   }
 }

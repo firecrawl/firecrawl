@@ -7,7 +7,8 @@ use super::TransformerError;
 
 #[instrument(
   name = "transformers::metadata::derive_metadata_from_raw_html",
-  skip(meta, document)
+  skip(meta, document),
+  err
 )]
 pub async fn derive_metadata_from_raw_html(
   meta: &Meta,

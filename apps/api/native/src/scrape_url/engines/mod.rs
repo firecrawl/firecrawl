@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display};
+use std::fmt::Display;
 
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
@@ -109,7 +109,7 @@ pub trait Engine {
     &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
-  ) -> Result<EngineScrapeResult, EngineSignal>;
+  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError>;
 }
 
 pub enum EngineKind {
@@ -151,7 +151,7 @@ impl EngineKind {
     &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
-  ) -> Result<EngineScrapeResult, EngineSignal> {
+  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError> {
     match self {
       EngineKind::Fetch(x) => x.scrape(meta, proxy).await,
       EngineKind::FireEngine(x) => x.scrape(meta, proxy).await,
@@ -198,15 +198,18 @@ pub async fn get_main_engine() -> EngineKind {
   }
 }
 
-pub enum EngineSignal {
-  FatalError(ScrapeURLError),
-  EngineError(Box<dyn Error + Send + Sync>),
-  ProxyElevationNeeded,
+pub enum EngineOutcome<T> {
+  Scraped(T),
   IndexMiss,
+  ProxyElevationNeeded,
 }
 
-impl Into<EngineSignal> for ScrapeURLError {
-  fn into(self) -> EngineSignal {
-    EngineSignal::FatalError(self)
+impl<T> EngineOutcome<T> {
+  pub fn map<U>(self, f: impl FnOnce(T) -> U) -> EngineOutcome<U> {
+    match self {
+      Self::Scraped(x) => EngineOutcome::Scraped(f(x)),
+      Self::IndexMiss => EngineOutcome::IndexMiss,
+      Self::ProxyElevationNeeded => EngineOutcome::ProxyElevationNeeded,
+    }
   }
 }

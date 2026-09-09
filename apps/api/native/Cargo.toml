@@ -39,6 +39,7 @@ strsim = "0.11"
 strum = { version = "0.28", features = ["derive"] }
 sqlx = { version = "0.8", features = [ "runtime-tokio", "tls-rustls-ring-webpki", "postgres", "json", "uuid", "chrono" ] }
 texting_robots = "0.2.2"
+thiserror = "2"
 url = { version = "2.5.7", features = ["serde"] }
 uuid = { version = "1", features = ["serde"] }
 url-macro = "0.2.4"

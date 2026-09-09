@@ -8,6 +8,7 @@ use url::Url;
 use super::super::super::{
   actions::InternalAction,
   engines::{ScrapeActionContent, fire_engine::actions::FireEngineActionResult},
+  error::ScrapeURLError,
   options::ScrapeOptionsLocation,
 };
 
@@ -125,23 +126,22 @@ pub enum FireEngineScrapeResponse {
 }
 
 impl FireEngine {
-  #[instrument(name = "FireEngine::call_scrape")]
+  #[instrument(name = "FireEngine::call_scrape", err)]
   pub(super) async fn call_scrape<'a>(
     &self,
     request: FireEngineScrapeRequest<'a>,
-  ) -> FireEngineScrapeResponse {
+  ) -> Result<FireEngineScrapeResponse, ScrapeURLError> {
     let client = Client::new(); // TODO: should we cache this
     // TODO: retries may be good here
     let res = client
       .post(format!("{}/scrape", self.url))
       .json(&request)
       .send()
-      .await
-      .unwrap(); // TODO: error handling
+      .await?;
 
     // NOTE: Explicitly do not check status code here.
     // Fire-engine can send 500 for things that we want to parse.
 
-    res.json::<FireEngineScrapeResponse>().await.unwrap() // TODO: error handling
+    Ok(res.json::<FireEngineScrapeResponse>().await?)
   }
 }

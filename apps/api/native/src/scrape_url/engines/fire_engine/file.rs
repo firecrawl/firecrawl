@@ -21,25 +21,23 @@ pub enum FireEngineScrapeFileContent {
   },
 }
 
-impl From<FireEngineScrapeFileContent> for EngineScrapeContent {
-  fn from(value: FireEngineScrapeFileContent) -> Self {
+impl TryFrom<FireEngineScrapeFileContent> for EngineScrapeContent {
+  type Error = base64::DecodeError;
+
+  fn try_from(value: FireEngineScrapeFileContent) -> Result<Self, Self::Error> {
     match value {
-      FireEngineScrapeFileContent::Base64 { content } => {
-        Self::Bytes(
-          base64::engine::Engine::decode(&base64::engine::general_purpose::STANDARD, content)
-            .unwrap() // TODO: error handling
-            .into(),
-        )
-      }
+      FireEngineScrapeFileContent::Base64 { content } => Ok(Self::Bytes(
+        base64::engine::Engine::decode(&base64::engine::general_purpose::STANDARD, content)?.into(),
+      )),
       FireEngineScrapeFileContent::Offloaded {
         gcs_uri,
         sha256,
         size_bytes,
-      } => Self::BytesOffloaded(BytesOffloaded {
+      } => Ok(Self::BytesOffloaded(BytesOffloaded {
         gcs_uri,
         sha256,
         size_bytes,
-      }),
+      })),
     }
   }
 }

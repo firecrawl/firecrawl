@@ -38,7 +38,8 @@ impl Into<DocumentAttribute> for crate::ExtractedAttributeResult {
 
 #[instrument(
   name = "transformers::attributes::derive_attributes_from_html",
-  skip(meta, document)
+  skip(meta, document),
+  err
 )]
 pub async fn derive_attributes_from_html(
   meta: &Meta,

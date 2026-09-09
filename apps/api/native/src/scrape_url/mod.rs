@@ -7,14 +7,14 @@ use url::Url;
 
 use self::{
   document::{Document, DocumentMetadataCacheState},
-  engines::{EngineKind, EngineScrapeProxy, EngineScrapeResult, should_use_index},
+  engines::{
+    EngineKind, EngineOutcome, EngineScrapeProxy, EngineScrapeResult, get_main_engine,
+    should_use_index,
+  },
   error::ScrapeURLError,
   feature_flags::FeatureFlags,
   meta::Meta,
   options::{InternalOptions, ProxyMode, ScrapeOptions},
-};
-use crate::scrape_url::{
-  engines::{EngineSignal, get_main_engine},
   transformers::execute_tranformers,
 };
 
@@ -59,7 +59,8 @@ struct EngineRun {
     engine.proxy_used = Empty,
     engine.cache_state = Empty,
   ),
-  skip(meta)
+  skip(meta),
+  err
 )]
 async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
   tracing::info!("scrapeURL entered");
@@ -81,78 +82,78 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
   let should_use_index = should_use_index(&meta);
 
   let index_run = {
-    if (meta.options.lockdown || meta.internal_options.agent_index_only) && !should_use_index {
-      panic!("throw") // TODO
+    if !should_use_index {
+      if meta.options.lockdown {
+        return Err(ScrapeURLError::LockdownMissError);
+      }
+      if meta.internal_options.agent_index_only {
+        return Err(ScrapeURLError::AgentIndexOnlyError);
+      }
     }
 
     if should_use_index && let Some(index) = EngineKind::index().await {
-      let result = index.scrape(&meta, discrete_proxy).await;
-      match result {
-        Ok(result) => Ok(Some(EngineRun {
+      match index.scrape(&meta, discrete_proxy).await? {
+        EngineOutcome::Scraped(result) => Some(EngineRun {
           engine: index,
           result,
           unsupported_features: HashSet::new(), // TODO
           index_attempted: true,
-        })),
-        Err(EngineSignal::IndexMiss) => Ok(None),
-        Err(EngineSignal::FatalError(e)) => Err(e),
-        Err(EngineSignal::EngineError(_)) => unimplemented!(),
-
+        }),
+        EngineOutcome::IndexMiss => None,
         // TODO: this pattern is disgusting and proof that the index and an engine should be separate primitives
-        Err(EngineSignal::ProxyElevationNeeded) => unreachable!(),
+        EngineOutcome::ProxyElevationNeeded => unreachable!(),
       }
     } else {
-      Ok(None)
+      None
     }
-  }?;
+  };
 
   let run = match index_run {
-    Some(index_run) => Ok(index_run),
-    None if meta.options.lockdown => Err(ScrapeURLError::LockdownMissError),
-    None if meta.internal_options.agent_index_only => Err(ScrapeURLError::AgentIndexOnlyError),
+    Some(index_run) => index_run,
+    None if meta.options.lockdown => return Err(ScrapeURLError::LockdownMissError),
+    None if meta.internal_options.agent_index_only => {
+      return Err(ScrapeURLError::AgentIndexOnlyError);
+    }
     None => {
       let main_engine = get_main_engine().await;
-      match get_main_engine().await.scrape(&meta, discrete_proxy).await {
-        Ok(result) => Ok(EngineRun {
+
+      match main_engine.scrape(&meta, discrete_proxy).await? {
+        EngineOutcome::Scraped(result) => EngineRun {
           engine: main_engine,
           result,
           unsupported_features: HashSet::new(), // TODO
           index_attempted: should_use_index,
-        }),
+        },
 
         // If basic proxy failed due to proxy error, and proxy mode is auto,
         // retry the main engine with enhanced proxies.
-        Err(EngineSignal::ProxyElevationNeeded)
+        EngineOutcome::ProxyElevationNeeded
           if meta.options.proxy == ProxyMode::Auto
             && discrete_proxy == EngineScrapeProxy::Basic =>
         {
-          main_engine
+          match main_engine
             .scrape(&meta, EngineScrapeProxy::Enhanced)
-            .await
-            .map(|result| EngineRun {
+            .await?
+          {
+            EngineOutcome::Scraped(result) => EngineRun {
               engine: main_engine,
               result,
               unsupported_features: HashSet::new(), // TODO
               index_attempted: should_use_index,
-            })
-            .map_err(|e| match e {
-              EngineSignal::FatalError(e) => e,
-              EngineSignal::EngineError(_) => unimplemented!(),
-              EngineSignal::ProxyElevationNeeded => {
-                ScrapeURLError::ReliableRetrievalError(meta.options.proxy)
-              }
-              EngineSignal::IndexMiss => unreachable!(),
-            })
+            },
+            EngineOutcome::ProxyElevationNeeded => {
+              return Err(ScrapeURLError::ReliableRetrievalError(meta.options.proxy));
+            }
+            EngineOutcome::IndexMiss => unreachable!(),
+          }
         }
-        Err(EngineSignal::ProxyElevationNeeded) => {
-          Err(ScrapeURLError::ReliableRetrievalError(meta.options.proxy))
+        EngineOutcome::ProxyElevationNeeded => {
+          return Err(ScrapeURLError::ReliableRetrievalError(meta.options.proxy));
         }
-        Err(EngineSignal::FatalError(e)) => Err(e),
-        Err(EngineSignal::EngineError(_)) => unimplemented!(),
-        Err(EngineSignal::IndexMiss) => unreachable!(),
+        EngineOutcome::IndexMiss => unreachable!(),
       }
     }
-  }?;
+  };
 
   Span::current()
     .record("engine.winner", run.engine.get_name())
@@ -189,7 +190,7 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
     ));
   }
 
-  let document = execute_tranformers(&meta, document).await.unwrap(); // TODO: error handling
+  let document = execute_tranformers(&meta, document).await?;
 
   Span::current()
     .record("engine.final_status_code", document.metadata.status_code)
@@ -230,6 +231,10 @@ fn ensure_crypto_provider() {
   });
 }
 
+fn napi_error(e: ScrapeURLError) -> napi::Error {
+  napi::Error::new(napi::Status::GenericFailure, e.to_transport_string())
+}
+
 // wrapper that lets us avoid exposing Meta in JS-land
 #[napi]
 pub async fn scrape_url(
@@ -246,28 +251,29 @@ pub async fn scrape_url(
   // exports the spans it produced before the process tears down.
   let _flush = crate::telemetry::FlushGuard;
 
-  let options: ScrapeOptions = serde_json::from_value(serde_json::Value::Object(options)).unwrap();
+  let options: ScrapeOptions = serde_json::from_value(serde_json::Value::Object(options))
+    .map_err(ScrapeURLError::from)
+    .map_err(napi_error)?;
   let internal_options: InternalOptions =
-    serde_json::from_value(serde_json::Value::Object(internal_options)).unwrap();
+    serde_json::from_value(serde_json::Value::Object(internal_options))
+      .map_err(ScrapeURLError::from)
+      .map_err(napi_error)?;
+  let url = Url::parse(&url)
+    .map_err(|_| ScrapeURLError::InvalidURLError)
+    .map_err(napi_error)?;
 
-  let result = _scrape_url(Meta::new(
-    id,
-    Url::parse(&url).unwrap(), // TODO: Better handling
-    team_id,
-    options,
-    internal_options,
-  ))
-  .await;
+  let result = _scrape_url(Meta::new(id, url, team_id, options, internal_options)).await;
 
   match result {
-    Ok(x) => Ok(match serde_json::to_value(x).unwrap() {
-      serde_json::Value::Object(x) => x,
-      _ => unreachable!(),
-    }),
-    // TODO: better transportable errors
-    Err(e) => Err(napi::Error::new(
-      napi::Status::GenericFailure,
-      format!("{:?}", e),
-    )),
+    Ok(x) => Ok(
+      match serde_json::to_value(x)
+        .map_err(ScrapeURLError::from)
+        .map_err(napi_error)?
+      {
+        serde_json::Value::Object(x) => x,
+        _ => unreachable!(),
+      },
+    ),
+    Err(e) => Err(napi_error(e)),
   }
 }

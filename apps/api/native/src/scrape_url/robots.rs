@@ -16,7 +16,7 @@ fn should_check_robots(options: &ScrapeOptions, internal_options: &InternalOptio
   }
 }
 
-#[instrument(skip(meta))]
+#[instrument(skip(meta), err)]
 pub async fn do_robots_check_if_needed(meta: &Meta) -> Result<(), ScrapeURLError> {
   if should_check_robots(&meta.options, &meta.internal_options) {
     info!(
@@ -26,7 +26,9 @@ pub async fn do_robots_check_if_needed(meta: &Meta) -> Result<(), ScrapeURLError
 
     // TODO:
 
-    Err(ScrapeURLError::CrawlDenialError)
+    Err(ScrapeURLError::CrawlDenialError {
+      reason: "URL blocked by robots.txt".to_string(),
+    })
   } else {
     Ok(())
   }

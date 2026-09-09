@@ -7,7 +7,9 @@ use reqwest::{
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
-use crate::{_post_process_markdown, scrape_url::transformers::html::_derive_html_from_raw_html};
+use crate::_post_process_markdown;
+
+use super::html::_derive_html_from_raw_html;
 
 use super::super::{document::Document, formats::FormatKind, meta::Meta};
 use super::TransformerError;
@@ -43,9 +45,10 @@ enum ConvertResponse {
 
 #[instrument(
   name = "transformers::markdown::convert_markdown_to_html",
-  skip(meta, html)
+  skip(meta, html),
+  err
 )]
-async fn convert_markdown_to_html(meta: &Meta, html: &str) -> String {
+async fn convert_markdown_to_html(meta: &Meta, html: &str) -> Result<String, TransformerError> {
   let client = Client::new(); // TODO: cache and share
 
   let mut headers = HeaderMap::new();
@@ -56,39 +59,46 @@ async fn convert_markdown_to_html(meta: &Meta, html: &str) -> String {
     headers.insert("X-Request-ID", val);
   }
 
+  let Some(service_url) = HTML_TO_MARKDOWN_SERVICE_URL.as_ref() else {
+    return Err(TransformerError::MarkdownConversion(
+      "html-to-markdown service is not configured".to_string(),
+    ));
+  };
+
   // TODO: timeout
   let res = client
-    .post(format!(
-      "{}/convert",
-      HTML_TO_MARKDOWN_SERVICE_URL
-        .as_ref()
-        .expect("html to markdown service is not configured")
-    )) // TODO: error handling
+    .post(format!("{}/convert", service_url))
     .headers(headers)
     .json(&ConvertRequest { html })
     .send()
-    .await
-    .unwrap(); // TODO: error handling
+    .await?;
 
   if !res.status().is_success() {
-    unimplemented!(); // TODO: error handling
+    return Err(TransformerError::MarkdownConversion(format!(
+      "html-to-markdown service returned status {}",
+      res.status()
+    )));
   }
 
-  let res = res.json::<ConvertResponse>().await.unwrap(); // TODO: error handling
+  let res = res.json::<ConvertResponse>().await?;
 
   let markdown = match res {
-    ConvertResponse::Failure { .. } => unimplemented!(), // TODO: error handling
+    ConvertResponse::Failure { error, details } => {
+      return Err(TransformerError::MarkdownConversion(match details {
+        Some(details) => format!("{error}: {details}"),
+        None => error,
+      }));
+    }
     ConvertResponse::Success { markdown, .. } => markdown,
   };
 
-  tokio::task::spawn_blocking(move || _post_process_markdown(markdown))
-    .await
-    .unwrap() // TODO: error handling
+  Ok(tokio::task::spawn_blocking(move || _post_process_markdown(markdown)).await?)
 }
 
 #[instrument(
   name = "transformers::markdown:derive_markdown_from_html",
-  skip(meta, document)
+  skip(meta, document),
+  err
 )]
 pub async fn derive_markdown_from_html(
   meta: &Meta,
@@ -120,12 +130,12 @@ pub async fn derive_markdown_from_html(
     ));
   };
 
-  let markdown = convert_markdown_to_html(meta, html).await;
+  let markdown = convert_markdown_to_html(meta, html).await?;
 
   // If OMC is on and resulting markdown was empty, re-derive html and markdown without OMC
   if meta.options.only_main_content && markdown.trim().is_empty() {
     let html = _derive_html_from_raw_html(&meta, &document, false).await?;
-    document.markdown = Some(convert_markdown_to_html(&meta, &html).await);
+    document.markdown = Some(convert_markdown_to_html(&meta, &html).await?);
     document.html = Some(html);
   } else {
     document.markdown = Some(markdown);

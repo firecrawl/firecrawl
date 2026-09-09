@@ -4,13 +4,12 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::scrape_url::engines::EngineScrapeContent;
-
 use super::super::{
+  error::ScrapeURLError,
   feature_flags::{ConstFeatureFlags, FeatureFlag},
   meta::Meta,
 };
-use super::{Engine, EngineScrapeProxy, EngineScrapeResult, EngineSignal};
+use super::{Engine, EngineOutcome, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult};
 
 static PLAYWRIGHT_MICROSERVICE_URL: LazyLock<Option<String>> = LazyLock::new(|| {
   if let Some(url) = std::env::var("PLAYWRIGHT_MICROSERVICE_URL").ok()
@@ -59,7 +58,7 @@ impl Engine for PlaywrightEngine {
     &self,
     meta: &Meta,
     _proxy: EngineScrapeProxy,
-  ) -> Result<EngineScrapeResult, EngineSignal> {
+  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError> {
     let client = reqwest::Client::new(); // TODO: cache this maybe?
 
     let res = client
@@ -73,16 +72,18 @@ impl Engine for PlaywrightEngine {
         skip_tls_verification: meta.options.should_skip_tls_verification(),
       })
       .send()
-      .await
-      .unwrap();
+      .await?;
 
     if !res.status().is_success() {
-      panic!("non-200"); // TODO: error handling
+      return Err(ScrapeURLError::EngineUnavailable {
+        engine: Self::NAME,
+        status: res.status().as_u16(),
+      });
     }
 
-    let body: PlaywrightResponse = res.json().await.unwrap(); // TODO: error handling
+    let body: PlaywrightResponse = res.json().await?;
 
-    Ok(EngineScrapeResult {
+    Ok(EngineOutcome::Scraped(EngineScrapeResult {
       url: meta.get_url().clone(), // TODO: improve redirect following
       content: EngineScrapeContent::ChromeRenderedDOM(body.content), // TODO: improve binary file handling
       status_code: body.page_status_code,
@@ -95,6 +96,6 @@ impl Engine for PlaywrightEngine {
       cached_at: None,
       timezone: None,
       filename: None,
-    })
+    }))
   }
 }

@@ -7,7 +7,8 @@ use super::TransformerError;
 
 #[instrument(
   name = "transformers::links::derive_links_from_html",
-  skip(meta, document)
+  skip(meta, document),
+  err
 )]
 pub async fn derive_links_from_html(
   meta: &Meta,

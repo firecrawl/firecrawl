@@ -9,10 +9,9 @@ use tokio::sync::{Mutex, OnceCell};
 use tracing::instrument;
 use uuid::Uuid;
 
-use crate::scrape_url::engines::index::IndexEntryFilter;
-
+use super::super::super::error::ScrapeURLError;
 use super::{
-  IndexEntryVariant,
+  IndexEntryFilter, IndexEntryVariant,
   db::{IndexEntry, MaxAgeRow},
 };
 
@@ -95,131 +94,143 @@ impl IndexEntryFilter {
 }
 
 impl IndexCache {
-  #[instrument(name = "IndexCache::init")]
-  async fn init() -> Option<Mutex<MultiplexedConnection>> {
-    if let Some(index_cache_redis_url) = std::env::var("INDEX_CACHE_REDIS_URL").ok()
-      && !index_cache_redis_url.is_empty()
-    {
-      Some(Mutex::new(
-        redis::Client::open(index_cache_redis_url)
-          .expect("Failed to connect to Redis")
-          .get_multiplexed_async_connection()
-          .await
-          .expect("Failed to connect to Redis"),
-      ))
-    } else {
-      None
-    }
+  #[instrument(name = "IndexCache::init", err)]
+  async fn init() -> Result<Option<Mutex<MultiplexedConnection>>, ScrapeURLError> {
+    let Some(url) = std::env::var("INDEX_CACHE_REDIS_URL")
+      .ok()
+      .filter(|x| !x.is_empty())
+    else {
+      return Ok(None);
+    };
+
+    let client = redis::Client::open(url)?;
+
+    Ok(Some(Mutex::new(
+      client.get_multiplexed_async_connection().await?,
+    )))
   }
 
   pub async fn get() -> Option<Self> {
-    INDEX_CACHE.get_or_init(Self::init).await.as_ref().map(Self)
+    INDEX_CACHE
+      .get_or_try_init(Self::init)
+      .await
+      .ok()
+      .and_then(|x| x.as_ref())
+      .map(Self)
   }
 
-  #[instrument(name = "IndexCache::get_max_age")]
-  pub async fn get_max_age(&self, domain_hash: &[u8]) -> Option<i32> {
+  #[instrument(name = "IndexCache::get_max_age", err)]
+  pub async fn get_max_age(&self, domain_hash: &[u8]) -> Result<Option<i32>, ScrapeURLError> {
     let unparsed = {
       // TODO: timeout
       let mut index_cache = self.0.lock().await;
 
       index_cache
         .get(format!("idxma:{}", hex::encode(domain_hash)))
-        .await
-        .ok() // TODO: log error
-        .flatten()
+        .await?
     };
 
-    unparsed
-      .and_then(|x| serde_json::from_str::<MaxAgeRow>(&x).ok())
-      .and_then(|x| x.max_age)
+    Ok(
+      unparsed
+        .map(|x| serde_json::from_str::<MaxAgeRow>(&x))
+        .transpose()?
+        .and_then(|x| x.max_age),
+    )
   }
 
-  #[instrument(name = "IndexCache::set_max_age")]
-  pub async fn set_max_age(&self, domain_hash: &[u8], max_age: i32) {
+  #[instrument(name = "IndexCache::set_max_age", err)]
+  pub async fn set_max_age(&self, domain_hash: &[u8], max_age: i32) -> Result<(), ScrapeURLError> {
     let mut index_cache = self.0.lock().await;
     // TODO: timeout
-    let _ = index_cache
+    index_cache
       .set_ex(
         format!("idxma:{}", hex::encode(domain_hash)),
         serde_json::to_string(&MaxAgeRow {
           max_age: Some(max_age),
-        })
-        .unwrap(),
+        })?,
         15 * 60,
       )
-      .await; // TODO: error logging
+      .await?;
+    Ok(())
   }
 
-  #[instrument(name = "IndexCache::_get_negative_hit")]
+  #[instrument(name = "IndexCache::_get_negative_hit", err)]
   async fn _get_negative_hit(
     &self,
     variant: &IndexEntryVariant,
     filter: &IndexEntryFilter,
-  ) -> bool {
+  ) -> Result<bool, ScrapeURLError> {
     let key = variant.to_redis_negative_key();
 
     let unparsed = {
       // TODO: timeout
       let mut index_cache = self.0.lock().await;
 
-      index_cache.get(&key).await.ok().flatten() // TODO: log error
+      index_cache.get(&key).await?
     };
 
-    let parsed: Option<IndexNegativeCacheEntry> =
-      unparsed.and_then(|unparsed| serde_json::from_str(&unparsed).ok()); // TODO: log error
+    let parsed: Option<IndexNegativeCacheEntry> = unparsed
+      .map(|unparsed| serde_json::from_str(&unparsed))
+      .transpose()?;
 
-    parsed
-      .map(|x| {
-        filter.now - Duration::from_millis(filter.max_age as u64) >= x.empty_from
+    Ok(
+      parsed
+        .map(|x| {
+          filter.now - Duration::from_millis(filter.max_age as u64) >= x.empty_from
           && (!x.screenshot || filter.needs_screenshot) // Only take a screenshotless negative hit as truly negative if we need a screenshot too
           && (!x.screenshot_fullscreen || filter.needs_screenshot_fullscreen) // Only take a fullscreenshotless negative hit as truly negative if we need a fullscreenshot too
           && x.wait_for <= filter.wait_time_ms
-      })
-      .unwrap_or(false)
+        })
+        .unwrap_or(false),
+    )
   }
 
-  #[instrument(name = "IndexCache::get_entries")]
+  #[instrument(name = "IndexCache::get_entries", err)]
   pub async fn get_entries(
     &self,
     variant: &IndexEntryVariant,
     filter: &IndexEntryFilter,
-  ) -> IndexCacheResult {
+  ) -> Result<IndexCacheResult, ScrapeURLError> {
     let key = variant.to_redis_key();
 
     let unparsed = {
       // TODO: timeout
       let mut index_cache = self.0.lock().await;
 
-      index_cache.hgetall(&key).await.ok() // TODO: log error
+      index_cache.hgetall(&key).await?
     };
 
-    if let Some(unparsed) = unparsed
-      && !unparsed.is_empty()
-      && let mut parsed = unparsed
-        .values()
-        .filter_map(|x| serde_json::from_str(x).ok())
-        .filter(|x| filter.evaluate_entry(x))
-        .collect::<Vec<IndexEntry>>()
-      && !parsed.is_empty()
-    {
+    let mut parsed = unparsed
+      .values()
+      .map(|x| serde_json::from_str::<IndexEntry>(x))
+      .collect::<Result<Vec<_>, _>>()?
+      .into_iter()
+      .filter(|x| filter.evaluate_entry(x))
+      .collect::<Vec<_>>();
+
+    if !parsed.is_empty() {
       parsed.sort_unstable_by_key(|x| std::cmp::Reverse(x.created_at));
       parsed.truncate(5);
-      IndexCacheResult::PositiveHit(parsed)
-    } else if filter.min_age.is_none() && self._get_negative_hit(variant, filter).await {
-      IndexCacheResult::NegativeHit
+      Ok(IndexCacheResult::PositiveHit(parsed))
+    } else if filter.min_age.is_none() && self._get_negative_hit(variant, filter).await? {
+      Ok(IndexCacheResult::NegativeHit)
     } else {
-      IndexCacheResult::Miss
+      Ok(IndexCacheResult::Miss)
     }
   }
 
-  #[instrument(name = "IndexCache::upsert_entries")]
-  pub async fn upsert_entries(&self, variant: &IndexEntryVariant, entries: &[IndexEntry]) {
+  #[instrument(name = "IndexCache::upsert_entries", err)]
+  pub async fn upsert_entries(
+    &self,
+    variant: &IndexEntryVariant,
+    entries: &[IndexEntry],
+  ) -> Result<(), ScrapeURLError> {
     let key = variant.to_redis_key();
 
     let map: Vec<(String, String)> = entries
       .iter()
-      .filter_map(|x| serde_json::to_string(x).ok().map(|y| (x.id.to_string(), y)))
-      .collect();
+      .map(|x| serde_json::to_string(x).map(|y| (x.id.to_string(), y)))
+      .collect::<Result<Vec<_>, _>>()?;
 
     let hlen: i32 = {
       // TODO: timeout
@@ -234,8 +245,7 @@ impl IndexCache {
         .ignore()
         .hlen(&key)
         .query_async(&mut *index_cache)
-        .await
-        .unwrap() // TODO: error handling
+        .await?
     };
 
     if hlen > 32 {
@@ -243,21 +253,13 @@ impl IndexCache {
         // TODO: timeout
         let mut index_cache = self.0.lock().await;
 
-        index_cache.hgetall(&key).await.unwrap() // TODO: error handling
+        index_cache.hgetall(&key).await?
       };
 
       let mut parsed: Vec<(String, DateTime<Utc>)> = unparsed
         .into_iter()
-        .map(|(id, entry)| {
-          (
-            id,
-            serde_json::from_str::<IndexEntry>(&entry)
-              .ok()
-              .map(|x| x.created_at)
-              .unwrap_or(DateTime::UNIX_EPOCH),
-          )
-        })
-        .collect();
+        .map(|(id, entry)| serde_json::from_str::<IndexEntry>(&entry).map(|x| (id, x.created_at)))
+        .collect::<Result<Vec<_>, _>>()?;
 
       parsed.sort_by(|(_, a), (_, b)| b.cmp(a));
       let to_delete: Vec<String> = parsed.into_iter().skip(32).map(|(id, _)| id).collect();
@@ -266,29 +268,38 @@ impl IndexCache {
         // TODO: timeout
         let mut index_cache = self.0.lock().await;
 
-        index_cache.hdel(&key, to_delete.as_slice()).await.unwrap(); // TODO: error handling
+        index_cache.hdel(&key, to_delete.as_slice()).await?;
       }
     }
+
+    Ok(())
   }
 
-  #[instrument(name = "IndexCache::delete_entry")]
-  pub async fn delete_entry(&self, variant: &IndexEntryVariant, id: Uuid) {
+  #[instrument(name = "IndexCache::delete_entry", err)]
+  pub async fn delete_entry(
+    &self,
+    variant: &IndexEntryVariant,
+    id: Uuid,
+  ) -> Result<(), ScrapeURLError> {
     let key = variant.to_redis_key();
 
     {
       // TODO: timeout
       let mut index_cache = self.0.lock().await;
 
-      index_cache.hdel(&key, id.to_string()).await.unwrap(); // TODO: error handling
+      index_cache.hdel(&key, id.to_string()).await?;
     }
+
+    Ok(())
   }
 
+  #[instrument(name = "IndexCache::set_negative", err)]
   pub async fn set_negative(
     &self,
     variant: &IndexEntryVariant,
     filter: &IndexEntryFilter,
     empty_from: DateTime<Utc>,
-  ) {
+  ) -> Result<(), ScrapeURLError> {
     let key = variant.to_redis_negative_key();
 
     {
@@ -303,12 +314,12 @@ impl IndexCache {
             screenshot: filter.needs_screenshot,
             screenshot_fullscreen: filter.needs_screenshot_fullscreen,
             wait_for: filter.wait_time_ms,
-          })
-          .unwrap(),
+          })?,
           600,
         )
-        .await
-        .unwrap(); // TODO: error handling
+        .await?;
     }
+
+    Ok(())
   }
 }

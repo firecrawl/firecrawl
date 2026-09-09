@@ -8,7 +8,8 @@ use super::TransformerError;
 
 #[instrument(
   name = "transformers::images::derive_images_from_html",
-  skip(meta, document)
+  skip(meta, document),
+  err
 )]
 pub async fn derive_images_from_html(
   meta: &Meta,

@@ -4,7 +4,7 @@ use super::{document::Document, meta::Meta};
 
 macro_rules! generate_execute_tranformers {
     ($($f:path),+ $(,)?) => {
-        #[instrument(name = "transformers::execute_transformers", skip(meta, document))]
+        #[instrument(name = "transformers::execute_transformers", skip(meta, document), err)]
         pub async fn execute_tranformers(
           meta: &Meta,
           mut document: Document,
@@ -29,9 +29,19 @@ mod links;
 mod markdown;
 mod metadata;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum TransformerError {
+  #[error("transformer called out of order: {0}")]
   CalledOutOfOrder(String),
+
+  #[error("html-to-markdown conversion failed: {0}")]
+  MarkdownConversion(String),
+
+  #[error(transparent)]
+  Reqwest(#[from] reqwest::Error),
+
+  #[error(transparent)]
+  Join(#[from] tokio::task::JoinError),
 }
 
 generate_execute_tranformers!(

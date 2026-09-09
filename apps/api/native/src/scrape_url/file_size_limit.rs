@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::LazyLock};
 
-use crate::scrape_url::meta::Meta;
+use super::meta::Meta;
 
 static PDF_BY_REFERENCE_MAX_BYTES_DEFAULT: LazyLock<usize> = LazyLock::new(|| {
   if let Some(n) = std::env::var("PDF_BY_REFERENCE_MAX_BYTES_DEFAULT").ok()

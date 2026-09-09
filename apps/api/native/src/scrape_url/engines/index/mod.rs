@@ -12,10 +12,11 @@ use self::{
   gcs::IndexGcs,
 };
 use super::super::{
+  error::ScrapeURLError,
   feature_flags::{ConstFeatureFlags, FeatureFlag},
   meta::Meta,
 };
-use super::{Engine, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult, EngineSignal};
+use super::{Engine, EngineOutcome, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult};
 
 pub use self::gcs::IndexPDFMetadata;
 
@@ -216,12 +217,12 @@ impl Engine for IndexEngine {
     None
   }
 
-  #[instrument(name = "IndexEngine::scrape", skip(meta, self))]
+  #[instrument(name = "IndexEngine::scrape", skip(meta, self), err)]
   async fn scrape(
     &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
-  ) -> Result<EngineScrapeResult, EngineSignal> {
+  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError> {
     let normalized_url = normalize_url_for_index(meta.get_url().clone());
 
     // TODO: fix index to support int8 = i64 to uncap max_age from 30-something days or so
@@ -240,12 +241,12 @@ impl Engine for IndexEngine {
         {
           let query_max_age = async {
             if let Some(index_cache) = &self.cache
-              && let Some(max_age) = index_cache.get_max_age(domain_hash).await
+              && let Ok(Some(max_age)) = index_cache.get_max_age(domain_hash).await
             {
               (max_age, MaxAgeSource::DynamicCached)
-            } else if let Some(max_age) = self.db.get_max_age(domain_hash).await {
+            } else if let Ok(Some(max_age)) = self.db.get_max_age(domain_hash).await {
               if let Some(index_cache) = &self.cache {
-                index_cache.set_max_age(domain_hash, max_age).await;
+                let _ = index_cache.set_max_age(domain_hash, max_age).await;
               }
               (max_age, MaxAgeSource::DynamicDb)
             } else {
@@ -273,37 +274,34 @@ impl Engine for IndexEngine {
     let variant = IndexEntryVariant::new(url_hash, meta, proxy);
     let filter = IndexEntryFilter::new(max_age, meta);
 
-    let (entries, source) = match if let Some(index_cache) = &self.cache {
-      Some((
-        index_cache.get_entries(&variant, &filter).await,
-        index_cache,
-      ))
-    } else {
-      None
-    } {
-      Some((IndexCacheResult::PositiveHit(entries), index_cache)) => {
+    let cache_lookup = match &self.cache {
+      Some(index_cache) => Some((index_cache, index_cache.get_entries(&variant, &filter).await)),
+      None => None,
+    };
+
+    let (entries, source) = match cache_lookup {
+      Some((index_cache, Ok(IndexCacheResult::PositiveHit(entries)))) => {
         (Some(entries), IndexEntrySource::Cache(index_cache))
       }
-      Some((IndexCacheResult::NegativeHit, index_cache)) => {
+      Some((index_cache, Ok(IndexCacheResult::NegativeHit))) => {
         (None, IndexEntrySource::Cache(index_cache))
       }
-      Some((IndexCacheResult::Miss, _)) | None => {
-        let entries = self.db.get_entries(&variant, &filter).await;
+      Some((index_cache, Ok(IndexCacheResult::Miss))) => {
+        let entries = match self.db.get_entries(&variant, &filter).await {
+          Ok(entries) => entries,
+          Err(_) => return Ok(EngineOutcome::IndexMiss),
+        };
         (
           if !entries.is_empty() {
-            if meta.options.min_age.is_none()
-              && let Some(index_cache) = &self.cache
-            {
-              index_cache.upsert_entries(&variant, &entries).await;
+            if meta.options.min_age.is_none() {
+              let _ = index_cache.upsert_entries(&variant, &entries).await;
             }
 
             Some(entries)
           } else {
-            if meta.options.min_age.is_none()
-              && let Some(index_cache) = &self.cache
-            {
+            if meta.options.min_age.is_none() {
               // TODO: this is suboptimal as it can overwrite a more broader negative hit signal
-              index_cache
+              let _ = index_cache
                 .set_negative(
                   &variant,
                   &filter,
@@ -313,6 +311,20 @@ impl Engine for IndexEngine {
             }
 
             None
+          },
+          IndexEntrySource::Db,
+        )
+      }
+      Some((_, Err(_))) | None => {
+        let entries = match self.db.get_entries(&variant, &filter).await {
+          Ok(entries) => entries,
+          Err(_) => return Ok(EngineOutcome::IndexMiss),
+        };
+        (
+          if entries.is_empty() {
+            None
+          } else {
+            Some(entries)
           },
           IndexEntrySource::Db,
         )
@@ -346,7 +358,12 @@ impl Engine for IndexEngine {
     };
 
     if let Some(selected_row) = selected_row {
-      if let Some(doc) = self.gcs.get_document(selected_row.id).await {
+      let doc = match self.gcs.get_document(selected_row.id).await {
+        Ok(doc) => doc,
+        Err(_) => return Ok(EngineOutcome::IndexMiss),
+      };
+
+      if let Some(doc) = doc {
         let normalized_pdf_metadata = doc.pdf_metadata.or_else(|| {
           doc.num_pages.map(|x| IndexPDFMetadata {
             num_pages: x,
@@ -363,10 +380,10 @@ impl Engine for IndexEngine {
           && let Some(max_pages) = pdf_parser.max_pages
           && num_pages > max_pages
         {
-          return Err(EngineSignal::IndexMiss);
+          return Ok(EngineOutcome::IndexMiss);
         }
 
-        Ok(EngineScrapeResult {
+        Ok(EngineOutcome::Scraped(EngineScrapeResult {
           url: doc.url,
           content: EngineScrapeContent::IndexFakeHTML(doc.html, normalized_pdf_metadata),
           status_code: doc.status_code,
@@ -379,16 +396,16 @@ impl Engine for IndexEngine {
           proxy_used: doc.proxy_used,
           timezone: None,
           filename: None,
-        })
+        }))
       } else {
         if let IndexEntrySource::Cache(index_cache) = source {
           // drop poisoned cache
-          index_cache.delete_entry(&variant, selected_row.id).await;
+          let _ = index_cache.delete_entry(&variant, selected_row.id).await;
         }
-        Err(EngineSignal::IndexMiss)
+        Ok(EngineOutcome::IndexMiss)
       }
     } else {
-      Err(EngineSignal::IndexMiss)
+      Ok(EngineOutcome::IndexMiss)
     }
   }
 }

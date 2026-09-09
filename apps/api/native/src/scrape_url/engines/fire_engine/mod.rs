@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use sha2::{Digest, Sha256};
-use tracing::instrument;
+use tracing::{Instrument, instrument};
 
 use self::{
   actions::{FireEngineActionResultCookie, FireEngineActionResultKind},
@@ -21,8 +21,8 @@ use super::super::{
   options::ProxyMode,
 };
 use super::{
-  Engine, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult, EngineScrapeResultActions,
-  EngineSignal, JavascriptActionContent,
+  Engine, EngineOutcome, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult,
+  EngineScrapeResultActions, JavascriptActionContent,
 };
 
 mod actions;
@@ -52,13 +52,13 @@ pub struct FireEngineScrape {
 }
 
 impl FireEngine {
-  #[instrument(name = "FireEngine::do_scrape", skip(meta))]
+  #[instrument(name = "FireEngine::do_scrape", skip(meta), err)]
   pub async fn do_scrape(
     &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
     get_cookies: bool,
-  ) -> Result<FireEngineScrape, EngineSignal> {
+  ) -> Result<EngineOutcome<FireEngineScrape>, ScrapeURLError> {
     let mut actions: Vec<InternalAction> = Vec::new();
 
     // Transform waitFor option into an action
@@ -155,12 +155,12 @@ impl FireEngine {
       pdf_max_size: None, // TODO
     };
 
-    let scrape = self.call_scrape(request).await;
+    let scrape = self.call_scrape(request).await?;
 
     let (job_id, result) = match scrape {
       FireEngineScrapeResponse::Completed(x) => (x.job_id.clone(), Ok(x)),
       FireEngineScrapeResponse::Processing(x) => loop {
-        match self.call_check_status(&x.job_id).await {
+        match self.call_check_status(&x.job_id).await? {
           FireEngineScrapeStatus::Completed(y) => break (Some(x.job_id), Ok(y)),
           FireEngineScrapeStatus::Processing(_) => {}
           FireEngineScrapeStatus::Failed(e) => break (Some(x.job_id.clone()), Err(e)),
@@ -172,10 +172,12 @@ impl FireEngine {
     // Dispatch delete if deleting the job is our responsibility
     if let Some(job_id) = job_id {
       let self2 = self.clone();
-      // TODO: do we need to do some sort of error handling here?
-      tokio::task::spawn(async move {
-        self2.call_delete(&job_id).await;
-      });
+      tokio::task::spawn(
+        async move {
+          let _ = self2.call_delete(&job_id).await;
+        }
+        .instrument(tracing::Span::current()),
+      );
     }
 
     let result = match result {
@@ -184,70 +186,71 @@ impl FireEngine {
           && let Some(page_error) = x.page_error.to_owned()
           && page_error.starts_with("Unsupported Media Type:") =>
       {
-        Err(ScrapeURLError::UnsupportedFileError { reason: page_error }.into())
+        return Err(ScrapeURLError::UnsupportedFileError { reason: page_error });
       }
-      Ok(x) => Ok(x),
-      Err(err) => Err(if err.retry_with_stealth {
-        EngineSignal::ProxyElevationNeeded
-      } else if let Some(code) = err.error.split("Chrome error: ").nth(1) {
-        if code.contains("ERR_CERT_") || code.contains("ERR_SSL_") || code.contains("ERR_BAD_SSL_")
+      Ok(x) => x,
+      Err(err) => {
+        if err.retry_with_stealth {
+          return Ok(EngineOutcome::ProxyElevationNeeded);
+        }
+
+        return Err(if let Some(code) = err.error.split("Chrome error: ").nth(1) {
+          if code.contains("ERR_CERT_") || code.contains("ERR_SSL_") || code.contains("ERR_BAD_SSL_")
+          {
+            ScrapeURLError::SSLError {
+              skip_tls_verification: meta.options.should_skip_tls_verification(),
+            }
+          } else {
+            ScrapeURLError::SiteError {
+              code: code.to_string(),
+            }
+          }
+        } else if let Some(hostname) = err
+          .error
+          .split("Dns resolution error for hostname: ")
+          .nth(1)
         {
-          ScrapeURLError::SSLError {
-            skip_tls_verification: meta.options.should_skip_tls_verification(),
+          ScrapeURLError::DNSResolutionError {
+            hostname: hostname.to_string(),
           }
-          .into()
+        } else if let Some(i) = err.error.find("File exceeds size limit") {
+          ScrapeURLError::UnsupportedFileError {
+            reason: err.error[i..].to_string(),
+          }
+        } else if err.error.contains("failed to finish without timing out") {
+          ScrapeURLError::PageLoadFailed
+        } else if err.error.contains("Element")
+          || err.error.contains("Javascript execution failed")
+          || err.error.starts_with("ActionError: ")
+        {
+          // TODO: improve conditions later
+          ScrapeURLError::ActionError {
+            error: err
+              .error
+              .trim_start_matches("Error: ")
+              .trim_start_matches("ActionError: ")
+              .to_string(),
+          }
+        } else if err.error.contains("proxies available for") {
+          ScrapeURLError::ProxySelectionError
         } else {
-          ScrapeURLError::SiteError {
-            code: code.to_string(),
+          ScrapeURLError::UnclassifiedEngineError {
+            engine: Self::NAME,
+            error: err.error,
           }
-          .into()
-        }
-      } else if let Some(hostname) = err
-        .error
-        .split("Dns resolution error for hostname: ")
-        .nth(1)
-      {
-        ScrapeURLError::DNSResolutionError {
-          hostname: hostname.to_string(),
-        }
-        .into()
-      } else if let Some(i) = err.error.find("File exceeds size limit") {
-        ScrapeURLError::UnsupportedFileError {
-          reason: err.error[i..].to_string(),
-        }
-        .into()
-      } else if err.error.contains("failed to finish without timing out") {
-        ScrapeURLError::PageLoadFailed.into()
-      } else if err.error.contains("Element")
-        || err.error.contains("Javascript execution failed")
-        || err.error.starts_with("ActionError: ")
-      {
-        // TODO: improve conditions later
-        ScrapeURLError::ActionError {
-          error: err
-            .error
-            .trim_start_matches("Error: ")
-            .trim_start_matches("ActionError: ")
-            .to_string(),
-        }
-        .into()
-      } else if err.error.contains("proxies available for") {
-        ScrapeURLError::ProxySelectionError.into()
-      } else {
-        // TODO: error handling
-        unimplemented!()
-      }),
-    }?;
+        });
+      }
+    };
 
     let mut screenshots_iter = result.screenshots.into_iter();
 
-    Ok(FireEngineScrape {
+    Ok(EngineOutcome::Scraped(FireEngineScrape {
       result: EngineScrapeResult {
         url: result.url.unwrap_or_else(|| meta.get_url().to_owned()),
 
         filename: result.file.as_ref().map(|x| x.name.to_owned()),
         content: if let Some(file) = result.file {
-          file.content.into()
+          file.content.try_into()?
         } else {
           EngineScrapeContent::ChromeRenderedDOM(result.content)
         },
@@ -277,17 +280,26 @@ impl FireEngine {
               .filter_map(|x| match &x.kind {
                 FireEngineActionResultKind::ExecuteJavascript {
                   r#return: raw_return,
-                } => serde_json::from_str::<serde_json::Value>(&raw_return)
-                  .ok()
-                  .map(|value| {
-                    match serde_json::from_value::<JavascriptActionContent>(value.clone()) {
-                      Ok(x) => x,
-                      Err(_) => JavascriptActionContent {
-                        r#type: "unknown".to_string(),
-                        value,
-                      },
+                } => Some(
+                  match serde_json::from_str::<serde_json::Value>(raw_return) {
+                    Ok(value) => {
+                      match serde_json::from_value::<JavascriptActionContent>(value.clone()) {
+                        Ok(x) => x,
+                        Err(_) => JavascriptActionContent {
+                          r#type: "unknown".to_string(),
+                          value,
+                        },
+                      }
                     }
-                  }),
+                    Err(e) => {
+                      tracing::warn!("failed to parse executeJavascript return: {e}");
+                      JavascriptActionContent {
+                        r#type: "unknown".to_string(),
+                        value: serde_json::Value::String(raw_return.clone()),
+                      }
+                    }
+                  },
+                ),
                 _ => None,
               })
               .collect(),
@@ -323,7 +335,7 @@ impl FireEngine {
         })
         .flatten()
         .collect(),
-    })
+    }))
   }
 }
 
@@ -352,7 +364,10 @@ impl Engine for FireEngine {
     &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
-  ) -> Result<EngineScrapeResult, EngineSignal> {
-    self.do_scrape(meta, proxy, false).await.map(|x| x.result)
+  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError> {
+    self
+      .do_scrape(meta, proxy, false)
+      .await
+      .map(|x| x.map(|scrape| scrape.result))
   }
 }

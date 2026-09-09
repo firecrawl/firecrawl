@@ -11,6 +11,8 @@ use tokio::sync::OnceCell;
 use tracing::instrument;
 use uuid::Uuid;
 
+use super::super::super::error::ScrapeURLError;
+
 use super::{IndexEntryFilter, IndexEntryVariant};
 
 #[derive(FromRow, Deserialize, Serialize)]
@@ -41,58 +43,58 @@ impl Debug for IndexDb {
 }
 
 impl IndexDb {
-  #[instrument(name = "IndexDb::init")]
-  async fn init() -> Option<PgPool> {
-    if let Some(index_database_url) = std::env::var("INDEX_DATABASE_URL").ok()
-      && !index_database_url.is_empty()
-    {
-      let index_database_url = index_database_url.replace("sslmode=no-verify", "sslmode=require");
+  #[instrument(name = "IndexDb::init", err)]
+  async fn init() -> Result<Option<PgPool>, ScrapeURLError> {
+    let Some(index_database_url) = std::env::var("INDEX_DATABASE_URL")
+      .ok()
+      .filter(|x| !x.is_empty())
+    else {
+      return Ok(None);
+    };
 
-      let options = PgConnectOptions::from_str(&index_database_url)
-        .expect("Failed to parse INDEX_DATABASE_URL")
-        .statement_cache_capacity(0); // tx pooler does not like statement cache
+    let index_database_url = index_database_url.replace("sslmode=no-verify", "sslmode=require");
 
-      Some(
-        PgPoolOptions::new()
-          .min_connections(0)
-          .max_connections(6)
-          .connect_with(options)
-          .await
-          .expect("Failed to connect to index DB"),
-      )
-    } else {
-      None
-    }
+    let options = PgConnectOptions::from_str(&index_database_url)?
+      .statement_cache_capacity(0); // tx pooler does not like statement cache
+
+    Ok(Some(
+      PgPoolOptions::new()
+        .min_connections(0)
+        .max_connections(6)
+        .connect_with(options)
+        .await?,
+    ))
   }
 
   pub async fn get() -> Option<Self> {
-    INDEX_DB.get_or_init(Self::init).await.as_ref().map(Self)
+    INDEX_DB
+      .get_or_try_init(Self::init)
+      .await
+      .ok()
+      .and_then(|x| x.as_ref())
+      .map(Self)
   }
 
-  #[instrument(name = "IndexDb::get_max_age")]
-  pub async fn get_max_age(&self, domain_hash: &[u8]) -> Option<i32> {
-    let mut tx = self.0.begin().await.ok()?;
-    let row = sqlx::query_as(r#"select max_age from query_max_age(i_domain_hash => $1)"#)
-      .bind(domain_hash)
-      .persistent(false)
-      .fetch_optional(&mut *tx)
-      .await // TODO: timeout
-      .ok() // TODO: error handling
-      .flatten() as Option<MaxAgeRow>;
-    let _ = tx.commit().await;
-    row.and_then(|x| x.max_age)
+  #[instrument(name = "IndexDb::get_max_age", err)]
+  pub async fn get_max_age(&self, domain_hash: &[u8]) -> Result<Option<i32>, ScrapeURLError> {
+    let mut tx = self.0.begin().await?;
+    let row: Option<MaxAgeRow> =
+      sqlx::query_as(r#"select max_age from query_max_age(i_domain_hash => $1)"#)
+        .bind(domain_hash)
+        .persistent(false)
+        .fetch_optional(&mut *tx)
+        .await?; // TODO: timeout
+    tx.commit().await?;
+    Ok(row.and_then(|x| x.max_age))
   }
 
-  #[instrument(name = "IndexDb::get_entries")]
+  #[instrument(name = "IndexDb::get_entries", err)]
   pub async fn get_entries(
     &self,
     variant: &IndexEntryVariant,
     filter: &IndexEntryFilter,
-  ) -> Vec<IndexEntry> {
-    let mut tx = match self.0.begin().await {
-      Ok(tx) => tx,
-      Err(_) => return Vec::with_capacity(0), // TODO: error handling
-    };
+  ) -> Result<Vec<IndexEntry>, ScrapeURLError> {
+    let mut tx = self.0.begin().await?;
     let entries = sqlx::query_as(r#"
       select id, created_at, status, has_screenshot, has_screenshot_fullscreen, COALESCE(wait_time_ms, 0)::int4 as wait_time_ms
       from index_get_recent_5(
@@ -122,9 +124,8 @@ impl IndexDb {
       .bind(filter.min_age)
       .persistent(false)
       .fetch_all(&mut *tx)
-      .await // TODO: timeout
-      .ok().unwrap_or_else(|| Vec::with_capacity(0)); // TODO: error handling
-    let _ = tx.commit().await;
-    entries
+      .await?; // TODO: timeout
+    tx.commit().await?;
+    Ok(entries)
   }
 }

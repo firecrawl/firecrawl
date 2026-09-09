@@ -8,7 +8,8 @@ use super::TransformerError;
 
 #[instrument(
   name = "transformers::html::_derive_html_from_raw_html",
-  skip(meta, document)
+  skip(meta, document),
+  err
 )]
 pub async fn _derive_html_from_raw_html(
   meta: &Meta,
@@ -51,7 +52,8 @@ pub async fn _derive_html_from_raw_html(
 
 #[instrument(
   name = "transformers::html::derive_html_from_raw_html",
-  skip(meta, document)
+  skip(meta, document),
+  err
 )]
 pub async fn derive_html_from_raw_html(
   meta: &Meta,
