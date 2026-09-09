@@ -21,9 +21,9 @@ import { settleExchangeCall } from "../../services/exchange/settle";
 const forward = vi.mocked(settleExchangeCall);
 
 const CALL = {
-  provider: "fred",
-  capability: "series/series",
-  options: { series_id: "GDP" },
+  provider: "test-provider",
+  capability: "records/get",
+  options: { id: "record-1" },
 };
 
 function req(
@@ -66,7 +66,7 @@ describe("scrape({ exchange })", () => {
       body: {
         success: true,
         creditsCost: 1,
-        results: [{ ...CALL, creditsCost: 1, data: { id: "GDP" } }],
+        results: [{ ...CALL, creditsCost: 1, data: { id: "record-1" } }],
       },
     });
     const { r, out } = res();
@@ -86,7 +86,7 @@ describe("scrape({ exchange })", () => {
       success: true,
       scrape_id: "job-1",
       data: {
-        exchange: [{ ...CALL, creditsCost: 1, data: { id: "GDP" } }],
+        exchange: [{ ...CALL, creditsCost: 1, data: { id: "record-1" } }],
         creditsCost: 1,
       },
     });
@@ -126,7 +126,7 @@ describe("scrape({ exchange })", () => {
       status: 400,
       contentType: null,
       requestId: null,
-      body: { code: "missing_option", error: "ticker is required" },
+      body: { code: "missing_option", error: "id is required" },
     });
     const { r, out } = res();
     await exchangeScrapeController(req({ exchange: [CALL] }), r, "job-5");
@@ -134,7 +134,7 @@ describe("scrape({ exchange })", () => {
     expect(out.body).toEqual({
       success: false,
       code: "missing_option",
-      error: "ticker is required",
+      error: "id is required",
     });
   });
 

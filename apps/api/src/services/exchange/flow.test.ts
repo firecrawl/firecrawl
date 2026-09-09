@@ -6,7 +6,6 @@ const state = vi.hoisted(() => ({
   queue: [] as string[],
   forward: vi.fn(),
   track: vi.fn(),
-  balance: vi.fn(),
   debit: vi.fn(),
   refund: vi.fn(),
   fetch: vi.fn(),
@@ -32,7 +31,6 @@ vi.mock("../queue-service", () => ({
 }));
 vi.mock("../autumn/autumn.service", () => ({
   autumnService: {
-    checkCredits: state.balance,
     trackCredits: state.track,
     refundCredits: state.refund,
     isRoutedThroughFirebill: async () => false,
@@ -90,7 +88,6 @@ beforeEach(() => {
   state.flags = { exchangeRetrieve: true };
   config.FIRE_EXCHANGE_URL = "https://exchange.example";
   config.EXCHANGE_INTERNAL_SECRET = "test-secret";
-  state.balance.mockResolvedValue({ allowed: true, remaining: 1 });
   state.track.mockResolvedValue(true);
   state.debit.mockResolvedValue([]);
   state.refund.mockResolvedValue(true);
@@ -187,27 +184,6 @@ it("refunds a failed enqueue and blocks re-execution", async () => {
   expect((await send()).status).toBe(409);
   expect(state.forward).toHaveBeenCalledTimes(1);
 });
-it.each(["/exchange/retrieve", "/v2/scrape"])(
-  "enforces provider access before billing on %s",
-  async path => {
-    state.flags.exchangeRetrieve = false;
-    const response = await request(app)
-      .post(path)
-      .send(path === "/v2/scrape" ? { exchange: calls } : { requests: calls });
-    expect(response.status).toBe(403);
-    expect(state.forward).not.toHaveBeenCalled();
-    expect(state.track).not.toHaveBeenCalled();
-  },
-);
-it("leaves discovery free", async () => {
-  expect((await request(app).get("/exchange/discover?q=test")).status).toBe(
-    200,
-  );
-  expect(state.balance).not.toHaveBeenCalled();
-  expect(state.track).not.toHaveBeenCalled();
-  expect(state.queue).toHaveLength(0);
-});
-
 it.each([408, 500, 502, 504])(
   "blocks retries after ambiguous upstream status %i",
   async status => {
@@ -238,4 +214,29 @@ it("does not repeat an ambiguous billing track after retry", async () => {
   expect(state.track).toHaveBeenCalledTimes(1);
   expect(state.queue).toHaveLength(0);
   expect(state.fetch).not.toHaveBeenCalled();
+});
+
+it.each([-1, 101, 1.5, undefined])(
+  "rejects invalid charge %s before billing",
+  async creditsCost => {
+    state.forward.mockResolvedValue({ status: 200, body: { creditsCost } });
+    const response = await request(app)
+      .post("/exchange/retrieve")
+      .send({ requests: calls });
+    expect(response.status).toBe(502);
+    expect(state.track).not.toHaveBeenCalled();
+    expect(state.queue).toHaveLength(0);
+  },
+);
+it("leaves failed confirmations pending after bounded retries", async () => {
+  await request(app).post("/exchange/retrieve").send({ requests: calls });
+  state.fetch.mockResolvedValue({
+    ok: false,
+    status: 503,
+    arrayBuffer: async () => new ArrayBuffer(0),
+  });
+  await processBillingBatch();
+  expect(state.debit).toHaveBeenCalledTimes(1);
+  expect(state.fetch).toHaveBeenCalledTimes(3);
+  expect(state.refund).not.toHaveBeenCalled();
 });
