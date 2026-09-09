@@ -686,6 +686,35 @@ describe("authenticateUser", () => {
         flags,
       );
     });
+
+    it("lets a per-team override win over the floor for a trusted agent request", async () => {
+      const overrideFlags = { rateLimitOverrides: { scrape: 42 } };
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([
+        {
+          api_key: "00000000-0000-4000-8000-000000000000",
+          api_key_id: 1,
+          team_id: "team-1",
+          org_id: "org-1",
+          flags: overrideFlags,
+        },
+      ]);
+      vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+
+      await authenticateUser(
+        agentRequest("agent-secret"),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      // The override replaces the whole base × multiplier computation, so the
+      // floor never applies and the Autumn multiplier is never fetched.
+      expect(autumnService.getRateLimitMultiplier).not.toHaveBeenCalled();
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        1,
+        overrideFlags,
+      );
+    });
   });
 
   it("leaves the preview token on the static rate limiter", async () => {
