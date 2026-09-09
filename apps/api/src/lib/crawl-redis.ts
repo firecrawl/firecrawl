@@ -1017,7 +1017,15 @@ export function crawlToCrawler(
   if (sc.robots !== undefined) {
     try {
       crawler.importRobotsTxt(sc.robots);
-    } catch (_) {}
+    } catch (error) {
+      _logger.warn(
+        "Failed to import robots.txt for crawl, proceeding without it",
+        {
+          error,
+          crawlId: id,
+        },
+      );
+    }
   }
 
   return crawler;

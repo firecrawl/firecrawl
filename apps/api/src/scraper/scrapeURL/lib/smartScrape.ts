@@ -206,7 +206,14 @@ export async function smartScrape({
         if (json.error === "Cost limit exceeded") {
           throw new CostLimitExceededError();
         }
-      } catch (e) {}
+      } catch (e) {
+        if (e instanceof CostLimitExceededError) {
+          throw e;
+        }
+        logger.debug("Failed to parse smart scrape error response", {
+          error: e,
+        });
+      }
     }
 
     // Safely extract error information without circular references

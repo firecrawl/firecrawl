@@ -159,7 +159,13 @@ export async function getMapResults({
   try {
     sc.robots = await crawler.getRobotsTxt(false, abort);
     crawler.importRobotsTxt(sc.robots);
-  } catch (_) {}
+  } catch (error) {
+    logger.warn("Failed to get robots.txt for map, proceeding without it", {
+      error,
+      crawlId: id,
+      teamId,
+    });
+  }
 
   // If sitemapOnly is true, only get links from sitemap
   if (crawlerOptions.sitemapOnly) {
