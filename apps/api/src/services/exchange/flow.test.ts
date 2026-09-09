@@ -119,8 +119,13 @@ beforeEach(() => {
     requestId: null,
   });
 });
-it.each(["/exchange/retrieve", "/v2/scrape"])(
-  "settles %s only after the queued debit commits",
+it.each([
+  "/exchange/retrieve",
+  "/exchange/retrieve/",
+  "/exchange/RETRIEVE",
+  "/v2/scrape",
+])(
+  "settles %s only after the queued debit commits and confirms Exchange usage",
   async path => {
     const payload =
       path === "/v2/scrape"

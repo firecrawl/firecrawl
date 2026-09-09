@@ -71,6 +71,16 @@ describe("forwardToExchange", () => {
     expect((fetchMock.mock.calls[0]![1] as any).body).toBeUndefined();
   });
 
+  it("reuses the connection pool across different request deadlines", async () => {
+    fetchMock.mockResolvedValue(upstream(200, { ok: true }));
+    const input = { teamId: "t", method: "GET", path: "/v1/discover" };
+    await forwardToExchange({ ...input, timeoutMs: 10_000 });
+    await forwardToExchange({ ...input, timeoutMs: 9_999 });
+    expect(fetchMock.mock.calls[0]![1]!.dispatcher).toBe(
+      fetchMock.mock.calls[1]![1]!.dispatcher,
+    );
+  });
+
   it("is unconfigured without an Exchange URL, before any call", async () => {
     config.FIRE_EXCHANGE_URL = "";
     await expect(

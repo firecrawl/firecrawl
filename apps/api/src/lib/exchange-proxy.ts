@@ -38,19 +38,11 @@ export function exchangeProxyFailureResponse(kind: ExchangeProxyFailure): {
 export const EXCHANGE_DISCOVER_TIMEOUT_MS = 10_000;
 export const EXCHANGE_RETRIEVE_TIMEOUT_MS = 50_000;
 
-const dispatchers = new Map<number, Agent>();
-function dispatcherFor(timeout: number): Agent {
-  let agent = dispatchers.get(timeout);
-  if (!agent) {
-    agent = new Agent({
-      connectTimeout: timeout,
-      headersTimeout: timeout,
-      bodyTimeout: timeout,
-    });
-    dispatchers.set(timeout, agent);
-  }
-  return agent;
-}
+const dispatcher = new Agent({
+  connectTimeout: EXCHANGE_RETRIEVE_TIMEOUT_MS,
+  headersTimeout: EXCHANGE_RETRIEVE_TIMEOUT_MS,
+  bodyTimeout: EXCHANGE_RETRIEVE_TIMEOUT_MS,
+});
 
 export function exchangeUpstreamBase(): string | null {
   if (!config.FIRE_EXCHANGE_URL) return null;
@@ -105,7 +97,7 @@ export async function forwardToExchange(input: {
       },
       body: hasBody ? JSON.stringify(input.body ?? {}) : undefined,
       signal: AbortSignal.timeout(input.timeoutMs),
-      dispatcher: dispatcherFor(input.timeoutMs),
+      dispatcher,
     });
     text = await upstream.text();
   } catch (error: unknown) {

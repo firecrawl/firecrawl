@@ -24,7 +24,7 @@ function exchangeError(res: Response, status: number, error: string) {
 
 function exchangeProxy(
   timeout: number,
-  options: { requiresRetrieveFlag?: boolean } = {},
+  options: { requiresRetrieveFlag?: boolean; billUsage?: boolean } = {},
 ) {
   const requiresRetrieveFlag = options.requiresRetrieveFlag !== false;
 
@@ -52,26 +52,25 @@ function exchangeProxy(
     const accept = req.headers["accept"];
     const requestId = req.headers["x-request-id"];
     try {
-      const upstream =
-        req.method === "POST" && req.path === "/retrieve"
-          ? await settleExchangeCall({
-              teamId: authedReq.auth.team_id,
-              apiKeyId: authedReq.acuc?.api_key_id ?? null,
-              orgId: authedReq.acuc?.org_id,
-              body: req.body,
-              timeoutMs: timeout,
-              requestId: typeof requestId === "string" ? requestId : undefined,
-              logger,
-            })
-          : await forwardToExchange({
-              teamId: authedReq.auth.team_id,
-              method: req.method,
-              path: req.originalUrl.replace(/^\/exchange/, "/v1"),
-              body: req.body,
-              timeoutMs: timeout,
-              ...(typeof accept === "string" ? { accept } : {}),
-              ...(typeof requestId === "string" ? { requestId } : {}),
-            });
+      const upstream = options.billUsage
+        ? await settleExchangeCall({
+            teamId: authedReq.auth.team_id,
+            apiKeyId: authedReq.acuc?.api_key_id ?? null,
+            orgId: authedReq.acuc?.org_id,
+            body: req.body,
+            timeoutMs: timeout,
+            requestId: typeof requestId === "string" ? requestId : undefined,
+            logger,
+          })
+        : await forwardToExchange({
+            teamId: authedReq.auth.team_id,
+            method: req.method,
+            path: req.originalUrl.replace(/^\/exchange/, "/v1"),
+            body: req.body,
+            timeoutMs: timeout,
+            ...(typeof accept === "string" ? { accept } : {}),
+            ...(typeof requestId === "string" ? { requestId } : {}),
+          });
 
       if (upstream.contentType)
         res.setHeader("content-type", upstream.contentType);
@@ -106,7 +105,7 @@ exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
   checkCreditsMiddleware(1),
-  wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
+  wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS, { billUsage: true })),
 );
 
 exchangeRouter.get(
