@@ -1,0 +1,25 @@
+apps/api/src/routes/exchange.ts
+  s_72504da98d9ee5::t_f9840150255f84 64-69,96
+apps/api/src/controllers/v2/__tests__/search-developer-ledger.test.ts
+  s_72504da98d9ee5::t_3ce68515df8e00 67-71,143-149,167,172-175
+apps/api/src/controllers/v2/search.ts
+  s_72504da98d9ee5::t_f9840150255f84 255,257-258
+apps/api/src/services/exchange/flow.test.ts
+  s_72504da98d9ee5::t_3ce68515df8e00 3,38,44,46-49,74-75,93-98,114,425,438-442,444-447,449,457-459,468-480,482-484
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a2d37d3a23f4c57442886bf3835a356fcfee72b3",
+  "prompts": {},
+  "sessions": {
+    "s_72504da98d9ee5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c2c-dc83-7412-a139-5948d4045196",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
