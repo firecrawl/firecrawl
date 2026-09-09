@@ -11,6 +11,7 @@ import {
   PDFAntibotError,
   PDFFetchProxyError,
   PDFInsufficientTimeError,
+  PDFPageLimitExceededError,
   PDFOCRRequiredError,
   PDFPrefetchFailed,
   RemoveFeatureError,
@@ -59,7 +60,11 @@ import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { toPublicBlocks } from "./blocks";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
-import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
+import {
+  isPdfBuffer,
+  PDF_SNIFF_WINDOW,
+  exceedsPreviewPdfPageLimit,
+} from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
 import { withPdfExtractionPermit } from "./semaphore";
 
@@ -493,6 +498,25 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         });
         // effectivePageCount stays 0 — skip time budget check
       }
+    }
+
+    // Free-tier page ceiling: preview/keyless teams cannot parse documents
+    // beyond PREVIEW_PDF_MAX_PAGES in one request. Enforced on the effective
+    // page count so an explicit in-limit maxPages still works, and applied
+    // regardless of extraction path so the policy is one predictable rule.
+    // Best-effort by design: when page detection fails (effectivePageCount
+    // stays 0) the request proceeds and downstream accounting still applies.
+    if (
+      exceedsPreviewPdfPageLimit(
+        meta.internalOptions.teamId,
+        effectivePageCount,
+        config.PREVIEW_PDF_MAX_PAGES,
+      )
+    ) {
+      throw new PDFPageLimitExceededError(
+        effectivePageCount,
+        config.PREVIEW_PDF_MAX_PAGES,
+      );
     }
 
     // Only enforce the per-page time budget when we need MU/fallback.
