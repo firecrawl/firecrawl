@@ -161,7 +161,7 @@ export interface WebSearchResult {
   highlights?: string;
 }
 
-export type SearchResultType = "web" | "images" | "news" | "exchange";
+export type SearchResultType = "web" | "images" | "news" | "exchange-providers";
 
 export interface ExchangeSearchResult {
   provider: string;
@@ -176,7 +176,7 @@ export interface SearchV2Response {
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
-  exchange?: ExchangeSearchResult[];
+  "exchange-providers"?: ExchangeSearchResult[];
 }
 
 export interface ScrapeActionContent {

@@ -2105,7 +2105,7 @@ const newsSearchSourceOptions = z.strictObject({
 });
 
 const exchangeSearchSourceOptions = z.strictObject({
-  type: z.literal("exchange"),
+  type: z.literal("exchange-providers"),
 });
 
 // Category source type definitions
@@ -2189,7 +2189,7 @@ export const searchRequestSchema = z
     sources: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["web", "images", "news", "exchange"])),
+        z.array(z.enum(["web", "images", "news", "exchange-providers"])),
         // Array of objects (advanced format)
         z.array(
           z.union([
@@ -2330,8 +2330,8 @@ export const searchRequestSchema = z
                 country,
                 location: x.location,
               };
-            case "exchange":
-              return { type: "exchange" as const };
+            case "exchange-providers":
+              return { type: s };
             default:
               return { type: s as any };
           }

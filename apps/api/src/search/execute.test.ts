@@ -171,7 +171,7 @@ describe("executeSearch exchange source", () => {
     position: 1,
   };
   const capability = {
-    provider: "financial-datasets",
+    provider: "test-provider",
     capability: "prices/latest",
     concept: "prices",
     cohorts: ["finance"],
@@ -200,14 +200,14 @@ describe("executeSearch exchange source", () => {
     expect(mocks.search.mock.calls[0][0].type).toEqual(["web"]);
     expect(mocks.searchExchangeCatalog).not.toHaveBeenCalled();
     expect(result.response).toEqual({ web: [webResult] });
-    expect(result.response).not.toHaveProperty("exchange");
+    expect(result.response).not.toHaveProperty("exchange-providers");
     expect(result.totalResultsCount).toBe(1);
     expect(result.searchCredits).toBe(2);
   });
 
   it("keeps the exchange type away from the upstream when mixed with web, and adds the catalogue beside the web results", async () => {
     const result = await executeSearch(
-      sources(["web", "exchange"]),
+      sources(["web", "exchange-providers"]),
       context,
       logger,
     );
@@ -224,17 +224,17 @@ describe("executeSearch exchange source", () => {
     );
     expect(result.response).toEqual({
       web: [webResult],
-      exchange: [capability],
+      "exchange-providers": [capability],
     });
     expect(result.totalResultsCount).toBe(1);
     expect(result.searchCredits).toBe(2);
   });
 
-  it("runs no upstream search and bills nothing for an exchange-only search", async () => {
-    const result = await executeSearch(sources(["exchange"]), context, logger);
+  it("keeps provider discovery free", async () => {
+    const result = await executeSearch(sources(["exchange-providers"]), context, logger);
 
     expect(mocks.search).not.toHaveBeenCalled();
-    expect(result.response).toEqual({ exchange: [capability] });
+    expect(result.response).toEqual({ "exchange-providers": [capability] });
     expect(result.totalResultsCount).toBe(0);
     expect(result.searchCredits).toBe(0);
     expect(result.totalCredits).toBe(0);
@@ -244,30 +244,30 @@ describe("executeSearch exchange source", () => {
     mocks.searchExchangeCatalog.mockResolvedValue(null);
 
     const result = await executeSearch(
-      sources(["web", "exchange"]),
+      sources(["web", "exchange-providers"]),
       context,
       logger,
     );
 
     expect(result.response).toEqual({ web: [webResult] });
-    expect(result.response).not.toHaveProperty("exchange");
+    expect(result.response).not.toHaveProperty("exchange-providers");
   });
 
   it("records every requested source in tracking, exchange included", async () => {
-    await executeSearch(sources(["web", "exchange"]), context, logger);
+    await executeSearch(sources(["web", "exchange-providers"]), context, logger);
     expect(vi.mocked(trackSearchRequest).mock.calls.at(-1)![0].sources).toEqual(
-      ["web", "exchange"],
+      ["web", "exchange-providers"],
     );
 
-    await executeSearch(sources(["exchange"]), context, logger);
+    await executeSearch(sources(["exchange-providers"]), context, logger);
     expect(vi.mocked(trackSearchRequest).mock.calls.at(-1)![0].sources).toEqual(
-      ["exchange"],
+      ["exchange-providers"],
     );
   });
 
   it("caps the catalogue wait at the caller's timeout", async () => {
     await executeSearch(
-      { ...sources(["exchange"]), timeout: 2_500 },
+      { ...sources(["exchange-providers"]), timeout: 2_500 },
       context,
       logger,
     );
@@ -278,7 +278,7 @@ describe("executeSearch exchange source", () => {
     mocks.search.mockResolvedValue({ web: [webResult], news: [], images: [] });
 
     await executeSearch(
-      sources(["web", "news", "images", "exchange"]),
+      sources(["web", "news", "images", "exchange-providers"]),
       context,
       logger,
     );
@@ -289,4 +289,11 @@ describe("executeSearch exchange source", () => {
       "images",
     ]);
   });
+});
+
+it("accepts provider sources but reserves exchange for later", () => {
+  for (const source of ["exchange-providers", { type: "exchange-providers" }])
+    expect(searchRequestSchema.safeParse({ query: "records", sources: [source] }).success).toBe(true);
+  for (const source of ["exchange", { type: "exchange" }])
+    expect(searchRequestSchema.safeParse({ query: "records", sources: [source] }).success).toBe(false);
 });

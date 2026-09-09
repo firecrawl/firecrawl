@@ -165,18 +165,18 @@ export async function searchController(
     }
 
     const wantsExchange = (req.body.sources as Array<{ type: string }>).some(
-      source => source.type === "exchange",
+      source => source.type === "exchange-providers",
     );
     if (wantsExchange && !req.acuc?.flags?.exchangeRetrieve) {
       return res.status(403).json({
         success: false,
-        error: "The exchange source is not enabled for this team.",
+        error: "The exchange-providers source is not enabled for this team.",
       });
     }
     if (wantsExchange && !config.FIRE_EXCHANGE_URL) {
       return res.status(503).json({
         success: false,
-        error: "The exchange source is not available.",
+        error: "The exchange-providers source is not available.",
       });
     }
 

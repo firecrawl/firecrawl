@@ -108,8 +108,8 @@ export async function executeSearch(
   logger.info("Searching for results");
 
   const requestedTypes = [...new Set(sources.map((s: any) => s.type))];
-  const wantsExchange = requestedTypes.includes("exchange");
-  const searchTypes = requestedTypes.filter(t => t !== "exchange");
+  const wantsExchange = requestedTypes.includes("exchange-providers");
+  const searchTypes = requestedTypes.filter(t => t !== "exchange-providers");
   const exchangeResultsPromise = wantsExchange
     ? searchExchangeCatalog(
         {
@@ -162,7 +162,7 @@ export async function executeSearch(
     : [];
   if (exchangeResultsPromise) {
     const exchange = await exchangeResultsPromise;
-    if (exchange !== null) searchResponse.exchange = exchange;
+    if (exchange !== null) searchResponse["exchange-providers"] = exchange;
   }
 
   // Threat protection: remove blocked results entirely — before
