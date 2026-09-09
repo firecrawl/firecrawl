@@ -1,7 +1,6 @@
 use std::{net::IpAddr, time::Duration};
 
 use chrono::{DateTime, Utc};
-use regex::Regex;
 use sha2::{Digest, Sha256};
 use tracing::instrument;
 use url::Url;
@@ -11,12 +10,13 @@ use self::{
   db::{IndexDb, IndexEntry},
   gcs::IndexGcs,
 };
-use super::super::{
+use super::{
   error::ScrapeURLError,
-  feature_flags::{ConstFeatureFlags, FeatureFlag},
+  feature_flags::FeatureFlag,
+  formats::FormatKind,
   meta::Meta,
+  raw_page::{RawPageContent, RawPageResult, ScrapeProxy},
 };
-use super::{Engine, EngineOutcome, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult};
 
 pub use self::gcs::IndexPDFMetadata;
 
@@ -144,7 +144,7 @@ struct IndexEntryVariant {
 }
 
 impl IndexEntryVariant {
-  pub fn new(url_hash: Vec<u8>, meta: &Meta, proxy: EngineScrapeProxy) -> Self {
+  pub fn new(url_hash: Vec<u8>, meta: &Meta, proxy: ScrapeProxy) -> Self {
     let mut location_languages: Vec<String> = meta.options.location.languages.clone();
     location_languages.dedup();
     location_languages.sort();
@@ -153,7 +153,7 @@ impl IndexEntryVariant {
       url_hash,
       is_mobile: meta.options.mobile,
       block_ads: meta.options.block_ads,
-      is_stealth: proxy == EngineScrapeProxy::Enhanced,
+      is_stealth: proxy == ScrapeProxy::Enhanced,
       location_country: meta.options.location.country.to_index_value(),
       location_languages,
     }
@@ -185,44 +185,33 @@ impl IndexEntryFilter {
   }
 }
 
-pub struct IndexEngine {
+pub struct Index {
   db: IndexDb,
   gcs: IndexGcs,
   cache: Option<IndexCache>,
 }
 
-impl Engine for IndexEngine {
-  const NAME: &'static str = "index";
-  const SPECIAL_REGEX: Option<&'static Regex> = None;
-  const FEATURES: ConstFeatureFlags = ConstFeatureFlags::new(&[
-    FeatureFlag::WaitFor,
-    FeatureFlag::Screenshot,
-    FeatureFlag::ScreenshotFullScreen,
-    FeatureFlag::Mobile,
-    FeatureFlag::Location,
-    FeatureFlag::DisableAdblock,
-  ]);
+impl Index {
+  pub const NAME: &'static str = "index";
 
-  async fn get() -> Option<super::EngineKind> {
-    if let Some(gcs) = IndexGcs::get().await
-      && let Some(db) = IndexDb::get().await
-    {
-      return Some(super::EngineKind::Index(Self {
-        db,
-        gcs,
-        cache: IndexCache::get().await,
-      }));
-    }
+  pub async fn get() -> Result<Option<Self>, ScrapeURLError> {
+    let (Some(gcs), Some(db)) = (IndexGcs::get().await?, IndexDb::get().await?) else {
+      return Ok(None);
+    };
 
-    None
+    Ok(Some(Self {
+      db,
+      gcs,
+      cache: IndexCache::get().await.ok().flatten(),
+    }))
   }
 
-  #[instrument(name = "IndexEngine::scrape", skip(meta, self), err)]
-  async fn scrape(
+  #[instrument(name = "Index::lookup", skip(meta, self), err)]
+  pub async fn lookup(
     &self,
     meta: &Meta,
-    proxy: EngineScrapeProxy,
-  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError> {
+    proxy: ScrapeProxy,
+  ) -> Result<Option<RawPageResult>, ScrapeURLError> {
     let normalized_url = normalize_url_for_index(meta.get_url().clone());
 
     // TODO: fix index to support int8 = i64 to uncap max_age from 30-something days or so
@@ -287,10 +276,7 @@ impl Engine for IndexEngine {
         (None, IndexEntrySource::Cache(index_cache))
       }
       Some((index_cache, Ok(IndexCacheResult::Miss))) => {
-        let entries = match self.db.get_entries(&variant, &filter).await {
-          Ok(entries) => entries,
-          Err(_) => return Ok(EngineOutcome::IndexMiss),
-        };
+        let entries = self.db.get_entries(&variant, &filter).await?;
         (
           if !entries.is_empty() {
             if meta.options.min_age.is_none() {
@@ -316,10 +302,7 @@ impl Engine for IndexEngine {
         )
       }
       Some((_, Err(_))) | None => {
-        let entries = match self.db.get_entries(&variant, &filter).await {
-          Ok(entries) => entries,
-          Err(_) => return Ok(EngineOutcome::IndexMiss),
-        };
+        let entries = self.db.get_entries(&variant, &filter).await?;
         (
           if entries.is_empty() {
             None
@@ -357,55 +340,75 @@ impl Engine for IndexEngine {
       None
     };
 
-    if let Some(selected_row) = selected_row {
-      let doc = match self.gcs.get_document(selected_row.id).await {
-        Ok(doc) => doc,
-        Err(_) => return Ok(EngineOutcome::IndexMiss),
-      };
+    let Some(selected_row) = selected_row else {
+      return Ok(None);
+    };
 
-      if let Some(doc) = doc {
-        let normalized_pdf_metadata = doc.pdf_metadata.or_else(|| {
-          doc.num_pages.map(|x| IndexPDFMetadata {
-            num_pages: x,
-            total_pages: None,
-            title: None, // TODO: is doc.title a thing?
-          })
-        });
+    let doc = self.gcs.get_document(selected_row.id).await?;
 
-        // If parsers.pdf().max_pages is defined, and the resulting document has a
-        // num_pages value (therefore it's a PDF), enforce the max_pages via
-        // simulating an index miss. I hate this - Mogery
-        if let Some(num_pages) = normalized_pdf_metadata.as_ref().map(|x| x.num_pages)
-          && let Some(pdf_parser) = meta.options.parsers.pdf()
-          && let Some(max_pages) = pdf_parser.max_pages
-          && num_pages > max_pages
-        {
-          return Ok(EngineOutcome::IndexMiss);
-        }
+    if let Some(doc) = doc {
+      let normalized_pdf_metadata = doc.pdf_metadata.or_else(|| {
+        doc.num_pages.map(|x| IndexPDFMetadata {
+          num_pages: x,
+          total_pages: None,
+          title: None, // TODO: is doc.title a thing?
+        })
+      });
 
-        Ok(EngineOutcome::Scraped(EngineScrapeResult {
-          url: doc.url,
-          content: EngineScrapeContent::IndexFakeHTML(doc.html, normalized_pdf_metadata),
-          status_code: doc.status_code,
-          screenshot: doc.screenshot,
-          actions: None,
-          content_type: doc
-            .content_type
-            .unwrap_or_else(|| "application/octet-stream".to_string()),
-          cached_at: Some(selected_row.created_at),
-          proxy_used: doc.proxy_used,
-          timezone: None,
-          filename: None,
-        }))
-      } else {
-        if let IndexEntrySource::Cache(index_cache) = source {
-          // drop poisoned cache
-          let _ = index_cache.delete_entry(&variant, selected_row.id).await;
-        }
-        Ok(EngineOutcome::IndexMiss)
+      // If parsers.pdf().max_pages is defined, and the resulting document has a
+      // num_pages value (therefore it's a PDF), enforce the max_pages via
+      // simulating an index miss. I hate this - Mogery
+      if let Some(num_pages) = normalized_pdf_metadata.as_ref().map(|x| x.num_pages)
+        && let Some(pdf_parser) = meta.options.parsers.pdf()
+        && let Some(max_pages) = pdf_parser.max_pages
+        && num_pages > max_pages
+      {
+        return Ok(None);
       }
+
+      Ok(Some(RawPageResult {
+        url: doc.url,
+        content: RawPageContent::IndexFakeHTML(doc.html, normalized_pdf_metadata),
+        status_code: doc.status_code,
+        screenshot: doc.screenshot,
+        actions: None,
+        content_type: doc
+          .content_type
+          .unwrap_or_else(|| "application/octet-stream".to_string()),
+        cached_at: Some(selected_row.created_at),
+        proxy_used: doc.proxy_used,
+        timezone: None,
+        filename: None,
+      }))
     } else {
-      Ok(EngineOutcome::IndexMiss)
+      if let IndexEntrySource::Cache(index_cache) = source {
+        // drop poisoned cache
+        let _ = index_cache.delete_entry(&variant, selected_row.id).await;
+      }
+      Ok(None)
     }
   }
+}
+
+pub fn should_use_index(meta: &Meta) -> bool {
+  let has_custom_screenshot_settings = if let Some(screenshot) = meta.options.formats.screenshot() {
+    screenshot.viewport.is_some() || screenshot.quality.is_some()
+  } else {
+    false
+  };
+
+  let has_custom_pdf_settings = if let Some(pdf) = meta.options.parsers.pdf() {
+    pdf.blocks || pdf.pages || pdf.page_markers
+  } else {
+    false
+  };
+
+  !meta.options.formats.contains(FormatKind::ChangeTracking)
+    && !meta.options.formats.contains(FormatKind::Branding)
+    && !has_custom_pdf_settings
+    && !has_custom_screenshot_settings
+    && meta.options.max_age != Some(0)
+    && meta.options.headers.is_empty()
+    && meta.options.actions.is_empty()
+    && meta.options.profile.is_none()
 }

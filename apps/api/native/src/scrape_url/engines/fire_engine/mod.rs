@@ -19,11 +19,11 @@ use super::super::{
   formats::FormatKind,
   meta::Meta,
   options::ProxyMode,
+  raw_page::{
+    JavascriptActionContent, RawPageActions, RawPageContent, RawPageResult, ScrapeProxy,
+  },
 };
-use super::{
-  Engine, EngineOutcome, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult,
-  EngineScrapeResultActions, JavascriptActionContent,
-};
+use super::{Engine, EngineOutcome};
 
 mod actions;
 mod check_status;
@@ -47,7 +47,7 @@ pub struct FireEngine {
 }
 
 pub struct FireEngineScrape {
-  pub result: EngineScrapeResult,
+  pub result: RawPageResult,
   pub audio_cookies: Vec<FireEngineActionResultCookie>,
 }
 
@@ -56,7 +56,7 @@ impl FireEngine {
   pub async fn do_scrape(
     &self,
     meta: &Meta,
-    proxy: EngineScrapeProxy,
+    proxy: ScrapeProxy,
     get_cookies: bool,
   ) -> Result<EngineOutcome<FireEngineScrape>, ScrapeURLError> {
     let mut actions: Vec<InternalAction> = Vec::new();
@@ -116,7 +116,7 @@ impl FireEngine {
       mobile: meta.options.mobile,
       timeout: 300000, // TODO: timeout
       disable_smart_wait_cache: meta.internal_options.disable_smart_wait_cache,
-      mobile_proxy: proxy == EngineScrapeProxy::Enhanced,
+      mobile_proxy: proxy == ScrapeProxy::Enhanced,
       auto_proxy: meta.options.proxy == ProxyMode::Auto,
       max_age: meta.options.max_age,
       save_scrape_result_to_gcs: false,
@@ -245,14 +245,14 @@ impl FireEngine {
     let mut screenshots_iter = result.screenshots.into_iter();
 
     Ok(EngineOutcome::Scraped(FireEngineScrape {
-      result: EngineScrapeResult {
+      result: RawPageResult {
         url: result.url.unwrap_or_else(|| meta.get_url().to_owned()),
 
         filename: result.file.as_ref().map(|x| x.name.to_owned()),
         content: if let Some(file) = result.file {
           file.content.try_into()?
         } else {
-          EngineScrapeContent::ChromeRenderedDOM(result.content)
+          RawPageContent::ChromeRenderedDOM(result.content)
         },
         status_code: result.page_status_code,
 
@@ -271,7 +271,7 @@ impl FireEngine {
         },
 
         actions: if had_actions {
-          Some(EngineScrapeResultActions {
+          Some(RawPageActions {
             screenshots: screenshots_iter.collect(),
             scrapes: result.action_content,
             javascript_returns: result
@@ -317,9 +317,9 @@ impl FireEngine {
         },
 
         proxy_used: if result.used_mobile_proxy {
-          EngineScrapeProxy::Enhanced
+          ScrapeProxy::Enhanced
         } else {
-          EngineScrapeProxy::Basic
+          ScrapeProxy::Basic
         },
         timezone: result.timezone,
 
@@ -363,8 +363,8 @@ impl Engine for FireEngine {
   async fn scrape(
     &self,
     meta: &Meta,
-    proxy: EngineScrapeProxy,
-  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError> {
+    proxy: ScrapeProxy,
+  ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError> {
     self
       .do_scrape(meta, proxy, false)
       .await

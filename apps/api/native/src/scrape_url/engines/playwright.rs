@@ -8,8 +8,9 @@ use super::super::{
   error::ScrapeURLError,
   feature_flags::{ConstFeatureFlags, FeatureFlag},
   meta::Meta,
+  raw_page::{RawPageContent, RawPageResult, ScrapeProxy},
 };
-use super::{Engine, EngineOutcome, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult};
+use super::{Engine, EngineOutcome};
 
 static PLAYWRIGHT_MICROSERVICE_URL: LazyLock<Option<String>> = LazyLock::new(|| {
   if let Some(url) = std::env::var("PLAYWRIGHT_MICROSERVICE_URL").ok()
@@ -57,8 +58,8 @@ impl Engine for PlaywrightEngine {
   async fn scrape(
     &self,
     meta: &Meta,
-    _proxy: EngineScrapeProxy,
-  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError> {
+    _proxy: ScrapeProxy,
+  ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError> {
     let client = reqwest::Client::new(); // TODO: cache this maybe?
 
     let res = client
@@ -83,14 +84,14 @@ impl Engine for PlaywrightEngine {
 
     let body: PlaywrightResponse = res.json().await?;
 
-    Ok(EngineOutcome::Scraped(EngineScrapeResult {
+    Ok(EngineOutcome::Scraped(RawPageResult {
       url: meta.get_url().clone(), // TODO: improve redirect following
-      content: EngineScrapeContent::ChromeRenderedDOM(body.content), // TODO: improve binary file handling
+      content: RawPageContent::ChromeRenderedDOM(body.content), // TODO: improve binary file handling
       status_code: body.page_status_code,
       content_type: body
         .content_type
         .unwrap_or_else(|| "application/octet-stream".to_string()), // TODO: improve content-type certainty
-      proxy_used: EngineScrapeProxy::Basic,
+      proxy_used: ScrapeProxy::Basic,
       screenshot: None,
       actions: None,
       cached_at: None,

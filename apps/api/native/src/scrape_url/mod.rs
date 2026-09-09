@@ -7,14 +7,12 @@ use url::Url;
 
 use self::{
   document::{Document, DocumentMetadataCacheState},
-  engines::{
-    EngineKind, EngineOutcome, EngineScrapeProxy, EngineScrapeResult, get_main_engine,
-    should_use_index,
-  },
+  engines::{EngineOutcome, get_main_engine},
   error::ScrapeURLError,
-  feature_flags::FeatureFlags,
+  index::{Index, should_use_index},
   meta::Meta,
   options::{InternalOptions, ProxyMode, ScrapeOptions},
+  raw_page::{RawPage, RawPageSource, ScrapeProxy},
   transformers::execute_tranformers,
 };
 
@@ -25,20 +23,15 @@ mod error;
 mod feature_flags;
 mod file_size_limit;
 mod formats;
+mod index;
 mod kinded;
 mod meta;
 mod options;
 mod parsers;
+mod raw_page;
 mod rewrite_url;
 mod robots;
 mod transformers;
-
-struct EngineRun {
-  engine: EngineKind,
-  result: EngineScrapeResult,
-  unsupported_features: FeatureFlags,
-  index_attempted: bool,
-}
 
 #[instrument(
   name = "scrape_url",
@@ -75,13 +68,13 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
   tracing::info!("Scraping URL...");
 
   let discrete_proxy = match meta.options.proxy {
-    options::ProxyMode::Auto | options::ProxyMode::Basic => engines::EngineScrapeProxy::Basic,
-    options::ProxyMode::Enhanced => engines::EngineScrapeProxy::Enhanced,
+    options::ProxyMode::Auto | options::ProxyMode::Basic => ScrapeProxy::Basic,
+    options::ProxyMode::Enhanced => ScrapeProxy::Enhanced,
   };
 
   let should_use_index = should_use_index(&meta);
 
-  let index_run = {
+  let index_page = {
     if !should_use_index {
       if meta.options.lockdown {
         return Err(ScrapeURLError::LockdownMissError);
@@ -91,25 +84,27 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
       }
     }
 
-    if should_use_index && let Some(index) = EngineKind::index().await {
-      match index.scrape(&meta, discrete_proxy).await? {
-        EngineOutcome::Scraped(result) => Some(EngineRun {
-          engine: index,
-          result,
-          unsupported_features: HashSet::new(), // TODO
-          index_attempted: true,
-        }),
-        EngineOutcome::IndexMiss => None,
-        // TODO: this pattern is disgusting and proof that the index and an engine should be separate primitives
-        EngineOutcome::ProxyElevationNeeded => unreachable!(),
+    if should_use_index {
+      match Index::get().await {
+        Ok(Some(index)) => index
+          .lookup(&meta, discrete_proxy)
+          .await
+          .ok()
+          .flatten()
+          .map(|result| RawPage {
+            source: RawPageSource::Index,
+            result,
+            index_attempted: true,
+          }),
+        _ => None,
       }
     } else {
       None
     }
   };
 
-  let run = match index_run {
-    Some(index_run) => index_run,
+  let page = match index_page {
+    Some(index_page) => index_page,
     None if meta.options.lockdown => return Err(ScrapeURLError::LockdownMissError),
     None if meta.internal_options.agent_index_only => {
       return Err(ScrapeURLError::AgentIndexOnlyError);
@@ -118,10 +113,12 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
       let main_engine = get_main_engine().await;
 
       match main_engine.scrape(&meta, discrete_proxy).await? {
-        EngineOutcome::Scraped(result) => EngineRun {
-          engine: main_engine,
+        EngineOutcome::Scraped(result) => RawPage {
+          source: RawPageSource::Engine(
+            main_engine,
+            HashSet::new(), // TODO
+          ),
           result,
-          unsupported_features: HashSet::new(), // TODO
           index_attempted: should_use_index,
         },
 
@@ -129,47 +126,51 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
         // retry the main engine with enhanced proxies.
         EngineOutcome::ProxyElevationNeeded
           if meta.options.proxy == ProxyMode::Auto
-            && discrete_proxy == EngineScrapeProxy::Basic =>
+            && discrete_proxy == ScrapeProxy::Basic =>
         {
           match main_engine
-            .scrape(&meta, EngineScrapeProxy::Enhanced)
+            .scrape(&meta, ScrapeProxy::Enhanced)
             .await?
           {
-            EngineOutcome::Scraped(result) => EngineRun {
-              engine: main_engine,
+            EngineOutcome::Scraped(result) => RawPage {
+              source: RawPageSource::Engine(
+                main_engine,
+                HashSet::new(), // TODO
+              ),
               result,
-              unsupported_features: HashSet::new(), // TODO
               index_attempted: should_use_index,
             },
             EngineOutcome::ProxyElevationNeeded => {
               return Err(ScrapeURLError::ReliableRetrievalError(meta.options.proxy));
             }
-            EngineOutcome::IndexMiss => unreachable!(),
           }
         }
         EngineOutcome::ProxyElevationNeeded => {
           return Err(ScrapeURLError::ReliableRetrievalError(meta.options.proxy));
         }
-        EngineOutcome::IndexMiss => unreachable!(),
       }
     }
   };
 
   Span::current()
-    .record("engine.winner", run.engine.get_name())
+    .record("engine.winner", page.source.name())
     .record(
       "engine.unsupported_features",
-      run
-        .unsupported_features
-        .iter()
-        .map(|x| x.to_string())
-        .collect::<Vec<String>>()
-        .join(","),
+      page
+        .source
+        .unsupported_features()
+        .map(|x| {
+          x.iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>()
+            .join(",")
+        })
+        .unwrap_or_default(),
     );
 
-  let cached_at = run.result.cached_at;
-  let mut document = parsers::parse_engine_result(&meta, run.result).await?;
-  if run.index_attempted {
+  let cached_at = page.result.cached_at;
+  let mut document = parsers::parse_engine_result(&meta, page.result).await?;
+  if page.index_attempted {
     if let Some(cached_at) = cached_at {
       document.metadata.cache_state = DocumentMetadataCacheState::Hit;
       document.metadata.cached_at = Some(cached_at);
@@ -178,11 +179,12 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
     }
   }
 
-  if !run.unsupported_features.is_empty() {
+  if let Some(unsupported_features) = page.source.unsupported_features()
+    && !unsupported_features.is_empty()
+  {
     document.append_warning(format!(
       "The engine used does not support the following features: {} -- your scrape may be partial.",
-      run
-        .unsupported_features
+      unsupported_features
         .iter()
         .map(|x| x.to_string())
         .collect::<Vec<String>>()

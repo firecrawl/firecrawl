@@ -9,9 +9,9 @@ use tracing::warn;
 use self::firepdf::FirePDF;
 use super::super::{
   document::{Document, DocumentMetadata, DocumentMetadataCacheState},
-  engines::{EngineScrapeContent, EngineScrapeResult},
   error::ScrapeURLError,
   meta::Meta,
+  raw_page::{RawPageContent, RawPageResult},
 };
 
 mod firepdf;
@@ -142,11 +142,11 @@ fn pdf_file_extension_match(filename: &str) -> bool {
   filename.ends_with(".pdf")
 }
 
-pub fn has_pdf_signal(result: &EngineScrapeResult) -> bool {
+pub fn has_pdf_signal(result: &RawPageResult) -> bool {
   let is_pdf_content_type = pdf_content_type_match(&result.content_type);
 
   let is_pdf_binary = match &result.content {
-    EngineScrapeContent::Bytes(bytes) => pdf_binary_match(bytes),
+    RawPageContent::Bytes(bytes) => pdf_binary_match(bytes),
     _ => false,
   };
 
@@ -171,11 +171,11 @@ struct PdfResult {
 
 pub async fn parse_pdf(
   meta: &Meta,
-  result: EngineScrapeResult,
+  result: RawPageResult,
 ) -> Result<Document, ScrapeURLError> {
   let bytes = match result.content {
-    EngineScrapeContent::Bytes(x) => x,
-    EngineScrapeContent::IndexFakeHTML(html, pdf_metadata) => {
+    RawPageContent::Bytes(x) => x,
+    RawPageContent::IndexFakeHTML(html, pdf_metadata) => {
       if pdf_base64_match(&html) && pdf_metadata.is_none() {
         // An undecoded PDF got dumped into the index. Simply run it through our pipeline.
         base64::engine::general_purpose::STANDARD
@@ -225,7 +225,7 @@ pub async fn parse_pdf(
         });
       }
     }
-    EngineScrapeContent::BytesOffloaded(offloaded) => {
+    RawPageContent::BytesOffloaded(offloaded) => {
       unimplemented!() // TODO:
     }
     _ => unreachable!(),

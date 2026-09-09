@@ -11,7 +11,7 @@ use tokio::sync::OnceCell;
 use tracing::instrument;
 use uuid::Uuid;
 
-use super::super::super::error::ScrapeURLError;
+use super::super::error::ScrapeURLError;
 
 use super::{IndexEntryFilter, IndexEntryVariant};
 
@@ -66,13 +66,14 @@ impl IndexDb {
     ))
   }
 
-  pub async fn get() -> Option<Self> {
-    INDEX_DB
-      .get_or_try_init(Self::init)
-      .await
-      .ok()
-      .and_then(|x| x.as_ref())
-      .map(Self)
+  pub async fn get() -> Result<Option<Self>, ScrapeURLError> {
+    Ok(
+      INDEX_DB
+        .get_or_try_init(Self::init)
+        .await?
+        .as_ref()
+        .map(Self),
+    )
   }
 
   #[instrument(name = "IndexDb::get_max_age", err)]

@@ -1,102 +1,17 @@
-use std::fmt::Display;
-
-use bytes::Bytes;
-use chrono::{DateTime, Utc};
 use regex::Regex;
-use serde::{Deserialize, Serialize};
-use url::Url;
 
-use self::{
-  fetch::FetchEngine,
-  fire_engine::FireEngine,
-  index::{IndexEngine, IndexPDFMetadata},
-  playwright::PlaywrightEngine,
-};
+use self::{fetch::FetchEngine, fire_engine::FireEngine, playwright::PlaywrightEngine};
 
 use super::{
-  error::ScrapeURLError, feature_flags::ConstFeatureFlags, formats::FormatKind, meta::Meta,
+  error::ScrapeURLError,
+  feature_flags::ConstFeatureFlags,
+  meta::Meta,
+  raw_page::{RawPageResult, ScrapeProxy},
 };
 
 mod fetch;
 mod fire_engine;
-mod index;
 mod playwright;
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ScrapeActionContent {
-  pub url: String,
-  pub html: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct JavascriptActionContent {
-  pub r#type: String,
-  pub value: serde_json::Value,
-}
-
-#[derive(Debug, Serialize)]
-pub struct EngineScrapeResultActions {
-  #[serde(skip_serializing_if = "Vec::is_empty")]
-  pub screenshots: Vec<Url>,
-  #[serde(skip_serializing_if = "Vec::is_empty")]
-  pub scrapes: Vec<ScrapeActionContent>,
-  #[serde(skip_serializing_if = "Vec::is_empty")]
-  pub javascript_returns: Vec<JavascriptActionContent>,
-  #[serde(skip_serializing_if = "Vec::is_empty")]
-  pub pdfs: Vec<Url>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum EngineScrapeProxy {
-  Basic,
-  #[serde(alias = "stealth")]
-  Enhanced,
-}
-
-impl Display for EngineScrapeProxy {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::Basic => f.write_str("basic"),
-      Self::Enhanced => f.write_str("enhanced"),
-    }
-  }
-}
-
-pub struct BytesOffloaded {
-  /// URI of file on GCS bucket (gs://{bucket name}/{object name})
-  pub gcs_uri: String,
-
-  /// SHA-256 hash of file
-  pub sha256: String,
-
-  /// File size in bytes
-  pub size_bytes: usize,
-}
-
-pub enum EngineScrapeContent {
-  Bytes(Bytes),
-  BytesOffloaded(BytesOffloaded),
-  ChromeRenderedDOM(String),
-  IndexFakeHTML(String, Option<IndexPDFMetadata>),
-  GeneratedMarkdown(String),
-}
-
-pub struct EngineScrapeResult {
-  pub url: Url,
-  pub status_code: u16,
-  pub content: EngineScrapeContent,
-  pub screenshot: Option<Url>,
-  pub actions: Option<EngineScrapeResultActions>,
-  // pub branding:
-  pub cached_at: Option<DateTime<Utc>>,
-  pub content_type: String, // CFR rework TODO
-  // pub youtube_transcript_content:
-  // pub audio_cookies:
-  pub proxy_used: EngineScrapeProxy,
-  pub timezone: Option<String>,
-  pub filename: Option<String>,
-}
 
 pub trait Engine {
   const NAME: &'static str;
@@ -108,41 +23,37 @@ pub trait Engine {
   async fn scrape(
     &self,
     meta: &Meta,
-    proxy: EngineScrapeProxy,
-  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError>;
+    proxy: ScrapeProxy,
+  ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError>;
 }
 
 pub enum EngineKind {
   Fetch(FetchEngine),
   FireEngine(FireEngine),
-  Index(IndexEngine),
   Playwright(PlaywrightEngine),
 }
 
 impl EngineKind {
-  pub fn get_name(self) -> &'static str {
+  pub fn get_name(&self) -> &'static str {
     match self {
       EngineKind::Fetch(_) => fetch::FetchEngine::NAME,
       EngineKind::FireEngine(_) => fire_engine::FireEngine::NAME,
-      EngineKind::Index(_) => index::IndexEngine::NAME,
       EngineKind::Playwright(_) => playwright::PlaywrightEngine::NAME,
     }
   }
 
-  pub fn get_features(self) -> ConstFeatureFlags {
+  pub fn get_features(&self) -> ConstFeatureFlags {
     match self {
       EngineKind::Fetch(_) => fetch::FetchEngine::FEATURES,
       EngineKind::FireEngine(_) => fire_engine::FireEngine::FEATURES,
-      EngineKind::Index(_) => index::IndexEngine::FEATURES,
       EngineKind::Playwright(_) => playwright::PlaywrightEngine::FEATURES,
     }
   }
 
-  pub fn special_regex(self) -> Option<&'static Regex> {
+  pub fn special_regex(&self) -> Option<&'static Regex> {
     match self {
       EngineKind::Fetch(_) => fetch::FetchEngine::SPECIAL_REGEX,
       EngineKind::FireEngine(_) => fire_engine::FireEngine::SPECIAL_REGEX,
-      EngineKind::Index(_) => index::IndexEngine::SPECIAL_REGEX,
       EngineKind::Playwright(_) => playwright::PlaywrightEngine::SPECIAL_REGEX,
     }
   }
@@ -150,42 +61,14 @@ impl EngineKind {
   pub async fn scrape(
     &self,
     meta: &Meta,
-    proxy: EngineScrapeProxy,
-  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError> {
+    proxy: ScrapeProxy,
+  ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError> {
     match self {
       EngineKind::Fetch(x) => x.scrape(meta, proxy).await,
       EngineKind::FireEngine(x) => x.scrape(meta, proxy).await,
-      EngineKind::Index(x) => x.scrape(meta, proxy).await,
       EngineKind::Playwright(x) => x.scrape(meta, proxy).await,
     }
   }
-
-  pub async fn index() -> Option<Self> {
-    IndexEngine::get().await
-  }
-}
-
-pub fn should_use_index(meta: &Meta) -> bool {
-  let has_custom_screenshot_settings = if let Some(screenshot) = meta.options.formats.screenshot() {
-    screenshot.viewport.is_some() || screenshot.quality.is_some()
-  } else {
-    false
-  };
-
-  let has_custom_pdf_settings = if let Some(pdf) = meta.options.parsers.pdf() {
-    pdf.blocks || pdf.pages || pdf.page_markers
-  } else {
-    false
-  };
-
-  !meta.options.formats.contains(FormatKind::ChangeTracking)
-    && !meta.options.formats.contains(FormatKind::Branding)
-    && !has_custom_pdf_settings
-    && !has_custom_screenshot_settings
-    && meta.options.max_age != Some(0)
-    && meta.options.headers.is_empty()
-    && meta.options.actions.is_empty()
-    && meta.options.profile.is_none()
 }
 
 pub async fn get_main_engine() -> EngineKind {
@@ -200,7 +83,6 @@ pub async fn get_main_engine() -> EngineKind {
 
 pub enum EngineOutcome<T> {
   Scraped(T),
-  IndexMiss,
   ProxyElevationNeeded,
 }
 
@@ -208,7 +90,6 @@ impl<T> EngineOutcome<T> {
   pub fn map<U>(self, f: impl FnOnce(T) -> U) -> EngineOutcome<U> {
     match self {
       Self::Scraped(x) => EngineOutcome::Scraped(f(x)),
-      Self::IndexMiss => EngineOutcome::IndexMiss,
       Self::ProxyElevationNeeded => EngineOutcome::ProxyElevationNeeded,
     }
   }

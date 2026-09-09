@@ -1,9 +1,9 @@
 use super::{
   document::Document,
-  engines::EngineScrapeResult,
   error::ScrapeURLError,
   kinded::{KindedSet, kinded},
   meta::Meta,
+  raw_page::RawPageResult,
 };
 
 pub use self::pdf::{PdfBlockItem, PdfPage};
@@ -22,7 +22,7 @@ pub type Parsers = KindedSet<Parser>;
 
 pub async fn parse_engine_result(
   meta: &Meta,
-  result: EngineScrapeResult,
+  result: RawPageResult,
 ) -> Result<Document, ScrapeURLError> {
   if pdf::has_pdf_signal(&result) {
     pdf::parse_pdf(meta, result).await

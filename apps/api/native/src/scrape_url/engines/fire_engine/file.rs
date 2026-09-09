@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::super::{BytesOffloaded, EngineScrapeContent};
+use super::super::super::raw_page::{BytesOffloaded, RawPageContent};
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -21,7 +21,7 @@ pub enum FireEngineScrapeFileContent {
   },
 }
 
-impl TryFrom<FireEngineScrapeFileContent> for EngineScrapeContent {
+impl TryFrom<FireEngineScrapeFileContent> for RawPageContent {
   type Error = base64::DecodeError;
 
   fn try_from(value: FireEngineScrapeFileContent) -> Result<Self, Self::Error> {

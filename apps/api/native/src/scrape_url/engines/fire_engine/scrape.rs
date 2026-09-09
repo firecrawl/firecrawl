@@ -7,9 +7,10 @@ use url::Url;
 
 use super::super::super::{
   actions::InternalAction,
-  engines::{ScrapeActionContent, fire_engine::actions::FireEngineActionResult},
+  engines::fire_engine::actions::FireEngineActionResult,
   error::ScrapeURLError,
   options::ScrapeOptionsLocation,
+  raw_page::ScrapeActionContent,
 };
 
 use super::{FireEngine, file::FireEngineScrapeFile};

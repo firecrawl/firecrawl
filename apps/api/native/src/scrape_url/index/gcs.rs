@@ -7,8 +7,8 @@ use tracing::instrument;
 use url::Url;
 use uuid::Uuid;
 
-use super::super::super::error::ScrapeURLError;
-use super::super::EngineScrapeProxy;
+use super::super::error::ScrapeURLError;
+use super::super::raw_page::ScrapeProxy;
 
 static INDEX_GCS: OnceCell<Option<(Storage, String)>> = OnceCell::const_new();
 
@@ -52,7 +52,7 @@ pub struct IndexDocument {
   #[serde(skip_serializing_if = "Option::is_none")]
   pub content_type: Option<String>,
   // pub postprocessors_used: Vec<...>,
-  pub proxy_used: EngineScrapeProxy,
+  pub proxy_used: ScrapeProxy,
 }
 
 impl IndexGcs {
@@ -74,13 +74,14 @@ impl IndexGcs {
     )))
   }
 
-  pub async fn get() -> Option<Self> {
-    INDEX_GCS
-      .get_or_try_init(Self::init)
-      .await
-      .ok()
-      .and_then(|x| x.as_ref())
-      .map(Self)
+  pub async fn get() -> Result<Option<Self>, ScrapeURLError> {
+    Ok(
+      INDEX_GCS
+        .get_or_try_init(Self::init)
+        .await?
+        .as_ref()
+        .map(Self),
+    )
   }
 
   #[instrument(name = "IndexGcs::get_document", err)]

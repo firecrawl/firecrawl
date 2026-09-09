@@ -12,8 +12,9 @@ use super::super::{
   error::{GuardError, ScrapeURLError},
   feature_flags::ConstFeatureFlags,
   meta::Meta,
+  raw_page::{RawPageContent, RawPageResult, ScrapeProxy},
 };
-use super::{Engine, EngineOutcome, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult};
+use super::{Engine, EngineOutcome};
 
 pub struct FetchEngine;
 
@@ -138,8 +139,8 @@ impl Engine for FetchEngine {
   async fn scrape(
     &self,
     meta: &Meta,
-    proxy: EngineScrapeProxy,
-  ) -> Result<EngineOutcome<EngineScrapeResult>, ScrapeURLError> {
+    proxy: ScrapeProxy,
+  ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError> {
     // Not sure how safe or performant it is to construct a new wreq every turn? - mogery
     let client = safe_wreq_builder(meta.options.should_skip_tls_verification(), true);
 
@@ -163,10 +164,10 @@ impl Engine for FetchEngine {
       .unwrap_or_else(|| "application/octet-stream".to_string());
     let bytes = res.bytes().await?;
 
-    Ok(EngineOutcome::Scraped(EngineScrapeResult {
+    Ok(EngineOutcome::Scraped(RawPageResult {
       url,
       status_code,
-      content: EngineScrapeContent::Bytes(bytes),
+      content: RawPageContent::Bytes(bytes),
       content_type,
       proxy_used: proxy,
       screenshot: None,

@@ -10,9 +10,9 @@ use crate::_get_inner_json;
 
 use super::super::{
   document::{Document, DocumentMetadata, DocumentMetadataCacheState},
-  engines::{EngineScrapeContent, EngineScrapeResult},
   error::ScrapeURLError,
   meta::Meta,
+  raw_page::{RawPageContent, RawPageResult},
 };
 
 fn deduce_encoding(content: &Bytes, content_type: &str) -> &'static Encoding {
@@ -38,9 +38,9 @@ fn deduce_encoding(content: &Bytes, content_type: &str) -> &'static Encoding {
   .unwrap_or(UTF_8)
 }
 
-pub fn parse_fallback(meta: &Meta, result: EngineScrapeResult) -> Result<Document, ScrapeURLError> {
+pub fn parse_fallback(meta: &Meta, result: RawPageResult) -> Result<Document, ScrapeURLError> {
   let (base64, content, markdown): (String, String, Option<String>) = match result.content {
-    EngineScrapeContent::Bytes(bytes) => {
+    RawPageContent::Bytes(bytes) => {
       let encoding = deduce_encoding(&bytes, &result.content_type);
       (
         base64::engine::general_purpose::STANDARD.encode(bytes.as_ref()),
@@ -48,7 +48,7 @@ pub fn parse_fallback(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
         None,
       )
     }
-    EngineScrapeContent::ChromeRenderedDOM(text) => {
+    RawPageContent::ChromeRenderedDOM(text) => {
       if result.content_type.contains("application/json") {
         // JSON needs to be extracted from <html><body> wrapping done by Chrome to
         // still be valid. We can also add some Markdown flavoring.
@@ -78,18 +78,18 @@ pub fn parse_fallback(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
         )
       }
     }
-    EngineScrapeContent::IndexFakeHTML(html, _) => (
+    RawPageContent::IndexFakeHTML(html, _) => (
       base64::engine::general_purpose::STANDARD.encode(&html), // TODO: THIS IS FAKE RAW
       html,
       None,
     ),
-    EngineScrapeContent::GeneratedMarkdown(md) => (
+    RawPageContent::GeneratedMarkdown(md) => (
       base64::engine::general_purpose::STANDARD.encode(&md),
       markdown::to_html_with_options(&md, &markdown::Options::gfm())
         .expect("this error is impossible"),
       Some(md),
     ),
-    EngineScrapeContent::BytesOffloaded(offloaded) => {
+    RawPageContent::BytesOffloaded(offloaded) => {
       unimplemented!() // TODO
     }
   };

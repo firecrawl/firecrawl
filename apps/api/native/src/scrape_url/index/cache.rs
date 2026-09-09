@@ -9,7 +9,7 @@ use tokio::sync::{Mutex, OnceCell};
 use tracing::instrument;
 use uuid::Uuid;
 
-use super::super::super::error::ScrapeURLError;
+use super::super::error::ScrapeURLError;
 use super::{
   IndexEntryFilter, IndexEntryVariant,
   db::{IndexEntry, MaxAgeRow},
@@ -110,13 +110,14 @@ impl IndexCache {
     )))
   }
 
-  pub async fn get() -> Option<Self> {
-    INDEX_CACHE
-      .get_or_try_init(Self::init)
-      .await
-      .ok()
-      .and_then(|x| x.as_ref())
-      .map(Self)
+  pub async fn get() -> Result<Option<Self>, ScrapeURLError> {
+    Ok(
+      INDEX_CACHE
+        .get_or_try_init(Self::init)
+        .await?
+        .as_ref()
+        .map(Self),
+    )
   }
 
   #[instrument(name = "IndexCache::get_max_age", err)]

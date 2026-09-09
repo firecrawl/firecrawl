@@ -5,9 +5,9 @@ use bytes::Bytes;
 
 use super::super::{
   document::{Document, DocumentMetadata, DocumentMetadataCacheState},
-  engines::{EngineScrapeContent, EngineScrapeResult},
   error::ScrapeURLError,
   meta::Meta,
+  raw_page::{RawPageContent, RawPageResult},
 };
 
 fn document_content_type_match(content_type: &str) -> bool {
@@ -36,12 +36,12 @@ fn document_file_extension_match(filename: &str) -> bool {
     || filename.ends_with(".xls")
 }
 
-pub fn has_document_signal(result: &EngineScrapeResult) -> bool {
+pub fn has_document_signal(result: &RawPageResult) -> bool {
   let is_document_content_type = document_content_type_match(&result.content_type);
 
   let is_document_binary = match &result.content {
-    EngineScrapeContent::Bytes(bytes) => document_binary_match(bytes),
-    EngineScrapeContent::IndexFakeHTML(_, _) => false, // it is impossible to identify an indexed document
+    RawPageContent::Bytes(bytes) => document_binary_match(bytes),
+    RawPageContent::IndexFakeHTML(_, _) => false, // it is impossible to identify an indexed document
     _ => false,
   };
 
@@ -54,9 +54,9 @@ pub fn has_document_signal(result: &EngineScrapeResult) -> bool {
   is_document_content_type || is_document_binary || is_document_file_extension
 }
 
-pub fn parse_document(meta: &Meta, result: EngineScrapeResult) -> Result<Document, ScrapeURLError> {
+pub fn parse_document(meta: &Meta, result: RawPageResult) -> Result<Document, ScrapeURLError> {
   match result.content {
-    EngineScrapeContent::Bytes(bytes) => {
+    RawPageContent::Bytes(bytes) => {
       let format = anydoc::Format::from_bytes(bytes.as_ref()).or_else(|| {
         result
           .filename
@@ -108,10 +108,10 @@ pub fn parse_document(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
         },
       })
     }
-    EngineScrapeContent::BytesOffloaded(offloaded) => {
+    RawPageContent::BytesOffloaded(offloaded) => {
       unimplemented!() // TODO:
     }
-    EngineScrapeContent::IndexFakeHTML(html, _) => {
+    RawPageContent::IndexFakeHTML(html, _) => {
       Ok(Document {
         markdown: None,
         html: None,

@@ -4,8 +4,8 @@ use serde_json::Value;
 use url::Url;
 
 use super::{
-  engines::{EngineScrapeProxy, EngineScrapeResultActions},
   parsers::{PdfBlockItem, PdfPage},
+  raw_page::{RawPageActions, ScrapeProxy},
 };
 use std::{collections::HashMap, fmt::Display};
 
@@ -37,7 +37,7 @@ pub struct DocumentMetadata {
   pub total_pages: Option<u32>,
   pub content_type: String,
   pub timezone: Option<String>,
-  pub proxy_used: EngineScrapeProxy,
+  pub proxy_used: ScrapeProxy,
   pub cache_state: DocumentMetadataCacheState,
   pub cached_at: Option<DateTime<Utc>>,
   pub index_id: Option<String>,
@@ -80,7 +80,7 @@ pub struct Document {
   pub blocks: Option<Vec<PdfBlockItem>>,
   pub warning: Option<String>,
   pub attributes: Option<Vec<DocumentAttribute>>,
-  pub actions: Option<EngineScrapeResultActions>,
+  pub actions: Option<RawPageActions>,
   // change_tracking:
   pub metadata: DocumentMetadata,
 }
