@@ -95,6 +95,10 @@ services:
 
   api:
     <<: *common-service
+    # node runs as PID 1 in this container and does not reap the detached
+    # worker subprocesses harness.js spawns (see apps/api/src/harness.ts),
+    # so an init process is required to prevent zombie accumulation.
+    init: true
     environment:
       <<: *common-env
       HOST: "0.0.0.0"
