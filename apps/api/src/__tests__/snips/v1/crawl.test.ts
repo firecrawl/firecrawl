@@ -155,7 +155,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
     3 * scrapeTimeout + 3 * 5000,
   );
 
-  it.concurrent(
+  it(
     "ongoing crawls endpoint works",
     async () => {
       const beforeCrawl = new Date();
@@ -241,7 +241,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
   //     }
   // }, 300000);
 
-  it.concurrent(
+  it(
     "crawlEntireDomain parameter works",
     async () => {
       const res = await crawl(
@@ -261,7 +261,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
     5 * scrapeTimeout,
   );
 
-  it.concurrent(
+  it(
     "crawlEntireDomain takes precedence over allowBackwardLinks",
     async () => {
       const res = await crawl(
@@ -282,7 +282,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
     5 * scrapeTimeout,
   );
 
-  it.concurrent(
+  it(
     "backward compatibility - allowBackwardLinks still works",
     async () => {
       const res = await crawl(
@@ -302,7 +302,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
     5 * scrapeTimeout,
   );
 
-  it.concurrent(
+  it(
     "allowSubdomains parameter works",
     async () => {
       const res = await crawl(
@@ -322,7 +322,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
     5 * scrapeTimeout,
   );
 
-  it.concurrent(
+  it(
     "allowSubdomains blocks subdomains when false",
     async () => {
       const res = await crawl(
@@ -345,7 +345,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
     5 * scrapeTimeout,
   );
 
-  it.concurrent(
+  it(
     "allowSubdomains correctly allows same registrable domain using PSL",
     async () => {
       const res = await crawl(
@@ -395,7 +395,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
   //   expect(response.body.details[0].path).toEqual(["url"]);
   // });
 
-  it.concurrent("accepts crawl when URL depth equals maxDepth", async () => {
+  it("accepts crawl when URL depth equals maxDepth", async () => {
     const response = await crawlStart(
       {
         url: base,
@@ -410,25 +410,22 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
     expect(typeof response.body.id).toBe("string");
   });
 
-  it.concurrent(
-    "accepts crawl when URL depth is less than maxDepth",
-    async () => {
-      const response = await crawlStart(
-        {
-          url: base,
-          maxDepth: 5,
-          limit: 5,
-        },
-        identity,
-      );
+  it("accepts crawl when URL depth is less than maxDepth", async () => {
+    const response = await crawlStart(
+      {
+        url: base,
+        maxDepth: 5,
+        limit: 5,
+      },
+      identity,
+    );
 
-      expect(response.statusCode).toBe(200);
-      expect(response.body.success).toBe(true);
-      expect(typeof response.body.id).toBe("string");
-    },
-  );
+    expect(response.statusCode).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(typeof response.body.id).toBe("string");
+  });
 
-  it.concurrent(
+  it(
     "filters out non-web protocol links (telnet, ftp, ssh, file, mailto)",
     async () => {
       const res = await crawl(
