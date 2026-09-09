@@ -9,7 +9,9 @@ import {
   getRateLimiter,
   getAutumnRateLimiter,
   getRateLimitOverride,
+  HOBBY_RATE_LIMIT_MULTIPLIER,
 } from "../services/rate-limiter";
+import { isAgentInteropSecretValid } from "../lib/agent-interop";
 import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   consumeKeylessRequest,
@@ -639,18 +641,38 @@ export async function authenticateUser(
  * on to getAutumnRateLimiter, which stays the only place deciding the final
  * limit. An override makes the multiplier irrelevant, so we skip fetching it
  * from Autumn in that case rather than paying for a value that is discarded.
+ *
+ * `minMultiplier` floors the Autumn multiplier (trusted agent traffic passes
+ * the hobby multiplier). It never applies on top of an override, which already
+ * replaces the whole computation.
  */
 async function buildAuthenticatedRateLimiter(
   teamId: string,
   orgId: string | null | undefined,
   mode: RateLimiterMode,
   flags: TeamFlags,
+  minMultiplier?: number,
 ): Promise<RateLimiterRedis> {
-  const multiplier =
-    getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined
-      ? 1
-      : await autumnService.getRateLimitMultiplier(teamId, orgId);
+  let multiplier: number;
+  if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
+    multiplier = 1;
+  } else {
+    multiplier = await autumnService.getRateLimitMultiplier(teamId, orgId);
+    if (minMultiplier !== undefined) {
+      multiplier = Math.max(multiplier, minMultiplier);
+    }
+  }
   return getAutumnRateLimiter(mode, multiplier, flags);
+}
+
+/**
+ * Whether the request carries a valid `__agentInterop` secret, i.e. comes from
+ * the trusted internal agent service. Read from the raw body because auth runs
+ * before the controller's zod parse — the same shape checkCreditsMiddleware
+ * relies on. Presence of the block alone is never trusted; only the secret.
+ */
+function isTrustedAgentInteropRequest(req): boolean {
+  return isAgentInteropSecretValid(req.body?.__agentInterop?.auth);
 }
 
 async function supaAuthenticateUser(
@@ -680,6 +702,14 @@ async function supaAuthenticateUser(
     req.headers["x-forwarded-for"] ||
     req.socket.remoteAddress) as string;
   const iptoken = incomingIP + token;
+
+  // An agent run fans one customer request out into ~10 sub-requests against
+  // the team's own bucket, so a free team (×1) gets throttled by its own agent.
+  // Floor trusted agent traffic at the hobby multiplier; paid plans already
+  // meet it and are unchanged.
+  const minRateMultiplier = isTrustedAgentInteropRequest(req)
+    ? HOBBY_RATE_LIMIT_MULTIPLIER
+    : undefined;
 
   let rateLimiter: RateLimiterRedis;
   let subscriptionData: { team_id: string } | null = null;
@@ -737,6 +767,7 @@ async function supaAuthenticateUser(
       chunk.org_id,
       mode,
       chunk.flags,
+      minRateMultiplier,
     );
   } else if (token.startsWith("fco_")) {
     // OAuth access token — resolve via introspection endpoint
@@ -806,6 +837,7 @@ async function supaAuthenticateUser(
       chunk.org_id,
       mode,
       chunk.flags,
+      minRateMultiplier,
     );
   } else {
     normalizedApi = parseApi(token);
@@ -837,6 +869,7 @@ async function supaAuthenticateUser(
       chunk.org_id,
       mode,
       chunk.flags,
+      minRateMultiplier,
     );
   }
 
