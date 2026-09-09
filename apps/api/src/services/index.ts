@@ -22,7 +22,7 @@ import {
   type IndexCacheEntry,
 } from "./index-cache";
 import type { Logger } from "winston";
-import psl from "psl";
+import { parseHostname } from "../lib/url-utils";
 import { MapDocument } from "../controllers/v2/types";
 import type { PdfMetadata } from "../scraper/scrapeURL/engines/pdf/types";
 import { storage } from "../lib/gcs-jobs";
@@ -239,11 +239,8 @@ export function generateDomainSplits(
   fakeDomain?: string,
 ): string[] {
   if (fakeDomain) {
-    const parsed = psl.parse(hostname);
-    if (parsed === null) return [fakeDomain];
-
-    const fakeParsed = psl.parse(fakeDomain);
-    if (fakeParsed === null || fakeParsed.domain === null) return [fakeDomain];
+    const fakeParsed = parseHostname(fakeDomain);
+    if (fakeParsed.domain === null) return [fakeDomain];
 
     const subdomains: string[] = (fakeParsed.subdomain ?? "")
       .split(".")
@@ -260,8 +257,12 @@ export function generateDomainSplits(
     return domains;
   }
 
-  const parsed = psl.parse(hostname);
-  if (parsed === null) {
+  const parsed = parseHostname(hostname);
+  // No registrable domain (IP literal, or a single label such as localhost) means
+  // there are no domain splits to generate. Note an unrecognised suffix still
+  // yields one — tldts reports domain.unknown as its own registrable domain.
+  const domain = parsed.domain;
+  if (domain === null) {
     return [];
   }
 
@@ -269,12 +270,12 @@ export function generateDomainSplits(
     .split(".")
     .filter(x => x !== "");
   if (subdomains.length === 1 && subdomains[0] === "www") {
-    return [parsed.domain];
+    return [domain];
   }
 
   const domains: string[] = [];
   for (let i = subdomains.length; i >= 0; i--) {
-    domains.push(subdomains.slice(i).concat([parsed.domain]).join("."));
+    domains.push(subdomains.slice(i).concat([domain]).join("."));
   }
 
   return domains;

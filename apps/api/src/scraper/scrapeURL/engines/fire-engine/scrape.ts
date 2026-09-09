@@ -5,6 +5,7 @@ import { InternalAction } from "../../../../controllers/v1/types";
 import { robustFetch } from "../../lib/fetch";
 import { MockState } from "../../lib/mock";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
+import { fireEngineFileSchema } from "./fileSchema";
 import {
   ActionError,
   AddFeatureError,
@@ -30,6 +31,7 @@ const browserCookieSchema = z
 export type FireEngineScrapeRequestCommon = {
   url: string;
   scrapeId?: string;
+  format?: "html" | "rawBase64";
 
   headers?: { [K: string]: string };
 
@@ -49,6 +51,7 @@ export type FireEngineScrapeRequestCommon = {
   geolocation?: { country?: string; languages?: string[] };
 
   mobileProxy?: boolean; // leave it undefined if user doesn't specify
+  autoProxy?: boolean;
 
   timeout?: number;
   maxAge?: number;
@@ -59,8 +62,13 @@ export type FireEngineScrapeRequestCommon = {
 export type FireEngineScrapeRequestChromeCDP = {
   engine: "chrome-cdp";
   skipTlsVerification?: boolean;
+  /** Team-scoped ceiling (bytes) for fire-engine's large-PDF GCS handoff.
+   * Absent = fire-engine grants no raise and PDFs keep its inline cap. */
+  pdfMaxSize?: number;
   actions?: InternalAction[];
   blockMedia?: boolean;
+  /** Opt out of render-engine routing (blockMedia: false normally forces it). */
+  forceNonRender?: boolean;
   mobile?: boolean;
   disableSmartWaitCache?: boolean;
   persistentStorage?: { uniqueId: string };
@@ -148,14 +156,12 @@ const successSchema = z.object({
     .array()
     .optional(),
 
-  // chrome-cdp only -- file download handler
-  file: z
-    .object({
-      name: z.string(),
-      content: z.string(),
-    })
-    .optional()
-    .or(z.null()),
+  // chrome-cdp only -- file download handler (inline base64 or a GCS
+  // handoff reference; see fileSchema.ts). Must accept exactly what the
+  // poll parser in checkStatus.ts accepts: fire-engine returns finished
+  // jobs from POST /scrape too, and a handoff rejected here surfaced as
+  // "response not matched by any schema" -> a spurious engine failure.
+  file: fireEngineFileSchema,
 
   docUrl: z.string().optional(),
 
@@ -269,10 +275,11 @@ export async function fireEngineScrape<
       );
     } else if (
       typeof status.error === "string" &&
-      (status.error.includes("File size exceeds") ||
-        status.error.includes("File exceeds size limit"))
+      status.error.includes("File exceeds size limit")
     ) {
-      throw new UnsupportedFileError("File exceeds size limit");
+      throw new UnsupportedFileError(
+        status.error.slice(status.error.indexOf("File exceeds size limit")),
+      );
     } else if (
       typeof status.error === "string" &&
       status.error.includes("failed to finish without timing out")

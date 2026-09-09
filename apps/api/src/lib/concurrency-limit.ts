@@ -1,6 +1,4 @@
-import { RateLimiterMode } from "../types";
 import { getRedisConnection } from "../services/queue-service";
-import { getACUCTeam } from "../controllers/auth";
 import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
 import { abTestJob } from "../services/ab-test";
@@ -20,31 +18,24 @@ import {
   pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
-import {
-  autumnService,
-  isAutumnLimitsEnabled,
-} from "../services/autumn/autumn.service";
+import { autumnService } from "../services/autumn/autumn.service";
+import { reportPipelineError } from "./redis-pipeline";
 
-// Legacy fallback when neither ACUC nor Autumn gives us a concurrency value.
+// Fallback when Autumn can't give us a concurrency value.
 const DEFAULT_CONCURRENCY_LIMIT = 2;
 
 /**
- * Returns the team's effective concurrency limit. When the Autumn-limits ramp
- * is enabled for the org, this comes from Autumn's CONCURRENCY balance (falling
- * back to the ACUC value, then the default, if Autumn can't answer). Otherwise
- * it's the ACUC value — the old, default behavior.
+ * Returns the team's effective concurrency limit from Autumn's CONCURRENCY
+ * balance. Autumn is authoritative; when the entity is missing we fall back to
+ * the low default of 2. When Autumn errors, getConcurrencyLimit already returns
+ * a high fail-open value, so that carries through here.
  */
 export async function getEffectiveConcurrencyLimit(
   teamId: string,
-  acucConcurrency: number | null | undefined,
   orgId?: string | null,
 ): Promise<number> {
-  const acucValue = acucConcurrency ?? DEFAULT_CONCURRENCY_LIMIT;
-  if (!isAutumnLimitsEnabled(orgId)) {
-    return acucValue;
-  }
   const autumnValue = await autumnService.getConcurrencyLimit(teamId, orgId);
-  return autumnValue ?? acucValue;
+  return autumnValue ?? DEFAULT_CONCURRENCY_LIMIT;
 }
 
 const constructKey = constructConcurrencyLimitKey;
@@ -93,7 +84,15 @@ export async function removeConcurrencyLimitedJobs(
     for (const id of chunk) {
       pipeline.del(constructJobKey(id));
     }
-    await pipeline.exec();
+    // Do not throw on command errors: cancel has already been recorded on
+    // the crawl, and the stale entries self-expire via their PX timeout.
+    // But never let the failure pass silently.
+    reportPipelineError(await pipeline.exec(), logger, {
+      module: "concurrency-limit",
+      method: "removeConcurrencyLimitedJobs",
+      teamId: team_id,
+      jobCount: chunk.length,
+    });
   }
 }
 
@@ -153,7 +152,16 @@ export async function pushConcurrencyLimitedJobs(
 
   pipeline.zadd(queueKey, ...zaddArgs);
   pipeline.sadd("concurrency-limit-queues", queueKey);
-  await pipeline.exec();
+  // Do not throw on command errors: the jobs are already durable in the
+  // NuQ backlog, and the concurrency-queue reconciler requeues anything
+  // missing from this derived Redis index on its next run. But never let
+  // the failure pass silently.
+  reportPipelineError(await pipeline.exec(), logger, {
+    module: "concurrency-limit",
+    method: "pushConcurrencyLimitedJobs",
+    teamId: team_id,
+    jobCount: jobs.length,
+  });
 }
 
 export async function getConcurrencyLimitedJobs(team_id: string) {
@@ -330,16 +338,8 @@ export async function concurrentJobDone(job: NuQJob<any>) {
       await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
     }
 
-    const acuc = await getACUCTeam(
-      job.data.team_id,
-      false,
-      true,
-      job.data.is_extract ? RateLimiterMode.Extract : RateLimiterMode.Crawl,
-    );
     const maxTeamConcurrency = await getEffectiveConcurrencyLimit(
       job.data.team_id,
-      acuc?.concurrency,
-      acuc?.org_id,
     );
 
     let staleSkipped = 0;

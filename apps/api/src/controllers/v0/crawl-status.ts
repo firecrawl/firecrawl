@@ -10,7 +10,6 @@ import {
   type StoredCrawl,
 } from "../../../src/lib/crawl-redis";
 import { supabaseGetScrapesByRequestId } from "../../../src/lib/supabase-jobs";
-import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { toLegacyDocument } from "../v1/types";
 import type { DBScrape, PseudoJob } from "../v1/crawl-status";
@@ -297,7 +296,6 @@ export async function crawlStatusController(req: Request, res: Response) {
               .map(x => toLegacyDocument(x, sc.internalOptions)),
     });
   } catch (error) {
-    Sentry.captureException(error);
     logger.error(error);
     return res.status(500).json({ error: error.message });
   }

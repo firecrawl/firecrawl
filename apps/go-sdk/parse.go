@@ -71,6 +71,7 @@ type ParseOptions struct {
 	Proxy               *string           `json:"proxy,omitempty"`
 	Integration         *string           `json:"integration,omitempty"`
 	RedactPII           *bool             `json:"redactPII,omitempty"`
+	AuditMetadata       *AuditMetadata    `json:"auditMetadata,omitempty"`
 	JsonOptions         *JsonOptions      `json:"jsonOptions,omitempty"`
 }
 

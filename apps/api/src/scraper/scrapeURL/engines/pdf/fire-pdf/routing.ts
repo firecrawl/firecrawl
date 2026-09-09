@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { MIN_DEADLINE_MS } from "./schema";
+import { MIN_ASYNC_CALLER_WINDOW_MS } from "./schema";
 
-export const FIRE_PDF_ASYNC_MIN_REMAINING_MS = MIN_DEADLINE_MS + 10_000;
+export const FIRE_PDF_ASYNC_MIN_REMAINING_MS = MIN_ASYNC_CALLER_WINDOW_MS;
 
 type FirePdfAsyncRouteReason =
   | "zdr"
@@ -9,6 +9,7 @@ type FirePdfAsyncRouteReason =
   | "team_disabled"
   | "team_forced"
   | "request_override"
+  | "bulk_origin"
   | "percentage"
   | "percentage_disabled"
   | "outside_percentage";
@@ -28,6 +29,11 @@ type FirePdfAsyncRouteInput = {
   forceTeamIds?: string;
   disableTeamIds?: string;
   allowRequestOverride: boolean;
+  /** Scrape is a child of a crawl or batch scrape (carries a crawlId).
+   * No caller is blocked on this specific document, so it can ride the
+   * async lane under its own, separately ramped percentage. */
+  bulkOrigin?: boolean;
+  bulkOriginPercentage?: number;
 };
 
 function parseTeamIds(value: string | undefined): Set<string> {
@@ -67,6 +73,19 @@ export function decideFirePdfAsyncRoute(
 
   if (input.requestOptIn && input.allowRequestOverride) {
     return { enabled: true, reason: "request_override" };
+  }
+
+  // Crawl/batch children ramp on their own cohort. The hash is keyed
+  // separately from the general cohort so the two percentages stay
+  // independent; a bulk scrape outside its cohort still falls through
+  // to the general percentage below.
+  if (
+    input.bulkOrigin &&
+    (input.bulkOriginPercentage ?? 0) > 0 &&
+    deterministicPercentage(`bulk-origin:${input.scrapeId}`) <
+      (input.bulkOriginPercentage ?? 0)
+  ) {
+    return { enabled: true, reason: "bulk_origin" };
   }
 
   if (input.percentage <= 0) {

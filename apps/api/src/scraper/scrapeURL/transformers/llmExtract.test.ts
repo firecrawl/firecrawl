@@ -1,4 +1,18 @@
-import { removeDefaultProperty } from "./llmExtract";
+import { vi } from "vitest";
+
+vi.mock("../lib/extractSmartScrape", async importOriginal => {
+  const actual =
+    await importOriginal<typeof import("../lib/extractSmartScrape")>();
+  return {
+    ...actual,
+    extractData: vi.fn(async () => ({
+      extractedDataArray: [],
+      warning: undefined,
+      costLimitExceededTokenUsage: null,
+    })),
+  };
+});
+import { performLLMExtract, removeDefaultProperty } from "./llmExtract";
 import { trimToTokenLimit } from "./llmExtract";
 import { performSummary } from "./llmExtract";
 import { performCleanContent } from "./llmExtract";
@@ -336,5 +350,47 @@ describe("performCleanContent", () => {
 
     expect(result.markdown).toBe("Some content");
     expect(result.warning).toBeUndefined();
+  });
+});
+
+describe("performLLMExtract empty-result handling", () => {
+  it("keeps the json key (null) and adds a warning when extraction produces nothing", async () => {
+    const mockMeta = {
+      options: {
+        formats: [
+          {
+            type: "json",
+            schema: {
+              type: "object",
+              properties: { rows: { type: "array" } },
+            },
+          },
+        ],
+      },
+      internalOptions: { zeroDataRetention: false, teamId: "test-team" },
+      logger: {
+        child: vi.fn(() => ({
+          info: vi.fn(),
+          debug: vi.fn(),
+          warn: vi.fn(),
+          error: vi.fn(),
+        })),
+        debug: vi.fn(),
+        info: vi.fn(),
+      },
+      costTracking: {},
+      id: "test-id",
+      url: "https://example.com/doc.pdf",
+    } as any;
+
+    const document = { markdown: "# some content", metadata: {} } as any;
+
+    const result = await performLLMExtract(mockMeta, document);
+
+    // the requested format must never vanish silently
+    expect(result.json).toBeNull();
+    expect(result.warning).toContain(
+      "JSON extraction did not produce a result",
+    );
   });
 });

@@ -79,6 +79,10 @@ public class ScrapeOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? RedactPII { get; set; }
 
+    [JsonPropertyName("auditMetadata")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AuditMetadata? AuditMetadata { get; set; }
+
     [JsonPropertyName("integration")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Integration { get; set; }

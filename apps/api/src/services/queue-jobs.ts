@@ -1,5 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
-import { NotificationType, RateLimiterMode, ScrapeJobData } from "../types";
+import { NotificationType, ScrapeJobData } from "../types";
 import {
   cleanOldConcurrencyLimitEntries,
   getConcurrencyLimitActiveJobs,
@@ -17,7 +17,6 @@ import {
 import { logger as _logger } from "../lib/logger";
 import { sendNotificationWithCustomDays } from "./notification/email_notification";
 import { shouldSendConcurrencyLimitNotification } from "./notification/notification-check";
-import { getACUCTeam } from "../controllers/auth";
 import { getJobFromGCS, removeJobFromGCS } from "../lib/gcs-jobs";
 import { Document } from "../controllers/v1/types";
 import { getCrawl } from "../lib/crawl-redis";
@@ -399,19 +398,9 @@ async function addScrapeJobRaw(
       }
     }
 
-    {
-      const acuc = await getACUCTeam(
-        webScraperOptions.team_id,
-        false,
-        true,
-        RateLimiterMode.Crawl,
-      );
-      maxConcurrency = await getEffectiveConcurrencyLimit(
-        webScraperOptions.team_id,
-        acuc?.concurrency,
-        acuc?.org_id,
-      );
-    }
+    maxConcurrency = await getEffectiveConcurrencyLimit(
+      webScraperOptions.team_id,
+    );
 
     if (concurrencyLimited === null) {
       const now = Date.now();
@@ -704,17 +693,7 @@ export async function addScrapeJobs(
       addToCQ = jobsForcedToCQ;
     } else {
       const now = Date.now();
-      const acuc = await getACUCTeam(
-        teamId,
-        false,
-        true,
-        RateLimiterMode.Scrape,
-      );
-      maxConcurrency = await getEffectiveConcurrencyLimit(
-        teamId,
-        acuc?.concurrency,
-        acuc?.org_id,
-      );
+      maxConcurrency = await getEffectiveConcurrencyLimit(teamId);
       await cleanOldConcurrencyLimitEntries(teamId, now);
 
       currentActiveConcurrency = (

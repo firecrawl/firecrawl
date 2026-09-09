@@ -22,6 +22,8 @@ export class ScrapeRetryTracker {
     removeFeatureAttempts: 0,
     pdfAntibotAttempts: 0,
     documentAntibotAttempts: 0,
+    pdfFetchProxyAttempts: 0,
+    documentFetchProxyAttempts: 0,
   };
 
   constructor(
@@ -53,19 +55,40 @@ export class ScrapeRetryTracker {
         }
         break;
       case "pdf_antibot":
-        this.stats.pdfAntibotAttempts += 1;
-        if (this.stats.pdfAntibotAttempts > this.config.maxPdfPrefetches) {
-          this.throwLimit(reason, lastError);
+      case "pdf_fetch_proxy": {
+        if (reason === "pdf_antibot") {
+          this.stats.pdfAntibotAttempts += 1;
+        } else {
+          this.stats.pdfFetchProxyAttempts += 1;
         }
-        break;
-      case "document_antibot":
-        this.stats.documentAntibotAttempts += 1;
+        // Antibot and proxy-failure retries consume the same resource — one
+        // browser-engine prefetch round trip — so they share the budget: a
+        // scrape must not be granted maxPdfPrefetches of EACH.
         if (
-          this.stats.documentAntibotAttempts > this.config.maxDocumentPrefetches
+          this.stats.pdfAntibotAttempts + this.stats.pdfFetchProxyAttempts >
+          this.config.maxPdfPrefetches
         ) {
           this.throwLimit(reason, lastError);
         }
         break;
+      }
+      case "document_antibot":
+      case "document_fetch_proxy": {
+        if (reason === "document_antibot") {
+          this.stats.documentAntibotAttempts += 1;
+        } else {
+          this.stats.documentFetchProxyAttempts += 1;
+        }
+        // Same shared-budget rationale as the PDF counters above.
+        if (
+          this.stats.documentAntibotAttempts +
+            this.stats.documentFetchProxyAttempts >
+          this.config.maxDocumentPrefetches
+        ) {
+          this.throwLimit(reason, lastError);
+        }
+        break;
+      }
     }
 
     this.logger.warn("scrapeURL retrying after handled error", {

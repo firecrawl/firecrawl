@@ -31,14 +31,16 @@ export type AuthCreditUsageChunkRow = Record<string, any> & {
 export async function authCreditUsageChunk(
   database: DB,
   input_key: string,
+  input_credential_purpose: "general" | "hosted_mcp_oauth" = "general",
 ): Promise<AuthCreditUsageChunkRow[]> {
   const rows = await execRows<AuthCreditUsageChunkRow>(
     database,
-    sql`select * from auth_credit_usage_chunk_56(input_key => ${input_key})`,
+    sql`select * from auth_chunk_1(input_key => ${input_key}, input_credential_purpose => ${input_credential_purpose})`,
   );
   // api_key_id is a bigint column, so the pg driver hands it back as a string.
   for (const row of rows) {
     if (row.api_key_id != null) {
+      row.api_key_id_text = String(row.api_key_id);
       row.api_key_id = toNum(row.api_key_id);
     }
   }
@@ -51,7 +53,7 @@ export function authCreditUsageChunkFromTeam(
 ): Promise<AuthCreditUsageChunkRow[]> {
   return execRows(
     database,
-    sql`select * from auth_credit_usage_chunk_56_from_team(input_team => ${input_team})`,
+    sql`select * from auth_chunk_1_from_team(input_team => ${input_team})`,
   );
 }
 
@@ -86,23 +88,16 @@ export function billTeam7(params: {
   );
 }
 
-export async function changeTrackingInsertScrape(params: {
-  team_id: string;
-  url: string;
-  job_id: string;
-  change_tracking_tag: string | null;
-  date_added: string;
-}): Promise<void> {
-  await db.execute(
-    sql`select change_tracking_insert_scrape(p_team_id => ${params.team_id}, p_url => ${params.url}, p_job_id => ${params.job_id}, p_change_tracking_tag => ${params.change_tracking_tag}, p_date_added => ${params.date_added}::timestamptz)`,
-  );
-}
-
+// `database` is a parameter because callers split between the primary and the
+// read replica: status controllers (informational `creditsUsed`) read from the
+// replica, while crawl finalization (crawl-logic) reads its own recent billing
+// writes and must stay on the primary.
 export function creditsBilledByCrawlId(
+  database: DB,
   i_crawl_id: string,
 ): Promise<{ credits_billed: number }[]> {
   return execRows(
-    db,
+    database,
     sql`select * from credits_billed_by_crawl_id_2(i_crawl_id => ${i_crawl_id})`,
   );
 }

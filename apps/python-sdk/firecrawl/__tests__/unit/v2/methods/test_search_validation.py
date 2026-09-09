@@ -1,5 +1,5 @@
 import pytest
-from firecrawl.v2.types import SearchRequest, Source, ScrapeOptions, ScrapeFormats
+from firecrawl.v2.types import Category, SearchRequest, Source, ScrapeOptions, ScrapeFormats
 from firecrawl.v2.methods.search import _validate_search_request
 
 
@@ -65,6 +65,23 @@ class TestSearchValidation:
         # Mixed valid/invalid sources
         request = SearchRequest(query="test", sources=["web", "invalid_source"])
         with pytest.raises(ValueError, match="Invalid source type"):
+            _validate_search_request(request)
+
+    def test_validate_categories(self):
+        """Test validation of search categories."""
+        for category in ["github", "research", "pdf", "developer"]:
+            request = SearchRequest(query="test", categories=[category])
+            assert _validate_search_request(request) == request
+
+            request = SearchRequest(query="test", categories=[Category(type=category)])
+            assert _validate_search_request(request) == request
+
+        request = SearchRequest(query="test", categories=["invalid_category"])
+        with pytest.raises(ValueError, match="Invalid category type"):
+            _validate_search_request(request)
+
+        request = SearchRequest(query="test", categories=[Category(type="invalid_category")])
+        with pytest.raises(ValueError, match="Invalid category type"):
             _validate_search_request(request)
 
     def test_validate_invalid_location(self):

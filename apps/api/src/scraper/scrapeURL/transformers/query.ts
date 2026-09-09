@@ -2,6 +2,7 @@ import { generateText } from "ai";
 import { Document, FormatObject } from "../../../controllers/v2/types";
 import { Meta } from "..";
 import { getModel } from "../../../lib/generic-ai";
+import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { calculateCost } from "./llmExtract";
 import {
@@ -12,6 +13,13 @@ import {
 const PROMPT_TAGS = /(<\/?)(query|page|lines)([\s>])/gi;
 function escapePromptTags(text: string): string {
   return text.replace(PROMPT_TAGS, "$1\u200B$2$3");
+}
+
+// Vertex is the preferred provider so usage is traceable via Vertex billing
+// labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
+// aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
+function hasVertex(): boolean {
+  return Boolean(config.VERTEX_CREDENTIALS);
 }
 
 const DIRECT_QUOTE_MODEL = {
@@ -135,7 +143,10 @@ ${escapePromptTags(markdown)}
   const modelChain = [
     {
       name: "gemini-2.5-flash-lite",
-      model: getModel("gemini-2.5-flash-lite", "google"),
+      model: getModel(
+        "gemini-2.5-flash-lite",
+        hasVertex() ? "vertex" : "google",
+      ),
     },
     {
       name: "gpt-4o-mini",

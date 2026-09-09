@@ -1,7 +1,7 @@
 {
   "name": "@mendable/firecrawl-js",
-  "version": "4.30.1",
-  "description": "JavaScript SDK for Firecrawl API",
+  "version": "4.39.0",
+  "description": "JavaScript SDK for the Firecrawl API: web scraping, crawling, web search, and scientific literature search over a research paper index of PubMed, bioRxiv, medRxiv and arXiv abstracts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -57,25 +57,23 @@
     "web",
     "scraper",
     "api",
-    "sdk"
+    "sdk",
+    "web-search",
+    "literature-search",
+    "research",
+    "scientific-papers",
+    "academic-search",
+    "biomedical",
+    "life-sciences",
+    "pubmed",
+    "biorxiv",
+    "medrxiv",
+    "arxiv",
+    "preprints",
+    "citations",
+    "bioinformatics"
   ],
   "engines": {
     "node": ">=22.0.0"
-  },
-  "pnpm": {
-    "overrides": {
-      "@isaacs/brace-expansion@<=5.0.0": ">=5.0.1",
-      "minimatch@<10.2.3": ">=10.2.3",
-      "rollup@<4.59.0": ">=4.59.0",
-      "picomatch@<4.0.4": ">=4.0.4",
-      "handlebars": ">=4.7.9",
-      "brace-expansion@>=5.0.0 <5.0.7": "5.0.7",
-      "js-yaml@>=3.0.0 <3.15.0": "3.15.0",
-      "axios@>=1.0.0 <1.16.0": "1.16.1",
-      "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0",
-      "form-data@>=4.0.0 <4.0.6": "4.0.6",
-      "@babel/core@>=7.0.0 <7.29.6": "7.29.7",
-      "esbuild@>=0.17.0 <0.28.1": "0.28.1"
-    }
   }
 }

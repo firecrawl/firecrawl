@@ -1,111 +1,54 @@
 import { Meta } from "../..";
 import { EngineScrapeResult } from "..";
-import { fetchFileToBuffer } from "../utils/downloadFile";
-import { DocumentConverter, DocumentType } from "@mendable/firecrawl-rs";
+import {
+  fetchFileGuardingProxyFailure,
+  fetchFileToBuffer,
+} from "../utils/downloadFile";
+import { convertDocumentToMarkdown } from "@mendable/firecrawl-rs";
+import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
 import type { Response } from "undici";
-import { DocumentAntibotError, DocumentPrefetchFailed } from "../../error";
+import {
+  DocumentAntibotError,
+  DocumentFetchProxyError,
+  EngineUnsuccessfulError,
+} from "../../error";
+import {
+  documentContentTypeFromExtension,
+  documentExtensionFromContentType,
+  documentExtensionFromUrlPath,
+} from "../../../../lib/document-formats";
 import { readFile, unlink } from "node:fs/promises";
-
-const converter = new DocumentConverter();
-
-function getDocumentTypeFromUrl(url: string): DocumentType {
-  const urlLower = url.toLowerCase();
-
-  // Check for extensions at the end or in the middle (e.g., file.xlsx/hash)
-  // Check .docx before .doc to avoid false matches
-  if (urlLower.endsWith(".docx") || urlLower.includes(".docx/"))
-    return DocumentType.Docx;
-  if (urlLower.endsWith(".doc") || urlLower.includes(".doc/"))
-    return DocumentType.Doc;
-  if (urlLower.endsWith(".odt") || urlLower.includes(".odt/"))
-    return DocumentType.Odt;
-  if (urlLower.endsWith(".rtf") || urlLower.includes(".rtf/"))
-    return DocumentType.Rtf;
-  if (
-    urlLower.endsWith(".xlsx") ||
-    urlLower.endsWith(".xls") ||
-    urlLower.includes(".xlsx/") ||
-    urlLower.includes(".xls/")
-  )
-    return DocumentType.Xlsx;
-
-  return DocumentType.Docx; // hope for the best
-}
-
-function getDocumentTypeFromContentType(
-  contentType: string | null,
-): DocumentType | null {
-  if (!contentType) return null;
-
-  const ct = contentType.toLowerCase();
-
-  // Check for modern .docx format first (Office Open XML)
-  if (
-    ct.includes(
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    )
-  ) {
-    return DocumentType.Docx;
-  }
-
-  // Legacy .doc format (OLE2/CFB binary format)
-  if (ct.includes("application/msword")) {
-    return DocumentType.Doc;
-  }
-
-  if (ct.includes("application/vnd.oasis.opendocument.text")) {
-    return DocumentType.Odt;
-  }
-
-  if (ct.includes("application/rtf") || ct.includes("text/rtf")) {
-    return DocumentType.Rtf;
-  }
-
-  if (
-    ct.includes(
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ) ||
-    ct.includes("application/vnd.ms-excel")
-  ) {
-    return DocumentType.Xlsx;
-  }
-
-  return null;
-}
-
-function getContentTypeFromDocumentType(documentType: DocumentType): string {
-  switch (documentType) {
-    case DocumentType.Docx:
-      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    case DocumentType.Doc:
-      return "application/msword";
-    case DocumentType.Odt:
-      return "application/vnd.oasis.opendocument.text";
-    case DocumentType.Rtf:
-      return "application/rtf";
-    case DocumentType.Xlsx:
-      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-  }
-}
-
-function isValidDocumentContentType(contentType: string | null): boolean {
-  if (!contentType) return false;
-
-  const ct = contentType.toLowerCase();
-  const validTypes = [
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-excel",
-    "application/msword",
-    "application/rtf",
-    "text/rtf",
-    "application/vnd.oasis.opendocument.text",
-  ];
-
-  return validTypes.some(type => ct.includes(type));
-}
+import { useFireEngine } from "../fire-engine/available";
 
 export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
+  // With fire-engine available this engine never downloads files itself:
+  // buildFallbackList routes file URLs through the browser engines and the
+  // file arrives here via documentPrefetch. Reaching the direct download
+  // means either an explicit forceEngine pin (the escape hatch, kept
+  // working) or a browser handoff that came back empty
+  // (documentPrefetch === null) — signal antibot so the retry loop can give
+  // the browser another round trip. In self-hosted deployments (no
+  // fire-engine) the direct download stays the primary path. Ordinary
+  // pages (no "document" flag) keep declining via EngineUnsuccessfulError
+  // so the waterfall just moves on.
+  if (
+    useFireEngine &&
+    meta.internalOptions.forceEngine === undefined &&
+    meta.documentPrefetch == null
+  ) {
+    // A cross-type handoff (a .docx URL serving a PDF or an image) lands in
+    // pdfPrefetch/imagePrefetch: the file is in hand, just not for this
+    // engine — decline so the waterfall reaches the engine that can parse it.
+    if (
+      meta.pdfPrefetch != null ||
+      meta.imagePrefetch != null ||
+      !meta.featureFlags.has("document")
+    ) {
+      throw new EngineUnsuccessfulError("document");
+    }
+    throw new DocumentAntibotError();
+  }
+
   let response: Response;
   let buffer: Buffer;
   let proxyUsed: "basic" | "stealth" = "basic";
@@ -132,41 +75,61 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
       proxyUsed = meta.documentPrefetch.proxyUsed;
     } else {
       // Fetch the document normally
-      const result = await fetchFileToBuffer(
-        meta.rewrittenUrl ?? meta.url,
-        meta.options.skipTlsVerification,
-        {
-          headers: meta.options.headers,
-          signal: meta.abort.asSignal(),
-        },
+      const result = await fetchDocumentFileGuardingProxyFailure(meta, () =>
+        fetchFileToBuffer(
+          meta.rewrittenUrl ?? meta.url,
+          meta.options.skipTlsVerification,
+          {
+            headers: meta.options.headers,
+            signal: meta.abort.asSignal(),
+          },
+        ),
       );
       response = result.response;
       buffer = result.buffer;
 
       // Validate content type only when fetching directly (not using prefetch)
       const ct = response.headers.get("Content-Type");
-      if (ct && !isValidDocumentContentType(ct)) {
+      if (ct && documentExtensionFromContentType(ct) === null) {
+        // The server declared a non-document type and nothing asked for a
+        // document (no `document` flag means neither a document URL extension nor
+        // a caller-requested format), so this engine is just the tail of the
+        // stealth fallback list running against an ordinary HTML page.
+        //
+        // Escalating here is unrecoverable: DocumentAntibotError's remedy is to
+        // clear the `document` flag and re-run the waterfall, which is a no-op
+        // when the flag was never set, so the next attempt fetches the same page,
+        // raises the same error, and burns attempts until SCRAPE_MAX_ATTEMPTS.
+        // Fail this engine instead and let the waterfall move on. Mirrors the pdf
+        // engine's guard, which is why pdf never developed this loop.
+        if (!meta.featureFlags.has("document")) {
+          throw new EngineUnsuccessfulError("document");
+        }
+
         // if downloaded file wasn't a valid document, throw antibot error
         throw new DocumentAntibotError();
       }
     }
 
-    const documentType =
-      getDocumentTypeFromContentType(response.headers.get("content-type")) ??
-      getDocumentTypeFromUrl(response.url);
+    const extension =
+      documentExtensionFromContentType(response.headers.get("content-type")) ??
+      documentExtensionFromUrlPath(new URL(response.url).pathname);
 
-    const html = await converter.convertBufferToHtml(
+    const markdown = await convertDocumentToMarkdown(
       new Uint8Array(buffer),
-      documentType,
+      extension ?? undefined,
     );
+    const html = await safeMarkdownToHtml(markdown, meta.logger, meta.id);
 
     return {
       url: response.url,
       statusCode: response.status,
       html,
+      markdown,
       contentType:
         response.headers.get("content-type") ??
-        getContentTypeFromDocumentType(documentType),
+        (extension ? documentContentTypeFromExtension(extension) : null) ??
+        "application/octet-stream",
       proxyUsed,
     };
   } finally {
@@ -187,4 +150,33 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
 
 export function documentMaxReasonableTime(meta: Meta): number {
   return 15000;
+}
+
+/**
+ * Guards the document engine's direct undici download: a proxy tunneling
+ * failure converts into DocumentFetchProxyError, which the scrapeURL retry
+ * loop handles exactly like DocumentAntibotError (clear the "document" flag,
+ * re-run the waterfall, browser engine fetches the file). See
+ * fetchFileGuardingProxyFailure for the conversion eligibility rules.
+ */
+function fetchDocumentFileGuardingProxyFailure<T>(
+  meta: Meta,
+  fetch: () => Promise<T>,
+): Promise<T> {
+  return fetchFileGuardingProxyFailure(
+    {
+      prefetch: meta.documentPrefetch,
+      // Same conversion-eligibility rules as the pdf engine: only when
+      // forceEngine is unset (retry loop recovers via browser fallback) or
+      // scalar-pinned to this engine (clean error surfaces); arrays keep the
+      // raw error so the waterfall continues through remaining forced
+      // engines.
+      flagMandated:
+        (meta.internalOptions.forceEngine === undefined &&
+          meta.featureFlags.has("document")) ||
+        meta.internalOptions.forceEngine === "document",
+      makeError: () => new DocumentFetchProxyError(),
+    },
+    fetch,
+  );
 }

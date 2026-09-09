@@ -40,9 +40,10 @@ impl Visit for FieldVisitor {
     if field.name() == "message" {
       self.message = Some(format!("{:?}", value));
     } else {
-      self
-        .fields
-        .insert(field.name().to_string(), Value::String(format!("{:?}", value)));
+      self.fields.insert(
+        field.name().to_string(),
+        Value::String(format!("{:?}", value)),
+      );
     }
   }
 
@@ -254,10 +255,7 @@ mod tests {
   fn test_error_preserves_logs() {
     let traced: TracingResult<napi::Result<()>> = with_native_tracing(None, "test", || {
       tracing::info!("before error");
-      Err(napi::Error::new(
-        napi::Status::GenericFailure,
-        "test error",
-      ))
+      Err(napi::Error::new(napi::Status::GenericFailure, "test error"))
     });
 
     assert!(traced.value.is_err());

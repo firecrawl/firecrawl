@@ -54,14 +54,6 @@ export function projectScrapeCredits(
     credits += 4;
   }
 
-  if (
-    options.proxy === "stealth" ||
-    options.proxy === "enhanced" ||
-    options.proxy === "auto"
-  ) {
-    credits += 4;
-  }
-
   return credits;
 }
 

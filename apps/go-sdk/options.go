@@ -91,6 +91,7 @@ type ScrapeOptions struct {
 	StoreInCache        *bool                    `json:"storeInCache,omitempty"`
 	Lockdown            *bool                    `json:"lockdown,omitempty"`
 	RedactPII           *bool                    `json:"redactPII,omitempty"`
+	AuditMetadata       *AuditMetadata           `json:"auditMetadata,omitempty"`
 	Integration         *string                  `json:"integration,omitempty"`
 	JsonOptions         *JsonOptions             `json:"jsonOptions,omitempty"`
 }
@@ -158,6 +159,7 @@ type MapOptions struct {
 	Timeout               *int            `json:"timeout,omitempty"`
 	Integration           *string         `json:"integration,omitempty"`
 	Location              *LocationConfig `json:"location,omitempty"`
+	AuditMetadata         *AuditMetadata  `json:"auditMetadata,omitempty"`
 }
 
 // SearchOptions configures a search request.
@@ -169,6 +171,7 @@ type SearchOptions struct {
 	Limit             *int           `json:"limit,omitempty"`
 	TBS               *string        `json:"tbs,omitempty"`
 	Location          *string        `json:"location,omitempty"`
+	Country           *string        `json:"country,omitempty"`
 	IgnoreInvalidURLs *bool          `json:"ignoreInvalidURLs,omitempty"`
 	Timeout           *int           `json:"timeout,omitempty"`
 	Highlights        *bool          `json:"highlights,omitempty"`
@@ -185,7 +188,16 @@ type AgentOptions struct {
 	MaxCredits            *int                   `json:"maxCredits,omitempty"`
 	StrictConstrainToURLs *bool                  `json:"strictConstrainToURLs,omitempty"`
 	Model                 *string                `json:"model,omitempty"`
-	Webhook               *WebhookConfig         `json:"webhook,omitempty"`
+	// Effort sets the reasoning budget for the agent. Valid values are "low",
+	// "medium", and "high". Every effort level runs spark-2.
+	Effort        *string        `json:"effort,omitempty"`
+	Webhook       *WebhookConfig `json:"webhook,omitempty"`
+	AuditMetadata *AuditMetadata `json:"auditMetadata,omitempty"`
+}
+
+// AuditMetadata identifies the user associated with a SIEM logging event.
+type AuditMetadata struct {
+	Username string `json:"username"`
 }
 
 // LocationConfig specifies geolocation for requests.
@@ -204,8 +216,9 @@ type WebhookConfig struct {
 
 // JsonOptions configures JSON extraction within formats.
 type JsonOptions struct {
-	Prompt string                 `json:"prompt,omitempty"`
-	Schema map[string]interface{} `json:"schema,omitempty"`
+	Prompt               string                 `json:"prompt,omitempty"`
+	Schema               map[string]interface{} `json:"schema,omitempty"`
+	CheckPromptInjection *bool                  `json:"checkPromptInjection,omitempty"`
 }
 
 // Pointer helpers for optional fields.

@@ -308,6 +308,7 @@ export type GenerateCompletionsOptions = {
     deepResearchId?: string;
     llmsTxtId?: string;
   };
+  zeroDataRetention?: boolean;
 };
 export async function generateCompletions({
   logger,
@@ -321,6 +322,7 @@ export async function generateCompletions({
   retryModel = getModel("gpt-4.1-mini", "openai"),
   costTrackingOptions,
   metadata,
+  zeroDataRetention = false,
 }: GenerateCompletionsOptions): Promise<{
   extract: any;
   numTokens: number;
@@ -371,7 +373,7 @@ export async function generateCompletions({
             },
           },
           experimental_telemetry: {
-            isEnabled: true,
+            isEnabled: !zeroDataRetention,
             functionId: metadata.functionId
               ? metadata.functionId + "/generateText"
               : "generateText",
@@ -477,7 +479,7 @@ export async function generateCompletions({
                 },
               },
               experimental_telemetry: {
-                isEnabled: true,
+                isEnabled: !zeroDataRetention,
                 functionId: metadata.functionId
                   ? metadata.functionId + "/generateText"
                   : "generateText",
@@ -648,7 +650,7 @@ export async function generateCompletions({
               },
             },
             experimental_telemetry: {
-              isEnabled: true,
+              isEnabled: !zeroDataRetention,
               functionId: metadata.functionId
                 ? metadata.functionId + "/repairText"
                 : "repairText",
@@ -744,7 +746,7 @@ export async function generateCompletions({
         },
       }),
       experimental_telemetry: {
-        isEnabled: true,
+        isEnabled: !zeroDataRetention,
         functionId: metadata.functionId,
         metadata: {
           teamId: metadata.teamId,
@@ -970,9 +972,17 @@ export async function performLLMExtract(
   }
 
   if (jsonFormat) {
-    if (meta.internalOptions.zeroDataRetention) {
+    const useAgent = isAgentExtractModelValid(
+      meta.internalOptions.v1JSONAgent?.model,
+    );
+
+    // NOTE: ZDR deny policy on JSON mode has been lightened to only
+    // disallow agent/smart scrape (deprecated). This now binds us to
+    // only use model providers in JSON mode that we have ZDR agreements
+    // with. (openai certified yes.) WE MUST OBEY THIS! - Mogery
+    if (useAgent && meta.internalOptions.zeroDataRetention) {
       document.warning =
-        "JSON mode is not supported with zero data retention." +
+        "JSON mode with agent is not supported with zero data retention." +
         (document.warning ? " " + document.warning : "");
       return document;
     }
@@ -1004,15 +1014,14 @@ export async function performLLMExtract(
         functionId: "performLLMExtract",
         scrapeId: meta.id,
       },
+      zeroDataRetention: meta.internalOptions.zeroDataRetention,
     };
 
     const { extractedDataArray, warning, costLimitExceededTokenUsage } =
       await extractData({
         extractOptions: generationOptions,
         urls: [meta.rewrittenUrl ?? meta.url],
-        useAgent: isAgentExtractModelValid(
-          meta.internalOptions.v1JSONAgent?.model,
-        ),
+        useAgent,
         scrapeId: meta.id,
         metadata: {
           teamId: meta.internalOptions.teamId,
@@ -1028,6 +1037,16 @@ export async function performLLMExtract(
     // IMPORTANT: here it only get's the last page!!!
     const extractedData =
       extractedDataArray[extractedDataArray.length - 1] ?? undefined;
+
+    // A requested format must never vanish silently: when extraction
+    // produced nothing, keep the key (null) and say why in `warning` —
+    // otherwise the response is a 200 with the json field absent and no
+    // signal to the caller that anything failed.
+    if (extractedData === undefined && !warning) {
+      document.warning =
+        "JSON extraction did not produce a result." +
+        (document.warning ? " " + document.warning : "");
+    }
 
     // // Prepare the schema, potentially wrapping it
     // const { schemaToUse, schemaWasWrapped } = prepareSmartScrapeSchema(
@@ -1114,12 +1133,12 @@ export async function performLLMExtract(
     });
 
     if (meta.internalOptions.v1OriginalFormat === "extract") {
-      document.extract = extractedData;
+      document.extract = extractedData ?? null;
     } else if (meta.internalOptions.v1OriginalFormat === "json") {
-      document.json = extractedData;
+      document.json = extractedData ?? null;
     } else {
       // v2 API or no v1OriginalFormat - use json field
-      document.json = extractedData;
+      document.json = extractedData ?? null;
     }
     // document.warning = warning;
   }
@@ -1444,6 +1463,7 @@ export async function generateSchemaFromPrompt(
     extractId?: string;
     scrapeId?: string;
   },
+  zeroDataRetention = false,
 ): Promise<{ extract: any }> {
   const model = getModel("gpt-4o-mini", "openai");
   const retryModel = getModel("gpt-4.1-mini", "openai");
@@ -1501,6 +1521,7 @@ Return a valid JSON schema object with properties that would capture the informa
             ? metadata.functionId + "/generateSchemaFromPrompt"
             : "generateSchemaFromPrompt",
         },
+        zeroDataRetention,
       });
 
       return { extract };

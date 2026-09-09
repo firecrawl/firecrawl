@@ -4,6 +4,7 @@ import { autumnService } from "../../services/autumn/autumn.service";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode, ScrapeJobSingleUrls } from "../../types";
 import { logSearch, logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { PageOptions, SearchOptions } from "../../lib/entities";
 import { search } from "../../search";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
@@ -11,7 +12,6 @@ import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
-import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
 import {
   fromLegacyScrapeOptions,
@@ -90,7 +90,7 @@ async function searchHelper(
       team_id,
       searchCredits,
       api_key_id,
-      { endpoint: "search", jobId },
+      { endpoint: "search", jobId, chargeId: jobId },
       logger,
     ).catch(error => {
       logger.error(
@@ -209,6 +209,7 @@ export async function searchController(req: Request, res: Response) {
       id: jobId,
       kind: "search",
       api_version: "v0",
+      external_request_id: externalRequestId(req),
       team_id,
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
@@ -259,7 +260,6 @@ export async function searchController(req: Request, res: Response) {
         return res.status(402).json({ error: "Insufficient credits" });
       }
     } catch (error) {
-      Sentry.captureException(error);
       logger.error(error);
       return res.status(500).json({ error: "Internal server error" });
     }
@@ -299,7 +299,6 @@ export async function searchController(req: Request, res: Response) {
       return res.status(408).json({ error: error.message });
     }
 
-    Sentry.captureException(error);
     logger.error("Unhandled error occurred in search", { error });
     return res.status(500).json({ error: error.message });
   }

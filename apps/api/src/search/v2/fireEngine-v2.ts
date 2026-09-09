@@ -4,13 +4,9 @@ import {
   SearchV2Response,
   SearchResultType,
 } from "../../lib/entities";
-import * as Sentry from "@sentry/node";
 import { logger } from "../../lib/logger";
 import { executeWithRetry, attemptRequest } from "../../lib/retry-utils";
-
-const useFireEngine =
-  config.FIRE_ENGINE_BETA_URL !== "" &&
-  config.FIRE_ENGINE_BETA_URL !== undefined;
+import { useFireEngine } from "../../scraper/scrapeURL/engines/fire-engine/available";
 
 function normalizeSearchTypes(
   type?: SearchResultType | SearchResultType[],
@@ -40,11 +36,13 @@ function normalizeSearchTypes(
 export async function fire_engine_search_v2(
   q: string,
   options: {
+    requestId?: string;
     tbs?: string;
     filter?: string;
     lang?: string;
     country?: string;
     location?: string;
+    safe?: boolean;
     numResults: number;
     page?: number;
     type?: SearchResultType | SearchResultType[];
@@ -69,6 +67,7 @@ export async function fire_engine_search_v2(
     page: options.page ?? 1,
     type: options.type || "web",
     enterprise: options.enterprise,
+    safe: options.safe ? ("active" as const) : undefined,
   };
 
   const requestedTypes = normalizeSearchTypes(options.type);
@@ -76,7 +75,7 @@ export async function fire_engine_search_v2(
   const data = JSON.stringify(payload);
 
   const result = await executeWithRetry<SearchV2Response>(
-    () => attemptRequest<SearchV2Response>(url, data, abort),
+    () => attemptRequest<SearchV2Response>(url, data, abort, options.requestId),
     (response): response is SearchV2Response => response !== null,
     abort,
   );

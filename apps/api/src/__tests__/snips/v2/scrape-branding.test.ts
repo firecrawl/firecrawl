@@ -11,6 +11,30 @@ beforeAll(async () => {
   });
 }, 10000 + scrapeTimeout);
 
+describe("Branding declared-logo fallback", () => {
+  // The fixture page declares its logo via JSON-LD + apple-touch icon but
+  // renders no logo image in the DOM, forcing the declared-mark fallback.
+  concurrentIf(TEST_PRODUCTION)(
+    "uses the JSON-LD declared logo when the DOM has none",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/branding-declared-only",
+          formats: ["branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.branding).toBeDefined();
+      expect(response.branding?.images?.logo).toBe(
+        "https://firecrawl-test-site.vercel.app/declared-logo.png",
+      );
+    },
+    scrapeTimeout,
+  );
+});
+
 // TODO: fix this test
 // Need to run on fire-engine
 describe.skip("Branding extraction", () => {

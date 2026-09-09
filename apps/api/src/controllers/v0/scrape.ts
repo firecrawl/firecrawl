@@ -15,7 +15,6 @@ import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
-import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
 import { ZodError } from "zod";
 import { Document as V0Document } from "./../../lib/entities";
@@ -25,6 +24,7 @@ import { ScrapeJobTimeoutError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { getErrorContactMessage } from "../../lib/deployment";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   isThreatProtectionForced,
@@ -219,6 +219,7 @@ export async function scrapeController(req: Request, res: Response) {
       id: jobId,
       kind: "scrape",
       api_version: "v0",
+      external_request_id: externalRequestId(req),
       team_id,
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
@@ -321,7 +322,6 @@ export async function scrapeController(req: Request, res: Response) {
 
     return res.status(result.returnCode).json(result);
   } catch (error) {
-    Sentry.captureException(error);
     logger.error("Scrape error occcurred", { error });
     return res.status(500).json({
       error:

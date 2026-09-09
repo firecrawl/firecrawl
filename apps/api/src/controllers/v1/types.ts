@@ -1,8 +1,11 @@
-import { Request, Response } from "express";
+import { Request } from "express";
 import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
+import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
+import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
+import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
 import {
   ExtractorOptions,
   PageOptions,
@@ -20,11 +23,14 @@ import { BrandingProfile } from "../../types/branding";
 import { ProductProfile } from "../../types/product";
 import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
+import { auditMetadataSchema } from "../../lib/siem-logging/types";
+import type { RateLimiterMode } from "../../types";
 
 type Format =
   | "markdown"
   | "html"
   | "rawHtml"
+  | "rawBase64"
   | "links"
   | "screenshot"
   | "screenshot@fullPage"
@@ -36,8 +42,15 @@ type Format =
   | "product"
   | "menu";
 
-export const url = z.preprocess(
-  x => {
+export const url = z
+  .string()
+  // .overwrite must stay after .string(). It interpolates x into a template, so
+  // a non-string url would become the string "http://undefined" — a valid URL
+  // whose only failure is the TLD check below, which would blame a field the
+  // caller never sent. Letting .string() reject it first gives the real error.
+  // .overwrite rather than .transform, so this stays a ZodString and .url() /
+  // .regex() can still chain onto it.
+  .overwrite(x => {
     if (!protocolIncluded(x as string)) {
       x = `http://${x}`;
     }
@@ -53,34 +66,33 @@ export const url = z.preprocess(
     // }
 
     return x;
-  },
-  z
-    .url()
-    .regex(/^https?:\/\//i, "URL uses unsupported protocol")
-    .refine(x => {
-      if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
-        if (
-          /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
-            x as string,
-          )
-        ) {
-          return true;
-        }
-      }
-      return /(\.[a-zA-Z0-9-\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([\/?#]|$)/i.test(
-        x,
-      );
-    }, "URL must have a valid top-level domain or be a valid path")
-    .refine(x => {
-      try {
-        checkUrl(x as string);
+  })
+  .url()
+  .regex(/^https?:\/\//i, "URL uses unsupported protocol")
+  .refine(x => {
+    if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
+      if (
+        /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
+          x as string,
+        )
+      ) {
         return true;
-      } catch (_) {
-        return false;
       }
-    }, "Invalid URL"),
-  // .refine((x) => !isUrlBlocked(x as string), UNSUPPORTED_SITE_MESSAGE),
-);
+    }
+    // Same TLD-shaped check as before, plus IP literals — which the old
+    // inline regex accepted only when the last octet had 2+ digits, so
+    // 8.8.8.8 was rejected while 169.254.169.254 passed.
+    return hasReachableHost(x as string);
+  }, "URL must have a valid top-level domain or be an IP address")
+  .refine(x => {
+    try {
+      checkUrl(x as string);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }, "Invalid URL");
+// .refine((x) => !isUrlBlocked(x as string), UNSUPPORTED_SITE_MESSAGE)
 
 const agentExtractModelValue = "fire-1";
 export const isAgentExtractModelValid = (x: string | undefined) =>
@@ -211,6 +223,7 @@ export const extractOptions = z
     systemPrompt: z.string().max(10000).prefault(""),
     prompt: z.string().max(10000).optional(),
     temperature: z.number().optional(),
+    checkPromptInjection: z.boolean().optional(),
   })
   .transform(data => ({
     ...data,
@@ -245,6 +258,7 @@ const extractOptionsWithAgent = z
     systemPrompt: z.string().max(10000).prefault(""),
     prompt: z.string().max(10000).optional(),
     temperature: z.number().optional(),
+    checkPromptInjection: z.boolean().optional(),
     agent: z
       .strictObject({
         model: z.string().prefault(agentExtractModelValue),
@@ -426,6 +440,7 @@ const baseScrapeOptions = z.strictObject({
       "markdown",
       "html",
       "rawHtml",
+      "rawBase64",
       "links",
       "screenshot",
       "screenshot@fullPage",
@@ -447,6 +462,10 @@ const baseScrapeOptions = z.strictObject({
     .refine(
       x => !x.includes("changeTracking") || x.includes("markdown"),
       "The changeTracking format requires the markdown format to be specified as well",
+    )
+    .refine(
+      x => !x.includes("rawBase64") || x.length === 1,
+      "The rawBase64 format cannot be combined with other formats",
     ),
   headers: z.record(z.string(), z.string()).optional(),
   includeTags: z
@@ -532,6 +551,7 @@ const baseScrapeOptions = z.strictObject({
   // Enterprise: per-request field-level override of the org's threat
   // protection policy. Gated on the team flag + org config (checkPermissions).
   threatProtection: threatProtectionOverrideSchema.optional(),
+  auditMetadata: auditMetadataSchema.optional(),
   // @deprecated
   __experimental_cache: z.boolean().prefault(false).optional(),
   __searchPreviewToken: z.string().optional(),
@@ -853,8 +873,8 @@ export type BatchScrapeRequest = z.infer<typeof batchScrapeRequestSchema>;
 export type BatchScrapeRequestInput = z.input<typeof batchScrapeRequestSchema>;
 
 const crawlerOptions = z.strictObject({
-  includePaths: z.string().array().prefault([]),
-  excludePaths: z.string().array().prefault([]),
+  includePaths: pathPatternsSchema.prefault([]),
+  excludePaths: pathPatternsSchema.prefault([]),
   maxDepth: z.number().prefault(10), // default?
   maxDiscoveryDepth: z.number().optional(),
   limit: z.number().prefault(10000), // default?
@@ -903,6 +923,10 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
 
 export const crawlRequestSchema = crawlRequestSchemaBase
   .strict()
+  .superRefine((x, ctx) => {
+    addPathRegexIssues(x.includePaths, "includePaths", ctx);
+    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+  })
   .refine(
     x => (x.scrapeOptions ? extractRefine(x.scrapeOptions) : true),
     extractRefineOpts,
@@ -978,9 +1002,15 @@ const mapRequestSchemaBase = crawlerOptions
     location: locationSchema,
     headers: z.record(z.string(), z.string()).optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
+    auditMetadata: auditMetadataSchema.optional(),
   });
 
-export const mapRequestSchema = mapRequestSchemaBase.strict();
+export const mapRequestSchema = mapRequestSchemaBase
+  .strict()
+  .superRefine((x, ctx) => {
+    addPathRegexIssues(x.includePaths, "includePaths", ctx);
+    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+  });
 
 // export type MapRequest = {
 //   url: string;
@@ -995,8 +1025,14 @@ export type Document = {
   description?: string;
   url?: string;
   markdown?: string;
+  /** Physical PDF pages, populated by the v2 `pages` parser option. */
+  pages?: Array<{ pageNumber: number; markdown: string }>;
+  /** Typed PDF layout blocks with bounding boxes, populated by the v2
+   * `blocks` parser option. */
+  blocks?: PdfPageBlocks[];
   html?: string;
   rawHtml?: string;
+  rawBase64?: string;
   links?: string[];
   images?: string[];
   screenshot?: string;
@@ -1255,33 +1291,15 @@ type Account = {
 export type AuthCreditUsageChunk = {
   api_key: string;
   api_key_id: number;
+  api_key_id_text?: string;
   team_id: string;
   org_id: string;
-  plan_priority: {
-    bucketLimit: number;
-    planModifier: number;
-  };
-  rate_limits: {
-    crawl: number;
-    scrape: number;
-    search: number;
-    map: number;
-    extract: number;
-    preview: number;
-    crawlStatus: number;
-    extractStatus: number;
-    extractAgentPreview?: number;
-    scrapeAgentPreview?: number;
-    browser?: number;
-    browserExecute?: number;
-    browserReplay?: number;
-    account?: number;
-    supportAsk?: number;
-    supportDocsSearch?: number;
-    research?: number;
-  };
-  concurrency: number;
   flags: TeamFlags;
+
+  // teams.banned surfaced from auth_chunk_1 — banned teams are rejected (403)
+  // in supaAuthenticateUser. Optional because pre-rollout cached ACUC entries
+  // and the bypass/preview mocks omit it (treated as not banned).
+  is_banned?: boolean;
 
   // appended on JS-side
   is_extract?: boolean;
@@ -1298,6 +1316,7 @@ export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
+  siemLogging?: boolean;
   unblockedDomains?: string[];
   forceZDR?: boolean;
   allowZDR?: boolean;
@@ -1320,6 +1339,8 @@ export type TeamFlags = {
   searchFeedbackOptOut?: boolean;
   researchBeta?: boolean;
   enrichBeta?: boolean;
+  labsSearch?: boolean;
+  exchangeRetrieve?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
   organizationDataSourceAccess?: Record<
     string,
@@ -1335,6 +1356,18 @@ export type TeamFlags = {
   >;
   // routes the team's new queue work to the FoundationDB backend
   nuqFdb?: boolean;
+  // enables OCR of raster image URLs and uploads through FirePDF (see
+  // lib/image-ocr-gate.ts); rolled out per team
+  imageOcr?: boolean;
+  /**
+   * Per-endpoint rate-limit overrides, in requests per minute. A value here
+   * replaces the computed limit for that mode, so the Autumn multiplier is
+   * not applied. The map is sparse: a mode that is absent keeps the normal
+   * computation. Only a finite integer above zero is used; any other value is
+   * ignored. Read by getAutumnRateLimiter, so it never affects the preview
+   * token.
+   */
+  rateLimitOverrides?: Partial<Record<RateLimiterMode, number>>;
 } | null;
 
 export type AuthCreditUsageChunkFromTeam = Omit<
@@ -1375,11 +1408,6 @@ export interface RequestWithAuth<
 > extends RequestWithMaybeACUC<ReqParams, ReqBody, ResBody> {
   auth: AuthObject;
   account?: Account;
-}
-
-export interface ResponseWithSentry<ResBody = undefined>
-  extends Response<ResBody> {
-  sentry?: string;
 }
 
 export function toLegacyCrawlerOptions(x: CrawlerOptions) {

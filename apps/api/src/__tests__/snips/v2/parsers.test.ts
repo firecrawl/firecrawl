@@ -388,6 +388,24 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
     );
 
     it.concurrent(
+      "rejects non-boolean pages",
+      async () => {
+        const raw = await scrapeRaw(
+          {
+            url: pdfUrl,
+            parsers: [{ type: "pdf", pages: "yes" } as any],
+          },
+          identity,
+        );
+
+        expect(raw.statusCode).toBe(400);
+        expect(raw.body.success).toBe(false);
+        expect(raw.body.error).toBe("Bad Request");
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
       "rejects colon-separated shorthand strings",
       async () => {
         const raw = await scrapeRaw(

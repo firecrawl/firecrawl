@@ -24,6 +24,7 @@ function makeOrgConfig(
     orgId: "00000000-0000-0000-0000-000000000000",
     policy: { ...orgPolicy },
     allowRequestOverrides: true,
+    zscaler: null,
     createdAt: null,
     updatedAt: null,
     ...overrides,
@@ -71,9 +72,52 @@ describe("rowToConfig", () => {
         failurePolicy: "open",
       },
       allowRequestOverrides: false,
+      zscaler: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
     });
+  });
+
+  it("maps a stored Zscaler block into settings and policy", () => {
+    const config = rowToConfig(
+      makeRow("zscaler", {
+        failurePolicy: "closed",
+        zscaler: {
+          clientId: "client-1",
+          secretCiphertext: "gcm:iv:tag:ct",
+          vanityDomain: "tenant",
+          cloud: null,
+          deniedCategories: ["GAMBLING", "CUSTOM_01"],
+          syncIntervalMinutes: 30,
+        },
+      }),
+    );
+
+    expect(config.policy.mode).toBe("zscaler");
+    expect(config.policy.zscaler).toEqual({
+      orgId: ORG_ID,
+      deniedCategories: ["GAMBLING", "CUSTOM_01"],
+      syncIntervalMinutes: 30,
+    });
+    expect(config.zscaler).toEqual({
+      clientId: "client-1",
+      secretCiphertext: "gcm:iv:tag:ct",
+      vanityDomain: "tenant",
+      cloud: null,
+      deniedCategories: ["GAMBLING", "CUSTOM_01"],
+      syncIntervalMinutes: 30,
+    });
+  });
+
+  it("degrades a malformed Zscaler block to no connection instead of throwing", () => {
+    const config = rowToConfig(
+      makeRow("zscaler", {
+        zscaler: { clientId: 42 },
+      }),
+    );
+    expect(config.policy.mode).toBe("zscaler");
+    expect(config.zscaler).toBeNull();
+    expect(config.policy.zscaler).toBeUndefined();
   });
 
   it("falls back to defaults for an empty config document", () => {

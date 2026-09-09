@@ -8,6 +8,7 @@ import {
 import { configDotenv } from "dotenv";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError, MapFailedError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
@@ -81,6 +82,7 @@ export async function mapController(
     id: mapId,
     kind: "map",
     api_version: "v2",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
@@ -103,6 +105,9 @@ export async function mapController(
       billTeam(req.auth.team_id, creditsCost, req.acuc?.api_key_id ?? null, {
         endpoint: "map",
         jobId: mapId,
+        // Suffixed so this early-return path can never collide with the main
+        // map charge below, even if both ever billed the same mapId.
+        chargeId: `${mapId}:avgrab`,
       }).catch(error => {
         logger.error(
           `Failed to bill team ${req.auth.team_id} for ${creditsCost} credits: ${error}`,
@@ -210,12 +215,21 @@ export async function mapController(
   // Threat protection: remove blocked links from the returned URL list
   // entirely. Checks are URL-level; scan fees bill +2 per unique scanned
   // URL (see calculateThreatScanCredits).
+  //
+  // "zscaler" mode evaluates map results against local rules only (org
+  // lists + synced custom categories): one map can return thousands of
+  // URLs, and inline classification would burn the tenant's 400/hour
+  // urlLookup budget on links that may never be fetched. Every URL still
+  // gets the full provider check when a scrape of it starts.
   let threatScanCredits = 0;
   if (threatProtection.policy && result.mapResults.length > 0) {
     const { decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
       result.mapResults.map(x => x.url),
       threatProtection.policy,
-      { teamId: req.auth.team_id },
+      {
+        teamId: req.auth.team_id,
+        localRulesOnly: threatProtection.policy.mode === "zscaler",
+      },
     );
     threatScanCredits = calculateThreatScanCredits(decisionsByUrl.values());
     result.mapResults = result.mapResults.filter(x => {
@@ -229,6 +243,7 @@ export async function mapController(
   billTeam(req.auth.team_id, creditsToBill, req.acuc?.api_key_id ?? null, {
     endpoint: "map",
     jobId: mapId,
+    chargeId: mapId,
   }).catch(error => {
     logger.error("Failed to bill team for map credits", {
       teamId: req.auth.team_id,

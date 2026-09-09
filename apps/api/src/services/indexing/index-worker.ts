@@ -1,8 +1,6 @@
 import "dotenv/config";
 import { config } from "../../config";
-import "../sentry";
-import { setSentryServiceTag } from "../sentry";
-import * as Sentry from "@sentry/node";
+import { shutdownTracing } from "../../otel";
 import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger, logger } from "../../lib/logger";
 import {
@@ -41,7 +39,9 @@ import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { crawlGroup, resolveNewGroupBackend } from "../worker/nuq-router";
 import { getACUCTeam } from "../../controllers/auth";
 import { processEngpickerJob } from "../../lib/engpicker";
-import { logRequest } from "../logging/log_job";
+import { logRequest, shutdownPubSubLogging } from "../logging/log_job";
+import { startSiemLoggingConsumer } from "../siem-logging/worker";
+import { closeSiemLoggingTransport } from "../../lib/siem-logging/transport";
 
 const workerLockDuration = config.WORKER_LOCK_DURATION;
 const workerStalledCheckInterval = config.WORKER_STALLED_CHECK_INTERVAL;
@@ -123,7 +123,6 @@ const processBillingJobInternal = async (token: string, job: Job) => {
     await job.moveToCompleted({ success: true }, token, false);
   } catch (error) {
     logger.error("Error processing billing job", { error });
-    Sentry.captureException(error);
     err = error;
     await job.moveToFailed(error, token, false);
   } finally {
@@ -553,7 +552,6 @@ const processPrecrawlJob = async (token: string, job: Job) => {
             submittedCrawls++;
           } catch (e) {
             logger.error("Error adding precrawl job to queue", { error: e });
-            Sentry.captureException(e);
           }
         }
 
@@ -578,7 +576,6 @@ const processPrecrawlJob = async (token: string, job: Job) => {
     });
   } catch (e) {
     logger.error("Error processing precrawl job", { error: e });
-    Sentry.captureException(e);
     await job.moveToFailed(e, token, false);
   } finally {
     clearInterval(extendLockInterval);
@@ -587,15 +584,27 @@ const processPrecrawlJob = async (token: string, job: Job) => {
 
 let isShuttingDown = false;
 
+// The SIEM consumer is a subscription rather than a loop, so it has to be torn
+// down from the signal path: workerFun exits the process once its own jobs
+// drain, so anything after the worker Promise.all never runs. Unacked batches go
+// back to the broker for another replica.
+function shutdownSiemLoggingTransport(): void {
+  closeSiemLoggingTransport().catch(error => {
+    logger.warn("Failed to close the SIEM logging transport", { error });
+  });
+}
+
 if (require.main === module) {
   process.on("SIGINT", () => {
     logger.info("Received SIGINT. Shutting down gracefully...");
     isShuttingDown = true;
+    shutdownSiemLoggingTransport();
   });
 
   process.on("SIGTERM", () => {
     logger.info("Received SIGTERM. Shutting down gracefully...");
     isShuttingDown = true;
+    shutdownSiemLoggingTransport();
   });
 }
 
@@ -672,6 +681,8 @@ const workerFun = async (
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   logger.info("All jobs finished. Worker exiting!");
+  await shutdownPubSubLogging();
+  await shutdownTracing();
   process.exit(0);
 };
 
@@ -684,8 +695,6 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
 
 // Start the workers
 (async () => {
-  setSentryServiceTag("index-worker");
-
   // Start billing worker and batch processing
   startBillingBatchProcessing();
   const billingWorkerPromise = workerFun(
@@ -698,6 +707,11 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
     : (async () => {
         logger.warn("PRECRAWL_TEAM_ID not set, skipping precrawl worker");
       })();
+  // A RabbitMQ consumer registration, not a polling loop: it returns once
+  // subscribed and the transport reconnects itself on a broker drop.
+  startSiemLoggingConsumer().catch(error => {
+    logger.error("Failed to start the SIEM logging consumer", { error });
+  });
 
   const indexInserterInterval = setInterval(async () => {
     if (isShuttingDown) {

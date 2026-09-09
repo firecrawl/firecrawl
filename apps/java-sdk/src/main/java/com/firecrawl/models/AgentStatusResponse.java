@@ -13,6 +13,7 @@ public class AgentStatusResponse {
     private String error;
     private Object data;
     private String model;
+    private String effort;
     private String expiresAt;
     private Integer creditsUsed;
 
@@ -21,6 +22,8 @@ public class AgentStatusResponse {
     public String getError() { return error; }
     public Object getData() { return data; }
     public String getModel() { return model; }
+    /** The effort the job ran with; only present for runs that specified it. */
+    public String getEffort() { return effort; }
     public String getExpiresAt() { return expiresAt; }
     public Integer getCreditsUsed() { return creditsUsed; }
 

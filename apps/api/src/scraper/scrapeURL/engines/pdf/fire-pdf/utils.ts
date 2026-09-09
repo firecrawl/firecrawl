@@ -1,6 +1,16 @@
 import type { Meta } from "../../..";
+import type { PDFMode } from "../../../../../controllers/v2/types";
 import { config } from "../../../../../config";
-import { MAX_DEADLINE_MS, POLL_FLOOR_MS, POLL_CAP_MS } from "./schema";
+import {
+  INLINE_JOB_DEADLINE_MARGIN_FRACTION,
+  INLINE_JOB_DEADLINE_MARGIN_MAX_MS,
+  INLINE_JOB_DEADLINE_MARGIN_MIN_MS,
+  JOB_DEADLINE_POLL_GRACE_MS,
+  MAX_DEADLINE_MS,
+  MIN_DEADLINE_MS,
+  POLL_FLOOR_MS,
+  POLL_CAP_MS,
+} from "./schema";
 import { firePdfAsyncFallbackTotal, type FallbackReason } from "./metrics";
 
 export function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -38,13 +48,132 @@ export function nextPollDelay(
   return Math.min(POLL_CAP_MS, jittered);
 }
 
+/**
+ * Deadline for an INLINE job: the caller window minus a margin, never below
+ * fire-pdf's 5s minimum. The worker plans its work against this deadline and
+ * degrades what is left when it arrives; the margin is what lets that result
+ * be written, observed by a poll, and fetched before the caller's own abort
+ * fires at the end of the window. Advertising the full window instead means
+ * the worker is still finishing when the caller gives up — the job is
+ * cancelled and the caller sees a timeout with nothing to show for it.
+ */
+export function computeInlineJobDeadlineMs(callerWindowMs: number): number {
+  const margin = Math.min(
+    INLINE_JOB_DEADLINE_MARGIN_MAX_MS,
+    Math.max(
+      INLINE_JOB_DEADLINE_MARGIN_MIN_MS,
+      Math.round(callerWindowMs * INLINE_JOB_DEADLINE_MARGIN_FRACTION),
+    ),
+  );
+  return Math.max(MIN_DEADLINE_MS, callerWindowMs - margin);
+}
+
+/**
+ * Cap a poll delay so a poll lands just after the job deadline, and keep
+ * polling at the floor once the deadline has passed. Backoff (up to
+ * POLL_CAP_MS plus jitter) is right while the job is mid-flight; around the
+ * deadline it is exactly wrong, because the result appears there and the
+ * caller's window closes shortly after. A job deadline beyond the caller
+ * window (by-reference) leaves the delay untouched.
+ */
+export function alignPollDelay(
+  delayMs: number,
+  nowMs: number,
+  jobDeadlineAtMs: number | undefined,
+): number {
+  if (jobDeadlineAtMs === undefined) return delayMs;
+  const untilTarget = jobDeadlineAtMs + JOB_DEADLINE_POLL_GRACE_MS - nowMs;
+  if (untilTarget <= 0) return Math.min(delayMs, POLL_FLOOR_MS);
+  return Math.min(delayMs, Math.max(POLL_FLOOR_MS, untilTarget));
+}
+
 export function computeDeadlineMs(scrapeTimeoutMs: number | undefined): number {
-  // 5min default when there's no scrape budget (CLI/tests). Routing rejects
-  // budgets that are too short; only cap the upper bound here so we never
-  // advertise more time to FirePDF than the caller actually has.
+  // 5min default when there's no scrape budget. This matches the usable
+  // window exactly: scrapeURLLoop races every engine against
+  // `scrapeTimeout() ?? 300000`, so a no-timeout scrape dies at 5 minutes
+  // regardless of what we advertise to FirePDF. Long documents (large
+  // by-reference PDFs especially) need an explicit caller `timeout`, which
+  // unlocks up to MAX_DEADLINE_MS here and extends the loop's race alike.
+  // Only cap the upper bound so we never advertise more time to FirePDF
+  // than the caller actually has.
   const fallback = 5 * 60 * 1_000;
   const candidate = scrapeTimeoutMs ?? fallback;
   return Math.min(MAX_DEADLINE_MS, candidate);
+}
+
+/** Worst-case processing rate for the page-scaled by-reference deadline.
+ * Must cover the SLOW class, not the median: scanned giants run full-page
+ * OCR at ~1.3s/page p90 in prod (2026-08-27), and the original 500ms —
+ * calibrated on a text-heavy 6,543-page run — starved them into deadline
+ * fallback (a 798-page scan got 11.6min against ~17min of real OCR).
+ *
+ * The base must absorb QUEUE WAIT, which spends the same budget as
+ * processing (the deadline clock starts at submit, not claim): measured
+ * bursts queued giants 12-14 minutes behind five xl workers, so a 5-min
+ * base guaranteed starvation regardless of the per-page term (a 931-page
+ * doc reached its worker with 84s left and degraded 93% of its pages —
+ * and that degraded result then poisoned content-adoption for every
+ * retry). 10 min covers observed burst queues; genuinely fixing the
+ * queue/processing conflation (claim-time budgets) is fire-pdf-side
+ * follow-up work.
+ */
+const BY_REFERENCE_DEADLINE_PER_PAGE_MS = 1_250;
+const BY_REFERENCE_DEADLINE_BASE_MS = 10 * 60 * 1_000;
+
+/**
+ * Job deadline for by-reference submits, DECOUPLED from the caller's
+ * remaining budget: what the document needs (page-scaled), never less
+ * than the caller's own window, capped at fire-pdf's 30-min maximum.
+ *
+ * Inline submits advertise exactly the caller window (computeDeadlineMs)
+ * because an abandoned inline job is cancelled and its work discarded.
+ * A by-reference job that outlives its caller is NOT discarded: the
+ * async caller skips cancel-on-abandon, the job finishes server-side,
+ * and the result lands in the raw-sha cache and the content-adoption
+ * lookup — so the customer's retry converges instead of restarting a
+ * multi-minute document from zero on every attempt.
+ */
+export function computeByReferenceDeadlineMs(
+  scrapeTimeoutMs: number | undefined,
+  pagesEstimate: number | undefined,
+): number {
+  const callerWindow = computeDeadlineMs(scrapeTimeoutMs);
+  const pages =
+    pagesEstimate !== undefined && pagesEstimate > 0 ? pagesEstimate : 0;
+  const pageScaled =
+    BY_REFERENCE_DEADLINE_BASE_MS + pages * BY_REFERENCE_DEADLINE_PER_PAGE_MS;
+  return Math.min(MAX_DEADLINE_MS, Math.max(callerWindow, pageScaled));
+}
+
+/**
+ * The `options` object for fire-pdf async wire calls. One builder for
+ * both POST /jobs and POST /jobs/lookup: adoption matches on fire-pdf's
+ * idempotency options, so a lookup that built its options differently
+ * from the submit would silently never match.
+ */
+export function buildFirePdfJobOptions(args: {
+  maxPages: number | undefined;
+  pagesProcessed: number | undefined;
+  mode: PDFMode | undefined;
+  includePageMarkdown: boolean;
+  includeBlocks: boolean;
+  pageMarkers: boolean;
+}): Record<string, unknown> {
+  return {
+    ...(args.pagesProcessed !== undefined && {
+      pages_estimate: args.pagesProcessed,
+    }),
+    ...(args.maxPages !== undefined && { max_pages: args.maxPages }),
+    ...(args.mode !== undefined && { mode: args.mode }),
+    ...(args.includePageMarkdown && { include_page_markdown: true }),
+    ...(args.includeBlocks && { include_blocks: true }),
+    // Intentionally camelCase, unlike its siblings: the fire-pdf async
+    // /jobs options schema named this key `pageMarkers` (fire-pdf
+    // api/src/http/schemas/jobs.ts) while the sync /ocr path uses
+    // `page_markers`. Sending snake_case here would be rejected as an
+    // unknown option.
+    ...(args.pageMarkers && { pageMarkers: true }),
+  };
 }
 
 export function firePdfHeaders(includeJson = false): Record<string, string> {

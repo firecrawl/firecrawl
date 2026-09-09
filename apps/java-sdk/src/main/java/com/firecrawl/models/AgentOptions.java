@@ -1,6 +1,7 @@
 package com.firecrawl.models;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Map;
 
@@ -17,7 +18,9 @@ public class AgentOptions {
     private Integer maxCredits;
     private Boolean strictConstrainToURLs;
     private String model;
+    private String effort;
     private WebhookConfig webhook;
+    private AuditMetadata auditMetadata;
 
     private AgentOptions() {}
 
@@ -28,7 +31,10 @@ public class AgentOptions {
     public Integer getMaxCredits() { return maxCredits; }
     public Boolean getStrictConstrainToURLs() { return strictConstrainToURLs; }
     public String getModel() { return model; }
+    public String getEffort() { return effort; }
     public WebhookConfig getWebhook() { return webhook; }
+    @JsonProperty("auditMetadata")
+    public AuditMetadata getAuditMetadata() { return auditMetadata; }
 
     public static Builder builder() { return new Builder(); }
 
@@ -40,7 +46,9 @@ public class AgentOptions {
         private Integer maxCredits;
         private Boolean strictConstrainToURLs;
         private String model;
+        private String effort;
         private WebhookConfig webhook;
+        private AuditMetadata auditMetadata;
 
         private Builder() {}
 
@@ -56,10 +64,14 @@ public class AgentOptions {
         public Builder maxCredits(Integer maxCredits) { this.maxCredits = maxCredits; return this; }
         /** Don't navigate outside provided URLs. */
         public Builder strictConstrainToURLs(Boolean strictConstrainToURLs) { this.strictConstrainToURLs = strictConstrainToURLs; return this; }
-        /** Agent model: "spark-1-pro" or "spark-1-mini". */
+        /** Agent model: "spark-1-pro" (default), "spark-1-mini", or "spark-2". */
         public Builder model(String model) { this.model = model; return this; }
+        /** Reasoning effort: "low", "medium", or "high". Sets the reasoning budget (every level runs spark-2). */
+        public Builder effort(String effort) { this.effort = effort; return this; }
         /** Webhook configuration. */
         public Builder webhook(WebhookConfig webhook) { this.webhook = webhook; return this; }
+        /** User attribution to include with SIEM logging events. */
+        public Builder auditMetadata(AuditMetadata auditMetadata) { this.auditMetadata = auditMetadata; return this; }
 
         public AgentOptions build() {
             if (prompt == null || prompt.isEmpty()) {
@@ -73,7 +85,9 @@ public class AgentOptions {
             o.maxCredits = this.maxCredits;
             o.strictConstrainToURLs = this.strictConstrainToURLs;
             o.model = this.model;
+            o.effort = this.effort;
             o.webhook = this.webhook;
+            o.auditMetadata = this.auditMetadata;
             return o;
         }
     }

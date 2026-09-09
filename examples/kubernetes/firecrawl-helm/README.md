@@ -1,41 +1,41 @@
-# Firecrawl Helm Chart
+# Deploy Firecrawl with Helm
 
-This chart deploys Firecrawl on Kubernetes with:
+Use this chart when you want a repeatable, values-driven Kubernetes render and upgrade workflow. The chart deploys the Firecrawl API, workers, Playwright, Redis, NuQ PostgreSQL, and RabbitMQ, with optional worker types controlled by values.
 
-- `api`
-- `worker` (queue-worker)
-- `extract-worker`
-- `nuq-worker`
-- `nuq-prefetch-worker`
-- `cclog-worker`
-- `playwright-service`
-- `redis`
-- `nuq-postgres`
-- `rabbitmq`
+> [!WARNING]
+> This chart is a source-aligned starting point, not a production guarantee. Its default values use third-party `winkkgmbh` images tagged `latest`, disable resource requests and limits, and do not complete your authentication, persistence, availability, or secret-management design.
 
-## Image Strategy
+## Choose Helm or another path
 
-- **x86-only cluster**: use official Firecrawl images from GHCR (`ghcr.io/firecrawl/...`).
-- **ARM or mixed ARM+x86 cluster**: use your multi-arch `winkkgmbh` images.
+- **Use this chart** when you want values, overlays, rendered diffs, and Helm-managed upgrades.
+- **Use the [raw manifests](../cluster-install/)** when you want to inspect and own every Kubernetes resource directly.
+- **Use the [Docker Compose self-hosting guide](https://docs.firecrawl.dev/contributing/self-host)** when you are still proving the first scrape.
 
-Official Firecrawl images are fine for x86. Use winkk images only when ARM support is needed.
+## Choose and trust the container images
 
-## Configure Values
+- **x86-only cluster:** use official Firecrawl images from `ghcr.io/firecrawl/...`.
+- **ARM or mixed ARM+x86 cluster:** build and publish your own multi-architecture images, or explicitly review and accept another publisher's images.
 
-Use `values.yaml` plus one overlay.
+Pin immutable image tags or digests before production. Do not rely on `latest` for a controlled upgrade or rollback.
 
-Important fields:
+## Configure the release
 
-- `secret.*` for API keys and sensitive values.
-- `config.extra` / `secret.extra` for custom env vars.
-- `image.dockerSecretEnabled` and `imagePullSecrets` for private registries.
-- `resources.enabled` enables/disables all container resource requests/limits.
-  Default: `false`.
-- `rabbitmq.enabled`, `extractWorker.enabled`, `nuqPrefetchWorker.enabled`, `cclogWorker.enabled` to toggle components.
+Use [`values.yaml`](./values.yaml) plus one environment overlay.
 
-## Deploy
+Review these fields first:
 
-Render:
+- `secret.*` for API keys and sensitive values;
+- `config.extra` and `secret.extra` for custom environment variables;
+- `image.dockerSecretEnabled` and `imagePullSecrets` for private registries;
+- `resources.enabled` and each component's resource values;
+- `rabbitmq.enabled`, `extractWorker.enabled`, `nuqPrefetchWorker.enabled`, and `cclogWorker.enabled`; and
+- storage, authentication, ingress, and provider settings required by your environment.
+
+Keep populated secret values outside Git.
+
+## Render before installing
+
+From this directory, render the production overlay:
 
 ```bash
 HELM_NO_PLUGINS=1 helm template firecrawl . \
@@ -44,7 +44,9 @@ HELM_NO_PLUGINS=1 helm template firecrawl . \
   -n firecrawl
 ```
 
-Install/upgrade:
+Inspect the rendered images, Secrets, Services, environment variables, storage, and resource settings before applying them.
+
+## Install or upgrade Firecrawl
 
 ```bash
 HELM_NO_PLUGINS=1 helm upgrade firecrawl . \
@@ -55,9 +57,9 @@ HELM_NO_PLUGINS=1 helm upgrade firecrawl . \
   --create-namespace
 ```
 
-### Use Official Firecrawl Images (x86-only)
+### Use official Firecrawl images on x86
 
-If your cluster is x86-only and you want official images, override repositories:
+Override the default repositories:
 
 ```bash
 HELM_NO_PLUGINS=1 helm upgrade firecrawl . \
@@ -71,9 +73,64 @@ HELM_NO_PLUGINS=1 helm upgrade firecrawl . \
   --create-namespace
 ```
 
-## Build and Push Multi-Arch Containers (ARM+x86)
+Add reviewed version tags or digests to the override instead of inheriting `latest`.
 
-Run from `examples/kubernetes/firecrawl-helm`:
+## Verify the release
+
+Check the workloads:
+
+```bash
+kubectl get pods -n firecrawl
+kubectl rollout status deployment/firecrawl-firecrawl-api -n firecrawl
+```
+
+Forward the API service:
+
+```bash
+kubectl port-forward svc/firecrawl-firecrawl-api 3002:3002 -n firecrawl
+```
+
+In another terminal, check reachability and one scrape:
+
+```bash
+curl --fail --silent --show-error \
+  http://localhost:3002/v0/health/readiness
+```
+
+```bash
+curl \
+  --fail-with-body \
+  --silent \
+  --show-error \
+  --max-time 75 \
+  -X POST \
+  http://localhost:3002/v2/scrape \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["markdown"],
+    "timeout": 60000
+  }'
+```
+
+Treat API reachability as a heartbeat. The scrape is the end-to-end check for the API, workers, scraping path, and outbound access.
+
+## Prepare the production design
+
+Before exposing the API, define and test:
+
+- authentication, TLS, ingress, and network policy;
+- persistent volumes, backups, and recovery;
+- resource requests, limits, autoscaling, and disruption budgets;
+- monitoring, capacity targets, alerts, and incident ownership;
+- image provenance, version pinning, upgrades, and rollback; and
+- secret management and every optional provider data flow.
+
+No values overlay makes these decisions automatically.
+
+## Build multi-architecture images
+
+Run from `examples/kubernetes/firecrawl-helm` only when you need ARM and x86 images that you control:
 
 ```bash
 docker buildx create --name multiarch --use --bootstrap
@@ -81,43 +138,42 @@ docker buildx create --name multiarch --use --bootstrap
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 --push \
-  -t docker.io/winkkgmbh/firecrawl:latest \
+  -t YOUR_REGISTRY/firecrawl:YOUR_TAG \
   ../../../apps/api
 
 docker buildx build --platform linux/amd64,linux/arm64 --push \
-  -t docker.io/winkkgmbh/firecrawl-playwright:latest \
+  -t YOUR_REGISTRY/firecrawl-playwright:YOUR_TAG \
   ../../../apps/playwright-service-ts
 
 docker buildx build --platform linux/amd64,linux/arm64 --push \
-  -t docker.io/winkkgmbh/nuq-postgres:latest \
+  -t YOUR_REGISTRY/nuq-postgres:YOUR_TAG \
   ../../../apps/nuq-postgres
 ```
 
-## Package and Push Helm Chart (OCI)
+Update the chart values to those exact repositories and tags before rendering again.
+
+## Package the chart as OCI
 
 ```bash
 HELM_NO_PLUGINS=1 helm package . --destination /tmp/helm-packages
-HELM_NO_PLUGINS=1 helm push /tmp/helm-packages/firecrawl-0.2.0.tgz oci://registry-1.docker.io/winkkgmbh
+HELM_NO_PLUGINS=1 helm push /tmp/helm-packages/firecrawl-0.2.0.tgz YOUR_OCI_REGISTRY
 ```
 
-Install from OCI:
+Install the reviewed package:
 
 ```bash
-HELM_NO_PLUGINS=1 helm upgrade --install firecrawl oci://registry-1.docker.io/winkkgmbh/firecrawl \
+HELM_NO_PLUGINS=1 helm upgrade --install firecrawl YOUR_OCI_CHART \
   --version 0.2.0 \
-  -n firecrawl --create-namespace \
+  -n firecrawl \
+  --create-namespace \
   -f values.yaml \
   -f overlays/prod/values.yaml
 ```
 
-## Test
-
-```bash
-kubectl port-forward svc/firecrawl-firecrawl-api 3002:3002 -n firecrawl
-```
-
-## Cleanup
+## Remove the release
 
 ```bash
 helm uninstall firecrawl -n firecrawl
 ```
+
+Review retained persistent volumes and external services separately before deleting any data.

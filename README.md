@@ -58,7 +58,7 @@ _Pst. Hey, you, join our stargazers :)_
 - **Agent ready**: Connect Firecrawl to any AI agent or MCP client with a single command
 - **Media parsing**: Parse and extract content from web-hosted PDFs, DOCX, and more
 - **Actions**: Click, scroll, write, wait, and press before extracting content
-- **Open source**: Developed transparently and collaboratively — [join our community](https://github.com/firecrawl/firecrawl)
+- **Open source**: Developed transparently and collaboratively — [join our community](https://discord.gg/firecrawl)
 
 ---
 
@@ -189,7 +189,7 @@ Output:
 ```
 # Firecrawl
 
-Firecrawl helps AI systems search, scrape, and interact with the web.
+Firecrawl helps AI agents search, scrape, and interact with the web.
 
 ## Features
 - Search: Find information across the web
@@ -382,14 +382,37 @@ result = app.agent(
 )
 ```
 
-#### Model Selection
+#### Effort Selection
 
-Choose between two models based on your needs:
+Set how much reasoning the agent spends on the task:
+
+| Effort | Best For |
+|--------|----------|
+| `low` | Simple lookups on one site |
+| `medium` | Multi-step tasks on a few pages |
+| `high` | Deep research, complex navigation, critical data |
+
+```python
+result = app.agent(
+    prompt="Compare enterprise features across Firecrawl, Apify, and ScrapingBee",
+    effort="high"
+)
+```
+
+Every effort level runs the `spark-2` model. Effort changes the reasoning
+budget, not the model.
+
+#### Model Selection (Legacy)
+
+`model` still works, and it stays supported. Send `model` or `effort`, not
+both. A request with both fields returns a 400 error.
 
 | Model | Cost | Best For |
 |-------|------|----------|
-| `spark-1-mini` (default) | 60% cheaper | Most tasks |
-| `spark-1-pro` | Standard | Complex research, critical data gathering |
+| `spark-1-mini` | 60% cheaper | Most tasks |
+| `spark-1-pro` (default) | Standard | Complex research, critical data gathering |
+| `spark-2` | See [pricing](https://docs.firecrawl.dev/features/agent) | The model that `effort` runs |
+
 ```python
 result = app.agent(
     prompt="Compare enterprise features across Firecrawl, Apify, and ScrapingBee",
@@ -397,6 +420,7 @@ result = app.agent(
 )
 ```
 
+A request without `model` and without `effort` runs `spark-1-pro`.
 
 **When to use Pro:**
 - Comparing data across multiple websites
@@ -853,10 +877,11 @@ print_r($results);
 ## Integrations
 
 **Agents & AI Tools**
-- [Firecrawl Skill](https://docs.firecrawl.dev/sdks/cli)
-- [Firecrawl CLI Skills](https://github.com/firecrawl/cli#agent-skills)
-- [Firecrawl Workflows](https://github.com/firecrawl/firecrawl-workflows)
+- [Firecrawl Skills Catalog](https://github.com/firecrawl/skills) — install with `npx skills add firecrawl/skills`
+- [Firecrawl CLI](https://docs.firecrawl.dev/sdks/cli)
 - [Firecrawl MCP](https://github.com/mendableai/firecrawl-mcp-server)
+
+The build skills (integrating Firecrawl into product code) are authored in this repo under [`skills/`](./skills) and mirrored into the catalog by CI. Contributing skills? CLI skills (including the research/developer index skills) → PR [`firecrawl/cli`](https://github.com/firecrawl/cli). Build/SDK skills → PR this repo (`skills/`). Workflow skills → PR [`firecrawl/firecrawl-workflows`](https://github.com/firecrawl/firecrawl-workflows). The catalog ([`firecrawl/skills`](https://github.com/firecrawl/skills)) is read-only — never PR it directly.
 
 **Platforms**
 - [Lovable](https://docs.lovable.dev/integrations/firecrawl)

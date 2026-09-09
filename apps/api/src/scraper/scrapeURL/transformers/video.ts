@@ -4,6 +4,10 @@ import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { throwIfMediaAccessDenied } from "../error";
 
+// Video downloads can be large; generous but bounded so a hung fetch can't
+// silently consume the whole scrape budget.
+const DOWNLOAD_FETCH_TIMEOUT_MS = 240_000;
+
 let cachedUrlRegex: RegExp | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -171,6 +175,7 @@ async function fetchLegacyVideoIfSupported(meta: Meta, document: Document) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(DOWNLOAD_FETCH_TIMEOUT_MS),
   });
 
   if (!response.ok) {

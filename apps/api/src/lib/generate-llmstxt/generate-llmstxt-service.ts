@@ -282,7 +282,7 @@ export async function performGenerateLlmsTxt(
       teamId,
       urls.length,
       apiKeyId,
-      { endpoint: "llms_txt", jobId: generationId },
+      { endpoint: "llms_txt", jobId: generationId, chargeId: generationId },
       logger,
     ).catch(error => {
       logger.error(`Failed to bill team ${teamId} for ${urls.length} urls`, {

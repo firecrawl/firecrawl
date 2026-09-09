@@ -1,5 +1,5 @@
 # Firecrawl Skills
 
-[Firecrawl skills repository](https://github.com/firecrawl/skills)
+[Firecrawl skills catalog](https://github.com/firecrawl/skills) — the full catalog of Firecrawl agent skills (CLI, build, workflows).
 
-Build skills for adding Firecrawl to product code, choosing endpoints, wiring SDKs, and setting up API keys.
+The **build skills** (adding Firecrawl to product code, choosing endpoints, wiring SDKs, setting up API keys) are authored in this monorepo at [`skills/`](../skills) and mirrored into the catalog by CI.

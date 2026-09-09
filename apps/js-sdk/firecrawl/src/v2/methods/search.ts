@@ -34,6 +34,7 @@ function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
   if (req.limit != null) payload.limit = req.limit;
   if (req.tbs != null) payload.tbs = req.tbs;
   if (req.location != null) payload.location = req.location;
+  if (req.country != null) payload.country = req.country;
   if (req.ignoreInvalidURLs != null)
     payload.ignoreInvalidURLs = req.ignoreInvalidURLs;
   if (req.timeout != null) payload.timeout = req.timeout;
@@ -107,8 +108,11 @@ export async function search(
         const parts: string[] = [];
         if (out.web?.length) parts.push(`.web (${out.web.length} results)`);
         if (out.news?.length) parts.push(`.news (${out.news.length} results)`);
-        if (out.images?.length) parts.push(`.images (${out.images.length} results)`);
-        const available = parts.length ? parts.join(", ") : ".web, .news, or .images";
+        if (out.images?.length)
+          parts.push(`.images (${out.images.length} results)`);
+        const available = parts.length
+          ? parts.join(", ")
+          : ".web, .news, or .images";
         throw new Error(
           `SearchData has no '.data'. Results are grouped by source: ${available}`,
         );

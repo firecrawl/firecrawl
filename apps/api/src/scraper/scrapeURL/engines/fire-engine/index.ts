@@ -25,9 +25,25 @@ import {
   FEPageLoadFailed,
   ProxySelectionError,
 } from "../../error";
-import * as Sentry from "@sentry/node";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
+import {
+  byReferenceReachableForRequest,
+  largePdfLimitBytes,
+} from "../pdf/fire-pdf/by-reference";
+import { PDF_DOWNLOAD_MAX_FILE_SIZE } from "../pdf/types";
+import { config } from "../../../../config";
+
+/** The handoff additionally requires the inbound allowlist bucket to be
+ * configured: without it, a reference fire-engine returned could never be
+ * consumed, so granting the raise would only turn large-PDF scrapes into
+ * prefetch failures. */
+function fireEngineHandoffEligible(meta: Meta): boolean {
+  return (
+    config.FIRE_ENGINE_PDF_GCS_BUCKET !== undefined &&
+    byReferenceReachableForRequest(meta)
+  );
+}
 import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
 import { getInnerJson } from "@mendable/firecrawl-rs";
@@ -185,7 +201,6 @@ async function performFireEngineScrape<
               `An unexpeceted error occurred while calling checkStatus. Error counter is now at ${errors.length}.`,
               { error, jobId: (scrape as any).jobId },
             );
-            Sentry.captureException(error);
           }
         }
 
@@ -195,24 +210,40 @@ async function performFireEngineScrape<
       status = scrape as FireEngineCheckStatusSuccess;
     }
 
-    await specialtyScrapeCheck(
-      logger.child({
-        method: "performFireEngineScrape/specialtyScrapeCheck",
-      }),
-      status.responseHeaders,
-      status,
-    );
+    const wantsRawBase64 =
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined;
+
+    if (!wantsRawBase64) {
+      await specialtyScrapeCheck(
+        logger.child({
+          method: "performFireEngineScrape/specialtyScrapeCheck",
+        }),
+        status.responseHeaders,
+        status,
+        meta.abort.asSignal(),
+        // Handoff downloads only admit large files when the FirePDF
+        // by-reference route can actually take them, and only up to the
+        // requesting team's large-PDF limit.
+        fireEngineHandoffEligible(meta)
+          ? largePdfLimitBytes(meta)
+          : PDF_DOWNLOAD_MAX_FILE_SIZE,
+        meta.imageOcrEnabled,
+      );
+    }
 
     const contentType =
       (Object.entries(status.responseHeaders ?? {}).find(
         x => x[0].toLowerCase() === "content-type",
       ) ?? [])[1] ?? "";
 
-    if (contentType.includes("application/json")) {
+    if (!wantsRawBase64 && contentType.includes("application/json")) {
       status.content = await getInnerJson(status.content);
     }
 
-    if (status.file) {
+    // Reference-shaped files (gcs_uri without content) belong to the
+    // specialty prefetch path above and never reach this inline-decode
+    // block; guard on `content` so one slipping through can't crash it.
+    if (status.file?.content !== undefined && !wantsRawBase64) {
       const content = status.file.content;
       delete status.file;
       let buffer = Buffer.from(content, "base64");
@@ -273,6 +304,42 @@ async function performFireEngineScrape<
   });
 }
 
+// Action types that only read or drive the DOM and don't depend on rendered
+// output. Anything not listed here (screenshot, pdf, and any future visual
+// action) keeps render-engine routing — fail safe, not open.
+const DOM_SAFE_ACTION_TYPES: ReadonlySet<string> = new Set([
+  "wait",
+  "click",
+  "write",
+  "press",
+  "scroll",
+  "scrape",
+  "executeJavascript",
+]);
+
+// Branding needs media *loaded* (real image dimensions in the DOM), not
+// *rendered* — but blockMedia: false routes to the render engine, where
+// visually heavy pages can stall the renderer. Opt out of render routing
+// unless something actually needs visual output.
+export function shouldForceNonRender(input: {
+  formats: Meta["options"]["formats"];
+  actions?: Array<{ type: string }>;
+  youtubePostprocessorWillRun: boolean;
+}): boolean {
+  if (!hasFormatOfType(input.formats, "branding")) {
+    return false;
+  }
+
+  const needsVisualRendering =
+    hasFormatOfType(input.formats, "screenshot") !== undefined ||
+    (input.actions ?? []).some(a => !DOM_SAFE_ACTION_TYPES.has(a.type)) ||
+    hasFormatOfType(input.formats, "audio") !== undefined ||
+    hasFormatOfType(input.formats, "video") !== undefined ||
+    input.youtubePostprocessorWillRun;
+
+  return !needsVisualRendering;
+}
+
 export async function scrapeURLWithFireEngineChromeCDP(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
@@ -282,16 +349,34 @@ export async function scrapeURLWithFireEngineChromeCDP(
       "engine.url": meta.url,
       "engine.team_id": meta.internalOptions.teamId,
     });
+    const wantsRawBase64 =
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined;
+    if (
+      wantsRawBase64 &&
+      ((meta.options.waitFor ?? 0) > 0 ||
+        (meta.options.actions?.length ?? 0) > 0)
+    ) {
+      meta.logger.warn(
+        "rawBase64 returns the original response body; waitFor and actions are ignored.",
+        {
+          waitFor: meta.options.waitFor,
+          actionTypes: meta.options.actions?.map(action => action.type),
+        },
+      );
+    }
     const hasBranding = hasFormatOfType(meta.options.formats, "branding");
     const hasAudio = hasFormatOfType(meta.options.formats, "audio");
     const hasVideo = hasFormatOfType(meta.options.formats, "video");
-    const shouldRunYoutubePostprocessor = youtubePostprocessor.shouldRun(
-      meta,
-      new URL(meta.rewrittenUrl ?? meta.url),
-    );
+    const shouldRunYoutubePostprocessor =
+      !wantsRawBase64 &&
+      youtubePostprocessor.shouldRun(
+        meta,
+        new URL(meta.rewrittenUrl ?? meta.url),
+      );
     const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
-    const effectiveWait =
-      meta.options.waitFor != null && meta.options.waitFor !== 0
+    const effectiveWait = wantsRawBase64
+      ? 0
+      : meta.options.waitFor != null && meta.options.waitFor !== 0
         ? meta.options.waitFor
         : defaultWait;
 
@@ -308,7 +393,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
         : []),
 
       // Include specified actions
-      ...(meta.options.actions ?? []).map(action => {
+      ...(!wantsRawBase64 ? (meta.options.actions ?? []) : []).map(action => {
         const { metadata: _, ...rest } = action as InternalAction;
         return rest;
       }),
@@ -360,11 +445,18 @@ export async function scrapeURLWithFireEngineChromeCDP(
       hasFormatOfType(meta.options.formats, "branding") ||
       shouldRunYoutubePostprocessor;
 
+    const forceNonRender = shouldForceNonRender({
+      formats: meta.options.formats,
+      actions: meta.options.actions ?? undefined,
+      youtubePostprocessorWillRun: shouldRunYoutubePostprocessor,
+    });
+
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {
       url: meta.rewrittenUrl ?? meta.url,
       scrapeId: meta.id,
       engine: "chrome-cdp",
+      ...(wantsRawBase64 ? { format: "rawBase64" as const } : {}),
       instantReturn: false,
       skipTlsVerification: meta.options.skipTlsVerification,
       headers: meta.options.headers,
@@ -379,12 +471,20 @@ export async function scrapeURLWithFireEngineChromeCDP(
       timeout: meta.abort.scrapeTimeout() ?? 300000,
       disableSmartWaitCache: meta.internalOptions.disableSmartWaitCache,
       mobileProxy: meta.featureFlags.has("stealthProxy"),
+      autoProxy: meta.options.proxy === "auto",
       maxAge: meta.options.maxAge,
       saveScrapeResultToGCS:
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      // Team-scoped ceiling for fire-engine's large-PDF GCS handoff: without
+      // it fire-engine grants no raise and PDFs keep its inline cap, so the
+      // worker never captures bytes this team may not use.
+      ...(fireEngineHandoffEligible(meta)
+        ? { pdfMaxSize: largePdfLimitBytes(meta) }
+        : {}),
       ...(shouldAllowMedia ? { blockMedia: false } : {}),
+      ...(forceNonRender ? { forceNonRender: true } : {}),
       persistentStorage: meta.options.profile
         ? {
             uniqueId: `${createHash("sha256").update(meta.internalOptions.teamId).digest("hex").slice(0, 16)}_${meta.options.profile.name}`,
@@ -460,10 +560,24 @@ export async function scrapeURLWithFireEngineChromeCDP(
         x => x[0].toLowerCase() === "content-type",
       ) ?? [])[1] ?? undefined;
 
+    // A GCS-reference file cannot serve rawBase64 (the caller wants inline
+    // bytes). fire-engine never grants the large-PDF raise to rawBase64
+    // requests, so this is defense in depth with a clear error rather than
+    // a silent rawBase64: undefined.
+    if (
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined &&
+      response.file &&
+      response.file.content === undefined &&
+      response.file.gcs_uri !== undefined
+    ) {
+      throw new UnsupportedFileError("File exceeds size limit");
+    }
+
     return {
       url: response.url ?? meta.url,
 
       html: response.content,
+      rawBase64: response.file?.content,
       markdown: contentType?.includes("text/markdown")
         ? response.content
         : undefined,
@@ -520,6 +634,7 @@ export async function scrapeURLWithFireEngineTLSClient(
       geolocation: meta.options.location,
       disableJsDom: meta.internalOptions.v0DisableJsDom,
       mobileProxy: meta.featureFlags.has("stealthProxy"),
+      autoProxy: meta.options.proxy === "auto",
 
       timeout: meta.abort.scrapeTimeout() ?? 300000,
       maxAge: meta.options.maxAge,

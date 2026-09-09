@@ -26,6 +26,19 @@ import logging
 from .v1 import V1FirecrawlApp, AsyncV1FirecrawlApp
 from .v2 import FirecrawlClient as V2FirecrawlClient
 from .v2.client_async import AsyncFirecrawlClient
+from .v2.methods.research_docs import (
+    ASYNC_CLIENT_INSPECT_PAPER_DOC,
+    ASYNC_CLIENT_READ_PAPER_DOC,
+    ASYNC_CLIENT_RELATED_PAPERS_DOC,
+    ASYNC_CLIENT_SEARCH_GITHUB_DOC,
+    ASYNC_CLIENT_SEARCH_PAPERS_DOC,
+    CLIENT_INSPECT_PAPER_DOC,
+    CLIENT_READ_PAPER_DOC,
+    CLIENT_RELATED_PAPERS_DOC,
+    CLIENT_SEARCH_GITHUB_DOC,
+    CLIENT_SEARCH_PAPERS_DOC,
+    doc,
+)
 from .v2.types import Document, ParseOptions, ScrapeOptions
 
 logger = logging.getLogger("firecrawl")
@@ -65,6 +78,7 @@ class V2Proxy:
             self.delete_scrape_browser = self.stop_interaction
             self.parse = client_instance.parse
             self.search = client_instance.search
+            self.developer_search = client_instance.developer_search
             self.crawl = client_instance.crawl
             self.start_crawl = client_instance.start_crawl
             self.get_crawl_status = client_instance.get_crawl_status
@@ -83,6 +97,9 @@ class V2Proxy:
             self.start_agent = client_instance.start_agent
             self.get_agent_status = client_instance.get_agent_status
             self.cancel_agent = client_instance.cancel_agent
+            self.list_agents = client_instance.list_agents
+            self.get_agent_trace = client_instance.get_agent_trace
+            self.get_agent_snapshot = client_instance.get_agent_snapshot
 
             self.start_batch_scrape = client_instance.start_batch_scrape
             self.get_batch_scrape_status = client_instance.get_batch_scrape_status
@@ -151,6 +168,7 @@ class AsyncV2Proxy:
             self.delete_scrape_browser = self.stop_interaction
             self.parse = client_instance.parse
             self.search = client_instance.search
+            self.developer_search = client_instance.developer_search
             self.crawl = client_instance.crawl
             self.start_crawl = client_instance.start_crawl
             self.wait_crawl = client_instance.wait_crawl
@@ -170,6 +188,9 @@ class AsyncV2Proxy:
             self.start_agent = client_instance.start_agent
             self.get_agent_status = client_instance.get_agent_status
             self.cancel_agent = client_instance.cancel_agent
+            self.list_agents = client_instance.list_agents
+            self.get_agent_trace = client_instance.get_agent_trace
+            self.get_agent_snapshot = client_instance.get_agent_snapshot
 
             self.start_batch_scrape = client_instance.start_batch_scrape
             self.get_batch_scrape_status = client_instance.get_batch_scrape_status
@@ -257,6 +278,7 @@ class Firecrawl:
         self.delete_scrape_browser = self.stop_interaction
         self.parse = self._v2_client.parse
         self.search = self._v2_client.search
+        self.developer_search = self._v2_client.developer_search
         self.map = self._v2_client.map
         self.create_monitor = self._v2_client.create_monitor
         self.list_monitors = self._v2_client.list_monitors
@@ -291,6 +313,9 @@ class Firecrawl:
         self.start_agent = self._v2_client.start_agent
         self.get_agent_status = self._v2_client.get_agent_status
         self.cancel_agent = self._v2_client.cancel_agent
+        self.list_agents = self._v2_client.list_agents
+        self.get_agent_trace = self._v2_client.get_agent_trace
+        self.get_agent_snapshot = self._v2_client.get_agent_snapshot
         self.agent = self._v2_client.agent
 
         self.get_concurrency = self._v2_client.get_concurrency
@@ -331,7 +356,29 @@ class Firecrawl:
             content_type=content_type,
             options=options,
         )
-        
+
+    # Research paper index (/v2/search/research) — delegates to the v2 client.
+    @doc(CLIENT_SEARCH_PAPERS_DOC)
+    def search_papers(self, query: str, **kwargs):
+        return self._v2_client.search_papers(query, **kwargs)
+
+    @doc(CLIENT_INSPECT_PAPER_DOC)
+    def inspect_paper(self, paper_id: str):
+        return self._v2_client.inspect_paper(paper_id)
+
+    @doc(CLIENT_READ_PAPER_DOC)
+    def read_paper(self, paper_id: str, query: str, **kwargs):
+        return self._v2_client.read_paper(paper_id, query, **kwargs)
+
+    @doc(CLIENT_RELATED_PAPERS_DOC)
+    def related_papers(self, paper_id: str, intent: str, **kwargs):
+        return self._v2_client.related_papers(paper_id, intent, **kwargs)
+
+    @doc(CLIENT_SEARCH_GITHUB_DOC)
+    def search_github(self, query: str, **kwargs):
+        return self._v2_client.search_github(query, **kwargs)
+
+
 class AsyncFirecrawl:
     """Async unified Firecrawl client (v2 by default, v1 under ``.v1``)."""
 
@@ -370,6 +417,7 @@ class AsyncFirecrawl:
         self.delete_scrape_browser = self.stop_interaction
         self.parse = self._v2_client.parse
         self.search = self._v2_client.search
+        self.developer_search = self._v2_client.developer_search
         self.map = self._v2_client.map
         self.create_monitor = self._v2_client.create_monitor
         self.list_monitors = self._v2_client.list_monitors
@@ -403,6 +451,9 @@ class AsyncFirecrawl:
         self.start_agent = self._v2_client.start_agent
         self.get_agent_status = self._v2_client.get_agent_status
         self.cancel_agent = self._v2_client.cancel_agent
+        self.list_agents = self._v2_client.list_agents
+        self.get_agent_trace = self._v2_client.get_agent_trace
+        self.get_agent_snapshot = self._v2_client.get_agent_snapshot
         self.agent = self._v2_client.agent
 
         self.get_concurrency = self._v2_client.get_concurrency
@@ -443,6 +494,28 @@ class AsyncFirecrawl:
             content_type=content_type,
             options=options,
         )
+
+    # Research paper index (/v2/search/research) — delegates to the v2 client.
+    @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
+    async def search_papers(self, query: str, **kwargs):
+        return await self._v2_client.search_papers(query, **kwargs)
+
+    @doc(ASYNC_CLIENT_INSPECT_PAPER_DOC)
+    async def inspect_paper(self, paper_id: str):
+        return await self._v2_client.inspect_paper(paper_id)
+
+    @doc(ASYNC_CLIENT_READ_PAPER_DOC)
+    async def read_paper(self, paper_id: str, query: str, **kwargs):
+        return await self._v2_client.read_paper(paper_id, query, **kwargs)
+
+    @doc(ASYNC_CLIENT_RELATED_PAPERS_DOC)
+    async def related_papers(self, paper_id: str, intent: str, **kwargs):
+        return await self._v2_client.related_papers(paper_id, intent, **kwargs)
+
+    @doc(ASYNC_CLIENT_SEARCH_GITHUB_DOC)
+    async def search_github(self, query: str, **kwargs):
+        return await self._v2_client.search_github(query, **kwargs)
+
 
 # Export Firecrawl as an alias for FirecrawlApp
 FirecrawlApp = Firecrawl

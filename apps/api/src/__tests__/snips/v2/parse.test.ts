@@ -606,6 +606,45 @@ describe("/v2/parse", () => {
     );
   });
 
+  describeIf(ALLOW_TEST_SUITE_WEBSITE && !!config.FIRE_PDF_BASE_URL)(
+    "PDF upload physical page markdown",
+    () => {
+      it(
+        "returns physical pages for an uploaded PDF",
+        async () => {
+          expect(pdfFixture).not.toBeNull();
+
+          const result = await parse(
+            {
+              options: {
+                formats: ["markdown"],
+                parsers: [{ type: "pdf", mode: "auto", pages: true }],
+              },
+              file: {
+                content: pdfFixture!,
+                filename: "upload.pdf",
+                contentType: "application/pdf",
+              },
+            },
+            identity,
+          );
+
+          expect(result.markdown).toContain("PDF Test File");
+          expect(result.pages).toHaveLength(result.metadata.numPages!);
+          result.pages?.forEach((page, index) => {
+            expect(page).toEqual(
+              expect.objectContaining({
+                pageNumber: index + 1,
+                markdown: expect.any(String),
+              }),
+            );
+          });
+        },
+        scrapeTimeout * 3,
+      );
+    },
+  );
+
   it(
     "returns a validation error when file is missing",
     async () => {
@@ -654,9 +693,9 @@ describe("/v2/parse", () => {
             formats: ["markdown"],
           },
           file: {
-            content: Buffer.from("not-an-image"),
-            filename: "upload.png",
-            contentType: "image/png",
+            content: Buffer.from("not-a-document"),
+            filename: "upload.exe",
+            contentType: "application/x-msdownload",
           },
         },
         identity,

@@ -7,9 +7,9 @@ import {
   RequestWithAuth,
 } from "./types";
 import { getGenerateLlmsTxtQueue } from "../../services/queue-service";
-import * as Sentry from "@sentry/node";
 import { saveGeneratedLlmsTxt } from "../../lib/generate-llmstxt/generate-llmstxt-redis";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 type GenerateLLMsTextResponse =
@@ -45,6 +45,7 @@ export async function generateLLMsTextController(
     id: generationId,
     kind: "llmstxt",
     api_version: "v1",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: "api", // no origin field for llmstxt
     target_hint: req.body.url,

@@ -3,6 +3,7 @@ import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { htmlTransform } from "../lib/removeUnwantedElements";
 import { extractLinks } from "../lib/extractLinks";
+import { isMarkdownContentType } from "../lib/extractLinksFromMarkdown";
 import { extractImages } from "../lib/extractImages";
 import { extractMetadata } from "../lib/extractMetadata";
 import {
@@ -73,6 +74,15 @@ async function deriveHTMLFromRawHTML(
   return document;
 }
 
+function requireRawHtml(document: Document): string {
+  if (document.rawHtml === undefined) {
+    throw new Error(
+      "rawHtml is undefined -- this transformer is being called out of order",
+    );
+  }
+  return document.rawHtml;
+}
+
 async function deriveMarkdownFromHTML(
   meta: Meta,
   document: Document,
@@ -127,14 +137,20 @@ async function deriveMarkdownFromHTML(
     return document;
   }
 
-  if (document.metadata.contentType?.includes("application/json")) {
-    if (document.rawHtml === undefined) {
-      throw new Error(
-        "rawHtml is undefined -- this transformer is being called out of order",
-      );
-    }
+  // Media types are case-insensitive per RFC, so normalize before matching.
+  const contentType = document.metadata.contentType?.toLowerCase();
 
-    document.markdown = "```json\n" + document.rawHtml + "\n```";
+  if (contentType?.includes("application/json")) {
+    document.markdown = "```json\n" + requireRawHtml(document) + "\n```";
+    return document;
+  }
+
+  // text/plain responses (e.g. llms.txt) are already plain text/markdown.
+  // Running them through the HTML-to-markdown converter escapes markdown
+  // punctuation like "_", which corrupts underscores inside link URLs. Pass
+  // the raw body through untouched instead.
+  if (contentType?.includes("text/plain")) {
+    document.markdown = requireRawHtml(document);
     return document;
   }
 
@@ -181,7 +197,9 @@ async function deriveLinksFromHTML(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
-  if (document.html === undefined) {
+  const isMarkdown = isMarkdownContentType(document.metadata.contentType);
+
+  if (document.html === undefined && !isMarkdown) {
     throw new Error(
       "html is undefined -- this transformer is being called out of order",
     );
@@ -207,12 +225,15 @@ async function deriveLinksFromHTML(
     return document;
   }
 
+  // Engines that carry markdown natively (exchange) put synthetic metadata in
+  // rawHtml, so the markdown field is the only place their links live.
   document.links = await extractLinks(
-    document.html,
+    isMarkdown ? (document.markdown ?? document.rawHtml ?? "") : document.html!,
     document.metadata.url ??
       document.metadata.sourceURL ??
       meta.rewrittenUrl ??
       meta.url,
+    document.metadata.contentType,
   );
 
   if (forwardToIndexer) {
@@ -345,6 +366,7 @@ async function performLLMExtractUnlessNativeJson(
 function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
   const hasRawHtml = hasFormatOfType(meta.options.formats, "rawHtml");
+  const hasRawBase64 = hasFormatOfType(meta.options.formats, "rawBase64");
   const hasHtml = hasFormatOfType(meta.options.formats, "html");
   const hasLinks = hasFormatOfType(meta.options.formats, "links");
   const hasImages = hasFormatOfType(meta.options.formats, "images");
@@ -383,6 +405,14 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   } else if (hasRawHtml && document.rawHtml === undefined) {
     meta.logger.warn(
       "Request had format: rawHtml, but there was no rawHtml field in the result.",
+    );
+  }
+
+  if (!hasRawBase64 && document.rawBase64 !== undefined) {
+    delete document.rawBase64;
+  } else if (hasRawBase64 && document.rawBase64 === undefined) {
+    meta.logger.warn(
+      "Request had format: rawBase64, but there was no rawBase64 field in the result.",
     );
   }
 
@@ -640,6 +670,10 @@ export async function executeTransformers(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
+  if (hasFormatOfType(meta.options.formats, "rawBase64")) {
+    return coerceFieldsToFormats(meta, document);
+  }
+
   const executions: [string, number][] = [];
 
   for (const transformer of transformerStack) {

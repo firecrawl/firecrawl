@@ -27,6 +27,7 @@ import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { integrationSchema } from "../../utils/integration";
 import {
   BROWSER_CREDITS_PER_HOUR,
@@ -34,6 +35,7 @@ import {
   calculateBrowserSessionCredits,
 } from "../../lib/browser-billing";
 import { autumnService } from "../../services/autumn/autumn.service";
+import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -49,6 +51,13 @@ const browserCreateRequestSchema = z.object({
     .object({
       name: z.string().min(1).max(128),
       saveChanges: z.boolean().default(true),
+    })
+    .optional(),
+  __agentInterop: z
+    .object({
+      auth: z.string(),
+      requestId: z.string().uuid(),
+      shouldBill: z.boolean(),
     })
     .optional(),
 });
@@ -88,6 +97,7 @@ interface BrowserDeleteResponse {
   success: boolean;
   sessionDurationMs?: number;
   creditsBilled?: number;
+  cleanupQueued?: boolean;
   error?: string;
 }
 
@@ -186,6 +196,7 @@ interface BrowserServiceExecResponse {
 interface BrowserServiceDeleteResponse {
   ok: boolean;
   sessionDurationMs: number;
+  cleanupQueued: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +225,25 @@ export async function browserCreateController(
 
   req.body = browserCreateRequestSchema.parse(req.body);
 
+  if (
+    req.body.__agentInterop &&
+    config.AGENT_INTEROP_SECRET &&
+    !isAgentInteropSecretValid(req.body.__agentInterop.auth)
+  ) {
+    return res.status(403).json({
+      success: false,
+      error: "Invalid agent interop.",
+    });
+  } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
+    return res.status(403).json({
+      success: false,
+      error: "Agent interop is not enabled.",
+    });
+  }
+
+  const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
+  const agentRequestId = req.body.__agentInterop?.requestId ?? null;
+
   const {
     ttl,
     activityTtl,
@@ -234,32 +264,33 @@ export async function browserCreateController(
   logger.info("Creating browser session", { ttl, activityTtl });
 
   // 0a. Check if team has enough credits for the full TTL
-  const estimatedCredits = calculateBrowserSessionCredits(ttl * 1000);
-  const autumnResult = await autumnService.checkCredits({
-    teamId: req.auth.team_id,
-    value: estimatedCredits,
-    properties: {
-      source: "browserCreate",
-      path: req.path,
-      apiKeyId: req.acuc?.api_key_id ?? null,
-    },
-  });
+  if (shouldBill) {
+    const estimatedCredits = calculateBrowserSessionCredits(ttl * 1000);
+    const autumnResult = await autumnService.checkCredits({
+      teamId: req.auth.team_id,
+      value: estimatedCredits,
+      properties: {
+        source: "browserCreate",
+        path: req.path,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+      },
+    });
 
-  if (autumnResult !== null && !autumnResult.allowed) {
-    logger.warn("Insufficient credits for browser session TTL", {
-      estimatedCredits,
-      ttl,
-    });
-    return res.status(402).json({
-      success: false,
-      error: `Insufficient credits for a ${ttl}s browser session (requires ~${estimatedCredits} credits). For more credits, you can upgrade your plan at https://firecrawl.dev/pricing.`,
-    });
+    if (autumnResult !== null && !autumnResult.allowed) {
+      logger.warn("Insufficient credits for browser session TTL", {
+        estimatedCredits,
+        ttl,
+      });
+      return res.status(402).json({
+        success: false,
+        error: `Insufficient credits for a ${ttl}s browser session (requires ~${estimatedCredits} credits). For more credits, you can upgrade your plan at https://firecrawl.dev/pricing.`,
+      });
+    }
   }
 
   // 0b. Enforce concurrency limit (shared pool with scrape/crawl/interact)
   const concurrencyLimit = await getEffectiveConcurrencyLimit(
     req.auth.team_id,
-    req.acuc?.concurrency,
     req.acuc?.org_id,
   );
   const activeCount = await getCombinedTeamActiveCount(req.auth.team_id);
@@ -300,6 +331,7 @@ export async function browserCreateController(
         {
           ttl,
           record: recordSession,
+          customerId: req.auth.team_id,
           ...(activityTtl !== undefined ? { activityTtl } : {}),
           ...(persistentStorage !== undefined ? { persistentStorage } : {}),
         },
@@ -344,20 +376,25 @@ export async function browserCreateController(
 
   // 2. Persist session in Supabase
   try {
-    await logRequest({
-      id: sessionId,
-      kind: "browser",
-      api_version: "v2",
-      team_id: req.auth.team_id,
-      target_hint: "Browser session",
-      origin: "api",
-      integration: integration ?? null,
-      zeroDataRetention: false,
-      api_key_id: req.acuc!.api_key_id,
-    });
+    if (!agentRequestId) {
+      await logRequest({
+        id: sessionId,
+        kind: "browser",
+        api_version: "v2",
+        external_request_id: externalRequestId(req),
+        team_id: req.auth.team_id,
+        target_hint: "Browser session",
+        origin: "api",
+        integration: integration ?? null,
+        zeroDataRetention: false,
+        api_key_id: req.acuc!.api_key_id,
+      });
+    }
     await insertBrowserSession({
       id: sessionId,
       team_id: req.auth.team_id,
+      request_id: agentRequestId ?? sessionId,
+      should_bill: shouldBill,
       browser_id: svcResponse.sessionId,
       workspace_id: "",
       context_id: "",
@@ -551,20 +588,39 @@ export async function browserDeleteController(
 
   logger.info("Deleting browser session");
 
-  // Release the browser session via the browser service
-  let sessionDurationMs: number | undefined;
+  let deleteResult: BrowserServiceDeleteResponse;
   try {
-    const deleteResult =
-      await browserServiceRequest<BrowserServiceDeleteResponse>(
-        "DELETE",
-        `/browsers/${session.browser_id}`,
-      );
-    sessionDurationMs = deleteResult?.sessionDurationMs;
+    deleteResult = await browserServiceRequest<BrowserServiceDeleteResponse>(
+      "DELETE",
+      `/browsers/${session.browser_id}`,
+    );
   } catch (err) {
-    logger.warn("Failed to delete browser session via browser service", {
+    logger.error("Browser service did not confirm session release", {
       error: err,
     });
+    return res.status(502).json({
+      success: false,
+      error: "Browser session release was not confirmed.",
+    });
   }
+
+  if (
+    !deleteResult ||
+    !deleteResult.ok ||
+    !deleteResult.cleanupQueued ||
+    !Number.isFinite(deleteResult.sessionDurationMs) ||
+    deleteResult.sessionDurationMs < 0
+  ) {
+    logger.error("Browser service returned an invalid release confirmation", {
+      deleteResult,
+    });
+    return res.status(502).json({
+      success: false,
+      error: "Browser session release was not confirmed.",
+    });
+  }
+
+  const durationMs = deleteResult.sessionDurationMs;
 
   const claimed = await claimBrowserSessionDestroyed(session.id);
 
@@ -588,41 +644,45 @@ export async function browserDeleteController(
     });
     return res.status(200).json({
       success: true,
+      sessionDurationMs: durationMs,
+      cleanupQueued: true,
     });
   }
-
-  const wallClockMs = Date.now() - new Date(session.created_at).getTime();
-  const durationMs =
-    sessionDurationMs && sessionDurationMs > 0
-      ? sessionDurationMs
-      : wallClockMs;
 
   const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const rate = usedPrompt
     ? INTERACT_CREDITS_PER_HOUR
     : BROWSER_CREDITS_PER_HOUR;
-  const creditsBilled = calculateBrowserSessionCredits(durationMs, rate);
+  const creditsBilled = session.should_bill
+    ? calculateBrowserSessionCredits(durationMs, rate)
+    : 0;
 
   clearBrowserSessionPromptFlag(session.id).catch(() => {});
 
-  updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch(error => {
-    logger.error("Failed to update credits_used on browser session", {
-      error,
-      sessionId: session.id,
-      creditsBilled,
-    });
-  });
+  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
 
-  billTeam(req.auth.team_id, creditsBilled, req.acuc?.api_key_id ?? null, {
-    endpoint: usedPrompt ? "interact" : "browser",
-    jobId: session.id,
-  }).catch(error => {
-    logger.error("Failed to bill team for browser session", {
-      error,
-      creditsBilled,
-      durationMs,
+  if (session.should_bill) {
+    const agentRequestId =
+      session.request_id && session.request_id !== session.id
+        ? session.request_id
+        : null;
+    billTeam(req.auth.team_id, creditsBilled, req.acuc?.api_key_id ?? null, {
+      endpoint: agentRequestId ? "agent" : usedPrompt ? "interact" : "browser",
+      jobId: agentRequestId ?? session.id,
+      // Keyed on the session rather than on jobId, deliberately: one agent
+      // request can drive several sessions, and each is its own charge — a key
+      // built from the shared agent id would collapse them into one. The
+      // per-path suffix guards the other direction: the webhook teardown below
+      // bills the same session through a different path.
+      chargeId: `${session.id}:destroy`,
+    }).catch(error => {
+      logger.error("Failed to bill team for browser session", {
+        error,
+        creditsBilled,
+        durationMs,
+      });
     });
-  });
+  }
 
   logger.info("Browser session destroyed", {
     sessionDurationMs: durationMs,
@@ -631,6 +691,9 @@ export async function browserDeleteController(
 
   return res.status(200).json({
     success: true,
+    sessionDurationMs: durationMs,
+    creditsBilled,
+    cleanupQueued: true,
   });
 }
 
@@ -697,9 +760,18 @@ export async function browserWebhookDestroyedController(
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const { sessionId } = req.body as { sessionId?: string };
+  const { sessionId, sessionDurationMs } = req.body as {
+    sessionId?: string;
+    sessionDurationMs?: number;
+  };
   if (!sessionId) {
     return res.status(400).json({ error: "Missing browserId" });
+  }
+  if (
+    !Number.isFinite(sessionDurationMs) ||
+    (sessionDurationMs as number) < 0
+  ) {
+    return res.status(400).json({ error: "Missing sessionDurationMs" });
   }
   let browserId = sessionId;
 
@@ -733,41 +805,42 @@ export async function browserWebhookDestroyedController(
     return res.status(200).json({ ok: true });
   }
 
-  const durationMs = Date.now() - new Date(session.created_at).getTime();
+  const durationMs = sessionDurationMs as number;
 
   const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const rate = usedPrompt
     ? INTERACT_CREDITS_PER_HOUR
     : BROWSER_CREDITS_PER_HOUR;
-  const creditsBilled = calculateBrowserSessionCredits(durationMs, rate);
+  const creditsBilled = session.should_bill
+    ? calculateBrowserSessionCredits(durationMs, rate)
+    : 0;
 
   clearBrowserSessionPromptFlag(session.id).catch(() => {});
 
-  updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch(error => {
-    logger.error(
-      "Failed to update credits_used on browser session via webhook",
-      {
+  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
+
+  if (session.should_bill) {
+    const agentRequestId =
+      session.request_id && session.request_id !== session.id
+        ? session.request_id
+        : null;
+    billTeam(session.team_id, creditsBilled, null, {
+      endpoint: agentRequestId ? "agent" : usedPrompt ? "interact" : "browser",
+      jobId: agentRequestId ?? session.id,
+      // Same reasoning as the destroy path above: keyed on the session, not on
+      // jobId, and suffixed per path so the two teardown routes cannot dedupe
+      // each other's charge away.
+      chargeId: `${session.id}:webhook`,
+    }).catch(error => {
+      logger.error("Failed to bill team for browser session via webhook", {
         error,
+        teamId: session.team_id,
         sessionId: session.id,
         creditsBilled,
-      },
-    );
-  });
-
-  billTeam(
-    session.team_id,
-    creditsBilled,
-    null, // api_key_id not available in webhook context
-    { endpoint: usedPrompt ? "interact" : "browser", jobId: session.id },
-  ).catch(error => {
-    logger.error("Failed to bill team for browser session via webhook", {
-      error,
-      teamId: session.team_id,
-      sessionId: session.id,
-      creditsBilled,
-      durationMs,
+        durationMs,
+      });
     });
-  });
+  }
 
   logger.info("Session marked as destroyed via webhook", {
     sessionId: session.id,

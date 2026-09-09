@@ -40,6 +40,8 @@ def _prepare(urls: List[str], *, options: Optional[ScrapeOptions] = None, **kwar
         opts = prepare_scrape_options(options)
         if opts:
             payload.update(opts)
+    if (v := kwargs.get("audit_metadata")) is not None:
+        payload["auditMetadata"] = v.model_dump()
     if (w := kwargs.get("webhook")) is not None:
         payload["webhook"] = w if isinstance(w, str) else w.model_dump(exclude_none=True)
     if (v := kwargs.get("append_to_id")) is not None:

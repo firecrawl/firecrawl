@@ -42,4 +42,8 @@ public class MapOptions
     [JsonPropertyName("ignoreCache")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? IgnoreCache { get; set; }
+
+    [JsonPropertyName("auditMetadata")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AuditMetadata? AuditMetadata { get; set; }
 }

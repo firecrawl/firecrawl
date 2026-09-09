@@ -15,6 +15,7 @@ final class MapOptions
         private readonly ?int $timeout = null,
         private readonly ?string $integration = null,
         private readonly ?LocationConfig $location = null,
+        private readonly ?AuditMetadata $auditMetadata = null,
     ) {}
 
     public static function with(
@@ -26,10 +27,11 @@ final class MapOptions
         ?int $timeout = null,
         ?string $integration = null,
         ?LocationConfig $location = null,
+        ?AuditMetadata $auditMetadata = null,
     ): self {
         return new self(
             $search, $sitemap, $includeSubdomains, $ignoreQueryParameters,
-            $limit, $timeout, $integration, $location,
+            $limit, $timeout, $integration, $location, $auditMetadata,
         );
     }
 
@@ -45,6 +47,7 @@ final class MapOptions
             'timeout' => $this->timeout,
             'integration' => $this->integration,
             'location' => $this->location?->toArray(),
+            'auditMetadata' => $this->auditMetadata?->toArray(),
         ];
 
         return array_filter($fields, fn (mixed $v): bool => $v !== null);

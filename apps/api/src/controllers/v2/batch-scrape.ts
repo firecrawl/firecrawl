@@ -36,6 +36,7 @@ import {
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -43,8 +44,11 @@ import {
   resolveThreatProtection,
 } from "../../lib/threat-protection/request";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
+import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
+import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
+import { UnsupportedSiteError } from "../../lib/error";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -100,7 +104,7 @@ export async function batchScrapeController(
   if (
     req.body.__agentInterop &&
     config.AGENT_INTEROP_SECRET &&
-    req.body.__agentInterop.auth !== config.AGENT_INTEROP_SECRET
+    !isAgentInteropSecretValid(req.body.__agentInterop.auth)
   ) {
     return res.status(403).json({
       success: false,
@@ -129,6 +133,7 @@ export async function batchScrapeController(
   let urls: string[] = req.body.urls;
   let unnormalizedURLs = preNormalizedBody.urls;
   let invalidURLs: string[] | undefined = undefined;
+  const locallyBlockedURLs: string[] = [];
 
   if (req.body.ignoreInvalidURLs) {
     invalidURLs = [];
@@ -150,21 +155,39 @@ export async function batchScrapeController(
           unnormalizedURLs.push(u);
         } else {
           invalidURLs.push(u);
+          locallyBlockedURLs.push(nu);
         }
       } catch (_) {
         invalidURLs.push(u);
       }
     }
   } else {
-    if (
-      req.body.urls?.some((url: string) =>
+    const blockedURLs =
+      req.body.urls?.filter((url: string) =>
         isUrlBlocked(url, req.acuc?.flags ?? null, {
           team_id: req.auth.team_id,
           org_id: req.acuc?.org_id ?? null,
           origin: req.body.origin ?? null,
         }),
-      )
-    ) {
+      ) ?? [];
+    if (blockedURLs.length > 0) {
+      locallyBlockedURLs.push(...blockedURLs);
+      emitRejectedScrapeActivityEvents(
+        locallyBlockedURLs.map(url => ({
+          scrapeId: uuidv7(),
+          requestId: req.body.__agentInterop?.requestId ?? id,
+          endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
+          teamId: req.auth.team_id,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+          auditMetadata: req.body.auditMetadata,
+          url,
+          error: new UnsupportedSiteError(),
+          origin: req.body.origin ?? "api",
+          integration: req.body.integration,
+          zeroDataRetention,
+        })),
+      );
+      locallyBlockedURLs.length = 0;
       if (!res.headersSent) {
         return res.status(403).json({
           success: false,
@@ -173,6 +196,22 @@ export async function batchScrapeController(
       }
     }
   }
+
+  emitRejectedScrapeActivityEvents(
+    locallyBlockedURLs.map(url => ({
+      scrapeId: uuidv7(),
+      requestId: req.body.__agentInterop?.requestId ?? id,
+      endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
+      teamId: req.auth.team_id,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      auditMetadata: req.body.auditMetadata,
+      url,
+      error: new UnsupportedSiteError(),
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      zeroDataRetention,
+    })),
+  );
 
   // Threat protection: reject/report blocked URLs at enqueue time so they
   // never consume scrape slots. Mirrors the isUrlBlocked handling above:
@@ -205,13 +244,38 @@ export async function batchScrapeController(
           req.auth.team_id,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
-          billing,
+          {
+            ...billing,
+            // Appends reuse the batch id but each append's threat scans are a
+            // fresh charge — a shared key would underbill them. Appends stay
+            // keyless (per-request UUID in firebill).
+            ...(req.body.appendToId ? {} : { chargeId: `${id}:threat` }),
+          },
         ).catch(error => {
           logger.error(
             `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
           );
         });
       }
+      emitRejectedScrapeActivityEvents(
+        blocked.map(blockedUrl => ({
+          scrapeId: uuidv7(),
+          requestId: req.body.__agentInterop?.requestId ?? id,
+          endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
+          teamId: req.auth.team_id,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+          auditMetadata: req.body.auditMetadata,
+          url: blockedUrl.url,
+          error: new UnsafeDomainBlockedError(
+            blockedUrl.url,
+            blockedUrl.decision,
+          ),
+          threatDecisions: [blockedUrl.decision],
+          origin: req.body.origin ?? "api",
+          integration: req.body.integration,
+          zeroDataRetention,
+        })),
+      );
       if (req.body.ignoreInvalidURLs) {
         const blockedSet = new Set(blocked.map(x => x.url));
         const keptUnnormalized: string[] = [];
@@ -256,6 +320,7 @@ export async function batchScrapeController(
       id,
       kind: "batch_scrape",
       api_version: "v2",
+      external_request_id: externalRequestId(req),
       team_id: req.auth.team_id,
       origin: req.body.origin ?? "api",
       integration: req.body.integration,

@@ -41,7 +41,10 @@ defmodule Firecrawl do
   @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
   @base_url "https://api.firecrawl.dev/v2"
-  @sdk_origin "elixir-sdk@1.6.1"
+  # Sourced from mix.exs at compile time so the origin header cannot drift
+  # from the published package version.
+  @version Mix.Project.config()[:version]
+  @sdk_origin "elixir-sdk@" <> @version
 
   defp client(opts) do
     api_key =
@@ -530,6 +533,40 @@ defmodule Firecrawl do
 
 
   @doc """
+  Get a snapshot of an agent job
+
+  `GET /agent/{jobId}/snapshots/{snapshotId}`
+
+  Tag: Agent
+
+  ## Path Parameters
+
+    * `job_id` - Path parameter `jobId`
+    * `snapshot_id` - Path parameter `snapshotId`
+
+  ## Returns
+
+    * `{:ok, %Req.Response{}}` on success
+    * `{:error, exception}` on HTTP or validation failure
+
+  Success JSON: `%{"success" => true, "id" => "...", "snapshotId" => "...", "snapshot" => "<string content>"}`.
+  """
+  @spec get_agent_snapshot(String.t(), String.t(), keyword()) :: response()
+  def get_agent_snapshot(job_id, snapshot_id, opts \\ []) do
+    Req.get(client(opts), url: "/agent/#{job_id}/snapshots/#{snapshot_id}")
+  end
+
+
+  @doc """
+  Bang variant of `get_agent_snapshot`. Raises on error.
+  """
+  @spec get_agent_snapshot!(String.t(), String.t(), keyword()) :: Req.Response.t()
+  def get_agent_snapshot!(job_id, snapshot_id, opts \\ []) do
+    Req.get!(client(opts), url: "/agent/#{job_id}/snapshots/#{snapshot_id}")
+  end
+
+
+  @doc """
   Get the status of an agent job
 
   `GET /agent/{jobId}`
@@ -557,6 +594,56 @@ defmodule Firecrawl do
   @spec get_agent_status!(String.t(), keyword()) :: Req.Response.t()
   def get_agent_status!(job_id, opts \\ []) do
     Req.get!(client(opts), url: "/agent/#{job_id}")
+  end
+
+
+  @doc """
+  Get the execution trace of an agent job
+
+  `GET /agent/{jobId}/trace`
+
+  Tag: Agent
+
+  The trace is only available for agent runs on spark-2.
+
+  ## Path Parameters
+
+    * `job_id` - Path parameter `jobId`
+
+  ## Options
+
+    * `:live_view` - when `true`, the query parameter `liveView=true` is sent and
+      the response may additionally carry `activeBrowserSessions`, a list of
+      `%{"id" => "...", "liveViewUrl" => "...", "viewport" => %{"width" => 1280, "height" => 720}}`
+      entries for the run's live browser sessions.
+
+  ## Returns
+
+    * `{:ok, %Req.Response{}}` on success
+    * `{:error, exception}` on HTTP or validation failure
+
+  Success JSON: `%{"success" => true, "id" => "...", "events" => [...], "creditsUsed" => 5}`.
+
+  Each event has a `type` field (e.g. `"run.started"`, `"tool_call.started"`,
+  `"artifact.updated"`) plus the base fields `schemaVersion`, `eventId`, `runId`,
+  `occurredAt`, `producerSequence`, and `agent`.
+  """
+  @spec get_agent_trace(String.t(), keyword()) :: response()
+  def get_agent_trace(job_id, opts \\ []) do
+    {live_view, opts} = Keyword.pop(opts, :live_view, false)
+    params = if live_view, do: [{"liveView", "true"}], else: []
+    Req.get(client(opts), url: "/agent/#{job_id}/trace", params: params)
+  end
+
+
+  @doc """
+  Bang variant of `get_agent_trace`. Raises on error.
+  """
+  @spec get_agent_trace!(String.t(), keyword()) :: Req.Response.t()
+  def get_agent_trace!(job_id, opts \\ []) do
+    {live_view, opts} = Keyword.pop(opts, :live_view, false)
+    params = if live_view, do: [{"liveView", "true"}], else: []
+    Req.get!(client(opts), url: "/agent/#{job_id}/trace", params: params)
   end
 
 
@@ -826,6 +913,49 @@ defmodule Firecrawl do
   end
 
 
+  @list_agents_query_schema NimbleOptions.new!([
+    before: [type: :integer, doc: "Only return agent runs created before this unix millisecond timestamp"]
+  ])
+
+  @list_agents_query_key_mapping %{before: "before"}
+
+  @doc """
+  List agent runs, most recent first
+
+  `GET /agent`
+
+  Tag: Agent
+
+  Pages are fixed at 20 runs. To fetch the next page, pass the `before` value
+  from the previous page's `next` URL. This function does not auto-paginate.
+
+  ## Query Parameters
+
+    * `before` — query parameter `before`
+
+  ## Returns
+
+    * `{:ok, %Req.Response{}}` on success
+    * `{:error, exception}` on HTTP or validation failure
+  """
+  @spec list_agents(keyword(), keyword()) :: response()
+  def list_agents(params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @list_agents_query_schema) do
+      Req.get(client(opts), url: "/agent", params: to_query(params, @list_agents_query_key_mapping))
+    end
+  end
+
+
+  @doc """
+  Bang variant of `list_agents`. Raises on error.
+  """
+  @spec list_agents!(keyword(), keyword()) :: Req.Response.t()
+  def list_agents!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @list_agents_query_schema)
+    Req.get!(client(opts), url: "/agent", params: to_query(params, @list_agents_query_key_mapping))
+  end
+
+
   @list_browser_sessions_query_schema NimbleOptions.new!([
     status: [type: {:in, [:active, :destroyed]}, doc: "Filter sessions by status"]
   ])
@@ -867,6 +997,7 @@ defmodule Firecrawl do
 
 
   @map_urls_schema NimbleOptions.new!([
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     ignore_cache: [type: :boolean, doc: "Bypass the sitemap cache to retrieve fresh URLs. Sitemap data is cached for up to 7 days; use this parameter when your sitemap has been recently updated."],
     ignore_query_parameters: [type: :boolean, doc: "Do not return URLs with query parameters"],
     include_subdomains: [type: :boolean, doc: "Include subdomains of the website"],
@@ -878,7 +1009,7 @@ defmodule Firecrawl do
     url: [type: :string, required: true, doc: "The base URL to start crawling from"]
   ])
 
-  @map_urls_key_mapping %{ignore_cache: "ignoreCache", ignore_query_parameters: "ignoreQueryParameters", include_subdomains: "includeSubdomains", limit: "limit", location: "location", search: "search", sitemap: "sitemap", timeout: "timeout", url: "url"}
+  @map_urls_key_mapping %{audit_metadata: "auditMetadata", ignore_cache: "ignoreCache", ignore_query_parameters: "ignoreQueryParameters", include_subdomains: "includeSubdomains", limit: "limit", location: "location", search: "search", sitemap: "sitemap", timeout: "timeout", url: "url"}
 
   @doc """
   Map multiple URLs based on options
@@ -916,6 +1047,7 @@ defmodule Firecrawl do
 
 
   @parse_file_schema NimbleOptions.new!([
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     block_ads: [type: :boolean, doc: "Enable ad and cookie popup blocking."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
     formats: [type: {:list, :any}, doc: "Output formats supported for `/parse` uploads. Browser-rendering formats and change tracking are not supported."],
@@ -933,7 +1065,7 @@ defmodule Firecrawl do
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this parse. To enable this feature, please contact help@firecrawl.dev"]
   ])
 
-  @parse_file_key_mapping %{block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", integration: "integration", only_main_content: "onlyMainContent", origin: "origin", parsers: "parsers", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", timeout: "timeout", zero_data_retention: "zeroDataRetention"}
+  @parse_file_key_mapping %{audit_metadata: "auditMetadata", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", integration: "integration", only_main_content: "onlyMainContent", origin: "origin", parsers: "parsers", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", timeout: "timeout", zero_data_retention: "zeroDataRetention"}
 
   @doc """
   Upload and parse a file
@@ -1017,10 +1149,11 @@ defmodule Firecrawl do
 
   @scrape_and_extract_from_url_schema NimbleOptions.new!([
     url: [type: :string, required: true, doc: "The URL to scrape"],
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     actions: [type: {:list, :any}, doc: "Actions to perform on the page before grabbing the content"],
     block_ads: [type: :boolean, doc: "Enables ad-blocking and cookie popup blocking."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
-    formats: [type: {:list, :any}, doc: "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...} }`, `{ type: 'question', question: '...' }`, `{ type: 'highlights', query: '...' }`). The legacy `{ type: 'query', prompt: '...', mode: 'freeform' | 'directQuote' }` format is deprecated."],
+    formats: [type: {:list, :any}, doc: "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...}, check_prompt_injection: true }`, `{ type: 'question', question: '...' }`, `{ type: 'highlights', query: '...' }`). For the `json` format, set `check_prompt_injection: true` (serialized as `checkPromptInjection`) to run a prompt-injection safety check on the scraped page content before extraction runs; it defaults to false. The legacy `{ type: 'query', prompt: '...', mode: 'freeform' | 'directQuote' }` format is deprecated."],
     headers: [type: :any, doc: "Headers to send with the request. Can be used to send cookies, user-agent, etc."],
     include_tags: [type: {:list, :string}, doc: "Tags to include in the output."],
     location: [type: :keyword_list, doc: "Location settings for the request. When specified, this will use an appropriate proxy if available and emulate the corresponding language and timezone settings. Defaults to 'US' if not specified."],
@@ -1030,7 +1163,7 @@ defmodule Firecrawl do
     only_main_content: [type: :boolean, doc: "Only return the main content of the page excluding headers, navs, footers, etc."],
     parsers: [type: {:list, :any}, doc: "Controls how files are processed during scraping. When \"pdf\" is included (default), the PDF content is extracted and converted to markdown format, with billing based on the number of pages (1 credit per page). When an empty array is passed, the PDF file is returned in base64 encoding with a flat rate of 1 credit for the entire PDF."],
     profile: [type: :keyword_list, doc: "Enable persistent browser storage across scrape and interact sessions. Pass a profile when scraping to preserve cookies, localStorage, and session data. Sessions with the same profile name share browser state."],
-    proxy: [type: {:in, [:basic, :enhanced, :auto]}, doc: "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **enhanced**: Enhanced proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Costs up to 5 credits per request.\n - **auto**: Firecrawl will automatically retry scraping with enhanced proxies if the basic proxy fails. If the retry with enhanced is successful, 5 credits will be billed for the scrape. If the first attempt with basic is successful, only the regular cost will be billed."],
+    proxy: [type: {:in, [:basic, :enhanced, :auto]}, doc: "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **enhanced**: Enhanced proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Billed at the same credit cost as basic.\n - **auto**: Firecrawl will automatically retry scraping with enhanced proxies if the basic proxy fails. Enhanced proxies carry no credit surcharge, so either way only the regular cost is billed."],
     redact_pii: [type: :boolean, doc: "Redact personally identifiable information from returned content."],
     remove_base64_images: [type: :boolean, doc: "Removes all base 64 images from the markdown output, which may be overwhelmingly long. This does not affect html or rawHtml formats. The image's alt text remains in the output, but the URL is replaced with a placeholder."],
     skip_tls_verification: [type: :boolean, doc: "Skip TLS certificate verification when making requests."],
@@ -1041,7 +1174,7 @@ defmodule Firecrawl do
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this scrape. To enable this feature, please contact help@firecrawl.dev"]
   ])
 
-  @scrape_and_extract_from_url_key_mapping %{url: "url", actions: "actions", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", lockdown: "lockdown", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
+  @scrape_and_extract_from_url_key_mapping %{url: "url", audit_metadata: "auditMetadata", actions: "actions", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", lockdown: "lockdown", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
 
   @doc """
   Scrape a single URL and optionally extract information using an LLM
@@ -1079,6 +1212,7 @@ defmodule Firecrawl do
 
 
   @scrape_and_extract_from_urls_schema NimbleOptions.new!([
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     ignore_invalid_urls: [type: :boolean, doc: "If invalid URLs are specified in the urls array, they will be ignored. Instead of them failing the entire request, a batch scrape using the remaining valid URLs will be created, and the invalid URLs will be returned in the invalidURLs field of the response."],
     max_concurrency: [type: :integer, doc: "Maximum number of concurrent scrapes. This parameter allows you to set a concurrency limit for this batch scrape. If not specified, the batch scrape adheres to your team's concurrency limit."],
     urls: [type: {:list, :string}, required: true],
@@ -1086,7 +1220,7 @@ defmodule Firecrawl do
     actions: [type: {:list, :any}, doc: "Actions to perform on the page before grabbing the content"],
     block_ads: [type: :boolean, doc: "Enables ad-blocking and cookie popup blocking."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
-    formats: [type: {:list, :any}, doc: "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...} }`, `{ type: 'question', question: '...' }`, `{ type: 'highlights', query: '...' }`). The legacy `{ type: 'query', prompt: '...', mode: 'freeform' | 'directQuote' }` format is deprecated."],
+    formats: [type: {:list, :any}, doc: "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...}, check_prompt_injection: true }`, `{ type: 'question', question: '...' }`, `{ type: 'highlights', query: '...' }`). For the `json` format, set `check_prompt_injection: true` (serialized as `checkPromptInjection`) to run a prompt-injection safety check on the scraped page content before extraction runs; it defaults to false. The legacy `{ type: 'query', prompt: '...', mode: 'freeform' | 'directQuote' }` format is deprecated."],
     headers: [type: :any, doc: "Headers to send with the request. Can be used to send cookies, user-agent, etc."],
     include_tags: [type: {:list, :string}, doc: "Tags to include in the output."],
     location: [type: :keyword_list, doc: "Location settings for the request. When specified, this will use an appropriate proxy if available and emulate the corresponding language and timezone settings. Defaults to 'US' if not specified."],
@@ -1096,7 +1230,7 @@ defmodule Firecrawl do
     only_main_content: [type: :boolean, doc: "Only return the main content of the page excluding headers, navs, footers, etc."],
     parsers: [type: {:list, :any}, doc: "Controls how files are processed during scraping. When \"pdf\" is included (default), the PDF content is extracted and converted to markdown format, with billing based on the number of pages (1 credit per page). When an empty array is passed, the PDF file is returned in base64 encoding with a flat rate of 1 credit for the entire PDF."],
     profile: [type: :keyword_list, doc: "Enable persistent browser storage across scrape and interact sessions. Pass a profile when scraping to preserve cookies, localStorage, and session data. Sessions with the same profile name share browser state."],
-    proxy: [type: {:in, [:basic, :enhanced, :auto]}, doc: "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **enhanced**: Enhanced proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Costs up to 5 credits per request.\n - **auto**: Firecrawl will automatically retry scraping with enhanced proxies if the basic proxy fails. If the retry with enhanced is successful, 5 credits will be billed for the scrape. If the first attempt with basic is successful, only the regular cost will be billed."],
+    proxy: [type: {:in, [:basic, :enhanced, :auto]}, doc: "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **enhanced**: Enhanced proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Billed at the same credit cost as basic.\n - **auto**: Firecrawl will automatically retry scraping with enhanced proxies if the basic proxy fails. Enhanced proxies carry no credit surcharge, so either way only the regular cost is billed."],
     redact_pii: [type: :boolean, doc: "Redact personally identifiable information from returned content."],
     remove_base64_images: [type: :boolean, doc: "Removes all base 64 images from the markdown output, which may be overwhelmingly long. This does not affect html or rawHtml formats. The image's alt text remains in the output, but the URL is replaced with a placeholder."],
     skip_tls_verification: [type: :boolean, doc: "Skip TLS certificate verification when making requests."],
@@ -1107,7 +1241,7 @@ defmodule Firecrawl do
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this batch scrape. To enable this feature, please contact help@firecrawl.dev"]
   ])
 
-  @scrape_and_extract_from_urls_key_mapping %{ignore_invalid_urls: "ignoreInvalidURLs", max_concurrency: "maxConcurrency", urls: "urls", webhook: "webhook", actions: "actions", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", lockdown: "lockdown", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
+  @scrape_and_extract_from_urls_key_mapping %{audit_metadata: "auditMetadata", ignore_invalid_urls: "ignoreInvalidURLs", max_concurrency: "maxConcurrency", urls: "urls", webhook: "webhook", actions: "actions", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", lockdown: "lockdown", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
 
   @doc """
   Scrape multiple URLs and optionally extract information using an LLM
@@ -1342,15 +1476,17 @@ defmodule Firecrawl do
 
 
   @start_agent_schema NimbleOptions.new!([
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
+    effort: [type: {:in, ["low", "medium", "high"]}, doc: "Reasoning effort for the agent task. Every level runs spark-2."],
     max_credits: [type: {:or, [:integer, :float]}, doc: "Maximum credits to spend on this agent task. Defaults to 2500 if not set. Values above 2,500 are always billed as paid requests."],
-    model: [type: {:or, [{:in, [:"spark-1-mini", :"spark-1-pro"]}, :string]}, doc: "The model to use for the agent task. spark-1-mini (default) is 60% cheaper, spark-1-pro offers higher accuracy for complex tasks"],
+    model: [type: {:or, [{:in, [:"spark-1-mini", :"spark-1-pro", :"spark-2"]}, :string]}, doc: "The model to use for the agent task. spark-1-pro (default) offers higher accuracy for complex tasks, spark-1-mini is 60% cheaper than spark-1-pro, spark-2 handles most tasks"],
     prompt: [type: :string, required: true, doc: "The prompt describing what data to extract"],
     schema: [type: :any, doc: "Optional JSON schema to structure the extracted data"],
     strict_constrain_to_urls: [type: :boolean, doc: "If true, agent will only visit URLs provided in the urls array"],
     urls: [type: {:list, :string}, doc: "Optional list of URLs to constrain the agent to"]
   ])
 
-  @start_agent_key_mapping %{max_credits: "maxCredits", model: "model", prompt: "prompt", schema: "schema", strict_constrain_to_urls: "strictConstrainToURLs", urls: "urls"}
+  @start_agent_key_mapping %{audit_metadata: "auditMetadata", effort: "effort", max_credits: "maxCredits", model: "model", prompt: "prompt", schema: "schema", strict_constrain_to_urls: "strictConstrainToURLs", urls: "urls"}
 
   @doc """
   Start an agent task for agentic data extraction

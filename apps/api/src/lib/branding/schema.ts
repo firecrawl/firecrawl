@@ -137,12 +137,20 @@ export function getBrandingEnhancementSchema(hasLogoCandidates: boolean) {
     : baseBrandingEnhancementSchema;
 }
 
-// Type - logoSelection is optional in the type even though it's required in schema when candidates exist
+// Type - logoSelection is optional in the type even though it's required in
+// schema when candidates exist. personality/designSystem are optional so the
+// LLM-failure fallback can omit them instead of fabricating values.
 export type BrandingEnhancement = Omit<
   z.infer<typeof brandingEnhancementSchemaWithLogo>,
-  "logoSelection"
+  "logoSelection" | "personality" | "designSystem"
 > & {
   logoSelection?: z.infer<
     typeof brandingEnhancementSchemaWithLogo
   >["logoSelection"];
+  personality?: z.infer<
+    typeof brandingEnhancementSchemaWithLogo
+  >["personality"];
+  designSystem?: z.infer<
+    typeof brandingEnhancementSchemaWithLogo
+  >["designSystem"];
 };

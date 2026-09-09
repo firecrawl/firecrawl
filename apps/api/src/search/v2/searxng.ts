@@ -9,6 +9,7 @@ interface SearchOptions {
   lang?: string;
   country?: string;
   location?: string;
+  safe?: boolean;
   num_results: number;
   page?: number;
 }
@@ -36,6 +37,8 @@ export async function searxng_search(
       categories: config.SEARXNG_CATEGORIES ?? "",
       pageno: page,
       format: "json",
+      // 2 = strict; omitted otherwise so the instance default applies
+      ...(options.safe ? { safesearch: 2 } : {}),
     };
 
     const response = await axios.get(finalUrl, {

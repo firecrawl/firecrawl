@@ -6,6 +6,7 @@ import {
   generateSchemaFromPrompt,
 } from "../transformers/llmExtract";
 import { smartScrape } from "./smartScrape";
+import { checkForPromptInjection } from "./promptInjectionGuard";
 import { parseMarkdown } from "../../../lib/html-to-markdown";
 import { getModel } from "../../../lib/generic-ai";
 import { TokenUsage } from "../../../controllers/v1/types";
@@ -14,6 +15,11 @@ import {
   CostLimitExceededError,
   CostTracking,
 } from "../../../lib/cost-tracking";
+import { JsonExtractionContentTooLargeError } from "../error";
+
+// ~2MB of markdown, well past typical page sizes -- caps worst-case JSON extraction cost/latency.
+const MAX_JSON_EXTRACTION_MARKDOWN_CHARS = 2_000_000;
+
 const commonSmartScrapeProperties = {
   shouldUseSmartscrape: {
     type: "boolean",
@@ -33,7 +39,7 @@ const commonReasoningPromptProperties = {
   },
   smartscrape_prompt: {
     type: ["string", "null"],
-    description: `A clear, outcome-focused prompt describing what information to find on the page. 
+    description: `A clear, outcome-focused prompt describing what information to find on the page.
       Example: "Find the product specifications in the expandable section" rather than "Click the button to reveal product specs".
       Used by the smart scraping agent to determine what actions to take.
       Dont mention anything about extraction, smartscrape just returns page content.`,
@@ -260,6 +266,14 @@ export async function extractData({
   const logger = extractOptions.logger;
   const isSingleUrl = urls.length === 1;
   let costLimitExceededTokenUsage: number | null = null;
+
+  if (
+    extractOptions.markdown &&
+    extractOptions.markdown.length > MAX_JSON_EXTRACTION_MARKDOWN_CHARS
+  ) {
+    throw new JsonExtractionContentTooLargeError();
+  }
+
   // TODO: remove the "required" fields here!! it breaks o3-mini
 
   if (!schema && extractOptions.options.prompt) {
@@ -275,6 +289,7 @@ export async function extractData({
           ? metadata.functionId + "/extractData"
           : "extractData",
       },
+      extractOptions.zeroDataRetention,
     );
     schema = genRes.extract;
   }
@@ -350,13 +365,18 @@ export async function extractData({
     warning: string | undefined,
     totalUsage: TokenUsage | undefined;
 
-  // checks if using smartScrape is needed for this case
-  try {
-    const {
-      extract: e,
-      warning: w,
-      totalUsage: t,
-    } = await generateCompletions({
+  // Runs concurrently with extraction; guard verdict is checked before `extract` is used.
+  const [guardSettled, generateSettled] = await Promise.allSettled([
+    extractOptions.options.checkPromptInjection
+      ? checkForPromptInjection({
+          markdown: extractOptions.markdown,
+          logger,
+          costTracking: extractOptions.costTrackingOptions.costTracking,
+          metadata,
+          zeroDataRetention: !!extractOptions.zeroDataRetention,
+        })
+      : Promise.resolve(),
+    generateCompletions({
       ...extractOptionsNewSchema,
       costTrackingOptions: {
         costTracking: extractOptions.costTrackingOptions.costTracking,
@@ -366,11 +386,19 @@ export async function extractData({
           description: "Check if using smartScrape is needed for this case",
         },
       },
-    });
-    extract = e;
-    warning = w;
-    totalUsage = t;
-  } catch (error) {
+    }),
+  ]);
+
+  if (guardSettled.status === "rejected") {
+    throw guardSettled.reason;
+  }
+
+  if (generateSettled.status === "fulfilled") {
+    extract = generateSettled.value.extract;
+    warning = generateSettled.value.warning;
+    totalUsage = generateSettled.value.totalUsage;
+  } else {
+    const error = generateSettled.reason;
     if (error instanceof CostLimitExceededError) {
       throw error;
     }
@@ -378,7 +406,14 @@ export async function extractData({
     logger.error("failed during extractSmartScrape.ts:generateCompletions", {
       error,
     });
-    // console.log("failed during extractSmartScrape.ts:generateCompletions", error);
+    // Surface the failure to the caller: swallowing it here made a failed
+    // extraction indistinguishable from a successful-but-empty one — the
+    // scrape returned 200 with the json field silently absent (and billed).
+    // `warning` is provably undefined here (only assigned on the success
+    // path of the try above), so assign directly — the caller merges any
+    // pre-existing document warnings.
+    const reason = error instanceof Error ? error.message : String(error);
+    warning = `JSON extraction failed: ${reason.slice(0, 300)}`;
   }
 
   let extractedData = extract?.extractedData;
@@ -396,6 +431,13 @@ export async function extractData({
     });
 
     if (useAgent && extract?.shouldUseSmartscrape) {
+      // technically this should be checked upstream but might as well add another guard - Mogery
+      if (extractOptions.zeroDataRetention) {
+        throw new Error(
+          "JSON mode with agent is not supported with Zero Data Retention.",
+        );
+      }
+
       let smartscrapeResults: SmartScrapeResult[];
       if (isSingleUrl) {
         smartscrapeResults = [
@@ -456,6 +498,16 @@ export async function extractData({
       // console.log("markdowns", markdowns);
       extractedData = await Promise.all(
         markdowns.map(async markdown => {
+          if (extractOptions.options.checkPromptInjection) {
+            await checkForPromptInjection({
+              markdown,
+              logger,
+              costTracking: extractOptions.costTrackingOptions.costTracking,
+              metadata,
+              zeroDataRetention: !!extractOptions.zeroDataRetention,
+            });
+          }
+
           const newExtractOptions = {
             ...extractOptions,
             markdown: markdown,

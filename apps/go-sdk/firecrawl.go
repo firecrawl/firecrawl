@@ -672,6 +672,11 @@ func (c *Client) RelatedPapers(ctx context.Context, paperID, intent string, opts
 }
 
 // SearchGitHub searches GitHub research content.
+//
+// Deprecated: stops responding after 2026-11-03. Use the developer index at
+// GET or POST /v2/search/developer. This SDK does not wrap it yet, so call it
+// directly. It does not carry over the score breakdown or the web fallback
+// results.
 func (c *Client) SearchGitHub(ctx context.Context, query string, opts *SearchGitHubOptions) (*GitHubSearchResponse, error) {
 	if query == "" {
 		return nil, &FirecrawlError{Message: "query is required"}
@@ -727,6 +732,34 @@ func (c *Client) GetAgentStatus(ctx context.Context, jobID string) (*AgentStatus
 	}
 
 	var resp AgentStatusResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// ListAgents lists agent runs, most recent first.
+//
+// Pages are fixed at 20 runs. To fetch the next page, pass the before value
+// from the previous page's Next URL via ListAgentsOptions. This method does
+// not auto-paginate.
+func (c *Client) ListAgents(ctx context.Context, opts *ListAgentsOptions) (*AgentListResponse, error) {
+	values := url.Values{}
+	if opts != nil && opts.Before != nil {
+		values.Set("before", fmt.Sprint(*opts.Before))
+	}
+
+	path := "/v2/agent"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+
+	raw, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp AgentListResponse
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
 	}
@@ -793,6 +826,50 @@ func (c *Client) CancelAgent(ctx context.Context, jobID string) (map[string]inte
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
 	}
 	return resp, nil
+}
+
+// GetAgentTrace gets the event trace of an agent task. When liveView is true,
+// the response also includes any active browser sessions with live view URLs.
+func (c *Client) GetAgentTrace(ctx context.Context, jobID string, liveView bool) (*AgentTraceResponse, error) {
+	if jobID == "" {
+		return nil, &FirecrawlError{Message: "job ID is required"}
+	}
+
+	path := "/v2/agent/" + jobID + "/trace"
+	if liveView {
+		path += "?liveView=true"
+	}
+	raw, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp AgentTraceResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// GetAgentSnapshot gets a snapshot of an agent task.
+func (c *Client) GetAgentSnapshot(ctx context.Context, jobID string, snapshotID string) (*AgentSnapshotResponse, error) {
+	if jobID == "" {
+		return nil, &FirecrawlError{Message: "job ID is required"}
+	}
+	if snapshotID == "" {
+		return nil, &FirecrawlError{Message: "snapshot ID is required"}
+	}
+
+	raw, err := c.http.get(ctx, "/v2/agent/"+jobID+"/snapshots/"+snapshotID)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp AgentSnapshotResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
 }
 
 // ================================================================

@@ -5,7 +5,6 @@ import { BrandingEnhancement, getBrandingEnhancementSchema } from "./schema";
 import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
 import { getModel } from "../generic-ai";
-import { captureExceptionWithZdrCheck } from "../../services/sentry";
 
 function isDebugBrandingEnabled(input: BrandingLLMInput): boolean {
   return (
@@ -121,6 +120,9 @@ export async function enhanceBrandingWithLLM(
       temperature: 0.1,
       experimental_telemetry: {
         isEnabled: true,
+        // The input carries the page screenshot / raw page content; too large
+        // for span attributes. Outputs stay recorded.
+        recordInputs: false,
         functionId: "enhanceBrandingWithLLM",
         metadata: {
           teamId: input.teamId || "unknown",
@@ -193,22 +195,6 @@ export async function enhanceBrandingWithLLM(
         },
       );
     } else {
-      captureExceptionWithZdrCheck(error, {
-        tags: {
-          feature: "branding-llm",
-          model: modelName,
-          ...(input.scrapeId ? { scrape_id: input.scrapeId } : {}),
-          ...(input.teamId ? { team_id: input.teamId } : {}),
-        },
-        extra: {
-          url: input.url,
-          buttonsCount: input.buttons?.length || 0,
-          logoCandidatesCount: input.logoCandidates?.length || 0,
-          promptLength: prompt.length,
-          hasScreenshot: !!input.screenshot,
-        },
-        zeroDataRetention: input.zeroDataRetention,
-      });
       logger.error("LLM branding enhancement failed", {
         error,
         buttonsCount: input.buttons?.length || 0,
@@ -216,6 +202,11 @@ export async function enhanceBrandingWithLLM(
       });
     }
 
+    // On LLM failure return only the fields that have honest fallback values.
+    // Omitting logoSelection lets the transformer restore the heuristic's
+    // pick (a failure object with confidence 0 used to override it and drop
+    // the logo entirely); omitting personality/designSystem avoids stamping
+    // fabricated values into the output.
     return {
       cleanedFonts: [],
       buttonClassification: {
@@ -230,20 +221,6 @@ export async function enhanceBrandingWithLLM(
         accentColor: "",
         backgroundColor: "",
         textPrimary: "",
-        confidence: 0,
-      },
-      personality: {
-        tone: "professional",
-        energy: "medium",
-        targetAudience: "unknown",
-      },
-      designSystem: {
-        framework: "unknown",
-        componentLibrary: "",
-      },
-      logoSelection: {
-        selectedLogoIndex: -1,
-        selectedLogoReasoning: "LLM failed",
         confidence: 0,
       },
     };

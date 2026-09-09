@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { getRedisConnection } from "../../../services/queue-service";
+import { getDbPoolMetrics } from "../../../db/connection";
 import { nuqFdbGetMetrics } from "../../../services/worker/nuq-fdb";
 import { nuqGetLocalMetrics } from "../../../services/worker/nuq";
 import { scrapeQueue } from "../../../services/worker/nuq-router";
@@ -42,7 +43,8 @@ concurrency_limit_queue_job_count_total ${totalJobCount}
 concurrency_limit_queue_team_count ${teamCount}
 
 ${nuqGetLocalMetrics()}
-${semaphoreMetrics}`);
+${semaphoreMetrics}
+${getDbPoolMetrics()}`);
 }
 
 export async function nuqMetricsController(_: Request, res: Response) {

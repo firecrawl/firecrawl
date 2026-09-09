@@ -167,6 +167,18 @@ export function evaluatePolicy(
   }
 
   if (verdict !== null) {
+    // Zscaler mode blocks on the org's denied-categories selection. The
+    // verdict's categories are the normalized union of urlClassifications
+    // and urlClassificationsWithSecurityAlert.
+    if (policy.mode === "zscaler" && policy.zscaler) {
+      const denied = verdict.categories.filter(category =>
+        policy.zscaler!.deniedCategories.includes(category),
+      );
+      if (denied.length > 0) {
+        return { allowed: false, rule: "denied-category", ...base };
+      }
+    }
+
     if (
       verdict.riskScore !== null &&
       verdict.riskScore >= policy.riskScoreThreshold

@@ -389,6 +389,44 @@ class TestPrepareScrapeOptions:
 
         assert result["parsers"][0]["maxPages"] == 5
 
+    def test_prepare_parsers_blocks_and_pages(self):
+        """PDF parser blocks, pages, and page_markers are forwarded to the API."""
+        parser = PDFParser(mode="auto", pages=True, blocks=True, page_markers=True)
+        options = ScrapeOptions(parsers=[parser])
+
+        result = prepare_scrape_options(options)
+
+        assert result["parsers"][0] == {
+            "type": "pdf",
+            "mode": "auto",
+            "pages": True,
+            "blocks": True,
+            "pageMarkers": True,
+        }
+
+        markers_options = ScrapeOptions(
+            parsers=[{"type": "pdf", "page_markers": True}]
+        )
+        markers_result = prepare_scrape_options(markers_options)
+        assert markers_result["parsers"][0]["pageMarkers"] is True
+        assert "page_markers" not in markers_result["parsers"][0]
+
+        dict_options = ScrapeOptions(
+            parsers=[{"type": "pdf", "page_markdown": True, "blocks": True}]
+        )
+        dict_result = prepare_scrape_options(dict_options)
+        assert dict_result["parsers"][0]["pages"] is True
+        assert dict_result["parsers"][0]["blocks"] is True
+        assert "page_markdown" not in dict_result["parsers"][0]
+        assert "pageMarkdown" not in dict_result["parsers"][0]
+
+        camel_options = ScrapeOptions(
+            parsers=[{"type": "pdf", "pageMarkdown": True}]
+        )
+        camel_result = prepare_scrape_options(camel_options)
+        assert camel_result["parsers"][0]["pages"] is True
+        assert "pageMarkdown" not in camel_result["parsers"][0]
+
     def test_prepare_min_age_maps_to_camel_case(self):
         """min_age must be sent as minAge; the server drops the snake_case key."""
         options = ScrapeOptions(min_age=1000, max_age=5000)

@@ -1,82 +1,69 @@
 import { EventDataMap, EventDefinitionSlug } from "./data-schemas";
-import { eq } from "drizzle-orm";
-import { db } from "../../db/connection";
-import * as schema from "../../db/schema";
-import { getValue, setValue } from "../redis";
+import { config } from "../../config";
 import { logger } from "../../lib/logger";
 
+const TRACK_SOURCE = "firecrawl-api";
+const TRACK_TIMEOUT_MS = 5000;
+
+type TrackStoreResponse = {
+  tracks?: Array<{ track_uuid: string | null }>;
+};
+
 /**
- * Track an event in the ledger system
- * @param definitionSlug The provider definition slug
- * @param data Additional data to store with the track
- * @returns The tracked event ID or null if tracking failed
+ * Emit a track by POSTing it to the configured tracks endpoint. Never throws:
+ * on any failure it logs and returns null, so tracking cannot break the calling
+ * flow.
+ * @param definitionSlug The event definition slug
+ * @param data Event properties sent with the track
+ * @returns The stored track UUID, or null if the write did not succeed
  */
 export async function trackEvent<T extends EventDefinitionSlug>(
   definitionSlug: T,
   data: EventDataMap[T],
 ): Promise<string | null> {
+  const url = config.FIREBRAIN_TRACKS_URL;
+  const apiKey = config.FIREBRAIN_TRACKS_API_KEY?.trim();
+  if (!url || !apiKey) {
+    logger.warn(
+      "Skipping track: FIREBRAIN_TRACKS_URL or FIREBRAIN_TRACKS_API_KEY is unset",
+    );
+    return null;
+  }
+
   try {
-    // Get the provider definition ID from cache or database
-    const cacheKey = `provider_definition_${definitionSlug}_`;
-    let providerDefinition: any = null;
-    let definitionError: any = null;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        definition: definitionSlug,
+        source: TRACK_SOURCE,
+        properties: data,
+      }),
+      signal: AbortSignal.timeout(TRACK_TIMEOUT_MS),
+    });
 
-    // Try to get from Redis cache first
-    const cachedData = await getValue(cacheKey);
-    if (cachedData) {
-      providerDefinition = JSON.parse(cachedData);
-    } else {
-      // If not in cache, fetch from database
-      try {
-        [providerDefinition] = await db
-          .select({ id: schema.provider_definitions.id })
-          .from(schema.provider_definitions)
-          .where(eq(schema.provider_definitions.slug, definitionSlug))
-          .limit(1);
-      } catch (error) {
-        definitionError = error;
-      }
-
-      // Cache the result for 24 hours (1440 minutes)
-      if (!definitionError && providerDefinition) {
-        await setValue(
-          cacheKey,
-          JSON.stringify(providerDefinition),
-          600 * 60 * 24,
-        );
-      }
-    }
-
-    if (definitionError || !providerDefinition) {
-      logger.error("Error finding provider definition:", definitionError);
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      logger.error("Error storing track", {
+        module: "ledger/tracking",
+        definitionSlug,
+        status: response.status,
+        detail: detail.slice(0, 300),
+      });
       return null;
     }
 
-    // Create the track
-    let track: { uuid: string } | undefined;
-    try {
-      [track] = await db
-        .insert(schema.tracks)
-        .values({
-          created_at: new Date().toISOString(),
-          provider_definition_id: providerDefinition.id,
-          data: data,
-        })
-        .returning({ uuid: schema.tracks.uuid });
-    } catch (trackError) {
-      logger.error("Error creating track:", trackError);
-      return null;
-    }
-
-    if (!track) {
-      return null;
-    }
-    return track.uuid;
+    const result = (await response.json()) as TrackStoreResponse;
+    return result.tracks?.[0]?.track_uuid ?? null;
   } catch (error) {
-    logger.error("Error tracking event:", error);
+    logger.error("Error tracking event", {
+      module: "ledger/tracking",
+      definitionSlug,
+      error,
+    });
     return null;
   }
 }
-
-// data schemas?
-// everything that sends an email, move to tracks

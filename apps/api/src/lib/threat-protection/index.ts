@@ -1,6 +1,9 @@
 import { logger } from "../logger";
 import { fetchGoogleWebRiskVerdict } from "./providers/google-web-risk";
 import { canonicalizeUrl } from "./providers/web-risk/canonicalize";
+import { fetchZscalerVerdict } from "./providers/zscaler";
+import { ZSCALER_LOOKUP_TIMEOUT_MS } from "./providers/zscaler/lookup-queue";
+import { evaluateZscalerSyncedRules } from "./providers/zscaler/sync";
 import type {
   RawVerdict,
   ThreatCheckDedup,
@@ -27,6 +30,15 @@ export interface ThreatCheckContext {
    * request-scoped — never persisted, never shared across requests (ZDR).
    */
   dedup?: ThreatCheckDedup;
+  /**
+   * Evaluate local rules only (whitelist/blacklist/blocked-TLD and, in
+   * "zscaler" mode, the synced custom-list rules) and default-allow instead
+   * of consulting the provider. Used for map results in "zscaler" mode: one
+   * map can return thousands of URLs, and classifying them inline would
+   * burn the tenant's 400-lookups/hour budget on links that may never be
+   * scraped — each URL still gets its full check when a scrape of it starts.
+   */
+  localRulesOnly?: boolean;
 }
 
 // Public entry point for the threat protection core library (enterprise
@@ -36,13 +48,18 @@ export interface ThreatCheckContext {
 //      this request/job reuses the same in-flight decision
 //   3. local-only rules (whitelist/blacklist/blocked-tld, evaluated against
 //      the URL's host) → decide without a provider call (no billing)
-//   4. provider ("normal" = Google Web Risk local hash-prefix database),
-//      with a per-attempt timeout and one retry. Lookups are URL-level:
-//      host-suffix × path-prefix expressions per the Safe Browsing spec, so
-//      a listing that flags only a specific page is caught even when its
-//      domain is otherwise clean.
-//   5. evaluate the policy against the verdict; provider failure → the org's
-//      failurePolicy decides (fail-open allows, fail-closed blocks)
+//   4. "zscaler" mode only: the tenant's synced custom-list rules (custom
+//      categories, keywords, customer category additions — urlLookup never
+//      returns those) → a decisive match skips the provider call
+//   5. provider ("normal" = Google Web Risk local hash-prefix database,
+//      "zscaler" = batched ZIA urlLookup through the shared per-org queue),
+//      with a per-attempt timeout; "normal" gets one retry. Web Risk lookups
+//      are URL-level: host-suffix × path-prefix expressions per the Safe
+//      Browsing spec, so a listing that flags only a specific page is caught
+//      even when its domain is otherwise clean.
+//   6. evaluate the policy against the verdict (zscaler: the org's denied
+//      categories); provider failure → the org's failurePolicy decides
+//      (fail-open allows, fail-closed blocks)
 // Any decision backed by a verdict sets providerConsulted, which drives
 // billing in the enforcement layer (+2 credits per unique scanned URL per
 // billing scope — see calculateThreatScanCredits). This module performs no
@@ -71,20 +88,37 @@ const PROVIDER_ATTEMPTS = 2; // 1 initial + 1 retry
  * Single mode→provider dispatch point. Every provider is a separate module
  * under ./providers exporting `fetch<X>Verdict(url) → RawVerdict`; this
  * switch is the only place that knows which mode maps to which classifier.
- * Deliberately kept as a dispatch even with one live branch — future partner
- * classifiers add a mode + a case here and nothing else changes.
+ *
+ * Per-mode transport behavior: "normal" (Web Risk) is a local hash-prefix
+ * check, so it gets a short timeout and one retry. "zscaler" waits on a
+ * batched remote lookup whose pacing the queue already owns — a longer
+ * timeout and NO retry (a retry would spend a second slice of the tenant's
+ * 400/hour budget on the same URL).
  */
 async function fetchProviderVerdict(
   url: string,
   mode: Exclude<ThreatProtectionMode, "off">,
+  policy: ThreatProtectionPolicy,
 ): Promise<RawVerdict> {
+  const attempts = mode === "zscaler" ? 1 : PROVIDER_ATTEMPTS;
+  const timeoutMs =
+    mode === "zscaler" ? ZSCALER_LOOKUP_TIMEOUT_MS : PROVIDER_TIMEOUT_MS;
+
   let lastError: unknown;
-  for (let attempt = 1; attempt <= PROVIDER_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      const signal = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
+      const signal = AbortSignal.timeout(timeoutMs);
       switch (mode) {
         case "normal":
           return await fetchGoogleWebRiskVerdict(url, { signal });
+        case "zscaler": {
+          if (!policy.zscaler) {
+            throw new Error(
+              "Threat protection mode is zscaler but the org has no Zscaler connection configured",
+            );
+          }
+          return await fetchZscalerVerdict(url, policy.zscaler, { signal });
+        }
       }
     } catch (error) {
       lastError = error;
@@ -112,11 +146,43 @@ async function checkUrlFresh(
     return local;
   }
 
+  // Zscaler mode: the tenant's synced custom-list rules next. urlLookup
+  // never returns custom classifications, so these can only be decided
+  // here — and a decisive match skips the budgeted provider call entirely.
+  if (policy.mode === "zscaler" && policy.zscaler) {
+    const synced = await evaluateZscalerSyncedRules(
+      canonicalUrl,
+      policy.zscaler,
+      policy.failurePolicy,
+      {
+        url: canonicalUrl,
+        domain: normalizeDomain(canonicalUrl),
+        mode: policy.mode,
+      },
+    );
+    if (synced !== null) {
+      return synced;
+    }
+  }
+
+  if (ctx.localRulesOnly) {
+    return {
+      allowed: true,
+      rule: "default-allow",
+      url: canonicalUrl,
+      domain: normalizeDomain(canonicalUrl),
+      providerConsulted: false,
+      verdict: null,
+      mode: policy.mode,
+    };
+  }
+
   let verdict: RawVerdict | null = null;
   try {
     verdict = await fetchProviderVerdict(
       canonicalUrl,
       policy.mode as Exclude<ThreatProtectionMode, "off">,
+      policy,
     );
   } catch {
     // Already logged per-attempt; a null verdict routes the decision
