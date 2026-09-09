@@ -10,7 +10,7 @@ overrides:
   devalue: '>=5.8.1 <6.0.0'
   h3: '>=1.15.9'
   picomatch@<4.0.4: '>=4.0.4'
-  smol-toml@<1.6.1: '>=1.6.1'
+  smol-toml@<1.7.1: '>=1.7.1 <2.0.0'
   defu: '>=6.1.5'
   vite@>=7.0.0 <7.3.5: 7.3.5
   js-yaml@>=3.0.0 <3.15.1: 3.15.1
@@ -1617,8 +1617,8 @@ packages:
     engines: {node: '>=20.19.5', npm: '>=10.8.2'}
     hasBin: true
 
-  smol-toml@1.6.1:
-    resolution: {integrity: sha512-dWUG8F5sIIARXih1DTaQAX4SsiTXhInKf1buxdY9DIg4ZYPZK5nGM1VRIYmEbDbsHt7USo99xSLFu5Q1IqTmsg==}
+  smol-toml@1.8.0:
+    resolution: {integrity: sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ==}
     engines: {node: '>= 18'}
 
   source-map-js@1.2.1:
@@ -1942,7 +1942,7 @@ snapshots:
       picomatch: 4.0.4
       retext-smartypants: 6.2.0
       shiki: 4.0.2
-      smol-toml: 1.6.1
+      smol-toml: 1.8.0
       unified: 11.0.5
 
   '@astrojs/markdown-remark@7.2.1':
@@ -2534,7 +2534,7 @@ snapshots:
       picomatch: 4.0.5
       semver: 7.8.0
       shiki: 4.0.2
-      smol-toml: 1.6.1
+      smol-toml: 1.8.0
       svgo: 4.0.2
       tinyclip: 0.1.12
       tinyexec: 1.1.2
@@ -3852,7 +3852,7 @@ snapshots:
       arg: 5.0.2
       sax: 1.5.0
 
-  smol-toml@1.6.1: {}
+  smol-toml@1.8.0: {}
 
   source-map-js@1.2.1: {}
 
