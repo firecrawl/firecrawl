@@ -10,10 +10,11 @@ import { getRedisConnection } from "../queue-service";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { ConcurrencyQueueTimeoutError } from "../../lib/error";
 import { teamConcurrencySemaphore } from "../worker/team-semaphore";
+import {
+  exchangeRetrieveBatchResponseSchema,
+  exchangeRetrieveResponseSchema,
+} from "../../controllers/v2/types";
 
-const chargeSchema = z.object({
-  creditsCost: z.number().int().nonnegative().safe(),
-});
 const requestIdSchema = z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/);
 
 type Input = {
@@ -23,6 +24,7 @@ type Input = {
   body: unknown;
   timeoutMs: number;
   requestId?: string;
+  bypassBilling?: boolean;
   logger: Logger;
 };
 
@@ -63,6 +65,16 @@ export async function settleExchangeCall(input: Input) {
     .digest("hex");
   const key = `exchange:provider-charge:${chargeId}`;
   const redis = getRedisConnection();
+  const releaseClaim = async () => {
+    try {
+      await redis.del(key);
+    } catch (error) {
+      input.logger.warn("Exchange request identity cleanup failed", {
+        chargeId,
+        error,
+      });
+    }
+  };
   try {
     const claimed = await redis.set(key, "pending", "EX", 86400, "NX");
     if (claimed !== "OK")
@@ -110,7 +122,7 @@ export async function settleExchangeCall(input: Input) {
       !started ||
       (error instanceof ExchangeProxyError && error.requestNotSent)
     )
-      await redis.del(key);
+      await releaseClaim();
     if (error instanceof ConcurrencyQueueTimeoutError)
       return refusal(
         429,
@@ -124,16 +136,28 @@ export async function settleExchangeCall(input: Input) {
       upstream.status < 500 &&
       upstream.status !== 408
     )
-      await redis.del(key);
+      await releaseClaim();
     return upstream;
   }
-  const charge = chargeSchema.safeParse(upstream.body);
+  const responseSchema = Array.isArray(requests)
+    ? exchangeRetrieveBatchResponseSchema.refine(
+        body =>
+          body.results.length === items &&
+          body.results.reduce(
+            (sum, result) => sum + (result.creditsCost ?? 0),
+            0,
+          ) === body.creditsCost,
+      )
+    : exchangeRetrieveResponseSchema;
+  const charge = responseSchema.safeParse(upstream.body);
   if (!charge.success || charge.data.creditsCost > 100 * items) {
-    input.logger.error("Exchange returned an invalid charge", { chargeId });
-    return refusal(502, "Exchange returned an invalid charge.");
+    input.logger.error("Exchange returned an invalid response or charge", {
+      chargeId,
+    });
+    return refusal(502, "Exchange returned an invalid response or charge.");
   }
   const credits = charge.data.creditsCost;
-  if (credits > 0 && !preview) {
+  if (!preview && !input.bypassBilling) {
     const result = await billTeam(
       input.teamId,
       credits,

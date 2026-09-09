@@ -119,16 +119,20 @@ export async function forwardToExchange(input: {
     );
   }
 
-  let body: unknown;
+  const contentType = upstream.headers.get("content-type");
+  let body: unknown = text;
   try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = text;
-  }
+    if (
+      !contentType ||
+      /^(?:application\/json|[^;\s]+\+json)(?:\s*;|$)/i.test(contentType)
+    ) {
+      body = text ? JSON.parse(text) : null;
+    }
+  } catch {}
   return {
     status: upstream.status,
     body,
-    contentType: upstream.headers.get("content-type"),
+    contentType,
     requestId: upstream.headers.get("x-request-id"),
   };
 }

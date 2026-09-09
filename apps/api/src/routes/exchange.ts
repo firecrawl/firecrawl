@@ -11,6 +11,7 @@ import { logger as rootLogger } from "../lib/logger";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
+import { isAgentInteropSecretValid } from "../lib/agent-interop";
 
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
@@ -22,6 +23,22 @@ const INGEST_TIMEOUT_MS = 50_000;
 
 function exchangeError(res: Response, status: number, error: string) {
   return res.status(status).json({ success: false, error });
+}
+
+function exchangeAccessError(
+  req: RequestWithAuth<any, any, any>,
+  requiresRetrieveFlag = true,
+) {
+  if (!exchangeUpstreamBase()) {
+    return { status: 503, error: "This endpoint is not available." };
+  }
+  if (requiresRetrieveFlag && !req.acuc?.flags?.exchangeRetrieve) {
+    return {
+      status: 403,
+      error: "This endpoint is not enabled for this team.",
+    };
+  }
+  return null;
 }
 
 function exchangeProxy(
@@ -39,16 +56,19 @@ function exchangeProxy(
       teamId: authedReq.auth.team_id,
     });
 
-    if (!exchangeUpstreamBase()) {
-      return exchangeError(res, 503, "This endpoint is not available.");
+    const accessError = exchangeAccessError(authedReq, requiresRetrieveFlag);
+    if (accessError) {
+      return exchangeError(res, accessError.status, accessError.error);
     }
 
-    if (requiresRetrieveFlag && !authedReq.acuc?.flags?.exchangeRetrieve) {
-      return exchangeError(
-        res,
-        403,
-        "This endpoint is not enabled for this team.",
-      );
+    const interop = options.billUsage ? req.body?.__agentInterop : undefined;
+    if (interop !== undefined && !isAgentInteropSecretValid(interop?.auth)) {
+      return exchangeError(res, 403, "Invalid agent interop.");
+    }
+    let body = req.body;
+    if (interop !== undefined) {
+      body = { ...body };
+      delete body.__agentInterop;
     }
 
     const accept = req.headers["accept"];
@@ -59,9 +79,10 @@ function exchangeProxy(
             teamId: authedReq.auth.team_id,
             apiKeyId: authedReq.acuc?.api_key_id ?? null,
             orgId: authedReq.acuc?.org_id,
-            body: req.body,
+            body,
             timeoutMs: timeout,
             requestId: typeof requestId === "string" ? requestId : undefined,
+            bypassBilling: interop?.shouldBill === false,
             logger,
           })
         : await forwardToExchange({
@@ -106,6 +127,11 @@ exchangeRouter.get(
 exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
+  (req, res, next) => {
+    const error = exchangeAccessError(req as RequestWithAuth<any, any, any>);
+    if (error) return exchangeError(res, error.status, error.error);
+    next();
+  },
   checkCreditsMiddleware(1),
   wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS, { billUsage: true })),
 );

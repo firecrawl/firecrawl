@@ -62,6 +62,7 @@ vi.mock("../../../lib/logger", () => ({
 }));
 
 import { searchController } from "../search";
+import { config } from "../../../config";
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -134,6 +135,35 @@ beforeEach(() => {
 });
 
 describe("developer category code_searches ledger", () => {
+  it.each([false, true])(
+    "reserves search credits only when provider discovery includes web results (%s)",
+    async withWeb => {
+      config.FIRE_EXCHANGE_URL = "https://exchange.example";
+      mockProjectSearchTotalCredits.mockReturnValue(2);
+      mockReserveKeylessCredits.mockResolvedValue({ ok: false });
+      mockExecuteSearch.mockResolvedValue(
+        executeResult({
+          response: { "exchange-providers": [] },
+          totalResultsCount: 0,
+          developerResultsCount: 0,
+          searchCredits: 0,
+          totalCredits: 0,
+        }),
+      );
+      const req = makeReq({
+        query: "product inventory",
+        sources: withWeb
+          ? ["web", "exchange-providers"]
+          : ["exchange-providers"],
+      });
+      req.acuc.flags = { exchangeRetrieve: true };
+      const res = makeRes();
+      await searchController(req, res);
+      expect(res.status).toHaveBeenCalledWith(withWeb ? 429 : 200);
+      expect(mockReserveKeylessCredits).toHaveBeenCalledTimes(withWeb ? 1 : 0);
+    },
+  );
+
   it("returns the structured keyless 429 when projected credits cannot be reserved", async () => {
     mockProjectSearchTotalCredits.mockReturnValue(2);
     mockReserveKeylessCredits.mockResolvedValue({ ok: false });

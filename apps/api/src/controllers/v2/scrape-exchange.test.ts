@@ -18,6 +18,7 @@ vi.mock("../../lib/external-request-id", () => ({
 }));
 
 import { settleExchangeCall } from "../../services/exchange/settle";
+import { logRequest } from "../../services/logging/log_job";
 const forward = vi.mocked(settleExchangeCall);
 
 const CALL = {
@@ -54,43 +55,47 @@ function res() {
 
 describe("scrape({ exchange })", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     forward.mockReset();
     config.FIRE_EXCHANGE_URL = "https://exchange.example";
   });
 
-  it.each([CALL, [CALL]])("normalizes request %j and relays the cost", async exchange => {
-    forward.mockResolvedValueOnce({
-      status: 200,
-      contentType: "application/json",
-      requestId: null,
-      body: {
+  it.each([CALL, [CALL]])(
+    "normalizes request %j and relays the cost",
+    async exchange => {
+      forward.mockResolvedValueOnce({
+        status: 200,
+        contentType: "application/json",
+        requestId: null,
+        body: {
+          success: true,
+          creditsCost: 1,
+          results: [{ ...CALL, creditsCost: 1, data: { id: "record-1" } }],
+        },
+      });
+      const { r, out } = res();
+
+      await exchangeScrapeController(req({ exchange }), r, "job-1");
+
+      expect(forward).toHaveBeenCalledWith(
+        expect.objectContaining({
+          teamId: "team_a",
+          apiKeyId: 7,
+          body: { requests: [CALL] },
+          requestId: "job-1",
+        }),
+      );
+      expect(out.status).toBe(200);
+      expect(out.body).toEqual({
         success: true,
-        creditsCost: 1,
-        results: [{ ...CALL, creditsCost: 1, data: { id: "record-1" } }],
-      },
-    });
-    const { r, out } = res();
-
-    await exchangeScrapeController(req({ exchange }), r, "job-1");
-
-    expect(forward).toHaveBeenCalledWith(
-      expect.objectContaining({
-        teamId: "team_a",
-        apiKeyId: 7,
-        body: { requests: [CALL] },
-        requestId: "job-1",
-      }),
-    );
-    expect(out.status).toBe(200);
-    expect(out.body).toEqual({
-      success: true,
-      scrape_id: "job-1",
-      data: {
-        exchange: [{ ...CALL, creditsCost: 1, data: { id: "record-1" } }],
-        creditsCost: 1,
-      },
-    });
-  });
+        scrape_id: "job-1",
+        data: {
+          exchange: [{ ...CALL, creditsCost: 1, data: { id: "record-1" } }],
+          creditsCost: 1,
+        },
+      });
+    },
+  );
 
   it("refuses a team without the flag, before forwarding, the way /exchange/retrieve does", async () => {
     const { r, out } = res();
@@ -105,6 +110,22 @@ describe("scrape({ exchange })", () => {
     await exchangeScrapeController(req({ exchange: [CALL] }), r, "job-3");
     expect(out.status).toBe(503);
   });
+
+  it.each([{ scrapeZDR: "forced" }, { forceZDR: true }])(
+    "refuses forced ZDR before logging or forwarding: %j",
+    async flags => {
+      const { r, out } = res();
+      await exchangeScrapeController(
+        req({ exchange: CALL }, { exchangeRetrieve: true, ...flags }),
+        r,
+        "job-zdr",
+      );
+      expect(out.status).toBe(403);
+      expect(out.body.error).toContain("zero data retention");
+      expect(forward).not.toHaveBeenCalled();
+      expect(logRequest).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects an empty list, more than ten, and page-scrape fields, with a field-level message", async () => {
     for (const body of [

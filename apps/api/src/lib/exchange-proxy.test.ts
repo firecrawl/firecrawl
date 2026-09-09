@@ -203,6 +203,35 @@ describe("forwardToExchange", () => {
     expect(result).toMatchObject({ status: 502, body: "bad gateway" });
   });
   it.each([
+    "text/plain",
+    "text/markdown",
+    "application/json; charset=utf-8",
+    "application/problem+json",
+    null,
+  ])(
+    "respects content type %s even when text is valid JSON",
+    async contentType => {
+      const text = '{ "value": 12 }';
+      fetchMock.mockResolvedValueOnce({
+        status: 200,
+        headers: new Headers(
+          contentType ? { "content-type": contentType } : {},
+        ),
+        text: async () => text,
+      } as any);
+      const result = await forwardToExchange({
+        teamId: "t",
+        method: "GET",
+        path: "/v1/x",
+        timeoutMs: 1000,
+      });
+      expect(result.body).toEqual(
+        contentType?.startsWith("text/") ? text : { value: 12 },
+      );
+      expect(result.contentType).toBe(contentType);
+    },
+  );
+  it.each([
     "ECONNREFUSED",
     "ENOTFOUND",
     "UND_ERR_CONNECT_TIMEOUT",

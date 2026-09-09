@@ -27,10 +27,10 @@ describe("exchange search source", () => {
       body: {
         capabilities: [
           {
-            address: "prices/latest",
-            provider: "financial-datasets",
-            concept: "prices",
-            cohorts: ["finance"],
+            address: "products/search",
+            provider: "test-provider",
+            concept: "products",
+            cohorts: ["retail"],
             creditsCost: 1,
             similarity: 0.83,
           },
@@ -40,7 +40,7 @@ describe("exchange search source", () => {
 
     const results = await searchExchangeCatalog(
       {
-        query: "latest stock price by ticker",
+        query: "product inventory by name",
         limit: 10,
         teamId: "team_a",
         requestId: "rid",
@@ -52,17 +52,17 @@ describe("exchange search source", () => {
       expect.objectContaining({
         teamId: "team_a",
         method: "GET",
-        path: "/v1/discover?q=latest%20stock%20price%20by%20ticker&limit=10",
+        path: "/v1/discover?q=product%20inventory%20by%20name&limit=10",
         requestId: "rid",
       }),
     );
 
     expect(results).toEqual([
       {
-        provider: "financial-datasets",
-        capability: "prices/latest",
-        concept: "prices",
-        cohorts: ["finance"],
+        provider: "test-provider",
+        capability: "products/search",
+        concept: "products",
+        cohorts: ["retail"],
         creditsCost: 1,
         similarity: 0.83,
       },
@@ -77,8 +77,8 @@ describe("exchange search source", () => {
       body: {
         capabilities: [
           {
-            address: "prices/latest",
-            provider: "financial-datasets",
+            address: "products/search",
+            provider: "test-provider",
             creditsCost: 1,
           },
           { address: "broken", provider: "x", creditsCost: 1.5 },
@@ -90,7 +90,7 @@ describe("exchange search source", () => {
       { query: "q", limit: 5, teamId: "t" },
       logger,
     );
-    expect(results?.map(r => r.capability)).toEqual(["prices/latest"]);
+    expect(results?.map(r => r.capability)).toEqual(["products/search"]);
     expect(logger.warn).toHaveBeenCalledWith(
       "Exchange catalogue search dropped malformed entries",
       { dropped: 2, kept: 1 },
@@ -134,19 +134,35 @@ describe("exchange search source", () => {
     expect(forward.mock.calls[1]![0].timeoutMs).toBe(10_000);
   });
 
-  it("clamps the limit to the Exchange's ceiling", async () => {
-    forward.mockResolvedValueOnce({
-      status: 200,
-      contentType: null,
-      requestId: null,
-      body: { capabilities: [] },
-    });
-    await searchExchangeCatalog(
-      { query: "q", limit: 100, teamId: "t" },
-      logger,
-    );
-    expect(forward.mock.calls[0]![0].path).toBe("/v1/discover?q=q&limit=24");
-  });
+  it.each([
+    [2, 2],
+    [100, 24],
+  ])(
+    "caps returned results to the normalized limit (%i)",
+    async (limit, expected) => {
+      forward.mockResolvedValueOnce({
+        status: 200,
+        contentType: null,
+        requestId: null,
+        body: {
+          capabilities: Array.from({ length: 30 }, (_, i) => ({
+            address: `products/${i}`,
+            provider: "test-provider",
+            creditsCost: 1,
+          })),
+        },
+      });
+      const results = await searchExchangeCatalog(
+        { query: "q", limit, teamId: "t" },
+        logger,
+      );
+      expect(forward.mock.calls[0]![0].path).toBe(
+        `/v1/discover?q=q&limit=${expected}`,
+      );
+      expect(results).toHaveLength(expected);
+      expect(results?.at(-1)?.capability).toBe(`products/${expected - 1}`);
+    },
+  );
 
   it("answers null, not an empty catalogue, when the Exchange cannot answer", async () => {
     forward.mockResolvedValueOnce({

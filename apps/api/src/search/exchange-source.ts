@@ -80,7 +80,7 @@ export async function searchExchangeCatalog(
         kept: results.length,
       });
     }
-    return results;
+    return results.slice(0, limit);
   } catch (error) {
     if (error instanceof ExchangeProxyError) {
       logger.warn("Exchange catalogue search unavailable", {

@@ -1563,20 +1563,53 @@ export const exchangeScrapeRequestSchema = z.strictObject({
   timeout: z.int().positive().finite().optional(),
 });
 
-export type ExchangeScrapeResult =
-  | {
-      provider: string;
-      capability: string;
-      creditsCost: number;
-      data: unknown;
-      [key: string]: unknown;
-    }
-  | {
-      provider?: string;
-      capability?: string;
-      error: { code: string; message: string; status?: number };
-      [key: string]: unknown;
-    };
+const exchangeCreditsSchema = z.number().int().nonnegative().safe();
+const exchangeRetrieveResultSchema = z
+  .object({
+    provider: z.string(),
+    capability: z.string(),
+    creditsCost: exchangeCreditsSchema,
+    data: z.unknown().refine(value => value !== undefined),
+    error: z.never().optional(),
+  })
+  .passthrough();
+
+export const exchangeRetrieveResponseSchema =
+  exchangeRetrieveResultSchema.extend({
+    success: z.literal(true),
+  });
+
+export const exchangeRetrieveBatchResponseSchema = z
+  .object({
+    success: z.literal(true),
+    creditsCost: exchangeCreditsSchema,
+    error: z.never().optional(),
+    results: z
+      .array(
+        z.union([
+          exchangeRetrieveResultSchema,
+          z
+            .object({
+              provider: z.string().optional(),
+              capability: z.string().optional(),
+              error: z.object({
+                code: z.string(),
+                message: z.string(),
+                status: z.number().int().optional(),
+              }),
+              creditsCost: z.literal(0).optional(),
+            })
+            .passthrough(),
+        ]),
+      )
+      .min(1)
+      .max(10),
+  })
+  .passthrough();
+
+type ExchangeScrapeResult = z.infer<
+  typeof exchangeRetrieveBatchResponseSchema
+>["results"][number];
 
 export type ExchangeScrapeResponse = {
   success: true;

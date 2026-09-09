@@ -10,8 +10,11 @@ const state = vi.hoisted(() => ({
   debit: vi.fn(),
   refund: vi.fn(),
   fetch: vi.fn(),
+  cleanup: vi.fn(),
+  checkCredits: vi.fn(),
   flags: { exchangeRetrieve: true },
   failQueue: false,
+  exchangeAvailable: true,
 }));
 vi.mock("../queue-service", () => ({
   getRedisConnection: () => ({
@@ -20,7 +23,7 @@ vi.mock("../queue-service", () => ({
       state.keys.set(key, value);
       return "OK";
     },
-    del: async (key: string) => state.keys.delete(key),
+    del: state.cleanup,
     rpush: async (_key: string, value: string) => {
       if (state.failQueue) throw new Error("Queue unavailable");
       state.queue.push(value);
@@ -54,7 +57,8 @@ vi.mock("undici", async importOriginal => ({
 vi.mock("../../lib/exchange-proxy", async importOriginal => ({
   ...(await importOriginal<typeof import("../../lib/exchange-proxy")>()),
   forwardToExchange: state.forward,
-  exchangeUpstreamBase: () => "https://exchange.example",
+  exchangeUpstreamBase: () =>
+    state.exchangeAvailable ? "https://exchange.example" : null,
   exchangeProxyFailureResponse: () => ({
     status: 502,
     error: "Upstream unavailable",
@@ -67,7 +71,8 @@ vi.mock("../../routes/shared", () => ({
     req.acuc = { api_key_id: 7, flags: state.flags };
     next();
   },
-  checkCreditsMiddleware: () => (_req: any, _res: any, next: any) => next(),
+  checkCreditsMiddleware: () => (_req: any, res: any, next: any) =>
+    state.checkCredits() ? next() : res.status(402).json({ success: false }),
   wrap: (fn: unknown) => fn,
 }));
 vi.mock("../logging/log_job", () => ({ logRequest: async () => {} }));
@@ -92,14 +97,20 @@ const calls = [{ provider: "test", capability: "price" }];
 beforeEach(() => {
   vi.clearAllMocks();
   state.keys.clear();
+  state.cleanup
+    .mockReset()
+    .mockImplementation(async (key: string) => state.keys.delete(key));
+  state.checkCredits.mockReturnValue(true);
   state.semaphore.mockImplementation(
     async (_team, _holder, _limit, _signal, _timeout, fn) => fn(false),
   );
   state.queue.length = 0;
   state.failQueue = false;
+  state.exchangeAvailable = true;
   state.flags = { exchangeRetrieve: true };
   config.FIRE_EXCHANGE_URL = "https://exchange.example";
   config.EXCHANGE_INTERNAL_SECRET = "test-secret";
+  config.AGENT_INTEROP_SECRET = "agent-test-secret";
   state.track.mockResolvedValue(true);
   state.debit.mockResolvedValue([]);
   state.refund.mockResolvedValue(true);
@@ -113,7 +124,7 @@ beforeEach(() => {
     body: {
       success: true,
       creditsCost: 3,
-      results: [{ data: { value: 12 }, creditsCost: 3 }],
+      results: [{ ...calls[0], data: { value: 12 }, creditsCost: 3 }],
     },
     contentType: "application/json",
     requestId: null,
@@ -249,7 +260,14 @@ it("does not repeat an ambiguous billing track after retry", async () => {
 it.each([-1, 101, 1.5, undefined])(
   "rejects invalid charge %s before billing",
   async creditsCost => {
-    state.forward.mockResolvedValue({ status: 200, body: { creditsCost } });
+    state.forward.mockResolvedValue({
+      status: 200,
+      body: {
+        success: true,
+        creditsCost,
+        results: [{ ...calls[0], data: {}, creditsCost }],
+      },
+    });
     const response = await request(app)
       .post("/exchange/retrieve")
       .send({ requests: calls });
@@ -298,4 +316,144 @@ it("allows retry after a concurrency wait expires without calling the provider",
   expect(state.forward).not.toHaveBeenCalled();
   expect(state.track).not.toHaveBeenCalled();
   expect((await send()).status).toBe(200);
+});
+
+it.each([
+  { success: false, creditsCost: 3, results: [] },
+  { success: true, creditsCost: 3, results: "invalid" },
+  { success: true, creditsCost: 3, results: [null] },
+  { success: true, creditsCost: 3, results: [] },
+  { success: true, creditsCost: 3, results: [{ ...calls[0], creditsCost: 3 }] },
+  {
+    success: true,
+    creditsCost: 3,
+    results: [{ ...calls[0], creditsCost: 1, data: {} }],
+  },
+])(
+  "rejects malformed successful responses before either entry point bills: %j",
+  async body => {
+    state.forward.mockResolvedValue({ status: 200, body });
+    for (const path of ["/exchange/retrieve", "/v2/scrape"]) {
+      const response = await request(app)
+        .post(path)
+        .send(
+          path === "/v2/scrape" ? { exchange: calls } : { requests: calls },
+        );
+      expect(response.status).toBe(502);
+    }
+    expect(state.track).not.toHaveBeenCalled();
+    expect(state.queue).toHaveLength(0);
+  },
+);
+
+it.each([false, true])(
+  "settles valid zero-credit singleton or partial batch responses (batch: %s)",
+  async batch => {
+    const result = { ...calls[0], creditsCost: 0, data: null };
+    state.forward.mockResolvedValue({
+      status: 200,
+      body: batch
+        ? {
+            success: true,
+            creditsCost: 0,
+            results: [
+              result,
+              {
+                ...calls[0],
+                error: { code: "not_found", message: "No result", status: 404 },
+              },
+            ],
+          }
+        : { success: true, ...result },
+    });
+    const response = await request(app)
+      .post("/exchange/retrieve")
+      .send(batch ? { requests: [...calls, ...calls] } : calls[0]);
+    expect(response.status).toBe(200);
+    expect(state.queue).toHaveLength(1);
+    await processBillingBatch();
+    expect(state.debit).toHaveBeenCalledWith(
+      expect.objectContaining({ credits: 0 }),
+    );
+    expect(state.fetch).toHaveBeenCalledTimes(1);
+  },
+);
+
+it.each(["provider", "transport", "concurrency"])(
+  "preserves a %s failure when cleanup also fails",
+  async failure => {
+    state.cleanup.mockRejectedValue(new Error("Redis unavailable"));
+    if (failure === "provider")
+      state.forward.mockResolvedValue({
+        status: 422,
+        body: { error: "Invalid option" },
+      });
+    if (failure === "transport")
+      state.forward.mockRejectedValue(
+        new ExchangeProxyError("unreachable", undefined, true),
+      );
+    if (failure === "concurrency")
+      state.semaphore.mockRejectedValue(new ConcurrencyQueueTimeoutError());
+    const send = () =>
+      request(app)
+        .post("/exchange/retrieve")
+        .set("x-request-id", "cleanup")
+        .send({ requests: calls });
+    expect((await send()).status).toBe(
+      failure === "provider" ? 422 : failure === "transport" ? 502 : 429,
+    );
+    expect(state.cleanup).toHaveBeenCalledTimes(1);
+    expect(state.track).not.toHaveBeenCalled();
+    expect((await send()).status).toBe(409);
+  },
+);
+
+it.each([403, 503])(
+  "checks Exchange access before credit enforcement (%s)",
+  async status => {
+    state.checkCredits.mockReturnValue(false);
+    if (status === 403) state.flags.exchangeRetrieve = false;
+    else state.exchangeAvailable = false;
+    expect(
+      (await request(app).post("/exchange/retrieve").send({ requests: calls }))
+        .status,
+    ).toBe(status);
+    expect(state.checkCredits).not.toHaveBeenCalled();
+    expect(state.forward).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
+  ["agent-test-secret", false, 200, 0],
+  ["agent-test-secret", true, 200, 1],
+  ["forged-secret", false, 403, 0],
+])(
+  "honors only authenticated agent billing intent (%s, %s)",
+  async (auth, shouldBill, status, charges) => {
+    const response = await request(app).post("/exchange/retrieve").send({
+      requests: calls,
+      __agentInterop: { auth, shouldBill },
+    });
+    expect(response.status).toBe(status);
+    expect(state.track).toHaveBeenCalledTimes(charges as number);
+    expect(state.queue).toHaveLength(charges as number);
+    if (status === 200)
+      expect(state.forward).toHaveBeenCalledWith(
+        expect.objectContaining({ body: { requests: calls } }),
+      );
+    else expect(state.forward).not.toHaveBeenCalled();
+  },
+);
+
+it("treats calls without an idempotency header as independent requests", async () => {
+  for (let i = 0; i < 2; i++) {
+    expect(
+      (await request(app).post("/exchange/retrieve").send({ requests: calls }))
+        .status,
+    ).toBe(200);
+  }
+  expect(state.track).toHaveBeenCalledTimes(2);
+  expect(state.forward.mock.calls[0][0].requestId).not.toBe(
+    state.forward.mock.calls[1][0].requestId,
+  );
 });

@@ -1,6 +1,5 @@
 import { settleExchangeCall } from "../../services/exchange/settle";
 import { Response } from "express";
-import { z } from "zod";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import {
@@ -10,20 +9,13 @@ import {
 } from "../../lib/exchange-proxy";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   exchangeScrapeRequestSchema,
-  type ExchangeScrapeResult,
+  exchangeRetrieveBatchResponseSchema,
   type RequestWithAuth,
   type ScrapeResponse,
 } from "./types";
-
-const retrieveBatchSchema = z
-  .object({
-    success: z.literal(true),
-    creditsCost: z.number().int().nonnegative(),
-    results: z.array(z.record(z.string(), z.unknown())),
-  })
-  .passthrough();
 
 export async function exchangeScrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, unknown>,
@@ -55,6 +47,14 @@ export async function exchangeScrapeController(
     return res.status(503).json({
       success: false,
       error: "This endpoint is not available.",
+    });
+  }
+
+  if (getScrapeZDR(req.acuc?.flags) === "forced") {
+    return res.status(403).json({
+      success: false,
+      error:
+        "Exchange provider retrieval does not support zero data retention.",
     });
   }
 
@@ -109,7 +109,7 @@ export async function exchangeScrapeController(
       });
     }
 
-    const answer = retrieveBatchSchema.safeParse(upstream.body);
+    const answer = exchangeRetrieveBatchResponseSchema.safeParse(upstream.body);
     if (!answer.success) {
       logger.error("Exchange retrieve answered in an unknown shape", {
         status: upstream.status,
@@ -124,7 +124,7 @@ export async function exchangeScrapeController(
       success: true,
       scrape_id: jobId,
       data: {
-        exchange: answer.data.results as ExchangeScrapeResult[],
+        exchange: answer.data.results,
         creditsCost: answer.data.creditsCost,
       },
     });
