@@ -47,7 +47,7 @@ import { applyNotice, type Notice } from "../../lib/deprecations";
 
 const RESEARCH_CATEGORY_NOTICE: Notice = {
   message:
-    "The 'research' search category changes on 2026-11-16: it will search the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) instead of filtering web results to 14 academic websites. Results will move from data.web to data.research as paper records (paperId, primaryId, ids, title, abstract, score). To keep web pages from academic sites, use includeDomains. github, pdf and developer are unaffected. See https://docs.firecrawl.dev/features/research",
+    "On 2026-11-08, the 'research' search category will query the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) rather than restricting web results to a fixed list of 14 academic domains. Results will move from data.web to data.research and will match the records returned by the Research Index endpoint GET /search/research/papers, with the fields paperId, primaryId, ids, title, abstract and score. To adopt those records today, call GET /search/research/papers (https://docs.firecrawl.dev/api-reference/endpoint/research-search-papers). To continue receiving web pages from academic domains, use includeDomains. The github, pdf and developer categories are unchanged. See https://docs.firecrawl.dev/features/research",
 };
 
 // Ahead of auth and validation so rejected requests carry the notice too.
