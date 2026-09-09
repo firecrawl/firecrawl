@@ -92,14 +92,34 @@ describe("executeSearch developer category", () => {
     expect(result.response).toEqual({ web: [developerResult] });
     expect(result.response).not.toHaveProperty("developer");
     expect(result.developerResultsCount).toBe(1);
+    // The vertical that served the result survives the response as a label
+    // keyed by the position the client sees.
+    expect(result.resultCategories).toEqual({ web: { "1": "developer" } });
   });
-
 
   it("filters blocked developer results via threat protection and renumbers", async () => {
     mocks.searchDeveloperCategory.mockResolvedValue([
-      { url: "https://ok.example/a", title: "A", description: "", position: 1, category: "developer" },
-      { url: "https://blocked.example/b", title: "B", description: "", position: 2, category: "developer" },
-      { url: "https://ok.example/c", title: "C", description: "", position: 3, category: "developer" },
+      {
+        url: "https://ok.example/a",
+        title: "A",
+        description: "",
+        position: 1,
+        category: "developer",
+      },
+      {
+        url: "https://blocked.example/b",
+        title: "B",
+        description: "",
+        position: 2,
+        category: "developer",
+      },
+      {
+        url: "https://ok.example/c",
+        title: "C",
+        description: "",
+        position: 3,
+        category: "developer",
+      },
     ]);
     mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
       decisionsByUrl: new Map([
@@ -119,6 +139,11 @@ describe("executeSearch developer category", () => {
       ["https://ok.example/a", 1],
       ["https://ok.example/c", 2],
     ]);
+    // Keyed by the renumbered positions, not the upstream ones — position 2 is
+    // the surviving third result.
+    expect(result.resultCategories).toEqual({
+      web: { "1": "developer", "2": "developer" },
+    });
   });
 
   it("rejects developer combined with other categories at the schema", () => {

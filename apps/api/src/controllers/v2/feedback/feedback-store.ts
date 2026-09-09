@@ -26,6 +26,15 @@ type ValuableResultDocument = {
   resultType: SearchResultDocumentType;
   resultIndex: number;
   position: number;
+  /**
+   * Which vertical served this result, as the response tagged it — `developer`
+   * for an index-served hit, `github` / `research` / `pdf` for a URL-derived
+   * one. Absent when the result carried no category, or when the search row
+   * predates `result_categories`. This is the attribution half of the label:
+   * `requestedSource` says where in `data` the result sat, `category` says who
+   * answered.
+   */
+  category?: string;
   reason?: string;
   source: "position";
 };
@@ -77,6 +86,46 @@ function resultCountsBySource(
       entry[1] >= 0,
   );
   return entries.length > 0 ? Object.fromEntries(entries) : null;
+}
+
+/**
+ * Vertical that served each position, read from the persisted per-result
+ * categories. Returns null when the row predates `result_categories` or
+ * carries an unrecognised shape — which is not the same as an empty object,
+ * meaning the search ran with nothing tagged.
+ */
+function resultCategoriesBySource(
+  job: FeedbackJobRow,
+): Partial<Record<SearchResultType, Record<string, string>>> | null {
+  const categories = job.result_categories;
+  if (
+    categories === null ||
+    categories === undefined ||
+    typeof categories !== "object"
+  ) {
+    return null;
+  }
+
+  const bySource: Partial<Record<SearchResultType, Record<string, string>>> =
+    {};
+  for (const [source, positions] of Object.entries(
+    categories as Record<string, unknown>,
+  )) {
+    if (!(source in RESULT_DOCUMENT_TYPES)) continue;
+    if (!positions || typeof positions !== "object") continue;
+
+    const byPosition: Record<string, string> = {};
+    for (const [position, category] of Object.entries(
+      positions as Record<string, unknown>,
+    )) {
+      if (typeof category === "string" && category.length > 0) {
+        byPosition[position] = category;
+      }
+    }
+    bySource[source as SearchResultType] = byPosition;
+  }
+
+  return bySource;
 }
 
 /**
@@ -158,6 +207,7 @@ function valuableResultDocuments(
   // returned nothing — or was never requested — has no valuable positions.
   const maxPositions = new Map<SearchResultType, number | null>();
   const seen = new Set<string>();
+  const categories = resultCategoriesBySource(job);
 
   return results.flatMap(({ source, position, reason }) => {
     if (!(source in RESULT_DOCUMENT_TYPES)) return [];
@@ -175,6 +225,7 @@ function valuableResultDocuments(
 
     const resultType = RESULT_DOCUMENT_TYPES[source];
     const resultIndex = position - 1;
+    const category = categories?.[source]?.[String(position)];
     return [
       {
         documentId: searchFeedbackResultDocumentId(
@@ -187,6 +238,7 @@ function valuableResultDocuments(
         resultType,
         resultIndex,
         position,
+        ...(category ? { category } : {}),
         ...(reason ? { reason } : {}),
         source: "position" as const,
       },
@@ -218,6 +270,7 @@ function feedbackMetadata(
           valuableResults: valuableResultDocs.map(doc => ({
             source: doc.requestedSource,
             position: doc.position,
+            ...(doc.category ? { category: doc.category } : {}),
           })),
           valuableResultDocumentIds: valuableResultDocs.map(
             doc => doc.documentId,
@@ -246,6 +299,7 @@ export async function lookupFeedbackJob(
         ? {
             num_results: table.num_results,
             num_results_by_source: table.num_results_by_source,
+            result_categories: table.result_categories,
           }
         : {}),
     })
@@ -267,6 +321,8 @@ export async function lookupFeedbackJob(
     num_results: endpoint === "search" ? (row.num_results ?? null) : null,
     num_results_by_source:
       endpoint === "search" ? (row.num_results_by_source ?? null) : null,
+    result_categories:
+      endpoint === "search" ? (row.result_categories ?? null) : null,
   };
 }
 

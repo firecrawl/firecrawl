@@ -48,6 +48,13 @@ export type FeedbackJobRow = {
    * rows written before the column existed, and on searches logged by v0/v1.
    */
   num_results_by_source?: unknown;
+  /**
+   * Which vertical served each position (search only), e.g.
+   * `{"web":{"1":"developer"}}`. Sparse: untagged results and untagged groups
+   * are absent. Null on rows written before the column existed, on searches
+   * logged by v0/v1, and on zero-data-retention searches.
+   */
+  result_categories?: unknown;
 };
 
 export type FeedbackRecordOptions = {

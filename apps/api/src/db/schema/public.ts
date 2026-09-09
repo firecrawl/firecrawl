@@ -672,6 +672,7 @@ export const searches = pgTable("searches", {
    * fall back rather than assume zero.
    */
   num_results_by_source: jsonb("num_results_by_source"),
+  result_categories: jsonb("result_categories"),
 });
 
 export const subscriptions = pgTable("subscriptions", {

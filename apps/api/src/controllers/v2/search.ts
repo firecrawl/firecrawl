@@ -347,6 +347,7 @@ async function searchControllerInner(
         results: result.response as any,
         num_results: result.totalResultsCount,
         num_results_by_source: result.resultCountsBySource,
+        result_categories: result.resultCategories,
         time_taken: timeTakenInSeconds,
         team_id: req.auth.team_id,
         options: req.body,

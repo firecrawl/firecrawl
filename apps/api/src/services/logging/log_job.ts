@@ -18,7 +18,10 @@ import {
 import { hasFormatOfType } from "../../lib/format-utils";
 import { keylessTeamUuid } from "../../lib/keyless";
 import type { Document, ScrapeOptions } from "../../controllers/v2/types";
-import type { SearchResultCountsBySource } from "../../lib/entities";
+import type {
+  SearchResultCountsBySource,
+  SearchResultCategoriesBySource,
+} from "../../lib/entities";
 import type { CostTracking } from "../../lib/cost-tracking";
 import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
@@ -692,6 +695,7 @@ export type LoggedSearch = {
   error?: string;
   num_results: number;
   num_results_by_source?: SearchResultCountsBySource;
+  result_categories?: SearchResultCategoriesBySource;
   results: any;
   zeroDataRetention: boolean;
 };
@@ -731,6 +735,11 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
       error: search.zeroDataRetention ? null : (search.error ?? null),
       num_results: search.num_results,
       num_results_by_source: search.num_results_by_source ?? null,
+      // Redacted with everything else under zero data retention: the map says
+      // which vertical served each position, which is response data.
+      result_categories: search.zeroDataRetention
+        ? null
+        : (search.result_categories ?? null),
       time_taken: search.time_taken,
     },
     force,

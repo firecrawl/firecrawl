@@ -109,6 +109,87 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
     90000,
   );
 
+  // `source` says which `data` group a result sat in; `category` says which
+  // vertical served it. For a developer-category search those are "web" and
+  // "developer" — the tag is the only thing that separates our own index from
+  // an ordinary Google hit at the same position.
+  it.concurrent(
+    "records the serving vertical alongside the position",
+    async () => {
+      const raw = await searchRawFull(
+        {
+          query: "firecrawl retry backoff",
+          limit: 3,
+          categories: ["developer"],
+        },
+        identity,
+      );
+      expect(raw.statusCode).toBe(200);
+      const searchId = raw.body.id;
+      const web = raw.body.data?.web ?? [];
+      expect(web.length).toBeGreaterThan(0);
+      // Developer hits are returned in the web group, each tagged.
+      expect(web[0].category).toBe("developer");
+
+      const [searchRow] = await db
+        .select({ result_categories: schema.searches.result_categories })
+        .from(schema.searches)
+        .where(
+          and(
+            eq(schema.searches.id, searchId),
+            eq(schema.searches.team_id, identity.teamId),
+          ),
+        )
+        .limit(1);
+      expect(searchRow?.result_categories).toEqual(
+        expect.objectContaining({
+          web: expect.objectContaining({ "1": "developer" }),
+        }),
+      );
+
+      const result = await searchFeedback(
+        searchId,
+        {
+          rating: "good",
+          valuableResults: [
+            { source: "web", position: 1, reason: "Answered it outright." },
+          ],
+        },
+        identity,
+      );
+      expect(result.success).toBe(true);
+
+      const [feedbackRow] = await db
+        .select({
+          valuable_sources: schema.search_feedback.valuable_sources,
+          metadata: schema.search_feedback.metadata,
+        })
+        .from(schema.search_feedback)
+        .where(eq(schema.search_feedback.id, result.feedbackId))
+        .limit(1);
+
+      expect(feedbackRow.valuable_sources).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            documentId: `search:${searchId}:web:0`,
+            requestedSource: "web",
+            position: 1,
+            category: "developer",
+            source: "position",
+          }),
+        ]),
+      );
+      expect(feedbackRow.metadata).toEqual(
+        expect.objectContaining({
+          valuableResults: [
+            { source: "web", position: 1, category: "developer" },
+          ],
+        }),
+      );
+    },
+    90000,
+  );
+
   // Each group is numbered from 1 independently, so the same position in two
   // groups is two different results.
   it.concurrent(

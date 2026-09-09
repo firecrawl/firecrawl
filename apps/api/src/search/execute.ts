@@ -3,7 +3,9 @@ import { search } from "./v2";
 import {
   SearchV2Response,
   SearchResultCountsBySource,
+  SearchResultCategoriesBySource,
   countSearchResultsBySource,
+  collectSearchResultCategories,
 } from "../lib/entities";
 import {
   buildSearchQuery,
@@ -73,6 +75,7 @@ interface SearchExecuteResult {
   response: SearchV2Response;
   totalResultsCount: number;
   resultCountsBySource: SearchResultCountsBySource;
+  resultCategories: SearchResultCategoriesBySource;
   developerResultsCount: number;
   searchCredits: number;
   scrapeCredits: number;
@@ -385,6 +388,10 @@ export async function executeSearch(
     // Counted from the final response — after scraping and highlights — so it
     // matches exactly what the client can address by position.
     resultCountsBySource: countSearchResultsBySource(searchResponse),
+    // Read from the same final response, so a category is keyed by the position
+    // the client sees. Developer hits replace the web group above and are
+    // renumbered there, so their positions here are the renumbered ones.
+    resultCategories: collectSearchResultCategories(searchResponse),
     developerResultsCount,
     searchCredits,
     scrapeCredits,
