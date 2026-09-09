@@ -64,6 +64,11 @@ vi.mock("../../../lib/logger", () => ({
 import { searchController } from "../search";
 import { config } from "../../../config";
 
+const originalExchangeUrl = config.FIRE_EXCHANGE_URL;
+afterEach(() => {
+  config.FIRE_EXCHANGE_URL = originalExchangeUrl;
+});
+
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
 const developerResults = [
@@ -135,9 +140,13 @@ beforeEach(() => {
 });
 
 describe("developer category code_searches ledger", () => {
-  it.each([false, true])(
-    "reserves search credits only when provider discovery includes web results (%s)",
-    async withWeb => {
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+  ])(
+    "reserves credits for web or developer search alongside discovery (web: %s, developer: %s)",
+    async (withWeb, withDeveloper) => {
       config.FIRE_EXCHANGE_URL = "https://exchange.example";
       mockProjectSearchTotalCredits.mockReturnValue(2);
       mockReserveKeylessCredits.mockResolvedValue({ ok: false });
@@ -155,12 +164,15 @@ describe("developer category code_searches ledger", () => {
         sources: withWeb
           ? ["web", "exchange-providers"]
           : ["exchange-providers"],
+        ...(withDeveloper ? { categories: ["developer"] } : {}),
       });
       req.acuc.flags = { exchangeRetrieve: true };
       const res = makeRes();
       await searchController(req, res);
-      expect(res.status).toHaveBeenCalledWith(withWeb ? 429 : 200);
-      expect(mockReserveKeylessCredits).toHaveBeenCalledTimes(withWeb ? 1 : 0);
+      const billable = withWeb || withDeveloper;
+      expect(res.status).toHaveBeenCalledWith(billable ? 429 : 200);
+      expect(mockReserveKeylessCredits).toHaveBeenCalledTimes(billable ? 1 : 0);
+      expect(mockExecuteSearch).toHaveBeenCalledTimes(billable ? 0 : 1);
     },
   );
 

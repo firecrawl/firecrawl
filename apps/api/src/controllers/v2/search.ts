@@ -252,9 +252,10 @@ async function searchControllerInner(
     const projectedKeylessCredits =
       !isSearchPreview &&
       shouldBill &&
-      (req.body.sources as Array<{ type: string }>).some(
+      ((req.body.sources as Array<{ type: string }>).some(
         source => source.type !== "exchange-providers",
-      )
+      ) ||
+        wantsDeveloperCategory(req.body.categories as CategoryOption[]))
         ? projectSearchTotalCredits(
             {
               limit: req.body.limit,

@@ -61,8 +61,12 @@ function exchangeProxy(
       return exchangeError(res, accessError.status, accessError.error);
     }
 
-    const interop = options.billUsage ? req.body?.__agentInterop : undefined;
-    if (interop !== undefined && !isAgentInteropSecretValid(interop?.auth)) {
+    const interop = req.body?.__agentInterop;
+    if (
+      options.billUsage &&
+      interop !== undefined &&
+      !isAgentInteropSecretValid(interop?.auth)
+    ) {
       return exchangeError(res, 403, "Invalid agent interop.");
     }
     let body = req.body;
@@ -89,7 +93,7 @@ function exchangeProxy(
             teamId: authedReq.auth.team_id,
             method: req.method,
             path: req.originalUrl.replace(/^\/exchange/, "/v1"),
-            body: req.body,
+            body,
             timeoutMs: timeout,
             ...(typeof accept === "string" ? { accept } : {}),
             ...(typeof requestId === "string" ? { requestId } : {}),

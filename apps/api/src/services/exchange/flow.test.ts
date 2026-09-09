@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   keys: new Map<string, string>(),
   queue: [] as string[],
@@ -35,12 +35,18 @@ vi.mock("../queue-service", () => ({
 }));
 vi.mock("../autumn/autumn.service", () => ({
   autumnService: {
+    checkCredits: state.checkCredits,
     trackCredits: state.track,
     refundCredits: state.refund,
     isRoutedThroughFirebill: async () => false,
   },
   featureIdForBillingEndpoint: () => "credits",
+  CREDITS_FEATURE_ID: "credits",
 }));
+vi.mock("../autumn/usage", () => ({ getTeamBalance: vi.fn() }));
+vi.mock("../../controllers/auth", () => ({ authenticateUser: vi.fn() }));
+vi.mock("../idempotency/create", () => ({ createIdempotencyKey: vi.fn() }));
+vi.mock("../idempotency/validate", () => ({ validateIdempotencyKey: vi.fn() }));
 vi.mock("../../lib/concurrency-limit", () => ({
   getEffectiveConcurrencyLimit: async () => 2,
 }));
@@ -65,14 +71,13 @@ vi.mock("../../lib/exchange-proxy", async importOriginal => ({
   }),
   EXCHANGE_RETRIEVE_TIMEOUT_MS: 5000,
 }));
-vi.mock("../../routes/shared", () => ({
+vi.mock("../../routes/shared", async importOriginal => ({
+  ...(await importOriginal<typeof import("../../routes/shared")>()),
   authMiddleware: () => (req: any, _res: any, next: any) => {
     req.auth = { team_id: "team_a" };
     req.acuc = { api_key_id: 7, flags: state.flags };
     next();
   },
-  checkCreditsMiddleware: () => (_req: any, res: any, next: any) =>
-    state.checkCredits() ? next() : res.status(402).json({ success: false }),
   wrap: (fn: unknown) => fn,
 }));
 vi.mock("../logging/log_job", () => ({ logRequest: async () => {} }));
@@ -85,6 +90,12 @@ import { processBillingBatch } from "../billing/batch_billing";
 import { config } from "../../config";
 import { ExchangeProxyError } from "../../lib/exchange-proxy";
 import { ConcurrencyQueueTimeoutError } from "../../lib/error";
+const originalConfig = {
+  FIRE_EXCHANGE_URL: config.FIRE_EXCHANGE_URL,
+  EXCHANGE_INTERNAL_SECRET: config.EXCHANGE_INTERNAL_SECRET,
+  AGENT_INTEROP_SECRET: config.AGENT_INTEROP_SECRET,
+};
+afterEach(() => Object.assign(config, originalConfig));
 const app = express();
 app.use(express.json());
 app.use("/exchange", exchangeRouter);
@@ -100,7 +111,7 @@ beforeEach(() => {
   state.cleanup
     .mockReset()
     .mockImplementation(async (key: string) => state.keys.delete(key));
-  state.checkCredits.mockReturnValue(true);
+  state.checkCredits.mockResolvedValue({ allowed: true, remaining: 100 });
   state.semaphore.mockImplementation(
     async (_team, _holder, _limit, _signal, _timeout, fn) => fn(false),
   );
@@ -411,7 +422,7 @@ it.each(["provider", "transport", "concurrency"])(
 it.each([403, 503])(
   "checks Exchange access before credit enforcement (%s)",
   async status => {
-    state.checkCredits.mockReturnValue(false);
+    state.checkCredits.mockResolvedValue({ allowed: false, remaining: 0 });
     if (status === 403) state.flags.exchangeRetrieve = false;
     else state.exchangeAvailable = false;
     expect(
@@ -424,12 +435,18 @@ it.each([403, 503])(
 );
 
 it.each([
-  ["agent-test-secret", false, 200, 0],
-  ["agent-test-secret", true, 200, 1],
-  ["forged-secret", false, 403, 0],
+  ["agent-test-secret", false, false, 200, 0],
+  ["agent-test-secret", true, true, 200, 1],
+  ["agent-test-secret", true, false, 402, 0],
+  ["forged-secret", false, true, 403, 0],
+  ["forged-secret", false, false, 402, 0],
 ])(
-  "honors only authenticated agent billing intent (%s, %s)",
-  async (auth, shouldBill, status, charges) => {
+  "honors only authenticated agent billing intent (%s, bill: %s, credits allowed: %s)",
+  async (auth, shouldBill, allowed, status, charges) => {
+    state.checkCredits.mockResolvedValue({
+      allowed,
+      remaining: allowed ? 100 : 0,
+    });
     const response = await request(app).post("/exchange/retrieve").send({
       requests: calls,
       __agentInterop: { auth, shouldBill },
@@ -437,11 +454,34 @@ it.each([
     expect(response.status).toBe(status);
     expect(state.track).toHaveBeenCalledTimes(charges as number);
     expect(state.queue).toHaveLength(charges as number);
+    expect(state.checkCredits).toHaveBeenCalledTimes(
+      auth === "agent-test-secret" && shouldBill === false ? 0 : 1,
+    );
     if (status === 200)
       expect(state.forward).toHaveBeenCalledWith(
         expect.objectContaining({ body: { requests: calls } }),
       );
     else expect(state.forward).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["/exchange/platform/bounties/review", "/exchange/applications"])(
+  "strips internal authentication metadata from non-billing proxy route %s",
+  async path => {
+    state.flags.exchangeRetrieve = false;
+    const body = { title: "A request", status: "pending" };
+    const response = await request(app)
+      .post(path)
+      .send({
+        ...body,
+        __agentInterop: { auth: "agent-test-secret", shouldBill: false },
+      });
+    expect(response.status).toBe(200);
+    expect(state.forward).toHaveBeenCalledWith(
+      expect.objectContaining({ body }),
+    );
+    expect(state.checkCredits).not.toHaveBeenCalled();
+    expect(state.track).not.toHaveBeenCalled();
   },
 );
 
