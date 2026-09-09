@@ -470,6 +470,17 @@ export async function scrapeController(
             });
           }
 
+          if (e.code === "UNSUPPORTED_SITE") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           if (e.code === "SCRAPE_MEDIA_ACCESS_DENIED") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
