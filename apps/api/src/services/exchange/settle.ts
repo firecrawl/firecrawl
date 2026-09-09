@@ -81,7 +81,12 @@ export async function settleExchangeCall(input: Input) {
     deadline: Date.now() + Math.max(1, input.timeoutMs - 2000),
   });
   if (upstream.status < 200 || upstream.status >= 300) {
-    await redis.del(key);
+    if (
+      upstream.status >= 400 &&
+      upstream.status < 500 &&
+      upstream.status !== 408
+    )
+      await redis.del(key);
     return upstream;
   }
   const charge = chargeSchema.safeParse(upstream.body);

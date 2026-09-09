@@ -207,3 +207,35 @@ it("leaves discovery free", async () => {
   expect(state.track).not.toHaveBeenCalled();
   expect(state.queue).toHaveLength(0);
 });
+
+it.each([408, 500, 502, 504])(
+  "blocks retries after ambiguous upstream status %i",
+  async status => {
+    state.forward.mockResolvedValue({
+      status,
+      body: { error: "Upstream failed" },
+    });
+    const send = () =>
+      request(app)
+        .post("/exchange/retrieve")
+        .set("x-request-id", "ambiguous")
+        .send({ requests: calls });
+    expect((await send()).status).toBe(status);
+    expect((await send()).status).toBe(409);
+    expect(state.forward).toHaveBeenCalledTimes(1);
+    expect(state.track).not.toHaveBeenCalled();
+  },
+);
+it("does not repeat an ambiguous billing track after retry", async () => {
+  state.track.mockRejectedValue(new Error("Connection closed after track"));
+  const send = () =>
+    request(app)
+      .post("/exchange/retrieve")
+      .set("x-request-id", "track-failure")
+      .send({ requests: calls });
+  expect((await send()).status).toBe(502);
+  expect((await send()).status).toBe(409);
+  expect(state.track).toHaveBeenCalledTimes(1);
+  expect(state.queue).toHaveLength(0);
+  expect(state.fetch).not.toHaveBeenCalled();
+});

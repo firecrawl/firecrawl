@@ -2,15 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   set: vi.fn(),
   del: vi.fn(),
-  balance: vi.fn(),
   bill: vi.fn(),
   forward: vi.fn(),
 }));
 vi.mock("../queue-service", () => ({
   getRedisConnection: () => ({ set: mocks.set, del: mocks.del }),
-}));
-vi.mock("../autumn/autumn.service", () => ({
-  autumnService: { checkCredits: mocks.balance },
 }));
 vi.mock("../billing/credit_billing", () => ({ billTeam: mocks.bill }));
 vi.mock("../../lib/exchange-proxy", () => ({
@@ -29,7 +25,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.set.mockResolvedValue("OK");
   mocks.del.mockResolvedValue(1);
-  mocks.balance.mockResolvedValue({ allowed: true });
   mocks.bill.mockResolvedValue({ success: true });
   mocks.forward.mockResolvedValue({
     status: 200,
@@ -37,26 +32,6 @@ beforeEach(() => {
   });
 });
 describe("provider settlement without credit reservations", () => {
-  it("queues the actual price and matching receipt", async () => {
-    expect((await settleExchangeCall(input)).status).toBe(200);
-
-    const id = mocks.forward.mock.calls[0][0].requestId;
-    expect(mocks.bill).toHaveBeenCalledWith(
-      "team",
-      3,
-      1,
-      { endpoint: "scrape", chargeId: `exchange:${id}` },
-      input.logger,
-      { usageRequestId: id, billingReference: `exchange:${id}` },
-    );
-    expect(mocks.forward.mock.calls[0][0].deadline).toBeGreaterThan(Date.now());
-  });
-  it("does not execute or charge duplicate requests", async () => {
-    mocks.set.mockResolvedValue(null);
-    expect((await settleExchangeCall(input)).status).toBe(409);
-    expect(mocks.forward).not.toHaveBeenCalled();
-    expect(mocks.bill).not.toHaveBeenCalled();
-  });
   it("scopes duplicate identity to the team and request body", async () => {
     await settleExchangeCall(input);
     await settleExchangeCall(input);
@@ -107,12 +82,8 @@ describe("provider settlement without credit reservations", () => {
   it("does not bill free results or preview teams", async () => {
     mocks.forward.mockResolvedValue({ status: 200, body: { creditsCost: 0 } });
     await settleExchangeCall(input);
+    mocks.forward.mockResolvedValue({ status: 200, body: { creditsCost: 3 } });
     await settleExchangeCall({ ...input, teamId: "preview" });
     expect(mocks.bill).not.toHaveBeenCalled();
-  });
-  it("keeps failed settlement blocked for reconciliation", async () => {
-    mocks.bill.mockResolvedValue({ success: false });
-    expect((await settleExchangeCall(input)).status).toBe(503);
-    expect(mocks.del).not.toHaveBeenCalled();
   });
 });

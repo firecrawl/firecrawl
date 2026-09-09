@@ -21,9 +21,9 @@ import { settleExchangeCall } from "../../services/exchange/settle";
 const forward = vi.mocked(settleExchangeCall);
 
 const CALL = {
-  provider: "financial-datasets",
-  capability: "prices/latest",
-  options: { ticker: "NVDA" },
+  provider: "fred",
+  capability: "series/series",
+  options: { series_id: "GDP" },
 };
 
 function req(
@@ -66,7 +66,7 @@ describe("scrape({ exchange })", () => {
       body: {
         success: true,
         creditsCost: 1,
-        results: [{ ...CALL, creditsCost: 1, data: { price: 1 } }],
+        results: [{ ...CALL, creditsCost: 1, data: { id: "GDP" } }],
       },
     });
     const { r, out } = res();
@@ -86,7 +86,7 @@ describe("scrape({ exchange })", () => {
       success: true,
       scrape_id: "job-1",
       data: {
-        exchange: [{ ...CALL, creditsCost: 1, data: { price: 1 } }],
+        exchange: [{ ...CALL, creditsCost: 1, data: { id: "GDP" } }],
         creditsCost: 1,
       },
     });

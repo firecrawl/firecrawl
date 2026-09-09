@@ -124,6 +124,7 @@ describe("billTeam", () => {
       { endpoint: "search", jobId: "job-1" },
       false,
       true,
+      undefined,
     ]);
     expect(trackCredits).toHaveBeenCalledWith({
       teamId: "team-1",
@@ -174,6 +175,7 @@ describe("billTeam", () => {
       { endpoint: "search", jobId: "job-1" },
       false,
       false,
+      undefined,
     ]);
     expect(refundCredits).not.toHaveBeenCalled();
   });
