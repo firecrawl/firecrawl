@@ -83,9 +83,11 @@ function exchangeProxy(
             teamId: authedReq.auth.team_id,
             apiKeyId: authedReq.acuc?.api_key_id ?? null,
             orgId: authedReq.acuc?.org_id,
+            flags: authedReq.acuc?.flags,
             body,
             timeoutMs: timeout,
-            requestId: typeof requestId === "string" ? requestId : undefined,
+            requestId:
+              typeof requestId === "string" ? requestId : interop?.requestId,
             bypassBilling: interop?.shouldBill === false,
             logger,
           })

@@ -497,3 +497,44 @@ it("treats calls without an idempotency header as independent requests", async (
     state.forward.mock.calls[1][0].requestId,
   );
 });
+
+it.each([{ scrapeZDR: "forced" }, { forceZDR: true }])(
+  "blocks forced ZDR on both retrieval entry points: %j",
+  async flags => {
+    state.flags = { exchangeRetrieve: true, ...flags };
+    for (const path of ["/exchange/retrieve", "/v2/scrape"]) {
+      const response = await request(app)
+        .post(path)
+        .send(
+          path === "/v2/scrape" ? { exchange: calls } : { requests: calls },
+        );
+      expect(response.status).toBe(403);
+      expect(response.body.error).toContain("zero data retention");
+    }
+    expect(state.forward).not.toHaveBeenCalled();
+    expect(state.track).not.toHaveBeenCalled();
+    expect(state.keys.size).toBe(0);
+  },
+);
+
+it("uses the trusted agent request identity for retries unless a header overrides it", async () => {
+  const send = (requestId?: string) => {
+    const call = request(app).post("/exchange/retrieve");
+    if (requestId) call.set("x-request-id", requestId);
+    return call.send({
+      requests: calls,
+      __agentInterop: {
+        auth: "agent-test-secret",
+        shouldBill: true,
+        requestId: "agent-retry",
+      },
+    });
+  };
+  expect((await send()).status).toBe(200);
+  expect((await send()).status).toBe(409);
+  expect(state.forward).toHaveBeenCalledTimes(1);
+  expect(state.track).toHaveBeenCalledTimes(1);
+  expect((await send("new-call")).status).toBe(200);
+  expect(state.forward).toHaveBeenCalledTimes(2);
+  expect(state.track).toHaveBeenCalledTimes(2);
+});

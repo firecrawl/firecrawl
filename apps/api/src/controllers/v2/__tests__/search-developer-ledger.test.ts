@@ -173,6 +173,11 @@ describe("developer category code_searches ledger", () => {
       expect(res.status).toHaveBeenCalledWith(billable ? 429 : 200);
       expect(mockReserveKeylessCredits).toHaveBeenCalledTimes(billable ? 1 : 0);
       expect(mockExecuteSearch).toHaveBeenCalledTimes(billable ? 0 : 1);
+      if (!billable) {
+        expect(mockExecuteSearch.mock.calls[0][0].sources).toEqual([
+          { type: "exchange-providers" },
+        ]);
+      }
     },
   );
 

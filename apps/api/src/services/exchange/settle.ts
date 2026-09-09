@@ -10,9 +10,11 @@ import { getRedisConnection } from "../queue-service";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { ConcurrencyQueueTimeoutError } from "../../lib/error";
 import { teamConcurrencySemaphore } from "../worker/team-semaphore";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   exchangeRetrieveBatchResponseSchema,
   exchangeRetrieveResponseSchema,
+  type TeamFlags,
 } from "../../controllers/v2/types";
 
 const requestIdSchema = z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/);
@@ -21,6 +23,7 @@ type Input = {
   teamId: string;
   apiKeyId: number | null;
   orgId?: string | null;
+  flags: TeamFlags | undefined;
   body: unknown;
   timeoutMs: number;
   requestId?: string;
@@ -38,6 +41,12 @@ function refusal(status: number, error: string) {
 }
 
 export async function settleExchangeCall(input: Input) {
+  if (getScrapeZDR(input.flags) === "forced") {
+    return refusal(
+      403,
+      "Exchange provider retrieval does not support zero data retention.",
+    );
+  }
   if (
     input.requestId !== undefined &&
     !requestIdSchema.safeParse(input.requestId).success

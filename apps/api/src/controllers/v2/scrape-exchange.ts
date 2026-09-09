@@ -83,6 +83,7 @@ export async function exchangeScrapeController(
       teamId: req.auth.team_id,
       apiKeyId: req.acuc?.api_key_id ?? null,
       orgId: req.acuc?.org_id,
+      flags: req.acuc?.flags,
       logger,
       body: { requests: body.exchange },
       timeoutMs,
