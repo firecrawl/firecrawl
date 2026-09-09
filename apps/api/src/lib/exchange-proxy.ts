@@ -14,6 +14,7 @@ export class ExchangeProxyError extends Error {
   constructor(
     readonly kind: ExchangeProxyFailure,
     readonly cause?: unknown,
+    readonly requestNotSent = false,
   ) {
     super(`exchange proxy: ${kind}`);
     this.name = "ExchangeProxyError";
@@ -81,15 +82,16 @@ export async function forwardToExchange(input: {
   deadline?: number;
 }): Promise<ExchangeUpstream> {
   const base = exchangeUpstreamBase();
-  if (!base) throw new ExchangeProxyError("unconfigured");
+  if (!base) throw new ExchangeProxyError("unconfigured", undefined, true);
 
   const method = input.method.toUpperCase();
   const hasBody = method !== "GET" && method !== "HEAD";
-  let upstream: Awaited<ReturnType<typeof fetch>>;
+  let upstream: Awaited<ReturnType<typeof fetch>> | undefined;
   let text: string;
   try {
     upstream = await fetch(base + input.path, {
       method,
+      redirect: "manual",
       headers: {
         ...(input.accept === undefined ? {} : { accept: input.accept }),
         ...(input.requestId === undefined
@@ -107,10 +109,22 @@ export async function forwardToExchange(input: {
     });
     text = await upstream.text();
   } catch (error: unknown) {
-    if (isTimeout(error)) {
-      throw new ExchangeProxyError("timeout", error);
-    }
-    throw new ExchangeProxyError("unreachable", error);
+    const cause =
+      (error as { cause?: { code?: string }; code?: string })?.cause ?? error;
+    const code = (cause as { code?: string })?.code;
+    const requestNotSent =
+      upstream === undefined &&
+      [
+        "ECONNREFUSED",
+        "ENOTFOUND",
+        "EAI_AGAIN",
+        "UND_ERR_CONNECT_TIMEOUT",
+      ].includes(code ?? "");
+    throw new ExchangeProxyError(
+      isTimeout(error) || isTimeout(cause) ? "timeout" : "unreachable",
+      error,
+      requestNotSent,
+    );
   }
 
   let body: unknown;

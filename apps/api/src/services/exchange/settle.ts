@@ -1,9 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Logger } from "winston";
-import { forwardToExchange } from "../../lib/exchange-proxy";
+import {
+  ExchangeProxyError,
+  forwardToExchange,
+} from "../../lib/exchange-proxy";
 import { billTeam } from "../billing/credit_billing";
 import { getRedisConnection } from "../queue-service";
+import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
+import { ConcurrencyQueueTimeoutError } from "../../lib/error";
+import { teamConcurrencySemaphore } from "../worker/team-semaphore";
 
 const chargeSchema = z.object({
   creditsCost: z.number().int().nonnegative().safe(),
@@ -13,6 +19,7 @@ const requestIdSchema = z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/);
 type Input = {
   teamId: string;
   apiKeyId: number | null;
+  orgId?: string | null;
   body: unknown;
   timeoutMs: number;
   requestId?: string;
@@ -71,15 +78,46 @@ export async function settleExchangeCall(input: Input) {
   }
   const preview =
     input.teamId === "preview" || input.teamId.startsWith("preview_");
-  const upstream = await forwardToExchange({
-    teamId: input.teamId,
-    method: "POST",
-    path: "/v1/retrieve",
-    body: input.body,
-    timeoutMs: input.timeoutMs,
-    requestId: chargeId,
-    deadline: Date.now() + Math.max(1, input.timeoutMs - 2000),
-  });
+  const deadline = Date.now() + input.timeoutMs;
+  let started = false;
+  let upstream: Awaited<ReturnType<typeof forwardToExchange>>;
+  try {
+    const limit = await getEffectiveConcurrencyLimit(input.teamId, input.orgId);
+    upstream = await teamConcurrencySemaphore.withSemaphore(
+      input.teamId,
+      randomUUID(),
+      limit,
+      AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+      Math.max(1, deadline - Date.now()),
+      async () => {
+        const timeoutMs = deadline - Date.now();
+        if (timeoutMs <= 0) throw new ConcurrencyQueueTimeoutError();
+        started = true;
+        return forwardToExchange({
+          teamId: input.teamId,
+          method: "POST",
+          path: "/v1/retrieve",
+          body: input.body,
+          timeoutMs,
+          requestId: chargeId,
+          deadline:
+            Date.now() + timeoutMs - Math.min(2000, Math.floor(timeoutMs / 10)),
+        });
+      },
+    );
+  } catch (error) {
+    if (
+      !started ||
+      (error instanceof ExchangeProxyError && error.requestNotSent)
+    )
+      await redis.del(key);
+    if (error instanceof ConcurrencyQueueTimeoutError)
+      return refusal(
+        429,
+        "Provider concurrency limit reached. Retry with the same x-request-id.",
+      );
+    throw error;
+  }
   if (upstream.status < 200 || upstream.status >= 300) {
     if (
       upstream.status >= 400 &&

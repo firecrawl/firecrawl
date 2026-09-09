@@ -57,6 +57,7 @@ function exchangeProxy(
           ? await settleExchangeCall({
               teamId: authedReq.auth.team_id,
               apiKeyId: authedReq.acuc?.api_key_id ?? null,
+              orgId: authedReq.acuc?.org_id,
               body: req.body,
               timeoutMs: timeout,
               requestId: typeof requestId === "string" ? requestId : undefined,

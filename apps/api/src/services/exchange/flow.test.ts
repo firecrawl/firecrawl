@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   keys: new Map<string, string>(),
   queue: [] as string[],
   forward: vi.fn(),
+  semaphore: vi.fn(),
   track: vi.fn(),
   debit: vi.fn(),
   refund: vi.fn(),
@@ -37,6 +38,12 @@ vi.mock("../autumn/autumn.service", () => ({
   },
   featureIdForBillingEndpoint: () => "credits",
 }));
+vi.mock("../../lib/concurrency-limit", () => ({
+  getEffectiveConcurrencyLimit: async () => 2,
+}));
+vi.mock("../worker/team-semaphore", () => ({
+  teamConcurrencySemaphore: { withSemaphore: state.semaphore },
+}));
 vi.mock("../../db/rpc", () => ({ billTeam7: state.debit }));
 vi.mock("../../lib/withAuth", () => ({ withAuth: (fn: unknown) => fn }));
 vi.mock("../../lib/exchange", () => ({ reportExchangeBilling: vi.fn() }));
@@ -44,10 +51,10 @@ vi.mock("undici", async importOriginal => ({
   ...(await importOriginal<typeof import("undici")>()),
   fetch: state.fetch,
 }));
-vi.mock("../../lib/exchange-proxy", () => ({
+vi.mock("../../lib/exchange-proxy", async importOriginal => ({
+  ...(await importOriginal<typeof import("../../lib/exchange-proxy")>()),
   forwardToExchange: state.forward,
   exchangeUpstreamBase: () => "https://exchange.example",
-  ExchangeProxyError: class extends Error {},
   exchangeProxyFailureResponse: () => ({
     status: 502,
     error: "Upstream unavailable",
@@ -71,6 +78,8 @@ import { exchangeRouter } from "../../routes/exchange";
 import { exchangeScrapeController } from "../../controllers/v2/scrape-exchange";
 import { processBillingBatch } from "../billing/batch_billing";
 import { config } from "../../config";
+import { ExchangeProxyError } from "../../lib/exchange-proxy";
+import { ConcurrencyQueueTimeoutError } from "../../lib/error";
 const app = express();
 app.use(express.json());
 app.use("/exchange", exchangeRouter);
@@ -83,6 +92,9 @@ const calls = [{ provider: "test", capability: "price" }];
 beforeEach(() => {
   vi.clearAllMocks();
   state.keys.clear();
+  state.semaphore.mockImplementation(
+    async (_team, _holder, _limit, _signal, _timeout, fn) => fn(false),
+  );
   state.queue.length = 0;
   state.failQueue = false;
   state.flags = { exchangeRetrieve: true };
@@ -111,13 +123,26 @@ it.each(["/exchange/retrieve", "/v2/scrape"])(
   "settles %s only after the queued debit commits",
   async path => {
     const payload =
-      path === "/v2/scrape" ? { exchange: calls } : { requests: calls };
+      path === "/v2/scrape"
+        ? { exchange: calls, timeout: 1500 }
+        : { requests: calls };
     const response = await request(app)
       .post(path)
       .set("x-request-id", "flow-1")
       .set("x-exchange-team-id", "attacker")
       .send(payload);
     expect(response.status).toBe(200);
+    expect(state.forward.mock.calls[0][0].deadline).toBeGreaterThan(
+      Date.now() + 100,
+    );
+    expect(state.semaphore).toHaveBeenCalledWith(
+      "team_a",
+      expect.any(String),
+      2,
+      expect.any(AbortSignal),
+      expect.any(Number),
+      expect.any(Function),
+    );
     expect(state.track).toHaveBeenCalledTimes(1);
     expect(state.track.mock.calls[0][0]).toMatchObject({
       teamId: "team_a",
@@ -239,4 +264,33 @@ it("leaves failed confirmations pending after bounded retries", async () => {
   expect(state.debit).toHaveBeenCalledTimes(1);
   expect(state.fetch).toHaveBeenCalledTimes(3);
   expect(state.refund).not.toHaveBeenCalled();
+});
+
+it.each([true, false])(
+  "retries a transport failure only when definitely unsent: %s",
+  async requestNotSent => {
+    state.forward.mockRejectedValueOnce(
+      new ExchangeProxyError("unreachable", undefined, requestNotSent),
+    );
+    const send = () =>
+      request(app)
+        .post("/exchange/retrieve")
+        .set("x-request-id", "transport")
+        .send({ requests: calls });
+    expect((await send()).status).toBe(502);
+    expect((await send()).status).toBe(requestNotSent ? 200 : 409);
+    expect(state.track).toHaveBeenCalledTimes(requestNotSent ? 1 : 0);
+  },
+);
+it("allows retry after a concurrency wait expires without calling the provider", async () => {
+  state.semaphore.mockRejectedValueOnce(new ConcurrencyQueueTimeoutError());
+  const send = () =>
+    request(app)
+      .post("/exchange/retrieve")
+      .set("x-request-id", "concurrency")
+      .send({ requests: calls });
+  expect((await send()).status).toBe(429);
+  expect(state.forward).not.toHaveBeenCalled();
+  expect(state.track).not.toHaveBeenCalled();
+  expect((await send()).status).toBe(200);
 });

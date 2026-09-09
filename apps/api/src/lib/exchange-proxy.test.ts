@@ -192,4 +192,24 @@ describe("forwardToExchange", () => {
     });
     expect(result).toMatchObject({ status: 502, body: "bad gateway" });
   });
+  it.each([
+    "ECONNREFUSED",
+    "ENOTFOUND",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "ECONNRESET",
+  ])("classifies whether %s is definitely before sending", async code => {
+    fetchMock.mockRejectedValueOnce(
+      new TypeError("fetch failed", {
+        cause: Object.assign(new Error(code), { code }),
+      }),
+    );
+    await expect(
+      forwardToExchange({
+        teamId: "t",
+        method: "POST",
+        path: "/v1/retrieve",
+        timeoutMs: 1000,
+      }),
+    ).rejects.toMatchObject({ requestNotSent: code !== "ECONNRESET" });
+  });
 });
