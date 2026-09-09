@@ -1,0 +1,3 @@
+firecrawl-py>=1.0.0
+bolyra>=0.4.0
+python-dotenv>=1.0.0
