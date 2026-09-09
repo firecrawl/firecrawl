@@ -1,4 +1,13 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true
+    "low": true,
+    "allowlist": [
+        // GHSA-8cw4-87c7-c6xx (csv-parse): affects csv-parse 4.x via artillery (dev/load-test only).
+        // The fix requires csv-parse >=7.0.2, a multi-major jump that artillery 2.x does not support.
+        // This advisory is only reachable if a malicious actor controls the CSV input to the load
+        // test runner — inputs are authored by the engineering team, not user-controlled.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2026-12-09.
+        "GHSA-8cw4-87c7-c6xx"
+    ]
 }
