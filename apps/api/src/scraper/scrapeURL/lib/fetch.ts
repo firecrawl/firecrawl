@@ -137,7 +137,6 @@ export async function robustFetch<
       if (error instanceof AbortManagerThrownError) {
         throw error;
       } else if (!ignoreFailure) {
-        Sentry.captureException(error);
         if (tryCount > 1) {
           logger.debug(
             "Request failed, trying " + (tryCount - 1) + " more times",
@@ -150,6 +149,9 @@ export async function robustFetch<
             mock,
           });
         } else {
+          // Only report once retries are exhausted — transient failures that
+          // succeed on retry were flooding Sentry with one event per attempt.
+          Sentry.captureException(error);
           logger.debug("Request failed", {
             params: logParams,
             error,
