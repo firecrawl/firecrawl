@@ -1,3 +1,4 @@
+import { billExchangeRecord } from "../../lib/exchange-record-billing";
 import { Response } from "express";
 import { z } from "zod";
 import { config } from "../../config";
@@ -44,6 +45,10 @@ export async function exchangeScrapeController(
     });
   }
   const body = parsed.data;
+  const record =
+    body.exchange.length === 1 && "url" in body.exchange[0]
+      ? body.exchange[0]
+      : null;
 
   if (!req.acuc?.flags?.exchangeRetrieve) {
     return res.status(403).json({
@@ -66,7 +71,7 @@ export async function exchangeScrapeController(
     team_id: req.auth.team_id,
     origin: body.origin ?? "api",
     integration: body.integration,
-    target_hint: `exchange:${body.exchange.map(e => `${e.provider}/${e.capability}`).join(",")}`,
+    target_hint: `exchange:${body.exchange.map(e => ("url" in e ? e.url : `${e.provider}/${e.capability}`)).join(",")}`,
     zeroDataRetention: false,
     api_key_id: req.acuc?.api_key_id ?? null,
   }).catch(err =>
@@ -82,8 +87,8 @@ export async function exchangeScrapeController(
     const upstream = await forwardToExchange({
       teamId: req.auth.team_id,
       method: "POST",
-      path: "/v1/retrieve",
-      body: { requests: body.exchange },
+      path: record ? "/v1/records/fetch" : "/v1/retrieve",
+      body: record ? { url: record.url } : { requests: body.exchange },
       timeoutMs,
       requestId: jobId,
     });
@@ -105,6 +110,61 @@ export async function exchangeScrapeController(
       });
     }
 
+    if (record) {
+      const answer = z
+        .object({
+          success: z.literal(true),
+          accessEventId: z.string().uuid(),
+          creditsCost: z.number().int().nonnegative().safe(),
+          data: z
+            .object({
+              id: z.string(),
+              url: z.string(),
+              title: z.string(),
+              source: z.object({
+                provider: z.string(),
+                recordId: z.string(),
+                recordType: z.string(),
+              }),
+              metadata: z.record(z.string(), z.unknown()),
+              markdown: z.string().optional(),
+              json: z.record(z.string(), z.unknown()).optional(),
+            })
+            .passthrough(),
+        })
+        .safeParse(upstream.body);
+      if (!answer.success)
+        return res
+          .status(502)
+          .json({
+            success: false,
+            error: "Exchange returned an invalid record.",
+          });
+      const billed = await billExchangeRecord(answer.data, {
+        teamId: req.auth.team_id,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        maxCredits: record.maxCredits,
+      });
+      if (!billed.success)
+        return res
+          .status(billed.status)
+          .json({ success: false, error: billed.error });
+      return res.status(200).json({
+        success: true,
+        scrape_id: jobId,
+        data: {
+          exchange: [
+            {
+              provider: answer.data.data.source.provider,
+              capability: "records/fetch",
+              creditsCost: answer.data.creditsCost,
+              data: answer.data.data,
+            },
+          ],
+          creditsCost: answer.data.creditsCost,
+        },
+      });
+    }
     const answer = retrieveBatchSchema.safeParse(upstream.body);
     if (!answer.success) {
       logger.error("Exchange retrieve answered in an unknown shape", {

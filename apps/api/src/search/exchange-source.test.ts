@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExchangeProxyError } from "../lib/exchange-proxy";
-import { searchExchangeCatalog } from "./exchange-source";
+import {
+  searchExchangeCatalog,
+  searchExchangeContent,
+} from "./exchange-source";
 
 vi.mock("../lib/exchange-proxy", async importOriginal => ({
   ...(await importOriginal<typeof import("../lib/exchange-proxy")>()),
@@ -179,6 +182,52 @@ describe("exchange search source", () => {
     expect(
       await searchExchangeCatalog(
         { query: "q", limit: 5, teamId: "t" },
+        logger,
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("Exchange indexed content", () => {
+  const hit = {
+    address: "firecrawl://exchange/website/pages/123",
+    url: null,
+    title: "Funding",
+    description: "Preview",
+    domain: null,
+    kind: "document",
+    provider: "website",
+    providerName: "Documents",
+    credits: 2,
+    relevance: 0.9,
+  };
+  beforeEach(() => forward.mockReset());
+  it("preserves the canonical address and price without inventing a public URL", async () => {
+    forward.mockResolvedValueOnce({
+      status: 200,
+      contentType: null,
+      requestId: null,
+      body: { success: true, hits: [hit, { ...hit, credits: -1 }] },
+    });
+    expect(
+      await searchExchangeContent(
+        { query: "funding & grants", limit: 100, teamId: "t", timeoutMs: 500 },
+        logger,
+      ),
+    ).toEqual([hit]);
+    expect(forward).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/v1/discover/content?query=funding%20%26%20grants&limit=30",
+        teamId: "t",
+        timeoutMs: 500,
+      }),
+    );
+  });
+  it("omits unavailable content instead of claiming no matches", async () => {
+    forward.mockRejectedValueOnce(new ExchangeProxyError("timeout"));
+    expect(
+      await searchExchangeContent(
+        { query: "q", limit: 10, teamId: "t" },
         logger,
       ),
     ).toBeNull();

@@ -161,7 +161,12 @@ export interface WebSearchResult {
   highlights?: string;
 }
 
-export type SearchResultType = "web" | "images" | "news" | "exchange";
+export type SearchResultType =
+  | "web"
+  | "images"
+  | "news"
+  | "exchange"
+  | "exchange-provider";
 
 export interface ExchangeSearchResult {
   provider: string;
@@ -172,11 +177,25 @@ export interface ExchangeSearchResult {
   similarity: number;
 }
 
+export interface ExchangeContentResult {
+  address: string;
+  url: string | null;
+  title: string;
+  description: string;
+  domain: string | null;
+  kind: "document" | "page";
+  provider: string;
+  providerName: string;
+  credits: number | null;
+  relevance: number;
+}
+
 export interface SearchV2Response {
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
-  exchange?: ExchangeSearchResult[];
+  exchange?: ExchangeContentResult[];
+  "exchange-provider"?: ExchangeSearchResult[];
 }
 
 export interface ScrapeActionContent {

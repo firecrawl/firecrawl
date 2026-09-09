@@ -92,3 +92,55 @@ export async function searchExchangeCatalog(
     return null;
   }
 }
+
+const contentHitSchema = z.object({
+  address: z
+    .string()
+    .regex(/^firecrawl:\/\/exchange\/[^/?#]+\/[^/?#]+\/[^/?#]+$/),
+  url: z.url().nullable(),
+  title: z.string(),
+  description: z.string(),
+  domain: z.string().nullable(),
+  kind: z.enum(["document", "page"]),
+  provider: z.string(),
+  providerName: z.string(),
+  credits: z.number().int().nonnegative().nullable(),
+  relevance: z.number().finite(),
+});
+
+export async function searchExchangeContent(
+  input: Parameters<typeof searchExchangeCatalog>[0],
+  logger: Logger,
+): Promise<import("../lib/entities").ExchangeContentResult[] | null> {
+  try {
+    const limit = Math.min(Math.max(input.limit, 1), 30);
+    const upstream = await forwardToExchange({
+      teamId: input.teamId,
+      method: "GET",
+      path: `/v1/discover/content?query=${encodeURIComponent(input.query)}&limit=${limit}`,
+      timeoutMs: Math.min(
+        input.timeoutMs ?? EXCHANGE_DISCOVER_TIMEOUT_MS,
+        EXCHANGE_DISCOVER_TIMEOUT_MS,
+      ),
+      ...(input.requestId === undefined ? {} : { requestId: input.requestId }),
+    });
+    const parsed = z
+      .object({ success: z.literal(true), hits: z.array(z.unknown()) })
+      .safeParse(upstream.body);
+    if (upstream.status < 200 || upstream.status >= 300 || !parsed.success) {
+      logger.warn("Exchange content search unavailable", {
+        status: upstream.status,
+      });
+      return null;
+    }
+    return parsed.data.hits
+      .flatMap(entry => {
+        const hit = contentHitSchema.safeParse(entry);
+        return hit.success ? [hit.data] : [];
+      })
+      .slice(0, limit);
+  } catch (error) {
+    logger.warn("Exchange content search failed", { error });
+    return null;
+  }
+}

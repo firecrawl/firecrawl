@@ -1473,17 +1473,25 @@ export type ScrapeResponse =
     }
   | ExchangeScrapeResponse;
 
+const exchangeScrapeCallSchema = z.strictObject({
+  provider: z.string().min(1),
+  capability: z.string().min(1),
+  options: z.record(z.string(), z.unknown()).optional(),
+});
+
+const exchangeRecordCallSchema = z.strictObject({
+  url: z.string().regex(/^firecrawl:\/\/exchange\/[^/?#]+\/[^/?#]+\/[^/?#]+$/),
+  maxCredits: z.number().int().nonnegative().safe(),
+});
+
 export const exchangeScrapeRequestSchema = z.strictObject({
   exchange: z
-    .array(
-      z.strictObject({
-        provider: z.string().min(1),
-        capability: z.string().min(1),
-        options: z.record(z.string(), z.unknown()).optional(),
-      }),
-    )
-    .min(1)
-    .max(10),
+    .union([
+      exchangeRecordCallSchema,
+      exchangeScrapeCallSchema,
+      z.array(exchangeScrapeCallSchema).min(1).max(10),
+    ])
+    .transform(value => (Array.isArray(value) ? value : [value])),
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   timeout: z.int().positive().finite().optional(),
@@ -2102,7 +2110,7 @@ const newsSearchSourceOptions = z.strictObject({
 });
 
 const exchangeSearchSourceOptions = z.strictObject({
-  type: z.literal("exchange"),
+  type: z.enum(["exchange", "exchange-provider"]),
 });
 
 // Category source type definitions
@@ -2186,7 +2194,9 @@ export const searchRequestSchema = z
     sources: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["web", "images", "news", "exchange"])),
+        z.array(
+          z.enum(["web", "images", "news", "exchange", "exchange-provider"]),
+        ),
         // Array of objects (advanced format)
         z.array(
           z.union([
@@ -2328,7 +2338,8 @@ export const searchRequestSchema = z
                 location: x.location,
               };
             case "exchange":
-              return { type: "exchange" as const };
+            case "exchange-provider":
+              return { type: s };
             default:
               return { type: s as any };
           }

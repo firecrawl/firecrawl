@@ -3,6 +3,7 @@ const mocks = vi.hoisted(() => ({
   searchDeveloperCategory: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
   searchExchangeCatalog: vi.fn(),
+  searchExchangeContent: vi.fn(),
 }));
 
 vi.mock("./v2", () => ({ search: mocks.search }));
@@ -17,6 +18,7 @@ vi.mock("./developer", () => ({
 }));
 vi.mock("./exchange-source", () => ({
   searchExchangeCatalog: mocks.searchExchangeCatalog,
+  searchExchangeContent: mocks.searchExchangeContent,
 }));
 vi.mock("./scrape", () => ({
   getItemsToScrape: vi.fn(() => []),
@@ -200,14 +202,14 @@ describe("executeSearch exchange source", () => {
     expect(mocks.search.mock.calls[0][0].type).toEqual(["web"]);
     expect(mocks.searchExchangeCatalog).not.toHaveBeenCalled();
     expect(result.response).toEqual({ web: [webResult] });
-    expect(result.response).not.toHaveProperty("exchange");
+    expect(result.response).not.toHaveProperty("exchange-provider");
     expect(result.totalResultsCount).toBe(1);
     expect(result.searchCredits).toBe(2);
   });
 
   it("keeps the exchange type away from the upstream when mixed with web, and adds the catalogue beside the web results", async () => {
     const result = await executeSearch(
-      sources(["web", "exchange"]),
+      sources(["web", "exchange-provider"]),
       context,
       logger,
     );
@@ -224,17 +226,21 @@ describe("executeSearch exchange source", () => {
     );
     expect(result.response).toEqual({
       web: [webResult],
-      exchange: [capability],
+      "exchange-provider": [capability],
     });
     expect(result.totalResultsCount).toBe(1);
     expect(result.searchCredits).toBe(2);
   });
 
   it("runs no upstream search and bills nothing for an exchange-only search", async () => {
-    const result = await executeSearch(sources(["exchange"]), context, logger);
+    const result = await executeSearch(
+      sources(["exchange-provider"]),
+      context,
+      logger,
+    );
 
     expect(mocks.search).not.toHaveBeenCalled();
-    expect(result.response).toEqual({ exchange: [capability] });
+    expect(result.response).toEqual({ "exchange-provider": [capability] });
     expect(result.totalResultsCount).toBe(0);
     expect(result.searchCredits).toBe(0);
     expect(result.totalCredits).toBe(0);
@@ -244,30 +250,30 @@ describe("executeSearch exchange source", () => {
     mocks.searchExchangeCatalog.mockResolvedValue(null);
 
     const result = await executeSearch(
-      sources(["web", "exchange"]),
+      sources(["web", "exchange-provider"]),
       context,
       logger,
     );
 
     expect(result.response).toEqual({ web: [webResult] });
-    expect(result.response).not.toHaveProperty("exchange");
+    expect(result.response).not.toHaveProperty("exchange-provider");
   });
 
   it("records every requested source in tracking, exchange included", async () => {
-    await executeSearch(sources(["web", "exchange"]), context, logger);
+    await executeSearch(sources(["web", "exchange-provider"]), context, logger);
     expect(vi.mocked(trackSearchRequest).mock.calls.at(-1)![0].sources).toEqual(
-      ["web", "exchange"],
+      ["web", "exchange-provider"],
     );
 
-    await executeSearch(sources(["exchange"]), context, logger);
+    await executeSearch(sources(["exchange-provider"]), context, logger);
     expect(vi.mocked(trackSearchRequest).mock.calls.at(-1)![0].sources).toEqual(
-      ["exchange"],
+      ["exchange-provider"],
     );
   });
 
   it("caps the catalogue wait at the caller's timeout", async () => {
     await executeSearch(
-      { ...sources(["exchange"]), timeout: 2_500 },
+      { ...sources(["exchange-provider"]), timeout: 2_500 },
       context,
       logger,
     );
@@ -278,7 +284,7 @@ describe("executeSearch exchange source", () => {
     mocks.search.mockResolvedValue({ web: [webResult], news: [], images: [] });
 
     await executeSearch(
-      sources(["web", "news", "images", "exchange"]),
+      sources(["web", "news", "images", "exchange-provider"]),
       context,
       logger,
     );
@@ -289,4 +295,52 @@ describe("executeSearch exchange source", () => {
       "images",
     ]);
   });
+});
+
+it("routes content and provider sources independently alongside web search", async () => {
+  const content = {
+    address: "firecrawl://exchange/website/pages/123",
+    title: "Record",
+  };
+  mocks.search.mockResolvedValue({ web: [] });
+  mocks.searchExchangeCatalog.mockResolvedValue([]);
+  mocks.searchExchangeContent.mockResolvedValue([content]);
+  const result = await executeSearch(
+    searchRequestSchema.parse({
+      query: "funding",
+      sources: ["web", "exchange", "exchange-provider"],
+    }) as any,
+    context,
+    logger,
+  );
+  expect(mocks.search).toHaveBeenCalledWith(
+    expect.objectContaining({ type: ["web"] }),
+  );
+  expect(result.response.exchange).toEqual([content]);
+  expect(result.response["exchange-provider"]).toEqual([]);
+  expect(mocks.searchExchangeContent).toHaveBeenCalledWith(
+    expect.objectContaining({ query: "funding", teamId: "team-1" }),
+    logger,
+  );
+});
+
+it("filters blocked content URLs without dropping uploaded documents", async () => {
+  const uploaded = {
+    address: "firecrawl://exchange/website/pages/1",
+    url: null,
+  };
+  mocks.searchExchangeContent.mockResolvedValue([
+    { ...uploaded, url: "https://blocked.example" },
+    uploaded,
+  ]);
+  mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
+    decisionsByUrl: new Map([["https://blocked.example", { allowed: false }]]),
+  });
+  const result = await executeSearch(
+    { ...options([]), sources: [{ type: "exchange" }] },
+    { ...context, threatProtectionPolicy: { mode: "block" } } as any,
+    logger,
+  );
+  expect(result.response.exchange).toEqual([uploaded]);
+  expect(mocks.search).not.toHaveBeenCalled();
 });

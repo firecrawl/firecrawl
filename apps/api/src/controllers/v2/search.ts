@@ -165,7 +165,8 @@ export async function searchController(
     }
 
     const wantsExchange = (req.body.sources as Array<{ type: string }>).some(
-      source => source.type === "exchange",
+      source =>
+        source.type === "exchange" || source.type === "exchange-provider",
     );
     if (wantsExchange && !req.acuc?.flags?.exchangeRetrieve) {
       return res.status(403).json({

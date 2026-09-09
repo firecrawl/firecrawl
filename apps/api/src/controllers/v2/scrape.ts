@@ -72,9 +72,7 @@ export async function scrapeController(
         "scrape.middleware_time_ms": controllerStartTime - middlewareStartTime,
       });
 
-      if (
-        Array.isArray((req.body as { exchange?: unknown } | null)?.exchange)
-      ) {
+      if ((req.body as { exchange?: unknown } | null)?.exchange !== undefined) {
         return exchangeScrapeController(req, res, jobId);
       }
 

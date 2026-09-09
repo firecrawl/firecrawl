@@ -21,7 +21,10 @@ import {
 } from "./highlights";
 import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
-import { searchExchangeCatalog } from "./exchange-source";
+import {
+  searchExchangeCatalog,
+  searchExchangeContent,
+} from "./exchange-source";
 import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
@@ -108,8 +111,10 @@ export async function executeSearch(
   logger.info("Searching for results");
 
   const requestedTypes = [...new Set(sources.map((s: any) => s.type))];
-  const wantsExchange = requestedTypes.includes("exchange");
-  const searchTypes = requestedTypes.filter(t => t !== "exchange");
+  const wantsExchange = requestedTypes.includes("exchange-provider");
+  const searchTypes = requestedTypes.filter(
+    t => t !== "exchange" && t !== "exchange-provider",
+  );
   const exchangeResultsPromise = wantsExchange
     ? searchExchangeCatalog(
         {
@@ -119,6 +124,12 @@ export async function executeSearch(
           requestId: context.requestId,
           timeoutMs: options.timeout,
         },
+        logger,
+      )
+    : null;
+  const contentResultsPromise = requestedTypes.includes("exchange")
+    ? searchExchangeContent(
+        { query, limit, teamId, requestId, timeoutMs: options.timeout },
         logger,
       )
     : null;
@@ -162,7 +173,12 @@ export async function executeSearch(
     : [];
   if (exchangeResultsPromise) {
     const exchange = await exchangeResultsPromise;
-    if (exchange !== null) searchResponse.exchange = exchange;
+    if (exchange !== null) searchResponse["exchange-provider"] = exchange;
+  }
+
+  if (contentResultsPromise) {
+    const content = await contentResultsPromise;
+    if (content !== null) searchResponse.exchange = content;
   }
 
   // Threat protection: remove blocked results entirely — before
@@ -177,6 +193,7 @@ export async function executeSearch(
       ...(searchResponse.web ?? []).map(x => x.url),
       ...(searchResponse.news ?? []).map(x => x.url),
       ...(searchResponse.images ?? []).map(x => x.url),
+      ...(searchResponse.exchange ?? []).map(x => x.url),
       ...developerResults.map(x => x.url),
     ].filter((x): x is string => !!x);
 
@@ -200,6 +217,11 @@ export async function executeSearch(
       }
       if (searchResponse.images) {
         searchResponse.images = searchResponse.images.filter(x =>
+          isAllowed(x.url),
+        );
+      }
+      if (searchResponse.exchange) {
+        searchResponse.exchange = searchResponse.exchange.filter(x =>
           isAllowed(x.url),
         );
       }
