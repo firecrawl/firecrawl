@@ -30,7 +30,6 @@ import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
-import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -51,6 +50,13 @@ export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
 ) {
+  // Resolved before the root span starts so the whole request trace stays
+  // unrecorded for zero-data-retention requests (see otel-tracer).
+  const zeroDataRetentionTrace =
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body?.zeroDataRetention === true ||
+    req.body?.lockdown === true;
+
   return withSpan(
     "api.scrape.request",
     async span => {
@@ -464,6 +470,17 @@ export async function scrapeController(
             });
           }
 
+          if (e.code === "UNSUPPORTED_SITE") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           if (e.code === "SCRAPE_MEDIA_ACCESS_DENIED") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
@@ -524,18 +541,6 @@ export async function scrapeController(
             errorId: id,
             path: req.path,
             teamId: req.auth.team_id,
-          });
-          captureExceptionWithZdrCheck(e, {
-            tags: {
-              errorId: id,
-              version: "v2",
-              teamId: req.auth.team_id,
-            },
-            extra: {
-              path: req.path,
-              url: req.body.url,
-            },
-            zeroDataRetention,
           });
           setSpanAttributes(span, {
             "scrape.status_code": 500,
@@ -642,6 +647,7 @@ export async function scrapeController(
         "http.route": "/v2/scrape",
       },
       kind: SpanKind.SERVER,
+      zeroDataRetention: zeroDataRetentionTrace,
     },
   );
 }

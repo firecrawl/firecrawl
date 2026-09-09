@@ -1,6 +1,5 @@
 import "dotenv/config";
-import "./sentry";
-import { setSentryServiceTag } from "./sentry";
+import { shutdownTracing } from "../otel";
 import { logger } from "../lib/logger";
 import { zdrcleaner } from "../lib/zdrcleaner";
 
@@ -17,12 +16,11 @@ process.on("SIGTERM", () => {
 });
 
 (async () => {
-  setSentryServiceTag("zdr-worker");
-
   while (!isShuttingDown) {
     await zdrcleaner();
   }
 
+  await shutdownTracing();
   logger.info("zdr-worker exiting");
   process.exit(0);
 })();

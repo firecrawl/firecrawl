@@ -48,7 +48,7 @@ import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
-import { CrawlDenialError } from "../../lib/error";
+import { UnsupportedSiteError } from "../../lib/error";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -181,7 +181,7 @@ export async function batchScrapeController(
           apiKeyId: req.acuc?.api_key_id ?? null,
           auditMetadata: req.body.auditMetadata,
           url,
-          error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
+          error: new UnsupportedSiteError(),
           origin: req.body.origin ?? "api",
           integration: req.body.integration,
           zeroDataRetention,
@@ -206,7 +206,7 @@ export async function batchScrapeController(
       apiKeyId: req.acuc?.api_key_id ?? null,
       auditMetadata: req.body.auditMetadata,
       url,
-      error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
+      error: new UnsupportedSiteError(),
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       zeroDataRetention,

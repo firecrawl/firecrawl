@@ -1,6 +1,5 @@
 import { AuthResponse } from "../../src/types";
 import { logger } from "./logger";
-import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { config } from "../config";
 configDotenv();

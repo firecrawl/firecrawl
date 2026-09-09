@@ -1,3 +1,5 @@
+import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
+
 export type ErrorCodes =
   | "THIRD_PARTY_DATA_TERMS_REQUIRED"
   | "SCRAPE_TIMEOUT"
@@ -36,6 +38,7 @@ export type ErrorCodes =
   | "SCRAPE_X_TWITTER_CONFIGURATION_ERROR"
   | "PARSE_UNSUPPORTED_OPTIONS"
   | "CRAWL_DENIAL"
+  | "UNSUPPORTED_SITE"
   | "MAP_FAILED"
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST"
@@ -368,6 +371,25 @@ export class CrawlDenialError extends TransportableError {
   }
 }
 
+export class UnsupportedSiteError extends TransportableError {
+  constructor() {
+    super("UNSUPPORTED_SITE", UNSUPPORTED_SITE_MESSAGE);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new UnsupportedSiteError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class ActionsNotSupportedError extends TransportableError {
   constructor(message: string) {
     super("SCRAPE_ACTIONS_NOT_SUPPORTED", message);
@@ -389,7 +411,7 @@ export class ActionsNotSupportedError extends TransportableError {
 
 /**
  * Error thrown when a job is cancelled (expected flow control, not a real error)
- * This should not be sent to Sentry as it's expected behavior when a crawl/batch is cancelled
+ * This is expected behavior when a crawl/batch is cancelled
  */
 export class JobCancelledError extends Error {
   constructor() {

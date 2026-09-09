@@ -1,5 +1,4 @@
 import { Logger } from "winston";
-import * as Sentry from "@sentry/node";
 import { z } from "zod";
 
 import { robustFetch } from "../../lib/fetch";

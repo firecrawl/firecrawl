@@ -171,6 +171,16 @@ const configSchema = z.object({
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
+  // How long a team → org mapping is trusted in-process before it is re-read
+  // from the DB. Bounded because a team's org changes when accounts are merged
+  // or moved: every warm pod otherwise keeps billing the old Autumn customer
+  // (and 404s on the entity that no longer lives there) until it restarts.
+  AUTUMN_ORG_CACHE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(3600)
+    .default(300),
   RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
@@ -513,11 +523,15 @@ const configSchema = z.object({
   SYS_INFO_MAX_CACHE_DURATION: z.coerce.number().default(150),
   USE_GO_MARKDOWN_PARSER: z.stringbool().optional(),
 
-  // Sentry
-  SENTRY_DSN: z.string().optional(),
-  SENTRY_TRACE_SAMPLE_RATE: z.coerce.number().default(0.01),
-  SENTRY_ERROR_SAMPLE_RATE: z.coerce.number().default(0.05),
   SENTRY_ENVIRONMENT: z.string().default("production"),
+
+  // OpenTelemetry. Tracing is off unless an OTLP endpoint is set; spans are then
+  // exported over http/protobuf at 100% sampling, and the SDK honors the
+  // standard OTEL_EXPORTER_OTLP_* / OTEL_BSP_* / OTEL_RESOURCE_ATTRIBUTES
+  // variables. Zero-data-retention spans are never exported (see otel-tracer).
+  OTEL_EXPORTER_OTLP_ENDPOINT: emptyStringAsUndefined(z.string().url()),
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: emptyStringAsUndefined(z.string().url()),
+  OTEL_SERVICE_NAME: emptyStringAsUndefined(z.string()),
   NUQ_POD_NAME: z.string().default("main"),
 
   // Billing
@@ -593,6 +607,8 @@ const configSchema = z.object({
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 
   ZDRCLEANER_HEARTBEAT_URL: z.string().optional(),
+
+  CCLOG_WORKER_HEARTBEAT_URL: z.string().optional(),
 
   // Deterministic JSON extraction (reusable-json-mode)
   EXTRACT_CODEGEN_MODEL: z.string().default("gemini-3.1-flash-lite"),

@@ -35,6 +35,9 @@ pub struct SearchOptions {
     /// Geographic location string for local search results.
     pub location: Option<String>,
 
+    /// Country code to geo-target search results (e.g., "de").
+    pub country: Option<String>,
+
     /// Whether to ignore invalid URLs in results.
     pub ignore_invalid_urls: Option<bool>,
 
@@ -279,6 +282,22 @@ mod tests {
             serde_json::to_value(options).unwrap(),
             json!({ "highlights": false })
         );
+    }
+
+    #[test]
+    fn serializes_country_option() {
+        let options = SearchOptions {
+            country: Some("de".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            serde_json::to_value(options).unwrap(),
+            json!({ "country": "de" })
+        );
+
+        let default_value = serde_json::to_value(SearchOptions::default()).unwrap();
+        assert!(default_value.get("country").is_none());
     }
 
     #[tokio::test]

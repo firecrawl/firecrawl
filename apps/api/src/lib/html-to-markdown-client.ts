@@ -9,7 +9,6 @@ import axios, { AxiosInstance, AxiosError } from "axios";
 import { config } from "../config";
 import { logger } from "./logger";
 import type { Logger } from "winston";
-import * as Sentry from "@sentry/node";
 
 interface ConvertRequest {
   html: string;
@@ -112,22 +111,6 @@ export async function convertHTMLToMarkdownWithHttpService(
         serviceUrl: url,
       });
 
-      // Capture in Sentry with additional context (omit identifying fields
-      // and content sizes when ZDR so nothing is retained in Sentry either).
-      Sentry.captureException(error, {
-        tags: {
-          service: "html-to-markdown",
-          status_code: statusCode,
-          ...(requestId && !zeroDataRetention ? { request_id: requestId } : {}),
-        },
-        extra: {
-          serviceUrl: url,
-          errorMessage,
-          errorDetails,
-          ...(zeroDataRetention ? {} : { inputSize: html.length }),
-        },
-      });
-
       // Include details in error message if available
       const fullErrorMessage = errorDetails
         ? `HTML to Markdown conversion failed: ${errorMessage} - ${errorDetails}`
@@ -141,11 +124,6 @@ export async function convertHTMLToMarkdownWithHttpService(
           error,
         },
       );
-      Sentry.captureException(error, {
-        tags: {
-          ...(requestId && !zeroDataRetention ? { request_id: requestId } : {}),
-        },
-      });
       throw error;
     }
   }

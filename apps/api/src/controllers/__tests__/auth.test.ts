@@ -9,6 +9,7 @@ import { deleteKey, getValue, setValue } from "../../services/redis";
 import {
   getAutumnRateLimiter,
   getRateLimiter,
+  HOBBY_RATE_LIMIT_MULTIPLIER,
 } from "../../services/rate-limiter";
 import {
   consumeKeylessRequest,
@@ -102,6 +103,7 @@ describe("authenticateUser", () => {
   const originalIntrospectUrl = config.OAUTH_INTROSPECT_URL;
   const originalIntrospectSecret = config.OAUTH_INTROSPECT_SECRET;
   const originalPreviewToken = config.PREVIEW_TOKEN;
+  const originalAgentInteropSecret = config.AGENT_INTEROP_SECRET;
 
   beforeEach(() => {
     vi.mocked(isKeylessConfigured).mockReturnValue(false);
@@ -120,6 +122,7 @@ describe("authenticateUser", () => {
     config.OAUTH_INTROSPECT_URL = originalIntrospectUrl;
     config.OAUTH_INTROSPECT_SECRET = originalIntrospectSecret;
     config.PREVIEW_TOKEN = originalPreviewToken;
+    config.AGENT_INTEROP_SECRET = originalAgentInteropSecret;
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
@@ -588,6 +591,130 @@ describe("authenticateUser", () => {
       50,
       flags,
     );
+  });
+
+  describe("agent interop rate-limit floor", () => {
+    const flags = {};
+    const agentRequest = (auth: string) => ({
+      headers: {
+        authorization: "Bearer 00000000-0000-4000-8000-000000000000",
+      },
+      socket: { remoteAddress: "127.0.0.1" },
+      body: { __agentInterop: { auth, requestId: "req-1", shouldBill: true } },
+    });
+
+    beforeEach(() => {
+      config.USE_DB_AUTHENTICATION = true;
+      config.AGENT_INTEROP_SECRET = "agent-secret";
+      vi.mocked(getValue).mockResolvedValue(null);
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([
+        {
+          api_key: "00000000-0000-4000-8000-000000000000",
+          api_key_id: 1,
+          team_id: "team-1",
+          org_id: "org-1",
+          flags,
+        },
+      ]);
+      vi.mocked(redlock.using).mockImplementation(
+        async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+      );
+    });
+
+    it("floors a free team's multiplier at hobby for a trusted agent request", async () => {
+      vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+
+      const auth = await authenticateUser(
+        agentRequest("agent-secret"),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth.success).toBe(true);
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        HOBBY_RATE_LIMIT_MULTIPLIER,
+        flags,
+      );
+    });
+
+    it("leaves a paid plan's multiplier alone for a trusted agent request", async () => {
+      vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(50);
+
+      await authenticateUser(
+        agentRequest("agent-secret"),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        50,
+        flags,
+      );
+    });
+
+    it("does not floor the multiplier when the agent interop secret is wrong", async () => {
+      vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+
+      await authenticateUser(
+        agentRequest("not-the-secret"),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        1,
+        flags,
+      );
+    });
+
+    it("does not floor the multiplier when no agent interop secret is configured", async () => {
+      config.AGENT_INTEROP_SECRET = undefined;
+      vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+
+      await authenticateUser(
+        agentRequest("agent-secret"),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        1,
+        flags,
+      );
+    });
+
+    it("lets a per-team override win over the floor for a trusted agent request", async () => {
+      const overrideFlags = { rateLimitOverrides: { scrape: 42 } };
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([
+        {
+          api_key: "00000000-0000-4000-8000-000000000000",
+          api_key_id: 1,
+          team_id: "team-1",
+          org_id: "org-1",
+          flags: overrideFlags,
+        },
+      ]);
+      vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+
+      await authenticateUser(
+        agentRequest("agent-secret"),
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      // The override replaces the whole base × multiplier computation, so the
+      // floor never applies and the Autumn multiplier is never fetched.
+      expect(autumnService.getRateLimitMultiplier).not.toHaveBeenCalled();
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        1,
+        overrideFlags,
+      );
+    });
   });
 
   it("leaves the preview token on the static rate limiter", async () => {

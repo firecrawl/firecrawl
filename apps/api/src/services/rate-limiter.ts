@@ -125,6 +125,15 @@ export function getAutumnRateLimiter(
 }
 
 /**
+ * Autumn rate-limit multiplier granted to the hobby plan. Trusted agent
+ * traffic (a valid `__agentInterop` secret) is floored at this multiplier so a
+ * free team's agent runs are limited like hobby rather than at ×1; see
+ * buildAuthenticatedRateLimiter in controllers/auth.ts. Paid plans already
+ * meet or exceed it, so the floor only ever lifts free.
+ */
+export const HOBBY_RATE_LIMIT_MULTIPLIER = 10;
+
+/**
  * Plan-priority tiers keyed by the minimum Autumn rate-limit multiplier that
  * qualifies. Values mirror the tuned production `plan_priority` for each plan.
  * A customer's multiplier selects the highest tier they meet or exceed, so
@@ -140,7 +149,11 @@ const PLAN_PRIORITY_TIERS: {
   planModifier: number;
 }[] = [
   { minMultiplier: 1, bucketLimit: 25, planModifier: 0.5 }, // free
-  { minMultiplier: 10, bucketLimit: 100, planModifier: 0.3 }, // hobby
+  {
+    minMultiplier: HOBBY_RATE_LIMIT_MULTIPLIER,
+    bucketLimit: 100,
+    planModifier: 0.3,
+  }, // hobby
   { minMultiplier: 50, bucketLimit: 200, planModifier: 0.2 }, // standard
   { minMultiplier: 500, bucketLimit: 400, planModifier: 0.1 }, // growth
   { minMultiplier: 1000, bucketLimit: 400, planModifier: 0.1 }, // scale

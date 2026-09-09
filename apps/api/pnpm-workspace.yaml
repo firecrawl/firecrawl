@@ -60,8 +60,6 @@ patchedDependencies:
   "node-fetch@2.7.0": "patches/node-fetch@2.7.0.patch"
 allowBuilds:
   "@mendable/firecrawl-rs": true
-  "@sentry-internal/node-cpu-profiler": true
-  "@sentry/cli": true
   bigint-buffer: true
   # Optional native accelerator for fast-crc32c (pulled in by
   # @google-cloud/bigtable); the pure-JS fallback is fine for our payload

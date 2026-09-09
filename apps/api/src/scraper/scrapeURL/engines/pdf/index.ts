@@ -58,7 +58,6 @@ import { runFirePdfByReferenceAttempt } from "./fire-pdf/by-reference-flow";
 import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { toPublicBlocks } from "./blocks";
-import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
 import { withPdfExtractionPermit } from "./semaphore";
@@ -370,14 +369,6 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           error,
           url: meta.rewrittenUrl ?? meta.url,
         });
-        captureExceptionWithZdrCheck(error, {
-          extra: {
-            zeroDataRetention: meta.internalOptions.zeroDataRetention ?? false,
-            scrapeId: meta.id,
-            teamId: meta.internalOptions.teamId,
-            url: meta.rewrittenUrl ?? meta.url,
-          },
-        });
       }
     } else {
       // Rust extraction enabled (fast / auto modes).
@@ -482,14 +473,6 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         logger.warn("processPdf failed, falling back to MU/PdfParse", {
           error,
           url: meta.rewrittenUrl ?? meta.url,
-        });
-        captureExceptionWithZdrCheck(error, {
-          extra: {
-            zeroDataRetention: meta.internalOptions.zeroDataRetention ?? false,
-            scrapeId: meta.id,
-            teamId: meta.internalOptions.teamId,
-            url: meta.rewrittenUrl ?? meta.url,
-          },
         });
         // effectivePageCount stays 0 — skip time budget check
       }
@@ -882,15 +865,6 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             "RunPod MU failed to parse PDF (could be due to timeout) -- falling back to parse-pdf",
             { error },
           );
-          captureExceptionWithZdrCheck(error, {
-            extra: {
-              zeroDataRetention:
-                meta.internalOptions.zeroDataRetention ?? false,
-              scrapeId: meta.id,
-              teamId: meta.internalOptions.teamId,
-              url: meta.rewrittenUrl ?? meta.url,
-            },
-          });
           const muV1DurationMs = Date.now() - muV1StartedAt;
           meta.logger
             .child({ method: "scrapePDF/MUv1Experiment" })

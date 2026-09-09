@@ -10,6 +10,7 @@ import {
   SitemapError,
   TransportableError,
   UnknownError,
+  UnsupportedSiteError,
 } from "./error";
 import {
   ActionError,
@@ -76,6 +77,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_RACED_REDIRECT_ERROR: RacedRedirectError,
   SCRAPE_SITEMAP_ERROR: SitemapError,
   CRAWL_DENIAL: CrawlDenialError,
+  UNSUPPORTED_SITE: UnsupportedSiteError,
   SCRAPE_AUDIO_UNSUPPORTED_URL: AudioUnsupportedUrlError,
   SCRAPE_VIDEO_UNSUPPORTED_URL: VideoUnsupportedUrlError,
   SCRAPE_MEDIA_ACCESS_DENIED: MediaAccessDeniedError,

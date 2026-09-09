@@ -849,6 +849,8 @@ export interface SearchRequest {
   limit?: number;
   tbs?: string;
   location?: string;
+  /** ISO 3166-1 alpha-2 country code used to geo-target the search results. */
+  country?: string;
   ignoreInvalidURLs?: boolean;
   timeout?: number; // ms
   /** Generate query-relevant highlights for search results. Defaults to true. */

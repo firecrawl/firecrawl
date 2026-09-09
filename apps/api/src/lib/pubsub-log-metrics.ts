@@ -4,9 +4,8 @@ const NAME = "pubsub_log_publish_total";
 
 /**
  * Log rows handed to the Pub/Sub publisher, by table and outcome:
- * `published`, `failed` (every retry exhausted), or `dropped` (backlog cap).
- * A channel stall shows up here as `failed` and `dropped` rising together,
- * without waiting for the daily reconciliation against PostgreSQL.
+ * `published`, `failed` (publication or shutdown error), or `dropped` (backlog cap).
+ * Use failed and dropped counts to detect losses between reconciliation checks.
  *
  * Looked up before creation so a re-evaluated module (test isolation) does
  * not register the same series twice in the shared default registry.
