@@ -15,7 +15,6 @@ import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
-import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
 import { ZodError } from "zod";
 import { Document as V0Document } from "./../../lib/entities";
@@ -323,7 +322,6 @@ export async function scrapeController(req: Request, res: Response) {
 
     return res.status(result.returnCode).json(result);
   } catch (error) {
-    Sentry.captureException(error);
     logger.error("Scrape error occcurred", { error });
     return res.status(500).json({
       error:

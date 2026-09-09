@@ -17,6 +17,7 @@ import type {
 } from "../../services/logging/log_job";
 import type { RequestWithAuth } from "../v1/types";
 import { wrap } from "../../routes/shared";
+import { deprecationMiddleware } from "../../lib/deprecations";
 import { integrationSchema } from "../../utils/integration";
 import { requestOrigin } from "../../lib/request-origin";
 
@@ -284,6 +285,8 @@ function createResearchController(
 ): ResearchController {
   return async (req, res: Response) => {
     const authedReq = req as RequestWithAuth<any, any, any>;
+    const zeroDataRetention =
+      getSearchForcedKind(authedReq.acuc?.flags) !== null;
 
     const started = Date.now();
     const jobId = uuidv7();
@@ -321,7 +324,7 @@ function createResearchController(
       origin: requestOrigin(params, req),
       integration: params.integration ?? null,
       target_hint: targetHint,
-      zeroDataRetention: false,
+      zeroDataRetention,
       api_key_id: authedReq.acuc?.api_key_id ?? null,
     });
 
@@ -428,7 +431,7 @@ function createResearchController(
         credits_cost: statusCode >= 200 && statusCode < 300 ? credits : 0,
         is_successful: statusCode >= 200 && statusCode < 300,
         error,
-        zeroDataRetention: false,
+        zeroDataRetention,
       }).catch(logError => {
         logger.warn("Research endpoint log failed", { error: logError });
       });
@@ -519,8 +522,10 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
     }),
   );
 
+  // On the route, not the mounts, so the paper routes stay undeprecated.
   router.get(
     "/github",
+    deprecationMiddleware("v2_research_github_search"),
     wrap(
       createResearchController(
         githubSearchSchema,

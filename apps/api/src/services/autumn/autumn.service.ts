@@ -98,11 +98,38 @@ export class BoundedSet<V> extends Set<V> {
  * Wraps Autumn customer/entity provisioning and usage tracking for team credit billing.
  */
 export class AutumnService {
-  private customerOrgCache = new BoundedMap<string, string>(50_000);
+  // team → org, trusted only until `expiresAt`. A team's org changes when an
+  // account is merged or moved; without a bound every warm pod keeps billing
+  // the old Autumn customer until it restarts.
+  private customerOrgCache = new BoundedMap<
+    string,
+    { orgId: string; expiresAt: number }
+  >(50_000);
+  // One DB lookup in flight per team. Without this, N requests that all see
+  // an expired entry each read the DB, and if the org moved mid-flight an
+  // older read can land last and overwrite the newer org for another TTL.
+  private pendingOrgLookups = new Map<string, Promise<string>>();
   private gatewayTeams = new BoundedSet<string>(50_000);
   private nonGatewayTeamsUntil = new BoundedMap<string, number>(50_000);
   private ensuredOrgs = new BoundedSet<string>(50_000);
+  // Keyed by org AND team: an entity lives under one customer, so a team that
+  // moves orgs has to be provisioned again under the new one.
   private ensuredTeams = new BoundedSet<string>(50_000);
+
+  private ensuredTeamKey(orgId: string, teamId: string): string {
+    return `${orgId}:${teamId}`;
+  }
+
+  private orgCacheTtlMs(): number {
+    return (config.AUTUMN_ORG_CACHE_TTL_SECONDS ?? 300) * 1000;
+  }
+
+  private cacheOrgId(teamId: string, orgId: string): void {
+    this.customerOrgCache.set(teamId, {
+      orgId,
+      expiresAt: Date.now() + this.orgCacheTtlMs(),
+    });
+  }
 
   private isPreviewTeam(teamId: string): boolean {
     return teamId === "preview" || teamId.startsWith("preview_");
@@ -231,7 +258,9 @@ export class AutumnService {
         entityId,
         error,
       });
-      return null;
+      // Only a 404 establishes that the entity is missing. Let provisioning's
+      // catch handle other failures without attempting to create the entity.
+      throw error;
     }
   }
 
@@ -379,8 +408,9 @@ export class AutumnService {
   /**
    * Ensures the Autumn entity exists for a team under its org customer.
    *
-   * The `ensuredTeams` check is performed first so that already-provisioned
-   * teams incur no HTTP calls — not even the `ensureOrgProvisioned` round-trip.
+   * The `ensuredTeams` check runs before any Autumn call so that a team already
+   * provisioned under its current org incurs no HTTP round-trips — not even
+   * `ensureOrgProvisioned`.
    */
   async ensureTeamProvisioned({
     teamId,
@@ -389,12 +419,14 @@ export class AutumnService {
   }: EnsureTeamProvisionedParams): Promise<void> {
     if (!autumnClient) return;
     if (this.isPreviewTeam(teamId)) return;
-    // Fast path: team is already fully provisioned.
-    if (this.ensuredTeams.has(teamId)) return;
 
     try {
-      const resolvedOrgId = orgId ?? (await this.lookupOrgIdForTeam(teamId));
-      this.customerOrgCache.set(teamId, resolvedOrgId);
+      const resolvedOrgId = orgId ?? (await this.resolveOrgId(teamId));
+      // Fast path: team is already fully provisioned under this org.
+      if (this.ensuredTeams.has(this.ensuredTeamKey(resolvedOrgId, teamId))) {
+        return;
+      }
+      if (orgId) this.cacheOrgId(teamId, orgId);
       await this.ensureOrgProvisioned({ orgId: resolvedOrgId });
 
       const entity = await this.getEntity({
@@ -412,13 +444,13 @@ export class AutumnService {
         if (result.ok || ("conflict" in result && result.conflict)) {
           // Entity was just created, or already existed (409 race) — either way
           // it's present. No need for a second getEntity confirmation call.
-          this.ensuredTeams.add(teamId);
+          this.ensuredTeams.add(this.ensuredTeamKey(resolvedOrgId, teamId));
         }
         // Genuine error: leave ensuredTeams empty so the next request retries.
         return;
       }
 
-      this.ensuredTeams.add(teamId);
+      this.ensuredTeams.add(this.ensuredTeamKey(resolvedOrgId, teamId));
     } catch (error) {
       logger.error(
         "Autumn ensureTeamProvisioned failed — billing API may be unavailable",
@@ -428,15 +460,27 @@ export class AutumnService {
   }
 
   /**
-   * Resolves the orgId for a team, returning the cached value when available
-   * and populating the cache on miss.  Does NOT provision anything.
+   * Resolves the orgId for a team, returning the cached value while it is
+   * fresh and re-reading the DB once it has expired.  Does NOT provision
+   * anything.
    */
   private async resolveOrgId(teamId: string): Promise<string> {
     const cached = this.customerOrgCache.get(teamId);
-    if (cached) return cached;
-    const orgId = await this.lookupOrgIdForTeam(teamId);
-    this.customerOrgCache.set(teamId, orgId);
-    return orgId;
+    if (cached && cached.expiresAt > Date.now()) return cached.orgId;
+
+    const pending = this.pendingOrgLookups.get(teamId);
+    if (pending) return pending;
+
+    const lookup = this.lookupOrgIdForTeam(teamId)
+      .then(orgId => {
+        this.cacheOrgId(teamId, orgId);
+        return orgId;
+      })
+      .finally(() => {
+        this.pendingOrgLookups.delete(teamId);
+      });
+    this.pendingOrgLookups.set(teamId, lookup);
+    return lookup;
   }
 
   /**
@@ -448,7 +492,7 @@ export class AutumnService {
    */
   private async ensureTrackingContext(teamId: string): Promise<string> {
     const orgId = await this.resolveOrgId(teamId);
-    if (!this.ensuredTeams.has(teamId)) {
+    if (!this.ensuredTeams.has(this.ensuredTeamKey(orgId, teamId))) {
       await this.ensureTeamProvisioned({ teamId, orgId });
     }
     return orgId;

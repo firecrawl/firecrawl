@@ -4,7 +4,6 @@ import {
   SearchV2Response,
   SearchResultType,
 } from "../../lib/entities";
-import * as Sentry from "@sentry/node";
 import { logger } from "../../lib/logger";
 import { executeWithRetry, attemptRequest } from "../../lib/retry-utils";
 import { useFireEngine } from "../../scraper/scrapeURL/engines/fire-engine/available";

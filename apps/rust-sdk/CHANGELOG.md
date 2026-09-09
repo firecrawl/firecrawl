@@ -1,5 +1,12 @@
 ## CHANGELOG
 
+## [2.19.0] - 2026-09-08
+
+### Added
+
+- Added `SearchOptions::country` to geo-target a v2 search. The field
+  is omitted when the caller does not set it.
+
 ## [2.18.0] - 2026-08-31
 
 ### Added

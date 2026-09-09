@@ -57,6 +57,8 @@ import { agentStatusController } from "../controllers/v2/agent-status";
 import { agentCancelController } from "../controllers/v2/agent-cancel";
 import { agentTraceController } from "../controllers/v2/agent-trace";
 import { agentSnapshotController } from "../controllers/v2/agent-snapshot";
+import { agentSkillController } from "../controllers/v2/agent-skill";
+import { agentThreadController } from "../controllers/v2/agent-thread";
 import {
   browserCreateController,
   browserExecuteController,
@@ -383,6 +385,13 @@ v2Router.get(
   wrap(agentListController),
 );
 
+// Registered ahead of "/agent/:jobId" so a thread id is never read as a job id.
+v2Router.get(
+  "/agent/threads/:threadId",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  wrap(agentThreadController),
+);
+
 v2Router.post(
   "/agent",
   authMiddleware(RateLimiterMode.Extract),
@@ -404,6 +413,13 @@ v2Router.get(
   authMiddleware(RateLimiterMode.ExtractStatus),
   validateJobIdParam,
   wrap(agentTraceController),
+);
+
+v2Router.get(
+  "/agent/:jobId/skill",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  validateJobIdParam,
+  wrap(agentSkillController),
 );
 
 v2Router.get(

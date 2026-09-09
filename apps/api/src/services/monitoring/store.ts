@@ -777,6 +777,30 @@ export async function getMonitorCheck(
   return (data ?? null) as MonitorCheckRow | null;
 }
 
+// Finalizers must observe terminal writes before deciding whether to settle a hold.
+export async function getMonitorCheckForUpdate(
+  teamId: string,
+  monitorId: string,
+  checkId: string,
+): Promise<MonitorCheckRow | null> {
+  const [data] = await run(
+    () =>
+      db
+        .select()
+        .from(schema.monitor_checks)
+        .where(
+          and(
+            eq(schema.monitor_checks.id, checkId),
+            eq(schema.monitor_checks.monitor_id, monitorId),
+            eq(schema.monitor_checks.team_id, teamId),
+          ),
+        )
+        .limit(1),
+    "Failed to get monitor check for update",
+  );
+  return (data ?? null) as MonitorCheckRow | null;
+}
+
 export async function listRunningMonitorChecks(
   limit: number = 100,
 ): Promise<MonitorCheckRow[]> {
@@ -903,6 +927,16 @@ export async function updateMonitorCheckIfRunning(
   checkId: string,
   patch: Partial<MonitorCheckRow>,
 ): Promise<MonitorCheckRow | null> {
+  return updateMonitorCheckIfStatus(checkId, "running", patch);
+}
+
+// The terminal transition grants ownership of settlement and its follow-up work.
+// A competing worker must not confirm/release the hold when this returns null.
+export async function updateMonitorCheckIfStatus(
+  checkId: string,
+  expectedStatus: "queued" | "running",
+  patch: Partial<MonitorCheckRow>,
+): Promise<MonitorCheckRow | null> {
   const [data] = await run(
     () =>
       db
@@ -914,7 +948,7 @@ export async function updateMonitorCheckIfRunning(
         .where(
           and(
             eq(schema.monitor_checks.id, checkId),
-            eq(schema.monitor_checks.status, "running"),
+            eq(schema.monitor_checks.status, expectedStatus),
           ),
         )
         .returning(),

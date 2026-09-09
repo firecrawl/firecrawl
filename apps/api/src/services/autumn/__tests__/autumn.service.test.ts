@@ -72,7 +72,10 @@ const {
       return {
         from: () => ({
           where: () => ({
-            limit: () => Promise.resolve(rows),
+            limit: () =>
+              !isGatewayLookup && state.dbLimitOverride
+                ? state.dbLimitOverride()
+                : Promise.resolve(rows),
           }),
         }),
       };
@@ -101,6 +104,9 @@ const {
       gatewayStubRow: null as unknown,
       // Makes the gateway lookup throw, to prove a failure is never cached.
       gatewayStubThrows: false,
+      // When set, replaces the team → org_id query result (e.g. to hold a
+      // lookup open and observe how many are issued).
+      dbLimitOverride: null as (() => Promise<unknown[]>) | null,
       configRef: {} as Record<string, unknown>,
     },
   };
@@ -258,10 +264,13 @@ describe("ensureTeamProvisioned", () => {
     expect(mockEntityGet).toHaveBeenCalledTimes(1);
   });
 
-  it("marks team as ensured without a second getEntity when createEntity succeeds", async () => {
+  it.each([
+    { statusCode: 404 },
+    { status: 404 },
+    { response: { status: 404 } },
+  ])("creates and caches a missing entity after %j", async error => {
     const svc = makeService();
-    // First getEntity returns null → entity doesn't exist yet.
-    mockEntityGet.mockResolvedValue(null);
+    mockEntityGet.mockRejectedValue(error);
     mockEntityCreate.mockResolvedValue({ id: "team-1" });
 
     await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
@@ -269,14 +278,50 @@ describe("ensureTeamProvisioned", () => {
     // Only one getEntity call (no confirmation get).
     expect(mockEntityGet).toHaveBeenCalledTimes(1);
     expect(mockEntityCreate).toHaveBeenCalledTimes(1);
-    expect(mockEntityCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ featureId: "TEAM" }),
-    );
+    expect(mockEntityCreate).toHaveBeenCalledWith({
+      customerId: "org-1",
+      entityId: "team-1",
+      featureId: "TEAM",
+    });
+
+    await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
+    expect(mockEntityGet).toHaveBeenCalledTimes(1);
+    expect(mockEntityCreate).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    { statusCode: 429 },
+    { status: 429 },
+    { response: { status: 429 } },
+    { statusCode: 500 },
+    { status: 503 },
+    new Error("ECONNRESET"),
+  ])(
+    "does not create or cache an entity after lookup failure %j",
+    async error => {
+      const svc = makeService();
+      mockEntityGet.mockRejectedValueOnce(error);
+
+      // Provisioning remains best-effort: a lookup failure must not stop billing.
+      await expect(
+        svc.trackCredits({ teamId: "team-1", value: 5 }),
+      ).resolves.toBe(true);
+      expect(mockEntityCreate).not.toHaveBeenCalled();
+      expect(mockTrack).toHaveBeenCalledTimes(1);
+
+      // The failed lookup must not mark the team as provisioned; retry can recover.
+      await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
+      expect(mockEntityGet).toHaveBeenCalledTimes(2);
+      expect(mockEntityCreate).not.toHaveBeenCalled();
+
+      await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
+      expect(mockEntityGet).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("marks team as ensured on 409 conflict without a second getEntity", async () => {
     const svc = makeService();
-    mockEntityGet.mockResolvedValue(null);
+    mockEntityGet.mockRejectedValue({ statusCode: 404 });
     // createEntity returns null to simulate 409 — the mock throws a 409 error
     // to exercise the conflict branch inside createEntity.
     mockEntityCreate.mockRejectedValue(
@@ -294,7 +339,7 @@ describe("ensureTeamProvisioned", () => {
 
   it("does NOT mark team as ensured when createEntity has a genuine error", async () => {
     const svc = makeService();
-    mockEntityGet.mockResolvedValue(null);
+    mockEntityGet.mockRejectedValue({ statusCode: 404 });
     mockEntityCreate.mockRejectedValue(
       Object.assign(new Error("server error"), { status: 500 }),
     );
@@ -325,6 +370,136 @@ describe("ensureTrackingContext warm-cache short-circuit", () => {
 
     // No additional getEntity calls for provisioning.
     expect(mockEntityGet.mock.calls.length).toBe(callsAfterWarm);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Org moves: the team → org cache must expire and re-provision under the new org
+// ---------------------------------------------------------------------------
+
+describe("team org change", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("keeps billing the cached org while the mapping is fresh", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1" }),
+    );
+
+    // Org moves in the DB, but the cache has not expired yet (default 300s).
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    vi.advanceTimersByTime(299_000);
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1" }),
+    );
+  });
+
+  it("re-reads the org after the TTL and provisions the entity under the new org", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1", entityId: "team-1" }),
+    );
+    const entityGetsBefore = mockEntityGet.mock.calls.length;
+
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    // The entity does not exist under the new customer yet.
+    mockEntityGet.mockResolvedValue(null);
+    vi.advanceTimersByTime(301_000);
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+
+    // Provisioning ran again for the (org-2, team-1) pair...
+    expect(mockEntityGet.mock.calls.length).toBe(entityGetsBefore + 1);
+    expect(mockEntityGet).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2", entityId: "team-1" }),
+    );
+    expect(mockEntityCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: "org-2", entityId: "team-1" }),
+    );
+    // ...and usage is billed to the new org.
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2", entityId: "team-1" }),
+    );
+
+    // Warm again under org-2: no further provisioning calls.
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockEntityGet.mock.calls.length).toBe(entityGetsBefore + 1);
+  });
+
+  it("checkCredits follows the org move too", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.checkCredits({ teamId: "team-1", value: 1 });
+    expect(mockCheck).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1" }),
+    );
+
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    vi.advanceTimersByTime(301_000);
+
+    await svc.checkCredits({ teamId: "team-1", value: 1 });
+    expect(mockCheck).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2" }),
+    );
+  });
+
+  it("collapses concurrent expired-cache refreshes into one DB lookup", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    vi.advanceTimersByTime(301_000);
+
+    // Make the org lookup observable and slow.
+    let resolveLookup!: (rows: unknown[]) => void;
+    let lookups = 0;
+    state.dbLimitOverride = () => {
+      lookups++;
+      return new Promise<unknown[]>(resolve => {
+        resolveLookup = resolve;
+      });
+    };
+
+    const a = svc.trackCredits({ teamId: "team-1", value: 1 });
+    const b = svc.trackCredits({ teamId: "team-1", value: 1 });
+    const c = svc.trackCredits({ teamId: "team-1", value: 1 });
+    await Promise.resolve();
+    expect(lookups).toBe(1);
+
+    state.dbLimitOverride = null;
+    resolveLookup([{ org_id: "org-2" }]);
+    await Promise.all([a, b, c]);
+
+    expect(lookups).toBe(1);
+    for (const call of mockTrack.mock.calls.slice(-3)) {
+      expect(call[0]).toEqual(expect.objectContaining({ customerId: "org-2" }));
+    }
+  });
+
+  it("honours AUTUMN_ORG_CACHE_TTL_SECONDS", async () => {
+    vi.useFakeTimers();
+    state.configRef = { AUTUMN_ORG_CACHE_TTL_SECONDS: 10 };
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    vi.advanceTimersByTime(11_000);
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2" }),
+    );
   });
 });
 
@@ -725,6 +900,7 @@ describe("firebill routing", () => {
     // Default every test to not partner-provisioned, which almost every team is.
     state.gatewayStubRow = null;
     state.gatewayStubThrows = false;
+    state.dbLimitOverride = null;
   });
 
   afterEach(() => {

@@ -331,6 +331,7 @@ export async function browserCreateController(
         {
           ttl,
           record: recordSession,
+          customerId: req.auth.team_id,
           ...(activityTtl !== undefined ? { activityTtl } : {}),
           ...(persistentStorage !== undefined ? { persistentStorage } : {}),
         },

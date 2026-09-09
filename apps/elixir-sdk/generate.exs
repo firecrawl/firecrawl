@@ -23,6 +23,10 @@ defmodule Firecrawl.Generator do
     "getHistoricalTokenUsage"
   ])
 
+  # The method key becomes the Req function name in generated code, a position
+  # no escaping can protect, so anything else stops generation outright.
+  @http_methods ~w(get post put patch delete head options)
+
   def run do
     IO.puts("Fetching OpenAPI spec...")
     {:ok, spec} = fetch_spec()
@@ -51,6 +55,14 @@ defmodule Firecrawl.Generator do
   defp fetch_spec do
     Application.ensure_all_started(:req)
 
+    # Set FIRECRAWL_OPENAPI_SPEC to a local file to generate without the network.
+    case System.get_env("FIRECRAWL_OPENAPI_SPEC") do
+      nil -> fetch_remote_spec()
+      path -> {:ok, path |> File.read!() |> Jason.decode!()}
+    end
+  end
+
+  defp fetch_remote_spec do
     case Req.get(@openapi_url) do
       {:ok, %Req.Response{status: 200, body: body}} when is_map(body) ->
         {:ok, body}
@@ -88,6 +100,10 @@ defmodule Firecrawl.Generator do
         methods
         |> Enum.reject(fn {key, _} -> key == "parameters" end)
         |> Enum.map(fn {method, operation} ->
+          unless method in @http_methods do
+            raise ArgumentError, "refusing unknown HTTP method #{inspect(method)} at #{inspect(path)}"
+          end
+
           {method, path, operation, path_level_params}
         end)
       end)
@@ -107,7 +123,7 @@ defmodule Firecrawl.Generator do
 
     defmodule Firecrawl do
       @moduledoc \"\"\"
-      Auto-generated Firecrawl API #{api_version} client.
+      Auto-generated Firecrawl API #{escape_source_text(api_version)} client.
 
       Generated from the OpenAPI spec at:
       #{@openapi_url}
@@ -144,7 +160,7 @@ defmodule Firecrawl.Generator do
 
       @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
-      @base_url "#{base_url}"
+      @base_url #{inspect(base_url)}
       # Sourced from mix.exs at compile time so the origin header cannot drift
       # from the published package version.
       @version Mix.Project.config()[:version]
@@ -349,6 +365,7 @@ defmodule Firecrawl.Generator do
       )
 
     # Build typespecs
+    deprecated_code = build_deprecated(operation)
     spec_code = build_typespec(func_name, path_params, has_body || has_query_schema, false)
     bang_spec_code = build_typespec(func_name, path_params, has_body || has_query_schema, true)
 
@@ -358,11 +375,13 @@ defmodule Firecrawl.Generator do
       query_schema_code,
       query_key_mapping_code,
       doc,
+      deprecated_code,
       spec_code,
       "  #{sig}",
       body,
       "",
       doc_bang(func_name),
+      deprecated_code,
       bang_spec_code,
       "  #{bang_sig}",
       bang_body,
@@ -434,6 +453,7 @@ defmodule Firecrawl.Generator do
     {sig, body} = build_multipart_function_body(func_name, method, path, meta, has_options?, false)
     {bang_sig, bang_body} = build_multipart_function_body(func_name, method, path, meta, has_options?, true)
 
+    deprecated_code = build_deprecated(operation)
     spec_code = build_multipart_typespec(func_name, has_options?, false)
     bang_spec_code = build_multipart_typespec(func_name, has_options?, true)
 
@@ -441,11 +461,13 @@ defmodule Firecrawl.Generator do
       body_schema_code,
       body_key_mapping_code,
       doc,
+      deprecated_code,
       spec_code,
       "  #{sig}",
       body,
       "",
       doc_bang(func_name),
+      deprecated_code,
       bang_spec_code,
       "  #{bang_sig}",
       bang_body,
@@ -472,13 +494,13 @@ defmodule Firecrawl.Generator do
     options_part_text =
       cond do
         has_options? and not is_nil(options_field) ->
-          "{\"#{options_field}\", Jason.encode!(to_body(params, @#{func_name}_key_mapping))}, "
+          "{#{inspect(options_field)}, Jason.encode!(to_body(params, @#{func_name}_key_mapping))}, "
 
         true ->
           ""
       end
 
-    file_part_text = "{\"#{file_field}\", file_part}"
+    file_part_text = "{#{inspect(file_field)}, file_part}"
 
     indent = if not bang? and has_options?, do: "      ", else: "    "
 
@@ -503,7 +525,7 @@ defmodule Firecrawl.Generator do
       "",
       "#{indent}multipart = [#{options_part_text}#{file_part_text}]",
       "",
-      "#{indent}Req.#{req_fn}(client(opts), url: \"#{path}\", form_multipart: multipart)"
+      "#{indent}Req.#{req_fn}(client(opts), url: \"#{escape_string_literal(path)}\", form_multipart: multipart)"
     ]
 
     core = Enum.join(core_lines, "\n")
@@ -542,14 +564,14 @@ defmodule Firecrawl.Generator do
 
     parts = [
       "  @doc \"\"\"",
-      "  #{summary}",
+      "  #{escape_source_text(summary)}",
       "",
-      "  #{bt}#{http_method} #{path}#{bt}",
+      "  #{bt}#{escape_source_text(http_method)} #{escape_source_text(path)}#{bt}",
       "",
       "  Sends a #{bt}multipart/form-data#{bt} request."
     ]
 
-    parts = if tag != "", do: parts ++ ["", "  Tag: #{tag}"], else: parts
+    parts = if tag != "", do: parts ++ ["", "  Tag: #{escape_source_text(tag)}"], else: parts
 
     parts =
       parts ++
@@ -572,7 +594,7 @@ defmodule Firecrawl.Generator do
             "  ## Parameters",
             "",
             "  Validated by #{bt}NimbleOptions#{bt}. Pass options as a keyword list with snake_case keys.",
-            "  These are JSON-encoded and sent as the #{bt}#{meta.options_field}#{bt} multipart field.",
+            "  These are JSON-encoded and sent as the #{bt}#{escape_source_text(meta.options_field)}#{bt} multipart field.",
             "  See #{bt}@#{func_name}_schema#{bt} for the full schema."
           ]
       else
@@ -685,7 +707,7 @@ defmodule Firecrawl.Generator do
       properties
       |> Enum.map(fn {name, _} ->
         snake = to_snake_case(name)
-        "#{snake}: \"#{name}\""
+        "#{snake}: #{inspect(name)}"
       end)
       |> Enum.join(", ")
 
@@ -724,7 +746,7 @@ defmodule Firecrawl.Generator do
       |> Enum.map(fn param ->
         name = Map.get(param, "name")
         snake = to_snake_case(name)
-        "#{snake}: \"#{name}\""
+        "#{snake}: #{inspect(name)}"
       end)
       |> Enum.join(", ")
 
@@ -797,6 +819,40 @@ defmodule Firecrawl.Generator do
   # Doc Generation
   # ---------------------------------------------------------------------------
 
+  # OpenAPI marks a retiring operation with `deprecated: true`. Elixir's
+  # @deprecated turns that into a compiler warning at the caller.
+  def build_deprecated(operation) do
+    if Map.get(operation, "deprecated", false) do
+      note =
+        Map.get(operation, "x-deprecation-note") ||
+          "Deprecated in the Firecrawl API. See the function docs for the replacement."
+
+      "  @deprecated #{inspect(to_string(note))}"
+    end
+  end
+
+  # Spec text is fetched from the network and lands inside generated heredocs,
+  # where Elixir would run #{} as code at compile time. Neutralise that, the
+  # heredoc terminator, and stray backslashes.
+  def escape_source_text(text) do
+    text
+    |> to_string()
+    |> String.replace("\\", "\\\\")
+    |> String.replace(~S(#{), ~S(\#{))
+    |> String.replace(~S("""), ~S(\"\"\"))
+  end
+
+  # Same job for text that lands inside a generated "..." literal, where a
+  # quote or #{} would end or execute it. Path templates keep their {param}
+  # holes untouched so build_elixir_path can turn them into interpolations.
+  def escape_string_literal(text) do
+    text
+    |> to_string()
+    |> String.replace("\\", "\\\\")
+    |> String.replace("\"", "\\\"")
+    |> String.replace(~S(#{), ~S(\#{))
+  end
+
   defp build_doc(
          summary,
          http_method,
@@ -812,18 +868,18 @@ defmodule Firecrawl.Generator do
 
     parts = [
       "  @doc \"\"\"",
-      "  #{summary}",
+      "  #{escape_source_text(summary)}",
       "",
-      "  #{bt}#{http_method} #{path}#{bt}"
+      "  #{bt}#{escape_source_text(http_method)} #{escape_source_text(path)}#{bt}"
     ]
 
-    parts = if tag != "", do: parts ++ ["", "  Tag: #{tag}"], else: parts
+    parts = if tag != "", do: parts ++ ["", "  Tag: #{escape_source_text(tag)}"], else: parts
 
     parts =
       if path_params != [] do
         param_docs =
           Enum.map(path_params, fn p ->
-            "    * #{bt}#{to_snake_case(p)}#{bt} - Path parameter #{bt}#{p}#{bt}"
+            "    * #{bt}#{to_snake_case(p)}#{bt} - Path parameter #{bt}#{escape_source_text(p)}#{bt}"
           end)
 
         parts ++ ["", "  ## Path Parameters", ""] ++ param_docs
@@ -849,7 +905,7 @@ defmodule Firecrawl.Generator do
       if has_query_schema do
         param_docs =
           Enum.map(query_param_names, fn p ->
-            "    * #{bt}#{to_snake_case(p)}#{bt} — query parameter #{bt}#{p}#{bt}"
+            "    * #{bt}#{to_snake_case(p)}#{bt} — query parameter #{bt}#{escape_source_text(p)}#{bt}"
           end)
 
         parts ++ ["", "  ## Query Parameters", ""] ++ param_docs
@@ -1018,10 +1074,10 @@ defmodule Firecrawl.Generator do
     end
   end
 
-  defp build_elixir_path(path, []), do: path
+  defp build_elixir_path(path, []), do: escape_string_literal(path)
 
   defp build_elixir_path(path, path_params) do
-    Enum.reduce(path_params, path, fn param, acc ->
+    Enum.reduce(path_params, escape_string_literal(path), fn param, acc ->
       snake = to_snake_case(param)
       String.replace(acc, "{#{param}}", "\#{#{snake}}")
     end)
@@ -1036,7 +1092,7 @@ defmodule Firecrawl.Generator do
     if Regex.match?(~r/^[a-zA-Z_][a-zA-Z0-9_]*$/, value) do
       ":#{value}"
     else
-      ":\"#{value}\""
+      ":" <> inspect(to_string(value))
     end
   end
 
@@ -1111,4 +1167,4 @@ defmodule Firecrawl.Generator do
   end
 end
 
-Firecrawl.Generator.run()
+unless Code.ensure_loaded?(Mix) and Mix.env() == :test, do: Firecrawl.Generator.run()

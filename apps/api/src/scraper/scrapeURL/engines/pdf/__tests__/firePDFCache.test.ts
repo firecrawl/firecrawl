@@ -611,3 +611,112 @@ describe("FirePDF page-markdown cache capabilities", () => {
     );
   });
 });
+
+describe("FirePDF cache and empty raster-image results", () => {
+  // Base64 of a PNG signature followed by padding: sniffs as image/png.
+  const PNG_BASE64 = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0,
+  ]).toString("base64");
+  // Base64 of "%PDF-1.7": not an image, so the PDF rules apply.
+  const PDF_BASE64 = Buffer.from(
+    "%PDF-1.7\n%\xe2\xe3\xcf\xd3\n",
+    "latin1",
+  ).toString("base64");
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCached.mockResolvedValue(null);
+    saveCached.mockResolvedValue(null);
+  });
+
+  it("treats a cached empty result for an image as a miss", async () => {
+    getCached.mockResolvedValue({ markdown: "", html: "" });
+    const meta = makeMeta();
+
+    const result = await tryGetCached(
+      meta,
+      PNG_BASE64,
+      "ocr",
+      undefined,
+      1,
+      false,
+      false,
+    );
+
+    expect(result).toBeNull();
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "Ignoring cached empty FirePDF result for a raster image",
+      expect.objectContaining({ cacheVariant: "ocr" }),
+    );
+  });
+
+  it("still serves a cached image result that has text", async () => {
+    getCached.mockResolvedValueOnce({
+      markdown: "# Title",
+      html: "<h1>Title</h1>",
+    });
+
+    const result = await tryGetCached(
+      makeMeta(),
+      PNG_BASE64,
+      "ocr",
+      undefined,
+      1,
+      false,
+      false,
+    );
+
+    expect(result).toMatchObject({ markdown: "# Title" });
+  });
+
+  it("keeps serving cached empty results for PDFs", async () => {
+    getCached.mockResolvedValueOnce({ markdown: "", html: "" });
+
+    const result = await tryGetCached(
+      makeMeta(),
+      PDF_BASE64,
+      "auto",
+      undefined,
+      1,
+      false,
+      false,
+    );
+
+    expect(result).toMatchObject({ markdown: "", html: "" });
+  });
+
+  it("never writes an empty image result, but writes empty PDF and non-empty image results", async () => {
+    const save = (base64Content: string, markdown: string) =>
+      maybeSaveResult({
+        meta: makeMeta(),
+        base64Content,
+        mode: "ocr",
+        maxPages: undefined,
+        includePageMarkdown: false,
+        includeBlocks: false,
+        result: {
+          markdown,
+          html: markdown ? `<p>${markdown}</p>` : "",
+          pagesProcessed: 1,
+        },
+      });
+
+    await save(PNG_BASE64, "");
+    expect(saveCached).not.toHaveBeenCalled();
+
+    await save(PNG_BASE64, "   \n");
+    expect(saveCached).not.toHaveBeenCalled();
+
+    await save(PDF_BASE64, "");
+    expect(saveCached).toHaveBeenCalledTimes(1);
+
+    await save(PNG_BASE64, "text");
+    expect(saveCached).toHaveBeenCalledTimes(2);
+    expect(saveCached).toHaveBeenLastCalledWith(
+      PNG_BASE64,
+      expect.objectContaining({ markdown: "text" }),
+      "firepdf",
+      "ocr",
+    );
+  });
+});

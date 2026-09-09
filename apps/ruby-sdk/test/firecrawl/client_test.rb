@@ -592,6 +592,34 @@ class ClientTest < Minitest::Test
     assert_equal 0, result.web.size
   end
 
+  def test_search_with_country
+    stub_request(:post, "#{BASE_URL}/v2/search")
+      .with { |req| body = JSON.parse(req.body); body["country"] == "de" }
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { web: [], news: [], images: [] }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::SearchOptions.new(limit: 5, country: "de")
+    result = @client.search("test query", options)
+    assert_equal 0, result.web.size
+  end
+
+  def test_search_omits_country_when_unset
+    stub_request(:post, "#{BASE_URL}/v2/search")
+      .with { |req| body = JSON.parse(req.body); !body.key?("country") }
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { web: [], news: [], images: [] }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::SearchOptions.new(limit: 5)
+    result = @client.search("test query", options)
+    assert_equal 0, result.web.size
+  end
+
   # ================================================================
   # AGENT
   # ================================================================

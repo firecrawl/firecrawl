@@ -23,7 +23,16 @@ const RESEARCH_PAPER_OPERATIONS = [
   "similar",
 ] as const;
 
-export type ResearchPaperOperation = (typeof RESEARCH_PAPER_OPERATIONS)[number];
+// "github" is out of the default and the true/all shorthand, so keyless
+// behaviour is unchanged until someone names it. An explicit list replaces the
+// default, so closing it means RESEARCH_KEYLESS_DISABLED=search,inspect,read,similar,github
+const RESEARCH_KEYLESS_OPERATIONS = [
+  ...RESEARCH_PAPER_OPERATIONS,
+  "github",
+] as const;
+
+export type ResearchKeylessOperation =
+  (typeof RESEARCH_KEYLESS_OPERATIONS)[number];
 
 const researchKeylessDisabled = z.preprocess(
   value => {
@@ -40,7 +49,7 @@ const researchKeylessDisabled = z.preprocess(
       .filter(Boolean);
   },
   z
-    .array(z.enum(RESEARCH_PAPER_OPERATIONS))
+    .array(z.enum(RESEARCH_KEYLESS_OPERATIONS))
     .default([...RESEARCH_PAPER_OPERATIONS]),
 );
 
@@ -162,6 +171,16 @@ const configSchema = z.object({
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
+  // How long a team → org mapping is trusted in-process before it is re-read
+  // from the DB. Bounded because a team's org changes when accounts are merged
+  // or moved: every warm pod otherwise keeps billing the old Autumn customer
+  // (and 404s on the entity that no longer lives there) until it restarts.
+  AUTUMN_ORG_CACHE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(3600)
+    .default(300),
   RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
@@ -197,6 +216,10 @@ const configSchema = z.object({
   DATABASE_URL: z.string().optional(),
   DATABASE_REPLICA_URL: z.string().optional(),
   INDEX_DATABASE_URL: z.string().optional(),
+  // Pool sizing preset for this process (see db/pool-profiles.ts). Unset keeps
+  // the historical pool settings; deployments opt into `api`, `worker` or
+  // `utility` to keep connections warm within the pooler's client budget.
+  DB_POOL_PROFILE: emptyStringAsUndefined(z.enum(["api", "worker", "utility"])),
   INDEX_CACHE_REDIS_URL: z.string().optional(),
   // Negative (miss) caching TTL for index URL->id lookups, in ms. 0 disables
   // it; the cache then only shields lookups that find data. A positive value
@@ -206,6 +229,7 @@ const configSchema = z.object({
   REDIS_URL: z.string().optional(),
   REDIS_EVICT_URL: z.string().optional(),
   REDIS_RATE_LIMIT_URL: z.string().optional(),
+  SPUR_REDIS_URL: z.string().optional(),
   NUQ_DATABASE_URL: z.string().optional(),
   NUQ_DATABASE_URL_LISTEN: z.string().optional(),
   NUQ_RABBITMQ_URL: z.string().optional(),
@@ -234,6 +258,23 @@ const configSchema = z.object({
   PARSE_UPLOAD_STORAGE_DRIVER: z.enum(["local", "gcs"]).optional(),
   PARSE_UPLOAD_REF_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   PARSE_UPLOAD_PUBLIC_BASE_URL: z.string().url().optional(),
+
+  // Google Cloud Pub/Sub
+  PUBSUB_CREDENTIALS: z.string().optional(),
+  // Publisher backlog cap, per process. Log publishing is fire-and-forget and
+  // retries for up to five minutes, so during a stall the backlog is what
+  // grows; rows beyond the cap are dropped and counted rather than letting a
+  // hung channel take the process down.
+  PUBSUB_MAX_OUTSTANDING_MESSAGES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10_000),
+  PUBSUB_MAX_OUTSTANDING_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(64 * 1024 * 1024),
 
   // Cloud Bigtable (change tracking bookkeeping store). The client
   // auto-detects BIGTABLE_EMULATOR_HOST, so local dev only needs the
@@ -483,11 +524,15 @@ const configSchema = z.object({
   SYS_INFO_MAX_CACHE_DURATION: z.coerce.number().default(150),
   USE_GO_MARKDOWN_PARSER: z.stringbool().optional(),
 
-  // Sentry
-  SENTRY_DSN: z.string().optional(),
-  SENTRY_TRACE_SAMPLE_RATE: z.coerce.number().default(0.01),
-  SENTRY_ERROR_SAMPLE_RATE: z.coerce.number().default(0.05),
   SENTRY_ENVIRONMENT: z.string().default("production"),
+
+  // OpenTelemetry. Tracing is off unless an OTLP endpoint is set; spans are then
+  // exported over http/protobuf at 100% sampling, and the SDK honors the
+  // standard OTEL_EXPORTER_OTLP_* / OTEL_BSP_* / OTEL_RESOURCE_ATTRIBUTES
+  // variables. Zero-data-retention spans are never exported (see otel-tracer).
+  OTEL_EXPORTER_OTLP_ENDPOINT: emptyStringAsUndefined(z.string().url()),
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: emptyStringAsUndefined(z.string().url()),
+  OTEL_SERVICE_NAME: emptyStringAsUndefined(z.string()),
   NUQ_POD_NAME: z.string().default("main"),
 
   // Billing
@@ -563,6 +608,8 @@ const configSchema = z.object({
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 
   ZDRCLEANER_HEARTBEAT_URL: z.string().optional(),
+
+  CCLOG_WORKER_HEARTBEAT_URL: z.string().optional(),
 
   // Deterministic JSON extraction (reusable-json-mode)
   EXTRACT_CODEGEN_MODEL: z.string().default("gemini-3.1-flash-lite"),

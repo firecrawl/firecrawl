@@ -656,6 +656,7 @@ async function createSessionForScrape(
           // relying on the browser service's implicit default, matching the
           // standalone browser create path.
           record: true,
+          customerId: req.auth.team_id,
           ...(activityTtl !== undefined ? { activityTtl } : {}),
           ...(persistentStorage !== undefined ? { persistentStorage } : {}),
         },

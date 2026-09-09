@@ -1,5 +1,12 @@
 import { Response } from "express";
-import { AgentStatusResponse, RequestWithAuth } from "./types";
+import {
+  AgentExchangeSummary,
+  AgentMode,
+  AgentPendingApproval,
+  AgentStatusResponse,
+  AgentSuggestion,
+  RequestWithAuth,
+} from "./types";
 import {
   supabaseGetAgentByIdDirect,
   supabaseGetAgentRequestByIdDirect,
@@ -40,6 +47,46 @@ function isIncompatiblePythonSdkOrigin(origin: unknown): boolean {
   );
 }
 
+// Runs that produce more than a JSON result store an envelope instead of the
+// raw result, so `data` keeps its original meaning for every existing object.
+const AGENT_RESULT_KEY = "__agentResult";
+
+type StoredAgentResult = {
+  [AGENT_RESULT_KEY]: 1;
+  data: unknown | null;
+  message: string | null;
+  suggestions?: AgentSuggestion[];
+  pendingApproval?: AgentPendingApproval;
+  // The per-run summary rides the envelope because options holds what the run
+  // was asked to do, not what it did.
+  exchange?: AgentExchangeSummary;
+};
+
+function isStoredAgentResult(value: unknown): value is StoredAgentResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (value as Record<string, unknown>)[AGENT_RESULT_KEY] === 1
+  );
+}
+
+// The agent service persists these next to `model`/`effort`, so they come from
+// the same two sources and are absent on runs that predate threads.
+type ThreadOptions = {
+  threadId?: string;
+  threadTurn?: number;
+  mode?: AgentMode;
+};
+
+function readThreadOptions(options: any): ThreadOptions {
+  return {
+    threadId: options?.threadId,
+    threadTurn: options?.threadTurn,
+    mode: options?.mode,
+  };
+}
+
 export async function agentStatusController(
   req: RequestWithAuth<{ jobId: string }, AgentStatusResponse, any>,
   res: Response<AgentStatusResponse>,
@@ -61,12 +108,14 @@ export async function agentStatusController(
   // The agent service persists the effort of a run that used it. Older rows
   // and runs that picked a model have no effort, so this stays undefined.
   let effort: "low" | "medium" | "high" | undefined;
+  let thread: ThreadOptions = {};
   if (agent) {
     model = (agent.options?.model ?? "spark-1-pro") as
       | "spark-1-pro"
       | "spark-1-mini"
       | "spark-2";
     effort = agent.options?.effort as "low" | "medium" | "high" | undefined;
+    thread = readThreadOptions(agent.options);
   } else {
     try {
       const optionsRequest = await fetch(
@@ -96,6 +145,7 @@ export async function agentStatusController(
           | "spark-1-mini"
           | "spark-2";
         effort = options.effort as "low" | "medium" | "high" | undefined;
+        thread = readThreadOptions(options);
       }
     } catch (error) {
       logger.warn("Failed to get agent request details", {
@@ -121,8 +171,21 @@ export async function agentStatusController(
   }
 
   let data: any = undefined;
+  let message: string | undefined;
+  let suggestions: AgentSuggestion[] | undefined;
+  let pendingApproval: AgentPendingApproval | undefined;
+  let exchange: AgentExchangeSummary | undefined;
   if (agent?.is_successful) {
-    data = await getJobFromGCS(agent.id);
+    const stored: unknown = await getJobFromGCS(agent.id);
+    if (isStoredAgentResult(stored)) {
+      data = stored.data ?? null;
+      message = stored.message ?? undefined;
+      suggestions = stored.suggestions;
+      pendingApproval = stored.pendingApproval;
+      exchange = stored.exchange;
+    } else {
+      data = stored;
+    }
   }
 
   return res.status(200).json({
@@ -136,6 +199,13 @@ export async function agentStatusController(
     data,
     model,
     effort,
+    threadId: thread.threadId,
+    threadTurn: thread.threadTurn,
+    mode: thread.mode,
+    message,
+    suggestions,
+    pendingApproval,
+    exchange,
     expiresAt: new Date(
       new Date(agent?.created_at ?? agentRequest.created_at).getTime() +
         1000 * 60 * 60 * 24,

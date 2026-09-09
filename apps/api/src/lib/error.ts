@@ -42,7 +42,13 @@ export type ErrorCodes =
   | "CONCURRENCY_QUEUE_TIMEOUT"
   // Threat protection (enterprise domain risk blocking). Lowercase by design:
   // this is the documented, user-facing error code for the feature.
-  | "unsafe_domain_blocked";
+  | "unsafe_domain_blocked"
+  // Agent threads. Lowercase for the same reason as unsafe_domain_blocked.
+  | "thread_not_found"
+  | "thread_busy"
+  | "thread_expired"
+  | "threads_disabled"
+  | "exchange_not_enabled";
 
 export class TransportableError extends Error {
   public readonly code: ErrorCodes;
@@ -383,7 +389,7 @@ export class ActionsNotSupportedError extends TransportableError {
 
 /**
  * Error thrown when a job is cancelled (expected flow control, not a real error)
- * This should not be sent to Sentry as it's expected behavior when a crawl/batch is cancelled
+ * This is expected behavior when a crawl/batch is cancelled
  */
 export class JobCancelledError extends Error {
   constructor() {

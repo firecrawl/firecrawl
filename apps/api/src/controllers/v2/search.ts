@@ -24,13 +24,16 @@ import { logger as _logger } from "../../lib/logger";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { CategoryOption } from "../../lib/search-query-builder";
-import {
-  applyZdrScope,
-  captureExceptionWithZdrCheck,
-} from "../../services/sentry";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
+import {
+  withSpan,
+  setSpanAttributes,
+  recordSpanException,
+  SpanKind,
+  type Span,
+} from "../../lib/otel-tracer";
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
@@ -47,6 +50,35 @@ import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
   res: Response<SearchResponse>,
+) {
+  // Resolved before any span starts so the whole request stays unrecorded for
+  // zero-data-retention and anonymous searches (see otel-tracer).
+  const enterprise: unknown[] = Array.isArray(req.body?.enterprise)
+    ? req.body.enterprise
+    : [];
+  const zeroDataRetentionTrace =
+    Boolean(getSearchForcedKind(req.acuc?.flags)) ||
+    enterprise.includes("zdr") ||
+    enterprise.includes("anon");
+
+  return withSpan(
+    "api.search.request",
+    span => searchControllerInner(req, res, span),
+    {
+      kind: SpanKind.SERVER,
+      attributes: {
+        "api.version": "v2",
+        "search.team_id": req.auth.team_id,
+      },
+      zeroDataRetention: zeroDataRetentionTrace,
+    },
+  );
+}
+
+async function searchControllerInner(
+  req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
+  res: Response<SearchResponse>,
+  span: Span,
 ) {
   const middlewareStartTime =
     (req as any).requestTiming?.startTime || new Date().getTime();
@@ -185,7 +217,6 @@ export async function searchController(
     const isZDROrAnon = isZDR || isAnon;
     zeroDataRetention = isZDROrAnon ?? false;
     logger = logger.child({ zeroDataRetention });
-    applyZdrScope(zeroDataRetention);
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
     if (isZDROrAnon && !teamForcedKind) {
@@ -313,10 +344,7 @@ export async function searchController(
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
-    // Ensure the parent `requests` row is committed before the child
-    // `searches` insert, to avoid a request_id FK violation. The insert has
-    // been in flight since the top of the controller, so this is ~free in
-    // practice; robustInsert never rejects, so this await cannot throw.
+    // Wait for the parent log before inserting the child search log.
     const logStart = Date.now();
     await logRequestPromise;
     const waited = Date.now() - logStart;
@@ -343,7 +371,9 @@ export async function searchController(
         zeroDataRetention,
       },
       false,
-    );
+    ).catch(error => {
+      logger.error("Failed to log search", { error, jobId });
+    });
 
     if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
       logResearchEndpoint({
@@ -423,13 +453,12 @@ export async function searchController(
       });
     }
 
-    captureExceptionWithZdrCheck(error, {
-      extra: { zeroDataRetention },
-    });
     logger.error("Unhandled error occurred in search", {
       version: "v2",
       error,
     });
+    recordSpanException(span, error);
+    setSpanAttributes(span, { "search.status_code": 500 });
     return res.status(500).json({
       success: false,
       error: error.message,

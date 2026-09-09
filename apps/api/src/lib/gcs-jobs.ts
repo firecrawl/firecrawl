@@ -90,74 +90,78 @@ async function saveJobToGCS(params: {
 
   const attempts: GCSOperationAttempt[] = [];
 
-  return await withSpan("firecrawl-gcs-save-job", async span => {
-    setSpanAttributes(span, {
-      "gcs.operation": "save_job",
-      "job.id": params.id,
-      "job.request_id": params.request_id,
-      "job.team_id": params.team_id,
-      "job.mode": params.mode,
-      "job.success": params.is_successful,
-      "job.num_docs": params.num_docs,
-    });
+  return await withSpan(
+    "firecrawl-gcs-save-job",
+    async span => {
+      setSpanAttributes(span, {
+        "gcs.operation": "save_job",
+        "job.id": params.id,
+        "job.request_id": params.request_id,
+        "job.team_id": params.team_id,
+        "job.mode": params.mode,
+        "job.success": params.is_successful,
+        "job.num_docs": params.num_docs,
+      });
 
-    if (!config.GCS_BUCKET_NAME) {
-      setSpanAttributes(span, { "gcs.bucket_configured": false });
-      return;
-    }
-
-    const bucket = storageManualRetries.bucket(config.GCS_BUCKET_NAME);
-    const blob = bucket.file(filename);
-
-    let backoffUsed = BACKOFF_PARAMS;
-
-    const data = JSON.stringify(params.data);
-
-    // Save job docs with retry
-    // Due to retries and resumable uploads, this is:
-    //  if data is smaller than or exactly 3MB: best case 1 request, worst case 3 requests
-    //  if data is larger than 3MB: best case 2 requests, worst case 6 requests
-    for (let i = 0; i < backoffUsed.length; i++) {
-      const backoffMs = backoffUsed[i];
-      if (backoffMs > 0) {
-        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      if (!config.GCS_BUCKET_NAME) {
+        setSpanAttributes(span, { "gcs.bucket_configured": false });
+        return;
       }
 
-      const saveStart = Date.now();
-      try {
-        await blob.save(data, {
-          metadata: {
-            contentType: "application/json",
-            metadata: params.metadata,
-          },
-          resumable: data.length > 3 * 1024 * 1024, // 3MB, 5MB official limit
-        });
-        attempts.push({
-          error: null,
-          timeMs: Date.now() - saveStart,
-          backoffMs,
-        });
-        break;
-      } catch (error) {
-        if (
-          error instanceof ApiError &&
-          (error.code === 429 || error.code === 503)
-        ) {
-          // switch to slower backoff parameters for rate limiting or server overloaded errors
-          backoffUsed = BACKOFF_SLOWDOWN_PARAMS;
+      const bucket = storageManualRetries.bucket(config.GCS_BUCKET_NAME);
+      const blob = bucket.file(filename);
+
+      let backoffUsed = BACKOFF_PARAMS;
+
+      const data = JSON.stringify(params.data);
+
+      // Save job docs with retry
+      // Due to retries and resumable uploads, this is:
+      //  if data is smaller than or exactly 3MB: best case 1 request, worst case 3 requests
+      //  if data is larger than 3MB: best case 2 requests, worst case 6 requests
+      for (let i = 0; i < backoffUsed.length; i++) {
+        const backoffMs = backoffUsed[i];
+        if (backoffMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
         }
 
-        attempts.push({ error, timeMs: Date.now() - saveStart, backoffMs });
+        const saveStart = Date.now();
+        try {
+          await blob.save(data, {
+            metadata: {
+              contentType: "application/json",
+              metadata: params.metadata,
+            },
+            resumable: data.length > 3 * 1024 * 1024, // 3MB, 5MB official limit
+          });
+          attempts.push({
+            error: null,
+            timeMs: Date.now() - saveStart,
+            backoffMs,
+          });
+          break;
+        } catch (error) {
+          if (
+            error instanceof ApiError &&
+            (error.code === 429 || error.code === 503)
+          ) {
+            // switch to slower backoff parameters for rate limiting or server overloaded errors
+            backoffUsed = BACKOFF_SLOWDOWN_PARAMS;
+          }
 
-        if (i === BACKOFF_PARAMS.length - 1) {
-          setSpanAttributes(span, { "gcs.save_successful": false });
-          throw error;
+          attempts.push({ error, timeMs: Date.now() - saveStart, backoffMs });
+
+          if (i === BACKOFF_PARAMS.length - 1) {
+            setSpanAttributes(span, { "gcs.save_successful": false });
+            throw error;
+          }
         }
       }
-    }
 
-    setSpanAttributes(span, { "gcs.save_successful": true });
-  })
+      setSpanAttributes(span, { "gcs.save_successful": true });
+    },
+    { zeroDataRetention: params.zeroDataRetention },
+  )
     .then(x => {
       if (attempts.length === 0) {
         return x;

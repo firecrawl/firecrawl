@@ -5,6 +5,7 @@ import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
 import { includesFormat } from "../../lib/format-utils";
+import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import {
   ExtractorOptions,
   PageOptions,
@@ -522,9 +523,28 @@ const pdfParserWithOptions = z
     return normalized;
   });
 
+/**
+ * Raster image OCR (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP). Like `pdf` it is
+ * part of the default list, so a request that says nothing about parsers OCRs
+ * image URLs (behind the imageOcr team flag while it rolls out); an explicit
+ * list that omits it (`["pdf"]`, `[]`) opts out and keeps the historical
+ * unsupported-file rejection. The object form carries no options yet; it
+ * exists so options can be added later without a breaking change.
+ */
+const imageParserWithOptions = z.strictObject({
+  type: z.literal("image"),
+});
+
 const parsersSchema = z
-  .array(z.union([z.literal("pdf"), pdfParserWithOptions]))
-  .prefault(["pdf"]);
+  .array(
+    z.union([
+      z.literal("pdf"),
+      pdfParserWithOptions,
+      z.literal("image"),
+      imageParserWithOptions,
+    ]),
+  )
+  .prefault(["pdf", "image"]);
 
 type Parsers = z.infer<typeof parsersSchema>;
 
@@ -537,6 +557,22 @@ export function shouldParsePDF(parsers?: Parsers): boolean {
     }
     return false;
   });
+}
+
+/**
+ * Whether the request wants raster image OCR. Like PDFs, images are parsed
+ * by default: `undefined` means the default list, while an explicit list
+ * that omits `image` (including `[]`) opts out.
+ */
+export function shouldParseImages(parsers?: Parsers): boolean {
+  if (!parsers) return true;
+  return parsers.some(
+    parser =>
+      parser === "image" ||
+      (typeof parser === "object" &&
+        parser !== null &&
+        parser.type === "image"),
+  );
 }
 
 export function getPDFMaxPages(parsers?: Parsers): number | undefined {
@@ -904,7 +940,7 @@ export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
 
 export type ScrapeOptions = BaseScrapeOptions;
 
-export type UploadedParseFileKind = "html" | "pdf" | "document";
+export type UploadedParseFileKind = "html" | "pdf" | "document" | "image";
 
 export type UploadedParseFile = {
   buffer: Buffer;
@@ -999,6 +1035,27 @@ const agentWebhookSchema = createWebhookSchema([
   "cancelled",
 ]);
 
+// Forwarded verbatim to the agent service, which owns every default and the
+// per-thread inheritance rules; the gateway only validates the shape.
+const agentExchangeSchema = z.strictObject({
+  enabled: z.boolean().optional(),
+  toolkits: z.array(z.string()).optional(),
+  maxCalls: z.number().int().min(1).max(30).optional(),
+  requireApproval: z.boolean().optional(),
+  approve: z
+    .strictObject({
+      approvalId: z.string().uuid(),
+      callIds: z.array(z.string()).optional(),
+      always: z.boolean().optional(),
+    })
+    .optional(),
+  decline: z
+    .strictObject({
+      approvalId: z.string().uuid(),
+    })
+    .optional(),
+});
+
 export const agentRequestSchema = z
   .strictObject({
     urls: URL.array().optional(),
@@ -1037,6 +1094,10 @@ export const agentRequestSchema = z
     effort: z.enum(["low", "medium", "high"]).optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     auditMetadata: auditMetadataSchema.optional(),
+    // Continue an existing thread. Omitted starts a new one.
+    threadId: z.string().uuid().optional(),
+    mode: z.enum(["extract", "chat"]).optional(),
+    exchange: agentExchangeSchema.optional(),
   })
   // spark-1 is retired and spark-2 is the default. The spark-1 preset names
   // remain valid input and silently resolve to spark-2, so every request —
@@ -1100,7 +1161,8 @@ const uploadedParseFileSchema = z.custom<UploadedParseFile>(
       (value as any).kind === undefined ||
       (value as any).kind === "html" ||
       (value as any).kind === "pdf" ||
-      (value as any).kind === "document"),
+      (value as any).kind === "document" ||
+      (value as any).kind === "image"),
   {
     error: "A file upload is required.",
   },
@@ -1206,8 +1268,8 @@ export type BatchScrapeRequestInput = Omit<
 };
 
 export const crawlerOptions = z.strictObject({
-  includePaths: z.string().array().prefault([]),
-  excludePaths: z.string().array().prefault([]),
+  includePaths: pathPatternsSchema.prefault([]),
+  excludePaths: pathPatternsSchema.prefault([]),
   maxDiscoveryDepth: z.number().optional(),
   limit: z.number().prefault(10000), // default?
   crawlEntireDomain: z.boolean().optional(),
@@ -1254,6 +1316,10 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
 });
 
 export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
+  .superRefine((x, ctx) => {
+    addPathRegexIssues(x.includePaths, "includePaths", ctx);
+    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+  })
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const scrapeOptionsValue = x.scrapeOptions ?? baseScrapeOptions.parse({});
@@ -1303,7 +1369,12 @@ const mapRequestSchemaBase = crawlerOptions
     auditMetadata: auditMetadataSchema.optional(),
   });
 
-export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
+export const mapRequestSchema = strictWithMessage(
+  mapRequestSchemaBase,
+).superRefine((x, ctx) => {
+  addPathRegexIssues(x.includePaths, "includePaths", ctx);
+  addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+});
 
 // export type MapRequest = {
 //   url: string;
@@ -1582,11 +1653,53 @@ export type AgentListResponse =
       next?: string;
     };
 
+export type AgentMode = "extract" | "chat";
+
+export type AgentSuggestion = {
+  label: string;
+  prompt: string;
+};
+
+export type AgentPendingApproval = {
+  id: string;
+  reason: string;
+  calls: {
+    id: string;
+    provider: string;
+    capability: string;
+    input: Record<string, unknown>;
+    more?: Record<string, unknown>[];
+    creditsEstimate: number | null;
+  }[];
+  resolution: null | {
+    approved: boolean;
+    callIds: string[];
+    always: boolean;
+    byRunId: string;
+  };
+};
+
+// What a run did with Exchange, as the agent service reports it. `toolkits` and
+// `requireApproval` are what the run resolved to after thread inheritance, so
+// they describe the run rather than echoing the request.
+export type AgentExchangeSummary = {
+  enabled: boolean;
+  toolkits?: string[];
+  requireApproval?: boolean;
+  paidCalls: number;
+  creditsUsed: number | null;
+};
+
 export type AgentResponse =
-  | ErrorResponse
+  | (ErrorResponse & {
+      // Set on a 409 thread_busy: the run currently holding the thread.
+      runId?: string;
+    })
   | {
       success: boolean;
       id: string;
+      threadId?: string;
+      threadTurn?: number;
     };
 
 export type AgentStatusResponse =
@@ -1600,6 +1713,54 @@ export type AgentStatusResponse =
       effort?: "low" | "medium" | "high";
       expiresAt: string;
       creditsUsed?: number;
+      threadId?: string;
+      threadTurn?: number;
+      mode?: AgentMode;
+      message?: string;
+      suggestions?: AgentSuggestion[];
+      pendingApproval?: AgentPendingApproval;
+      exchange?: AgentExchangeSummary;
+    };
+
+type AgentThreadRun = {
+  id: string;
+  turn: number;
+  mode: AgentMode;
+  prompt: string;
+  urls?: string[];
+  schema?: unknown;
+  effort?: "low" | "medium" | "high";
+  status:
+    | "processing"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | "refused"
+    | "credit_limit_reached";
+  createdAt: string;
+  finishedAt: string | null;
+  creditsUsed: number | null;
+  message: string | null;
+  // Only present when the request asked for includeData.
+  data?: unknown;
+  suggestions?: AgentSuggestion[] | null;
+  pendingApproval?: AgentPendingApproval | null;
+  exchange?: AgentExchangeSummary | null;
+};
+
+export type AgentThread = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "idle" | "running";
+  runs: AgentThreadRun[];
+};
+
+export type AgentThreadResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      thread: AgentThread;
     };
 
 export type AgentTraceResponse =
@@ -1617,6 +1778,28 @@ export type AgentTraceResponse =
           height: number;
         };
       }>;
+    };
+
+/**
+ * A finished run distilled into something reusable: a SKILL.md to paste into a
+ * coding agent, and a workflow script that reproduces the run through the API.
+ * The upstream shape is passed through verbatim.
+ */
+export type AgentSkillResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      id: string;
+      skill: {
+        name: string;
+        spec: object;
+        skillMd: string;
+        workflow: string;
+        schema: string;
+      };
+      blueprint: object;
+      generatedAt: string;
+      generated: boolean;
     };
 
 export type AgentSnapshotResponse =
@@ -1925,7 +2108,7 @@ export function fromV0ScrapeOptions(
       parsers:
         pageOptions.parsePDF !== undefined
           ? pageOptions.parsePDF
-            ? ["pdf"]
+            ? ["pdf", "image"]
             : []
           : undefined,
       actions: pageOptions.actions,
@@ -2048,7 +2231,7 @@ export function fromV1ScrapeOptions(
       parsers:
         v1ScrapeOptions.parsePDF !== undefined
           ? v1ScrapeOptions.parsePDF
-            ? ["pdf"]
+            ? ["pdf", "image"]
             : []
           : undefined,
     }),

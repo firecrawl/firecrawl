@@ -155,6 +155,24 @@ class SearchTest {
 
     @Test
     @EnabledIfEnvironmentVariable(named = "FIRECRAWL_API_KEY", matches = ".*\\S.*")
+    void testSearchWithCountry() {
+        System.out.println("\n=== Test: Search with Country ===");
+
+        SearchData results = client.search("best coffee shops",
+                SearchOptions.builder()
+                        .country("de")
+                        .limit(5)
+                        .build());
+
+        assertNotNull(results.getWeb(), "Web results should not be null");
+
+        System.out.println("✓ Search with country completed");
+        System.out.println("  Country: de");
+        System.out.println("  Results: " + results.getWeb().size());
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named = "FIRECRAWL_API_KEY", matches = ".*\\S.*")
     void testSearchWithTimeFilter() {
         System.out.println("\n=== Test: Search with Time Filter ===");
         

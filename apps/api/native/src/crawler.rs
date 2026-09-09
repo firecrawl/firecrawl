@@ -45,6 +45,13 @@ pub struct FilterLinksResult {
   pub denial_reasons: HashMap<String, String>,
 }
 
+#[derive(Serialize)]
+#[napi(object)]
+pub struct RegexValidationError {
+  pub pattern: String,
+  pub error: String,
+}
+
 #[derive(Deserialize)]
 #[napi(object)]
 pub struct FilterUrlCall {
@@ -298,15 +305,15 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
     Url::parse(&data.initial_url).map_err(|e| format!("Initial URL parse error: {e}"))?;
   let scope = crawl_scope(&initial_url);
 
-  let excludes_regex: Vec<Regex> = data
+  let excludes_regex: Vec<PathRegex> = data
     .excludes
     .iter()
-    .filter_map(|e| Regex::new(e).ok())
+    .filter_map(|e| compile_path_regex(e).ok())
     .collect();
-  let includes_regex: Vec<Regex> = data
+  let includes_regex: Vec<PathRegex> = data
     .includes
     .iter()
-    .filter_map(|i| Regex::new(i).ok())
+    .filter_map(|i| compile_path_regex(i).ok())
     .collect();
 
   let robot = build_robot(
@@ -367,12 +374,20 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         path
       };
 
-      if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(match_target)) {
+      if !excludes_regex.is_empty()
+        && excludes_regex
+          .iter()
+          .any(|r| r.is_match(match_target.as_bytes()))
+      {
         denial_reasons.insert(link, EXCLUDE_PATTERN.to_string());
         continue;
       }
 
-      if !includes_regex.is_empty() && !includes_regex.iter().any(|r| r.is_match(match_target)) {
+      if !includes_regex.is_empty()
+        && !includes_regex
+          .iter()
+          .any(|r| r.is_match(match_target.as_bytes()))
+      {
         denial_reasons.insert(link, INCLUDE_PATTERN.to_string());
         continue;
       }
@@ -392,7 +407,11 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         continue;
       }
 
-      if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(url_str)) {
+      if !excludes_regex.is_empty()
+        && excludes_regex
+          .iter()
+          .any(|r| r.is_match(url_str.as_bytes()))
+      {
         denial_reasons.insert(link, EXCLUDE_PATTERN.to_string());
         continue;
       }
@@ -415,7 +434,11 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         } else {
           path
         };
-        if !includes_regex.is_empty() && !includes_regex.iter().any(|r| r.is_match(match_target)) {
+        if !includes_regex.is_empty()
+          && !includes_regex
+            .iter()
+            .any(|r| r.is_match(match_target.as_bytes()))
+        {
           denial_reasons.insert(link, INCLUDE_PATTERN.to_string());
           continue;
         }
@@ -446,6 +469,65 @@ pub async fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult> {
     })?;
 
   res.map_err(|e| Error::new(Status::GenericFailure, format!("Filter links error: {e}")))
+}
+
+/// Compiled form of a client-supplied includePaths/excludePaths pattern.
+///
+/// Path patterns are compiled with Unicode mode disabled, over bytes. Every
+/// haystack they are matched against is a serialized `url::Url` path or href,
+/// which is always percent-encoded ASCII, so ASCII and Unicode mode produce the
+/// same matches. Unicode mode is what makes compilation expensive: a Unicode
+/// `\w` is hundreds of codepoint ranges, so `\w{50}` alone compiles to more than
+/// two megabytes of NFA, and `.{2000}` or `[\w-]{1,100}` several times over hit
+/// the crate's 10 MiB default. In ASCII mode the same patterns compile in well
+/// under a millisecond, which is what lets the size limit below be tight.
+type PathRegex = regex::bytes::Regex;
+
+/// Approximate upper bound, in bytes, on the compiled NFA of a single path
+/// pattern. Patterns are untrusted, and the `regex` crate's compile time and
+/// heap usage scale with the *compiled* size rather than the pattern's length:
+/// `a{5}{5}{5}{5}{5}{5}` is 19 characters but expands to `a{15625}`. The crate's
+/// default of 10 MiB lets a short pattern cost tens of milliseconds of CPU per
+/// compile; this limit keeps it well under one millisecond while still admitting
+/// path filters far larger than any realistic one.
+/// https://docs.rs/regex/latest/regex/#untrusted-patterns
+const PATH_REGEX_SIZE_LIMIT: usize = 256 * 1024;
+
+/// Cache capacity of the lazy DFA used when matching a path pattern. Bounded so
+/// a large pattern cannot claim the crate's 2 MiB default per compiled regex.
+const PATH_REGEX_DFA_SIZE_LIMIT: usize = 256 * 1024;
+
+/// Maximum nesting depth of a path pattern's syntax tree (crate default: 250).
+const PATH_REGEX_NEST_LIMIT: u32 = 50;
+
+/// Compile an includePaths/excludePaths pattern with resource limits suitable
+/// for untrusted input. Every place that compiles a client-supplied path pattern
+/// must go through this so validation and filtering agree on what is accepted.
+fn compile_path_regex(pattern: &str) -> std::result::Result<PathRegex, regex::Error> {
+  regex::bytes::RegexBuilder::new(pattern)
+    .unicode(false)
+    .size_limit(PATH_REGEX_SIZE_LIMIT)
+    .dfa_size_limit(PATH_REGEX_DFA_SIZE_LIMIT)
+    .nest_limit(PATH_REGEX_NEST_LIMIT)
+    .build()
+}
+
+/// Validate regex patterns against the engine's regex flavor (the Rust `regex`
+/// crate), which is what link filtering compiles them with. Returns an entry for
+/// each pattern that fails to compile so callers can reject unsupported syntax
+/// (e.g. look-around, backreferences) instead of silently ignoring it.
+#[napi]
+pub fn validate_regexes(patterns: Vec<String>) -> Vec<RegexValidationError> {
+  patterns
+    .into_iter()
+    .filter_map(|pattern| match compile_path_regex(&pattern) {
+      Ok(_) => None,
+      Err(e) => Some(RegexValidationError {
+        pattern,
+        error: e.to_string(),
+      }),
+    })
+    .collect()
 }
 
 fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, String> {
@@ -507,10 +589,10 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     });
   }
 
-  let excludes_regex: Vec<Regex> = data
+  let excludes_regex: Vec<PathRegex> = data
     .excludes
     .iter()
-    .filter_map(|e| Regex::new(e).ok())
+    .filter_map(|e| compile_path_regex(e).ok())
     .collect();
 
   let robot = build_robot(
@@ -529,7 +611,7 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
       });
     }
 
-    if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(path)) {
+    if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(path.as_bytes())) {
       return Ok(FilterUrlResult {
         allowed: false,
         url: None,
@@ -562,7 +644,11 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
       });
     }
 
-    if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(url_str)) {
+    if !excludes_regex.is_empty()
+      && excludes_regex
+        .iter()
+        .any(|r| r.is_match(url_str.as_bytes()))
+    {
       return Ok(FilterUrlResult {
         allowed: false,
         url: None,
@@ -588,7 +674,9 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     // it), matched via the same PSL check used for allowSubdomains.
     if data.allow_external_content_links
       && !is_external_main_page(url_str)
-      && (is_internal_link(&context_url, &base_url) || is_subdomain(&url, &context_url) || is_internal_link(&url, &context_url))
+      && (is_internal_link(&context_url, &base_url)
+        || is_subdomain(&url, &context_url)
+        || is_internal_link(&url, &context_url))
     {
       return Ok(FilterUrlResult {
         allowed: true,

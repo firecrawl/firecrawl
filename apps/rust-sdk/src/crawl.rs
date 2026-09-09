@@ -105,8 +105,8 @@ pub struct CrawlJob {
     pub total: u32,
     /// Number of pages completed.
     pub completed: u32,
-    /// Credits used by the crawl.
-    pub credits_used: Option<u32>,
+    /// Credits used by the crawl; `-1` when no billing record exists.
+    pub credits_used: Option<i64>,
     /// Expiry time of the crawl data.
     pub expires_at: Option<String>,
     /// URL for the next page of results.
@@ -534,6 +534,38 @@ mod tests {
         assert_eq!(status.total, 5);
         assert_eq!(status.completed, 5);
         assert_eq!(status.data.len(), 2);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_get_crawl_status_accepts_negative_credits_used() {
+        // Self-hosted instances without a billing record report creditsUsed: -1.
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/crawl/crawl-selfhosted")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "status": "completed",
+                    "total": 1,
+                    "completed": 1,
+                    "creditsUsed": -1,
+                    "expiresAt": "2024-12-31T23:59:59Z",
+                    "data": [{ "markdown": "# Page" }]
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), None::<&str>).unwrap();
+        let status = client.get_crawl_status("crawl-selfhosted").await.unwrap();
+
+        assert_eq!(status.status, JobStatus::Completed);
+        assert_eq!(status.credits_used, Some(-1));
+        assert_eq!(status.data.len(), 1);
         mock.assert();
     }
 

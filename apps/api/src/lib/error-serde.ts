@@ -90,6 +90,13 @@ const errorMap: Record<ErrorCodes, any> = {
   BAD_REQUEST: null,
   BAD_REQUEST_INVALID_JSON: null,
   PARSE_UNSUPPORTED_OPTIONS: null,
+
+  // Agent thread rejections are API-level, never transported through workers.
+  thread_not_found: null,
+  thread_busy: null,
+  thread_expired: null,
+  threads_disabled: null,
+  exchange_not_enabled: null,
 };
 
 export function serializeTransportableError(error: TransportableError) {

@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/node";
 import { logger } from "./logger";
 
 const RETRY_DELAYS = [500, 1500, 3000] as const;
@@ -47,7 +46,6 @@ export async function attemptRequest<T>(
     }
   } catch (error) {
     logger.error("Fire Engine API request failed:", error);
-    Sentry.captureException(error);
   }
   return null;
 }
@@ -107,7 +105,6 @@ export async function executeWithRetry<T>(
       }
 
       logger.error(`Attempt ${attempt + 1} failed:`, error);
-      Sentry.captureException(error);
     }
 
     // Wait before retry (except on last attempt)

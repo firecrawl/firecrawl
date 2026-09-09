@@ -278,12 +278,7 @@ export interface ScrapeOptions {
 }
 
 export type RedactPIIEntity =
-  | "PERSON"
-  | "EMAIL"
-  | "PHONE"
-  | "LOCATION"
-  | "FINANCIAL"
-  | "SECRET";
+  "PERSON" | "EMAIL" | "PHONE" | "LOCATION" | "FINANCIAL" | "SECRET";
 
 export interface RedactPIIOptions {
   /**
@@ -324,12 +319,7 @@ export interface ThreatProtectionOptions {
 }
 
 export type ParseFileData =
-  | Blob
-  | File
-  | Buffer
-  | Uint8Array
-  | ArrayBuffer
-  | string;
+  Blob | File | Buffer | Uint8Array | ArrayBuffer | string;
 
 export interface ParseFile {
   data: ParseFileData;
@@ -364,11 +354,7 @@ export interface WebhookConfig {
 
 // Agent webhook events differ from crawl: has 'action' and 'cancelled', no 'page'
 export type AgentWebhookEvent =
-  | "started"
-  | "action"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  "started" | "action" | "completed" | "failed" | "cancelled";
 
 export interface AgentWebhookConfig {
   url: string;
@@ -489,10 +475,7 @@ export interface BrandingProfile {
     headerHeight?: string;
     footerHeight?: string;
     [key: string]:
-      | number
-      | string
-      | Record<string, number | string | undefined>
-      | undefined;
+      number | string | Record<string, number | string | undefined> | undefined;
   };
   tone?: {
     voice?: string;
@@ -866,6 +849,8 @@ export interface SearchRequest {
   limit?: number;
   tbs?: string;
   location?: string;
+  /** ISO 3166-1 alpha-2 country code used to geo-target the search results. */
+  country?: string;
   ignoreInvalidURLs?: boolean;
   timeout?: number; // ms
   /** Generate query-relevant highlights for search results. Defaults to true. */
@@ -1095,9 +1080,7 @@ export interface MonitorSearchTarget {
 }
 
 export type MonitorTarget =
-  | MonitorScrapeTarget
-  | MonitorCrawlTarget
-  | MonitorSearchTarget;
+  MonitorScrapeTarget | MonitorCrawlTarget | MonitorSearchTarget;
 
 export interface CreateMonitorRequest {
   name: string;
@@ -1220,11 +1203,7 @@ export interface MonitorCheck {
   reservedCredits?: number | null;
   actualCredits?: number | null;
   billingStatus:
-    | "not_applicable"
-    | "reserved"
-    | "confirmed"
-    | "released"
-    | "failed";
+    "not_applicable" | "reserved" | "confirmed" | "released" | "failed";
   summary: MonitorSummary;
   targetResults?: MonitorTargetResult[];
   notificationStatus?: unknown;
@@ -1311,10 +1290,65 @@ export interface ExtractResponse {
   creditsUsed?: number;
 }
 
+/** Conversation mode for an agent run. Defaults to "extract" server-side. */
+export type AgentMode = "extract" | "chat";
+
+/** Options forwarded verbatim to the agent; the server owns every default. */
+export interface AgentExchangeOptions {
+  enabled?: boolean;
+  /** At most 5. */
+  toolkits?: string[];
+  maxCalls?: number;
+  requireApproval?: boolean;
+  /** Answers a pendingApproval from the previous turn of the thread. */
+  approve?: { approvalId: string; callIds?: string[]; always?: boolean };
+  decline?: { approvalId: string };
+}
+
+/** Per-run summary reported on a status response. */
+export interface AgentExchangeSummary {
+  enabled: boolean;
+  /** What the run resolved to after thread inheritance, not what it requested. */
+  toolkits?: string[];
+  requireApproval?: boolean;
+  paidCalls: number;
+  creditsUsed: number | null;
+}
+
+/** A follow-up the agent offers for the next turn of the thread. */
+export interface AgentSuggestion {
+  label: string;
+  prompt: string;
+}
+
+/** A turn that ended waiting for the caller to allow or refuse paid calls. */
+export interface PendingApproval {
+  id: string;
+  reason: string;
+  calls: {
+    id: string;
+    provider: string;
+    capability: string;
+    input: Record<string, unknown>;
+    more?: Record<string, unknown>[];
+    creditsEstimate: number | null;
+  }[];
+  resolution: null | {
+    approved: boolean;
+    callIds: string[];
+    always: boolean;
+    byRunId: string;
+  };
+}
+
 export interface AgentResponse {
   success: boolean;
   id: string;
   error?: string;
+  /** Thread this run belongs to; pass it back to continue the conversation. */
+  threadId?: string;
+  /** 1-based position of this run in its thread. */
+  threadTurn?: number;
 }
 
 export interface AgentStatusResponse {
@@ -1335,6 +1369,55 @@ export interface AgentStatusResponse {
   effort?: "low" | "medium" | "high";
   expiresAt: string;
   creditsUsed?: number;
+  threadId?: string;
+  threadTurn?: number;
+  mode?: AgentMode;
+  /** Assistant text reply. Chat-mode runs answer here instead of in `data`. */
+  message?: string;
+  suggestions?: AgentSuggestion[];
+  pendingApproval?: PendingApproval;
+  exchange?: AgentExchangeSummary;
+}
+
+/** A single run of a thread, as returned by getAgentThread. */
+export interface AgentThreadRun {
+  id: string;
+  turn: number;
+  mode: AgentMode;
+  prompt: string;
+  urls?: string[];
+  schema?: unknown;
+  effort?: "low" | "medium" | "high";
+  status:
+    | "processing"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | "refused"
+    | "credit_limit_reached";
+  createdAt: string;
+  finishedAt: string | null;
+  creditsUsed: number | null;
+  message: string | null;
+  /** Only present when the request asked for includeData. */
+  data?: unknown;
+  suggestions?: AgentSuggestion[] | null;
+  pendingApproval?: PendingApproval | null;
+  exchange?: AgentExchangeSummary | null;
+}
+
+export interface AgentThread {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "idle" | "running";
+  runs: AgentThreadRun[];
+}
+
+export interface AgentThreadResponse {
+  success: boolean;
+  thread?: AgentThread;
+  error?: string;
 }
 
 /** Reasoning effort for agent jobs. Every level runs spark-2. */
@@ -1384,7 +1467,8 @@ export interface AgentListOptions {
   before?: number;
 }
 
-export type AgentTraceAgentRole = "orchestrator" | "subagent" | "browser" | "system";
+export type AgentTraceAgentRole =
+  "orchestrator" | "subagent" | "browser" | "system";
 
 export interface AgentTraceAgentIdentity {
   id: string;
@@ -1394,7 +1478,12 @@ export interface AgentTraceAgentIdentity {
 }
 
 export interface AgentTraceError {
-  code: "cancelled" | "credit_limit_reached" | "parent_finished" | "refused" | "internal";
+  code:
+    | "cancelled"
+    | "credit_limit_reached"
+    | "parent_finished"
+    | "refused"
+    | "internal";
   source: "agent" | "tool" | "billing" | "system";
   retryable: boolean;
   message: string;
@@ -1432,7 +1521,8 @@ export interface AgentTraceRunCancelRequestedEvent extends AgentTraceEventBase {
 
 export interface AgentTraceRunFinishedEvent extends AgentTraceEventBase {
   type: "run.finished";
-  outcome: "succeeded" | "failed" | "cancelled" | "refused" | "credit_limit_reached";
+  outcome:
+    "succeeded" | "failed" | "cancelled" | "refused" | "credit_limit_reached";
   /** The canonical schema always writes this key (nullable), but older rows may omit it. */
   error?: AgentTraceError | null;
 }
@@ -1829,7 +1919,14 @@ export interface SimilarPapersResponse {
   note?: string | null;
 }
 
-/** Component scores; each field is present only when that signal contributed. */
+/**
+ * Component scores; each field is present only when that signal contributed.
+ *
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. The developer index does not
+ * expose a score breakdown. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubScoreBreakdown {
   rrf?: number;
   semantic?: number;
@@ -1838,6 +1935,11 @@ export interface GitHubScoreBreakdown {
   rerank?: number;
 }
 
+/**
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubSearchItem {
   resultType?: "github_history" | "repo_readme" | "web";
   /** `owner/name`; empty for web results whose URL is not a repo page. */
@@ -1860,9 +1962,18 @@ export interface GitHubSearchItem {
   scores: GitHubScoreBreakdown;
 }
 
+/**
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubSearchResponse {
   success: boolean;
   results: GitHubSearchItem[];
+  /** Deprecation notice while the sunset window is live. */
+  warnings?: string[];
+  /** Replacement endpoint path, while the sunset window is live. */
+  replacement?: string;
 }
 
 /** Options for `research.searchPapers`. */
@@ -1901,7 +2012,13 @@ export interface SimilarPapersOptions {
   anchor?: string[];
 }
 
-/** Options for `research.searchGithub`. */
+/**
+ * Options for `research.searchGithub`.
+ *
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface SearchGithubOptions {
   /** Number of results to return (1–100, default 20). */
   k?: number;

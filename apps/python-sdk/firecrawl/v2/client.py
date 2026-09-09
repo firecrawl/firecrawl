@@ -26,6 +26,7 @@ from .types import (
     CrawlParamsData,
     WebhookConfig,
     AgentWebhookConfig,
+    AgentExchangeOptions,
     MonitorWebhookConfig,
     CrawlErrorsResponse,
     ActiveCrawlsResponse,
@@ -415,6 +416,7 @@ class FirecrawlClient:
         limit: Optional[int] = None,
         tbs: Optional[str] = None,
         location: Optional[str] = None,
+        country: Optional[str] = None,
         ignore_invalid_urls: Optional[bool] = None,
         timeout: Optional[int] = None,
         highlights: Optional[bool] = None,
@@ -431,6 +433,7 @@ class FirecrawlClient:
             limit: Maximum number of results to return (default: 5)
             tbs: Time-based search filter
             location: Location string for search
+            country: Country code that geo-targets the search results
             timeout: Request timeout in milliseconds (default: 300000)
             highlights: Generate query-relevant highlights for search results
                 (default: true)
@@ -453,6 +456,7 @@ class FirecrawlClient:
             limit=limit,
             tbs=tbs,
             location=location,
+            country=country,
             ignore_invalid_urls=ignore_invalid_urls,
             timeout=timeout,
             highlights=highlights,
@@ -1403,6 +1407,9 @@ class FirecrawlClient:
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         audit_metadata: Optional[AuditMetadata] = None,
+        thread_id: Optional[str] = None,
+        mode: Optional[Literal["extract", "chat"]] = None,
+        exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
     ):
         """Start an agent job (non-blocking).
 
@@ -1418,6 +1425,9 @@ class FirecrawlClient:
             threat_protection: Enterprise per-request override of the team's
                 threat protection policy
             audit_metadata: Metadata to include in SIEM logging events
+            thread_id: Continue an existing thread instead of starting one
+            mode: "extract" (default) or "chat"
+            exchange: Data provider options, forwarded as sent
         Returns:
             Response payload with job id/status (poll with get_agent_status)
         """
@@ -1434,6 +1444,9 @@ class FirecrawlClient:
             webhook=webhook,
             threat_protection=threat_protection,
             audit_metadata=audit_metadata,
+            thread_id=thread_id,
+            mode=mode,
+            exchange=exchange,
         )
 
     def agent(
@@ -1452,6 +1465,9 @@ class FirecrawlClient:
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         audit_metadata: Optional[AuditMetadata] = None,
+        thread_id: Optional[str] = None,
+        mode: Optional[Literal["extract", "chat"]] = None,
+        exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
     ):
         """Run an agent and wait until completion.
 
@@ -1469,6 +1485,9 @@ class FirecrawlClient:
             threat_protection: Enterprise per-request override of the team's
                 threat protection policy
             audit_metadata: Metadata to include in SIEM logging events
+            thread_id: Continue an existing thread instead of starting one
+            mode: "extract" (default) or "chat"
+            exchange: Data provider options, forwarded as sent
         Returns:
             Final agent response when completed
         """
@@ -1487,6 +1506,9 @@ class FirecrawlClient:
             webhook=webhook,
             threat_protection=threat_protection,
             audit_metadata=audit_metadata,
+            thread_id=thread_id,
+            mode=mode,
+            exchange=exchange,
         )
 
     def get_agent_status(self, job_id: str):
@@ -1525,6 +1547,20 @@ class FirecrawlClient:
             AgentListResponse with the list of agent runs and optional next URL
         """
         return agent_module.list_agents(self.http_client, before=before)
+
+    def get_agent_thread(self, thread_id: str, *, include_data: bool = False):
+        """Get a thread and its runs, oldest turn first.
+
+        Args:
+            thread_id: Thread ID, as returned by start_agent or get_agent_status
+            include_data: Inline each succeeded run's data
+
+        Returns:
+            AgentThreadResponse with the thread and its runs
+        """
+        return agent_module.get_agent_thread(
+            self.http_client, thread_id, include_data=include_data
+        )
 
     def get_agent_trace(self, job_id: str, *, live_view: bool = False):
         """Get the execution trace of an agent job (spark-2 runs only).

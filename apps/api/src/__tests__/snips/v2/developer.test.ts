@@ -163,6 +163,82 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
     expect(requestLog?.integration).toBe("_research_test");
   }, 120000);
 
+  it("redacts stored payloads for a forced-ZDR team", async () => {
+    if (!config.USE_DB_AUTHENTICATION) return;
+
+    const identity = await idmux({
+      name: "developer/forced ZDR retention",
+      credits: 100,
+      flags: { searchZDR: "forced-zdr" },
+    });
+
+    const res = await researchRaw(
+      CANONICAL_PATH,
+      {
+        query: `private developer query ${Date.now()}`,
+        k: 1,
+      },
+      identity,
+    );
+    expect(res.statusCode).toBe(200);
+
+    const requestLog = await waitForSingleRow<{
+      id: string;
+      target_hint: string;
+      dr_clean_by: string | null;
+    }>(async () => {
+      const data = await db
+        .select({
+          id: schema.requests.id,
+          target_hint: schema.requests.target_hint,
+          dr_clean_by: schema.requests.dr_clean_by,
+        })
+        .from(schema.requests)
+        .where(
+          and(
+            eq(schema.requests.team_id, identity.teamId),
+            eq(schema.requests.kind, "code_search"),
+          ),
+        )
+        .orderBy(desc(schema.requests.created_at))
+        .limit(1);
+      return data[0] ?? null;
+    });
+
+    expect(requestLog).not.toBeNull();
+    expect(requestLog?.target_hint).toBe(
+      "<redacted due to zero data retention>",
+    );
+    expect(requestLog?.dr_clean_by).not.toBeNull();
+
+    const usageLog = await waitForSingleRow<{
+      target: string;
+      options: unknown;
+      response: unknown;
+      error: string | null;
+    }>(async () => {
+      if (!requestLog) return null;
+      const data = await db
+        .select({
+          target: schema.code_searches.target,
+          options: schema.code_searches.options,
+          response: schema.code_searches.response,
+          error: schema.code_searches.error,
+        })
+        .from(schema.code_searches)
+        .where(eq(schema.code_searches.request_id, requestLog.id))
+        .limit(1);
+      return data[0] ?? null;
+    });
+
+    expect(usageLog).toEqual({
+      target: "<redacted due to zero data retention>",
+      options: null,
+      response: null,
+      error: null,
+    });
+  }, 120000);
+
   it("writes a usage row with the billed credits", async () => {
     if (!config.USE_DB_AUTHENTICATION) return;
 

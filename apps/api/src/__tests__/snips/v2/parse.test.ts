@@ -693,9 +693,9 @@ describe("/v2/parse", () => {
             formats: ["markdown"],
           },
           file: {
-            content: Buffer.from("not-an-image"),
-            filename: "upload.png",
-            contentType: "image/png",
+            content: Buffer.from("not-a-document"),
+            filename: "upload.exe",
+            contentType: "application/x-msdownload",
           },
         },
         identity,

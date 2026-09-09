@@ -13,6 +13,7 @@ from .types import (
     CrawlRequest,
     WebhookConfig,
     AgentWebhookConfig,
+    AgentExchangeOptions,
     MonitorWebhookConfig,
     SearchRequest,
     SearchData,
@@ -743,6 +744,9 @@ class AsyncFirecrawlClient:
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         audit_metadata: Optional[AuditMetadata] = None,
+        thread_id: Optional[str] = None,
+        mode: Optional[Literal["extract", "chat"]] = None,
+        exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
     ):
         return await async_agent.agent(
             self.async_http_client,
@@ -759,6 +763,9 @@ class AsyncFirecrawlClient:
             webhook=webhook,
             threat_protection=threat_protection,
             audit_metadata=audit_metadata,
+            thread_id=thread_id,
+            mode=mode,
+            exchange=exchange,
         )
 
     async def get_agent_status(self, job_id: str):
@@ -778,6 +785,9 @@ class AsyncFirecrawlClient:
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         audit_metadata: Optional[AuditMetadata] = None,
+        thread_id: Optional[str] = None,
+        mode: Optional[Literal["extract", "chat"]] = None,
+        exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
     ):
         return await async_agent.start_agent(
             self.async_http_client,
@@ -792,6 +802,9 @@ class AsyncFirecrawlClient:
             webhook=webhook,
             threat_protection=threat_protection,
             audit_metadata=audit_metadata,
+            thread_id=thread_id,
+            mode=mode,
+            exchange=exchange,
         )
 
     async def cancel_agent(self, job_id: str) -> bool:
@@ -819,6 +832,20 @@ class AsyncFirecrawlClient:
             AgentListResponse with the list of agent runs and optional next URL
         """
         return await async_agent.list_agents(self.async_http_client, before=before)
+
+    async def get_agent_thread(self, thread_id: str, *, include_data: bool = False):
+        """Get a thread and its runs, oldest turn first.
+
+        Args:
+            thread_id: Thread ID, as returned by start_agent or get_agent_status
+            include_data: Inline each succeeded run's data
+
+        Returns:
+            AgentThreadResponse with the thread and its runs
+        """
+        return await async_agent.get_agent_thread(
+            self.async_http_client, thread_id, include_data=include_data
+        )
 
     async def get_agent_trace(self, job_id: str, *, live_view: bool = False):
         """Get the execution trace of an agent job (spark-2 runs only).

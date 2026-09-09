@@ -12,7 +12,7 @@
 import { randomUUID } from "crypto";
 import { isIPv4 } from "net";
 import { config } from "../config";
-import { redisRateLimitClient } from "../services/rate-limiter";
+import { redisSpurClient } from "../services/spur-redis";
 import { logger } from "./logger";
 
 const FETCH_TIMEOUT_MS = 5000;
@@ -115,10 +115,7 @@ async function readCache(ip: string): Promise<CacheState> {
   let raw: string | null;
   let failed: string | null;
   try {
-    [raw, failed] = await redisRateLimitClient.mget(
-      contextKey(ip),
-      failedKey(ip),
-    );
+    [raw, failed] = await redisSpurClient.mget(contextKey(ip), failedKey(ip));
   } catch (error) {
     logger.warn("Spur cache read failed", { ...meta(ip), error });
     return { state: "miss" };
@@ -136,7 +133,7 @@ async function writeCache(
   ttlSec: number,
 ) {
   try {
-    await redisRateLimitClient.set(key, value, "EX", ttlSec);
+    await redisSpurClient.set(key, value, "EX", ttlSec);
   } catch (error) {
     logger.warn("Spur cache write failed", { ...meta(ip), key, error });
   }
@@ -144,7 +141,7 @@ async function writeCache(
 
 async function releaseLock(ip: string, token: string) {
   try {
-    await redisRateLimitClient.eval(RELEASE_LOCK_SCRIPT, 1, lockKey(ip), token);
+    await redisSpurClient.eval(RELEASE_LOCK_SCRIPT, 1, lockKey(ip), token);
   } catch (error) {
     logger.warn("Spur lock release failed", { ...meta(ip), error });
   }
@@ -228,7 +225,7 @@ export async function isKeylessIpSuspicious(ip: string): Promise<boolean> {
   let locked: boolean;
   try {
     locked =
-      (await redisRateLimitClient.set(
+      (await redisSpurClient.set(
         lockKey(ip),
         token,
         "PX",

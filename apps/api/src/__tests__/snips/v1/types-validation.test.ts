@@ -529,6 +529,35 @@ describe("V1 Types Validation", () => {
       expect(result.scrapeOptions).toBeDefined();
       expect(result.scrapeOptions.formats).toEqual(["markdown"]);
     });
+
+    it("should reject path patterns using a negative lookahead", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["^/?(?!blog|works-with)[^/]+/.+"],
+        }),
+      ).toThrow(
+        /look-around, including look-ahead and look-behind, is not supported/,
+      );
+    });
+
+    it("should reject patterns whose compiled form exceeds the size limit", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["a{5}{5}{5}{5}{5}{5}"],
+        }),
+      ).toThrow(/exceeds size limit/);
+    });
+
+    it("should reject more than the maximum number of path patterns", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          includePaths: Array.from({ length: 101 }, (_, i) => `^/p${i}`),
+        }),
+      ).toThrow(/at most 100 patterns/);
+    });
   });
 
   describe("mapRequestSchema", () => {

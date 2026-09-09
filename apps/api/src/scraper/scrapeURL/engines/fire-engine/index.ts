@@ -25,7 +25,6 @@ import {
   FEPageLoadFailed,
   ProxySelectionError,
 } from "../../error";
-import * as Sentry from "@sentry/node";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import {
@@ -202,7 +201,6 @@ async function performFireEngineScrape<
               `An unexpeceted error occurred while calling checkStatus. Error counter is now at ${errors.length}.`,
               { error, jobId: (scrape as any).jobId },
             );
-            Sentry.captureException(error);
           }
         }
 
@@ -229,6 +227,7 @@ async function performFireEngineScrape<
         fireEngineHandoffEligible(meta)
           ? largePdfLimitBytes(meta)
           : PDF_DOWNLOAD_MAX_FILE_SIZE,
+        meta.imageOcrEnabled,
       );
     }
 
