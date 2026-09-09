@@ -28,6 +28,8 @@ import {
 import * as Sentry from "@sentry/node";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
+import { detectContentShell, wantsPageContent } from "../../lib/contentShell";
+import { resolvePdfJsViewerShell } from "./pdfjsViewer";
 import {
   byReferenceReachableForRequest,
   largePdfLimitBytes,
@@ -506,6 +508,52 @@ export async function scrapeURLWithFireEngineChromeCDP(
       true,
     );
 
+    const contentType =
+      (Object.entries(response.responseHeaders ?? {}).find(
+        x => x[0].toLowerCase() === "content-type",
+      ) ?? [])[1] ?? undefined;
+
+    // A PDF.js viewer shell is not the page's content: resolve it to the
+    // document it displays (handed off to the pdf engine via AddFeatureError)
+    // or fail explicitly, instead of returning the viewer's toolbar text.
+    // Requests that only want the rendered page (screenshot, branding) keep
+    // the viewer as it is.
+    if (!wantsRawBase64 && wantsPageContent(meta.options.formats)) {
+      const shell = detectContentShell({
+        html: response.content,
+        url: response.url ?? request.url,
+        contentType,
+      });
+      if (shell?.kind === "pdfjs-viewer") {
+        meta.logger.info(
+          "Page is a PDF.js viewer shell; resolving the document it displays",
+          {
+            signals: shell.signals,
+            documentUrl: shell.document?.url,
+            documentSource: shell.document?.source,
+          },
+        );
+        await resolvePdfJsViewerShell(
+          meta,
+          meta.logger.child({
+            method: "scrapeURLWithFireEngineChromeCDP/resolvePdfJsViewerShell",
+          }),
+          request,
+          response,
+          shell,
+          (shellRequest, logger) =>
+            performFireEngineScrape(
+              meta,
+              logger,
+              shellRequest,
+              meta.mock,
+              meta.abort.asSignal(),
+              true,
+            ),
+        );
+      }
+    }
+
     let screenshot: string | undefined;
     if (hasFormatOfType(meta.options.formats, "screenshot")) {
       if (response.screenshots && response.screenshots.length > 0) {
@@ -557,10 +605,6 @@ export async function scrapeURLWithFireEngineChromeCDP(
     const audioCookies = (response.actionResults ?? [])
       .filter(x => x.type === "getCookies")
       .flatMap(x => x.result.cookies);
-    const contentType =
-      (Object.entries(response.responseHeaders ?? {}).find(
-        x => x[0].toLowerCase() === "content-type",
-      ) ?? [])[1] ?? undefined;
 
     // A GCS-reference file cannot serve rawBase64 (the caller wants inline
     // bytes). fire-engine never grants the large-PDF raise to rawBase64

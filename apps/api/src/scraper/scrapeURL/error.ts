@@ -472,6 +472,106 @@ export class PDFPrefetchFailed extends TransportableError {
   }
 }
 
+/** Why a detected PDF.js viewer shell could not be resolved to its document. */
+export type PDFViewerUnresolvedReason =
+  | "document_not_located"
+  | "document_fetch_failed"
+  | "viewer_load_failed"
+  | "viewer_unavailable"
+  | "no_resolving_engine";
+
+/**
+ * The page is a PDF.js viewer shell (see lib/pdfjsViewerShell) and the PDF
+ * it displays could not be retrieved. Returned instead of the viewer's
+ * toolbar text, which used to pass the success check as a 200 with content.
+ */
+export class PDFViewerUnresolvedError extends TransportableError {
+  constructor(
+    public viewerUrl: string,
+    public reason: PDFViewerUnresolvedReason,
+    public documentUrl?: string,
+    public statusCode?: number,
+    public detail?: string,
+  ) {
+    super(
+      "SCRAPE_PDF_VIEWER_UNRESOLVED",
+      PDFViewerUnresolvedError.describe(
+        reason,
+        documentUrl,
+        statusCode,
+        detail,
+      ),
+    );
+  }
+
+  private static describe(
+    reason: PDFViewerUnresolvedReason,
+    documentUrl: string | undefined,
+    statusCode: number | undefined,
+    detail: string | undefined,
+  ): string {
+    const parenthetical = detail ? ` (${detail})` : "";
+    let attempt: string;
+    switch (reason) {
+      case "document_not_located":
+        attempt =
+          "no document location could be found in the page and the viewer did not load one" +
+          parenthetical;
+        break;
+      case "document_fetch_failed":
+        attempt =
+          `the document URL ${documentUrl ?? "the viewer uses"} ` +
+          (statusCode !== undefined
+            ? `responded with HTTP ${statusCode}`
+            : "did not return a PDF") +
+          parenthetical;
+        break;
+      case "viewer_load_failed":
+        attempt =
+          `the viewer failed to load ${documentUrl ?? "its document"}` +
+          parenthetical;
+        break;
+      case "viewer_unavailable":
+        attempt =
+          "the viewer page could not be loaded again to extract the document" +
+          parenthetical;
+        break;
+      case "no_resolving_engine":
+        attempt =
+          "loading the document requires a browser engine, which is not available to this request" +
+          parenthetical;
+        break;
+    }
+    return `This URL serves a PDF.js viewer, not a document: the page's own content is the viewer interface (toolbars and menus), so Firecrawl did not return it as the scrape result. Firecrawl tried to retrieve the PDF the viewer displays, but ${attempt}. This usually means the document link has expired (viewer links often carry short-lived tokens), requires a login, or blocks automated access. Try scraping the PDF's direct URL, or request the viewer link again with a fresh token.`;
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+      viewerUrl: this.viewerUrl,
+      reason: this.reason,
+      documentUrl: this.documentUrl,
+      statusCode: this.statusCode,
+      detail: this.detail,
+    };
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new PDFViewerUnresolvedError(
+      data.viewerUrl,
+      data.reason,
+      data.documentUrl,
+      data.statusCode,
+      data.detail,
+    );
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class DocumentAntibotError extends TransportableError {
   constructor() {
     super(

@@ -1579,6 +1579,101 @@ describe("Scrape tests", () => {
       );
     });
 
+    describe("PDF.js viewer shells (f-e dependent)", () => {
+      // Mozilla's hosted demo viewer. Without file= it loads its default
+      // document (the TraceMonkey paper) from a setting baked into the
+      // viewer build, so nothing in the page or URL names it.
+      const viewerBase = "https://mozilla.github.io/pdf.js/web";
+      const documentTitle =
+        /Trace-?based\s+Just-?in-?Time\s+Type\s+Specialization/i;
+
+      it.concurrent(
+        "returns the document behind a viewer URL that names it (file=)",
+        async () => {
+          const url = `${viewerBase}/viewer.html?file=compressed.tracemonkey-pldi-09.pdf`;
+          const response = await scrape(
+            { url, maxAge: 0, timeout: scrapeTimeout },
+            identity,
+          );
+
+          expect(response.markdown).toMatch(documentTitle);
+          expect(response.markdown).not.toContain("Automatic Zoom");
+          expect(response.metadata.contentType).toBe("application/pdf");
+          expect(response.metadata.numPages).toBe(14);
+          expect(response.metadata.sourceURL).toBe(url);
+          expect(response.metadata.url).toContain(
+            "compressed.tracemonkey-pldi-09.pdf",
+          );
+        },
+        scrapeTimeout + 10000,
+      );
+
+      it.concurrent(
+        "returns the document a viewer loads on its own (no file= parameter)",
+        async () => {
+          const url = `${viewerBase}/viewer.html`;
+          const response = await scrape(
+            { url, maxAge: 0, timeout: scrapeTimeout },
+            identity,
+          );
+
+          expect(response.markdown).toMatch(documentTitle);
+          expect(response.markdown).not.toContain("Automatic Zoom");
+          expect(response.metadata.contentType).toBe("application/pdf");
+          expect(response.metadata.numPages).toBe(14);
+          expect(response.metadata.sourceURL).toBe(url);
+        },
+        scrapeTimeout + 10000,
+      );
+
+      it.concurrent(
+        "fails explicitly when the viewer's document cannot be retrieved",
+        async () => {
+          const url = `${viewerBase}/viewer.html?file=missing-${crypto.randomUUID()}.pdf`;
+          const raw = await scrapeRaw(
+            { url, maxAge: 0, timeout: scrapeTimeout },
+            identity,
+          );
+
+          expect(raw.statusCode).toBe(500);
+          expect(raw.body.success).toBe(false);
+          expect(raw.body.code).toBe("SCRAPE_PDF_VIEWER_UNRESOLVED");
+          expect(raw.body.error).toContain("PDF.js viewer");
+          expect(raw.body.error).toContain("404");
+        },
+        scrapeTimeout + 10000,
+      );
+
+      // Needs a team of its own to read credits from; the self-hosted idmux
+      // fallback shares one team across every test.
+      concurrentIf(!!config.IDMUX_URL)(
+        "does not bill a viewer shell whose document cannot be retrieved",
+        async () => {
+          const shellIdentity = await idmux({
+            name: "v2-scrape/pdfjs-viewer-unresolved",
+            credits: 1000,
+          });
+          const before = (await creditUsage(shellIdentity)).remainingCredits;
+
+          const raw = await scrapeRaw(
+            {
+              url: `${viewerBase}/viewer.html?file=missing-${crypto.randomUUID()}.pdf`,
+              maxAge: 0,
+              timeout: scrapeTimeout,
+            },
+            shellIdentity,
+          );
+          expect(raw.body.code).toBe("SCRAPE_PDF_VIEWER_UNRESOLVED");
+
+          // Same settlement window the other billing test in this file uses.
+          await new Promise(resolve => setTimeout(resolve, 40000));
+          const after = (await creditUsage(shellIdentity)).remainingCredits;
+          expect(before - after).toBe(0);
+        },
+        scrapeTimeout + 60000,
+      );
+    });
+
     describe("YouTube (f-e dependent)", () => {
       it.concurrent(
         "scrapes YouTube videos and transcripts",
