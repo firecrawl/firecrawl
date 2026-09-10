@@ -18,6 +18,7 @@ export type AlexandriaResponse = {
   total: number | null;
   nextCursor: null;
   error?: string;
+  warning?: string;
 };
 
 const contractSchema = z.object({
@@ -152,106 +153,123 @@ export async function searchAlexandria(
     if (hits === null) throw new Error("Semantic discovery unavailable");
     const items: Record<string, unknown>[] = new Array(hits.length);
     let position = 0;
-    const loaded = await Promise.allSettled(
+    let failures = 0;
+    await Promise.all(
       Array.from({ length: Math.min(4, hits.length) }, async () => {
         while (position < hits.length) {
           const index = position++;
           const hit = hits[index];
-          const cohort = hit.cohorts[0];
-          const identifiers = [
-            ...(cohort ? [cohort] : []),
-            hit.provider,
-            ...hit.capability.split("/"),
-          ];
-          if (
-            identifiers.some(
-              id => !id || !/^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/.test(id),
+          try {
+            const cohort = hit.cohorts[0];
+            const identifiers = [
+              ...(cohort ? [cohort] : []),
+              hit.provider,
+              ...hit.capability.split("/"),
+            ];
+            if (
+              identifiers.some(
+                id => !id || !/^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/.test(id),
+              )
             )
-          )
-            throw new Error("Invalid discovery identifier");
-          const upstream = await forwardToExchange({
-            teamId: input.teamId,
-            hasExtendedCatalogAccess: input.hasExtendedCatalogAccess === true,
-            ...(cohort
-              ? {
-                  method: "GET" as const,
-                  path: `/v1/discover/${identifiers.map(encodeURIComponent).join("/")}`,
-                }
-              : {
-                  method: "POST" as const,
-                  path: "/v1/retrieve",
-                  body: {
-                    provider: "firecrawl-contextual-discovery",
-                    capability: "discovery/context",
-                    options: {
-                      providers: [hit.provider],
-                      capabilities: [hit.capability],
-                      expand: ["options", "response", "examples"],
+              throw new Error("Invalid discovery identifier");
+            const upstream = await forwardToExchange({
+              teamId: input.teamId,
+              hasExtendedCatalogAccess: input.hasExtendedCatalogAccess === true,
+              ...(cohort
+                ? {
+                    method: "GET" as const,
+                    path: `/v1/discover/${identifiers.map(encodeURIComponent).join("/")}`,
+                  }
+                : {
+                    method: "POST" as const,
+                    path: "/v1/retrieve",
+                    body: {
+                      provider: "firecrawl-contextual-discovery",
+                      capability: "discovery/context",
+                      options: {
+                        providers: [hit.provider],
+                        capabilities: [hit.capability],
+                        expand: ["options", "response", "examples"],
+                      },
                     },
-                  },
-                }),
-            requestId: input.requestId,
-            timeoutMs: remaining(),
-          });
-          let contractBody = upstream.body;
-          if (!cohort) {
-            const lookup = z
-              .object({
-                success: z.literal(true),
-                creditsCost: z.literal(0),
-                data: z.object({
-                  items: z.array(z.record(z.string(), z.unknown())).length(1),
-                }),
-              })
-              .parse(upstream.body);
-            const tool = lookup.data.items[0];
-            contractBody = {
-              ...tool,
-              label: tool.name,
-              whenToUse: tool.description,
-              returns: tool.response,
+                  }),
+              requestId: input.requestId,
+              timeoutMs: remaining(),
+            });
+            let contractBody = upstream.body;
+            if (!cohort) {
+              const lookup = z
+                .object({
+                  success: z.literal(true),
+                  creditsCost: z.literal(0),
+                  data: z.object({
+                    items: z.array(z.record(z.string(), z.unknown())).length(1),
+                  }),
+                })
+                .parse(upstream.body);
+              const tool = lookup.data.items[0];
+              contractBody = {
+                ...tool,
+                label: tool.name,
+                whenToUse: tool.description,
+                returns: tool.response,
+              };
+            }
+            const parsed = contractSchema.safeParse(contractBody);
+            if (upstream.status !== 200 || !parsed.success)
+              throw new Error("Tool contract unavailable");
+            const contract = parsed.data;
+            if (
+              contract.provider !== hit.provider ||
+              contract.capability !== hit.capability
+            )
+              throw new Error("Tool contract identity mismatch");
+            items[index] = {
+              id: `${hit.provider}/${hit.capability}`,
+              provider: hit.provider,
+              capability: hit.capability,
+              name: contract.label,
+              description: contract.whenToUse,
+              concept: hit.concept,
+              cohorts: hit.cohorts,
+              similarity: hit.similarity,
+              creditsCost: contract.creditsCost,
+              perRecord: contract.perRecord,
+              options: contract.options,
+              ...(contract.requiresOneOf
+                ? { requiresOneOf: contract.requiresOneOf }
+                : {}),
+              response: contract.returns,
+              ...(contract.example ? { example: contract.example } : {}),
+              examples: examplesFor(contract),
             };
+          } catch (error) {
+            failures++;
+            logger.warn("Alexandria tool contract unavailable", {
+              provider: hit.provider,
+              capability: hit.capability,
+              error,
+            });
           }
-          const parsed = contractSchema.safeParse(contractBody);
-          if (upstream.status !== 200 || !parsed.success)
-            throw new Error("Tool contract unavailable");
-          const contract = parsed.data;
-          if (
-            contract.provider !== hit.provider ||
-            contract.capability !== hit.capability
-          )
-            throw new Error("Tool contract identity mismatch");
-          items[index] = {
-            id: `${hit.provider}/${hit.capability}`,
-            provider: hit.provider,
-            capability: hit.capability,
-            name: contract.label,
-            description: contract.whenToUse,
-            concept: hit.concept,
-            cohorts: hit.cohorts,
-            similarity: hit.similarity,
-            creditsCost: contract.creditsCost,
-            perRecord: contract.perRecord,
-            options: contract.options,
-            ...(contract.requiresOneOf
-              ? { requiresOneOf: contract.requiresOneOf }
-              : {}),
-            response: contract.returns,
-            ...(contract.example ? { example: contract.example } : {}),
-            examples: examplesFor(contract),
-          };
         }
       }),
     );
-    if (loaded.some(result => result.status === "rejected"))
+    const availableItems = items.filter(Boolean);
+    if (failures && !availableItems.length)
       throw new Error("Tool contract loading failed");
     return {
       status: "available",
       mode: "semantic",
       level: "tools",
-      items,
-      total: items.length,
+      items: availableItems,
+      total: availableItems.length,
       nextCursor: null,
+      ...(failures
+        ? {
+            warning:
+              "Some tool contracts could not be loaded. Showing available matches.",
+          }
+        : {}),
     };
   } catch (error) {
     logger.warn("Alexandria discovery unavailable", { error });

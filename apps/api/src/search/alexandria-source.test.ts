@@ -229,3 +229,27 @@ it("loads a cohort-less hit through free Find Tools without losing ranked matche
     }),
   );
 });
+
+it("keeps successful contracts in rank order and continues after failed lookups", async () => {
+  const addresses = ["first", "broken", "third", "fourth", "fifth", "sixth"];
+  forward.mockImplementation(async call => {
+    if (call.path.includes("?"))
+      return response({
+        capabilities: addresses.map(address => ({ ...hit, address })),
+      });
+    const capability = call.path.split("/").at(-1)!;
+    if (capability === "broken") return response({}, 503);
+    return response({ ...contract, capability });
+  });
+  const result = await searchAlexandria({ ...input, limit: 6 }, logger);
+  expect(result.status).toBe("available");
+  expect(result.items.map(item => item.capability)).toEqual([
+    "first",
+    "third",
+    "fourth",
+    "fifth",
+    "sixth",
+  ]);
+  expect(result.total).toBe(5);
+  expect(result.warning).toContain("Some tool contracts");
+});

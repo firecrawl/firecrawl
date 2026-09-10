@@ -39,7 +39,7 @@ Results are capped at the semantic index's current limit of 24 tools.
 The envelope retains `status`, `mode: "semantic"`, `level: "tools"`, `items`,
 `total` (returned tool count), and `nextCursor: null`. This is a ranked search,
 not paginated catalogue browsing. `status: "unavailable"` means search or contract
-loading failed; it is distinct from an available result with zero matches.
+loading failed for all matches; it is distinct from an available result with zero matches. If only some contracts fail, the response includes the successfully loaded tools in rank order with a `warning`.
 
 ## Find Tools and progressive disclosure
 
