@@ -298,24 +298,28 @@ export class AutumnService {
     }
   }
 
-  private async track({
-    customerId,
-    entityId,
-    featureId,
-    value,
-    properties,
-    idempotencyKey,
-  }: TrackParams): Promise<boolean> {
+  /**
+   * `routed` is decided by the caller (see {@link resolveBillingRoute}) rather
+   * than asked again here: the answer costs a `partner_provisioned_accounts`
+   * read on a cold team, and the caller already needed it to know whether to
+   * provision.
+   */
+  private async track(
+    {
+      customerId,
+      entityId,
+      featureId,
+      value,
+      properties,
+      idempotencyKey,
+    }: TrackParams,
+    routed: boolean,
+  ): Promise<boolean> {
     // Gradual rollout: allowlisted orgs, partner-provisioned orgs, and those in
     // sticky FIREBILL_ROLLOUT_PERCENT bucket bill through firebill. No fallback
     // to Autumn on failure — firebill may already own the event, and the SDK
     // sends no idempotency key, so the pair could not be deduped.
-    // No entity means no team, and every provisioned account has one — so there
-    // is nothing to look up.
-    const gatewayProvisioned = entityId
-      ? await this.isGatewayProvisioned(entityId)
-      : false;
-    if (shouldRouteToFirebill(customerId, { gatewayProvisioned })) {
+    if (routed) {
       billingRouteTotal.labels("firebill").inc();
       return await firebillTrack({
         customerId,
@@ -432,19 +436,30 @@ export class AutumnService {
   }
 
   /**
-   * Warms the Autumn customer/entity context needed before tracking usage and
-   * answers with the customer to bill — the caller's org, which this service
-   * never looks up for itself. A team already provisioned under this org skips
-   * ensureTeamProvisioned entirely.
+   * Decides the route a team's billing takes, and warms the customer/entity
+   * context the direct route needs. The customer is the caller's own org,
+   * which this service never looks up for itself.
+   *
+   * **Provisioning runs on the direct route only.** firebill creates a missing
+   * entity itself now, off the 404 `entity_not_found` Autumn answers the
+   * billing call with, so the get/create prefix here would be a second,
+   * redundant round trip — one that cannot change the answer either way,
+   * because its failure is caught and the operation proceeds regardless.
+   *
+   * A team already provisioned under this org skips ensureTeamProvisioned
+   * entirely.
    */
-  private async ensureTrackingContext(
+  private async resolveBillingRoute(
     teamId: string,
     orgId: string,
-  ): Promise<string> {
-    if (!this.ensuredTeams.has(this.ensuredTeamKey(orgId, teamId))) {
+  ): Promise<{ customerId: string; routed: boolean }> {
+    const routed = shouldRouteToFirebill(orgId, {
+      gatewayProvisioned: await this.isGatewayProvisioned(teamId),
+    });
+    if (!routed && !this.ensuredTeams.has(this.ensuredTeamKey(orgId, teamId))) {
       await this.ensureTeamProvisioned({ teamId, orgId });
     }
-    return orgId;
+    return { customerId: orgId, routed };
   }
 
   /**
@@ -465,7 +480,10 @@ export class AutumnService {
       return null;
     }
     try {
-      const customerId = await this.ensureTrackingContext(teamId, orgId);
+      const { customerId, routed } = await this.resolveBillingRoute(
+        teamId,
+        orgId,
+      );
 
       // Mirrors track() and lockCredits(). Without this branch the gate reads
       // the ghost's balance alone, and a gateway ghost is designed to spend
@@ -483,11 +501,7 @@ export class AutumnService {
       // outright, because Autumn is asked about a balance the org was never
       // meant to pay from. So the org this most needs to reach firebill is
       // exactly the one a sampling bucket might leave behind.
-      if (
-        shouldRouteToFirebill(customerId, {
-          gatewayProvisioned: await this.isGatewayProvisioned(teamId),
-        })
-      ) {
+      if (routed) {
         const result = await firebillCheck({
           customerId,
           entityId: teamId,
@@ -560,7 +574,10 @@ export class AutumnService {
         : { status: "skipped" };
 
     try {
-      const customerId = await this.ensureTrackingContext(teamId, orgId);
+      const { customerId, routed } = await this.resolveBillingRoute(
+        teamId,
+        orgId,
+      );
 
       // Gradual firebill rollout, mirroring track(): allowlisted orgs take
       // their holds through firebill. The hold still lives in Autumn (firebill
@@ -568,11 +585,7 @@ export class AutumnService {
       // around the call. An unavailable answer maps to "skipped" — proceed
       // unlocked — like a direct-Autumn check failure below, except when a
       // partner gate is involved; see `unreachable` above.
-      if (
-        shouldRouteToFirebill(customerId, {
-          gatewayProvisioned: await this.isGatewayProvisioned(teamId),
-        })
-      ) {
+      if (routed) {
         const result = await firebillLock({
           customerId,
           entityId: teamId,
@@ -689,29 +702,21 @@ export class AutumnService {
       gated ||
       (team && (await this.isRoutedThroughFirebill(team.teamId, team.orgId)))
     ) {
-      // Only resolved for a gated settle: firebill needs the org to split the
+      // Named only for a gated settle: firebill needs the org to split the
       // settle and to find the integration to report to. An ordinary finalize
-      // does neither, so it does not pay for the lookup.
+      // does neither, so it does not carry one. Nothing is provisioned here —
+      // every settle on this branch goes through firebill, which provisions
+      // what it needs (see resolveBillingRoute).
       //
-      // A failure degrades to omitting it rather than throwing. There is no
-      // durable retry on this path — `billMonitorCheck`'s only caller catches,
-      // writes `billing_status: "failed"`, and moves on, and nothing ever reads
-      // that back — so throwing would abandon the finalize entirely: the hold
+      // A caller that cannot name the org passes no team and the settle still
+      // lands, without the label. There is no durable retry on this path —
+      // `billMonitorCheck`'s only caller catches, writes
+      // `billing_status: "failed"`, and moves on, and nothing ever reads that
+      // back — so refusing would abandon the finalize entirely: the hold
       // expires and the run goes unbilled at Autumn as well as unreported.
       // Settling and losing the label is the lesser loss, and firebill counts
       // the lost label as `partner_events_total{outcome="no_customer"}`.
-      const customerId =
-        externalRequestId && team
-          ? await this.ensureTrackingContext(team.teamId, team.orgId).catch(
-              error => {
-                logger.error(
-                  "Could not provision the customer for a gated settle; finalizing anyway, but this run cannot be reported to its partner",
-                  { teamId: team.teamId, lockId, error },
-                );
-                return null;
-              },
-            )
-          : null;
+      const customerId = externalRequestId && team ? team.orgId : null;
       // Surfaced, not discarded. firebill answers `false` for a refusal, a
       // timeout, or a non-OK — none of which throw — so a caller that ignores
       // this records a run as billed that nobody billed.
@@ -773,15 +778,21 @@ export class AutumnService {
     if (this.isPreviewTeam(teamId)) return false;
 
     try {
-      const customerId = await this.ensureTrackingContext(teamId, orgId);
-      return await this.track({
-        customerId,
-        entityId: teamId,
-        featureId,
-        value,
-        properties,
-        idempotencyKey,
-      });
+      const { customerId, routed } = await this.resolveBillingRoute(
+        teamId,
+        orgId,
+      );
+      return await this.track(
+        {
+          customerId,
+          entityId: teamId,
+          featureId,
+          value,
+          properties,
+          idempotencyKey,
+        },
+        routed,
+      );
     } catch (error) {
       logger.error(
         "Autumn trackCredits failed — billing API may be unavailable",
@@ -965,15 +976,21 @@ export class AutumnService {
     if (this.isPreviewTeam(teamId)) return;
 
     try {
-      const customerId = await this.ensureTrackingContext(teamId, orgId);
-      await this.track({
-        customerId,
-        entityId: teamId,
-        featureId,
-        value: -value,
-        properties: { ...properties, source: "autumn_refund" },
-        idempotencyKey,
-      });
+      const { customerId, routed } = await this.resolveBillingRoute(
+        teamId,
+        orgId,
+      );
+      await this.track(
+        {
+          customerId,
+          entityId: teamId,
+          featureId,
+          value: -value,
+          properties: { ...properties, source: "autumn_refund" },
+          idempotencyKey,
+        },
+        routed,
+      );
     } catch (error) {
       logger.error(
         "Autumn refundCredits failed — billing API may be unavailable",
