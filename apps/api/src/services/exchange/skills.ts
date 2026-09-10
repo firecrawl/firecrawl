@@ -19,7 +19,7 @@ const responseSchema = z.object({
 export async function resolveSearchSkills(
   data: SearchV2Response,
   teamId: string,
-  specialAccess = false,
+  hasExtendedCatalogAccess = false,
 ) {
   const urls = [
     ...new Set([
@@ -46,7 +46,9 @@ export async function resolveSearchSkills(
           headers: {
             "content-type": "application/json",
             "x-exchange-team-id": teamId,
-            "x-exchange-special-access": String(specialAccess === true),
+            "x-exchange-extended-catalog-access": String(
+              hasExtendedCatalogAccess === true,
+            ),
           },
           body: JSON.stringify({ urls }),
           signal: AbortSignal.timeout(5000),

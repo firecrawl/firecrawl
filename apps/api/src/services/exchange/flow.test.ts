@@ -157,12 +157,12 @@ it.each([
       .post(path)
       .set("x-request-id", "flow-1")
       .set("x-exchange-team-id", "attacker")
-      .set("x-exchange-special-access", "false")
+      .set("x-exchange-extended-catalog-access", "false")
       .send(payload);
     expect(response.status).toBe(200);
     expect(state.forward.mock.calls[0][0]).toMatchObject({
       teamId: "team_a",
-      specialAccess: true,
+      hasExtendedCatalogAccess: true,
     });
     expect(state.forward.mock.calls[0][0].deadline).toBeGreaterThan(
       Date.now() + 100,
@@ -477,14 +477,14 @@ it.each(["/exchange/platform/bounties/review", "/exchange/applications"])(
     const body = { title: "A request", status: "pending" };
     const response = await request(app)
       .post(path)
-      .set("x-exchange-special-access", "true")
+      .set("x-exchange-extended-catalog-access", "true")
       .send({
         ...body,
         __agentInterop: { auth: "agent-test-secret", shouldBill: false },
       });
     expect(response.status).toBe(200);
     expect(state.forward).toHaveBeenCalledWith(
-      expect.objectContaining({ body, specialAccess: false }),
+      expect.objectContaining({ body, hasExtendedCatalogAccess: false }),
     );
     expect(response.headers["cache-control"]).toBe("no-store");
     expect(state.checkCredits).not.toHaveBeenCalled();

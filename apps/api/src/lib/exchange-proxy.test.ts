@@ -49,7 +49,7 @@ describe("forwardToExchange", () => {
     expect(url).toBe("https://exchange.example/v1/retrieve");
     expect(init.headers).toMatchObject({
       "x-exchange-team-id": "team_a",
-      "x-exchange-special-access": "false",
+      "x-exchange-extended-catalog-access": "false",
       "x-request-id": "rid-1",
       "content-type": "application/json",
     });
@@ -65,14 +65,14 @@ describe("forwardToExchange", () => {
     fetchMock.mockResolvedValueOnce(upstream(200, { capabilities: [] }));
     await forwardToExchange({
       teamId: "t",
-      specialAccess: true,
+      hasExtendedCatalogAccess: true,
       method: "GET",
       path: "/v1/discover?q=x",
       timeoutMs: 1_000,
     });
     expect((fetchMock.mock.calls[0]![1] as any).body).toBeUndefined();
     expect(fetchMock.mock.calls[0]![1]!.headers).toMatchObject({
-      "x-exchange-special-access": "true",
+      "x-exchange-extended-catalog-access": "true",
     });
   });
 

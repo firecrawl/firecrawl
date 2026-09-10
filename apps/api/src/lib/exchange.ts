@@ -126,7 +126,7 @@ type ProviderCatalog = {
   };
   request?: Promise<ExchangeProvider[] | null>;
 };
-type CatalogAccess = { teamId: string; specialAccess: boolean };
+type CatalogAccess = { teamId: string; hasExtendedCatalogAccess: boolean };
 const providerCatalogs = new Map<boolean, ProviderCatalog>();
 
 function normalizeHost(host: string): string {
@@ -181,8 +181,8 @@ async function fetchExchangeProviders(
         ? {
             headers: {
               "x-exchange-team-id": access.teamId,
-              "x-exchange-special-access": String(
-                access.specialAccess === true,
+              "x-exchange-extended-catalog-access": String(
+                access.hasExtendedCatalogAccess === true,
               ),
             },
           }
@@ -208,17 +208,19 @@ async function fetchExchangeProviders(
 async function getExchangeProviders(
   access?: CatalogAccess,
 ): Promise<ExchangeProvider[] | null> {
-  const specialAccess =
-    access?.specialAccess === true && access.teamId.trim() !== "";
+  const hasExtendedCatalogAccess =
+    access?.hasExtendedCatalogAccess === true && access.teamId.trim() !== "";
   // This endpoint's catalogue varies by access tier, never by the requesting team.
-  const catalog = providerCatalogs.get(specialAccess) ?? {};
-  providerCatalogs.set(specialAccess, catalog);
+  const catalog = providerCatalogs.get(hasExtendedCatalogAccess) ?? {};
+  providerCatalogs.set(hasExtendedCatalogAccess, catalog);
   if (catalog.cached && catalog.cached.expiresAt > Date.now()) {
     return catalog.cached.value;
   }
 
   if (!catalog.request) {
-    catalog.request = fetchExchangeProviders(specialAccess ? access : undefined)
+    catalog.request = fetchExchangeProviders(
+      hasExtendedCatalogAccess ? access : undefined,
+    )
       .then(providers => {
         if (providers === null) {
           // Keep serving the last good catalog through transient outages;
@@ -516,7 +518,7 @@ export async function getExchangeAccessForRequest(
       input.teamId
         ? {
             teamId: input.teamId,
-            specialAccess: input.flags?.exchangeRetrieve === true,
+            hasExtendedCatalogAccess: input.flags?.exchangeRetrieve === true,
           }
         : undefined,
     );

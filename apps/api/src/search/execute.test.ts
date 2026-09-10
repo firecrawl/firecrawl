@@ -218,7 +218,7 @@ describe("executeSearch exchange source", () => {
         query: "latest stock price by ticker",
         limit: 10,
         teamId: "team-1",
-        specialAccess: false,
+        hasExtendedCatalogAccess: false,
         requestId: "request-1",
       }),
       logger,
@@ -239,9 +239,9 @@ describe("executeSearch exchange source", () => {
     );
 
     expect(mocks.search).not.toHaveBeenCalled();
-    expect(mocks.searchExchangeCatalog.mock.calls[0][0].specialAccess).toBe(
-      true,
-    );
+    expect(
+      mocks.searchExchangeCatalog.mock.calls[0][0].hasExtendedCatalogAccess,
+    ).toBe(true);
     expect(result.response).toEqual({ "exchange-providers": [capability] });
     expect(result.totalResultsCount).toBe(0);
     expect(result.searchCredits).toBe(0);
@@ -262,7 +262,11 @@ describe("executeSearch exchange source", () => {
   });
 
   it("records every requested source in tracking, exchange included", async () => {
-    await executeSearch(sources(["web", "exchange-providers"]), context, logger);
+    await executeSearch(
+      sources(["web", "exchange-providers"]),
+      context,
+      logger,
+    );
     expect(vi.mocked(trackSearchRequest).mock.calls.at(-1)![0].sources).toEqual(
       ["web", "exchange-providers"],
     );
@@ -301,7 +305,13 @@ describe("executeSearch exchange source", () => {
 
 it("accepts provider sources but reserves exchange for later", () => {
   for (const source of ["exchange-providers", { type: "exchange-providers" }])
-    expect(searchRequestSchema.safeParse({ query: "records", sources: [source] }).success).toBe(true);
+    expect(
+      searchRequestSchema.safeParse({ query: "records", sources: [source] })
+        .success,
+    ).toBe(true);
   for (const source of ["exchange", { type: "exchange" }])
-    expect(searchRequestSchema.safeParse({ query: "records", sources: [source] }).success).toBe(false);
+    expect(
+      searchRequestSchema.safeParse({ query: "records", sources: [source] })
+        .success,
+    ).toBe(false);
 });

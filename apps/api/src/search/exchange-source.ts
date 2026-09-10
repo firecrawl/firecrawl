@@ -27,7 +27,7 @@ export async function searchExchangeCatalog(
     query: string;
     limit: number;
     teamId: string;
-    specialAccess?: boolean;
+    hasExtendedCatalogAccess?: boolean;
     requestId?: string;
     timeoutMs?: number;
   },
@@ -42,7 +42,7 @@ export async function searchExchangeCatalog(
     const path = `/v1/discover?q=${encodeURIComponent(input.query)}&limit=${limit}`;
     const upstream = await forwardToExchange({
       teamId: input.teamId,
-      specialAccess: input.specialAccess === true,
+      hasExtendedCatalogAccess: input.hasExtendedCatalogAccess === true,
       method: "GET",
       path,
       timeoutMs,

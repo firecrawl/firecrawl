@@ -94,7 +94,8 @@ function exchangeProxy(
           })
         : await forwardToExchange({
             teamId: authedReq.auth.team_id,
-            specialAccess: authedReq.acuc?.flags?.exchangeRetrieve === true,
+            hasExtendedCatalogAccess:
+              authedReq.acuc?.flags?.exchangeRetrieve === true,
             method: req.method,
             path: req.originalUrl.replace(/^\/exchange/, "/v1"),
             body,

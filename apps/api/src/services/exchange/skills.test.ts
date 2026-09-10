@@ -16,8 +16,8 @@ afterEach(async () => {
   await agent.close();
 });
 it.each([false, true])(
-  "forwards special access %s with skill lookup",
-  async specialAccess => {
+  "forwards extended catalogue access %s with skill lookup",
+  async hasExtendedCatalogAccess => {
     agent
       .get("https://exchange.example")
       .intercept({
@@ -26,7 +26,9 @@ it.each([false, true])(
         body: JSON.stringify({ urls: ["https://spotify.com/"] }),
         headers: {
           "x-exchange-team-id": "team",
-          "x-exchange-special-access": String(specialAccess),
+          "x-exchange-extended-catalog-access": String(
+            hasExtendedCatalogAccess,
+          ),
         },
       })
       .reply(200, {
@@ -42,7 +44,9 @@ it.each([false, true])(
     const data = {
       web: [{ url: "https://spotify.com/" }, { url: "https://spotify.com/" }],
     } as Parameters<typeof resolveSearchSkills>[0];
-    expect(await resolveSearchSkills(data, "team", specialAccess)).toEqual([
+    expect(
+      await resolveSearchSkills(data, "team", hasExtendedCatalogAccess),
+    ).toEqual([
       {
         id: "particle",
         description: "Podcasts",

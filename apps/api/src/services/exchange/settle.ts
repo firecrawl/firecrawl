@@ -116,7 +116,7 @@ export async function settleExchangeCall(input: Input) {
         started = true;
         return forwardToExchange({
           teamId: input.teamId,
-          specialAccess: input.flags?.exchangeRetrieve === true,
+          hasExtendedCatalogAccess: input.flags?.exchangeRetrieve === true,
           method: "POST",
           path: "/v1/retrieve",
           body: input.body,

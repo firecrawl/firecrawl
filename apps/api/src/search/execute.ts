@@ -116,7 +116,7 @@ export async function executeSearch(
           query,
           limit,
           teamId,
-          specialAccess: flags?.exchangeRetrieve === true,
+          hasExtendedCatalogAccess: flags?.exchangeRetrieve === true,
           requestId: context.requestId,
           timeoutMs: options.timeout,
         },
