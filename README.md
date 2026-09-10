@@ -19,6 +19,7 @@
   <a href="https://firecrawl.dev">
     <img src="https://img.shields.io/badge/Visit-firecrawl.dev-orange" alt="Visit firecrawl.dev">
   </a>
+<a href="https://inspect.software/software/firecrawl/firecrawl"><img src="https://raw.githubusercontent.com/inspect-software/badges/main/v1/f/firecrawl/firecrawl.svg" alt="inspect.software score badge for firecrawl/firecrawl" /></a>
 </div>
 
 <div>
