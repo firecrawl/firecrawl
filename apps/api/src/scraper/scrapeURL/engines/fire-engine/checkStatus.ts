@@ -12,6 +12,7 @@ import {
   DNSResolutionError,
   FEPageLoadFailed,
   ProxySelectionError,
+  SiteRestrictionError,
 } from "../../error";
 import { MockState } from "../../lib/mock";
 import { fireEngineURL } from "./scrape";
@@ -137,6 +138,7 @@ const failedSchema = z.object({
   processing: z.literal(false),
   error: z.string(),
   retryWithStealth: z.boolean().optional(),
+  failureReason: z.literal("site_protection").optional(),
 });
 
 export class StillProcessingError extends Error {
@@ -190,6 +192,9 @@ export async function fireEngineCheckStatus(
     throw new StillProcessingError(jobId);
   } else if (failedParse.success) {
     logger.debug("Scrape job failed", { status, jobId });
+    if (failedParse.data.failureReason === "site_protection") {
+      throw new SiteRestrictionError();
+    }
     if (
       failedParse.data.retryWithStealth &&
       meta.options.proxy === "auto" &&

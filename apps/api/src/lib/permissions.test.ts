@@ -5,8 +5,8 @@ const strictSafeMode: ResolvedSafeMode = {
   lockdown: false,
   checkRobots: true,
   domainControls: true,
-  proxyLimit: "basic",
-  noCaptchaBypass: true,
+  noStealthProxy: true,
+  blockOnSiteRestriction: true,
   blockAuthPaths: true,
 };
 
@@ -24,7 +24,7 @@ describe("checkPermissions — safe mode", () => {
   });
 
   it.each(["stealth", "enhanced"])(
-    "rejects %s proxy under a basic proxy limit",
+    "rejects %s proxy under noStealthProxy",
     proxy => {
       const result = checkPermissions({ proxy }, null, {
         safeMode: strictSafeMode,
@@ -34,10 +34,10 @@ describe("checkPermissions — safe mode", () => {
     },
   );
 
-  it("allows stealth when the proxy limit is stealth", () => {
+  it("allows stealth when noStealthProxy is off", () => {
     expect(
       checkPermissions({ proxy: "stealth" }, null, {
-        safeMode: { ...strictSafeMode, proxyLimit: "stealth" },
+        safeMode: { ...strictSafeMode, noStealthProxy: false },
       }),
     ).toEqual({});
   });
@@ -80,7 +80,6 @@ describe("checkPermissions — safe mode", () => {
   });
 
   it("treats threat protection as forced under domainControls", () => {
-    // Override rejected even though the org's own TP flag is only "allowed"
     const result = checkPermissions(
       { threatProtection: { mode: "off" } },
       { threatProtection: "allowed" },
@@ -88,8 +87,6 @@ describe("checkPermissions — safe mode", () => {
     );
     expect(result.error).toMatch(/cannot be disabled|disable/i);
 
-    // ...and even when the org has no TP flag at all — including under
-    // lockdown (domainControls still filters cached content)
     const noFlag = checkPermissions(
       { threatProtection: { mode: "off" } },
       null,
@@ -97,7 +94,6 @@ describe("checkPermissions — safe mode", () => {
     );
     expect(noFlag.error).toBeDefined();
 
-    // Non-disabling overrides stay allowed
     expect(
       checkPermissions({ threatProtection: { mode: "normal" } }, null, {
         safeMode: strictSafeMode,

@@ -3,34 +3,40 @@ import {
   TeamFlags,
 } from "../controllers/v2/types";
 import type { ErrorCodes } from "./error";
+import {
+  domainMatchesList,
+  normalizeDomain,
+} from "./threat-protection/verdict";
 
 const SUPPORT_EMAIL = "support@firecrawl.com";
 
-// Org-configurable sub-controls, stored as a partial under
-// organizations.flags.safeModeConfig. Absent keys mean the default.
+function isSafeModeAllowlisted(
+  url: string,
+  allowlist: string[] | undefined,
+): boolean {
+  if (!allowlist || allowlist.length === 0) return false;
+  return domainMatchesList(normalizeDomain(url), allowlist);
+}
+
 export type SafeModeConfig = NonNullable<
   NonNullable<TeamFlags>["safeModeConfig"]
 >;
 
-// The fully-resolved bundle that rides job payloads. All live-scrape
-// enforcement reads this shape, never the raw flags.
 export type ResolvedSafeMode = {
   lockdown: boolean;
   checkRobots: boolean;
   domainControls: boolean;
-  proxyLimit: "basic" | "stealth";
-  noCaptchaBypass: boolean;
+  noStealthProxy: boolean;
+  blockOnSiteRestriction: boolean;
   blockAuthPaths: boolean;
 };
 
 const SAFE_MODE_DEFAULTS: ResolvedSafeMode = {
-  // Strictest setting everywhere, except lockdown: the default posture is
-  // compliant live scraping, not cache-only.
   lockdown: false,
   checkRobots: true,
   domainControls: true,
-  proxyLimit: "basic",
-  noCaptchaBypass: true,
+  noStealthProxy: true,
+  blockOnSiteRestriction: true,
   blockAuthPaths: true,
 };
 
@@ -38,49 +44,40 @@ export function getSafeMode(flags: TeamFlags | null | undefined): boolean {
   return flags?.safeMode === true;
 }
 
-/**
- * Pins `proxy: "auto"` to `"basic"` under a basic proxy limit, so the
- * stealth-escalation paths (all gated on `proxy === "auto"`) never fire and
- * the reported proxyUsed stays truthful. Explicit stealth/enhanced requests
- * are rejected in checkPermissions instead. Mutates the passed options.
- */
-export function applySafeModeProxyLimit(
+export function applySafeMode(
   safeMode: ResolvedSafeMode | undefined,
-  scrapeOptions: { proxy?: "basic" | "stealth" | "enhanced" | "auto" },
+  scrapeOptions: {
+    proxy?: "basic" | "stealth" | "enhanced" | "auto";
+    lockdown?: boolean;
+    maxAge?: number;
+  },
 ): void {
+  if (!safeMode) return;
+
   if (
-    safeMode &&
     !safeMode.lockdown &&
-    safeMode.proxyLimit === "basic" &&
+    safeMode.noStealthProxy &&
     scrapeOptions.proxy === "auto"
   ) {
     scrapeOptions.proxy = "basic";
   }
-}
 
-/**
- * Applies effective lockdown to parsed scrape options: forces the lockdown
- * flag and mirrors the parse-time maxAge auto-set (2 years) so the index
- * lookup can actually hit — the schema transform only runs for request-sent
- * lockdown, not for org-forced lockdown. Mutates the passed options.
- */
-export function applySafeModeLockdown(
-  safeMode: ResolvedSafeMode | undefined,
-  scrapeOptions: { lockdown?: boolean; maxAge?: number },
-): void {
-  if (!safeMode?.lockdown || scrapeOptions.lockdown) return;
-  scrapeOptions.lockdown = true;
-  if (scrapeOptions.maxAge === undefined) {
-    scrapeOptions.maxAge = LOCKDOWN_DEFAULT_MAX_AGE_MS;
+  if (safeMode.lockdown && !scrapeOptions.lockdown) {
+    scrapeOptions.lockdown = true;
+    if (scrapeOptions.maxAge === undefined) {
+      scrapeOptions.maxAge = LOCKDOWN_DEFAULT_MAX_AGE_MS;
+    }
   }
 }
 
 export function resolveSafeMode(
   flags: TeamFlags | null | undefined,
   requestSafeMode: boolean | undefined,
+  url?: string,
 ): {
   safeMode?: ResolvedSafeMode;
   bypassed?: boolean;
+  allowlisted?: boolean;
   error?: string;
   code?: ErrorCodes;
 } {
@@ -91,14 +88,13 @@ export function resolveSafeMode(
         code: "SAFE_MODE_BLOCKED",
       };
     }
-    // safeMode: false without the org flag asks for what it already has.
     return {};
   }
 
   const config = flags?.safeModeConfig;
 
   if (requestSafeMode === false) {
-    if (config?.allowBypass !== true) {
+    if (config?.allowBypassSafeMode !== true) {
       return {
         error:
           "Requests are not allowed to disable Safe Mode for your organization. An organization admin can allow per-request opt-outs from the Safe Mode settings.",
@@ -108,17 +104,29 @@ export function resolveSafeMode(
     return { bypassed: true };
   }
 
-  return {
-    safeMode: {
-      lockdown: config?.lockdown ?? SAFE_MODE_DEFAULTS.lockdown,
-      checkRobots: config?.checkRobots ?? SAFE_MODE_DEFAULTS.checkRobots,
-      domainControls:
-        config?.domainControls ?? SAFE_MODE_DEFAULTS.domainControls,
-      proxyLimit: config?.proxyLimit ?? SAFE_MODE_DEFAULTS.proxyLimit,
-      noCaptchaBypass:
-        config?.noCaptchaBypass ?? SAFE_MODE_DEFAULTS.noCaptchaBypass,
-      blockAuthPaths:
-        config?.blockAuthPaths ?? SAFE_MODE_DEFAULTS.blockAuthPaths,
-    },
+  const resolved: ResolvedSafeMode = {
+    lockdown: config?.lockdown ?? SAFE_MODE_DEFAULTS.lockdown,
+    checkRobots: config?.checkRobots ?? SAFE_MODE_DEFAULTS.checkRobots,
+    domainControls: config?.domainControls ?? SAFE_MODE_DEFAULTS.domainControls,
+    noStealthProxy: config?.noStealthProxy ?? SAFE_MODE_DEFAULTS.noStealthProxy,
+    blockOnSiteRestriction:
+      config?.blockOnSiteRestriction ??
+      SAFE_MODE_DEFAULTS.blockOnSiteRestriction,
+    blockAuthPaths: config?.blockAuthPaths ?? SAFE_MODE_DEFAULTS.blockAuthPaths,
   };
+
+  if (url && isSafeModeAllowlisted(url, config?.allowlist)) {
+    return {
+      allowlisted: true,
+      safeMode: {
+        ...resolved,
+        checkRobots: false,
+        noStealthProxy: false,
+        blockOnSiteRestriction: false,
+        blockAuthPaths: false,
+      },
+    };
+  }
+
+  return { safeMode: resolved };
 }

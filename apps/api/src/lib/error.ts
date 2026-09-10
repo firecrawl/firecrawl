@@ -44,6 +44,7 @@ export type ErrorCodes =
   | "BAD_REQUEST"
   | "CONCURRENCY_QUEUE_TIMEOUT"
   | "SAFE_MODE_BLOCKED"
+  | "SCRAPE_SITE_RESTRICTION_BLOCKED"
   // Threat protection (enterprise domain risk blocking). Lowercase by design:
   // this is the documented, user-facing error code for the feature.
   | "unsafe_domain_blocked"

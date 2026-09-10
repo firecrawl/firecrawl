@@ -15,9 +15,11 @@ import {
   ProxySelectionError,
   SSLError,
   SiteError,
+  SiteRestrictionError,
   UnsupportedFileError,
 } from "../../error";
 import { Meta } from "../..";
+import type { ResolvedSafeMode } from "../../../../lib/safe-mode";
 
 import { config } from "../../../../config";
 
@@ -57,7 +59,20 @@ export type FireEngineScrapeRequestCommon = {
   maxAge?: number;
   saveScrapeResultToGCS?: boolean;
   zeroDataRetention?: boolean;
+
+  safeMode?: boolean;
+  safeModePolicies?: { useSiteHandling?: boolean };
 };
+
+export function safeModeParams(
+  safeMode: ResolvedSafeMode | undefined,
+): Pick<FireEngineScrapeRequestCommon, "safeMode" | "safeModePolicies"> {
+  if (!safeMode) return {};
+  return {
+    safeMode: true,
+    safeModePolicies: { useSiteHandling: !safeMode.blockOnSiteRestriction },
+  };
+}
 
 export type FireEngineScrapeRequestChromeCDP = {
   engine: "chrome-cdp";
@@ -180,6 +195,7 @@ const processingSchema = z.object({
 const failedSchema = z.object({
   error: z.string(),
   retryWithStealth: z.boolean().optional(),
+  failureReason: z.literal("site_protection").optional(),
 });
 
 export const fireEngineURL =
@@ -241,6 +257,9 @@ export async function fireEngineScrape<
     logger.debug("Scrape job failed", {
       status,
     });
+    if (failedParse.data.failureReason === "site_protection") {
+      throw new SiteRestrictionError();
+    }
     if (
       failedParse.data.retryWithStealth &&
       meta.options.proxy === "auto" &&

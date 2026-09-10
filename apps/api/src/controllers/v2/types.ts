@@ -812,9 +812,6 @@ const baseScrapeOptions = z.strictObject({
   minAge: z.int().gte(0).optional(),
   storeInCache: z.boolean().prefault(true),
   lockdown: z.boolean().prefault(false),
-  // Tri-state on purpose (never .prefault(false)): `false` is an explicit
-  // request to bypass Safe Mode, gated on the org's allowBypass setting;
-  // absent means "follow the org flags".
   safeMode: z.boolean().optional(),
   redactPII: redactPIISchema,
   // Enterprise: per-request field-level override of the org's threat
@@ -1889,28 +1886,22 @@ type Account = {
   remainingCredits: number;
 };
 
-// Lockdown's default cache window: 2 years in ms. Number.MAX_SAFE_INTEGER
-// lands ~285,000 years which overflows Postgres TIMESTAMP arithmetic in the
-// index lookup and silently returns no rows. 2 years covers any practical
-// cache retention window. Shared by the parse-time transform (request-sent
-// lockdown) and applySafeModeLockdown (org-forced lockdown).
 export const LOCKDOWN_DEFAULT_MAX_AGE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 
 export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
-  // Safe Mode gate (internal admin) + customer-set sub-control overrides;
-  // absent safeModeConfig keys mean the strict default.
   safeMode?: boolean;
   safeModeConfig?: {
-    allowBypass?: boolean;
+    allowBypassSafeMode?: boolean;
     lockdown?: boolean;
     checkRobots?: boolean;
     domainControls?: boolean;
-    proxyLimit?: "basic" | "stealth";
-    noCaptchaBypass?: boolean;
+    noStealthProxy?: boolean;
+    blockOnSiteRestriction?: boolean;
     blockAuthPaths?: boolean;
+    allowlist?: string[];
   };
   siemLogging?: boolean;
   unblockedDomains?: string[];

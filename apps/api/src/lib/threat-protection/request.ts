@@ -67,10 +67,8 @@ interface ResolvedThreatProtection {
  * - Flag "forced": an override may never set `mode: "off"` → 403.
  * - Effective mode "off" resolves to `policy: null` so callers can skip all
  *   enforcement work.
- * - `force: true` (Safe Mode's domainControls): the org's policy if they have
- *   one, protective defaults if they don't, and requests can tighten but
- *   never loosen — the feature always runs, so this never resolves to
- *   `policy: null`.
+ * - `force: true`: treated as flag "forced"; the feature always runs, so this
+ *   never resolves to `policy: null`.
  */
 export async function resolveThreatProtection(args: {
   teamId: string;
@@ -79,9 +77,6 @@ export async function resolveThreatProtection(args: {
   override?: Partial<ThreatProtectionPolicy>;
   force?: boolean;
 }): Promise<ResolvedThreatProtection> {
-  // `force` is equivalent to the team flag being "forced": the feature runs
-  // and the request may not disable it. Everything below reasons about this
-  // one effective mode.
   const effectiveFlagMode =
     args.force === true ? "forced" : getThreatProtection(args.flags);
 
@@ -118,8 +113,6 @@ export async function resolveThreatProtection(args: {
 
   let policy = resolveEffectivePolicy(orgConfig, args.override);
   if (args.force === true && policy.mode === "off") {
-    // Overrides that disable were already rejected above, so an "off" here
-    // comes from the org config (or the unconfigured defaults).
     policy = { ...policy, mode: "normal" };
   }
 

@@ -1,6 +1,5 @@
 import {
-  applySafeModeLockdown,
-  applySafeModeProxyLimit,
+  applySafeMode,
   getSafeMode,
   resolveSafeMode,
   ResolvedSafeMode,
@@ -11,8 +10,8 @@ const strict: ResolvedSafeMode = {
   lockdown: false,
   checkRobots: true,
   domainControls: true,
-  proxyLimit: "basic",
-  noCaptchaBypass: true,
+  noStealthProxy: true,
+  blockOnSiteRestriction: true,
   blockAuthPaths: true,
 };
 
@@ -56,8 +55,8 @@ describe("resolveSafeMode — org flag on", () => {
         lockdown: false,
         checkRobots: true,
         domainControls: true,
-        proxyLimit: "basic",
-        noCaptchaBypass: true,
+        noStealthProxy: true,
+        blockOnSiteRestriction: true,
         blockAuthPaths: true,
       },
     });
@@ -72,7 +71,7 @@ describe("resolveSafeMode — org flag on", () => {
     const result = resolveSafeMode(
       {
         safeMode: true,
-        safeModeConfig: { lockdown: true, proxyLimit: "stealth" },
+        safeModeConfig: { lockdown: true, noStealthProxy: false },
       },
       undefined,
     );
@@ -80,17 +79,17 @@ describe("resolveSafeMode — org flag on", () => {
       lockdown: true,
       checkRobots: true,
       domainControls: true,
-      proxyLimit: "stealth",
-      noCaptchaBypass: true,
+      noStealthProxy: false,
+      blockOnSiteRestriction: true,
       blockAuthPaths: true,
     });
   });
 
-  it("rejects a bypass when allowBypass is unset or false", () => {
+  it("rejects a bypass when allowBypassSafeMode is unset or false", () => {
     const configs: (SafeModeConfig | undefined)[] = [
       undefined,
       {},
-      { allowBypass: false },
+      { allowBypassSafeMode: false },
     ];
     for (const config of configs) {
       const result = resolveSafeMode(
@@ -113,17 +112,17 @@ describe("resolveSafeMode — org flag on", () => {
     expect(result.code).toBe("SAFE_MODE_BLOCKED");
   });
 
-  it("honors a bypass when allowBypass is true", () => {
+  it("honors a bypass when allowBypassSafeMode is true", () => {
     const result = resolveSafeMode(
-      { safeMode: true, safeModeConfig: { allowBypass: true } },
+      { safeMode: true, safeModeConfig: { allowBypassSafeMode: true } },
       false,
     );
     expect(result).toEqual({ bypassed: true });
   });
 
-  it("still enforces when allowBypass is true but no bypass is requested", () => {
+  it("still enforces when allowBypassSafeMode is true but no bypass is requested", () => {
     const result = resolveSafeMode(
-      { safeMode: true, safeModeConfig: { allowBypass: true } },
+      { safeMode: true, safeModeConfig: { allowBypassSafeMode: true } },
       undefined,
     );
     expect(result.safeMode).toBeDefined();
@@ -131,49 +130,123 @@ describe("resolveSafeMode — org flag on", () => {
   });
 });
 
-describe("applySafeModeProxyLimit", () => {
-  it("pins auto to basic under a basic limit", () => {
+describe("resolveSafeMode — allowlist", () => {
+  const flags = {
+    safeMode: true,
+    safeModeConfig: { allowlist: ["docs.example.com", "*.trusted.example"] },
+  };
+
+  it("relaxes scraping controls but keeps lockdown + domainControls", () => {
+    const result = resolveSafeMode(
+      flags,
+      undefined,
+      "https://docs.example.com/x",
+    );
+    expect(result.allowlisted).toBe(true);
+    expect(result.safeMode).toEqual({
+      lockdown: false,
+      checkRobots: false,
+      domainControls: true,
+      noStealthProxy: false,
+      blockOnSiteRestriction: false,
+      blockAuthPaths: false,
+    });
+  });
+
+  it("keeps lockdown on for an allowlisted URL when the org enabled it", () => {
+    const result = resolveSafeMode(
+      {
+        safeMode: true,
+        safeModeConfig: { lockdown: true, allowlist: ["docs.example.com"] },
+      },
+      undefined,
+      "https://docs.example.com/x",
+    );
+    expect(result.allowlisted).toBe(true);
+    expect(result.safeMode?.lockdown).toBe(true);
+    expect(result.safeMode?.noStealthProxy).toBe(false);
+  });
+
+  it("matches globs and subdomains", () => {
+    expect(
+      resolveSafeMode(flags, undefined, "https://a.trusted.example/p")
+        .allowlisted,
+    ).toBe(true);
+    expect(
+      resolveSafeMode(
+        { safeMode: true, safeModeConfig: { allowlist: ["example.com"] } },
+        undefined,
+        "https://sub.example.com/p",
+      ).allowlisted,
+    ).toBe(true);
+  });
+
+  it("does not exempt a non-matching URL", () => {
+    const result = resolveSafeMode(flags, undefined, "https://other.example/x");
+    expect(result.allowlisted).toBeUndefined();
+    expect(result.safeMode?.noStealthProxy).toBe(true);
+  });
+
+  it("ignores the allowlist when no url is passed", () => {
+    const result = resolveSafeMode(flags, undefined);
+    expect(result.allowlisted).toBeUndefined();
+    expect(result.safeMode?.blockAuthPaths).toBe(true);
+  });
+
+  it("a request bypass still wins over the allowlist path", () => {
+    const result = resolveSafeMode(
+      {
+        safeMode: true,
+        safeModeConfig: { allowBypassSafeMode: true, allowlist: ["x.example"] },
+      },
+      false,
+      "https://y.example/p",
+    );
+    expect(result.bypassed).toBe(true);
+  });
+});
+
+describe("applySafeMode", () => {
+  it("forces auto to basic under noStealthProxy", () => {
     const options = { proxy: "auto" as const };
-    applySafeModeProxyLimit(strict, options);
+    applySafeMode(strict, options);
     expect(options.proxy).toBe("basic");
   });
 
-  it("leaves non-auto values and other configs untouched", () => {
+  it("leaves proxy untouched for non-auto values, off, or lockdown", () => {
     for (const [safeMode, proxy] of [
       [strict, "basic"],
-      [{ ...strict, proxyLimit: "stealth" }, "auto"],
+      [{ ...strict, noStealthProxy: false }, "auto"],
       [{ ...strict, lockdown: true }, "auto"],
       [undefined, "auto"],
     ] as const) {
       const options = { proxy: proxy as "basic" | "auto" };
-      applySafeModeProxyLimit(safeMode, options);
+      applySafeMode(safeMode, options);
       expect(options.proxy).toBe(proxy);
     }
   });
-});
 
-describe("applySafeModeLockdown", () => {
   it("forces lockdown and the 2-year maxAge when unset", () => {
     const options: { lockdown?: boolean; maxAge?: number } = {};
-    applySafeModeLockdown({ ...strict, lockdown: true }, options);
+    applySafeMode({ ...strict, lockdown: true }, options);
     expect(options.lockdown).toBe(true);
     expect(options.maxAge).toBe(2 * 365 * 24 * 60 * 60 * 1000);
   });
 
-  it("keeps a request-supplied maxAge", () => {
+  it("keeps a request-supplied maxAge under forced lockdown", () => {
     const options = { maxAge: 5000 };
-    applySafeModeLockdown({ ...strict, lockdown: true }, options);
+    applySafeMode({ ...strict, lockdown: true }, options);
     expect(options).toEqual({ lockdown: true, maxAge: 5000 });
   });
 
-  it("no-ops when lockdown was already requested or is off", () => {
+  it("no-ops lockdown when already requested or off", () => {
     const alreadyOn = { lockdown: true };
-    applySafeModeLockdown({ ...strict, lockdown: true }, alreadyOn);
+    applySafeMode({ ...strict, lockdown: true }, alreadyOn);
     expect(alreadyOn).toEqual({ lockdown: true });
 
     const off: { lockdown?: boolean } = {};
-    applySafeModeLockdown(strict, off);
-    applySafeModeLockdown(undefined, off);
+    applySafeMode(strict, off);
+    applySafeMode(undefined, off);
     expect(off).toEqual({});
   });
 });

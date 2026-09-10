@@ -56,8 +56,6 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
     );
   });
 
-  // Per-team flags require idmux, which the self-hosted fallback identity
-  // cannot provide — every flag-dependent suite is production-only.
   describeIf(TEST_PRODUCTION)("org flag on (strict defaults)", () => {
     let identity: Identity;
 
@@ -195,13 +193,16 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
     );
   });
 
-  describeIf(TEST_PRODUCTION)("org flag on with allowBypass", () => {
+  describeIf(TEST_PRODUCTION)("org flag on with allowBypassSafeMode", () => {
     let identity: Identity;
 
     beforeAll(async () => {
       identity = await idmux({
         name: "safe-mode/bypassable",
-        flags: { safeMode: true, safeModeConfig: { allowBypass: true } },
+        flags: {
+          safeMode: true,
+          safeModeConfig: { allowBypassSafeMode: true },
+        },
       });
     }, 10000);
 
@@ -259,8 +260,6 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
       it.concurrent(
         "accepts and ignores params the other controls would reject",
         async () => {
-          // Not a 403: under lockdown the params are inert, so the request
-          // proceeds into lockdown machinery and fails only on the cache miss.
           const res = await scrapeRaw(
             {
               url: createTestIdUrl(),
@@ -282,8 +281,6 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
     let identity: Identity;
 
     beforeAll(async () => {
-      // threatProtection: "allowed" lets the test save a TP config; Safe
-      // Mode's domainControls must enforce it even with mode: "off".
       identity = await idmux({
         name: "safe-mode/domain-controls",
         flags: { safeMode: true, threatProtection: "allowed" },

@@ -17,11 +17,7 @@ import {
 } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
-import {
-  applySafeModeLockdown,
-  applySafeModeProxyLimit,
-  resolveSafeMode,
-} from "../../lib/safe-mode";
+import { applySafeMode, resolveSafeMode } from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -91,11 +87,6 @@ export async function scrapeController(
         });
       });
 
-      // Safe Mode: resolve the org bundle + request bypass. No-ops for
-      // teams without the flag. Resolved before threat protection because
-      // domainControls forces threat protection on.
-      // Compliance audit trail: safe-mode rejections are SIEM-visible for
-      // orgs with siemLogging (the emitter no-ops for everyone else).
       const emitSafeModeRejection = (message: string) =>
         emitRejectedScrapeActivityEvent({
           scrapeId: jobId,
@@ -110,7 +101,11 @@ export async function scrapeController(
           zeroDataRetention: req.body.zeroDataRetention ?? false,
         });
 
-      const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
+      const safeMode = resolveSafeMode(
+        req.acuc?.flags,
+        req.body.safeMode,
+        req.body.url,
+      );
       if (safeMode.error) {
         setSpanAttributes(span, {
           "scrape.error": safeMode.error,
@@ -126,11 +121,12 @@ export async function scrapeController(
       setSpanAttributes(span, {
         "scrape.safe_mode": safeMode.safeMode !== undefined,
         "scrape.safe_mode_bypassed": safeMode.bypassed === true,
+        "scrape.safe_mode_allowlisted": safeMode.allowlisted === true,
       });
 
       // Threat protection: resolve the effective policy (org config +
       // per-request override). No-ops (null policy, zero I/O) for teams
-      // without the flag; Safe Mode's domainControls forces it on.
+      // without the flag.
       const threatProtection = await resolveThreatProtection({
         teamId: req.auth.team_id,
         orgId: req.acuc?.org_id ?? null,
@@ -143,8 +139,6 @@ export async function scrapeController(
           "scrape.error": threatProtection.error,
           "scrape.status_code": 403,
         });
-        // A TP rejection under forced domainControls is a safe-mode
-        // rejection too — keep it on the same audit trail.
         if (safeMode.safeMode?.domainControls) {
           emitSafeModeRejection(threatProtection.error);
         }
@@ -201,8 +195,7 @@ export async function scrapeController(
         });
       }
 
-      applySafeModeProxyLimit(safeMode.safeMode, req.body);
-      applySafeModeLockdown(safeMode.safeMode, req.body);
+      applySafeMode(safeMode.safeMode, req.body);
 
       const zeroDataRetention =
         getScrapeZDR(req.acuc?.flags) === "forced" ||
@@ -273,7 +266,6 @@ export async function scrapeController(
       const middlewareTime = controllerStartTime - middlewareStartTime;
 
       if (safeMode.bypassed) {
-        // Audit trail: the request opted out of Safe Mode via allowBypass.
         logger.info("Safe Mode bypassed by request", {
           apiKeyId: req.acuc?.api_key_id,
         });
@@ -410,7 +402,9 @@ export async function scrapeController(
                       teamConcurrency: baseConcurrency,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
                       threatProtection: threatProtection.policy ?? undefined,
-                      safeMode: safeMode.safeMode,
+                      safeMode: safeMode.allowlisted
+                        ? undefined
+                        : safeMode.safeMode,
                     },
                     skipNuq: true,
                     origin,

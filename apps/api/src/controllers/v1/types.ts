@@ -1316,17 +1316,16 @@ export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
-  // Safe Mode gate (internal admin) + customer-set sub-control overrides;
-  // absent safeModeConfig keys mean the strict default.
   safeMode?: boolean;
   safeModeConfig?: {
-    allowBypass?: boolean;
+    allowBypassSafeMode?: boolean;
     lockdown?: boolean;
     checkRobots?: boolean;
     domainControls?: boolean;
-    proxyLimit?: "basic" | "stealth";
-    noCaptchaBypass?: boolean;
+    noStealthProxy?: boolean;
+    blockOnSiteRestriction?: boolean;
     blockAuthPaths?: boolean;
+    allowlist?: string[];
   };
   siemLogging?: boolean;
   unblockedDomains?: string[];

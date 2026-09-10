@@ -920,8 +920,6 @@ async function startServices(command?: string[]): Promise<Services> {
       )
     : undefined;
 
-  // tests hammer the API instantly, so we need to ensure it's running before
-  // launching tests — including the narrow `pnpm exec vitest run <path>` form.
   if (
     command &&
     Array.isArray(command) &&

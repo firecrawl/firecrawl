@@ -43,12 +43,6 @@ interface PermissionOptions {
    * threatProtection option is rejected.
    */
   threatProtectionOrgConfig?: { allowRequestOverrides: boolean } | null;
-  /**
-   * Resolved Safe Mode bundle for this request (null/absent when the org
-   * doesn't have the flag or the request was allowed to bypass). Under
-   * effective lockdown the live-scrape rules are skipped: the params they
-   * would reject are inert when no outbound traffic can occur.
-   */
   safeMode?: ResolvedSafeMode | null;
 }
 
@@ -103,12 +97,10 @@ export function checkPermissions(
   // threat protection perms — the flag must be 'allowed' or 'forced' for any
   // per-request threatProtection option, the org must not have locked down
   // request-level overrides, and a 'forced' team may never disable the
-  // feature per-request. Safe Mode's domainControls forces the feature the
-  // same way (even under lockdown — domain checks also filter cached content).
+  // feature per-request.
   const threatProtectionOption =
     request.threatProtection ?? request.scrapeOptions?.threatProtection;
   if (threatProtectionOption !== undefined) {
-    // Safe Mode's domainControls is equivalent to the flag being "forced".
     const effectiveThreatMode =
       options?.safeMode?.domainControls === true
         ? "forced"
@@ -127,13 +119,10 @@ export function checkPermissions(
     }
   }
 
-  // Safe Mode perms — fail-closed request-time rules for the resolved
-  // bundle. Skipped entirely under effective lockdown: no outbound traffic
-  // occurs, so the params these rules reject are inert.
   const safeMode = options?.safeMode;
   if (safeMode && !safeMode.lockdown) {
     if (
-      safeMode.proxyLimit === "basic" &&
+      safeMode.noStealthProxy &&
       (request.proxy === "stealth" || request.proxy === "enhanced")
     ) {
       return {

@@ -41,6 +41,7 @@ import {
   DocumentFetchProxyError,
   RemoveFeatureError,
   SiteError,
+  SiteRestrictionError,
   UnsupportedFileError,
   SSLError,
   PDFInsufficientTimeError,
@@ -624,12 +625,6 @@ export type InternalOptions = {
    */
   threatProtection?: ThreatProtectionPolicy;
 
-  /**
-   * Resolved Safe Mode bundle for this scrape (org flags + request bypass,
-   * resolved at the controller layer like threatProtection). Rides the job
-   * payload so crawl children and sub-scrapes inherit it. Absent => Safe Mode
-   * is off or bypassed for this request.
-   */
   safeMode?: ResolvedSafeMode;
 
   v1Agent?: ScrapeOptionsV1["agent"];
@@ -1000,6 +995,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof AddFeatureError ||
               error.error instanceof RemoveFeatureError ||
               error.error instanceof SiteError ||
+              error.error instanceof SiteRestrictionError ||
               error.error instanceof SSLError ||
               error.error instanceof DNSResolutionError ||
               error.error instanceof ActionError ||
