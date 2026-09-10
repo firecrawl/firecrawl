@@ -48,11 +48,11 @@ beforeEach(() => {
     } as unknown as Awaited<ReturnType<typeof fetch>>);
 });
 
-it("derives special access from authentication and preserves private cache policy", async () => {
+it("derives extended catalogue access from authentication and preserves private cache policy", async () => {
   const response = await request(app())
     .get("/exchange/discover")
     .set("x-exchange-team-id", "spoofed-team")
-    .set("x-exchange-special-access", "false");
+    .set("x-exchange-extended-catalog-access", "false");
   expect(response.status).toBe(200);
   expect(response.headers["cache-control"]).toBe("no-store");
   expect(fetch).toHaveBeenCalledWith(
@@ -60,40 +60,40 @@ it("derives special access from authentication and preserves private cache polic
     expect.objectContaining({
       headers: expect.objectContaining({
         "x-exchange-team-id": "authenticated-team",
-        "x-exchange-special-access": "true",
+        "x-exchange-extended-catalog-access": "true",
       }),
     }),
   );
 });
 
 it.each([false, undefined, "true"])(
-  "does not grant special access from client headers when the flag is %s",
+  "does not grant extended catalogue access from client headers when the flag is %s",
   async access => {
     state.access = access;
     const response = await request(app())
-      .get("/exchange/platform/catalogue?specialAccess=true")
-      .set("x-exchange-special-access", "true");
+      .get("/exchange/platform/catalogue?hasExtendedCatalogAccess=true")
+      .set("x-exchange-extended-catalog-access", "true");
     expect(response.status).toBe(200);
     expect(fetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
         headers: expect.objectContaining({
-          "x-exchange-special-access": "false",
+          "x-exchange-extended-catalog-access": "false",
         }),
       }),
     );
   },
 );
 
-it("keeps the existing retrieval gate even when the caller spoofs special access", async () => {
+it("keeps the existing retrieval gate even when the caller spoofs extended catalogue access", async () => {
   state.access = false;
   const response = await request(app())
     .post("/exchange/retrieve")
-    .set("x-exchange-special-access", "true")
+    .set("x-exchange-extended-catalog-access", "true")
     .send({
       provider: "preview-catalog",
       capability: "items/search",
-      specialAccess: true,
+      hasExtendedCatalogAccess: true,
     });
   expect(response.status).toBe(403);
   expect(fetch).not.toHaveBeenCalled();

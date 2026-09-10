@@ -83,7 +83,7 @@ function exchangeProxy(
           ),
           ...(hasBody ? { "content-type": "application/json" } : {}),
           "x-exchange-team-id": authedReq.auth.team_id,
-          "x-exchange-special-access": String(
+          "x-exchange-extended-catalog-access": String(
             authedReq.acuc?.flags?.exchangeRetrieve === true,
           ),
         },

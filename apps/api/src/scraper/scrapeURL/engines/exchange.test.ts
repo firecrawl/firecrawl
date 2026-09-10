@@ -18,7 +18,7 @@ vi.mock("../../../lib/otel-tracer", () => ({
 afterEach(() => vi.clearAllMocks());
 
 it.each([true, false, undefined])(
-  "carries only authenticated special access %s into legacy record retrieval",
+  "carries only authenticated extended catalogue access %s into legacy record retrieval",
   async access => {
     const logger = { child: () => logger, info: vi.fn(), warn: vi.fn() };
     vi.mocked(robustFetch).mockResolvedValue({
@@ -32,7 +32,7 @@ it.each([true, false, undefined])(
       options: {
         headers: {
           "x-exchange-team-id": "spoofed",
-          "x-exchange-special-access": "true",
+          "x-exchange-extended-catalog-access": "true",
         },
       },
       internalOptions: {
@@ -48,7 +48,7 @@ it.each([true, false, undefined])(
         url: "https://exchange.internal/v1/scrape",
         headers: {
           "x-exchange-team-id": "real-team",
-          "x-exchange-special-access": String(access === true),
+          "x-exchange-extended-catalog-access": String(access === true),
         },
       }),
     );

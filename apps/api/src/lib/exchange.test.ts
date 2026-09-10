@@ -107,7 +107,8 @@ describe("Exchange routing", () => {
       clearExchangeProvidersForTest();
       vi.mocked(fetch).mockImplementation(async (_url, init) => {
         const headers = init?.headers as Record<string, string> | undefined;
-        const approved = headers?.["x-exchange-special-access"] === "true";
+        const approved =
+          headers?.["x-exchange-extended-catalog-access"] === "true";
         if (approved)
           expect(headers?.["x-exchange-team-id"]).toBe("approved-team");
         return {
@@ -356,9 +357,7 @@ describe("Exchange routing", () => {
 
   it("accepts only formats the Exchange can return directly", () => {
     expect(isSupportedExchangeFormatRequest(undefined)).toBe(true);
-    expect(isSupportedExchangeFormatRequest([{ type: "markdown" }])).toBe(
-      true,
-    );
+    expect(isSupportedExchangeFormatRequest([{ type: "markdown" }])).toBe(true);
     expect(isSupportedExchangeFormatRequest(["json"])).toBe(true);
     expect(
       isSupportedExchangeFormatRequest([
@@ -369,9 +368,9 @@ describe("Exchange routing", () => {
     expect(isSupportedExchangeFormatRequest([{ type: "html" }])).toBe(false);
     // deterministicJson extractors run against page HTML, which Exchange
     // responses do not carry.
-    expect(isSupportedExchangeFormatRequest([{ type: "deterministicJson" }])).toBe(
-      false,
-    );
+    expect(
+      isSupportedExchangeFormatRequest([{ type: "deterministicJson" }]),
+    ).toBe(false);
     expect(isSupportedExchangeFormatRequest([])).toBe(false);
   });
 
@@ -626,7 +625,10 @@ describe("Exchange routing", () => {
       "https://exchange.example/v1/access-events/6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60/billing",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ status: "confirmed", billingReference: "bill-1" }),
+        body: JSON.stringify({
+          status: "confirmed",
+          billingReference: "bill-1",
+        }),
       }),
     );
 
