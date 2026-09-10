@@ -357,7 +357,12 @@ describe("Scrape tests", () => {
 
       expect(response.metadata.sourceURL).toBe("https://google.com/");
       expect(response.metadata.url).toBeDefined();
-      expect(new URL(response.metadata.url!).hostname).toBe("www.google.com");
+      // Not pinned to www.google.com: the target is region-dependent from
+      // whichever network the runner sits on. That the landed host is no
+      // longer the requested one is the whole invariant under test.
+      expect(new URL(response.metadata.url!).hostname).not.toBe(
+        new URL("https://google.com/").hostname,
+      );
     },
     scrapeTimeout,
   );
