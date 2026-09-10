@@ -122,6 +122,18 @@ exchangeRouter.get(
 );
 
 exchangeRouter.post(
+  "/skills/resolve",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+);
+
+exchangeRouter.get(
+  "/skills/:id/SKILL.md",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+);
+
+exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
