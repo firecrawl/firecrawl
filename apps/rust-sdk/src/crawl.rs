@@ -323,14 +323,17 @@ impl Client {
                     tokio::time::sleep(tokio::time::Duration::from_millis(poll_interval)).await;
                 }
                 JobStatus::Failed => {
+                    // Use the server's own reason when it sent one, e.g. a kickoff failure.
                     return Err(FirecrawlError::JobFailed(
-                        "Crawl job failed".to_string(),
+                        status.error.unwrap_or("Crawl job failed".to_string()),
                         JobStatus::Failed,
                     ));
                 }
                 JobStatus::Cancelled => {
                     return Err(FirecrawlError::JobFailed(
-                        "Crawl job was cancelled".to_string(),
+                        status
+                            .error
+                            .unwrap_or("Crawl job was cancelled".to_string()),
                         JobStatus::Cancelled,
                     ));
                 }
