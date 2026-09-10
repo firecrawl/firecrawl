@@ -22,8 +22,8 @@ import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
-import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -40,14 +40,29 @@ import {
   DOCUMENT_EXTENSIONS,
   documentExtensionFromContentType,
 } from "../../lib/document-formats";
+import {
+  IMAGE_EXTENSIONS,
+  imageExtensionFromContentType,
+} from "../../lib/image-formats";
+import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
+import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
-export const SUPPORTED_PARSE_FILE_TYPES =
+const BASE_PARSE_FILE_TYPES =
   ".html, .htm, .xhtml, .pdf, .docx, .doc, .docm, .odt, .ods, .odp, .rtf, .xlsx, .xls, .xlsm, .xlsb, .pptx, .ppt, .pptm, .epub, .csv";
+
+/** Image uploads are OCR'd through FirePDF, so they are only advertised as
+ * supported for teams with image OCR enabled (matching
+ * detectUploadedFileKind). */
+export function getSupportedParseFileTypes(imageOcrEnabled: boolean): string {
+  if (!imageOcrEnabled) return BASE_PARSE_FILE_TYPES;
+  return `${BASE_PARSE_FILE_TYPES}, ${[...IMAGE_EXTENSIONS].sort().join(", ")}`;
+}
 
 export function detectUploadedFileKind(
   filename: string,
   contentType?: string | null,
+  imageOcrEnabled = false,
 ): UploadedParseFileKind | null {
   const extension = path.extname(filename).toLowerCase();
   const normalizedType = contentType?.toLowerCase() ?? "";
@@ -67,6 +82,17 @@ export function detectUploadedFileKind(
 
   if (isDocument) {
     return "document";
+  }
+
+  // Image uploads are OCR'd through FirePDF for teams with the imageOcr
+  // flag; for everyone else they stay unsupported.
+  const isImage =
+    imageOcrEnabled &&
+    (IMAGE_EXTENSIONS.has(extension) ||
+      imageExtensionFromContentType(normalizedType) !== null);
+
+  if (isImage) {
+    return "image";
   }
 
   const isHtml =
@@ -97,18 +123,26 @@ function getSyntheticFilename(file: UploadedParseFile): string {
     return `${file.filename}.docx`;
   }
 
+  if (file.kind === "image") {
+    return `${file.filename}${imageExtensionFromContentType(file.contentType) ?? ".png"}`;
+  }
+
   return `${file.filename}.html`;
 }
 
 function getParseForceEngine(
   kind: UploadedParseFileKind,
-): "fetch" | "pdf" | "document" {
+): "fetch" | "pdf" | "document" | "image" {
   if (kind === "pdf") {
     return "pdf";
   }
 
   if (kind === "document") {
     return "document";
+  }
+
+  if (kind === "image") {
+    return "image";
   }
 
   return "fetch";
@@ -224,12 +258,21 @@ export function parseMultipartPayloadMiddleware(
     }
   }
 
-  const kind = detectUploadedFileKind(file.originalname || "", file.mimetype);
+  // authMiddleware runs before this middleware, so the team's flags are
+  // available to decide whether image uploads are accepted.
+  const imageOcrEnabled = isImageOcrEnabled(
+    (req as unknown as RequestWithAuth).acuc?.flags,
+  );
+  const kind = detectUploadedFileKind(
+    file.originalname || "",
+    file.mimetype,
+    imageOcrEnabled,
+  );
   if (!kind) {
     res.status(400).json({
       success: false,
       code: "UNSUPPORTED_FILE_TYPE",
-      error: `Unsupported upload type. Supported file extensions: ${SUPPORTED_PARSE_FILE_TYPES}`,
+      error: `Unsupported upload type. Supported file extensions: ${getSupportedParseFileTypes(imageOcrEnabled)}`,
     });
     return;
   }
@@ -251,6 +294,12 @@ export async function parseController(
   req: RequestWithAuth<{}, ScrapeResponse, ParseRequest>,
   res: Response<ScrapeResponse>,
 ) {
+  // Resolved before the root span starts so the whole request trace stays
+  // unrecorded for zero-data-retention requests (see otel-tracer).
+  const zeroDataRetentionTrace =
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body?.zeroDataRetention === true;
+
   return withSpan(
     "api.parse.request",
     async span => {
@@ -325,7 +374,7 @@ export async function parseController(
       if (
         req.body.__agentInterop &&
         config.AGENT_INTEROP_SECRET &&
-        req.body.__agentInterop.auth !== config.AGENT_INTEROP_SECRET
+        !isAgentInteropSecretValid(req.body.__agentInterop.auth)
       ) {
         return res.status(403).json({
           success: false,
@@ -394,6 +443,7 @@ export async function parseController(
           id: jobId,
           kind: "parse",
           api_version: "v2",
+          external_request_id: externalRequestId(req),
           team_id: req.auth.team_id,
           origin: req.body.origin ?? "api",
           integration: req.body.integration,
@@ -542,7 +592,9 @@ export async function parseController(
         }
 
         const timeoutErr =
-          e instanceof TransportableError && e.code === "SCRAPE_TIMEOUT";
+          e instanceof TransportableError &&
+          (e.code === "SCRAPE_TIMEOUT" ||
+            e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
         setSpanAttributes(span, {
           "parse.error": e instanceof Error ? e.message : String(e),
@@ -593,7 +645,7 @@ export async function parseController(
             });
           }
 
-          const statusCode = e.code === "SCRAPE_TIMEOUT" ? 408 : 500;
+          const statusCode = timeoutErr ? 408 : 500;
           setSpanAttributes(span, {
             "parse.status_code": statusCode,
           });
@@ -610,18 +662,6 @@ export async function parseController(
             errorId: id,
             path: req.path,
             teamId: req.auth.team_id,
-          });
-          captureExceptionWithZdrCheck(e, {
-            tags: {
-              errorId: id,
-              version: "v2",
-              teamId: req.auth.team_id,
-            },
-            extra: {
-              path: req.path,
-              fileName: req.body.file.filename,
-            },
-            zeroDataRetention,
           });
           setSpanAttributes(span, {
             "parse.status_code": 500,
@@ -724,6 +764,7 @@ export async function parseController(
         "http.route": "/v2/parse",
       },
       kind: SpanKind.SERVER,
+      zeroDataRetention: zeroDataRetentionTrace,
     },
   );
 }

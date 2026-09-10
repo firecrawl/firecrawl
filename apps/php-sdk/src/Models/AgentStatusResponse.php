@@ -12,6 +12,7 @@ final class AgentStatusResponse
         private readonly ?string $error = null,
         private readonly mixed $data = null,
         private readonly ?string $model = null,
+        private readonly ?string $effort = null,
         private readonly ?string $expiresAt = null,
         private readonly ?int $creditsUsed = null,
     ) {}
@@ -25,6 +26,7 @@ final class AgentStatusResponse
             error: $raw['error'] ?? null,
             data: $raw['data'] ?? null,
             model: $raw['model'] ?? null,
+            effort: $raw['effort'] ?? null,
             expiresAt: $raw['expiresAt'] ?? null,
             creditsUsed: isset($raw['creditsUsed']) ? (int) $raw['creditsUsed'] : null,
         );
@@ -58,6 +60,15 @@ final class AgentStatusResponse
     public function getModel(): ?string
     {
         return $this->model;
+    }
+
+    /**
+     * The effort ("low", "medium", or "high") the job ran with. Only present
+     * for runs that specified one.
+     */
+    public function getEffort(): ?string
+    {
+        return $this->effort;
     }
 
     public function getExpiresAt(): ?string

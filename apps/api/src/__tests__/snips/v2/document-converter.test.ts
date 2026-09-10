@@ -38,7 +38,7 @@ describe("Document Converter tests", () => {
   });
 
   describe("XLSX document conversion", () => {
-    const expectedMarkdown = `## Sheet1\n\n| sample file | test |\n| --- | --- |\n|  |  |\n| Name | Price |\n| iPhone | 1000 |\n| iPad | 800 |\n| Macbook | 1200 |\n\n## Sheet2\n\n|  |  |\n| --- | --- |\n| other tab |  |\n|  |  |\n| Name | Price |\n| ChatGPT | 20 |\n| Claude | 17 |\n| Perplexity | 20 |\n`;
+    const expectedMarkdown = `## Sheet1\n\n| sample file | test |\n| --- | --- |\n|  |  |\n| Name | Price |\n| iPhone | 1000 |\n| iPad | 800 |\n| Macbook | 1200 |\n\n## Sheet2\n\n|  |  |\n| --- | --- |\n| other tab |  |\n|  |  |\n| Name | Price |\n| ChatGPT | $20.00 |\n| Claude | $17.00 |\n| Perplexity | $20.00 |\n`;
 
     it("should convert XLSX document and return expected markdown", () => {
       const filePath = path.join(samplesDir, "sample.xlsx");

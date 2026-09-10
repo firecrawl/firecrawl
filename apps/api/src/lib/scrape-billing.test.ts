@@ -4,6 +4,10 @@ import {
 } from "./scrape-billing";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
 import type { ThreatDecision } from "./threat-protection/types";
+import {
+  DNSResolutionError,
+  LockdownMissError,
+} from "../scraper/scrapeURL/error";
 
 describe("calculateCreditsToBeBilled", () => {
   it("bills handled Exchange successes at the reported credit cost", async () => {
@@ -59,6 +63,61 @@ describe("calculateCreditsToBeBilled", () => {
     expect(credits).toBe(30);
   });
 
+  it("bills enhanced proxy scrapes the same as basic ones", async () => {
+    const bill = (unsupportedFeatures?: Set<any>) =>
+      calculateCreditsToBeBilled(
+        {
+          formats: [{ type: "markdown" }],
+        } as any,
+        {
+          teamId: "team-id",
+          orgId: null,
+        },
+        {
+          metadata: {
+            statusCode: 200,
+            proxyUsed: "stealth",
+          },
+        } as any,
+        {
+          totalCost: 0,
+        } as any,
+        {} as any,
+        undefined,
+        unsupportedFeatures,
+      );
+
+    // No surcharge, whether or not the engine could honour Enhanced Mode (the
+    // old waiver for an unsupported enhanced proxy is moot now there is
+    // nothing to waive).
+    expect(await bill()).toBe(1);
+    expect(await bill(new Set(["stealthProxy"]))).toBe(1);
+  });
+
+  it("still bills enhanced proxy scrapes with json at 5 credits", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        formats: [{ type: "json", schema: {} }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      {
+        metadata: {
+          statusCode: 200,
+          proxyUsed: "stealth",
+        },
+      } as any,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+    );
+
+    expect(credits).toBe(5);
+  });
+
   it("bills deterministic JSON at 10 credits when the script was generated", async () => {
     const credits = await calculateCreditsToBeBilled(
       {
@@ -91,6 +150,46 @@ describe("calculateCreditsToBeBilled", () => {
     expect(credits).toBe(10);
   });
 
+  it("bills nothing for DNS resolution failures", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        formats: [{ type: "markdown" }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      null,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+      new DNSResolutionError("nonexistent.example.com"),
+    );
+
+    expect(credits).toBe(0);
+  });
+
+  it("bills 1 credit for lockdown cache misses", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        formats: [{ type: "markdown" }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      null,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+      new LockdownMissError(),
+    );
+
+    expect(credits).toBe(1);
+  });
+
   it("bills deterministic JSON at 3 credits when a cached script was reused", async () => {
     const credits = await calculateCreditsToBeBilled(
       {
@@ -121,6 +220,71 @@ describe("calculateCreditsToBeBilled", () => {
     );
 
     expect(credits).toBe(3);
+  });
+
+  // =========================================
+  // lockdown + json surcharge stacking
+  // =========================================
+
+  const promptInjectionGuardCall = {
+    type: "other",
+    model: "vertex/gemini",
+    cost: 0,
+    metadata: { module: "scrapeURL", method: "checkForPromptInjection" },
+  };
+
+  // `guard` means the caller asked for the prompt injection check and the
+  // guard actually ran. Both conditions must hold for the +4 guard fee.
+  const billScrape = (args: {
+    lockdown?: boolean;
+    json?: boolean;
+    guard?: boolean;
+  }) =>
+    calculateCreditsToBeBilled(
+      {
+        lockdown: args.lockdown,
+        formats: args.json
+          ? [{ type: "json", schema: {}, checkPromptInjection: args.guard }]
+          : [{ type: "markdown" }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      {
+        metadata: {
+          statusCode: 200,
+          proxyUsed: "basic",
+        },
+      } as any,
+      {
+        totalCost: 0,
+        calls: args.guard ? [promptInjectionGuardCall] : [],
+      } as any,
+      {} as any,
+    );
+
+  // Public billing docs quote 5 credits for a json scrape. Guard that figure.
+  it("bills a json scrape alone at 5 credits", async () => {
+    expect(await billScrape({ json: true })).toBe(5);
+  });
+
+  it("bills a lockdown scrape alone at 5 credits", async () => {
+    expect(await billScrape({ lockdown: true })).toBe(5);
+  });
+
+  it("keeps the lockdown surcharge on a json scrape (9 credits)", async () => {
+    expect(await billScrape({ lockdown: true, json: true })).toBe(9);
+  });
+
+  it("stacks lockdown, json, and the prompt injection guard (13 credits)", async () => {
+    expect(await billScrape({ lockdown: true, json: true, guard: true })).toBe(
+      13,
+    );
+  });
+
+  it("bills json plus the prompt injection guard at 9 credits", async () => {
+    expect(await billScrape({ json: true, guard: true })).toBe(9);
   });
 });
 

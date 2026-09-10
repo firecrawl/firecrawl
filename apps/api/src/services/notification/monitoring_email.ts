@@ -3,7 +3,7 @@ import escapeHtml from "escape-html";
 import { eq } from "drizzle-orm";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
-import { db } from "../../db/connection";
+import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import type { MonitorCheckRow, MonitorRow } from "../monitoring/types";
 import {
@@ -96,7 +96,7 @@ async function getTeamEmails(teamId: string): Promise<string[]> {
     email_preferences: string[] | null;
   }[];
   try {
-    rows = await db
+    rows = await dbRr
       .select({
         email: schema.users.email,
         unsubscribed_all: schema.notification_preferences.unsubscribed_all,

@@ -748,7 +748,7 @@ async function setupFdb(): Promise<Services["fdb"]> {
   // configured" failure and surface any real configure error.
   const configure = execForward(
     `${runtime}@fdb-configure`,
-    `${runtime} exec ${containerName} sh -c 'out=$(fdbcli --exec "configure new single memory" 2>&1); status=$?; printf "%s\\n" "$out"; if [ "$status" -eq 0 ]; then exit 0; fi; printf "%s\\n" "$out" | grep -Eiq "already.*configured|database.*configured"'`,
+    `${runtime} exec ${containerName} sh -c 'out=$(fdbcli --exec "configure new single memory" 2>&1); status=$?; printf "%s\\n" "$out"; if [ "$status" -eq 0 ]; then exit 0; fi; printf "%s\\n" "$out" | grep -Eiq "already.*configured|database.*configured|database.*already exists"'`,
   );
   await configure.promise;
 

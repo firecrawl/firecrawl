@@ -873,7 +873,7 @@ export async function performExtraction_F0(
     teamId,
     creditsToBill,
     apiKeyId,
-    { endpoint: "extract", jobId: extractId },
+    { endpoint: "extract", jobId: extractId, chargeId: extractId },
     logger,
   ).catch(error => {
     logger.error(

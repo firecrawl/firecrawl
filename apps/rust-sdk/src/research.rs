@@ -289,6 +289,11 @@ impl Client {
         self.handle_response(response, "related papers").await
     }
 
+    /// Search the research index GitHub slice.
+    ///
+    /// Stops responding after 2026-11-03. Call `/v2/search/developer` directly;
+    /// this SDK does not wrap it yet.
+    #[deprecated(note = "Use the developer index at /v2/search/developer; sunset 2026-11-03")]
     pub async fn search_github(
         &self,
         query_text: impl AsRef<str>,

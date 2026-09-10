@@ -26,7 +26,6 @@ import {
 } from "../../../src/lib/crawl-redis";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { checkAndUpdateURL } from "../../../src/lib/validateUrl";
-import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
 import { url as urlSchema } from "../v1/types";
 import { ZodError } from "zod";
@@ -38,6 +37,7 @@ import {
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   isThreatProtectionForced,
@@ -74,6 +74,7 @@ export async function crawlController(req: Request, res: Response) {
       id,
       kind: "crawl",
       api_version: "v0",
+      external_request_id: externalRequestId(req),
       team_id,
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
@@ -310,7 +311,6 @@ export async function crawlController(req: Request, res: Response) {
             logger,
           );
           for (const job of jobs) {
-            // add with sentry instrumentation
             await addScrapeJob(job.data, job.jobId, job.priority);
           }
         });
@@ -345,7 +345,6 @@ export async function crawlController(req: Request, res: Response) {
 
     res.json({ jobId: id });
   } catch (error) {
-    Sentry.captureException(error);
     logger.error(error);
     return res.status(500).json({
       error: error instanceof ZodError ? "Invalid URL" : error.message,

@@ -38,6 +38,9 @@ export async function searchDeveloperCategory(
 
     const body: any = await upstream.json();
     const results: any[] = Array.isArray(body?.results) ? body.results : [];
+    // Exact WebSearchResult shape: developer results are indistinguishable
+    // from ordinary web results on the wire. Passage text serves as the
+    // description; nothing from the upstream payload leaks through.
     return results
       .slice(0, options.limit)
       .map((result, index) => ({

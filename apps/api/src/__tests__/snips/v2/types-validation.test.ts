@@ -1,6 +1,11 @@
 import { z } from "zod";
 import {
+  MAX_PATH_PATTERNS,
+  MAX_PATH_PATTERN_LENGTH,
+} from "../../../lib/crawl-regex";
+import {
   scrapeRequestSchema,
+  parseRequestSchema,
   scrapeOptions,
   extractRequestSchema,
   crawlRequestSchema,
@@ -81,6 +86,22 @@ describe("V2 Types Validation", () => {
 
       const result = scrapeRequestSchema.parse(input);
       expect(result.formats).toEqual([{ type: "markdown" }, { type: "html" }]);
+    });
+
+    it("should only allow rawBase64 as the sole format", () => {
+      expect(
+        scrapeRequestSchema.parse({
+          url: "https://example.com/file",
+          formats: ["rawBase64"],
+        }).formats,
+      ).toEqual([{ type: "rawBase64" }]);
+
+      expect(() =>
+        scrapeRequestSchema.parse({
+          url: "https://example.com/file",
+          formats: ["markdown", "rawBase64"],
+        }),
+      ).toThrow("The rawBase64 format cannot be combined with other formats");
     });
 
     it("should accept video format as string and object", () => {
@@ -438,13 +459,29 @@ describe("V2 Types Validation", () => {
     it("should accept physical page markdown for PDF parsers", () => {
       const result = scrapeRequestSchema.parse({
         url: "https://example.com/file.pdf",
+        parsers: [{ type: "pdf", mode: "auto", pages: true }],
+      });
+
+      expect((result.parsers as any)[0].pages).toBe(true);
+    });
+
+    it("should fold the deprecated pageMarkdown alias into pages", () => {
+      const result = scrapeRequestSchema.parse({
+        url: "https://example.com/file.pdf",
         parsers: [{ type: "pdf", mode: "auto", pageMarkdown: true }],
       });
 
-      expect((result.parsers as any)[0].pageMarkdown).toBe(true);
+      expect((result.parsers as any)[0].pages).toBe(true);
+      expect("pageMarkdown" in (result.parsers as any)[0]).toBe(false);
     });
 
     it("should reject non-boolean physical page markdown", () => {
+      expect(() =>
+        scrapeRequestSchema.parse({
+          url: "https://example.com/file.pdf",
+          parsers: [{ type: "pdf", pages: "yes" }],
+        }),
+      ).toThrow();
       expect(() =>
         scrapeRequestSchema.parse({
           url: "https://example.com/file.pdf",
@@ -669,6 +706,22 @@ describe("V2 Types Validation", () => {
     });
   });
 
+  describe("parseRequestSchema", () => {
+    it("should reject rawBase64 for file uploads", () => {
+      expect(() =>
+        parseRequestSchema.parse({
+          formats: ["rawBase64"],
+          file: {
+            buffer: Buffer.from("raw upload"),
+            filename: "upload.html",
+            contentType: "text/html",
+            kind: "html",
+          },
+        }),
+      ).toThrow("The rawBase64 format is not supported for parse uploads");
+    });
+  });
+
   describe("extractRequestSchema", () => {
     it("should accept valid extract request with urls", () => {
       const input: ExtractRequestInput = {
@@ -860,6 +913,166 @@ describe("V2 Types Validation", () => {
 
       expect(result.sitemap).toBe("only");
     });
+
+    it("should accept anchored and substring path patterns", () => {
+      const result = crawlRequestSchema.parse({
+        url: "https://example.com",
+        excludePaths: ["^/?docs(/.*)?$", "/admin"],
+        includePaths: ["^/blog"],
+      });
+
+      expect(result.excludePaths).toEqual(["^/?docs(/.*)?$", "/admin"]);
+      expect(result.includePaths).toEqual(["^/blog"]);
+    });
+
+    it("should reject excludePaths patterns using a negative lookahead", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["^/?(?!blog|works-with)[^/]+/.+"],
+        }),
+      ).toThrow(
+        /look-around, including look-ahead and look-behind, is not supported/,
+      );
+    });
+
+    it("should reject includePaths patterns using a backreference", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          includePaths: ["(a)\\1"],
+        }),
+      ).toThrow(/backreferences/);
+    });
+
+    it("should report the real error without the look-around hint for unrelated syntax errors", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["[abc"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/unclosed character class/);
+      expect(message).not.toMatch(/Rewrite the pattern/);
+    });
+
+    it("should state the look-around limitation once and add a rewrite hint", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["^/?(?!blog)[^/]+/.+"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message.match(/not supported/g)).toHaveLength(1);
+      expect(message).toMatch(/Rewrite the pattern/);
+    });
+
+    it("should accept counted repetitions of word classes that real path filters use", () => {
+      // Unicode \w is hundreds of ranges, so these used to exceed the engine's
+      // compiled-size limit and were silently dropped. Path haystacks are
+      // percent-encoded ASCII, so they are compiled in ASCII mode and are cheap.
+      const result = crawlRequestSchema.parse({
+        url: "https://example.com",
+        includePaths: [
+          "^/[\\w-]{1,100}/[\\w-]{1,100}/[\\w-]{1,100}/?$",
+          "\\w{300}",
+        ],
+      });
+
+      expect(result.includePaths).toHaveLength(2);
+    });
+
+    it("should reject patterns whose compiled form exceeds the size limit", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["a{5}{5}{5}{5}{5}{5}"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/exceeds size limit/);
+      expect(message).toMatch(/stacked counted repetitions/);
+    });
+
+    it("should reject Unicode-only constructs with a hint", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["^/\\p{Greek}+"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/Unicode not allowed/);
+      expect(message).toMatch(/percent-encoded ASCII/);
+    });
+
+    it("should reject more than the maximum number of path patterns", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: Array.from(
+            { length: MAX_PATH_PATTERNS + 1 },
+            (_, i) => `^/p${i}`,
+          ),
+        }),
+      ).toThrow(/at most 100 patterns/);
+    });
+
+    it("should not compile patterns once the count cap is exceeded", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: [
+            ...Array.from({ length: MAX_PATH_PATTERNS }, (_, i) => `^/p${i}`),
+            "[abc",
+          ],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/at most 100 patterns/);
+      expect(message).not.toMatch(/unclosed character class/);
+    });
+
+    it("should not derive hints from user pattern text", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["[exceeds size limit"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/unclosed character class/);
+      expect(message).not.toMatch(/stacked counted repetitions/);
+    });
+
+    it("should reject path patterns longer than the maximum length", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          includePaths: ["^/" + "a".repeat(MAX_PATH_PATTERN_LENGTH)],
+        }),
+      ).toThrow(/at most 2000 characters/);
+    });
   });
 
   describe("mapRequestSchema", () => {
@@ -915,6 +1128,17 @@ describe("V2 Types Validation", () => {
 
       const result = mapRequestSchema.parse(input);
       expect(result.sitemap).toBe("only");
+    });
+
+    it("should reject path patterns the engine cannot honour", () => {
+      expect(() =>
+        mapRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["^/?(?!blog)[^/]+/.+"],
+        }),
+      ).toThrow(
+        /look-around, including look-ahead and look-behind, is not supported/,
+      );
     });
   });
 
@@ -1108,9 +1332,18 @@ describe("V2 Types Validation", () => {
       expect(
         searchRequestSchema.parse({
           query: "test",
-          categories: ["docs", "github", "developer_index"],
+          categories: ["docs", "developer_index"],
         }).categories,
-      ).toEqual([{ type: "developer" }, { type: "github" }]);
+      ).toEqual([{ type: "developer" }]);
+
+      // Developer (and its aliases) is exclusive: combining with any other
+      // category is rejected at the schema.
+      expect(() =>
+        searchRequestSchema.parse({
+          query: "test",
+          categories: ["docs", "github", "developer_index"],
+        }),
+      ).toThrow(/cannot be combined/);
     });
 
     it("should reject developer alias params and unknown categories", () => {

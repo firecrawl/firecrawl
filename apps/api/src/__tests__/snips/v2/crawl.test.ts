@@ -191,6 +191,47 @@ describe("Crawl tests", () => {
     10 * scrapeTimeout,
   );
 
+  it.concurrent(
+    "rejects path patterns that are too expensive to compile",
+    async () => {
+      // 19 characters that expand to a{15625}. Compiling patterns like this
+      // with the engine's default limits is a CPU denial-of-service vector.
+      const res = await crawlStart(
+        {
+          url: "https://firecrawl.dev",
+          excludePaths: ["a{5}{5}{5}{5}{5}{5}"],
+        },
+        identity,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toMatch(/exceeds size limit/);
+    },
+    scrapeTimeout,
+  );
+
+  it.concurrent(
+    "rejects more path patterns than the engine will compile",
+    async () => {
+      const res = await crawlStart(
+        {
+          url: "https://firecrawl.dev",
+          excludePaths: Array.from({ length: 101 }, (_, i) => `^/p${i}`),
+        },
+        identity,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body.success).toBe(false);
+      // Schema-level (non-custom) issues are reported in details, not error.
+      expect(
+        res.body.details.map((issue: { message: string }) => issue.message),
+      ).toContainEqual(expect.stringMatching(/at most 100 patterns/));
+    },
+    scrapeTimeout,
+  );
+
   // TODO: port to new dynamic url system
   // concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
   //   "filters URLs properly when using regexOnFullURL",
@@ -442,6 +483,56 @@ describe("Crawl tests", () => {
             true,
           );
         }
+      }
+    },
+    5 * scrapeTimeout,
+  );
+
+  // Regression for #4315: with allowExternalLinks, a discovered external link
+  // that redirects within its own domain must be followed and scraped, not
+  // rejected as EXTERNAL_LINK. Depends on stable public sites: example.org
+  // links to https://iana.org/domains/example, which redirects to
+  // www.iana.org/help/example-domains. The assertions require both that the
+  // iana.org link was discovered/followed AND that it actually redirected, so
+  // if either external site changes the test fails loudly rather than silently
+  // passing as a no-op.
+  concurrentIf(!process.env.TEST_SUITE_SELF_HOSTED)(
+    "allowExternalLinks follows a redirecting external link",
+    async () => {
+      const res = await crawl(
+        {
+          url: "https://example.org/",
+          limit: 2,
+          maxDiscoveryDepth: 1,
+          allowExternalLinks: true,
+          sitemap: "skip",
+        },
+        identity,
+      );
+
+      expect(res.success).toBe(true);
+      if (res.success) {
+        const hostOf = (value?: string) => {
+          try {
+            return new URL(value!).hostname.replace(/^www\./, "");
+          } catch {
+            return undefined;
+          }
+        };
+
+        // The page reached via the external iana.org link (identified by its
+        // pre-redirect sourceURL). Absent before the fix, when it was rejected
+        // as EXTERNAL_LINK.
+        const ianaPage = res.data.find(
+          page => hostOf(page.metadata.sourceURL) === "iana.org",
+        );
+        expect(ianaPage).toBeDefined();
+
+        // And the link genuinely redirected: the final URL differs from the
+        // discovered sourceURL.
+        expect(normalizeUrlForCompare(ianaPage!.metadata.url!)).not.toBe(
+          normalizeUrlForCompare(ianaPage!.metadata.sourceURL!),
+        );
       }
     },
     5 * scrapeTimeout,

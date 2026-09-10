@@ -1,4 +1,18 @@
+import { vi } from "vitest";
 import { config } from "../config";
+import { RateLimiterMode } from "../types";
+import type { TeamFlags } from "../controllers/v1/types";
+
+// The module builds a Redis client at import time. Stub ioredis so the limiter
+// can be constructed without a live server.
+vi.mock("ioredis", () => ({
+  default: class {
+    defineCommand() {}
+  },
+}));
+
+import { getAutumnRateLimiter } from "./rate-limiter";
+
 // import {
 //   getRateLimiter,
 //   serverRateLimiter,
@@ -369,3 +383,79 @@ import { config } from "../config";
 //   });
 // });
 // TODO: FIX
+
+describe("getAutumnRateLimiter", () => {
+  const flagsWith = (overrides: unknown): TeamFlags =>
+    ({ rateLimitOverrides: overrides }) as TeamFlags;
+
+  it("multiplies the base limit when there is no override", () => {
+    expect(getAutumnRateLimiter(RateLimiterMode.Scrape, 5).points).toBe(50);
+    expect(getAutumnRateLimiter(RateLimiterMode.Scrape, 5, null).points).toBe(
+      50,
+    );
+    expect(
+      getAutumnRateLimiter(RateLimiterMode.Scrape, 5, {} as TeamFlags).points,
+    ).toBe(50);
+  });
+
+  it("replaces the computed limit with the override for that mode", () => {
+    const limiter = getAutumnRateLimiter(
+      RateLimiterMode.Scrape,
+      5,
+      flagsWith({ [RateLimiterMode.Scrape]: 42 }),
+    );
+
+    expect(limiter.points).toBe(42);
+  });
+
+  it("keeps the normal limit when only another mode is overridden", () => {
+    const limiter = getAutumnRateLimiter(
+      RateLimiterMode.Scrape,
+      5,
+      flagsWith({ [RateLimiterMode.Map]: 42 }),
+    );
+
+    expect(limiter.points).toBe(50);
+  });
+
+  it("applies the override to a mode that has no base limit", () => {
+    // Research is not multiplier-scaled, so it normally uses the fallback 100.
+    expect(getAutumnRateLimiter(RateLimiterMode.Research, 5).points).toBe(100);
+    expect(
+      getAutumnRateLimiter(
+        RateLimiterMode.Research,
+        5,
+        flagsWith({ [RateLimiterMode.Research]: 7 }),
+      ).points,
+    ).toBe(7);
+  });
+
+  it.each([
+    ["zero", 0],
+    ["a negative number", -10],
+    ["a non-integer", 12.5],
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["a numeric string", "42"],
+    ["null", null],
+    ["an object", { rpm: 42 }],
+  ])("ignores an override of %s", (_label, value) => {
+    const limiter = getAutumnRateLimiter(
+      RateLimiterMode.Scrape,
+      5,
+      flagsWith({ [RateLimiterMode.Scrape]: value }),
+    );
+
+    expect(limiter.points).toBe(50);
+  });
+
+  it("ignores an override map that is not an object", () => {
+    expect(
+      getAutumnRateLimiter(RateLimiterMode.Scrape, 5, flagsWith(null)).points,
+    ).toBe(50);
+    expect(
+      getAutumnRateLimiter(RateLimiterMode.Scrape, 5, flagsWith("scrape=42"))
+        .points,
+    ).toBe(50);
+  });
+});

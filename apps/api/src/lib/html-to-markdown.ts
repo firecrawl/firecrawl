@@ -1,7 +1,5 @@
 import koffi from "koffi";
 import { config } from "../config";
-import "../services/sentry";
-import * as Sentry from "@sentry/node";
 import { logger } from "./logger";
 import type { Logger } from "winston";
 import { stat } from "fs/promises";
@@ -82,12 +80,6 @@ export async function parseMarkdown(
         "Error converting HTML to Markdown with HTTP service, falling back to original parser",
         { error },
       );
-      Sentry.captureException(error, {
-        tags: {
-          fallback: "original_parser",
-          ...(requestId && !zeroDataRetention ? { request_id: requestId } : {}),
-        },
-      });
     }
   }
 
@@ -103,11 +95,6 @@ export async function parseMarkdown(
       !(error instanceof Error) ||
       error.message !== "Go shared library not found"
     ) {
-      Sentry.captureException(error, {
-        tags: {
-          ...(requestId && !zeroDataRetention ? { request_id: requestId } : {}),
-        },
-      });
       contextLogger.error(
         `Error converting HTML to Markdown with Go parser: ${error}`,
       );

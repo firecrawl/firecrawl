@@ -7,6 +7,11 @@ This module contains clean, modern type definitions for the v2 API.
 import warnings
 from datetime import datetime
 from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, Union
+
+try:
+    from typing import Annotated
+except ImportError:  # Python 3.8
+    from typing_extensions import Annotated
 import logging
 from pydantic import (
     BaseModel,
@@ -46,6 +51,10 @@ warnings.filterwarnings(
 warnings.filterwarnings(
     "ignore",
     message='Field name "json" in "MonitorPageSnapshot" shadows an attribute in parent "BaseModel"',
+)
+warnings.filterwarnings(
+    "ignore",
+    message='Field name "schema" in "AgentListItemOptions" shadows an attribute in parent "BaseModel"',
 )
 
 T = TypeVar("T")
@@ -258,9 +267,10 @@ class AttributeResult(BaseModel):
 class BrandingProfile(BaseModel):
     """Branding information extracted from a website."""
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "allow", "populate_by_name": True}
 
     color_scheme: Optional[Literal["light", "dark"]] = None
+    brand_name: Optional[str] = Field(default=None, alias="brandName")
     logo: Optional[str] = None
     fonts: Optional[List[Dict[str, Any]]] = None
     colors: Optional[Dict[str, str]] = None
@@ -438,6 +448,52 @@ RedactPIIEntity = Literal[
 ]
 
 
+class PdfBlockConfidence(BaseModel):
+    """Layout and OCR confidence scores for a PDF block."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    layout: Optional[float] = None
+    ocr: Optional[float] = None
+
+
+class PdfBlockItem(BaseModel):
+    """A typed PDF layout block (bounding box, type, reading order)."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    id: str
+    type: str
+    label: Optional[str] = None
+    bbox: Optional[List[float]] = None
+    content: str
+    markdown_span: Optional[List[int]] = Field(default=None, alias="markdownSpan")
+    reading_order: int = Field(alias="readingOrder")
+    source: Optional[str] = None
+    confidence: PdfBlockConfidence
+
+
+class PdfPageBlocks(BaseModel):
+    """Typed layout blocks for a single PDF page."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    page_number: int = Field(alias="pageNumber")
+    width: Optional[float] = None
+    height: Optional[float] = None
+    status: str
+    items: List[PdfBlockItem] = Field(default_factory=list)
+
+
+class PdfPage(BaseModel):
+    """Physical PDF page markdown, present when parsers[].pages is true."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    page_number: int = Field(alias="pageNumber")
+    markdown: str
+
+
 class Document(BaseModel):
     """A scraped document."""
 
@@ -460,6 +516,8 @@ class Document(BaseModel):
     branding: Optional[BrandingProfile] = None
     product: Optional[ProductProfile] = None
     menu: Optional[MenuProfile] = None
+    pages: Optional[List[PdfPage]] = None
+    blocks: Optional[List[PdfPageBlocks]] = None
 
     @property
     def metadata_typed(self) -> DocumentMetadata:
@@ -559,12 +617,30 @@ SourceOption = Union[str, Source]
 class Category(BaseModel):
     """Configuration for a search category.
 
+    Categories narrow ordinary **web search**. They do not switch `search()` to
+    a different index.
+
     Supported categories:
-    - "github": Filter results to GitHub repositories
-    - "research": Filter results to research papers and academic sites
+    - "github": Restrict web results to github.com (a `site:` filter)
+    - "research": Restrict web results to a fixed list of ~14 academic
+      *websites* (arxiv.org, pubmed.ncbi.nlm.nih.gov, nature.com, science.org,
+      ieee.org, sciencedirect.com, biorxiv.org, medrxiv.org, ...). This is a
+      website/domain filter and it returns ordinary web page results for those
+      domains — **not** paper records.
     - "pdf": Filter results to PDF files (adds filetype:pdf to search)
-    - "developer": Add developer results (issues, pull requests, READMEs and
-      documentation) under `.developer`
+    - "developer": Developer-index results (issues, pull requests, READMEs and
+      documentation) served in `web`; cannot be combined with other categories
+
+    .. warning::
+       ``categories=["research"]`` is **not** Firecrawl's research paper index.
+       To search papers themselves — ~43M abstracts, about 90% biomedical
+       (PubMed, bioRxiv, medRxiv) plus arXiv — with full abstracts, in-body
+       passage reads and citation-graph expansion, use
+       :meth:`Firecrawl.search_papers` (and ``inspect_paper``, ``read_paper``,
+       ``related_papers``), which call ``/v2/search/research``.
+
+       Rule of thumb: literature search → ``search_papers()``; web pages that
+       happen to live on academic domains → ``search(categories=["research"])``.
     """
 
     type: str
@@ -615,6 +691,7 @@ class JsonFormat(Format):
     type: Literal["json"] = "json"
     prompt: Optional[str] = None
     schema: Optional[Any] = None
+    check_prompt_injection: Optional[bool] = None
 
 
 class ChangeTrackingFormat(Format):
@@ -1372,17 +1449,405 @@ class ExtractResponse(BaseModel):
     tokens_used: Optional[int] = None
 
 
+class AgentExchangeOptions(BaseModel):
+    """Options forwarded verbatim to the agent; the server owns every default."""
+
+    model_config = {"populate_by_name": True}
+
+    enabled: Optional[bool] = None
+    # At most 5.
+    toolkits: Optional[List[str]] = None
+    max_calls: Optional[int] = Field(default=None, alias="maxCalls")
+    require_approval: Optional[bool] = Field(default=None, alias="requireApproval")
+    # Answers a pending_approval from the previous turn of the thread.
+    approve: Optional[Dict[str, Any]] = None
+    decline: Optional[Dict[str, Any]] = None
+
+
+class AgentExchangeSummary(BaseModel):
+    """Per-run summary reported on a status response."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    enabled: Optional[bool] = None
+    # What the run resolved to after thread inheritance, not what it requested.
+    toolkits: Optional[List[str]] = None
+    require_approval: Optional[bool] = Field(default=None, alias="requireApproval")
+    paid_calls: Optional[int] = Field(default=None, alias="paidCalls")
+    credits_used: Optional[int] = Field(default=None, alias="creditsUsed")
+
+
+class AgentSuggestion(BaseModel):
+    """A follow-up the agent offers for the next turn of the thread."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    label: Optional[str] = None
+    prompt: Optional[str] = None
+
+
+class PendingApprovalCall(BaseModel):
+    """One call held back by a pending approval."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    id: Optional[str] = None
+    provider: Optional[str] = None
+    capability: Optional[str] = None
+    input: Optional[Dict[str, Any]] = None
+    more: Optional[List[Dict[str, Any]]] = None
+    credits_estimate: Optional[int] = Field(default=None, alias="creditsEstimate")
+
+
+class PendingApprovalResolution(BaseModel):
+    """How a pending approval was answered by a later turn."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    approved: Optional[bool] = None
+    call_ids: Optional[List[str]] = Field(default=None, alias="callIds")
+    always: Optional[bool] = None
+    by_run_id: Optional[str] = Field(default=None, alias="byRunId")
+
+
+class PendingApproval(BaseModel):
+    """A turn that ended waiting for the caller to allow or refuse paid calls."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    id: Optional[str] = None
+    reason: Optional[str] = None
+    calls: Optional[List[PendingApprovalCall]] = None
+    resolution: Optional[PendingApprovalResolution] = None
+
+
 class AgentResponse(BaseModel):
     """Response for agent operations (start/status/final)."""
+
+    model_config = {"populate_by_name": True}
 
     success: Optional[bool] = None
     id: Optional[str] = None
     status: Optional[Literal["processing", "completed", "failed"]] = None
     data: Optional[Any] = None
     error: Optional[str] = None
-    model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None
+    # Deliberately a plain str, not a Literal: this is server-provided and new
+    # models ship without an SDK release, so a narrow type turns an unknown
+    # model name into a ValidationError on every status poll.
+    model: Optional[str] = None
+    # Reasoning effort the job ran with; only set for runs that specified it.
+    effort: Optional[Literal["low", "medium", "high"]] = None
     expires_at: Optional[datetime] = None
     credits_used: Optional[int] = None
+    # Thread this run belongs to; pass it back to continue the conversation.
+    thread_id: Optional[str] = Field(default=None, alias="threadId")
+    # 1-based position of this run in its thread.
+    thread_turn: Optional[int] = Field(default=None, alias="threadTurn")
+    mode: Optional[Literal["extract", "chat"]] = None
+    # Assistant text reply. Chat-mode runs answer here instead of in `data`.
+    message: Optional[str] = None
+    suggestions: Optional[List[AgentSuggestion]] = None
+    pending_approval: Optional[PendingApproval] = Field(
+        default=None, alias="pendingApproval"
+    )
+    exchange: Optional[AgentExchangeSummary] = None
+
+
+class AgentListItemSettings(BaseModel):
+    """Per-session settings attached to an agent run."""
+
+    model_config = {"populate_by_name": True}
+
+    hidden: bool = False
+    starred: bool = False
+    label: Optional[str] = None
+
+
+class AgentListItemOptions(BaseModel):
+    """Options an agent run was started with."""
+
+    model_config = {"populate_by_name": True}
+
+    urls: Optional[List[str]] = None
+    prompt: str = ""
+    schema: Optional[Any] = None
+    # Plain str, not a Literal: server-provided, and new models ship without an
+    # SDK release (see AgentResponse.model).
+    model: Optional[str] = None
+    effort: Optional[Literal["low", "medium", "high"]] = None
+
+
+class AgentListItem(BaseModel):
+    """A single agent run as returned by the agent list endpoint."""
+
+    model_config = {"populate_by_name": True}
+
+    id: str
+    created_at: str = Field(alias="createdAt")
+    target_hint: str = Field(alias="targetHint")
+    origin: str = "api"
+    integration: Optional[str] = None
+    settings: AgentListItemSettings = Field(default_factory=AgentListItemSettings)
+    status: Optional[Literal["processing", "completed", "failed"]] = None
+    options: Optional[AgentListItemOptions] = None
+
+
+class AgentListResponse(BaseModel):
+    """Response from GET /v2/agent (list agent runs)."""
+
+    success: Optional[bool] = None
+    agents: Optional[List[AgentListItem]] = None
+    # Absolute URL of the next page; only present when more pages exist.
+    next: Optional[str] = None
+    error: Optional[str] = None
+
+
+class AgentThreadRun(BaseModel):
+    """A single run of a thread, as returned by get_agent_thread."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    id: Optional[str] = None
+    turn: Optional[int] = None
+    mode: Optional[Literal["extract", "chat"]] = None
+    prompt: Optional[str] = None
+    urls: Optional[List[str]] = None
+    # Trailing underscore because `schema` shadows a BaseModel attribute.
+    schema_: Optional[Any] = Field(default=None, alias="schema")
+    effort: Optional[Literal["low", "medium", "high"]] = None
+    # Plain str, not a Literal: the run vocabulary is server-owned.
+    status: Optional[str] = None
+    created_at: Optional[str] = Field(default=None, alias="createdAt")
+    finished_at: Optional[str] = Field(default=None, alias="finishedAt")
+    credits_used: Optional[int] = Field(default=None, alias="creditsUsed")
+    message: Optional[str] = None
+    # Only present when the request asked for include_data.
+    data: Optional[Any] = None
+    suggestions: Optional[List[AgentSuggestion]] = None
+    pending_approval: Optional[PendingApproval] = Field(
+        default=None, alias="pendingApproval"
+    )
+    exchange: Optional[AgentExchangeSummary] = None
+
+
+class AgentThread(BaseModel):
+    """A thread and its runs, oldest turn first."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    id: Optional[str] = None
+    created_at: Optional[str] = Field(default=None, alias="createdAt")
+    updated_at: Optional[str] = Field(default=None, alias="updatedAt")
+    status: Optional[Literal["idle", "running"]] = None
+    runs: Optional[List[AgentThreadRun]] = None
+
+
+class AgentThreadResponse(BaseModel):
+    """Response from GET /v2/agent/threads/{thread_id}."""
+
+    model_config = {"populate_by_name": True}
+
+    success: Optional[bool] = None
+    thread: Optional[AgentThread] = None
+    error: Optional[str] = None
+
+
+# Agent trace types (GET /v2/agent/{job_id}/trace).
+# These mirror the agent service's canonical event schema (schemaVersion 1):
+# usage.recorded events are withheld server-side and agent.started carries no
+# model name.
+
+
+class AgentTraceAgentIdentity(BaseModel):
+    """Which agent produced a trace event."""
+
+    model_config = {"populate_by_name": True}
+
+    id: str
+    role: Literal["orchestrator", "subagent", "browser", "system"]
+    name: str
+    parent_id: Optional[str] = Field(default=None, alias="parentId")
+
+
+class AgentTraceError(BaseModel):
+    """Structured error attached to terminal/error trace events."""
+
+    code: Literal[
+        "cancelled", "credit_limit_reached", "parent_finished", "refused", "internal"
+    ]
+    source: Literal["agent", "tool", "billing", "system"]
+    retryable: bool
+    message: str
+
+
+class AgentTraceArtifactChange(BaseModel):
+    """Reference to an artifact snapshot; fetch content via get_agent_snapshot."""
+
+    model_config = {"populate_by_name": True}
+
+    kind: Literal["json", "markdown", "html", "screenshot", "text"]
+    artifact_id: str = Field(alias="artifactId")
+    path: Optional[str] = None
+    snapshot_id: str = Field(alias="snapshotId")
+    change: Literal["init", "partial", "append", "modify", "update"]
+    changed_fields: Optional[List[str]] = Field(default=None, alias="changedFields")
+    item_count: Optional[int] = Field(default=None, alias="itemCount")
+    source_tool_call_id: Optional[str] = Field(default=None, alias="sourceToolCallId")
+
+
+class AgentTraceEventBase(BaseModel):
+    """Fields every trace event carries."""
+
+    model_config = {"populate_by_name": True}
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    event_id: str = Field(alias="eventId")
+    run_id: str = Field(alias="runId")
+    occurred_at: datetime = Field(alias="occurredAt")
+    producer_sequence: int = Field(alias="producerSequence")
+    agent: AgentTraceAgentIdentity
+
+
+class AgentTraceRunStartedEvent(AgentTraceEventBase):
+    type: Literal["run.started"]
+
+
+class AgentTraceRunCancelRequestedEvent(AgentTraceEventBase):
+    type: Literal["run.cancel_requested"]
+    reason: Literal["user"]
+
+
+class AgentTraceRunFinishedEvent(AgentTraceEventBase):
+    type: Literal["run.finished"]
+    outcome: Literal["succeeded", "failed", "cancelled", "refused", "credit_limit_reached"]
+    # The canonical schema always writes this key (nullable), but default it so
+    # a trace with the key absent still parses instead of raising.
+    error: Optional[AgentTraceError] = None
+
+
+class AgentTraceAgentStartedEvent(AgentTraceEventBase):
+    type: Literal["agent.started"]
+
+
+class AgentTraceAgentFinishedEvent(AgentTraceEventBase):
+    type: Literal["agent.finished"]
+    outcome: Literal["succeeded", "failed", "cancelled", "refused"]
+    duration_ms: int = Field(alias="durationMs")
+    # See AgentTraceRunFinishedEvent.error for why this has a default.
+    error: Optional[AgentTraceError] = None
+
+
+class AgentTraceBrowserSessionStartedEvent(AgentTraceEventBase):
+    type: Literal["browser.session.started"]
+    session_id: str = Field(alias="sessionId")
+
+
+class AgentTraceBrowserSessionFinishedEvent(AgentTraceEventBase):
+    type: Literal["browser.session.finished"]
+    session_id: str = Field(alias="sessionId")
+    duration_ms: int = Field(alias="durationMs")
+
+
+class AgentTraceProgressReportedEvent(AgentTraceEventBase):
+    type: Literal["progress.reported"]
+    phase: Literal["planning", "working", "finalizing"]
+    message: str
+
+
+class AgentTraceReasoningSummaryEvent(AgentTraceEventBase):
+    type: Literal["reasoning.summary"]
+    text: str
+
+
+class AgentTraceToolCallStartedEvent(AgentTraceEventBase):
+    type: Literal["tool_call.started"]
+    tool_call_id: str = Field(alias="toolCallId")
+    tool_name: str = Field(alias="toolName")
+    # Required key on the wire (zod `.json()`), values may be null: Field(...)
+    # keeps the key required so a malformed event cannot silently pass.
+    parameters: Any = Field(...)
+
+
+class AgentTraceToolCallFinishedEvent(AgentTraceEventBase):
+    type: Literal["tool_call.finished"]
+    tool_call_id: str = Field(alias="toolCallId")
+    tool_name: str = Field(alias="toolName")
+    # See AgentTraceToolCallStartedEvent.parameters.
+    result: Any = Field(...)
+
+
+class AgentTraceArtifactUpdatedEvent(AgentTraceEventBase):
+    type: Literal["artifact.updated"]
+    artifact: AgentTraceArtifactChange
+
+
+class AgentTraceErrorOccurredEvent(AgentTraceEventBase):
+    type: Literal["error.occurred"]
+    error: AgentTraceError
+
+
+# Discriminated on the wire's `type` tag so generated schemas expose the
+# discriminator and validation dispatches on it directly.
+AgentTraceEvent = Annotated[
+    Union[
+        AgentTraceRunStartedEvent,
+        AgentTraceRunCancelRequestedEvent,
+        AgentTraceRunFinishedEvent,
+        AgentTraceAgentStartedEvent,
+        AgentTraceAgentFinishedEvent,
+        AgentTraceBrowserSessionStartedEvent,
+        AgentTraceBrowserSessionFinishedEvent,
+        AgentTraceProgressReportedEvent,
+        AgentTraceReasoningSummaryEvent,
+        AgentTraceToolCallStartedEvent,
+        AgentTraceToolCallFinishedEvent,
+        AgentTraceArtifactUpdatedEvent,
+        AgentTraceErrorOccurredEvent,
+    ],
+    Field(discriminator="type"),
+]
+
+
+class AgentTraceViewport(BaseModel):
+    width: int
+    height: int
+
+
+class AgentTraceActiveBrowserSession(BaseModel):
+    """Live browser session, present only when trace is requested with live_view."""
+
+    model_config = {"populate_by_name": True}
+
+    id: str
+    live_view_url: str = Field(alias="liveViewUrl")
+    viewport: AgentTraceViewport
+
+
+class AgentTraceResponse(BaseModel):
+    """Response from GET /v2/agent/{job_id}/trace."""
+
+    model_config = {"populate_by_name": True}
+
+    success: Optional[bool] = None
+    id: Optional[str] = None
+    events: Optional[List[AgentTraceEvent]] = None
+    credits_used: Optional[int] = Field(default=None, alias="creditsUsed")
+    active_browser_sessions: Optional[List[AgentTraceActiveBrowserSession]] = Field(
+        default=None, alias="activeBrowserSessions"
+    )
+    error: Optional[str] = None
+
+
+class AgentSnapshotResponse(BaseModel):
+    """Response from GET /v2/agent/{job_id}/snapshots/{snapshot_id}."""
+
+    model_config = {"populate_by_name": True}
+
+    success: Optional[bool] = None
+    id: Optional[str] = None
+    snapshot_id: Optional[str] = Field(default=None, alias="snapshotId")
+    snapshot: Optional[str] = None
+    error: Optional[str] = None
 
 
 # Browser types
@@ -1599,6 +2064,27 @@ class PDFParser(BaseModel):
     type: Literal["pdf"] = "pdf"
     mode: Optional[Literal["fast", "auto", "ocr"]] = None
     max_pages: Optional[int] = None
+    pages: Optional[bool] = None
+    blocks: Optional[bool] = None
+    # Join PDF pages in document markdown with `\n\n---\n\n<!-- page N -->\n\n`
+    # (N = 1-based physical page of the content that follows). Markers appear
+    # between pages only, and numbering may skip pages merged by cross-page
+    # stitching — use `pages=True` when every physical page is needed.
+    page_markers: Optional[bool] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fold_deprecated_page_markdown(cls, data: Any) -> Any:
+        """Accept the pre-rename pageMarkdown alias and fold it into pages."""
+        if not isinstance(data, dict):
+            return data
+        folded = dict(data)
+        alias = folded.pop("page_markdown", None)
+        if alias is None:
+            alias = folded.pop("pageMarkdown", None)
+        if folded.get("pages") is None and alias is not None:
+            folded["pages"] = alias
+        return folded
 
 
 # Location types
@@ -1607,6 +2093,75 @@ class Location(BaseModel):
 
     country: Optional[str] = None
     languages: Optional[List[str]] = None
+
+
+DeveloperSearchType = Literal["doc", "issue", "pull_request", "readme"]
+
+
+class DeveloperSearchRequest(BaseModel):
+    """Request for the dedicated developer-search endpoint."""
+
+    query: str
+    k: Optional[int] = Field(default=None, ge=1, le=100)
+    passages: Optional[int] = Field(default=None, ge=1, le=5)
+    types: Optional[List[DeveloperSearchType]] = Field(default=None, max_length=4)
+    repos: Optional[List[str]] = Field(default=None, max_length=20)
+    sources: Optional[List[str]] = Field(default=None, max_length=20)
+    language: Optional[str] = None
+    topic: Optional[List[str]] = Field(default=None, max_length=8)
+    license: Optional[str] = None
+    min_stars: Optional[int] = Field(default=None, ge=0)
+    max_stars: Optional[int] = Field(default=None, ge=0)
+    archived: Optional[bool] = None
+    fork: Optional[bool] = None
+    skills: Optional[Literal["only"]] = None
+
+
+class DeveloperSearchLicenseDisclosure(BaseModel):
+    """Repository license disclosure returned by developer search."""
+
+    state: Literal["licensed", "known_absent", "unknown"]
+    spdx_id: Optional[str] = None
+
+
+class DeveloperSearchPassage(BaseModel):
+    text: str
+    citation_url: Optional[str] = None
+
+
+class DeveloperSearchResult(BaseModel):
+    id: str
+    url: str
+    title: Optional[str] = None
+    passages: List[DeveloperSearchPassage]
+    # Accept both shapes while the API flattens license objects to SPDX strings.
+    license: Optional[Union[DeveloperSearchLicenseDisclosure, str]] = None
+
+
+class DeveloperSearchRepoTypes(BaseModel):
+    model_config = {"populate_by_name": True}
+
+    issue: bool
+    pull_request: bool = Field(alias="pullRequest")
+    readme: bool
+
+
+class DeveloperSearchRepoStatus(BaseModel):
+    repo: str
+    indexed: bool
+    types: DeveloperSearchRepoTypes
+
+
+class DeveloperSearchSourceStatus(BaseModel):
+    source: str
+    indexed: bool
+
+
+class DeveloperSearchResponse(BaseModel):
+    success: bool
+    results: List[DeveloperSearchResult]
+    repos: Optional[List[DeveloperSearchRepoStatus]] = None
+    sources: Optional[List[DeveloperSearchSourceStatus]] = None
 
 
 class SearchRequest(BaseModel):
@@ -1620,6 +2175,7 @@ class SearchRequest(BaseModel):
     limit: Optional[int] = 5
     tbs: Optional[str] = None
     location: Optional[str] = None
+    country: Optional[str] = None
     ignore_invalid_urls: Optional[bool] = None
     timeout: Optional[int] = 300000
     highlights: Optional[bool] = None
@@ -1700,7 +2256,6 @@ class SearchData(BaseModel):
     web: Optional[List[Union[SearchResultWeb, Document]]] = None
     news: Optional[List[Union[SearchResultNews, Document]]] = None
     images: Optional[List[Union[SearchResultImages, Document]]] = None
-    developer: Optional[List[Union[SearchResultWeb, Document]]] = None
 
     @property
     def data(self):
@@ -1711,8 +2266,6 @@ class SearchData(BaseModel):
             parts.append(f".news ({len(self.news)} results)")
         if self.images:
             parts.append(f".images ({len(self.images)} results)")
-        if self.developer:
-            parts.append(f".developer ({len(self.developer)} results)")
         available = ", ".join(parts) if parts else ".web, .news, or .images"
         raise AttributeError(
             f"SearchData has no '.data'. Results are grouped by source: {available}"

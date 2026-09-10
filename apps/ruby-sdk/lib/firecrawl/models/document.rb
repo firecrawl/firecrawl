@@ -7,7 +7,8 @@ module Firecrawl
       attr_reader :markdown, :html, :raw_html, :json, :summary,
                   :metadata, :links, :images, :screenshot, :audio,
                   :video, :attributes, :actions, :answer, :highlights,
-                  :warning, :change_tracking, :branding, :product, :menu
+                  :warning, :change_tracking, :branding, :product, :menu,
+                  :pages, :blocks
 
       def initialize(data)
         @markdown = data["markdown"]
@@ -30,6 +31,8 @@ module Firecrawl
         @branding = data["branding"]
         @product = data["product"] && ProductProfile.new(data["product"])
         @menu = data["menu"] && MenuProfile.new(data["menu"])
+        @pages = data["pages"]
+        @blocks = data["blocks"]
       end
 
       def to_s

@@ -1,7 +1,6 @@
 import { Response } from "express";
 import { logger } from "../../lib/logger";
 import { getCrawl, getCrawlJobs, saveCrawl } from "../../lib/crawl-redis";
-import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { RequestWithAuth } from "./types";
 import { crawlGroup } from "../../services/worker/nuq-router";
@@ -49,7 +48,6 @@ export async function crawlCancelController(
       status: "cancelled",
     });
   } catch (error) {
-    Sentry.captureException(error);
     logger.error(error);
     return res.status(500).json({ error: error.message });
   }

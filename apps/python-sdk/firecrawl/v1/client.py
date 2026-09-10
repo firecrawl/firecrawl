@@ -214,6 +214,7 @@ class V1JsonConfig(pydantic.BaseModel):
     prompt: Optional[str] = None
     schema_field: Optional[Any] = pydantic.Field(None, alias='schema')
     systemPrompt: Optional[str] = None
+    checkPromptInjection: Optional[bool] = None
     agent: Optional[V1ExtractAgent] = None
 
 class V1ScrapeParams(V1ScrapeOptions):
@@ -579,7 +580,7 @@ class V1FirecrawlApp:
           skip_tls_verification (Optional[bool]): Skip TLS verification
           remove_base64_images (Optional[bool]): Remove base64 images
           block_ads (Optional[bool]): Block ads
-          proxy (Optional[Literal["basic", "stealth", "auto"]]): Proxy type (basic/stealth)
+          proxy (Optional[Literal["basic", "stealth", "enhanced", "auto"]]): Proxy type (basic/enhanced)
           extract (Optional[JsonConfig]): Content extraction settings
           json_options (Optional[JsonConfig]): JSON extraction settings
           actions (Optional[List[Union[WaitAction, ScreenshotAction, ClickAction, WriteAction, PressAction, ScrollAction, ScrapeAction, ExecuteJavascriptAction, PDFAction]]]): Actions to perform
@@ -2631,7 +2632,7 @@ class V1FirecrawlApp:
         Initiates a deep research operation on a given query and polls until completion.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             query (str): Research query or topic to investigate
@@ -2660,7 +2661,7 @@ class V1FirecrawlApp:
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -2734,7 +2735,7 @@ class V1FirecrawlApp:
         Initiates an asynchronous deep research operation.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             query (str): Research query or topic to investigate
@@ -2756,7 +2757,7 @@ class V1FirecrawlApp:
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -2805,7 +2806,7 @@ class V1FirecrawlApp:
         Check the status of a deep research operation.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             id (str): The ID of the deep research operation.
@@ -2830,7 +2831,7 @@ class V1FirecrawlApp:
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -3649,7 +3650,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
           skip_tls_verification (Optional[bool]): Skip TLS verification
           remove_base64_images (Optional[bool]): Remove base64 images
           block_ads (Optional[bool]): Block ads
-          proxy (Optional[Literal["basic", "stealth", "auto"]]): Proxy type (basic/stealth)
+          proxy (Optional[Literal["basic", "stealth", "enhanced", "auto"]]): Proxy type (basic/enhanced)
           extract (Optional[V1JsonConfig]): Content extraction settings
           json_options (Optional[V1JsonConfig]): JSON extraction settings
           actions (Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]]): Actions to perform
@@ -4994,7 +4995,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Initiates a deep research operation on a given query and polls until completion.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             query (str): Research query or topic to investigate
@@ -5023,7 +5024,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -5097,7 +5098,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Initiates an asynchronous deep research operation.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             query (str): Research query or topic to investigate
@@ -5119,7 +5120,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -5157,7 +5158,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Check the status of a deep research operation.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             id (str): The ID of the deep research operation.
@@ -5182,7 +5183,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )

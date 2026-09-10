@@ -52,13 +52,16 @@ function buildReq(overrides: any = {}): any {
   };
 }
 
-function runMiddleware(req: any): Promise<{ res: any; nextErr?: any }> {
+function runMiddleware(
+  req: any,
+): Promise<{ res: any; nextErr?: any; nextCalled: boolean }> {
   return new Promise(resolve => {
     let settled = false;
+    let nextCalled = false;
     const settle = (payload: { res: any; nextErr?: any }) => {
       if (settled) return;
       settled = true;
-      resolve(payload);
+      resolve({ ...payload, nextCalled });
     };
 
     const res: any = {
@@ -71,7 +74,10 @@ function runMiddleware(req: any): Promise<{ res: any; nextErr?: any }> {
       headersSent: false,
     };
 
-    const next: NextFunction = (err?: any) => settle({ res, nextErr: err });
+    const next: NextFunction = (err?: any) => {
+      nextCalled = true;
+      settle({ res, nextErr: err });
+    };
     checkCreditsMiddleware()(req, res, next);
   });
 }
@@ -103,12 +109,62 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
   });
 
   it("adjusts crawl limit down when Autumn denies but some credits remain", async () => {
-    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 5 });
+    checkCreditsMock
+      .mockResolvedValueOnce({ allowed: false, remaining: 5 })
+      .mockResolvedValueOnce({ allowed: true, remaining: 5 });
 
     const req = buildReq({ body: { limit: 100 } });
     const { res } = await runMiddleware(req);
 
     expect(res.status).not.toHaveBeenCalled();
+    expect(req.body.limit).toBe(5);
+    expect(checkCreditsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        value: 5,
+        properties: expect.objectContaining({
+          source: "checkCreditsMiddleware:clamp",
+          apiKeyId: null,
+        }),
+      }),
+    );
+  });
+
+  it("blocks with 402 when a per-key spend limit denies but the team balance is healthy", async () => {
+    // A per-API-key spend limit does not lower the team balance, so both the
+    // initial check and the clamped re-check deny with credits still remaining.
+    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 5000 });
+
+    const req = buildReq({ body: { limit: 100 } });
+    const { res, nextCalled } = await runMiddleware(req);
+
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(nextCalled).toBe(false);
+    // A request that ends in a 402 keeps the caller's original limit.
+    expect(req.body.limit).toBe(100);
+  });
+
+  it("clamps the crawl limit down only, never up to the remaining balance", async () => {
+    checkCreditsMock
+      .mockResolvedValueOnce({ allowed: false, remaining: 5000 })
+      .mockResolvedValueOnce({ allowed: true, remaining: 5000 });
+
+    const req = buildReq({ body: { limit: 5 } });
+    const { res } = await runMiddleware(req);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(req.body.limit).toBe(5);
+  });
+
+  it("fails open when the clamped re-check finds Autumn unavailable", async () => {
+    checkCreditsMock
+      .mockResolvedValueOnce({ allowed: false, remaining: 5 })
+      .mockResolvedValueOnce(null);
+
+    const req = buildReq({ body: { limit: 100 } });
+    const { res, nextCalled } = await runMiddleware(req);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(nextCalled).toBe(true);
     expect(req.body.limit).toBe(5);
   });
 

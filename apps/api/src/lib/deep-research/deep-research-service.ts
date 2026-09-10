@@ -429,7 +429,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
       teamId,
       credits_billed,
       apiKeyId,
-      { endpoint: "deep_research", jobId: researchId },
+      { endpoint: "deep_research", jobId: researchId, chargeId: researchId },
       logger,
     ).catch(error => {
       logger.error(

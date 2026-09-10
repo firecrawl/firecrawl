@@ -31,7 +31,7 @@ module Firecrawl
           "timeout" => timeout,
           "waitFor" => wait_for,
           "mobile" => mobile,
-          "parsers" => parsers,
+          "parsers" => parsers&.map { |parser| parser.respond_to?(:to_h) ? parser.to_h : parser },
           "actions" => actions,
           "location" => location.is_a?(Hash) ? location : location&.to_h,
           "skipTlsVerification" => skip_tls_verification,

@@ -181,6 +181,7 @@ export interface ScrapeParams<LLMSchema extends zt.ZodSchema = any, ActionsSchem
     prompt?: string;
     schema?: LLMSchema;
     systemPrompt?: string;
+    checkPromptInjection?: boolean;
   }
   changeTrackingOptions?: {
     prompt?: string;
@@ -1642,7 +1643,7 @@ export default class FirecrawlApp {
    * @param onActivity - Optional callback to receive activity updates in real-time.
    * @param onSource - Optional callback to receive source updates in real-time.
    * @returns The final research results.
-   * @deprecated /v1/deep-research is deprecated. Use /v2/search instead.
+   * @deprecated /v1/deep-research is deprecated. Use /v2/search for web research, or research.searchPapers() for scientific literature.
    */
   async deepResearch(
     query: string, 
@@ -1730,7 +1731,7 @@ export default class FirecrawlApp {
    * Initiates a deep research operation on a given query without polling.
    * @param params - Parameters for the deep research operation.
    * @returns The response containing the research job ID.
-   * @deprecated /v1/deep-research is deprecated. Use /v2/search instead.
+   * @deprecated /v1/deep-research is deprecated. Use /v2/search for web research, or research.searchPapers() for scientific literature.
    */
   async asyncDeepResearch(query: string, params: DeepResearchParams<zt.ZodSchema>): Promise<DeepResearchResponse | ErrorResponse> {
     const headers = this.prepareHeaders();
@@ -1772,7 +1773,7 @@ export default class FirecrawlApp {
    * Checks the status of a deep research operation.
    * @param id - The ID of the deep research operation.
    * @returns The current status and results of the research operation.
-   * @deprecated /v1/deep-research is deprecated. Use /v2/search instead.
+   * @deprecated /v1/deep-research is deprecated. Use /v2/search for web research, or research.searchPapers() for scientific literature.
    */
   async checkDeepResearchStatus(id: string): Promise<DeepResearchStatusResponse | ErrorResponse> {
     const headers = this.prepareHeaders();

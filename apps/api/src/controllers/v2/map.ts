@@ -8,6 +8,7 @@ import {
 import { configDotenv } from "dotenv";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError, MapFailedError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
@@ -81,6 +82,7 @@ export async function mapController(
     id: mapId,
     kind: "map",
     api_version: "v2",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
@@ -103,6 +105,9 @@ export async function mapController(
       billTeam(req.auth.team_id, creditsCost, req.acuc?.api_key_id ?? null, {
         endpoint: "map",
         jobId: mapId,
+        // Suffixed so this early-return path can never collide with the main
+        // map charge below, even if both ever billed the same mapId.
+        chargeId: `${mapId}:avgrab`,
       }).catch(error => {
         logger.error(
           `Failed to bill team ${req.auth.team_id} for ${creditsCost} credits: ${error}`,
@@ -238,6 +243,7 @@ export async function mapController(
   billTeam(req.auth.team_id, creditsToBill, req.acuc?.api_key_id ?? null, {
     endpoint: "map",
     jobId: mapId,
+    chargeId: mapId,
   }).catch(error => {
     logger.error("Failed to bill team for map credits", {
       teamId: req.auth.team_id,

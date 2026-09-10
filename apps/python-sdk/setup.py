@@ -22,7 +22,7 @@ setup(
     url="https://github.com/firecrawl/firecrawl",
     author="Mendable.ai",
     author_email="nick@mendable.ai",
-    description="Python SDK for Firecrawl API",
+    description="Python SDK for the Firecrawl API: web scraping, crawling, web search, and scientific literature search over a research paper index of PubMed, bioRxiv, medRxiv and arXiv abstracts",
     long_description=long_description_content,
     long_description_content_type="text/markdown",
     packages=find_packages(),
@@ -57,8 +57,16 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: Text Processing",
         "Topic :: Text Processing :: Indexing",
+        "Intended Audience :: Science/Research",
+        "Topic :: Scientific/Engineering",
+        "Topic :: Scientific/Engineering :: Bio-Informatics",
+        "Topic :: Scientific/Engineering :: Medical Science Apps.",
     ],
-    keywords="SDK API firecrawl",
+    keywords=(
+        "SDK API firecrawl web scraping crawler web search literature search "
+        "research scientific papers academic search biomedical life sciences "
+        "pubmed biorxiv medrxiv arxiv preprints citations bioinformatics"
+    ),
     project_urls={
         "Documentation": "https://docs.firecrawl.dev",
         "Source": "https://github.com/firecrawl/firecrawl",

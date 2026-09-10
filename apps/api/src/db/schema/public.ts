@@ -51,6 +51,18 @@ export const agent_sponsors = pgTable("agent_sponsors", {
   updated_at: ts("updated_at").defaultNow(),
 });
 
+export const agent_session_settings = pgTable("agent_session_settings", {
+  id: uuid("id").notNull(),
+  session_id: uuid("session_id").notNull(),
+  team_id: uuid("team_id").notNull(),
+  hidden: boolean("hidden").default(false),
+  starred: boolean("starred").default(false),
+  label: text("label"),
+  created_at: ts("created_at").defaultNow(),
+  updated_at: ts("updated_at").defaultNow(),
+  share_id: uuid("share_id"),
+});
+
 export const agents = pgTable("agents", {
   id: uuid("id").notNull(),
   request_id: uuid("request_id").notNull(),
@@ -127,6 +139,8 @@ export const browser_session_activities = pgTable(
 export const browser_sessions = pgTable("browser_sessions", {
   id: uuid("id").notNull(),
   team_id: text("team_id").notNull(),
+  request_id: uuid("request_id"),
+  should_bill: boolean("should_bill").notNull().default(true),
   browser_id: text("browser_id").notNull(),
   workspace_id: text("workspace_id").notNull(),
   context_id: text("context_id").notNull(),
@@ -376,6 +390,7 @@ export const monitor_checks = pgTable("monitor_checks", {
   reserved_credits: integer("reserved_credits"),
   actual_credits: integer("actual_credits"),
   autumn_lock_id: text("autumn_lock_id"),
+  partner_run_token: text("partner_run_token"),
   billing_status: text("billing_status").notNull().default("not_applicable"),
   total_pages: integer("total_pages").notNull().default(0),
   same_count: integer("same_count").notNull().default(0),
@@ -452,6 +467,7 @@ export const monitors = pgTable("monitors", {
   deleted_at: ts("deleted_at"),
   goal: text("goal"),
   judge_enabled: boolean("judge_enabled").notNull().default(false),
+  partner_job_token: text("partner_job_token"),
 });
 
 export const slack_installations = pgTable("slack_installations", {
@@ -558,6 +574,7 @@ export const requests = pgTable("requests", {
   target_hint: text("target_hint").notNull(),
   dr_clean_by: ts("dr_clean_by"),
   api_key_id: bigintNum("api_key_id"),
+  external_request_id: text("external_request_id"),
 });
 
 export const mcp_action_logs = pgTable(
@@ -676,6 +693,16 @@ export const subscriptions = pgTable("subscriptions", {
   pending_price_effective_at: ts("pending_price_effective_at"),
   pending_schedule_id: text("pending_schedule_id"),
 });
+
+export const partner_provisioned_accounts = pgTable(
+  "partner_provisioned_accounts",
+  {
+    id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
+    integration_id: bigintNum("integration_id").notNull(),
+    team_id: uuid("team_id").notNull(),
+    org_id: uuid("org_id").notNull(),
+  },
+);
 
 export const teams = pgTable("teams", {
   id: uuid("id").notNull().defaultRandom(),

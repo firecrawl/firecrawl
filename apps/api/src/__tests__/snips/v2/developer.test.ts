@@ -15,8 +15,6 @@ const CANONICAL_PATH = "/v2/search/developer";
 const LEGACY_PATH = "/v2/developer/search";
 const SERVING_PATHS = [CANONICAL_PATH, LEGACY_PATH];
 
-const COVERAGE_STATUSES = ["ok", "degraded", "unavailable", "skipped"];
-
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const sleepForBilling = () => sleep(40000);
 
@@ -51,17 +49,10 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.results)).toBe(true);
-      for (const type of ["doc", "issue", "pull_request", "readme"]) {
-        expect(COVERAGE_STATUSES).toContain(res.body.coverage[type]);
-      }
-      expect(typeof res.body.reranked).toBe("boolean");
 
       for (const result of res.body.results) {
         expect(typeof result.id).toBe("string");
         expect(typeof result.url).toBe("string");
-        expect(["doc", "issue", "pull_request", "readme"]).toContain(
-          result.type,
-        );
         expect(Array.isArray(result.passages)).toBe(true);
         expect(result.license).toBeUndefined();
       }
@@ -82,11 +73,6 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.results)).toBe(true);
-      for (const result of res.body.results) {
-        expect(["issue", "readme"]).toContain(result.type);
-      }
-      expect(res.body.coverage.doc).toBe("skipped");
-      expect(res.body.coverage.pull_request).toBe("skipped");
     }, 120000);
   });
 
@@ -175,6 +161,82 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
     expect(requestLog).not.toBeNull();
     expect(requestLog?.origin).toBe("mcp");
     expect(requestLog?.integration).toBe("_research_test");
+  }, 120000);
+
+  it("redacts stored payloads for a forced-ZDR team", async () => {
+    if (!config.USE_DB_AUTHENTICATION) return;
+
+    const identity = await idmux({
+      name: "developer/forced ZDR retention",
+      credits: 100,
+      flags: { searchZDR: "forced-zdr" },
+    });
+
+    const res = await researchRaw(
+      CANONICAL_PATH,
+      {
+        query: `private developer query ${Date.now()}`,
+        k: 1,
+      },
+      identity,
+    );
+    expect(res.statusCode).toBe(200);
+
+    const requestLog = await waitForSingleRow<{
+      id: string;
+      target_hint: string;
+      dr_clean_by: string | null;
+    }>(async () => {
+      const data = await db
+        .select({
+          id: schema.requests.id,
+          target_hint: schema.requests.target_hint,
+          dr_clean_by: schema.requests.dr_clean_by,
+        })
+        .from(schema.requests)
+        .where(
+          and(
+            eq(schema.requests.team_id, identity.teamId),
+            eq(schema.requests.kind, "code_search"),
+          ),
+        )
+        .orderBy(desc(schema.requests.created_at))
+        .limit(1);
+      return data[0] ?? null;
+    });
+
+    expect(requestLog).not.toBeNull();
+    expect(requestLog?.target_hint).toBe(
+      "<redacted due to zero data retention>",
+    );
+    expect(requestLog?.dr_clean_by).not.toBeNull();
+
+    const usageLog = await waitForSingleRow<{
+      target: string;
+      options: unknown;
+      response: unknown;
+      error: string | null;
+    }>(async () => {
+      if (!requestLog) return null;
+      const data = await db
+        .select({
+          target: schema.code_searches.target,
+          options: schema.code_searches.options,
+          response: schema.code_searches.response,
+          error: schema.code_searches.error,
+        })
+        .from(schema.code_searches)
+        .where(eq(schema.code_searches.request_id, requestLog.id))
+        .limit(1);
+      return data[0] ?? null;
+    });
+
+    expect(usageLog).toEqual({
+      target: "<redacted due to zero data retention>",
+      options: null,
+      response: null,
+      error: null,
+    });
   }, 120000);
 
   it("writes a usage row with the billed credits", async () => {

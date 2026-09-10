@@ -273,3 +273,68 @@ describe("index cache fail-open", () => {
     ).resolves.toBeUndefined();
   }, 5000);
 });
+
+describe("upsertCachedIndexEntries pipeline error handling", () => {
+  function fakeClientWithResults(results: [Error | null, unknown][]) {
+    const delCalls: string[] = [];
+    const client: any = {
+      pipeline: () => {
+        const pipeline: any = {
+          hset: () => pipeline,
+          expire: () => pipeline,
+          del: () => pipeline,
+          hlen: () => pipeline,
+          exec: async () => results,
+        };
+        return pipeline;
+      },
+      del: async (key: string) => {
+        delCalls.push(key);
+        return 1;
+      },
+    };
+    return { client, delCalls };
+  }
+
+  it("retries the negative-marker DEL when the HSET landed but the DEL failed", async () => {
+    const { client, delCalls } = fakeClientWithResults([
+      [null, 1], // hset
+      [null, 1], // expire
+      [new Error("boom"), undefined], // del negative marker
+      [null, 1], // hlen
+    ]);
+
+    await upsertCachedIndexEntries("idxc:test", [entry()], undefined, client);
+
+    expect(delCalls).toEqual(["idxcneg:test"]);
+  });
+
+  it("still retries the negative-marker DEL when the HSET failed", async () => {
+    // A connection failure can report the HSET as failed even when Redis
+    // applied it, and deleting the marker is always safe (it only costs a
+    // DB read on the next lookup).
+    const { client, delCalls } = fakeClientWithResults([
+      [new Error("boom"), undefined], // hset
+      [null, 1], // expire
+      [new Error("boom"), undefined], // del negative marker
+      [null, 1], // hlen
+    ]);
+
+    await upsertCachedIndexEntries("idxc:test", [entry()], undefined, client);
+
+    expect(delCalls).toEqual(["idxcneg:test"]);
+  });
+
+  it("does not retry the negative-marker DEL when it succeeded", async () => {
+    const { client, delCalls } = fakeClientWithResults([
+      [null, 1], // hset
+      [null, 1], // expire
+      [null, 1], // del negative marker
+      [null, 1], // hlen
+    ]);
+
+    await upsertCachedIndexEntries("idxc:test", [entry()], undefined, client);
+
+    expect(delCalls).toEqual([]);
+  });
+});

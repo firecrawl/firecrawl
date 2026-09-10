@@ -28,6 +28,7 @@ import {
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { checkUrl } from "../../lib/threat-protection";
@@ -87,6 +88,9 @@ export async function crawlController(
           req.auth.team_id,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
+          // No chargeId: a fresh crawl id is minted per request and the
+          // rejected crawl is never persisted or queued, so there is no
+          // stable per-charge identity that could dedupe a retry.
           { endpoint: "crawl" },
         ).catch(error => {
           _logger.error(
@@ -148,6 +152,7 @@ export async function crawlController(
     id,
     kind: "crawl",
     api_version: "v1",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: req.body.origin ?? "api",
     integration: req.body.integration,

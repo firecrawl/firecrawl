@@ -200,6 +200,7 @@ export async function resolveRedirects(
   const targetUrl = protocolIncluded(url) ? url : `http://${url}`;
 
   const methods = ["HEAD", "GET"] as const;
+  const dispatcher = getSecureDispatcher(false);
 
   for (const method of methods) {
     const signal = abort
@@ -210,7 +211,7 @@ export async function resolveRedirects(
       const response = await undici.fetch(targetUrl, {
         method,
         redirect: "follow",
-        dispatcher: getSecureDispatcher(false),
+        dispatcher,
         signal,
       });
 

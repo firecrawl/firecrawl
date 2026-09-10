@@ -68,10 +68,20 @@ interface SearchContext {
 interface SearchExecuteResult {
   response: SearchV2Response;
   totalResultsCount: number;
+  developerResultsCount: number;
   searchCredits: number;
   scrapeCredits: number;
   totalCredits: number;
   shouldScrape: boolean;
+}
+
+function hasOnlyDeveloperCategory(categories?: CategoryOption[]): boolean {
+  if (!categories?.length) return false;
+  return categories.every(category =>
+    typeof category === "string"
+      ? category === "developer"
+      : category.type === "developer",
+  );
 }
 
 export async function executeSearch(
@@ -106,34 +116,34 @@ export async function executeSearch(
     },
   );
 
-  const developerResults = wantsDeveloperCategory(categories)
+  const wantsDeveloper = wantsDeveloperCategory(categories);
+  const developerResultsPromise = wantsDeveloper
     ? searchDeveloperCategory(
         { query, limit, teamId, timeout: options.timeout },
         logger,
       )
     : null;
 
-  const searchResponse = (await search({
-    query: searchQuery,
-    logger,
-    advanced: false,
-    num_results: num_results_buffer,
-    tbs: options.tbs,
-    filter: options.filter,
-    lang: options.lang,
-    country: options.country,
-    location: options.location,
-    safe: options.safe,
-    type: searchTypes,
-    enterprise: options.enterprise,
-  })) as SearchV2Response;
-
-  if (developerResults) {
-    const developer = await developerResults;
-    if (developer.length > 0) {
-      searchResponse.developer = developer;
-    }
-  }
+  const searchResponse = hasOnlyDeveloperCategory(categories)
+    ? ({} as SearchV2Response)
+    : ((await search({
+        query: searchQuery,
+        logger,
+        requestId: context.requestId,
+        advanced: false,
+        num_results: num_results_buffer,
+        tbs: options.tbs,
+        filter: options.filter,
+        lang: options.lang,
+        country: options.country,
+        location: options.location,
+        safe: options.safe,
+        type: searchTypes,
+        enterprise: options.enterprise,
+      })) as SearchV2Response);
+  let developerResults = developerResultsPromise
+    ? await developerResultsPromise
+    : [];
 
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are
@@ -147,7 +157,7 @@ export async function executeSearch(
       ...(searchResponse.web ?? []).map(x => x.url),
       ...(searchResponse.news ?? []).map(x => x.url),
       ...(searchResponse.images ?? []).map(x => x.url),
-      ...(searchResponse.developer ?? []).map(x => x.url),
+      ...developerResults.map(x => x.url),
     ].filter((x): x is string => !!x);
 
     if (urlsToCheck.length > 0) {
@@ -173,11 +183,7 @@ export async function executeSearch(
           isAllowed(x.url),
         );
       }
-      if (searchResponse.developer) {
-        searchResponse.developer = searchResponse.developer.filter(x =>
-          isAllowed(x.url),
-        );
-      }
+      developerResults = developerResults.filter(x => isAllowed(x.url));
     }
   }
 
@@ -220,9 +226,8 @@ export async function executeSearch(
     totalResultsCount += searchResponse.news.length;
   }
 
-  if (searchResponse.developer && searchResponse.developer.length > 0) {
-    totalResultsCount += searchResponse.developer.length;
-  }
+  const developerResultsCount = developerResults.length;
+  totalResultsCount += developerResultsCount;
 
   const isZDR = options.enterprise?.includes("zdr");
   const creditsPerTenResults = isZDR ? 10 : 2;
@@ -321,6 +326,16 @@ export async function executeSearch(
     }
   }
 
+  if (wantsDeveloper) {
+    // The developer category is exclusive (schema-enforced), so these are
+    // the only results: they ARE the web group. Threat filtering above may
+    // have removed entries, so renumber the survivors.
+    searchResponse.web = developerResults.map((result, index) => ({
+      ...result,
+      position: index + 1,
+    }));
+  }
+
   const scrapeFormats = scrapeOptions?.formats
     ? scrapeOptions.formats.map((f: any) =>
         typeof f === "string" ? f : f.type,
@@ -362,6 +377,7 @@ export async function executeSearch(
   return {
     response: searchResponse,
     totalResultsCount,
+    developerResultsCount,
     searchCredits,
     scrapeCredits,
     totalCredits: searchCredits + scrapeCredits,

@@ -7,6 +7,7 @@ import type { PDFMode } from "../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import { createPdfCacheKey } from "../../../../lib/gcs-pdf-cache";
 import { maybeSaveResult, tryGetCached } from "./fire-pdf/cache";
+import { firePdfBlocksSchema, firePdfPagesSchema } from "./fire-pdf/schema";
 
 /**
  * Reconcile an existing page count with what fire-pdf reported.
@@ -45,6 +46,8 @@ export async function scrapePDFWithFirePDF(
   pagesProcessed?: number,
   mode?: PDFMode,
   includePageMarkdown = false,
+  includeBlocks = false,
+  pageMarkers = false,
 ): Promise<PDFProcessorResult> {
   const logger = meta.logger;
 
@@ -60,6 +63,11 @@ export async function scrapePDFWithFirePDF(
   //     running fire-pdf again.
   //   - `fast` is bypassed entirely (hard cost ceiling — must fail on
   //     scanned PDFs, not serve a cached OCR result).
+  //   - `page_markers` rewrites the document markdown itself (inter-page
+  //     `<!-- page N -->` separators), so marker requests read/write a
+  //     fully disjoint `…markers…` variant family — a base-variant entry
+  //     must never be served for a marker request and vice versa. See
+  //     cacheKeyShape in fire-pdf/cache.ts.
   const cacheable =
     mode !== "fast" && !maxPages && !meta.internalOptions.zeroDataRetention;
   const cached = cacheable
@@ -70,6 +78,8 @@ export async function scrapePDFWithFirePDF(
         maxPages,
         pagesProcessed,
         includePageMarkdown,
+        includeBlocks,
+        pageMarkers,
       )
     : null;
   if (cached) return cached;
@@ -120,6 +130,8 @@ export async function scrapePDFWithFirePDF(
       ...(maxPages !== undefined && { max_pages: maxPages }),
       ...(mode !== undefined && { mode }),
       ...(includePageMarkdown && { include_page_markdown: true }),
+      ...(includeBlocks && { include_blocks: true }),
+      ...(pageMarkers && { page_markers: true }),
       // Enrichment for the fire-pdf jobs DB / dashboard. fire-pdf treats
       // these as optional — older fire-pdf builds will ignore unknown fields.
       team_id: meta.internalOptions.teamId,
@@ -137,11 +149,14 @@ export async function scrapePDFWithFirePDF(
       markdown: z.string(),
       failed_pages: z.array(z.number()).nullable(),
       pages_processed: z.number().optional(),
-      pages: z
-        .array(
-          z.object({ page: z.number().int().positive(), markdown: z.string() }),
-        )
-        .optional(),
+      pages: firePdfPagesSchema,
+      blocks: firePdfBlocksSchema,
+      // Echo of an honored page_markers request. Markers are baked into
+      // `markdown` and their absence is not reliably detectable there (a
+      // single-page or fully-stitched document legitimately has none), so
+      // the echo is the only proof the fire-pdf build understood the
+      // option — older builds ignore unknown request fields and omit it.
+      page_markers: z.literal(true).optional(),
     }),
     mock: meta.mock,
     abort: meta.abort.asSignal(),
@@ -151,6 +166,16 @@ export async function scrapePDFWithFirePDF(
   if (includePageMarkdown && resp.pages === undefined) {
     throw new Error(
       "FirePDF response did not include requested physical page markdown",
+    );
+  }
+  if (includeBlocks && resp.blocks === undefined) {
+    throw new Error("FirePDF response did not include requested typed blocks");
+  }
+  if (pageMarkers && resp.page_markers !== true) {
+    // Without the echo, the markdown is ordinary unmarked output; caching
+    // it under a marker variant would silently poison the marker cache.
+    throw new Error(
+      "FirePDF response did not acknowledge requested page markers",
     );
   }
   const pages = resp.pages_processed ?? pagesProcessed;
@@ -170,6 +195,7 @@ export async function scrapePDFWithFirePDF(
     html: await safeMarkdownToHtml(resp.markdown, logger, meta.id),
     pagesProcessed: pages,
     ...(resp.pages ? { pageMarkdown: resp.pages } : {}),
+    ...(resp.blocks ? { blocks: resp.blocks } : {}),
   };
 
   if (cacheable) {
@@ -179,6 +205,8 @@ export async function scrapePDFWithFirePDF(
       mode,
       maxPages,
       includePageMarkdown,
+      includeBlocks,
+      pageMarkers,
       result: processorResult,
     });
   }

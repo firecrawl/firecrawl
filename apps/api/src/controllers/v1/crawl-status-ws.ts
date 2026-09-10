@@ -17,7 +17,6 @@ import {
   getDoneJobsOrdered,
 } from "../../lib/crawl-redis";
 import { getJobs, PseudoJob } from "./crawl-status";
-import * as Sentry from "@sentry/node";
 import { getConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
 import { scrapeQueue, NuQJobStatus } from "../../services/worker/nuq-router";
 import { getErrorContactMessage } from "../../lib/deployment";
@@ -249,8 +248,6 @@ export async function crawlStatusWSController(
     if (closedDuringAuth || !isSocketOpen(ws)) {
       return;
     }
-
-    Sentry.captureException(err);
 
     const id = uuidv7();
     let verbose = JSON.stringify(err);

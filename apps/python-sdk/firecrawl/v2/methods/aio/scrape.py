@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional, Dict, Any, Literal
 from ...types import (
     ScrapeOptions,
@@ -9,6 +10,7 @@ from ...utils.normalize import normalize_document_input
 from ...utils.error_handler import handle_response_error
 from ...utils.validation import prepare_scrape_options, validate_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
+from ...utils.auto_resume import ResumeTracker
 
 
 async def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -> Dict[str, Any]:
@@ -24,17 +26,33 @@ async def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = N
     return payload
 
 
-async def scrape(client: AsyncHttpClient, url: str, options: Optional[ScrapeOptions] = None) -> Document:
+async def scrape(
+    client: AsyncHttpClient,
+    url: str,
+    options: Optional[ScrapeOptions] = None,
+    *,
+    auto_resume: Optional[bool] = None,
+) -> Document:
     payload = await _prepare_scrape_request(url, options)
-    response = await client.post("/v2/scrape", payload)
-    if response.status_code >= 400:
-        handle_response_error(response, "scrape")
-    body = response.json()
-    if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
-    document_data = body.get("data", {})
-    normalized = normalize_document_input(document_data)
-    return Document(**normalized)
+
+    resume = ResumeTracker(enabled=auto_resume is not False)
+    while True:
+        response = await client.post("/v2/scrape", payload)
+        if response.status_code >= 400:
+            delay_s = resume.delay_or_none(response)
+            if delay_s is not None:
+                # The document keeps processing server-side; the retry
+                # attaches to the same in-flight job (content adoption)
+                # and returns the finished result.
+                await asyncio.sleep(delay_s)
+                continue
+            handle_response_error(response, "scrape")
+        body = response.json()
+        if not body.get("success"):
+            raise Exception(body.get("error", "Unknown error occurred"))
+        document_data = body.get("data", {})
+        normalized = normalize_document_input(document_data)
+        return Document(**normalized)
 
 
 async def interact(

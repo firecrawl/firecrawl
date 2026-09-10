@@ -2277,6 +2277,7 @@
                 "markdown",
                 "html",
                 "rawHtml",
+                "rawBase64",
                 "links",
                 "screenshot",
                 "screenshot@fullPage",
@@ -2285,7 +2286,7 @@
                 "branding"
               ]
             },
-            "description": "Formats to include in the output.",
+            "description": "Formats to include in the output. `rawBase64` must be requested by itself.",
             "default": ["markdown"]
           },
           "onlyMainContent": {
@@ -2547,7 +2548,7 @@
           "proxy": {
             "type": "string",
             "enum": ["basic", "enhanced", "auto"],
-            "description": "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **enhanced**: Enhanced proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Costs up to 5 credits per request.\n - **auto**: Firecrawl will automatically retry scraping with enhanced proxies if the basic proxy fails. If the retry with enhanced is successful, 5 credits will be billed for the scrape. If the first attempt with basic is successful, only the regular cost will be billed.\n\nIf you do not specify a proxy, Firecrawl will default to basic."
+            "description": "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **enhanced**: Enhanced proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Billed at the same credit cost as basic.\n - **auto**: Firecrawl will automatically retry scraping with enhanced proxies if the basic proxy fails. Enhanced proxies carry no credit surcharge, so either way only the regular cost is billed.\n\nIf you do not specify a proxy, Firecrawl will default to basic."
           },
           "changeTrackingOptions": {
             "type": "object",
@@ -2605,6 +2606,11 @@
                 "type": "string",
                 "nullable": true,
                 "description": "Raw HTML content of the page if `rawHtml` is in `formats`"
+              },
+              "rawBase64": {
+                "type": "string",
+                "nullable": true,
+                "description": "Base64-encoded original response body if `rawBase64` is in `formats`"
               },
               "screenshot": {
                 "type": "string",
@@ -2866,6 +2872,11 @@
                   "nullable": true,
                   "description": "Raw HTML content of the page if `includeRawHtml`  is true"
                 },
+                "rawBase64": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Base64-encoded original response body if `rawBase64` is in `formats`"
+                },
                 "links": {
                   "type": "array",
                   "items": {
@@ -3002,6 +3013,11 @@
                   "type": "string",
                   "nullable": true,
                   "description": "Raw HTML content of the page if `includeRawHtml`  is true"
+                },
+                "rawBase64": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Base64-encoded original response body if `rawBase64` is in `formats`"
                 },
                 "links": {
                   "type": "array",

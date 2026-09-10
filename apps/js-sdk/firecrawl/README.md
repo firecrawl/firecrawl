@@ -166,6 +166,109 @@ const mapResult = await app.map('https://example.com');
 console.log(mapResult);
 ```
 
+### Search
+
+Use `search` to search the web and optionally scrape the results in the same call.
+
+```js
+const results = await app.search('what is retrieval augmented generation?', { limit: 5 });
+for (const result of results.web ?? []) {
+  console.log(result.url, '-', result.title);
+}
+
+// Scrape every result as part of the search:
+const scraped = await app.search('firecrawl changelog', {
+  limit: 3,
+  scrapeOptions: { formats: ['markdown'] },
+});
+```
+
+Results are grouped by source: `.web`, `.news` and `.images`. Developer
+category results are served inside `.web`.
+
+Use `categories` to narrow web search to a kind of site:
+
+```js
+const results = await app.search('nanopore basecalling accuracy', {
+  categories: ['research'],
+});
+```
+
+> **`categories: ['research']` is a website filter, not the paper index.** It
+> restricts ordinary web search to roughly 14 academic domains (arxiv.org,
+> pubmed.ncbi.nlm.nih.gov, nature.com, biorxiv.org, ...) and returns web page
+> results. To search papers themselves, use `research.searchPapers` below.
+
+### Developer search
+
+Use `developerSearch` for the dedicated developer index and its complete filter
+and response contract. Generic `search(..., { categories: ['developer'] })`
+returns developer results inside `.web` in the ordinary web-result shape
+(first passage as the description) and does not accept these filters.
+
+```js
+const evidence = await app.developerSearch('configure retry backoff', {
+  repos: ['firecrawl/firecrawl'],
+  types: ['issue', 'pull_request', 'readme'],
+  passages: 3,
+  language: 'TypeScript',
+  license: 'MIT',
+});
+
+for (const result of evidence.results) {
+  // Result kind is the id prefix; the API intentionally omits a type field.
+  console.log(result.id, result.license);
+  for (const passage of result.passages) {
+    console.log(passage.text, passage.citation_url);
+  }
+}
+console.log(evidence.repos); // indexed-status echoes for requested repos
+```
+
+`developerSearch` also supports `sources`, `topic`, `minStars`, `maxStars`,
+`archived`, `fork`, and `skills: 'only'`. Supplying both `repos` and `sources`
+OR-combines GitHub-backed and documentation results.
+
+### Research / paper search
+
+Use `app.research` to search Firecrawl's research paper index: ~43M paper
+abstracts, roughly 90% biomedical and life sciences (PubMed, bioRxiv, medRxiv),
+plus arXiv for physics, mathematics and computer science.
+
+```js
+// Search the paper index (semantic search over abstracts):
+const papers = await app.research.searchPapers(
+  'CRISPR base editing off-target effects in primary human T cells',
+  { k: 10 },
+);
+for (const paper of papers.results) {
+  console.log(paper.primaryId, '-', paper.title);
+}
+
+// Inspect one paper's metadata (accepts pmid:, pmcid:, doi: or arxiv: ids):
+const paper = await app.research.getPaper('pmid:<id>');
+
+// Read the passages inside a paper that answer a specific question:
+const read = await app.research.getPaper('pmid:<id>', {
+  query: 'what was the primary endpoint and the reported hazard ratio?',
+  k: 4,
+});
+
+// Expand along the citation graph, re-ranked for your stated intent:
+const related = await app.research.similarPapers('pmid:<id>', {
+  intent: 'replication attempts in larger cohorts',
+  k: 20,
+});
+```
+
+> **`app.research.searchGithub` is deprecated.** The research index GitHub
+> endpoint stops responding after 2026-11-03. Use `app.developerSearch`
+> instead: it searches GitHub issues, pull requests and readmes plus curated
+> documentation sources, returns matched passages, and adds filters for repo,
+> language, license and stars. It does not carry over the `scores` breakdown
+> or the `resultType: "web"` fallback results. See
+> [the developer index docs](https://docs.firecrawl.dev/features/developer).
+
 ### Scrape-bound interactive browsing (v2)
 
 Use a scrape job ID to keep interacting with the replayed browser context:

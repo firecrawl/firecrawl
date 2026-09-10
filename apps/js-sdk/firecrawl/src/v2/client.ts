@@ -1,11 +1,12 @@
 import { HttpClient } from "./utils/httpClient";
 import {
-  scrape,
+  scrape, type ScrapeCallOptions,
   interact as interactMethod,
   stopInteraction as stopInteractionMethod,
 } from "./methods/scrape";
 import { parse as parseMethod } from "./methods/parse";
 import { search } from "./methods/search";
+import { developerSearch as developerSearchMethod } from "./methods/developer";
 import { map as mapMethod } from "./methods/map";
 import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
 import {
@@ -25,7 +26,7 @@ import {
   batchScrape as batchWaiter,
 } from "./methods/batch";
 import { startExtract, getExtractStatus, extract as extractWaiter } from "./methods/extract";
-import { startAgent, getAgentStatus, cancelAgent, agent as agentWaiter } from "./methods/agent";
+import { startAgent, getAgentStatus, getAgentThread, getAgentTrace, getAgentSnapshot, cancelAgent, listAgents, agent as agentWaiter } from "./methods/agent";
 import {
   browser as browserMethod,
   browserExecute,
@@ -51,6 +52,8 @@ import type {
   ScrapeOptions,
   SearchData,
   SearchRequest,
+  DeveloperSearchOptions,
+  DeveloperSearchResponse,
   EndpointFeedbackRequest,
   FeedbackResponse,
   SearchFeedbackRequest,
@@ -65,6 +68,11 @@ import type {
   ExtractResponse,
   AgentResponse,
   AgentStatusResponse,
+  AgentTraceResponse,
+  AgentSnapshotResponse,
+  AgentThreadResponse,
+  AgentListOptions,
+  AgentListResponse,
   CrawlOptions,
   BatchScrapeOptions,
   PaginationConfig,
@@ -165,8 +173,8 @@ export class FirecrawlClient {
     url: string,
     options: Opts
   ): Promise<Omit<Document, "json"> & { json?: InferredJsonFromOptions<Opts> }>;
-  async scrape(url: string, options?: ScrapeOptions): Promise<Document>;
-  async scrape(url: string, options?: ScrapeOptions): Promise<Document> {
+  async scrape(url: string, options?: ScrapeCallOptions): Promise<Document>;
+  async scrape(url: string, options?: ScrapeCallOptions): Promise<Document> {
     return scrape(this.http, url, options);
   }
   /**
@@ -241,6 +249,19 @@ export class FirecrawlClient {
   }
 
   /**
+   * Search the dedicated developer index with repository, documentation,
+   * artifact, language, topic, license, star, archive, and fork filters.
+   * Unlike `search(query, { categories: ["developer"] })`, this returns all
+   * requested passages, citations, license disclosures, and indexing echoes.
+   */
+  async developerSearch(
+    query: string,
+    options: DeveloperSearchOptions = {},
+  ): Promise<DeveloperSearchResponse> {
+    return developerSearchMethod(this.http, query, options);
+  }
+
+  /**
    * Submit feedback for a v2 job.
    * @param request Feedback payload with endpoint, job id, rating, and supporting signals.
    * @returns Feedback record and refund details.
@@ -261,8 +282,22 @@ export class FirecrawlClient {
 
   // Research
   /**
-   * Access the v2 research endpoints (arXiv papers + GitHub history/readmes).
-   * Example: `firecrawl.research.searchPapers("diffusion models")`.
+   * Access the v2 research endpoints — Firecrawl's **research paper index**
+   * (~43M paper abstracts) plus GitHub history/readmes.
+   *
+   * `research.searchGithub()` is deprecated and stops responding after
+   * 2026-11-03. Use `developerSearch()` instead.
+   *
+   * The paper corpus is roughly 90% biomedical and life sciences — PubMed,
+   * bioRxiv and medRxiv — with arXiv covering physics, mathematics and
+   * computer science.
+   *
+   * ⚠️ Not the same as `search({ categories: ["research"] })`, which is only a
+   * website/domain filter over ordinary web search (~14 academic domains,
+   * returning page snippets). Use `research.searchPapers()` for literature
+   * search.
+   *
+   * Example: `firecrawl.research.searchPapers("GLP-1 receptor agonists cardiovascular outcomes")`.
    */
   get research(): ResearchClient {
     if (!this._research) this._research = new ResearchClient(this.http);
@@ -493,6 +528,17 @@ export class FirecrawlClient {
     return getAgentStatus(this.http, jobId);
   }
   /**
+   * List agent runs, most recent first.
+   *
+   * Pages are fixed at 20 runs. To fetch the next page, pass the `before`
+   * value from the previous page's `next` URL. This method does not
+   * auto-paginate.
+   * @param options.before Only return runs created before this unix ms timestamp.
+   */
+  async listAgents(options?: AgentListOptions): Promise<AgentListResponse> {
+    return listAgents(this.http, options);
+  }
+  /**
    * Convenience waiter: start an agent and poll until it finishes.
    * @param args Agent request plus waiter controls (pollInterval, timeout seconds).
    * @returns Final agent response.
@@ -507,6 +553,30 @@ export class FirecrawlClient {
    */
   async cancelAgent(jobId: string): Promise<boolean> {
     return cancelAgent(this.http, jobId);
+  }
+  /**
+   * Get the execution trace of an agent job (spark-2 runs only).
+   * @param jobId Agent job id.
+   * @param options.liveView Also include currently active browser sessions with live view URLs.
+   */
+  async getAgentTrace(jobId: string, options?: { liveView?: boolean }): Promise<AgentTraceResponse> {
+    return getAgentTrace(this.http, jobId, options);
+  }
+  /**
+   * Get the full content of an artifact snapshot referenced by a trace event.
+   * @param jobId Agent job id.
+   * @param snapshotId Snapshot id from an artifact.updated trace event.
+   */
+  async getAgentSnapshot(jobId: string, snapshotId: string): Promise<AgentSnapshotResponse> {
+    return getAgentSnapshot(this.http, jobId, snapshotId);
+  }
+  /**
+   * Get a thread and its runs, oldest turn first.
+   * @param threadId Thread id, as returned by startAgent or getAgentStatus.
+   * @param options.includeData Inline each succeeded run's data.
+   */
+  async getAgentThread(threadId: string, options?: { includeData?: boolean }): Promise<AgentThreadResponse> {
+    return getAgentThread(this.http, threadId, options);
   }
 
   // Browser

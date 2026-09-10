@@ -366,6 +366,7 @@ async function performLLMExtractUnlessNativeJson(
 function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
   const hasRawHtml = hasFormatOfType(meta.options.formats, "rawHtml");
+  const hasRawBase64 = hasFormatOfType(meta.options.formats, "rawBase64");
   const hasHtml = hasFormatOfType(meta.options.formats, "html");
   const hasLinks = hasFormatOfType(meta.options.formats, "links");
   const hasImages = hasFormatOfType(meta.options.formats, "images");
@@ -404,6 +405,14 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   } else if (hasRawHtml && document.rawHtml === undefined) {
     meta.logger.warn(
       "Request had format: rawHtml, but there was no rawHtml field in the result.",
+    );
+  }
+
+  if (!hasRawBase64 && document.rawBase64 !== undefined) {
+    delete document.rawBase64;
+  } else if (hasRawBase64 && document.rawBase64 === undefined) {
+    meta.logger.warn(
+      "Request had format: rawBase64, but there was no rawBase64 field in the result.",
     );
   }
 
@@ -661,6 +670,10 @@ export async function executeTransformers(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
+  if (hasFormatOfType(meta.options.formats, "rawBase64")) {
+    return coerceFieldsToFormats(meta, document);
+  }
+
   const executions: [string, number][] = [];
 
   for (const transformer of transformerStack) {

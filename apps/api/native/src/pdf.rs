@@ -43,76 +43,101 @@ fn to_napi_result(result: pdf_inspector::PdfProcessResult) -> PdfProcessResult {
 /// Process a PDF file: detect type, extract text + markdown if text-based.
 /// When `max_pages` is provided, only the first N pages are extracted.
 /// Pass `ctx` (NativeContext) for structured tracing with scrape_id/url.
+///
+/// Runs on tokio's blocking thread pool: extraction is CPU-bound and can take
+/// tens of seconds on large PDFs, which would otherwise freeze the Node.js
+/// event loop (and every in-flight request on the process) for the duration.
 #[napi]
-pub fn process_pdf(
+pub async fn process_pdf(
   path: String,
   max_pages: Option<u32>,
   ctx: Option<NativeContext>,
 ) -> Result<PdfProcessResult> {
-  let traced = with_native_tracing(ctx.as_ref(), "pdf", || {
-    tracing::info!(max_pages = ?max_pages, "starting PDF processing");
+  tokio::task::spawn_blocking(move || {
+    let traced = with_native_tracing(ctx.as_ref(), "pdf", || {
+      tracing::info!(max_pages = ?max_pages, "starting PDF processing");
 
-    let opts = match max_pages {
-      Some(n) if n > 0 => PdfOptions::new().pages(1..=n),
-      _ => PdfOptions::new(),
-    };
+      let opts = match max_pages {
+        Some(n) if n > 0 => PdfOptions::new().pages(1..=n),
+        _ => PdfOptions::new(),
+      };
 
-    let result = rust_process_pdf(&path, opts).map_err(|e| {
-      tracing::error!(error = %e, "PDF processing failed");
-      Error::new(
-        Status::GenericFailure,
-        format!("Failed to process PDF: {e}"),
-      )
-    })?;
+      let result = rust_process_pdf(&path, opts).map_err(|e| {
+        tracing::error!(error = %e, "PDF processing failed");
+        Error::new(
+          Status::GenericFailure,
+          format!("Failed to process PDF: {e}"),
+        )
+      })?;
 
-    tracing::info!(
-      pdf_type = pdf_type_str(result.pdf_type),
-      page_count = result.page_count,
-      confidence = %result.confidence,
-      is_complex = result.layout.is_complex,
-      "PDF processing complete"
-    );
+      tracing::info!(
+        pdf_type = pdf_type_str(result.pdf_type),
+        page_count = result.page_count,
+        confidence = %result.confidence,
+        is_complex = result.layout.is_complex,
+        "PDF processing complete"
+      );
 
-    Ok(to_napi_result(result))
-  });
+      Ok(to_napi_result(result))
+    });
 
-  match traced.value {
-    Ok(mut result) => {
-      result.logs = traced.logs;
-      Ok(result)
+    match traced.value {
+      Ok(mut result) => {
+        result.logs = traced.logs;
+        Ok(result)
+      }
+      Err(err) => Err(embed_logs_in_error(err, &traced.logs)),
     }
-    Err(err) => Err(embed_logs_in_error(err, &traced.logs)),
-  }
+  })
+  .await
+  .map_err(|e| {
+    Error::new(
+      Status::GenericFailure,
+      format!("PDF processing task failed to complete: {e}"),
+    )
+  })?
 }
 
 /// Fast metadata-only detection: page count, title, type, confidence.
 /// Skips text extraction, markdown generation, and layout analysis.
 /// Pass `ctx` (NativeContext) for structured tracing with scrape_id/url.
+///
+/// Offloaded to tokio's blocking pool for the same reason as `process_pdf`:
+/// even metadata-only parsing can be slow on huge or malformed PDFs.
 #[napi]
-pub fn detect_pdf(path: String, ctx: Option<NativeContext>) -> Result<PdfProcessResult> {
-  let traced = with_native_tracing(ctx.as_ref(), "pdf", || {
-    tracing::info!("starting PDF detection");
+pub async fn detect_pdf(path: String, ctx: Option<NativeContext>) -> Result<PdfProcessResult> {
+  tokio::task::spawn_blocking(move || {
+    let traced = with_native_tracing(ctx.as_ref(), "pdf", || {
+      tracing::info!("starting PDF detection");
 
-    let result = rust_process_pdf(&path, PdfOptions::detect_only()).map_err(|e| {
-      tracing::error!(error = %e, "PDF detection failed");
-      Error::new(Status::GenericFailure, format!("Failed to detect PDF: {e}"))
-    })?;
+      let result = rust_process_pdf(&path, PdfOptions::detect_only()).map_err(|e| {
+        tracing::error!(error = %e, "PDF detection failed");
+        Error::new(Status::GenericFailure, format!("Failed to detect PDF: {e}"))
+      })?;
 
-    tracing::info!(
-      pdf_type = pdf_type_str(result.pdf_type),
-      page_count = result.page_count,
-      confidence = %result.confidence,
-      "PDF detection complete"
-    );
+      tracing::info!(
+        pdf_type = pdf_type_str(result.pdf_type),
+        page_count = result.page_count,
+        confidence = %result.confidence,
+        "PDF detection complete"
+      );
 
-    Ok(to_napi_result(result))
-  });
+      Ok(to_napi_result(result))
+    });
 
-  match traced.value {
-    Ok(mut result) => {
-      result.logs = traced.logs;
-      Ok(result)
+    match traced.value {
+      Ok(mut result) => {
+        result.logs = traced.logs;
+        Ok(result)
+      }
+      Err(err) => Err(embed_logs_in_error(err, &traced.logs)),
     }
-    Err(err) => Err(embed_logs_in_error(err, &traced.logs)),
-  }
+  })
+  .await
+  .map_err(|e| {
+    Error::new(
+      Status::GenericFailure,
+      format!("PDF detection task failed to complete: {e}"),
+    )
+  })?
 }

@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@faker-js/faker@<=10.4.0': '>=10.5.0 <11.0.0'
   fast-xml-builder: '>=1.1.6 <2.0.0'
   fast-xml-parser: ^5.7.0
   minimatch@<10.2.3: '>=10.2.3'
@@ -19,10 +20,12 @@ overrides:
   lodash: '>=4.18.0'
   protobufjs@>=7.0.0 <7.6.5: 7.6.5
   uuid@<11.1.1: 11.1.1
-  postcss@<8.5.23: '>=8.5.23 <9.0.0'
+  postcss@<8.5.26: '>=8.5.26 <9.0.0'
+  nanoid@>=3.0.0 <3.3.18: 3.3.18
   socket.io-parser@>=4.0.0 <4.2.7: 4.2.7
   '@grpc/grpc-js@>=1.14.0 <2.0.0': 1.14.4
   '@opentelemetry/core@>=2.0.0 <2.8.0': 2.8.0
+  fflate@<0.8.2: 0.8.3
 
 importers:
 
@@ -293,8 +296,8 @@ packages:
     resolution: {integrity: sha512-QLqTtVETsa2GN/YabSnSNhCfJP/cMaQRr3mYML9L76mH6JoNWERUpXzIko6uVmvvYS+QYvbmj8gQSu/RGwZEVQ==}
     engines: {node: '>=12.0.0'}
 
-  '@faker-js/faker@10.4.0':
-    resolution: {integrity: sha512-sDBWI3yLy8EcDzgobvJTWq1MJYzAkQdpjXuPukga9wXonhpMRvd1Izuo2Qgwey2OiEoRIBr35RMU9HJRoOHzpw==}
+  '@faker-js/faker@10.6.0':
+    resolution: {integrity: sha512-3RQHgEtvL1Frl/d1cSreo7qhJ3Gk1OdNUai/CtZ8G+wYeRQnJih3s9xJ9/kgYekPQRdwgh0HXRPqMlzWGwivIQ==}
     engines: {node: ^20.19.0 || ^22.13.0 || ^23.5.0 || >=24.0.0, npm: '>=10'}
 
   '@grpc/grpc-js@1.14.4':
@@ -1166,8 +1169,8 @@ packages:
       picomatch:
         optional: true
 
-  fflate@0.8.1:
-    resolution: {integrity: sha512-/exOvEuc+/iaUm105QIiOt4LpBdMTWsXxqR0HDF35vx3fmaKzw7354gTilCh5rkzEt8WYyG//ku3h3nRmd7CHQ==}
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
 
   file-uri-to-path@1.0.0:
     resolution: {integrity: sha512-0Zt+s3L7Vf1biwWZ29aARiVYLx7iMGnEUl9x33fbB/j3jR81u/O2LbqK+Bm1CDSNDKVtJ/YjwY7TUd5SkeLQLw==}
@@ -1518,8 +1521,8 @@ packages:
   nan@2.26.0:
     resolution: {integrity: sha512-/h3yIdxzdv4Z+S3Q2Q84gAtOrYW7a6g0WGBcTlWkztRHqGv9e4uOZkHmX90wipfzDbRhmyxyxLiIzq0k2EoBTQ==}
 
-  nanoid@3.3.11:
-    resolution: {integrity: sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==}
+  nanoid@3.3.18:
+    resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -1609,6 +1612,7 @@ packages:
   prom-client@14.2.0:
     resolution: {integrity: sha512-sF308EhTenb/pDRPakm+WgiN+VdM/T1RaHj1x+MvAuT8UiQP8JmOEbxVqtkbfR4LrvOg5n7ic01kRBDGXjYikA==}
     engines: {node: '>=10'}
+    deprecated: prom-client has been replaced by @prometheus-io/client
 
   protobufjs@7.6.5:
     resolution: {integrity: sha512-/FPD0nUc9jH6rfFjji9IBqOz4pcSE3CsT1m7Ep6Mdb0LxSUMj8hgl6GomOvZzpNpAqqGaXA0P3VSrZLFzIhQrw==}
@@ -2543,7 +2547,7 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@faker-js/faker@10.4.0': {}
+  '@faker-js/faker@10.6.0': {}
 
   '@grpc/grpc-js@1.14.4':
     dependencies:
@@ -2957,7 +2961,7 @@ snapshots:
     dependencies:
       '@smithy/core': 3.24.7
       '@smithy/types': 4.14.4
-      fflate: 0.8.1
+      fflate: 0.8.3
       tslib: 2.8.1
 
   '@smithy/node-http-handler@4.7.8':
@@ -3092,7 +3096,7 @@ snapshots:
 
   artillery-plugin-fake-data@1.24.0:
     dependencies:
-      '@faker-js/faker': 10.4.0
+      '@faker-js/faker': 10.6.0
 
   artillery-plugin-metrics-by-endpoint@1.27.0:
     dependencies:
@@ -3189,7 +3193,7 @@ snapshots:
       jsonwebtoken: 9.0.3
       lodash: 4.18.1
       moment: 2.30.1
-      nanoid: 3.3.11
+      nanoid: 3.3.18
       ora: 4.1.1
       rc: 1.2.8
       sqs-consumer: 6.0.2(@aws-sdk/client-sqs@3.1068.0)
@@ -3578,7 +3582,7 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.4
 
-  fflate@0.8.1: {}
+  fflate@0.8.3: {}
 
   file-uri-to-path@1.0.0:
     optional: true
@@ -3923,7 +3927,7 @@ snapshots:
   nan@2.26.0:
     optional: true
 
-  nanoid@3.3.11: {}
+  nanoid@3.3.18: {}
 
   nanotimer@0.3.14: {}
 

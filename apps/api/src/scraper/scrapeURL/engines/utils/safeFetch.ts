@@ -60,11 +60,8 @@ function attachSecurityCheck(agent: undici.Dispatcher) {
   });
 }
 
-// Dispatcher WITH cookie handling (for scraping - needs cookies for auth flows)
 function makeSecureDispatcher(skipTlsVerification: boolean) {
-  const baseAgent = createBaseAgent(skipTlsVerification);
-  const cookieJar = new CookieJar();
-  const agent = baseAgent.compose(cookie({ jar: cookieJar }));
+  const agent = createBaseAgent(skipTlsVerification);
   attachSecurityCheck(agent);
   return agent;
 }
@@ -82,8 +79,13 @@ const secureDispatcherNoCookies = makeSecureDispatcherNoCookies(false);
 const secureDispatcherNoCookiesSkipTlsVerification =
   makeSecureDispatcherNoCookies(true);
 
-export const getSecureDispatcher = (skipTlsVerification: boolean = false) =>
-  skipTlsVerification ? secureDispatcherSkipTlsVerification : secureDispatcher;
+export const getSecureDispatcher = (skipTlsVerification: boolean = false) => {
+  const dispatcher = skipTlsVerification
+    ? secureDispatcherSkipTlsVerification
+    : secureDispatcher;
+
+  return dispatcher.compose(cookie({ jar: new CookieJar() }));
+};
 
 // Use this for webhook delivery to avoid sending empty cookie headers
 export const getSecureDispatcherNoCookies = (

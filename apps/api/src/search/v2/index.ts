@@ -8,6 +8,7 @@ import { Logger } from "winston";
 export async function search({
   query,
   logger,
+  requestId,
   advanced = false,
   num_results = 5,
   tbs = undefined,
@@ -24,6 +25,7 @@ export async function search({
 }: {
   query: string;
   logger: Logger;
+  requestId?: string;
   advanced?: boolean;
   num_results?: number;
   tbs?: string;
@@ -42,6 +44,7 @@ export async function search({
     if (config.FIRE_ENGINE_BETA_URL) {
       logger.info("Using fire engine search");
       const results = await fire_engine_search_v2(query, {
+        requestId,
         numResults: num_results,
         tbs,
         filter,
