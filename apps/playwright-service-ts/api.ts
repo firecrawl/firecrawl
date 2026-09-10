@@ -30,6 +30,46 @@ const MAX_CONCURRENT_PAGES = Math.max(
 const ALLOW_LOCAL_WEBHOOKS =
   (process.env.ALLOW_LOCAL_WEBHOOKS || 'False').toUpperCase() === 'TRUE';
 
+/**
+ * How hard the browser should work at not looking automated.
+ *
+ *   off   (default)  nothing added — the behaviour you get today
+ *   basic            launch with --disable-blink-features=AutomationControlled,
+ *                    which is what makes navigator.webdriver false
+ *   full             basic, plus init-script shims for window.chrome and
+ *                    navigator.plugins
+ *
+ * Off by default because this changes how the scraper represents itself to the
+ * sites it visits — that is the operator's call to make, not a default. Reach
+ * for `basic` first: it clears the tell that detectors check first without
+ * running an init script on every page.
+ */
+type StealthMode = 'off' | 'basic' | 'full';
+
+const parseStealthMode = (raw: string | undefined): StealthMode => {
+  // true/false are accepted because every other flag here is a boolean, so
+  // that is what an operator will reasonably guess this one is.
+  switch ((raw ?? '').trim().toLowerCase()) {
+    case '':
+    case 'off':
+    case 'false':
+      return 'off';
+    case 'basic':
+      return 'basic';
+    case 'full':
+    case 'true':
+      return 'full';
+    default:
+      console.warn(
+        `Unrecognised STEALTH_MODE ${JSON.stringify(raw)} — ` +
+          'expected off, basic or full. Using off.',
+      );
+      return 'off';
+  }
+};
+
+const STEALTH_MODE = parseStealthMode(process.env.STEALTH_MODE);
+
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
 const PROXY_PASSWORD = process.env.PROXY_PASSWORD || null;
@@ -197,6 +237,14 @@ const initializeBrowser = async () => {
       '--no-first-run',
       '--no-zygote',
       '--disable-gpu',
+      // AutomationControlled is what makes navigator.webdriver true, and that
+      // is the first thing commodity headless detectors test. Client sites
+      // branch on it: an observed Shopify theme did, and navigated the browser
+      // to google.com, so the scrape returned a foreign page under the
+      // requested URL.
+      ...(STEALTH_MODE !== 'off'
+        ? ['--disable-blink-features=AutomationControlled']
+        : []),
     ],
   });
 };
@@ -226,6 +274,27 @@ const createContext = async (
   };
 
   const newContext = await browser.newContext(contextOptions);
+
+  if (STEALTH_MODE === 'full') {
+    // Second-tier headless tells, checked by the same detectors that check
+    // navigator.webdriver: a real Chrome always exposes window.chrome and a
+    // non-empty navigator.plugins, headless exposes neither. Shim ONLY when
+    // absent, so a future Playwright or Chromium that populates them natively
+    // wins and nothing here overwrites it.
+    await newContext.addInitScript(() => {
+      if (navigator.plugins.length === 0) {
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => [{ name: 'PDF Viewer' }, { name: 'Chrome PDF Viewer' }],
+        });
+      }
+      const w = window as unknown as Record<string, unknown>;
+      if (typeof w.chrome === 'undefined') {
+        Object.defineProperty(window, 'chrome', {
+          get: () => ({ runtime: {} }),
+        });
+      }
+    });
+  }
 
   if (BLOCK_MEDIA) {
     await newContext.route(
