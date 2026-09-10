@@ -6,75 +6,63 @@ web search and subsequent provider execution retain their own charges. The curre
 team rollout gate still applies. Catalogue access comes from authenticated team
 flags, never a caller-supplied access flag or header.
 
-## Search and browse
+## Semantic search with tool contracts
 
 ```json
 {
-  "query": "podcast episode transcripts",
-  "sources": [
-    "web",
-    {
-      "type": "alexandria",
-      "mode": "semantic",
-      "categories": ["podcasts"],
-      "level": "providers",
-      "limit": 5
-    }
-  ]
+  "query": "podcast conversations about AI agents",
+  "sources": ["web", "alexandria"],
+  "limit": 5
 }
 ```
 
-Omit `query` for catalogue-only browsing:
+A query is required. Semantic matching is implicit for `alexandria`; there are no
+browse, level, expand, filter, language, or cursor controls on this source.
+`{ "type": "alexandria" }` is equivalent to the string form. The old
+`exchange-providers` source retains its compact legacy response.
+
+Web pages appear in `data.web`. Tool matches appear alongside them in
+`data.alexandria.items`, in semantic relevance order. Each match includes:
+
+- `provider`, `capability`, `name`, `description`, `concept`, `cohorts`, `similarity`.
+- `creditsCost` and `perRecord` for a subsequent provider execution.
+- `options` and, where declared, `requiresOneOf` from the actual input contract.
+- `response`, containing the actual response contract.
+- `examples`: JavaScript, Python and cURL requests generated from the contract.
+- `example` only when the provider has a recorded request and response.
+
+Discovery itself costs no credits and never executes provider tools. The endpoint
+uses existing Exchange semantic discovery and fetches each selected contract,
+with at most four contract reads in flight and one shared discovery deadline.
+Results are capped at the semantic index's current limit of 24 tools.
+
+The envelope retains `status`, `mode: "semantic"`, `level: "tools"`, `items`,
+`total` (returned tool count), and `nextCursor: null`. This is a ranked search,
+not paginated catalogue browsing. `status: "unavailable"` means search or contract
+loading failed; it is distinct from an available result with zero matches.
+
+## Contextual discovery and progressive disclosure
+
+Use the zero-credit meta tool through `POST /exchange/retrieve`:
 
 ```json
 {
-  "sources": [
-    {
-      "type": "alexandria",
-      "mode": "browse",
-      "providers": ["particle"],
-      "level": "tools",
-      "expand": ["options", "response", "examples"],
-      "languages": ["javascript", "python", "curl"],
-      "limit": 5
-    }
-  ]
+  "provider": "firecrawl-contextual-discovery",
+  "capability": "discovery/context",
+  "options": { "urls": ["https://open.spotify.com/show/example"] }
 }
 ```
 
-- `mode`: `semantic` ranks the query; `browse` lists the filtered catalogue.
-  Defaults to semantic with a query and browse without one.
-- `categories`, `providers`, `domains`, `groups`, `capabilities`: optional arrays
-  of identifiers. Values within a filter are alternatives; different filters
-  narrow each other. `retail` maps to the `shopping` category. Domains are
-  hostnames, such as `podcasts.apple.com`, and use Exchange's provider mappings.
-- `level`: `categories`, `providers` (default), `groups`, or `tools`.
-- `expand`: include `options`, `response`, and/or `examples` at the tools level.
-  `languages` selects example languages when examples are expanded.
-- `limit`: 1–100 items at the selected level. `cursor`: reuse the returned
-  `nextCursor` with the same query and filters to fetch the next page.
+It supports URLs, categories, providers, groups, and capabilities. Follow each
+item's `next` retrieval request to reveal groups, tools, and contracts. Its
+pagination and expansion options belong to this tool, not to search sources.
+See Exchange's `docs/contextual-discovery.md` for the complete contract.
 
-The response is under `data.alexandria`: `status`, `mode`, `level`, `items`,
-`total`, and `nextCursor`. Items contain stable IDs, accessible `toolCount`, and
-`next`, a complete `/v2/search` body for expanding that item. Following `next`
-browses the selected scope, so a provider can reveal its full matching catalogue.
-Tool prices marked `perRecord` are per returned record.
-
-`status: "unavailable"` with `total: null` means discovery failed; it is distinct
-from an available catalogue with zero matches. Invalid or stale cursors return 400. Changes to access, the catalogue, or ranking can invalidate a cursor.
-
-Legacy `sources: ["exchange-providers"]` with a query preserves its existing
-`data["exchange-providers"]` result shape. Advanced objects using that alias
-use the Alexandria envelope. Do not request both aliases together.
-
-## Contextual tools and skill documents
-
-`POST /exchange/skills/resolve` accepts `{ "urls": [...], "query": "..." }`.
-`GET /exchange/skills/:id/SKILL.md` returns the Markdown contract. These routes
-derive catalogue visibility from authentication; URL lookup rejects forced ZDR.
-Provider domains, query terms, selected capabilities and search/scrape placement
-remain configured beside the provider's on/off flags in Exchange. See that
-repository's `docs/domain-skill-resolver.md` before adding a mapping.
+Search's existing opt-in `skills: true` returns contextual matches in `data.skills`.
+The web app can associate them with result URLs and display adjacent tools.
+The existing `/exchange/skills/resolve` and `/exchange/skills/:id/SKILL.md` proxy
+routes remain available. Scrape's web UI does a separate contextual lookup;
+this change does not add tool metadata to scrape API responses.
 
 ## Credit reservation and retries
 
@@ -97,8 +85,9 @@ too large to retain also return 409 on replay. An uncertain provider outcome or
 billing acknowledgement requires operational reconciliation; its hold expires
 after one hour if it cannot be confirmed.
 
-Deploy the supporting Exchange catalogue, quote, and budget enforcement before
-this API change. Paid hosted execution requires the configured Autumn/firebill
+Deploy the supporting Exchange quote and budget enforcement before paid
+execution from this API branch. Semantic search uses the existing discovery
+routes; contextual lookup requires the merged discovery meta tool. Paid hosted execution requires the configured Autumn/firebill
 credit-hold service. SDK changes are a follow-up; this change establishes the HTTP
 contract.
 

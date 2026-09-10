@@ -308,24 +308,29 @@ describe("executeSearch exchange source", () => {
   });
 
   it.each([false, true])(
-    "keeps structured Alexandria discovery free when mixed with web: %s",
+    "returns Alexandria tool contracts beside web results without discovery charges: %s",
     async includeWeb => {
       const alexandria = {
         status: "available",
-        mode: "browse",
-        level: "providers",
-        items: [{ id: "particle", toolCount: 13 }],
+        mode: "semantic",
+        level: "tools",
+        items: [
+          {
+            provider: "particle",
+            capability: "podcasts/episodes/search",
+            options: [{ name: "semantic_search", type: "string" }],
+            response: { key: "data" },
+          },
+        ],
         total: 1,
         nextCursor: null,
       };
       mocks.searchAlexandria.mockResolvedValue(alexandria);
       const source = {
         type: "alexandria",
-        mode: "browse",
-        providers: ["particle"],
       };
       const input = searchRequestSchema.parse({
-        ...(includeWeb ? { query: "Spotify podcasts" } : {}),
+        query: "Spotify podcasts",
         sources: includeWeb ? ["web", source] : [source],
       });
       const result = await executeSearch(

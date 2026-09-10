@@ -5,147 +5,183 @@ vi.mock("../lib/exchange-proxy", async importOriginal => ({
 }));
 import { forwardToExchange } from "../lib/exchange-proxy";
 import { searchRequestSchema } from "../controllers/v2/types";
-import { searchAlexandria, AlexandriaRequestError } from "./alexandria-source";
+import { searchAlexandria } from "./alexandria-source";
 const forward = vi.mocked(forwardToExchange);
 const logger = { warn: vi.fn() } as any;
-beforeEach(() => forward.mockReset());
-it("accepts mixed string and structured sources, and requires queries only when needed", () => {
-  const input = searchRequestSchema.parse({
-    query: "finance",
-    sources: ["web", { type: "alexandria", categories: ["finance"] }],
-  });
-  expect(input.sources.map(source => source.type)).toEqual([
-    "web",
-    "alexandria",
-  ]);
+const input = {
+  query: "podcast conversations",
+  source: { type: "alexandria" as const },
+  limit: 5,
+  teamId: "team",
+  hasExtendedCatalogAccess: true,
+  requestId: "request-1",
+};
+const contract = {
+  provider: "particle",
+  capability: "podcasts/episodes/search",
+  label: "Episode search",
+  whenToUse: "Find episodes by what was said.",
+  creditsCost: 15,
+  perRecord: false,
+  options: [
+    { name: "semantic_search", type: "string" },
+    { name: "limit", type: "number", default: 3 },
+  ],
+  requiresOneOf: [["semantic_search", "keyword_search"]],
+  returns: {
+    key: "data",
+    about: "Matching episodes",
+    fields: [{ name: "id", type: "string" }],
+    paginated: true,
+  },
+};
+const hit = {
+  provider: "particle",
+  address: contract.capability,
+  creditsCost: 15,
+  cohorts: ["podcasts"],
+  concept: "podcasts",
+  similarity: 0.9,
+};
+const response = (body: unknown, status = 200) => ({
+  status,
+  requestId: null,
+  contentType: "application/json",
+  body,
+});
+beforeEach(() => {
+  forward.mockReset();
+});
+
+it("accepts simple Alexandria sources and rejects lookup knobs and query-free search", () => {
+  expect(
+    searchRequestSchema
+      .parse({ query: "podcasts", sources: ["web", "alexandria"] })
+      .sources.map(source => source.type),
+  ).toEqual(["web", "alexandria"]);
   expect(
     searchRequestSchema.safeParse({
-      sources: [
-        { type: "alexandria", mode: "browse", providers: ["particle"] },
-      ],
+      query: "podcasts",
+      sources: [{ type: "alexandria" }],
     }).success,
   ).toBe(true);
-  for (const input of [
-    { sources: ["web"] },
-    { sources: [{ type: "alexandria", mode: "semantic" }] },
-    { query: "q", sources: ["alexandria", "exchange-providers"] },
-    {
-      query: "q",
-      sources: [
-        { type: "alexandria", level: "providers", expand: ["options"] },
-      ],
-    },
-    {
-      query: "q",
-      sources: [{ type: "alexandria", domains: ["https://example.com/path"] }],
-    },
+  for (const source of [
+    { type: "alexandria", mode: "browse" },
+    { type: "alexandria", level: "tools" },
+    { type: "alexandria", providers: ["particle"] },
+    { type: "alexandria", expand: ["options"] },
+    { type: "alexandria", categories: ["podcasts"] },
+    { type: "alexandria", cursor: "next" },
   ])
-    expect(searchRequestSchema.safeParse(input).success).toBe(false);
+    expect(
+      searchRequestSchema.safeParse({ query: "podcasts", sources: [source] })
+        .success,
+    ).toBe(false);
+  expect(
+    searchRequestSchema.safeParse({ sources: ["alexandria"] }).success,
+  ).toBe(false);
+  expect(
+    searchRequestSchema.safeParse({ query: " ", sources: ["alexandria"] })
+      .success,
+  ).toBe(false);
+  expect(
+    searchRequestSchema.safeParse({
+      query: "q",
+      sources: ["alexandria", "exchange-providers"],
+    }).success,
+  ).toBe(false);
 });
-it("forwards scoped disclosure and pagination, and produces usable follow-up requests", async () => {
-  forward.mockResolvedValue({
-    status: 200,
-    requestId: null,
-    contentType: "application/json",
-    body: {
-      level: "tools",
-      mode: "browse",
-      total: 13,
-      nextCursor: "next",
-      items: [
-        {
-          provider: "particle",
-          capability: "podcasts/search",
-          requestOptions: [{ name: "query", type: "string", required: true }],
-          next: {
-            type: "alexandria",
-            mode: "browse",
-            level: "tools",
-            providers: ["particle"],
-            capabilities: ["podcasts/search"],
-            expand: ["options", "response", "examples"],
-          },
-        },
-      ],
-    },
+
+it("semantically ranks tools and includes their real contracts and examples without extra source flags", async () => {
+  forward
+    .mockResolvedValueOnce(response({ capabilities: [hit] }))
+    .mockResolvedValueOnce(response(contract));
+  const result = await searchAlexandria(input, logger);
+  expect(result).toMatchObject({
+    status: "available",
+    level: "tools",
+    mode: "semantic",
+    total: 1,
+    nextCursor: null,
   });
-  const result = await searchAlexandria(
-    {
-      query: "",
-      source: {
-        type: "alexandria",
-        providers: ["particle"],
-        level: "tools",
-        mode: "browse",
-        expand: ["examples"],
-        languages: ["javascript", "python", "curl"],
-        cursor: "previous",
-        limit: 5,
-      },
-      limit: 10,
+  expect(result.items[0]).toMatchObject({
+    provider: "particle",
+    capability: contract.capability,
+    name: "Episode search",
+    options: contract.options,
+    requiresOneOf: contract.requiresOneOf,
+    response: contract.returns,
+    creditsCost: 15,
+    similarity: 0.9,
+  });
+  expect(result.items[0]).not.toHaveProperty("next");
+  expect(result.items[0]).not.toHaveProperty("example");
+  const snippets = result.items[0].examples as Record<string, string>;
+  expect(snippets.javascript).toContain(
+    '"semantic_search": "<semantic_search>"',
+  );
+  expect(snippets.javascript).toContain('"x-request-id": requestId');
+  expect(snippets.python).toContain('"semantic_search"');
+  expect(snippets.curl).toContain("/exchange/retrieve");
+  expect(forward.mock.calls.map(([call]) => call.path)).toEqual([
+    "/v1/discover?q=podcast%20conversations&limit=5",
+    "/v1/discover/podcasts/particle/podcasts/episodes/search",
+  ]);
+  for (const [call] of forward.mock.calls)
+    expect(call).toMatchObject({
+      method: "GET",
       teamId: "team",
       hasExtendedCatalogAccess: true,
-    },
-    logger,
-  );
-  const called = forward.mock.calls[0][0];
-  const url = new URL(called.path, "https://exchange.example");
-  expect(url.searchParams.get("providers")).toBe("particle");
-  expect(url.searchParams.get("cursor")).toBe("previous");
-  expect(url.searchParams.get("limit")).toBe("5");
-  expect(called.hasExtendedCatalogAccess).toBe(true);
-  expect(result.nextCursor).toBe("next");
-  const examples = result.items[0].examples as Record<string, string>;
-  expect(examples.javascript).toContain("await fetch(");
-  expect(examples.javascript).toContain('"x-request-id": requestId');
-  expect(examples.python).toContain('"<query>"');
-  expect(examples.python).toContain('"x-request-id": request_id');
-  expect(examples.curl).toContain("x-request-id");
-  expect(result.items[0].requestOptions).toBeUndefined();
-  expect(searchRequestSchema.safeParse(result.items[0].next).success).toBe(
-    true,
-  );
+      requestId: "request-1",
+    });
 });
-it("distinguishes a valid empty catalogue from unavailable discovery and invalid cursors", async () => {
-  const input = {
-    query: "",
-    source: { type: "alexandria" as const, mode: "browse" as const },
-    limit: 10,
-    teamId: "team",
-  };
-  forward.mockResolvedValueOnce({
-    status: 200,
-    requestId: null,
-    contentType: "application/json",
-    body: {
-      level: "providers",
-      mode: "browse",
-      items: [],
-      total: 0,
-      nextCursor: null,
-    },
+
+it("preserves semantic ordering when contract requests complete out of order", async () => {
+  forward.mockImplementation(async call => {
+    if (call.path.includes("?"))
+      return response({
+        capabilities: [
+          hit,
+          { ...hit, address: "podcasts/search", similarity: 0.7 },
+        ],
+      });
+    if (call.path.endsWith("episodes/search")) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return response(contract);
+    }
+    return response({ ...contract, capability: "podcasts/search" });
   });
+  const result = await searchAlexandria(input, logger);
+  expect(result.items.map(item => item.capability)).toEqual([
+    "podcasts/episodes/search",
+    "podcasts/search",
+  ]);
+});
+
+it("distinguishes empty matches from unavailable or mismatched contracts", async () => {
+  forward.mockResolvedValueOnce(response({ capabilities: [] }));
   expect(await searchAlexandria(input, logger)).toMatchObject({
     status: "available",
+    items: [],
     total: 0,
   });
-  forward.mockResolvedValueOnce({
-    status: 503,
-    requestId: null,
-    contentType: "application/json",
-    body: {},
-  });
+  for (const failed of [
+    response({}, 503),
+    response({ ...contract, provider: "wrong" }),
+    response({ ...contract, options: undefined }),
+  ]) {
+    forward
+      .mockResolvedValueOnce(response({ capabilities: [hit] }))
+      .mockResolvedValueOnce(failed);
+    expect(await searchAlexandria(input, logger)).toMatchObject({
+      status: "unavailable",
+      items: [],
+      total: null,
+    });
+  }
+  forward.mockResolvedValueOnce(response({}, 503));
   expect(await searchAlexandria(input, logger)).toMatchObject({
     status: "unavailable",
     total: null,
   });
-  forward.mockResolvedValueOnce({
-    status: 400,
-    requestId: null,
-    contentType: "application/json",
-    body: { error: "Cursor expired" },
-  });
-  await expect(searchAlexandria(input, logger)).rejects.toBeInstanceOf(
-    AlexandriaRequestError,
-  );
 });

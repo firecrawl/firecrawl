@@ -1,73 +1,53 @@
 import { z } from "zod";
 import type { Logger } from "winston";
+import { searchExchangeCatalog } from "./exchange-source";
 import {
   forwardToExchange,
   EXCHANGE_DISCOVER_TIMEOUT_MS,
 } from "../lib/exchange-proxy";
 
-const identifiers = z
-  .array(
-    z
-      .string()
-      .min(1)
-      .max(200)
-      .regex(/^[a-zA-Z0-9._/-]+$/),
-  )
-  .min(1)
-  .max(50);
-export const alexandriaSourceSchema = z
-  .strictObject({
-    type: z.enum(["alexandria", "exchange-providers"]),
-    mode: z.enum(["semantic", "browse"]).optional(),
-    categories: identifiers.optional(),
-    providers: identifiers.optional(),
-    groups: identifiers.optional(),
-    capabilities: identifiers.optional(),
-    domains: z
-      .array(
-        z
-          .string()
-          .toLowerCase()
-          .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/),
-      )
-      .min(1)
-      .max(50)
-      .optional(),
-    level: z.enum(["categories", "providers", "groups", "tools"]).optional(),
-    expand: z
-      .array(z.enum(["options", "response", "examples"]))
-      .max(3)
-      .optional(),
-    languages: z
-      .array(z.enum(["javascript", "python", "curl"]))
-      .min(1)
-      .max(3)
-      .optional(),
-    limit: z.number().int().min(1).max(100).optional(),
-    cursor: z.string().min(1).max(1000).optional(),
-  })
-  .refine(
-    source =>
-      !source.expand?.length ||
-      (source.level ??
-        (source.type === "exchange-providers" ? "tools" : "providers")) ===
-        "tools",
-    "Expand is available at the tools level.",
-  )
-  .refine(
-    source => !source.languages || source.expand?.includes("examples"),
-    "Languages requires expand: examples.",
-  );
+export const alexandriaSourceSchema = z.strictObject({
+  type: z.enum(["alexandria", "exchange-providers"]),
+});
 export type AlexandriaSource = z.infer<typeof alexandriaSourceSchema>;
 export type AlexandriaResponse = {
   status: "available" | "unavailable";
-  level: string;
-  mode: string;
+  level: "tools";
+  mode: "semantic";
   items: Record<string, unknown>[];
   total: number | null;
-  nextCursor: string | null;
+  nextCursor: null;
   error?: string;
 };
+
+const contractSchema = z.object({
+  provider: z.string(),
+  capability: z.string(),
+  label: z.string(),
+  whenToUse: z.string(),
+  creditsCost: z.number().int().nonnegative(),
+  perRecord: z.boolean(),
+  options: z.array(
+    z.object({ name: z.string(), type: z.string() }).passthrough(),
+  ),
+  requiresOneOf: z.array(z.array(z.string())).optional(),
+  returns: z
+    .object({
+      about: z.string(),
+      key: z.string(),
+      fields: z.array(
+        z.object({ name: z.string(), type: z.string() }).passthrough(),
+      ),
+    })
+    .passthrough(),
+  example: z
+    .object({
+      recordedAt: z.string(),
+      request: z.record(z.string(), z.unknown()),
+      response: z.unknown(),
+    })
+    .optional(),
+});
 
 const python = (value: unknown, depth = 0): string => {
   if (value === null) return "None";
@@ -81,11 +61,9 @@ const python = (value: unknown, depth = 0): string => {
   }
   return JSON.stringify(value);
 };
-function examplesFor(item: Record<string, any>, source: AlexandriaSource) {
+function examplesFor(item: Record<string, any>) {
   const options: Record<string, unknown> = {};
-  const descriptors = Array.isArray(item.requestOptions)
-    ? item.requestOptions
-    : [];
+  const descriptors = Array.isArray(item.options) ? item.options : [];
   const selected = descriptors.filter(
     (option: any) => option.required || option.default !== undefined,
   );
@@ -131,7 +109,7 @@ function examplesFor(item: Record<string, any>, source: AlexandriaSource) {
     curl: `curl https://api.firecrawl.dev/exchange/retrieve \\\n  -H "Authorization: Bearer $FIRECRAWL_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "x-request-id: <unique-request-id>" \\\n  --data '${json.replace(/'/g, "'\\''")}'`,
   };
   return Object.fromEntries(
-    (source.languages ?? ["javascript", "python", "curl"]).map(language => [
+    (["javascript", "python", "curl"] as const).map(language => [
       language,
       snippets[language],
     ]),
@@ -150,92 +128,101 @@ export async function searchAlexandria(
   },
   logger: Logger,
 ): Promise<AlexandriaResponse> {
-  const { source } = input;
-  const level =
-    source.level ??
-    (source.type === "exchange-providers" ? "tools" : "providers");
-  const mode = source.mode ?? (input.query.trim() ? "semantic" : "browse");
-  const params = new URLSearchParams({
-    level,
-    mode,
-    limit: String(source.limit ?? input.limit),
-  });
-  if (input.query.trim()) params.set("q", input.query.trim());
-  for (const name of [
-    "categories",
-    "providers",
-    "domains",
-    "groups",
-    "capabilities",
-    "expand",
-  ] as const)
-    if (source[name]?.length) params.set(name, source[name]!.join(","));
-  if (source.cursor) params.set("cursor", source.cursor);
+  if (!input.query.trim())
+    throw new AlexandriaRequestError(
+      "A query is required for Alexandria search. Use Contextual Discovery for lookup.",
+    );
+  const deadline =
+    Date.now() +
+    Math.min(
+      input.timeoutMs ?? EXCHANGE_DISCOVER_TIMEOUT_MS,
+      EXCHANGE_DISCOVER_TIMEOUT_MS,
+    );
+  const remaining = () => {
+    const ms = deadline - Date.now();
+    if (ms <= 0) throw new Error("Discovery deadline exceeded");
+    return ms;
+  };
   try {
-    const upstream = await forwardToExchange({
-      teamId: input.teamId,
-      hasExtendedCatalogAccess: input.hasExtendedCatalogAccess === true,
-      method: "GET",
-      path: `/v1/discover/catalogue?${params}`,
-      requestId: input.requestId,
-      timeoutMs: Math.min(
-        input.timeoutMs ?? EXCHANGE_DISCOVER_TIMEOUT_MS,
-        EXCHANGE_DISCOVER_TIMEOUT_MS,
-      ),
-    });
-    if (upstream.status === 400) {
-      const message =
-        (upstream.body as { error?: string })?.error ??
-        "Invalid Alexandria discovery request.";
-      throw new AlexandriaRequestError(message);
-    }
-    const schema = z.object({
-      level: z.string(),
-      mode: z.string(),
-      items: z.array(z.record(z.string(), z.unknown())),
-      total: z.number().int().nonnegative(),
-      nextCursor: z.string().nullable(),
-    });
-    const parsed = schema.safeParse(upstream.body);
-    if (upstream.status < 200 || upstream.status >= 300 || !parsed.success)
-      throw new Error("Catalogue unavailable");
+    const hits = await searchExchangeCatalog(
+      { ...input, timeoutMs: remaining() },
+      logger,
+    );
+    if (hits === null) throw new Error("Semantic discovery unavailable");
+    const items: Record<string, unknown>[] = new Array(hits.length);
+    let position = 0;
+    const loaded = await Promise.allSettled(
+      Array.from({ length: Math.min(4, hits.length) }, async () => {
+        while (position < hits.length) {
+          const index = position++;
+          const hit = hits[index];
+          const cohort = hit.cohorts[0];
+          const identifiers = [
+            cohort,
+            hit.provider,
+            ...hit.capability.split("/"),
+          ];
+          if (
+            identifiers.some(
+              id => !id || !/^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/.test(id),
+            )
+          )
+            throw new Error("Invalid discovery identifier");
+          const upstream = await forwardToExchange({
+            teamId: input.teamId,
+            hasExtendedCatalogAccess: input.hasExtendedCatalogAccess === true,
+            method: "GET",
+            path: `/v1/discover/${identifiers.map(encodeURIComponent).join("/")}`,
+            requestId: input.requestId,
+            timeoutMs: remaining(),
+          });
+          const parsed = contractSchema.safeParse(upstream.body);
+          if (upstream.status !== 200 || !parsed.success)
+            throw new Error("Tool contract unavailable");
+          const contract = parsed.data;
+          if (
+            contract.provider !== hit.provider ||
+            contract.capability !== hit.capability
+          )
+            throw new Error("Tool contract identity mismatch");
+          items[index] = {
+            id: `${hit.provider}/${hit.capability}`,
+            provider: hit.provider,
+            capability: hit.capability,
+            name: contract.label,
+            description: contract.whenToUse,
+            concept: hit.concept,
+            cohorts: hit.cohorts,
+            similarity: hit.similarity,
+            creditsCost: contract.creditsCost,
+            perRecord: contract.perRecord,
+            options: contract.options,
+            ...(contract.requiresOneOf
+              ? { requiresOneOf: contract.requiresOneOf }
+              : {}),
+            response: contract.returns,
+            ...(contract.example ? { example: contract.example } : {}),
+            examples: examplesFor(contract),
+          };
+        }
+      }),
+    );
+    if (loaded.some(result => result.status === "rejected"))
+      throw new Error("Tool contract loading failed");
     return {
       status: "available",
-      ...parsed.data,
-      items: parsed.data.items.map(item => {
-        const { requestOptions: _requestOptions, next, ...rest } = item;
-        const nextSource = next as Record<string, unknown> | undefined;
-        const { query: nextQuery, ...sourceOptions } = nextSource ?? {};
-        return {
-          ...rest,
-          ...(source.expand?.includes("examples")
-            ? { examples: examplesFor(item, source) }
-            : {}),
-          ...(nextSource
-            ? {
-                next: {
-                  ...(nextQuery ? { query: nextQuery } : {}),
-                  sources: [
-                    {
-                      ...sourceOptions,
-                      ...(source.languages
-                        ? { languages: source.languages }
-                        : {}),
-                    },
-                  ],
-                },
-              }
-            : {}),
-        };
-      }),
+      mode: "semantic",
+      level: "tools",
+      items,
+      total: items.length,
+      nextCursor: null,
     };
   } catch (error) {
-    if (error instanceof AlexandriaRequestError) throw error;
     logger.warn("Alexandria discovery unavailable", { error });
     return {
       status: "unavailable",
-      level,
-      mode,
+      level: "tools",
+      mode: "semantic",
       items: [],
       total: null,
       nextCursor: null,

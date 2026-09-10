@@ -109,19 +109,12 @@ export async function executeSearch(
   logger.info("Searching for results");
 
   const requestedTypes = [...new Set(sources.map((s: any) => s.type))];
-  const legacySource = sources.find(
+  const wantsExchange = sources.some(
     source => source.type === "exchange-providers",
   );
-  const legacyShorthand =
-    legacySource &&
-    Object.keys(legacySource).length === 1 &&
-    query.trim().length > 0;
-  const wantsExchange = Boolean(legacyShorthand);
-  const alexandriaSource = (sources.find(
+  const alexandriaSource = sources.find(
     source => source.type === "alexandria",
-  ) ?? (!legacyShorthand ? legacySource : undefined)) as
-    | AlexandriaSource
-    | undefined;
+  ) as AlexandriaSource | undefined;
   const searchTypes = requestedTypes.filter(
     t => t !== "exchange-providers" && t !== "alexandria",
   );

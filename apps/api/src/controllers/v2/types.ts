@@ -2496,20 +2496,10 @@ export const searchRequestSchema = z
       })
       .optional(),
   })
-  .refine(x => {
-    const sources = x.sources.map(source =>
-      typeof source === "string" ? { type: source } : source,
-    );
-    return (
-      Boolean(x.query.trim()) ||
-      (!x.categories?.length &&
-        sources.every(
-          source =>
-            ["alexandria", "exchange-providers"].includes(source.type) &&
-            (!("mode" in source) || source.mode !== "semantic"),
-        ))
-    );
-  }, "A query is required for web or semantic search.")
+  .refine(
+    x => Boolean(x.query.trim()),
+    "A query is required for search. Use Contextual Discovery for catalogue lookup.",
+  )
   .refine(x => {
     const types = x.sources
       .map(source => (typeof source === "string" ? source : source.type))
