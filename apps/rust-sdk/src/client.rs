@@ -5,6 +5,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::error::FirecrawlError;
+use crate::types::JobStatus;
 
 pub(crate) const API_VERSION: &str = "/v2";
 const CLOUD_API_URL: &str = "https://api.firecrawl.dev";
@@ -145,16 +146,28 @@ impl Client {
         action: impl AsRef<str>,
     ) -> Result<T, FirecrawlError> {
         let (is_success, status) = (response.status().is_success(), response.status());
-        let body = response
-            .text()
-            .await
-            .map_err(FirecrawlError::ResponseParseErrorText)?;
+        // A body-read failure on a non-2xx response still carries a status worth reporting.
+        let body = match response.text().await {
+            Ok(body) => body,
+            Err(e) if is_success => return Err(FirecrawlError::ResponseParseErrorText(e)),
+            Err(_) => {
+                let reason = status.canonical_reason().unwrap_or("unknown status");
+                return Err(FirecrawlError::HttpRequestFailed(
+                    action.as_ref().to_string(),
+                    status.as_u16(),
+                    reason.to_string(),
+                ));
+            }
+        };
 
         let response = serde_json::from_str::<Value>(&body)
             .map_err(FirecrawlError::ResponseParseError)
             .and_then(|response_value| {
-                // Only an explicit success: false routes to APIError; everything else parses as T.
-                if response_value["success"].as_bool() == Some(false) {
+                // success:false is an APIError unless the body also carries a job status (e.g. a
+                // crawl that failed at kickoff), in which case it's routed through T instead.
+                if response_value["success"].as_bool() == Some(false)
+                    && !has_job_status(&response_value)
+                {
                     Err(FirecrawlError::APIError(
                         action.as_ref().to_string(),
                         serde_json::from_value(response_value)
@@ -190,6 +203,13 @@ impl Client {
     pub(crate) fn url(&self, path: &str) -> String {
         format!("{}{}{}", self.api_url, API_VERSION, path)
     }
+}
+
+/// True when `value["status"]` is a recognized `JobStatus`, marking a crawl/batch job payload.
+fn has_job_status(value: &Value) -> bool {
+    value
+        .get("status")
+        .is_some_and(|s| serde_json::from_value::<JobStatus>(s.clone()).is_ok())
 }
 
 #[cfg(test)]
