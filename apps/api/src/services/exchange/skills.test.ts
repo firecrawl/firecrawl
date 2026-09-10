@@ -15,38 +15,44 @@ afterEach(async () => {
   setGlobalDispatcher(original);
   await agent.close();
 });
-it("deduplicates result URLs and returns public skill proxy URLs", async () => {
-  agent
-    .get("https://exchange.example")
-    .intercept({
-      path: "/v1/skills/resolve",
-      method: "POST",
-      body: JSON.stringify({ urls: ["https://spotify.com/"] }),
-      headers: { "x-exchange-team-id": "team" },
-    })
-    .reply(200, {
-      skills: [
-        {
-          id: "particle",
-          description: "Podcasts",
-          matchedDomains: ["spotify.com"],
-          url: "/v1/skills/particle/SKILL.md",
+it.each([false, true])(
+  "forwards special access %s with skill lookup",
+  async specialAccess => {
+    agent
+      .get("https://exchange.example")
+      .intercept({
+        path: "/v1/skills/resolve",
+        method: "POST",
+        body: JSON.stringify({ urls: ["https://spotify.com/"] }),
+        headers: {
+          "x-exchange-team-id": "team",
+          "x-exchange-special-access": String(specialAccess),
         },
-      ],
-    });
-  const data = {
-    web: [{ url: "https://spotify.com/" }, { url: "https://spotify.com/" }],
-  } as Parameters<typeof resolveSearchSkills>[0];
-  expect(await resolveSearchSkills(data, "team")).toEqual([
-    {
-      id: "particle",
-      description: "Podcasts",
-      matchedDomains: ["spotify.com"],
-      url: "https://api.firecrawl.dev/exchange/skills/particle/SKILL.md",
-    },
-  ]);
-  agent.assertNoPendingInterceptors();
-});
+      })
+      .reply(200, {
+        skills: [
+          {
+            id: "particle",
+            description: "Podcasts",
+            matchedDomains: ["spotify.com"],
+            url: "/v1/skills/particle/SKILL.md",
+          },
+        ],
+      });
+    const data = {
+      web: [{ url: "https://spotify.com/" }, { url: "https://spotify.com/" }],
+    } as Parameters<typeof resolveSearchSkills>[0];
+    expect(await resolveSearchSkills(data, "team", specialAccess)).toEqual([
+      {
+        id: "particle",
+        description: "Podcasts",
+        matchedDomains: ["spotify.com"],
+        url: "https://api.firecrawl.dev/exchange/skills/particle/SKILL.md",
+      },
+    ]);
+    agent.assertNoPendingInterceptors();
+  },
+);
 it("does not make a request for empty results", async () => {
   expect(await resolveSearchSkills({}, "team")).toEqual([]);
 });

@@ -101,6 +101,12 @@ export async function scrapeURLWithExchange(
       const response = await robustFetch({
         url: `${config.FIRE_EXCHANGE_URL!.replace(/\/+$/, "")}/v1/scrape`,
         method: "POST",
+        headers: {
+          "x-exchange-team-id": meta.internalOptions.teamId,
+          "x-exchange-special-access": String(
+            meta.internalOptions.teamFlags?.exchangeRetrieve === true,
+          ),
+        },
         body: {
           requestId: meta.id,
           teamId: meta.internalOptions.teamId,

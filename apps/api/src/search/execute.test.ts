@@ -218,6 +218,7 @@ describe("executeSearch exchange source", () => {
         query: "latest stock price by ticker",
         limit: 10,
         teamId: "team-1",
+        specialAccess: false,
         requestId: "request-1",
       }),
       logger,
@@ -231,9 +232,16 @@ describe("executeSearch exchange source", () => {
   });
 
   it("keeps provider discovery free", async () => {
-    const result = await executeSearch(sources(["exchange-providers"]), context, logger);
+    const result = await executeSearch(
+      sources(["exchange-providers"]),
+      { ...context, flags: { exchangeRetrieve: true } },
+      logger,
+    );
 
     expect(mocks.search).not.toHaveBeenCalled();
+    expect(mocks.searchExchangeCatalog.mock.calls[0][0].specialAccess).toBe(
+      true,
+    );
     expect(result.response).toEqual({ "exchange-providers": [capability] });
     expect(result.totalResultsCount).toBe(0);
     expect(result.searchCredits).toBe(0);

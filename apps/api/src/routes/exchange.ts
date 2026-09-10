@@ -48,6 +48,7 @@ function exchangeProxy(
   const requiresRetrieveFlag = options.requiresRetrieveFlag !== false;
 
   return async function controller(req: Request, res: Response) {
+    res.setHeader("cache-control", "no-store");
     const authedReq = req as RequestWithAuth<any, any, any>;
     const logger = rootLogger.child({
       module: "api/exchange",
@@ -93,6 +94,7 @@ function exchangeProxy(
           })
         : await forwardToExchange({
             teamId: authedReq.auth.team_id,
+            specialAccess: authedReq.acuc?.flags?.exchangeRetrieve === true,
             method: req.method,
             path: req.originalUrl.replace(/^\/exchange/, "/v1"),
             body,

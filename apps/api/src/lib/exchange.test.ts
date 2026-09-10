@@ -101,6 +101,70 @@ describe("Exchange routing", () => {
     ).resolves.not.toBeNull();
   });
 
+  it.each([false, true])(
+    "isolates routing catalogues when approved access is requested first: %s",
+    async approvedFirst => {
+      clearExchangeProvidersForTest();
+      vi.mocked(fetch).mockImplementation(async (_url, init) => {
+        const headers = init?.headers as Record<string, string> | undefined;
+        const approved = headers?.["x-exchange-special-access"] === "true";
+        if (approved)
+          expect(headers?.["x-exchange-team-id"]).toBe("approved-team");
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: approved
+              ? [
+                  {
+                    id: "preview-catalog",
+                    creditsCost: 0,
+                    capabilities: {
+                      scrape: {
+                        urlRoutes: [
+                          { domains: ["preview.example"], pathPrefixes: [] },
+                        ],
+                      },
+                    },
+                  },
+                ]
+              : [],
+          }),
+        } as unknown as Awaited<ReturnType<typeof fetch>>;
+      });
+      const input = {
+        url: "https://preview.example/item",
+        formats: [{ type: "markdown" }],
+        teamId: "approved-team",
+        flags: {
+          professionalProfileCompanyDataBeta: true,
+          exchangeRetrieve: true,
+        },
+      };
+      for (const approved of [approvedFirst, !approvedFirst]) {
+        expect(
+          await canUseExchangeForRequest({
+            ...input,
+            flags: { ...input.flags, exchangeRetrieve: approved },
+          }),
+        ).toBe(approved);
+      }
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(
+        await canUseExchangeForRequest({ ...input, teamId: undefined }),
+      ).toBe(false);
+      expect(
+        await canUseExchangeForRequest({
+          ...input,
+          flags: { ...input.flags, exchangeRetrieve: false },
+        }),
+      ).toBe(false);
+      expect(await canUseExchangeForRequest(input)).toBe(true);
+      expect(fetch).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it("respects path segment boundaries for prefixes without trailing slashes", async () => {
     setExchangeProvidersForTest([
       {

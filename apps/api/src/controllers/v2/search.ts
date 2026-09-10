@@ -437,6 +437,7 @@ async function searchControllerInner(
         result.response.skills = await resolveSearchSkills(
           result.response,
           req.auth.team_id,
+          req.acuc?.flags?.exchangeRetrieve === true,
         );
       } catch {
         skillsWarning =

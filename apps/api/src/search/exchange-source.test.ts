@@ -43,6 +43,7 @@ describe("exchange search source", () => {
         query: "product inventory by name",
         limit: 10,
         teamId: "team_a",
+        specialAccess: true,
         requestId: "rid",
       },
       logger,
@@ -51,6 +52,7 @@ describe("exchange search source", () => {
     expect(forward).toHaveBeenCalledWith(
       expect.objectContaining({
         teamId: "team_a",
+        specialAccess: true,
         method: "GET",
         path: "/v1/discover?q=product%20inventory%20by%20name&limit=10",
         requestId: "rid",

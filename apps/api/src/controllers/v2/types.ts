@@ -1990,6 +1990,7 @@ export type TeamFlags = {
   menuBeta?: boolean;
   enrichBeta?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
+  exchangeRetrieve?: boolean;
   organizationDataSourceAccess?: Record<
     string,
     {

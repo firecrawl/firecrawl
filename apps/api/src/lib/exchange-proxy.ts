@@ -65,6 +65,7 @@ function isTimeout(error: unknown): boolean {
 
 export async function forwardToExchange(input: {
   teamId: string;
+  specialAccess?: boolean;
   method: string;
   path: string;
   body?: unknown;
@@ -91,6 +92,7 @@ export async function forwardToExchange(input: {
           : { "x-request-id": input.requestId }),
         ...(hasBody ? { "content-type": "application/json" } : {}),
         "x-exchange-team-id": input.teamId,
+        "x-exchange-special-access": String(input.specialAccess === true),
         ...(input.deadline === undefined
           ? {}
           : { "x-exchange-deadline": String(input.deadline) }),
