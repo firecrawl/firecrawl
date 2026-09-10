@@ -233,6 +233,14 @@ async function searchControllerInner(
       }
     }
 
+    if (req.body.skills && zeroDataRetention) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Skill lookup is not available for zero-data-retention searches.",
+      });
+    }
+
     // Kick off the `requests` row insert without blocking: it queues on the
     // Postgres pool and can take seconds under pool pressure. We only need it
     // committed before the child-row writes (logSearch et al. below) to keep
@@ -350,6 +358,21 @@ async function searchControllerInner(
       );
     }
 
+    let skillsWarning: string | undefined;
+    if (req.body.skills) {
+      try {
+        result.response.skills = await resolveSearchSkills(
+          result.response,
+          req.auth.team_id,
+          req.acuc?.flags?.exchangeRetrieve === true,
+        );
+      } catch {
+        skillsWarning =
+          "Skill lookup is temporarily unavailable. Search results are unaffected.";
+        logger.warn("Exchange skill lookup failed", { jobId });
+      }
+    }
+
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
@@ -430,21 +453,6 @@ async function searchControllerInner(
       totalCredits: result.totalCredits,
       scrapeful: result.shouldScrape,
     });
-
-    let skillsWarning: string | undefined;
-    if (req.body.skills) {
-      try {
-        result.response.skills = await resolveSearchSkills(
-          result.response,
-          req.auth.team_id,
-          req.acuc?.flags?.exchangeRetrieve === true,
-        );
-      } catch {
-        skillsWarning =
-          "Skill lookup is temporarily unavailable. Search results are unaffected.";
-        logger.warn("Exchange skill lookup failed", { jobId });
-      }
-    }
 
     return res.status(200).json({
       success: true,

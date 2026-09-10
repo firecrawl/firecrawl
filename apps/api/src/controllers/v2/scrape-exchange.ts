@@ -1,3 +1,4 @@
+import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { settleExchangeCall } from "../../services/exchange/settle";
 import { Response } from "express";
 import { config } from "../../config";
@@ -36,6 +37,17 @@ export async function exchangeScrapeController(
     });
   }
   const body = parsed.data;
+  if (
+    body.__agentInterop &&
+    !isAgentInteropSecretValid(body.__agentInterop.auth)
+  ) {
+    return res.status(403).json({
+      success: false,
+      error: config.AGENT_INTEROP_SECRET
+        ? "Invalid agent interop."
+        : "Agent interop is not enabled.",
+    });
+  }
 
   if (!req.acuc?.flags?.exchangeRetrieve) {
     return res.status(403).json({
@@ -85,12 +97,13 @@ export async function exchangeScrapeController(
       orgId: req.acuc?.org_id,
       flags: req.acuc?.flags,
       logger,
+      bypassBilling: body.__agentInterop?.shouldBill === false,
       body: { requests: body.exchange },
       timeoutMs,
       requestId:
         typeof req.headers["x-request-id"] === "string"
           ? req.headers["x-request-id"]
-          : jobId,
+          : (body.__agentInterop?.requestId ?? jobId),
     });
 
     if (upstream.status < 200 || upstream.status >= 300) {

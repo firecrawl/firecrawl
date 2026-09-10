@@ -1,5 +1,10 @@
 import { vi } from "vitest";
 
+const mockResolveSearchSkills = vi.fn();
+vi.mock("../../../services/exchange/skills", () => ({
+  resolveSearchSkills: (...args: any[]) => mockResolveSearchSkills(...args),
+}));
+
 const mockLogRequest = vi.fn();
 const mockLogSearch = vi.fn();
 const mockLogResearchEndpoint = vi.fn();
@@ -126,6 +131,7 @@ async function flushAsync() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockResolveSearchSkills.mockResolvedValue([]);
   mockLogRequest.mockResolvedValue(undefined);
   mockLogSearch.mockResolvedValue(undefined);
   mockLogResearchEndpoint.mockResolvedValue(undefined);
@@ -140,6 +146,43 @@ beforeEach(() => {
 });
 
 describe("developer category code_searches ledger", () => {
+  it.each(["forced-zdr", "forced-anon"])(
+    "rejects skill lookup for %s before executing search",
+    async searchZDR => {
+      const req = makeReq({ query: "public documentation", skills: true });
+      req.acuc.flags = { exchangeRetrieve: true, searchZDR };
+      const res = makeRes();
+      await searchController(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockExecuteSearch).not.toHaveBeenCalled();
+      expect(mockResolveSearchSkills).not.toHaveBeenCalled();
+    },
+  );
+
+  it("archives the skills returned with search results", async () => {
+    const skills = [
+      {
+        id: "docs",
+        description: "Documentation",
+        matchedDomains: ["example.com"],
+        url: "https://api.firecrawl.dev/exchange/skills/docs/SKILL.md",
+      },
+    ];
+    mockResolveSearchSkills.mockResolvedValue(skills);
+    let archived: unknown;
+    mockLogSearch.mockImplementationOnce(row => {
+      archived = structuredClone(row.results);
+      return Promise.resolve();
+    });
+    const req = makeReq({ query: "public documentation", skills: true });
+    req.acuc.flags = { exchangeRetrieve: true };
+    const res = makeRes();
+    await searchController(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(archived).toEqual(res.json.mock.calls[0][0].data);
+    expect(archived).toHaveProperty("skills", skills);
+  });
+
   it.each([
     [false, false],
     [true, false],

@@ -703,12 +703,7 @@ export async function reportExchangeBilling(input: {
   return false;
 }
 
-/**
- * Warm the provider catalog at process startup so the first flagged-org
- * request never waits on the fetch; after this, stale-while-revalidate
- * keeps every lookup in-memory. No-op when the Exchange is not configured;
- * never throws.
- */
+/** Warm the standard catalogue. The extended tier loads on its first authenticated lookup. */
 export function warmExchangeCatalog(): void {
   if (!config.FIRE_EXCHANGE_URL) {
     return;

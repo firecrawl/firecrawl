@@ -545,3 +545,24 @@ it("uses the trusted agent request identity for retries unless a header override
   expect(state.forward).toHaveBeenCalledTimes(2);
   expect(state.track).toHaveBeenCalledTimes(2);
 });
+
+it.each([
+  { auth: "agent-test-secret", shouldBill: false, status: 200, billed: false },
+  { auth: "agent-test-secret", shouldBill: true, status: 200, billed: true },
+  { auth: "wrong", shouldBill: false, status: 403, billed: false },
+])(
+  "honors only authenticated agent billing intent: %j",
+  async ({ auth, shouldBill, status, billed }) => {
+    const response = await request(app)
+      .post("/v2/scrape")
+      .send({
+        exchange: calls,
+        __agentInterop: { auth, shouldBill, requestId: "agent-request" },
+      });
+    expect(response.status).toBe(status);
+    expect(state.track).toHaveBeenCalledTimes(billed ? 1 : 0);
+    if (status === 403) expect(state.forward).not.toHaveBeenCalled();
+    else
+      expect(state.forward.mock.calls[0][0].body).toEqual({ requests: calls });
+  },
+);

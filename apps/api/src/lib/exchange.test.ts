@@ -162,6 +162,12 @@ describe("Exchange routing", () => {
         }),
       ).toBe(false);
       expect(await canUseExchangeForRequest(input)).toBe(true);
+      expect(
+        await canUseExchangeForRequest({
+          ...input,
+          teamId: "another-approved-team",
+        }),
+      ).toBe(true);
       expect(fetch).toHaveBeenCalledTimes(2);
     },
   );

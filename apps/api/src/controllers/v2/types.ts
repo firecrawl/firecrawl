@@ -1545,6 +1545,7 @@ export type ScrapeResponse =
   | ExchangeScrapeResponse;
 
 export const exchangeScrapeRequestSchema = z.strictObject({
+  __agentInterop: scrapeRequestSchemaBase.shape.__agentInterop,
   exchange: z.preprocess(
     value => (Array.isArray(value) ? value : [value]),
     z
