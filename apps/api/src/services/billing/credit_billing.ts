@@ -1,8 +1,5 @@
 import { withAuth } from "../../lib/withAuth";
-import {
-  queueBillingOperation,
-  type ExchangeBillingReceipt,
-} from "./batch_billing";
+import { queueBillingOperation } from "./batch_billing";
 import {
   autumnService,
   featureIdForBillingEndpoint,
@@ -16,7 +13,6 @@ export async function billTeam(
   api_key_id: number | null,
   billing: BillingMetadata,
   logger?: Logger,
-  exchange?: ExchangeBillingReceipt,
 ) {
   return withAuth(
     async (
@@ -25,7 +21,6 @@ export async function billTeam(
       api_key_id: number | null,
       billing: BillingMetadata,
       logger: Logger | undefined,
-      exchange: ExchangeBillingReceipt | undefined,
     ) => {
       const autumnProperties = {
         source: "billTeam",
@@ -52,7 +47,6 @@ export async function billTeam(
         billing,
         false,
         trackedInRequest,
-        exchange,
       );
 
       if (!result.success && trackedInRequest) {
@@ -83,5 +77,5 @@ export async function billTeam(
       return result;
     },
     { success: true, message: "No DB, bypassed." },
-  )(team_id, credits, api_key_id, billing, logger, exchange);
+  )(team_id, credits, api_key_id, billing, logger);
 }

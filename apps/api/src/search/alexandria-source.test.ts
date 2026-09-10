@@ -169,6 +169,14 @@ it("distinguishes empty matches from unavailable or mismatched contracts", async
     response({}, 503),
     response({ ...contract, provider: "wrong" }),
     response({ ...contract, options: undefined }),
+    response({
+      ...contract,
+      options: [{ name: "query", type: "string", required: "yes" }],
+    }),
+    response({
+      ...contract,
+      options: [{ name: "query", type: "string", oneOf: "invalid" }],
+    }),
   ]) {
     forward
       .mockResolvedValueOnce(response({ capabilities: [hit] }))

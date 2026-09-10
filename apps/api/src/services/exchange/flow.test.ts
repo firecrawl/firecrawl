@@ -98,7 +98,10 @@ vi.mock("../../lib/external-request-id", () => ({
 }));
 import { exchangeRouter } from "../../routes/exchange";
 import { exchangeScrapeController } from "../../controllers/v2/scrape-exchange";
-import { processBillingBatch } from "../billing/batch_billing";
+import {
+  processBillingBatch,
+  queueBillingOperation,
+} from "../billing/batch_billing";
 import { config } from "../../config";
 import { ExchangeProxyError } from "../../lib/exchange-proxy";
 import { ConcurrencyQueueTimeoutError } from "../../lib/error";
@@ -233,6 +236,15 @@ it("keeps an uncertain credit hold from authorizing a retry", async () => {
   expect((await send()).status).toBe(409);
   expect(state.forward).not.toHaveBeenCalled();
   expect(state.hold).toHaveBeenCalledTimes(1);
+  expect(JSON.parse([...state.keys.values()][0])).toMatchObject({
+    state: "pending",
+    reconciliation: {
+      phase: "reserve",
+      lockId: expect.any(String),
+      maximumCredits: 3,
+      body: { requests: calls },
+    },
+  });
 });
 it("rejects reusing the same request ID for a different payload", async () => {
   await send();
@@ -423,3 +435,49 @@ it("keeps discovery free, scopes access from authentication and preserves Markdo
   );
   expect(state.hold).not.toHaveBeenCalled();
 });
+
+it.each([false, true])(
+  "keeps confirmed provider charges when the ledger fails (mixed batch: %s)",
+  async mixed => {
+    expect((await send()).status).toBe(200);
+    if (mixed)
+      await queueBillingOperation(
+        "team_a",
+        5,
+        7,
+        { endpoint: "scrape" },
+        false,
+        true,
+      );
+    state.debit.mockRejectedValueOnce(new Error("Ledger acknowledgement lost"));
+    await processBillingBatch();
+    if (mixed)
+      expect(state.refund).toHaveBeenCalledWith(
+        expect.objectContaining({ value: 5 }),
+      );
+    else expect(state.refund).not.toHaveBeenCalled();
+    expect(state.fetch).not.toHaveBeenCalled();
+    expect((await send()).status).toBe(200);
+    expect(state.forward).toHaveBeenCalledTimes(1);
+    expect(state.hold).toHaveBeenCalledTimes(1);
+  },
+);
+
+it.each(["denied", "unsent"])(
+  "reports reconciliation when safe retry cleanup fails after %s",
+  async failure => {
+    state.cleanup.mockRejectedValueOnce(new Error("Redis unavailable"));
+    if (failure === "denied")
+      state.hold.mockResolvedValueOnce({ status: "denied" });
+    else
+      state.forward.mockRejectedValueOnce(
+        new ExchangeProxyError("unreachable", undefined, true),
+      );
+    const result = await send();
+    expect(result.status).toBe(503);
+    expect(result.body.error).toContain("reconciliation");
+    expect((await send()).status).toBe(409);
+    expect(state.hold).toHaveBeenCalledTimes(1);
+    expect(state.queue).toHaveLength(0);
+  },
+);

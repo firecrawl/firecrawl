@@ -137,7 +137,8 @@ async function releaseLock() {
 
 async function refundRequestTrackedCredits(group: GroupedBillingOperation) {
   const requestTrackedCredits = group.operations
-    .filter(op => op.autumnTrackInRequest)
+    // Provider execution is already delivered; a ledger failure needs reconciliation.
+    .filter(op => op.autumnTrackInRequest && !op.exchange_usage_request_id)
     .reduce((sum, op) => sum + op.credits, 0);
 
   if (requestTrackedCredits <= 0) return;

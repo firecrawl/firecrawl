@@ -39,7 +39,9 @@ Results are capped at the semantic index's current limit of 24 tools.
 The envelope retains `status`, `mode: "semantic"`, `level: "tools"`, `items`,
 `total` (returned tool count), and `nextCursor: null`. This is a ranked search,
 not paginated catalogue browsing. `status: "unavailable"` means search or contract
-loading failed for all matches; it is distinct from an available result with zero matches. If only some contracts fail, the response includes the successfully loaded tools in rank order with a `warning`.
+loading failed for all matches; it is distinct from an available result with zero
+matches. If only some contracts fail, the response includes the successfully loaded
+tools in rank order with a `warning`.
 
 ## Find Tools and progressive disclosure
 
@@ -56,9 +58,12 @@ Use **Find Tools**, the zero-credit meta tool, through `POST /v2/scrape`:
 ```
 
 It supports URLs, categories, providers, groups, and capabilities. Follow each
-item's `next` request, passed as `exchange` in the next `/v2/scrape` call, to reveal groups, tools, and contracts. Its
+item's `next` request, passed as `exchange` in the next `/v2/scrape` call, to reveal
+groups, tools, and contracts. Its
 pagination and expansion options belong to this tool, not to search sources.
-Read the discovery payload from `data.exchange[0].data`. The provider and capability identifiers remain stable; Find Tools is the catalogue display name. See Exchange's `docs/contextual-discovery.md` for the complete contract.
+Read the discovery payload from `data.exchange[0].data`. The provider and capability
+identifiers remain stable; Find Tools is the catalogue display name. See Exchange's
+`docs/contextual-discovery.md` for the complete contract.
 
 Search's existing opt-in `skills: true` returns contextual matches in `data.skills`.
 The web app can associate them with result URLs and display adjacent tools.
@@ -77,24 +82,37 @@ The API quotes a maximum cost, reserves credits atomically, then executes with
 that budget. Insufficient credits return 402 before execution. An unavailable
 reservation returns 503. Successful calls confirm only their actual cost, release
 the unused balance, and queue the ledger update without charging Autumn twice.
+If the ledger update fails after provider execution, the confirmed provider charge
+is retained for reconciliation rather than automatically refunded.
 Per-record requests must have a bounded cost, up to 100 credits per call and ten
 calls per batch.
 
-Completed responses up to 5 MiB are retained for 24 hours. Pending request identities and reconciliation records do not expire automatically. Reusing an ID with a
+Completed responses up to 5 MiB are retained for 24 hours. Pending request identities
+and reconciliation records do not expire automatically. Reusing an ID with a
 different payload returns 409. Concurrent or ambiguous requests cannot execute
 again: a 409 awaiting reconciliation must not be retried with a new ID. Responses
-too large to retain also return 409 on replay. An uncertain provider outcome or billing acknowledgement leaves a pending record with the request, hold, actual charge (when known), and billing receipt for operational reconciliation. It is not marked complete or allowed to execute again. Holds still expire after one hour, so operators must reconcile unresolved charges; no automatic reconciliation worker is included here.
+too large to retain also return 409 on replay. An uncertain provider outcome or billing
+acknowledgement leaves a pending record with the request, hold, actual charge (when
+known), and billing receipt for operational reconciliation. It is not marked complete or
+allowed to execute again. Holds still expire after one hour, so operators must reconcile
+unresolved charges; no automatic reconciliation worker is included here.
 
 Deploy the supporting Exchange quote and budget enforcement before paid
 execution from this API branch. Semantic search uses the existing discovery
-routes; contextual lookup requires the merged discovery meta tool. Paid hosted execution requires the configured Autumn/firebill
+routes; contextual lookup requires the merged discovery meta tool. Paid hosted execution
+requires the configured Autumn/firebill
 credit-hold service. SDK changes are a follow-up; this change establishes the HTTP
 contract.
 
-Generated JavaScript and Python examples call `/v2/scrape` with an `exchange` request through HTTP directly until SDK support is
+Generated JavaScript and Python examples call `/v2/scrape` with an `exchange` request
+through HTTP directly until SDK support is
 added, and include the same request-ID contract as cURL. Replace the request-ID
 placeholder once per logical operation; keep that value when retrying.
 
 ## Scope
 
-This branch adds semantic discovery to `/v2/search` and explicit tool execution to `/v2/scrape`, with billing shared by the existing retrieval proxy. It does not extend automatic URL routing or add Alexandria execution to v1, crawl, or batch-scrape endpoints. An `exchange` array on a single `/v2/scrape` request can still contain up to ten explicit tool calls; that is separate from the batch-scrape endpoint.
+This branch adds semantic discovery to `/v2/search` and explicit tool execution to
+`/v2/scrape`, with billing shared by the existing retrieval proxy. It does not extend
+automatic URL routing or add Alexandria execution to v1, crawl, or batch-scrape
+endpoints. An `exchange` array on a single `/v2/scrape` request can still contain up to
+ten explicit tool calls; that is separate from the batch-scrape endpoint.

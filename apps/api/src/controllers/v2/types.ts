@@ -1545,20 +1545,17 @@ export type ScrapeResponse =
     }
   | ExchangeScrapeResponse;
 
+export const exchangeCallRequestSchema = z.strictObject({
+  provider: z.string().min(1).max(200),
+  capability: z.string().min(1).max(200),
+  options: z.record(z.string(), z.unknown()).optional(),
+});
+
 export const exchangeScrapeRequestSchema = z.strictObject({
   __agentInterop: scrapeRequestSchemaBase.shape.__agentInterop,
   exchange: z.preprocess(
     value => (Array.isArray(value) ? value : [value]),
-    z
-      .array(
-        z.strictObject({
-          provider: z.string().min(1),
-          capability: z.string().min(1),
-          options: z.record(z.string(), z.unknown()).optional(),
-        }),
-      )
-      .min(1)
-      .max(10),
+    z.array(exchangeCallRequestSchema).min(1).max(10),
   ),
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
@@ -2397,7 +2394,7 @@ const searchDomainSchema = z
 
 export const searchRequestSchema = z
   .strictObject({
-    query: z.string().optional().prefault(""),
+    query: z.string(),
     skills: z.boolean().optional(),
     limit: z.int().positive().finite().max(100).optional().prefault(10),
     tbs: z.string().optional(),
@@ -2498,7 +2495,7 @@ export const searchRequestSchema = z
   })
   .refine(
     x => Boolean(x.query.trim()),
-    "A query is required for search. Use Contextual Discovery for catalogue lookup.",
+    "A query is required for search. Use Find Tools for catalogue lookup.",
   )
   .refine(x => {
     const types = x.sources

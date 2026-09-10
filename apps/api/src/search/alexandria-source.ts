@@ -29,7 +29,16 @@ const contractSchema = z.object({
   creditsCost: z.number().int().nonnegative(),
   perRecord: z.boolean(),
   options: z.array(
-    z.object({ name: z.string(), type: z.string() }).passthrough(),
+    z
+      .object({
+        name: z.string(),
+        type: z.string(),
+        required: z.boolean().optional(),
+        default: z.unknown().optional(),
+        oneOf: z.array(z.string()).optional(),
+        min: z.number().optional(),
+      })
+      .passthrough(),
   ),
   requiresOneOf: z.array(z.array(z.string())).optional(),
   returns: z
@@ -62,21 +71,19 @@ const python = (value: unknown, depth = 0): string => {
   }
   return JSON.stringify(value);
 };
-function examplesFor(item: Record<string, any>) {
+function examplesFor(item: z.infer<typeof contractSchema>) {
   const options: Record<string, unknown> = {};
-  const descriptors = Array.isArray(item.options) ? item.options : [];
+  const descriptors = item.options;
   const selected = descriptors.filter(
-    (option: any) => option.required || option.default !== undefined,
+    option => option.required || option.default !== undefined,
   );
   for (const alternatives of item.requiresOneOf ?? []) {
     if (
-      alternatives.some((name: string) =>
-        selected.some((option: any) => option.name === name),
-      )
+      alternatives.some(name => selected.some(option => option.name === name))
     )
       continue;
     const alternative = descriptors.find(
-      (option: any) => option.name === alternatives[0],
+      option => option.name === alternatives[0],
     );
     if (alternative) selected.push(alternative);
   }
@@ -110,12 +117,7 @@ function examplesFor(item: Record<string, any>) {
     python: `import os\nimport requests\n\nrequest_id = "<unique-request-id>"\nresponse = requests.post(\n  "https://api.firecrawl.dev/v2/scrape",\n  headers={\n    "Authorization": "Bearer " + os.environ["FIRECRAWL_API_KEY"],\n    "x-request-id": request_id\n  },\n  json=${python(scrapeRequest)},\n  timeout=120\n)\nresponse.raise_for_status()\nresult = response.json()`,
     curl: `curl https://api.firecrawl.dev/v2/scrape \\\n  -H "Authorization: Bearer $FIRECRAWL_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "x-request-id: <unique-request-id>" \\\n  --data '${json.replace(/'/g, "'\\''")}'`,
   };
-  return Object.fromEntries(
-    (["javascript", "python", "curl"] as const).map(language => [
-      language,
-      snippets[language],
-    ]),
-  );
+  return snippets;
 }
 
 export async function searchAlexandria(
@@ -196,6 +198,8 @@ export async function searchAlexandria(
               requestId: input.requestId,
               timeoutMs: remaining(),
             });
+            if (upstream.status !== 200)
+              throw new Error("Tool contract unavailable");
             let contractBody = upstream.body;
             if (!cohort) {
               const lookup = z
@@ -216,8 +220,7 @@ export async function searchAlexandria(
               };
             }
             const parsed = contractSchema.safeParse(contractBody);
-            if (upstream.status !== 200 || !parsed.success)
-              throw new Error("Tool contract unavailable");
+            if (!parsed.success) throw new Error("Tool contract unavailable");
             const contract = parsed.data;
             if (
               contract.provider !== hit.provider ||

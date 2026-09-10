@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Logger } from "winston";
 import {
@@ -10,27 +10,29 @@ import {
   autumnService,
   featureIdForBillingEndpoint,
 } from "../autumn/autumn.service";
-import { getRedisConnection } from "../queue-service";
+import {
+  beginExchangeRequest,
+  refusal,
+  MAX_REPLAY_BYTES,
+} from "./request-state";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { ConcurrencyQueueTimeoutError } from "../../lib/error";
 import { teamConcurrencySemaphore } from "../worker/team-semaphore";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { config } from "../../config";
 import {
+  exchangeCallRequestSchema,
   exchangeRetrieveBatchResponseSchema,
   exchangeRetrieveResponseSchema,
   type TeamFlags,
 } from "../../controllers/v2/types";
 
 const requestIdSchema = z.string().regex(/^[A-Za-z0-9._:-]{1,128}$/);
-const callSchema = z.strictObject({
-  provider: z.string().min(1).max(200),
-  capability: z.string().min(1).max(200),
-  options: z.record(z.string(), z.unknown()).optional(),
-});
 const requestSchema = z.union([
-  callSchema,
-  z.strictObject({ requests: z.array(callSchema).min(1).max(10) }),
+  exchangeCallRequestSchema,
+  z.strictObject({
+    requests: z.array(exchangeCallRequestSchema).min(1).max(10),
+  }),
 ]);
 type Upstream = Awaited<ReturnType<typeof forwardToExchange>>;
 type Input = {
@@ -44,34 +46,14 @@ type Input = {
   bypassBilling?: boolean;
   logger: Logger;
 };
-const hash = (value: unknown) =>
-  createHash("sha256").update(JSON.stringify(value)).digest("hex");
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, value]) => [key, canonical(value)]),
-    );
-  return value;
-}
-function refusal(status: number, error: string): Upstream {
-  return {
-    status,
-    body: { success: false, error },
-    contentType: "application/json",
-    requestId: null,
-  };
-}
-
 export async function settleExchangeCall(input: Input): Promise<Upstream> {
   if (getScrapeZDR(input.flags) === "forced")
     return refusal(
       403,
       "Exchange provider retrieval does not support zero data retention.",
     );
-  if (!requestIdSchema.safeParse(input.requestId).success)
+  const requestId = requestIdSchema.safeParse(input.requestId);
+  if (!requestId.success)
     return refusal(
       400,
       "Provide x-request-id: 1–128 letters, digits, dots, underscores, colons or hyphens. Reuse it only when retrying the same request.",
@@ -83,93 +65,15 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
       "Provide a provider, capability and options, or a batch of 1–10 such calls.",
     );
   const body = parsed.data;
-  const chargeId = hash([input.teamId, input.requestId]);
-  const payloadHash = hash([canonical(body), input.bypassBilling === true]);
-  const key = `exchange:provider-request:v2:${chargeId}`;
-  const redis = getRedisConnection();
-  try {
-    if (
-      (await redis.set(
-        key,
-        JSON.stringify({
-          payloadHash,
-          state: "pending",
-          chargeId,
-          teamId: input.teamId,
-          createdAt: Date.now(),
-        }),
-        "NX",
-      )) !== "OK"
-    ) {
-      const raw = await redis.get(key);
-      if (!raw)
-        return refusal(
-          409,
-          "Request state changed. Retry with the same x-request-id.",
-        );
-      const previous = JSON.parse(raw);
-      if (previous.payloadHash !== payloadHash)
-        return refusal(
-          409,
-          "This x-request-id belongs to a different request.",
-        );
-      if (previous.state === "complete" && previous.response)
-        return previous.response;
-      if (previous.state === "complete")
-        return refusal(
-          409,
-          "This request completed, but its response was too large to retain for replay. It will not execute again.",
-        );
-      return refusal(
-        409,
-        "This request is still processing or awaiting reconciliation. Do not retry with a new x-request-id.",
-      );
-    }
-  } catch {
-    return refusal(
-      503,
-      "Unable to establish request identity. Retry with the same x-request-id.",
-    );
-  }
-  const forget = async () => {
-    try {
-      await redis.del(key);
-    } catch (error) {
-      input.logger.warn("Exchange request identity cleanup failed", {
-        chargeId,
-        error,
-      });
-    }
-  };
-  const finish = async (response: Upstream) => {
-    response = { ...response, requestId: input.requestId! };
-    try {
-      const stored = JSON.stringify({
-        payloadHash,
-        state: "complete",
-        response,
-      });
-      if (Buffer.byteLength(stored) <= 5 * 1024 * 1024)
-        await redis.set(key, stored, "EX", 86400);
-      else
-        await redis.set(
-          key,
-          JSON.stringify({ payloadHash, state: "complete" }),
-          "EX",
-          86400,
-        );
-    } catch (error) {
-      input.logger.error("Exchange result replay storage failed", {
-        chargeId,
-        error,
-      });
-      return refusal(
-        503,
-        "Result storage needs reconciliation. Retry only with the same x-request-id.",
-      );
-    }
-    return response;
-  };
+  const state = await beginExchangeRequest({
+    teamId: input.teamId,
+    requestId: requestId.data,
+    body,
+    bypassBilling: input.bypassBilling,
+    logger: input.logger,
+  });
+  if (state.response !== undefined) return state.response;
+  const { chargeId, forget, finish } = state;
   const billable =
     config.USE_DB_AUTHENTICATION &&
     input.teamId !== "preview" &&
@@ -185,33 +89,26 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
   let lockId: string | undefined;
   let maximumCredits = 0;
   let started = false;
-  const reconciliation: Record<string, unknown> = {
-    teamId: input.teamId,
-    apiKeyId: input.apiKeyId,
-    chargeId,
-    featureId,
-    properties,
-  };
-  const preserve = async (
-    phase: string,
+  const preserve = (
+    phase: Parameters<typeof state.preserve>[0],
     details: Record<string, unknown> = {},
-  ) => {
-    Object.assign(reconciliation, {
-      phase,
+  ) =>
+    state.preserve(phase, {
+      apiKeyId: input.apiKeyId,
+      featureId,
+      properties,
       lockId,
       maximumCredits,
       ...details,
     });
-    await redis.set(
-      key,
-      JSON.stringify({ payloadHash, state: "pending", reconciliation }),
-    );
-  };
   const pending = () =>
     refusal(
       503,
-      "Billing needs reconciliation. Retry only with the same x-request-id; the provider will not execute again.",
+      "Request state needs reconciliation. Retry only with the same x-request-id; the provider will not execute again.",
     );
+
+  const retryable = async (response: Upstream) =>
+    (await forget()) ? response : pending();
 
   const release = async () => {
     if (!lockId) return true;
@@ -244,39 +141,40 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
       timeoutMs: Math.min(input.timeoutMs, 10000),
     });
     if (quote.status < 200 || quote.status >= 300) {
-      await forget();
-      return quote;
+      return retryable(quote);
     }
     const quoted = z
       .object({ maximumCredits: z.number().int().min(0).max(1000) })
       .safeParse(quote.body);
     if (!quoted.success) {
-      await forget();
-      return refusal(502, "Exchange returned an invalid credit quote.");
+      return retryable(
+        refusal(502, "Exchange returned an invalid credit quote."),
+      );
     }
     maximumCredits = quoted.data.maximumCredits;
     if (billable && maximumCredits > 0) {
+      lockId = `exchange_${chargeId}`;
+      await preserve("reserve", { body });
       const hold = await autumnService.lockCredits({
         teamId: input.teamId,
         value: maximumCredits,
-        lockId: `exchange_${chargeId}`,
+        lockId,
         expiresAt: Date.now() + 60 * 60 * 1000,
         featureId,
         properties,
       });
       if (hold.status !== "locked") {
         // A skipped hold can mean a billing outage; it never authorizes paid provider work.
-        if (hold.status === "skipped") {
-          lockId = `exchange_${chargeId}`;
-          if (await release()) await forget();
-        } else await forget();
-        return refusal(
-          hold.status === "denied" && hold.reason !== "gate_unavailable"
-            ? 402
-            : 503,
-          hold.status === "denied" && hold.reason !== "gate_unavailable"
-            ? "Insufficient credits for this provider request."
-            : "Credit reservation is unavailable. No provider was executed.",
+        if (hold.status === "skipped" && !(await release())) return pending();
+        return retryable(
+          refusal(
+            hold.status === "denied" && hold.reason !== "gate_unavailable"
+              ? 402
+              : 503,
+            hold.status === "denied" && hold.reason !== "gate_unavailable"
+              ? "Insufficient credits for this provider request."
+              : "Credit reservation is unavailable. No provider was executed.",
+          ),
         );
       }
       lockId = hold.lockId;
@@ -313,7 +211,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
       !started ||
       (error instanceof ExchangeProxyError && error.requestNotSent)
     ) {
-      if (await release()) await forget();
+      if (!(await release()) || !(await forget())) return pending();
     } else {
       input.logger.error("Exchange execution outcome needs reconciliation", {
         chargeId,
@@ -358,7 +256,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
       await preserve("confirm", {
         credits,
         response:
-          Buffer.byteLength(JSON.stringify(upstream)) <= 5 * 1024 * 1024
+          Buffer.byteLength(JSON.stringify(upstream)) <= MAX_REPLAY_BYTES
             ? upstream
             : undefined,
         billing: { endpoint: "scrape", chargeId: `exchange:${chargeId}` },
