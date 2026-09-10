@@ -121,6 +121,7 @@ exchangeRouter.get(
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
 );
 
+// Both skills routes intentionally require the exchangeRetrieve flag during preview.
 exchangeRouter.post(
   "/skills/resolve",
   authMiddleware(RateLimiterMode.Labs),
