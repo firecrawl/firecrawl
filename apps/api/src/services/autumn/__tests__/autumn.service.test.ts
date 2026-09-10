@@ -1961,6 +1961,52 @@ describe("org id hint", () => {
     );
   });
 
+  // A read already in flight is what a hintless caller awaits today and costs
+  // nothing extra, so it wins over the hint. Otherwise the hint would seed the
+  // cache and the older read would land after it, for a whole TTL.
+  it("awaits an in-flight hintless lookup rather than using the hint", async () => {
+    const svc = makeService();
+
+    let resolveLookup!: (rows: unknown[]) => void;
+    state.dbLimitOverride = () => {
+      orgLookups++;
+      return new Promise<unknown[]>(resolve => {
+        resolveLookup = resolve;
+      });
+    };
+
+    const hintless = svc.trackCredits({ teamId: "team-1", value: 1 });
+    await Promise.resolve();
+    expect(orgLookups).toBe(1);
+
+    // Reaches resolveOrgId while that read is still open.
+    const hinted = svc.checkCredits({
+      teamId: "team-1",
+      value: 42,
+      orgId: HINT_ORG,
+    });
+
+    // Counted, not held open: a second read would show up in orgLookups.
+    state.dbLimitOverride = () => {
+      orgLookups++;
+      return Promise.resolve([{ org_id: "org-2" }]);
+    };
+    resolveLookup([{ org_id: "org-2" }]);
+    await Promise.all([hintless, hinted]);
+
+    expect(orgLookups).toBe(1);
+    expect(mockCheck).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2" }),
+    );
+
+    // The hint seeded nothing, so a later hintless biller still bills org-2.
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(orgLookups).toBe(1);
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-2" }),
+    );
+  });
+
   // The synthetic ACUCs carry these, and no `teams.org_id` read could ever
   // return one, so a team holding one has to keep taking today's path.
   it.each(["preview", "bypass", "", "org-1", "not a uuid"])(
@@ -2065,6 +2111,17 @@ describe("inline provisioning counters", () => {
     await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
 
     expect(await entityCreates("ensureTeamProvisioned")).toBe(0);
+  });
+
+  // The counter measures load put on Autumn, so a call that got there and
+  // failed counts the same as one that succeeded.
+  it("counts a customer call that reached Autumn and failed", async () => {
+    const svc = makeService();
+    mockGetOrCreate.mockRejectedValueOnce(new Error("autumn unavailable"));
+
+    await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
+
+    expect(await customerCalls()).toBe(1);
   });
 
   it("counts nothing when the entity is already present", async () => {

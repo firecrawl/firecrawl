@@ -96,11 +96,12 @@ export const autumnEntityCreatedInlineTotal = new Counter({
 });
 
 /**
- * Calls to `customers.get_or_create` that reached Autumn. Deliberately not
- * "created": the endpoint answers 200 either way and autumn-js parses only the
- * customer body, so nothing in the response tells a creation from a get.
+ * Calls to `customers.get_or_create` attempted against Autumn, counted before
+ * the response so a failure counts too. Deliberately not "created": the
+ * endpoint answers 200 either way and autumn-js parses only the customer body,
+ * so nothing in the response tells a creation from a get.
  */
 export const autumnCustomerGetOrCreateTotal = new Counter({
   name: "firecrawl_autumn_customer_get_or_create_total",
-  help: "Autumn customers.get_or_create calls made from a billing path",
+  help: "Autumn customers.get_or_create calls attempted from a billing path",
 });

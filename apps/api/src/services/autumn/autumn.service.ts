@@ -243,13 +243,15 @@ export class AutumnService {
     if (!customerId) return null;
 
     try {
+      // Counted before the await so a call that reached Autumn and failed is
+      // still counted; the counter measures attempts, not successes.
+      autumnCustomerGetOrCreateTotal.inc();
       const customer = await autumnClient.customers.getOrCreate({
         customerId,
         name: name ?? undefined,
         email: email ?? undefined,
         autoEnablePlanId,
       });
-      autumnCustomerGetOrCreateTotal.inc();
       logger.info("Autumn getOrCreateCustomer succeeded", { customerId });
       return customer;
     } catch (error) {
@@ -493,8 +495,9 @@ export class AutumnService {
    * anything.
    *
    * A usable `orgId` hint (the request's ACUC carries one) stands in for the
-   * DB read once the cache is cold, and seeds the cache. A fresh entry still
-   * wins, so a warm pod resolves exactly what it resolved before the hint.
+   * DB read only when nothing is cached and no lookup is in flight, and seeds
+   * the cache. A fresh entry or a pending read still wins, so the hint never
+   * races an already-running lookup that would resolve after it.
    */
   private async resolveOrgId(
     teamId: string,
@@ -503,14 +506,14 @@ export class AutumnService {
     const cached = this.customerOrgCache.get(teamId);
     if (cached && cached.expiresAt > Date.now()) return cached.orgId;
 
+    const pending = this.pendingOrgLookups.get(teamId);
+    if (pending) return pending;
+
     const hint = this.usableOrgIdHint(orgId);
     if (hint) {
       this.cacheOrgId(teamId, hint);
       return hint;
     }
-
-    const pending = this.pendingOrgLookups.get(teamId);
-    if (pending) return pending;
 
     const lookup = this.lookupOrgIdForTeam(teamId)
       .then(orgId => {
