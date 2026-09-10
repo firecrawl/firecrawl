@@ -283,15 +283,55 @@ const createContext = async (
     // wins and nothing here overwrites it.
     await newContext.addInitScript(() => {
       if (navigator.plugins.length === 0) {
-        Object.defineProperty(navigator, 'plugins', {
-          get: () => [{ name: 'PDF Viewer' }, { name: 'Chrome PDF Viewer' }],
+        // Shaped as the real host objects rather than a plain Array. Headless
+        // already exposes a genuine, empty PluginArray, so substituting an
+        // Array would flip Array.isArray to true (false in any real browser),
+        // report [object Array], and drop item()/namedItem() — trading one
+        // weak tell for several strong ones.
+        const makePlugin = (name: string, description: string) => {
+          const plugin = Object.create(Plugin.prototype);
+          Object.defineProperties(plugin, {
+            name: { value: name, enumerable: true },
+            filename: { value: 'internal-pdf-viewer', enumerable: true },
+            description: { value: description, enumerable: true },
+            length: { value: 0, enumerable: true },
+          });
+          return plugin as Plugin;
+        };
+
+        const plugins = [
+          makePlugin('PDF Viewer', 'Portable Document Format'),
+          makePlugin('Chrome PDF Viewer', 'Portable Document Format'),
+        ];
+        const list = Object.create(PluginArray.prototype);
+        plugins.forEach((plugin, index) =>
+          Object.defineProperty(list, index, {
+            value: plugin,
+            enumerable: true,
+          }),
+        );
+        plugins.forEach(plugin =>
+          Object.defineProperty(list, plugin.name, { value: plugin }),
+        );
+        Object.defineProperty(list, 'length', { value: plugins.length });
+        Object.defineProperty(list, 'item', {
+          value: (index: number) => plugins[index] ?? null,
         });
+        Object.defineProperty(list, 'namedItem', {
+          value: (name: string) =>
+            plugins.find(plugin => plugin.name === name) ?? null,
+        });
+        Object.defineProperty(list, 'refresh', { value: () => {} });
+        Object.defineProperty(navigator, 'plugins', { get: () => list });
       }
+
       const w = window as unknown as Record<string, unknown>;
       if (typeof w.chrome === 'undefined') {
-        Object.defineProperty(window, 'chrome', {
-          get: () => ({ runtime: {} }),
-        });
+        // One object built once, not a fresh literal per access: page code
+        // must see `window.chrome === window.chrome`, and a write to
+        // chrome.runtime has to survive being read back.
+        const chrome = { runtime: {} };
+        Object.defineProperty(window, 'chrome', { get: () => chrome });
       }
     });
   }
