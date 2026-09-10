@@ -66,8 +66,7 @@ function escapeHtml(value: string): string {
 // Exchange responses carry no page HTML; synthesize a minimal head so the
 // metadata transformer can populate the document's title and description.
 function buildMetadataHtml(title?: string, description?: string): string {
-  const titleTag =
-    title === undefined ? "" : `<title>${escapeHtml(title)}</title>`;
+  const titleTag = title === undefined ? "" : `<title>${escapeHtml(title)}</title>`;
   const descriptionTag =
     description === undefined
       ? ""
@@ -102,12 +101,6 @@ export async function scrapeURLWithExchange(
       const response = await robustFetch({
         url: `${config.FIRE_EXCHANGE_URL!.replace(/\/+$/, "")}/v1/scrape`,
         method: "POST",
-        headers: {
-          "x-exchange-team-id": meta.internalOptions.teamId,
-          "x-exchange-extended-catalog-access": String(
-            meta.internalOptions.teamFlags?.exchangeRetrieve === true,
-          ),
-        },
         body: {
           requestId: meta.id,
           teamId: meta.internalOptions.teamId,

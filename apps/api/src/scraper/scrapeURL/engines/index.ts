@@ -670,7 +670,6 @@ export async function buildFallbackList(meta: Meta): Promise<
     if (
       await canUseExchangeForRequest({
         url: meta.rewrittenUrl ?? meta.url,
-        teamId: meta.internalOptions.teamId,
         formats: meta.options.formats,
         actions: meta.options.actions,
         headers: meta.options.headers,

@@ -360,7 +360,6 @@ function blocklistGate(
       (await getExchangeAccessForRequestBody({
         body: req.body,
         flags: req.acuc?.flags ?? null,
-        teamId: req.acuc?.team_id,
         url: req.body.url,
         zeroDataRetention,
       }));

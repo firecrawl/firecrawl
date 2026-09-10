@@ -101,77 +101,6 @@ describe("Exchange routing", () => {
     ).resolves.not.toBeNull();
   });
 
-  it.each([false, true])(
-    "isolates routing catalogues when approved access is requested first: %s",
-    async approvedFirst => {
-      clearExchangeProvidersForTest();
-      vi.mocked(fetch).mockImplementation(async (_url, init) => {
-        const headers = init?.headers as Record<string, string> | undefined;
-        const approved =
-          headers?.["x-exchange-extended-catalog-access"] === "true";
-        if (approved)
-          expect(headers?.["x-exchange-team-id"]).toBe("approved-team");
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            success: true,
-            data: approved
-              ? [
-                  {
-                    id: "preview-catalog",
-                    creditsCost: 0,
-                    capabilities: {
-                      scrape: {
-                        urlRoutes: [
-                          { domains: ["preview.example"], pathPrefixes: [] },
-                        ],
-                      },
-                    },
-                  },
-                ]
-              : [],
-          }),
-        } as unknown as Awaited<ReturnType<typeof fetch>>;
-      });
-      const input = {
-        url: "https://preview.example/item",
-        formats: [{ type: "markdown" }],
-        teamId: "approved-team",
-        flags: {
-          professionalProfileCompanyDataBeta: true,
-          exchangeRetrieve: true,
-        },
-      };
-      for (const approved of [approvedFirst, !approvedFirst]) {
-        expect(
-          await canUseExchangeForRequest({
-            ...input,
-            flags: { ...input.flags, exchangeRetrieve: approved },
-          }),
-        ).toBe(approved);
-      }
-      expect(fetch).toHaveBeenCalledTimes(2);
-      expect(
-        await canUseExchangeForRequest({ ...input, teamId: undefined }),
-      ).toBe(false);
-      expect(
-        await canUseExchangeForRequest({
-          ...input,
-          flags: { ...input.flags, exchangeRetrieve: false },
-        }),
-      ).toBe(false);
-      expect(await canUseExchangeForRequest(input)).toBe(true);
-      expect(
-        await canUseExchangeForRequest({
-          ...input,
-          teamId: "another-approved-team",
-        }),
-      ).toBe(true);
-      expect(fetch).toHaveBeenCalledTimes(2);
-    },
-  );
-
   it("respects path segment boundaries for prefixes without trailing slashes", async () => {
     setExchangeProvidersForTest([
       {
@@ -363,7 +292,9 @@ describe("Exchange routing", () => {
 
   it("accepts only formats the Exchange can return directly", () => {
     expect(isSupportedExchangeFormatRequest(undefined)).toBe(true);
-    expect(isSupportedExchangeFormatRequest([{ type: "markdown" }])).toBe(true);
+    expect(isSupportedExchangeFormatRequest([{ type: "markdown" }])).toBe(
+      true,
+    );
     expect(isSupportedExchangeFormatRequest(["json"])).toBe(true);
     expect(
       isSupportedExchangeFormatRequest([
@@ -374,9 +305,9 @@ describe("Exchange routing", () => {
     expect(isSupportedExchangeFormatRequest([{ type: "html" }])).toBe(false);
     // deterministicJson extractors run against page HTML, which Exchange
     // responses do not carry.
-    expect(
-      isSupportedExchangeFormatRequest([{ type: "deterministicJson" }]),
-    ).toBe(false);
+    expect(isSupportedExchangeFormatRequest([{ type: "deterministicJson" }])).toBe(
+      false,
+    );
     expect(isSupportedExchangeFormatRequest([])).toBe(false);
   });
 
@@ -631,10 +562,7 @@ describe("Exchange routing", () => {
       "https://exchange.example/v1/access-events/6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60/billing",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({
-          status: "confirmed",
-          billingReference: "bill-1",
-        }),
+        body: JSON.stringify({ status: "confirmed", billingReference: "bill-1" }),
       }),
     );
 

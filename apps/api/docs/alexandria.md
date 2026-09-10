@@ -12,7 +12,7 @@ flags, never a caller-supplied access flag or header.
 {
   "query": "podcast conversations about AI agents",
   "sources": ["web", "alexandria"],
-  "limit": 5
+  "limit": 2
 }
 ```
 
@@ -43,20 +43,22 @@ loading failed; it is distinct from an available result with zero matches.
 
 ## Find Tools and progressive disclosure
 
-Use the zero-credit meta tool through `POST /exchange/retrieve`:
+Use **Find Tools**, the zero-credit meta tool, through `POST /v2/scrape`:
 
 ```json
 {
-  "provider": "firecrawl-contextual-discovery",
-  "capability": "discovery/context",
-  "options": { "urls": ["https://open.spotify.com/show/example"] }
+  "exchange": {
+    "provider": "firecrawl-contextual-discovery",
+    "capability": "discovery/context",
+    "options": { "urls": ["https://open.spotify.com/show/example"] }
+  }
 }
 ```
 
 It supports URLs, categories, providers, groups, and capabilities. Follow each
-item's `next` retrieval request to reveal groups, tools, and contracts. Its
+item's `next` request, passed as `exchange` in the next `/v2/scrape` call, to reveal groups, tools, and contracts. Its
 pagination and expansion options belong to this tool, not to search sources.
-See Exchange's `docs/contextual-discovery.md` for the complete contract.
+Read the discovery payload from `data.exchange[0].data`. The provider and capability identifiers remain stable; Find Tools is the catalogue display name. See Exchange's `docs/contextual-discovery.md` for the complete contract.
 
 Search's existing opt-in `skills: true` returns contextual matches in `data.skills`.
 The web app can associate them with result URLs and display adjacent tools.
@@ -92,3 +94,7 @@ contract.
 Generated JavaScript and Python examples call `/v2/scrape` with an `exchange` request through HTTP directly until SDK support is
 added, and include the same request-ID contract as cURL. Replace the request-ID
 placeholder once per logical operation; keep that value when retrying.
+
+## Scope
+
+This branch adds semantic discovery to `/v2/search` and explicit tool execution to `/v2/scrape`, with billing shared by the existing retrieval proxy. It does not extend automatic URL routing or add Alexandria execution to v1, crawl, or batch-scrape endpoints. An `exchange` array on a single `/v2/scrape` request can still contain up to ten explicit tool calls; that is separate from the batch-scrape endpoint.

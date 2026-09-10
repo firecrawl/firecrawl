@@ -22,7 +22,6 @@ type OrganizationDataSourceAccess = Record<
 
 type RouteInput = {
   url: string;
-  teamId?: string;
   formats?: FormatObject[] | unknown[];
   actions?: unknown[];
   headers?: Record<string, unknown>;
@@ -39,7 +38,6 @@ type RouteInput = {
   zeroDataRetention?: boolean;
   lockdown?: boolean;
   flags?: {
-    exchangeRetrieve?: boolean;
     professionalProfileCompanyDataBeta?: boolean;
     organizationDataSourceAccess?: OrganizationDataSourceAccess | null;
   } | null;
@@ -119,15 +117,13 @@ const exchangeProvidersSchema = z.object({
   ),
 });
 
-type ProviderCatalog = {
-  cached?: {
-    expiresAt: number;
-    value: ExchangeProvider[] | null;
-  };
-  request?: Promise<ExchangeProvider[] | null>;
-};
-type CatalogAccess = { teamId: string; hasExtendedCatalogAccess: boolean };
-const providerCatalogs = new Map<boolean, ProviderCatalog>();
+let cachedProviders:
+  | {
+      expiresAt: number;
+      value: ExchangeProvider[] | null;
+    }
+  | undefined;
+let providersRequest: Promise<ExchangeProvider[] | null> | undefined;
 
 function normalizeHost(host: string): string {
   return host.trim().toLowerCase().replace(/\.$/, "");
@@ -166,9 +162,7 @@ function normalizeProviders(
     .filter(provider => provider.routes.length > 0);
 }
 
-async function fetchExchangeProviders(
-  access?: CatalogAccess,
-): Promise<ExchangeProvider[] | null> {
+async function fetchExchangeProviders(): Promise<ExchangeProvider[] | null> {
   const baseUrl = getExchangeBaseUrl();
   if (!baseUrl) {
     return null;
@@ -177,16 +171,6 @@ async function fetchExchangeProviders(
   try {
     const response = await fetch(`${baseUrl}${EXCHANGE_PROVIDERS_PATH}`, {
       method: "GET",
-      ...(access
-        ? {
-            headers: {
-              "x-exchange-team-id": access.teamId,
-              "x-exchange-extended-catalog-access": String(
-                access.hasExtendedCatalogAccess === true,
-              ),
-            },
-          }
-        : {}),
       signal: AbortSignal.timeout(EXCHANGE_PROVIDERS_TIMEOUT_MS),
     });
 
@@ -205,51 +189,42 @@ async function fetchExchangeProviders(
   }
 }
 
-async function getExchangeProviders(
-  access?: CatalogAccess,
-): Promise<ExchangeProvider[] | null> {
-  const hasExtendedCatalogAccess =
-    access?.hasExtendedCatalogAccess === true && access.teamId.trim() !== "";
-  // This endpoint's catalogue varies by access tier, never by the requesting team.
-  const catalog = providerCatalogs.get(hasExtendedCatalogAccess) ?? {};
-  providerCatalogs.set(hasExtendedCatalogAccess, catalog);
-  if (catalog.cached && catalog.cached.expiresAt > Date.now()) {
-    return catalog.cached.value;
+async function getExchangeProviders(): Promise<ExchangeProvider[] | null> {
+  if (cachedProviders && cachedProviders.expiresAt > Date.now()) {
+    return cachedProviders.value;
   }
 
-  if (!catalog.request) {
-    catalog.request = fetchExchangeProviders(
-      hasExtendedCatalogAccess ? access : undefined,
-    )
+  if (!providersRequest) {
+    providersRequest = fetchExchangeProviders()
       .then(providers => {
         if (providers === null) {
           // Keep serving the last good catalog through transient outages;
           // the failure TTL only delays the next refresh attempt.
-          catalog.cached = {
-            value: catalog.cached?.value ?? null,
+          cachedProviders = {
+            value: cachedProviders?.value ?? null,
             expiresAt: Date.now() + EXCHANGE_PROVIDERS_FAILURE_TTL_MS,
           };
         } else {
-          catalog.cached = {
+          cachedProviders = {
             value: providers,
             expiresAt: Date.now() + EXCHANGE_PROVIDERS_TTL_MS,
           };
         }
-        return catalog.cached.value;
+        return cachedProviders.value;
       })
       .finally(() => {
-        catalog.request = undefined;
+        providersRequest = undefined;
       });
   }
 
   // Serve the stale catalog while the refresh runs in the background so
   // request latency never depends on the catalog endpoint; only the very
   // first lookup after boot has nothing to serve and waits.
-  if (catalog.cached) {
-    return catalog.cached.value;
+  if (cachedProviders) {
+    return cachedProviders.value;
   }
 
-  return catalog.request;
+  return providersRequest;
 }
 
 function providerMatchesUrl(
@@ -287,9 +262,8 @@ function providerMatchesUrl(
 
 export async function resolveExchangeProvider(
   inputUrl: string,
-  access?: CatalogAccess,
 ): Promise<ExchangeProvider | null> {
-  const providers = await getExchangeProviders(access);
+  const providers = await getExchangeProviders();
   if (providers === null) {
     return null;
   }
@@ -513,15 +487,7 @@ export async function getExchangeAccessForRequest(
       return { allowed: false, termsRequired: false };
     }
 
-    const provider = await resolveExchangeProvider(
-      input.url,
-      input.teamId
-        ? {
-            teamId: input.teamId,
-            hasExtendedCatalogAccess: input.flags?.exchangeRetrieve === true,
-          }
-        : undefined,
-    );
+    const provider = await resolveExchangeProvider(input.url);
     if (provider === null) {
       return { allowed: false, termsRequired: false };
     }
@@ -703,7 +669,12 @@ export async function reportExchangeBilling(input: {
   return false;
 }
 
-/** Warm the standard catalogue. The extended tier loads on its first authenticated lookup. */
+/**
+ * Warm the provider catalog at process startup so the first flagged-org
+ * request never waits on the fetch; after this, stale-while-revalidate
+ * keeps every lookup in-memory. No-op when the Exchange is not configured;
+ * never throws.
+ */
 export function warmExchangeCatalog(): void {
   if (!config.FIRE_EXCHANGE_URL) {
     return;
@@ -721,22 +692,21 @@ export function setExchangeProvidersForTest(
   }[],
   ttlMs = 300_000,
 ) {
-  providerCatalogs.set(false, {
-    cached: {
-      value: providers.map(provider => ({
-        id: provider.id,
-        creditsCost: provider.creditsCost ?? 0,
-        ...(provider.terms === undefined ? {} : { terms: provider.terms }),
-        routes: provider.routes.map(route => ({
-          domains: new Set(route.domains.map(normalizeHost)),
-          pathPrefixes: (route.pathPrefixes ?? []).map(normalizePathPrefix),
-        })),
+  cachedProviders = {
+    value: providers.map(provider => ({
+      id: provider.id,
+      creditsCost: provider.creditsCost ?? 0,
+      ...(provider.terms === undefined ? {} : { terms: provider.terms }),
+      routes: provider.routes.map(route => ({
+        domains: new Set(route.domains.map(normalizeHost)),
+        pathPrefixes: (route.pathPrefixes ?? []).map(normalizePathPrefix),
       })),
-      expiresAt: Date.now() + ttlMs,
-    },
-  });
+    })),
+    expiresAt: Date.now() + ttlMs,
+  };
 }
 
 export function clearExchangeProvidersForTest() {
-  providerCatalogs.clear();
+  cachedProviders = undefined;
+  providersRequest = undefined;
 }
