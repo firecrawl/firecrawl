@@ -51,6 +51,7 @@ import { applyNotice, type Notice } from "../../lib/deprecations";
 const RESEARCH_CATEGORY_NOTICE: Notice = {
   message:
     "On 2026-11-08, the 'research' search category will query the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) rather than restricting web results to a fixed list of 14 academic domains. Results will move from data.web to data.research and will match the records returned by the Research Index endpoint GET /search/research/papers, with the fields paperId, primaryId, ids, title, abstract and score. To adopt those records today, call GET /search/research/papers (https://docs.firecrawl.dev/api-reference/endpoint/research-search-papers). To continue receiving web pages from academic domains, use includeDomains. The github, pdf and developer categories are unchanged. See https://docs.firecrawl.dev/features/research",
+  links: ['<https://docs.firecrawl.dev/features/research>; rel="help"'],
 };
 
 // Ahead of auth and validation so rejected requests carry the notice too.

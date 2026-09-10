@@ -356,6 +356,9 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)(
         );
         expect(raw.statusCode).toBe(200);
         expect(raw.headers["warning"]).toMatch(/^299 - "/);
+        expect(raw.headers["link"]).toContain(
+          "https://docs.firecrawl.dev/features/research",
+        );
         expect(raw.body.warnings).toHaveLength(1);
         expect(raw.body.warnings[0]).toContain("2026-11-08");
       },

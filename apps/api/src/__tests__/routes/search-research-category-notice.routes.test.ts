@@ -23,7 +23,9 @@ describe("research category notice", () => {
     expect(res.headers["warning"]).toContain("2026-11-08");
     expect(res.headers["deprecation"]).toBeUndefined();
     expect(res.headers["sunset"]).toBeUndefined();
-    expect(res.headers["link"]).toBeUndefined();
+    expect(res.headers["link"]).toBe(
+      '<https://docs.firecrawl.dev/features/research>; rel="help"',
+    );
     expect(res.body.warnings).toHaveLength(1);
     expect(res.body.warnings[0]).toContain("data.research");
     expect(res.body.replacement).toBeUndefined();
