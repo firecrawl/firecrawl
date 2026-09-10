@@ -79,6 +79,8 @@ pub struct BatchScrapeResponse {
 pub struct BatchScrapeJob {
     /// Current status of the batch scrape job.
     pub status: JobStatus,
+    /// Failure reason, present when status is failed (e.g. a kickoff failure).
+    pub error: Option<String>,
     /// Number of URLs completed.
     pub completed: u32,
     /// Total number of URLs to scrape.

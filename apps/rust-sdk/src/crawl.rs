@@ -101,6 +101,8 @@ pub struct CrawlResponse {
 pub struct CrawlJob {
     /// Current status of the crawl job.
     pub status: JobStatus,
+    /// Failure reason, present when status is failed (e.g. a kickoff failure).
+    pub error: Option<String>,
     /// Total number of pages to crawl.
     pub total: u32,
     /// Number of pages completed.
