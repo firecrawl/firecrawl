@@ -509,6 +509,7 @@ it.each([{ scrapeZDR: "forced" }, { forceZDR: true }])(
   "blocks forced ZDR on both retrieval entry points: %j",
   async flags => {
     state.flags = { exchangeRetrieve: true, ...flags };
+    state.checkCredits.mockResolvedValue({ allowed: false, remaining: 0 });
     for (const path of ["/exchange/retrieve", "/v2/scrape"]) {
       const response = await request(app)
         .post(path)
@@ -518,6 +519,7 @@ it.each([{ scrapeZDR: "forced" }, { forceZDR: true }])(
       expect(response.status).toBe(403);
       expect(response.body.error).toContain("zero data retention");
     }
+    expect(state.checkCredits).not.toHaveBeenCalled();
     expect(state.forward).not.toHaveBeenCalled();
     expect(state.track).not.toHaveBeenCalled();
     expect(state.keys.size).toBe(0);

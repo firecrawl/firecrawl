@@ -27,9 +27,11 @@ export async function resolveSearchSkills(
       ...(data.news ?? []).map(result => result.url),
       ...(data.images ?? []).map(result => result.url),
     ]),
-  ].filter(
-    (url): url is string => typeof url === "string" && url.length <= 8192,
-  );
+  ].filter((url): url is string => {
+    if (typeof url !== "string" || url.length > 8192) return false;
+    const parsed = URL.parse(url);
+    return parsed?.protocol === "https:" || parsed?.protocol === "http:";
+  });
   if (!urls.length) return [];
   const base = config.FIRE_EXCHANGE_URL;
   if (!base) throw new Error("Skills unavailable");

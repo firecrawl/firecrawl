@@ -47,6 +47,19 @@ it("confirms through the configured HTTPS endpoint, preserving its path prefix",
   agent.assertNoPendingInterceptors();
 });
 
+it.each([404, 429, 500])(
+  "retries a %s response and confirms billing",
+  async status => {
+    const pool = agent.get("https://exchange.example");
+    pool.intercept({ path, method: "POST" }).reply(status, {});
+    pool.intercept({ path, method: "POST" }).reply(200, {});
+    await expect(
+      reportExchangeUsageBilling("receipt-1", "charge-1"),
+    ).resolves.toBe(true);
+    agent.assertNoPendingInterceptors();
+  },
+);
+
 it.each(["http://exchange.example", "http://localhost:3000"])(
   "does not send the secret to %s",
   async url => {

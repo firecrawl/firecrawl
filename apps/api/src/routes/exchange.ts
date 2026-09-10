@@ -12,6 +12,7 @@ import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
 import { isAgentInteropSecretValid } from "../lib/agent-interop";
+import { getScrapeZDR } from "../lib/zdr-helpers";
 
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
@@ -137,8 +138,16 @@ exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
   (req, res, next) => {
-    const error = exchangeAccessError(req as RequestWithAuth<any, any, any>);
+    const authedReq = req as RequestWithAuth<any, any, any>;
+    const error = exchangeAccessError(authedReq);
     if (error) return exchangeError(res, error.status, error.error);
+    if (getScrapeZDR(authedReq.acuc?.flags) === "forced") {
+      return exchangeError(
+        res,
+        403,
+        "Exchange provider retrieval does not support zero data retention.",
+      );
+    }
     next();
   },
   checkCreditsMiddleware(1),

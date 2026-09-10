@@ -42,7 +42,15 @@ it.each([false, true])(
         ],
       });
     const data = {
-      web: [{ url: "https://spotify.com/" }, { url: "https://spotify.com/" }],
+      web: [
+        { url: "" },
+        { url: "not a URL" },
+        { url: "https://" },
+        { url: "https://spotify.com/" },
+        { url: "https://spotify.com/" },
+      ],
+      news: [{ url: "ftp://example.com/" }],
+      images: [{ url: "javascript:alert(1)" }],
     } as Parameters<typeof resolveSearchSkills>[0];
     expect(
       await resolveSearchSkills(data, "team", hasExtendedCatalogAccess),
@@ -57,9 +65,17 @@ it.each([false, true])(
     agent.assertNoPendingInterceptors();
   },
 );
-it("does not make a request for empty results", async () => {
-  expect(await resolveSearchSkills({}, "team")).toEqual([]);
-});
+it.each([{}, { web: [{ url: "" }, { url: "invalid" }] }])(
+  "does not make a request without valid URLs: %j",
+  async data => {
+    expect(
+      await resolveSearchSkills(
+        data as Parameters<typeof resolveSearchSkills>[0],
+        "team",
+      ),
+    ).toEqual([]);
+  },
+);
 it("rejects unsuccessful lookups instead of reporting no matches", async () => {
   agent
     .get("https://exchange.example")
