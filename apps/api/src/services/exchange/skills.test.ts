@@ -96,3 +96,48 @@ it("rejects unsuccessful lookups instead of reporting no matches", async () => {
     ),
   ).rejects.toThrow("Skills unavailable");
 });
+
+it("resolves a query without URLs and preserves grouped provider metadata", async () => {
+  agent
+    .get("https://exchange.example")
+    .intercept({
+      path: "/v1/skills/resolve",
+      method: "POST",
+      body: JSON.stringify({ urls: [], query: "Spotify interviews" }),
+    })
+    .reply(200, {
+      skills: [
+        {
+          id: "particle",
+          name: "Particle",
+          origin: "api",
+          toolCount: 13,
+          description: "Podcast intelligence",
+          matchedDomains: [],
+          matchedTerms: ["Spotify"],
+          url: "/v1/skills/particle/SKILL.md",
+        },
+      ],
+    });
+  expect(
+    await resolveSearchSkills(
+      {},
+      "team",
+      false,
+      "request",
+      "Spotify interviews",
+    ),
+  ).toEqual([
+    {
+      id: "particle",
+      name: "Particle",
+      origin: "api",
+      toolCount: 13,
+      description: "Podcast intelligence",
+      matchedDomains: [],
+      matchedTerms: ["Spotify"],
+      url: "https://api.firecrawl.dev/exchange/skills/particle/SKILL.md",
+    },
+  ]);
+  agent.assertNoPendingInterceptors();
+});

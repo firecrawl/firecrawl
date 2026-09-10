@@ -8,8 +8,12 @@ const responseSchema = z.object({
     .array(
       z.object({
         id: z.string().min(1),
+        name: z.string().optional(),
+        origin: z.enum(["api", "crawl"]).optional(),
+        toolCount: z.number().int().nonnegative().optional(),
         description: z.string(),
         matchedDomains: z.array(z.string()),
+        matchedTerms: z.array(z.string()).optional(),
         url: z.string(),
       }),
     )
@@ -21,6 +25,7 @@ export async function resolveSearchSkills(
   teamId: string,
   hasExtendedCatalogAccess = false,
   requestId?: string,
+  query?: string,
 ) {
   const urls = [
     ...new Set([
@@ -33,12 +38,14 @@ export async function resolveSearchSkills(
     const parsed = URL.parse(url);
     return parsed?.protocol === "https:" || parsed?.protocol === "http:";
   });
-  if (!urls.length) return [];
+  const searchQuery = query?.slice(0, 2000).trim();
+  if (!urls.length && !searchQuery) return [];
   const base = config.FIRE_EXCHANGE_URL;
   if (!base) throw new Error("Skills unavailable");
   const batches: string[][] = [];
   for (let index = 0; index < urls.length; index += 100)
     batches.push(urls.slice(index, index + 100));
+  if (!batches.length) batches.push([]);
   const results = await Promise.all(
     batches.map(async urls => {
       const response = await fetch(
@@ -54,7 +61,10 @@ export async function resolveSearchSkills(
               hasExtendedCatalogAccess === true,
             ),
           },
-          body: JSON.stringify({ urls }),
+          body: JSON.stringify({
+            urls,
+            ...(searchQuery ? { query: searchQuery } : {}),
+          }),
           signal: AbortSignal.timeout(5000),
         },
       );
@@ -79,6 +89,16 @@ export async function resolveSearchSkills(
           ...skill.matchedDomains,
         ]),
       ],
+      ...(skill.matchedTerms
+        ? {
+            matchedTerms: [
+              ...new Set([
+                ...(previous?.matchedTerms ?? []),
+                ...skill.matchedTerms,
+              ]),
+            ],
+          }
+        : {}),
     });
   }
   return [...unique.values()].map(skill => ({

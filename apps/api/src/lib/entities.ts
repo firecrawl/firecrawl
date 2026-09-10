@@ -175,8 +175,12 @@ export interface ExchangeSearchResult {
 export interface SearchV2Response {
   skills?: {
     id: string;
+    name?: string;
+    origin?: "api" | "crawl";
+    toolCount?: number;
     description: string;
     matchedDomains: string[];
+    matchedTerms?: string[];
     url: string;
   }[];
   web?: WebSearchResult[];

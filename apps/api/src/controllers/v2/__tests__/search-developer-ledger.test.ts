@@ -202,6 +202,7 @@ describe("developer category code_searches ledger", () => {
         TEAM_ID,
         true,
         agentRequestId ?? searchContext.jobId,
+        "public documentation",
       );
       expect(archived).toEqual(res.json.mock.calls[0][0].data);
       expect(archived).toHaveProperty("skills", skills);
