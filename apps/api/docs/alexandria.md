@@ -41,7 +41,7 @@ The envelope retains `status`, `mode: "semantic"`, `level: "tools"`, `items`,
 not paginated catalogue browsing. `status: "unavailable"` means search or contract
 loading failed; it is distinct from an available result with zero matches.
 
-## Contextual discovery and progressive disclosure
+## Find Tools and progressive disclosure
 
 Use the zero-credit meta tool through `POST /exchange/retrieve`:
 
@@ -78,12 +78,10 @@ the unused balance, and queue the ledger update without charging Autumn twice.
 Per-record requests must have a bounded cost, up to 100 credits per call and ten
 calls per batch.
 
-Completed responses up to 5 MiB are retained for 24 hours. Reusing an ID with a
+Completed responses up to 5 MiB are retained for 24 hours. Pending request identities and reconciliation records do not expire automatically. Reusing an ID with a
 different payload returns 409. Concurrent or ambiguous requests cannot execute
 again: a 409 awaiting reconciliation must not be retried with a new ID. Responses
-too large to retain also return 409 on replay. An uncertain provider outcome or
-billing acknowledgement requires operational reconciliation; its hold expires
-after one hour if it cannot be confirmed.
+too large to retain also return 409 on replay. An uncertain provider outcome or billing acknowledgement leaves a pending record with the request, hold, actual charge (when known), and billing receipt for operational reconciliation. It is not marked complete or allowed to execute again. Holds still expire after one hour, so operators must reconcile unresolved charges; no automatic reconciliation worker is included here.
 
 Deploy the supporting Exchange quote and budget enforcement before paid
 execution from this API branch. Semantic search uses the existing discovery
@@ -91,6 +89,6 @@ routes; contextual lookup requires the merged discovery meta tool. Paid hosted e
 credit-hold service. SDK changes are a follow-up; this change establishes the HTTP
 contract.
 
-Generated JavaScript and Python examples call HTTP directly until SDK support is
+Generated JavaScript and Python examples call `/v2/scrape` with an `exchange` request through HTTP directly until SDK support is
 added, and include the same request-ID contract as cURL. Replace the request-ID
 placeholder once per logical operation; keep that value when retrying.

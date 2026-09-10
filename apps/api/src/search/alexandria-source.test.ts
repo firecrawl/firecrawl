@@ -122,7 +122,7 @@ it("semantically ranks tools and includes their real contracts and examples with
   );
   expect(snippets.javascript).toContain('"x-request-id": requestId');
   expect(snippets.python).toContain('"semantic_search"');
-  expect(snippets.curl).toContain("/exchange/retrieve");
+  expect(snippets.curl).toContain("/v2/scrape");
   expect(forward.mock.calls.map(([call]) => call.path)).toEqual([
     "/v1/discover?q=podcast%20conversations&limit=5",
     "/v1/discover/podcasts/particle/podcasts/episodes/search",
@@ -184,4 +184,48 @@ it("distinguishes empty matches from unavailable or mismatched contracts", async
     status: "unavailable",
     total: null,
   });
+});
+
+it("loads a cohort-less hit through free Find Tools without losing ranked matches", async () => {
+  forward.mockImplementation(async call => {
+    if (call.path.includes("?"))
+      return response({
+        capabilities: [
+          hit,
+          { ...hit, address: "podcasts/search", cohorts: [] },
+        ],
+      });
+    if (call.path === "/v1/retrieve")
+      return response({
+        success: true,
+        creditsCost: 0,
+        data: {
+          items: [
+            {
+              ...contract,
+              capability: "podcasts/search",
+              name: contract.label,
+              description: contract.whenToUse,
+              response: contract.returns,
+            },
+          ],
+        },
+      });
+    return response(contract);
+  });
+  const result = await searchAlexandria(input, logger);
+  expect(result.status).toBe("available");
+  expect(result.items.map(item => item.capability)).toEqual([
+    "podcasts/episodes/search",
+    "podcasts/search",
+  ]);
+  expect(forward).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "POST",
+      path: "/v1/retrieve",
+      body: expect.objectContaining({
+        provider: "firecrawl-contextual-discovery",
+      }),
+    }),
+  );
 });

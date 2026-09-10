@@ -17,12 +17,15 @@ const state = vi.hoisted(() => ({
   checkCredits: vi.fn(),
   flags: { exchangeRetrieve: true },
   failQueue: false,
+  failReplay: false,
   exchangeAvailable: true,
 }));
 vi.mock("../queue-service", () => ({
   getRedisConnection: () => ({
     get: async (key: string) => state.keys.get(key) ?? null,
     set: async (key: string, value: string, ...args: unknown[]) => {
+      if (state.failReplay && JSON.parse(value).state === "complete")
+        throw new Error("Replay storage failed");
       if (args.includes("NX") && state.keys.has(key)) return null;
       state.keys.set(key, value);
       return "OK";
@@ -121,6 +124,7 @@ beforeEach(() => {
   state.queue.length = 0;
   state.flags = { exchangeRetrieve: true };
   state.failQueue = false;
+  state.failReplay = false;
   state.exchangeAvailable = true;
   state.cleanup
     .mockReset()
@@ -298,7 +302,17 @@ it.each([
 it("does not charge again when billing confirmation is ambiguous", async () => {
   state.finalize.mockResolvedValue(false);
   expect((await send()).status).toBe(503);
-  expect((await send()).status).toBe(503);
+  expect((await send()).status).toBe(409);
+  expect([...state.keys.values()].map(value => JSON.parse(value))).toEqual([
+    expect.objectContaining({
+      state: "pending",
+      reconciliation: expect.objectContaining({
+        phase: "confirm",
+        credits: 3,
+        lockId: expect.any(String),
+      }),
+    }),
+  ]);
   expect(state.finalize).toHaveBeenCalledTimes(1);
   expect(state.forward).toHaveBeenCalledTimes(1);
   expect(state.queue).toHaveLength(0);
@@ -326,8 +340,30 @@ it("releases a hold and permits a retry after a concurrency timeout", async () =
 it("does not repeat an executed request after an enqueue failure", async () => {
   state.failQueue = true;
   expect((await send()).status).toBe(503);
-  expect((await send()).status).toBe(503);
+  expect((await send()).status).toBe(409);
+  expect([...state.keys.values()].map(value => JSON.parse(value))).toEqual([
+    expect.objectContaining({
+      state: "pending",
+      reconciliation: expect.objectContaining({
+        phase: "enqueue",
+        holdConfirmed: true,
+        credits: 3,
+        receipt: expect.any(Object),
+      }),
+    }),
+  ]);
   expect(state.forward).toHaveBeenCalledTimes(1);
+});
+it("retains pending reconciliation when completed replay storage fails", async () => {
+  state.failReplay = true;
+  expect((await send()).status).toBe(503);
+  expect((await send()).status).toBe(409);
+  expect(state.forward).toHaveBeenCalledTimes(1);
+  expect(state.queue).toHaveLength(1);
+  expect(JSON.parse([...state.keys.values()][0])).toMatchObject({
+    state: "pending",
+    reconciliation: { phase: "enqueue", credits: 3 },
+  });
 });
 it.each(["/exchange/retrieve", "/v2/scrape"])(
   "honors authenticated no-bill calls at %s",

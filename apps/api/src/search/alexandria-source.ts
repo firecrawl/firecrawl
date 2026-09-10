@@ -102,11 +102,12 @@ function examplesFor(item: Record<string, any>) {
     capability: item.capability,
     options: item.example?.request ?? options,
   };
-  const json = JSON.stringify(request, null, 2);
+  const scrapeRequest = { exchange: request };
+  const json = JSON.stringify(scrapeRequest, null, 2);
   const snippets = {
-    javascript: `const requestId = "<unique-request-id>";\nconst response = await fetch("https://api.firecrawl.dev/exchange/retrieve", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer " + process.env.FIRECRAWL_API_KEY,\n    "Content-Type": "application/json",\n    "x-request-id": requestId\n  },\n  body: JSON.stringify(${json})\n});\nconst result = await response.json();\nif (!response.ok) throw new Error(result.error ?? "Request failed");`,
-    python: `import os\nimport requests\n\nrequest_id = "<unique-request-id>"\nresponse = requests.post(\n  "https://api.firecrawl.dev/exchange/retrieve",\n  headers={\n    "Authorization": "Bearer " + os.environ["FIRECRAWL_API_KEY"],\n    "x-request-id": request_id\n  },\n  json=${python(request)},\n  timeout=120\n)\nresponse.raise_for_status()\nresult = response.json()`,
-    curl: `curl https://api.firecrawl.dev/exchange/retrieve \\\n  -H "Authorization: Bearer $FIRECRAWL_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "x-request-id: <unique-request-id>" \\\n  --data '${json.replace(/'/g, "'\\''")}'`,
+    javascript: `const requestId = "<unique-request-id>";\nconst response = await fetch("https://api.firecrawl.dev/v2/scrape", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer " + process.env.FIRECRAWL_API_KEY,\n    "Content-Type": "application/json",\n    "x-request-id": requestId\n  },\n  body: JSON.stringify(${json})\n});\nconst result = await response.json();\nif (!response.ok) throw new Error(result.error ?? "Request failed");`,
+    python: `import os\nimport requests\n\nrequest_id = "<unique-request-id>"\nresponse = requests.post(\n  "https://api.firecrawl.dev/v2/scrape",\n  headers={\n    "Authorization": "Bearer " + os.environ["FIRECRAWL_API_KEY"],\n    "x-request-id": request_id\n  },\n  json=${python(scrapeRequest)},\n  timeout=120\n)\nresponse.raise_for_status()\nresult = response.json()`,
+    curl: `curl https://api.firecrawl.dev/v2/scrape \\\n  -H "Authorization: Bearer $FIRECRAWL_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -H "x-request-id: <unique-request-id>" \\\n  --data '${json.replace(/'/g, "'\\''")}'`,
   };
   return Object.fromEntries(
     (["javascript", "python", "curl"] as const).map(language => [
@@ -130,7 +131,7 @@ export async function searchAlexandria(
 ): Promise<AlexandriaResponse> {
   if (!input.query.trim())
     throw new AlexandriaRequestError(
-      "A query is required for Alexandria search. Use Contextual Discovery for lookup.",
+      "A query is required for Alexandria search. Use Find Tools for lookup.",
     );
   const deadline =
     Date.now() +
@@ -158,7 +159,7 @@ export async function searchAlexandria(
           const hit = hits[index];
           const cohort = hit.cohorts[0];
           const identifiers = [
-            cohort,
+            ...(cohort ? [cohort] : []),
             hit.provider,
             ...hit.capability.split("/"),
           ];
@@ -171,12 +172,47 @@ export async function searchAlexandria(
           const upstream = await forwardToExchange({
             teamId: input.teamId,
             hasExtendedCatalogAccess: input.hasExtendedCatalogAccess === true,
-            method: "GET",
-            path: `/v1/discover/${identifiers.map(encodeURIComponent).join("/")}`,
+            ...(cohort
+              ? {
+                  method: "GET" as const,
+                  path: `/v1/discover/${identifiers.map(encodeURIComponent).join("/")}`,
+                }
+              : {
+                  method: "POST" as const,
+                  path: "/v1/retrieve",
+                  body: {
+                    provider: "firecrawl-contextual-discovery",
+                    capability: "discovery/context",
+                    options: {
+                      providers: [hit.provider],
+                      capabilities: [hit.capability],
+                      expand: ["options", "response", "examples"],
+                    },
+                  },
+                }),
             requestId: input.requestId,
             timeoutMs: remaining(),
           });
-          const parsed = contractSchema.safeParse(upstream.body);
+          let contractBody = upstream.body;
+          if (!cohort) {
+            const lookup = z
+              .object({
+                success: z.literal(true),
+                creditsCost: z.literal(0),
+                data: z.object({
+                  items: z.array(z.record(z.string(), z.unknown())).length(1),
+                }),
+              })
+              .parse(upstream.body);
+            const tool = lookup.data.items[0];
+            contractBody = {
+              ...tool,
+              label: tool.name,
+              whenToUse: tool.description,
+              returns: tool.response,
+            };
+          }
+          const parsed = contractSchema.safeParse(contractBody);
           if (upstream.status !== 200 || !parsed.success)
             throw new Error("Tool contract unavailable");
           const contract = parsed.data;

@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { config } from "../../config";
 import { fetch } from "undici";
 import { logger } from "../../lib/logger";
@@ -41,6 +42,17 @@ export async function reportExchangeUsageBilling(
       await response.arrayBuffer();
       if (response.ok) return true;
       if (response.status < 500 && response.status !== 429) break;
+      if (attempt < 2) {
+        const retryAfter = response.headers.get("retry-after");
+        const seconds = retryAfter?.trim() ? Number(retryAfter) : NaN;
+        const retryAt = retryAfter ? Date.parse(retryAfter) : NaN;
+        const waitMs = Number.isFinite(seconds)
+          ? seconds * 1000
+          : Number.isFinite(retryAt)
+            ? retryAt - Date.now()
+            : 250 * 2 ** attempt;
+        await delay(Math.max(0, Math.min(5000, waitMs)));
+      }
     } catch {}
   }
   logger.error("Exchange billing confirmation needs reconciliation", {

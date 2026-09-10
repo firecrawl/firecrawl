@@ -91,9 +91,13 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
     if (
       (await redis.set(
         key,
-        JSON.stringify({ payloadHash, state: "pending" }),
-        "EX",
-        86400,
+        JSON.stringify({
+          payloadHash,
+          state: "pending",
+          chargeId,
+          teamId: input.teamId,
+          createdAt: Date.now(),
+        }),
         "NX",
       )) !== "OK"
     ) {
@@ -159,6 +163,10 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
         chargeId,
         error,
       });
+      return refusal(
+        503,
+        "Result storage needs reconciliation. Retry only with the same x-request-id.",
+      );
     }
     return response;
   };
@@ -177,6 +185,34 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
   let lockId: string | undefined;
   let maximumCredits = 0;
   let started = false;
+  const reconciliation: Record<string, unknown> = {
+    teamId: input.teamId,
+    apiKeyId: input.apiKeyId,
+    chargeId,
+    featureId,
+    properties,
+  };
+  const preserve = async (
+    phase: string,
+    details: Record<string, unknown> = {},
+  ) => {
+    Object.assign(reconciliation, {
+      phase,
+      lockId,
+      maximumCredits,
+      ...details,
+    });
+    await redis.set(
+      key,
+      JSON.stringify({ payloadHash, state: "pending", reconciliation }),
+    );
+  };
+  const pending = () =>
+    refusal(
+      503,
+      "Billing needs reconciliation. Retry only with the same x-request-id; the provider will not execute again.",
+    );
+
   const release = async () => {
     if (!lockId) return true;
     try {
@@ -253,6 +289,8 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
       AbortSignal.timeout(Math.max(1, deadline - Date.now())),
       Math.max(1, deadline - Date.now()),
       async () => {
+        if (deadline <= Date.now()) throw new ConcurrencyQueueTimeoutError();
+        await preserve("executing", { body });
         const timeoutMs = deadline - Date.now();
         if (timeoutMs <= 0) throw new ConcurrencyQueueTimeoutError();
         started = true;
@@ -277,10 +315,10 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
     ) {
       if (await release()) await forget();
     } else {
-      input.logger.error(
-        "Exchange execution outcome needs reconciliation; credit hold will expire",
-        { chargeId, lockId },
-      );
+      input.logger.error("Exchange execution outcome needs reconciliation", {
+        chargeId,
+        lockId,
+      });
     }
     if (error instanceof ConcurrencyQueueTimeoutError)
       return refusal(
@@ -290,7 +328,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
     throw error;
   }
   if (upstream.status < 200 || upstream.status >= 300) {
-    await release();
+    if (!(await release())) return pending();
     return finish(upstream);
   }
   const schema =
@@ -306,7 +344,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
       : exchangeRetrieveResponseSchema;
   const answer = schema.safeParse(upstream.body);
   if (!answer.success || answer.data.creditsCost > maximumCredits) {
-    await release();
+    if (!(await release())) return pending();
     return finish(
       refusal(
         502,
@@ -316,23 +354,54 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
   }
   if (billable) {
     const credits = answer.data.creditsCost;
-    if (lockId) {
-      const confirmed = await autumnService.finalizeCreditsLock({
-        lockId,
-        teamId: input.teamId,
-        featureId,
-        heldValue: maximumCredits,
-        action: "confirm",
-        overrideValue: credits,
-        properties,
+    try {
+      await preserve("confirm", {
+        credits,
+        response:
+          Buffer.byteLength(JSON.stringify(upstream)) <= 5 * 1024 * 1024
+            ? upstream
+            : undefined,
+        billing: { endpoint: "scrape", chargeId: `exchange:${chargeId}` },
+        receipt: {
+          usageRequestId: chargeId,
+          billingReference: `exchange:${chargeId}`,
+        },
       });
-      if (!confirmed)
-        return finish(
-          refusal(
-            503,
-            "Billing confirmation needs reconciliation. This request will not execute again.",
-          ),
-        );
+    } catch (error) {
+      input.logger.error("Exchange reconciliation storage failed", {
+        chargeId,
+        error,
+      });
+      return pending();
+    }
+    if (lockId) {
+      let confirmed = false;
+      try {
+        confirmed = await autumnService.finalizeCreditsLock({
+          lockId,
+          teamId: input.teamId,
+          featureId,
+          heldValue: maximumCredits,
+          action: "confirm",
+          overrideValue: credits,
+          properties,
+        });
+      } catch (error) {
+        input.logger.error("Exchange hold confirmation failed", {
+          chargeId,
+          error,
+        });
+      }
+      if (!confirmed) return pending();
+    }
+    try {
+      await preserve("enqueue", { holdConfirmed: Boolean(lockId) });
+    } catch (error) {
+      input.logger.error("Exchange confirmed hold storage failed", {
+        chargeId,
+        error,
+      });
+      return pending();
     }
     const queued = await queueBillingOperation(
       input.teamId,
@@ -343,13 +412,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
       Boolean(lockId),
       { usageRequestId: chargeId, billingReference: `exchange:${chargeId}` },
     );
-    if (!queued.success)
-      return finish(
-        refusal(
-          503,
-          "Billing needs reconciliation. This request will not execute again.",
-        ),
-      );
+    if (!queued.success) return pending();
   }
   return finish(upstream);
 }

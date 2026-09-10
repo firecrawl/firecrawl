@@ -213,7 +213,7 @@ async function searchControllerInner(
     if (wantsExchange && !config.FIRE_EXCHANGE_URL) {
       return res.status(503).json({
         success: false,
-        error: "Alexandria discovery is not available.",
+        error: "Exchange discovery is not available.",
       });
     }
 

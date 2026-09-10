@@ -351,6 +351,26 @@ describe("executeSearch exchange source", () => {
     },
   );
 
+  it("preserves web results and the unavailable Alexandria envelope", async () => {
+    const unavailable = {
+      status: "unavailable",
+      items: [],
+      total: null,
+      nextCursor: null,
+      mode: "semantic",
+      level: "tools",
+      error: "Discovery unavailable",
+    };
+    mocks.searchAlexandria.mockResolvedValue(unavailable);
+    const result = await executeSearch(
+      sources(["web", "alexandria"]),
+      context,
+      logger,
+    );
+    expect(result.response.alexandria).toEqual(unavailable);
+    expect(result.response.web).toBeDefined();
+  });
+
   it("propagates an invalid catalogue request after the web result settles", async () => {
     const failure = new Error("Invalid cursor");
     mocks.searchAlexandria.mockRejectedValue(failure);

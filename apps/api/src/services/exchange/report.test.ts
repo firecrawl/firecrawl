@@ -3,6 +3,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { config } from "../../config";
 import { reportExchangeUsageBilling } from "./report";
 
+vi.mock("node:timers/promises", () => ({
+  setTimeout: vi.fn().mockResolvedValue(undefined),
+}));
+import { setTimeout as delay } from "node:timers/promises";
+
 const originalDispatcher = getGlobalDispatcher();
 const originalUrl = config.FIRE_EXCHANGE_URL;
 const originalSecret = config.EXCHANGE_INTERNAL_SECRET;
@@ -10,6 +15,7 @@ const path = "/v1/usage-events/billing";
 let agent: MockAgent;
 
 beforeEach(() => {
+  vi.mocked(delay).mockClear();
   agent = new MockAgent();
   agent.disableNetConnect();
   setGlobalDispatcher(agent);
@@ -98,5 +104,33 @@ it("does not retry a missing billing receipt or endpoint", async () => {
     .reply(404, {});
   expect(await reportExchangeUsageBilling("missing")).toBe(false);
   expect(dispatch).toHaveBeenCalledTimes(1);
+  agent.assertNoPendingInterceptors();
+});
+
+it.each(["2", "999999", "invalid"])(
+  "bounds Retry-After %s before retrying",
+  async retryAfter => {
+    const pool = agent.get("https://exchange.example");
+    pool
+      .intercept({ path, method: "POST" })
+      .reply(429, {}, { headers: { "retry-after": retryAfter } });
+    pool.intercept({ path, method: "POST" }).reply(200, {});
+    expect(await reportExchangeUsageBilling("receipt-1")).toBe(true);
+    expect(delay).toHaveBeenCalledWith(
+      retryAfter === "2" ? 2000 : retryAfter === "999999" ? 5000 : 250,
+    );
+    agent.assertNoPendingInterceptors();
+  },
+);
+
+it("returns false after three failed dispatches", async () => {
+  const dispatch = vi.spyOn(agent, "dispatch");
+  agent
+    .get("https://exchange.example")
+    .intercept({ path, method: "POST" })
+    .reply(503, {})
+    .times(3);
+  expect(await reportExchangeUsageBilling("receipt-1")).toBe(false);
+  expect(dispatch).toHaveBeenCalledTimes(3);
   agent.assertNoPendingInterceptors();
 });
