@@ -13,7 +13,11 @@ import {
   firebillConfigured,
   shouldRouteToFirebill,
 } from "./firebill";
-import { billingRouteTotal } from "./metrics";
+import {
+  autumnCustomerGetOrCreateTotal,
+  autumnEntityCreatedInlineTotal,
+  billingRouteTotal,
+} from "./metrics";
 import type {
   CreateEntityParams,
   CreateEntityResult,
@@ -116,6 +120,9 @@ export class AutumnService {
   // moves orgs has to be provisioned again under the new one.
   private ensuredTeams = new BoundedSet<string>(50_000);
 
+  private static readonly ORG_ID_PATTERN =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
   private ensuredTeamKey(orgId: string, teamId: string): string {
     return `${orgId}:${teamId}`;
   }
@@ -133,6 +140,20 @@ export class AutumnService {
 
   private isPreviewTeam(teamId: string): boolean {
     return teamId === "preview" || teamId.startsWith("preview_");
+  }
+
+  /**
+   * A caller-supplied org id we may bill against without reading the DB.
+   *
+   * `teams.org_id` is a non-null uuid, so only a uuid can be what the read
+   * would have returned. That rejects the synthetic ACUC org ids ("preview",
+   * "bypass") and anything else odd, which keeps every team whose lookup
+   * throws today on exactly that path.
+   */
+  private usableOrgIdHint(orgId?: string | null): string | null {
+    return typeof orgId === "string" && AutumnService.ORG_ID_PATTERN.test(orgId)
+      ? orgId
+      : null;
   }
 
   private async lookupOrgIdForTeam(teamId: string): Promise<string> {
@@ -228,6 +249,7 @@ export class AutumnService {
         email: email ?? undefined,
         autoEnablePlanId,
       });
+      autumnCustomerGetOrCreateTotal.inc();
       logger.info("Autumn getOrCreateCustomer succeeded", { customerId });
       return customer;
     } catch (error) {
@@ -269,6 +291,7 @@ export class AutumnService {
     entityId,
     featureId,
     name,
+    path,
   }: CreateEntityParams): Promise<CreateEntityResult> {
     if (!autumnClient) return { ok: false, conflict: false };
 
@@ -279,6 +302,7 @@ export class AutumnService {
         featureId,
         name: name ?? undefined,
       });
+      autumnEntityCreatedInlineTotal.labels(path).inc();
       logger.info("Autumn createEntity succeeded", {
         customerId,
         entityId,
@@ -312,14 +336,17 @@ export class AutumnService {
    * enqueues behave differently). Never throws: an error means "not routed",
    * falling back to the pre-firebill behavior.
    */
-  async isRoutedThroughFirebill(teamId: string): Promise<boolean> {
+  async isRoutedThroughFirebill(
+    teamId: string,
+    orgId?: string | null,
+  ): Promise<boolean> {
     if (this.isPreviewTeam(teamId)) return false;
     try {
-      const [orgId, gatewayProvisioned] = await Promise.all([
-        this.resolveOrgId(teamId),
+      const [resolvedOrgId, gatewayProvisioned] = await Promise.all([
+        this.resolveOrgId(teamId, orgId),
         this.isGatewayProvisioned(teamId),
       ]);
-      return shouldRouteToFirebill(orgId, { gatewayProvisioned });
+      return shouldRouteToFirebill(resolvedOrgId, { gatewayProvisioned });
     } catch {
       return false;
     }
@@ -440,6 +467,7 @@ export class AutumnService {
           entityId: teamId,
           featureId: TEAM_FEATURE_ID,
           name,
+          path: "ensureTeamProvisioned",
         });
         if (result.ok || ("conflict" in result && result.conflict)) {
           // Entity was just created, or already existed (409 race) — either way
@@ -463,10 +491,23 @@ export class AutumnService {
    * Resolves the orgId for a team, returning the cached value while it is
    * fresh and re-reading the DB once it has expired.  Does NOT provision
    * anything.
+   *
+   * A usable `orgId` hint (the request's ACUC carries one) stands in for the
+   * DB read once the cache is cold, and seeds the cache. A fresh entry still
+   * wins, so a warm pod resolves exactly what it resolved before the hint.
    */
-  private async resolveOrgId(teamId: string): Promise<string> {
+  private async resolveOrgId(
+    teamId: string,
+    orgId?: string | null,
+  ): Promise<string> {
     const cached = this.customerOrgCache.get(teamId);
     if (cached && cached.expiresAt > Date.now()) return cached.orgId;
+
+    const hint = this.usableOrgIdHint(orgId);
+    if (hint) {
+      this.cacheOrgId(teamId, hint);
+      return hint;
+    }
 
     const pending = this.pendingOrgLookups.get(teamId);
     if (pending) return pending;
@@ -490,12 +531,15 @@ export class AutumnService {
    * immediately without calling ensureTeamProvisioned, avoiding redundant
    * map/set lookups on every billing operation.
    */
-  private async ensureTrackingContext(teamId: string): Promise<string> {
-    const orgId = await this.resolveOrgId(teamId);
-    if (!this.ensuredTeams.has(this.ensuredTeamKey(orgId, teamId))) {
-      await this.ensureTeamProvisioned({ teamId, orgId });
+  private async ensureTrackingContext(
+    teamId: string,
+    orgId?: string | null,
+  ): Promise<string> {
+    const resolvedOrgId = await this.resolveOrgId(teamId, orgId);
+    if (!this.ensuredTeams.has(this.ensuredTeamKey(resolvedOrgId, teamId))) {
+      await this.ensureTeamProvisioned({ teamId, orgId: resolvedOrgId });
     }
-    return orgId;
+    return resolvedOrgId;
   }
 
   /**
@@ -507,6 +551,7 @@ export class AutumnService {
     value,
     properties,
     featureId = CREDITS_FEATURE_ID,
+    orgId,
   }: TrackCreditsParams): Promise<{
     allowed: boolean;
     remaining: number;
@@ -515,7 +560,7 @@ export class AutumnService {
       return null;
     }
     try {
-      const customerId = await this.ensureTrackingContext(teamId);
+      const customerId = await this.ensureTrackingContext(teamId, orgId);
 
       // Mirrors track() and lockCredits(). Without this branch the gate reads
       // the ghost's balance alone, and a gateway ghost is designed to spend
@@ -592,6 +637,7 @@ export class AutumnService {
     properties,
     featureId = CREDITS_FEATURE_ID,
     partnerJobToken,
+    orgId,
   }: LockCreditsParams): Promise<LockCreditsResult> {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
       return { status: "skipped" };
@@ -609,7 +655,7 @@ export class AutumnService {
         : { status: "skipped" };
 
     try {
-      const customerId = await this.ensureTrackingContext(teamId);
+      const customerId = await this.ensureTrackingContext(teamId, orgId);
 
       // Gradual firebill rollout, mirroring track(): allowlisted orgs take
       // their holds through firebill. The hold still lives in Autumn (firebill
@@ -732,9 +778,13 @@ export class AutumnService {
     externalRequestId,
     featureId = CREDITS_FEATURE_ID,
     heldValue,
+    orgId,
   }: FinalizeCreditsLockParams): Promise<boolean> {
     const gated = Boolean(externalRequestId) && firebillConfigured();
-    if (gated || (teamId && (await this.isRoutedThroughFirebill(teamId)))) {
+    if (
+      gated ||
+      (teamId && (await this.isRoutedThroughFirebill(teamId, orgId)))
+    ) {
       // Only resolved for a gated settle: firebill needs the org to split the
       // settle and to find the integration to report to. An ordinary finalize
       // does neither, so it does not pay for the lookup.
@@ -748,7 +798,7 @@ export class AutumnService {
       // the lost label as `partner_events_total{outcome="no_customer"}`.
       const customerId =
         externalRequestId && teamId
-          ? await this.ensureTrackingContext(teamId).catch(error => {
+          ? await this.ensureTrackingContext(teamId, orgId).catch(error => {
               logger.error(
                 "Could not resolve the org for a gated settle; finalizing anyway, but this run cannot be reported to its partner",
                 { teamId, lockId, error },
@@ -811,12 +861,13 @@ export class AutumnService {
     properties,
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
+    orgId,
   }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
 
     try {
-      const customerId = await this.ensureTrackingContext(teamId);
+      const customerId = await this.ensureTrackingContext(teamId, orgId);
       return await this.track({
         customerId,
         entityId: teamId,
@@ -990,12 +1041,13 @@ export class AutumnService {
     properties,
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
+    orgId,
   }: TrackCreditsParams): Promise<void> {
     if (!autumnClient) return;
     if (this.isPreviewTeam(teamId)) return;
 
     try {
-      const customerId = await this.ensureTrackingContext(teamId);
+      const customerId = await this.ensureTrackingContext(teamId, orgId);
       await this.track({
         customerId,
         entityId: teamId,

@@ -15,6 +15,8 @@ export type CreateEntityParams = {
   entityId: string;
   featureId: string;
   name?: string | null;
+  /** Method doing the creation, for the inline-creation counter's `path`. */
+  path: string;
 };
 
 export type TrackParams = {
@@ -52,6 +54,8 @@ export type LockCreditsParams = {
   expiresAt?: number;
   properties?: Record<string, unknown>;
   featureId?: string;
+  /** See TrackCreditsParams.orgId. */
+  orgId?: string | null;
   /** Arms firebill's partner credit gate, which is asked before Autumn holds anything. */
   partnerJobToken?: string | null;
 };
@@ -99,6 +103,8 @@ export type FinalizeCreditsLockParams = {
   /** What the lock reserved. Autumn nets outstanding holds out of a reported
    * balance, so firebill adds this back to see what the ghost can really pay. */
   heldValue?: number | null;
+  /** See TrackCreditsParams.orgId. */
+  orgId?: string | null;
 };
 
 export type TrackCreditsParams = {
@@ -108,6 +114,12 @@ export type TrackCreditsParams = {
   featureId?: string;
   /** See TrackParams.idempotencyKey. */
   idempotencyKey?: string;
+  /**
+   * The team's org, when the caller already has it (a request's ACUC does).
+   * Saves the `teams.org_id` read; ignored unless it is shaped like one, so a
+   * caller that has no real org id changes nothing.
+   */
+  orgId?: string | null;
 };
 
 export type CreateEntityResult =

@@ -183,6 +183,22 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
     );
   });
 
+  it("hands the ACUC's org to both checks, so neither reads teams.org_id", async () => {
+    checkCreditsMock
+      .mockResolvedValueOnce({ allowed: false, remaining: 5 })
+      .mockResolvedValueOnce({ allowed: true, remaining: 5 });
+
+    const req = buildReq({ body: { limit: 100 } });
+    await runMiddleware(req);
+
+    expect(checkCreditsMock).toHaveBeenCalledTimes(2);
+    for (const [params] of checkCreditsMock.mock.calls) {
+      expect(params).toEqual(
+        expect.objectContaining({ orgId: "org_test", teamId: "team_test" }),
+      );
+    }
+  });
+
   it("sends a null apiKeyId when the request has no resolved api key id", async () => {
     checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
 

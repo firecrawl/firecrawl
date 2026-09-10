@@ -143,6 +143,10 @@ import {
   BoundedSet,
   featureIdForBillingEndpoint,
 } from "../autumn.service";
+import {
+  autumnCustomerGetOrCreateTotal,
+  autumnEntityCreatedInlineTotal,
+} from "../metrics";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1868,5 +1872,208 @@ describe("firebill routing", () => {
 
     expect(mockFetch).not.toHaveBeenCalled();
     expect(mockFinalize).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The org id hint: the request's ACUC already carries the org, so the credit
+// check should not read `teams.org_id` for it.
+// ---------------------------------------------------------------------------
+
+describe("org id hint", () => {
+  // Shaped like the column (`teams.org_id` is a uuid), which is what makes it
+  // usable at all.
+  const HINT_ORG = "3f2c1b8e-7a4d-4c1e-9b6a-0d5e8f2a1c74";
+
+  // Counts team → org_id reads only; the stub answers the gateway lookup
+  // separately.
+  let orgLookups = 0;
+
+  beforeEach(() => {
+    orgLookups = 0;
+    state.dbLimitOverride = () => {
+      orgLookups++;
+      return Promise.resolve([{ org_id: "org-1" }]);
+    };
+  });
+
+  afterEach(() => {
+    state.dbLimitOverride = null;
+    vi.useRealTimers();
+  });
+
+  it("checks the hinted org against Autumn with no DB read", async () => {
+    const svc = makeService();
+
+    const result = await svc.checkCredits({
+      teamId: "team-1",
+      value: 42,
+      orgId: HINT_ORG,
+    });
+
+    expect(result).toEqual({ allowed: true, remaining: 0 });
+    expect(orgLookups).toBe(0);
+    expect(mockCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: HINT_ORG, entityId: "team-1" }),
+    );
+  });
+
+  it("reads the DB exactly once when the caller has no hint", async () => {
+    const svc = makeService();
+
+    await svc.checkCredits({ teamId: "team-1", value: 42 });
+
+    expect(orgLookups).toBe(1);
+    expect(mockCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: "org-1" }),
+    );
+  });
+
+  // The ACUC is Redis-cached for longer than this cache lives, so a hint can
+  // arrive staler than what a warm pod already read. The cache keeps winning.
+  it("a fresh cached org wins over a differing hint", async () => {
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(orgLookups).toBe(1);
+
+    await svc.checkCredits({ teamId: "team-1", value: 42, orgId: HINT_ORG });
+
+    expect(orgLookups).toBe(1);
+    expect(mockCheck).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: "org-1" }),
+    );
+  });
+
+  it("an expired entry is replaced by the hint without a DB read", async () => {
+    vi.useFakeTimers();
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(orgLookups).toBe(1);
+    vi.advanceTimersByTime(301_000);
+
+    await svc.checkCredits({ teamId: "team-1", value: 42, orgId: HINT_ORG });
+
+    expect(orgLookups).toBe(1);
+    expect(mockCheck).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customerId: HINT_ORG }),
+    );
+  });
+
+  // The synthetic ACUCs carry these, and no `teams.org_id` read could ever
+  // return one, so a team holding one has to keep taking today's path.
+  it.each(["preview", "bypass", "", "org-1", "not a uuid"])(
+    "ignores %j as a hint and resolves the org from the DB",
+    async orgId => {
+      const svc = makeService();
+
+      await svc.checkCredits({ teamId: "team-1", value: 42, orgId });
+
+      expect(orgLookups).toBe(1);
+      expect(mockCheck).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: "org-1" }),
+      );
+    },
+  );
+
+  it("seeds the org cache, so a later biller with no hint reads nothing", async () => {
+    const svc = makeService();
+
+    await svc.checkCredits({ teamId: "team-1", value: 1, orgId: HINT_ORG });
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+
+    expect(orgLookups).toBe(0);
+    expect(mockTrack).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: HINT_ORG }),
+    );
+  });
+
+  it("sends the hinted org to firebill as the customer", async () => {
+    const mockFetch = vi.fn<(url: any, init?: any) => Promise<Response>>();
+    mockFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({ success: true, allowed: true, remaining: 500 }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", mockFetch);
+    state.configRef = {
+      FIREBILL_URL: "http://firebill.test",
+      FIREBILL_SECRET: "fb-secret",
+      FIREBILL_ORG_IDS: [HINT_ORG],
+    };
+
+    try {
+      const svc = makeService();
+
+      const result = await svc.checkCredits({
+        teamId: "team-1",
+        value: 100,
+        properties: { source: "checkCreditsMiddleware" },
+        orgId: HINT_ORG,
+      });
+
+      expect(result).toEqual({ allowed: true, remaining: 500 });
+      expect(orgLookups).toBe(0);
+      expect(mockCheck).not.toHaveBeenCalled();
+      const [url, init] = mockFetch.mock.calls[0]!;
+      expect(String(url)).toBe("http://firebill.test/v1/check");
+      expect(JSON.parse(init.body).customer_id).toBe(HINT_ORG);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Inline-provisioning counters (§5 of the middleware credit-check spec): how
+// much the request path is still back-filling.
+// ---------------------------------------------------------------------------
+
+describe("inline provisioning counters", () => {
+  const entityCreates = async (path: string) =>
+    (await autumnEntityCreatedInlineTotal.get()).values.find(
+      v => v.labels.path === path,
+    )?.value ?? 0;
+
+  const customerCalls = async () =>
+    (await autumnCustomerGetOrCreateTotal.get()).values[0]?.value ?? 0;
+
+  beforeEach(() => {
+    autumnEntityCreatedInlineTotal.reset();
+    autumnCustomerGetOrCreateTotal.reset();
+  });
+
+  it("counts an entity created inline, labelled with the method that did it", async () => {
+    const svc = makeService();
+    mockEntityGet.mockRejectedValue({ statusCode: 404 });
+
+    await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
+
+    expect(await entityCreates("ensureTeamProvisioned")).toBe(1);
+    expect(await customerCalls()).toBe(1);
+  });
+
+  it("does not count a 409: the entity was already there", async () => {
+    const svc = makeService();
+    mockEntityGet.mockRejectedValue({ statusCode: 404 });
+    mockEntityCreate.mockRejectedValue(
+      Object.assign(new Error("conflict"), { status: 409 }),
+    );
+
+    await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
+
+    expect(await entityCreates("ensureTeamProvisioned")).toBe(0);
+  });
+
+  it("counts nothing when the entity is already present", async () => {
+    const svc = makeService();
+    mockEntityGet.mockResolvedValue(makeEntity(0));
+
+    await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
+
+    expect(await entityCreates("ensureTeamProvisioned")).toBe(0);
+    expect(await customerCalls()).toBe(1);
   });
 });

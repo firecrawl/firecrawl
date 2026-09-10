@@ -143,6 +143,9 @@ export function checkCreditsMiddleware(
 
       const autumnResult = await autumnService.checkCredits({
         teamId: req.auth.team_id,
+        // The ACUC already carries the org, so the credit check does not have
+        // to read `teams.org_id` for it.
+        orgId: req.auth.org_id,
         value: requestedCredits,
         properties: {
           source: "checkCreditsMiddleware",
@@ -183,6 +186,7 @@ export function checkCreditsMiddleware(
           // to the 402 below. A null re-check keeps the fail-open behavior.
           const clampedResult = await autumnService.checkCredits({
             teamId: req.auth.team_id,
+            orgId: req.auth.org_id,
             value: clampedLimit,
             properties: {
               source: "checkCreditsMiddleware:clamp",

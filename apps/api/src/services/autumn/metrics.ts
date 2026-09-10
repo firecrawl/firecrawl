@@ -81,3 +81,26 @@ export const firebillCheckTotal = new Counter({
   help: "Outcomes of credit checks sent to firebill",
   labelNames: ["outcome"] as const, // allowed | denied | unavailable
 });
+
+/**
+ * Entities the request path had to create for itself, by the method that did
+ * it. Provisioning is meant to happen at team creation, so anything counted
+ * here is the back-fill still being needed, and is what the per-request
+ * provisioning prefix is buying. A 409 is not counted: the entity was already
+ * there.
+ */
+export const autumnEntityCreatedInlineTotal = new Counter({
+  name: "firecrawl_autumn_entity_created_inline_total",
+  help: "Autumn entities created inline on a billing path",
+  labelNames: ["path"] as const, // the method that created it
+});
+
+/**
+ * Calls to `customers.get_or_create` that reached Autumn. Deliberately not
+ * "created": the endpoint answers 200 either way and autumn-js parses only the
+ * customer body, so nothing in the response tells a creation from a get.
+ */
+export const autumnCustomerGetOrCreateTotal = new Counter({
+  name: "firecrawl_autumn_customer_get_or_create_total",
+  help: "Autumn customers.get_or_create calls made from a billing path",
+});
