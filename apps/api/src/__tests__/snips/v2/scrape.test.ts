@@ -340,6 +340,50 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
+  concurrentIf(TEST_SELF_HOST && HAS_PLAYWRIGHT)(
+    "playwright reports the landed URL after a cross-hostname redirect",
+    async () => {
+      // google.com 301s to www.google.com — the same stable redirect the
+      // threat-protection suite relies on. Before the playwright-service
+      // reported page.url(), metadata.url echoed the requested URL, so a page
+      // fetched from another host was indistinguishable from a real one.
+      const response = await scrape(
+        {
+          url: "https://google.com/",
+          waitFor: 100,
+        },
+        identity,
+      );
+
+      expect(response.metadata.sourceURL).toBe("https://google.com/");
+      expect(response.metadata.url).toBeDefined();
+      expect(new URL(response.metadata.url!).hostname).toBe("www.google.com");
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(TEST_SELF_HOST && HAS_PLAYWRIGHT && ALLOW_TEST_SUITE_WEBSITE)(
+    "playwright reports the requested URL when there is no redirect",
+    async () => {
+      // The other half of the contract: reporting the landed URL must not
+      // invent a redirect where there is none.
+      const response = await scrape(
+        {
+          url: TEST_SUITE_WEBSITE,
+          waitFor: 100,
+        },
+        identity,
+      );
+
+      expect(response.metadata.sourceURL).toBe(TEST_SUITE_WEBSITE);
+      expect(response.metadata.url).toBeDefined();
+      expect(new URL(response.metadata.url!).hostname).toBe(
+        new URL(TEST_SUITE_WEBSITE).hostname,
+      );
+    },
+    scrapeTimeout,
+  );
+
   concurrentIf(TEST_PRODUCTION || (HAS_PLAYWRIGHT && ALLOW_TEST_SUITE_WEBSITE))(
     "waitFor works",
     async () => {
