@@ -283,46 +283,104 @@ const createContext = async (
     // wins and nothing here overwrites it.
     await newContext.addInitScript(() => {
       if (navigator.plugins.length === 0) {
-        // Shaped as the real host objects rather than a plain Array. Headless
-        // already exposes a genuine, empty PluginArray, so substituting an
-        // Array would flip Array.isArray to true (false in any real browser),
-        // report [object Array], and drop item()/namedItem() — trading one
-        // weak tell for several strong ones.
-        const makePlugin = (name: string, description: string) => {
-          const plugin = Object.create(Plugin.prototype);
-          Object.defineProperties(plugin, {
-            name: { value: name, enumerable: true },
-            filename: { value: 'internal-pdf-viewer', enumerable: true },
-            description: { value: description, enumerable: true },
-            length: { value: 0, enumerable: true },
+        // Shaped as the real host objects rather than plain Arrays. Headless
+        // already exposes genuine, empty PluginArray and MimeTypeArray, so
+        // substituting Arrays would flip Array.isArray to true (false in any
+        // real browser), report [object Array], and drop item()/namedItem() —
+        // trading one weak tell for several strong ones.
+        //
+        // The whole plugin/mimeType graph is built, not just the plugin list:
+        // inheriting a native prototype without defining the methods leaves
+        // brand-checked natives in place, so plugins[0].item(0) would throw
+        // Illegal invocation, which no real browser does. Plugins that carry
+        // no MIME types would be incoherent for the same reason.
+        const PDF = 'Portable Document Format';
+        const INTERNAL_PDF = 'internal-pdf-viewer';
+
+        // Own item/namedItem/length/indices, so no brand-checked native
+        // method inherited from the prototype is ever reached.
+        const collection = <T>(
+          proto: object,
+          entries: T[],
+          keyOf: (entry: T) => string,
+        ) => {
+          const list = Object.create(proto);
+          entries.forEach((entry, index) =>
+            Object.defineProperty(list, index, {
+              value: entry,
+              enumerable: true,
+            }),
+          );
+          entries.forEach(entry =>
+            Object.defineProperty(list, keyOf(entry), { value: entry }),
+          );
+          Object.defineProperty(list, 'length', { value: entries.length });
+          Object.defineProperty(list, 'item', {
+            value: (index: number) => entries[index] ?? null,
           });
-          return plugin as Plugin;
+          Object.defineProperty(list, 'namedItem', {
+            value: (name: string) =>
+              entries.find(entry => keyOf(entry) === name) ?? null,
+          });
+          return list;
         };
 
+        const mimeTypes = [
+          { type: 'application/pdf', suffixes: 'pdf', description: PDF },
+          { type: 'text/pdf', suffixes: 'pdf', description: PDF },
+        ].map(spec => {
+          const mimeType = Object.create(MimeType.prototype);
+          Object.defineProperties(mimeType, {
+            type: { value: spec.type, enumerable: true },
+            suffixes: { value: spec.suffixes, enumerable: true },
+            description: { value: spec.description, enumerable: true },
+          });
+          return mimeType as MimeType;
+        });
+
         const plugins = [
-          makePlugin('PDF Viewer', 'Portable Document Format'),
-          makePlugin('Chrome PDF Viewer', 'Portable Document Format'),
-        ];
-        const list = Object.create(PluginArray.prototype);
-        plugins.forEach((plugin, index) =>
-          Object.defineProperty(list, index, {
-            value: plugin,
+          { name: 'PDF Viewer', description: PDF },
+          { name: 'Chrome PDF Viewer', description: PDF },
+        ].map(spec => {
+          const plugin = collection(
+            Plugin.prototype,
+            mimeTypes,
+            mimeType => mimeType.type,
+          );
+          Object.defineProperties(plugin, {
+            name: { value: spec.name, enumerable: true },
+            filename: { value: INTERNAL_PDF, enumerable: true },
+            description: { value: spec.description, enumerable: true },
+          });
+          return plugin as Plugin;
+        });
+
+        // Real MIME types point back at the plugin serving them.
+        mimeTypes.forEach(mimeType =>
+          Object.defineProperty(mimeType, 'enabledPlugin', {
+            value: plugins[0],
             enumerable: true,
           }),
         );
-        plugins.forEach(plugin =>
-          Object.defineProperty(list, plugin.name, { value: plugin }),
+
+        const pluginArray = collection(
+          PluginArray.prototype,
+          plugins,
+          plugin => plugin.name,
         );
-        Object.defineProperty(list, 'length', { value: plugins.length });
-        Object.defineProperty(list, 'item', {
-          value: (index: number) => plugins[index] ?? null,
+        Object.defineProperty(pluginArray, 'refresh', { value: () => {} });
+        const mimeTypeArray = collection(
+          MimeTypeArray.prototype,
+          mimeTypes,
+          mimeType => mimeType.type,
+        );
+
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => pluginArray,
         });
-        Object.defineProperty(list, 'namedItem', {
-          value: (name: string) =>
-            plugins.find(plugin => plugin.name === name) ?? null,
+        Object.defineProperty(navigator, 'mimeTypes', {
+          get: () => mimeTypeArray,
         });
-        Object.defineProperty(list, 'refresh', { value: () => {} });
-        Object.defineProperty(navigator, 'plugins', { get: () => list });
       }
 
       const w = window as unknown as Record<string, unknown>;
