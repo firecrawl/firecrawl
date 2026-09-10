@@ -1,20 +1,27 @@
 import { vi, beforeEach } from "vitest";
 
-const mockAggregate = vi.fn<(args: any, options?: any) => Promise<any>>();
+// Historical aggregations run on the dedicated `autumnHistoricalClient` (which
+// carries a longer client-level timeout), NOT the hot-path `autumnClient`.
+// Keep the two aggregate mocks distinct so tests can assert the routing.
+const mockAggregate = vi.fn<(args: any) => Promise<any>>();
+const mockHotPathAggregate = vi.fn<(args: any) => Promise<any>>();
 const mockEntitiesGet = vi.fn<(args: any) => Promise<any>>();
 const mockCustomersGetOrCreate = vi.fn<(args: any) => Promise<any>>();
 
-// Historical aggregations override the Autumn client's global 2s timeout.
-const EXPECTED_HISTORICAL_TIMEOUT_MS = 15000;
-
 let autumnClientRef: {
-  events: { aggregate: typeof mockAggregate };
+  events: { aggregate: typeof mockHotPathAggregate };
   entities: { get: typeof mockEntitiesGet };
   customers: { getOrCreate: typeof mockCustomersGetOrCreate };
 } | null = {
-  events: { aggregate: mockAggregate },
+  events: { aggregate: mockHotPathAggregate },
   entities: { get: mockEntitiesGet },
   customers: { getOrCreate: mockCustomersGetOrCreate },
+};
+
+let autumnHistoricalClientRef: {
+  events: { aggregate: typeof mockAggregate };
+} | null = {
+  events: { aggregate: mockAggregate },
 };
 
 let teamLookup = {
@@ -27,6 +34,9 @@ let apiKeysData: Array<{ id: number; name: string }> = [];
 vi.mock("../client", () => ({
   get autumnClient() {
     return autumnClientRef;
+  },
+  get autumnHistoricalClient() {
+    return autumnHistoricalClientRef;
   },
 }));
 
@@ -58,9 +68,12 @@ import {
 beforeEach(() => {
   vi.clearAllMocks();
   autumnClientRef = {
-    events: { aggregate: mockAggregate },
+    events: { aggregate: mockHotPathAggregate },
     entities: { get: mockEntitiesGet },
     customers: { getOrCreate: mockCustomersGetOrCreate },
+  };
+  autumnHistoricalClientRef = {
+    events: { aggregate: mockAggregate },
   };
   teamLookup = { data: { org_id: "org-1" }, error: null };
   apiKeysData = [];
@@ -782,7 +795,6 @@ describe("getTeamHistoricalUsage", () => {
         range: "90d",
         binSize: "day",
       }),
-      expect.objectContaining({ timeoutMs: EXPECTED_HISTORICAL_TIMEOUT_MS }),
     );
   });
 
@@ -806,7 +818,6 @@ describe("getTeamHistoricalUsage", () => {
         range: "90d",
         binSize: "day",
       }),
-      expect.objectContaining({ timeoutMs: EXPECTED_HISTORICAL_TIMEOUT_MS }),
     );
   });
 
@@ -900,7 +911,6 @@ describe("getTeamHistoricalUsageByApiKey", () => {
         binSize: "day",
         groupBy: "properties.apiKeyId",
       }),
-      expect.objectContaining({ timeoutMs: EXPECTED_HISTORICAL_TIMEOUT_MS }),
     );
   });
 
@@ -978,50 +988,38 @@ describe("getTeamHistoricalUsageByApiKey", () => {
         entityId: "team-1",
         groupBy: "properties.apiKeyId",
       }),
-      expect.objectContaining({ timeoutMs: EXPECTED_HISTORICAL_TIMEOUT_MS }),
     );
   });
 });
 
 // ---------------------------------------------------------------------------
-// Per-call Autumn timeout for the historical aggregations
+// Historical aggregations run on the dedicated (longer-timeout) client
 // ---------------------------------------------------------------------------
 
 // These aggregations bin by day (and optionally group by API key), so Autumn
-// walks raw events and the call cost scales with the team's event volume. The
-// Autumn client's global 2s timeout is sized for the latency-sensitive balance
-// checks, so each historical call must override it or high-volume teams get a
-// timeout error surfaced as a 500.
-describe("historical usage Autumn timeout override", () => {
-  it("passes a 15s per-call timeout for the ungrouped aggregate", async () => {
+// walks raw events and the call cost scales with the team's event volume —
+// routinely several seconds. The Autumn SDK only honors a timeout set at the
+// client level (a per-call timeoutMs/signal does NOT override a lower client
+// default), so historical calls must go through `autumnHistoricalClient`, not
+// the hot-path `autumnClient` whose 2s budget is sized for balance checks. If
+// they regressed to the hot-path client, high-volume teams would time out and
+// surface a 500.
+describe("historical usage routes through the dedicated Autumn client", () => {
+  it("uses autumnHistoricalClient, not the hot-path client, for the ungrouped aggregate", async () => {
     mockAggregate.mockResolvedValue({ list: [] });
 
     await getTeamHistoricalUsage("team-1");
 
     expect(mockAggregate).toHaveBeenCalledTimes(1);
-    const [, options] = mockAggregate.mock.calls[0];
-    expect(options).toEqual({ timeoutMs: 15000 });
+    expect(mockHotPathAggregate).not.toHaveBeenCalled();
   });
 
-  it("passes a 15s per-call timeout for the grouped byApiKey aggregate", async () => {
+  it("uses autumnHistoricalClient, not the hot-path client, for the grouped byApiKey aggregate", async () => {
     mockAggregate.mockResolvedValue({ list: [] });
 
     await getTeamHistoricalUsageByApiKey("team-1");
 
     expect(mockAggregate).toHaveBeenCalledTimes(1);
-    const [, options] = mockAggregate.mock.calls[0];
-    expect(options).toEqual({ timeoutMs: 15000 });
-  });
-
-  it("overrides the Autumn client's global 2s timeout with a larger value", async () => {
-    mockAggregate.mockResolvedValue({ list: [] });
-
-    await getTeamHistoricalUsage("team-1");
-    await getTeamHistoricalUsageByApiKey("team-1");
-
-    expect(mockAggregate).toHaveBeenCalledTimes(2);
-    for (const [, options] of mockAggregate.mock.calls) {
-      expect(options?.timeoutMs).toBeGreaterThan(2000);
-    }
+    expect(mockHotPathAggregate).not.toHaveBeenCalled();
   });
 });
