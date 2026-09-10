@@ -70,8 +70,10 @@ import { searchController } from "../search";
 import { config } from "../../../config";
 
 const originalExchangeUrl = config.FIRE_EXCHANGE_URL;
+const originalAgentInteropSecret = config.AGENT_INTEROP_SECRET;
 afterEach(() => {
   config.FIRE_EXCHANGE_URL = originalExchangeUrl;
+  config.AGENT_INTEROP_SECRET = originalAgentInteropSecret;
 });
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
@@ -159,29 +161,52 @@ describe("developer category code_searches ledger", () => {
     },
   );
 
-  it("archives the skills returned with search results", async () => {
-    const skills = [
-      {
-        id: "docs",
-        description: "Documentation",
-        matchedDomains: ["example.com"],
-        url: "https://api.firecrawl.dev/exchange/skills/docs/SKILL.md",
-      },
-    ];
-    mockResolveSearchSkills.mockResolvedValue(skills);
-    let archived: unknown;
-    mockLogSearch.mockImplementationOnce(row => {
-      archived = structuredClone(row.results);
-      return Promise.resolve();
-    });
-    const req = makeReq({ query: "public documentation", skills: true });
-    req.acuc.flags = { exchangeRetrieve: true };
-    const res = makeRes();
-    await searchController(req, res);
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(archived).toEqual(res.json.mock.calls[0][0].data);
-    expect(archived).toHaveProperty("skills", skills);
-  });
+  it.each([undefined, "agent-request"])(
+    "archives skills and keeps the originating request ID (agent: %s)",
+    async agentRequestId => {
+      config.AGENT_INTEROP_SECRET = "skills-test-secret";
+      const skills = [
+        {
+          id: "docs",
+          description: "Documentation",
+          matchedDomains: ["example.com"],
+          url: "https://api.firecrawl.dev/exchange/skills/docs/SKILL.md",
+        },
+      ];
+      mockResolveSearchSkills.mockResolvedValue(skills);
+      let archived: unknown;
+      mockLogSearch.mockImplementationOnce(row => {
+        archived = structuredClone(row.results);
+        return Promise.resolve();
+      });
+      const req = makeReq({
+        query: "public documentation",
+        skills: true,
+        ...(agentRequestId
+          ? {
+              __agentInterop: {
+                auth: "skills-test-secret",
+                requestId: agentRequestId,
+                shouldBill: true,
+              },
+            }
+          : {}),
+      });
+      req.acuc.flags = { exchangeRetrieve: true };
+      const res = makeRes();
+      await searchController(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      const searchContext = mockExecuteSearch.mock.calls[0][1];
+      expect(mockResolveSearchSkills).toHaveBeenCalledWith(
+        expect.any(Object),
+        TEAM_ID,
+        true,
+        agentRequestId ?? searchContext.jobId,
+      );
+      expect(archived).toEqual(res.json.mock.calls[0][0].data);
+      expect(archived).toHaveProperty("skills", skills);
+    },
+  );
 
   it.each([
     [false, false],

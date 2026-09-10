@@ -365,6 +365,7 @@ async function searchControllerInner(
           result.response,
           req.auth.team_id,
           req.acuc?.flags?.exchangeRetrieve === true,
+          agentRequestId ?? jobId,
         );
       } catch {
         skillsWarning =

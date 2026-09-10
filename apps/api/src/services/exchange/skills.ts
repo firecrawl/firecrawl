@@ -20,6 +20,7 @@ export async function resolveSearchSkills(
   data: SearchV2Response,
   teamId: string,
   hasExtendedCatalogAccess = false,
+  requestId?: string,
 ) {
   const urls = [
     ...new Set([
@@ -48,6 +49,7 @@ export async function resolveSearchSkills(
           headers: {
             "content-type": "application/json",
             "x-exchange-team-id": teamId,
+            ...(requestId !== undefined ? { "x-request-id": requestId } : {}),
             "x-exchange-extended-catalog-access": String(
               hasExtendedCatalogAccess === true,
             ),

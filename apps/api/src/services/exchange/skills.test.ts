@@ -26,6 +26,7 @@ it.each([false, true])(
         body: JSON.stringify({ urls: ["https://spotify.com/"] }),
         headers: {
           "x-exchange-team-id": "team",
+          "x-request-id": "agent-request",
           "x-exchange-extended-catalog-access": String(
             hasExtendedCatalogAccess,
           ),
@@ -53,7 +54,12 @@ it.each([false, true])(
       images: [{ url: "javascript:alert(1)" }],
     } as Parameters<typeof resolveSearchSkills>[0];
     expect(
-      await resolveSearchSkills(data, "team", hasExtendedCatalogAccess),
+      await resolveSearchSkills(
+        data,
+        "team",
+        hasExtendedCatalogAccess,
+        "agent-request",
+      ),
     ).toEqual([
       {
         id: "particle",
