@@ -14,6 +14,10 @@ const responseSchema = z.object({
         description: z.string(),
         matchedDomains: z.array(z.string()),
         matchedTerms: z.array(z.string()).optional(),
+        domainCapabilities: z
+          .record(z.string(), z.array(z.string()))
+          .optional(),
+        queryCapabilities: z.array(z.string()).optional(),
         url: z.string(),
       }),
     )
@@ -89,12 +93,42 @@ export async function resolveSearchSkills(
           ...skill.matchedDomains,
         ]),
       ],
-      ...(skill.matchedTerms
+      ...(skill.matchedTerms || previous?.matchedTerms
         ? {
             matchedTerms: [
               ...new Set([
                 ...(previous?.matchedTerms ?? []),
-                ...skill.matchedTerms,
+                ...(skill.matchedTerms ?? []),
+              ]),
+            ],
+          }
+        : {}),
+      ...(skill.domainCapabilities || previous?.domainCapabilities
+        ? {
+            domainCapabilities: Object.fromEntries(
+              [
+                ...new Set([
+                  ...Object.keys(previous?.domainCapabilities ?? {}),
+                  ...Object.keys(skill.domainCapabilities ?? {}),
+                ]),
+              ].map(domain => [
+                domain,
+                [
+                  ...new Set([
+                    ...(previous?.domainCapabilities?.[domain] ?? []),
+                    ...(skill.domainCapabilities?.[domain] ?? []),
+                  ]),
+                ],
+              ]),
+            ),
+          }
+        : {}),
+      ...(skill.queryCapabilities || previous?.queryCapabilities
+        ? {
+            queryCapabilities: [
+              ...new Set([
+                ...(previous?.queryCapabilities ?? []),
+                ...(skill.queryCapabilities ?? []),
               ]),
             ],
           }
@@ -103,6 +137,14 @@ export async function resolveSearchSkills(
   }
   return [...unique.values()].map(skill => ({
     ...skill,
+    ...(skill.domainCapabilities || skill.queryCapabilities
+      ? {
+          toolCount: new Set([
+            ...Object.values(skill.domainCapabilities ?? {}).flat(),
+            ...(skill.queryCapabilities ?? []),
+          ]).size,
+        }
+      : {}),
     url: `https://api.firecrawl.dev/exchange/skills/${encodeURIComponent(skill.id)}/SKILL.md`,
   }));
 }

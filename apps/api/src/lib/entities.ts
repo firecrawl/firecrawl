@@ -181,6 +181,8 @@ export interface SearchV2Response {
     description: string;
     matchedDomains: string[];
     matchedTerms?: string[];
+    domainCapabilities?: Record<string, string[]>;
+    queryCapabilities?: string[];
     url: string;
   }[];
   web?: WebSearchResult[];

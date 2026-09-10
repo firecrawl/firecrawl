@@ -141,3 +141,63 @@ it("resolves a query without URLs and preserves grouped provider metadata", asyn
   ]);
   agent.assertNoPendingInterceptors();
 });
+
+it("merges selected tools across URL batches without leaking one domain's selection into another", async () => {
+  const urls = Array.from(
+    { length: 101 },
+    (_, index) => `https://site${index}.example/`,
+  );
+  const selections = ["podcasts/search", "podcasts/segment"];
+  for (const [index, batch] of [
+    urls.slice(0, 100),
+    urls.slice(100),
+  ].entries()) {
+    const domain = new URL(batch[0]).hostname;
+    agent
+      .get("https://exchange.example")
+      .intercept({
+        path: "/v1/skills/resolve",
+        method: "POST",
+        body: JSON.stringify({ urls: batch, query: "Spotify" }),
+      })
+      .reply(200, {
+        skills: [
+          {
+            id: "particle",
+            name: "Particle",
+            origin: "api",
+            description: "Podcasts",
+            toolCount: 2,
+            matchedDomains: [domain],
+            matchedTerms: ["Spotify"],
+            domainCapabilities: { [domain]: [selections[index]] },
+            queryCapabilities: ["podcasts/episodes/search"],
+            url: "/v1/skills/particle/SKILL.md",
+          },
+        ],
+      });
+  }
+  const skills = await resolveSearchSkills(
+    { web: urls.map(url => ({ url })) } as Parameters<
+      typeof resolveSearchSkills
+    >[0],
+    "team",
+    false,
+    "request",
+    "Spotify",
+  );
+  expect(skills).toMatchObject([
+    {
+      id: "particle",
+      toolCount: 3,
+      matchedTerms: ["Spotify"],
+      matchedDomains: ["site0.example", "site100.example"],
+      domainCapabilities: {
+        "site0.example": ["podcasts/search"],
+        "site100.example": ["podcasts/segment"],
+      },
+      queryCapabilities: ["podcasts/episodes/search"],
+    },
+  ]);
+  agent.assertNoPendingInterceptors();
+});
