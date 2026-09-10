@@ -173,6 +173,12 @@ export interface ExchangeSearchResult {
 }
 
 export interface SearchV2Response {
+  skills?: {
+    id: string;
+    description: string;
+    matchedDomains: string[];
+    url: string;
+  }[];
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];

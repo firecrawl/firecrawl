@@ -1,3 +1,4 @@
+import { resolveSearchSkills } from "../../services/exchange/skills";
 import { Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
@@ -199,10 +200,13 @@ async function searchControllerInner(
     const wantsExchange = (req.body.sources as Array<{ type: string }>).some(
       source => source.type === "exchange-providers",
     );
-    if (wantsExchange && !req.acuc?.flags?.exchangeRetrieve) {
+    if (
+      (wantsExchange || req.body.skills) &&
+      !req.acuc?.flags?.exchangeRetrieve
+    ) {
       return res.status(403).json({
         success: false,
-        error: "The exchange-providers source is not enabled for this team.",
+        error: "Exchange discovery is not enabled for this team.",
       });
     }
     if (wantsExchange && !config.FIRE_EXCHANGE_URL) {
@@ -427,8 +431,23 @@ async function searchControllerInner(
       scrapeful: result.shouldScrape,
     });
 
+    let skillsWarning: string | undefined;
+    if (req.body.skills) {
+      try {
+        result.response.skills = await resolveSearchSkills(
+          result.response,
+          req.auth.team_id,
+        );
+      } catch {
+        skillsWarning =
+          "Skill lookup is temporarily unavailable. Search results are unaffected.";
+        logger.warn("Exchange skill lookup failed", { jobId });
+      }
+    }
+
     return res.status(200).json({
       success: true,
+      ...(skillsWarning ? { warning: skillsWarning } : {}),
       data: result.response,
       creditsUsed: result.totalCredits,
       id: jobId,

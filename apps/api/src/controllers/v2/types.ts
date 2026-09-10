@@ -2399,6 +2399,7 @@ const searchDomainSchema = z
 export const searchRequestSchema = z
   .strictObject({
     query: z.string(),
+    skills: z.boolean().optional(),
     limit: z.int().positive().finite().max(100).optional().prefault(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),
