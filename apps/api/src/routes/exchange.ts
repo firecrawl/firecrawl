@@ -16,7 +16,11 @@ const SUPPLY_TIMEOUT_MS = 30_000;
 const INGEST_TIMEOUT_MS = 50_000;
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
-const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
+const FORWARDED_RESPONSE_HEADERS = [
+  "content-type",
+  "x-request-id",
+  "cache-control",
+];
 
 function dispatcherFor(timeout: number) {
   return new Agent({
@@ -79,6 +83,9 @@ function exchangeProxy(
           ),
           ...(hasBody ? { "content-type": "application/json" } : {}),
           "x-exchange-team-id": authedReq.auth.team_id,
+          "x-exchange-special-access": String(
+            authedReq.acuc?.flags?.exchangeRetrieve === true,
+          ),
         },
         body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
         signal: AbortSignal.timeout(timeout),

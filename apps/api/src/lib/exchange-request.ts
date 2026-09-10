@@ -16,6 +16,7 @@ type ExchangeFlags = Parameters<
 export function getExchangeAccessForRequestBody(input: {
   body: Record<string, any>;
   flags: ExchangeFlags;
+  teamId?: string;
   url: string;
   zeroDataRetention: boolean;
 }): Promise<ExchangeAccess> {
@@ -27,6 +28,7 @@ export function getExchangeAccessForRequestBody(input: {
 
   return getExchangeAccessForRequest({
     url: input.url,
+    teamId: input.teamId,
     formats: scrapeOptions.formats,
     actions: scrapeOptions.actions,
     headers: scrapeOptions.headers,

@@ -22,6 +22,7 @@ type OrganizationDataSourceAccess = Record<
 
 type RouteInput = {
   url: string;
+  teamId?: string;
   formats?: FormatObject[] | unknown[];
   actions?: unknown[];
   headers?: Record<string, unknown>;
@@ -38,6 +39,7 @@ type RouteInput = {
   zeroDataRetention?: boolean;
   lockdown?: boolean;
   flags?: {
+    exchangeRetrieve?: boolean;
     professionalProfileCompanyDataBeta?: boolean;
     organizationDataSourceAccess?: OrganizationDataSourceAccess | null;
   } | null;
@@ -117,13 +119,15 @@ const exchangeProvidersSchema = z.object({
   ),
 });
 
-let cachedProviders:
-  | {
-      expiresAt: number;
-      value: ExchangeProvider[] | null;
-    }
-  | undefined;
-let providersRequest: Promise<ExchangeProvider[] | null> | undefined;
+type ProviderCatalog = {
+  cached?: {
+    expiresAt: number;
+    value: ExchangeProvider[] | null;
+  };
+  request?: Promise<ExchangeProvider[] | null>;
+};
+type CatalogAccess = { teamId: string; specialAccess: boolean };
+const providerCatalogs = new Map<boolean, ProviderCatalog>();
 
 function normalizeHost(host: string): string {
   return host.trim().toLowerCase().replace(/\.$/, "");
@@ -162,7 +166,9 @@ function normalizeProviders(
     .filter(provider => provider.routes.length > 0);
 }
 
-async function fetchExchangeProviders(): Promise<ExchangeProvider[] | null> {
+async function fetchExchangeProviders(
+  access?: CatalogAccess,
+): Promise<ExchangeProvider[] | null> {
   const baseUrl = getExchangeBaseUrl();
   if (!baseUrl) {
     return null;
@@ -171,6 +177,16 @@ async function fetchExchangeProviders(): Promise<ExchangeProvider[] | null> {
   try {
     const response = await fetch(`${baseUrl}${EXCHANGE_PROVIDERS_PATH}`, {
       method: "GET",
+      ...(access
+        ? {
+            headers: {
+              "x-exchange-team-id": access.teamId,
+              "x-exchange-special-access": String(
+                access.specialAccess === true,
+              ),
+            },
+          }
+        : {}),
       signal: AbortSignal.timeout(EXCHANGE_PROVIDERS_TIMEOUT_MS),
     });
 
@@ -189,42 +205,49 @@ async function fetchExchangeProviders(): Promise<ExchangeProvider[] | null> {
   }
 }
 
-async function getExchangeProviders(): Promise<ExchangeProvider[] | null> {
-  if (cachedProviders && cachedProviders.expiresAt > Date.now()) {
-    return cachedProviders.value;
+async function getExchangeProviders(
+  access?: CatalogAccess,
+): Promise<ExchangeProvider[] | null> {
+  const specialAccess =
+    access?.specialAccess === true && access.teamId.trim() !== "";
+  // This endpoint's catalogue varies by access tier, never by the requesting team.
+  const catalog = providerCatalogs.get(specialAccess) ?? {};
+  providerCatalogs.set(specialAccess, catalog);
+  if (catalog.cached && catalog.cached.expiresAt > Date.now()) {
+    return catalog.cached.value;
   }
 
-  if (!providersRequest) {
-    providersRequest = fetchExchangeProviders()
+  if (!catalog.request) {
+    catalog.request = fetchExchangeProviders(specialAccess ? access : undefined)
       .then(providers => {
         if (providers === null) {
           // Keep serving the last good catalog through transient outages;
           // the failure TTL only delays the next refresh attempt.
-          cachedProviders = {
-            value: cachedProviders?.value ?? null,
+          catalog.cached = {
+            value: catalog.cached?.value ?? null,
             expiresAt: Date.now() + EXCHANGE_PROVIDERS_FAILURE_TTL_MS,
           };
         } else {
-          cachedProviders = {
+          catalog.cached = {
             value: providers,
             expiresAt: Date.now() + EXCHANGE_PROVIDERS_TTL_MS,
           };
         }
-        return cachedProviders.value;
+        return catalog.cached.value;
       })
       .finally(() => {
-        providersRequest = undefined;
+        catalog.request = undefined;
       });
   }
 
   // Serve the stale catalog while the refresh runs in the background so
   // request latency never depends on the catalog endpoint; only the very
   // first lookup after boot has nothing to serve and waits.
-  if (cachedProviders) {
-    return cachedProviders.value;
+  if (catalog.cached) {
+    return catalog.cached.value;
   }
 
-  return providersRequest;
+  return catalog.request;
 }
 
 function providerMatchesUrl(
@@ -262,8 +285,9 @@ function providerMatchesUrl(
 
 export async function resolveExchangeProvider(
   inputUrl: string,
+  access?: CatalogAccess,
 ): Promise<ExchangeProvider | null> {
-  const providers = await getExchangeProviders();
+  const providers = await getExchangeProviders(access);
   if (providers === null) {
     return null;
   }
@@ -487,7 +511,15 @@ export async function getExchangeAccessForRequest(
       return { allowed: false, termsRequired: false };
     }
 
-    const provider = await resolveExchangeProvider(input.url);
+    const provider = await resolveExchangeProvider(
+      input.url,
+      input.teamId
+        ? {
+            teamId: input.teamId,
+            specialAccess: input.flags?.exchangeRetrieve === true,
+          }
+        : undefined,
+    );
     if (provider === null) {
       return { allowed: false, termsRequired: false };
     }
@@ -692,21 +724,22 @@ export function setExchangeProvidersForTest(
   }[],
   ttlMs = 300_000,
 ) {
-  cachedProviders = {
-    value: providers.map(provider => ({
-      id: provider.id,
-      creditsCost: provider.creditsCost ?? 0,
-      ...(provider.terms === undefined ? {} : { terms: provider.terms }),
-      routes: provider.routes.map(route => ({
-        domains: new Set(route.domains.map(normalizeHost)),
-        pathPrefixes: (route.pathPrefixes ?? []).map(normalizePathPrefix),
+  providerCatalogs.set(false, {
+    cached: {
+      value: providers.map(provider => ({
+        id: provider.id,
+        creditsCost: provider.creditsCost ?? 0,
+        ...(provider.terms === undefined ? {} : { terms: provider.terms }),
+        routes: provider.routes.map(route => ({
+          domains: new Set(route.domains.map(normalizeHost)),
+          pathPrefixes: (route.pathPrefixes ?? []).map(normalizePathPrefix),
+        })),
       })),
-    })),
-    expiresAt: Date.now() + ttlMs,
-  };
+      expiresAt: Date.now() + ttlMs,
+    },
+  });
 }
 
 export function clearExchangeProvidersForTest() {
-  cachedProviders = undefined;
-  providersRequest = undefined;
+  providerCatalogs.clear();
 }
