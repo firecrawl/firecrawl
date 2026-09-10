@@ -173,6 +173,7 @@ export interface ExchangeSearchResult {
 }
 
 export interface SearchV2Response {
+  alexandria?: import("../search/alexandria-source").AlexandriaResponse;
   skills?: {
     id: string;
     name?: string;

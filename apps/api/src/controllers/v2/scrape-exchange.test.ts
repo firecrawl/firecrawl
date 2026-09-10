@@ -75,14 +75,16 @@ describe("scrape({ exchange })", () => {
       });
       const { r, out } = res();
 
-      await exchangeScrapeController(req({ exchange }), r, "job-1");
+      const input = req({ exchange });
+      input.headers["x-request-id"] = "request-1";
+      await exchangeScrapeController(input, r, "job-1");
 
       expect(forward).toHaveBeenCalledWith(
         expect.objectContaining({
           teamId: "team_a",
           apiKeyId: 7,
           body: { requests: [CALL] },
-          requestId: "job-1",
+          requestId: "request-1",
         }),
       );
       expect(out.status).toBe(200);

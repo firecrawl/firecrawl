@@ -44,7 +44,11 @@ function exchangeAccessError(
 
 function exchangeProxy(
   timeout: number,
-  options: { requiresRetrieveFlag?: boolean; billUsage?: boolean } = {},
+  options: {
+    requiresRetrieveFlag?: boolean;
+    billUsage?: boolean;
+    requiresNonZdr?: boolean;
+  } = {},
 ) {
   const requiresRetrieveFlag = options.requiresRetrieveFlag !== false;
 
@@ -63,6 +67,15 @@ function exchangeProxy(
       return exchangeError(res, accessError.status, accessError.error);
     }
 
+    if (
+      options.requiresNonZdr &&
+      getScrapeZDR(authedReq.acuc?.flags) === "forced"
+    )
+      return exchangeError(
+        res,
+        403,
+        "Skill lookup is not available for zero-data-retention requests.",
+      );
     const interop = req.body?.__agentInterop;
     if (
       options.billUsage &&
@@ -127,6 +140,21 @@ function exchangeProxy(
 }
 
 export const exchangeRouter = express.Router();
+exchangeRouter.post(
+  "/skills/resolve",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(
+    exchangeProxy(DISCOVER_TIMEOUT_MS, {
+      requiresRetrieveFlag: false,
+      requiresNonZdr: true,
+    }),
+  ),
+);
+exchangeRouter.get(
+  "/skills/:id/SKILL.md",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
 
 exchangeRouter.get(
   "/discover{/*path}",
@@ -150,7 +178,9 @@ exchangeRouter.post(
     }
     next();
   },
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(undefined, undefined, {
+    skipBalanceCheck: () => true,
+  }),
   wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS, { billUsage: true })),
 );
 

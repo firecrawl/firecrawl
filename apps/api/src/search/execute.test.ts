@@ -3,6 +3,7 @@ const mocks = vi.hoisted(() => ({
   searchDeveloperCategory: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
   searchExchangeCatalog: vi.fn(),
+  searchAlexandria: vi.fn(),
 }));
 
 vi.mock("./v2", () => ({ search: mocks.search }));
@@ -17,6 +18,10 @@ vi.mock("./developer", () => ({
 }));
 vi.mock("./exchange-source", () => ({
   searchExchangeCatalog: mocks.searchExchangeCatalog,
+}));
+vi.mock("./alexandria-source", async importOriginal => ({
+  ...(await importOriginal<typeof import("./alexandria-source")>()),
+  searchAlexandria: mocks.searchAlexandria,
 }));
 vi.mock("./scrape", () => ({
   getItemsToScrape: vi.fn(() => []),
@@ -300,6 +305,53 @@ describe("executeSearch exchange source", () => {
       "news",
       "images",
     ]);
+  });
+
+  it.each([false, true])(
+    "keeps structured Alexandria discovery free when mixed with web: %s",
+    async includeWeb => {
+      const alexandria = {
+        status: "available",
+        mode: "browse",
+        level: "providers",
+        items: [{ id: "particle", toolCount: 13 }],
+        total: 1,
+        nextCursor: null,
+      };
+      mocks.searchAlexandria.mockResolvedValue(alexandria);
+      const source = {
+        type: "alexandria",
+        mode: "browse",
+        providers: ["particle"],
+      };
+      const input = searchRequestSchema.parse({
+        ...(includeWeb ? { query: "Spotify podcasts" } : {}),
+        sources: includeWeb ? ["web", source] : [source],
+      });
+      const result = await executeSearch(
+        input,
+        { ...context, flags: { exchangeRetrieve: true } },
+        logger,
+      );
+      expect(result.response.alexandria).toEqual(alexandria);
+      expect(result.totalCredits).toBe(includeWeb ? 2 : 0);
+      expect(mocks.searchAlexandria).toHaveBeenCalledWith(
+        expect.objectContaining({ source, hasExtendedCatalogAccess: true }),
+        logger,
+      );
+      expect(mocks.searchExchangeCatalog).not.toHaveBeenCalled();
+      if (includeWeb)
+        expect(mocks.search.mock.calls[0][0].type).toEqual(["web"]);
+      else expect(mocks.search).not.toHaveBeenCalled();
+    },
+  );
+
+  it("propagates an invalid catalogue request after the web result settles", async () => {
+    const failure = new Error("Invalid cursor");
+    mocks.searchAlexandria.mockRejectedValue(failure);
+    await expect(
+      executeSearch(sources(["web", "alexandria"]), context, logger),
+    ).rejects.toBe(failure);
   });
 });
 

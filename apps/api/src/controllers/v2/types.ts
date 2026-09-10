@@ -1,3 +1,4 @@
+import { alexandriaSourceSchema } from "../../search/alexandria-source";
 import { Request, Response } from "express";
 import { config } from "../../config";
 import { z } from "zod";
@@ -2322,10 +2323,6 @@ const newsSearchSourceOptions = z.strictObject({
   type: z.literal("news"),
 });
 
-const exchangeSearchSourceOptions = z.strictObject({
-  type: z.literal("exchange-providers"),
-});
-
 // Category source type definitions
 const githubCategoryOptions = z.strictObject({
   type: z.literal("github"),
@@ -2400,25 +2397,23 @@ const searchDomainSchema = z
 
 export const searchRequestSchema = z
   .strictObject({
-    query: z.string(),
+    query: z.string().optional().prefault(""),
     skills: z.boolean().optional(),
     limit: z.int().positive().finite().max(100).optional().prefault(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),
     sources: z
-      .union([
-        // Array of strings (simple format)
-        z.array(z.enum(["web", "images", "news", "exchange-providers"])),
-        // Array of objects (advanced format)
-        z.array(
-          z.union([
-            webSearchSourceOptions,
-            imagesSearchSourceOptions,
-            newsSearchSourceOptions,
-            exchangeSearchSourceOptions,
-          ]),
-        ),
-      ])
+      .array(
+        z.union([
+          z.enum(["web", "images", "news", "alexandria", "exchange-providers"]),
+          webSearchSourceOptions,
+          imagesSearchSourceOptions,
+          newsSearchSourceOptions,
+          alexandriaSourceSchema,
+        ]),
+      )
+      .min(1)
+      .max(5)
       .optional()
       .prefault(["web"]),
     categories: z
@@ -2501,6 +2496,26 @@ export const searchRequestSchema = z
       })
       .optional(),
   })
+  .refine(x => {
+    const sources = x.sources.map(source =>
+      typeof source === "string" ? { type: source } : source,
+    );
+    return (
+      Boolean(x.query.trim()) ||
+      (!x.categories?.length &&
+        sources.every(
+          source =>
+            ["alexandria", "exchange-providers"].includes(source.type) &&
+            (!("mode" in source) || source.mode !== "semantic"),
+        ))
+    );
+  }, "A query is required for web or semantic search.")
+  .refine(x => {
+    const types = x.sources
+      .map(source => (typeof source === "string" ? source : source.type))
+      .map(type => (type === "exchange-providers" ? "alexandria" : type));
+    return new Set(types).size === types.length;
+  }, "Specify each source once; alexandria and exchange-providers are aliases.")
   .refine(
     x => !(x.includeDomains?.length && x.excludeDomains?.length),
     "includeDomains and excludeDomains cannot both be specified",
@@ -2519,77 +2534,30 @@ export const searchRequestSchema = z
     const country =
       x.country !== undefined ? x.country : x.location ? undefined : "us";
 
-    // Transform string array sources to object format
-    let sources = x.sources;
-    if (sources && Array.isArray(sources) && sources.length > 0) {
-      // Check if it's a string array by checking the first element
-      if (typeof sources[0] === "string") {
-        // It's a string array, transform to object array
-        sources = (sources as string[]).map(s => {
-          switch (s) {
-            case "web":
-              return {
-                type: "web" as const,
-                tbs: x.tbs,
-                filter: x.filter,
-                lang: x.lang,
-                country,
-                location: x.location,
-              };
-            case "images":
-              return {
-                type: "images" as const,
-                // Images don't inherit global params in the simple format
-              };
-            case "news":
-              return {
-                type: "news" as const,
-                tbs: x.tbs,
-                lang: x.lang,
-                country,
-                location: x.location,
-              };
-            case "exchange-providers":
-              return { type: s };
-            default:
-              return { type: s as any };
-          }
-        });
-      }
-      // Otherwise it's already an object array, keep as is
-    }
-
-    // Transform string array categories to object format
-    let categories = x.categories;
-    if (categories && Array.isArray(categories) && categories.length > 0) {
-      // Check if it's a string array by checking the first element
-      if (typeof categories[0] === "string") {
-        // It's a string array, transform to object array
-        categories = (categories as string[]).map(c => {
-          switch (c) {
-            case "github":
-              return {
-                type: "github" as const,
-              };
-            case "research":
-              return {
-                type: "research" as const,
-              };
-            case "pdf":
-              return {
-                type: "pdf" as const,
-              };
-            case "developer":
-              return {
-                type: "developer" as const,
-              };
-            default:
-              return { type: c as any };
-          }
-        });
-      }
-      // Otherwise it's already an object array, keep as is
-    }
+    const categories = x.categories?.map(category =>
+      typeof category === "string" ? { type: category } : category,
+    );
+    const sources = x.sources.map(source => {
+      if (typeof source !== "string") return source;
+      if (source === "web")
+        return {
+          type: source,
+          tbs: x.tbs,
+          filter: x.filter,
+          lang: x.lang,
+          country,
+          location: x.location,
+        };
+      if (source === "news")
+        return {
+          type: source,
+          tbs: x.tbs,
+          lang: x.lang,
+          country,
+          location: x.location,
+        };
+      return { type: source };
+    });
 
     return {
       ...x,

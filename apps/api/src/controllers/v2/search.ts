@@ -1,3 +1,4 @@
+import { AlexandriaRequestError } from "../../search/alexandria-source";
 import { resolveSearchSkills } from "../../services/exchange/skills";
 import { Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
@@ -198,7 +199,7 @@ async function searchControllerInner(
     }
 
     const wantsExchange = (req.body.sources as Array<{ type: string }>).some(
-      source => source.type === "exchange-providers",
+      source => ["alexandria", "exchange-providers"].includes(source.type),
     );
     if (
       (wantsExchange || req.body.skills) &&
@@ -212,7 +213,7 @@ async function searchControllerInner(
     if (wantsExchange && !config.FIRE_EXCHANGE_URL) {
       return res.status(503).json({
         success: false,
-        error: "The exchange-providers source is not available.",
+        error: "Alexandria discovery is not available.",
       });
     }
 
@@ -265,7 +266,7 @@ async function searchControllerInner(
       !isSearchPreview &&
       shouldBill &&
       ((req.body.sources as Array<{ type: string }>).some(
-        source => source.type !== "exchange-providers",
+        source => !["alexandria", "exchange-providers"].includes(source.type),
       ) ||
         wantsDeveloperCategory(req.body.categories as CategoryOption[]))
         ? projectSearchTotalCredits(
@@ -470,6 +471,9 @@ async function searchControllerInner(
         () => {},
       );
     }
+
+    if (error instanceof AlexandriaRequestError)
+      return res.status(400).json({ success: false, error: error.message });
 
     if (error instanceof z.ZodError) {
       logger.warn("Invalid request body", { error: error.issues });

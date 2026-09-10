@@ -164,8 +164,7 @@ it("merges selected tools across URL batches without leaking one domain's select
         skills: [
           {
             id: "particle",
-            name: "Particle",
-            origin: "api",
+            ...(index === 0 ? { name: "Particle", origin: "api" } : {}),
             description: "Podcasts",
             toolCount: 2,
             matchedDomains: [domain],
@@ -190,6 +189,8 @@ it("merges selected tools across URL batches without leaking one domain's select
     {
       id: "particle",
       toolCount: 3,
+      name: "Particle",
+      origin: "api",
       matchedTerms: ["Spotify"],
       matchedDomains: ["site0.example", "site100.example"],
       domainCapabilities: {

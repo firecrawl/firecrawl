@@ -7,6 +7,9 @@ const state = vi.hoisted(() => ({
   forward: vi.fn(),
   semaphore: vi.fn(),
   track: vi.fn(),
+  hold: vi.fn(),
+  finalize: vi.fn(),
+  log: vi.fn(),
   debit: vi.fn(),
   refund: vi.fn(),
   fetch: vi.fn(),
@@ -18,8 +21,9 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("../queue-service", () => ({
   getRedisConnection: () => ({
-    set: async (key: string, value: string) => {
-      if (state.keys.has(key)) return null;
+    get: async (key: string) => state.keys.get(key) ?? null,
+    set: async (key: string, value: string, ...args: unknown[]) => {
+      if (args.includes("NX") && state.keys.has(key)) return null;
       state.keys.set(key, value);
       return "OK";
     },
@@ -36,6 +40,8 @@ vi.mock("../queue-service", () => ({
 vi.mock("../autumn/autumn.service", () => ({
   autumnService: {
     checkCredits: state.checkCredits,
+    lockCredits: state.hold,
+    finalizeCreditsLock: state.finalize,
     trackCredits: state.track,
     refundCredits: state.refund,
     isRoutedThroughFirebill: async () => false,
@@ -62,7 +68,10 @@ vi.mock("undici", async importOriginal => ({
 }));
 vi.mock("../../lib/exchange-proxy", async importOriginal => ({
   ...(await importOriginal<typeof import("../../lib/exchange-proxy")>()),
-  forwardToExchange: state.forward,
+  forwardToExchange: (input: any) =>
+    input.path === "/v1/retrieve/quote"
+      ? Promise.resolve({ status: 200, body: { maximumCredits: 3 } })
+      : state.forward(input),
   exchangeUpstreamBase: () =>
     state.exchangeAvailable ? "https://exchange.example" : null,
   exchangeProxyFailureResponse: () => ({
@@ -80,7 +89,7 @@ vi.mock("../../routes/shared", async importOriginal => ({
   },
   wrap: (fn: unknown) => fn,
 }));
-vi.mock("../logging/log_job", () => ({ logRequest: async () => {} }));
+vi.mock("../logging/log_job", () => ({ logRequest: state.log }));
 vi.mock("../../lib/external-request-id", () => ({
   externalRequestId: () => "external",
 }));
@@ -91,6 +100,7 @@ import { config } from "../../config";
 import { ExchangeProxyError } from "../../lib/exchange-proxy";
 import { ConcurrencyQueueTimeoutError } from "../../lib/error";
 const originalConfig = {
+  USE_DB_AUTHENTICATION: config.USE_DB_AUTHENTICATION,
   FIRE_EXCHANGE_URL: config.FIRE_EXCHANGE_URL,
   EXCHANGE_INTERNAL_SECRET: config.EXCHANGE_INTERNAL_SECRET,
   AGENT_INTEROP_SECRET: config.AGENT_INTEROP_SECRET,
@@ -108,463 +118,272 @@ const calls = [{ provider: "test", capability: "price" }];
 beforeEach(() => {
   vi.clearAllMocks();
   state.keys.clear();
+  state.queue.length = 0;
+  state.flags = { exchangeRetrieve: true };
+  state.failQueue = false;
+  state.exchangeAvailable = true;
   state.cleanup
     .mockReset()
     .mockImplementation(async (key: string) => state.keys.delete(key));
-  state.checkCredits.mockResolvedValue({ allowed: true, remaining: 100 });
-  state.semaphore.mockImplementation(
-    async (_team, _holder, _limit, _signal, _timeout, fn) => fn(false),
-  );
-  state.queue.length = 0;
-  state.failQueue = false;
-  state.exchangeAvailable = true;
-  state.flags = { exchangeRetrieve: true };
-  config.FIRE_EXCHANGE_URL = "https://exchange.example";
-  config.EXCHANGE_INTERNAL_SECRET = "test-secret";
-  config.AGENT_INTEROP_SECRET = "agent-test-secret";
-  state.track.mockResolvedValue(true);
-  state.debit.mockResolvedValue([]);
-  state.refund.mockResolvedValue(true);
-  state.fetch.mockResolvedValue({
+  state.hold.mockReset().mockImplementation(async input => ({
+    status: "locked",
+    lockId: input.lockId,
+  }));
+  state.finalize.mockReset().mockResolvedValue(true);
+  state.forward.mockReset().mockResolvedValue({
+    status: 200,
+    contentType: "application/json",
+    requestId: "receipt",
+    body: {
+      success: true,
+      creditsCost: 3,
+      results: [{ ...calls[0], data: {}, creditsCost: 3 }],
+    },
+  });
+  state.semaphore
+    .mockReset()
+    .mockImplementation(async (...args) => args.at(-1)());
+  state.debit.mockReset().mockResolvedValue([{ api_key: "key" }]);
+  state.refund.mockReset().mockResolvedValue(true);
+  state.log.mockResolvedValue(undefined);
+  state.fetch.mockReset().mockResolvedValue({
     ok: true,
     status: 200,
     arrayBuffer: async () => new ArrayBuffer(0),
   });
-  state.forward.mockResolvedValue({
+  config.USE_DB_AUTHENTICATION = true;
+  config.FIRE_EXCHANGE_URL = "https://exchange.example";
+  config.EXCHANGE_INTERNAL_SECRET = "test-secret";
+  config.AGENT_INTEROP_SECRET = "agent-test-secret";
+});
+const send = (path = "/exchange/retrieve", id = "same", extra = {}) =>
+  request(app)
+    .post(path)
+    .set("x-request-id", id)
+    .send({
+      ...(path === "/v2/scrape" ? { exchange: calls } : { requests: calls }),
+      ...extra,
+    });
+
+it.each(["/exchange/retrieve", "/v2/scrape"])(
+  "reserves before execution and charges once through %s",
+  async path => {
+    state.forward.mockImplementation(async input => {
+      expect(state.hold).toHaveBeenCalledWith(
+        expect.objectContaining({
+          value: 3,
+          properties: expect.objectContaining({ apiKeyId: 7 }),
+        }),
+      );
+      expect(input.maxCredits).toBe(3);
+      return {
+        status: 200,
+        body: {
+          success: true,
+          creditsCost: 2,
+          results: [{ ...calls[0], data: {}, creditsCost: 2 }],
+        },
+      };
+    });
+    expect((await send(path)).status).toBe(200);
+    expect(state.finalize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "confirm",
+        overrideValue: 2,
+        heldValue: 3,
+      }),
+    );
+    expect(state.track).not.toHaveBeenCalled();
+    expect(state.queue).toHaveLength(1);
+    await processBillingBatch();
+    expect(state.debit).toHaveBeenCalledWith(
+      expect.objectContaining({ credits: 2 }),
+    );
+    expect(state.fetch).toHaveBeenCalledTimes(1);
+  },
+);
+it.each(["denied", "skipped"])(
+  "does not execute when a hold is %s",
+  async status => {
+    state.hold.mockResolvedValue({ status });
+    for (const path of ["/exchange/retrieve", "/v2/scrape"])
+      expect((await send(path)).status).toBe(status === "denied" ? 402 : 503);
+    expect(state.forward).not.toHaveBeenCalled();
+    expect(state.queue).toHaveLength(0);
+  },
+);
+it("replays completed results across entry points without a second execution or charge", async () => {
+  const first = await send();
+  const retry = await send("/v2/scrape");
+  expect(first.status).toBe(200);
+  expect(retry.status).toBe(200);
+  expect(retry.body.data.exchange).toEqual(first.body.results);
+  expect(state.forward).toHaveBeenCalledTimes(1);
+  expect(state.hold).toHaveBeenCalledTimes(1);
+  expect(state.queue).toHaveLength(1);
+});
+it("keeps an uncertain credit hold from authorizing a retry", async () => {
+  state.hold.mockResolvedValue({ status: "skipped" });
+  state.finalize.mockResolvedValue(false);
+  expect((await send()).status).toBe(503);
+  expect((await send()).status).toBe(409);
+  expect(state.forward).not.toHaveBeenCalled();
+  expect(state.hold).toHaveBeenCalledTimes(1);
+});
+it("rejects reusing the same request ID for a different payload", async () => {
+  await send();
+  const second = await send("/exchange/retrieve", "same", {
+    requests: [{ ...calls[0], options: { q: "different" } }],
+  });
+  expect(second.status).toBe(409);
+  expect(state.forward).toHaveBeenCalledTimes(1);
+});
+it("requires request IDs on external execution calls", async () => {
+  for (const path of ["/exchange/retrieve", "/v2/scrape"]) {
+    expect(
+      (
+        await request(app)
+          .post(path)
+          .send(
+            path === "/v2/scrape" ? { exchange: calls } : { requests: calls },
+          )
+      ).status,
+    ).toBe(400);
+  }
+  expect(state.hold).not.toHaveBeenCalled();
+  expect(state.forward).not.toHaveBeenCalled();
+});
+it("does not execute simultaneous retries twice", async () => {
+  let finish!: (value: any) => void;
+  const upstream = new Promise(resolve => {
+    finish = resolve;
+  });
+  state.forward.mockReturnValue(upstream);
+  const first = send().then(response => response);
+  await vi.waitFor(() => expect(state.forward).toHaveBeenCalledTimes(1));
+  expect((await send()).status).toBe(409);
+  finish({
     status: 200,
     body: {
       success: true,
       creditsCost: 3,
-      results: [{ ...calls[0], data: { value: 12 }, creditsCost: 3 }],
+      results: [{ ...calls[0], data: {}, creditsCost: 3 }],
     },
-    contentType: "application/json",
-    requestId: null,
   });
-});
-it.each([
-  "/exchange/retrieve",
-  "/exchange/retrieve/",
-  "/exchange/RETRIEVE",
-  "/v2/scrape",
-])(
-  "settles %s only after the queued debit commits and confirms Exchange usage",
-  async path => {
-    const payload =
-      path === "/v2/scrape"
-        ? { exchange: calls, timeout: 1500 }
-        : { requests: calls };
-    const response = await request(app)
-      .post(path)
-      .set("x-request-id", "flow-1")
-      .set("x-exchange-team-id", "attacker")
-      .set("x-exchange-extended-catalog-access", "false")
-      .send(payload);
-    expect(response.status).toBe(200);
-    expect(state.forward.mock.calls[0][0]).toMatchObject({
-      teamId: "team_a",
-      hasExtendedCatalogAccess: true,
-    });
-    expect(state.forward.mock.calls[0][0].deadline).toBeGreaterThan(
-      Date.now() + 100,
-    );
-    expect(state.semaphore).toHaveBeenCalledWith(
-      "team_a",
-      expect.any(String),
-      2,
-      expect.any(AbortSignal),
-      expect.any(Number),
-      expect.any(Function),
-    );
-    expect(state.track).toHaveBeenCalledTimes(1);
-    expect(state.track.mock.calls[0][0]).toMatchObject({
-      teamId: "team_a",
-      value: 3,
-    });
-    expect(state.queue).toHaveLength(1);
-    expect(state.debit).not.toHaveBeenCalled();
-    expect(state.fetch).not.toHaveBeenCalled();
-    const operation = JSON.parse(state.queue[0]);
-    expect(operation.exchange_usage_request_id).toBe(
-      state.forward.mock.calls[0][0].requestId,
-    );
-    await processBillingBatch();
-    expect(state.debit).toHaveBeenCalledWith(
-      expect.objectContaining({ team_id: "team_a", credits: 3, api_key_id: 7 }),
-    );
-    expect(state.fetch).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(state.fetch.mock.calls[0][1].body)).toEqual([
-      {
-        requestId: operation.exchange_usage_request_id,
-        status: "confirmed",
-        billingReference: operation.billing_reference,
-      },
-    ]);
-  },
-);
-it("deduplicates concurrent calls across the two HTTP entry points", async () => {
-  const results = await Promise.all([
-    request(app)
-      .post("/exchange/retrieve")
-      .set("x-request-id", "same")
-      .send({ requests: calls }),
-    request(app)
-      .post("/v2/scrape")
-      .set("x-request-id", "same")
-      .send({ exchange: calls }),
-  ]);
-  expect(results.map(r => r.status).sort()).toEqual([200, 409]);
-  expect(state.forward).toHaveBeenCalledTimes(1);
-  expect(state.track).toHaveBeenCalledTimes(1);
+  expect((await first).status).toBe(200);
   expect(state.queue).toHaveLength(1);
 });
-it("does not confirm a failed database debit", async () => {
-  await request(app)
-    .post("/exchange/retrieve")
-    .set("x-request-id", "debit-failure")
-    .send({ requests: calls });
-  state.debit.mockRejectedValue(new Error("Database unavailable"));
-  await processBillingBatch();
-  expect(state.fetch).not.toHaveBeenCalled();
-  expect(state.refund).toHaveBeenCalledWith(
-    expect.objectContaining({ value: 3 }),
-  );
-});
-it("refunds a failed enqueue and blocks re-execution", async () => {
-  state.failQueue = true;
-  const send = () =>
-    request(app)
-      .post("/exchange/retrieve")
-      .set("x-request-id", "queue-failure")
-      .send({ requests: calls });
-  expect((await send()).status).toBe(503);
-  expect(state.refund).toHaveBeenCalledTimes(1);
-  expect((await send()).status).toBe(409);
-  expect(state.forward).toHaveBeenCalledTimes(1);
-});
-it.each([408, 500, 502, 504])(
-  "blocks retries after ambiguous upstream status %i",
-  async status => {
-    state.forward.mockResolvedValue({
-      status,
-      body: { error: "Upstream failed" },
-    });
-    const send = () =>
-      request(app)
-        .post("/exchange/retrieve")
-        .set("x-request-id", "ambiguous")
-        .send({ requests: calls });
-    expect((await send()).status).toBe(status);
-    expect((await send()).status).toBe(409);
-    expect(state.forward).toHaveBeenCalledTimes(1);
-    expect(state.track).not.toHaveBeenCalled();
+it.each([
+  { success: false, creditsCost: 3, results: [] },
+  { success: true, creditsCost: 3, results: "invalid" },
+  { success: true, creditsCost: 3, results: [] },
+  {
+    success: true,
+    creditsCost: 4,
+    results: [{ ...calls[0], data: {}, creditsCost: 4 }],
   },
-);
-it("does not repeat an ambiguous billing track after retry", async () => {
-  state.track.mockRejectedValue(new Error("Connection closed after track"));
-  const send = () =>
-    request(app)
-      .post("/exchange/retrieve")
-      .set("x-request-id", "track-failure")
-      .send({ requests: calls });
+  {
+    success: true,
+    creditsCost: 3,
+    results: [{ ...calls[0], data: {}, creditsCost: 1 }],
+  },
+])("releases the hold for an invalid response or charge: %j", async body => {
+  state.forward.mockResolvedValue({ status: 200, body });
   expect((await send()).status).toBe(502);
-  expect((await send()).status).toBe(409);
-  expect(state.track).toHaveBeenCalledTimes(1);
+  expect(state.finalize).toHaveBeenCalledWith(
+    expect.objectContaining({ action: "release" }),
+  );
   expect(state.queue).toHaveLength(0);
-  expect(state.fetch).not.toHaveBeenCalled();
 });
-
-it.each([-1, 101, 1.5, undefined])(
-  "rejects invalid charge %s before billing",
-  async creditsCost => {
-    state.forward.mockResolvedValue({
-      status: 200,
-      body: {
-        success: true,
-        creditsCost,
-        results: [{ ...calls[0], data: {}, creditsCost }],
-      },
-    });
-    const response = await request(app)
-      .post("/exchange/retrieve")
-      .send({ requests: calls });
-    expect(response.status).toBe(502);
-    expect(state.track).not.toHaveBeenCalled();
-    expect(state.queue).toHaveLength(0);
-  },
-);
-it("leaves failed confirmations pending after bounded retries", async () => {
-  await request(app).post("/exchange/retrieve").send({ requests: calls });
-  state.fetch.mockResolvedValue({
-    ok: false,
-    status: 503,
-    arrayBuffer: async () => new ArrayBuffer(0),
-  });
-  await processBillingBatch();
-  expect(state.debit).toHaveBeenCalledTimes(1);
-  expect(state.fetch).toHaveBeenCalledTimes(3);
-  expect(state.refund).not.toHaveBeenCalled();
+it("does not charge again when billing confirmation is ambiguous", async () => {
+  state.finalize.mockResolvedValue(false);
+  expect((await send()).status).toBe(503);
+  expect((await send()).status).toBe(503);
+  expect(state.finalize).toHaveBeenCalledTimes(1);
+  expect(state.forward).toHaveBeenCalledTimes(1);
+  expect(state.queue).toHaveLength(0);
 });
-
 it.each([true, false])(
-  "retries a transport failure only when definitely unsent: %s",
+  "retries transport errors only when execution was definitely unsent (%s)",
   async requestNotSent => {
     state.forward.mockRejectedValueOnce(
       new ExchangeProxyError("unreachable", undefined, requestNotSent),
     );
-    const send = () =>
-      request(app)
-        .post("/exchange/retrieve")
-        .set("x-request-id", "transport")
-        .send({ requests: calls });
     expect((await send()).status).toBe(502);
     expect((await send()).status).toBe(requestNotSent ? 200 : 409);
-    expect(state.track).toHaveBeenCalledTimes(requestNotSent ? 1 : 0);
+    expect(state.forward).toHaveBeenCalledTimes(requestNotSent ? 2 : 1);
   },
 );
-it("allows retry after a concurrency wait expires without calling the provider", async () => {
+it("releases a hold and permits a retry after a concurrency timeout", async () => {
   state.semaphore.mockRejectedValueOnce(new ConcurrencyQueueTimeoutError());
-  const send = () =>
-    request(app)
-      .post("/exchange/retrieve")
-      .set("x-request-id", "concurrency")
-      .send({ requests: calls });
   expect((await send()).status).toBe(429);
   expect(state.forward).not.toHaveBeenCalled();
-  expect(state.track).not.toHaveBeenCalled();
+  expect(state.finalize).toHaveBeenCalledWith(
+    expect.objectContaining({ action: "release" }),
+  );
   expect((await send()).status).toBe(200);
 });
-
-it.each([
-  { success: false, creditsCost: 3, results: [] },
-  { success: true, creditsCost: 3, results: "invalid" },
-  { success: true, creditsCost: 3, results: [null] },
-  { success: true, creditsCost: 3, results: [] },
-  { success: true, creditsCost: 3, results: [{ ...calls[0], creditsCost: 3 }] },
-  {
-    success: true,
-    creditsCost: 3,
-    results: [{ ...calls[0], creditsCost: 1, data: {} }],
-  },
-])(
-  "rejects malformed successful responses before either entry point bills: %j",
-  async body => {
-    state.forward.mockResolvedValue({ status: 200, body });
-    for (const path of ["/exchange/retrieve", "/v2/scrape"]) {
-      const response = await request(app)
-        .post(path)
-        .send(
-          path === "/v2/scrape" ? { exchange: calls } : { requests: calls },
-        );
-      expect(response.status).toBe(502);
-    }
-    expect(state.track).not.toHaveBeenCalled();
-    expect(state.queue).toHaveLength(0);
-  },
-);
-
-it.each([false, true])(
-  "settles valid zero-credit singleton or partial batch responses (batch: %s)",
-  async batch => {
-    const result = { ...calls[0], creditsCost: 0, data: null };
-    state.forward.mockResolvedValue({
-      status: 200,
-      body: batch
-        ? {
-            success: true,
-            creditsCost: 0,
-            results: [
-              result,
-              {
-                ...calls[0],
-                error: { code: "not_found", message: "No result", status: 404 },
-              },
-            ],
-          }
-        : { success: true, ...result },
-    });
-    const response = await request(app)
-      .post("/exchange/retrieve")
-      .send(batch ? { requests: [...calls, ...calls] } : calls[0]);
-    expect(response.status).toBe(200);
-    expect(state.queue).toHaveLength(1);
-    await processBillingBatch();
-    expect(state.debit).toHaveBeenCalledWith(
-      expect.objectContaining({ credits: 0 }),
-    );
-    expect(state.fetch).toHaveBeenCalledTimes(1);
-  },
-);
-
-it.each(["provider", "transport", "concurrency"])(
-  "preserves a %s failure when cleanup also fails",
-  async failure => {
-    state.cleanup.mockRejectedValue(new Error("Redis unavailable"));
-    if (failure === "provider")
-      state.forward.mockResolvedValue({
-        status: 422,
-        body: { error: "Invalid option" },
-      });
-    if (failure === "transport")
-      state.forward.mockRejectedValue(
-        new ExchangeProxyError("unreachable", undefined, true),
-      );
-    if (failure === "concurrency")
-      state.semaphore.mockRejectedValue(new ConcurrencyQueueTimeoutError());
-    const send = () =>
-      request(app)
-        .post("/exchange/retrieve")
-        .set("x-request-id", "cleanup")
-        .send({ requests: calls });
-    expect((await send()).status).toBe(
-      failure === "provider" ? 422 : failure === "transport" ? 502 : 429,
-    );
-    expect(state.cleanup).toHaveBeenCalledTimes(1);
-    expect(state.track).not.toHaveBeenCalled();
-    expect((await send()).status).toBe(409);
-  },
-);
-
-it.each([403, 503])(
-  "checks Exchange access before credit enforcement (%s)",
-  async status => {
-    state.checkCredits.mockResolvedValue({ allowed: false, remaining: 0 });
-    if (status === 403) state.flags.exchangeRetrieve = false;
-    else state.exchangeAvailable = false;
-    expect(
-      (await request(app).post("/exchange/retrieve").send({ requests: calls }))
-        .status,
-    ).toBe(status);
-    expect(state.checkCredits).not.toHaveBeenCalled();
-    expect(state.forward).not.toHaveBeenCalled();
-  },
-);
-
-it.each([
-  ["agent-test-secret", false, false, 200, 0],
-  ["agent-test-secret", true, true, 200, 1],
-  ["agent-test-secret", true, false, 402, 0],
-  ["forged-secret", false, true, 403, 0],
-  ["forged-secret", false, false, 402, 0],
-])(
-  "honors only authenticated agent billing intent (%s, bill: %s, credits allowed: %s)",
-  async (auth, shouldBill, allowed, status, charges) => {
-    state.checkCredits.mockResolvedValue({
-      allowed,
-      remaining: allowed ? 100 : 0,
-    });
-    const response = await request(app).post("/exchange/retrieve").send({
-      requests: calls,
-      __agentInterop: { auth, shouldBill },
-    });
-    expect(response.status).toBe(status);
-    expect(state.track).toHaveBeenCalledTimes(charges as number);
-    expect(state.queue).toHaveLength(charges as number);
-    expect(state.checkCredits).toHaveBeenCalledTimes(
-      auth === "agent-test-secret" && shouldBill === false ? 0 : 1,
-    );
-    if (status === 200)
-      expect(state.forward).toHaveBeenCalledWith(
-        expect.objectContaining({ body: { requests: calls } }),
-      );
-    else expect(state.forward).not.toHaveBeenCalled();
-  },
-);
-
-it.each(["/exchange/platform/bounties/review", "/exchange/applications"])(
-  "strips internal authentication metadata from non-billing proxy route %s",
-  async path => {
-    state.flags.exchangeRetrieve = false;
-    const body = { title: "A request", status: "pending" };
-    const response = await request(app)
-      .post(path)
-      .set("x-exchange-extended-catalog-access", "true")
-      .send({
-        ...body,
-        __agentInterop: { auth: "agent-test-secret", shouldBill: false },
-      });
-    expect(response.status).toBe(200);
-    expect(state.forward).toHaveBeenCalledWith(
-      expect.objectContaining({ body, hasExtendedCatalogAccess: false }),
-    );
-    expect(response.headers["cache-control"]).toBe("no-store");
-    expect(state.checkCredits).not.toHaveBeenCalled();
-    expect(state.track).not.toHaveBeenCalled();
-  },
-);
-
-it("treats calls without an idempotency header as independent requests", async () => {
-  for (let i = 0; i < 2; i++) {
-    expect(
-      (await request(app).post("/exchange/retrieve").send({ requests: calls }))
-        .status,
-    ).toBe(200);
-  }
-  expect(state.track).toHaveBeenCalledTimes(2);
-  expect(state.forward.mock.calls[0][0].requestId).not.toBe(
-    state.forward.mock.calls[1][0].requestId,
-  );
+it("does not repeat an executed request after an enqueue failure", async () => {
+  state.failQueue = true;
+  expect((await send()).status).toBe(503);
+  expect((await send()).status).toBe(503);
+  expect(state.forward).toHaveBeenCalledTimes(1);
 });
-
-it.each([{ scrapeZDR: "forced" }, { forceZDR: true }])(
-  "blocks forced ZDR on both retrieval entry points: %j",
-  async flags => {
-    state.flags = { exchangeRetrieve: true, ...flags };
-    state.checkCredits.mockResolvedValue({ allowed: false, remaining: 0 });
-    for (const path of ["/exchange/retrieve", "/v2/scrape"]) {
-      const response = await request(app)
-        .post(path)
-        .send(
-          path === "/v2/scrape" ? { exchange: calls } : { requests: calls },
-        );
-      expect(response.status).toBe(403);
-      expect(response.body.error).toContain("zero data retention");
-    }
-    expect(state.checkCredits).not.toHaveBeenCalled();
-    expect(state.forward).not.toHaveBeenCalled();
-    expect(state.track).not.toHaveBeenCalled();
-    expect(state.keys.size).toBe(0);
-  },
-);
-
-it("uses the trusted agent request identity for retries unless a header overrides it", async () => {
-  const send = (requestId?: string) => {
-    const call = request(app).post("/exchange/retrieve");
-    if (requestId) call.set("x-request-id", requestId);
-    return call.send({
-      requests: calls,
+it.each(["/exchange/retrieve", "/v2/scrape"])(
+  "honors authenticated no-bill calls at %s",
+  async path => {
+    const response = await send(path, "agent", {
       __agentInterop: {
         auth: "agent-test-secret",
-        shouldBill: true,
-        requestId: "agent-retry",
+        shouldBill: false,
+        requestId: "agent",
       },
     });
-  };
-  expect((await send()).status).toBe(200);
-  expect((await send()).status).toBe(409);
-  expect(state.forward).toHaveBeenCalledTimes(1);
-  expect(state.track).toHaveBeenCalledTimes(1);
-  expect((await send("new-call")).status).toBe(200);
-  expect(state.forward).toHaveBeenCalledTimes(2);
-  expect(state.track).toHaveBeenCalledTimes(2);
-});
-
-it.each([
-  { auth: "agent-test-secret", shouldBill: false, status: 200, billed: false },
-  { auth: "agent-test-secret", shouldBill: true, status: 200, billed: true },
-  { auth: "wrong", shouldBill: false, status: 403, billed: false },
-])(
-  "honors only authenticated agent billing intent: %j",
-  async ({ auth, shouldBill, status, billed }) => {
-    const response = await request(app)
-      .post("/v2/scrape")
-      .send({
-        exchange: calls,
-        __agentInterop: { auth, shouldBill, requestId: "agent-request" },
-      });
-    expect(response.status).toBe(status);
-    expect(state.track).toHaveBeenCalledTimes(billed ? 1 : 0);
-    if (status === 403) expect(state.forward).not.toHaveBeenCalled();
-    else
-      expect(state.forward.mock.calls[0][0].body).toEqual({ requests: calls });
+    expect(response.status).toBe(200);
+    expect(state.hold).not.toHaveBeenCalled();
+    expect(state.queue).toHaveLength(0);
+    expect(state.log).not.toHaveBeenCalled();
+    expect(
+      (
+        await send(path, "forged", {
+          __agentInterop: {
+            auth: "wrong",
+            shouldBill: false,
+            requestId: "forged",
+          },
+        })
+      ).status,
+    ).toBe(403);
   },
 );
+it.each([{ scrapeZDR: "forced" }, { forceZDR: true }])(
+  "rejects retention-ineligible execution before billing %j",
+  async flags => {
+    state.flags = { exchangeRetrieve: true, ...flags };
+    for (const path of ["/exchange/retrieve", "/v2/scrape"])
+      expect((await send(path)).status).toBe(403);
+    expect(state.hold).not.toHaveBeenCalled();
+    expect(state.forward).not.toHaveBeenCalled();
+  },
+);
+it("keeps discovery free, scopes access from authentication and preserves Markdown", async () => {
+  state.flags.exchangeRetrieve = false;
+  state.forward.mockResolvedValue({
+    status: 200,
+    body: "# Particle",
+    contentType: "text/markdown",
+  });
+  const result = await request(app)
+    .get("/exchange/skills/particle/SKILL.md")
+    .set("x-exchange-extended-catalog-access", "true");
+  expect(result.status).toBe(200);
+  expect(result.text).toBe("# Particle");
+  expect(result.headers["cache-control"]).toBe("no-store");
+  expect(state.forward).toHaveBeenCalledWith(
+    expect.objectContaining({
+      path: "/v1/skills/particle/SKILL.md",
+      hasExtendedCatalogAccess: false,
+    }),
+  );
+  expect(state.hold).not.toHaveBeenCalled();
+});

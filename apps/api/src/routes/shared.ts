@@ -37,6 +37,9 @@ import { isAgentInteropSecretValid } from "../lib/agent-interop";
 export function checkCreditsMiddleware(
   _minimum?: number,
   featureId: string = CREDITS_FEATURE_ID,
+  options: {
+    skipBalanceCheck?: (req: RequestWithAuth<any, any, any>) => boolean;
+  } = {},
 ): (req: RequestWithAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
     let minimum = _minimum;
@@ -113,6 +116,8 @@ export function checkCreditsMiddleware(
         }
         // If verified, fall through to normal credit check (key is now on real account)
       }
+
+      if (options.skipBalanceCheck?.(req)) return next();
 
       if (!minimum && req.body) {
         minimum = Number(

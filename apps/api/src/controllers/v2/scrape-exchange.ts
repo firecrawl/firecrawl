@@ -70,20 +70,21 @@ export async function exchangeScrapeController(
     });
   }
 
-  void logRequest({
-    id: jobId,
-    kind: "scrape",
-    api_version: "v2",
-    external_request_id: externalRequestId(req),
-    team_id: req.auth.team_id,
-    origin: body.origin ?? "api",
-    integration: body.integration,
-    target_hint: `exchange:${body.exchange.map(e => `${e.provider}/${e.capability}`).join(",")}`,
-    zeroDataRetention: false,
-    api_key_id: req.acuc?.api_key_id ?? null,
-  }).catch(err =>
-    logger.warn("Background request log failed", { error: err, jobId }),
-  );
+  if (!body.__agentInterop)
+    void logRequest({
+      id: jobId,
+      kind: "scrape",
+      api_version: "v2",
+      external_request_id: externalRequestId(req),
+      team_id: req.auth.team_id,
+      origin: body.origin ?? "api",
+      integration: body.integration,
+      target_hint: `exchange:${body.exchange.map(e => `${e.provider}/${e.capability}`).join(",")}`,
+      zeroDataRetention: false,
+      api_key_id: req.acuc?.api_key_id ?? null,
+    }).catch(err =>
+      logger.warn("Background request log failed", { error: err, jobId }),
+    );
 
   const timeoutMs = Math.min(
     body.timeout ?? EXCHANGE_RETRIEVE_TIMEOUT_MS,
@@ -103,7 +104,7 @@ export async function exchangeScrapeController(
       requestId:
         typeof req.headers["x-request-id"] === "string"
           ? req.headers["x-request-id"]
-          : (body.__agentInterop?.requestId ?? jobId),
+          : body.__agentInterop?.requestId,
     });
 
     if (upstream.status < 200 || upstream.status >= 300) {

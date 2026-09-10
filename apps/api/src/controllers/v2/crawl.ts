@@ -286,6 +286,7 @@ export async function crawlController(
     scrapeOptions,
     internalOptions: {
       disableSmartWaitCache: true,
+      teamFlags: req.acuc?.flags,
       teamId: req.auth.team_id,
       orgId: req.acuc?.org_id ?? null,
       saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,

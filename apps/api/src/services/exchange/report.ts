@@ -40,12 +40,7 @@ export async function reportExchangeUsageBilling(
       });
       await response.arrayBuffer();
       if (response.ok) return true;
-      if (
-        response.status < 500 &&
-        response.status !== 429 &&
-        response.status !== 404
-      )
-        break;
+      if (response.status < 500 && response.status !== 429) break;
     } catch {}
   }
   logger.error("Exchange billing confirmation needs reconciliation", {

@@ -73,6 +73,7 @@ export async function forwardToExchange(input: {
   accept?: string;
   requestId?: string;
   deadline?: number;
+  maxCredits?: number;
 }): Promise<ExchangeUpstream> {
   const base = exchangeUpstreamBase();
   if (!base) throw new ExchangeProxyError("unconfigured", undefined, true);
@@ -91,6 +92,9 @@ export async function forwardToExchange(input: {
           ? {}
           : { "x-request-id": input.requestId }),
         ...(hasBody ? { "content-type": "application/json" } : {}),
+        ...(input.maxCredits === undefined
+          ? {}
+          : { "x-exchange-max-credits": String(input.maxCredits) }),
         "x-exchange-team-id": input.teamId,
         "x-exchange-extended-catalog-access": String(
           input.hasExtendedCatalogAccess === true,

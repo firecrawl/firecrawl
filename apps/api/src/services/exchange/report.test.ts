@@ -47,7 +47,7 @@ it("confirms through the configured HTTPS endpoint, preserving its path prefix",
   agent.assertNoPendingInterceptors();
 });
 
-it.each([404, 429, 500])(
+it.each([429, 500])(
   "retries a %s response and confirms billing",
   async status => {
     const pool = agent.get("https://exchange.example");
@@ -89,3 +89,14 @@ it.each(["https://unexpected.example", "http://unexpected.example"])(
     expect(confirmed).toBe(false);
   },
 );
+
+it("does not retry a missing billing receipt or endpoint", async () => {
+  const dispatch = vi.spyOn(agent, "dispatch");
+  agent
+    .get("https://exchange.example")
+    .intercept({ path, method: "POST" })
+    .reply(404, {});
+  expect(await reportExchangeUsageBilling("missing")).toBe(false);
+  expect(dispatch).toHaveBeenCalledTimes(1);
+  agent.assertNoPendingInterceptors();
+});

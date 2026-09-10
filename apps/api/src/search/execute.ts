@@ -1,3 +1,4 @@
+import { searchAlexandria, type AlexandriaSource } from "./alexandria-source";
 import type { Logger } from "winston";
 import { search } from "./v2";
 import { SearchV2Response } from "../lib/entities";
@@ -108,8 +109,39 @@ export async function executeSearch(
   logger.info("Searching for results");
 
   const requestedTypes = [...new Set(sources.map((s: any) => s.type))];
-  const wantsExchange = requestedTypes.includes("exchange-providers");
-  const searchTypes = requestedTypes.filter(t => t !== "exchange-providers");
+  const legacySource = sources.find(
+    source => source.type === "exchange-providers",
+  );
+  const legacyShorthand =
+    legacySource &&
+    Object.keys(legacySource).length === 1 &&
+    query.trim().length > 0;
+  const wantsExchange = Boolean(legacyShorthand);
+  const alexandriaSource = (sources.find(
+    source => source.type === "alexandria",
+  ) ?? (!legacyShorthand ? legacySource : undefined)) as
+    | AlexandriaSource
+    | undefined;
+  const searchTypes = requestedTypes.filter(
+    t => t !== "exchange-providers" && t !== "alexandria",
+  );
+  const alexandriaPromise = alexandriaSource
+    ? searchAlexandria(
+        {
+          query,
+          source: alexandriaSource,
+          limit,
+          teamId,
+          hasExtendedCatalogAccess: flags?.exchangeRetrieve === true,
+          requestId: context.requestId,
+          timeoutMs: options.timeout,
+        },
+        logger,
+      ).then(
+        result => ({ result }),
+        error => ({ error }),
+      )
+    : null;
   const exchangeResultsPromise = wantsExchange
     ? searchExchangeCatalog(
         {
@@ -164,6 +196,12 @@ export async function executeSearch(
   if (exchangeResultsPromise) {
     const exchange = await exchangeResultsPromise;
     if (exchange !== null) searchResponse["exchange-providers"] = exchange;
+  }
+
+  if (alexandriaPromise) {
+    const alexandria = await alexandriaPromise;
+    if ("error" in alexandria) throw alexandria.error;
+    searchResponse.alexandria = alexandria.result;
   }
 
   // Threat protection: remove blocked results entirely — before

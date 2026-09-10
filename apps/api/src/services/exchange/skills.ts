@@ -86,7 +86,11 @@ export async function resolveSearchSkills(
   for (const skill of results.flat()) {
     const previous = unique.get(skill.id);
     unique.set(skill.id, {
+      ...previous,
       ...skill,
+      name: skill.name ?? previous?.name,
+      origin: skill.origin ?? previous?.origin,
+      toolCount: skill.toolCount ?? previous?.toolCount,
       matchedDomains: [
         ...new Set([
           ...(previous?.matchedDomains ?? []),
