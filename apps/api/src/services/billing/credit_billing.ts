@@ -13,6 +13,7 @@ export async function billTeam(
   api_key_id: number | null,
   billing: BillingMetadata,
   logger?: Logger,
+  exchange?: { accessEventId: string; billingReference?: string },
 ) {
   return withAuth(
     async (
@@ -21,6 +22,9 @@ export async function billTeam(
       api_key_id: number | null,
       billing: BillingMetadata,
       logger: Logger | undefined,
+      exchange:
+        | { accessEventId: string; billingReference?: string }
+        | undefined,
     ) => {
       const autumnProperties = {
         source: "billTeam",
@@ -47,6 +51,7 @@ export async function billTeam(
         billing,
         false,
         trackedInRequest,
+        exchange,
       );
 
       if (!result.success && trackedInRequest) {
@@ -77,5 +82,5 @@ export async function billTeam(
       return result;
     },
     { success: true, message: "No DB, bypassed." },
-  )(team_id, credits, api_key_id, billing, logger);
+  )(team_id, credits, api_key_id, billing, logger, exchange);
 }

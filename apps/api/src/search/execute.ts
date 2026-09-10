@@ -21,6 +21,10 @@ import {
 } from "./highlights";
 import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
+import {
+  searchExchangeCatalog,
+  searchExchangeContent,
+} from "./exchange-source";
 import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
@@ -106,7 +110,29 @@ export async function executeSearch(
 
   logger.info("Searching for results");
 
-  const searchTypes = [...new Set(sources.map((s: any) => s.type))];
+  const requestedTypes = [...new Set(sources.map((s: any) => s.type))];
+  const wantsExchange = requestedTypes.includes("exchange-provider");
+  const searchTypes = requestedTypes.filter(
+    t => t !== "exchange" && t !== "exchange-provider",
+  );
+  const exchangeResultsPromise = wantsExchange
+    ? searchExchangeCatalog(
+        {
+          query,
+          limit,
+          teamId,
+          requestId: context.requestId,
+          timeoutMs: options.timeout,
+        },
+        logger,
+      )
+    : null;
+  const contentResultsPromise = requestedTypes.includes("exchange")
+    ? searchExchangeContent(
+        { query, limit, teamId, requestId, timeoutMs: options.timeout },
+        logger,
+      )
+    : null;
   const { query: searchQuery, categoryMap } = buildSearchQuery(
     query,
     categories,
@@ -124,26 +150,36 @@ export async function executeSearch(
       )
     : null;
 
-  const searchResponse = hasOnlyDeveloperCategory(categories)
-    ? ({} as SearchV2Response)
-    : ((await search({
-        query: searchQuery,
-        logger,
-        requestId: context.requestId,
-        advanced: false,
-        num_results: num_results_buffer,
-        tbs: options.tbs,
-        filter: options.filter,
-        lang: options.lang,
-        country: options.country,
-        location: options.location,
-        safe: options.safe,
-        type: searchTypes,
-        enterprise: options.enterprise,
-      })) as SearchV2Response);
+  const searchResponse =
+    hasOnlyDeveloperCategory(categories) || searchTypes.length === 0
+      ? ({} as SearchV2Response)
+      : ((await search({
+          query: searchQuery,
+          logger,
+          requestId: context.requestId,
+          advanced: false,
+          num_results: num_results_buffer,
+          tbs: options.tbs,
+          filter: options.filter,
+          lang: options.lang,
+          country: options.country,
+          location: options.location,
+          safe: options.safe,
+          type: searchTypes,
+          enterprise: options.enterprise,
+        })) as SearchV2Response);
   let developerResults = developerResultsPromise
     ? await developerResultsPromise
     : [];
+  if (exchangeResultsPromise) {
+    const exchange = await exchangeResultsPromise;
+    if (exchange !== null) searchResponse["exchange-provider"] = exchange;
+  }
+
+  if (contentResultsPromise) {
+    const content = await contentResultsPromise;
+    if (content !== null) searchResponse.exchange = content;
+  }
 
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are
@@ -157,6 +193,7 @@ export async function executeSearch(
       ...(searchResponse.web ?? []).map(x => x.url),
       ...(searchResponse.news ?? []).map(x => x.url),
       ...(searchResponse.images ?? []).map(x => x.url),
+      ...(searchResponse.exchange ?? []).map(x => x.url),
       ...developerResults.map(x => x.url),
     ].filter((x): x is string => !!x);
 
@@ -180,6 +217,11 @@ export async function executeSearch(
       }
       if (searchResponse.images) {
         searchResponse.images = searchResponse.images.filter(x =>
+          isAllowed(x.url),
+        );
+      }
+      if (searchResponse.exchange) {
+        searchResponse.exchange = searchResponse.exchange.filter(x =>
           isAllowed(x.url),
         );
       }
@@ -352,7 +394,7 @@ export async function executeSearch(
     apiVersion: context.apiVersion,
     lang: options.lang,
     country: options.country,
-    sources: searchTypes,
+    sources: requestedTypes,
     numResults: totalResultsCount,
     searchCredits,
     scrapeCredits,

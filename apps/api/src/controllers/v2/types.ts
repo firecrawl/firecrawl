@@ -1541,7 +1541,56 @@ export type ScrapeResponse =
       warning?: string;
       data: Document;
       scrape_id?: string;
+    }
+  | ExchangeScrapeResponse;
+
+const exchangeScrapeCallSchema = z.strictObject({
+  provider: z.string().min(1),
+  capability: z.string().min(1),
+  options: z.record(z.string(), z.unknown()).optional(),
+});
+
+const exchangeRecordCallSchema = z.strictObject({
+  url: z.string().regex(/^firecrawl:\/\/exchange\/[^/?#]+\/[^/?#]+\/[^/?#]+$/),
+  maxCredits: z.number().int().nonnegative().safe(),
+});
+
+export const exchangeScrapeRequestSchema = z.strictObject({
+  exchange: z
+    .union([
+      exchangeRecordCallSchema,
+      exchangeScrapeCallSchema,
+      z.array(exchangeScrapeCallSchema).min(1).max(10),
+    ])
+    .transform(value => (Array.isArray(value) ? value : [value])),
+  origin: z.string().optional().prefault("api"),
+  integration: integrationSchema.optional().transform(val => val || null),
+  timeout: z.int().positive().finite().optional(),
+});
+
+export type ExchangeScrapeResult =
+  | {
+      provider: string;
+      capability: string;
+      creditsCost: number;
+      data: unknown;
+      [key: string]: unknown;
+    }
+  | {
+      provider?: string;
+      capability?: string;
+      error: { code: string; message: string; status?: number };
+      [key: string]: unknown;
     };
+
+export type ExchangeScrapeResponse = {
+  success: true;
+  scrape_id: string;
+  data: {
+    exchange: ExchangeScrapeResult[];
+    creditsCost: number;
+  };
+};
 
 export interface URLTrace {
   url: string;
@@ -2243,6 +2292,10 @@ const newsSearchSourceOptions = z.strictObject({
   type: z.literal("news"),
 });
 
+const exchangeSearchSourceOptions = z.strictObject({
+  type: z.enum(["exchange", "exchange-provider"]),
+});
+
 // Category source type definitions
 const githubCategoryOptions = z.strictObject({
   type: z.literal("github"),
@@ -2324,13 +2377,16 @@ export const searchRequestSchema = z
     sources: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["web", "images", "news"])),
+        z.array(
+          z.enum(["web", "images", "news", "exchange", "exchange-provider"]),
+        ),
         // Array of objects (advanced format)
         z.array(
           z.union([
             webSearchSourceOptions,
             imagesSearchSourceOptions,
             newsSearchSourceOptions,
+            exchangeSearchSourceOptions,
           ]),
         ),
       ])
@@ -2464,6 +2520,9 @@ export const searchRequestSchema = z
                 country,
                 location: x.location,
               };
+            case "exchange":
+            case "exchange-provider":
+              return { type: s };
             default:
               return { type: s as any };
           }

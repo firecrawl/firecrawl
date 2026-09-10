@@ -43,6 +43,7 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { exchangeScrapeController } from "./scrape-exchange";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -76,6 +77,10 @@ export async function scrapeController(
         "scrape.api_key_id": req.acuc?.api_key_id,
         "scrape.middleware_time_ms": controllerStartTime - middlewareStartTime,
       });
+
+      if ((req.body as { exchange?: unknown } | null)?.exchange !== undefined) {
+        return exchangeScrapeController(req, res, jobId);
+      }
 
       // Validation span
       await withSpan("api.scrape.validate", async validateSpan => {
