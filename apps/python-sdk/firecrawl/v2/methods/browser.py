@@ -58,6 +58,7 @@ def browser(
     ttl: Optional[int] = None,
     activity_ttl: Optional[int] = None,
     stream_web_view: Optional[bool] = None,
+    record_session: Optional[bool] = None,
     profile: Optional[Dict[str, Any]] = None,
 ) -> BrowserCreateResponse:
     """Create a new browser session.
@@ -67,6 +68,7 @@ def browser(
         ttl: Total time-to-live in seconds (30-3600, default 300)
         activity_ttl: Inactivity TTL in seconds (10-3600)
         stream_web_view: Whether to enable webview streaming
+        record_session: Whether to record the session (default True server-side)
         profile: Profile config with ``name`` (str) and
             optional ``save_changes`` (bool, default ``True``)
 
@@ -80,6 +82,8 @@ def browser(
         body["activityTtl"] = activity_ttl
     if stream_web_view is not None:
         body["streamWebView"] = stream_web_view
+    if record_session is not None:
+        body["recordSession"] = record_session
     if profile is not None:
         body["profile"] = {
             "name": profile["name"],
