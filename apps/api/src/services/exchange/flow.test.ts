@@ -103,7 +103,14 @@ vi.mock("../autumn/autumn.service", () => ({
   CREDITS_FEATURE_ID: "credits",
 }));
 vi.mock("../autumn/usage", () => ({ getTeamBalance: vi.fn() }));
-vi.mock("../../controllers/auth", () => ({ authenticateUser: vi.fn() }));
+vi.mock("../../controllers/auth", () => ({
+  authenticateUser: vi.fn(),
+  getACUCTeam: async () => ({ org_id: "org_a" }),
+}));
+vi.mock("../autumn/firebill", () => ({
+  firebillConfigured: () => true,
+  firebillFinalize: state.finalize,
+}));
 vi.mock("../idempotency/create", () => ({ createIdempotencyKey: vi.fn() }));
 vi.mock("../idempotency/validate", () => ({ validateIdempotencyKey: vi.fn() }));
 vi.mock("../../lib/concurrency-limit", () => ({
@@ -669,3 +676,51 @@ it("still confirms Exchange delivery if the batch lock release fails", async () 
   await processBillingBatch();
   expect(state.fetch).toHaveBeenCalledTimes(1);
 });
+
+it.each([false, true])(
+  "retains the hold identity when checkpoint and release fail (storage remains down: %s)",
+  async storageDown => {
+    state.hold.mockImplementationOnce(async () => {
+      state.failPhase = "reserve";
+      return {
+        status: "locked",
+        lockId: "returned-lock",
+        operationToken: "partner-operation",
+      };
+    });
+    state.finalize.mockImplementationOnce(async () => {
+      if (!storageDown) state.failPhase = "";
+      return false;
+    });
+    expect((await send()).status).toBe(503);
+    expect(state.forward).not.toHaveBeenCalled();
+    state.failPhase = "";
+    await recover();
+    expect(state.finalize).toHaveBeenCalledTimes(storageDown ? 1 : 2);
+    if (storageDown)
+      expect(JSON.parse([...state.keys.values()][0]).state).toBe("manual");
+    for (const [hold] of state.finalize.mock.calls) {
+      expect(hold).toMatchObject({
+        lockId: "returned-lock",
+        externalRequestId: "partner-operation",
+        action: "release",
+        customerId: "org_a",
+      });
+    }
+  },
+);
+it.each([
+  "invalid JSON",
+  JSON.stringify({ state: "pending", reconciliation: { phase: "confirm" } }),
+])(
+  "quarantines malformed recovery state without retrying billing: %s",
+  async raw => {
+    state.keys.set("broken-request", raw);
+    state.due.set("broken-request", 0);
+    await recover();
+    expect(JSON.parse(state.keys.get("broken-request")!).state).toBe("manual");
+    expect(state.due.has("broken-request")).toBe(false);
+    expect(state.finalize).not.toHaveBeenCalled();
+    expect(state.debit).not.toHaveBeenCalled();
+  },
+);

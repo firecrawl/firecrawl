@@ -436,6 +436,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     const doc = pipeline.document;
 
     if (
+      pipeline.exchange?.handled !== true &&
       job.data.origin !== "monitor" &&
       !job.data.internalOptions?.isParse &&
       doc.metadata.url !== undefined &&

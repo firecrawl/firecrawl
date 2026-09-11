@@ -24,13 +24,14 @@ const responseSchema = z.object({
     .max(500),
 });
 
-export async function resolveSearchSkills(
+export async function resolveSearchTools(
   data: SearchV2Response,
   teamId: string,
   hasExtendedCatalogAccess = false,
   requestId?: string,
   query?: string,
   apiOrigin = "https://api.firecrawl.dev",
+  timeoutMs = 5000,
 ) {
   const urls = [
     ...new Set([
@@ -45,6 +46,8 @@ export async function resolveSearchSkills(
   });
   const searchQuery = query?.slice(0, 2000).trim();
   if (!urls.length && !searchQuery) return [];
+  if (timeoutMs <= 0) throw new Error("Skills lookup deadline exceeded");
+  const signal = AbortSignal.timeout(Math.min(5000, timeoutMs));
   const base = config.FIRE_EXCHANGE_URL;
   if (!base) throw new Error("Skills unavailable");
   const batches: string[][] = [];
@@ -70,7 +73,7 @@ export async function resolveSearchSkills(
             urls,
             ...(searchQuery ? { query: searchQuery } : {}),
           }),
-          signal: AbortSignal.timeout(5000),
+          signal,
         },
       );
       if (!response.ok) {

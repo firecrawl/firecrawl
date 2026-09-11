@@ -1,6 +1,6 @@
+import { finalizeExchangeHold } from "./finalize";
 import { z } from "zod";
 import { logger } from "../../lib/logger";
-import { autumnService } from "../autumn/autumn.service";
 import { queueBillingOperation } from "../billing/batch_billing";
 import { getRedisConnection } from "../queue-service";
 import {
@@ -22,6 +22,7 @@ const receiptSchema = z.object({
   maximumCredits: z.number().nonnegative(),
   lockId: z.string().optional(),
   operationToken: z.string().optional(),
+  holdIdentityPending: z.boolean().optional(),
   phase: z.enum(["reserve", "executing", "confirm", "enqueue"]),
   credits: z.number().nonnegative().optional(),
   response: z.unknown().optional(),
@@ -68,7 +69,15 @@ export async function reconcileExchangeRequests() {
           await redis.zrem(RECONCILIATION_KEY, key);
           continue;
         }
-        const record = JSON.parse(raw);
+        let record;
+        try {
+          record = JSON.parse(raw);
+          if (!record || typeof record !== "object" || Array.isArray(record))
+            throw new Error("Invalid request record");
+        } catch {
+          await markExchangeRequestForReview(key, { unparsed: raw });
+          continue;
+        }
         if (record.state !== "pending") {
           await redis.zrem(RECONCILIATION_KEY, key);
           continue;
@@ -78,10 +87,15 @@ export async function reconcileExchangeRequests() {
           await forgetExchangeRequest(key);
           continue;
         }
-        const receipt = receiptSchema.parse(record.reconciliation);
-        if (receipt.phase === "executing") {
+        const parsed = receiptSchema.safeParse(record.reconciliation);
+        if (!parsed.success) {
+          await markExchangeRequestForReview(key, record);
+          continue;
+        }
+        const receipt = parsed.data;
+        if (receipt.phase === "executing" || receipt.holdIdentityPending) {
           logger.error(
-            "Exchange provider outcome requires manual reconciliation",
+            "Exchange execution or hold identity requires manual reconciliation",
             { key, teamId: receipt.teamId, chargeId: receipt.chargeId },
           );
           await markExchangeRequestForReview(key, record);
@@ -90,7 +104,7 @@ export async function reconcileExchangeRequests() {
         if (receipt.phase === "reserve") {
           if (
             receipt.lockId &&
-            !(await autumnService.finalizeCreditsLock({
+            !(await finalizeExchangeHold({
               lockId: receipt.lockId,
               teamId: receipt.teamId,
               featureId: receipt.featureId,
@@ -108,7 +122,7 @@ export async function reconcileExchangeRequests() {
           throw new Error("Missing confirmed cost");
         if (receipt.lockId && !receipt.holdConfirmed) {
           if (
-            !(await autumnService.finalizeCreditsLock({
+            !(await finalizeExchangeHold({
               lockId: receipt.lockId,
               teamId: receipt.teamId,
               featureId: receipt.featureId,

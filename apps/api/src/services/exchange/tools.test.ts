@@ -3,7 +3,7 @@ import { MockAgent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 vi.mock("../../config", () => ({
   config: { FIRE_EXCHANGE_URL: "https://exchange.example" },
 }));
-import { resolveSearchSkills } from "./skills";
+import { resolveSearchTools } from "./tools";
 const original = getGlobalDispatcher();
 let agent: MockAgent;
 beforeEach(() => {
@@ -52,9 +52,9 @@ it.each([false, true])(
       ],
       news: [{ url: "ftp://example.com/" }],
       images: [{ url: "javascript:alert(1)" }],
-    } as Parameters<typeof resolveSearchSkills>[0];
+    } as Parameters<typeof resolveSearchTools>[0];
     expect(
-      await resolveSearchSkills(
+      await resolveSearchTools(
         data,
         "team",
         hasExtendedCatalogAccess,
@@ -75,8 +75,8 @@ it.each([{}, { web: [{ url: "" }, { url: "invalid" }] }])(
   "does not make a request without valid URLs: %j",
   async data => {
     expect(
-      await resolveSearchSkills(
-        data as Parameters<typeof resolveSearchSkills>[0],
+      await resolveSearchTools(
+        data as Parameters<typeof resolveSearchTools>[0],
         "team",
       ),
     ).toEqual([]);
@@ -88,9 +88,9 @@ it("rejects unsuccessful lookups instead of reporting no matches", async () => {
     .intercept({ path: "/v1/skills/resolve", method: "POST" })
     .reply(503, {});
   await expect(
-    resolveSearchSkills(
+    resolveSearchTools(
       { web: [{ url: "https://spotify.com/" }] } as Parameters<
-        typeof resolveSearchSkills
+        typeof resolveSearchTools
       >[0],
       "team",
     ),
@@ -120,7 +120,7 @@ it("resolves a query without URLs and preserves grouped provider metadata", asyn
       ],
     });
   expect(
-    await resolveSearchSkills(
+    await resolveSearchTools(
       {},
       "team",
       false,
@@ -176,9 +176,9 @@ it("merges selected tools across URL batches without leaking one domain's select
         ],
       });
   }
-  const skills = await resolveSearchSkills(
+  const skills = await resolveSearchTools(
     { web: urls.map(url => ({ url })) } as Parameters<
-      typeof resolveSearchSkills
+      typeof resolveSearchTools
     >[0],
     "team",
     false,
@@ -217,9 +217,9 @@ it("returns contract links on the caller's API origin", async () => {
         },
       ],
     });
-  const result = await resolveSearchSkills(
+  const result = await resolveSearchTools(
     { web: [{ url: "https://spotify.com" }] } as Parameters<
-      typeof resolveSearchSkills
+      typeof resolveSearchTools
     >[0],
     "team",
     true,
@@ -230,4 +230,10 @@ it("returns contract links on the caller's API origin", async () => {
   expect(result[0].url).toBe(
     "https://preview.firecrawl.dev/exchange/skills/particle/SKILL.md",
   );
+});
+
+it("does not start contextual discovery after the search deadline", async () => {
+  await expect(
+    resolveSearchTools({}, "team", false, "request", "podcasts", undefined, 0),
+  ).rejects.toThrow("deadline exceeded");
 });

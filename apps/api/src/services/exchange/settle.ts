@@ -1,3 +1,4 @@
+import { finalizeExchangeHold } from "./finalize";
 import { authorizeExchangeProviders } from "../../lib/exchange-provider-access";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -89,6 +90,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
   };
   let lockId: string | undefined;
   let operationToken: string | undefined;
+  let holdIdentityKnown = false;
   let maximumCredits = 0;
   let started = false;
   const preserve = (
@@ -116,7 +118,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
   const release = async () => {
     if (!lockId) return true;
     try {
-      return await autumnService.finalizeCreditsLock({
+      return await finalizeExchangeHold({
         lockId,
         teamId: input.teamId,
         featureId,
@@ -181,7 +183,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
     if (billable && maximumCredits > 0) {
       // Persist the caller-chosen ID before reserving in case the response is lost.
       lockId = `exchange_${chargeId}`;
-      await preserve("reserve", { body });
+      await preserve("reserve", { body, holdIdentityPending: true });
       const hold = await autumnService.lockCredits({
         teamId: input.teamId,
         value: maximumCredits,
@@ -204,9 +206,10 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
           ),
         );
       }
+      holdIdentityKnown = true;
       lockId = hold.lockId;
       operationToken = hold.operationToken;
-      await preserve("reserve", { body });
+      await preserve("reserve", { body, holdIdentityPending: false });
     }
     const limit = await getEffectiveConcurrencyLimit(input.teamId, input.orgId);
     upstream = await teamConcurrencySemaphore.withSemaphore(
@@ -240,7 +243,20 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
       !started ||
       (error instanceof ExchangeProxyError && error.requestNotSent)
     ) {
-      if (!(await release()) || !(await forget())) return pending();
+      if (!(await release())) {
+        if (holdIdentityKnown) {
+          try {
+            await preserve("reserve", { body, holdIdentityPending: false });
+          } catch (storageError) {
+            input.logger.error("Exchange hold identity storage failed", {
+              chargeId,
+              error: storageError,
+            });
+          }
+        }
+        return pending();
+      }
+      if (!(await forget())) return pending();
     } else {
       input.logger.error("Exchange execution outcome needs reconciliation", {
         chargeId,
@@ -304,7 +320,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
     if (lockId) {
       let confirmed = false;
       try {
-        confirmed = await autumnService.finalizeCreditsLock({
+        confirmed = await finalizeExchangeHold({
           lockId,
           teamId: input.teamId,
           featureId,

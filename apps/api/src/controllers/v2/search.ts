@@ -1,5 +1,5 @@
 import { AlexandriaRequestError } from "../../search/alexandria-source";
-import { resolveSearchSkills } from "../../services/exchange/skills";
+import { resolveSearchTools } from "../../services/exchange/tools";
 import { NextFunction, Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
@@ -256,8 +256,7 @@ async function searchControllerInner(
     if (req.body.skills && zeroDataRetention) {
       return res.status(400).json({
         success: false,
-        error:
-          "Skill lookup is not available for zero-data-retention searches.",
+        error: "Tool lookup is not available for zero-data-retention searches.",
       });
     }
 
@@ -378,21 +377,22 @@ async function searchControllerInner(
       );
     }
 
-    let skillsWarning: string | undefined;
+    let toolsWarning: string | undefined;
     if (req.body.skills) {
       try {
-        result.response.skills = await resolveSearchSkills(
+        result.response.skills = await resolveSearchTools(
           result.response,
           req.auth.team_id,
           req.acuc?.flags?.exchangeRetrieve === true,
           agentRequestId ?? jobId,
           req.body.query,
           `${req.protocol}://${req.get("host")}`,
+          (req.body.timeout ?? 60000) - (Date.now() - controllerStartTime),
         );
       } catch {
-        skillsWarning =
-          "Skill lookup is temporarily unavailable. Search results are unaffected.";
-        logger.warn("Exchange skill lookup failed", { jobId });
+        toolsWarning =
+          "Tool lookup is temporarily unavailable. Search results are unaffected.";
+        logger.warn("Exchange tool lookup failed", { jobId });
       }
     }
 
@@ -479,7 +479,7 @@ async function searchControllerInner(
 
     return res.status(200).json({
       success: true,
-      ...(skillsWarning ? { warning: skillsWarning } : {}),
+      ...(toolsWarning ? { warning: toolsWarning } : {}),
       data: result.response,
       creditsUsed: result.totalCredits,
       id: jobId,
