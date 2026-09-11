@@ -1,3 +1,4 @@
+import { AlexandriaRequestError } from "../../search/alexandria-source";
 import { NextFunction, Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
@@ -215,6 +216,25 @@ async function searchControllerInner(
       }
     }
 
+    const wantsExchange = (req.body.sources as Array<{ type: string }>).some(
+      source => ["alexandria", "exchange-providers"].includes(source.type),
+    );
+    if (
+      (wantsExchange || req.body.domainTools) &&
+      !req.acuc?.flags?.exchangeRetrieve
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: "Exchange discovery is not enabled for this team.",
+      });
+    }
+    if (wantsExchange && !config.FIRE_EXCHANGE_URL) {
+      return res.status(503).json({
+        success: false,
+        error: "Exchange discovery is not available.",
+      });
+    }
+
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
@@ -230,6 +250,13 @@ async function searchControllerInner(
             "Zero Data Retention (ZDR) search is not enabled for your team. Contact support@firecrawl.com to enable this feature.",
         });
       }
+    }
+
+    if (req.body.domainTools && zeroDataRetention) {
+      return res.status(400).json({
+        success: false,
+        error: "Tool lookup is not available for zero-data-retention searches.",
+      });
     }
 
     // Kick off the `requests` row insert without blocking: it queues on the
@@ -253,7 +280,12 @@ async function searchControllerInner(
     }
 
     const projectedKeylessCredits =
-      !isSearchPreview && shouldBill
+      !isSearchPreview &&
+      shouldBill &&
+      ((req.body.sources as Array<{ type: string }>).some(
+        source => !["alexandria", "exchange-providers"].includes(source.type),
+      ) ||
+        wantsDeveloperCategory(req.body.categories as CategoryOption[]))
         ? projectSearchTotalCredits(
             {
               limit: req.body.limit,
@@ -295,6 +327,7 @@ async function searchControllerInner(
         enterprise: req.body.enterprise,
         scrapeOptions: req.body.scrapeOptions,
         highlights: req.body.highlights,
+        domainTools: req.body.domainTools,
         timeout: req.body.timeout,
       },
       {
@@ -343,6 +376,8 @@ async function searchControllerInner(
         () => {},
       );
     }
+
+    const toolsWarning = result.toolsWarning;
 
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
@@ -427,6 +462,7 @@ async function searchControllerInner(
 
     return res.status(200).json({
       success: true,
+      ...(toolsWarning ? { warning: toolsWarning } : {}),
       data: result.response,
       creditsUsed: result.totalCredits,
       id: jobId,
@@ -438,6 +474,9 @@ async function searchControllerInner(
         () => {},
       );
     }
+
+    if (error instanceof AlexandriaRequestError)
+      return res.status(400).json({ success: false, error: error.message });
 
     if (error instanceof z.ZodError) {
       logger.warn("Invalid request body", { error: error.issues });

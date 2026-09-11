@@ -62,6 +62,14 @@ vi.mock("../../../lib/logger", () => ({
 }));
 
 import { searchController } from "../search";
+import { config } from "../../../config";
+
+const originalExchangeUrl = config.FIRE_EXCHANGE_URL;
+const originalAgentInteropSecret = config.AGENT_INTEROP_SECRET;
+afterEach(() => {
+  config.FIRE_EXCHANGE_URL = originalExchangeUrl;
+  config.AGENT_INTEROP_SECRET = originalAgentInteropSecret;
+});
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -99,6 +107,8 @@ function makeReq(body: Record<string, any>, headers: Record<string, any> = {}) {
   return {
     body,
     headers,
+    protocol: "https",
+    get: () => "preview.firecrawl.dev",
     auth: { team_id: TEAM_ID },
     acuc: { api_key_id: 7, flags: {} },
   } as any;
@@ -134,6 +144,118 @@ beforeEach(() => {
 });
 
 describe("developer category code_searches ledger", () => {
+  it.each([
+    [{ searchZDR: "forced-zdr" }, {}],
+    [{ searchZDR: "forced-anon" }, {}],
+    [{ searchZDR: "forced" }, {}],
+    [{ forceZDR: true }, {}],
+    [{ searchZDR: "allowed" }, { enterprise: ["zdr"] }],
+    [{ searchZDR: "allowed" }, { enterprise: ["anon"] }],
+  ])(
+    "rejects private skill lookup before executing search (%j, %j)",
+    async (flags, options) => {
+      const req = makeReq({
+        query: "public documentation",
+        domainTools: true,
+        ...options,
+      });
+      req.acuc.flags = { exchangeRetrieve: true, ...flags };
+      const res = makeRes();
+      await searchController(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockExecuteSearch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([undefined, "agent-request"])(
+    "archives tools and keeps the originating request ID (agent: %s)",
+    async agentRequestId => {
+      config.AGENT_INTEROP_SECRET = "skills-test-secret";
+      const tools = [
+        {
+          provider: "docs",
+          capability: "documentation/search",
+          description: "Documentation",
+          matchedBy: ["domain"],
+          matchedUrls: ["https://example.com"],
+        },
+      ];
+      mockExecuteSearch.mockResolvedValue(
+        executeResult({ response: { web: developerResults, tools } }),
+      );
+      let archived: unknown;
+      mockLogSearch.mockImplementationOnce(row => {
+        archived = structuredClone(row.results);
+        return Promise.resolve();
+      });
+      const req = makeReq({
+        query: "public documentation",
+        domainTools: true,
+        ...(agentRequestId
+          ? {
+              __agentInterop: {
+                auth: "skills-test-secret",
+                requestId: agentRequestId,
+                shouldBill: true,
+              },
+            }
+          : {}),
+      });
+      req.acuc.flags = { exchangeRetrieve: true };
+      const res = makeRes();
+      await searchController(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      const searchContext = mockExecuteSearch.mock.calls[0][1];
+      expect(mockExecuteSearch.mock.calls[0][0].domainTools).toBe(true);
+      expect(searchContext.requestId).toBe(
+        agentRequestId ?? searchContext.jobId,
+      );
+      expect(archived).toEqual(res.json.mock.calls[0][0].data);
+      expect(archived).toHaveProperty("tools", tools);
+    },
+  );
+
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+  ])(
+    "reserves credits for web or developer search alongside discovery (web: %s, developer: %s)",
+    async (withWeb, withDeveloper) => {
+      config.FIRE_EXCHANGE_URL = "https://exchange.example";
+      mockProjectSearchTotalCredits.mockReturnValue(2);
+      mockReserveKeylessCredits.mockResolvedValue({ ok: false });
+      mockExecuteSearch.mockResolvedValue(
+        executeResult({
+          response: { "exchange-providers": [] },
+          totalResultsCount: 0,
+          developerResultsCount: 0,
+          searchCredits: 0,
+          totalCredits: 0,
+        }),
+      );
+      const req = makeReq({
+        query: "product inventory",
+        sources: withWeb
+          ? ["web", "exchange-providers"]
+          : ["exchange-providers"],
+        ...(withDeveloper ? { categories: ["developer"] } : {}),
+      });
+      req.acuc.flags = { exchangeRetrieve: true };
+      const res = makeRes();
+      await searchController(req, res);
+      const billable = withWeb || withDeveloper;
+      expect(res.status).toHaveBeenCalledWith(billable ? 429 : 200);
+      expect(mockReserveKeylessCredits).toHaveBeenCalledTimes(billable ? 1 : 0);
+      expect(mockExecuteSearch).toHaveBeenCalledTimes(billable ? 0 : 1);
+      if (!billable) {
+        expect(mockExecuteSearch.mock.calls[0][0].sources).toEqual([
+          { type: "exchange-providers" },
+        ]);
+      }
+    },
+  );
+
   it("returns the structured keyless 429 when projected credits cannot be reserved", async () => {
     mockProjectSearchTotalCredits.mockReturnValue(2);
     mockReserveKeylessCredits.mockResolvedValue({ ok: false });

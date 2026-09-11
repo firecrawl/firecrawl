@@ -1,11 +1,18 @@
+import { settleExchangeCall } from "../services/exchange/settle";
 import { bountyBlocklistMiddleware } from "./exchange-blocklist";
 import express, { Request, Response } from "express";
-import { Agent, fetch } from "undici";
-import { config } from "../config";
+import {
+  ExchangeProxyError,
+  exchangeProxyFailureResponse,
+  exchangeUpstreamBase,
+  forwardToExchange,
+} from "../lib/exchange-proxy";
 import { logger as rootLogger } from "../lib/logger";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
-import { authMiddleware, wrap } from "./shared";
+import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
+import { isAgentInteropSecretValid } from "../lib/agent-interop";
+import { getScrapeZDR, getSearchForcedKind } from "../lib/zdr-helpers";
 
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
@@ -15,34 +22,38 @@ const CLAIMS_TIMEOUT_MS = 20_000;
 const SUPPLY_TIMEOUT_MS = 30_000;
 const INGEST_TIMEOUT_MS = 50_000;
 
-const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
-const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
-
-function dispatcherFor(timeout: number) {
-  return new Agent({
-    connectTimeout: timeout,
-    headersTimeout: timeout,
-    bodyTimeout: timeout,
-  });
-}
-
 function exchangeError(res: Response, status: number, error: string) {
   return res.status(status).json({ success: false, error });
 }
 
-function upstreamBase(): string | null {
-  if (!config.FIRE_EXCHANGE_URL) return null;
-  return config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
+function exchangeAccessError(
+  req: RequestWithAuth<any, any, any>,
+  requiresRetrieveFlag = true,
+) {
+  if (!exchangeUpstreamBase()) {
+    return { status: 503, error: "This endpoint is not available." };
+  }
+  if (requiresRetrieveFlag && !req.acuc?.flags?.exchangeRetrieve) {
+    return {
+      status: 403,
+      error: "This endpoint is not enabled for this team.",
+    };
+  }
+  return null;
 }
 
 function exchangeProxy(
   timeout: number,
-  options: { requiresRetrieveFlag?: boolean } = {},
+  options: {
+    requiresRetrieveFlag?: boolean;
+    billUsage?: boolean;
+    requiresNonZdr?: boolean;
+  } = {},
 ) {
   const requiresRetrieveFlag = options.requiresRetrieveFlag !== false;
-  const dispatcher = dispatcherFor(timeout);
 
   return async function controller(req: Request, res: Response) {
+    res.setHeader("cache-control", "no-store");
     const authedReq = req as RequestWithAuth<any, any, any>;
     const logger = rootLogger.child({
       module: "api/exchange",
@@ -51,61 +62,77 @@ function exchangeProxy(
       teamId: authedReq.auth.team_id,
     });
 
-    const base = upstreamBase();
-    if (!base) {
-      return exchangeError(res, 503, "This endpoint is not available.");
+    const accessError = exchangeAccessError(authedReq, requiresRetrieveFlag);
+    if (accessError) {
+      return exchangeError(res, accessError.status, accessError.error);
     }
 
-    if (requiresRetrieveFlag && !authedReq.acuc?.flags?.exchangeRetrieve) {
+    if (
+      options.requiresNonZdr &&
+      (getScrapeZDR(authedReq.acuc?.flags) === "forced" ||
+        getSearchForcedKind(authedReq.acuc?.flags) !== null)
+    )
       return exchangeError(
         res,
         403,
-        "This endpoint is not enabled for this team.",
+        "Skill lookup is not available for zero-data-retention requests.",
       );
+    const interop = req.body?.__agentInterop;
+    if (
+      options.billUsage &&
+      interop !== undefined &&
+      !isAgentInteropSecretValid(interop?.auth)
+    ) {
+      return exchangeError(res, 403, "Invalid agent interop.");
+    }
+    let body = req.body;
+    if (interop !== undefined) {
+      body = { ...body };
+      delete body.__agentInterop;
     }
 
-    const hasBody = req.method !== "GET";
-    const path = req.originalUrl.replace(/^\/exchange/, "/v1");
-
+    const accept = req.headers["accept"];
+    const requestId = req.headers["x-request-id"];
     try {
-      const upstream = await fetch(base + path, {
-        method: req.method,
-        headers: {
-          ...Object.fromEntries(
-            FORWARDED_REQUEST_HEADERS.flatMap(h => {
-              const value = req.headers[h];
-              return typeof value === "string" ? [[h, value]] : [];
-            }),
-          ),
-          ...(hasBody ? { "content-type": "application/json" } : {}),
-          "x-exchange-team-id": authedReq.auth.team_id,
-        },
-        body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
-        signal: AbortSignal.timeout(timeout),
-        dispatcher,
-      });
+      const upstream = options.billUsage
+        ? await settleExchangeCall({
+            teamId: authedReq.auth.team_id,
+            apiKeyId: authedReq.acuc?.api_key_id ?? null,
+            orgId: authedReq.acuc?.org_id,
+            flags: authedReq.acuc?.flags,
+            body,
+            timeoutMs: timeout,
+            requestId:
+              typeof requestId === "string" ? requestId : interop?.requestId,
+            bypassBilling: interop?.shouldBill === false,
+            logger,
+          })
+        : await forwardToExchange({
+            teamId: authedReq.auth.team_id,
+            hasExtendedCatalogAccess:
+              authedReq.acuc?.flags?.exchangeRetrieve === true,
+            method: req.method,
+            path: req.originalUrl.replace(/^\/exchange/, "/v1"),
+            body,
+            timeoutMs: timeout,
+            ...(typeof accept === "string" ? { accept } : {}),
+            ...(typeof requestId === "string" ? { requestId } : {}),
+          });
 
-      for (const h of FORWARDED_RESPONSE_HEADERS) {
-        const value = upstream.headers.get(h);
-        if (value) res.setHeader(h, value);
-      }
+      if (upstream.contentType)
+        res.setHeader("content-type", upstream.contentType);
+      if (upstream.requestId) res.setHeader("x-request-id", upstream.requestId);
 
-      const text = await upstream.text();
-      let body: unknown;
-      try {
-        body = text ? JSON.parse(text) : null;
-      } catch {
-        body = text;
+      if (upstream.body === null || typeof upstream.body === "string") {
+        return res.status(upstream.status).send(upstream.body ?? "");
       }
-
-      if (body === null || typeof body === "string") {
-        return res.status(upstream.status).send(body ?? "");
-      }
-      return res.status(upstream.status).json(body);
+      return res.status(upstream.status).json(upstream.body);
     } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === "TimeoutError") {
-        logger.error("Exchange proxy timed out");
-        return exchangeError(res, 504, "The request timed out.");
+      if (error instanceof ExchangeProxyError) {
+        if (error.kind === "timeout") logger.error("Exchange proxy timed out");
+        else logger.error("Exchange proxy error", { error: error.cause });
+        const failure = exchangeProxyFailureResponse(error.kind);
+        return exchangeError(res, failure.status, failure.error);
       }
       logger.error("Exchange proxy error", { error });
       return exchangeError(res, 502, "The request could not be completed.");
@@ -114,6 +141,26 @@ function exchangeProxy(
 }
 
 export const exchangeRouter = express.Router();
+exchangeRouter.get(
+  "/provider-terms",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+exchangeRouter.post(
+  "/skills/resolve",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(
+    exchangeProxy(DISCOVER_TIMEOUT_MS, {
+      requiresRetrieveFlag: false,
+      requiresNonZdr: true,
+    }),
+  ),
+);
+exchangeRouter.get(
+  "/skills/:id/SKILL.md",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
 
 exchangeRouter.get(
   "/discover{/*path}",
@@ -121,23 +168,26 @@ exchangeRouter.get(
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
 );
 
-// Both skills routes intentionally require the exchangeRetrieve flag during preview.
-exchangeRouter.post(
-  "/skills/resolve",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
-);
-
-exchangeRouter.get(
-  "/skills/:id/SKILL.md",
-  authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
-);
-
 exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
+  (req, res, next) => {
+    const authedReq = req as RequestWithAuth<any, any, any>;
+    const error = exchangeAccessError(authedReq);
+    if (error) return exchangeError(res, error.status, error.error);
+    if (getScrapeZDR(authedReq.acuc?.flags) === "forced") {
+      return exchangeError(
+        res,
+        403,
+        "Exchange provider retrieval does not support zero data retention.",
+      );
+    }
+    next();
+  },
+  checkCreditsMiddleware(undefined, undefined, {
+    skipBalanceCheck: () => true,
+  }),
+  wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS, { billUsage: true })),
 );
 
 exchangeRouter.get(

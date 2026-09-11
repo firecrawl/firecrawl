@@ -54,6 +54,7 @@ function buildReq(overrides: any = {}): any {
 
 function runMiddleware(
   req: any,
+  options: Parameters<typeof checkCreditsMiddleware>[2] = {},
 ): Promise<{ res: any; nextErr?: any; nextCalled: boolean }> {
   return new Promise(resolve => {
     let settled = false;
@@ -78,7 +79,7 @@ function runMiddleware(
       nextCalled = true;
       settle({ res, nextErr: err });
     };
-    checkCreditsMiddleware()(req, res, next);
+    checkCreditsMiddleware(undefined, undefined, options)(req, res, next);
   });
 }
 
@@ -195,6 +196,20 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
       }),
     );
   });
+
+  it.each(["verified", "blocked"])(
+    "preserves sponsor restrictions when the handler owns credit reservation: %s",
+    async status => {
+      checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
+      const req = buildReq({ acuc: { _agentSponsor: { status } } });
+      const { res, nextCalled } = await runMiddleware(req, {
+        skipBalanceCheck: () => true,
+      });
+      expect(nextCalled).toBe(status === "verified");
+      if (status === "blocked") expect(res.status).toHaveBeenCalledWith(403);
+      expect(checkCreditsMock).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("checkCreditsMiddleware – unverified agent-key 50-credit cap", () => {

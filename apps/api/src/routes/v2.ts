@@ -191,7 +191,21 @@ v2Router.post(
   researchCategoryNoticeMiddleware,
   authMiddleware(RateLimiterMode.Search, { allowKeyless: true }),
   countryCheck,
-  checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
+  checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID, {
+    skipBalanceCheck: req => {
+      const sources = req.body?.sources;
+      return (
+        Array.isArray(sources) &&
+        sources.length > 0 &&
+        !req.body?.categories?.length &&
+        sources.every(source =>
+          ["alexandria", "exchange-providers"].includes(
+            typeof source === "string" ? source : source?.type,
+          ),
+        )
+      );
+    },
+  }),
   blocklistMiddleware,
   wrap(searchController),
 );
@@ -236,7 +250,9 @@ v2Router.post(
   "/scrape",
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
   countryCheck,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(1, undefined, {
+    skipBalanceCheck: req => req.body?.exchange !== undefined,
+  }),
   scrapeBlocklistMiddleware,
   wrap(scrapeController),
 );

@@ -1,3 +1,4 @@
+import type { DiscoveredTool } from "../search/alexandria-source";
 import type { Action } from "../controllers/v1/types";
 import type { BrandingProfile } from "../types/branding";
 
@@ -161,12 +162,23 @@ export interface WebSearchResult {
   highlights?: string;
 }
 
-export type SearchResultType = "web" | "images" | "news";
+export type SearchResultType = "web" | "images" | "news" | "exchange-providers";
+
+export interface ExchangeSearchResult {
+  provider: string;
+  capability: string;
+  concept: string;
+  cohorts: string[];
+  creditsCost: number;
+  similarity: number;
+}
 
 export interface SearchV2Response {
+  tools?: DiscoveredTool[];
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
+  "exchange-providers"?: ExchangeSearchResult[];
 }
 
 export interface ScrapeActionContent {

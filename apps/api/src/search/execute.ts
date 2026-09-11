@@ -1,3 +1,8 @@
+import {
+  discoverDomainTools,
+  mergeDiscoveredTools,
+} from "../services/exchange/tools";
+import { searchAlexandria, type AlexandriaSource } from "./alexandria-source";
 import type { Logger } from "winston";
 import { search } from "./v2";
 import { SearchV2Response } from "../lib/entities";
@@ -21,6 +26,7 @@ import {
 } from "./highlights";
 import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
+import { searchExchangeCatalog } from "./exchange-source";
 import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
@@ -43,6 +49,7 @@ interface SearchOptions {
   enterprise?: ("default" | "anon" | "zdr")[];
   scrapeOptions?: ScrapeOptions;
   highlights?: boolean;
+  domainTools?: boolean;
   timeout: number;
 }
 
@@ -66,6 +73,7 @@ interface SearchContext {
 }
 
 interface SearchExecuteResult {
+  toolsWarning?: string;
   response: SearchV2Response;
   totalResultsCount: number;
   developerResultsCount: number;
@@ -89,6 +97,7 @@ export async function executeSearch(
   context: SearchContext,
   logger: Logger,
 ): Promise<SearchExecuteResult> {
+  const deadline = Date.now() + options.timeout;
   const { query, limit, sources, categories, scrapeOptions } = options;
   const {
     teamId,
@@ -106,7 +115,46 @@ export async function executeSearch(
 
   logger.info("Searching for results");
 
-  const searchTypes = [...new Set(sources.map((s: any) => s.type))];
+  const requestedTypes = [...new Set(sources.map((s: any) => s.type))];
+  const wantsExchange = sources.some(
+    source => source.type === "exchange-providers",
+  );
+  const alexandriaSource = sources.find(
+    source => source.type === "alexandria",
+  ) as AlexandriaSource | undefined;
+  const searchTypes = requestedTypes.filter(
+    t => t !== "exchange-providers" && t !== "alexandria",
+  );
+  const alexandriaPromise = alexandriaSource
+    ? searchAlexandria(
+        {
+          query,
+          source: alexandriaSource,
+          limit,
+          teamId,
+          hasExtendedCatalogAccess: flags?.exchangeRetrieve === true,
+          requestId: context.requestId,
+          timeoutMs: options.timeout,
+        },
+        logger,
+      ).then(
+        result => ({ result }),
+        error => ({ error }),
+      )
+    : null;
+  const exchangeResultsPromise = wantsExchange
+    ? searchExchangeCatalog(
+        {
+          query,
+          limit,
+          teamId,
+          hasExtendedCatalogAccess: flags?.exchangeRetrieve === true,
+          requestId: context.requestId,
+          timeoutMs: options.timeout,
+        },
+        logger,
+      )
+    : null;
   const { query: searchQuery, categoryMap } = buildSearchQuery(
     query,
     categories,
@@ -124,26 +172,31 @@ export async function executeSearch(
       )
     : null;
 
-  const searchResponse = hasOnlyDeveloperCategory(categories)
-    ? ({} as SearchV2Response)
-    : ((await search({
-        query: searchQuery,
-        logger,
-        requestId: context.requestId,
-        advanced: false,
-        num_results: num_results_buffer,
-        tbs: options.tbs,
-        filter: options.filter,
-        lang: options.lang,
-        country: options.country,
-        location: options.location,
-        safe: options.safe,
-        type: searchTypes,
-        enterprise: options.enterprise,
-      })) as SearchV2Response);
+  const searchResponse =
+    hasOnlyDeveloperCategory(categories) || searchTypes.length === 0
+      ? ({} as SearchV2Response)
+      : ((await search({
+          query: searchQuery,
+          logger,
+          requestId: context.requestId,
+          advanced: false,
+          num_results: num_results_buffer,
+          tbs: options.tbs,
+          filter: options.filter,
+          lang: options.lang,
+          country: options.country,
+          location: options.location,
+          safe: options.safe,
+          type: searchTypes,
+          enterprise: options.enterprise,
+        })) as SearchV2Response);
   let developerResults = developerResultsPromise
     ? await developerResultsPromise
     : [];
+  if (exchangeResultsPromise) {
+    const exchange = await exchangeResultsPromise;
+    if (exchange !== null) searchResponse["exchange-providers"] = exchange;
+  }
 
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are
@@ -239,6 +292,27 @@ export async function executeSearch(
     Math.ceil(totalResultsCount / 10) * creditsPerTenResults +
     threatScanCredits;
   let scrapeCredits = 0;
+
+  const domainPromise =
+    (options.domainTools ?? Boolean(alexandriaSource)) &&
+    !zeroDataRetention &&
+    !options.enterprise?.some(mode => mode === "zdr" || mode === "anon") &&
+    flags?.exchangeRetrieve === true
+      ? discoverDomainTools({
+          data: wantsDeveloper
+            ? { ...searchResponse, web: developerResults }
+            : searchResponse,
+          teamId,
+          hasExtendedCatalogAccess: true,
+          requestId,
+          timeoutMs: deadline - Date.now(),
+          limit,
+        }).catch(() => ({
+          items: [],
+          warning:
+            "Domain tool lookup is temporarily unavailable. Search results are unaffected.",
+        }))
+      : null;
 
   const shouldScrape =
     scrapeOptions?.formats && scrapeOptions.formats.length > 0;
@@ -336,6 +410,20 @@ export async function executeSearch(
     }));
   }
 
+  const toolWarnings: string[] = [];
+  if (alexandriaPromise || domainPromise) {
+    const semantic = alexandriaPromise ? await alexandriaPromise : null;
+    if (semantic && "error" in semantic) throw semantic.error;
+    const domain = domainPromise ? await domainPromise : null;
+    searchResponse.tools = mergeDiscoveredTools(
+      semantic?.result.items ?? [],
+      domain?.items ?? [],
+    );
+    if (semantic?.result.error) toolWarnings.push(semantic.result.error);
+    if (semantic?.result.warning) toolWarnings.push(semantic.result.warning);
+    if (domain?.warning) toolWarnings.push(domain.warning);
+  }
+
   const scrapeFormats = scrapeOptions?.formats
     ? scrapeOptions.formats.map((f: any) =>
         typeof f === "string" ? f : f.type,
@@ -352,7 +440,7 @@ export async function executeSearch(
     apiVersion: context.apiVersion,
     lang: options.lang,
     country: options.country,
-    sources: searchTypes,
+    sources: requestedTypes,
     numResults: totalResultsCount,
     searchCredits,
     scrapeCredits,
@@ -376,6 +464,7 @@ export async function executeSearch(
 
   return {
     response: searchResponse,
+    ...(toolWarnings.length ? { toolsWarning: toolWarnings.join(" ") } : {}),
     totalResultsCount,
     developerResultsCount,
     searchCredits,
