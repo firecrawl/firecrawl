@@ -10,6 +10,7 @@ import {
   getExchangeRequestLogContext,
   getExchangeResponseLogContext,
   getExchangeSuccessCredits,
+  getThirdPartyDataSourceNotEnabledResponse,
   getThirdPartyDataTermsRequiredResponse,
   isSuccessfulExchangeStatusCode,
   isSupportedExchangeFormatRequest,
@@ -455,7 +456,88 @@ describe("Exchange routing", () => {
           },
         },
       }),
+    ).resolves.toEqual({
+      allowed: false,
+      termsRequired: false,
+      notEnabled: { dataSourceId: "acme" },
+    });
+  });
+
+  /**
+   * A refusal that is a fact about the organization has to be told apart from
+   * one that is a fact about us. Both leave the URL to the ordinary path, both
+   * end in the same 403 for a blocked domain, and a caller that reads the
+   * second as the first tells a customer their admin switched something off
+   * when nothing of theirs is switched off at all.
+   */
+  it("marks a switched-off source as such, and marks nothing else", async () => {
+    await expect(
+      getExchangeAccessForRequest({
+        url: "https://profiles.example/person/example-person",
+        formats: [{ type: "markdown" }],
+        flags: {
+          professionalProfileCompanyDataBeta: true,
+          organizationDataSourceAccess: {
+            acme: {
+              status: "suspended",
+              termsKey: "acme",
+              termsVersion: "2026-01-01",
+            },
+          },
+        },
+      }),
+    ).resolves.toEqual({
+      allowed: false,
+      termsRequired: false,
+      notEnabled: { dataSourceId: "acme" },
+    });
+
+    // No provider claims this URL, so nothing about the org was consulted.
+    await expect(
+      getExchangeAccessForRequest({
+        url: "https://unclaimed.example/person/example-person",
+        formats: [{ type: "markdown" }],
+        flags: ENABLED_EXCHANGE_FLAGS,
+      }),
     ).resolves.toEqual({ allowed: false, termsRequired: false });
+
+    // A request shape the Exchange cannot serve, by an org that is fully enabled.
+    await expect(
+      getExchangeAccessForRequest({
+        url: "https://profiles.example/person/example-person",
+        formats: [{ type: "html" }],
+        flags: ENABLED_EXCHANGE_FLAGS,
+      }),
+    ).resolves.toEqual({ allowed: false, termsRequired: false });
+
+    // The catalog is unreachable. This is the one that reached a customer: an
+    // org that had just switched FullEnrich on was told it was switched off,
+    // because a refusal we could not explain was reported as one we could.
+    clearExchangeProvidersForTest();
+    vi.mocked(fetch).mockRejectedValue(new Error("connect timeout"));
+    await expect(
+      getExchangeAccessForRequest({
+        url: "https://profiles.example/person/example-person",
+        formats: [{ type: "markdown" }],
+        flags: ENABLED_EXCHANGE_FLAGS,
+      }),
+    ).resolves.toEqual({ allowed: false, termsRequired: false });
+  });
+
+  it("names the data source in the switched-off refusal", () => {
+    expect(getThirdPartyDataSourceNotEnabledResponse("acme")).toMatchObject({
+      success: false,
+      code: "THIRD_PARTY_DATA_SOURCE_NOT_ENABLED",
+      requiresAction: {
+        type: "enable_data_source",
+        dataSource: "acme",
+      },
+    });
+
+    // The two 403s a covered URL can end in must never share a code.
+    expect(getThirdPartyDataSourceNotEnabledResponse("acme").code).not.toBe(
+      getThirdPartyDataTermsRequiredResponse(ACME_TERMS).code,
+    );
   });
 
   it("allows providers with no declared terms without acceptance", async () => {
@@ -478,7 +560,11 @@ describe("Exchange routing", () => {
           },
         },
       }),
-    ).resolves.toEqual({ allowed: false, termsRequired: false });
+    ).resolves.toEqual({
+      allowed: false,
+      termsRequired: false,
+      notEnabled: { dataSourceId: "openfacts" },
+    });
   });
 
   it("does not route unless the beta flag is enabled", async () => {
