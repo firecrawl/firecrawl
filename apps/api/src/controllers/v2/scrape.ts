@@ -1,3 +1,4 @@
+import { keylessFeedbackMetadata } from "./feedback/keyless-context";
 import { Response } from "express";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
@@ -376,6 +377,17 @@ export async function scrapeController(
           },
         );
       } catch (e) {
+        const feedbackMetadata = await keylessFeedbackMetadata(
+          req,
+          "scrape",
+          jobId,
+          false,
+          {
+            error:
+              e instanceof TransportableError ? e.message : "Request failed",
+            code: e instanceof TransportableError ? e.code : "UNKNOWN_ERROR",
+          },
+        );
         if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
           reconciledKeylessCredits = true;
           adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
@@ -408,6 +420,9 @@ export async function scrapeController(
             });
             return res.status(200).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -419,6 +434,9 @@ export async function scrapeController(
             });
             return res.status(404).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -430,6 +448,9 @@ export async function scrapeController(
             });
             return res.status(404).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -441,6 +462,9 @@ export async function scrapeController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
               sponsor_status: "pending",
@@ -454,6 +478,9 @@ export async function scrapeController(
             });
             return res.status(400).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -465,6 +492,9 @@ export async function scrapeController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -476,6 +506,9 @@ export async function scrapeController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -487,6 +520,9 @@ export async function scrapeController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -498,6 +534,9 @@ export async function scrapeController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -509,6 +548,9 @@ export async function scrapeController(
             });
             return res.status(400).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -529,6 +571,9 @@ export async function scrapeController(
           }
           return res.status(statusCode).json({
             success: false,
+            ...(Object.keys(feedbackMetadata).length
+              ? { metadata: feedbackMetadata }
+              : {}),
             code: e.code,
             error: e.message,
             ...(processing && { details: processing }),
@@ -548,6 +593,9 @@ export async function scrapeController(
           });
           return res.status(500).json({
             success: false,
+            ...(Object.keys(feedbackMetadata).length
+              ? { metadata: feedbackMetadata }
+              : {}),
             code: "UNKNOWN_ERROR",
             error: getErrorContactMessage(id),
           });
@@ -632,6 +680,7 @@ export async function scrapeController(
           ...doc!,
           metadata: {
             ...doc!.metadata,
+            ...(await keylessFeedbackMetadata(req, "scrape", jobId, true, doc)),
             concurrencyLimited,
             concurrencyQueueDurationMs: concurrencyLimited
               ? lockTime || 0

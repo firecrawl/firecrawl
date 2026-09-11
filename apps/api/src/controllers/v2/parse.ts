@@ -1,3 +1,4 @@
+import { keylessFeedbackMetadata } from "./feedback/keyless-context";
 import { NextFunction, Request, Response } from "express";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
@@ -584,6 +585,17 @@ export async function parseController(
           },
         );
       } catch (e) {
+        const feedbackMetadata = await keylessFeedbackMetadata(
+          req,
+          "parse",
+          jobId,
+          false,
+          {
+            error:
+              e instanceof TransportableError ? e.message : "Request failed",
+            code: e instanceof TransportableError ? e.code : "UNKNOWN_ERROR",
+          },
+        );
         if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
           reconciledKeylessCredits = true;
           adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
@@ -616,6 +628,9 @@ export async function parseController(
             });
             return res.status(404).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -627,6 +642,9 @@ export async function parseController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
               sponsor_status: "pending",
@@ -640,6 +658,9 @@ export async function parseController(
             });
             return res.status(400).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -651,6 +672,9 @@ export async function parseController(
           });
           return res.status(statusCode).json({
             success: false,
+            ...(Object.keys(feedbackMetadata).length
+              ? { metadata: feedbackMetadata }
+              : {}),
             code: e.code,
             error: e.message,
           });
@@ -669,6 +693,9 @@ export async function parseController(
           });
           return res.status(500).json({
             success: false,
+            ...(Object.keys(feedbackMetadata).length
+              ? { metadata: feedbackMetadata }
+              : {}),
             code: "UNKNOWN_ERROR",
             error: getErrorContactMessage(id),
           });
@@ -750,6 +777,7 @@ export async function parseController(
           ...doc!,
           metadata: {
             ...doc!.metadata,
+            ...(await keylessFeedbackMetadata(req, "parse", jobId, true, doc)),
             concurrencyLimited,
             concurrencyQueueDurationMs: concurrencyLimited
               ? lockTime || 0

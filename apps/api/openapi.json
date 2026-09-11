@@ -110,7 +110,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Keyless responses can include optional feedback invitations and a jobId in metadata. Search returns top-level metadata; Scrape returns data.metadata, or top-level metadata on execution failures. Submit available evidence through POST /v2/feedback without interrupting the task."
       }
     },
     "/batch/scrape": {
@@ -1908,7 +1909,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Keyless responses can include optional feedback invitations and a jobId in metadata. Search returns top-level metadata; Scrape returns data.metadata, or top-level metadata on execution failures. Submit available evidence through POST /v2/feedback without interrupting the task."
       }
     },
     "/feedback": {
@@ -1919,14 +1921,22 @@
         "security": [
           {
             "bearerAuth": []
-          }
+          },
+          {}
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EndpointFeedbackRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/EndpointFeedbackRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/KeylessFeedbackRequest"
+                  }
+                ]
               }
             }
           }
@@ -1991,8 +2001,29 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Daily submission cap or attempt limit reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feedback storage is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
           }
-        }
+        },
+        "description": "Eligible keyless callers can submit Search, Scrape, or Parse evidence with KeylessFeedbackRequest. One accepted submission per identity, category, and UTC day, shared across clients. Attempts are limited separately to 10 per minute. Operation quota exhaustion does not affect feedback eligibility. Job context expires after 24 hours. Authenticated callers retain EndpointFeedbackRequest and existing behavior."
       }
     },
     "/search/{jobId}/feedback": {
@@ -3340,6 +3371,368 @@
             "format": "date-time"
           }
         }
+      },
+      "KeylessFeedbackRequest": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "rating": {
+                "type": "string",
+                "enum": ["good", "partial", "bad"]
+              },
+              "task": {
+                "type": "string",
+                "minLength": 10,
+                "maxLength": 2000
+              },
+              "assessment": {
+                "type": "string",
+                "minLength": 10,
+                "maxLength": 2000
+              },
+              "origin": {
+                "default": "api",
+                "type": "string",
+                "maxLength": 100
+              },
+              "integration": {
+                "nullable": true,
+                "type": "string",
+                "maxLength": 100
+              },
+              "endpoint": {
+                "type": "string",
+                "enum": ["search"]
+              },
+              "observations": {
+                "minItems": 1,
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "detail": {
+                          "type": "string",
+                          "minLength": 10,
+                          "maxLength": 2000
+                        },
+                        "basis": {
+                          "type": "string",
+                          "enum": ["output", "source_comparison", "expectation"]
+                        },
+                        "comparison": {
+                          "type": "object",
+                          "properties": {
+                            "reference": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2048
+                            },
+                            "detail": {
+                              "type": "string",
+                              "minLength": 10,
+                              "maxLength": 2000
+                            }
+                          },
+                          "required": ["reference", "detail"],
+                          "additionalProperties": false
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": ["useful", "irrelevant"]
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": ["web", "images", "news"]
+                        },
+                        "position": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "detail",
+                        "basis",
+                        "kind",
+                        "source",
+                        "position"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "detail": {
+                          "type": "string",
+                          "minLength": 10,
+                          "maxLength": 2000
+                        },
+                        "basis": {
+                          "type": "string",
+                          "enum": ["output", "source_comparison", "expectation"]
+                        },
+                        "comparison": {
+                          "type": "object",
+                          "properties": {
+                            "reference": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2048
+                            },
+                            "detail": {
+                              "type": "string",
+                              "minLength": 10,
+                              "maxLength": 2000
+                            }
+                          },
+                          "required": ["reference", "detail"],
+                          "additionalProperties": false
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": ["missing"]
+                        },
+                        "topic": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "knownSources": {
+                          "maxItems": 20,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uri"
+                          }
+                        }
+                      },
+                      "required": ["detail", "basis", "kind", "topic"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "jobId",
+              "rating",
+              "task",
+              "assessment",
+              "endpoint",
+              "observations"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "rating": {
+                "type": "string",
+                "enum": ["good", "partial", "bad"]
+              },
+              "task": {
+                "type": "string",
+                "minLength": 10,
+                "maxLength": 2000
+              },
+              "assessment": {
+                "type": "string",
+                "minLength": 10,
+                "maxLength": 2000
+              },
+              "origin": {
+                "default": "api",
+                "type": "string",
+                "maxLength": 100
+              },
+              "integration": {
+                "nullable": true,
+                "type": "string",
+                "maxLength": 100
+              },
+              "endpoint": {
+                "type": "string",
+                "enum": ["scrape"]
+              },
+              "observations": {
+                "minItems": 1,
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string",
+                      "minLength": 10,
+                      "maxLength": 2000
+                    },
+                    "basis": {
+                      "type": "string",
+                      "enum": ["output", "source_comparison", "expectation"]
+                    },
+                    "comparison": {
+                      "type": "object",
+                      "properties": {
+                        "reference": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "detail": {
+                          "type": "string",
+                          "minLength": 10,
+                          "maxLength": 2000
+                        }
+                      },
+                      "required": ["reference", "detail"],
+                      "additionalProperties": false
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": ["correct", "missing", "incorrect", "failure"]
+                    },
+                    "location": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    "retryOutcome": {
+                      "type": "string",
+                      "minLength": 10,
+                      "maxLength": 2000
+                    }
+                  },
+                  "required": ["detail", "basis", "kind"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "jobId",
+              "rating",
+              "task",
+              "assessment",
+              "endpoint",
+              "observations"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "jobId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "rating": {
+                "type": "string",
+                "enum": ["good", "partial", "bad"]
+              },
+              "task": {
+                "type": "string",
+                "minLength": 10,
+                "maxLength": 2000
+              },
+              "assessment": {
+                "type": "string",
+                "minLength": 10,
+                "maxLength": 2000
+              },
+              "origin": {
+                "default": "api",
+                "type": "string",
+                "maxLength": 100
+              },
+              "integration": {
+                "nullable": true,
+                "type": "string",
+                "maxLength": 100
+              },
+              "endpoint": {
+                "type": "string",
+                "enum": ["parse"]
+              },
+              "observations": {
+                "minItems": 1,
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string",
+                      "minLength": 10,
+                      "maxLength": 2000
+                    },
+                    "basis": {
+                      "type": "string",
+                      "enum": ["output", "source_comparison", "expectation"]
+                    },
+                    "comparison": {
+                      "type": "object",
+                      "properties": {
+                        "reference": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "detail": {
+                          "type": "string",
+                          "minLength": 10,
+                          "maxLength": 2000
+                        }
+                      },
+                      "required": ["reference", "detail"],
+                      "additionalProperties": false
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "correct",
+                        "text",
+                        "table",
+                        "layout",
+                        "completeness"
+                      ]
+                    },
+                    "location": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    }
+                  },
+                  "required": ["detail", "basis", "kind"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "jobId",
+              "rating",
+              "task",
+              "assessment",
+              "endpoint",
+              "observations"
+            ],
+            "additionalProperties": false
+          }
+        ],
+        "description": "Keyless feedback requires a task, assessment, rating, and category-specific observations. Each source_comparison requires comparison.reference and comparison.detail. Search result positions must exist in the delivered source group. Use only evidence already available; no investigation or root-cause diagnosis is required."
       }
     }
   },
