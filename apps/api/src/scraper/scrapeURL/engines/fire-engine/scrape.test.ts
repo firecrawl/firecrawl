@@ -20,20 +20,20 @@ describe("safeModeParams", () => {
     expect(safeModeParams(undefined)).toEqual({});
   });
 
-  it("forwards all engine policies (all off under strict defaults)", () => {
+  it("translates strict defaults to all overrides on (block)", () => {
     expect(safeModeParams(strict)).toEqual({
-      safeModePolicies: {
-        useSiteHandling: false,
-        useDefaultAutomation: false,
-        useDefaultUserAgent: false,
-        usePlatformSelection: false,
-        useCountrySelection: false,
-        useReferrer: false,
+      behaviorOverrides: {
+        disableSiteHandling: true,
+        exposeWebdriver: true,
+        useHeadlessUserAgent: true,
+        disablePlatformSelection: true,
+        disableCountrySelection: true,
+        disableAutomaticReferrer: true,
       },
     });
   });
 
-  it("forwards each engine policy as configured", () => {
+  it("negates each allowed capability into the engine override", () => {
     expect(
       safeModeParams({
         ...strict,
@@ -41,13 +41,13 @@ describe("safeModeParams", () => {
         useCountrySelection: true,
       }),
     ).toEqual({
-      safeModePolicies: {
-        useSiteHandling: true,
-        useDefaultAutomation: false,
-        useDefaultUserAgent: false,
-        usePlatformSelection: false,
-        useCountrySelection: true,
-        useReferrer: false,
+      behaviorOverrides: {
+        disableSiteHandling: false,
+        exposeWebdriver: true,
+        useHeadlessUserAgent: true,
+        disablePlatformSelection: true,
+        disableCountrySelection: false,
+        disableAutomaticReferrer: true,
       },
     });
   });

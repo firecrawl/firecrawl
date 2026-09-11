@@ -60,28 +60,28 @@ export type FireEngineScrapeRequestCommon = {
   saveScrapeResultToGCS?: boolean;
   zeroDataRetention?: boolean;
 
-  safeModePolicies?: {
-    useSiteHandling?: boolean;
-    useDefaultAutomation?: boolean;
-    useDefaultUserAgent?: boolean;
-    usePlatformSelection?: boolean;
-    useCountrySelection?: boolean;
-    useReferrer?: boolean;
+  behaviorOverrides?: {
+    disableSiteHandling?: boolean;
+    exposeWebdriver?: boolean;
+    useHeadlessUserAgent?: boolean;
+    disablePlatformSelection?: boolean;
+    disableCountrySelection?: boolean;
+    disableAutomaticReferrer?: boolean;
   };
 };
 
 export function safeModeParams(
   safeMode: ResolvedSafeMode | undefined,
-): Pick<FireEngineScrapeRequestCommon, "safeModePolicies"> {
+): Pick<FireEngineScrapeRequestCommon, "behaviorOverrides"> {
   if (!safeMode) return {};
   return {
-    safeModePolicies: {
-      useSiteHandling: safeMode.useSiteHandling,
-      useDefaultAutomation: safeMode.useDefaultAutomation,
-      useDefaultUserAgent: safeMode.useDefaultUserAgent,
-      usePlatformSelection: safeMode.usePlatformSelection,
-      useCountrySelection: safeMode.useCountrySelection,
-      useReferrer: safeMode.useReferrer,
+    behaviorOverrides: {
+      disableSiteHandling: !safeMode.useSiteHandling,
+      exposeWebdriver: !safeMode.useDefaultAutomation,
+      useHeadlessUserAgent: !safeMode.useDefaultUserAgent,
+      disablePlatformSelection: !safeMode.usePlatformSelection,
+      disableCountrySelection: !safeMode.useCountrySelection,
+      disableAutomaticReferrer: !safeMode.useReferrer,
     },
   };
 }
