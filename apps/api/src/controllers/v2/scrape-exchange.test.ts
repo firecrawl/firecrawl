@@ -3,10 +3,6 @@ import { config } from "../../config";
 import { ExchangeProxyError } from "../../lib/exchange-proxy";
 import { exchangeScrapeController } from "./scrape-exchange";
 
-vi.mock("../../lib/exchange-proxy", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../lib/exchange-proxy")>()),
-  forwardToExchange: vi.fn(),
-}));
 vi.mock("../../services/exchange/settle", () => ({
   settleExchangeCall: vi.fn(),
 }));
@@ -18,7 +14,6 @@ vi.mock("../../lib/external-request-id", () => ({
 }));
 
 import { settleExchangeCall } from "../../services/exchange/settle";
-import { logRequest } from "../../services/logging/log_job";
 const forward = vi.mocked(settleExchangeCall);
 
 const CALL = {
@@ -113,22 +108,6 @@ describe("scrape({ exchange })", () => {
     await exchangeScrapeController(req({ exchange: [CALL] }), r, "job-3");
     expect(out.status).toBe(503);
   });
-
-  it.each([{ scrapeZDR: "forced" }, { forceZDR: true }])(
-    "refuses forced ZDR before logging or forwarding: %j",
-    async flags => {
-      const { r, out } = res();
-      await exchangeScrapeController(
-        req({ exchange: CALL }, { exchangeRetrieve: true, ...flags }),
-        r,
-        "job-zdr",
-      );
-      expect(out.status).toBe(403);
-      expect(out.body.error).toContain("zero data retention");
-      expect(forward).not.toHaveBeenCalled();
-      expect(logRequest).not.toHaveBeenCalled();
-    },
-  );
 
   it("rejects an empty list, more than ten, and page-scrape fields, with a field-level message", async () => {
     for (const body of [

@@ -436,38 +436,6 @@ it("releases a hold and permits a retry after a concurrency timeout", async () =
   );
   expect((await send()).status).toBe(200);
 });
-it("does not repeat an executed request after an enqueue failure", async () => {
-  state.failQueue = true;
-  expect((await send()).status).toBe(503);
-  expect((await send()).status).toBe(409);
-  expect(
-    [...state.keys.entries()]
-      .filter(([key]) => key.startsWith("exchange:provider-request"))
-      .map(([, value]) => JSON.parse(value)),
-  ).toEqual([
-    expect.objectContaining({
-      state: "pending",
-      reconciliation: expect.objectContaining({
-        phase: "enqueue",
-        holdConfirmed: true,
-        credits: 3,
-        receipt: expect.any(Object),
-      }),
-    }),
-  ]);
-  expect(state.forward).toHaveBeenCalledTimes(1);
-});
-it("retains pending reconciliation when completed replay storage fails", async () => {
-  state.failReplay = true;
-  expect((await send()).status).toBe(503);
-  expect((await send()).status).toBe(409);
-  expect(state.forward).toHaveBeenCalledTimes(1);
-  expect(state.queue).toHaveLength(1);
-  expect(JSON.parse([...state.keys.values()][0])).toMatchObject({
-    state: "pending",
-    reconciliation: { phase: "enqueue", credits: 3 },
-  });
-});
 it.each(["/exchange/retrieve", "/v2/scrape"])(
   "honors authenticated no-bill calls at %s",
   async path => {
@@ -503,6 +471,7 @@ it.each([{ scrapeZDR: "forced" }, { forceZDR: true }])(
       expect((await send(path)).status).toBe(403);
     expect(state.hold).not.toHaveBeenCalled();
     expect(state.forward).not.toHaveBeenCalled();
+    expect(state.log).not.toHaveBeenCalled();
   },
 );
 it.each([
@@ -636,32 +605,35 @@ const recover = async () => {
   for (const key of state.due.keys()) state.due.set(key, 0);
   await reconcileExchangeRequests();
 };
-it("recovers a confirmed request after queue failure without executing or charging twice", async () => {
-  state.failQueue = true;
-  expect((await send()).status).toBe(503);
-  state.failQueue = false;
-  await recover();
-  expect((await send()).status).toBe(200);
-  expect(state.forward).toHaveBeenCalledTimes(1);
-  expect(state.finalize).toHaveBeenCalledTimes(1);
-  expect(state.queue).toHaveLength(1);
-});
+it.each(["failQueue", "failReplay"] as const)(
+  "preserves and recovers a confirmed request after %s without duplicate execution or billing",
+  async failure => {
+    state[failure] = true;
+    expect((await send()).status).toBe(503);
+    expect((await send()).status).toBe(409);
+    expect(JSON.parse([...state.keys.values()][0])).toMatchObject({
+      state: "pending",
+      reconciliation: {
+        phase: "enqueue",
+        holdConfirmed: true,
+        credits: 3,
+        receipt: expect.any(Object),
+      },
+    });
+    state[failure] = false;
+    await recover();
+    expect((await send()).status).toBe(200);
+    expect(state.forward).toHaveBeenCalledTimes(1);
+    expect(state.finalize).toHaveBeenCalledTimes(1);
+    expect(state.queue).toHaveLength(1);
+  },
+);
 it("hands off billing even when the post-confirm checkpoint fails", async () => {
   state.failPhase = "enqueue";
   expect((await send()).status).toBe(200);
   expect(state.queue).toHaveLength(1);
   expect((await send()).status).toBe(200);
   expect(state.finalize).toHaveBeenCalledTimes(1);
-});
-it("recovers lost replay storage without a duplicate ledger enqueue", async () => {
-  state.failReplay = true;
-  expect((await send()).status).toBe(503);
-  state.failReplay = false;
-  await recover();
-  expect((await send()).status).toBe(200);
-  expect(state.forward).toHaveBeenCalledTimes(1);
-  expect(state.finalize).toHaveBeenCalledTimes(1);
-  expect(state.queue).toHaveLength(1);
 });
 it("never re-executes a provider with an unknown outcome during recovery", async () => {
   state.forward.mockRejectedValue(new ExchangeProxyError("timeout"));
