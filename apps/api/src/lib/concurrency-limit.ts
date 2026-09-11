@@ -34,7 +34,10 @@ export async function getEffectiveConcurrencyLimit(
   teamId: string,
   orgId?: string | null,
 ): Promise<number> {
-  const autumnValue = await autumnService.getConcurrencyLimit(teamId, orgId);
+  const autumnValue = await autumnService.getConcurrencyLimit(
+    teamId,
+    orgId ?? null,
+  );
   return autumnValue ?? DEFAULT_CONCURRENCY_LIMIT;
 }
 

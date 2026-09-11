@@ -657,7 +657,10 @@ async function buildAuthenticatedRateLimiter(
   if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
     multiplier = 1;
   } else {
-    multiplier = await autumnService.getRateLimitMultiplier(teamId, orgId);
+    multiplier = await autumnService.getRateLimitMultiplier(
+      teamId,
+      orgId ?? null,
+    );
     if (minMultiplier !== undefined) {
       multiplier = Math.max(multiplier, minMultiplier);
     }

@@ -13,6 +13,7 @@ import {
   updateMonitorScheduleAfterRun,
 } from "./store";
 import { autumnService } from "../autumn/autumn.service";
+import { getACUCTeam } from "../../controllers/auth";
 import { isMonitorCheckStale, MONITOR_CHECK_STALE_ERROR } from "./stale";
 import { validateMonitorCron } from "./cron";
 import { monitorJitterOffsetMs } from "./jitter";
@@ -210,6 +211,10 @@ async function clearFinishedOrStaleCurrentCheck(
 
     let released = true;
     if (failed.autumn_lock_id) {
+      // The billing service no longer finds the org for itself; without one
+      // the release goes straight to Autumn, as it already did then.
+      const orgId =
+        (await getACUCTeam(monitor.team_id).catch(() => null))?.org_id ?? null;
       released = await autumnService
         .finalizeCreditsLock({
           lockId: failed.autumn_lock_id,
@@ -219,7 +224,7 @@ async function clearFinishedOrStaleCurrentCheck(
             endpoint: "monitor",
             jobId: failed.id,
           },
-          teamId: monitor.team_id,
+          team: orgId ? { teamId: monitor.team_id, orgId } : undefined,
         })
         .catch(error => {
           logger.warn("Failed to release stale monitor check credit lock", {

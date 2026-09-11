@@ -49,11 +49,17 @@ export async function fireclawController(
   // full multi-play cost is checked here. Fail open on an Autumn outage
   // (checkCredits returns null), matching checkCreditsMiddleware — don't turn an
   // Autumn outage into a customer outage.
-  const creditCheck = await autumnService.checkCredits({
-    teamId: req.auth.team_id,
-    value: totalCredits,
-    properties: { source: "fireclaw", apiKeyId: chunk?.api_key_id ?? null },
-  });
+  // No org, no Autumn customer to gate against: fail open, exactly as
+  // checkCredits answered for an identity it could not name.
+  const orgId = chunk?.org_id ?? null;
+  const creditCheck = orgId
+    ? await autumnService.checkCredits({
+        teamId: req.auth.team_id,
+        orgId,
+        value: totalCredits,
+        properties: { source: "fireclaw", apiKeyId: chunk?.api_key_id ?? null },
+      })
+    : null;
 
   if (creditCheck !== null && !creditCheck.allowed) {
     res.status(402).json({
@@ -66,6 +72,7 @@ export async function fireclawController(
   try {
     await billTeam(
       req.auth.team_id,
+      req.acuc?.org_id ?? null,
       totalCredits,
       req.acuc?.api_key_id ?? null,
       // No chargeId: fireclaw has no per-charge identity to key on — a

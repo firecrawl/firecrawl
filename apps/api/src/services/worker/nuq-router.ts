@@ -248,11 +248,14 @@ export async function fdbEnqueueScrapeJobs(
   teamLimit: number | null;
 }> {
   let teamLimit: number | null = null;
-  if (!isSelfHosted() && !fdbForced()) {
-    teamLimit = (await autumnService.getConcurrencyLimit(teamId)) ?? 2;
-  } else if (!isSelfHosted()) {
+  if (!isSelfHosted()) {
+    // The org comes from the team's ACUC — the same lookup the concurrency
+    // limit used to make for itself, now that the billing service resolves
+    // nothing. One per enqueue batch, not per job.
+    const orgId = (await getACUCTeam(teamId).catch(() => null))?.org_id ?? null;
+    const autumnLimit = await autumnService.getConcurrencyLimit(teamId, orgId);
     // fdbForced: leave unlimited (null) when Autumn has no concurrency value.
-    teamLimit = await autumnService.getConcurrencyLimit(teamId);
+    teamLimit = fdbForced() ? autumnLimit : (autumnLimit ?? 2);
   }
 
   const queueCap =

@@ -140,11 +140,20 @@ export async function crawlController(req: Request, res: Response) {
 
     const limitCheck = req.body?.crawlerOptions?.limit ?? 1;
     // Autumn is the source of truth for credits.
-    const autumnResult = await autumnService.checkCredits({
-      teamId: team_id,
-      value: limitCheck,
-      properties: { source: "v0/crawl", apiKeyId: chunk?.api_key_id ?? null },
-    });
+    // No org, no Autumn customer to gate against: fail open, exactly as
+    // checkCredits answered for an identity it could not name.
+    const orgId = chunk?.org_id ?? null;
+    const autumnResult = orgId
+      ? await autumnService.checkCredits({
+          teamId: team_id,
+          orgId,
+          value: limitCheck,
+          properties: {
+            source: "v0/crawl",
+            apiKeyId: chunk?.api_key_id ?? null,
+          },
+        })
+      : null;
 
     if (autumnResult !== null && !autumnResult.allowed) {
       return res.status(402).json({

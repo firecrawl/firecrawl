@@ -213,6 +213,7 @@ export async function batchScrapeController(
       if (threatScanCredits > 0) {
         billTeam(
           req.auth.team_id,
+          req.acuc?.org_id ?? null,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
           {

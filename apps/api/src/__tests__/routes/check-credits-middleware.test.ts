@@ -199,6 +199,25 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
     }
   });
 
+  // Keyless and preview identities carry no org, and neither does the DB-auth
+  // bypass. checkCredits answered null for all of them, so the middleware takes
+  // that fail-open answer itself rather than asking with an org it hasn't got.
+  it.each([null, undefined])(
+    "fails open without asking Autumn when org_id is %s",
+    async orgId => {
+      const req = buildReq({
+        auth: { team_id: "preview_1.2.3.4", org_id: orgId },
+      });
+      const { res, nextCalled } = await runMiddleware(req);
+
+      expect(checkCreditsMock).not.toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+      expect(nextCalled).toBe(true);
+      expect(req.account.remainingCredits).toBe(Infinity);
+      expect(req.body.limit).toBe(100);
+    },
+  );
+
   it("sends a null apiKeyId when the request has no resolved api key id", async () => {
     checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
 

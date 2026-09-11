@@ -516,11 +516,17 @@ export async function mapController(
 
   // Bill the team
   const creditsToBill = 1 + threatScanCredits;
-  billTeam(req.auth.team_id, creditsToBill, req.acuc?.api_key_id ?? null, {
-    endpoint: "map",
-    jobId: mapId,
-    chargeId: mapId,
-  }).catch(error => {
+  billTeam(
+    req.auth.team_id,
+    req.acuc?.org_id ?? null,
+    creditsToBill,
+    req.acuc?.api_key_id ?? null,
+    {
+      endpoint: "map",
+      jobId: mapId,
+      chargeId: mapId,
+    },
+  ).catch(error => {
     logger.error(
       `Failed to bill team ${req.auth.team_id} for ${creditsToBill} credit(s): ${error}`,
     );

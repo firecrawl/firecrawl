@@ -280,6 +280,7 @@ export async function performGenerateLlmsTxt(
     // Bill team for usage
     billTeam(
       teamId,
+      acuc?.org_id ?? null,
       urls.length,
       apiKeyId,
       { endpoint: "llms_txt", jobId: generationId, chargeId: generationId },

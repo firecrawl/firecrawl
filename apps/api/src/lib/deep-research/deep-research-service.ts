@@ -427,6 +427,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
     // Bill team for usage based on URLs analyzed
     billTeam(
       teamId,
+      acuc?.org_id ?? null,
       credits_billed,
       apiKeyId,
       { endpoint: "deep_research", jobId: researchId, chargeId: researchId },

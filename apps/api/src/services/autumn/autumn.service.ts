@@ -4,7 +4,6 @@ import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
-import { getACUCTeam } from "../../controllers/auth";
 import { autumnClient } from "./client";
 import {
   firebillFinalize,
@@ -288,15 +287,12 @@ export class AutumnService {
    */
   async isRoutedThroughFirebill(
     teamId: string,
-    orgId?: string | null,
+    orgId: string,
   ): Promise<boolean> {
     if (this.isPreviewTeam(teamId)) return false;
     try {
-      const [resolvedOrgId, gatewayProvisioned] = await Promise.all([
-        this.resolveOrgId(teamId, orgId),
-        this.isGatewayProvisioned(teamId),
-      ]);
-      return shouldRouteToFirebill(resolvedOrgId, { gatewayProvisioned });
+      const gatewayProvisioned = await this.isGatewayProvisioned(teamId);
+      return shouldRouteToFirebill(orgId, { gatewayProvisioned });
     } catch {
       return false;
     }
@@ -398,21 +394,20 @@ export class AutumnService {
     if (this.isPreviewTeam(teamId)) return;
 
     try {
-      const resolvedOrgId = await this.resolveOrgId(teamId, orgId);
       // Fast path: team is already fully provisioned under this org.
-      if (this.ensuredTeams.has(this.ensuredTeamKey(resolvedOrgId, teamId))) {
+      if (this.ensuredTeams.has(this.ensuredTeamKey(orgId, teamId))) {
         return;
       }
-      await this.ensureOrgProvisioned({ orgId: resolvedOrgId });
+      await this.ensureOrgProvisioned({ orgId });
 
       const entity = await this.getEntity({
-        customerId: resolvedOrgId,
+        customerId: orgId,
         entityId: teamId,
       });
 
       if (!entity) {
         const result = await this.createEntity({
-          customerId: resolvedOrgId,
+          customerId: orgId,
           entityId: teamId,
           featureId: TEAM_FEATURE_ID,
           name,
@@ -421,13 +416,13 @@ export class AutumnService {
         if (result.ok || ("conflict" in result && result.conflict)) {
           // Entity was just created, or already existed (409 race) — either way
           // it's present. No need for a second getEntity confirmation call.
-          this.ensuredTeams.add(this.ensuredTeamKey(resolvedOrgId, teamId));
+          this.ensuredTeams.add(this.ensuredTeamKey(orgId, teamId));
         }
         // Genuine error: leave ensuredTeams empty so the next request retries.
         return;
       }
 
-      this.ensuredTeams.add(this.ensuredTeamKey(resolvedOrgId, teamId));
+      this.ensuredTeams.add(this.ensuredTeamKey(orgId, teamId));
     } catch (error) {
       logger.error(
         "Autumn ensureTeamProvisioned failed — billing API may be unavailable",
@@ -437,43 +432,19 @@ export class AutumnService {
   }
 
   /**
-   * The org to bill a team against. The caller's own `orgId` wins; otherwise
-   * the team's ACUC answers, which makes it the one source of the org and its
-   * Redis cache the one cache. Throws when no org can be named, which every
-   * caller catches and turns into its fail-open answer.
-   */
-  private async resolveOrgId(
-    teamId: string,
-    orgId?: string | null,
-  ): Promise<string> {
-    if (typeof orgId === "string" && orgId.length > 0) return orgId;
-
-    // Without DB auth there is no real org to bill: getACUCTeam answers with a
-    // mock ACUC whose synthetic org must never become an Autumn customer.
-    if (config.USE_DB_AUTHENTICATION !== true) {
-      throw new Error(`Missing org_id for team ${teamId}`);
-    }
-
-    const acuc = await getACUCTeam(teamId);
-    if (acuc?.org_id) return acuc.org_id;
-
-    throw new Error(`Missing org_id for team ${teamId}`);
-  }
-
-  /**
-   * Resolves and warms the Autumn customer/entity context needed before
-   * tracking usage. A team already provisioned under this org skips
+   * Warms the Autumn customer/entity context needed before tracking usage and
+   * answers with the customer to bill — the caller's org, which this service
+   * never looks up for itself. A team already provisioned under this org skips
    * ensureTeamProvisioned entirely.
    */
   private async ensureTrackingContext(
     teamId: string,
-    orgId?: string | null,
+    orgId: string,
   ): Promise<string> {
-    const resolvedOrgId = await this.resolveOrgId(teamId, orgId);
-    if (!this.ensuredTeams.has(this.ensuredTeamKey(resolvedOrgId, teamId))) {
-      await this.ensureTeamProvisioned({ teamId, orgId: resolvedOrgId });
+    if (!this.ensuredTeams.has(this.ensuredTeamKey(orgId, teamId))) {
+      await this.ensureTeamProvisioned({ teamId, orgId });
     }
-    return resolvedOrgId;
+    return orgId;
   }
 
   /**
@@ -692,7 +663,7 @@ export class AutumnService {
   /**
    * Finalizes a previously-acquired Autumn lock.
    *
-   * When the caller supplies the lock's teamId and that team's org is on the
+   * When the caller supplies the lock's team and that team's org is on the
    * firebill rollout, the settle goes through firebill, which queues it
    * durably and retries delivery — a dropped direct finalize means the hold
    * just expires, leaving a confirm's work unbilled. Either route lands on the
@@ -708,16 +679,15 @@ export class AutumnService {
     action,
     overrideValue,
     properties,
-    teamId,
+    team,
     externalRequestId,
     featureId = CREDITS_FEATURE_ID,
     heldValue,
-    orgId,
   }: FinalizeCreditsLockParams): Promise<boolean> {
     const gated = Boolean(externalRequestId) && firebillConfigured();
     if (
       gated ||
-      (teamId && (await this.isRoutedThroughFirebill(teamId, orgId)))
+      (team && (await this.isRoutedThroughFirebill(team.teamId, team.orgId)))
     ) {
       // Only resolved for a gated settle: firebill needs the org to split the
       // settle and to find the integration to report to. An ordinary finalize
@@ -731,14 +701,16 @@ export class AutumnService {
       // Settling and losing the label is the lesser loss, and firebill counts
       // the lost label as `partner_events_total{outcome="no_customer"}`.
       const customerId =
-        externalRequestId && teamId
-          ? await this.ensureTrackingContext(teamId, orgId).catch(error => {
-              logger.error(
-                "Could not resolve the org for a gated settle; finalizing anyway, but this run cannot be reported to its partner",
-                { teamId, lockId, error },
-              );
-              return null;
-            })
+        externalRequestId && team
+          ? await this.ensureTrackingContext(team.teamId, team.orgId).catch(
+              error => {
+                logger.error(
+                  "Could not provision the customer for a gated settle; finalizing anyway, but this run cannot be reported to its partner",
+                  { teamId: team.teamId, lockId, error },
+                );
+                return null;
+              },
+            )
           : null;
       // Surfaced, not discarded. firebill answers `false` for a refusal, a
       // timeout, or a non-OK — none of which throw — so a caller that ignores
@@ -857,12 +829,13 @@ export class AutumnService {
    * Returns nulls when Autumn is not configured, the entity is missing (404),
    * or a balance isn't present — these mean "no elevated entitlement", so
    * callers fall back to the low defaults. When Autumn itself errors (network /
-   * 5xx / unexpected exception) we instead fail OPEN, returning the high
-   * ERROR_FALLBACK_* limits so a billing outage doesn't throttle real teams.
+   * 5xx / unexpected exception), or the caller can name no org, we instead fail
+   * OPEN, returning the high ERROR_FALLBACK_* limits so a billing outage
+   * doesn't throttle real teams.
    */
   private async getEntityLimits(
     teamId: string,
-    orgId?: string | null,
+    orgId: string | null,
   ): Promise<{
     concurrency: number | null;
     rateLimitMultiplier: number | null;
@@ -892,13 +865,24 @@ export class AutumnService {
       return { concurrency, rateLimitMultiplier };
     };
 
-    try {
-      const resolvedOrgId = orgId ?? (await this.resolveOrgId(teamId));
-      if (!resolvedOrgId)
-        return { concurrency: null, rateLimitMultiplier: null };
+    // No org means no Autumn entity to ask about. Fail OPEN on the high
+    // limits, the same answer this method already gives when it cannot reach
+    // Autumn — and the same one the service's own org lookup produced by
+    // throwing into the catch below. Not cached, for the same reason.
+    if (!orgId) {
+      logger.error(
+        "Autumn getEntityLimits has no org for the team, falling back to high limits",
+        { teamId },
+      );
+      return {
+        concurrency: AutumnService.ERROR_FALLBACK_CONCURRENCY,
+        rateLimitMultiplier: AutumnService.ERROR_FALLBACK_RATE_MULTIPLIER,
+      };
+    }
 
+    try {
       const entity: any = await autumnClient.entities.get({
-        customerId: resolvedOrgId,
+        customerId: orgId,
         entityId: teamId,
       });
       const balances = entity?.balances ?? {};
@@ -946,7 +930,7 @@ export class AutumnService {
    */
   async getConcurrencyLimit(
     teamId: string,
-    orgId?: string | null,
+    orgId: string | null,
   ): Promise<number | null> {
     return (await this.getEntityLimits(teamId, orgId)).concurrency;
   }
@@ -961,7 +945,7 @@ export class AutumnService {
    */
   async getRateLimitMultiplier(
     teamId: string,
-    orgId?: string | null,
+    orgId: string | null,
   ): Promise<number> {
     return (await this.getEntityLimits(teamId, orgId)).rateLimitMultiplier ?? 1;
   }

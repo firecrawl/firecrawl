@@ -172,24 +172,35 @@ async function billScrapeJob(
       job.data.team_id !== config.BACKGROUND_INDEX_TEAM_ID! &&
       config.USE_DB_AUTHENTICATION
     ) {
+      // The org rides the job payload, snapshotted from the request ACUC at
+      // acceptance. The ACUC answers only for a job enqueued without one —
+      // the same lookup the billing service used to make on every charge.
+      const orgId =
+        job.data.internalOptions?.orgId ??
+        (await getACUCTeam(job.data.team_id).catch(() => null))?.org_id ??
+        null;
+
       // Resolved outside the try so the catch's refund decision can see it.
       let routedToFirebill = false;
       try {
-        routedToFirebill = await autumnService.isRoutedThroughFirebill(
-          job.data.team_id,
-        );
-        trackedInRequest = await autumnService.trackCredits({
-          teamId: job.data.team_id,
-          value: creditsToBeBilled,
-          properties: autumnProperties,
-          featureId,
-          // The worker job id is the one identity that is unique per charge
-          // (a crawl id is shared by every page — keying on it would collapse
-          // a crawl's pages into one billed event) AND survives a stall
-          // requeue, which re-runs the job under the same id: with this key,
-          // the re-run dedupes instead of double-billing (firebill route).
-          idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
-        });
+        routedToFirebill = orgId
+          ? await autumnService.isRoutedThroughFirebill(job.data.team_id, orgId)
+          : false;
+        trackedInRequest = orgId
+          ? await autumnService.trackCredits({
+              teamId: job.data.team_id,
+              orgId,
+              value: creditsToBeBilled,
+              properties: autumnProperties,
+              featureId,
+              // The worker job id is the one identity that is unique per charge
+              // (a crawl id is shared by every page — keying on it would collapse
+              // a crawl's pages into one billed event) AND survives a stall
+              // requeue, which re-runs the job under the same id: with this key,
+              // the re-run dedupes instead of double-billing (firebill route).
+              idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
+            })
+          : false;
         // On the firebill route the ledger enqueue must be idempotent by the
         // originating job: a stalled job reruns under the same job.id, the
         // track dedupes in firebill, and a fresh random billing job id would
@@ -226,6 +237,7 @@ async function billScrapeJob(
               "bill_team",
               {
                 team_id: job.data.team_id,
+                org_id: orgId,
                 credits: creditsToBeBilled,
                 billing,
                 is_extract: false,
@@ -280,9 +292,10 @@ async function billScrapeJob(
                 billing,
               },
             );
-          } else {
+          } else if (orgId) {
             await autumnService.refundCredits({
               teamId: job.data.team_id,
+              orgId,
               value: creditsToBeBilled,
               properties: autumnProperties,
               featureId,
@@ -325,6 +338,8 @@ async function billScrapeJob(
 function billThreatBlockedDiscoveries(
   args: {
     teamId: string;
+    /** Snapshotted onto the job at acceptance; see InternalOptions.orgId. */
+    orgId: string | null;
     apiKeyId: number | null;
     billing: BillingMetadata;
     bypassBilling: boolean;
@@ -341,14 +356,18 @@ function billThreatBlockedDiscoveries(
   // billing metadata (each page job that discovers new blocked URLs bills its
   // own batch under the same crawl id) — a shared key would collapse them
   // into one charge, i.e. underbill. Keyless until per-batch identity exists.
-  billTeam(args.teamId, threatScanCredits, args.apiKeyId, args.billing).catch(
-    error => {
-      logger.error(
-        `Failed to bill team ${args.teamId} for ${threatScanCredits} threat scan credit(s)`,
-        { error },
-      );
-    },
-  );
+  billTeam(
+    args.teamId,
+    args.orgId,
+    threatScanCredits,
+    args.apiKeyId,
+    args.billing,
+  ).catch(error => {
+    logger.error(
+      `Failed to bill team ${args.teamId} for ${threatScanCredits} threat scan credit(s)`,
+      { error },
+    );
+  });
 }
 
 async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
@@ -649,6 +668,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 billThreatBlockedDiscoveries(
                   {
                     teamId: job.data.team_id,
+                    orgId: job.data.internalOptions?.orgId ?? null,
                     apiKeyId: job.data.apiKeyId ?? null,
                     billing: resolveBillingMetadata({
                       billing: job.data.billing,
@@ -1390,6 +1410,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         billThreatBlockedDiscoveries(
           {
             teamId: job.data.team_id,
+            orgId: job.data.internalOptions?.orgId ?? null,
             apiKeyId: job.data.apiKeyId ?? null,
             billing: resolveBillingMetadata({
               billing: job.data.billing,
@@ -1557,6 +1578,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         billThreatBlockedDiscoveries(
           {
             teamId: job.data.team_id,
+            orgId: sc.internalOptions?.orgId ?? null,
             apiKeyId: job.data.apiKeyId ?? null,
             billing: resolveBillingMetadata({
               billing: job.data.billing,

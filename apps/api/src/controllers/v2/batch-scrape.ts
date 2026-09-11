@@ -242,6 +242,7 @@ export async function batchScrapeController(
       ) {
         billTeam(
           req.auth.team_id,
+          req.acuc?.org_id ?? null,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
           {

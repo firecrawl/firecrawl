@@ -302,6 +302,7 @@ async function searchControllerInner(
     if (!isSearchPreview && shouldBill) {
       billTeam(
         req.auth.team_id,
+        req.acuc?.org_id ?? null,
         result.searchCredits,
         req.acuc?.api_key_id ?? null,
         { ...billing, chargeId: jobId },

@@ -494,11 +494,17 @@ export async function scrapeStopInteractiveBrowserController(
     });
   });
 
-  billTeam(req.auth.team_id, creditsBilled, req.acuc?.api_key_id ?? null, {
-    endpoint: "interact",
-    jobId: session.id,
-    chargeId: `${session.id}:scrape-browser`,
-  }).catch(error => {
+  billTeam(
+    req.auth.team_id,
+    req.acuc?.org_id ?? null,
+    creditsBilled,
+    req.acuc?.api_key_id ?? null,
+    {
+      endpoint: "interact",
+      jobId: session.id,
+      chargeId: `${session.id}:scrape-browser`,
+    },
+  ).catch(error => {
     logger.error("Failed to bill team for interact session", {
       error,
       creditsBilled,
@@ -587,15 +593,21 @@ async function createSessionForScrape(
   }
   const keylessReserved = estimatedCredits;
 
-  const autumnResult = await autumnService.checkCredits({
-    teamId: req.auth.team_id,
-    value: estimatedCredits,
-    properties: {
-      source: "scrapeBrowserCreate",
-      path: req.path,
-      apiKeyId: req.acuc?.api_key_id ?? null,
-    },
-  });
+  // No org, no Autumn customer to gate against: fail open, exactly as
+  // checkCredits answered for an identity it could not name.
+  const orgId = req.acuc?.org_id ?? null;
+  const autumnResult = orgId
+    ? await autumnService.checkCredits({
+        teamId: req.auth.team_id,
+        orgId,
+        value: estimatedCredits,
+        properties: {
+          source: "scrapeBrowserCreate",
+          path: req.path,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+        },
+      })
+    : null;
 
   if (autumnResult !== null && !autumnResult.allowed) {
     adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(() => {});

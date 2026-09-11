@@ -4,23 +4,29 @@ import { vi } from "vitest";
 // reads at build time must be created in vi.hoisted(). (Jest left jest.mock
 // un-hoisted here because `jest` was imported from @jest/globals.) The `redis`
 // stub below stays module-level: its factory only captures it lazily.
-const { logger, withAuth, trackCredits, refundCredits, billTeam7 } = vi.hoisted(
-  () => {
-    const logger: any = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      child: vi.fn(() => logger),
-    };
-    return {
-      logger,
-      withAuth: vi.fn((fn: any) => fn),
-      trackCredits: vi.fn<(args: any) => Promise<boolean>>(),
-      refundCredits: vi.fn<(args: any) => Promise<void>>(),
-      billTeam7: vi.fn<(params: any) => Promise<{ api_key: string }[]>>(),
-    };
-  },
-);
+const {
+  logger,
+  withAuth,
+  trackCredits,
+  refundCredits,
+  billTeam7,
+  getACUCTeam,
+} = vi.hoisted(() => {
+  const logger: any = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn(() => logger),
+  };
+  return {
+    logger,
+    withAuth: vi.fn((fn: any) => fn),
+    trackCredits: vi.fn<(args: any) => Promise<boolean>>(),
+    refundCredits: vi.fn<(args: any) => Promise<void>>(),
+    billTeam7: vi.fn<(params: any) => Promise<{ api_key: string }[]>>(),
+    getACUCTeam: vi.fn<(teamId: string) => Promise<any>>(),
+  };
+});
 
 vi.mock("../../../lib/logger", () => ({
   logger,
@@ -41,6 +47,10 @@ vi.mock("../../autumn/autumn.service", () => ({
 
 vi.mock("../../../db/rpc", () => ({
   billTeam7,
+}));
+
+vi.mock("../../../controllers/auth", () => ({
+  getACUCTeam,
 }));
 
 let queue: string[] = [];
@@ -109,8 +119,11 @@ vi.mock("../../queue-service", () => ({
 import { processBillingBatch } from "../batch_billing";
 
 function makeOp(overrides: Record<string, unknown> = {}) {
+  // `org_id: undefined` in an override drops the key entirely, which is the
+  // shape of an operation enqueued before the field existed.
   return JSON.stringify({
     team_id: "team-1",
+    org_id: "org-1",
     credits: 10,
     billing: { endpoint: "extract" },
     is_extract: false,
@@ -128,6 +141,7 @@ beforeEach(() => {
   billTeam7.mockResolvedValue([]);
   trackCredits.mockResolvedValue(true);
   refundCredits.mockResolvedValue(undefined);
+  getACUCTeam.mockResolvedValue({ team_id: "team-1", org_id: "org-legacy" });
 });
 
 describe("processBillingBatch", () => {
@@ -160,6 +174,7 @@ describe("processBillingBatch", () => {
 
     expect(refundCredits).toHaveBeenCalledWith({
       teamId: "team-1",
+      orgId: "org-1",
       value: 10,
       properties: {
         source: "processBillingBatch",
@@ -178,6 +193,7 @@ describe("processBillingBatch", () => {
 
     expect(refundCredits).toHaveBeenCalledWith({
       teamId: "team-1",
+      orgId: "org-1",
       value: 10,
       properties: {
         source: "processBillingBatch",
@@ -208,6 +224,7 @@ describe("processBillingBatch", () => {
 
     expect(refundCredits).toHaveBeenCalledWith({
       teamId: "team-1",
+      orgId: "org-1",
       value: 10,
       properties: {
         source: "processBillingBatch",
@@ -219,5 +236,32 @@ describe("processBillingBatch", () => {
     expect(billTeam7).toHaveBeenCalledTimes(2);
     // The batch never tracks usage to Autumn, regardless of the request-time flag.
     expect(trackCredits).not.toHaveBeenCalled();
+  });
+
+  // Transitional: operations enqueued before org_id was carried. Remove with
+  // the lookup they exist for, after one deploy.
+  it("resolves the org once for operations that predate the field", async () => {
+    queue = [
+      makeOp({ org_id: undefined, autumnTrackInRequest: true }),
+      makeOp({ org_id: undefined, autumnTrackInRequest: true }),
+    ];
+    billTeam7.mockRejectedValue(new Error("db failed"));
+
+    await processBillingBatch();
+
+    expect(getACUCTeam).toHaveBeenCalledTimes(1);
+    expect(refundCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: "team-1", orgId: "org-legacy" }),
+    );
+  });
+
+  it("does not look anything up for an operation whose org is a known null", async () => {
+    queue = [makeOp({ org_id: null, autumnTrackInRequest: true })];
+    billTeam7.mockRejectedValueOnce(new Error("db failed"));
+
+    await processBillingBatch();
+
+    expect(getACUCTeam).not.toHaveBeenCalled();
+    expect(refundCredits).not.toHaveBeenCalled();
   });
 });

@@ -871,6 +871,7 @@ export async function performExtraction_F0(
   // Bill team for usage
   billTeam(
     teamId,
+    acuc?.org_id ?? null,
     creditsToBill,
     apiKeyId,
     { endpoint: "extract", jobId: extractId, chargeId: extractId },

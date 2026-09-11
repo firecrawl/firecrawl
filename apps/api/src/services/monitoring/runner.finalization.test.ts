@@ -32,7 +32,7 @@ vi.mock("./search/judge", () => ({}));
 vi.mock("./search/dedupe", () => ({}));
 vi.mock("./search/persist", () => ({}));
 vi.mock("../../scraper/WebScraper/utils/blocklist", () => ({}));
-vi.mock("../../controllers/auth", () => ({}));
+vi.mock("../../controllers/auth", () => ({ getACUCTeam: vi.fn() }));
 vi.mock("./store", () => ({
   getMonitorCheckForUpdate: vi.fn(),
   getMonitorForUpdate: vi.fn(),
@@ -58,6 +58,7 @@ import {
   reconcileRunningMonitorChecks,
 } from "./runner";
 import * as store from "./store";
+import { getACUCTeam } from "../../controllers/auth";
 import { autumnService } from "../autumn/autumn.service";
 import { getBillingQueue } from "../queue-service";
 import { redisEvictConnection } from "../redis";
@@ -136,6 +137,7 @@ describe("monitor check finalization ownership", () => {
       async ({ status }) => (!status || status === "same" ? 1 : 0),
     );
     vi.mocked(store.calculateMonitorCheckActualCredits).mockResolvedValue(1);
+    vi.mocked(getACUCTeam).mockResolvedValue({ org_id: "org-1" } as any);
     vi.mocked(autumnService.finalizeCreditsLock).mockResolvedValue(true);
     vi.mocked(getBillingQueue).mockReturnValue({
       add: bill,
@@ -543,7 +545,7 @@ describe("monitor check finalization ownership", () => {
             endpoint: "monitor",
             jobId: current.id,
           },
-          teamId: monitor.team_id,
+          team: { teamId: monitor.team_id, orgId: "org-1" },
         });
       } else {
         expect(autumnService.finalizeCreditsLock).not.toHaveBeenCalled();

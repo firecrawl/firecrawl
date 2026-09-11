@@ -1,6 +1,7 @@
 import { redisEvictConnection } from "../services/redis";
 import { logger } from "./logger";
 import { autumnService } from "../services/autumn/autumn.service";
+import { getACUCTeam } from "../controllers/auth";
 import { inferPlanPriorityFromMultiplier } from "../services/rate-limiter";
 
 const SET_KEY_PREFIX = "limit_team_id:";
@@ -48,7 +49,14 @@ export async function getJobPriority({
     const setLength = await redisEvictConnection.scard(setKey);
 
     // Plan priority is inferred from the team's Autumn rate-limit multiplier.
-    const multiplier = await autumnService.getRateLimitMultiplier(team_id);
+    // The org comes from the team's ACUC — the same lookup the multiplier used
+    // to make for itself, now that the billing service resolves nothing.
+    const orgId =
+      (await getACUCTeam(team_id).catch(() => null))?.org_id ?? null;
+    const multiplier = await autumnService.getRateLimitMultiplier(
+      team_id,
+      orgId,
+    );
     const { bucketLimit, planModifier } =
       inferPlanPriorityFromMultiplier(multiplier);
 
