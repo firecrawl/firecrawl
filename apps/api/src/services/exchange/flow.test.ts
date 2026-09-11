@@ -271,12 +271,16 @@ it.each(["/exchange/retrieve", "/v2/scrape"])(
     expect(state.fetch).toHaveBeenCalledTimes(1);
   },
 );
-it.each(["confirm", "release", "recover"])(
-  "preserves the returned hold identity and partner token through %s",
-  async outcome => {
+it.each(
+  ["confirm", "release", "recover"].flatMap(outcome =>
+    ["returned-lock", "", "  "].map(returnedId => ({ outcome, returnedId })),
+  ),
+)(
+  "preserves a usable hold identity and partner token through $outcome ($returnedId)",
+  async ({ outcome, returnedId }) => {
     state.hold.mockResolvedValue({
       status: "locked",
-      lockId: "returned-lock",
+      lockId: returnedId,
       operationToken: "partner-operation",
     });
     if (outcome === "release") {
@@ -295,7 +299,9 @@ it.each(["confirm", "release", "recover"])(
     }
     for (const [hold] of state.finalize.mock.calls) {
       expect(hold).toMatchObject({
-        lockId: "returned-lock",
+        lockId: returnedId.trim()
+          ? returnedId
+          : state.hold.mock.calls[0][0].lockId,
         externalRequestId: "partner-operation",
         action: outcome === "release" ? "release" : "confirm",
       });

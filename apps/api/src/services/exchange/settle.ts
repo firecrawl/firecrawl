@@ -207,7 +207,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
         );
       }
       holdIdentityKnown = true;
-      lockId = hold.lockId;
+      lockId = hold.lockId.trim() ? hold.lockId : lockId;
       operationToken = hold.operationToken;
       await preserve("reserve", { body, holdIdentityPending: false });
     }
