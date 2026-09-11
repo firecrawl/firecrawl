@@ -4,6 +4,8 @@ vi.mock("../../config", () => ({
   config: { FIRE_EXCHANGE_URL: "https://exchange.example" },
 }));
 const mockContract = vi.hoisted(() => vi.fn());
+const mockForward = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/exchange-proxy", () => ({ forwardToExchange: mockForward }));
 vi.mock("../../search/alexandria-source", () => ({
   loadToolContract: mockContract,
 }));
@@ -300,5 +302,66 @@ it("normalizes path-specific matches and scopes the mapping cache to each team",
   expect(
     await discoverDomainTools({ ...input, teamId: "another-team" }),
   ).toEqual(result);
+  agent.assertNoPendingInterceptors();
+});
+
+it("expands provider-only matches from the current Exchange catalogue", async () => {
+  agent
+    .get("https://exchange.example")
+    .intercept({ path: "/v1/skills/resolve", method: "POST" })
+    .reply(200, {
+      skills: [
+        {
+          id: "particle",
+          description: "Podcasts",
+          matchedDomains: ["open.spotify.com"],
+          url: "/v1/skills/particle/SKILL.md",
+        },
+      ],
+    });
+  mockForward.mockResolvedValueOnce({
+    status: 200,
+    body: {
+      success: true,
+      creditsCost: 0,
+      data: {
+        items: [{ provider: "particle", capability: "podcasts/search" }],
+      },
+    },
+  });
+  mockContract.mockImplementation(async ({ provider, capability }) => ({
+    provider,
+    capability,
+  }));
+  const result = await discoverDomainTools({
+    data: {
+      web: ["https://open.spotify.com/show/123", "https://example.com"].map(
+        url => ({ url, title: "", description: "" }),
+      ),
+    },
+    teamId: "legacy-team",
+    hasExtendedCatalogAccess: true,
+    requestId: "legacy-request",
+    timeoutMs: 1000,
+    limit: 2,
+  });
+  expect(result).toMatchObject({
+    items: [
+      {
+        provider: "particle",
+        capability: "podcasts/search",
+        matchedBy: ["domain"],
+        matchedUrls: ["https://open.spotify.com/show/123"],
+      },
+    ],
+  });
+  expect(result.warning).toBeUndefined();
+  expect(mockForward).toHaveBeenCalledWith(
+    expect.objectContaining({
+      body: expect.objectContaining({
+        options: { providers: ["particle"], level: "tools", limit: 2 },
+      }),
+    }),
+  );
   agent.assertNoPendingInterceptors();
 });

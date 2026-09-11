@@ -3,6 +3,7 @@ import {
   type DiscoveredTool,
 } from "../../search/alexandria-source";
 import { fetch } from "undici";
+import { forwardToExchange } from "../../lib/exchange-proxy";
 import { z } from "zod";
 import { config } from "../../config";
 import type { SearchV2Response } from "../../lib/entities";
@@ -241,16 +242,68 @@ export async function discoverDomainTools(input: {
   >();
   let failures = 0;
   for (const group of groups) {
-    if (!group.domainCapabilities) {
-      failures++;
-      continue;
+    let domainCapabilities = group.domainCapabilities;
+    if (!domainCapabilities) {
+      // Older catalogues return provider matches without capability selections.
+      try {
+        const matchedUrls = urls.filter(url =>
+          group.matchedDomains.includes(
+            new URL(url).hostname.replace(/\.$/, ""),
+          ),
+        );
+        if (!matchedUrls.length) continue;
+        const lookup = await forwardToExchange({
+          teamId: input.teamId,
+          hasExtendedCatalogAccess: input.hasExtendedCatalogAccess,
+          requestId: input.requestId,
+          timeoutMs: remaining(),
+          method: "POST",
+          path: "/v1/retrieve",
+          body: {
+            provider: "firecrawl-contextual-discovery",
+            capability: "discovery/context",
+            options: {
+              providers: [group.id],
+              level: "tools",
+              limit: input.limit,
+            },
+          },
+        });
+        if (lookup.status !== 200)
+          throw new Error("Provider catalogue unavailable");
+        const result = z
+          .object({
+            success: z.literal(true),
+            creditsCost: z.literal(0),
+            data: z.object({
+              items: z
+                .array(
+                  z.object({
+                    provider: z.literal(group.id),
+                    capability: z.string().min(1),
+                  }),
+                )
+                .max(input.limit),
+            }),
+          })
+          .parse(lookup.body);
+        domainCapabilities = Object.fromEntries(
+          matchedUrls.map(url => [
+            url,
+            result.data.items.map(item => item.capability),
+          ]),
+        );
+      } catch {
+        failures++;
+        continue;
+      }
     }
     for (const url of urls) {
       const hostname = new URL(url).hostname;
       const capabilities = new Set([
-        ...(group.domainCapabilities[url] ?? []),
-        ...(group.domainCapabilities[hostname] ?? []),
-        ...(group.domainCapabilities[hostname.replace(/^www\./, "")] ?? []),
+        ...(domainCapabilities[url] ?? []),
+        ...(domainCapabilities[hostname] ?? []),
+        ...(domainCapabilities[hostname.replace(/^www\./, "")] ?? []),
       ]);
       for (const capability of capabilities) {
         const id = JSON.stringify([group.id, capability]);
