@@ -2,25 +2,18 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import { db } from "../../../db/connection";
 import { search_feedback } from "../../../db/schema";
-import type {
-  KeylessFeedbackEndpoint,
-  KeylessFeedbackRequest,
-} from "./keyless-schema";
+import type { KeylessFeedbackRequest } from "./keyless-schema";
 import type { KeylessFeedbackContext } from "./keyless-context";
 
 const utcDayStart = sql`date_trunc('day', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
 
-export async function hasKeylessFeedbackToday(
-  identity: string,
-  endpoint: KeylessFeedbackEndpoint,
-) {
+export async function hasKeylessFeedbackToday(identity: string) {
   const [row] = await db
     .select({ id: search_feedback.id })
     .from(search_feedback)
     .where(
       and(
         eq(search_feedback.team_id, identity),
-        eq(search_feedback.endpoint, endpoint),
         gte(search_feedback.created_at, utcDayStart),
       ),
     )
@@ -37,7 +30,7 @@ export async function insertKeylessFeedback(
     async tx => {
       await tx.execute(sql`SET LOCAL statement_timeout = '5s'`);
       await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${`keyless-feedback:${identity}:${answers.endpoint}`}))`,
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`keyless-feedback:${identity}`}))`,
       );
       const [existing] = await tx
         .select({ id: search_feedback.id })
@@ -64,7 +57,6 @@ export async function insertKeylessFeedback(
         .where(
           and(
             eq(search_feedback.team_id, identity),
-            eq(search_feedback.endpoint, answers.endpoint),
             gte(search_feedback.created_at, utcDayStart),
           ),
         )

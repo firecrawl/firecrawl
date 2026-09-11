@@ -45,13 +45,13 @@ Search returns its `id` and optional top-level `metadata`. Scrape and Parse incl
 
 MCP exposes `firecrawl_feedback`. CLI exposes `firecrawl feedback <endpoint> <jobId> --rating <rating> --task <task> --assessment <assessment> --observations-file <path>`. CLI invitations use stderr, preserving ordinary stdout; JSON results retain metadata. Submitting feedback is optional and does not alter operation allowance.
 
-`KEYLESS_FEEDBACK_ENABLED` controls the keyless feature, default `true`. Feedback also requires database authentication, keyless access, and `KEYLESS_FEEDBACK_REDIS_URL`. `KEYLESS_FEEDBACK_INVITATION_EVERY` invites on every Nth eligible result per identity and category, default `3`; `0` disables invitations while retaining submission support. Context/invitation work adds at most 250 ms of waiting to operation responses and fails without failing the operation. Invitations are suppressed after acceptance, during attempt throttling, and when eligibility or storage checks fail. Concurrent operation responses can observe eligibility before another submission commits; the submission endpoint always rechecks the authoritative limit.
+`KEYLESS_FEEDBACK_ENABLED` controls the keyless feature, default `true`. Feedback also requires database authentication, keyless access, and `KEYLESS_FEEDBACK_REDIS_URL`. `KEYLESS_FEEDBACK_INVITATION_EVERY` invites on every Nth eligible result per identity and category, default `3`; `0` disables invitations while retaining submission support. Context/invitation work adds at most 250 ms of waiting to operation responses and fails without failing the operation. Invitations across all three categories are suppressed after acceptance, during attempt throttling, and when eligibility or storage checks fail. Concurrent operation responses can observe eligibility before another submission commits; the submission endpoint always rechecks the authoritative limit.
 
 Clients that disable invitations send `x-firecrawl-no-feedback: 1`. The API retains the job reference but skips invitation selection and counting. MCP and CLI also filter responses locally for compatibility with older API versions.
 
 ## Limits and storage
 
-One new submission is accepted per identity and category per UTC day. A retry for the same job returns the original feedback ID with `alreadySubmitted: true`. All feedback attempts share a separate 10-per-minute limiter. Blocked and invalid keyless identities are rejected using the existing authentication checks. Remaining Search, Scrape, or Parse allowance does not affect feedback eligibility. Feedback does not refund or reset operation quota.
+One new submission is accepted per identity per UTC day, shared across Search, Scrape, and Parse. A retry for the same job returns the original feedback ID with `alreadySubmitted: true`. All feedback attempts share a separate 10-per-minute limiter. Blocked and invalid keyless identities are rejected using the existing authentication checks. Remaining Search, Scrape, or Parse allowance does not affect feedback eligibility. Feedback does not refund or reset operation quota.
 
 The API retains a bounded job snapshot in Redis for up to 24 hours, including redacted request options and available result context. Request credentials and file payloads are excluded. Search preserves delivered groups, order, result URLs, and serving category tags. Document result context is limited to 16,000 characters with explicit truncation. The complete snapshot is bounded to 64 KiB; oversized snapshots are not offered for feedback. Zero-retention requests are excluded.
 
@@ -71,7 +71,7 @@ ORDER BY created_at DESC
 LIMIT 100;
 ```
 
-Admission uses a transaction-scoped PostgreSQL advisory lock per identity and category. The daily check, duplicate check, and insert use the primary database in one transaction. Failed writes roll back without consuming the daily allowance. Redis is used only for attempt throttling, invitations, and expiring job context, not as the accepted-submission ledger.
+Admission uses a transaction-scoped PostgreSQL advisory lock per identity. The daily check, duplicate check, and insert use the primary database in one transaction. Failed writes roll back without consuming the daily allowance. Redis is used only for attempt throttling, invitations, and expiring job context, not as the accepted-submission ledger.
 
 ## Invitation measurement
 

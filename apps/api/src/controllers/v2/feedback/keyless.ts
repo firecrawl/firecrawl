@@ -81,7 +81,7 @@ export async function keylessFeedbackController(
       return fail(
         429,
         "DAILY_LIMIT_REACHED",
-        "Feedback was already accepted for this category today. Try another UTC day.",
+        "Feedback was already accepted for this identity today. The daily limit is shared across Search, Scrape, and Parse. Try another UTC day.",
       );
     return res.status(200).json({ ...result, creditsRefunded: 0 });
   } catch {
