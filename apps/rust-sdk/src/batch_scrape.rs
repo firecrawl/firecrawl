@@ -640,4 +640,73 @@ mod tests {
         assert_eq!(errors.errors[0].error, "Connection timeout");
         mock.assert();
     }
+
+    #[tokio::test]
+    async fn test_batch_scrape_failed_uses_server_error() {
+        let mut server = mockito::Server::new_async().await;
+
+        let status_mock = server
+            .mock("GET", "/v2/batch/scrape/batch-failed")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "status": "failed",
+                    "error": "could not resolve host",
+                    "total": 0,
+                    "completed": 0,
+                    "data": []
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let err = client
+            .wait_for_batch_scrape("batch-failed", 1000)
+            .await
+            .unwrap_err();
+
+        match err {
+            FirecrawlError::JobFailed(message, JobStatus::Failed) => {
+                assert_eq!(message, "could not resolve host");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+        status_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_batch_scrape_cancelled_uses_fallback_message() {
+        let mut server = mockito::Server::new_async().await;
+
+        let status_mock = server
+            .mock("GET", "/v2/batch/scrape/batch-cancelled")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "status": "cancelled",
+                    "total": 0,
+                    "completed": 0,
+                    "data": []
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let err = client
+            .wait_for_batch_scrape("batch-cancelled", 1000)
+            .await
+            .unwrap_err();
+
+        match err {
+            FirecrawlError::JobFailed(message, JobStatus::Cancelled) => {
+                assert_eq!(message, "Batch scrape job was cancelled");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+        status_mock.assert();
+    }
 }

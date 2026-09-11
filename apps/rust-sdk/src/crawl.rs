@@ -686,4 +686,73 @@ mod tests {
         start_mock.assert();
         status_mock.assert();
     }
+
+    #[tokio::test]
+    async fn test_crawl_failed_uses_server_error() {
+        let mut server = mockito::Server::new_async().await;
+
+        let status_mock = server
+            .mock("GET", "/v2/crawl/crawl-failed")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "status": "failed",
+                    "error": "could not resolve host",
+                    "total": 0,
+                    "completed": 0,
+                    "data": []
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let err = client
+            .wait_for_crawl("crawl-failed", 1000)
+            .await
+            .unwrap_err();
+
+        match err {
+            FirecrawlError::JobFailed(message, JobStatus::Failed) => {
+                assert_eq!(message, "could not resolve host");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+        status_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_crawl_cancelled_uses_fallback_message() {
+        let mut server = mockito::Server::new_async().await;
+
+        let status_mock = server
+            .mock("GET", "/v2/crawl/crawl-cancelled")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "status": "cancelled",
+                    "total": 0,
+                    "completed": 0,
+                    "data": []
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let err = client
+            .wait_for_crawl("crawl-cancelled", 1000)
+            .await
+            .unwrap_err();
+
+        match err {
+            FirecrawlError::JobFailed(message, JobStatus::Cancelled) => {
+                assert_eq!(message, "Crawl job was cancelled");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+        status_mock.assert();
+    }
 }
