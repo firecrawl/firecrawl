@@ -20,7 +20,7 @@ describe("research category notice", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.headers["warning"]).toMatch(/^299 - "/);
-    expect(res.headers["warning"]).toContain("2026-11-08");
+    expect(res.headers["warning"]).toContain("2026-11-16");
     expect(res.headers["deprecation"]).toBeUndefined();
     expect(res.headers["sunset"]).toBeUndefined();
     expect(res.headers["link"]).toBe(

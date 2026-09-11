@@ -360,7 +360,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)(
           "https://docs.firecrawl.dev/features/research",
         );
         expect(raw.body.warnings).toHaveLength(1);
-        expect(raw.body.warnings[0]).toContain("2026-11-08");
+        expect(raw.body.warnings[0]).toContain("2026-11-16");
       },
       60000,
     );
@@ -387,7 +387,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)(
           { apiKey: "invalid-api-key", teamId: "" },
         );
         expect(raw.statusCode).toBe(401);
-        expect(raw.headers["warning"]).toContain("2026-11-08");
+        expect(raw.headers["warning"]).toContain("2026-11-16");
         expect(raw.body.warnings).toHaveLength(1);
       },
       60000,
