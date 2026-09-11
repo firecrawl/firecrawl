@@ -1020,6 +1020,18 @@ describe("V2 Types Validation", () => {
       expect(message).toMatch(/percent-encoded ASCII/);
     });
 
+    it("should accept several hundred keyword patterns per field", () => {
+      // Keyword-based filtering sends one short pattern per term; a few
+      // hundred per field must not be rejected by the count cap.
+      const result = crawlRequestSchema.parse({
+        url: "https://example.com",
+        includePaths: Array.from({ length: 300 }, (_, i) => `topic${i}`),
+        excludePaths: Array.from({ length: 300 }, (_, i) => `skip${i}`),
+      });
+      expect(result.includePaths).toHaveLength(300);
+      expect(result.excludePaths).toHaveLength(300);
+    });
+
     it("should reject more than the maximum number of path patterns", () => {
       expect(() =>
         crawlRequestSchema.parse({
@@ -1029,7 +1041,7 @@ describe("V2 Types Validation", () => {
             (_, i) => `^/p${i}`,
           ),
         }),
-      ).toThrow(/at most 100 patterns/);
+      ).toThrow(new RegExp(`at most ${MAX_PATH_PATTERNS} patterns`));
     });
 
     it("should not compile patterns once the count cap is exceeded", () => {
@@ -1046,7 +1058,9 @@ describe("V2 Types Validation", () => {
         message = String(e);
       }
 
-      expect(message).toMatch(/at most 100 patterns/);
+      expect(message).toMatch(
+        new RegExp(`at most ${MAX_PATH_PATTERNS} patterns`),
+      );
       expect(message).not.toMatch(/unclosed character class/);
     });
 
@@ -1071,7 +1085,7 @@ describe("V2 Types Validation", () => {
           url: "https://example.com",
           includePaths: ["^/" + "a".repeat(MAX_PATH_PATTERN_LENGTH)],
         }),
-      ).toThrow(/at most 2000 characters/);
+      ).toThrow(new RegExp(`at most ${MAX_PATH_PATTERN_LENGTH} characters`));
     });
   });
 

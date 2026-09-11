@@ -20,6 +20,7 @@ import {
   TEST_API_URL,
 } from "./lib";
 import request from "./lib";
+import { MAX_PATH_PATTERNS } from "../../../lib/crawl-regex";
 import { describe, it, expect } from "vitest";
 
 let identity: Identity;
@@ -212,12 +213,35 @@ describe("Crawl tests", () => {
   );
 
   it.concurrent(
+    "accepts several hundred keyword path patterns per field",
+    async () => {
+      const res = await crawlStart(
+        {
+          url: "https://firecrawl.dev",
+          limit: 1,
+          includePaths: Array.from({ length: 300 }, (_, i) => `topic${i}`),
+          excludePaths: Array.from({ length: 300 }, (_, i) => `skip${i}`),
+        },
+        identity,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(typeof res.body.id).toBe("string");
+    },
+    scrapeTimeout,
+  );
+
+  it.concurrent(
     "rejects more path patterns than the engine will compile",
     async () => {
       const res = await crawlStart(
         {
           url: "https://firecrawl.dev",
-          excludePaths: Array.from({ length: 101 }, (_, i) => `^/p${i}`),
+          excludePaths: Array.from(
+            { length: MAX_PATH_PATTERNS + 1 },
+            (_, i) => `^/p${i}`,
+          ),
         },
         identity,
       );
@@ -227,7 +251,11 @@ describe("Crawl tests", () => {
       // Schema-level (non-custom) issues are reported in details, not error.
       expect(
         res.body.details.map((issue: { message: string }) => issue.message),
-      ).toContainEqual(expect.stringMatching(/at most 100 patterns/));
+      ).toContainEqual(
+        expect.stringMatching(
+          new RegExp(`at most ${MAX_PATH_PATTERNS} patterns`),
+        ),
+      );
     },
     scrapeTimeout,
   );

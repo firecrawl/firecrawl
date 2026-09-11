@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_PATH_PATTERNS } from "../../../lib/crawl-regex";
 import {
   scrapeRequestSchema,
   scrapeOptions,
@@ -550,13 +551,26 @@ describe("V1 Types Validation", () => {
       ).toThrow(/exceeds size limit/);
     });
 
+    it("should accept several hundred keyword patterns per field", () => {
+      const result = crawlRequestSchema.parse({
+        url: "https://example.com",
+        includePaths: Array.from({ length: 300 }, (_, i) => `topic${i}`),
+        excludePaths: Array.from({ length: 300 }, (_, i) => `skip${i}`),
+      });
+      expect(result.includePaths).toHaveLength(300);
+      expect(result.excludePaths).toHaveLength(300);
+    });
+
     it("should reject more than the maximum number of path patterns", () => {
       expect(() =>
         crawlRequestSchema.parse({
           url: "https://example.com",
-          includePaths: Array.from({ length: 101 }, (_, i) => `^/p${i}`),
+          includePaths: Array.from(
+            { length: MAX_PATH_PATTERNS + 1 },
+            (_, i) => `^/p${i}`,
+          ),
         }),
-      ).toThrow(/at most 100 patterns/);
+      ).toThrow(new RegExp(`at most ${MAX_PATH_PATTERNS} patterns`));
     });
   });
 

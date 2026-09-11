@@ -6,7 +6,13 @@ import { z } from "zod";
 // count x per-pattern cost. The engine bounds per-pattern cost (see
 // compile_path_regex in native/src/crawler.rs); these bound the count and the
 // pattern length, which is what parsing cost scales with.
-export const MAX_PATH_PATTERNS = 100;
+//
+// Keyword-style filtering (one short pattern per term) routinely needs a few
+// hundred patterns per field, so the count cap has headroom for that. Measured
+// against the native module, 1000 patterns compile in ~2 ms for short keywords
+// and ~350 ms in the worst case (every pattern a maximal-length alternation),
+// which is well within what a single request may spend on validation.
+export const MAX_PATH_PATTERNS = 1000;
 export const MAX_PATH_PATTERN_LENGTH = 2000;
 
 export const pathPatternsSchema = z
