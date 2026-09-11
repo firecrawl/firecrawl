@@ -1130,6 +1130,7 @@ async function logSearchInternal(search: LoggedSearch, force: boolean = false) {
       ? search.options
       : { ...search.options, query: sanitizeString(search.options.query) };
   const storedTeamId =
+    keylessTeamUuid(search.team_id) ??
     search.team_id === "preview" || search.team_id?.startsWith("preview_")
       ? previewTeamId
       : search.team_id;

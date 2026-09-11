@@ -209,7 +209,11 @@ v2Router.post(
 
 v2Router.post(
   "/feedback",
-  authMiddleware(RateLimiterMode.Account),
+  authMiddleware(RateLimiterMode.Account, {
+    allowKeyless: true,
+    keylessFeedback: true,
+  }),
+  countryCheck,
   wrap(feedbackController),
 );
 

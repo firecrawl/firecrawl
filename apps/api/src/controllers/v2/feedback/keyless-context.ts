@@ -1,0 +1,153 @@
+import { config } from "../../../config";
+import { keylessTeamUuid } from "../../../lib/keyless";
+import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
+import { redisRateLimitClient } from "../../../services/rate-limiter";
+import type { RequestWithAuth } from "../types";
+import type { KeylessFeedbackEndpoint } from "./keyless-schema";
+import { hasKeylessFeedbackToday } from "./keyless-store";
+import {
+  KEYLESS_FEEDBACK_ATTEMPTS,
+  keylessFeedbackAttemptKey,
+} from "./keyless-limits";
+
+export const KEYLESS_FEEDBACK_MAX_AGE_SEC = 86400;
+export const keylessFeedbackContextKey = (
+  identity: string,
+  endpoint: string,
+  jobId: string,
+) => `keyless_feedback_context:${identity}:${endpoint}:${jobId}`;
+
+export type KeylessFeedbackContext = {
+  createdAt: string;
+  success: boolean;
+  request: unknown;
+  result: unknown;
+};
+
+function redactOptions(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactOptions);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([key]) =>
+          !/headers|cookie|token|secret|password|authorization|api.?key|^uploadref$|^buffer$|base64|^__/.test(
+            key.toLowerCase(),
+          ),
+      )
+      .map(([key, item]) => [key, redactOptions(item)]),
+  );
+}
+
+function resultContext(
+  endpoint: KeylessFeedbackEndpoint,
+  result: any,
+): unknown {
+  if (endpoint === "search") {
+    return Object.fromEntries(
+      (["web", "images", "news"] as const).map(source => [
+        source,
+        (result?.[source] ?? []).map((item: any, index: number) => ({
+          position: index + 1,
+          url: item.url,
+          title: item.title,
+          description: item.description,
+          category: item.category,
+          snippet: item.snippet,
+          imageUrl: item.imageUrl,
+        })),
+      ]),
+    );
+  }
+  const text = JSON.stringify(result ?? null);
+  return text.length <= 16000
+    ? result
+    : { excerpt: text.slice(0, 16000), truncated: true };
+}
+
+export async function keylessFeedbackMetadata(
+  req: RequestWithAuth<any, any, any>,
+  endpoint: KeylessFeedbackEndpoint,
+  jobId: string,
+  success: boolean,
+  result: unknown,
+): Promise<Record<string, unknown>> {
+  const identity = keylessTeamUuid(req.auth.team_id);
+  if (
+    !identity ||
+    !config.KEYLESS_FEEDBACK_ENABLED ||
+    !config.USE_DB_AUTHENTICATION ||
+    req.acuc?.flags?.searchFeedbackOptOut ||
+    req.body?.zeroDataRetention ||
+    req.body?.lockdown ||
+    req.body?.enterprise?.includes("zdr") ||
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    getSearchZDR(req.acuc?.flags) === "forced-zdr"
+  )
+    return {};
+
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      (async () => {
+        const context: KeylessFeedbackContext = {
+          createdAt: new Date().toISOString(),
+          success,
+          request: redactOptions(req.body),
+          result: resultContext(endpoint, result),
+        };
+        const encoded = JSON.stringify(context);
+        if (Buffer.byteLength(encoded) > 64 * 1024) return {};
+        await redisRateLimitClient.set(
+          keylessFeedbackContextKey(identity, endpoint, jobId),
+          encoded,
+          "EX",
+          KEYLESS_FEEDBACK_MAX_AGE_SEC,
+        );
+        const metadata: Record<string, unknown> = { jobId };
+        const every = config.KEYLESS_FEEDBACK_INVITATION_EVERY;
+        if (!every) return metadata;
+        const count = Number(
+          await redisRateLimitClient.eval(
+            `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then redis.call('EXPIRE', KEYS[1], 86400) end
+return count
+`,
+            1,
+            `keyless_feedback_invitations:${identity}:${endpoint}`,
+          ),
+        );
+        if (count % every !== 0) return metadata;
+        if (
+          Number(
+            await redisRateLimitClient.get(keylessFeedbackAttemptKey(identity)),
+          ) >= KEYLESS_FEEDBACK_ATTEMPTS ||
+          (await hasKeylessFeedbackToday(identity, endpoint))
+        )
+          return metadata;
+        return {
+          ...metadata,
+          feedback: {
+            endpoint,
+            jobId,
+            method: "POST",
+            path: "/v2/feedback",
+            expiresAt: new Date(
+              Date.now() + KEYLESS_FEEDBACK_MAX_AGE_SEC * 1000,
+            ).toISOString(),
+            message:
+              "Optional: submit your task, rating, assessment, and specific observations. Use only evidence already available; distinguish output, source comparisons, and expectations. No additional investigation is required. One accepted submission per category per UTC day.",
+          },
+        };
+      })(),
+      new Promise<Record<string, unknown>>(resolve => {
+        timer = setTimeout(() => resolve({}), 250);
+      }),
+    ]);
+  } catch {
+    return {};
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}

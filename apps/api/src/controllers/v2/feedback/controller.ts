@@ -1,3 +1,5 @@
+import { keylessTeamUuid } from "../../../lib/keyless";
+import { keylessFeedbackController } from "./keyless";
 import { Response } from "express";
 import { z } from "zod";
 import {
@@ -28,6 +30,8 @@ export async function feedbackController(
   >,
   res: Response<EndpointFeedbackResponse>,
 ) {
+  if (keylessTeamUuid(req.auth.team_id))
+    return keylessFeedbackController(req, res);
   let parsedBody: EndpointFeedbackRequest | AlexandriaFeedbackRequest;
   try {
     parsedBody = feedbackSchema.parse(req.body);
