@@ -107,12 +107,113 @@ describe("keyless feedback invitation issuance", () => {
     const response = new EventEmitter();
     const pending = prepare(response);
     await vi.advanceTimersByTimeAsync(251);
-    expect(await pending).toEqual({});
+    expect(await pending).toEqual({ jobId: "job" });
     response.emit("finish");
     release(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(mocks.info).not.toHaveBeenCalled();
     expect(mocks.set).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves the reference when invitation eligibility fails", async () => {
+    mocks.today.mockRejectedValueOnce(new Error("database unavailable"));
+    const response = new EventEmitter();
+    expect(await prepare(response)).toEqual({ jobId: "job" });
+    response.emit("finish");
+    expect(mocks.info).not.toHaveBeenCalled();
+  });
+
+  it("does not increment the invitation counter after a slow snapshot write", async () => {
+    vi.useFakeTimers();
+    let release!: (value: string) => void;
+    mocks.set.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          release = resolve;
+        }),
+    );
+    const pending = prepare(new EventEmitter());
+    await vi.advanceTimersByTimeAsync(251);
+    expect(await pending).toEqual({ jobId: "job" });
+    release("OK");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mocks.eval).not.toHaveBeenCalled();
+  });
+
+  it.each(["search", "scrape", "parse"] as const)(
+    "bounds %s context and preserves job references and Search positions",
+    async endpoint => {
+      const document = {
+        markdown: "Observed output ".repeat(100000),
+        toJSON() {
+          throw new Error("Must not serialize the complete document");
+        },
+      };
+      const result =
+        endpoint === "search"
+          ? {
+              web: Array.from({ length: 100 }, () => ({
+                url: "https://example.com/",
+                description: document.markdown,
+              })),
+            }
+          : document;
+      const metadata = await keylessFeedbackMetadata(
+        {
+          auth: { team_id: "fixture" },
+          body: {
+            url: "https://user:password@example.com/page?credential=secret#secret",
+            actions: [
+              { type: "write", text: "form-secret" },
+              { type: "executeJavascript", script: "script-secret" },
+            ],
+            headers: { Authorization: "header-secret" },
+          },
+        } as any,
+        endpoint,
+        "job",
+        true,
+        result,
+      );
+      expect(metadata.jobId).toBe("job");
+      const encoded = mocks.set.mock.calls[0][1];
+      expect(Buffer.byteLength(encoded)).toBeLessThan(64 * 1024);
+      expect(encoded).not.toContain("secret");
+      expect(encoded).not.toContain("password");
+      const context = JSON.parse(encoded);
+      expect(context.request.url).toBe("https://example.com/page");
+      expect(context.request.actions).toEqual([
+        { type: "write" },
+        { type: "executeJavascript" },
+      ]);
+      expect(context.result.truncated).toBe(true);
+      if (endpoint === "search") {
+        expect(context.result.web).toHaveLength(100);
+        expect(context.result.web[99].position).toBe(100);
+      } else {
+        expect(context.result.markdown.length).toBeLessThanOrEqual(16000);
+      }
+    },
+  );
+
+  it("keeps escaped and multibyte request and result snapshots below the storage cap", async () => {
+    const large = "\u0000😀".repeat(100000);
+    const metadata = await keylessFeedbackMetadata(
+      {
+        auth: { team_id: "fixture" },
+        body: { query: large, nested: { value: large } },
+      } as any,
+      "parse",
+      "job",
+      true,
+      { json: { text: large }, markdown: large },
+    );
+    expect(metadata.jobId).toBe("job");
+    const encoded = mocks.set.mock.calls[0][1];
+    expect(Buffer.byteLength(encoded)).toBeLessThan(64 * 1024);
+    const stored = JSON.parse(encoded);
+    expect(stored.request.truncated).toBe(true);
+    expect(stored.result.truncated).toBe(true);
   });
 
   it("retains the issuance event and reports a failed context update", async () => {
@@ -127,7 +228,7 @@ describe("keyless feedback invitation issuance", () => {
   it("does not offer feedback when snapshot storage fails", async () => {
     mocks.set.mockRejectedValueOnce(new Error("cache unavailable"));
     const response = new EventEmitter();
-    expect(await prepare(response)).toEqual({});
+    expect(await prepare(response)).toEqual({ jobId: "job" });
     response.emit("finish");
     expect(mocks.info).not.toHaveBeenCalled();
   });
