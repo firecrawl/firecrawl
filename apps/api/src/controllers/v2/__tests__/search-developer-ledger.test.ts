@@ -150,11 +150,22 @@ beforeEach(() => {
 });
 
 describe("developer category code_searches ledger", () => {
-  it.each(["forced-zdr", "forced-anon"])(
-    "rejects skill lookup for %s before executing search",
-    async searchZDR => {
-      const req = makeReq({ query: "public documentation", skills: true });
-      req.acuc.flags = { exchangeRetrieve: true, searchZDR };
+  it.each([
+    [{ searchZDR: "forced-zdr" }, {}],
+    [{ searchZDR: "forced-anon" }, {}],
+    [{ searchZDR: "forced" }, {}],
+    [{ forceZDR: true }, {}],
+    [{ searchZDR: "allowed" }, { enterprise: ["zdr"] }],
+    [{ searchZDR: "allowed" }, { enterprise: ["anon"] }],
+  ])(
+    "rejects private skill lookup before executing search (%j, %j)",
+    async (flags, options) => {
+      const req = makeReq({
+        query: "public documentation",
+        skills: true,
+        ...options,
+      });
+      req.acuc.flags = { exchangeRetrieve: true, ...flags };
       const res = makeRes();
       await searchController(req, res);
       expect(res.status).toHaveBeenCalledWith(400);

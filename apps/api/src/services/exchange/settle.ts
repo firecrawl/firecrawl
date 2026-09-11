@@ -88,6 +88,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
     chargeId,
   };
   let lockId: string | undefined;
+  let operationToken: string | undefined;
   let maximumCredits = 0;
   let started = false;
   const preserve = (
@@ -99,6 +100,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
       featureId,
       properties,
       lockId,
+      operationToken,
       maximumCredits,
       ...details,
     });
@@ -120,6 +122,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
         featureId,
         heldValue: maximumCredits,
         action: "release",
+        externalRequestId: operationToken,
         properties,
       });
     } catch (error) {
@@ -176,7 +179,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
     }
     maximumCredits = quoted.data.maximumCredits;
     if (billable && maximumCredits > 0) {
-      // Both hold services use this caller-chosen ID, including ambiguous responses.
+      // Persist the caller-chosen ID before reserving in case the response is lost.
       lockId = `exchange_${chargeId}`;
       await preserve("reserve", { body });
       const hold = await autumnService.lockCredits({
@@ -201,6 +204,9 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
           ),
         );
       }
+      lockId = hold.lockId;
+      operationToken = hold.operationToken;
+      await preserve("reserve", { body });
     }
     const limit = await getEffectiveConcurrencyLimit(input.teamId, input.orgId);
     upstream = await teamConcurrencySemaphore.withSemaphore(
@@ -305,6 +311,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
           heldValue: maximumCredits,
           action: "confirm",
           overrideValue: credits,
+          externalRequestId: operationToken,
           properties,
         });
       } catch (error) {

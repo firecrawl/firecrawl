@@ -12,7 +12,7 @@ import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
 import { isAgentInteropSecretValid } from "../lib/agent-interop";
-import { getScrapeZDR } from "../lib/zdr-helpers";
+import { getScrapeZDR, getSearchForcedKind } from "../lib/zdr-helpers";
 
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
@@ -69,7 +69,8 @@ function exchangeProxy(
 
     if (
       options.requiresNonZdr &&
-      getScrapeZDR(authedReq.acuc?.flags) === "forced"
+      (getScrapeZDR(authedReq.acuc?.flags) === "forced" ||
+        getSearchForcedKind(authedReq.acuc?.flags) !== null)
     )
       return exchangeError(
         res,

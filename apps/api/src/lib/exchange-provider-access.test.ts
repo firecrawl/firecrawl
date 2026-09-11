@@ -108,6 +108,28 @@ it("allows an enabled provider with no agreement", async () => {
   expect(await authorizeExchangeProviders(input)).toBeUndefined();
   expect(mocks.execute).toHaveBeenCalledOnce();
 });
+it("allows a provider with no required agreement and no organization override", async () => {
+  mocks.forward.mockResolvedValue({
+    status: 200,
+    body: {
+      providers: [{ provider: "particle", required: false, terms: null }],
+    },
+  });
+  mocks.execute.mockResolvedValue({
+    rows: [
+      {
+        org_id: "org-a",
+        data_source_id: null,
+        status: null,
+        terms_key: null,
+        terms_version: null,
+        terms_accepted_at: null,
+        settings: null,
+      },
+    ],
+  });
+  expect(await authorizeExchangeProviders(input)).toBeUndefined();
+});
 it("still honors disabled access when agreement acceptance is optional", async () => {
   mocks.forward.mockResolvedValue({
     status: 200,

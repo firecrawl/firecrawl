@@ -218,6 +218,25 @@ jobs:
         env:
           npm_config_ignore_scripts: 'true'
 
+      - name: Run Exchange recovery tests with isolated Redis
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        env:
+          TEST_EXCHANGE_REDIS_SOCKET: ${{ runner.temp }}/exchange-recovery/redis.sock
+        run: |
+          mkdir -p "$RUNNER_TEMP/exchange-recovery"
+          docker run -d --rm --name exchange-recovery-redis \
+            --user "$(id -u):$(id -g)" \
+            -v "$RUNNER_TEMP/exchange-recovery:/redis" redis:7-alpine \
+            redis-server --port 0 --unixsocket /redis/redis.sock --save '' --appendonly no
+          trap 'docker stop exchange-recovery-redis' EXIT
+          for attempt in $(seq 1 50); do
+            test -S "$TEST_EXCHANGE_REDIS_SOCKET" && break
+            sleep 0.1
+          done
+          test -S "$TEST_EXCHANGE_REDIS_SOCKET"
+          pnpm exec vitest run src/services/exchange/recovery-redis.test.ts --reporter=default
+        working-directory: apps/api
+
       - name: Run monitor finalization regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: >-

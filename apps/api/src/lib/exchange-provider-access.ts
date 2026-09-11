@@ -105,6 +105,8 @@ export async function authorizeExchangeProviders(input: {
     const rows = new Map(parsedRows.data.map(row => [row.data_source_id, row]));
     for (const provider of parsed.data.providers) {
       const row = rows.get(provider.provider);
+      // Providers without required agreements need no opt-in row; an explicit
+      // organization disablement still overrides that default.
       if (row && row.status !== "enabled")
         return refusal(
           403,

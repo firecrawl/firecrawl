@@ -24,6 +24,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   setGlobalDispatcher(originalDispatcher);
   config.FIRE_EXCHANGE_URL = originalUrl;
   config.EXCHANGE_INTERNAL_SECRET = originalSecret;
@@ -107,18 +108,29 @@ it("does not retry a missing billing receipt or endpoint", async () => {
   agent.assertNoPendingInterceptors();
 });
 
-it.each(["2", "999999", "invalid"])(
+it.each([
+  ["0", 0],
+  ["2", 2000],
+  ["999999", 5000],
+  ["invalid", 250],
+  ["-1", 250],
+  ["-1.5", 250],
+  ["1.5", 250],
+  ["0x10", 250],
+  ["", 250],
+  ["Thu, 10 Sep 2026 11:59:59 GMT", 250],
+  ["Thu, 10 Sep 2026 12:00:02 GMT", 2000],
+])(
   "bounds Retry-After %s before retrying",
-  async retryAfter => {
+  async (retryAfter, expectedDelay) => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 8, 10, 12));
     const pool = agent.get("https://exchange.example");
     pool
       .intercept({ path, method: "POST" })
       .reply(429, {}, { headers: { "retry-after": retryAfter } });
     pool.intercept({ path, method: "POST" }).reply(200, {});
     expect(await reportExchangeUsageBilling("receipt-1")).toBe(true);
-    expect(delay).toHaveBeenCalledWith(
-      retryAfter === "2" ? 2000 : retryAfter === "999999" ? 5000 : 250,
-    );
+    expect(delay).toHaveBeenCalledWith(expectedDelay);
     agent.assertNoPendingInterceptors();
   },
 );

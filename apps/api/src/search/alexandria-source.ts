@@ -96,7 +96,7 @@ function examplesFor(item: z.infer<typeof contractSchema>) {
         : option.type === "integer" || option.type === "number"
           ? (option.min ?? 1)
           : option.type === "array" || option.type?.endsWith("[]")
-            ? option.type === "number[]"
+            ? option.type === "number[]" || option.type === "integer[]"
               ? [option.min ?? 1]
               : option.type === "object[]"
                 ? [{}]

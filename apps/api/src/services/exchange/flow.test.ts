@@ -264,6 +264,37 @@ it.each(["/exchange/retrieve", "/v2/scrape"])(
     expect(state.fetch).toHaveBeenCalledTimes(1);
   },
 );
+it.each(["confirm", "release", "recover"])(
+  "preserves the returned hold identity and partner token through %s",
+  async outcome => {
+    state.hold.mockResolvedValue({
+      status: "locked",
+      lockId: "returned-lock",
+      operationToken: "partner-operation",
+    });
+    if (outcome === "release") {
+      state.semaphore.mockRejectedValueOnce(new ConcurrencyQueueTimeoutError());
+      expect((await send()).status).toBe(429);
+      expect(state.forward).not.toHaveBeenCalled();
+    } else if (outcome === "recover") {
+      state.finalize.mockResolvedValueOnce(false);
+      expect((await send()).status).toBe(503);
+      await recover();
+      expect((await send()).status).toBe(200);
+      expect(state.forward).toHaveBeenCalledOnce();
+      expect(state.finalize).toHaveBeenCalledTimes(2);
+    } else {
+      expect((await send()).status).toBe(200);
+    }
+    for (const [hold] of state.finalize.mock.calls) {
+      expect(hold).toMatchObject({
+        lockId: "returned-lock",
+        externalRequestId: "partner-operation",
+        action: outcome === "release" ? "release" : "confirm",
+      });
+    }
+  },
+);
 it.each(["denied", "skipped"])(
   "does not execute when a hold is %s",
   async status => {
@@ -474,6 +505,33 @@ it.each([{ scrapeZDR: "forced" }, { forceZDR: true }])(
     expect(state.forward).not.toHaveBeenCalled();
   },
 );
+it.each([
+  { searchZDR: "forced-zdr" },
+  { searchZDR: "forced-anon" },
+  { searchZDR: "forced" },
+  { scrapeZDR: "forced" },
+  { forceZDR: true },
+])("blocks private contextual lookup before forwarding %j", async flags => {
+  state.flags = { exchangeRetrieve: true, ...flags };
+  const result = await request(app)
+    .post("/exchange/skills/resolve")
+    .send({ query: "private query", urls: ["https://example.com/private"] });
+  expect(result.status).toBe(403);
+  expect(state.forward).not.toHaveBeenCalled();
+  expect(state.hold).not.toHaveBeenCalled();
+});
+it("allows contextual lookup when private search is optional", async () => {
+  state.flags = { exchangeRetrieve: true, ...{ searchZDR: "allowed" } };
+  expect(
+    (
+      await request(app)
+        .post("/exchange/skills/resolve")
+        .send({ query: "docs" })
+    ).status,
+  ).toBe(200);
+  expect(state.forward).toHaveBeenCalledOnce();
+  expect(state.hold).not.toHaveBeenCalled();
+});
 it("keeps discovery free, scopes access from authentication and preserves Markdown", async () => {
   state.flags.exchangeRetrieve = false;
   state.forward.mockResolvedValue({

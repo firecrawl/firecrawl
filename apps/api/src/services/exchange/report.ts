@@ -43,13 +43,16 @@ export async function reportExchangeUsageBilling(
       if (response.ok) return true;
       if (response.status < 500 && response.status !== 429) break;
       if (attempt < 2) {
-        const retryAfter = response.headers.get("retry-after");
-        const seconds = retryAfter?.trim() ? Number(retryAfter) : NaN;
-        const retryAt = retryAfter ? Date.parse(retryAfter) : NaN;
+        const retryAfter = response.headers.get("retry-after")?.trim() ?? "";
+        const seconds = /^\d+$/.test(retryAfter) ? Number(retryAfter) : NaN;
+        const retryAt = /^[A-Za-z]{3}/.test(retryAfter)
+          ? Date.parse(retryAfter)
+          : NaN;
+        const dateDelay = retryAt - Date.now();
         const waitMs = Number.isFinite(seconds)
           ? seconds * 1000
-          : Number.isFinite(retryAt)
-            ? retryAt - Date.now()
+          : Number.isFinite(dateDelay) && dateDelay > 0
+            ? dateDelay
             : 250 * 2 ** attempt;
         await delay(Math.max(0, Math.min(5000, waitMs)));
       }

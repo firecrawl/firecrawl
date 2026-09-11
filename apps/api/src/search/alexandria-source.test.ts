@@ -136,6 +136,24 @@ it("semantically ranks tools and includes their real contracts and examples with
     });
 });
 
+it("generates numeric inputs for integer-array contracts in every example", async () => {
+  forward
+    .mockResolvedValueOnce(response({ capabilities: [hit] }))
+    .mockResolvedValueOnce(
+      response({
+        ...contract,
+        options: [{ name: "ids", type: "integer[]", required: true }],
+        requiresOneOf: [],
+      }),
+    );
+  const result = await searchAlexandria(input, logger);
+  const snippets = result.items[0].examples as Record<string, string>;
+  for (const snippet of Object.values(snippets)) {
+    expect(snippet).toMatch(/"ids":\s*\[\s*1\s*\]/);
+    expect(snippet).not.toContain("<ids>");
+  }
+});
+
 it("preserves semantic ordering when contract requests complete out of order", async () => {
   forward.mockImplementation(async call => {
     if (call.path.includes("?"))

@@ -21,6 +21,7 @@ const receiptSchema = z.object({
   properties: z.record(z.string(), z.unknown()),
   maximumCredits: z.number().nonnegative(),
   lockId: z.string().optional(),
+  operationToken: z.string().optional(),
   phase: z.enum(["reserve", "executing", "confirm", "enqueue"]),
   credits: z.number().nonnegative().optional(),
   response: z.unknown().optional(),
@@ -95,6 +96,7 @@ export async function reconcileExchangeRequests() {
               featureId: receipt.featureId,
               heldValue: receipt.maximumCredits,
               action: "release",
+              externalRequestId: receipt.operationToken,
               properties: receipt.properties,
             }))
           )
@@ -113,6 +115,7 @@ export async function reconcileExchangeRequests() {
               heldValue: receipt.maximumCredits,
               action: "confirm",
               overrideValue: receipt.credits,
+              externalRequestId: receipt.operationToken,
               properties: receipt.properties,
             }))
           )
