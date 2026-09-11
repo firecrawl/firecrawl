@@ -30,6 +30,7 @@ import { fireclawController } from "../../controllers/v1/fireclaw";
 import { autumnService } from "../../services/autumn/autumn.service";
 import { getTeamBalance } from "../../services/autumn/usage";
 import { billTeam } from "../../services/billing/credit_billing";
+import { getACUCTeam } from "../../controllers/auth";
 
 const checkCreditsMock = autumnService.checkCredits as MockedFunction<
   typeof autumnService.checkCredits
@@ -38,6 +39,7 @@ const getTeamBalanceMock = getTeamBalance as MockedFunction<
   typeof getTeamBalance
 >;
 const billTeamMock = billTeam as MockedFunction<typeof billTeam>;
+const getACUCTeamMock = getACUCTeam as MockedFunction<typeof getACUCTeam>;
 
 function buildReq(overrides: any = {}): any {
   return {
@@ -123,6 +125,31 @@ describe("fireclawController credit gating (Autumn)", () => {
         remaining_credits: 4000, // from getTeamBalance
       }),
     );
+  });
+
+  it("bills against the fallback ACUC's org when req.acuc is absent", async () => {
+    const req = buildReq({ acuc: undefined });
+    const res = buildRes();
+    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 5000 });
+    getACUCTeamMock.mockResolvedValue({
+      api_key_id: 7,
+      org_id: "org_test",
+    } as any);
+
+    await fireclawController(req, res);
+
+    expect(checkCreditsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org_test" }),
+    );
+    // The charge lands on the identity the check gated, not on the absent acuc
+    expect(billTeamMock).toHaveBeenCalledWith(
+      "team_test",
+      "org_test",
+      100,
+      7,
+      expect.objectContaining({ endpoint: "fireclaw" }),
+    );
+    expect(res.statusCode).toBe(200);
   });
 
   it("fails open and bills when Autumn is unavailable (checkCredits null)", async () => {

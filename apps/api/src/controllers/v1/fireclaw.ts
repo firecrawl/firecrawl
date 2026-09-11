@@ -73,9 +73,11 @@ export async function fireclawController(
   try {
     await billTeam(
       req.auth.team_id,
-      orgIdFromAcuc(req.acuc),
+      // The same chunk the credit check ran against: with req.acuc absent, the
+      // fallback ACUC is what named the org, so billing must use it too.
+      orgId,
       totalCredits,
-      req.acuc?.api_key_id ?? null,
+      chunk?.api_key_id ?? null,
       // No chargeId: fireclaw has no per-charge identity to key on — a
       // server-minted UUID here would be equivalent to firebill's own
       // per-request key, so this stays keyless until fireclaw carries one.
