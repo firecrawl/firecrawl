@@ -18,313 +18,255 @@ import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
 import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
 import { useIndex } from "../../services";
+import { withSitemapPermit } from "../sitemap-permit";
 
 const gunzipAsync = promisify(gunzip);
 
-export async function getLinksFromSitemap(
+type SitemapOptions = {
+  sitemapUrl: string;
+  urlsHandler(urls: string[]): unknown;
+  mode?: "axios" | "fire-engine";
+  maxAge?: number;
+  zeroDataRetention: boolean;
+  location?: ScrapeOptions["location"];
+  headers?: Record<string, string>;
+};
+
+async function getSitemapInstructions(
   {
     sitemapUrl,
-    urlsHandler,
     mode = "axios",
     maxAge = 0,
     zeroDataRetention,
     location,
     headers,
-  }: {
-    sitemapUrl: string;
-    urlsHandler(urls: string[]): unknown;
-    mode?: "axios" | "fire-engine";
-    maxAge?: number;
-    zeroDataRetention: boolean;
-    location?: ScrapeOptions["location"];
-    headers?: Record<string, string>;
-  },
+  }: SitemapOptions,
+  logger: Logger,
+  crawlId: string,
+  abort?: AbortSignal,
+  mock?: string,
+): Promise<SitemapProcessingResult | null> {
+  let content = "";
+
+  const isGzip = sitemapUrl.toLowerCase().endsWith(".gz");
+  if (isGzip) {
+    try {
+      const { buffer } = await fetchFileToBuffer(sitemapUrl, false, {
+        headers,
+        signal: abort,
+      });
+      const decompressed = await gunzipAsync(buffer);
+      content = decompressed.toString("utf-8");
+    } catch (error) {
+      logger.error("Failed to download/decompress gzip sitemap", {
+        sitemapUrl,
+        error,
+      });
+      return null;
+    }
+  } else {
+    try {
+      const shouldPrioritizeFireEngine =
+        location && mode === "fire-engine" && useFireEngine;
+
+      const forceEngine: Engine[] = [
+        ...(maxAge > 0 && useIndex ? ["index" as const] : []),
+        ...(shouldPrioritizeFireEngine
+          ? [
+              "fire-engine;tlsclient" as const,
+              "fire-engine;tlsclient;stealth" as const,
+            ]
+          : []),
+        "fetch",
+        ...(!shouldPrioritizeFireEngine &&
+        mode === "fire-engine" &&
+        useFireEngine
+          ? [
+              "fire-engine;tlsclient" as const,
+              "fire-engine;tlsclient;stealth" as const,
+            ]
+          : []),
+      ];
+
+      const response = await scrapeURL(
+        "sitemap;" + crawlId,
+        sitemapUrl,
+        scrapeOptions.parse({
+          formats: ["rawHtml"],
+          useMock: mock,
+          maxAge,
+          ...(location ? { location } : {}),
+          ...(headers ? { headers } : {}),
+        }),
+        {
+          forceEngine,
+          v0DisableJsDom: true,
+          orgId: null,
+          externalAbort: abort
+            ? {
+                signal: abort,
+                tier: "external",
+                throwable() {
+                  return new Error("Sitemap fetch aborted");
+                },
+              }
+            : undefined,
+          teamId: "sitemap",
+          zeroDataRetention,
+        },
+        new CostTracking(),
+      );
+
+      if (
+        response.success &&
+        response.document.metadata.statusCode >= 200 &&
+        response.document.metadata.statusCode < 300
+      ) {
+        content = response.document.rawHtml!;
+      } else {
+        if (response.success && response.document.metadata.statusCode === 404) {
+          logger.warn("Sitemap not found", { sitemapUrl }); // should probably index 404 sitemaps
+          return null;
+        }
+
+        logger.error(`Request failed for sitemap fetch`, {
+          method: "getLinksFromSitemap",
+          mode,
+          sitemapUrl,
+          error: response.success
+            ? response.document.metadata.statusCode
+            : response.error,
+        });
+        return null;
+      }
+    } catch (error) {
+      if (error instanceof ScrapeJobTimeoutError) {
+        throw error;
+      } else {
+        logger.error(`Request failed for sitemap fetch`, {
+          method: "getLinksFromSitemap",
+          mode,
+          sitemapUrl,
+          error,
+        });
+        return null;
+      }
+    }
+  }
+
+  abort?.throwIfAborted();
+  try {
+    return await processSitemap(content);
+  } catch (error) {
+    logger.warn(
+      "Rust sitemap processing failed, falling back to JavaScript logic",
+      {
+        method: "getLinksFromSitemap",
+        sitemapUrl,
+        error: error.message,
+      },
+    );
+    abort?.throwIfAborted();
+    let parsed: ParsedSitemap;
+    try {
+      parsed = await parseSitemapXml(content);
+    } catch (parseError) {
+      logger.warn("Rust XML parsing failed, falling back to JavaScript logic", {
+        method: "getLinksFromSitemap",
+        sitemapUrl,
+        error: parseError.message,
+      });
+      abort?.throwIfAborted();
+      parsed = await parseStringPromise(content);
+    }
+
+    const root = parsed.urlset || parsed.sitemapindex;
+    const instructions: SitemapProcessingResult["instructions"] = [];
+    if (root && "sitemap" in root && root.sitemap) {
+      const urls = root.sitemap
+        .filter(x => x.loc && x.loc.length > 0)
+        .map(x => x.loc[0].trim());
+      instructions.push({ action: "recurse", urls, count: urls.length });
+    } else if (root && "url" in root && root.url) {
+      const urls = root.url
+        .filter(x => x.loc && x.loc.length > 0)
+        .map(x => x.loc[0].trim());
+      const isSitemap = (url: string) => /\.xml(?:\.gz)?$/i.test(url);
+      const children = urls.filter(isSitemap);
+      const pages = urls.filter(
+        x => !isSitemap(x) && !WebCrawler.prototype.isFile(x),
+      );
+      instructions.push({
+        action: "recurse",
+        urls: children,
+        count: children.length,
+      });
+      instructions.push({
+        action: "process",
+        urls: pages,
+        count: pages.length,
+      });
+    }
+    return {
+      instructions,
+      totalCount: instructions.reduce((sum, x) => sum + x.count, 0),
+    };
+  }
+}
+
+export async function getLinksFromSitemap(
+  options: SitemapOptions,
   logger: Logger,
   crawlId: string,
   sitemapsHit: Set<string>,
   abort?: AbortSignal,
   mock?: string,
 ): Promise<number> {
-  if (sitemapsHit.size >= SITEMAP_LIMIT) {
-    return 0;
-  }
-
+  const { sitemapUrl, urlsHandler } = options;
+  if (abort?.aborted || sitemapsHit.size >= SITEMAP_LIMIT) return 0;
   if (sitemapsHit.has(sitemapUrl)) {
     logger.warn("This sitemap has already been hit.", { sitemapUrl });
     return 0;
   }
-
   sitemapsHit.add(sitemapUrl);
 
   try {
-    let content = "";
-
-    const isGzip = sitemapUrl.toLowerCase().endsWith(".gz");
-    if (isGzip) {
-      try {
-        const { buffer } = await fetchFileToBuffer(sitemapUrl, false, {
-          headers,
-          signal: abort,
-        });
-        const decompressed = await gunzipAsync(buffer);
-        content = decompressed.toString("utf-8");
-      } catch (error) {
-        logger.error("Failed to download/decompress gzip sitemap", {
-          sitemapUrl,
-          error,
-        });
-        return 0;
-      }
-    } else {
-      try {
-        const shouldPrioritizeFireEngine =
-          location && mode === "fire-engine" && useFireEngine;
-
-        const forceEngine: Engine[] = [
-          ...(maxAge > 0 && useIndex ? ["index" as const] : []),
-          ...(shouldPrioritizeFireEngine
-            ? [
-                "fire-engine;tlsclient" as const,
-                "fire-engine;tlsclient;stealth" as const,
-              ]
-            : []),
-          "fetch",
-          ...(!shouldPrioritizeFireEngine &&
-          mode === "fire-engine" &&
-          useFireEngine
-            ? [
-                "fire-engine;tlsclient" as const,
-                "fire-engine;tlsclient;stealth" as const,
-              ]
-            : []),
-        ];
-
-        const response = await scrapeURL(
-          "sitemap;" + crawlId,
-          sitemapUrl,
-          scrapeOptions.parse({
-            formats: ["rawHtml"],
-            useMock: mock,
-            maxAge,
-            ...(location ? { location } : {}),
-            ...(headers ? { headers } : {}),
-          }),
-          {
-            forceEngine,
-            v0DisableJsDom: true,
-            orgId: null,
-            externalAbort: abort
-              ? {
-                  signal: abort,
-                  tier: "external",
-                  throwable() {
-                    return new Error("Sitemap fetch aborted");
-                  },
-                }
-              : undefined,
-            teamId: "sitemap",
-            zeroDataRetention,
-          },
-          new CostTracking(),
-        );
-
-        if (
-          response.success &&
-          response.document.metadata.statusCode >= 200 &&
-          response.document.metadata.statusCode < 300
-        ) {
-          content = response.document.rawHtml!;
-        } else {
-          if (
-            response.success &&
-            response.document.metadata.statusCode === 404
-          ) {
-            logger.warn("Sitemap not found", { sitemapUrl }); // should probably index 404 sitemaps
-            return 0;
-          }
-
-          logger.error(`Request failed for sitemap fetch`, {
-            method: "getLinksFromSitemap",
-            mode,
-            sitemapUrl,
-            error: response.success
-              ? response.document.metadata.statusCode
-              : response.error,
-          });
-          return 0;
-        }
-      } catch (error) {
-        if (error instanceof ScrapeJobTimeoutError) {
-          throw error;
-        } else {
-          logger.error(`Request failed for sitemap fetch`, {
-            method: "getLinksFromSitemap",
-            mode,
-            sitemapUrl,
-            error,
-          });
-          return 0;
-        }
-      }
-    }
-
-    let instructions: SitemapProcessingResult;
-    try {
-      instructions = await processSitemap(content);
-    } catch (error) {
-      logger.warn(
-        "Rust sitemap processing failed, falling back to JavaScript logic",
-        {
-          method: "getLinksFromSitemap",
-          sitemapUrl,
-          error: error.message,
-        },
-      );
-
-      let parsed: ParsedSitemap;
-      try {
-        parsed = await parseSitemapXml(content);
-      } catch (parseError) {
-        logger.warn(
-          "Rust XML parsing failed, falling back to JavaScript logic",
-          {
-            method: "getLinksFromSitemap",
-            sitemapUrl,
-            error: parseError.message,
-          },
-        );
-        parsed = await parseStringPromise(content);
-      }
-
-      const root = parsed.urlset || parsed.sitemapindex;
-      let count = 0;
-
-      if (root && "sitemap" in root && root.sitemap) {
-        const sitemapUrls = root.sitemap
-          .filter(sitemap => sitemap.loc && sitemap.loc.length > 0)
-          .map(sitemap => sitemap.loc[0].trim());
-
-        const sitemapPromises: Promise<number>[] = sitemapUrls.map(sitemapUrl =>
-          getLinksFromSitemap(
-            {
-              sitemapUrl,
-              urlsHandler,
-              mode,
-              zeroDataRetention,
-              location,
-              headers,
-              maxAge,
-            },
-            logger,
-            crawlId,
-            sitemapsHit,
-            abort,
-            mock,
+    const result = await withSitemapPermit(
+      () => getSitemapInstructions(options, logger, crawlId, abort, mock),
+      abort,
+    );
+    if (!result || abort?.aborted) return 0;
+    let count = 0;
+    for (const instruction of result.instructions) {
+      if (abort?.aborted) break;
+      if (instruction.action === "recurse") {
+        const counts = await Promise.all(
+          instruction.urls.map(child =>
+            getLinksFromSitemap(
+              { ...options, sitemapUrl: child },
+              logger,
+              crawlId,
+              sitemapsHit,
+              abort,
+              mock,
+            ),
           ),
         );
-
-        const results = await Promise.all(sitemapPromises);
-        count = results.reduce((a, x) => a + x);
-      } else if (root && "url" in root && root.url) {
-        const xmlSitemaps: string[] = root.url
-          .filter(
-            url =>
-              url.loc &&
-              url.loc.length > 0 &&
-              (url.loc[0].trim().toLowerCase().endsWith(".xml") ||
-                url.loc[0].trim().toLowerCase().endsWith(".xml.gz")),
-          )
-          .map(url => url.loc[0].trim());
-
-        if (xmlSitemaps.length > 0) {
-          const sitemapPromises = xmlSitemaps.map(sitemapUrl =>
-            getLinksFromSitemap(
-              {
-                sitemapUrl: sitemapUrl,
-                urlsHandler,
-                mode,
-                zeroDataRetention,
-                location,
-                headers,
-                maxAge,
-              },
-              logger,
-              crawlId,
-              sitemapsHit,
-              abort,
-              mock,
-            ),
-          );
-          count += (await Promise.all(sitemapPromises)).reduce(
-            (a, x) => a + x,
-            0,
-          );
-        }
-
-        const validUrls = root.url
-          .filter(
-            url =>
-              url.loc &&
-              url.loc.length > 0 &&
-              !url.loc[0].trim().toLowerCase().endsWith(".xml") &&
-              !url.loc[0].trim().toLowerCase().endsWith(".xml.gz") &&
-              !WebCrawler.prototype.isFile(url.loc[0].trim()),
-          )
-          .map(url => url.loc[0].trim());
-        count += validUrls.length;
-
-        const h = urlsHandler(validUrls);
-        if (h instanceof Promise) {
-          await h;
-        }
-      }
-
-      return count;
-    }
-
-    let count = 0;
-    for (const instruction of instructions.instructions) {
-      if (instruction.action === "recurse") {
-        const sitemapPromises: Promise<number>[] = instruction.urls.map(
-          sitemapUrl =>
-            getLinksFromSitemap(
-              {
-                sitemapUrl,
-                urlsHandler,
-                mode,
-                zeroDataRetention,
-                location,
-                headers,
-                maxAge,
-              },
-              logger,
-              crawlId,
-              sitemapsHit,
-              abort,
-              mock,
-            ),
-        );
-
-        const results = await Promise.all(sitemapPromises);
-        count += results.reduce((a, x) => a + x, 0);
+        count += counts.reduce((sum, x) => sum + x, 0);
       } else if (instruction.action === "process") {
+        await urlsHandler(instruction.urls);
         count += instruction.urls.length;
-        const h = urlsHandler(instruction.urls);
-        if (h instanceof Promise) {
-          await h;
-        }
       }
     }
-
     return count;
   } catch (error) {
-    logger.debug(`Error processing sitemapUrl: ${sitemapUrl}`, {
-      method: "getLinksFromSitemap",
-      mode,
-      sitemapUrl,
-      error,
-    });
+    if (!abort?.aborted)
+      logger.debug(`Error processing sitemapUrl: ${sitemapUrl}`, {
+        method: "getLinksFromSitemap",
+        mode: options.mode ?? "axios",
+        sitemapUrl,
+        error,
+      });
+    return 0;
   }
-
-  return 0;
 }

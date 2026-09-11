@@ -1,0 +1,66 @@
+[
+  {
+    "time": 1740000000000,
+    "options": {
+      "url": "https://www.hfea.gov.uk/sitemap.xml",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "https://www.hfea.gov.uk/sitemap.xml",
+      "body": "<sitemapindex><sitemap><loc>https://www.hfea.gov.uk/nested.xml</loc></sitemap><sitemap><loc>https://www.hfea.gov.uk/broken.xml</loc></sitemap></sitemapindex>",
+      "status": 200,
+      "headers": [["content-type", "text/xml"]]
+    }
+  },
+  {
+    "time": 1740000000000,
+    "options": {
+      "url": "https://www.hfea.gov.uk/nested.xml",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "https://www.hfea.gov.uk/nested.xml",
+      "body": "<sitemapindex><sitemap><loc>https://www.hfea.gov.uk/leaf.xml</loc></sitemap></sitemapindex>",
+      "status": 200,
+      "headers": [["content-type", "text/xml"]]
+    }
+  },
+  {
+    "time": 1740000000000,
+    "options": {
+      "url": "https://www.hfea.gov.uk/leaf.xml",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "https://www.hfea.gov.uk/leaf.xml",
+      "body": "<urlset><url><loc>https://www.hfea.gov.uk/nested-first</loc></url><url><loc>https://www.hfea.gov.uk/nested-second</loc></url></urlset>",
+      "status": 200,
+      "headers": [["content-type", "text/xml"]]
+    }
+  },
+  {
+    "time": 1740000000000,
+    "options": {
+      "url": "https://www.hfea.gov.uk/broken.xml",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "https://www.hfea.gov.uk/broken.xml",
+      "body": "Unavailable",
+      "status": 503,
+      "headers": [["content-type", "text/xml"]]
+    }
+  }
+]

@@ -2,6 +2,7 @@ import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
   TEST_SUITE_WEBSITE,
+  scrapeTimeout,
 } from "../lib";
 import { expectMapToSucceed, map, idmux, Identity } from "./lib";
 
@@ -18,6 +19,28 @@ beforeAll(async () => {
 // TODO: is map meant for self-host?
 describe("Map tests", () => {
   const base = TEST_SUITE_WEBSITE;
+
+  it.concurrent.each(["include", "only"] as const)(
+    "sitemap=%s returns nested URLs when a sibling sitemap fails",
+    async sitemap => {
+      const response = await map(
+        {
+          url: "https://www.hfea.gov.uk",
+          sitemap,
+          useIndex: false,
+          useMock: "map-nested-sitemaps",
+          ignoreCache: true,
+          limit: 100000,
+        },
+        identity,
+      );
+      expectMapToSucceed(response);
+      const urls = response.body.links.map(x => x.url);
+      expect(urls).toContain("https://www.hfea.gov.uk/nested-first");
+      expect(urls).toContain("https://www.hfea.gov.uk/nested-second");
+    },
+    scrapeTimeout,
+  );
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "basic map succeeds",

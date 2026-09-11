@@ -14,6 +14,7 @@ import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
 import { SitemapError } from "../../lib/error";
 import { useIndex } from "../../services";
+import { withSitemapPermit } from "../sitemap-permit";
 
 type SitemapScrapeOptions = {
   url: string;
@@ -127,27 +128,32 @@ export async function scrapeSitemap(
     location: options.location,
   });
 
-  const xml = await getSitemapXML(options);
+  const instructions = await withSitemapPermit(async () => {
+    const xml = await getSitemapXML(options);
 
-  logger.info("Processing sitemap");
+    logger.info("Processing sitemap");
 
-  let instructions: SitemapProcessingResult;
-  try {
-    instructions = await processSitemap(xml);
-  } catch (error) {
-    // Wrap XML parsing errors (user's broken sitemap) in SitemapError
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (
-      errorMessage.includes("XML parsing error") ||
-      errorMessage.includes("Parse sitemap error")
-    ) {
-      throw new SitemapError(
-        `The sitemap XML could not be parsed because it contains invalid or malformed XML. This is a problem with the website's sitemap, not with your request. Details: ${errorMessage}. The website owner should fix their sitemap to be valid XML. You can try using a different starting URL or the /map endpoint instead.`,
-        error,
-      );
+    let instructions: SitemapProcessingResult;
+    try {
+      instructions = await processSitemap(xml);
+    } catch (error) {
+      // Wrap XML parsing errors (user's broken sitemap) in SitemapError
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (
+        errorMessage.includes("XML parsing error") ||
+        errorMessage.includes("Parse sitemap error")
+      ) {
+        throw new SitemapError(
+          `The sitemap XML could not be parsed because it contains invalid or malformed XML. This is a problem with the website's sitemap, not with your request. Details: ${errorMessage}. The website owner should fix their sitemap to be valid XML. You can try using a different starting URL or the /map endpoint instead.`,
+          error,
+        );
+      }
+      throw error;
     }
-    throw error;
-  }
+
+    return instructions;
+  });
 
   const sitemapData: SitemapData = {
     urls: [],
