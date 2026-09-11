@@ -1,3 +1,4 @@
+import { authorizeExchangeProviders } from "../lib/exchange-provider-access";
 import { bountyBlocklistMiddleware } from "./exchange-blocklist";
 import express, { Request, Response } from "express";
 import { Agent, fetch } from "undici";
@@ -37,12 +38,16 @@ function upstreamBase(): string | null {
 
 function exchangeProxy(
   timeout: number,
-  options: { requiresRetrieveFlag?: boolean } = {},
+  options: {
+    requiresRetrieveFlag?: boolean;
+    checkProviderAccess?: boolean;
+  } = {},
 ) {
   const requiresRetrieveFlag = options.requiresRetrieveFlag !== false;
   const dispatcher = dispatcherFor(timeout);
 
   return async function controller(req: Request, res: Response) {
+    res.setHeader("cache-control", "no-store");
     const authedReq = req as RequestWithAuth<any, any, any>;
     const logger = rootLogger.child({
       module: "api/exchange",
@@ -64,10 +69,41 @@ function exchangeProxy(
       );
     }
 
+    const signal = AbortSignal.timeout(timeout);
     const hasBody = req.method !== "GET";
     const path = req.originalUrl.replace(/^\/exchange/, "/v1");
 
     try {
+      if (options.checkProviderAccess) {
+        const denied = await authorizeExchangeProviders({
+          teamId: authedReq.auth.team_id,
+          body: req.body,
+          requirements: async providers => {
+            const response = await fetch(
+              `${base}/v1/provider-terms/requirements`,
+              {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                  "x-exchange-team-id": authedReq.auth.team_id,
+                  "x-exchange-extended-catalog-access": String(
+                    authedReq.acuc?.flags?.exchangeRetrieve === true,
+                  ),
+                },
+                body: JSON.stringify({ providers }),
+                signal: AbortSignal.any([
+                  signal,
+                  AbortSignal.timeout(DISCOVER_TIMEOUT_MS),
+                ]),
+                dispatcher,
+              },
+            );
+            return { status: response.status, body: await response.json() };
+          },
+        });
+        if (denied) return res.status(denied.status).json(denied.body);
+      }
+      signal.throwIfAborted();
       const upstream = await fetch(base + path, {
         method: req.method,
         headers: {
@@ -79,9 +115,12 @@ function exchangeProxy(
           ),
           ...(hasBody ? { "content-type": "application/json" } : {}),
           "x-exchange-team-id": authedReq.auth.team_id,
+          "x-exchange-extended-catalog-access": String(
+            authedReq.acuc?.flags?.exchangeRetrieve === true,
+          ),
         },
         body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
-        signal: AbortSignal.timeout(timeout),
+        signal,
         dispatcher,
       });
 
@@ -116,6 +155,12 @@ function exchangeProxy(
 export const exchangeRouter = express.Router();
 
 exchangeRouter.get(
+  "/provider-terms",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.get(
   "/discover{/*path}",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
@@ -137,7 +182,7 @@ exchangeRouter.get(
 exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
+  wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS, { checkProviderAccess: true })),
 );
 
 exchangeRouter.get(
