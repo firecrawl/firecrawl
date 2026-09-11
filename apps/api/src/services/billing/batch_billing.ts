@@ -210,27 +210,36 @@ export async function processBillingBatch() {
     );
 
     // transitional: operations enqueued before org_id was carried; remove
-    // after one deploy. Memoized per team, and never fatal — a batch already
-    // popped off Redis must not be lost to a lookup failure.
-    const legacyOrgIds = new Map<string, string | null>();
+    // after one deploy. An answer of null is a team that genuinely has no org
+    // and is memoized as such; a lookup that throws leaves the org unknown, and
+    // billing those as org-less would silently skip their refund — so they are
+    // requeued untouched instead. The failure is memoized too, so a failing
+    // lookup costs one call per team per batch rather than one per operation.
+    const legacyOrgIds = new Map<
+      string,
+      { resolved: true; orgId: string | null } | { resolved: false }
+    >();
     const resolveLegacyOrgId = async (teamId: string) => {
       if (!legacyOrgIds.has(teamId)) {
-        let orgId: string | null = null;
         try {
-          orgId = (await getACUCTeam(teamId))?.org_id ?? null;
+          legacyOrgIds.set(teamId, {
+            resolved: true,
+            orgId: (await getACUCTeam(teamId))?.org_id ?? null,
+          });
         } catch (error) {
           logger.warn("Failed to resolve the org for a legacy billing op", {
             team_id: teamId,
             error,
           });
+          legacyOrgIds.set(teamId, { resolved: false });
         }
-        legacyOrgIds.set(teamId, orgId);
       }
       return legacyOrgIds.get(teamId)!;
     };
 
     // Group operations by team_id, org_id, endpoint, is_extract, and api_key_id
     const groupedOperations = new Map<string, GroupedBillingOperation>();
+    const unresolvedOperations: BillingOperation[] = [];
 
     for (const op of operations) {
       const billing = resolveBillingMetadata({
@@ -238,10 +247,17 @@ export async function processBillingBatch() {
           op.billing ?? (op.endpoint ? { endpoint: op.endpoint } : undefined),
         isExtract: op.is_extract,
       });
-      const orgId =
-        op.org_id === undefined
-          ? await resolveLegacyOrgId(op.team_id)
-          : op.org_id;
+      let orgId: string | null;
+      if (op.org_id === undefined) {
+        const lookup = await resolveLegacyOrgId(op.team_id);
+        if (!lookup.resolved) {
+          unresolvedOperations.push(op);
+          continue;
+        }
+        orgId = lookup.orgId;
+      } else {
+        orgId = op.org_id;
+      }
       const key = `${op.team_id}:${orgId}:${billing.endpoint}:${op.is_extract}:${op.api_key_id}`;
 
       if (!groupedOperations.has(key)) {
@@ -259,6 +275,20 @@ export async function processBillingBatch() {
       const group = groupedOperations.get(key)!;
       group.total_credits += op.credits;
       group.operations.push(op);
+    }
+
+    if (unresolvedOperations.length > 0) {
+      // Back onto the same list in the same shape — still without org_id — so
+      // the next batch retries the lookup. Nothing is billed or refunded for
+      // them here.
+      logger.warn(
+        "Requeueing legacy billing operations whose org could not be resolved",
+        { count: unresolvedOperations.length },
+      );
+      await redis.rpush(
+        BATCH_KEY,
+        ...unresolvedOperations.map(op => JSON.stringify(op)),
+      );
     }
 
     // Process each group of operations

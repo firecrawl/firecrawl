@@ -278,7 +278,7 @@ export async function scrapeController(
 
         const baseConcurrency = await getEffectiveConcurrencyLimit(
           req.auth.team_id,
-          req.acuc?.org_id,
+          req.acuc?.org_id ?? null,
         );
         const concurrency = boostConcurrency
           ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST

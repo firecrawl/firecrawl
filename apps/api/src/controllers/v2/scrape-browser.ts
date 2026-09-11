@@ -624,7 +624,7 @@ async function createSessionForScrape(
   // Active session limit — uses the same concurrency pool as scrape/crawl
   const concurrencyLimit = await getEffectiveConcurrencyLimit(
     req.auth.team_id,
-    req.acuc?.org_id,
+    req.acuc?.org_id ?? null,
   );
   const activeCount = await getCombinedTeamActiveCount(req.auth.team_id);
   if (activeCount >= concurrencyLimit) {

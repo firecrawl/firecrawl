@@ -16,6 +16,7 @@ import {
 } from "./concurrency-limit";
 import { getCrawl } from "./crawl-redis";
 import { logger as _logger } from "./logger";
+import { getACUCTeam } from "../controllers/auth";
 
 interface ReconcileOptions {
   teamId?: string;
@@ -82,6 +83,7 @@ async function getQueuedJobIDs(teamId: string): Promise<Set<string>> {
 
 async function reconcileTeam(
   ownerId: string,
+  orgId: string | null,
   teamLogger: Logger,
 ): Promise<{ jobsStarted: number; jobsRequeued: number } | null> {
   const backloggedJobIDs = new Set(
@@ -111,7 +113,7 @@ async function reconcileTeam(
   // TODO: gate crawl + extract against one combined pool (sum of both active
   // counts vs the single limit) instead of applying the same limit to each
   // type independently.
-  const teamConcurrency = await getEffectiveConcurrencyLimit(ownerId);
+  const teamConcurrency = await getEffectiveConcurrencyLimit(ownerId, orgId);
   const maxCrawlConcurrency = teamConcurrency;
   const maxExtractConcurrency = teamConcurrency;
 
@@ -201,6 +203,7 @@ async function reconcileTeam(
 
 async function drainQueue(
   ownerId: string,
+  orgId: string | null,
   teamLogger: Logger,
 ): Promise<{ jobsPromoted: number; staleSkipped: number }> {
   // Autumn's CONCURRENCY balance is a single per-team pool, so crawl and
@@ -208,7 +211,7 @@ async function drainQueue(
   // TODO: gate crawl + extract against one combined pool (sum of both active
   // counts vs the single limit) instead of applying the same limit to each
   // type independently.
-  const teamConcurrency = await getEffectiveConcurrencyLimit(ownerId);
+  const teamConcurrency = await getEffectiveConcurrencyLimit(ownerId, orgId);
   const maxCrawlConcurrency = teamConcurrency;
   const maxExtractConcurrency = teamConcurrency;
 
@@ -335,14 +338,20 @@ export async function reconcileConcurrencyQueue(
     const teamLogger = logger.child({ teamId: ownerId });
 
     try {
-      const teamResult = await reconcileTeam(ownerId, teamLogger);
+      // The reconciler has no request ACUC and no job payload to read, so the
+      // team's ACUC is the only org source; once per team per pass, shared by
+      // both limit lookups below.
+      const orgId =
+        (await getACUCTeam(ownerId).catch(() => null))?.org_id ?? null;
+
+      const teamResult = await reconcileTeam(ownerId, orgId, teamLogger);
       if (teamResult !== null) {
         result.teamsWithDrift++;
         result.jobsStarted += teamResult.jobsStarted;
         result.jobsRequeued += teamResult.jobsRequeued;
       }
 
-      const drainResult = await drainQueue(ownerId, teamLogger);
+      const drainResult = await drainQueue(ownerId, orgId, teamLogger);
       if (drainResult.jobsPromoted > 0 || drainResult.staleSkipped > 0) {
         result.jobsStarted += drainResult.jobsPromoted;
         teamLogger.info("Queue drain promoted jobs", {

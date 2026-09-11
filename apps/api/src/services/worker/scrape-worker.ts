@@ -684,7 +684,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 billThreatBlockedDiscoveries(
                   {
                     teamId: job.data.team_id,
-                    orgId: job.data.internalOptions?.orgId ?? null,
+                    // A null org here would drop a real charge, so this falls
+                    // through the payload, the stored crawl, then the ACUC.
+                    orgId: await orgIdForJob(
+                      job.data.internalOptions?.orgId ??
+                        sc.internalOptions?.orgId,
+                      job.data.team_id,
+                    ),
                     apiKeyId: job.data.apiKeyId ?? null,
                     billing: resolveBillingMetadata({
                       billing: job.data.billing,
@@ -1437,7 +1443,12 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         billThreatBlockedDiscoveries(
           {
             teamId: job.data.team_id,
-            orgId: job.data.internalOptions?.orgId ?? null,
+            // Kickoff jobs may carry no internalOptions; the stored crawl and
+            // then the ACUC answer, since a null org would drop a real charge.
+            orgId: await orgIdForJob(
+              job.data.internalOptions?.orgId ?? sc.internalOptions?.orgId,
+              job.data.team_id,
+            ),
             apiKeyId: job.data.apiKeyId ?? null,
             billing: resolveBillingMetadata({
               billing: job.data.billing,
@@ -1609,7 +1620,12 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         billThreatBlockedDiscoveries(
           {
             teamId: job.data.team_id,
-            orgId: sc.internalOptions?.orgId ?? null,
+            // Same as the other kickoff path: the ACUC answers when the crawl
+            // names no org, so a real charge is not dropped.
+            orgId: await orgIdForJob(
+              sc.internalOptions?.orgId,
+              job.data.team_id,
+            ),
             apiKeyId: job.data.apiKeyId ?? null,
             billing: resolveBillingMetadata({
               billing: job.data.billing,

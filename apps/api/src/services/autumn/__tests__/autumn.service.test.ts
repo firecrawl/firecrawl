@@ -9,8 +9,6 @@
  * every org below is one the caller hands in.
  */
 
-import { readFileSync } from "fs";
-import { join } from "path";
 import { vi } from "vitest";
 
 // ---------------------------------------------------------------------------
@@ -1885,17 +1883,8 @@ describe("firebill routing", () => {
 describe("the org the caller supplies", () => {
   const CALLER_ORG = "3f2c1b8e-7a4d-4c1e-9b6a-0d5e8f2a1c74";
 
-  // The point of the change this file guards: the service has no way to look an
-  // org up, so a later edit cannot quietly reach for one instead of threading
-  // the org its caller already holds.
-  it("cannot be resolved by the service: no ACUC lookup is even imported", () => {
-    const source = readFileSync(
-      join(__dirname, "..", "autumn.service.ts"),
-      "utf-8",
-    );
-    expect(source).not.toContain("getACUCTeam");
-    expect(source).not.toContain("resolveOrgId");
-  });
+  // That the service has no way to look an org up at all is guarded by
+  // autumn.service.org-source.test.ts, which mocks controllers/auth to throw.
 
   it("bills the caller's org", async () => {
     const svc = makeService();

@@ -319,6 +319,42 @@ describe("monitor check finalization ownership", () => {
   );
 
   it.each([
+    {
+      name: "answers no org",
+      acuc: async () => ({ org_id: null }) as any,
+    },
+    {
+      name: "cannot be read",
+      acuc: async () => {
+        throw new Error("ACUC unavailable");
+      },
+    },
+  ])(
+    "releases a stale hold with no team when the ACUC $name",
+    async ({ acuc }) => {
+      vi.mocked(getACUCTeam).mockImplementation(acuc);
+      current.started_at = new Date(
+        Date.now() - 2 * 60 * 60 * 1000,
+      ).toISOString();
+
+      await reconcileRunningMonitorChecks();
+
+      expect(current).toMatchObject({
+        status: "failed",
+        billing_status: "released",
+      });
+      // Fail open: the release still happens, just without a team to name.
+      const calls = vi.mocked(autumnService.finalizeCreditsLock).mock.calls;
+      expect(calls).toHaveLength(1);
+      expect(calls[0][0]).toMatchObject({
+        action: "release",
+        lockId: "monitor_check-1",
+      });
+      expect(calls[0][0].team).toBeUndefined();
+    },
+  );
+
+  it.each([
     { kind: "stale", throws: false },
     { kind: "stale", throws: true },
     { kind: "orphan", throws: false },

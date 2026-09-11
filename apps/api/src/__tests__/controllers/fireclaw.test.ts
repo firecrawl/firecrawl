@@ -40,7 +40,9 @@ function buildReq(overrides: any = {}): any {
   return {
     body: { plays: 1 },
     auth: { team_id: "team_test", org_id: "org_test" },
-    acuc: { api_key_id: 1 },
+    // A real org: it is what gates the Autumn credit check, so the billable
+    // path is the one under test here.
+    acuc: { api_key_id: 1, org_id: "org_test" },
     ...overrides,
   };
 }
@@ -104,6 +106,7 @@ describe("fireclawController credit gating (Autumn)", () => {
     );
     expect(billTeamMock).toHaveBeenCalledWith(
       "team_test",
+      "org_test",
       200,
       1,
       expect.objectContaining({ endpoint: "fireclaw" }),
@@ -128,6 +131,7 @@ describe("fireclawController credit gating (Autumn)", () => {
 
     expect(billTeamMock).toHaveBeenCalledWith(
       "team_test",
+      "org_test",
       300,
       1,
       expect.objectContaining({ endpoint: "fireclaw" }),

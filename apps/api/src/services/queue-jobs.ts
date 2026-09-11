@@ -38,6 +38,7 @@ import {
 import { serializeTraceContext } from "../lib/otel-tracer";
 import { isSelfHosted } from "../lib/deployment";
 import { MONITOR_CHECK_STALE_TIMEOUT_MS } from "./monitoring/stale";
+import { getACUCTeam } from "../controllers/auth";
 
 // Queue-wait deadline for a backlogged job (how long its owner still cares about the result)
 function backlogTimeoutMs(data: ScrapeJobData): number {
@@ -345,6 +346,27 @@ async function maybeSendConcurrencyNotificationFdb(
   }
 }
 
+// The org for a team's concurrency lookup. It rides the job payload,
+// snapshotted from the request ACUC at acceptance; every job here is one
+// team's, so any of them answers. The ACUC is the fallback for a job enqueued
+// without one (monitor jobs null the field deliberately — it also gates
+// blocklist enforcement), so a monitor team is still gated on its real limit
+// rather than falling open. One resolution per enqueue, never per job.
+async function orgIdForEnqueue(
+  jobs: ScrapeJobData[],
+  teamId: string,
+): Promise<string | null> {
+  return (
+    jobs
+      .map(d =>
+        "internalOptions" in d ? (d.internalOptions?.orgId ?? null) : null,
+      )
+      .find(o => o !== null) ??
+    (await getACUCTeam(teamId).catch(() => null))?.org_id ??
+    null
+  );
+}
+
 async function addScrapeJobRaw(
   webScraperOptions: ScrapeJobData,
   jobId: string,
@@ -400,6 +422,7 @@ async function addScrapeJobRaw(
 
     maxConcurrency = await getEffectiveConcurrencyLimit(
       webScraperOptions.team_id,
+      await orgIdForEnqueue([webScraperOptions], webScraperOptions.team_id),
     );
 
     if (concurrencyLimited === null) {
@@ -693,7 +716,13 @@ export async function addScrapeJobs(
       addToCQ = jobsForcedToCQ;
     } else {
       const now = Date.now();
-      maxConcurrency = await getEffectiveConcurrencyLimit(teamId);
+      maxConcurrency = await getEffectiveConcurrencyLimit(
+        teamId,
+        await orgIdForEnqueue(
+          allTeamJobs.map(j => j.data),
+          teamId,
+        ),
+      );
       await cleanOldConcurrencyLimitEntries(teamId, now);
 
       currentActiveConcurrency = (

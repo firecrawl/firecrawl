@@ -97,11 +97,11 @@ const redis = {
     }
     return queue.length;
   }),
-  rpush: vi.fn(async (key: string, value: string) => {
+  rpush: vi.fn(async (key: string, ...values: string[]) => {
     if (key !== "billing_batch") {
       throw new Error("unexpected redis.rpush key");
     }
-    queue.push(value);
+    queue.push(...values);
     return queue.length;
   }),
   sadd: vi.fn(async (key: string, teamId: string) => {
@@ -253,6 +253,40 @@ describe("processBillingBatch", () => {
     expect(refundCredits).toHaveBeenCalledWith(
       expect.objectContaining({ teamId: "team-1", orgId: "org-legacy" }),
     );
+  });
+
+  it("requeues legacy operations when the org lookup throws", async () => {
+    queue = [
+      makeOp({ org_id: undefined, autumnTrackInRequest: true }),
+      makeOp({ org_id: undefined, autumnTrackInRequest: true }),
+    ];
+    getACUCTeam.mockRejectedValue(new Error("acuc unavailable"));
+
+    await processBillingBatch();
+
+    // Nothing billed and nothing refunded for them; both are back on the
+    // queue in their original shape, still without org_id.
+    expect(billTeam7).not.toHaveBeenCalled();
+    expect(refundCredits).not.toHaveBeenCalled();
+    expect(queue).toHaveLength(2);
+    expect(JSON.parse(queue[0])).not.toHaveProperty("org_id");
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Requeueing legacy billing operations whose org could not be resolved",
+      { count: 2 },
+    );
+  });
+
+  it("bills a legacy operation whose team is confirmed to have no org", async () => {
+    queue = [makeOp({ org_id: undefined, autumnTrackInRequest: true })];
+    getACUCTeam.mockResolvedValue({ team_id: "team-1", org_id: null });
+    billTeam7.mockRejectedValueOnce(new Error("db failed"));
+
+    await processBillingBatch();
+
+    expect(billTeam7).toHaveBeenCalled();
+    // A confirmed null is an org-less team: the refund is skipped, not deferred.
+    expect(refundCredits).not.toHaveBeenCalled();
+    expect(queue).toHaveLength(0);
   });
 
   it("does not look anything up for an operation whose org is a known null", async () => {
