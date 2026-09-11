@@ -1999,3 +1999,297 @@ describe("inline provisioning counters", () => {
     expect(await customerCalls()).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Who provisions, by route (§2 of the middleware credit-check spec). On the
+// firebill route the monolith no longer runs its own customer/entity prefix:
+// firebill creates a missing entity itself, off the 404 Autumn answers the
+// billing call with. The direct route keeps provisioning exactly as it did.
+// ---------------------------------------------------------------------------
+
+describe("provisioning by route", () => {
+  const mockFetch = vi.fn<(url: any, init?: any) => Promise<Response>>();
+
+  const firebillConfig = () => ({
+    FIREBILL_URL: "http://firebill.test",
+    FIREBILL_SECRET: "fb-secret",
+    FIREBILL_ORG_IDS: ["org-1"],
+  });
+
+  // The same team, off the allowlist and at 0 percent, so it bills straight to
+  // Autumn. The route is the only thing that differs between the two halves.
+  const directConfig = () => ({
+    ...firebillConfig(),
+    FIREBILL_ORG_IDS: ["some-other-org"],
+    FIREBILL_ROLLOUT_PERCENT: 0,
+  });
+
+  // A fresh Response per call: firebill reads the body, and a reused one looks
+  // like a failure and triggers its retry.
+  const answers = (body: Record<string, unknown>) => () =>
+    Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+
+  const expectNoProvisioning = () => {
+    expect(mockGetOrCreate).not.toHaveBeenCalled();
+    expect(mockEntityGet).not.toHaveBeenCalled();
+    expect(mockEntityCreate).not.toHaveBeenCalled();
+  };
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockImplementation(
+      answers({
+        success: true,
+        allowed: true,
+        remaining: 500,
+        lock_id: "lock-1",
+      }),
+    );
+    vi.stubGlobal("fetch", mockFetch);
+    state.gatewayStubRow = null;
+    state.gatewayStubThrows = false;
+    state.configRef = firebillConfig();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("check asks firebill the same question, and provisions nothing", async () => {
+    const svc = makeService();
+
+    const result = await svc.checkCredits({
+      teamId: "team-1",
+      orgId: "org-1",
+      value: 100,
+      properties: { source: "checkCreditsMiddleware" },
+    });
+
+    expect(result).toEqual({ allowed: true, remaining: 500 });
+    expectNoProvisioning();
+    expect(mockCheck).not.toHaveBeenCalled();
+    const [url, init] = mockFetch.mock.calls[0]!;
+    expect(String(url)).toBe("http://firebill.test/v1/check");
+    expect(JSON.parse(init.body)).toEqual({
+      customer_id: "org-1",
+      entity_id: "team-1",
+      feature_id: "CREDITS",
+      value: 100,
+      properties: { source: "checkCreditsMiddleware" },
+    });
+  });
+
+  it("lock holds through firebill unchanged, and provisions nothing", async () => {
+    const svc = makeService();
+
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      orgId: "org-1",
+      value: 10,
+      lockId: "lock-1",
+      expiresAt: 1_700_000_000_000,
+      properties: { source: "monitorCheck" },
+    });
+
+    expect(result).toEqual({ status: "locked", lockId: "lock-1" });
+    expectNoProvisioning();
+    const [url, init] = mockFetch.mock.calls[0]!;
+    expect(String(url)).toBe("http://firebill.test/v1/lock");
+    expect(JSON.parse(init.body)).toEqual({
+      customer_id: "org-1",
+      entity_id: "team-1",
+      feature_id: "CREDITS",
+      value: 10,
+      lock_id: "lock-1",
+      expires_at: 1_700_000_000_000,
+      properties: { source: "monitorCheck" },
+    });
+  });
+
+  it("a gated lock still arms the partner gate, and provisions nothing", async () => {
+    mockFetch.mockImplementation(
+      answers({
+        success: true,
+        allowed: true,
+        lock_id: "lock-1",
+        operation_token: "run-42",
+      }),
+    );
+    const svc = makeService();
+
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      orgId: "org-1",
+      value: 10,
+      lockId: "lock-1",
+      expiresAt: 1_700_000_000_000,
+      partnerJobToken: "pjt-1",
+    });
+
+    expect(result).toEqual({
+      status: "locked",
+      lockId: "lock-1",
+      operationToken: "run-42",
+    });
+    expectNoProvisioning();
+    expect(JSON.parse(mockFetch.mock.calls[0]![1].body).partner_job_token).toBe(
+      "pjt-1",
+    );
+  });
+
+  it("track forwards the same event, and provisions nothing", async () => {
+    const svc = makeService();
+
+    await expect(
+      svc.trackCredits({
+        teamId: "team-1",
+        orgId: "org-1",
+        value: 42,
+        properties: { source: "billScrapeJob", endpoint: "scrape" },
+        idempotencyKey: "fc:track:scrape:job-1",
+      }),
+    ).resolves.toBe(true);
+
+    expectNoProvisioning();
+    expect(mockTrack).not.toHaveBeenCalled();
+    const [url, init] = mockFetch.mock.calls[0]!;
+    expect(String(url)).toBe("http://firebill.test/v1/track");
+    expect(JSON.parse(init.body)).toEqual({
+      customer_id: "org-1",
+      entity_id: "team-1",
+      feature_id: "CREDITS",
+      value: 42,
+      properties: { source: "billScrapeJob", endpoint: "scrape" },
+      idempotency_key: "fc:track:scrape:job-1",
+    });
+  });
+
+  it("refund forwards the same event, and provisions nothing", async () => {
+    const svc = makeService();
+
+    await svc.refundCredits({
+      teamId: "team-1",
+      orgId: "org-1",
+      value: 30,
+      properties: { endpoint: "extract" },
+      idempotencyKey: "fc:refund:extract:job-1",
+    });
+
+    expectNoProvisioning();
+    expect(mockTrack).not.toHaveBeenCalled();
+    const [url, init] = mockFetch.mock.calls[0]!;
+    expect(String(url)).toBe("http://firebill.test/v1/refund");
+    expect(JSON.parse(init.body)).toEqual({
+      customer_id: "org-1",
+      entity_id: "team-1",
+      feature_id: "CREDITS",
+      // firebill negates a refund itself, so the positive value goes on the wire.
+      value: 30,
+      properties: { endpoint: "extract", source: "autumn_refund" },
+      idempotency_key: "fc:refund:extract:job-1",
+    });
+  });
+
+  // The gated settle needs the org named — that is the whole reason it resolves
+  // one — so this is the case where skipping the prefix must not cost the label.
+  it("a gated finalize still names the org, and provisions nothing", async () => {
+    const svc = makeService();
+
+    await expect(
+      svc.finalizeCreditsLock({
+        lockId: "monitor_check-1",
+        action: "confirm",
+        overrideValue: 7,
+        team: { teamId: "team-1", orgId: "org-1" },
+        externalRequestId: "run-42",
+        heldValue: 12,
+      }),
+    ).resolves.toBe(true);
+
+    expectNoProvisioning();
+    expect(mockFinalize).not.toHaveBeenCalled();
+    const [url, init] = mockFetch.mock.calls[0]!;
+    expect(String(url)).toBe("http://firebill.test/v1/finalize");
+    const body = JSON.parse(init.body);
+    expect(body.customer_id).toBe("org-1");
+    expect(body.external_request_id).toBe("run-42");
+    expect(body.feature_id).toBe("CREDITS");
+    expect(body.held_value).toBe(12);
+  });
+
+  // Skipping the prefix must not also claim the team is provisioned: nothing
+  // here checked the entity, so a later direct-route operation still has to.
+  it("leaves ensuredTeams cold, so the direct route still provisions", async () => {
+    const svc = makeService();
+
+    await svc.checkCredits({ teamId: "team-1", orgId: "org-1", value: 1 });
+    expectNoProvisioning();
+
+    state.configRef = directConfig();
+    await svc.checkCredits({ teamId: "team-1", orgId: "org-1", value: 1 });
+
+    expect(mockGetOrCreate).toHaveBeenCalledTimes(1);
+    expect(mockEntityGet).toHaveBeenCalledTimes(1);
+  });
+
+  const operations: Record<string, (svc: AutumnService) => Promise<unknown>> = {
+    check: svc =>
+      svc.checkCredits({ teamId: "team-1", orgId: "org-1", value: 1 }),
+    lock: svc =>
+      svc.lockCredits({
+        teamId: "team-1",
+        orgId: "org-1",
+        value: 1,
+        lockId: "lock-1",
+      }),
+    track: svc =>
+      svc.trackCredits({ teamId: "team-1", orgId: "org-1", value: 1 }),
+    refund: svc =>
+      svc.refundCredits({ teamId: "team-1", orgId: "org-1", value: 1 }),
+  };
+
+  describe.each(Object.entries(operations))(
+    "the direct route's %s",
+    (_name, run) => {
+      beforeEach(() => {
+        state.configRef = directConfig();
+      });
+
+      it("provisions a cold team: getOrCreate then get, no create", async () => {
+        const svc = makeService();
+
+        await run(svc);
+
+        expect(mockGetOrCreate).toHaveBeenCalledTimes(1);
+        expect(mockEntityGet).toHaveBeenCalledTimes(1);
+        expect(mockEntityCreate).not.toHaveBeenCalled();
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it("creates the entity Autumn answers 404 for", async () => {
+        mockEntityGet.mockRejectedValue({ statusCode: 404 });
+        const svc = makeService();
+
+        await run(svc);
+
+        expect(mockEntityCreate).toHaveBeenCalledTimes(1);
+        expect(mockEntityCreate).toHaveBeenCalledWith({
+          customerId: "org-1",
+          entityId: "team-1",
+          featureId: "TEAM",
+        });
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it("provisions nothing once the team is ensured", async () => {
+        const svc = makeService();
+
+        await run(svc);
+        vi.clearAllMocks();
+        await run(svc);
+
+        expectNoProvisioning();
+      });
+    },
+  );
+});
