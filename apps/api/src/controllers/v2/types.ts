@@ -1060,7 +1060,7 @@ const agentExchangeSchema = z.strictObject({
 export const agentRequestSchema = z
   .strictObject({
     urls: URL.array().optional(),
-    prompt: z.string().max(10000),
+    prompt: z.string().max(100000),
     schema: z
       .any()
       .optional()

@@ -317,6 +317,27 @@ describe("logRequest", () => {
     expect(values.mock.calls[1][0].external_request_id).toBe("é".repeat(1024));
   });
 
+  it("truncates an oversized target_hint at the same byte cap", async () => {
+    // A prompt-only agent run logs its whole prompt as the hint, and the
+    // agent list hands the stored hint back; a page of 100,000-character
+    // prompts would be megabytes of response for a one-line label.
+    // Truncation, not null: the column is NOT NULL, and a short label still
+    // tells the customer which run the row is.
+    await logRequest({ ...makeRequest(null), target_hint: "p".repeat(100000) });
+
+    const inserted = values.mock.calls[0][0];
+    expect(inserted.target_hint).toBe("p".repeat(2048));
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it("cuts the target_hint between characters, not inside one", async () => {
+    // 683 three-byte characters: 2049 bytes, one over. Byte 2048 sits inside
+    // the last character, so the cut steps back to a whole 682 of them.
+    await logRequest({ ...makeRequest(null), target_hint: "日".repeat(683) });
+
+    expect(values.mock.calls[0][0].target_hint).toBe("日".repeat(682));
+  });
+
   it("cleans NUL bytes and unpaired surrogates for both stores", async () => {
     // "Łódź" mis-decoded by a client arrives as a lone low surrogate, which
     // JSON.stringify would emit as "\udc81" and ClickPipes would reject as

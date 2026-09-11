@@ -417,6 +417,41 @@ function boundedExternalRequestId(
   return null;
 }
 
+/**
+ * The longest `target_hint` we log (bytes).
+ *
+ * The hint is a one-line label for the request: the first URL, or the prompt
+ * when the caller sent none. An agent prompt can be 100,000 characters, and
+ * `GET /v2/agent` hands the stored hint back verbatim, so a full page of
+ * prompt-only runs would be megabytes of response for a field the client
+ * renders on one line. Same ceiling as the external request id, and the same
+ * reason: a caller must not be able to push a document into a label column.
+ *
+ * Truncation here, not null: the column is NOT NULL, and a shortened label
+ * still tells the customer which run it is, where an empty one tells nothing.
+ */
+const TARGET_HINT_MAX_BYTES = 2048;
+
+function boundedTargetHint(
+  value: string | null,
+  logger: Logger,
+): string | null {
+  if (value === null) return null;
+  if (Buffer.byteLength(value) <= TARGET_HINT_MAX_BYTES) return value;
+  logger.warn(
+    "target_hint exceeds the cap at the insert boundary; truncating",
+    {
+      bytes: Buffer.byteLength(value),
+      max: TARGET_HINT_MAX_BYTES,
+    },
+  );
+  // Cut on a byte boundary, then step back off a split UTF-8 code point.
+  const buffer = Buffer.from(value);
+  let end = TARGET_HINT_MAX_BYTES;
+  while (end > 0 && (buffer[end] & 0xc0) === 0x80) end--;
+  return buffer.subarray(0, end).toString("utf8");
+}
+
 export async function logRequest(request: LoggedRequest) {
   const logger = _logger.child({
     module: "log_job",
@@ -445,7 +480,7 @@ export async function logRequest(request: LoggedRequest) {
   const sanitizedIntegration = sanitizeString(request.integration ?? null);
   const sanitizedTargetHint = request.zeroDataRetention
     ? "<redacted due to zero data retention>"
-    : sanitizeString(request.target_hint);
+    : boundedTargetHint(sanitizeString(request.target_hint), logger);
 
   await robustInsert(
     "requests",
