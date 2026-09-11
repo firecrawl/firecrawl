@@ -202,6 +202,7 @@ describe("executeSearch exchange source", () => {
   beforeEach(() => {
     mocks.search.mockResolvedValue({ web: [webResult] });
     mocks.searchExchangeCatalog.mockResolvedValue([capability]);
+    mocks.discoverDomainTools.mockResolvedValue({ items: [] });
   });
 
   it("leaves a web-only search exactly as it was: upstream called with web, no catalogue call, no exchange key", async () => {
@@ -396,7 +397,7 @@ describe("executeSearch exchange source", () => {
       items: [{ ...tool, matchedBy: ["domain"], matchedUrls: [webResult.url] }],
     });
     const result = await executeSearch(
-      { ...sources(["web", "alexandria"]), skills: true },
+      sources(["web", "alexandria"]),
       { ...context, flags: { exchangeRetrieve: true } },
       logger,
     );
@@ -408,6 +409,17 @@ describe("executeSearch exchange source", () => {
       },
     ]);
     expect(result.totalCredits).toBe(2);
+  });
+
+  it("allows semantic-only discovery by explicitly disabling domain tools", async () => {
+    mocks.searchAlexandria.mockResolvedValue({ items: [] });
+    await executeSearch(
+      { ...sources(["web", "alexandria"]), domainTools: false },
+      { ...context, flags: { exchangeRetrieve: true } },
+      logger,
+    );
+    expect(mocks.searchAlexandria).toHaveBeenCalled();
+    expect(mocks.discoverDomainTools).not.toHaveBeenCalled();
   });
 
   it("starts domain lookup before scraping finishes and preserves results on lookup failure", async () => {
@@ -429,7 +441,7 @@ describe("executeSearch exchange source", () => {
     const result = await executeSearch(
       {
         ...sources(["web"]),
-        skills: true,
+        domainTools: true,
         scrapeOptions: { formats: ["markdown"] },
       } as any,
       { ...context, flags: { exchangeRetrieve: true } },

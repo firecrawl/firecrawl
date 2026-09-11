@@ -156,7 +156,7 @@ describe("developer category code_searches ledger", () => {
     async (flags, options) => {
       const req = makeReq({
         query: "public documentation",
-        skills: true,
+        domainTools: true,
         ...options,
       });
       req.acuc.flags = { exchangeRetrieve: true, ...flags };
@@ -190,7 +190,7 @@ describe("developer category code_searches ledger", () => {
       });
       const req = makeReq({
         query: "public documentation",
-        skills: true,
+        domainTools: true,
         ...(agentRequestId
           ? {
               __agentInterop: {
@@ -206,7 +206,7 @@ describe("developer category code_searches ledger", () => {
       await searchController(req, res);
       expect(res.status).toHaveBeenCalledWith(200);
       const searchContext = mockExecuteSearch.mock.calls[0][1];
-      expect(mockExecuteSearch.mock.calls[0][0].skills).toBe(true);
+      expect(mockExecuteSearch.mock.calls[0][0].domainTools).toBe(true);
       expect(searchContext.requestId).toBe(
         agentRequestId ?? searchContext.jobId,
       );

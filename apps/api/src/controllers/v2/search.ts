@@ -220,7 +220,7 @@ async function searchControllerInner(
       source => ["alexandria", "exchange-providers"].includes(source.type),
     );
     if (
-      (wantsExchange || req.body.skills) &&
+      (wantsExchange || req.body.domainTools) &&
       !req.acuc?.flags?.exchangeRetrieve
     ) {
       return res.status(403).json({
@@ -252,7 +252,7 @@ async function searchControllerInner(
       }
     }
 
-    if (req.body.skills && zeroDataRetention) {
+    if (req.body.domainTools && zeroDataRetention) {
       return res.status(400).json({
         success: false,
         error: "Tool lookup is not available for zero-data-retention searches.",
@@ -327,7 +327,7 @@ async function searchControllerInner(
         enterprise: req.body.enterprise,
         scrapeOptions: req.body.scrapeOptions,
         highlights: req.body.highlights,
-        skills: req.body.skills,
+        domainTools: req.body.domainTools,
         timeout: req.body.timeout,
       },
       {

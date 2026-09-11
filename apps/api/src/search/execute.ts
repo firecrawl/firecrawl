@@ -49,7 +49,7 @@ interface SearchOptions {
   enterprise?: ("default" | "anon" | "zdr")[];
   scrapeOptions?: ScrapeOptions;
   highlights?: boolean;
-  skills?: boolean;
+  domainTools?: boolean;
   timeout: number;
 }
 
@@ -294,7 +294,7 @@ export async function executeSearch(
   let scrapeCredits = 0;
 
   const domainPromise =
-    options.skills &&
+    (options.domainTools ?? Boolean(alexandriaSource)) &&
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon") &&
     flags?.exchangeRetrieve === true
