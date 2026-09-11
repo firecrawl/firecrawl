@@ -36,16 +36,20 @@ export const pathPatternsSchema = z
 
 type PathPatternField = "includePaths" | "excludePaths";
 
+// Values are `unknown` because the v2 crawl controller passes crawler options
+// that were partly produced by an LLM from a `prompt`, which may return the
+// wrong shape entirely (a string instead of an array, numbers in the array).
 type PathPatternFields = {
-  includePaths?: string[];
-  excludePaths?: string[];
+  includePaths?: unknown;
+  excludePaths?: unknown;
 };
 
 type PathPatternIssue = {
+  // "shape": the field is not an array of strings.
   // "field-cap": a single field exceeds its count or length cap.
   // "budget": both fields together exceed the request-wide budget.
   // "syntax": a pattern does not compile with the engine.
-  kind: "field-cap" | "budget" | "syntax";
+  kind: "shape" | "field-cap" | "budget" | "syntax";
   // Empty for request-wide (cross-field) issues.
   path: PathPatternField[];
   message: string;
@@ -64,8 +68,23 @@ type PathPatternIssue = {
 export function collectPathPatternIssues(
   fields: PathPatternFields,
 ): PathPatternIssue[] {
-  const include = fields.includePaths ?? [];
-  const exclude = fields.excludePaths ?? [];
+  const shapeIssues: PathPatternIssue[] = [];
+  const asPatterns = (field: PathPatternField): string[] => {
+    const value = fields[field];
+    if (value === undefined || value === null) return [];
+    if (Array.isArray(value) && value.every(p => typeof p === "string")) {
+      return value;
+    }
+    shapeIssues.push({
+      kind: "shape",
+      path: [field],
+      message: `${field} must be an array of strings.`,
+    });
+    return [];
+  };
+  const include = asPatterns("includePaths");
+  const exclude = asPatterns("excludePaths");
+  if (shapeIssues.length > 0) return shapeIssues;
   if (include.length === 0 && exclude.length === 0) return [];
 
   const capIssues: PathPatternIssue[] = [];

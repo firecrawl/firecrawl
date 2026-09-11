@@ -1159,6 +1159,27 @@ describe("V2 Types Validation", () => {
       ).toEqual([]);
     });
 
+    it("should report malformed generated fields instead of throwing", () => {
+      expect(
+        collectPathPatternIssues({
+          includePaths: "^/blog",
+          excludePaths: ["^/jobs", 42],
+        }),
+      ).toEqual([
+        {
+          kind: "shape",
+          path: ["includePaths"],
+          message: "includePaths must be an array of strings.",
+        },
+        {
+          kind: "shape",
+          path: ["excludePaths"],
+          message: "excludePaths must be an array of strings.",
+        },
+      ]);
+      expect(collectPathPatternIssues({ includePaths: null })).toEqual([]);
+    });
+
     it("should report per-field caps that the schema did not see", () => {
       const issues = collectPathPatternIssues({
         includePaths: Array.from(
