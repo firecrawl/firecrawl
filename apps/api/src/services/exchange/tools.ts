@@ -2,7 +2,6 @@ import {
   loadToolContract,
   type DiscoveredTool,
 } from "../../search/alexandria-source";
-import { fetch } from "undici";
 import { forwardToExchange } from "../../lib/exchange-proxy";
 import { z } from "zod";
 import { config } from "../../config";
@@ -13,180 +12,28 @@ const responseSchema = z.object({
     .array(
       z.object({
         id: z.string().min(1),
-        name: z.string().optional(),
-        origin: z.enum(["api", "crawl"]).optional(),
-        toolCount: z.number().int().nonnegative().optional(),
-        description: z.string(),
         matchedDomains: z.array(z.string()),
-        matchedTerms: z.array(z.string()).optional(),
         domainCapabilities: z
           .record(z.string(), z.array(z.string()))
           .optional(),
-        queryCapabilities: z.array(z.string()).optional(),
-        url: z.string(),
       }),
     )
     .max(500),
 });
-
-export async function resolveSearchTools(
-  data: SearchV2Response,
-  teamId: string,
-  hasExtendedCatalogAccess = false,
-  requestId?: string,
-  query?: string,
-  apiOrigin = "https://api.firecrawl.dev",
-  timeoutMs = 5000,
-) {
-  const urls = [
-    ...new Set([
-      ...(data.web ?? []).map(result => result.url),
-      ...(data.news ?? []).map(result => result.url),
-      ...(data.images ?? []).map(result => result.url),
-    ]),
-  ].filter((url): url is string => {
-    if (typeof url !== "string" || url.length > 8192) return false;
-    const parsed = URL.parse(url);
-    return (
-      !!parsed &&
-      (parsed.protocol === "https:" || parsed.protocol === "http:") &&
-      !parsed.username &&
-      !parsed.password
-    );
-  });
-  const searchQuery = query?.slice(0, 2000).trim();
-  if (!urls.length && !searchQuery) return [];
-  if (timeoutMs <= 0) throw new Error("Skills lookup deadline exceeded");
-  const signal = AbortSignal.timeout(Math.min(5000, timeoutMs));
-  const base = config.FIRE_EXCHANGE_URL;
-  if (!base) throw new Error("Skills unavailable");
-  const batches: string[][] = [];
-  for (let index = 0; index < urls.length; index += 100)
-    batches.push(urls.slice(index, index + 100));
-  if (!batches.length) batches.push([]);
-  const results = await Promise.all(
-    batches.map(async urls => {
-      const response = await fetch(
-        `${base.replace(/\/+$/, "")}/v1/skills/resolve`,
-        {
-          method: "POST",
-          redirect: "error",
-          headers: {
-            "content-type": "application/json",
-            "x-exchange-team-id": teamId,
-            ...(requestId !== undefined ? { "x-request-id": requestId } : {}),
-            "x-exchange-extended-catalog-access": String(
-              hasExtendedCatalogAccess === true,
-            ),
-          },
-          body: JSON.stringify({
-            urls,
-            ...(searchQuery ? { query: searchQuery } : {}),
-          }),
-          signal,
-        },
-      );
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw new Error("Skills unavailable");
-      }
-      return responseSchema.parse(await response.json()).skills;
-    }),
-  );
-  const unique = new Map<
-    string,
-    z.infer<typeof responseSchema>["skills"][number]
-  >();
-  for (const skill of results.flat()) {
-    const previous = unique.get(skill.id);
-    unique.set(skill.id, {
-      ...previous,
-      ...skill,
-      name: skill.name ?? previous?.name,
-      origin: skill.origin ?? previous?.origin,
-      toolCount: skill.toolCount ?? previous?.toolCount,
-      matchedDomains: [
-        ...new Set([
-          ...(previous?.matchedDomains ?? []),
-          ...skill.matchedDomains,
-        ]),
-      ],
-      ...(skill.matchedTerms || previous?.matchedTerms
-        ? {
-            matchedTerms: [
-              ...new Set([
-                ...(previous?.matchedTerms ?? []),
-                ...(skill.matchedTerms ?? []),
-              ]),
-            ],
-          }
-        : {}),
-      ...(skill.domainCapabilities || previous?.domainCapabilities
-        ? {
-            domainCapabilities: Object.fromEntries(
-              [
-                ...new Set([
-                  ...Object.keys(previous?.domainCapabilities ?? {}),
-                  ...Object.keys(skill.domainCapabilities ?? {}),
-                ]),
-              ].map(domain => [
-                domain,
-                [
-                  ...new Set([
-                    ...(previous?.domainCapabilities?.[domain] ?? []),
-                    ...(skill.domainCapabilities?.[domain] ?? []),
-                  ]),
-                ],
-              ]),
-            ),
-          }
-        : {}),
-      ...(skill.queryCapabilities || previous?.queryCapabilities
-        ? {
-            queryCapabilities: [
-              ...new Set([
-                ...(previous?.queryCapabilities ?? []),
-                ...(skill.queryCapabilities ?? []),
-              ]),
-            ],
-          }
-        : {}),
-    });
-  }
-  return [...unique.values()].map(skill => ({
-    ...skill,
-    ...(skill.domainCapabilities || skill.queryCapabilities
-      ? {
-          toolCount: new Set([
-            ...Object.values(skill.domainCapabilities ?? {}).flat(),
-            ...(skill.queryCapabilities ?? []),
-          ]).size,
-        }
-      : {}),
-    url: `${apiOrigin}/exchange/skills/${encodeURIComponent(skill.id)}/SKILL.md`,
-  }));
-}
-
-const mappingCache = new Map<
-  string,
-  { expires: number; groups: Awaited<ReturnType<typeof resolveSearchTools>> }
->();
-
-export async function discoverDomainTools(input: {
+type DomainMatch = z.infer<typeof responseSchema>["skills"][number];
+type DomainDiscoveryInput = {
   data: SearchV2Response;
   teamId: string;
   hasExtendedCatalogAccess: boolean;
   requestId: string;
   timeoutMs: number;
   limit: number;
-}): Promise<{ items: DiscoveredTool[]; warning?: string }> {
-  const urls = [
+};
+
+function resultUrls(data: SearchV2Response): string[] {
+  return [
     ...new Set(
-      [
-        ...(input.data.web ?? []),
-        ...(input.data.news ?? []),
-        ...(input.data.images ?? []),
-      ]
+      [...(data.web ?? []), ...(data.news ?? []), ...(data.images ?? [])]
         .map(item => item.url)
         .filter((url): url is string => {
           if (typeof url !== "string" || url.length > 8192) return false;
@@ -200,7 +47,67 @@ export async function discoverDomainTools(input: {
         }),
     ),
   ];
-  if (!urls.length) return { items: [] };
+}
+
+async function resolveDomainMatches(
+  input: DomainDiscoveryInput,
+  urls: string[],
+  remaining: () => number,
+): Promise<DomainMatch[]> {
+  const batches: string[][] = [];
+  for (let index = 0; index < urls.length; index += 100)
+    batches.push(urls.slice(index, index + 100));
+  const results = await Promise.all(
+    batches.map(async urls => {
+      const response = await forwardToExchange({
+        teamId: input.teamId,
+        hasExtendedCatalogAccess: input.hasExtendedCatalogAccess,
+        requestId: input.requestId,
+        method: "POST",
+        path: "/v1/skills/resolve",
+        body: { urls },
+        timeoutMs: remaining(),
+      });
+      if (response.status !== 200)
+        throw new Error("Domain discovery unavailable");
+      return responseSchema.parse(response.body).skills;
+    }),
+  );
+  const unique = new Map<string, DomainMatch>();
+  for (const group of results.flat()) {
+    const previous = unique.get(group.id);
+    if (!previous) {
+      unique.set(group.id, group);
+      continue;
+    }
+    previous.matchedDomains = [
+      ...new Set([...previous.matchedDomains, ...group.matchedDomains]),
+    ];
+    for (const [domain, capabilities] of Object.entries(
+      group.domainCapabilities ?? {},
+    )) {
+      previous.domainCapabilities ??= {};
+      previous.domainCapabilities[domain] = [
+        ...new Set([
+          ...(previous.domainCapabilities[domain] ?? []),
+          ...capabilities,
+        ]),
+      ];
+    }
+  }
+  return [...unique.values()];
+}
+
+const mappingCache = new Map<
+  string,
+  { expires: number; groups: DomainMatch[] }
+>();
+
+export async function discoverDomainTools(
+  input: DomainDiscoveryInput,
+): Promise<{ items: DiscoveredTool[]; warning?: string }> {
+  const urls = resultUrls(input.data);
+  if (!urls.length || input.limit <= 0) return { items: [] };
   const deadline = Date.now() + Math.min(input.timeoutMs, 5000);
   const remaining = () => {
     const ms = deadline - Date.now();
@@ -218,15 +125,7 @@ export async function discoverDomainTools(input: {
   const groups =
     cached && cached.expires > Date.now()
       ? cached.groups
-      : await resolveSearchTools(
-          { web: urls.map(url => ({ url, title: "", description: "" })) },
-          input.teamId,
-          input.hasExtendedCatalogAccess,
-          input.requestId,
-          undefined,
-          undefined,
-          remaining(),
-        );
+      : await resolveDomainMatches(input, urls, remaining);
   if (
     (!cached || cached.expires <= Date.now()) &&
     key.length <= 16384 &&
@@ -242,6 +141,7 @@ export async function discoverDomainTools(input: {
   >();
   let failures = 0;
   for (const group of groups) {
+    if (selected.size >= input.limit) break;
     let domainCapabilities = group.domainCapabilities;
     if (!domainCapabilities) {
       // Older catalogues return provider matches without capability selections.
@@ -252,6 +152,7 @@ export async function discoverDomainTools(input: {
           ),
         );
         if (!matchedUrls.length) continue;
+        const limit = input.limit - selected.size;
         const lookup = await forwardToExchange({
           teamId: input.teamId,
           hasExtendedCatalogAccess: input.hasExtendedCatalogAccess,
@@ -262,11 +163,7 @@ export async function discoverDomainTools(input: {
           body: {
             provider: "firecrawl-contextual-discovery",
             capability: "discovery/context",
-            options: {
-              providers: [group.id],
-              level: "tools",
-              limit: input.limit,
-            },
+            options: { providers: [group.id], level: "tools", limit },
           },
         });
         if (lookup.status !== 200)
@@ -283,7 +180,7 @@ export async function discoverDomainTools(input: {
                     capability: z.string().min(1),
                   }),
                 )
-                .max(input.limit),
+                .max(limit),
             }),
           })
           .parse(lookup.body);
@@ -307,13 +204,13 @@ export async function discoverDomainTools(input: {
       ]);
       for (const capability of capabilities) {
         const id = JSON.stringify([group.id, capability]);
-        if (!selected.has(id))
+        if (!selected.has(id) && selected.size < input.limit)
           selected.set(id, { provider: group.id, capability, urls: new Set() });
-        selected.get(id)!.urls.add(url);
+        selected.get(id)?.urls.add(url);
       }
     }
   }
-  const matches = [...selected.values()].slice(0, input.limit);
+  const matches = [...selected.values()];
   const items: DiscoveredTool[] = new Array(matches.length);
   let position = 0;
   await Promise.all(

@@ -1,7 +1,7 @@
 import { finalizeExchangeHold } from "./finalize";
 import { z } from "zod";
 import { logger } from "../../lib/logger";
-import { queueBillingOperation } from "../billing/batch_billing";
+import { settleExchangeBilling } from "./billing";
 import { getRedisConnection } from "../queue-service";
 import {
   RECONCILIATION_KEY,
@@ -120,43 +120,20 @@ export async function reconcileExchangeRequests() {
         }
         if (receipt.credits === undefined)
           throw new Error("Missing confirmed cost");
-        if (receipt.lockId && !receipt.holdConfirmed) {
-          if (
-            !(await finalizeExchangeHold({
-              lockId: receipt.lockId,
-              teamId: receipt.teamId,
-              featureId: receipt.featureId,
-              heldValue: receipt.maximumCredits,
-              action: "confirm",
-              overrideValue: receipt.credits,
-              externalRequestId: receipt.operationToken,
-              properties: receipt.properties,
-            }))
-          )
-            continue;
-          receipt.holdConfirmed = true;
-        }
-        // Enqueue is idempotent, including an uncertain Redis acknowledgement.
-        const queued = await queueBillingOperation(
-          receipt.teamId,
-          receipt.credits,
-          receipt.apiKeyId,
-          { endpoint: "scrape", chargeId: `exchange:${receipt.chargeId}` },
-          false,
-          Boolean(receipt.lockId),
-          {
-            usageRequestId: receipt.chargeId,
-            billingReference: `exchange:${receipt.chargeId}`,
-          },
+        const settled = await settleExchangeBilling(
+          { ...receipt, credits: receipt.credits },
+          holdConfirmed =>
+            saveExchangeRequest(
+              key,
+              {
+                ...record,
+                reconciliation: { ...receipt, phase: "enqueue", holdConfirmed },
+              },
+              true,
+            ),
+          logger,
         );
-        if (!queued.success) {
-          await saveExchangeRequest(
-            key,
-            { ...record, reconciliation: { ...receipt, phase: "enqueue" } },
-            true,
-          );
-          continue;
-        }
+        if (!settled) continue;
         await saveExchangeRequest(
           key,
           {

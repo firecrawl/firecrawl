@@ -270,6 +270,7 @@ export async function processBillingBatch() {
         continue;
       }
 
+      let debitCommitted = false;
       try {
         // Execute the actual billing
         const billingResult = await withAuth(supaBillTeam, {
@@ -307,6 +308,7 @@ export async function processBillingBatch() {
           continue;
         }
 
+        debitCommitted = true;
         logger.info(
           `✅ Successfully billed team ${group.team_id} for ${group.total_credits} credits`,
         );
@@ -332,13 +334,15 @@ export async function processBillingBatch() {
             checkpointError,
           });
         }
-        await refundRequestTrackedCredits(group);
+        if (!debitCommitted) await refundRequestTrackedCredits(group);
         // No Exchange outcome here either — same ambiguity as the
         // success: false branch above; the events stay pending.
-        logger.error(`❌ Failed to bill team ${group.team_id}`, {
-          error,
-          group,
-        });
+        logger.error(
+          debitCommitted
+            ? "Billing debit committed but its checkpoint failed"
+            : `❌ Failed to bill team ${group.team_id}`,
+          { error, group, debitCommitted },
+        );
       }
     }
 

@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   due: new Map<string, number>(),
   ledgerDue: new Map<string, number>(),
   failPhase: "",
+  failLedgerCommit: false,
   quote: 3,
   queue: [] as string[],
   forward: vi.fn(),
@@ -108,6 +109,8 @@ vi.mock("../queue-service", () => ({
         } else {
           if (record.token !== args[0]) return 0;
           if (record.state === "committed") return 2;
+          if (state.failLedgerCommit && args[1] === "committed")
+            throw new Error("Ledger checkpoint unavailable");
           record.state = args[1];
           if (record.state === "review") state.ledgerDue.delete(key);
           else {
@@ -244,6 +247,8 @@ import {
 import { config } from "../../config";
 import { ExchangeProxyError } from "../../lib/exchange-proxy";
 import { ConcurrencyQueueTimeoutError } from "../../lib/error";
+import { searchAlexandria } from "../../search/alexandria-source";
+import { logger } from "../../lib/logger";
 const originalConfig = {
   USE_DB_AUTHENTICATION: config.USE_DB_AUTHENTICATION,
   FIRE_EXCHANGE_URL: config.FIRE_EXCHANGE_URL,
@@ -267,6 +272,7 @@ beforeEach(() => {
   state.due.clear();
   state.ledgerDue.clear();
   state.failPhase = "";
+  state.failLedgerCommit = false;
   state.quote = 3;
   state.queue.length = 0;
   state.flags = { exchangeRetrieve: true };
@@ -315,6 +321,104 @@ const send = (path = "/exchange/retrieve", id = "same", extra = {}) =>
       ...(path === "/v2/scrape" ? { exchange: calls } : { requests: calls }),
       ...extra,
     });
+
+it("discovers a tool without billing, then reserves and settles its explicit scrape call", async () => {
+  const call = {
+    provider: "test",
+    capability: "price",
+    options: { symbol: "ABC" },
+  };
+  state.forward.mockImplementation(async input => {
+    if (input.path.startsWith("/v1/discover?"))
+      return {
+        status: 200,
+        body: {
+          capabilities: [
+            { ...call, address: "price", cohorts: ["finance"], creditsCost: 3 },
+          ],
+        },
+      };
+    if (input.path === "/v1/discover/finance/test/price")
+      return {
+        status: 200,
+        body: {
+          ...call,
+          label: "Price lookup",
+          whenToUse: "Look up a price",
+          creditsCost: 3,
+          perRecord: false,
+          options: [{ name: "symbol", type: "string", required: true }],
+          returns: {
+            about: "Current price",
+            key: "",
+            fields: [{ name: "price", type: "number" }],
+          },
+        },
+      };
+    expect(input.path).toBe("/v1/retrieve");
+    expect(input.body).toEqual({ requests: [call] });
+    expect(state.hold).toHaveBeenCalledOnce();
+    expect(input.maxCredits).toBe(3);
+    return {
+      status: 200,
+      body: {
+        success: true,
+        creditsCost: 2,
+        results: [{ ...call, data: { price: 42 }, creditsCost: 2 }],
+      },
+    };
+  });
+  const discovered = await searchAlexandria(
+    {
+      query: "price lookup",
+      source: { type: "alexandria" },
+      limit: 1,
+      teamId: "team_a",
+      hasExtendedCatalogAccess: true,
+    },
+    logger,
+  );
+  expect(discovered.status).toBe("available");
+  expect(state.hold).not.toHaveBeenCalled();
+  expect(state.finalize).not.toHaveBeenCalled();
+  expect(state.queue).toHaveLength(0);
+  const tool = discovered.items[0];
+  const exchange = {
+    provider: tool.provider,
+    capability: tool.capability,
+    options: call.options,
+  };
+  const result = await send("/v2/scrape", "discovered-tool", { exchange });
+  expect(result.status).toBe(200);
+  expect(result.body.data).toMatchObject({
+    exchange: [
+      {
+        provider: tool.provider,
+        capability: tool.capability,
+        data: { price: 42 },
+        creditsCost: 2,
+      },
+    ],
+    creditsCost: 2,
+  });
+  expect(state.finalize).toHaveBeenCalledWith(
+    expect.objectContaining({
+      action: "confirm",
+      heldValue: 3,
+      overrideValue: 2,
+    }),
+  );
+  expect(
+    (await send("/v2/scrape", "discovered-tool", { exchange })).body.data,
+  ).toEqual(result.body.data);
+  expect(state.hold).toHaveBeenCalledOnce();
+  expect(state.finalize).toHaveBeenCalledOnce();
+  expect(state.track).not.toHaveBeenCalled();
+  await processBillingBatch();
+  expect(state.debit).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ credits: 2 }),
+  );
+});
 
 it.each(["/exchange/retrieve", "/v2/scrape"])(
   "reserves before execution and charges once through %s",
@@ -730,6 +834,18 @@ it("hands off billing even when the post-confirm checkpoint fails", async () => 
   expect((await send()).status).toBe(200);
   expect(state.finalize).toHaveBeenCalledTimes(1);
 });
+it("checkpoints a recovered confirmation before storing the replay result", async () => {
+  state.finalize.mockResolvedValueOnce(false);
+  expect((await send()).status).toBe(503);
+  state.failReplay = true;
+  await recover();
+  state.failReplay = false;
+  await recover();
+  expect((await send()).status).toBe(200);
+  expect(state.finalize).toHaveBeenCalledTimes(2);
+  expect(state.forward).toHaveBeenCalledOnce();
+  expect(state.queue).toHaveLength(1);
+});
 it("never re-executes a provider with an unknown outcome during recovery", async () => {
   state.forward.mockRejectedValue(new ExchangeProxyError("timeout"));
   expect((await send()).status).toBe(502);
@@ -756,6 +872,28 @@ it("does not refund delivered access-event charges after a ledger error", async 
   state.debit.mockRejectedValueOnce(new Error("Ledger unavailable"));
   await processBillingBatch();
   expect(state.refund).not.toHaveBeenCalled();
+});
+
+it("does not refund ordinary scrape usage when an Exchange checkpoint fails after the shared debit commits", async () => {
+  expect((await send()).status).toBe(200);
+  await queueBillingOperation(
+    "team_a",
+    7,
+    7,
+    { endpoint: "scrape" },
+    false,
+    true,
+  );
+  state.failLedgerCommit = true;
+  await processBillingBatch();
+  expect(state.debit).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ team_id: "team_a", credits: 10 }),
+  );
+  expect(state.refund).not.toHaveBeenCalled();
+  expect(state.fetch).not.toHaveBeenCalled();
+  state.failLedgerCommit = false;
+  await processBillingBatch();
+  expect(state.debit).toHaveBeenCalledOnce();
 });
 
 it("still confirms Exchange delivery if the batch lock release fails", async () => {

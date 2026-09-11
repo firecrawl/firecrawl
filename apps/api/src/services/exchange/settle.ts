@@ -7,7 +7,7 @@ import {
   ExchangeProxyError,
   forwardToExchange,
 } from "../../lib/exchange-proxy";
-import { queueBillingOperation } from "../billing/batch_billing";
+import { settleExchangeBilling } from "./billing";
 import {
   autumnService,
   featureIdForBillingEndpoint,
@@ -317,46 +317,22 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
       });
       return pending();
     }
-    if (lockId) {
-      let confirmed = false;
-      try {
-        confirmed = await finalizeExchangeHold({
-          lockId,
-          teamId: input.teamId,
-          featureId,
-          heldValue: maximumCredits,
-          action: "confirm",
-          overrideValue: credits,
-          externalRequestId: operationToken,
-          properties,
-        });
-      } catch (error) {
-        input.logger.error("Exchange hold confirmation failed", {
-          chargeId,
-          error,
-        });
-      }
-      if (!confirmed) return pending();
-    }
-    try {
-      await preserve("enqueue", { holdConfirmed: Boolean(lockId) });
-    } catch (error) {
-      input.logger.error("Exchange confirmed hold storage failed", {
+    const settled = await settleExchangeBilling(
+      {
+        teamId: input.teamId,
+        apiKeyId: input.apiKeyId,
         chargeId,
-        error,
-      });
-      // The earlier confirm checkpoint can recover this idempotent handoff.
-    }
-    const queued = await queueBillingOperation(
-      input.teamId,
-      credits,
-      input.apiKeyId,
-      { endpoint: "scrape", chargeId: `exchange:${chargeId}` },
-      false,
-      Boolean(lockId),
-      { usageRequestId: chargeId, billingReference: `exchange:${chargeId}` },
+        credits,
+        maximumCredits,
+        featureId,
+        properties,
+        lockId,
+        operationToken,
+      },
+      holdConfirmed => preserve("enqueue", { holdConfirmed }),
+      input.logger,
     );
-    if (!queued.success) return pending();
+    if (!settled) return pending();
   }
   return finish(upstream);
 }

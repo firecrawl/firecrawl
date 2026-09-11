@@ -1,5 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { MockAgent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
+import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("../../config", () => ({
   config: { FIRE_EXCHANGE_URL: "https://exchange.example" },
 }));
@@ -9,359 +8,303 @@ vi.mock("../../lib/exchange-proxy", () => ({ forwardToExchange: mockForward }));
 vi.mock("../../search/alexandria-source", () => ({
   loadToolContract: mockContract,
 }));
-import { resolveSearchTools, discoverDomainTools } from "./tools";
-const original = getGlobalDispatcher();
-let agent: MockAgent;
+import { discoverDomainTools, mergeDiscoveredTools } from "./tools";
+
+let sequence = 0;
+const input = (urls = ["https://spotify.com/"]) => ({
+  data: { web: urls.map(url => ({ url, title: "", description: "" })) },
+  teamId: `team-${sequence++}`,
+  requestId: "request-1",
+  hasExtendedCatalogAccess: true,
+  timeoutMs: 1000,
+  limit: 5,
+});
+const group = {
+  id: "particle",
+  matchedDomains: ["spotify.com"],
+  domainCapabilities: { "spotify.com": ["podcasts/search"] },
+};
+const response = (body: unknown, status = 200) => ({ status, body });
 beforeEach(() => {
-  agent = new MockAgent();
-  agent.disableNetConnect();
-  setGlobalDispatcher(agent);
+  mockForward.mockReset().mockResolvedValue(response({ skills: [group] }));
+  mockContract
+    .mockReset()
+    .mockImplementation(async ({ provider, capability }) => ({
+      id: `${provider}/${capability}`,
+      provider,
+      capability,
+      name: capability,
+      description: "Find matching records",
+      creditsCost: 3,
+      perRecord: false,
+      options: [],
+      response: { about: "Records", key: "", fields: [] },
+      examples: {},
+    }));
 });
-afterEach(async () => {
-  setGlobalDispatcher(original);
-  await agent.close();
-});
+
 it.each([false, true])(
-  "forwards extended catalogue access %s with skill lookup",
+  "forwards authenticated catalogue scope (%s) and only valid result URLs",
   async hasExtendedCatalogAccess => {
-    agent
-      .get("https://exchange.example")
-      .intercept({
-        path: "/v1/skills/resolve",
-        method: "POST",
-        body: JSON.stringify({ urls: ["https://spotify.com/"] }),
-        headers: {
-          "x-exchange-team-id": "team",
-          "x-request-id": "agent-request",
-          "x-exchange-extended-catalog-access": String(
-            hasExtendedCatalogAccess,
-          ),
-        },
-      })
-      .reply(200, {
-        skills: [
-          {
-            id: "particle",
-            description: "Podcasts",
-            matchedDomains: ["spotify.com"],
-            url: "/v1/skills/particle/SKILL.md",
-          },
-        ],
-      });
-    const data = {
-      web: [
-        { url: "" },
-        { url: "not a URL" },
-        { url: "https://user:secret@spotify.com/" },
-        { url: "https://" },
-        { url: "https://spotify.com/" },
-        { url: "https://spotify.com/" },
-      ],
-      news: [{ url: "ftp://example.com/" }],
+    const request = {
+      ...input([
+        "",
+        "invalid",
+        "https://user:secret@spotify.com/",
+        "https://spotify.com/",
+        "https://spotify.com/",
+      ]),
+      hasExtendedCatalogAccess,
+    };
+    request.data = {
+      ...request.data,
+      news: [{ url: "ftp://example.com" }],
       images: [{ url: "javascript:alert(1)" }],
-    } as Parameters<typeof resolveSearchTools>[0];
-    expect(
-      await resolveSearchTools(
-        data,
-        "team",
-        hasExtendedCatalogAccess,
-        "agent-request",
-      ),
-    ).toEqual([
-      {
-        id: "particle",
-        description: "Podcasts",
-        matchedDomains: ["spotify.com"],
-        url: "https://api.firecrawl.dev/exchange/skills/particle/SKILL.md",
-      },
-    ]);
-    agent.assertNoPendingInterceptors();
-  },
-);
-it.each([{}, { web: [{ url: "" }, { url: "invalid" }] }])(
-  "does not make a request without valid URLs: %j",
-  async data => {
-    expect(
-      await resolveSearchTools(
-        data as Parameters<typeof resolveSearchTools>[0],
-        "team",
-      ),
-    ).toEqual([]);
-  },
-);
-it("rejects unsuccessful lookups instead of reporting no matches", async () => {
-  agent
-    .get("https://exchange.example")
-    .intercept({ path: "/v1/skills/resolve", method: "POST" })
-    .reply(503, {});
-  await expect(
-    resolveSearchTools(
-      { web: [{ url: "https://spotify.com/" }] } as Parameters<
-        typeof resolveSearchTools
-      >[0],
-      "team",
-    ),
-  ).rejects.toThrow("Skills unavailable");
-});
-
-it("resolves a query without URLs and preserves grouped provider metadata", async () => {
-  agent
-    .get("https://exchange.example")
-    .intercept({
-      path: "/v1/skills/resolve",
+    } as typeof request.data;
+    const result = await discoverDomainTools(request);
+    expect(mockForward).toHaveBeenCalledExactlyOnceWith({
+      teamId: request.teamId,
+      hasExtendedCatalogAccess,
+      requestId: "request-1",
       method: "POST",
-      body: JSON.stringify({ urls: [], query: "Spotify interviews" }),
-    })
-    .reply(200, {
-      skills: [
-        {
-          id: "particle",
-          name: "Particle",
-          origin: "api",
-          toolCount: 13,
-          description: "Podcast intelligence",
-          matchedDomains: [],
-          matchedTerms: ["Spotify"],
-          url: "/v1/skills/particle/SKILL.md",
-        },
-      ],
+      path: "/v1/skills/resolve",
+      body: { urls: ["https://spotify.com/"] },
+      timeoutMs: expect.any(Number),
     });
-  expect(
-    await resolveSearchTools(
-      {},
-      "team",
-      false,
-      "request",
-      "Spotify interviews",
-    ),
-  ).toEqual([
-    {
-      id: "particle",
-      name: "Particle",
-      origin: "api",
-      toolCount: 13,
-      description: "Podcast intelligence",
-      matchedDomains: [],
-      matchedTerms: ["Spotify"],
-      url: "https://api.firecrawl.dev/exchange/skills/particle/SKILL.md",
-    },
-  ]);
-  agent.assertNoPendingInterceptors();
-});
-
-it("merges selected tools across URL batches without leaking one domain's selection into another", async () => {
-  const urls = Array.from(
-    { length: 101 },
-    (_, index) => `https://site${index}.example/`,
-  );
-  const selections = ["podcasts/search", "podcasts/segment"];
-  for (const [index, batch] of [
-    urls.slice(0, 100),
-    urls.slice(100),
-  ].entries()) {
-    const domain = new URL(batch[0]).hostname;
-    agent
-      .get("https://exchange.example")
-      .intercept({
-        path: "/v1/skills/resolve",
-        method: "POST",
-        body: JSON.stringify({ urls: batch, query: "Spotify" }),
-      })
-      .reply(200, {
-        skills: [
-          {
-            id: "particle",
-            ...(index === 0 ? { name: "Particle", origin: "api" } : {}),
-            description: "Podcasts",
-            toolCount: 2,
-            matchedDomains: [domain],
-            matchedTerms: ["Spotify"],
-            domainCapabilities: { [domain]: [selections[index]] },
-            queryCapabilities: ["podcasts/episodes/search"],
-            url: "/v1/skills/particle/SKILL.md",
-          },
-        ],
-      });
-  }
-  const skills = await resolveSearchTools(
-    { web: urls.map(url => ({ url })) } as Parameters<
-      typeof resolveSearchTools
-    >[0],
-    "team",
-    false,
-    "request",
-    "Spotify",
-  );
-  expect(skills).toMatchObject([
-    {
-      id: "particle",
-      toolCount: 3,
-      name: "Particle",
-      origin: "api",
-      matchedTerms: ["Spotify"],
-      matchedDomains: ["site0.example", "site100.example"],
-      domainCapabilities: {
-        "site0.example": ["podcasts/search"],
-        "site100.example": ["podcasts/segment"],
-      },
-      queryCapabilities: ["podcasts/episodes/search"],
-    },
-  ]);
-  agent.assertNoPendingInterceptors();
-});
-
-it("returns contract links on the caller's API origin", async () => {
-  agent
-    .get("https://exchange.example")
-    .intercept({ path: "/v1/skills/resolve", method: "POST" })
-    .reply(200, {
-      skills: [
-        {
-          id: "particle",
-          description: "Podcasts",
-          matchedDomains: ["spotify.com"],
-          url: "/v1/skills/particle/SKILL.md",
-        },
-      ],
-    });
-  const result = await resolveSearchTools(
-    { web: [{ url: "https://spotify.com" }] } as Parameters<
-      typeof resolveSearchTools
-    >[0],
-    "team",
-    true,
-    undefined,
-    undefined,
-    "https://preview.firecrawl.dev",
-  );
-  expect(result[0].url).toBe(
-    "https://preview.firecrawl.dev/exchange/skills/particle/SKILL.md",
-  );
-});
-
-it("does not start contextual discovery after the search deadline", async () => {
-  await expect(
-    resolveSearchTools({}, "team", false, "request", "podcasts", undefined, 0),
-  ).rejects.toThrow("deadline exceeded");
-});
-
-it("normalizes path-specific matches and scopes the mapping cache to each team", async () => {
-  const urls = [
-    "https://youtube.com/podcasts",
-    "https://youtube.com/watch?v=123",
-  ];
-  const input = {
-    data: { web: urls.map(url => ({ url, title: "", description: "" })) },
-    teamId: "cache-team",
-    requestId: "mapping-test",
-    hasExtendedCatalogAccess: true,
-    timeoutMs: 1000,
-    limit: 5,
-  };
-  mockContract.mockImplementation(async ({ provider, capability }) => ({
-    provider,
-    capability,
-    options: [],
-    response: {},
-    examples: {},
-  }));
-  const intercept = () =>
-    agent
-      .get("https://exchange.example")
-      .intercept({
-        path: "/v1/skills/resolve",
-        method: "POST",
-        body: JSON.stringify({ urls }),
-      })
-      .reply(200, {
-        skills: [
-          {
-            id: "particle",
-            description: "Podcasts",
-            matchedDomains: ["youtube.com"],
-            domainCapabilities: {
-              [urls[0]]: ["podcasts/search"],
-              "youtube.com": ["videos/search"],
-            },
-            url: "/v1/skills/particle/SKILL.md",
-          },
-        ],
-      });
-  intercept();
-  const result = await discoverDomainTools(input);
-  expect(result.items).toMatchObject([
-    {
-      capability: "podcasts/search",
-      matchedBy: ["domain"],
-      matchedUrls: [urls[0]],
-    },
-    { capability: "videos/search", matchedBy: ["domain"], matchedUrls: urls },
-  ]);
-  expect(await discoverDomainTools(input)).toEqual(result);
-  intercept();
-  expect(
-    await discoverDomainTools({ ...input, teamId: "another-team" }),
-  ).toEqual(result);
-  agent.assertNoPendingInterceptors();
-});
-
-it("expands provider-only matches from the current Exchange catalogue", async () => {
-  agent
-    .get("https://exchange.example")
-    .intercept({ path: "/v1/skills/resolve", method: "POST" })
-    .reply(200, {
-      skills: [
-        {
-          id: "particle",
-          description: "Podcasts",
-          matchedDomains: ["open.spotify.com"],
-          url: "/v1/skills/particle/SKILL.md",
-        },
-      ],
-    });
-  mockForward.mockResolvedValueOnce({
-    status: 200,
-    body: {
-      success: true,
-      creditsCost: 0,
-      data: {
-        items: [{ provider: "particle", capability: "podcasts/search" }],
-      },
-    },
-  });
-  mockContract.mockImplementation(async ({ provider, capability }) => ({
-    provider,
-    capability,
-  }));
-  const result = await discoverDomainTools({
-    data: {
-      web: ["https://open.spotify.com/show/123", "https://example.com"].map(
-        url => ({ url, title: "", description: "" }),
-      ),
-    },
-    teamId: "legacy-team",
-    hasExtendedCatalogAccess: true,
-    requestId: "legacy-request",
-    timeoutMs: 1000,
-    limit: 2,
-  });
-  expect(result).toMatchObject({
-    items: [
+    expect(result.items).toMatchObject([
       {
         provider: "particle",
         capability: "podcasts/search",
         matchedBy: ["domain"],
-        matchedUrls: ["https://open.spotify.com/show/123"],
+        matchedUrls: ["https://spotify.com/"],
       },
-    ],
+    ]);
+    expect(result.items[0]).not.toHaveProperty("skills");
+    expect(result.items[0]).not.toHaveProperty("url");
+  },
+);
+
+it.each(
+  [[], ["", "invalid"], ["https://" + "a".repeat(8192)]].map(urls => ({
+    urls,
+  })),
+)("does no lookup without valid URLs (%#)", async ({ urls }) => {
+  expect(await discoverDomainTools(input(urls))).toEqual({ items: [] });
+  expect(mockForward).not.toHaveBeenCalled();
+});
+it("does no lookup after the deadline or without a result budget", async () => {
+  await expect(
+    discoverDomainTools({ ...input(), timeoutMs: 0 }),
+  ).rejects.toThrow("deadline exceeded");
+  expect(await discoverDomainTools({ ...input(), limit: 0 })).toEqual({
+    items: [],
   });
-  expect(result.warning).toBeUndefined();
-  expect(mockForward).toHaveBeenCalledWith(
-    expect.objectContaining({
-      body: expect.objectContaining({
-        options: { providers: ["particle"], level: "tools", limit: 2 },
+  expect(mockForward).not.toHaveBeenCalled();
+});
+it.each([302, 503])(
+  "does not disguise a failed lookup as no matches (%s)",
+  async status => {
+    mockForward.mockResolvedValue(response({}, status));
+    await expect(discoverDomainTools(input())).rejects.toThrow("unavailable");
+  },
+);
+it.each([
+  {},
+  { skills: [{ id: "particle" }] },
+  { skills: [{ ...group, domainCapabilities: { "spotify.com": "invalid" } }] },
+])("rejects malformed mappings (%j)", async body => {
+  mockForward.mockResolvedValue(response(body));
+  await expect(discoverDomainTools(input())).rejects.toThrow();
+});
+it("keeps an empty catalogue distinct from a failed lookup", async () => {
+  mockForward.mockResolvedValue(response({ skills: [] }));
+  expect(await discoverDomainTools(input())).toEqual({ items: [] });
+  expect(mockContract).not.toHaveBeenCalled();
+});
+it("merges URL batches without leaking one domain's selection into another", async () => {
+  const urls = Array.from(
+    { length: 101 },
+    (_, i) => `https://site${i}.example/`,
+  );
+  mockForward
+    .mockResolvedValueOnce(
+      response({
+        skills: [
+          {
+            id: "particle",
+            matchedDomains: ["site0.example"],
+            domainCapabilities: { "site0.example": ["podcasts/search"] },
+          },
+        ],
       }),
+    )
+    .mockResolvedValueOnce(
+      response({
+        skills: [
+          {
+            id: "particle",
+            matchedDomains: ["site100.example"],
+            domainCapabilities: { "site100.example": ["podcasts/segment"] },
+          },
+        ],
+      }),
+    );
+  const result = await discoverDomainTools(input(urls));
+  expect(mockForward.mock.calls.map(([call]) => call.body)).toEqual([
+    { urls: urls.slice(0, 100) },
+    { urls: urls.slice(100) },
+  ]);
+  expect(result.items).toMatchObject([
+    { capability: "podcasts/search", matchedUrls: [urls[0]] },
+    { capability: "podcasts/segment", matchedUrls: [urls[100]] },
+  ]);
+});
+it("preserves path-specific provenance and caches mappings by team and catalogue access", async () => {
+  const urls = [
+    "https://youtube.com/podcasts",
+    "https://youtube.com/watch?v=123",
+  ];
+  const request = input(urls);
+  mockForward.mockResolvedValue(
+    response({
+      skills: [
+        {
+          id: "particle",
+          matchedDomains: ["youtube.com"],
+          domainCapabilities: {
+            [urls[0]]: ["podcasts/search"],
+            "youtube.com": ["videos/search"],
+          },
+        },
+      ],
     }),
   );
-  agent.assertNoPendingInterceptors();
+  const result = await discoverDomainTools(request);
+  expect(result.items).toMatchObject([
+    { capability: "podcasts/search", matchedUrls: [urls[0]] },
+    { capability: "videos/search", matchedUrls: urls },
+  ]);
+  expect(await discoverDomainTools(request)).toEqual(result);
+  expect(mockForward).toHaveBeenCalledOnce();
+  expect(
+    await discoverDomainTools({ ...request, teamId: "another-team" }),
+  ).toEqual(result);
+  expect(
+    await discoverDomainTools({ ...request, hasExtendedCatalogAccess: false }),
+  ).toEqual(result);
+  expect(mockForward).toHaveBeenCalledTimes(3);
+});
+it("stops expanding provider-only matches once the requested limit is filled", async () => {
+  mockForward
+    .mockResolvedValueOnce(
+      response({
+        skills: [
+          { id: "first", matchedDomains: ["spotify.com"] },
+          { id: "second", matchedDomains: ["spotify.com"] },
+        ],
+      }),
+    )
+    .mockResolvedValue(
+      response({
+        success: true,
+        creditsCost: 0,
+        data: { items: [{ provider: "first", capability: "podcasts/search" }] },
+      }),
+    );
+  const result = await discoverDomainTools({ ...input(), limit: 1 });
+  expect(result.items).toMatchObject([
+    { provider: "first", capability: "podcasts/search" },
+  ]);
+  expect(mockForward).toHaveBeenCalledTimes(2);
+  expect(mockContract).toHaveBeenCalledOnce();
+});
+it("requests only the remaining number of tools when expanding a provider", async () => {
+  mockForward
+    .mockResolvedValueOnce(
+      response({
+        skills: [group, { id: "second", matchedDomains: ["spotify.com"] }],
+      }),
+    )
+    .mockResolvedValueOnce(
+      response({
+        success: true,
+        creditsCost: 0,
+        data: {
+          items: [{ provider: "second", capability: "podcasts/search" }],
+        },
+      }),
+    );
+  const result = await discoverDomainTools({ ...input(), limit: 2 });
+  expect(result.items).toHaveLength(2);
+  expect(mockForward.mock.calls[1][0].body.options).toEqual({
+    providers: ["second"],
+    level: "tools",
+    limit: 1,
+  });
+});
+it.each([
+  { success: true, creditsCost: 1, data: { items: [] } },
+  {
+    success: true,
+    creditsCost: 0,
+    data: { items: [{ provider: "wrong", capability: "search" }] },
+  },
+])("rejects paid or wrong-provider catalogue responses (%j)", async body => {
+  mockForward
+    .mockResolvedValueOnce(
+      response({
+        skills: [{ id: "particle", matchedDomains: ["spotify.com"] }],
+      }),
+    )
+    .mockResolvedValueOnce(response(body));
+  const result = await discoverDomainTools(input());
+  expect(result.items).toEqual([]);
+  expect(result.warning).toBeDefined();
+  expect(mockContract).not.toHaveBeenCalled();
+});
+it("keeps available contracts and warns when a contract cannot be loaded", async () => {
+  mockForward.mockResolvedValue(
+    response({
+      skills: [
+        {
+          ...group,
+          domainCapabilities: { "spotify.com": ["first", "broken", "third"] },
+        },
+      ],
+    }),
+  );
+  const load = mockContract.getMockImplementation()!;
+  mockContract.mockImplementation(async input => {
+    if (input.capability === "broken") throw new Error("unavailable");
+    return load(input);
+  });
+  const result = await discoverDomainTools(input());
+  expect(result.items.map(tool => tool.capability)).toEqual(["first", "third"]);
+  expect(result.warning).toBeDefined();
+});
+it("merges domain provenance into semantic matches without changing rank or mutating inputs", async () => {
+  const {
+    items: [domain],
+  } = await discoverDomainTools(input());
+  const semantic = {
+    ...domain,
+    name: "Semantic name",
+    similarity: 0.9,
+    matchedBy: ["semantic"] as const,
+    matchedUrls: [],
+  };
+  const merged = mergeDiscoveredTools(
+    [{ ...semantic, matchedBy: [...semantic.matchedBy] }],
+    [domain],
+  );
+  expect(merged).toMatchObject([
+    {
+      name: "Semantic name",
+      similarity: 0.9,
+      matchedBy: ["semantic", "domain"],
+      matchedUrls: ["https://spotify.com/"],
+    },
+  ]);
+  expect(semantic.matchedUrls).toEqual([]);
+  expect(domain.matchedBy).toEqual(["domain"]);
 });
