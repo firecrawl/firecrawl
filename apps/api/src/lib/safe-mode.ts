@@ -25,29 +25,29 @@ export type SafeModeConfig = NonNullable<
 export type ResolvedSafeMode = {
   lockdown: boolean;
   domainControls: boolean;
-  allowIgnoreRobots: boolean;
-  useStealthProxy: boolean;
-  useAuthentication: boolean;
-  useSiteHandling: boolean;
-  useDefaultAutomation: boolean;
-  useDefaultUserAgent: boolean;
-  usePlatformSelection: boolean;
-  useCountrySelection: boolean;
-  useReferrer: boolean;
+  enforceRobots: boolean;
+  disableStealthProxy: boolean;
+  disableAuthentication: boolean;
+  disableSiteHandling: boolean;
+  exposeWebdriver: boolean;
+  useHeadlessUserAgent: boolean;
+  disablePlatformSelection: boolean;
+  disableCountrySelection: boolean;
+  disableAutomaticReferrer: boolean;
 };
 
 const SAFE_MODE_DEFAULTS: ResolvedSafeMode = {
   lockdown: false,
   domainControls: true,
-  allowIgnoreRobots: false,
-  useStealthProxy: false,
-  useAuthentication: false,
-  useSiteHandling: false,
-  useDefaultAutomation: false,
-  useDefaultUserAgent: false,
-  usePlatformSelection: false,
-  useCountrySelection: false,
-  useReferrer: false,
+  enforceRobots: true,
+  disableStealthProxy: true,
+  disableAuthentication: true,
+  disableSiteHandling: true,
+  exposeWebdriver: true,
+  useHeadlessUserAgent: true,
+  disablePlatformSelection: true,
+  disableCountrySelection: true,
+  disableAutomaticReferrer: true,
 };
 
 export function getSafeMode(flags: TeamFlags | null | undefined): boolean {
@@ -66,7 +66,7 @@ export function applySafeMode(
 
   if (
     !safeMode.lockdown &&
-    !safeMode.useStealthProxy &&
+    safeMode.disableStealthProxy &&
     scrapeOptions.proxy === "auto"
   ) {
     scrapeOptions.proxy = "basic";
@@ -117,23 +117,26 @@ export function resolveSafeMode(
   const resolved: ResolvedSafeMode = {
     lockdown: config?.lockdown ?? SAFE_MODE_DEFAULTS.lockdown,
     domainControls: config?.domainControls ?? SAFE_MODE_DEFAULTS.domainControls,
-    allowIgnoreRobots:
-      config?.allowIgnoreRobots ?? SAFE_MODE_DEFAULTS.allowIgnoreRobots,
-    useStealthProxy:
-      config?.useStealthProxy ?? SAFE_MODE_DEFAULTS.useStealthProxy,
-    useAuthentication:
-      config?.useAuthentication ?? SAFE_MODE_DEFAULTS.useAuthentication,
-    useSiteHandling:
-      config?.useSiteHandling ?? SAFE_MODE_DEFAULTS.useSiteHandling,
-    useDefaultAutomation:
-      config?.useDefaultAutomation ?? SAFE_MODE_DEFAULTS.useDefaultAutomation,
-    useDefaultUserAgent:
-      config?.useDefaultUserAgent ?? SAFE_MODE_DEFAULTS.useDefaultUserAgent,
-    usePlatformSelection:
-      config?.usePlatformSelection ?? SAFE_MODE_DEFAULTS.usePlatformSelection,
-    useCountrySelection:
-      config?.useCountrySelection ?? SAFE_MODE_DEFAULTS.useCountrySelection,
-    useReferrer: config?.useReferrer ?? SAFE_MODE_DEFAULTS.useReferrer,
+    enforceRobots: config?.enforceRobots ?? SAFE_MODE_DEFAULTS.enforceRobots,
+    disableStealthProxy:
+      config?.disableStealthProxy ?? SAFE_MODE_DEFAULTS.disableStealthProxy,
+    disableAuthentication:
+      config?.disableAuthentication ?? SAFE_MODE_DEFAULTS.disableAuthentication,
+    disableSiteHandling:
+      config?.disableSiteHandling ?? SAFE_MODE_DEFAULTS.disableSiteHandling,
+    exposeWebdriver:
+      config?.exposeWebdriver ?? SAFE_MODE_DEFAULTS.exposeWebdriver,
+    useHeadlessUserAgent:
+      config?.useHeadlessUserAgent ?? SAFE_MODE_DEFAULTS.useHeadlessUserAgent,
+    disablePlatformSelection:
+      config?.disablePlatformSelection ??
+      SAFE_MODE_DEFAULTS.disablePlatformSelection,
+    disableCountrySelection:
+      config?.disableCountrySelection ??
+      SAFE_MODE_DEFAULTS.disableCountrySelection,
+    disableAutomaticReferrer:
+      config?.disableAutomaticReferrer ??
+      SAFE_MODE_DEFAULTS.disableAutomaticReferrer,
   };
 
   if (url && isSafeModeAllowlisted(url, config?.allowlist)) {
@@ -141,15 +144,15 @@ export function resolveSafeMode(
       allowlisted: true,
       safeMode: {
         ...resolved,
-        allowIgnoreRobots: true,
-        useStealthProxy: true,
-        useAuthentication: true,
-        useSiteHandling: true,
-        useDefaultAutomation: true,
-        useDefaultUserAgent: true,
-        usePlatformSelection: true,
-        useCountrySelection: true,
-        useReferrer: true,
+        enforceRobots: false,
+        disableStealthProxy: false,
+        disableAuthentication: false,
+        disableSiteHandling: false,
+        exposeWebdriver: false,
+        useHeadlessUserAgent: false,
+        disablePlatformSelection: false,
+        disableCountrySelection: false,
+        disableAutomaticReferrer: false,
       },
     };
   }

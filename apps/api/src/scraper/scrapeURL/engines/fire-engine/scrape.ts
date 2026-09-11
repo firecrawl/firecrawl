@@ -76,12 +76,12 @@ export function safeModeParams(
   if (!safeMode) return {};
   return {
     behaviorOverrides: {
-      disableSiteHandling: !safeMode.useSiteHandling,
-      exposeWebdriver: !safeMode.useDefaultAutomation,
-      useHeadlessUserAgent: !safeMode.useDefaultUserAgent,
-      disablePlatformSelection: !safeMode.usePlatformSelection,
-      disableCountrySelection: !safeMode.useCountrySelection,
-      disableAutomaticReferrer: !safeMode.useReferrer,
+      disableSiteHandling: safeMode.disableSiteHandling,
+      exposeWebdriver: safeMode.exposeWebdriver,
+      useHeadlessUserAgent: safeMode.useHeadlessUserAgent,
+      disablePlatformSelection: safeMode.disablePlatformSelection,
+      disableCountrySelection: safeMode.disableCountrySelection,
+      disableAutomaticReferrer: safeMode.disableAutomaticReferrer,
     },
   };
 }

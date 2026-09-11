@@ -4,15 +4,15 @@ import { ResolvedSafeMode } from "./safe-mode";
 const strictSafeMode: ResolvedSafeMode = {
   lockdown: false,
   domainControls: true,
-  allowIgnoreRobots: false,
-  useStealthProxy: false,
-  useAuthentication: false,
-  useSiteHandling: false,
-  useDefaultAutomation: false,
-  useDefaultUserAgent: false,
-  usePlatformSelection: false,
-  useCountrySelection: false,
-  useReferrer: false,
+  enforceRobots: true,
+  disableStealthProxy: true,
+  disableAuthentication: true,
+  disableSiteHandling: true,
+  exposeWebdriver: true,
+  useHeadlessUserAgent: true,
+  disablePlatformSelection: true,
+  disableCountrySelection: true,
+  disableAutomaticReferrer: true,
 };
 
 describe("checkPermissions — safe mode", () => {
@@ -29,7 +29,7 @@ describe("checkPermissions — safe mode", () => {
   });
 
   it.each(["stealth", "enhanced"])(
-    "rejects %s proxy when stealth proxy is not allowed",
+    "rejects %s proxy when stealth proxy is disabled",
     proxy => {
       const result = checkPermissions({ proxy }, null, {
         safeMode: strictSafeMode,
@@ -39,10 +39,10 @@ describe("checkPermissions — safe mode", () => {
     },
   );
 
-  it("allows stealth when useStealthProxy is on", () => {
+  it("allows stealth when the org relaxes disableStealthProxy", () => {
     expect(
       checkPermissions({ proxy: "stealth" }, null, {
-        safeMode: { ...strictSafeMode, useStealthProxy: true },
+        safeMode: { ...strictSafeMode, disableStealthProxy: false },
       }),
     ).toEqual({});
   });
@@ -54,6 +54,16 @@ describe("checkPermissions — safe mode", () => {
       { safeMode: strictSafeMode },
     );
     expect(result.code).toBe("SAFE_MODE_BLOCKED");
+  });
+
+  it("allows ignoreRobotsTxt when the org relaxes enforceRobots", () => {
+    expect(
+      checkPermissions(
+        { crawlerOptions: { ignoreRobotsTxt: true } },
+        { ignoreRobots: "allowed" },
+        { safeMode: { ...strictSafeMode, enforceRobots: false } },
+      ),
+    ).toEqual({});
   });
 
   it("rejects profile, login actions, and credential headers", () => {
@@ -68,6 +78,21 @@ describe("checkPermissions — safe mode", () => {
         safeMode: strictSafeMode,
       });
       expect(result.code).toBe("SAFE_MODE_BLOCKED");
+    }
+  });
+
+  it("allows profile/login/credentials when the org relaxes disableAuthentication", () => {
+    const requests: Parameters<typeof checkPermissions>[0][] = [
+      { profile: { name: "p" } },
+      { actions: [{ type: "press" }] },
+      { headers: { AUTHORIZATION: "x" } },
+    ];
+    for (const request of requests) {
+      expect(
+        checkPermissions(request, null, {
+          safeMode: { ...strictSafeMode, disableAuthentication: false },
+        }),
+      ).toEqual({});
     }
   });
 

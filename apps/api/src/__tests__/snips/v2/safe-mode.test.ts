@@ -9,8 +9,11 @@ import {
   scrapeTimeout,
   TEST_API_URL,
   TEST_PRODUCTION,
+  TEST_SUITE_WEBSITE,
 } from "../lib";
 import { scrape, scrapeRaw } from "./lib";
+
+const TEST_SUITE_HOST = new URL(TEST_SUITE_WEBSITE).hostname;
 
 async function expectSafeModeBlocked(
   body: Parameters<typeof scrapeRaw>[0],
@@ -316,6 +319,116 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
         expect(res.statusCode).toBe(403);
         expect(res.body.success).toBe(false);
         expect(res.body.error).toMatch(/threat protection/i);
+      },
+      scrapeTimeout,
+    );
+  });
+
+  // Each capability is individually relaxable from the org's safeModeConfig:
+  // flipping its control off restores the normal behavior while Safe Mode
+  // stays on for everything else.
+  describeIf(TEST_PRODUCTION)("org config relaxations", () => {
+    it.concurrent(
+      "disableStealthProxy: false lets a request use a stealth proxy",
+      async () => {
+        const identity = await idmux({
+          name: "safe-mode/relax-stealth",
+          flags: {
+            safeMode: true,
+            safeModeConfig: { disableStealthProxy: false },
+          },
+        });
+        const res = await scrapeRaw(
+          { url: createTestIdUrl(), proxy: "stealth" },
+          identity,
+        );
+        expect(res.body.code).not.toBe("SAFE_MODE_BLOCKED");
+        expect(res.statusCode).toBe(200);
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "disableAuthentication: false lets a request send credential headers",
+      async () => {
+        const identity = await idmux({
+          name: "safe-mode/relax-auth",
+          flags: {
+            safeMode: true,
+            safeModeConfig: { disableAuthentication: false },
+          },
+        });
+        const res = await scrapeRaw(
+          {
+            url: createTestIdUrl(),
+            headers: { Authorization: "Bearer not-a-real-token" },
+          },
+          identity,
+        );
+        expect(res.body.code).not.toBe("SAFE_MODE_BLOCKED");
+        expect(res.statusCode).toBe(200);
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "still blocks the capabilities left at their strict default",
+      async () => {
+        const identity = await idmux({
+          name: "safe-mode/relax-partial",
+          flags: {
+            safeMode: true,
+            safeModeConfig: { disableStealthProxy: false },
+          },
+        });
+        // stealth relaxed above, but authentication stays enforced
+        const res = await scrapeRaw(
+          { url: createTestIdUrl(), profile: { name: "test-profile" } },
+          identity,
+        );
+        expect(res.statusCode).toBe(403);
+        expect(res.body.code).toBe("SAFE_MODE_BLOCKED");
+      },
+      scrapeTimeout,
+    );
+  });
+
+  // An allowlisted URL relaxes *how* it is scraped (evaluated per-URL), while a
+  // non-matching URL under the same org stays fully strict.
+  describeIf(TEST_PRODUCTION)("allowlist", () => {
+    let identity: Identity;
+
+    beforeAll(async () => {
+      identity = await idmux({
+        name: "safe-mode/allowlist",
+        flags: {
+          safeMode: true,
+          safeModeConfig: { allowlist: [TEST_SUITE_HOST] },
+        },
+      });
+    }, 10000);
+
+    it.concurrent(
+      "relaxes a stealth proxy request for an allowlisted URL",
+      async () => {
+        const res = await scrapeRaw(
+          { url: createTestIdUrl(), proxy: "stealth" },
+          identity,
+        );
+        expect(res.body.code).not.toBe("SAFE_MODE_BLOCKED");
+        expect(res.statusCode).toBe(200);
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "keeps a non-allowlisted URL strict",
+      async () => {
+        const body = await expectSafeModeBlocked(
+          { url: "https://not-in-allowlist.example.org/", proxy: "stealth" },
+          identity,
+        );
+        expect(body.error).toMatch(/prox/i);
       },
       scrapeTimeout,
     );
