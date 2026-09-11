@@ -429,6 +429,12 @@ function boundedExternalRequestId(
  *
  * Truncation here, not null: the column is NOT NULL, and a shortened label
  * still tells the customer which run it is, where an empty one tells nothing.
+ *
+ * Logged at debug, not warn: a prompt-only run logs its whole prompt as the
+ * hint, so with a 100,000-character cap a hint past this bound is an ordinary
+ * request, not a fault. `boundedExternalRequestId` above warns because an
+ * oversized request id really is exceptional; the two levels differ on
+ * purpose.
  */
 const TARGET_HINT_MAX_BYTES = 2048;
 
@@ -438,7 +444,7 @@ function boundedTargetHint(
 ): string | null {
   if (value === null) return null;
   if (Buffer.byteLength(value) <= TARGET_HINT_MAX_BYTES) return value;
-  logger.warn(
+  logger.debug(
     "target_hint exceeds the cap at the insert boundary; truncating",
     {
       bytes: Buffer.byteLength(value),

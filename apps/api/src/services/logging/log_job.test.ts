@@ -327,7 +327,10 @@ describe("logRequest", () => {
 
     const inserted = values.mock.calls[0][0];
     expect(inserted.target_hint).toBe("p".repeat(2048));
-    expect(logger.warn).toHaveBeenCalled();
+    // Debug, not warn: at a 100,000-character prompt cap an oversized hint is
+    // the ordinary prompt-only request, so warning on it would be pure noise.
+    expect(logger.debug).toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it("cuts the target_hint between characters, not inside one", async () => {
