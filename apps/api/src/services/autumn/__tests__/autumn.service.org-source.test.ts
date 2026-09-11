@@ -1,8 +1,9 @@
 /**
  * The org comes from the caller, and nowhere else: AutumnService must have no
- * way to look one up. controllers/auth is mocked with a factory that throws, so
- * a service that reaches for the ACUC again — directly or through a helper —
- * fails this file at import time rather than quietly resolving its own org.
+ * way to look one up. controllers/auth and lib/team-org are mocked with
+ * factories that throw, so a service that reaches for the ACUC again — directly
+ * or through the shared helper — fails this file at import time rather than
+ * quietly resolving its own org.
  */
 
 import { vi } from "vitest";
@@ -30,9 +31,13 @@ const { mockCheck, mockTrack, mockAutumnClient } = vi.hoisted(() => {
   };
 });
 
-// The seam: importing this module at all is the failure.
+// The seam: importing either module at all is the failure.
 vi.mock("../../../controllers/auth", () => {
   throw new Error("autumn.service must not import controllers/auth");
+});
+
+vi.mock("../../../lib/team-org", () => {
+  throw new Error("autumn.service must not import lib/team-org");
 });
 
 vi.mock("../client", () => ({

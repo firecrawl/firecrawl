@@ -38,7 +38,7 @@ import {
 import { serializeTraceContext } from "../lib/otel-tracer";
 import { isSelfHosted } from "../lib/deployment";
 import { MONITOR_CHECK_STALE_TIMEOUT_MS } from "./monitoring/stale";
-import { getACUCTeam } from "../controllers/auth";
+import { orgIdForTeam } from "../lib/team-org";
 
 // Queue-wait deadline for a backlogged job (how long its owner still cares about the result)
 function backlogTimeoutMs(data: ScrapeJobData): number {
@@ -361,9 +361,7 @@ async function orgIdForEnqueue(
       .map(d =>
         "internalOptions" in d ? (d.internalOptions?.orgId ?? null) : null,
       )
-      .find(o => o !== null) ??
-    (await getACUCTeam(teamId).catch(() => null))?.org_id ??
-    null
+      .find(o => o !== null) ?? (await orgIdForTeam(teamId))
   );
 }
 

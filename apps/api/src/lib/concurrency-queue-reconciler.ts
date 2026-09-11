@@ -16,7 +16,7 @@ import {
 } from "./concurrency-limit";
 import { getCrawl } from "./crawl-redis";
 import { logger as _logger } from "./logger";
-import { getACUCTeam } from "../controllers/auth";
+import { orgIdForTeam } from "./team-org";
 
 interface ReconcileOptions {
   teamId?: string;
@@ -341,8 +341,7 @@ export async function reconcileConcurrencyQueue(
       // The reconciler has no request ACUC and no job payload to read, so the
       // team's ACUC is the only org source; once per team per pass, shared by
       // both limit lookups below.
-      const orgId =
-        (await getACUCTeam(ownerId).catch(() => null))?.org_id ?? null;
+      const orgId = await orgIdForTeam(ownerId);
 
       const teamResult = await reconcileTeam(ownerId, orgId, teamLogger);
       if (teamResult !== null) {

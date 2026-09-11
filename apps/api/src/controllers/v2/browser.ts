@@ -35,7 +35,7 @@ import {
   calculateBrowserSessionCredits,
 } from "../../lib/browser-billing";
 import { autumnService } from "../../services/autumn/autumn.service";
-import { getACUCTeam } from "../auth";
+import { orgIdForTeam } from "../../lib/team-org";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
 // ---------------------------------------------------------------------------
@@ -845,7 +845,7 @@ export async function browserWebhookDestroyedController(
     // the org — the same lookup the biller used to make for itself.
     billTeam(
       session.team_id,
-      (await getACUCTeam(session.team_id).catch(() => null))?.org_id ?? null,
+      await orgIdForTeam(session.team_id),
       creditsBilled,
       null,
       {

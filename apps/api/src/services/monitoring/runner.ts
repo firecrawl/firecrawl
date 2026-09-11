@@ -74,6 +74,7 @@ import { verdictJsonSchema } from "./search/judge";
 import { computeGoalVersion } from "./search/dedupe";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { getACUCTeam } from "../../controllers/auth";
+import { orgIdForTeam } from "../../lib/team-org";
 import {
   reconstructKnownState,
   searchStatusToPageStatus,
@@ -1016,8 +1017,7 @@ export async function processMonitorCheckJob(
   // One org lookup for the whole check job — the billing service no longer
   // makes it, so every hold, settle and release below shares this one. A
   // failure answers null, which is what the lookup inside the biller did.
-  const orgId =
-    (await getACUCTeam(monitor.team_id).catch(() => null))?.org_id ?? null;
+  const orgId = await orgIdForTeam(monitor.team_id);
   const partnerJobToken = check.partner_run_token
     ? null
     : monitor.partner_job_token;
@@ -1523,8 +1523,7 @@ export async function reconcileRunningMonitorChecks(
 
       // One org lookup per check — the billing service no longer makes it, so
       // the release, the stale-fail and the settle below all share this one.
-      const orgId =
-        (await getACUCTeam(check.team_id).catch(() => null))?.org_id ?? null;
+      const orgId = await orgIdForTeam(check.team_id);
 
       const monitor = await getMonitorForUpdate(
         check.team_id,

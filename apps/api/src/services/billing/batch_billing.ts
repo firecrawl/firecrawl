@@ -14,6 +14,7 @@ import {
 } from "./types";
 import { reportExchangeBilling } from "../../lib/exchange";
 import { getACUCTeam } from "../../controllers/auth";
+import { orgIdFromAcuc } from "../../lib/team-org";
 
 // Upper bound on concurrent Exchange confirmation requests across the
 // whole worker, so slow or retrying deliveries from overlapping batch
@@ -224,7 +225,7 @@ export async function processBillingBatch() {
         try {
           legacyOrgIds.set(teamId, {
             resolved: true,
-            orgId: (await getACUCTeam(teamId))?.org_id ?? null,
+            orgId: orgIdFromAcuc(await getACUCTeam(teamId)),
           });
         } catch (error) {
           logger.warn("Failed to resolve the org for a legacy billing op", {

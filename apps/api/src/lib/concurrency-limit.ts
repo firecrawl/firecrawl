@@ -19,7 +19,7 @@ import {
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
 import { autumnService } from "../services/autumn/autumn.service";
-import { getACUCTeam } from "../controllers/auth";
+import { orgIdForTeam } from "./team-org";
 import { reportPipelineError } from "./redis-pipeline";
 
 // Fallback when Autumn can't give us a concurrency value.
@@ -347,9 +347,7 @@ export async function concurrentJobDone(job: NuQJob<any>) {
     // not once per job promoted below.
     const maxTeamConcurrency = await getEffectiveConcurrencyLimit(
       job.data.team_id,
-      job.data.internalOptions?.orgId ??
-        (await getACUCTeam(job.data.team_id).catch(() => null))?.org_id ??
-        null,
+      job.data.internalOptions?.orgId ?? (await orgIdForTeam(job.data.team_id)),
     );
 
     let staleSkipped = 0;

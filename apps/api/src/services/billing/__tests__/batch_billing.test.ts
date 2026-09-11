@@ -49,6 +49,9 @@ vi.mock("../../../db/rpc", () => ({
   billTeam7,
 }));
 
+// orgIdFromAcuc answers null without it, so the legacy op resolves no org.
+vi.mock("../../../config", () => ({ config: { USE_DB_AUTHENTICATION: true } }));
+
 vi.mock("../../../controllers/auth", () => ({
   getACUCTeam,
 }));

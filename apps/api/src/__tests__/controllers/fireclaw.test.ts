@@ -19,6 +19,9 @@ vi.mock("../../controllers/auth", () => ({
   getACUCTeam: vi.fn(),
 }));
 
+// orgIdFromAcuc answers null without it, so the billable path needs it on.
+vi.mock("../../config", () => ({ config: { USE_DB_AUTHENTICATION: true } }));
+
 vi.mock("../../lib/logger", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));

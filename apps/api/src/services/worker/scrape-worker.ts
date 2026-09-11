@@ -51,6 +51,7 @@ import { getJobPriority } from "../../lib/job-priority";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
+import { orgIdForTeam } from "../../lib/team-org";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { CustomError } from "../../lib/custom-error";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
@@ -130,11 +131,7 @@ async function orgIdForJob(
   orgIdFromJob: string | null | undefined,
   teamId: string,
 ): Promise<string | null> {
-  return (
-    orgIdFromJob ??
-    (await getACUCTeam(teamId).catch(() => null))?.org_id ??
-    null
-  );
+  return orgIdFromJob ?? (await orgIdForTeam(teamId));
 }
 
 async function billScrapeJob(
@@ -191,10 +188,10 @@ async function billScrapeJob(
       // The org rides the job payload, snapshotted from the request ACUC at
       // acceptance. The ACUC answers only for a job enqueued without one —
       // the same lookup the billing service used to make on every charge.
-      const orgId =
-        job.data.internalOptions?.orgId ??
-        (await getACUCTeam(job.data.team_id).catch(() => null))?.org_id ??
-        null;
+      const orgId = await orgIdForJob(
+        job.data.internalOptions?.orgId,
+        job.data.team_id,
+      );
 
       // Resolved outside the try so the catch's refund decision can see it.
       let routedToFirebill = false;

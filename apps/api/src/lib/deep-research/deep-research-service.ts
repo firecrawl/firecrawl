@@ -7,6 +7,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { ExtractOptions } from "../../controllers/v1/types";
 import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
+import { orgIdFromAcuc } from "../team-org";
 import { includesFormat } from "../format-utils";
 export interface DeepResearchServiceOptions {
   researchId: string;
@@ -427,7 +428,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
     // Bill team for usage based on URLs analyzed
     billTeam(
       teamId,
-      acuc?.org_id ?? null,
+      orgIdFromAcuc(acuc),
       credits_billed,
       apiKeyId,
       { endpoint: "deep_research", jobId: researchId, chargeId: researchId },

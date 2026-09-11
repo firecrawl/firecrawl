@@ -2,6 +2,7 @@ import { Response } from "express";
 import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getACUCTeam } from "../auth";
+import { orgIdFromAcuc } from "../../lib/team-org";
 import { RateLimiterMode } from "../../types";
 import { logger } from "../../lib/logger";
 import { autumnService } from "../../services/autumn/autumn.service";
@@ -51,7 +52,7 @@ export async function fireclawController(
   // Autumn outage into a customer outage.
   // No org, no Autumn customer to gate against: fail open, exactly as
   // checkCredits answered for an identity it could not name.
-  const orgId = chunk?.org_id ?? null;
+  const orgId = orgIdFromAcuc(chunk);
   const creditCheck = orgId
     ? await autumnService.checkCredits({
         teamId: req.auth.team_id,
@@ -72,7 +73,7 @@ export async function fireclawController(
   try {
     await billTeam(
       req.auth.team_id,
-      req.acuc?.org_id ?? null,
+      orgIdFromAcuc(req.acuc),
       totalCredits,
       req.acuc?.api_key_id ?? null,
       // No chargeId: fireclaw has no per-charge identity to key on — a
