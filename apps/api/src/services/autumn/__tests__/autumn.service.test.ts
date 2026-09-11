@@ -3,7 +3,8 @@
  *
  * All external I/O is mocked:
  *   - autumnClient  →  vi.fn() stubs on customers / entities / track
- *   - dbRr          →  stubbed Drizzle query builder
+ *   - getACUCTeam   →  the team's ACUC, which carries the org
+ *   - dbRr          →  stubbed Drizzle query builder (gateway lookup only)
  */
 
 import { vi } from "vitest";
@@ -20,6 +21,7 @@ const {
   mockGetOrCreate,
   mockEntityGet,
   mockEntityCreate,
+  mockGetACUCTeam,
   mockAutumnClient,
   makeDbStub,
   state,
@@ -47,35 +49,25 @@ const {
     track: mockTrack,
   };
 
-  // Minimal Drizzle query-builder stub: .select().from().where().limit() → rows.
-  //
-  // Table-aware by the selected columns, because two different lookups share it:
-  // the team → org_id resolution, and the gateway-provisioning check. Returning
-  // one row for both would make every team look partner-provisioned.
-  const makeDbStub = (
-    data: unknown,
-    gatewayRow: unknown,
-    gatewayThrows = false,
-  ) => ({
-    select: (fields?: Record<string, unknown>) => {
-      const isGatewayLookup = !!fields && "team_id" in fields;
-      if (isGatewayLookup && gatewayThrows) {
+  // The team's ACUC, which is where the org now comes from. `null` is a team
+  // the lookup cannot name — the shape that makes every biller fail open.
+  const mockGetACUCTeam = vi.fn(async (teamId: string) =>
+    state.acucOrgId === null
+      ? null
+      : { team_id: teamId, org_id: state.acucOrgId },
+  );
+
+  // Minimal Drizzle query-builder stub for the one lookup still on the
+  // replica: .select().from().where().limit() → the gateway-provisioning rows.
+  const makeDbStub = (gatewayRow: unknown, gatewayThrows = false) => ({
+    select: () => {
+      if (gatewayThrows) {
         throw new Error("replica unavailable");
       }
-      const rows = isGatewayLookup
-        ? gatewayRow
-          ? [gatewayRow]
-          : []
-        : data
-          ? [data]
-          : [];
       return {
         from: () => ({
           where: () => ({
-            limit: () =>
-              !isGatewayLookup && state.dbLimitOverride
-                ? state.dbLimitOverride()
-                : Promise.resolve(rows),
+            limit: () => Promise.resolve(gatewayRow ? [gatewayRow] : []),
           }),
         }),
       };
@@ -89,24 +81,20 @@ const {
     mockGetOrCreate,
     mockEntityGet,
     mockEntityCreate,
+    mockGetACUCTeam,
     mockAutumnClient,
     makeDbStub,
     // Mutable state individual tests tweak (e.g. set state.autumnClientRef = null to
     // simulate a missing API key).
     state: {
       autumnClientRef: mockAutumnClient as typeof mockAutumnClient | null,
-      supabaseStubData: { data: { org_id: "org-1" }, error: null } as {
-        data: unknown;
-        error: unknown;
-      },
+      // Org the team's ACUC carries; null = no ACUC, so no org can be named.
+      acucOrgId: "org-1" as string | null,
       // Row the partner_provisioned_accounts lookup finds. null = not
       // which is what almost every team is.
       gatewayStubRow: null as unknown,
       // Makes the gateway lookup throw, to prove a failure is never cached.
       gatewayStubThrows: false,
-      // When set, replaces the team → org_id query result (e.g. to hold a
-      // lookup open and observe how many are issued).
-      dbLimitOverride: null as (() => Promise<unknown[]>) | null,
       configRef: {} as Record<string, unknown>,
     },
   };
@@ -120,12 +108,12 @@ vi.mock("../client", () => ({
 
 vi.mock("../../../db/connection", () => ({
   get dbRr() {
-    return makeDbStub(
-      state.supabaseStubData.data,
-      state.gatewayStubRow,
-      state.gatewayStubThrows,
-    );
+    return makeDbStub(state.gatewayStubRow, state.gatewayStubThrows);
   },
+}));
+
+vi.mock("../../../controllers/auth", () => ({
+  getACUCTeam: mockGetACUCTeam,
 }));
 
 vi.mock("../../../config", () => ({
@@ -167,7 +155,7 @@ function makeEntity(usage: number) {
 beforeEach(() => {
   vi.clearAllMocks();
   state.autumnClientRef = mockAutumnClient;
-  state.supabaseStubData = { data: { org_id: "org-1" }, error: null };
+  state.acucOrgId = "org-1";
   state.configRef = {};
   mockCheck.mockResolvedValue({
     allowed: true,
@@ -378,35 +366,12 @@ describe("ensureTrackingContext warm-cache short-circuit", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Org moves: the team → org cache must expire and re-provision under the new org
+// Org moves: the ACUC names the org on every billing call, so a move follows it
+// — including re-provisioning the entity under the new customer.
 // ---------------------------------------------------------------------------
 
 describe("team org change", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("keeps billing the cached org while the mapping is fresh", async () => {
-    vi.useFakeTimers();
-    const svc = makeService();
-
-    await svc.trackCredits({ teamId: "team-1", value: 1 });
-    expect(mockTrack).toHaveBeenLastCalledWith(
-      expect.objectContaining({ customerId: "org-1" }),
-    );
-
-    // Org moves in the DB, but the cache has not expired yet (default 300s).
-    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
-    vi.advanceTimersByTime(299_000);
-
-    await svc.trackCredits({ teamId: "team-1", value: 1 });
-    expect(mockTrack).toHaveBeenLastCalledWith(
-      expect.objectContaining({ customerId: "org-1" }),
-    );
-  });
-
-  it("re-reads the org after the TTL and provisions the entity under the new org", async () => {
-    vi.useFakeTimers();
+  it("bills the new org and provisions the entity under it", async () => {
     const svc = makeService();
 
     await svc.trackCredits({ teamId: "team-1", value: 1 });
@@ -415,10 +380,9 @@ describe("team org change", () => {
     );
     const entityGetsBefore = mockEntityGet.mock.calls.length;
 
-    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
+    state.acucOrgId = "org-2";
     // The entity does not exist under the new customer yet.
     mockEntityGet.mockResolvedValue(null);
-    vi.advanceTimersByTime(301_000);
 
     await svc.trackCredits({ teamId: "team-1", value: 1 });
 
@@ -441,7 +405,6 @@ describe("team org change", () => {
   });
 
   it("checkCredits follows the org move too", async () => {
-    vi.useFakeTimers();
     const svc = makeService();
 
     await svc.checkCredits({ teamId: "team-1", value: 1 });
@@ -449,59 +412,10 @@ describe("team org change", () => {
       expect.objectContaining({ customerId: "org-1" }),
     );
 
-    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
-    vi.advanceTimersByTime(301_000);
+    state.acucOrgId = "org-2";
 
     await svc.checkCredits({ teamId: "team-1", value: 1 });
     expect(mockCheck).toHaveBeenLastCalledWith(
-      expect.objectContaining({ customerId: "org-2" }),
-    );
-  });
-
-  it("collapses concurrent expired-cache refreshes into one DB lookup", async () => {
-    vi.useFakeTimers();
-    const svc = makeService();
-
-    await svc.trackCredits({ teamId: "team-1", value: 1 });
-    vi.advanceTimersByTime(301_000);
-
-    // Make the org lookup observable and slow.
-    let resolveLookup!: (rows: unknown[]) => void;
-    let lookups = 0;
-    state.dbLimitOverride = () => {
-      lookups++;
-      return new Promise<unknown[]>(resolve => {
-        resolveLookup = resolve;
-      });
-    };
-
-    const a = svc.trackCredits({ teamId: "team-1", value: 1 });
-    const b = svc.trackCredits({ teamId: "team-1", value: 1 });
-    const c = svc.trackCredits({ teamId: "team-1", value: 1 });
-    await Promise.resolve();
-    expect(lookups).toBe(1);
-
-    state.dbLimitOverride = null;
-    resolveLookup([{ org_id: "org-2" }]);
-    await Promise.all([a, b, c]);
-
-    expect(lookups).toBe(1);
-    for (const call of mockTrack.mock.calls.slice(-3)) {
-      expect(call[0]).toEqual(expect.objectContaining({ customerId: "org-2" }));
-    }
-  });
-
-  it("honours AUTUMN_ORG_CACHE_TTL_SECONDS", async () => {
-    vi.useFakeTimers();
-    state.configRef = { AUTUMN_ORG_CACHE_TTL_SECONDS: 10 };
-    const svc = makeService();
-
-    await svc.trackCredits({ teamId: "team-1", value: 1 });
-    state.supabaseStubData = { data: { org_id: "org-2" }, error: null };
-    vi.advanceTimersByTime(11_000);
-
-    await svc.trackCredits({ teamId: "team-1", value: 1 });
-    expect(mockTrack).toHaveBeenLastCalledWith(
       expect.objectContaining({ customerId: "org-2" }),
     );
   });
@@ -904,7 +818,6 @@ describe("firebill routing", () => {
     // Default every test to not partner-provisioned, which almost every team is.
     state.gatewayStubRow = null;
     state.gatewayStubThrows = false;
-    state.dbLimitOverride = null;
   });
 
   afterEach(() => {
@@ -1676,8 +1589,8 @@ describe("firebill routing", () => {
   // well as unreported — a worse loss than the missing label.
   it("still finalizes when it cannot name the org, rather than abandoning the settle", async () => {
     state.configRef = firebillConfig();
-    // No org row for this team, so resolving the customer throws.
-    state.supabaseStubData = { data: null, error: null };
+    // No ACUC for this team, so resolving the customer throws.
+    state.acucOrgId = null;
     const svc = makeService();
 
     await expect(
@@ -1876,166 +1789,73 @@ describe("firebill routing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The org id hint: the request's ACUC already carries the org, so the credit
-// check should not read `teams.org_id` for it.
+// Where the org comes from: the caller's, else the team's ACUC — nothing else.
 // ---------------------------------------------------------------------------
 
-describe("org id hint", () => {
-  // Shaped like the column (`teams.org_id` is a uuid), which is what makes it
-  // usable at all.
-  const HINT_ORG = "3f2c1b8e-7a4d-4c1e-9b6a-0d5e8f2a1c74";
+describe("org resolution", () => {
+  const CALLER_ORG = "3f2c1b8e-7a4d-4c1e-9b6a-0d5e8f2a1c74";
 
-  // Counts team → org_id reads only; the stub answers the gateway lookup
-  // separately.
-  let orgLookups = 0;
-
-  beforeEach(() => {
-    orgLookups = 0;
-    state.dbLimitOverride = () => {
-      orgLookups++;
-      return Promise.resolve([{ org_id: "org-1" }]);
-    };
-  });
-
-  afterEach(() => {
-    state.dbLimitOverride = null;
-    vi.useRealTimers();
-  });
-
-  it("checks the hinted org against Autumn with no DB read", async () => {
+  it("bills the caller's org without reading the ACUC", async () => {
     const svc = makeService();
 
     const result = await svc.checkCredits({
       teamId: "team-1",
       value: 42,
-      orgId: HINT_ORG,
+      orgId: CALLER_ORG,
     });
 
     expect(result).toEqual({ allowed: true, remaining: 0 });
-    expect(orgLookups).toBe(0);
+    expect(mockGetACUCTeam).not.toHaveBeenCalled();
     expect(mockCheck).toHaveBeenCalledWith(
-      expect.objectContaining({ customerId: HINT_ORG, entityId: "team-1" }),
+      expect.objectContaining({ customerId: CALLER_ORG, entityId: "team-1" }),
     );
   });
 
-  it("reads the DB exactly once when the caller has no hint", async () => {
+  it("reads the ACUC exactly once when the caller has no org", async () => {
     const svc = makeService();
 
     await svc.checkCredits({ teamId: "team-1", value: 42 });
 
-    expect(orgLookups).toBe(1);
+    expect(mockGetACUCTeam).toHaveBeenCalledTimes(1);
+    expect(mockGetACUCTeam).toHaveBeenCalledWith("team-1");
     expect(mockCheck).toHaveBeenCalledWith(
       expect.objectContaining({ customerId: "org-1" }),
     );
   });
 
-  // The ACUC is Redis-cached for longer than this cache lives, so a hint can
-  // arrive staler than what a warm pod already read. The cache keeps winning.
-  it("a fresh cached org wins over a differing hint", async () => {
-    const svc = makeService();
-
-    await svc.trackCredits({ teamId: "team-1", value: 1 });
-    expect(orgLookups).toBe(1);
-
-    await svc.checkCredits({ teamId: "team-1", value: 42, orgId: HINT_ORG });
-
-    expect(orgLookups).toBe(1);
-    expect(mockCheck).toHaveBeenLastCalledWith(
-      expect.objectContaining({ customerId: "org-1" }),
-    );
-  });
-
-  it("an expired entry is replaced by the hint without a DB read", async () => {
-    vi.useFakeTimers();
-    const svc = makeService();
-
-    await svc.trackCredits({ teamId: "team-1", value: 1 });
-    expect(orgLookups).toBe(1);
-    vi.advanceTimersByTime(301_000);
-
-    await svc.checkCredits({ teamId: "team-1", value: 42, orgId: HINT_ORG });
-
-    expect(orgLookups).toBe(1);
-    expect(mockCheck).toHaveBeenLastCalledWith(
-      expect.objectContaining({ customerId: HINT_ORG }),
-    );
-  });
-
-  // A read already in flight is what a hintless caller awaits today and costs
-  // nothing extra, so it wins over the hint. Otherwise the hint would seed the
-  // cache and the older read would land after it, for a whole TTL.
-  it("awaits an in-flight hintless lookup rather than using the hint", async () => {
-    const svc = makeService();
-
-    let resolveLookup!: (rows: unknown[]) => void;
-    state.dbLimitOverride = () => {
-      orgLookups++;
-      return new Promise<unknown[]>(resolve => {
-        resolveLookup = resolve;
-      });
-    };
-
-    const hintless = svc.trackCredits({ teamId: "team-1", value: 1 });
-    await Promise.resolve();
-    expect(orgLookups).toBe(1);
-
-    // Reaches resolveOrgId while that read is still open.
-    const hinted = svc.checkCredits({
-      teamId: "team-1",
-      value: 42,
-      orgId: HINT_ORG,
+  // An unnameable org is what every biller already fails open on, so the
+  // answers here are the ones a missing `teams.org_id` produced before.
+  describe("when the ACUC names no org", () => {
+    beforeEach(() => {
+      state.acucOrgId = null;
     });
 
-    // Counted, not held open: a second read would show up in orgLookups.
-    state.dbLimitOverride = () => {
-      orgLookups++;
-      return Promise.resolve([{ org_id: "org-2" }]);
-    };
-    resolveLookup([{ org_id: "org-2" }]);
-    await Promise.all([hintless, hinted]);
-
-    expect(orgLookups).toBe(1);
-    expect(mockCheck).toHaveBeenLastCalledWith(
-      expect.objectContaining({ customerId: "org-2" }),
-    );
-
-    // The hint seeded nothing, so a later hintless biller still bills org-2.
-    await svc.trackCredits({ teamId: "team-1", value: 1 });
-    expect(orgLookups).toBe(1);
-    expect(mockTrack).toHaveBeenLastCalledWith(
-      expect.objectContaining({ customerId: "org-2" }),
-    );
-  });
-
-  // The synthetic ACUCs carry these, and no `teams.org_id` read could ever
-  // return one, so a team holding one has to keep taking today's path.
-  it.each(["preview", "bypass", "", "org-1", "not a uuid"])(
-    "ignores %j as a hint and resolves the org from the DB",
-    async orgId => {
+    it("checkCredits falls back with null", async () => {
       const svc = makeService();
+      await expect(
+        svc.checkCredits({ teamId: "team-1", value: 42 }),
+      ).resolves.toBeNull();
+      expect(mockCheck).not.toHaveBeenCalled();
+    });
 
-      await svc.checkCredits({ teamId: "team-1", value: 42, orgId });
+    it("trackCredits reports that nothing was tracked", async () => {
+      const svc = makeService();
+      await expect(
+        svc.trackCredits({ teamId: "team-1", value: 42 }),
+      ).resolves.toBe(false);
+      expect(mockTrack).not.toHaveBeenCalled();
+    });
 
-      expect(orgLookups).toBe(1);
-      expect(mockCheck).toHaveBeenCalledWith(
-        expect.objectContaining({ customerId: "org-1" }),
-      );
-    },
-  );
-
-  it("seeds the org cache, so a later biller with no hint reads nothing", async () => {
-    const svc = makeService();
-
-    await svc.checkCredits({ teamId: "team-1", value: 1, orgId: HINT_ORG });
-    await svc.trackCredits({ teamId: "team-1", value: 1 });
-
-    expect(orgLookups).toBe(0);
-    expect(mockTrack).toHaveBeenCalledWith(
-      expect.objectContaining({ customerId: HINT_ORG }),
-    );
+    it("lockCredits skips the hold", async () => {
+      const svc = makeService();
+      await expect(
+        svc.lockCredits({ teamId: "team-1", value: 42 }),
+      ).resolves.toEqual({ status: "skipped" });
+      expect(mockCheck).not.toHaveBeenCalled();
+    });
   });
 
-  it("sends the hinted org to firebill as the customer", async () => {
+  it("sends the caller's org to firebill as the customer", async () => {
     const mockFetch = vi.fn<(url: any, init?: any) => Promise<Response>>();
     mockFetch.mockResolvedValue(
       new Response(
@@ -2047,7 +1867,7 @@ describe("org id hint", () => {
     state.configRef = {
       FIREBILL_URL: "http://firebill.test",
       FIREBILL_SECRET: "fb-secret",
-      FIREBILL_ORG_IDS: [HINT_ORG],
+      FIREBILL_ORG_IDS: [CALLER_ORG],
     };
 
     try {
@@ -2057,15 +1877,15 @@ describe("org id hint", () => {
         teamId: "team-1",
         value: 100,
         properties: { source: "checkCreditsMiddleware" },
-        orgId: HINT_ORG,
+        orgId: CALLER_ORG,
       });
 
       expect(result).toEqual({ allowed: true, remaining: 500 });
-      expect(orgLookups).toBe(0);
+      expect(mockGetACUCTeam).not.toHaveBeenCalled();
       expect(mockCheck).not.toHaveBeenCalled();
       const [url, init] = mockFetch.mock.calls[0]!;
       expect(String(url)).toBe("http://firebill.test/v1/check");
-      expect(JSON.parse(init.body).customer_id).toBe(HINT_ORG);
+      expect(JSON.parse(init.body).customer_id).toBe(CALLER_ORG);
     } finally {
       vi.unstubAllGlobals();
     }

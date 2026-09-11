@@ -116,8 +116,7 @@ export type TrackCreditsParams = {
   idempotencyKey?: string;
   /**
    * The team's org, when the caller already has it (a request's ACUC does).
-   * Saves the `teams.org_id` read; ignored unless it is shaped like one, so a
-   * caller that has no real org id changes nothing.
+   * Saves resolving it from the team's ACUC.
    */
   orgId?: string | null;
 };
