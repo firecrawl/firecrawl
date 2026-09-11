@@ -645,6 +645,13 @@ mod tests {
     async fn test_batch_scrape_failed_uses_server_error() {
         let mut server = mockito::Server::new_async().await;
 
+        let start_mock = server
+            .mock("POST", "/v2/batch/scrape")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "id": "batch-failed", "url": "x"}).to_string())
+            .create();
+
         let status_mock = server
             .mock("GET", "/v2/batch/scrape/batch-failed")
             .with_status(200)
@@ -663,7 +670,7 @@ mod tests {
 
         let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
         let err = client
-            .wait_for_batch_scrape("batch-failed", 1000)
+            .batch_scrape(vec!["https://bad.invalid".to_string()], None)
             .await
             .unwrap_err();
 
@@ -673,12 +680,20 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+        start_mock.assert();
         status_mock.assert();
     }
 
     #[tokio::test]
     async fn test_batch_scrape_cancelled_uses_fallback_message() {
         let mut server = mockito::Server::new_async().await;
+
+        let start_mock = server
+            .mock("POST", "/v2/batch/scrape")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "id": "batch-cancelled", "url": "x"}).to_string())
+            .create();
 
         let status_mock = server
             .mock("GET", "/v2/batch/scrape/batch-cancelled")
@@ -697,7 +712,7 @@ mod tests {
 
         let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
         let err = client
-            .wait_for_batch_scrape("batch-cancelled", 1000)
+            .batch_scrape(vec!["https://example.com".to_string()], None)
             .await
             .unwrap_err();
 
@@ -707,6 +722,7 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+        start_mock.assert();
         status_mock.assert();
     }
 }

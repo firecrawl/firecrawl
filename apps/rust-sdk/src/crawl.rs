@@ -691,6 +691,13 @@ mod tests {
     async fn test_crawl_failed_uses_server_error() {
         let mut server = mockito::Server::new_async().await;
 
+        let start_mock = server
+            .mock("POST", "/v2/crawl")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "id": "crawl-failed", "url": "x"}).to_string())
+            .create();
+
         let status_mock = server
             .mock("GET", "/v2/crawl/crawl-failed")
             .with_status(200)
@@ -708,10 +715,7 @@ mod tests {
             .create();
 
         let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
-        let err = client
-            .wait_for_crawl("crawl-failed", 1000)
-            .await
-            .unwrap_err();
+        let err = client.crawl("https://bad.invalid", None).await.unwrap_err();
 
         match err {
             FirecrawlError::JobFailed(message, JobStatus::Failed) => {
@@ -719,12 +723,20 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+        start_mock.assert();
         status_mock.assert();
     }
 
     #[tokio::test]
     async fn test_crawl_cancelled_uses_fallback_message() {
         let mut server = mockito::Server::new_async().await;
+
+        let start_mock = server
+            .mock("POST", "/v2/crawl")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "id": "crawl-cancelled", "url": "x"}).to_string())
+            .create();
 
         let status_mock = server
             .mock("GET", "/v2/crawl/crawl-cancelled")
@@ -742,10 +754,7 @@ mod tests {
             .create();
 
         let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
-        let err = client
-            .wait_for_crawl("crawl-cancelled", 1000)
-            .await
-            .unwrap_err();
+        let err = client.crawl("https://example.com", None).await.unwrap_err();
 
         match err {
             FirecrawlError::JobFailed(message, JobStatus::Cancelled) => {
@@ -753,6 +762,7 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+        start_mock.assert();
         status_mock.assert();
     }
 }
