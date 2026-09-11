@@ -148,6 +148,85 @@ struct ScrapeResponse {
     warning: Option<String>,
 }
 
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExchangeCall {
+    pub provider: String,
+    pub capability: String,
+    pub options: Option<serde_json::Map<String, Value>>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExchangeOptions {
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    pub timeout: Option<u32>,
+    pub integration: Option<String>,
+    pub origin: Option<String>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct ExchangeRequest {
+    exchange: Vec<ExchangeCall>,
+    #[serde(flatten)]
+    options: ExchangeOptions,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExchangeScrapeError {
+    pub code: String,
+    pub message: String,
+    pub status: Option<u16>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExchangeScrapeResult {
+    pub provider: Option<String>,
+    pub capability: Option<String>,
+    pub credits_cost: Option<u32>,
+    pub data: Option<Value>,
+    pub records: Option<u64>,
+    pub upstream_status: Option<u16>,
+    pub recorded_at: Option<String>,
+    pub error: Option<ExchangeScrapeError>,
+}
+
+impl ExchangeScrapeResult {
+    pub fn failed(&self) -> bool {
+        self.error.is_some()
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExchangeScrapeData {
+    pub request_id: String,
+    pub scrape_id: String,
+    pub exchange: Vec<ExchangeScrapeResult>,
+    pub credits_cost: u32,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct ExchangeScrapePayload {
+    exchange: Vec<ExchangeScrapeResult>,
+    credits_cost: u32,
+}
+
+#[derive(Deserialize, Debug)]
+struct ExchangeScrapeResponse {
+    scrape_id: String,
+    data: ExchangeScrapePayload,
+}
+
 /// Supported languages for scrape-bound browser execution.
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -283,6 +362,100 @@ impl Client {
         let response: ScrapeResponse = self.handle_response(response, "scrape").await?;
 
         Ok(response.data)
+    }
+
+    pub async fn scrape_exchange(
+        &self,
+        calls: Vec<ExchangeCall>,
+        options: impl Into<Option<ExchangeOptions>>,
+    ) -> Result<ExchangeScrapeData, FirecrawlError> {
+        if calls.is_empty() {
+            return Err(FirecrawlError::Misuse(
+                "at least one exchange call is required".to_string(),
+            ));
+        }
+        if calls.len() > 10 {
+            return Err(FirecrawlError::Misuse(
+                "at most 10 exchange calls are allowed per request".to_string(),
+            ));
+        }
+        for (index, call) in calls.iter().enumerate() {
+            if call.provider.trim().is_empty() {
+                return Err(FirecrawlError::Misuse(format!(
+                    "exchange call {index}: provider is required"
+                )));
+            }
+            if call.capability.trim().is_empty() {
+                return Err(FirecrawlError::Misuse(format!(
+                    "exchange call {index}: capability is required"
+                )));
+            }
+        }
+        let mut options = options.into().unwrap_or_default();
+        if options.timeout == Some(0) {
+            return Err(FirecrawlError::Misuse(
+                "timeout must be positive".to_string(),
+            ));
+        }
+        if options.origin.is_none() {
+            options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
+        }
+        let request_timeout = options
+            .timeout
+            .map(|ms| std::time::Duration::from_millis(u64::from(ms) + 5000));
+        let request_id = options
+            .request_id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        if request_id.is_empty()
+            || request_id.len() > 128
+            || !request_id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"._:-".contains(&c))
+        {
+            return Err(FirecrawlError::Misuse("Invalid request_id".into()));
+        }
+        let body = ExchangeRequest {
+            exchange: calls,
+            options,
+        };
+
+        let headers = self.prepare_headers(None);
+
+        let mut request = self
+            .client
+            .post(self.url("/scrape"))
+            .headers(headers)
+            .header("x-request-id", &request_id)
+            .json(&body);
+        if let Some(timeout) = request_timeout {
+            request = request.timeout(timeout);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|e| FirecrawlError::ExchangeExecution {
+                request_id: request_id.clone(),
+                source: Box::new(FirecrawlError::HttpError(
+                    "Executing exchange calls".to_string(),
+                    e,
+                )),
+            })?;
+
+        let response: ExchangeScrapeResponse = self
+            .handle_response(response, "exchange")
+            .await
+            .map_err(|e| FirecrawlError::ExchangeExecution {
+                request_id: request_id.clone(),
+                source: Box::new(e),
+            })?;
+
+        Ok(ExchangeScrapeData {
+            request_id,
+            scrape_id: response.scrape_id,
+            exchange: response.data.exchange,
+            credits_cost: response.data.credits_cost,
+        })
     }
 
     /// Scrapes a URL with a JSON schema for structured extraction.
@@ -848,5 +1021,41 @@ mod tests {
 
         assert!(result.is_err());
         mock.assert();
+    }
+
+    fn exchange_scrape_fixture() -> serde_json::Value {
+        json!({
+            "success": true,
+            "scrape_id": "x",
+            "data": {
+                "exchange": [
+                    {
+                        "provider": "fred",
+                        "capability": "finance/series/observations",
+                        "creditsCost": 1,
+                        "data": { "observations": [{ "date": "2024-01-01", "value": "308.417" }] },
+                        "records": 12,
+                        "upstreamStatus": 200,
+                        "recordedAt": "2026-09-02T10:00:00.000Z"
+                    },
+                    {
+                        "provider": "sec",
+                        "capability": "filings/search",
+                        "creditsCost": 1,
+                        "data": [1, 2, 3]
+                    },
+                    {
+                        "provider": "fred",
+                        "capability": "finance/series/missing",
+                        "error": {
+                            "code": "credential_missing",
+                            "message": "no credential",
+                            "status": 503
+                        }
+                    }
+                ],
+                "creditsCost": 2
+            }
+        })
     }
 }

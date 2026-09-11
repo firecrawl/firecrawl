@@ -9,10 +9,11 @@ from typing import Dict, Any, Optional
 class FirecrawlError(Exception):
     """Base exception for Firecrawl API errors."""
     
-    def __init__(self, message: str, status_code: Optional[int] = None, response: Optional[requests.Response] = None):
+    def __init__(self, message: str, status_code: Optional[int] = None, response: Optional[requests.Response] = None, *, request_id: Optional[str] = None):
         super().__init__(message)
         self.status_code = status_code
         self.response = response
+        self.request_id = request_id
 
 
 class BadRequestError(FirecrawlError):

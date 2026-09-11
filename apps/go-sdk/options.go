@@ -164,6 +164,7 @@ type MapOptions struct {
 
 // SearchOptions configures a search request.
 type SearchOptions struct {
+	Skills            *bool          `json:"skills,omitempty"`
 	Sources           []interface{}  `json:"sources,omitempty"`
 	Categories        []interface{}  `json:"categories,omitempty"`
 	IncludeDomains    []string       `json:"includeDomains,omitempty"`

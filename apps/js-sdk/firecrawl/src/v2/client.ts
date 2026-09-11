@@ -6,6 +6,7 @@ import {
 } from "./methods/scrape";
 import { parse as parseMethod } from "./methods/parse";
 import { search } from "./methods/search";
+import { scrapeExchange, findTools } from "./methods/tools";
 import { developerSearch as developerSearchMethod } from "./methods/developer";
 import { map as mapMethod } from "./methods/map";
 import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
@@ -47,6 +48,10 @@ import {
 } from "./methods/monitor";
 import type {
   Document,
+  ExchangeScrapeRequest,
+  FindToolsOptions,
+  FindToolsData,
+  ExchangeScrapeData,
   ParseFile,
   ParseOptions,
   ScrapeOptions,
@@ -171,11 +176,42 @@ export class FirecrawlClient {
    */
   async scrape<Opts extends ScrapeOptions>(
     url: string,
-    options: Opts
+    options: Opts,
   ): Promise<Omit<Document, "json"> & { json?: InferredJsonFromOptions<Opts> }>;
   async scrape(url: string, options?: ScrapeCallOptions): Promise<Document>;
-  async scrape(url: string, options?: ScrapeCallOptions): Promise<Document> {
-    return scrape(this.http, url, options);
+  async scrape(request: ExchangeScrapeRequest): Promise<ExchangeScrapeData>;
+  async scrape(
+    url: string | ExchangeScrapeRequest,
+    options?: ScrapeCallOptions,
+  ): Promise<Document | ExchangeScrapeData> {
+    if (typeof url === "string") return scrape(this.http, url, options);
+    if (
+      !url ||
+      options !== undefined ||
+      Object.keys(url).some(
+        (key) =>
+          ![
+            "exchange",
+            "requestId",
+            "timeout",
+            "integration",
+            "origin",
+          ].includes(key),
+      )
+    ) {
+      throw new Error("Provide an exchange request without URL scrape options");
+    }
+    const { exchange, ...opts } = url;
+    return scrapeExchange(
+      this.http,
+      Array.isArray(exchange) ? exchange : [exchange],
+      opts,
+    );
+  }
+
+  /** Explore the catalogue without executing the tools it returns. */
+  async findTools(options?: FindToolsOptions): Promise<FindToolsData> {
+    return findTools(this.http, options);
   }
   /**
    * Interact with the browser session associated with a scrape job.

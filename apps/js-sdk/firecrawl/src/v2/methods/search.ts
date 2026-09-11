@@ -27,6 +27,7 @@ function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     query: req.query,
   };
+  if (req.skills != null) payload.skills = req.skills;
   if (req.sources) payload.sources = req.sources;
   if (req.categories) payload.categories = req.categories;
   if (req.includeDomains) payload.includeDomains = req.includeDomains;
@@ -87,6 +88,7 @@ export async function search(
       success: boolean;
       data?: Record<string, unknown>;
       error?: string;
+      warning?: string;
     }>(
       "/v2/search",
       payload,
@@ -99,10 +101,13 @@ export async function search(
     }
     const data = (res.data.data || {}) as Record<string, any>;
     const out: SearchData = {};
+    if (res.data.warning) out.warning = res.data.warning;
     if (data.web) out.web = transformArray<SearchResultWeb>(data.web);
     if (data.news) out.news = transformArray<SearchResultNews>(data.news);
     if (data.images)
       out.images = transformArray<SearchResultImages>(data.images);
+    if (data.tools) out.tools = data.tools;
+    if (data["exchange-providers"]) out["exchange-providers"] = data["exchange-providers"];
     Object.defineProperty(out, "data", {
       get() {
         const parts: string[] = [];
@@ -110,9 +115,11 @@ export async function search(
         if (out.news?.length) parts.push(`.news (${out.news.length} results)`);
         if (out.images?.length)
           parts.push(`.images (${out.images.length} results)`);
+        if (out.tools?.length)
+          parts.push(`.tools (${out.tools.length} results)`);
         const available = parts.length
           ? parts.join(", ")
-          : ".web, .news, or .images";
+          : ".web, .news, .images, or .tools";
         throw new Error(
           `SearchData has no '.data'. Results are grouped by source: ${available}`,
         );

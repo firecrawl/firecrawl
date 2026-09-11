@@ -18,6 +18,9 @@ from .types import (
     DeveloperSearchType,
     SourceOption,
     CategoryOption,
+    FindToolsData,
+    ExchangeCall,
+    ExchangeScrapeData,
     CrawlRequest,
     CrawlResponse,
     CrawlJob,
@@ -150,9 +153,11 @@ class FirecrawlClient:
     
     def scrape(
         self,
-        url: str,
+        url: Optional[str] = None,
         *,
         auto_resume: Optional[bool] = None,
+        exchange: Optional[Union[ExchangeCall, Dict[str, Any], List[Union[ExchangeCall, Dict[str, Any]]]]] = None,
+        request_id: Optional[str] = None,
         formats: Optional[List['FormatOption']] = None,
         headers: Optional[Dict[str, str]] = None,
         include_tags: Optional[List[str]] = None,
@@ -177,7 +182,7 @@ class FirecrawlClient:
         profile: Optional[Dict[str, Any]] = None,
         audit_metadata: Optional[AuditMetadata] = None,
         integration: Optional[str] = None,
-    ) -> Document:
+    ) -> Union[Document, ExchangeScrapeData]:
         """
         Scrape a single URL and return the document.
         Args:
@@ -236,7 +241,50 @@ class FirecrawlClient:
                 integration=integration,
             ).items() if v is not None}
         ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration]) else None
+        if exchange is not None:
+            if url is not None or auto_resume is not None or (options and set(options.model_dump(exclude_none=True, exclude_unset=True)) - {"timeout", "integration"}):
+                raise ValueError("exchange cannot be combined with URL scrape options")
+            return self.scrape_exchange(exchange, timeout=timeout, integration=integration, request_id=request_id)
+        if request_id is not None:
+            raise ValueError("request_id requires exchange")
         return scrape_module.scrape(self.http_client, url, options, auto_resume=auto_resume)
+
+    def scrape_exchange(
+        self,
+        calls: Union[ExchangeCall, Dict[str, Any], List[Union[ExchangeCall, Dict[str, Any]]]],
+        *,
+        timeout: Optional[int] = None,
+        integration: Optional[str] = None,
+        request_id: Optional[str] = None,
+    ) -> ExchangeScrapeData:
+        """
+        Execute up to 10 Exchange capabilities in one request.
+
+        Args:
+            calls: Exchange calls, each with provider, capability and optional options
+            timeout: Request timeout in milliseconds
+            integration: Integration tag for the request
+
+        Returns:
+            ExchangeScrapeData with one result (or error) per call and the total credits cost
+        """
+        return scrape_module.scrape_exchange(
+            self.http_client, calls, timeout=timeout, integration=integration, request_id=request_id
+        )
+
+    def find_tools(self, **options) -> FindToolsData:
+        """Explore providers and contracts without executing discovered tools.
+
+        Filter by urls, providers, categories, groups, or capabilities. Use level
+        (providers/groups/tools), expand, limit, and offset to control disclosure.
+        Follow a returned next request with scrape(exchange=next).
+        """
+        result = self.scrape_exchange({"provider": "firecrawl-contextual-discovery", "capability": "discovery/context", "options": options})
+        item = result.exchange[0]
+        if item.error:
+            from .utils.error_handler import FirecrawlError
+            raise FirecrawlError(item.error.message, item.error.status, request_id=result.request_id)
+        return FindToolsData(**item.data)
 
     # Research paper index (/v2/search/research)
     @doc(CLIENT_SEARCH_PAPERS_DOC)
@@ -410,6 +458,7 @@ class FirecrawlClient:
         query: str,
         *,
         sources: Optional[List[SourceOption]] = None,
+        skills: Optional[bool] = None,
         categories: Optional[List[CategoryOption]] = None,
         include_domains: Optional[List[str]] = None,
         exclude_domains: Optional[List[str]] = None,
@@ -450,6 +499,7 @@ class FirecrawlClient:
         request = SearchRequest(
             query=query,
             sources=sources,
+            skills=skills,
             categories=categories,
             include_domains=include_domains,
             exclude_domains=exclude_domains,

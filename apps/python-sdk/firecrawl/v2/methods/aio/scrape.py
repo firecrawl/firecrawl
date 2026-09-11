@@ -1,13 +1,16 @@
 import asyncio
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, List, Literal, Union
 from ...types import (
     ScrapeOptions,
     Document,
     BrowserExecuteResponse,
     BrowserDeleteResponse,
+    ExchangeCall,
+    ExchangeScrapeData,
 )
+from ..scrape import _exchange_request_id, _prepare_scrape_exchange_request, _parse_scrape_exchange_response
 from ...utils.normalize import normalize_document_input
-from ...utils.error_handler import handle_response_error
+from ...utils.error_handler import FirecrawlError, handle_response_error
 from ...utils.validation import prepare_scrape_options, validate_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.auto_resume import ResumeTracker
@@ -53,6 +56,24 @@ async def scrape(
         document_data = body.get("data", {})
         normalized = normalize_document_input(document_data)
         return Document(**normalized)
+
+
+async def scrape_exchange(client: AsyncHttpClient, calls, *, timeout: Optional[int] = None,
+                          integration: Optional[str] = None, request_id: Optional[str] = None) -> ExchangeScrapeData:
+    payload = _prepare_scrape_exchange_request(calls, timeout=timeout, integration=integration)
+    request_id = _exchange_request_id(request_id)
+    headers = {"x-request-id": request_id}
+    try:
+        response = await client.post("/v2/scrape", payload, headers=headers,
+                                    timeout=(timeout + 5000) / 1000 if timeout else None)
+        if response.status_code != 200 or not response.json().get("success"):
+            handle_response_error(response, "scrape exchange")
+        return _parse_scrape_exchange_response(response.json(), request_id)
+    except FirecrawlError as error:
+        error.request_id = request_id
+        raise
+    except Exception as error:
+        raise FirecrawlError(str(error), request_id=request_id) from error
 
 
 async def interact(
@@ -161,4 +182,3 @@ async def delete_scrape_browser(
 ) -> BrowserDeleteResponse:
     """Deprecated alias for stop_interaction()."""
     return await stop_interaction(client, job_id)
-

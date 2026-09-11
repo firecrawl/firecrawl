@@ -608,6 +608,8 @@ class WebhookData(BaseModel):
 class Source(BaseModel):
     """Configuration for a search source."""
 
+    model_config = {"extra": "forbid"}
+
     type: str
 
 
@@ -1044,6 +1046,80 @@ class SearchResultImages(BaseModel):
     image_height: Optional[int] = None
     url: Optional[str] = None
     position: Optional[int] = None
+
+
+class ExchangeSearchResult(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    provider: str
+    capability: str
+    concept: Optional[str] = None
+    cohorts: List[str] = Field(default_factory=list)
+    credits_cost: Optional[Union[int, float]] = Field(default=None, alias="creditsCost")
+    similarity: Optional[float] = None
+
+
+class DiscoveredTool(ExchangeSearchResult):
+    credits_cost: int = Field(alias="creditsCost")
+    id: str
+    name: str
+    description: str
+    per_record: bool = Field(alias="perRecord")
+    options: List[Dict[str, Any]]
+    requires_one_of: Optional[List[List[str]]] = Field(default=None, alias="requiresOneOf")
+    response: Dict[str, Any]
+    examples: Dict[str, str]
+    example: Optional[Dict[str, Any]] = None
+    matched_by: List[Literal["semantic", "domain"]] = Field(alias="matchedBy")
+    matched_urls: List[str] = Field(alias="matchedUrls")
+
+
+class FindToolsData(BaseModel):
+    level: Literal["providers", "groups", "tools"]
+    items: List[Dict[str, Any]]
+    total: int
+    next: Optional[Dict[str, Any]] = None
+
+
+class ExchangeCall(BaseModel):
+    model_config = {"extra": "forbid"}
+    provider: str
+    capability: str
+    options: Optional[Dict[str, Any]] = None
+
+
+class ExchangeError(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    code: str
+    message: str
+    status: Optional[int] = None
+
+
+class ExchangeScrapeResult(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    provider: Optional[str] = None
+    capability: Optional[str] = None
+    credits_cost: Optional[Union[int, float]] = Field(default=None, alias="creditsCost")
+    data: Any = None
+    records: Optional[int] = None
+    upstream_status: Optional[int] = Field(default=None, alias="upstreamStatus")
+    recorded_at: Optional[str] = Field(default=None, alias="recordedAt")
+    error: Optional[ExchangeError] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+class ExchangeScrapeData(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    scrape_id: Optional[str] = None
+    request_id: Optional[str] = None
+    exchange: List[ExchangeScrapeResult] = Field(default_factory=list)
+    credits_cost: Union[int, float] = Field(default=0, alias="creditsCost")
 
 
 class MapDocument(Document):
@@ -2168,6 +2244,7 @@ class SearchRequest(BaseModel):
     """Request for search operations."""
 
     query: str
+    skills: Optional[bool] = None
     sources: Optional[List[SourceOption]] = None
     categories: Optional[List[CategoryOption]] = None
     include_domains: Optional[List[str]] = None
@@ -2253,9 +2330,12 @@ SearchResult = LinkResult
 class SearchData(BaseModel):
     """Search results grouped by source type."""
 
+    warning: Optional[str] = None
     web: Optional[List[Union[SearchResultWeb, Document]]] = None
     news: Optional[List[Union[SearchResultNews, Document]]] = None
     images: Optional[List[Union[SearchResultImages, Document]]] = None
+    tools: Optional[List[DiscoveredTool]] = None
+    exchange_providers: Optional[List[ExchangeSearchResult]] = Field(default=None, alias="exchange-providers")
 
     @property
     def data(self):
@@ -2266,7 +2346,9 @@ class SearchData(BaseModel):
             parts.append(f".news ({len(self.news)} results)")
         if self.images:
             parts.append(f".images ({len(self.images)} results)")
-        available = ", ".join(parts) if parts else ".web, .news, or .images"
+        if self.tools:
+            parts.append(f".tools ({len(self.tools)} results)")
+        available = ", ".join(parts) if parts else ".web, .news, .images, or .tools"
         raise AttributeError(
             f"SearchData has no '.data'. Results are grouped by source: {available}"
         )

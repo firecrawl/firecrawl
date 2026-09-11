@@ -3,15 +3,20 @@ Scraping functionality for Firecrawl v2 API.
 """
 
 import time
-from typing import Optional, Dict, Any, Literal
+import re
+from uuid import uuid4
+from typing import Optional, Dict, Any, List, Literal, Union
 from ..types import (
     ScrapeOptions,
     Document,
     BrowserExecuteResponse,
     BrowserDeleteResponse,
+    ExchangeCall,
+    ExchangeScrapeData,
+    ExchangeScrapeResult,
 )
 from ..utils.normalize import normalize_document_input
-from ..utils import HttpClient, handle_response_error, prepare_scrape_options, validate_scrape_options
+from ..utils import FirecrawlError, HttpClient, handle_response_error, prepare_scrape_options, validate_scrape_options
 from ..utils.auto_resume import ResumeTracker
 
 
@@ -86,6 +91,83 @@ def scrape(
         document_data = body.get("data", {})
         normalized = normalize_document_input(document_data)
         return Document(**normalized)
+
+
+MAX_EXCHANGE_CALLS = 10
+
+
+def _prepare_scrape_exchange_request(
+    calls: List[Union[ExchangeCall, Dict[str, Any]]],
+    *,
+    timeout: Optional[int] = None,
+    integration: Optional[str] = None,
+) -> Dict[str, Any]:
+    if isinstance(calls, (dict, ExchangeCall)):
+        calls = [calls]
+    if not calls:
+        raise ValueError("At least one exchange call is required")
+    if len(calls) > MAX_EXCHANGE_CALLS:
+        raise ValueError(f"At most {MAX_EXCHANGE_CALLS} exchange calls are allowed per request")
+    items: List[Dict[str, Any]] = []
+    for call in calls:
+        if isinstance(call, dict):
+            call = ExchangeCall(**call)
+        elif not isinstance(call, ExchangeCall):
+            raise ValueError(f"Invalid exchange call: {call!r}")
+        provider = (call.provider or "").strip()
+        capability = (call.capability or "").strip()
+        if not provider:
+            raise ValueError("Exchange call provider cannot be empty")
+        if not capability:
+            raise ValueError("Exchange call capability cannot be empty")
+        item: Dict[str, Any] = {"provider": provider, "capability": capability}
+        if call.options is not None:
+            item["options"] = call.options
+        items.append(item)
+    payload: Dict[str, Any] = {"exchange": items}
+    if timeout is not None:
+        if timeout <= 0:
+            raise ValueError("Timeout must be positive")
+        payload["timeout"] = timeout
+    if integration is not None and str(integration).strip():
+        payload["integration"] = str(integration).strip()
+    return payload
+
+
+def _parse_scrape_exchange_response(body: Dict[str, Any], request_id: str) -> ExchangeScrapeData:
+    data = body["data"]
+    results = [ExchangeScrapeResult(**item) for item in data["exchange"]]
+    return ExchangeScrapeData(
+        scrape_id=body.get("scrape_id"),
+        exchange=results,
+        credits_cost=data["creditsCost"],
+        request_id=request_id,
+    )
+
+
+def _exchange_request_id(request_id: Optional[str]) -> str:
+    value = str(uuid4()) if request_id is None else request_id
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", value):
+        raise ValueError("Invalid request_id")
+    return value
+
+
+def scrape_exchange(client: HttpClient, calls, *, timeout: Optional[int] = None,
+                    integration: Optional[str] = None, request_id: Optional[str] = None) -> ExchangeScrapeData:
+    payload = _prepare_scrape_exchange_request(calls, timeout=timeout, integration=integration)
+    request_id = _exchange_request_id(request_id)
+    headers = {**client._prepare_headers(), "x-request-id": request_id}
+    try:
+        response = client.post("/v2/scrape", payload, headers=headers,
+                                    timeout=(timeout + 5000) / 1000 if timeout else None)
+        if response.status_code != 200 or not response.json().get("success"):
+            handle_response_error(response, "scrape exchange")
+        return _parse_scrape_exchange_response(response.json(), request_id)
+    except FirecrawlError as error:
+        error.request_id = request_id
+        raise
+    except Exception as error:
+        raise FirecrawlError(str(error), request_id=request_id) from error
 
 
 def interact(

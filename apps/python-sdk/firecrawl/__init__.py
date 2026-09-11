@@ -9,7 +9,16 @@ import os
 from .client import Firecrawl, AsyncFirecrawl, FirecrawlApp, AsyncFirecrawlApp
 from .v2.watcher import Watcher
 from .v2.watcher_async import AsyncWatcher
-from .v2.types import AuditMetadata
+from .v2.types import (
+    AuditMetadata,
+    DiscoveredTool,
+    FindToolsData,
+    ExchangeCall,
+    ExchangeError,
+    ExchangeScrapeData,
+    ExchangeScrapeResult,
+    ExchangeSearchResult,
+)
 from .v1 import (
     V1FirecrawlApp,
     AsyncV1FirecrawlApp,
@@ -81,6 +90,13 @@ __all__ = [
     'Watcher',
     'AsyncWatcher',
     'AuditMetadata',
+    'DiscoveredTool',
+    'FindToolsData',
+    'ExchangeCall',
+    'ExchangeError',
+    'ExchangeScrapeData',
+    'ExchangeScrapeResult',
+    'ExchangeSearchResult',
     'V1FirecrawlApp',
     'AsyncV1FirecrawlApp',
     'V1JsonConfig',

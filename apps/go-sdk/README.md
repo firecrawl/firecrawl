@@ -426,3 +426,48 @@ Users pin via the semantic version suffix; they never reference the
 ## License
 
 MIT
+
+## Alexandria tools
+
+Requires the matching Alexandria API deployment and team access. Semantic discovery
+returns contracts alongside web results in `SearchData.Tools`:
+
+```go
+limit := 2
+result, err := client.Search(ctx, "podcast conversations about AI agents", &firecrawl.SearchOptions{
+    Sources: []interface{}{"web", "alexandria"},
+    Limit: &limit,
+})
+if err != nil {
+    return err
+}
+fmt.Println(result.Tools, result.Warning)
+```
+
+Set `Skills` to a pointer to `true` for contextual matches in the same tools array.
+For progressive disclosure, Find Tools returns an item's next detail request and,
+when more results are available, a top-level next page request:
+
+```go
+found, err := client.FindTools(ctx, &firecrawl.FindToolsOptions{
+    Providers: []string{"particle"},
+    Limit: &limit,
+})
+if err != nil {
+    return err
+}
+fmt.Println(found.Items)
+if found.Next != nil {
+    page, err := client.ScrapeExchange(ctx, []firecrawl.ExchangeCall{*found.Next}, nil)
+    if err != nil {
+        return err
+    }
+    fmt.Println(page.Exchange)
+}
+```
+
+`ScrapeExchange` also executes selected tools through `/v2/scrape`. Inspect each
+result's `Error` and `CreditsCost`. It generates one request ID before retries;
+reuse `ExchangeOptions.RequestID` for the identical payload after an uncertain
+outcome. Both results and `ExchangeExecutionError` carry `RequestID`. Find Tools
+costs zero credits; selected tool execution uses the published price.

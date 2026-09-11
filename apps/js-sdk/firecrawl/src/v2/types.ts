@@ -796,10 +796,132 @@ export interface SearchResultImages {
   position?: number;
 }
 
+export interface ExchangeSearchResult {
+  provider: string;
+  capability: string;
+  concept: string;
+  cohorts: string[];
+  creditsCost: number;
+  similarity: number;
+}
+
 export interface SearchData {
+  warning?: string;
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
+  tools?: DiscoveredTool[];
+  "exchange-providers"?: ExchangeSearchResult[];
+}
+
+/** A complete tool contract returned by semantic or contextual discovery. */
+export interface DiscoveredTool {
+  id: string;
+  provider: string;
+  capability: string;
+  name: string;
+  description: string;
+  creditsCost: number;
+  perRecord: boolean;
+  options: Array<{
+    name: string;
+    type: string;
+    required?: boolean;
+    [key: string]: unknown;
+  }>;
+  requiresOneOf?: string[][];
+  response: {
+    about: string;
+    key: string;
+    fields: Array<{ name: string; type: string; [key: string]: unknown }>;
+    [key: string]: unknown;
+  };
+  examples: { javascript: string; python: string; curl: string };
+  example?: {
+    recordedAt: string;
+    request: Record<string, unknown>;
+    response: unknown;
+  };
+  matchedBy: Array<"semantic" | "domain">;
+  matchedUrls: string[];
+  concept?: string;
+  cohorts?: string[];
+  similarity?: number;
+}
+
+export interface FindToolsOptions {
+  urls?: string[];
+  providers?: string[];
+  categories?: string[];
+  groups?: string[];
+  capabilities?: string[];
+  level?: "providers" | "groups" | "tools";
+  expand?: Array<"options" | "response" | "examples">;
+  limit?: number;
+  offset?: number;
+}
+
+export interface FindToolsData {
+  level: "providers" | "groups" | "tools";
+  items: Array<{
+    id: string;
+    name: string;
+    next?: ExchangeCall;
+    execute?: Pick<ExchangeCall, "provider" | "capability">;
+    [key: string]: unknown;
+  }>;
+  total: number;
+  next: ExchangeCall | null;
+}
+
+export interface ExchangeScrapeRequest extends ExchangeOptions {
+  exchange: ExchangeCall | ExchangeCall[];
+}
+
+export interface ExchangeCall {
+  provider: string;
+  capability: string;
+  options?: Record<string, unknown>;
+}
+
+export interface ExchangeScrapeError {
+  code: string;
+  message: string;
+  status?: number;
+}
+
+export type ExchangeScrapeResult =
+  | {
+      provider: string;
+      capability: string;
+      creditsCost: number;
+      data: unknown;
+      records?: number;
+      upstreamStatus?: number;
+      recordedAt?: string;
+      error?: undefined;
+      [key: string]: unknown;
+    }
+  | {
+      provider?: string;
+      capability?: string;
+      error: ExchangeScrapeError;
+      [key: string]: unknown;
+    };
+
+export interface ExchangeScrapeData {
+  scrapeId: string;
+  requestId: string;
+  exchange: ExchangeScrapeResult[];
+  creditsCost: number;
+}
+
+export interface ExchangeOptions {
+  /** Reuse this ID with the identical payload when retrying an execution. */
+  requestId?: string;
+  timeout?: number;
+  integration?: string;
+  origin?: string;
 }
 
 /**
@@ -830,8 +952,11 @@ export interface CategoryOption {
 
 export interface SearchRequest {
   query: string;
+  /** Include domain-matched contracts in tools alongside semantic matches. */
+  skills?: boolean;
   sources?: Array<
-    "web" | "news" | "images" | { type: "web" | "news" | "images" }
+    "web" | "news" | "images" | "alexandria" | "exchange-providers"
+    | { type: "web" | "news" | "images" | "alexandria" | "exchange-providers" }
   >;
   /**
    * Narrow web search by category. See {@link CategoryOption}.
@@ -1708,6 +1833,7 @@ export interface ErrorDetails {
 }
 
 export class SdkError extends Error {
+  requestId?: string;
   status?: number;
   code?: string;
   details?: unknown;

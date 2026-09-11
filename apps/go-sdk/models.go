@@ -604,9 +604,62 @@ type GetMonitorCheckOptions struct {
 
 // SearchData represents the result of a search request.
 type SearchData struct {
-	Web    []map[string]interface{} `json:"web,omitempty"`
-	News   []map[string]interface{} `json:"news,omitempty"`
-	Images []map[string]interface{} `json:"images,omitempty"`
+	Warning           string                   `json:"warning,omitempty"`
+	Web               []map[string]interface{} `json:"web,omitempty"`
+	News              []map[string]interface{} `json:"news,omitempty"`
+	Images            []map[string]interface{} `json:"images,omitempty"`
+	Tools             []DiscoveredTool         `json:"tools,omitempty"`
+	ExchangeProviders []ExchangeSearchResult   `json:"exchange-providers,omitempty"`
+}
+
+type ExchangeSearchResult struct {
+	Provider    string   `json:"provider"`
+	Capability  string   `json:"capability"`
+	Concept     string   `json:"concept"`
+	Cohorts     []string `json:"cohorts"`
+	CreditsCost int      `json:"creditsCost"`
+	Similarity  float64  `json:"similarity"`
+}
+
+type ExchangeCall struct {
+	Provider   string                 `json:"provider"`
+	Capability string                 `json:"capability"`
+	Options    map[string]interface{} `json:"options,omitempty"`
+}
+
+type ExchangeOptions struct {
+	RequestID   string  `json:"-"`
+	Timeout     *int    `json:"timeout,omitempty"`
+	Integration *string `json:"integration,omitempty"`
+	Origin      *string `json:"origin,omitempty"`
+}
+
+type ExchangeScrapeError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Status  *int   `json:"status,omitempty"`
+}
+
+type ExchangeScrapeResult struct {
+	Provider       string               `json:"provider,omitempty"`
+	Capability     string               `json:"capability,omitempty"`
+	CreditsCost    *int                 `json:"creditsCost,omitempty"`
+	Data           interface{}          `json:"data,omitempty"`
+	Records        *int                 `json:"records,omitempty"`
+	UpstreamStatus *int                 `json:"upstreamStatus,omitempty"`
+	RecordedAt     string               `json:"recordedAt,omitempty"`
+	Error          *ExchangeScrapeError `json:"error,omitempty"`
+}
+
+func (r *ExchangeScrapeResult) Failed() bool {
+	return r.Error != nil
+}
+
+type ExchangeScrapeData struct {
+	RequestID   string                 `json:"requestId"`
+	ScrapeID    string                 `json:"scrapeId"`
+	Exchange    []ExchangeScrapeResult `json:"exchange"`
+	CreditsCost int                    `json:"creditsCost"`
 }
 
 // AgentResponse is returned when starting an async agent task.
@@ -826,4 +879,44 @@ type CreditUsage struct {
 	PlanCredits        int    `json:"planCredits"`
 	BillingPeriodStart string `json:"billingPeriodStart,omitempty"`
 	BillingPeriodEnd   string `json:"billingPeriodEnd,omitempty"`
+}
+
+// DiscoveredTool includes the contract and its semantic/domain provenance.
+type DiscoveredTool struct {
+	ID            string                   `json:"id"`
+	Provider      string                   `json:"provider"`
+	Capability    string                   `json:"capability"`
+	Name          string                   `json:"name"`
+	Description   string                   `json:"description"`
+	CreditsCost   int                      `json:"creditsCost"`
+	PerRecord     bool                     `json:"perRecord"`
+	Options       []map[string]interface{} `json:"options"`
+	RequiresOneOf [][]string               `json:"requiresOneOf,omitempty"`
+	Response      map[string]interface{}   `json:"response"`
+	Examples      map[string]string        `json:"examples"`
+	Example       map[string]interface{}   `json:"example,omitempty"`
+	MatchedBy     []string                 `json:"matchedBy"`
+	MatchedURLs   []string                 `json:"matchedUrls"`
+	Concept       string                   `json:"concept,omitempty"`
+	Cohorts       []string                 `json:"cohorts,omitempty"`
+	Similarity    *float64                 `json:"similarity,omitempty"`
+}
+
+type FindToolsOptions struct {
+	URLs         []string `json:"urls,omitempty"`
+	Providers    []string `json:"providers,omitempty"`
+	Categories   []string `json:"categories,omitempty"`
+	Groups       []string `json:"groups,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	Level        string   `json:"level,omitempty"`
+	Expand       []string `json:"expand,omitempty"`
+	Limit        *int     `json:"limit,omitempty"`
+	Offset       *int     `json:"offset,omitempty"`
+}
+
+type FindToolsData struct {
+	Level string                   `json:"level"`
+	Items []map[string]interface{} `json:"items"`
+	Total int                      `json:"total"`
+	Next  *ExchangeCall            `json:"next"`
 }

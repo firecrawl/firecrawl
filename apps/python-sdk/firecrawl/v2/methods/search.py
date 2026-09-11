@@ -3,7 +3,7 @@ Search functionality for Firecrawl v2 API.
 """
 
 from typing import Dict, Any, Union, List, TypeVar, Type
-from ..types import SearchRequest, SearchData, Document, SearchResultWeb, SearchResultNews, SearchResultImages
+from ..types import SearchRequest, SearchData, Document, SearchResultWeb, SearchResultNews, SearchResultImages, ExchangeSearchResult, DiscoveredTool
 from ..utils.normalize import normalize_document_input, _map_search_result_keys
 from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
 
@@ -35,13 +35,17 @@ def search(
         if not response_data.get("success"):
             handle_response_error(response, "search")
         data = response_data.get("data", {}) or {}
-        out = SearchData()
+        out = SearchData(warning=response_data.get("warning"))
         if "web" in data:
             out.web = _transform_array(data["web"], SearchResultWeb)
         if "news" in data:
             out.news = _transform_array(data["news"], SearchResultNews)
         if "images" in data:
             out.images = _transform_array(data["images"], SearchResultImages)
+        if "tools" in data:
+            out.tools = [DiscoveredTool(**item) for item in data["tools"]]
+        if "exchange-providers" in data:
+            out.exchange_providers = _transform_exchange(data["exchange-providers"])
         return out
     except Exception as err:
         # If the error is an HTTP error from requests, handle it
@@ -89,6 +93,12 @@ def _transform_array(arr: List[Any], result_type: Type[T]) -> List[Union[T, 'Doc
             results.append(result_type(url=item))
     return results
 
+def _transform_exchange(arr: Any) -> List[ExchangeSearchResult]:
+    if not isinstance(arr, list):
+        return []
+    return [ExchangeSearchResult(**item) for item in arr if isinstance(item, dict)]
+
+
 def _validate_search_request(request: SearchRequest) -> SearchRequest:
     """
     Validate and normalize search request.
@@ -122,7 +132,7 @@ def _validate_search_request(request: SearchRequest) -> SearchRequest:
     
     # Validate sources (if provided)
     if request.sources is not None:
-        valid_sources = {"web", "news", "images"}
+        valid_sources = {"web", "news", "images", "alexandria", "exchange-providers"}
         for source in request.sources:
             if isinstance(source, str):
                 if source not in valid_sources:

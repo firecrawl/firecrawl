@@ -386,3 +386,28 @@ The Firecrawl Node SDK is licensed under the MIT License. This means you are fre
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Please note that while this SDK is MIT licensed, it is part of a larger project which may be under different licensing terms. Always refer to the license information in the root directory of the main project for overall licensing details.
+
+### Alexandria
+
+With a matching API deployment, Search returns complete tool contracts in `tools`.
+`skills: true` adds domain matches to that same array. Find Tools walks the catalogue
+without executing the tools it returns.
+
+```ts
+const results = await firecrawl.search("podcast conversations about AI agents", {
+  sources: ["web", "alexandria"],
+  skills: true,
+  limit: 2,
+});
+console.log(results.tools?.[0].options);
+
+const catalogue = await firecrawl.findTools({ providers: ["particle"], limit: 2 });
+const next = catalogue.items[0]?.next;
+if (next) console.log(await firecrawl.scrape({ exchange: next }));
+```
+
+Execute a selected contract with `scrape({ exchange: { provider, capability, options } })`,
+or pass an array of up to ten calls. Check each returned `exchange` item's `error`
+before using its `data`. The result and execution errors expose `requestId`; reuse it
+with the identical payload for a retry. Automatic retries retain the same ID.
+Find Tools costs zero credits; provider execution uses its published price.

@@ -12,6 +12,8 @@ pub struct FirecrawlAPIError {
     /// Error message
     pub error: String,
 
+    pub code: Option<String>,
+
     /// Additional details of this error. Schema depends on the error itself.
     pub details: Option<Value>,
 }
@@ -28,6 +30,12 @@ impl Display for FirecrawlAPIError {
 
 #[derive(Error, Debug)]
 pub enum FirecrawlError {
+    #[error("{source} (request ID: {request_id})")]
+    ExchangeExecution {
+        request_id: String,
+        #[source]
+        source: Box<FirecrawlError>,
+    },
     #[error("{0} failed: HTTP error {1}: {2}")]
     HttpRequestFailed(String, u16, String),
     #[error("{0} failed: HTTP error: {1}")]

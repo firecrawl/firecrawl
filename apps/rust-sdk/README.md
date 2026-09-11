@@ -271,3 +271,42 @@ Contributions to the Firecrawl Rust SDK are welcome! If you find any issues or h
 ## License
 
 The Firecrawl Rust SDK is open-source and released under the [MIT License](https://opensource.org/licenses/MIT).
+
+## Alexandria tools
+
+Requires the matching Alexandria API deployment and team access. Semantic discovery
+returns contracts alongside web results in `response.data.tools`:
+
+```rust
+use firecrawl::{SearchOptions, SearchSource, FindToolsOptions};
+
+let response = client.search("podcast conversations about AI agents", SearchOptions {
+    sources: Some(vec![SearchSource::Web, SearchSource::Alexandria]),
+    limit: Some(2),
+    ..Default::default()
+}).await?;
+println!("{:?}", response.data.tools);
+println!("{:?}", response.warning);
+
+let found = client.find_tools(FindToolsOptions {
+    providers: Some(vec!["particle".into()]),
+    limit: Some(2),
+    ..Default::default()
+}).await?;
+println!("{:?}", found.items);
+if let Some(next_page) = found.next {
+    let page = client.scrape_exchange(vec![next_page], None).await?;
+    println!("{:?}", page.exchange);
+}
+```
+
+Set `SearchOptions.skills` to `Some(true)` for contextual matches in the same tools
+array. Find Tools reveals providers, groups, and contracts without a search query.
+An item's `next` reveals more detail; top-level `next` requests another page.
+Both are Exchange calls accepted by `scrape_exchange`.
+
+`ExchangeScrapeData` preserves per-tool errors and credit costs. Execution generates
+one request ID; reuse `ExchangeOptions.request_id` for the identical payload after
+an uncertain outcome. Results and `FirecrawlError::ExchangeExecution` carry that
+identity. Find Tools costs zero credits; executing a selected tool uses its
+published price. All execution goes through `/v2/scrape`.

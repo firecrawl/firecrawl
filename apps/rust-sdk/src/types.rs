@@ -1033,6 +1033,20 @@ pub enum SearchSource {
     Web,
     News,
     Images,
+    Alexandria,
+    #[serde(rename = "exchange-providers")]
+    ExchangeProviders,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExchangeSearchResult {
+    pub provider: String,
+    pub capability: String,
+    pub concept: String,
+    pub cohorts: Vec<String>,
+    pub credits_cost: u32,
+    pub similarity: f64,
 }
 
 /// Search category types.
@@ -1312,4 +1326,23 @@ mod tests {
         assert_eq!(pages[1].page_number, 2);
         assert_eq!(pages[1].markdown, "## Intro");
     }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredTool {
+    pub id: String,
+    pub provider: String,
+    pub capability: String,
+    pub name: String,
+    pub description: String,
+    pub credits_cost: u32,
+    pub per_record: bool,
+    pub options: Vec<serde_json::Value>,
+    pub response: serde_json::Value,
+    pub examples: std::collections::HashMap<String, String>,
+    pub matched_by: Vec<String>,
+    pub matched_urls: Vec<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
