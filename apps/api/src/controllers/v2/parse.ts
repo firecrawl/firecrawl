@@ -500,6 +500,7 @@ export async function parseController(
           async limited => {
             const jobPriority = await getJobPriority({
               team_id: req.auth.team_id,
+              org_id: req.acuc?.org_id ?? null,
               basePriority: 10,
             });
 

@@ -282,6 +282,7 @@ export async function crawlController(req: Request, res: Response) {
 
           let jobPriority = await getJobPriority({
             team_id,
+            org_id: orgId,
             basePriority: 21,
           });
           const billing = { endpoint: "crawl" as const, jobId: id };
@@ -347,7 +348,7 @@ export async function crawlController(req: Request, res: Response) {
           apiKeyId: chunk?.api_key_id ?? null,
         },
         jobId,
-        await getJobPriority({ team_id, basePriority: 15 }),
+        await getJobPriority({ team_id, org_id: orgId, basePriority: 15 }),
       );
       await addCrawlJob(id, jobId, logger);
     }

@@ -1,7 +1,6 @@
 import { redisEvictConnection } from "../services/redis";
 import { logger } from "./logger";
 import { autumnService } from "../services/autumn/autumn.service";
-import { getACUCTeam } from "../controllers/auth";
 import { inferPlanPriorityFromMultiplier } from "../services/rate-limiter";
 
 const SET_KEY_PREFIX = "limit_team_id:";
@@ -32,9 +31,14 @@ export async function deleteJobPriority(team_id, job_id) {
 
 export async function getJobPriority({
   team_id,
+  org_id,
   basePriority = 10,
 }: {
   team_id: string;
+  /** The team's org, from the ACUC the caller already holds. Required so a
+   * caller cannot silently omit it and fall back to the high fail-open
+   * limits; pass null only when the caller genuinely has no org. */
+  org_id: string | null;
   basePriority?: number;
   from_extract?: boolean;
 }): Promise<number> {
@@ -49,13 +53,11 @@ export async function getJobPriority({
     const setLength = await redisEvictConnection.scard(setKey);
 
     // Plan priority is inferred from the team's Autumn rate-limit multiplier.
-    // The org comes from the team's ACUC — the same lookup the multiplier used
-    // to make for itself, now that the billing service resolves nothing.
-    const orgId =
-      (await getACUCTeam(team_id).catch(() => null))?.org_id ?? null;
+    // The org is threaded in by the caller: this runs once per discovered link
+    // inside a crawl, so it must not do an ACUC lookup of its own.
     const multiplier = await autumnService.getRateLimitMultiplier(
       team_id,
-      orgId,
+      org_id,
     );
     const { bucketLimit, planModifier } =
       inferPlanPriorityFromMultiplier(multiplier);

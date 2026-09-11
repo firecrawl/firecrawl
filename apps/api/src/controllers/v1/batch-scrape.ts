@@ -365,6 +365,7 @@ export async function batchScrapeController(
     // set base to 21
     jobPriority = await getJobPriority({
       team_id: req.auth.team_id,
+      org_id: req.acuc?.org_id ?? null,
       basePriority: 21,
     });
   }

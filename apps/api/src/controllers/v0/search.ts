@@ -118,7 +118,11 @@ async function searchHelper(
     return { success: true, error: "No search results found", returnCode: 200 };
   }
 
-  const jobPriority = await getJobPriority({ team_id, basePriority: 20 });
+  const jobPriority = await getJobPriority({
+    team_id,
+    org_id,
+    basePriority: 20,
+  });
   const billing = { endpoint: "search" as const, jobId };
 
   // filter out social media links

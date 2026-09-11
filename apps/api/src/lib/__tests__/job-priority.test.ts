@@ -6,6 +6,8 @@ import {
 } from "../job-priority";
 import { redisEvictConnection } from "../../services/redis";
 import {} from "../../types";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 vi.mock("../../services/queue-service", () => ({
   redisConnection: {
@@ -50,11 +52,11 @@ describe("Job Priority Tests", () => {
     const plan = "standard";
     (redisEvictConnection.scard as Mock).mockResolvedValue(150);
 
-    const priority = await getJobPriority({ team_id });
+    const priority = await getJobPriority({ team_id, org_id: null });
     expect(priority).toBe(10);
 
     (redisEvictConnection.scard as Mock).mockResolvedValue(250);
-    const priorityExceeded = await getJobPriority({ team_id });
+    const priorityExceeded = await getJobPriority({ team_id, org_id: null });
     expect(priorityExceeded).toBe(20); // basePriority + Math.ceil((250 - 200) * 0.4)
   });
 
@@ -63,22 +65,22 @@ describe("Job Priority Tests", () => {
 
     (redisEvictConnection.scard as Mock).mockResolvedValue(50);
     let plan = "hobby";
-    let priority = await getJobPriority({ team_id });
+    let priority = await getJobPriority({ team_id, org_id: null });
     expect(priority).toBe(10);
 
     (redisEvictConnection.scard as Mock).mockResolvedValue(150);
     plan = "hobby";
-    priority = await getJobPriority({ team_id });
+    priority = await getJobPriority({ team_id, org_id: null });
     expect(priority).toBe(25); // basePriority + Math.ceil((150 - 50) * 0.3)
 
     (redisEvictConnection.scard as Mock).mockResolvedValue(25);
     plan = "free";
-    priority = await getJobPriority({ team_id });
+    priority = await getJobPriority({ team_id, org_id: null });
     expect(priority).toBe(10);
 
     (redisEvictConnection.scard as Mock).mockResolvedValue(60);
     plan = "free";
-    priority = await getJobPriority({ team_id });
+    priority = await getJobPriority({ team_id, org_id: null });
     expect(priority).toBe(28); // basePriority + Math.ceil((60 - 25) * 0.5)
   });
 
@@ -133,5 +135,25 @@ describe("Job Priority Tests", () => {
     expect(setSize).toBe(0);
 
     vi.useRealTimers();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Where the org comes from: the caller, and nowhere else.
+// ---------------------------------------------------------------------------
+
+describe("the org the caller supplies", () => {
+  // getJobPriority runs once per discovered link inside a crawl, so an ACUC
+  // lookup here is one Redis GET per link. The org must be threaded in by the
+  // caller, which already holds it.
+  it("cannot be resolved here: no ACUC lookup is even imported", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "job-priority.ts"),
+      "utf-8",
+    );
+    expect(source).not.toContain("getACUCTeam");
+    expect(source).toMatch(
+      /getRateLimitMultiplier\(\s*team_id,\s*org_id,?\s*\)/,
+    );
   });
 });

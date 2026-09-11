@@ -111,7 +111,7 @@ async function scrapeHelper(
       apiKeyId,
     },
     jobId,
-    await getJobPriority({ team_id, basePriority: 10 }),
+    await getJobPriority({ team_id, org_id, basePriority: 10 }),
     false,
     true,
   );

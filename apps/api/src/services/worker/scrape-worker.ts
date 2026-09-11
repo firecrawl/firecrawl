@@ -121,6 +121,22 @@ if (require.main === module) {
   warmExchangeCatalog();
 }
 
+// The org for a job's Autumn lookups. It rides the job payload, snapshotted
+// from the request ACUC at acceptance; the ACUC answers only for a job
+// enqueued without one (monitor jobs null it deliberately, since the field
+// also gates blocklist enforcement) — the same lookup getJobPriority used to
+// make for itself, now hoisted to once per job instead of once per link.
+async function orgIdForJob(
+  orgIdFromJob: string | null | undefined,
+  teamId: string,
+): Promise<string | null> {
+  return (
+    orgIdFromJob ??
+    (await getACUCTeam(teamId).catch(() => null))?.org_id ??
+    null
+  );
+}
+
 async function billScrapeJob(
   job: NuQJob<any>,
   document: Document | null,
@@ -692,11 +708,18 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               }
             }
 
+            // Hoisted: one org resolution per job, not one per discovered link.
+            const crawlOrgId =
+              discoveredLinks.length > 0
+                ? await orgIdForJob(sc.internalOptions?.orgId, sc.team_id)
+                : null;
+
             for (const link of discoveredLinks) {
               if (await lockURL(job.data.crawl_id, sc, link)) {
                 // This seems to work really welel
                 const jobPriority = await getJobPriority({
                   team_id: sc.team_id,
+                  org_id: crawlOrgId,
                   basePriority: job.data.crawl_id ? 20 : 10,
                 });
                 const jobId = uuidv7();
@@ -1321,7 +1344,11 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
           : undefined,
       },
       jobId,
-      await getJobPriority({ team_id: job.data.team_id, basePriority: 15 }),
+      await getJobPriority({
+        team_id: job.data.team_id,
+        org_id: await orgIdForJob(sc.internalOptions?.orgId, job.data.team_id),
+        basePriority: 15,
+      }),
     );
     logger.debug("Adding scrape job to BullMQ...", { jobId });
     await addCrawlJob(job.data.crawl_id, jobId, logger);
@@ -1432,6 +1459,10 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
       let jobPriority = await getJobPriority({
         team_id: job.data.team_id,
+        org_id: await orgIdForJob(
+          job.data.internalOptions?.orgId,
+          job.data.team_id,
+        ),
         basePriority: 21,
       });
       logger.debug("Using job priority " + jobPriority, { jobPriority });
@@ -1600,6 +1631,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
 
       const jobPriority = await getJobPriority({
         team_id: job.data.team_id,
+        org_id: await orgIdForJob(sc.internalOptions?.orgId, job.data.team_id),
         basePriority: 21,
       });
 

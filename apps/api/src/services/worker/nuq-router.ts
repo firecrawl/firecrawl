@@ -249,10 +249,23 @@ export async function fdbEnqueueScrapeJobs(
 }> {
   let teamLimit: number | null = null;
   if (!isSelfHosted()) {
-    // The org comes from the team's ACUC — the same lookup the concurrency
-    // limit used to make for itself, now that the billing service resolves
-    // nothing. One per enqueue batch, not per job.
-    const orgId = (await getACUCTeam(teamId).catch(() => null))?.org_id ?? null;
+    // The org rides the job payload, snapshotted from the request ACUC at
+    // acceptance; every job in a batch is one team's, so any of them answers.
+    // The ACUC lookup is the fallback for a job enqueued without one (monitor
+    // jobs null the field deliberately — it also gates blocklist enforcement),
+    // so a monitor team is still gated on its real limit rather than falling
+    // open. Batches are enqueued per discovered link, so the payload org keeps
+    // the common path free of a lookup.
+    const orgId =
+      jobs
+        .map(j =>
+          "internalOptions" in j.data
+            ? (j.data.internalOptions?.orgId ?? null)
+            : null,
+        )
+        .find(o => o !== null) ??
+      (await getACUCTeam(teamId).catch(() => null))?.org_id ??
+      null;
     const autumnLimit = await autumnService.getConcurrencyLimit(teamId, orgId);
     // fdbForced: leave unlimited (null) when Autumn has no concurrency value.
     teamLimit = fdbForced() ? autumnLimit : (autumnLimit ?? 2);
