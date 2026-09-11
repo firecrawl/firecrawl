@@ -9,11 +9,18 @@ import { z } from "zod";
 //
 // Keyword-style filtering (one short pattern per term) routinely needs a few
 // hundred patterns per field, so the count cap has headroom for that. Measured
-// against the native module, 1000 patterns compile in ~2 ms for short keywords
-// and ~350 ms in the worst case (every pattern a maximal-length alternation),
-// which is well within what a single request may spend on validation.
+// against the native module, 1000 short keyword patterns compile in ~2 ms.
 export const MAX_PATH_PATTERNS = 1000;
 export const MAX_PATH_PATTERN_LENGTH = 2000;
+
+// includePaths and excludePaths are compiled together, so the per-field caps
+// alone would let one request demand 2 x 1000 x 2000 characters of compile
+// work. These bound the request as a whole: total pattern count and total
+// pattern characters across both fields. The worst case that fits (1000
+// patterns whose combined length is 100k characters) compiles in ~120 ms on the
+// native module, versus ~700 ms for the unbudgeted per-field maximum.
+export const MAX_TOTAL_PATH_PATTERNS = 1000;
+export const MAX_TOTAL_PATH_PATTERN_CHARS = 100_000;
 
 export const pathPatternsSchema = z
   .string()
@@ -27,27 +34,67 @@ export const pathPatternsSchema = z
     `includePaths and excludePaths each accept at most ${MAX_PATH_PATTERNS} patterns.`,
   );
 
+type PathPatternFields = {
+  includePaths?: string[];
+  excludePaths?: string[];
+};
+
+// Validate includePaths/excludePaths as a unit: first the request-wide budget,
+// then each pattern against the engine. Nothing is compiled once any cap is
+// exceeded, because the caps are what bound the compile work a request can
+// demand and the request has already been rejected at that point.
+export function addPathRegexIssues(
+  fields: PathPatternFields,
+  ctx: z.RefinementCtx,
+): void {
+  const include = fields.includePaths ?? [];
+  const exclude = fields.excludePaths ?? [];
+  if (include.length === 0 && exclude.length === 0) return;
+
+  // Zod still runs this refinement when pathPatternsSchema has already reported
+  // a per-field count or length violation, so re-check those caps here.
+  const overFieldCap = (patterns: string[]) =>
+    patterns.length > MAX_PATH_PATTERNS ||
+    patterns.some(p => p.length > MAX_PATH_PATTERN_LENGTH);
+  if (overFieldCap(include) || overFieldCap(exclude)) return;
+
+  const totalCount = include.length + exclude.length;
+  if (totalCount > MAX_TOTAL_PATH_PATTERNS) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["includePaths"],
+      message: `includePaths and excludePaths together accept at most ${MAX_TOTAL_PATH_PATTERNS} patterns (got ${totalCount}).`,
+    });
+    return;
+  }
+  const totalChars = [...include, ...exclude].reduce(
+    (sum, p) => sum + p.length,
+    0,
+  );
+  if (totalChars > MAX_TOTAL_PATH_PATTERN_CHARS) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["includePaths"],
+      message: `includePaths and excludePaths together accept at most ${MAX_TOTAL_PATH_PATTERN_CHARS} characters of patterns (got ${totalChars}).`,
+    });
+    return;
+  }
+
+  addFieldRegexIssues(include, "includePaths", ctx);
+  addFieldRegexIssues(exclude, "excludePaths", ctx);
+}
+
 // Link filtering compiles includePaths/excludePaths with the Rust `regex` crate
 // (RE2-style: no look-around or backreferences). Historically an unsupported
 // pattern compiled fine in most clients' regex flavor but was silently dropped
 // by the engine, so the paths it was meant to filter got crawled anyway. Reject
 // such patterns up front with a message that points at the actual limitation.
-export function addPathRegexIssues(
-  patterns: string[] | undefined,
+function addFieldRegexIssues(
+  patterns: string[],
   field: "includePaths" | "excludePaths",
   ctx: z.RefinementCtx,
 ): void {
-  if (!patterns || patterns.length === 0) return;
-  // Zod still runs this refinement when pathPatternsSchema has already reported
-  // a count or length violation, so re-check the caps here: they are what bound
-  // the total compile work a request can demand, and an over-cap request has
-  // already been rejected.
-  if (
-    patterns.length > MAX_PATH_PATTERNS ||
-    patterns.some(p => p.length > MAX_PATH_PATTERN_LENGTH)
-  ) {
-    return;
-  }
+  if (patterns.length === 0) return;
   for (const { pattern, error } of validateRegexes(patterns)) {
     const summary = summarizeRegexError(error);
     ctx.addIssue({

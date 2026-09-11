@@ -20,7 +20,10 @@ import {
   TEST_API_URL,
 } from "./lib";
 import request from "./lib";
-import { MAX_PATH_PATTERNS } from "../../../lib/crawl-regex";
+import {
+  MAX_PATH_PATTERNS,
+  MAX_TOTAL_PATH_PATTERNS,
+} from "../../../lib/crawl-regex";
 import { describe, it, expect } from "vitest";
 
 let identity: Identity;
@@ -254,6 +257,30 @@ describe("Crawl tests", () => {
       ).toContainEqual(
         expect.stringMatching(
           new RegExp(`at most ${MAX_PATH_PATTERNS} patterns`),
+        ),
+      );
+    },
+    scrapeTimeout,
+  );
+
+  it.concurrent(
+    "rejects include and exclude patterns that together exceed the budget",
+    async () => {
+      const half = Math.floor(MAX_TOTAL_PATH_PATTERNS / 2) + 1;
+      const res = await crawlStart(
+        {
+          url: "https://firecrawl.dev",
+          includePaths: Array.from({ length: half }, (_, i) => `^/a${i}`),
+          excludePaths: Array.from({ length: half }, (_, i) => `^/b${i}`),
+        },
+        identity,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toMatch(
+        new RegExp(
+          `together accept at most ${MAX_TOTAL_PATH_PATTERNS} patterns`,
         ),
       );
     },

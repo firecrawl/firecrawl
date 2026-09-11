@@ -1318,8 +1318,7 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
 
 export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
   .superRefine((x, ctx) => {
-    addPathRegexIssues(x.includePaths, "includePaths", ctx);
-    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+    addPathRegexIssues(x, ctx);
   })
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
@@ -1373,8 +1372,7 @@ const mapRequestSchemaBase = crawlerOptions
 export const mapRequestSchema = strictWithMessage(
   mapRequestSchemaBase,
 ).superRefine((x, ctx) => {
-  addPathRegexIssues(x.includePaths, "includePaths", ctx);
-  addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+  addPathRegexIssues(x, ctx);
 });
 
 // export type MapRequest = {

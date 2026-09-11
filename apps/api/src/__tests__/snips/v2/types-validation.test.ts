@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   MAX_PATH_PATTERNS,
   MAX_PATH_PATTERN_LENGTH,
+  MAX_TOTAL_PATH_PATTERNS,
+  MAX_TOTAL_PATH_PATTERN_CHARS,
 } from "../../../lib/crawl-regex";
 import {
   scrapeRequestSchema,
@@ -1042,6 +1044,39 @@ describe("V2 Types Validation", () => {
           ),
         }),
       ).toThrow(new RegExp(`at most ${MAX_PATH_PATTERNS} patterns`));
+    });
+
+    it("should reject more than the aggregate number of path patterns", () => {
+      // Each field is within its own cap, but together they exceed the budget.
+      const half = Math.floor(MAX_TOTAL_PATH_PATTERNS / 2) + 1;
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          includePaths: Array.from({ length: half }, (_, i) => `^/a${i}`),
+          excludePaths: Array.from({ length: half }, (_, i) => `^/b${i}`),
+        }),
+      ).toThrow(
+        new RegExp(
+          `together accept at most ${MAX_TOTAL_PATH_PATTERNS} patterns`,
+        ),
+      );
+    });
+
+    it("should reject path patterns exceeding the aggregate character budget", () => {
+      const pattern = "^/" + "a".repeat(MAX_PATH_PATTERN_LENGTH - 2);
+      const perField =
+        Math.floor(MAX_TOTAL_PATH_PATTERN_CHARS / pattern.length / 2) + 1;
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          includePaths: Array.from({ length: perField }, () => pattern),
+          excludePaths: Array.from({ length: perField }, () => pattern),
+        }),
+      ).toThrow(
+        new RegExp(
+          `together accept at most ${MAX_TOTAL_PATH_PATTERN_CHARS} characters`,
+        ),
+      );
     });
 
     it("should not compile patterns once the count cap is exceeded", () => {
