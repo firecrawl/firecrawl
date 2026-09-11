@@ -1,5 +1,12 @@
 import { reconcileExchangeRequests } from "../exchange/reconcile";
-import { reportExchangeUsageBilling } from "../exchange/report";
+import {
+  enqueueExchangeLedger,
+  claimExchangeLedger,
+  finishExchangeLedger,
+  confirmExchangeLedger,
+  recoverExchangeLedger,
+  isRetryableLedgerRollback,
+} from "../exchange/ledger";
 import { logger } from "../../lib/logger";
 import { getRedisConnection } from "../queue-service";
 import { billTeam7 } from "../../db/rpc";
@@ -65,10 +72,7 @@ async function confirmExchangeOutcomes(
         const op = operations[index];
         await withExchangeConfirmSlot(() =>
           op.exchange_usage_request_id
-            ? reportExchangeUsageBilling(
-                op.exchange_usage_request_id,
-                op.billing_reference,
-              )
+            ? confirmExchangeLedger(op)
             : reportExchangeBilling({
                 accessEventId: op.exchange_access_event_id!,
                 status: "confirmed",
@@ -90,7 +94,7 @@ const BATCH_TIMEOUT = 15000; // 15 seconds processing interval
 const LOCK_TIMEOUT = 30000; // 30 seconds lock timeout
 
 // Define interfaces for billing operations
-interface BillingOperation {
+export interface BillingOperation {
   team_id: string;
   credits: number;
   billing?: BillingMetadata;
@@ -185,14 +189,30 @@ export async function processBillingBatch() {
   // Exchange operations whose debit committed this run; their ledger
   // confirmations are delivered after the lock is released.
   const committedExchangeOps: BillingOperation[] = [];
+  const exchangeClaims = new Map<BillingOperation, string>();
+  const checkpoint = async (
+    group: GroupedBillingOperation,
+    state: "committed" | "queued" | "review",
+  ) => {
+    for (const op of group.operations) {
+      const token = exchangeClaims.get(op);
+      if (token) await finishExchangeLedger(op, token, state);
+    }
+  };
 
   try {
     // Get all operations from Redis list
     const operations: BillingOperation[] = [];
-    while (operations.length < BATCH_SIZE) {
+    for (let popped = 0; popped < BATCH_SIZE; popped++) {
       const op = await redis.lpop(BATCH_KEY);
       if (!op) break;
-      operations.push(JSON.parse(op));
+      const operation: BillingOperation = JSON.parse(op);
+      if (operation.exchange_usage_request_id) {
+        const token = await claimExchangeLedger(operation);
+        if (!token) continue;
+        exchangeClaims.set(operation, token);
+      }
+      operations.push(operation);
     }
 
     if (operations.length === 0) {
@@ -264,6 +284,12 @@ export async function processBillingBatch() {
         );
 
         if (!billingResult.success) {
+          await checkpoint(
+            group,
+            isRetryableLedgerRollback(billingResult.error)
+              ? "queued"
+              : "review",
+          );
           await refundRequestTrackedCredits(group);
           // Deliberately no Exchange outcome here: supaBillTeam maps thrown
           // errors to success: false, and a transport error can occur after
@@ -285,6 +311,8 @@ export async function processBillingBatch() {
           `✅ Successfully billed team ${group.team_id} for ${group.total_credits} credits`,
         );
 
+        await checkpoint(group, "committed");
+
         // Ledger commit only — usage is tracked to Autumn at request time, not here.
 
         // The debit is committed: confirm the Exchange accesses it covered
@@ -297,6 +325,13 @@ export async function processBillingBatch() {
           ),
         );
       } catch (error) {
+        try {
+          await checkpoint(group, "review");
+        } catch (checkpointError) {
+          logger.error("Exchange ledger checkpoint will require recovery", {
+            checkpointError,
+          });
+        }
         await refundRequestTrackedCredits(group);
         // No Exchange outcome here either — same ambiguity as the
         // success: false branch above; the events stay pending.
@@ -333,6 +368,9 @@ export function startBillingBatchProcessing() {
   batchInterval = setInterval(async () => {
     const queueLength = await getRedisConnection().llen(BATCH_KEY);
     logger.info(`Checking billing batch queue (${queueLength} items pending)`);
+    void recoverExchangeLedger().catch(error =>
+      logger.error("Exchange ledger recovery failed", { error }),
+    );
     void reconcileExchangeRequests().catch(error =>
       logger.error("Exchange recovery failed", { error }),
     );
@@ -398,19 +436,7 @@ export async function queueBillingOperation(
     // Add operation to Redis list
     const redis = getRedisConnection();
     if (exchange && "usageRequestId" in exchange) {
-      // A recovered request can repeat this handoff after its acknowledgement was lost.
-      await redis.eval(
-        `
-        if redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
-        redis.call('RPUSH', KEYS[1], ARGV[1])
-        redis.call('SET', KEYS[2], '1', 'EX', 604800)
-        return 1
-      `,
-        2,
-        BATCH_KEY,
-        `exchange:billing-enqueued:${team_id}:${exchange.usageRequestId}`,
-        JSON.stringify(operation),
-      );
+      if (!(await enqueueExchangeLedger(operation))) return { success: false };
     } else {
       await redis.rpush(BATCH_KEY, JSON.stringify(operation));
     }

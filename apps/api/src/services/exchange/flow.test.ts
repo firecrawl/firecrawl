@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   keys: new Map<string, string>(),
   due: new Map<string, number>(),
+  ledgerDue: new Map<string, number>(),
   failPhase: "",
   quote: 3,
   queue: [] as string[],
@@ -30,15 +31,94 @@ vi.mock("../../lib/exchange-provider-access", () => ({
 vi.mock("../queue-service", () => ({
   getRedisConnection: () => ({
     get: async (key: string) => state.keys.get(key) ?? null,
-    zrangebyscore: async () =>
-      [...state.due.entries()]
+    zrangebyscore: async (index: string) =>
+      [
+        ...(index === "exchange:billing-pending"
+          ? state.ledgerDue
+          : state.due
+        ).entries(),
+      ]
         .filter(([, due]) => due <= Date.now())
         .map(([key]) => key),
     zremrangebyscore: async () => 0,
-    zrem: async (_index: string, key: string) => state.due.delete(key),
+    zrem: async (index: string, key: string) =>
+      (index === "exchange:billing-pending"
+        ? state.ledgerDue
+        : state.due
+      ).delete(key),
     eval: async (script: string, keyCount: number, ...values: any[]) => {
       const [key, second] = values;
       const args = values.slice(keyCount);
+      if (values.slice(0, keyCount).includes("exchange:billing-pending")) {
+        if (script.includes("local existing")) {
+          const existing = state.keys.get(second);
+          if (existing) {
+            const record = JSON.parse(existing);
+            if (!record || typeof record !== "object") {
+              state.keys.set(
+                second,
+                JSON.stringify({ ...JSON.parse(args[0]), state: "review" }),
+              );
+              return 0;
+            }
+            return ["queued", "committed"].includes(record.state) ? 1 : 0;
+          }
+          if (state.failQueue) throw new Error("Queue unavailable");
+          state.keys.set(second, args[0]);
+          state.queue.push(args[2]);
+          state.ledgerDue.set(second, args[3]);
+          return 1;
+        }
+        if (script.includes("local due")) {
+          const recordKey = values[2];
+          if (
+            !state.ledgerDue.has(recordKey) ||
+            state.ledgerDue.get(recordKey)! > args[0]
+          )
+            return null;
+          const raw = state.keys.get(recordKey);
+          if (!raw) {
+            state.ledgerDue.delete(recordKey);
+            return null;
+          }
+          const record = JSON.parse(raw);
+          if (record.state === "processing") {
+            record.state = "review";
+            state.ledgerDue.delete(recordKey);
+          } else {
+            state.ledgerDue.set(recordKey, args[1]);
+            if (record.state === "queued")
+              state.queue.push(JSON.stringify(record.operation));
+          }
+          state.keys.set(recordKey, JSON.stringify(record));
+          return JSON.stringify(record);
+        }
+        const raw = state.keys.get(key);
+        if (!raw) return 0;
+        const record = JSON.parse(raw);
+        if (script.includes("record.token =")) {
+          if (!record || typeof record !== "object") {
+            state.keys.set(key, args[3]);
+            return 0;
+          }
+          if (record.state !== "queued") return 0;
+          record.state = "processing";
+          record.token = args[0];
+          state.ledgerDue.set(key, args[2]);
+        } else {
+          if (record.token !== args[0]) return 0;
+          if (record.state === "committed") return 2;
+          record.state = args[1];
+          if (record.state === "review") state.ledgerDue.delete(key);
+          else {
+            state.ledgerDue.set(key, args[3]);
+            if (record.state === "queued")
+              state.queue.push(JSON.stringify(record.operation));
+          }
+        }
+        state.keys.set(key, JSON.stringify(record));
+        return 1;
+      }
       if (script.includes("'ZSCORE'")) {
         if (!state.due.has(args[0]) || state.due.get(args[0])! > args[1])
           return 0;
@@ -154,6 +234,7 @@ vi.mock("../../lib/external-request-id", () => ({
   externalRequestId: () => "external",
 }));
 import { reconcileExchangeRequests } from "./reconcile";
+import { recoverExchangeLedger } from "./ledger";
 import { exchangeRouter } from "../../routes/exchange";
 import { exchangeScrapeController } from "../../controllers/v2/scrape-exchange";
 import {
@@ -184,6 +265,7 @@ beforeEach(() => {
   state.access.mockReset().mockResolvedValue(undefined);
   state.keys.clear();
   state.due.clear();
+  state.ledgerDue.clear();
   state.failPhase = "";
   state.quote = 3;
   state.queue.length = 0;
@@ -730,3 +812,71 @@ it.each([
     expect(state.debit).not.toHaveBeenCalled();
   },
 );
+
+it("retains and retries a rolled-back Exchange debit without executing the provider twice", async () => {
+  expect((await send()).status).toBe(200);
+  state.debit.mockRejectedValueOnce(
+    Object.assign(new Error("serialization failure"), { code: "40001" }),
+  );
+  await processBillingBatch();
+  expect(state.queue).toHaveLength(1);
+  expect(state.fetch).not.toHaveBeenCalled();
+  await processBillingBatch();
+  expect(state.debit).toHaveBeenCalledTimes(2);
+  expect(state.fetch).toHaveBeenCalledOnce();
+  expect(state.ledgerDue.size).toBe(0);
+  expect(state.forward).toHaveBeenCalledOnce();
+});
+
+it("recovers an Exchange operation lost after dequeue and skips duplicate queue entries", async () => {
+  expect((await send()).status).toBe(200);
+  const dequeued = state.queue.shift()!;
+  for (const key of state.ledgerDue.keys()) state.ledgerDue.set(key, 0);
+  await recoverExchangeLedger();
+  state.queue.push(dequeued);
+  await processBillingBatch();
+  expect(state.debit).toHaveBeenCalledOnce();
+  expect(state.fetch).toHaveBeenCalledOnce();
+});
+
+it("preserves uncertain ledger outcomes for review and never reports them as committed", async () => {
+  expect((await send()).status).toBe(200);
+  const op = JSON.parse(state.queue[0]);
+  state.debit.mockRejectedValueOnce(new Error("commit acknowledgement lost"));
+  await processBillingBatch();
+  const key = `exchange:billing-enqueued:${op.team_id}:${op.exchange_usage_request_id}`;
+  expect(JSON.parse(state.keys.get(key)!)).toMatchObject({
+    state: "review",
+    operation: op,
+  });
+  expect(
+    await queueBillingOperation(
+      op.team_id,
+      op.credits,
+      op.api_key_id,
+      op.billing,
+      false,
+      true,
+      { usageRequestId: op.exchange_usage_request_id },
+    ),
+  ).toMatchObject({ success: false });
+  await processBillingBatch();
+  expect(state.debit).toHaveBeenCalledOnce();
+  expect(state.fetch).not.toHaveBeenCalled();
+});
+
+it("retries a failed Exchange confirmation without debiting the ledger again", async () => {
+  expect((await send()).status).toBe(200);
+  state.fetch.mockResolvedValueOnce({
+    ok: false,
+    status: 400,
+    arrayBuffer: async () => new ArrayBuffer(0),
+  });
+  await processBillingBatch();
+  expect(state.ledgerDue.size).toBe(1);
+  for (const key of state.ledgerDue.keys()) state.ledgerDue.set(key, 0);
+  await recoverExchangeLedger();
+  expect(state.ledgerDue.size).toBe(0);
+  expect(state.debit).toHaveBeenCalledOnce();
+  expect(state.fetch).toHaveBeenCalledTimes(2);
+});
