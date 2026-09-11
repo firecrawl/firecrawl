@@ -270,7 +270,7 @@ export async function getMapResults({
           false,
           crawlerOptions.timeout ?? 30000,
           abort,
-          crawlerOptions.useMock,
+          undefined,
           ignoreCache ? 0 : undefined,
         );
       } catch (e) {
