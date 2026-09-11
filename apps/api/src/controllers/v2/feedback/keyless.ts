@@ -1,7 +1,7 @@
 import type { Response } from "express";
 import { config } from "../../../config";
 import { keylessTeamUuid } from "../../../lib/keyless";
-import { redisRateLimitClient } from "../../../services/rate-limiter";
+import { keylessFeedbackRedis } from "./keyless-redis";
 import type { RequestWithAuth } from "../types";
 import { keylessFeedbackSchema } from "./keyless-schema";
 import {
@@ -17,7 +17,11 @@ export async function keylessFeedbackController(
 ) {
   const fail = (status: number, feedbackErrorCode: string, error: string) =>
     res.status(status).json({ success: false, feedbackErrorCode, error });
-  if (!config.KEYLESS_FEEDBACK_ENABLED || !config.USE_DB_AUTHENTICATION)
+  if (
+    !config.KEYLESS_FEEDBACK_ENABLED ||
+    !config.USE_DB_AUTHENTICATION ||
+    !keylessFeedbackRedis
+  )
     return fail(
       503,
       "FEEDBACK_UNAVAILABLE",
@@ -37,7 +41,7 @@ export async function keylessFeedbackController(
   const answers = parsed.data;
   const identity = keylessTeamUuid(req.auth.team_id)!;
   try {
-    const stored = await redisRateLimitClient.get(
+    const stored = await keylessFeedbackRedis.get(
       keylessFeedbackContextKey(identity, answers.endpoint, answers.jobId),
     );
     if (!stored)
