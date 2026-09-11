@@ -1,3 +1,4 @@
+import { reconcileExchangeRequests } from "../exchange/reconcile";
 import { reportExchangeUsageBilling } from "../exchange/report";
 import { logger } from "../../lib/logger";
 import { getRedisConnection } from "../queue-service";
@@ -138,7 +139,12 @@ async function releaseLock() {
 async function refundRequestTrackedCredits(group: GroupedBillingOperation) {
   const requestTrackedCredits = group.operations
     // Provider execution is already delivered; a ledger failure needs reconciliation.
-    .filter(op => op.autumnTrackInRequest && !op.exchange_usage_request_id)
+    .filter(
+      op =>
+        op.autumnTrackInRequest &&
+        !op.exchange_usage_request_id &&
+        !op.exchange_access_event_id,
+    )
     .reduce((sum, op) => sum + op.credits, 0);
 
   if (requestTrackedCredits <= 0) return;
@@ -305,7 +311,13 @@ export async function processBillingBatch() {
   } catch (error) {
     logger.error("Error processing billing batch", { error });
   } finally {
-    await releaseLock();
+    try {
+      await releaseLock();
+    } catch (error) {
+      logger.error("Billing lock release failed; its lease will expire", {
+        error,
+      });
+    }
   }
 
   await confirmExchangeOutcomes(committedExchangeOps);
@@ -321,6 +333,9 @@ export function startBillingBatchProcessing() {
   batchInterval = setInterval(async () => {
     const queueLength = await getRedisConnection().llen(BATCH_KEY);
     logger.info(`Checking billing batch queue (${queueLength} items pending)`);
+    void reconcileExchangeRequests().catch(error =>
+      logger.error("Exchange recovery failed", { error }),
+    );
     await processBillingBatch();
   }, BATCH_TIMEOUT);
 
@@ -333,7 +348,7 @@ export function startBillingBatchProcessing() {
  *
  * Internal billing operations are batched and committed to Supabase.
  */
-export type ExchangeBillingReceipt =
+type ExchangeBillingReceipt =
   | { accessEventId: string; billingReference?: string }
   | { usageRequestId: string; billingReference?: string };
 
@@ -382,7 +397,23 @@ export async function queueBillingOperation(
 
     // Add operation to Redis list
     const redis = getRedisConnection();
-    await redis.rpush(BATCH_KEY, JSON.stringify(operation));
+    if (exchange && "usageRequestId" in exchange) {
+      // A recovered request can repeat this handoff after its acknowledgement was lost.
+      await redis.eval(
+        `
+        if redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
+        redis.call('RPUSH', KEYS[1], ARGV[1])
+        redis.call('SET', KEYS[2], '1', 'EX', 604800)
+        return 1
+      `,
+        2,
+        BATCH_KEY,
+        `exchange:billing-enqueued:${team_id}:${exchange.usageRequestId}`,
+        JSON.stringify(operation),
+      );
+    } else {
+      await redis.rpush(BATCH_KEY, JSON.stringify(operation));
+    }
     const queueLength = await getRedisConnection().llen(BATCH_KEY);
     logger.info(
       `📥 Added billing operation to queue (${queueLength} total pending)`,

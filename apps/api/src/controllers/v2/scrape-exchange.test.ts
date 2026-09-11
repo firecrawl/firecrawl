@@ -41,6 +41,7 @@ function req(
 function res() {
   const out: { status?: number; body?: any } = {};
   const r: any = {
+    setHeader: vi.fn(),
     status: (s: number) => {
       out.status = s;
       return r;

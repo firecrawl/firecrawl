@@ -202,3 +202,32 @@ it("merges selected tools across URL batches without leaking one domain's select
   ]);
   agent.assertNoPendingInterceptors();
 });
+
+it("returns contract links on the caller's API origin", async () => {
+  agent
+    .get("https://exchange.example")
+    .intercept({ path: "/v1/skills/resolve", method: "POST" })
+    .reply(200, {
+      skills: [
+        {
+          id: "particle",
+          description: "Podcasts",
+          matchedDomains: ["spotify.com"],
+          url: "/v1/skills/particle/SKILL.md",
+        },
+      ],
+    });
+  const result = await resolveSearchSkills(
+    { web: [{ url: "https://spotify.com" }] } as Parameters<
+      typeof resolveSearchSkills
+    >[0],
+    "team",
+    true,
+    undefined,
+    undefined,
+    "https://preview.firecrawl.dev",
+  );
+  expect(result[0].url).toBe(
+    "https://preview.firecrawl.dev/exchange/skills/particle/SKILL.md",
+  );
+});

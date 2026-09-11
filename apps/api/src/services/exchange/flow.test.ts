@@ -3,8 +3,12 @@ import request from "supertest";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   keys: new Map<string, string>(),
+  due: new Map<string, number>(),
+  failPhase: "",
+  quote: 3,
   queue: [] as string[],
   forward: vi.fn(),
+  access: vi.fn(),
   semaphore: vi.fn(),
   track: vi.fn(),
   hold: vi.fn(),
@@ -20,9 +24,55 @@ const state = vi.hoisted(() => ({
   failReplay: false,
   exchangeAvailable: true,
 }));
+vi.mock("../../lib/exchange-provider-access", () => ({
+  authorizeExchangeProviders: state.access,
+}));
 vi.mock("../queue-service", () => ({
   getRedisConnection: () => ({
     get: async (key: string) => state.keys.get(key) ?? null,
+    zrangebyscore: async () =>
+      [...state.due.entries()]
+        .filter(([, due]) => due <= Date.now())
+        .map(([key]) => key),
+    zremrangebyscore: async () => 0,
+    zrem: async (_index: string, key: string) => state.due.delete(key),
+    eval: async (script: string, keyCount: number, ...values: any[]) => {
+      const [key, second] = values;
+      const args = values.slice(keyCount);
+      if (script.includes("'ZSCORE'")) {
+        if (!state.due.has(args[0]) || state.due.get(args[0])! > args[1])
+          return 0;
+        state.due.set(args[0], args[2]);
+        return 1;
+      }
+      if (script.includes("'RPUSH'")) {
+        if (state.keys.has(second)) return 0;
+        if (state.failQueue) throw new Error("Queue unavailable");
+        state.queue.push(args[0]);
+        state.keys.set(second, "1");
+        return 1;
+      }
+      if (script.includes("'DEL'")) {
+        await state.cleanup(key);
+        state.due.delete(key);
+        return 1;
+      }
+      const record = JSON.parse(args[0]);
+      if (script.includes("'NX'")) {
+        if (state.keys.has(key)) return null;
+        state.keys.set(key, args[0]);
+        state.due.set(key, args[2]);
+        return "OK";
+      }
+      if (state.failReplay && record.state === "complete")
+        throw new Error("Replay storage failed");
+      if (state.failPhase && record.reconciliation?.phase === state.failPhase)
+        throw new Error("Checkpoint unavailable");
+      state.keys.set(key, args[0]);
+      if (args[2] === "pending") state.due.set(key, args[3]);
+      else state.due.delete(key);
+      return 1;
+    },
     set: async (key: string, value: string, ...args: unknown[]) => {
       if (state.failReplay && JSON.parse(value).state === "complete")
         throw new Error("Replay storage failed");
@@ -73,7 +123,7 @@ vi.mock("../../lib/exchange-proxy", async importOriginal => ({
   ...(await importOriginal<typeof import("../../lib/exchange-proxy")>()),
   forwardToExchange: (input: any) =>
     input.path === "/v1/retrieve/quote"
-      ? Promise.resolve({ status: 200, body: { maximumCredits: 3 } })
+      ? Promise.resolve({ status: 200, body: { maximumCredits: state.quote } })
       : state.forward(input),
   exchangeUpstreamBase: () =>
     state.exchangeAvailable ? "https://exchange.example" : null,
@@ -96,6 +146,7 @@ vi.mock("../logging/log_job", () => ({ logRequest: state.log }));
 vi.mock("../../lib/external-request-id", () => ({
   externalRequestId: () => "external",
 }));
+import { reconcileExchangeRequests } from "./reconcile";
 import { exchangeRouter } from "../../routes/exchange";
 import { exchangeScrapeController } from "../../controllers/v2/scrape-exchange";
 import {
@@ -123,7 +174,11 @@ app.post("/v2/scrape", (req, res) => {
 const calls = [{ provider: "test", capability: "price" }];
 beforeEach(() => {
   vi.clearAllMocks();
+  state.access.mockReset().mockResolvedValue(undefined);
   state.keys.clear();
+  state.due.clear();
+  state.failPhase = "";
+  state.quote = 3;
   state.queue.length = 0;
   state.flags = { exchangeRetrieve: true };
   state.failQueue = false;
@@ -254,21 +309,18 @@ it("rejects reusing the same request ID for a different payload", async () => {
   expect(second.status).toBe(409);
   expect(state.forward).toHaveBeenCalledTimes(1);
 });
-it("requires request IDs on external execution calls", async () => {
-  for (const path of ["/exchange/retrieve", "/v2/scrape"]) {
-    expect(
-      (
-        await request(app)
-          .post(path)
-          .send(
-            path === "/v2/scrape" ? { exchange: calls } : { requests: calls },
-          )
-      ).status,
-    ).toBe(400);
-  }
-  expect(state.hold).not.toHaveBeenCalled();
-  expect(state.forward).not.toHaveBeenCalled();
+it("supplies scrape IDs for ordinary clients while retaining explicit proxy IDs", async () => {
+  expect(
+    (await request(app).post("/exchange/retrieve").send({ requests: calls }))
+      .status,
+  ).toBe(400);
+  const first = await request(app).post("/v2/scrape").send({ exchange: calls });
+  expect(first.status).toBe(200);
+  expect(first.headers["x-request-id"]).toBe("job");
+  expect((await send("/v2/scrape", "job")).status).toBe(200);
+  expect(state.forward).toHaveBeenCalledTimes(1);
 });
+
 it("does not execute simultaneous retries twice", async () => {
   let finish!: (value: any) => void;
   const upstream = new Promise(resolve => {
@@ -315,7 +367,11 @@ it("does not charge again when billing confirmation is ambiguous", async () => {
   state.finalize.mockResolvedValue(false);
   expect((await send()).status).toBe(503);
   expect((await send()).status).toBe(409);
-  expect([...state.keys.values()].map(value => JSON.parse(value))).toEqual([
+  expect(
+    [...state.keys.entries()]
+      .filter(([key]) => key.startsWith("exchange:provider-request"))
+      .map(([, value]) => JSON.parse(value)),
+  ).toEqual([
     expect.objectContaining({
       state: "pending",
       reconciliation: expect.objectContaining({
@@ -353,7 +409,11 @@ it("does not repeat an executed request after an enqueue failure", async () => {
   state.failQueue = true;
   expect((await send()).status).toBe(503);
   expect((await send()).status).toBe(409);
-  expect([...state.keys.values()].map(value => JSON.parse(value))).toEqual([
+  expect(
+    [...state.keys.entries()]
+      .filter(([key]) => key.startsWith("exchange:provider-request"))
+      .map(([, value]) => JSON.parse(value)),
+  ).toEqual([
     expect.objectContaining({
       state: "pending",
       reconciliation: expect.objectContaining({
@@ -481,3 +541,101 @@ it.each(["denied", "unsent"])(
     expect(state.queue).toHaveLength(0);
   },
 );
+
+it("exposes provider agreements through a free authenticated read proxy", async () => {
+  state.flags.exchangeRetrieve = false;
+  state.forward.mockResolvedValue({
+    status: 200,
+    body: { providers: [] },
+    contentType: "application/json",
+  });
+  const result = await request(app).get("/exchange/provider-terms?surface=web");
+  expect(result.status).toBe(200);
+  expect(result.body).toEqual({ providers: [] });
+  expect(result.headers["cache-control"]).toBe("no-store");
+  expect(state.forward).toHaveBeenCalledWith(
+    expect.objectContaining({ path: "/v1/provider-terms?surface=web" }),
+  );
+  expect(state.hold).not.toHaveBeenCalled();
+});
+
+it.each(["/exchange/retrieve", "/v2/scrape"])(
+  "blocks unaccepted provider execution and billing through %s",
+  async path => {
+    state.access.mockResolvedValue({
+      status: 403,
+      body: { success: false, error: "Accept provider terms first." },
+    });
+    expect((await send(path)).status).toBe(403);
+    expect(state.forward).not.toHaveBeenCalled();
+    expect(state.hold).not.toHaveBeenCalled();
+    state.access.mockResolvedValue(undefined);
+    expect((await send(path)).status).toBe(200);
+  },
+);
+
+const recover = async () => {
+  for (const key of state.due.keys()) state.due.set(key, 0);
+  await reconcileExchangeRequests();
+};
+it("recovers a confirmed request after queue failure without executing or charging twice", async () => {
+  state.failQueue = true;
+  expect((await send()).status).toBe(503);
+  state.failQueue = false;
+  await recover();
+  expect((await send()).status).toBe(200);
+  expect(state.forward).toHaveBeenCalledTimes(1);
+  expect(state.finalize).toHaveBeenCalledTimes(1);
+  expect(state.queue).toHaveLength(1);
+});
+it("hands off billing even when the post-confirm checkpoint fails", async () => {
+  state.failPhase = "enqueue";
+  expect((await send()).status).toBe(200);
+  expect(state.queue).toHaveLength(1);
+  expect((await send()).status).toBe(200);
+  expect(state.finalize).toHaveBeenCalledTimes(1);
+});
+it("recovers lost replay storage without a duplicate ledger enqueue", async () => {
+  state.failReplay = true;
+  expect((await send()).status).toBe(503);
+  state.failReplay = false;
+  await recover();
+  expect((await send()).status).toBe(200);
+  expect(state.forward).toHaveBeenCalledTimes(1);
+  expect(state.finalize).toHaveBeenCalledTimes(1);
+  expect(state.queue).toHaveLength(1);
+});
+it("never re-executes a provider with an unknown outcome during recovery", async () => {
+  state.forward.mockRejectedValue(new ExchangeProxyError("timeout"));
+  expect((await send()).status).toBe(502);
+  await recover();
+  expect((await send()).status).toBe(409);
+  expect(state.forward).toHaveBeenCalledTimes(1);
+});
+it("rejects quotes above the per-call cap before reserving", async () => {
+  state.quote = 101;
+  expect((await send()).status).toBe(502);
+  expect(state.hold).not.toHaveBeenCalled();
+  expect(state.forward).not.toHaveBeenCalled();
+});
+it("does not refund delivered access-event charges after a ledger error", async () => {
+  await queueBillingOperation(
+    "team_a",
+    3,
+    7,
+    { endpoint: "scrape" },
+    false,
+    true,
+    { accessEventId: "access-1" },
+  );
+  state.debit.mockRejectedValueOnce(new Error("Ledger unavailable"));
+  await processBillingBatch();
+  expect(state.refund).not.toHaveBeenCalled();
+});
+
+it("still confirms Exchange delivery if the batch lock release fails", async () => {
+  expect((await send()).status).toBe(200);
+  state.cleanup.mockRejectedValueOnce(new Error("Redis release unavailable"));
+  await processBillingBatch();
+  expect(state.fetch).toHaveBeenCalledTimes(1);
+});

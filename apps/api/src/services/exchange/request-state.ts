@@ -5,6 +5,69 @@ import { getRedisConnection } from "../queue-service";
 
 type Upstream = Awaited<ReturnType<typeof forwardToExchange>>;
 export const MAX_REPLAY_BYTES = 5 * 1024 * 1024;
+export const MANUAL_RECONCILIATION_KEY = "exchange:provider-manual:v2";
+export const RECONCILIATION_KEY = "exchange:provider-reconciliation:v2";
+export const REQUEST_RETENTION_SECONDS = 7 * 86400;
+export const RECOVERY_DELAY_MS = 5 * 60 * 1000;
+
+export async function saveExchangeRequest(
+  key: string,
+  record: unknown,
+  pending: boolean,
+) {
+  await getRedisConnection().eval(
+    `
+    redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+    if ARGV[3] == 'pending' then
+      redis.call('ZADD', KEYS[2], ARGV[4], KEYS[1])
+    else
+      redis.call('ZREM', KEYS[2], KEYS[1])
+    end
+    return 1
+  `,
+    2,
+    key,
+    RECONCILIATION_KEY,
+    JSON.stringify(record),
+    pending ? REQUEST_RETENTION_SECONDS : 86400,
+    pending ? "pending" : "complete",
+    Date.now() + RECOVERY_DELAY_MS,
+  );
+}
+
+export async function markExchangeRequestForReview(
+  key: string,
+  record: object,
+) {
+  await getRedisConnection().eval(
+    `
+    redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+    redis.call('ZREM', KEYS[2], KEYS[1])
+    redis.call('ZADD', KEYS[3], ARGV[3], KEYS[1])
+    return 1
+  `,
+    3,
+    key,
+    RECONCILIATION_KEY,
+    MANUAL_RECONCILIATION_KEY,
+    JSON.stringify({ ...record, state: "manual" }),
+    REQUEST_RETENTION_SECONDS,
+    Date.now(),
+  );
+}
+
+export async function forgetExchangeRequest(key: string) {
+  await getRedisConnection().eval(
+    `
+    redis.call('DEL', KEYS[1])
+    redis.call('ZREM', KEYS[2], KEYS[1])
+    return 1
+  `,
+    2,
+    key,
+    RECONCILIATION_KEY,
+  );
+}
 
 const hash = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -43,16 +106,27 @@ export async function beginExchangeRequest(input: {
   const redis = getRedisConnection();
   try {
     if (
-      (await redis.set(
+      (await redis.eval(
+        `
+        if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2]) then
+          redis.call('ZADD', KEYS[2], ARGV[3], KEYS[1])
+          return 'OK'
+        end
+        return nil
+      `,
+        2,
         key,
+        RECONCILIATION_KEY,
         JSON.stringify({
           payloadHash,
           state: "pending",
           chargeId,
           teamId: input.teamId,
+          requestId: input.requestId,
           createdAt: Date.now(),
         }),
-        "NX",
+        REQUEST_RETENTION_SECONDS,
+        Date.now() + RECOVERY_DELAY_MS,
       )) !== "OK"
     ) {
       const raw = await redis.get(key);
@@ -80,6 +154,13 @@ export async function beginExchangeRequest(input: {
             "This request completed, but its response was too large to retain for replay. It will not execute again.",
           ),
         };
+      if (previous.state === "manual")
+        return {
+          response: refusal(
+            409,
+            "The provider outcome requires manual reconciliation. Do not execute it again with a new x-request-id.",
+          ),
+        };
       return {
         response: refusal(
           409,
@@ -97,7 +178,7 @@ export async function beginExchangeRequest(input: {
   }
   const forget = async () => {
     try {
-      await redis.del(key);
+      await forgetExchangeRequest(key);
       return true;
     } catch (error) {
       input.logger.warn("Exchange request identity cleanup failed", {
@@ -110,20 +191,14 @@ export async function beginExchangeRequest(input: {
   const finish = async (response: Upstream) => {
     response = { ...response, requestId: input.requestId };
     try {
-      const stored = JSON.stringify({
-        payloadHash,
-        state: "complete",
-        response,
-      });
-      if (Buffer.byteLength(stored) <= MAX_REPLAY_BYTES)
-        await redis.set(key, stored, "EX", 86400);
-      else
-        await redis.set(
-          key,
-          JSON.stringify({ payloadHash, state: "complete" }),
-          "EX",
-          86400,
-        );
+      const record = { payloadHash, state: "complete", response };
+      await saveExchangeRequest(
+        key,
+        Buffer.byteLength(JSON.stringify(record)) <= MAX_REPLAY_BYTES
+          ? record
+          : { payloadHash, state: "complete" },
+        false,
+      );
     } catch (error) {
       input.logger.error("Exchange result replay storage failed", {
         chargeId,
@@ -145,9 +220,15 @@ export async function beginExchangeRequest(input: {
     details: Record<string, unknown>,
   ) => {
     Object.assign(reconciliation, { phase, ...details });
-    await redis.set(
+    await saveExchangeRequest(
       key,
-      JSON.stringify({ payloadHash, state: "pending", reconciliation }),
+      {
+        payloadHash,
+        state: "pending",
+        requestId: input.requestId,
+        reconciliation,
+      },
+      true,
     );
   };
   return { chargeId, forget, finish, preserve };

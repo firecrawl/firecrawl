@@ -37,6 +37,12 @@ export async function exchangeScrapeController(
     });
   }
   const body = parsed.data;
+  const requestId =
+    typeof req.headers["x-request-id"] === "string"
+      ? req.headers["x-request-id"]
+      : (body.__agentInterop?.requestId ?? jobId);
+  if (/^[A-Za-z0-9._:-]{1,128}$/.test(requestId))
+    res.setHeader("x-request-id", requestId);
   if (
     body.__agentInterop &&
     !isAgentInteropSecretValid(body.__agentInterop.auth)
@@ -101,10 +107,7 @@ export async function exchangeScrapeController(
       bypassBilling: body.__agentInterop?.shouldBill === false,
       body: { requests: body.exchange },
       timeoutMs,
-      requestId:
-        typeof req.headers["x-request-id"] === "string"
-          ? req.headers["x-request-id"]
-          : body.__agentInterop?.requestId,
+      requestId,
     });
 
     if (upstream.status < 200 || upstream.status >= 300) {

@@ -112,6 +112,8 @@ function makeReq(body: Record<string, any>, headers: Record<string, any> = {}) {
   return {
     body,
     headers,
+    protocol: "https",
+    get: () => "preview.firecrawl.dev",
     auth: { team_id: TEAM_ID },
     acuc: { api_key_id: 7, flags: {} },
   } as any;
@@ -203,6 +205,7 @@ describe("developer category code_searches ledger", () => {
         true,
         agentRequestId ?? searchContext.jobId,
         "public documentation",
+        "https://preview.firecrawl.dev",
       );
       expect(archived).toEqual(res.json.mock.calls[0][0].data);
       expect(archived).toHaveProperty("skills", skills);

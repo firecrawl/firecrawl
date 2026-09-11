@@ -58,7 +58,7 @@ import { CostTracking } from "../../lib/cost-tracking";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
-import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
+
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
 import { WebCrawler } from "../../scraper/WebScraper/crawler";
 import {
@@ -77,8 +77,10 @@ import {
   SitemapError,
   TransportableError,
   UnknownError,
+  UnsupportedSiteError,
 } from "../../lib/error";
 import { serializeTransportableError } from "../../lib/error-serde";
+import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 import { trackScrape } from "../../lib/tracking";
 import type { NuQJob } from "./nuq";
 import {
@@ -433,6 +435,32 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
     const doc = pipeline.document;
 
+    if (
+      job.data.origin !== "monitor" &&
+      !job.data.internalOptions?.isParse &&
+      doc.metadata.url !== undefined &&
+      doc.metadata.sourceURL !== undefined &&
+      canonicalizeUrl(doc.metadata.url) !==
+        canonicalizeUrl(doc.metadata.sourceURL)
+    ) {
+      let teamFlags = job.data.internalOptions?.teamFlags ?? null;
+      let orgId = job.data.internalOptions?.orgId ?? null;
+      if (job.data.internalOptions?.teamFlags === undefined) {
+        const teamChunk = await getACUCTeam(job.data.team_id);
+        teamFlags = teamChunk?.flags ?? null;
+        orgId = orgId ?? teamChunk?.org_id ?? null;
+      }
+      if (
+        isUrlBlocked(doc.metadata.url, teamFlags, {
+          team_id: job.data.team_id,
+          org_id: orgId,
+          origin: job.data.origin,
+        })
+      ) {
+        throw new UnsupportedSiteError();
+      }
+    }
+
     const rawHtml = doc.rawHtml ?? "";
 
     if (!hasFormatOfType(job.data.scrapeOptions.formats, "rawHtml")) {
@@ -528,17 +556,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           // TODO: re-fetch sitemap for redirect target domain
           sc.originUrl = doc.metadata.url;
           await saveCrawl(job.data.crawl_id, sc);
-        }
-
-        const teamChunk = await getACUCTeam(job.data.team_id);
-        if (
-          isUrlBlocked(doc.metadata.url, teamChunk?.flags ?? null, {
-            team_id: job.data.team_id,
-            org_id: teamChunk?.org_id ?? null,
-            origin: job.data.origin,
-          })
-        ) {
-          throw new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
         }
 
         const p1 = generateURLPermutations(normalizeURL(doc.metadata.url, sc));

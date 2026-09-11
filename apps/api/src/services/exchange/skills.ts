@@ -30,6 +30,7 @@ export async function resolveSearchSkills(
   hasExtendedCatalogAccess = false,
   requestId?: string,
   query?: string,
+  apiOrigin = "https://api.firecrawl.dev",
 ) {
   const urls = [
     ...new Set([
@@ -149,6 +150,6 @@ export async function resolveSearchSkills(
           ]).size,
         }
       : {}),
-    url: `https://api.firecrawl.dev/exchange/skills/${encodeURIComponent(skill.id)}/SKILL.md`,
+    url: `${apiOrigin}/exchange/skills/${encodeURIComponent(skill.id)}/SKILL.md`,
   }));
 }

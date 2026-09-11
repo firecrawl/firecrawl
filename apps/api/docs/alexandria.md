@@ -73,10 +73,17 @@ this change does not add tool metadata to scrape API responses.
 
 ## Credit reservation and retries
 
-Direct `POST /exchange/retrieve` and `/v2/scrape` requests with `exchange` require
-`x-request-id`: 1–128 letters, digits, dots, underscores, colons or hyphens. Generate
-one ID per logical execution and reuse it for retries of the same payload. A
-trusted agent interop request can supply its existing request ID instead.
+`POST /exchange/retrieve` requires `x-request-id`: 1–128 letters, digits, dots,
+underscores, colons or hyphens. `/v2/scrape` accepts the same header and uses its
+job ID when it is omitted, returning it in `x-request-id`. Generate one ID per
+logical execution and reuse it for retries of the same payload. A trusted agent
+interop request can supply its existing request ID instead. Supplying the ID
+before sending is recommended when the client may lose the entire response.
+
+`POST /exchange/retrieve` takes `{ "provider": "...", "capability": "...", "options": {} }`
+or `{ "requests": [{ "provider": "...", "capability": "...", "options": {} }] }`.
+`POST /v2/scrape` wraps a single call or array in `exchange`. Do not send the
+`exchange` wrapper to the retrieval proxy.
 
 The API quotes a maximum cost, reserves credits atomically, then executes with
 that budget. Insufficient credits return 402 before execution. An unavailable
@@ -87,15 +94,28 @@ is retained for reconciliation rather than automatically refunded.
 Per-record requests must have a bounded cost, up to 100 credits per call and ten
 calls per batch.
 
-Completed responses up to 5 MiB are retained for 24 hours. Pending request identities
-and reconciliation records do not expire automatically. Reusing an ID with a
-different payload returns 409. Concurrent or ambiguous requests cannot execute
-again: a 409 awaiting reconciliation must not be retried with a new ID. Responses
-too large to retain also return 409 on replay. An uncertain provider outcome or billing
-acknowledgement leaves a pending record with the request, hold, actual charge (when
-known), and billing receipt for operational reconciliation. It is not marked complete or
-allowed to execute again. Holds still expire after one hour, so operators must reconcile
-unresolved charges; no automatic reconciliation worker is included here.
+Completed responses up to 5 MiB are retained for 24 hours. Pending identities
+and their recovery checkpoints are retained for seven days. Treat 24 hours as the
+client retry window; beyond it, check the outcome before submitting more work.
+Reusing an ID with a different payload returns 409. Concurrent or ambiguous
+requests cannot execute again while their identity is retained. Responses too
+large to retain also return 409 on replay.
+
+Each pending checkpoint is atomically indexed for recovery. The existing indexing
+worker's billing loop claims stale records after five minutes. It releases holds
+for requests known not to have executed, resumes confirmation/ledger enqueue for
+known results, and restores the saved response. Ledger enqueue is idempotent by
+team and usage request ID. This uses the existing Redis persistence and indexing
+worker, which must be running for automatic recovery.
+
+An unknown provider outcome is atomically moved to the
+`exchange:provider-manual:v2` sorted set and never re-executed by recovery. Operators
+can list it with `ZRANGE exchange:provider-manual:v2 0 -1`, then `GET` each returned
+request key to inspect its hold, provider request, and charge reference. These
+records remain available for seven days; resolve or archive them within that window. Unconfirmed holds still expire after one hour; unresolved
+finalization failures and Redis data loss require operational reconciliation.
+Redis persistence and recovery are required deployment dependencies, not a promise
+of exactly-once execution across complete storage loss.
 
 Deploy the supporting Exchange quote and budget enforcement before paid
 execution from this API branch. Semantic search uses the existing discovery

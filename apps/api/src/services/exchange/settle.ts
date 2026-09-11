@@ -1,3 +1,4 @@
+import { authorizeExchangeProviders } from "../../lib/exchange-provider-access";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Logger } from "winston";
@@ -132,19 +133,41 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
   const deadline = Date.now() + input.timeoutMs;
   let upstream: Upstream;
   try {
+    const calls = "requests" in body ? body.requests : [body];
+    const accessError = await authorizeExchangeProviders({
+      teamId: input.teamId,
+      body,
+      requirements: providers =>
+        forwardToExchange({
+          teamId: input.teamId,
+          hasExtendedCatalogAccess: input.flags?.exchangeRetrieve === true,
+          method: "POST",
+          path: "/v1/provider-terms/requirements",
+          body: { providers },
+          timeoutMs: Math.max(1, Math.min(10000, deadline - Date.now())),
+        }),
+    });
+    if (accessError)
+      return retryable(refusal(accessError.status, accessError.body.error));
     const quote = await forwardToExchange({
       teamId: input.teamId,
       hasExtendedCatalogAccess: input.flags?.exchangeRetrieve === true,
       method: "POST",
       path: "/v1/retrieve/quote",
       body,
-      timeoutMs: Math.min(input.timeoutMs, 10000),
+      timeoutMs: Math.max(1, Math.min(deadline - Date.now(), 10000)),
     });
     if (quote.status < 200 || quote.status >= 300) {
       return retryable(quote);
     }
     const quoted = z
-      .object({ maximumCredits: z.number().int().min(0).max(1000) })
+      .object({
+        maximumCredits: z
+          .number()
+          .int()
+          .min(0)
+          .max(calls.length * 100),
+      })
       .safeParse(quote.body);
     if (!quoted.success) {
       return retryable(
@@ -153,6 +176,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
     }
     maximumCredits = quoted.data.maximumCredits;
     if (billable && maximumCredits > 0) {
+      // Both hold services use this caller-chosen ID, including ambiguous responses.
       lockId = `exchange_${chargeId}`;
       await preserve("reserve", { body });
       const hold = await autumnService.lockCredits({
@@ -177,7 +201,6 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
           ),
         );
       }
-      lockId = hold.lockId;
     }
     const limit = await getEffectiveConcurrencyLimit(input.teamId, input.orgId);
     upstream = await teamConcurrencySemaphore.withSemaphore(
@@ -299,7 +322,7 @@ export async function settleExchangeCall(input: Input): Promise<Upstream> {
         chargeId,
         error,
       });
-      return pending();
+      // The earlier confirm checkpoint can recover this idempotent handoff.
     }
     const queued = await queueBillingOperation(
       input.teamId,

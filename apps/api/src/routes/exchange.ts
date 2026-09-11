@@ -140,6 +140,11 @@ function exchangeProxy(
 }
 
 export const exchangeRouter = express.Router();
+exchangeRouter.get(
+  "/provider-terms",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
 exchangeRouter.post(
   "/skills/resolve",
   authMiddleware(RateLimiterMode.Labs),

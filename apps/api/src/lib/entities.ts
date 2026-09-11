@@ -1,3 +1,4 @@
+import type { AlexandriaResponse } from "../search/alexandria-source";
 import type { Action } from "../controllers/v1/types";
 import type { BrandingProfile } from "../types/branding";
 
@@ -173,7 +174,7 @@ export interface ExchangeSearchResult {
 }
 
 export interface SearchV2Response {
-  alexandria?: import("../search/alexandria-source").AlexandriaResponse;
+  alexandria?: AlexandriaResponse;
   skills?: {
     id: string;
     name?: string;
