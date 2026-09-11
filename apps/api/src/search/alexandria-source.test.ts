@@ -17,6 +17,7 @@ const input = {
   requestId: "request-1",
 };
 const contract = {
+  attribution: "Provider attribution",
   provider: "particle",
   capability: "podcasts/episodes/search",
   label: "Episode search",
@@ -111,6 +112,7 @@ it("semantically ranks tools and includes their real contracts and examples with
     options: contract.options,
     requiresOneOf: contract.requiresOneOf,
     response: contract.returns,
+    attribution: contract.attribution,
     creditsCost: 15,
     similarity: 0.9,
   });
@@ -233,6 +235,7 @@ it("loads a cohort-less hit through free Find Tools without losing ranked matche
               name: contract.label,
               description: contract.whenToUse,
               response: contract.returns,
+    attribution: contract.attribution,
             },
           ],
         },

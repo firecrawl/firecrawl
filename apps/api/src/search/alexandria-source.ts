@@ -22,6 +22,7 @@ type AlexandriaResponse = {
 };
 
 const contractSchema = z.object({
+  attribution: z.string().optional(),
   provider: z.string(),
   capability: z.string(),
   label: z.string(),
@@ -195,6 +196,7 @@ export async function loadToolContract(input: {
     capability: input.capability,
     name: contract.label,
     description: contract.whenToUse,
+    ...(contract.attribution ? { attribution: contract.attribution } : {}),
     creditsCost: contract.creditsCost,
     perRecord: contract.perRecord,
     options: contract.options,
