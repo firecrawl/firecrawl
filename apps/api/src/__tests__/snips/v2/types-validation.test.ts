@@ -4,6 +4,7 @@ import {
   MAX_PATH_PATTERN_LENGTH,
   MAX_TOTAL_PATH_PATTERNS,
   MAX_TOTAL_PATH_PATTERN_CHARS,
+  collectPathPatternIssues,
 } from "../../../lib/crawl-regex";
 import {
   scrapeRequestSchema,
@@ -1062,6 +1063,28 @@ describe("V2 Types Validation", () => {
       );
     });
 
+    it("should report aggregate budget issues at the request root", () => {
+      // excludePaths sits exactly at its own cap; one includePaths pattern
+      // pushes the total over the request-wide budget.
+      const result = crawlRequestSchema.safeParse({
+        url: "https://example.com",
+        excludePaths: Array.from(
+          { length: MAX_PATH_PATTERNS },
+          (_, i) => `^/b${i}`,
+        ),
+        includePaths: ["^/a"],
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const issue = result.error.issues.find(i =>
+          /together accept at most/.test(i.message),
+        );
+        expect(issue).toBeDefined();
+        // Neither field is individually at fault, so do not point at one.
+        expect(issue!.path).toEqual([]);
+      }
+    });
+
     it("should reject path patterns exceeding the aggregate character budget", () => {
       const pattern = "^/" + "a".repeat(MAX_PATH_PATTERN_LENGTH - 2);
       const perField =
@@ -1121,6 +1144,46 @@ describe("V2 Types Validation", () => {
           includePaths: ["^/" + "a".repeat(MAX_PATH_PATTERN_LENGTH)],
         }),
       ).toThrow(new RegExp(`at most ${MAX_PATH_PATTERN_LENGTH} characters`));
+    });
+  });
+
+  describe("collectPathPatternIssues", () => {
+    // Options generated from a crawl prompt are merged after schema
+    // validation, so the controller validates them with this helper directly.
+    it("should accept merged options within every limit", () => {
+      expect(
+        collectPathPatternIssues({
+          includePaths: Array.from({ length: 300 }, (_, i) => `topic${i}`),
+          excludePaths: ["^/careers", "^/jobs"],
+        }),
+      ).toEqual([]);
+    });
+
+    it("should report per-field caps that the schema did not see", () => {
+      const issues = collectPathPatternIssues({
+        includePaths: Array.from(
+          { length: MAX_PATH_PATTERNS + 1 },
+          (_, i) => `^/p${i}`,
+        ),
+      });
+      expect(issues).toHaveLength(1);
+      expect(issues[0].kind).toBe("field-cap");
+      expect(issues[0].path).toEqual(["includePaths"]);
+    });
+
+    it("should report the aggregate budget and unsupported syntax", () => {
+      const half = Math.floor(MAX_TOTAL_PATH_PATTERNS / 2) + 1;
+      const budget = collectPathPatternIssues({
+        includePaths: Array.from({ length: half }, (_, i) => `^/a${i}`),
+        excludePaths: Array.from({ length: half }, (_, i) => `^/b${i}`),
+      });
+      expect(budget.map(i => i.kind)).toEqual(["budget"]);
+
+      const syntax = collectPathPatternIssues({
+        excludePaths: ["^/ok", "(?<=a)b"],
+      });
+      expect(syntax.map(i => i.kind)).toEqual(["syntax"]);
+      expect(syntax[0].message).toMatch(/look-around/);
     });
   });
 

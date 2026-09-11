@@ -25,6 +25,7 @@ import {
   formatTypesOf,
 } from "../../lib/key-restriction";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
+import { collectPathPatternIssues } from "../../lib/crawl-regex";
 import {
   crawlGroup,
   resolveNewGroupBackend,
@@ -245,23 +246,15 @@ export async function crawlController(
     }
   }
 
-  if (Array.isArray(finalCrawlerOptions.includePaths)) {
-    for (const x of finalCrawlerOptions.includePaths) {
-      try {
-        new RegExp(x);
-      } catch (e) {
-        return res.status(400).json({ success: false, error: e.message });
-      }
-    }
-  }
-
-  if (Array.isArray(finalCrawlerOptions.excludePaths)) {
-    for (const x of finalCrawlerOptions.excludePaths) {
-      try {
-        new RegExp(x);
-      } catch (e) {
-        return res.status(400).json({ success: false, error: e.message });
-      }
+  // The request schema already validated user-supplied includePaths /
+  // excludePaths. Options generated from a prompt bypass the schema, so hold
+  // the merged result to the same caps, budget, and engine syntax.
+  if (req.body.prompt) {
+    const pathPatternIssues = collectPathPatternIssues(finalCrawlerOptions);
+    if (pathPatternIssues.length > 0) {
+      return res
+        .status(400)
+        .json({ success: false, error: pathPatternIssues[0].message });
     }
   }
 

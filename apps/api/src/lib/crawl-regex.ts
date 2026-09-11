@@ -34,54 +34,103 @@ export const pathPatternsSchema = z
     `includePaths and excludePaths each accept at most ${MAX_PATH_PATTERNS} patterns.`,
   );
 
+type PathPatternField = "includePaths" | "excludePaths";
+
 type PathPatternFields = {
   includePaths?: string[];
   excludePaths?: string[];
 };
 
-// Validate includePaths/excludePaths as a unit: first the request-wide budget,
-// then each pattern against the engine. Nothing is compiled once any cap is
-// exceeded, because the caps are what bound the compile work a request can
-// demand and the request has already been rejected at that point.
-export function addPathRegexIssues(
+type PathPatternIssue = {
+  // "field-cap": a single field exceeds its count or length cap.
+  // "budget": both fields together exceed the request-wide budget.
+  // "syntax": a pattern does not compile with the engine.
+  kind: "field-cap" | "budget" | "syntax";
+  // Empty for request-wide (cross-field) issues.
+  path: PathPatternField[];
+  message: string;
+};
+
+// Validate includePaths/excludePaths as a unit: the per-field caps, then the
+// request-wide budget, then each pattern against the engine. Nothing is
+// compiled once any cap is exceeded, because the caps are what bound the
+// compile work a request can demand.
+//
+// This is the single source of truth for what path patterns are accepted. The
+// request schemas call it through addPathRegexIssues; the v2 crawl controller
+// calls it directly on the final crawler options, because includePaths /
+// excludePaths generated from a crawl `prompt` are merged in after schema
+// validation and must meet the same limits before they reach the crawler.
+export function collectPathPatternIssues(
   fields: PathPatternFields,
-  ctx: z.RefinementCtx,
-): void {
+): PathPatternIssue[] {
   const include = fields.includePaths ?? [];
   const exclude = fields.excludePaths ?? [];
-  if (include.length === 0 && exclude.length === 0) return;
+  if (include.length === 0 && exclude.length === 0) return [];
 
-  // Zod still runs this refinement when pathPatternsSchema has already reported
-  // a per-field count or length violation, so re-check those caps here.
-  const overFieldCap = (patterns: string[]) =>
-    patterns.length > MAX_PATH_PATTERNS ||
-    patterns.some(p => p.length > MAX_PATH_PATTERN_LENGTH);
-  if (overFieldCap(include) || overFieldCap(exclude)) return;
+  const capIssues: PathPatternIssue[] = [];
+  for (const [field, patterns] of [
+    ["includePaths", include],
+    ["excludePaths", exclude],
+  ] as const) {
+    if (patterns.length > MAX_PATH_PATTERNS) {
+      capIssues.push({
+        kind: "field-cap",
+        path: [field],
+        message: `includePaths and excludePaths each accept at most ${MAX_PATH_PATTERNS} patterns.`,
+      });
+    }
+    if (patterns.some(p => p.length > MAX_PATH_PATTERN_LENGTH)) {
+      capIssues.push({
+        kind: "field-cap",
+        path: [field],
+        message: `Each includePaths/excludePaths pattern must be at most ${MAX_PATH_PATTERN_LENGTH} characters.`,
+      });
+    }
+  }
+  if (capIssues.length > 0) return capIssues;
 
   const totalCount = include.length + exclude.length;
   if (totalCount > MAX_TOTAL_PATH_PATTERNS) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["includePaths"],
-      message: `includePaths and excludePaths together accept at most ${MAX_TOTAL_PATH_PATTERNS} patterns (got ${totalCount}).`,
-    });
-    return;
+    return [
+      {
+        kind: "budget",
+        path: [],
+        message: `includePaths and excludePaths together accept at most ${MAX_TOTAL_PATH_PATTERNS} patterns (got ${totalCount}).`,
+      },
+    ];
   }
   const totalChars = [...include, ...exclude].reduce(
     (sum, p) => sum + p.length,
     0,
   );
   if (totalChars > MAX_TOTAL_PATH_PATTERN_CHARS) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["includePaths"],
-      message: `includePaths and excludePaths together accept at most ${MAX_TOTAL_PATH_PATTERN_CHARS} characters of patterns (got ${totalChars}).`,
-    });
-    return;
+    return [
+      {
+        kind: "budget",
+        path: [],
+        message: `includePaths and excludePaths together accept at most ${MAX_TOTAL_PATH_PATTERN_CHARS} characters of patterns (got ${totalChars}).`,
+      },
+    ];
   }
 
-  addFieldRegexIssues(include, "includePaths", ctx);
-  addFieldRegexIssues(exclude, "excludePaths", ctx);
+  return [
+    ...fieldRegexIssues(include, "includePaths"),
+    ...fieldRegexIssues(exclude, "excludePaths"),
+  ];
+}
+
+// Zod refinement wrapper around collectPathPatternIssues. Zod still runs this
+// refinement when pathPatternsSchema has already reported a per-field count or
+// length violation, so those are not reported a second time here.
+export function addPathRegexIssues(
+  fields: PathPatternFields,
+  ctx: z.RefinementCtx,
+): void {
+  for (const issue of collectPathPatternIssues(fields)) {
+    if (issue.kind === "field-cap") continue;
+    ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+  }
 }
 
 // Link filtering compiles includePaths/excludePaths with the Rust `regex` crate
@@ -89,22 +138,21 @@ export function addPathRegexIssues(
 // pattern compiled fine in most clients' regex flavor but was silently dropped
 // by the engine, so the paths it was meant to filter got crawled anyway. Reject
 // such patterns up front with a message that points at the actual limitation.
-function addFieldRegexIssues(
+function fieldRegexIssues(
   patterns: string[],
-  field: "includePaths" | "excludePaths",
-  ctx: z.RefinementCtx,
-): void {
-  if (patterns.length === 0) return;
-  for (const { pattern, error } of validateRegexes(patterns)) {
+  field: PathPatternField,
+): PathPatternIssue[] {
+  if (patterns.length === 0) return [];
+  return validateRegexes(patterns).map(({ pattern, error }) => {
     const summary = summarizeRegexError(error);
-    ctx.addIssue({
-      code: "custom",
+    return {
+      kind: "syntax",
       path: [field],
       message:
         `Invalid ${field} pattern ${JSON.stringify(pattern)}: ${summary}. ` +
         `${field} patterns use Rust regex (RE2-style) syntax.${regexErrorHint(summary)}`,
-    });
-  }
+    };
+  });
 }
 
 function summarizeRegexError(error: string): string {
