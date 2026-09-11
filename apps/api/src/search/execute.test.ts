@@ -1,10 +1,10 @@
 const mocks = vi.hoisted(() => ({
-  search: vi.fn(),
+  searchWithOutcome: vi.fn(),
   searchDeveloperCategory: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
 }));
 
-vi.mock("./v2", () => ({ search: mocks.search }));
+vi.mock("./v2", () => ({ searchWithOutcome: mocks.searchWithOutcome }));
 vi.mock("./developer", () => ({
   wantsDeveloperCategory: (categories?: Array<string | { type: string }>) =>
     (categories ?? []).some(category =>
@@ -78,6 +78,7 @@ function options(categories: Array<{ type: string }>) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.searchDeveloperCategory.mockResolvedValue([developerResult]);
+  mocks.searchWithOutcome.mockResolvedValue({ response: {}, succeeded: true });
 });
 
 describe("executeSearch developer category", () => {
@@ -88,7 +89,7 @@ describe("executeSearch developer category", () => {
       logger,
     );
 
-    expect(mocks.search).not.toHaveBeenCalled();
+    expect(mocks.searchWithOutcome).not.toHaveBeenCalled();
     expect(result.response).toEqual({ web: [developerResult] });
     expect(result.response).not.toHaveProperty("developer");
     expect(result.developerResultsCount).toBe(1);
@@ -114,7 +115,7 @@ describe("executeSearch developer category", () => {
     );
 
     expect(mocks.checkUrlsAgainstThreatPolicy).toHaveBeenCalledTimes(1);
-    expect(mocks.search).not.toHaveBeenCalled();
+    expect(mocks.searchWithOutcome).not.toHaveBeenCalled();
     expect((result.response.web ?? []).map(x => [x.url, x.position])).toEqual([
       ["https://ok.example/a", 1],
       ["https://ok.example/c", 2],
@@ -138,5 +139,73 @@ describe("executeSearch developer category", () => {
       categories: ["developer"],
     });
     expect(sole.success).toBe(true);
+  });
+});
+
+describe("executeSearch billing floor", () => {
+  const webOptions = {
+    query: "firecrawl",
+    limit: 10,
+    sources: [{ type: "web" }],
+    timeout: 1_000,
+  } as any;
+
+  it("bills one search unit when a successful search matches nothing", async () => {
+    mocks.searchWithOutcome.mockResolvedValue({
+      response: {},
+      succeeded: true,
+    });
+
+    const result = await executeSearch(webOptions, context, logger);
+
+    expect(result.totalResultsCount).toBe(0);
+    expect(result.searchCredits).toBe(2);
+    expect(result.totalCredits).toBe(2);
+  });
+
+  it("bills the ZDR unit when a successful ZDR search matches nothing", async () => {
+    mocks.searchWithOutcome.mockResolvedValue({
+      response: {},
+      succeeded: true,
+    });
+
+    const result = await executeSearch(
+      { ...webOptions, enterprise: ["zdr"] },
+      context,
+      logger,
+    );
+
+    expect(result.searchCredits).toBe(10);
+  });
+
+  it("bills nothing when no provider served the search", async () => {
+    mocks.searchWithOutcome.mockResolvedValue({
+      response: {},
+      succeeded: false,
+    });
+
+    const result = await executeSearch(webOptions, context, logger);
+
+    expect(result.searchCredits).toBe(0);
+    expect(result.totalCredits).toBe(0);
+  });
+
+  it("keeps the per-ten-results rate for non-empty searches", async () => {
+    mocks.searchWithOutcome.mockResolvedValue({
+      response: {
+        web: Array.from({ length: 10 }, (_, index) => ({
+          url: `https://example.com/${index}`,
+          title: `Result ${index}`,
+          description: "",
+          position: index + 1,
+        })),
+      },
+      succeeded: true,
+    });
+
+    const result = await executeSearch(webOptions, context, logger);
+
+    expect(result.totalResultsCount).toBe(10);
+    expect(result.searchCredits).toBe(2);
   });
 });

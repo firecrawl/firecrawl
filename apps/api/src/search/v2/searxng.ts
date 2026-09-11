@@ -17,7 +17,7 @@ interface SearchOptions {
 export async function searxng_search(
   q: string,
   options: SearchOptions,
-): Promise<SearchV2Response> {
+): Promise<SearchV2Response | null> {
   const resultsPerPage = 20;
   const requestedResults = Math.max(options.num_results, 0);
   const startPage = options.page ?? 1;
@@ -90,6 +90,9 @@ export async function searxng_search(
       : {};
   } catch (error) {
     logger.error(`There was an error searching for content`, { error });
-    return {};
+    // null means searxng did not serve the query. Callers must not read that
+    // as an empty result set; they fall through to the next provider either
+    // way, but only a served query is billable.
+    return null;
   }
 }
