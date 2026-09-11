@@ -2023,7 +2023,7 @@
             }
           }
         },
-        "description": "Eligible keyless callers can submit Search, Scrape, or Parse evidence with KeylessFeedbackRequest. One accepted submission per identity, category, and UTC day, shared across clients. Attempts are limited separately to 10 per minute. Operation quota exhaustion does not affect feedback eligibility. Job context expires after 24 hours. Authenticated callers retain EndpointFeedbackRequest and existing behavior."
+        "description": "Eligible keyless callers can submit Search, Scrape, or Parse evidence with KeylessFeedbackRequest. One accepted submission per identity per UTC day, shared across Search, Scrape, Parse, and all clients. Attempts are limited separately to 10 per minute. Operation quota exhaustion does not affect feedback eligibility. Job context expires after 24 hours. Authenticated callers retain EndpointFeedbackRequest and existing behavior."
       }
     },
     "/search/{jobId}/feedback": {

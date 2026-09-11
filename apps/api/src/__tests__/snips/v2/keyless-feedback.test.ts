@@ -39,7 +39,7 @@ describeIf(enabled)("keyless feedback", () => {
       `keyless_feedback_invitations:${identity}:parse`,
     );
   };
-  beforeAll(cleanup);
+  beforeEach(cleanup);
   afterAll(cleanup);
 
   const call = (path: string, body: object) =>

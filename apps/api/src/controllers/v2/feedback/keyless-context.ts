@@ -132,7 +132,7 @@ return count
           Number(
             await redisRateLimitClient.get(keylessFeedbackAttemptKey(identity)),
           ) >= KEYLESS_FEEDBACK_ATTEMPTS ||
-          (await hasKeylessFeedbackToday(identity, endpoint))
+          (await hasKeylessFeedbackToday(identity))
         )
           return metadata;
         return {
@@ -146,7 +146,7 @@ return count
               Date.now() + KEYLESS_FEEDBACK_MAX_AGE_SEC * 1000,
             ).toISOString(),
             message:
-              "Optional: submit your task, rating, assessment, and specific observations. Use only evidence already available; distinguish output, source comparisons, and expectations. No additional investigation is required. One accepted submission per category per UTC day.",
+              "Optional: submit your task, rating, assessment, and specific observations. Use only evidence already available; distinguish output, source comparisons, and expectations. No additional investigation is required. One accepted submission per keyless identity per UTC day, shared across Search, Scrape, Parse, and all clients.",
           },
         };
       })(),
