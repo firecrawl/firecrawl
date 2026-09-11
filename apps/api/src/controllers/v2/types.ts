@@ -2503,7 +2503,7 @@ export const searchRequestSchema = z
       .map(source => (typeof source === "string" ? source : source.type))
       .map(type => (type === "exchange-providers" ? "alexandria" : type));
     return new Set(types).size === types.length;
-  }, "Specify each source once; alexandria and exchange-providers are aliases.")
+  }, "Specify each source once; choose either alexandria or exchange-providers.")
   .refine(
     x => !(x.includeDomains?.length && x.excludeDomains?.length),
     "includeDomains and excludeDomains cannot both be specified",

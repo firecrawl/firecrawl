@@ -1,10 +1,5 @@
 import { vi } from "vitest";
 
-const mockResolveSearchTools = vi.fn();
-vi.mock("../../../services/exchange/tools", () => ({
-  resolveSearchTools: (...args: any[]) => mockResolveSearchTools(...args),
-}));
-
 const mockLogRequest = vi.fn();
 const mockLogSearch = vi.fn();
 const mockLogResearchEndpoint = vi.fn();
@@ -135,7 +130,6 @@ async function flushAsync() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockResolveSearchTools.mockResolvedValue([]);
   mockLogRequest.mockResolvedValue(undefined);
   mockLogSearch.mockResolvedValue(undefined);
   mockLogResearchEndpoint.mockResolvedValue(undefined);
@@ -170,23 +164,25 @@ describe("developer category code_searches ledger", () => {
       await searchController(req, res);
       expect(res.status).toHaveBeenCalledWith(400);
       expect(mockExecuteSearch).not.toHaveBeenCalled();
-      expect(mockResolveSearchTools).not.toHaveBeenCalled();
     },
   );
 
   it.each([undefined, "agent-request"])(
-    "archives skills and keeps the originating request ID (agent: %s)",
+    "archives tools and keeps the originating request ID (agent: %s)",
     async agentRequestId => {
       config.AGENT_INTEROP_SECRET = "skills-test-secret";
-      const skills = [
+      const tools = [
         {
-          id: "docs",
+          provider: "docs",
+          capability: "documentation/search",
           description: "Documentation",
-          matchedDomains: ["example.com"],
-          url: "https://api.firecrawl.dev/exchange/skills/docs/SKILL.md",
+          matchedBy: ["domain"],
+          matchedUrls: ["https://example.com"],
         },
       ];
-      mockResolveSearchTools.mockResolvedValue(skills);
+      mockExecuteSearch.mockResolvedValue(
+        executeResult({ response: { web: developerResults, tools } }),
+      );
       let archived: unknown;
       mockLogSearch.mockImplementationOnce(row => {
         archived = structuredClone(row.results);
@@ -210,17 +206,12 @@ describe("developer category code_searches ledger", () => {
       await searchController(req, res);
       expect(res.status).toHaveBeenCalledWith(200);
       const searchContext = mockExecuteSearch.mock.calls[0][1];
-      expect(mockResolveSearchTools).toHaveBeenCalledWith(
-        expect.any(Object),
-        TEAM_ID,
-        true,
+      expect(mockExecuteSearch.mock.calls[0][0].skills).toBe(true);
+      expect(searchContext.requestId).toBe(
         agentRequestId ?? searchContext.jobId,
-        "public documentation",
-        "https://preview.firecrawl.dev",
-        expect.any(Number),
       );
       expect(archived).toEqual(res.json.mock.calls[0][0].data);
-      expect(archived).toHaveProperty("skills", skills);
+      expect(archived).toHaveProperty("tools", tools);
     },
   );
 

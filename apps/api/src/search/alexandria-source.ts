@@ -10,11 +10,11 @@ export const alexandriaSourceSchema = z.strictObject({
   type: z.enum(["alexandria", "exchange-providers"]),
 });
 export type AlexandriaSource = z.infer<typeof alexandriaSourceSchema>;
-export type AlexandriaResponse = {
+type AlexandriaResponse = {
   status: "available" | "unavailable";
   level: "tools";
   mode: "semantic";
-  items: Record<string, unknown>[];
+  items: DiscoveredTool[];
   total: number | null;
   nextCursor: null;
   error?: string;
@@ -120,6 +120,101 @@ function examplesFor(item: z.infer<typeof contractSchema>) {
   return snippets;
 }
 
+export async function loadToolContract(input: {
+  provider: string;
+  capability: string;
+  cohort?: string;
+  teamId: string;
+  hasExtendedCatalogAccess?: boolean;
+  requestId?: string;
+  timeoutMs: number;
+}) {
+  const cohort = input.cohort;
+  const identifiers = [
+    ...(cohort ? [cohort] : []),
+    input.provider,
+    ...input.capability.split("/"),
+  ];
+  if (identifiers.some(id => !id || !/^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/.test(id)))
+    throw new Error("Invalid discovery identifier");
+  const upstream = await forwardToExchange({
+    teamId: input.teamId,
+    hasExtendedCatalogAccess: input.hasExtendedCatalogAccess === true,
+    ...(cohort
+      ? {
+          method: "GET" as const,
+          path: `/v1/discover/${identifiers.map(encodeURIComponent).join("/")}`,
+        }
+      : {
+          method: "POST" as const,
+          path: "/v1/retrieve",
+          body: {
+            provider: "firecrawl-contextual-discovery",
+            capability: "discovery/context",
+            options: {
+              providers: [input.provider],
+              capabilities: [input.capability],
+              expand: ["options", "response", "examples"],
+            },
+          },
+        }),
+    requestId: input.requestId,
+    timeoutMs: input.timeoutMs,
+  });
+  if (upstream.status !== 200) throw new Error("Tool contract unavailable");
+  let contractBody = upstream.body;
+  if (!cohort) {
+    const lookup = z
+      .object({
+        success: z.literal(true),
+        creditsCost: z.literal(0),
+        data: z.object({
+          items: z.array(z.record(z.string(), z.unknown())).length(1),
+        }),
+      })
+      .parse(upstream.body);
+    const tool = lookup.data.items[0];
+    contractBody = {
+      ...tool,
+      label: tool.name,
+      whenToUse: tool.description,
+      returns: tool.response,
+    };
+  }
+  const parsed = contractSchema.safeParse(contractBody);
+  if (!parsed.success) throw new Error("Tool contract unavailable");
+  const contract = parsed.data;
+  if (
+    contract.provider !== input.provider ||
+    contract.capability !== input.capability
+  )
+    throw new Error("Tool contract identity mismatch");
+  return {
+    id: `${input.provider}/${input.capability}`,
+    provider: input.provider,
+    capability: input.capability,
+    name: contract.label,
+    description: contract.whenToUse,
+    creditsCost: contract.creditsCost,
+    perRecord: contract.perRecord,
+    options: contract.options,
+    ...(contract.requiresOneOf
+      ? { requiresOneOf: contract.requiresOneOf }
+      : {}),
+    response: contract.returns,
+    ...(contract.example ? { example: contract.example } : {}),
+    examples: examplesFor(contract),
+  };
+}
+
+export type DiscoveredTool = Awaited<ReturnType<typeof loadToolContract>> & {
+  matchedBy: ("semantic" | "domain")[];
+  matchedUrls: string[];
+  concept?: string;
+  cohorts?: string[];
+  similarity?: number;
+};
+
 export async function searchAlexandria(
   input: {
     query: string;
@@ -153,7 +248,7 @@ export async function searchAlexandria(
       logger,
     );
     if (hits === null) throw new Error("Semantic discovery unavailable");
-    const items: Record<string, unknown>[] = new Array(hits.length);
+    const items: DiscoveredTool[] = new Array(hits.length);
     let position = 0;
     let failures = 0;
     await Promise.all(
@@ -162,89 +257,20 @@ export async function searchAlexandria(
           const index = position++;
           const hit = hits[index];
           try {
-            const cohort = hit.cohorts[0];
-            const identifiers = [
-              ...(cohort ? [cohort] : []),
-              hit.provider,
-              ...hit.capability.split("/"),
-            ];
-            if (
-              identifiers.some(
-                id => !id || !/^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/.test(id),
-              )
-            )
-              throw new Error("Invalid discovery identifier");
-            const upstream = await forwardToExchange({
-              teamId: input.teamId,
-              hasExtendedCatalogAccess: input.hasExtendedCatalogAccess === true,
-              ...(cohort
-                ? {
-                    method: "GET" as const,
-                    path: `/v1/discover/${identifiers.map(encodeURIComponent).join("/")}`,
-                  }
-                : {
-                    method: "POST" as const,
-                    path: "/v1/retrieve",
-                    body: {
-                      provider: "firecrawl-contextual-discovery",
-                      capability: "discovery/context",
-                      options: {
-                        providers: [hit.provider],
-                        capabilities: [hit.capability],
-                        expand: ["options", "response", "examples"],
-                      },
-                    },
-                  }),
-              requestId: input.requestId,
-              timeoutMs: remaining(),
-            });
-            if (upstream.status !== 200)
-              throw new Error("Tool contract unavailable");
-            let contractBody = upstream.body;
-            if (!cohort) {
-              const lookup = z
-                .object({
-                  success: z.literal(true),
-                  creditsCost: z.literal(0),
-                  data: z.object({
-                    items: z.array(z.record(z.string(), z.unknown())).length(1),
-                  }),
-                })
-                .parse(upstream.body);
-              const tool = lookup.data.items[0];
-              contractBody = {
-                ...tool,
-                label: tool.name,
-                whenToUse: tool.description,
-                returns: tool.response,
-              };
-            }
-            const parsed = contractSchema.safeParse(contractBody);
-            if (!parsed.success) throw new Error("Tool contract unavailable");
-            const contract = parsed.data;
-            if (
-              contract.provider !== hit.provider ||
-              contract.capability !== hit.capability
-            )
-              throw new Error("Tool contract identity mismatch");
-            items[index] = {
-              id: `${hit.provider}/${hit.capability}`,
+            const contract = await loadToolContract({
+              ...input,
               provider: hit.provider,
               capability: hit.capability,
-              name: contract.label,
-              description: contract.whenToUse,
+              cohort: hit.cohorts[0],
+              timeoutMs: remaining(),
+            });
+            items[index] = {
+              ...contract,
               concept: hit.concept,
               cohorts: hit.cohorts,
               similarity: hit.similarity,
-              creditsCost: contract.creditsCost,
-              perRecord: contract.perRecord,
-              options: contract.options,
-              ...(contract.requiresOneOf
-                ? { requiresOneOf: contract.requiresOneOf }
-                : {}),
-              response: contract.returns,
-              ...(contract.example ? { example: contract.example } : {}),
-              examples: examplesFor(contract),
+              matchedBy: ["semantic"],
+              matchedUrls: [],
             };
           } catch (error) {
             failures++;

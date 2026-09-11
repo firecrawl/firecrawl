@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   checkUrlsAgainstThreatPolicy: vi.fn(),
   searchExchangeCatalog: vi.fn(),
   searchAlexandria: vi.fn(),
+  discoverDomainTools: vi.fn(),
 }));
 
 vi.mock("./v2", () => ({ search: mocks.search }));
@@ -22,6 +23,10 @@ vi.mock("./exchange-source", () => ({
 vi.mock("./alexandria-source", async importOriginal => ({
   ...(await importOriginal<typeof import("./alexandria-source")>()),
   searchAlexandria: mocks.searchAlexandria,
+}));
+vi.mock("../services/exchange/tools", async importOriginal => ({
+  ...(await importOriginal<typeof import("../services/exchange/tools")>()),
+  discoverDomainTools: mocks.discoverDomainTools,
 }));
 vi.mock("./scrape", () => ({
   getItemsToScrape: vi.fn(() => []),
@@ -46,6 +51,7 @@ vi.mock("../lib/scrape-billing", () => ({
 }));
 
 import { executeSearch } from "./execute";
+import { getItemsToScrape, scrapeSearchResults } from "./scrape";
 import { trackSearchRequest } from "../lib/tracking";
 import { searchRequestSchema } from "../controllers/v2/types";
 
@@ -320,6 +326,8 @@ describe("executeSearch exchange source", () => {
             capability: "podcasts/episodes/search",
             options: [{ name: "semantic_search", type: "string" }],
             response: { key: "data" },
+            matchedBy: ["semantic"],
+            matchedUrls: [],
           },
         ],
         total: 1,
@@ -338,7 +346,9 @@ describe("executeSearch exchange source", () => {
         { ...context, flags: { exchangeRetrieve: true } },
         logger,
       );
-      expect(result.response.alexandria).toEqual(alexandria);
+      expect(result.response.tools).toEqual(alexandria.items);
+      expect(result.response).not.toHaveProperty("alexandria");
+      expect(result.response).not.toHaveProperty("skills");
       expect(result.totalCredits).toBe(includeWeb ? 2 : 0);
       expect(mocks.searchAlexandria).toHaveBeenCalledWith(
         expect.objectContaining({ source, hasExtendedCatalogAccess: true }),
@@ -351,7 +361,7 @@ describe("executeSearch exchange source", () => {
     },
   );
 
-  it("preserves web results and the unavailable Alexandria envelope", async () => {
+  it("preserves web results and reports unavailable tool discovery", async () => {
     const unavailable = {
       status: "unavailable",
       items: [],
@@ -367,8 +377,68 @@ describe("executeSearch exchange source", () => {
       context,
       logger,
     );
-    expect(result.response.alexandria).toEqual(unavailable);
+    expect(result.response.tools).toEqual([]);
+    expect(result.toolsWarning).toBe("Discovery unavailable");
+    expect(mocks.discoverDomainTools).not.toHaveBeenCalled();
     expect(result.response.web).toBeDefined();
+  });
+
+  it("merges semantic and domain contracts while retaining rank and URL associations", async () => {
+    const tool = {
+      provider: "particle",
+      capability: "podcasts/search",
+      matchedBy: ["semantic"],
+      matchedUrls: [],
+      similarity: 0.9,
+    };
+    mocks.searchAlexandria.mockResolvedValue({ items: [tool] });
+    mocks.discoverDomainTools.mockResolvedValue({
+      items: [{ ...tool, matchedBy: ["domain"], matchedUrls: [webResult.url] }],
+    });
+    const result = await executeSearch(
+      { ...sources(["web", "alexandria"]), skills: true },
+      { ...context, flags: { exchangeRetrieve: true } },
+      logger,
+    );
+    expect(result.response.tools).toEqual([
+      {
+        ...tool,
+        matchedBy: ["semantic", "domain"],
+        matchedUrls: [webResult.url],
+      },
+    ]);
+    expect(result.totalCredits).toBe(2);
+  });
+
+  it("starts domain lookup before scraping finishes and preserves results on lookup failure", async () => {
+    let finishScrape!: (value: never[]) => void;
+    const pendingScrape = new Promise<never[]>(resolve => {
+      finishScrape = resolve;
+    });
+    vi.mocked(getItemsToScrape).mockReturnValueOnce([
+      { scrapeInput: { url: webResult.url } },
+    ] as any);
+    vi.mocked(scrapeSearchResults).mockImplementationOnce(async () => {
+      expect(mocks.discoverDomainTools).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { web: [webResult] } }),
+      );
+      finishScrape([]);
+      return pendingScrape;
+    });
+    mocks.discoverDomainTools.mockRejectedValue(new Error("Unavailable"));
+    const result = await executeSearch(
+      {
+        ...sources(["web"]),
+        skills: true,
+        scrapeOptions: { formats: ["markdown"] },
+      } as any,
+      { ...context, flags: { exchangeRetrieve: true } },
+      logger,
+    );
+    expect(scrapeSearchResults).toHaveBeenCalled();
+    expect(result.response.web).toEqual([webResult]);
+    expect(result.response.tools).toEqual([]);
+    expect(result.toolsWarning).toContain("temporarily unavailable");
   });
 
   it("propagates an invalid catalogue request after the web result settles", async () => {

@@ -1,3 +1,7 @@
+import {
+  discoverDomainTools,
+  mergeDiscoveredTools,
+} from "../services/exchange/tools";
 import { searchAlexandria, type AlexandriaSource } from "./alexandria-source";
 import type { Logger } from "winston";
 import { search } from "./v2";
@@ -45,6 +49,7 @@ interface SearchOptions {
   enterprise?: ("default" | "anon" | "zdr")[];
   scrapeOptions?: ScrapeOptions;
   highlights?: boolean;
+  skills?: boolean;
   timeout: number;
 }
 
@@ -68,6 +73,7 @@ interface SearchContext {
 }
 
 interface SearchExecuteResult {
+  toolsWarning?: string;
   response: SearchV2Response;
   totalResultsCount: number;
   developerResultsCount: number;
@@ -91,6 +97,7 @@ export async function executeSearch(
   context: SearchContext,
   logger: Logger,
 ): Promise<SearchExecuteResult> {
+  const deadline = Date.now() + options.timeout;
   const { query, limit, sources, categories, scrapeOptions } = options;
   const {
     teamId,
@@ -191,12 +198,6 @@ export async function executeSearch(
     if (exchange !== null) searchResponse["exchange-providers"] = exchange;
   }
 
-  if (alexandriaPromise) {
-    const alexandria = await alexandriaPromise;
-    if ("error" in alexandria) throw alexandria.error;
-    searchResponse.alexandria = alexandria.result;
-  }
-
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are
   // URL-level and deduped within this request; scan fees bill +2 per unique
@@ -291,6 +292,27 @@ export async function executeSearch(
     Math.ceil(totalResultsCount / 10) * creditsPerTenResults +
     threatScanCredits;
   let scrapeCredits = 0;
+
+  const domainPromise =
+    options.skills &&
+    !zeroDataRetention &&
+    !options.enterprise?.some(mode => mode === "zdr" || mode === "anon") &&
+    flags?.exchangeRetrieve === true
+      ? discoverDomainTools({
+          data: wantsDeveloper
+            ? { ...searchResponse, web: developerResults }
+            : searchResponse,
+          teamId,
+          hasExtendedCatalogAccess: true,
+          requestId,
+          timeoutMs: deadline - Date.now(),
+          limit,
+        }).catch(() => ({
+          items: [],
+          warning:
+            "Domain tool lookup is temporarily unavailable. Search results are unaffected.",
+        }))
+      : null;
 
   const shouldScrape =
     scrapeOptions?.formats && scrapeOptions.formats.length > 0;
@@ -388,6 +410,20 @@ export async function executeSearch(
     }));
   }
 
+  const toolWarnings: string[] = [];
+  if (alexandriaPromise || domainPromise) {
+    const semantic = alexandriaPromise ? await alexandriaPromise : null;
+    if (semantic && "error" in semantic) throw semantic.error;
+    const domain = domainPromise ? await domainPromise : null;
+    searchResponse.tools = mergeDiscoveredTools(
+      semantic?.result.items ?? [],
+      domain?.items ?? [],
+    );
+    if (semantic?.result.error) toolWarnings.push(semantic.result.error);
+    if (semantic?.result.warning) toolWarnings.push(semantic.result.warning);
+    if (domain?.warning) toolWarnings.push(domain.warning);
+  }
+
   const scrapeFormats = scrapeOptions?.formats
     ? scrapeOptions.formats.map((f: any) =>
         typeof f === "string" ? f : f.type,
@@ -428,6 +464,7 @@ export async function executeSearch(
 
   return {
     response: searchResponse,
+    ...(toolWarnings.length ? { toolsWarning: toolWarnings.join(" ") } : {}),
     totalResultsCount,
     developerResultsCount,
     searchCredits,

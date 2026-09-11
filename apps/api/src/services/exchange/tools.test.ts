@@ -3,7 +3,11 @@ import { MockAgent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 vi.mock("../../config", () => ({
   config: { FIRE_EXCHANGE_URL: "https://exchange.example" },
 }));
-import { resolveSearchTools } from "./tools";
+const mockContract = vi.hoisted(() => vi.fn());
+vi.mock("../../search/alexandria-source", () => ({
+  loadToolContract: mockContract,
+}));
+import { resolveSearchTools, discoverDomainTools } from "./tools";
 const original = getGlobalDispatcher();
 let agent: MockAgent;
 beforeEach(() => {
@@ -46,6 +50,7 @@ it.each([false, true])(
       web: [
         { url: "" },
         { url: "not a URL" },
+        { url: "https://user:secret@spotify.com/" },
         { url: "https://" },
         { url: "https://spotify.com/" },
         { url: "https://spotify.com/" },
@@ -236,4 +241,64 @@ it("does not start contextual discovery after the search deadline", async () => 
   await expect(
     resolveSearchTools({}, "team", false, "request", "podcasts", undefined, 0),
   ).rejects.toThrow("deadline exceeded");
+});
+
+it("normalizes path-specific matches and scopes the mapping cache to each team", async () => {
+  const urls = [
+    "https://youtube.com/podcasts",
+    "https://youtube.com/watch?v=123",
+  ];
+  const input = {
+    data: { web: urls.map(url => ({ url, title: "", description: "" })) },
+    teamId: "cache-team",
+    requestId: "mapping-test",
+    hasExtendedCatalogAccess: true,
+    timeoutMs: 1000,
+    limit: 5,
+  };
+  mockContract.mockImplementation(async ({ provider, capability }) => ({
+    provider,
+    capability,
+    options: [],
+    response: {},
+    examples: {},
+  }));
+  const intercept = () =>
+    agent
+      .get("https://exchange.example")
+      .intercept({
+        path: "/v1/skills/resolve",
+        method: "POST",
+        body: JSON.stringify({ urls }),
+      })
+      .reply(200, {
+        skills: [
+          {
+            id: "particle",
+            description: "Podcasts",
+            matchedDomains: ["youtube.com"],
+            domainCapabilities: {
+              [urls[0]]: ["podcasts/search"],
+              "youtube.com": ["videos/search"],
+            },
+            url: "/v1/skills/particle/SKILL.md",
+          },
+        ],
+      });
+  intercept();
+  const result = await discoverDomainTools(input);
+  expect(result.items).toMatchObject([
+    {
+      capability: "podcasts/search",
+      matchedBy: ["domain"],
+      matchedUrls: [urls[0]],
+    },
+    { capability: "videos/search", matchedBy: ["domain"], matchedUrls: urls },
+  ]);
+  expect(await discoverDomainTools(input)).toEqual(result);
+  intercept();
+  expect(
+    await discoverDomainTools({ ...input, teamId: "another-team" }),
+  ).toEqual(result);
+  agent.assertNoPendingInterceptors();
 });

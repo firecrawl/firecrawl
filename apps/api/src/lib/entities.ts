@@ -1,4 +1,4 @@
-import type { AlexandriaResponse } from "../search/alexandria-source";
+import type { DiscoveredTool } from "../search/alexandria-source";
 import type { Action } from "../controllers/v1/types";
 import type { BrandingProfile } from "../types/branding";
 
@@ -174,19 +174,7 @@ export interface ExchangeSearchResult {
 }
 
 export interface SearchV2Response {
-  alexandria?: AlexandriaResponse;
-  skills?: {
-    id: string;
-    name?: string;
-    origin?: "api" | "crawl";
-    toolCount?: number;
-    description: string;
-    matchedDomains: string[];
-    matchedTerms?: string[];
-    domainCapabilities?: Record<string, string[]>;
-    queryCapabilities?: string[];
-    url: string;
-  }[];
+  tools?: DiscoveredTool[];
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];

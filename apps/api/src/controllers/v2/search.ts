@@ -1,5 +1,4 @@
 import { AlexandriaRequestError } from "../../search/alexandria-source";
-import { resolveSearchTools } from "../../services/exchange/tools";
 import { NextFunction, Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
@@ -328,6 +327,7 @@ async function searchControllerInner(
         enterprise: req.body.enterprise,
         scrapeOptions: req.body.scrapeOptions,
         highlights: req.body.highlights,
+        skills: req.body.skills,
         timeout: req.body.timeout,
       },
       {
@@ -377,24 +377,7 @@ async function searchControllerInner(
       );
     }
 
-    let toolsWarning: string | undefined;
-    if (req.body.skills) {
-      try {
-        result.response.skills = await resolveSearchTools(
-          result.response,
-          req.auth.team_id,
-          req.acuc?.flags?.exchangeRetrieve === true,
-          agentRequestId ?? jobId,
-          req.body.query,
-          `${req.protocol}://${req.get("host")}`,
-          (req.body.timeout ?? 60000) - (Date.now() - controllerStartTime),
-        );
-      } catch {
-        toolsWarning =
-          "Tool lookup is temporarily unavailable. Search results are unaffected.";
-        logger.warn("Exchange tool lookup failed", { jobId });
-      }
-    }
+    const toolsWarning = result.toolsWarning;
 
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;

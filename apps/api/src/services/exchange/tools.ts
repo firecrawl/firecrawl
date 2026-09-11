@@ -1,3 +1,7 @@
+import {
+  loadToolContract,
+  type DiscoveredTool,
+} from "../../search/alexandria-source";
 import { fetch } from "undici";
 import { z } from "zod";
 import { config } from "../../config";
@@ -42,7 +46,12 @@ export async function resolveSearchTools(
   ].filter((url): url is string => {
     if (typeof url !== "string" || url.length > 8192) return false;
     const parsed = URL.parse(url);
-    return parsed?.protocol === "https:" || parsed?.protocol === "http:";
+    return (
+      !!parsed &&
+      (parsed.protocol === "https:" || parsed.protocol === "http:") &&
+      !parsed.username &&
+      !parsed.password
+    );
   });
   const searchQuery = query?.slice(0, 2000).trim();
   if (!urls.length && !searchQuery) return [];
@@ -155,4 +164,160 @@ export async function resolveSearchTools(
       : {}),
     url: `${apiOrigin}/exchange/skills/${encodeURIComponent(skill.id)}/SKILL.md`,
   }));
+}
+
+const mappingCache = new Map<
+  string,
+  { expires: number; groups: Awaited<ReturnType<typeof resolveSearchTools>> }
+>();
+
+export async function discoverDomainTools(input: {
+  data: SearchV2Response;
+  teamId: string;
+  hasExtendedCatalogAccess: boolean;
+  requestId: string;
+  timeoutMs: number;
+  limit: number;
+}): Promise<{ items: DiscoveredTool[]; warning?: string }> {
+  const urls = [
+    ...new Set(
+      [
+        ...(input.data.web ?? []),
+        ...(input.data.news ?? []),
+        ...(input.data.images ?? []),
+      ]
+        .map(item => item.url)
+        .filter((url): url is string => {
+          if (typeof url !== "string" || url.length > 8192) return false;
+          const parsed = URL.parse(url);
+          return (
+            !!parsed &&
+            ["https:", "http:"].includes(parsed.protocol) &&
+            !parsed.username &&
+            !parsed.password
+          );
+        }),
+    ),
+  ];
+  if (!urls.length) return { items: [] };
+  const deadline = Date.now() + Math.min(input.timeoutMs, 5000);
+  const remaining = () => {
+    const ms = deadline - Date.now();
+    if (ms <= 0) throw new Error("Domain discovery deadline exceeded");
+    return ms;
+  };
+  remaining();
+  const key = JSON.stringify([
+    config.FIRE_EXCHANGE_URL,
+    input.teamId,
+    input.hasExtendedCatalogAccess,
+    [...urls].sort(),
+  ]);
+  const cached = mappingCache.get(key);
+  const groups =
+    cached && cached.expires > Date.now()
+      ? cached.groups
+      : await resolveSearchTools(
+          { web: urls.map(url => ({ url, title: "", description: "" })) },
+          input.teamId,
+          input.hasExtendedCatalogAccess,
+          input.requestId,
+          undefined,
+          undefined,
+          remaining(),
+        );
+  if (
+    (!cached || cached.expires <= Date.now()) &&
+    key.length <= 16384 &&
+    JSON.stringify(groups).length <= 262144
+  ) {
+    if (mappingCache.size >= 64)
+      mappingCache.delete(mappingCache.keys().next().value!);
+    mappingCache.set(key, { expires: Date.now() + 30000, groups });
+  }
+  const selected = new Map<
+    string,
+    { provider: string; capability: string; urls: Set<string> }
+  >();
+  let failures = 0;
+  for (const group of groups) {
+    if (!group.domainCapabilities) {
+      failures++;
+      continue;
+    }
+    for (const url of urls) {
+      const hostname = new URL(url).hostname;
+      const capabilities = new Set([
+        ...(group.domainCapabilities[url] ?? []),
+        ...(group.domainCapabilities[hostname] ?? []),
+        ...(group.domainCapabilities[hostname.replace(/^www\./, "")] ?? []),
+      ]);
+      for (const capability of capabilities) {
+        const id = JSON.stringify([group.id, capability]);
+        if (!selected.has(id))
+          selected.set(id, { provider: group.id, capability, urls: new Set() });
+        selected.get(id)!.urls.add(url);
+      }
+    }
+  }
+  const matches = [...selected.values()].slice(0, input.limit);
+  const items: DiscoveredTool[] = new Array(matches.length);
+  let position = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(4, matches.length) }, async () => {
+      while (position < matches.length) {
+        const index = position++;
+        const match = matches[index];
+        try {
+          const contract = await loadToolContract({
+            ...input,
+            provider: match.provider,
+            capability: match.capability,
+            timeoutMs: remaining(),
+          });
+          items[index] = {
+            ...contract,
+            matchedBy: ["domain"],
+            matchedUrls: [...match.urls],
+          };
+        } catch {
+          failures++;
+        }
+      }
+    }),
+  );
+  return {
+    items: items.filter(Boolean),
+    ...(failures
+      ? { warning: "Some domain tool contracts could not be loaded." }
+      : {}),
+  };
+}
+
+export function mergeDiscoveredTools(
+  ...groups: DiscoveredTool[][]
+): DiscoveredTool[] {
+  const unique = new Map<string, DiscoveredTool>();
+  for (const tool of groups.flat()) {
+    const key = JSON.stringify([tool.provider, tool.capability]);
+    const previous = unique.get(key);
+    unique.set(
+      key,
+      previous
+        ? {
+            ...tool,
+            ...previous,
+            matchedBy: [...new Set([...previous.matchedBy, ...tool.matchedBy])],
+            matchedUrls: [
+              ...new Set([...previous.matchedUrls, ...tool.matchedUrls]),
+            ],
+          }
+        : {
+            ...tool,
+            matchedBy: [...tool.matchedBy],
+            matchedUrls: [...tool.matchedUrls],
+          },
+    );
+  }
+  return [...unique.values()];
 }
