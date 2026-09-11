@@ -1,4 +1,5 @@
 import type { Meta } from "../../..";
+import { hasCustomRequestContext } from "../../../lib/request-context";
 
 export function buildFirePdfRequestMetadata(meta: Meta): {
   source_endpoint: "scrape" | "parse";
@@ -10,12 +11,9 @@ export function buildFirePdfRequestMetadata(meta: Meta): {
     meta.internalOptions.uploadedFile !== undefined;
   const source_endpoint = isParse ? "parse" : "scrape";
   // Describe supplied request options without forwarding their values.
-  const source_request_context =
-    Object.keys(meta.options.headers ?? {}).length > 0 ||
-    (meta.options.actions?.length ?? 0) > 0 ||
-    meta.options.profile !== undefined
-      ? "custom"
-      : "default";
+  const source_request_context = hasCustomRequestContext(meta.options)
+    ? "custom"
+    : "default";
 
   // Upload requests use synthetic URLs, and ZDR requests omit URL metadata.
   if (isParse || meta.internalOptions.zeroDataRetention === true) {
