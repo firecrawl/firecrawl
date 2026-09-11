@@ -119,8 +119,10 @@ vi.mock("../../../controllers/auth", () => ({
 vi.mock("../../../config", () => ({
   // Stubbed so importing the real config (which parses env) is avoided.
   // A getter so individual tests can swap the config (e.g. firebill routing).
+  // DB auth is on by default — the deployed shape, and the only one in which a
+  // team's ACUC carries a real org — so a test must opt out of it explicitly.
   get config() {
-    return state.configRef;
+    return { USE_DB_AUTHENTICATION: true, ...state.configRef };
   },
 }));
 
@@ -1852,6 +1854,58 @@ describe("org resolution", () => {
         svc.lockCredits({ teamId: "team-1", value: 42 }),
       ).resolves.toEqual({ status: "skipped" });
       expect(mockCheck).not.toHaveBeenCalled();
+    });
+  });
+
+  // Without DB auth getACUCTeam hands back a mock ACUC carrying a synthetic
+  // org, so the ACUC must not be consulted at all: these are the same fail-open
+  // answers the DB lookup gave when it had no database to read.
+  describe("when DB authentication is off", () => {
+    beforeEach(() => {
+      state.configRef = { USE_DB_AUTHENTICATION: false };
+    });
+
+    it("checkCredits falls back with null without reading the ACUC", async () => {
+      const svc = makeService();
+      await expect(
+        svc.checkCredits({ teamId: "team-1", value: 42 }),
+      ).resolves.toBeNull();
+      expect(mockGetACUCTeam).not.toHaveBeenCalled();
+      expect(mockCheck).not.toHaveBeenCalled();
+    });
+
+    it("trackCredits reports that nothing was tracked", async () => {
+      const svc = makeService();
+      await expect(
+        svc.trackCredits({ teamId: "team-1", value: 42 }),
+      ).resolves.toBe(false);
+      expect(mockGetACUCTeam).not.toHaveBeenCalled();
+      expect(mockTrack).not.toHaveBeenCalled();
+    });
+
+    it("lockCredits skips the hold", async () => {
+      const svc = makeService();
+      await expect(
+        svc.lockCredits({ teamId: "team-1", value: 42 }),
+      ).resolves.toEqual({ status: "skipped" });
+      expect(mockGetACUCTeam).not.toHaveBeenCalled();
+      expect(mockCheck).not.toHaveBeenCalled();
+    });
+
+    it("still bills a caller-supplied org", async () => {
+      const svc = makeService();
+
+      const result = await svc.checkCredits({
+        teamId: "team-1",
+        value: 42,
+        orgId: CALLER_ORG,
+      });
+
+      expect(result).toEqual({ allowed: true, remaining: 0 });
+      expect(mockGetACUCTeam).not.toHaveBeenCalled();
+      expect(mockCheck).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: CALLER_ORG, entityId: "team-1" }),
+      );
     });
   });
 

@@ -448,6 +448,12 @@ export class AutumnService {
   ): Promise<string> {
     if (typeof orgId === "string" && orgId.length > 0) return orgId;
 
+    // Without DB auth there is no real org to bill: getACUCTeam answers with a
+    // mock ACUC whose synthetic org must never become an Autumn customer.
+    if (config.USE_DB_AUTHENTICATION !== true) {
+      throw new Error(`Missing org_id for team ${teamId}`);
+    }
+
     const acuc = await getACUCTeam(teamId);
     if (acuc?.org_id) return acuc.org_id;
 
