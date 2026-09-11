@@ -122,7 +122,7 @@ export function checkPermissions(
   const safeMode = options?.safeMode;
   if (safeMode && !safeMode.lockdown) {
     if (
-      safeMode.noStealthProxy &&
+      !safeMode.useStealthProxy &&
       (request.proxy === "stealth" || request.proxy === "enhanced")
     ) {
       return {
@@ -131,14 +131,17 @@ export function checkPermissions(
         code: "SAFE_MODE_BLOCKED",
       };
     }
-    if (safeMode.checkRobots && request.crawlerOptions?.ignoreRobotsTxt) {
+    if (
+      !safeMode.allowIgnoreRobots &&
+      request.crawlerOptions?.ignoreRobotsTxt
+    ) {
       return {
         error:
           "Safe Mode: robots.txt is always honored for your organization; the ignoreRobotsTxt parameter is not allowed.",
         code: "SAFE_MODE_BLOCKED",
       };
     }
-    if (safeMode.blockAuthPaths) {
+    if (!safeMode.useAuthentication) {
       if (request.profile !== undefined) {
         return {
           error:

@@ -1320,11 +1320,16 @@ export type TeamFlags = {
   safeModeConfig?: {
     allowBypassSafeMode?: boolean;
     lockdown?: boolean;
-    checkRobots?: boolean;
     domainControls?: boolean;
-    noStealthProxy?: boolean;
-    blockOnSiteRestriction?: boolean;
-    blockAuthPaths?: boolean;
+    allowIgnoreRobots?: boolean;
+    useStealthProxy?: boolean;
+    useAuthentication?: boolean;
+    useSiteHandling?: boolean;
+    useDefaultAutomation?: boolean;
+    useDefaultUserAgent?: boolean;
+    usePlatformSelection?: boolean;
+    useCountrySelection?: boolean;
+    useReferrer?: boolean;
     allowlist?: string[];
   };
   siemLogging?: boolean;

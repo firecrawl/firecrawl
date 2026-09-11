@@ -60,17 +60,29 @@ export type FireEngineScrapeRequestCommon = {
   saveScrapeResultToGCS?: boolean;
   zeroDataRetention?: boolean;
 
-  safeMode?: boolean;
-  safeModePolicies?: { useSiteHandling?: boolean };
+  safeModePolicies?: {
+    useSiteHandling?: boolean;
+    useDefaultAutomation?: boolean;
+    useDefaultUserAgent?: boolean;
+    usePlatformSelection?: boolean;
+    useCountrySelection?: boolean;
+    useReferrer?: boolean;
+  };
 };
 
 export function safeModeParams(
   safeMode: ResolvedSafeMode | undefined,
-): Pick<FireEngineScrapeRequestCommon, "safeMode" | "safeModePolicies"> {
+): Pick<FireEngineScrapeRequestCommon, "safeModePolicies"> {
   if (!safeMode) return {};
   return {
-    safeMode: true,
-    safeModePolicies: { useSiteHandling: !safeMode.blockOnSiteRestriction },
+    safeModePolicies: {
+      useSiteHandling: safeMode.useSiteHandling,
+      useDefaultAutomation: safeMode.useDefaultAutomation,
+      useDefaultUserAgent: safeMode.useDefaultUserAgent,
+      usePlatformSelection: safeMode.usePlatformSelection,
+      useCountrySelection: safeMode.useCountrySelection,
+      useReferrer: safeMode.useReferrer,
+    },
   };
 }
 

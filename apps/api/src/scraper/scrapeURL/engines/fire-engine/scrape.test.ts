@@ -3,11 +3,16 @@ import type { ResolvedSafeMode } from "../../../../lib/safe-mode";
 
 const strict: ResolvedSafeMode = {
   lockdown: false,
-  checkRobots: true,
   domainControls: true,
-  noStealthProxy: true,
-  blockOnSiteRestriction: true,
-  blockAuthPaths: true,
+  allowIgnoreRobots: false,
+  useStealthProxy: false,
+  useAuthentication: false,
+  useSiteHandling: false,
+  useDefaultAutomation: false,
+  useDefaultUserAgent: false,
+  usePlatformSelection: false,
+  useCountrySelection: false,
+  useReferrer: false,
 };
 
 describe("safeModeParams", () => {
@@ -15,19 +20,35 @@ describe("safeModeParams", () => {
     expect(safeModeParams(undefined)).toEqual({});
   });
 
-  it("enables Safe Mode and disables site handling under blockOnSiteRestriction", () => {
+  it("forwards all engine policies (all off under strict defaults)", () => {
     expect(safeModeParams(strict)).toEqual({
-      safeMode: true,
-      safeModePolicies: { useSiteHandling: false },
+      safeModePolicies: {
+        useSiteHandling: false,
+        useDefaultAutomation: false,
+        useDefaultUserAgent: false,
+        usePlatformSelection: false,
+        useCountrySelection: false,
+        useReferrer: false,
+      },
     });
   });
 
-  it("allows site handling when blockOnSiteRestriction is relaxed", () => {
+  it("forwards each engine policy as configured", () => {
     expect(
-      safeModeParams({ ...strict, blockOnSiteRestriction: false }),
+      safeModeParams({
+        ...strict,
+        useSiteHandling: true,
+        useCountrySelection: true,
+      }),
     ).toEqual({
-      safeMode: true,
-      safeModePolicies: { useSiteHandling: true },
+      safeModePolicies: {
+        useSiteHandling: true,
+        useDefaultAutomation: false,
+        useDefaultUserAgent: false,
+        usePlatformSelection: false,
+        useCountrySelection: true,
+        useReferrer: false,
+      },
     });
   });
 });

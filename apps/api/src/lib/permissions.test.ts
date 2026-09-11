@@ -3,11 +3,16 @@ import { ResolvedSafeMode } from "./safe-mode";
 
 const strictSafeMode: ResolvedSafeMode = {
   lockdown: false,
-  checkRobots: true,
   domainControls: true,
-  noStealthProxy: true,
-  blockOnSiteRestriction: true,
-  blockAuthPaths: true,
+  allowIgnoreRobots: false,
+  useStealthProxy: false,
+  useAuthentication: false,
+  useSiteHandling: false,
+  useDefaultAutomation: false,
+  useDefaultUserAgent: false,
+  usePlatformSelection: false,
+  useCountrySelection: false,
+  useReferrer: false,
 };
 
 describe("checkPermissions — safe mode", () => {
@@ -24,7 +29,7 @@ describe("checkPermissions — safe mode", () => {
   });
 
   it.each(["stealth", "enhanced"])(
-    "rejects %s proxy under noStealthProxy",
+    "rejects %s proxy when stealth proxy is not allowed",
     proxy => {
       const result = checkPermissions({ proxy }, null, {
         safeMode: strictSafeMode,
@@ -34,10 +39,10 @@ describe("checkPermissions — safe mode", () => {
     },
   );
 
-  it("allows stealth when noStealthProxy is off", () => {
+  it("allows stealth when useStealthProxy is on", () => {
     expect(
       checkPermissions({ proxy: "stealth" }, null, {
-        safeMode: { ...strictSafeMode, noStealthProxy: false },
+        safeMode: { ...strictSafeMode, useStealthProxy: true },
       }),
     ).toEqual({});
   });

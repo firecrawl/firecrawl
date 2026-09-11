@@ -24,20 +24,30 @@ export type SafeModeConfig = NonNullable<
 
 export type ResolvedSafeMode = {
   lockdown: boolean;
-  checkRobots: boolean;
   domainControls: boolean;
-  noStealthProxy: boolean;
-  blockOnSiteRestriction: boolean;
-  blockAuthPaths: boolean;
+  allowIgnoreRobots: boolean;
+  useStealthProxy: boolean;
+  useAuthentication: boolean;
+  useSiteHandling: boolean;
+  useDefaultAutomation: boolean;
+  useDefaultUserAgent: boolean;
+  usePlatformSelection: boolean;
+  useCountrySelection: boolean;
+  useReferrer: boolean;
 };
 
 const SAFE_MODE_DEFAULTS: ResolvedSafeMode = {
   lockdown: false,
-  checkRobots: true,
   domainControls: true,
-  noStealthProxy: true,
-  blockOnSiteRestriction: true,
-  blockAuthPaths: true,
+  allowIgnoreRobots: false,
+  useStealthProxy: false,
+  useAuthentication: false,
+  useSiteHandling: false,
+  useDefaultAutomation: false,
+  useDefaultUserAgent: false,
+  usePlatformSelection: false,
+  useCountrySelection: false,
+  useReferrer: false,
 };
 
 export function getSafeMode(flags: TeamFlags | null | undefined): boolean {
@@ -56,7 +66,7 @@ export function applySafeMode(
 
   if (
     !safeMode.lockdown &&
-    safeMode.noStealthProxy &&
+    !safeMode.useStealthProxy &&
     scrapeOptions.proxy === "auto"
   ) {
     scrapeOptions.proxy = "basic";
@@ -106,13 +116,24 @@ export function resolveSafeMode(
 
   const resolved: ResolvedSafeMode = {
     lockdown: config?.lockdown ?? SAFE_MODE_DEFAULTS.lockdown,
-    checkRobots: config?.checkRobots ?? SAFE_MODE_DEFAULTS.checkRobots,
     domainControls: config?.domainControls ?? SAFE_MODE_DEFAULTS.domainControls,
-    noStealthProxy: config?.noStealthProxy ?? SAFE_MODE_DEFAULTS.noStealthProxy,
-    blockOnSiteRestriction:
-      config?.blockOnSiteRestriction ??
-      SAFE_MODE_DEFAULTS.blockOnSiteRestriction,
-    blockAuthPaths: config?.blockAuthPaths ?? SAFE_MODE_DEFAULTS.blockAuthPaths,
+    allowIgnoreRobots:
+      config?.allowIgnoreRobots ?? SAFE_MODE_DEFAULTS.allowIgnoreRobots,
+    useStealthProxy:
+      config?.useStealthProxy ?? SAFE_MODE_DEFAULTS.useStealthProxy,
+    useAuthentication:
+      config?.useAuthentication ?? SAFE_MODE_DEFAULTS.useAuthentication,
+    useSiteHandling:
+      config?.useSiteHandling ?? SAFE_MODE_DEFAULTS.useSiteHandling,
+    useDefaultAutomation:
+      config?.useDefaultAutomation ?? SAFE_MODE_DEFAULTS.useDefaultAutomation,
+    useDefaultUserAgent:
+      config?.useDefaultUserAgent ?? SAFE_MODE_DEFAULTS.useDefaultUserAgent,
+    usePlatformSelection:
+      config?.usePlatformSelection ?? SAFE_MODE_DEFAULTS.usePlatformSelection,
+    useCountrySelection:
+      config?.useCountrySelection ?? SAFE_MODE_DEFAULTS.useCountrySelection,
+    useReferrer: config?.useReferrer ?? SAFE_MODE_DEFAULTS.useReferrer,
   };
 
   if (url && isSafeModeAllowlisted(url, config?.allowlist)) {
@@ -120,10 +141,15 @@ export function resolveSafeMode(
       allowlisted: true,
       safeMode: {
         ...resolved,
-        checkRobots: false,
-        noStealthProxy: false,
-        blockOnSiteRestriction: false,
-        blockAuthPaths: false,
+        allowIgnoreRobots: true,
+        useStealthProxy: true,
+        useAuthentication: true,
+        useSiteHandling: true,
+        useDefaultAutomation: true,
+        useDefaultUserAgent: true,
+        usePlatformSelection: true,
+        useCountrySelection: true,
+        useReferrer: true,
       },
     };
   }
