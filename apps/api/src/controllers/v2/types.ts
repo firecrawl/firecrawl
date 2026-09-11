@@ -1,5 +1,6 @@
 import { alexandriaSourceSchema } from "../../search/alexandria-source";
 import { Request, Response } from "express";
+import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
@@ -2509,12 +2510,7 @@ export const searchRequestSchema = z
   )
   .refine(x => {
     const categories = x.categories ?? [];
-    const hasDeveloper = categories.some(category =>
-      typeof category === "string"
-        ? category === "developer"
-        : category.type === "developer",
-    );
-    return !hasDeveloper || categories.length === 1;
+    return !hasCategory(categories, "developer") || categories.length === 1;
   }, "the developer category cannot be combined with other categories")
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {

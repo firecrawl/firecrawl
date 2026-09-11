@@ -5,6 +5,7 @@ import {
   CrawlDenialError,
   JobCancelledError,
   TransportableError,
+  UnsupportedSiteError,
 } from "../error";
 import { UnsafeDomainBlockedError } from "../threat-protection/error";
 import type {
@@ -69,6 +70,7 @@ function resultForOutcome(
   if (outcome.success) return "success";
   if (
     outcome.error instanceof CrawlDenialError ||
+    outcome.error instanceof UnsupportedSiteError ||
     outcome.error instanceof UnsafeDomainBlockedError ||
     outcome.threatDecisions?.some(decision => !decision.allowed)
   ) {

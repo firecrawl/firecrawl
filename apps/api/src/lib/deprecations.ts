@@ -9,6 +9,12 @@ interface Deprecation {
   docs?: string;
 }
 
+export interface Notice {
+  message: string;
+  links?: string[];
+  replacement?: string;
+}
+
 // Every legacy entry shipped together in #3469, so they share one date.
 const DEPRECATIONS = {
   v1_extract: {
@@ -97,6 +103,29 @@ function quoteWarningText(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+// Copies the body: the research controllers log the same object after responding.
+export function applyNotice(res: Response, notice: Notice) {
+  if (notice.links?.length) res.setHeader("Link", notice.links.join(", "));
+  // RFC 7234 Warning header, code 299 = "Miscellaneous Persistent Warning".
+  res.setHeader("Warning", `299 - ${quoteWarningText(notice.message)}`);
+
+  const originalJson = res.json.bind(res);
+  res.json = (body: any) => {
+    if (body && typeof body === "object" && !Array.isArray(body)) {
+      const existing = Array.isArray(body.warnings) ? body.warnings : [];
+      const annotated: any = {
+        ...body,
+        warnings: [...existing, notice.message],
+      };
+      if (notice.replacement && annotated.replacement === undefined) {
+        annotated.replacement = notice.replacement;
+      }
+      return originalJson(annotated);
+    }
+    return originalJson(body);
+  };
+}
+
 export function deprecationMiddleware(key: DeprecationKey) {
   const dep: Deprecation = DEPRECATIONS[key];
   return (req: Request, res: Response, next: NextFunction) => {
@@ -112,27 +141,11 @@ export function deprecationMiddleware(key: DeprecationKey) {
     if (dep.replacement) {
       links.push(`<${dep.replacement}>; rel="successor-version"`);
     }
-    if (links.length > 0) res.setHeader("Link", links.join(", "));
-
-    // RFC 7234 Warning header, code 299 = "Miscellaneous Persistent Warning".
-    res.setHeader("Warning", `299 - ${quoteWarningText(dep.message)}`);
-
-    const originalJson = res.json.bind(res);
-    res.json = (body: any) => {
-      if (body && typeof body === "object" && !Array.isArray(body)) {
-        // Copy: the research controllers log the same object after responding.
-        const existing = Array.isArray(body.warnings) ? body.warnings : [];
-        const annotated: any = {
-          ...body,
-          warnings: [...existing, dep.message],
-        };
-        if (dep.replacement && annotated.replacement === undefined) {
-          annotated.replacement = dep.replacement;
-        }
-        return originalJson(annotated);
-      }
-      return originalJson(body);
-    };
+    applyNotice(res, {
+      message: dep.message,
+      links,
+      replacement: dep.replacement,
+    });
     next();
   };
 }

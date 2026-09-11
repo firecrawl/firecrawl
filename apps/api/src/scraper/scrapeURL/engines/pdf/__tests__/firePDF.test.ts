@@ -36,6 +36,80 @@ function makeMeta() {
   } as any;
 }
 
+describe("scrapePDFWithFirePDF request metadata", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "Document",
+      failed_pages: null,
+      pages_processed: 1,
+    } as any);
+  });
+
+  it.each([
+    [
+      "original URL",
+      {},
+      {},
+      { source_endpoint: "scrape", url: "https://example.com/file.pdf" },
+    ],
+    [
+      "rewritten URL",
+      { rewrittenUrl: "https://example.com/download/file.pdf" },
+      {},
+      {
+        source_endpoint: "scrape",
+        url: "https://example.com/download/file.pdf",
+      },
+    ],
+    ["empty URL", { url: "" }, {}, { source_endpoint: "scrape", url: "" }],
+    [
+      "non-HTTP URL",
+      { url: "file:///document.pdf" },
+      {},
+      { source_endpoint: "scrape", url: "file:///document.pdf" },
+    ],
+    [
+      "unmodified source value",
+      { url: "  document source  " },
+      {},
+      { source_endpoint: "scrape", url: "  document source  " },
+    ],
+    ["ZDR", {}, { zeroDataRetention: true }, { source_endpoint: "scrape" }],
+    ["parse", {}, { isParse: true }, { source_endpoint: "parse" }],
+    [
+      "uploaded file",
+      {},
+      {
+        uploadedFile: {
+          buffer: Buffer.from("document"),
+          filename: "document.pdf",
+        },
+      },
+      { source_endpoint: "parse" },
+    ],
+  ] as const)(
+    "sends source metadata for %s",
+    async (_name, overrides, internalOptions, expected) => {
+      const meta = { ...makeMeta(), ...overrides };
+      meta.internalOptions = {
+        ...meta.internalOptions,
+        zeroDataRetention: false,
+        ...internalOptions,
+      };
+
+      await scrapePDFWithFirePDF(meta, "BASE64", 1);
+
+      const body = mockedRobustFetch.mock.calls[0][0].body as Record<
+        string,
+        unknown
+      >;
+      expect(body).toMatchObject({ source: "firecrawl", ...expected });
+      expect(Object.hasOwn(body, "url")).toBe(Object.hasOwn(expected, "url"));
+    },
+  );
+});
+
 describe("reconcilePageCountWithFirePdf", () => {
   it("uses fire-pdf's count when the upstream pass left it at 0", () => {
     // The original regression: processPdf threw "Invalid PDF structure" on a

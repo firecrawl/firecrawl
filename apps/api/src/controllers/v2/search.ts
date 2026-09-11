@@ -1,6 +1,6 @@
 import { AlexandriaRequestError } from "../../search/alexandria-source";
 import { resolveSearchSkills } from "../../services/exchange/skills";
-import { Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import {
@@ -25,7 +25,7 @@ import {
 import { logger as _logger } from "../../lib/logger";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
-import { CategoryOption } from "../../lib/search-query-builder";
+import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
@@ -48,6 +48,25 @@ import {
 import { wantsDeveloperCategory } from "../../search/developer";
 import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { applyNotice, type Notice } from "../../lib/deprecations";
+
+const RESEARCH_CATEGORY_NOTICE: Notice = {
+  message:
+    "On 2026-11-16, the 'research' search category will query the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) rather than restricting web results to a fixed list of 14 academic domains. Results will move from data.web to data.research and will match the records returned by the Research Index endpoint GET /search/research/papers, with the fields paperId, primaryId, ids, title, abstract and score. To adopt those records today, call GET /search/research/papers (https://docs.firecrawl.dev/api-reference/endpoint/research-search-papers). To continue receiving web pages from academic domains, use includeDomains. The github, pdf and developer categories are unchanged. See https://docs.firecrawl.dev/features/research",
+  links: ['<https://docs.firecrawl.dev/features/research>; rel="help"'],
+};
+
+// Ahead of auth and validation so rejected requests carry the notice too.
+export function researchCategoryNoticeMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (hasCategory(req.body?.categories, "research")) {
+    applyNotice(res, RESEARCH_CATEGORY_NOTICE);
+  }
+  next();
+}
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,

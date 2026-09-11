@@ -78,9 +78,7 @@ export async function scrapeController(
         "scrape.middleware_time_ms": controllerStartTime - middlewareStartTime,
       });
 
-      if (
-        (req.body as { exchange?: unknown } | null)?.exchange !== undefined
-      ) {
+      if ((req.body as { exchange?: unknown } | null)?.exchange !== undefined) {
         return exchangeScrapeController(req, res, jobId);
       }
 
@@ -467,6 +465,17 @@ export async function scrapeController(
           }
 
           if (e.code === "unsafe_domain_blocked") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e.code === "UNSUPPORTED_SITE") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });

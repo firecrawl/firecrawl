@@ -164,10 +164,39 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect(result.pagesProcessed).toBe(12);
     expect(fallback).not.toHaveBeenCalled();
     expect(calls).toHaveLength(4);
+    expect(calls[0].body).toMatchObject({
+      source: "firecrawl",
+      source_endpoint: "scrape",
+      url: "https://example.com/doc.pdf",
+    });
     // Account context rides the submit body (FirePDF ENG-5049).
     expect(
       (calls[0].body as { team_concurrency?: number }).team_concurrency,
     ).toBe(12);
+  });
+
+  it("marks parse requests without forwarding their synthetic upload URL", async () => {
+    const fetchImpl = vi.fn(async (url: string) =>
+      jsonResp({
+        status: 200,
+        body: url.endsWith("/result")
+          ? { schema_version: 1, markdown: "Document", pages_processed: 1 }
+          : { scrape_id: "scrape-id-test", status: "done", lane: "fast" },
+      }),
+    );
+    const meta = makeMeta();
+    meta.internalOptions.isParse = true;
+    meta.url = "https://example.com/uploads/document.pdf";
+
+    await scrapePDFWithFirePDFAsync(meta, "BASE64", 1, 1, "auto", {
+      fetchImpl: fetchImpl as any,
+      sleepImpl: noopSleep,
+    });
+
+    const body = JSON.parse((fetchImpl.mock.calls[0] as any)[1].body);
+    expect(body.source).toBe("firecrawl");
+    expect(body.source_endpoint).toBe("parse");
+    expect(body).not.toHaveProperty("url");
   });
 
   it("requests and returns physical page markdown", async () => {
@@ -1128,6 +1157,9 @@ describe("scrapePDFWithFirePDFAsync", () => {
       const body = calls[0].body as Record<string, unknown>;
       expect(body.input_gcs_uri).toBe(BY_REF.gcsUri);
       expect(body.input_sha256).toBe(BY_REF.sha256);
+      expect(body.source).toBe("firecrawl");
+      expect(body.source_endpoint).toBe("scrape");
+      expect(body.url).toBe(meta.url);
       expect(body.pdf_b64).toBeUndefined();
       expect((body.options as { pages_estimate?: number }).pages_estimate).toBe(
         6543,

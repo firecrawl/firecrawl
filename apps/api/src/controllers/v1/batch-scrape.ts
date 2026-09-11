@@ -46,7 +46,7 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
-import { CrawlDenialError } from "../../lib/error";
+import { UnsupportedSiteError } from "../../lib/error";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -159,7 +159,7 @@ export async function batchScrapeController(
           apiKeyId: req.acuc?.api_key_id ?? null,
           auditMetadata: req.body.auditMetadata,
           url,
-          error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
+          error: new UnsupportedSiteError(),
           origin: req.body.origin ?? "api",
           integration: req.body.integration,
           zeroDataRetention: zeroDataRetention ?? false,
@@ -184,7 +184,7 @@ export async function batchScrapeController(
       apiKeyId: req.acuc?.api_key_id ?? null,
       auditMetadata: req.body.auditMetadata,
       url,
-      error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
+      error: new UnsupportedSiteError(),
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       zeroDataRetention: zeroDataRetention ?? false,
