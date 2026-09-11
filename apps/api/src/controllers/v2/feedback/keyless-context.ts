@@ -7,6 +7,7 @@ import { keylessFeedbackRedis } from "./keyless-redis";
 import type { RequestWithAuth } from "../types";
 import type { KeylessFeedbackEndpoint } from "./keyless-schema";
 import { hasKeylessFeedbackToday } from "./keyless-store";
+import { snapshotCopier } from "./keyless-snapshot";
 import {
   KEYLESS_FEEDBACK_ATTEMPTS,
   keylessFeedbackAttemptKey,
@@ -27,45 +28,34 @@ export type KeylessFeedbackContext = {
   result: unknown;
 };
 
-function redactOptions(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactOptions);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(
-        ([key]) =>
-          !/headers|cookie|token|secret|password|authorization|api.?key|^uploadref$|^buffer$|base64|^__/.test(
-            key.toLowerCase(),
-          ),
-      )
-      .map(([key, item]) => [key, redactOptions(item)]),
-  );
-}
-
 function resultContext(
   endpoint: KeylessFeedbackEndpoint,
   result: any,
 ): unknown {
+  const snapshot = snapshotCopier(24 * 1024);
   if (endpoint === "search") {
-    return Object.fromEntries(
+    const groups = Object.fromEntries(
       (["web", "images", "news"] as const).map(source => [
         source,
-        (result?.[source] ?? []).map((item: any, index: number) => ({
-          position: index + 1,
-          url: item.url,
-          title: item.title,
-          description: item.description,
-          category: item.category,
-          snippet: item.snippet,
-          imageUrl: item.imageUrl,
-        })),
+        (result?.[source] ?? [])
+          .slice(0, 100)
+          .map((item: any, index: number) => ({
+            position: index + 1,
+            ...snapshot.copy({
+              url: item.url,
+              title: item.title,
+              description: item.description,
+              category: item.category,
+              snippet: item.snippet,
+              imageUrl: item.imageUrl,
+            }),
+          })),
       ]),
     );
+    return { ...groups, ...(snapshot.truncated ? { truncated: true } : {}) };
   }
-  const text = JSON.stringify(result ?? null);
-  return text.length <= 16000
-    ? result
-    : { excerpt: text.slice(0, 16000), truncated: true };
+  const value = snapshot.copy(result ?? null);
+  return snapshot.truncated ? { ...value, truncated: true } : value;
 }
 
 export async function keylessFeedbackMetadata(
@@ -94,21 +84,26 @@ export async function keylessFeedbackMetadata(
   let timer: NodeJS.Timeout | undefined;
   let expired = false;
   let context: KeylessFeedbackContext | undefined;
+  const reference: Record<string, unknown> = { jobId };
   const key = keylessFeedbackContextKey(identity, endpoint, jobId);
   try {
     const metadata = await Promise.race([
       (async () => {
+        const options = snapshotCopier(16 * 1024);
+        const request = options.copy(req.body);
         context = {
           createdAt: new Date().toISOString(),
           success,
           invited: false,
-          request: redactOptions(req.body),
+          request: options.truncated
+            ? { ...request, truncated: true }
+            : request,
           result: resultContext(endpoint, result),
         };
         const encoded = JSON.stringify(context);
-        if (Buffer.byteLength(encoded) > 64 * 1024) return {};
+        if (Buffer.byteLength(encoded) > 64 * 1024) return reference;
         await cache.set(key, encoded, "EX", KEYLESS_FEEDBACK_MAX_AGE_SEC);
-        const metadata: Record<string, unknown> = { jobId };
+        const metadata: Record<string, unknown> = reference;
         const every = config.KEYLESS_FEEDBACK_INVITATION_EVERY;
         if (
           expired ||
@@ -153,7 +148,7 @@ return count
       new Promise<Record<string, unknown>>(resolve => {
         timer = setTimeout(() => {
           expired = true;
-          resolve({});
+          resolve(reference);
         }, 250);
       }),
     ]);
@@ -191,7 +186,12 @@ return count
     }
     return metadata;
   } catch {
-    return {};
+    logger.warn("Keyless feedback context unavailable", {
+      canonicalLog: "keyless/feedback_context_error",
+      endpoint,
+      jobId,
+    });
+    return reference;
   } finally {
     if (timer) clearTimeout(timer);
   }

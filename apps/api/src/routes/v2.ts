@@ -213,7 +213,6 @@ v2Router.post(
     allowKeyless: true,
     keylessFeedback: true,
   }),
-  countryCheck,
   wrap(feedbackController),
 );
 

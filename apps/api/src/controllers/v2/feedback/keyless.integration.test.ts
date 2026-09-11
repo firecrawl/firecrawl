@@ -398,7 +398,7 @@ suite("keyless feedback HTTP and persistence", () => {
           true,
           {},
         ),
-      ).toEqual({});
+      ).toEqual({ jobId: expect.any(String) });
       expect(Date.now() - started).toBeLessThan(1000);
     } finally {
       set.mockRestore();

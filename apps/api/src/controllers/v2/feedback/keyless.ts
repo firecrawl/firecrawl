@@ -10,6 +10,7 @@ import {
   type KeylessFeedbackContext,
 } from "./keyless-context";
 import { insertKeylessFeedback } from "./keyless-store";
+import { logger } from "../../../lib/logger";
 
 export async function keylessFeedbackController(
   req: RequestWithAuth<any, any, any>,
@@ -85,6 +86,11 @@ export async function keylessFeedbackController(
       );
     return res.status(200).json({ ...result, creditsRefunded: 0 });
   } catch {
+    logger.warn("Keyless feedback submission failed", {
+      canonicalLog: "keyless/feedback_submission_error",
+      endpoint: answers.endpoint,
+      jobId: answers.jobId,
+    });
     return fail(
       503,
       "FEEDBACK_UNAVAILABLE",
