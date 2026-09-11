@@ -1,4 +1,5 @@
 import express from "express";
+import { EventEmitter } from "node:events";
 import request from "supertest";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
@@ -23,6 +24,7 @@ suite("keyless feedback HTTP and persistence", () => {
   let api: typeof import("./keyless-context");
   let identity: typeof import("../../../lib/keyless");
   let redis: typeof import("../../../services/rate-limiter").redisRateLimitClient;
+  let cache: NonNullable<typeof import("./keyless-redis").keylessFeedbackRedis>;
   let table: typeof import("../../../db/schema").search_feedback;
   let config: typeof import("../../../config").config;
   const ip = "203.0.113.71";
@@ -61,8 +63,10 @@ suite("keyless feedback HTTP and persistence", () => {
       .send(payload);
   async function job(endpoint: "search" | "scrape" | "parse", success = true) {
     const jobId = randomUUID();
+    const response = new EventEmitter();
     const metadata = await api.keylessFeedbackMetadata(
       {
+        res: response,
         auth: { team_id: identity.keylessTeamId(ip) },
         body: {
           query: "retry behavior",
@@ -91,6 +95,16 @@ suite("keyless feedback HTTP and persistence", () => {
     );
     contextKeys.push(api.keylessFeedbackContextKey(team(), endpoint, jobId));
     expect(metadata.jobId).toBe(jobId);
+    response.emit("finish");
+    if (metadata.feedback)
+      await vi.waitFor(async () => {
+        const stored = JSON.parse(
+          (await cache.get(
+            api.keylessFeedbackContextKey(team(), endpoint, jobId),
+          ))!,
+        );
+        expect(stored.invited).toBe(true);
+      });
     return { jobId, metadata };
   }
   beforeAll(async () => {
@@ -113,6 +127,8 @@ suite("keyless feedback HTTP and persistence", () => {
     ));
     ({ search_feedback: table } = await import("../../../db/schema/index.js"));
     api = await import("./keyless-context.js");
+    cache = (await import("./keyless-redis.js")).keylessFeedbackRedis!;
+    await vi.waitFor(() => expect(cache.status).toBe("ready"));
     await fixture.pool.query(`CREATE TABLE search_feedback (
       id uuid PRIMARY KEY, search_id uuid UNIQUE, endpoint text NOT NULL DEFAULT 'search', job_id uuid,
       request_id uuid, api_version text DEFAULT 'v2', team_id uuid NOT NULL, api_key_id bigint,
@@ -128,6 +144,18 @@ suite("keyless feedback HTTP and persistence", () => {
     const { feedbackController } = await import("./controller.js");
     app = express();
     app.use(express.json());
+    app.post("/test/jobs/:endpoint/:jobId", async (req, res) => {
+      const metadata = await api.keylessFeedbackMetadata(
+        Object.assign(req, {
+          auth: { team_id: identity.keylessTeamId(ip) },
+        }) as any,
+        req.params.endpoint as "search" | "scrape" | "parse",
+        req.params.jobId,
+        true,
+        { markdown: "Observed document content." },
+      );
+      res.json({ success: true, metadata });
+    });
     app.post(
       "/v2/feedback",
       authMiddleware(RateLimiterMode.Account, {
@@ -140,8 +168,8 @@ suite("keyless feedback HTTP and persistence", () => {
   beforeEach(async () => {
     config.KEYLESS_FEEDBACK_INVITATION_EVERY = 1;
     await fixture.pool!.query("DELETE FROM search_feedback");
-    await redis.del(
-      `keyless_feedback_attempts:${team()}`,
+    await redis.del(`keyless_feedback_attempts:${team()}`);
+    await cache.del(
       `keyless_feedback_invitations:${team()}:search`,
       `keyless_feedback_invitations:${team()}:scrape`,
       `keyless_feedback_invitations:${team()}:parse`,
@@ -149,11 +177,13 @@ suite("keyless feedback HTTP and persistence", () => {
   });
   afterAll(async () => {
     if (redis) {
-      if (contextKeys.length) await redis.del(...contextKeys);
+      if (contextKeys.length) await cache.del(...contextKeys);
       await redis.del(
         `keyless_requests:${ip}`,
         `keyless_credits:${ip}`,
         `keyless_feedback_attempts:${team()}`,
+      );
+      await cache.del(
         ...["search", "scrape", "parse"].map(
           category => `keyless_feedback_invitations:${team()}:${category}`,
         ),
@@ -195,6 +225,7 @@ suite("keyless feedback HTTP and persistence", () => {
       version: "keyless_feedback_v1",
       answers: { origin: "mcp", integration: "cli" },
       context: {
+        invited: true,
         request: {
           categories: ["developer"],
           file: { filename: "fixture.html", kind: "html" },
@@ -202,6 +233,47 @@ suite("keyless feedback HTTP and persistence", () => {
       },
     });
     expect(JSON.stringify(rows)).not.toContain("redact-me");
+  });
+  it("stores snapshots on a separate Redis server and records nonresponders after HTTP response completion", async () => {
+    const jobId = randomUUID();
+    const key = api.keylessFeedbackContextKey(team(), "scrape", jobId);
+    contextKeys.push(key);
+    const response = await request(app)
+      .post(`/test/jobs/scrape/${jobId}`)
+      .send({ origin: "cli", integration: "cli" });
+    expect(response.body.metadata.feedback).toBeDefined();
+    await vi.waitFor(async () =>
+      expect(JSON.parse((await cache.get(key))!).invited).toBe(true),
+    );
+    expect(await cache.ttl(key)).toBeGreaterThan(86000);
+    expect(await redis.get(key)).toBeNull();
+    expect(
+      await redis.get(`keyless_feedback_invitations:${team()}:scrape`),
+    ).toBeNull();
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+    const runId = (info: string) => info.match(/^run_id:(.+)$/m)?.[1];
+    expect(runId(await cache.info("server"))).not.toBe(
+      runId(await redis.info("server")),
+    );
+    await redis.set(`keyless_requests:${ip}`, "100000");
+    await cache.del(key);
+    expect((await submit(body("scrape", jobId))).status).toBe(404);
+    expect(await redis.get(`keyless_requests:${ip}`)).toBe("100000");
+  });
+
+  it("preserves a non-invited context for a client that opts out at the API", async () => {
+    const jobId = randomUUID();
+    const key = api.keylessFeedbackContextKey(team(), "parse", jobId);
+    contextKeys.push(key);
+    const response = await request(app)
+      .post(`/test/jobs/parse/${jobId}`)
+      .set("x-firecrawl-no-feedback", "1")
+      .send({});
+    expect(response.body.metadata).toEqual({ jobId });
+    expect(JSON.parse((await cache.get(key))!).invited).toBe(false);
+    expect(
+      await cache.get(`keyless_feedback_invitations:${team()}:parse`),
+    ).toBeNull();
   });
   it("suppresses invitations and rejects submissions when disabled", async () => {
     const { jobId } = await job("scrape");
@@ -282,7 +354,7 @@ suite("keyless feedback HTTP and persistence", () => {
   });
   it("bounds waiting when optional context storage is unavailable", async () => {
     const set = vi
-      .spyOn(redis, "set")
+      .spyOn(cache, "set")
       .mockImplementationOnce(() => new Promise(() => {}));
     const started = Date.now();
     try {
@@ -359,9 +431,9 @@ suite("keyless feedback HTTP and persistence", () => {
   it("bounds context lifetime and skips zero-retention jobs", async () => {
     const { jobId } = await job("scrape");
     const key = api.keylessFeedbackContextKey(team(), "scrape", jobId);
-    const stored = JSON.parse((await redis.get(key))!);
+    const stored = JSON.parse((await cache.get(key))!);
     stored.createdAt = new Date(Date.now() - 86401 * 1000).toISOString();
-    await redis.set(key, JSON.stringify(stored));
+    await cache.set(key, JSON.stringify(stored));
     expect((await submit(body("scrape", jobId))).body.feedbackErrorCode).toBe(
       "FEEDBACK_WINDOW_EXPIRED",
     );

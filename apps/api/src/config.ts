@@ -192,6 +192,7 @@ const configSchema = z.object({
     .nonnegative()
     .default(100),
   KEYLESS_FEEDBACK_ENABLED: z.stringbool().default(true),
+  KEYLESS_FEEDBACK_REDIS_URL: z.string().optional(),
   KEYLESS_FEEDBACK_INVITATION_EVERY: z.coerce
     .number()
     .int()

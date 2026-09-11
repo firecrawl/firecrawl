@@ -2,6 +2,8 @@ import { config } from "../../../config";
 import { keylessTeamUuid } from "../../../lib/keyless";
 import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
 import { redisRateLimitClient } from "../../../services/rate-limiter";
+import { logger } from "../../../lib/logger";
+import { keylessFeedbackRedis } from "./keyless-redis";
 import type { RequestWithAuth } from "../types";
 import type { KeylessFeedbackEndpoint } from "./keyless-schema";
 import { hasKeylessFeedbackToday } from "./keyless-store";
@@ -20,6 +22,7 @@ export const keylessFeedbackContextKey = (
 export type KeylessFeedbackContext = {
   createdAt: string;
   success: boolean;
+  invited: boolean;
   request: unknown;
   result: unknown;
 };
@@ -73,8 +76,10 @@ export async function keylessFeedbackMetadata(
   result: unknown,
 ): Promise<Record<string, unknown>> {
   const identity = keylessTeamUuid(req.auth.team_id);
+  const cache = keylessFeedbackRedis;
   if (
     !identity ||
+    !cache ||
     !config.KEYLESS_FEEDBACK_ENABLED ||
     !config.USE_DB_AUTHENTICATION ||
     req.acuc?.flags?.searchFeedbackOptOut ||
@@ -87,28 +92,32 @@ export async function keylessFeedbackMetadata(
     return {};
 
   let timer: NodeJS.Timeout | undefined;
+  let expired = false;
+  let context: KeylessFeedbackContext | undefined;
+  const key = keylessFeedbackContextKey(identity, endpoint, jobId);
   try {
-    return await Promise.race([
+    const metadata = await Promise.race([
       (async () => {
-        const context: KeylessFeedbackContext = {
+        context = {
           createdAt: new Date().toISOString(),
           success,
+          invited: false,
           request: redactOptions(req.body),
           result: resultContext(endpoint, result),
         };
         const encoded = JSON.stringify(context);
         if (Buffer.byteLength(encoded) > 64 * 1024) return {};
-        await redisRateLimitClient.set(
-          keylessFeedbackContextKey(identity, endpoint, jobId),
-          encoded,
-          "EX",
-          KEYLESS_FEEDBACK_MAX_AGE_SEC,
-        );
+        await cache.set(key, encoded, "EX", KEYLESS_FEEDBACK_MAX_AGE_SEC);
         const metadata: Record<string, unknown> = { jobId };
         const every = config.KEYLESS_FEEDBACK_INVITATION_EVERY;
-        if (!every) return metadata;
+        if (
+          expired ||
+          !every ||
+          req.headers?.["x-firecrawl-no-feedback"] === "1"
+        )
+          return metadata;
         const count = Number(
-          await redisRateLimitClient.eval(
+          await cache.eval(
             `
 local count = redis.call('INCR', KEYS[1])
 if count == 1 then redis.call('EXPIRE', KEYS[1], 86400) end
@@ -118,7 +127,7 @@ return count
             `keyless_feedback_invitations:${identity}:${endpoint}`,
           ),
         );
-        if (count % every !== 0) return metadata;
+        if (expired || count % every !== 0) return metadata;
         if (
           Number(
             await redisRateLimitClient.get(keylessFeedbackAttemptKey(identity)),
@@ -142,9 +151,45 @@ return count
         };
       })(),
       new Promise<Record<string, unknown>>(resolve => {
-        timer = setTimeout(() => resolve({}), 250);
+        timer = setTimeout(() => {
+          expired = true;
+          resolve({});
+        }, 250);
       }),
     ]);
+    if (metadata.feedback && context) {
+      const issuedContext = { ...context, invited: true };
+      // A timeout or disconnected response must not count as an invitation.
+      req.res?.once("finish", () => {
+        logger.info("Keyless feedback invitation issued", {
+          canonicalLog: "keyless/feedback_invitation",
+          invited: true,
+          issuedAt: new Date().toISOString(),
+          identity,
+          endpoint,
+          jobId,
+          origin:
+            typeof req.body?.origin === "string"
+              ? req.body.origin.slice(0, 100)
+              : "api",
+          integration:
+            typeof req.body?.integration === "string"
+              ? req.body.integration.slice(0, 100)
+              : null,
+        });
+        // Keep the original expiry and never recreate an evicted context.
+        void cache
+          .set(key, JSON.stringify(issuedContext), "KEEPTTL", "XX")
+          .catch(() => {
+            logger.warn("Keyless feedback invitation context update failed", {
+              canonicalLog: "keyless/feedback_invitation_context_error",
+              endpoint,
+              jobId,
+            });
+          });
+      });
+    }
+    return metadata;
   } catch {
     return {};
   } finally {
