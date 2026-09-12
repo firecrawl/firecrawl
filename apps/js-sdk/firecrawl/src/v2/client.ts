@@ -6,7 +6,7 @@ import {
 } from "./methods/scrape";
 import { parse as parseMethod } from "./methods/parse";
 import { search } from "./methods/search";
-import { scrapeExchange, findTools } from "./methods/tools";
+import { scrapeAlexandria, findTools } from "./methods/tools";
 import { developerSearch as developerSearchMethod } from "./methods/developer";
 import { map as mapMethod } from "./methods/map";
 import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
@@ -48,10 +48,10 @@ import {
 } from "./methods/monitor";
 import type {
   Document,
-  ExchangeScrapeRequest,
+  AlexandriaScrapeRequest,
   FindToolsOptions,
   FindToolsData,
-  ExchangeScrapeData,
+  AlexandriaScrapeData,
   ParseFile,
   ParseOptions,
   ScrapeOptions,
@@ -179,11 +179,11 @@ export class FirecrawlClient {
     options: Opts,
   ): Promise<Omit<Document, "json"> & { json?: InferredJsonFromOptions<Opts> }>;
   async scrape(url: string, options?: ScrapeCallOptions): Promise<Document>;
-  async scrape(request: ExchangeScrapeRequest): Promise<ExchangeScrapeData>;
+  async scrape(request: AlexandriaScrapeRequest): Promise<AlexandriaScrapeData>;
   async scrape(
-    url: string | ExchangeScrapeRequest,
+    url: string | AlexandriaScrapeRequest,
     options?: ScrapeCallOptions,
-  ): Promise<Document | ExchangeScrapeData> {
+  ): Promise<Document | AlexandriaScrapeData> {
     if (typeof url === "string") return scrape(this.http, url, options);
     if (
       !url ||
@@ -191,7 +191,7 @@ export class FirecrawlClient {
       Object.keys(url).some(
         (key) =>
           ![
-            "exchange",
+            "alexandria",
             "requestId",
             "timeout",
             "integration",
@@ -199,12 +199,12 @@ export class FirecrawlClient {
           ].includes(key),
       )
     ) {
-      throw new Error("Provide an exchange request without URL scrape options");
+      throw new Error("Provide an alexandria request without URL scrape options");
     }
-    const { exchange, ...opts } = url;
-    return scrapeExchange(
+    const { alexandria, ...opts } = url;
+    return scrapeAlexandria(
       this.http,
-      Array.isArray(exchange) ? exchange : [exchange],
+      Array.isArray(alexandria) ? alexandria : [alexandria],
       opts,
     );
   }

@@ -1,5 +1,5 @@
 use crate::error::FirecrawlAPIError;
-use crate::{Client, ExchangeCall, FirecrawlError};
+use crate::{Client, AlexandriaCall, FirecrawlError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -21,7 +21,7 @@ pub struct FindToolsData {
     pub level: String,
     pub items: Vec<Value>,
     pub total: u32,
-    pub next: Option<ExchangeCall>,
+    pub next: Option<AlexandriaCall>,
 }
 impl Client {
     pub async fn find_tools(
@@ -31,8 +31,8 @@ impl Client {
         let options = serde_json::to_value(options.into().unwrap_or_default())
             .map_err(FirecrawlError::ResponseParseError)?;
         let result = self
-            .scrape_exchange(
-                vec![ExchangeCall {
+            .scrape_alexandria(
+                vec![AlexandriaCall {
                     provider: "firecrawl-contextual-discovery".into(),
                     capability: "discovery/context".into(),
                     options: options.as_object().cloned(),
@@ -41,12 +41,12 @@ impl Client {
             )
             .await?;
         let request_id = result.request_id;
-        let fail = |source| FirecrawlError::ExchangeExecution {
+        let fail = |source| FirecrawlError::AlexandriaExecution {
             request_id: request_id.clone(),
             source: Box::new(source),
         };
         let item = result
-            .exchange
+            .alexandria
             .into_iter()
             .next()
             .ok_or_else(|| fail(FirecrawlError::Misuse("Missing Find Tools result".into())))?;

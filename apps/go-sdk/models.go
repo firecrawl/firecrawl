@@ -614,27 +614,27 @@ type SearchData struct {
 	Tools   []DiscoveredTool         `json:"tools,omitempty"`
 }
 
-type ExchangeCall struct {
+type AlexandriaCall struct {
 	Provider   string                 `json:"provider"`
 	Capability string                 `json:"capability"`
 	Options    map[string]interface{} `json:"options,omitempty"`
 }
 
-type ExchangeOptions struct {
+type AlexandriaOptions struct {
 	RequestID   string  `json:"-"`
 	Timeout     *int    `json:"timeout,omitempty"`
 	Integration *string `json:"integration,omitempty"`
 	Origin      *string `json:"origin,omitempty"`
 }
 
-type ExchangeScrapeError struct {
+type AlexandriaScrapeError struct {
 	Code     string `json:"code"`
 	Message  string `json:"message"`
 	Status   *int   `json:"status,omitempty"`
 	ChargeID string `json:"chargeId,omitempty"`
 }
 
-type ExchangeScrapeResult struct {
+type AlexandriaScrapeResult struct {
 	Provider       string               `json:"provider,omitempty"`
 	Capability     string               `json:"capability,omitempty"`
 	CreditsCost    *int                 `json:"creditsCost,omitempty"`
@@ -642,17 +642,17 @@ type ExchangeScrapeResult struct {
 	Records        *int                 `json:"records,omitempty"`
 	UpstreamStatus *int                 `json:"upstreamStatus,omitempty"`
 	RecordedAt     string               `json:"recordedAt,omitempty"`
-	Error          *ExchangeScrapeError `json:"error,omitempty"`
+	Error          *AlexandriaScrapeError `json:"error,omitempty"`
 }
 
-func (r *ExchangeScrapeResult) Failed() bool {
+func (r *AlexandriaScrapeResult) Failed() bool {
 	return r.Error != nil
 }
 
-type ExchangeScrapeData struct {
+type AlexandriaScrapeData struct {
 	RequestID   string                 `json:"requestId"`
 	ScrapeID    string                 `json:"scrapeId"`
-	Exchange    []ExchangeScrapeResult `json:"exchange"`
+	Alexandria  []AlexandriaScrapeResult `json:"alexandria"`
 	CreditsCost int                    `json:"creditsCost"`
 }
 
@@ -912,5 +912,5 @@ type FindToolsData struct {
 	Level string                   `json:"level"`
 	Items []map[string]interface{} `json:"items"`
 	Total int                      `json:"total"`
-	Next  *ExchangeCall            `json:"next"`
+	Next  *AlexandriaCall            `json:"next"`
 }

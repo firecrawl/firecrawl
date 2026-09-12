@@ -295,18 +295,18 @@ let found = client.find_tools(FindToolsOptions {
 }).await?;
 println!("{:?}", found.items);
 if let Some(next_page) = found.next {
-    let page = client.scrape_exchange(vec![next_page], None).await?;
-    println!("{:?}", page.exchange);
+    let page = client.scrape_alexandria(vec![next_page], None).await?;
+    println!("{:?}", page.alexandria);
 }
 ```
 
 Set `SearchOptions.skills` to `Some(true)` for contextual matches in the same tools
 array. Find Tools reveals providers, groups, and contracts without a search query.
 An item's `next` reveals more detail; top-level `next` requests another page.
-Both are Exchange calls accepted by `scrape_exchange`.
+Both are Alexandria calls accepted by `scrape_alexandria`.
 
-`ExchangeScrapeData` preserves per-tool errors and credit costs. Execution generates
-one request ID; reuse `ExchangeOptions.request_id` for the identical payload after
-an uncertain outcome. Results and `FirecrawlError::ExchangeExecution` carry that
+`AlexandriaScrapeData` preserves per-tool errors and credit costs. Execution generates
+one request ID; reuse `AlexandriaOptions.request_id` for the identical payload after
+an uncertain outcome. Results and `FirecrawlError::AlexandriaExecution` carry that
 identity. Find Tools costs zero credits; executing a selected tool uses its
 published price. All execution goes through `/v2/scrape`.

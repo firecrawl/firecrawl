@@ -154,7 +154,7 @@ struct ScrapeResponse {
 #[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ExchangeCall {
+pub struct AlexandriaCall {
     pub provider: String,
     pub capability: String,
     pub options: Option<serde_json::Map<String, Value>>,
@@ -163,7 +163,7 @@ pub struct ExchangeCall {
 #[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ExchangeOptions {
+pub struct AlexandriaOptions {
     #[serde(skip)]
     pub request_id: Option<String>,
     pub timeout: Option<u32>,
@@ -173,16 +173,16 @@ pub struct ExchangeOptions {
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
-struct ExchangeRequest {
-    exchange: Vec<ExchangeCall>,
+struct AlexandriaRequest {
+    alexandria: Vec<AlexandriaCall>,
     #[serde(flatten)]
-    options: ExchangeOptions,
+    options: AlexandriaOptions,
 }
 
 #[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ExchangeScrapeError {
+pub struct AlexandriaScrapeError {
     pub code: String,
     pub message: String,
     pub status: Option<u16>,
@@ -194,7 +194,7 @@ pub struct ExchangeScrapeError {
 #[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ExchangeScrapeResult {
+pub struct AlexandriaScrapeResult {
     pub provider: Option<String>,
     pub capability: Option<String>,
     pub credits_cost: Option<u32>,
@@ -202,10 +202,10 @@ pub struct ExchangeScrapeResult {
     pub records: Option<u64>,
     pub upstream_status: Option<u16>,
     pub recorded_at: Option<String>,
-    pub error: Option<ExchangeScrapeError>,
+    pub error: Option<AlexandriaScrapeError>,
 }
 
-impl ExchangeScrapeResult {
+impl AlexandriaScrapeResult {
     pub fn failed(&self) -> bool {
         self.error.is_some()
     }
@@ -213,24 +213,24 @@ impl ExchangeScrapeResult {
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ExchangeScrapeData {
+pub struct AlexandriaScrapeData {
     pub request_id: String,
     pub scrape_id: String,
-    pub exchange: Vec<ExchangeScrapeResult>,
+    pub alexandria: Vec<AlexandriaScrapeResult>,
     pub credits_cost: u32,
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-struct ExchangeScrapePayload {
-    exchange: Vec<ExchangeScrapeResult>,
+struct AlexandriaScrapePayload {
+    alexandria: Vec<AlexandriaScrapeResult>,
     credits_cost: u32,
 }
 
 #[derive(Deserialize, Debug)]
-struct ExchangeScrapeResponse {
+struct AlexandriaScrapeResponse {
     scrape_id: String,
-    data: ExchangeScrapePayload,
+    data: AlexandriaScrapePayload,
 }
 
 /// Supported languages for scrape-bound browser execution.
@@ -370,30 +370,30 @@ impl Client {
         Ok(response.data)
     }
 
-    pub async fn scrape_exchange(
+    pub async fn scrape_alexandria(
         &self,
-        calls: Vec<ExchangeCall>,
-        options: impl Into<Option<ExchangeOptions>>,
-    ) -> Result<ExchangeScrapeData, FirecrawlError> {
+        calls: Vec<AlexandriaCall>,
+        options: impl Into<Option<AlexandriaOptions>>,
+    ) -> Result<AlexandriaScrapeData, FirecrawlError> {
         if calls.is_empty() {
             return Err(FirecrawlError::Misuse(
-                "at least one exchange call is required".to_string(),
+                "at least one alexandria call is required".to_string(),
             ));
         }
         if calls.len() > 10 {
             return Err(FirecrawlError::Misuse(
-                "at most 10 exchange calls are allowed per request".to_string(),
+                "at most 10 alexandria calls are allowed per request".to_string(),
             ));
         }
         for (index, call) in calls.iter().enumerate() {
             if call.provider.trim().is_empty() {
                 return Err(FirecrawlError::Misuse(format!(
-                    "exchange call {index}: provider is required"
+                    "alexandria call {index}: provider is required"
                 )));
             }
             if call.capability.trim().is_empty() {
                 return Err(FirecrawlError::Misuse(format!(
-                    "exchange call {index}: capability is required"
+                    "alexandria call {index}: capability is required"
                 )));
             }
         }
@@ -421,8 +421,8 @@ impl Client {
         {
             return Err(FirecrawlError::Misuse("Invalid request_id".into()));
         }
-        let body = ExchangeRequest {
-            exchange: calls,
+        let body = AlexandriaRequest {
+            alexandria: calls,
             options,
         };
 
@@ -440,26 +440,26 @@ impl Client {
         let response = request
             .send()
             .await
-            .map_err(|e| FirecrawlError::ExchangeExecution {
+            .map_err(|e| FirecrawlError::AlexandriaExecution {
                 request_id: request_id.clone(),
                 source: Box::new(FirecrawlError::HttpError(
-                    "Executing exchange calls".to_string(),
+                    "Executing alexandria calls".to_string(),
                     e,
                 )),
             })?;
 
-        let response: ExchangeScrapeResponse = self
-            .handle_response(response, "exchange")
+        let response: AlexandriaScrapeResponse = self
+            .handle_response(response, "alexandria")
             .await
-            .map_err(|e| FirecrawlError::ExchangeExecution {
+            .map_err(|e| FirecrawlError::AlexandriaExecution {
                 request_id: request_id.clone(),
                 source: Box::new(e),
             })?;
 
-        Ok(ExchangeScrapeData {
+        Ok(AlexandriaScrapeData {
             request_id,
             scrape_id: response.scrape_id,
-            exchange: response.data.exchange,
+            alexandria: response.data.alexandria,
             credits_cost: response.data.credits_cost,
         })
     }
@@ -1040,12 +1040,12 @@ mod tests {
         mock.assert();
     }
 
-    fn exchange_scrape_fixture() -> serde_json::Value {
+    fn alexandria_scrape_fixture() -> serde_json::Value {
         json!({
             "success": true,
             "scrape_id": "x",
             "data": {
-                "exchange": [
+                "alexandria": [
                     {
                         "provider": "fred",
                         "capability": "finance/series/observations",

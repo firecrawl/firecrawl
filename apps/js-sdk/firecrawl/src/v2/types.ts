@@ -860,25 +860,25 @@ export interface FindToolsData {
   items: Array<{
     id: string;
     name: string;
-    next?: ExchangeCall;
-    execute?: Pick<ExchangeCall, "provider" | "capability">;
+    next?: AlexandriaCall;
+    execute?: Pick<AlexandriaCall, "provider" | "capability">;
     [key: string]: unknown;
   }>;
   total: number;
-  next: ExchangeCall | null;
+  next: AlexandriaCall | null;
 }
 
-export interface ExchangeScrapeRequest extends ExchangeOptions {
-  exchange: ExchangeCall | ExchangeCall[];
+export interface AlexandriaScrapeRequest extends AlexandriaOptions {
+  alexandria: AlexandriaCall | AlexandriaCall[];
 }
 
-export interface ExchangeCall {
+export interface AlexandriaCall {
   provider: string;
   capability: string;
   options?: Record<string, unknown>;
 }
 
-export interface ExchangeScrapeError {
+export interface AlexandriaScrapeError {
   code: string;
   message: string;
   status?: number;
@@ -886,7 +886,7 @@ export interface ExchangeScrapeError {
   chargeId?: string;
 }
 
-export type ExchangeScrapeResult =
+export type AlexandriaScrapeResult =
   | {
       provider: string;
       capability: string;
@@ -901,18 +901,18 @@ export type ExchangeScrapeResult =
   | {
       provider?: string;
       capability?: string;
-      error: ExchangeScrapeError;
+      error: AlexandriaScrapeError;
       [key: string]: unknown;
     };
 
-export interface ExchangeScrapeData {
+export interface AlexandriaScrapeData {
   scrapeId: string;
   requestId: string;
-  exchange: ExchangeScrapeResult[];
+  alexandria: AlexandriaScrapeResult[];
   creditsCost: number;
 }
 
-export interface ExchangeOptions {
+export interface AlexandriaOptions {
   /** Reuse this ID with the identical payload when retrying an execution. */
   requestId?: string;
   timeout?: number;

@@ -11,30 +11,30 @@ import (
 	"time"
 )
 
-// ExchangeExecutionError preserves the request ID for retrying the same payload.
-type ExchangeExecutionError struct {
+// AlexandriaExecutionError preserves the request ID for retrying the same payload.
+type AlexandriaExecutionError struct {
 	RequestID string
 	Err       error
 }
 
-func (e *ExchangeExecutionError) Error() string {
+func (e *AlexandriaExecutionError) Error() string {
 	return fmt.Sprintf("%v (request ID: %s)", e.Err, e.RequestID)
 }
-func (e *ExchangeExecutionError) Unwrap() error { return e.Err }
+func (e *AlexandriaExecutionError) Unwrap() error { return e.Err }
 
-func (c *Client) ScrapeExchange(ctx context.Context, calls []ExchangeCall, opts *ExchangeOptions) (*ExchangeScrapeData, error) {
+func (c *Client) ScrapeAlexandria(ctx context.Context, calls []AlexandriaCall, opts *AlexandriaOptions) (*AlexandriaScrapeData, error) {
 	if len(calls) == 0 {
-		return nil, &FirecrawlError{Message: "at least one exchange call is required"}
+		return nil, &FirecrawlError{Message: "at least one alexandria call is required"}
 	}
 	if len(calls) > 10 {
-		return nil, &FirecrawlError{Message: "at most 10 exchange calls are allowed per request"}
+		return nil, &FirecrawlError{Message: "at most 10 alexandria calls are allowed per request"}
 	}
 	for i, call := range calls {
 		if strings.TrimSpace(call.Provider) == "" {
-			return nil, &FirecrawlError{Message: fmt.Sprintf("exchange call %d: provider is required", i)}
+			return nil, &FirecrawlError{Message: fmt.Sprintf("alexandria call %d: provider is required", i)}
 		}
 		if strings.TrimSpace(call.Capability) == "" {
-			return nil, &FirecrawlError{Message: fmt.Sprintf("exchange call %d: capability is required", i)}
+			return nil, &FirecrawlError{Message: fmt.Sprintf("alexandria call %d: capability is required", i)}
 		}
 	}
 	if opts != nil && opts.Timeout != nil {
@@ -46,7 +46,7 @@ func (c *Client) ScrapeExchange(ctx context.Context, calls []ExchangeCall, opts 
 		defer cancel()
 	}
 
-	body := map[string]interface{}{"exchange": calls}
+	body := map[string]interface{}{"alexandria": calls}
 	mergeOptions(body, opts)
 
 	if _, ok := body["origin"]; !ok {
@@ -68,26 +68,26 @@ func (c *Client) ScrapeExchange(ctx context.Context, calls []ExchangeCall, opts 
 	}
 	raw, err := c.http.post(ctx, "/v2/scrape", body, map[string]string{"x-request-id": requestID})
 	if err != nil {
-		return nil, &ExchangeExecutionError{RequestID: requestID, Err: err}
+		return nil, &AlexandriaExecutionError{RequestID: requestID, Err: err}
 	}
 
 	var envelope struct {
 		ScrapeID string `json:"scrape_id"`
 		Data     *struct {
-			Exchange    []ExchangeScrapeResult `json:"exchange"`
+			Alexandria  []AlexandriaScrapeResult `json:"alexandria"`
 			CreditsCost *int                   `json:"creditsCost"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return nil, &ExchangeExecutionError{RequestID: requestID, Err: err}
+		return nil, &AlexandriaExecutionError{RequestID: requestID, Err: err}
 	}
-	if envelope.Data == nil || envelope.Data.Exchange == nil || envelope.Data.CreditsCost == nil || *envelope.Data.CreditsCost < 0 {
-		return nil, &ExchangeExecutionError{RequestID: requestID, Err: &FirecrawlError{Message: "invalid exchange response"}}
+	if envelope.Data == nil || envelope.Data.Alexandria == nil || envelope.Data.CreditsCost == nil || *envelope.Data.CreditsCost < 0 {
+		return nil, &AlexandriaExecutionError{RequestID: requestID, Err: &FirecrawlError{Message: "invalid alexandria response"}}
 	}
-	return &ExchangeScrapeData{
+	return &AlexandriaScrapeData{
 		RequestID:   requestID,
 		ScrapeID:    envelope.ScrapeID,
-		Exchange:    envelope.Data.Exchange,
+		Alexandria:  envelope.Data.Alexandria,
 		CreditsCost: *envelope.Data.CreditsCost,
 	}, nil
 }
@@ -96,17 +96,17 @@ func (c *Client) ScrapeExchange(ctx context.Context, calls []ExchangeCall, opts 
 func (c *Client) FindTools(ctx context.Context, opts *FindToolsOptions) (*FindToolsData, error) {
 	options := map[string]interface{}{}
 	mergeOptions(options, opts)
-	result, err := c.ScrapeExchange(ctx, []ExchangeCall{{Provider: "firecrawl-contextual-discovery", Capability: "discovery/context", Options: options}}, nil)
+	result, err := c.ScrapeAlexandria(ctx, []AlexandriaCall{{Provider: "firecrawl-contextual-discovery", Capability: "discovery/context", Options: options}}, nil)
 	if err != nil {
 		return nil, err
 	}
 	fail := func(err error) (*FindToolsData, error) {
-		return nil, &ExchangeExecutionError{RequestID: result.RequestID, Err: err}
+		return nil, &AlexandriaExecutionError{RequestID: result.RequestID, Err: err}
 	}
-	if len(result.Exchange) != 1 {
+	if len(result.Alexandria) != 1 {
 		return fail(&FirecrawlError{Message: "missing Find Tools result"})
 	}
-	item := result.Exchange[0]
+	item := result.Alexandria[0]
 	if item.Error != nil {
 		return fail(&FirecrawlError{ErrorCode: item.Error.Code, Message: item.Error.Message})
 	}

@@ -41,11 +41,11 @@ beforeAll(async () => {
           data: { web: [{ url: "https://podcasts.apple.com" }], tools: [tool] },
         }),
       );
-    if (body.exchange[0].provider === "retry" && attempts++ === 0) {
+    if (body.alexandria[0].provider === "retry" && attempts++ === 0) {
       res.statusCode = 502;
       return res.end("{}");
     }
-    if (body.exchange[0].provider === "denied") {
+    if (body.alexandria[0].provider === "denied") {
       res.statusCode = 402;
       return res.end(
         JSON.stringify({
@@ -55,8 +55,8 @@ beforeAll(async () => {
         }),
       );
     }
-    const exchange =
-      body.exchange[0].provider === "firecrawl-contextual-discovery"
+    const alexandria =
+      body.alexandria[0].provider === "firecrawl-contextual-discovery"
         ? [
             {
               ...next,
@@ -90,7 +90,7 @@ beforeAll(async () => {
       JSON.stringify({
         success: true,
         scrape_id: "scrape-1",
-        data: { exchange, creditsCost: exchange.length === 1 ? 0 : 15 },
+        data: { alexandria, creditsCost: alexandria.length === 1 ? 0 : 15 },
       }),
     );
   });
@@ -123,23 +123,23 @@ describe("Alexandria contracts and execution", () => {
   });
   test("retains one ID through transport retries and per-tool failures", async () => {
     const result = await client.scrape({
-      exchange: [{ provider: "retry", capability: "a/b" }],
+      alexandria: [{ provider: "retry", capability: "a/b" }],
       requestId: "same-request",
     });
     const retries = sent.filter(
-      (r) => r.body.exchange?.[0].provider === "retry",
+      (r) => r.body.alexandria?.[0].provider === "retry",
     );
     expect(retries).toHaveLength(2);
     expect(retries.map((r) => r.id)).toEqual(["same-request", "same-request"]);
     expect(retries[0].body).not.toHaveProperty("requestId");
     expect(result.requestId).toBe("same-request");
     expect(result.creditsCost).toBe(15);
-    expect(result.exchange[1].error?.code).toBe("unavailable");
+    expect(result.alexandria[1].error?.code).toBe("unavailable");
   });
   test("returns an error code and retry identity on failed execution", async () => {
     await expect(
       client.scrape({
-        exchange: { provider: "denied", capability: "a/b" },
+        alexandria: { provider: "denied", capability: "a/b" },
         requestId: "denied-1",
       }),
     ).rejects.toMatchObject({
@@ -150,15 +150,15 @@ describe("Alexandria contracts and execution", () => {
   });
   test("walks with Find Tools and feeds next directly into scrape", async () => {
     const found = await client.findTools({ providers: ["particle"], limit: 2 });
-    const result = await client.scrape({ exchange: found.items[0].next! });
+    const result = await client.scrape({ alexandria: found.items[0].next! });
     expect(result.creditsCost).toBe(0);
     expect(sent.at(-1)?.id).toBeTruthy();
-    expect(sent.at(-1)?.body.exchange).toEqual([next]);
+    expect(sent.at(-1)?.body.alexandria).toEqual([next]);
   });
   test("rejects URL options and queryless browsing before dispatch", async () => {
     const count = sent.length;
     await expect(
-      client.scrape({ exchange: next, url: "https://example.com" } as any),
+      client.scrape({ alexandria: next, url: "https://example.com" } as any),
     ).rejects.toThrow();
     await expect(
       client.search("", { sources: ["alexandria"] }),

@@ -458,16 +458,16 @@ if err != nil {
 }
 fmt.Println(found.Items)
 if found.Next != nil {
-    page, err := client.ScrapeExchange(ctx, []firecrawl.ExchangeCall{*found.Next}, nil)
+    page, err := client.ScrapeAlexandria(ctx, []firecrawl.AlexandriaCall{*found.Next}, nil)
     if err != nil {
         return err
     }
-    fmt.Println(page.Exchange)
+    fmt.Println(page.Alexandria)
 }
 ```
 
-`ScrapeExchange` also executes selected tools through `/v2/scrape`. Inspect each
+`ScrapeAlexandria` also executes selected tools through `/v2/scrape`. Inspect each
 result's `Error` and `CreditsCost`. It generates one request ID before retries;
-reuse `ExchangeOptions.RequestID` for the identical payload after an uncertain
-outcome. Both results and `ExchangeExecutionError` carry `RequestID`. Find Tools
+reuse `AlexandriaOptions.RequestID` for the identical payload after an uncertain
+outcome. Both results and `AlexandriaExecutionError` carry `RequestID`. Find Tools
 costs zero credits; selected tool execution uses the published price.

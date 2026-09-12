@@ -19,8 +19,8 @@ from .types import (
     SourceOption,
     CategoryOption,
     FindToolsData,
-    ExchangeCall,
-    ExchangeScrapeData,
+    AlexandriaCall,
+    AlexandriaScrapeData,
     CrawlRequest,
     CrawlResponse,
     CrawlJob,
@@ -156,7 +156,7 @@ class FirecrawlClient:
         url: Optional[str] = None,
         *,
         auto_resume: Optional[bool] = None,
-        exchange: Optional[Union[ExchangeCall, Dict[str, Any], List[Union[ExchangeCall, Dict[str, Any]]]]] = None,
+        alexandria: Optional[Union[AlexandriaCall, Dict[str, Any], List[Union[AlexandriaCall, Dict[str, Any]]]]] = None,
         request_id: Optional[str] = None,
         formats: Optional[List['FormatOption']] = None,
         headers: Optional[Dict[str, str]] = None,
@@ -183,7 +183,7 @@ class FirecrawlClient:
         audit_metadata: Optional[AuditMetadata] = None,
         integration: Optional[str] = None,
         domain_tools: Optional[bool] = None,
-    ) -> Union[Document, ExchangeScrapeData]:
+    ) -> Union[Document, AlexandriaScrapeData]:
         """
         Scrape a single URL and return the document.
         Args:
@@ -243,34 +243,34 @@ class FirecrawlClient:
                 domain_tools=domain_tools,
             ).items() if v is not None}
         ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration, domain_tools]) else None
-        if exchange is not None:
+        if alexandria is not None:
             if url is not None or auto_resume is not None or (options and set(options.model_dump(exclude_none=True, exclude_unset=True)) - {"timeout", "integration"}):
-                raise ValueError("exchange cannot be combined with URL scrape options")
-            return self.scrape_exchange(exchange, timeout=timeout, integration=integration, request_id=request_id)
+                raise ValueError("alexandria cannot be combined with URL scrape options")
+            return self.scrape_alexandria(alexandria, timeout=timeout, integration=integration, request_id=request_id)
         if request_id is not None:
-            raise ValueError("request_id requires exchange")
+            raise ValueError("request_id requires alexandria")
         return scrape_module.scrape(self.http_client, url, options, auto_resume=auto_resume)
 
-    def scrape_exchange(
+    def scrape_alexandria(
         self,
-        calls: Union[ExchangeCall, Dict[str, Any], List[Union[ExchangeCall, Dict[str, Any]]]],
+        calls: Union[AlexandriaCall, Dict[str, Any], List[Union[AlexandriaCall, Dict[str, Any]]]],
         *,
         timeout: Optional[int] = None,
         integration: Optional[str] = None,
         request_id: Optional[str] = None,
-    ) -> ExchangeScrapeData:
+    ) -> AlexandriaScrapeData:
         """
-        Execute up to 10 Exchange capabilities in one request.
+        Execute up to 10 Alexandria capabilities in one request.
 
         Args:
-            calls: Exchange calls, each with provider, capability and optional options
+            calls: Alexandria calls, each with provider, capability and optional options
             timeout: Request timeout in milliseconds
             integration: Integration tag for the request
 
         Returns:
-            ExchangeScrapeData with one result (or error) per call and the total credits cost
+            AlexandriaScrapeData with one result (or error) per call and the total credits cost
         """
-        return scrape_module.scrape_exchange(
+        return scrape_module.scrape_alexandria(
             self.http_client, calls, timeout=timeout, integration=integration, request_id=request_id
         )
 
@@ -279,10 +279,10 @@ class FirecrawlClient:
 
         Filter by urls, providers, categories, groups, or capabilities. Use level
         (providers/groups/tools), expand, limit, and offset to control disclosure.
-        Follow a returned next request with scrape(exchange=next).
+        Follow a returned next request with scrape(alexandria=next).
         """
-        result = self.scrape_exchange({"provider": "firecrawl-contextual-discovery", "capability": "discovery/context", "options": options})
-        item = result.exchange[0]
+        result = self.scrape_alexandria({"provider": "firecrawl-contextual-discovery", "capability": "discovery/context", "options": options})
+        item = result.alexandria[0]
         if item.error:
             from .utils.error_handler import FirecrawlError
             raise FirecrawlError(item.error.message, item.error.status, request_id=result.request_id)

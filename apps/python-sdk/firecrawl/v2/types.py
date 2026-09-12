@@ -1085,14 +1085,14 @@ class FindToolsData(BaseModel):
     next: Optional[Dict[str, Any]] = None
 
 
-class ExchangeCall(BaseModel):
+class AlexandriaCall(BaseModel):
     model_config = {"extra": "forbid"}
     provider: str
     capability: str
     options: Optional[Dict[str, Any]] = None
 
 
-class ExchangeError(BaseModel):
+class AlexandriaError(BaseModel):
     model_config = {"extra": "allow", "populate_by_name": True}
 
     code: str
@@ -1101,7 +1101,7 @@ class ExchangeError(BaseModel):
     charge_id: Optional[str] = Field(default=None, alias="chargeId")
 
 
-class ExchangeScrapeResult(BaseModel):
+class AlexandriaScrapeResult(BaseModel):
     model_config = {"extra": "allow", "populate_by_name": True}
 
     provider: Optional[str] = None
@@ -1111,19 +1111,19 @@ class ExchangeScrapeResult(BaseModel):
     records: Optional[int] = None
     upstream_status: Optional[int] = Field(default=None, alias="upstreamStatus")
     recorded_at: Optional[str] = Field(default=None, alias="recordedAt")
-    error: Optional[ExchangeError] = None
+    error: Optional[AlexandriaError] = None
 
     @property
     def ok(self) -> bool:
         return self.error is None
 
 
-class ExchangeScrapeData(BaseModel):
+class AlexandriaScrapeData(BaseModel):
     model_config = {"extra": "allow", "populate_by_name": True}
 
     scrape_id: Optional[str] = None
     request_id: Optional[str] = None
-    exchange: List[ExchangeScrapeResult] = Field(default_factory=list)
+    alexandria: List[AlexandriaScrapeResult] = Field(default_factory=list)
     credits_cost: Union[int, float] = Field(default=0, alias="creditsCost")
 
 

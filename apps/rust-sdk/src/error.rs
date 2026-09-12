@@ -35,7 +35,7 @@ impl Display for FirecrawlAPIError {
 #[derive(Error, Debug)]
 pub enum FirecrawlError {
     #[error("{source} (request ID: {request_id})")]
-    ExchangeExecution {
+    AlexandriaExecution {
         request_id: String,
         #[source]
         source: Box<FirecrawlError>,

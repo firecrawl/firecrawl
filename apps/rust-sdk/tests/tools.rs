@@ -1,5 +1,5 @@
 use firecrawl::{
-    Client, ExchangeCall, ExchangeOptions, FirecrawlError, SearchOptions, SearchSource,
+    Client, AlexandriaCall, AlexandriaOptions, FirecrawlError, SearchOptions, SearchSource,
 };
 use mockito::Matcher;
 use serde_json::json;
@@ -38,7 +38,7 @@ async fn unified_contracts_and_execution_identity() {
         .mock("POST", "/v2/scrape")
         .match_header("x-request-id", "denied-1")
         .match_body(Matcher::PartialJson(
-            json!({"exchange":[{"provider":"p","capability":"a"}]}),
+            json!({"alexandria":[{"provider":"p","capability":"a"}]}),
         ))
         .with_status(402)
         .with_header("content-type", "application/json")
@@ -48,13 +48,13 @@ async fn unified_contracts_and_execution_identity() {
         .create_async()
         .await;
     let error = client
-        .scrape_exchange(
-            vec![ExchangeCall {
+        .scrape_alexandria(
+            vec![AlexandriaCall {
                 provider: "p".into(),
                 capability: "a".into(),
                 options: None,
             }],
-            ExchangeOptions {
+            AlexandriaOptions {
                 request_id: Some("denied-1".into()),
                 ..Default::default()
             },
@@ -62,7 +62,7 @@ async fn unified_contracts_and_execution_identity() {
         .await
         .unwrap_err();
     match error {
-        FirecrawlError::ExchangeExecution { request_id, source } => {
+        FirecrawlError::AlexandriaExecution { request_id, source } => {
             assert_eq!(request_id, "denied-1");
             assert!(matches!(*source, FirecrawlError::APIError(_, _)));
         }
@@ -75,10 +75,10 @@ async fn unified_contracts_and_execution_identity() {
     ));
     let invalid = server.mock("POST", "/v2/scrape")
         .with_header("content-type", "application/json")
-        .with_body(r#"{"success":true,"scrape_id":"s1","data":{"exchange":[{"error":{"code":"invalid_options","message":"Invalid lookup"}}],"creditsCost":0}}"#)
+        .with_body(r#"{"success":true,"scrape_id":"s1","data":{"alexandria":[{"error":{"code":"invalid_options","message":"Invalid lookup"}}],"creditsCost":0}}"#)
         .create_async().await;
     match client.find_tools(None).await.unwrap_err() {
-        FirecrawlError::ExchangeExecution { request_id, source } => {
+        FirecrawlError::AlexandriaExecution { request_id, source } => {
             assert!(!request_id.is_empty());
             match *source {
                 FirecrawlError::APIError(_, error) => {

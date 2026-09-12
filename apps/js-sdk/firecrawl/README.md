@@ -403,11 +403,11 @@ console.log(results.tools?.[0].options);
 
 const catalogue = await firecrawl.findTools({ providers: ["particle"], limit: 2 });
 const next = catalogue.items[0]?.next;
-if (next) console.log(await firecrawl.scrape({ exchange: next }));
+if (next) console.log(await firecrawl.scrape({ alexandria: next }));
 ```
 
-Execute a selected contract with `scrape({ exchange: { provider, capability, options } })`,
-or pass an array of up to ten calls. Check each returned `exchange` item's `error`
+Execute a selected contract with `scrape({ alexandria: { provider, capability, options } })`,
+or pass an array of up to ten calls. Check each returned `alexandria` item's `error`
 before using its `data`. The result and execution errors expose `requestId`; reuse it
 with the identical payload for a retry. Automatic retries retain the same ID.
 Find Tools costs zero credits; provider execution uses its published price.

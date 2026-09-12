@@ -415,11 +415,11 @@ print(result.tools[0].options)
 
 catalogue = firecrawl.find_tools(providers=["particle"], limit=2)
 if catalogue.items and catalogue.items[0].get("next"):
-    details = firecrawl.scrape(exchange=catalogue.items[0]["next"])
-    print(details.exchange[0].data)
+    details = firecrawl.scrape(alexandria=catalogue.items[0]["next"])
+    print(details.alexandria[0].data)
 ```
 
-Use `scrape(exchange={"provider": ..., "capability": ..., "options": ...})` to
+Use `scrape(alexandria={"provider": ..., "capability": ..., "options": ...})` to
 execute a selected tool, or pass a list of up to ten calls. Check each item's
 `error` before using `data`. Results and execution exceptions expose `request_id`;
 reuse it with the identical payload when retrying. Automatic retries retain it.

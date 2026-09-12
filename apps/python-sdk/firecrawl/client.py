@@ -71,7 +71,7 @@ class V2Proxy:
 
         if client_instance:
             self.scrape = client_instance.scrape
-            self.scrape_exchange = client_instance.scrape_exchange
+            self.scrape_alexandria = client_instance.scrape_alexandria
             self.find_tools = client_instance.find_tools
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
@@ -163,7 +163,7 @@ class AsyncV2Proxy:
 
         if client_instance:
             self.scrape = client_instance.scrape
-            self.scrape_exchange = client_instance.scrape_exchange
+            self.scrape_alexandria = client_instance.scrape_alexandria
             self.find_tools = client_instance.find_tools
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
@@ -275,7 +275,7 @@ class Firecrawl:
         self.v2 = V2Proxy(self._v2_client)
         
         self.scrape = self._v2_client.scrape
-        self.scrape_exchange = self._v2_client.scrape_exchange
+        self.scrape_alexandria = self._v2_client.scrape_alexandria
         self.find_tools = self._v2_client.find_tools
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction
@@ -416,7 +416,7 @@ class AsyncFirecrawl:
         # Expose v2 async surface directly on the top-level client for ergonomic access
         # Keep method names aligned with the sync client
         self.scrape = self._v2_client.scrape
-        self.scrape_exchange = self._v2_client.scrape_exchange
+        self.scrape_alexandria = self._v2_client.scrape_alexandria
         self.find_tools = self._v2_client.find_tools
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction

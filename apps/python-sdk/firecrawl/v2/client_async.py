@@ -21,8 +21,8 @@ from .types import (
     DeveloperSearchType,
     SourceOption,
     FindToolsData,
-    ExchangeCall,
-    ExchangeScrapeData,
+    AlexandriaCall,
+    AlexandriaScrapeData,
     CrawlResponse,
     CrawlJob,
     CrawlParamsRequest,
@@ -120,32 +120,32 @@ class AsyncFirecrawlClient:
         url: Optional[str] = None,
         *,
         auto_resume: Optional[bool] = None,
-        exchange: Optional[Union[ExchangeCall, Dict[str, Any], List[Union[ExchangeCall, Dict[str, Any]]]]] = None,
+        alexandria: Optional[Union[AlexandriaCall, Dict[str, Any], List[Union[AlexandriaCall, Dict[str, Any]]]]] = None,
         request_id: Optional[str] = None,
         **kwargs,
     ):
-        if exchange is not None:
+        if alexandria is not None:
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
             if url is not None or auto_resume is not None or set(kwargs) - {"timeout", "integration"}:
-                raise ValueError("exchange cannot be combined with URL scrape options")
-            return await self.scrape_exchange(exchange, request_id=request_id, **kwargs)
+                raise ValueError("alexandria cannot be combined with URL scrape options")
+            return await self.scrape_alexandria(alexandria, request_id=request_id, **kwargs)
         if request_id is not None:
-            raise ValueError("request_id requires exchange")
+            raise ValueError("request_id requires alexandria")
         options = ScrapeOptions(**{k: v for k, v in kwargs.items() if v is not None}) if kwargs else None
         return await async_scrape.scrape(
             self.async_http_client, url, options, auto_resume=auto_resume
         )
 
-    async def scrape_exchange(
+    async def scrape_alexandria(
         self,
-        calls: Union[ExchangeCall, Dict[str, Any], List[Union[ExchangeCall, Dict[str, Any]]]],
+        calls: Union[AlexandriaCall, Dict[str, Any], List[Union[AlexandriaCall, Dict[str, Any]]]],
         *,
         timeout: Optional[int] = None,
         integration: Optional[str] = None,
         request_id: Optional[str] = None,
-    ) -> ExchangeScrapeData:
-        """Execute up to 10 Exchange capabilities in one request."""
-        return await async_scrape.scrape_exchange(
+    ) -> AlexandriaScrapeData:
+        """Execute up to 10 Alexandria capabilities in one request."""
+        return await async_scrape.scrape_alexandria(
             self.async_http_client, calls, timeout=timeout, integration=integration, request_id=request_id
         )
 
@@ -154,10 +154,10 @@ class AsyncFirecrawlClient:
 
         Filter by urls, providers, categories, groups, or capabilities. Use level
         (providers/groups/tools), expand, limit, and offset to control disclosure.
-        Follow a returned next request with scrape(exchange=next).
+        Follow a returned next request with scrape(alexandria=next).
         """
-        result = await self.scrape_exchange({"provider": "firecrawl-contextual-discovery", "capability": "discovery/context", "options": options})
-        item = result.exchange[0]
+        result = await self.scrape_alexandria({"provider": "firecrawl-contextual-discovery", "capability": "discovery/context", "options": options})
+        item = result.alexandria[0]
         if item.error:
             from .utils.error_handler import FirecrawlError
             raise FirecrawlError(item.error.message, item.error.status, request_id=result.request_id)
