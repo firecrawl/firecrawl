@@ -26,9 +26,10 @@ URL matching only.
 }
 ```
 
-An ordinary URL scrape accepts `domainTools: true` (default off) and, for
-teams with Exchange access, adds `data.tools` matched to the page's domain in
-the same shape as Search. Discovery is free and never fails the scrape.
+An ordinary URL scrape accepts `domainTools: true` (default off) and adds
+`data.tools` matched to the page's domain in the same shape as Search. It
+needs Exchange access and no zero data retention, refused with the same 403
+Search returns; discovery itself is free and never fails the scrape.
 
 Scrape with `exchange` accepts one call or up to ten and returns
 `data.exchange` with `data.creditsCost`. `/exchange/retrieve` shares the path; its single-call

@@ -254,11 +254,12 @@ it("returns the answer but records nothing when the settle does not land", async
   expect(mocks.report).not.toHaveBeenCalled();
 });
 
-it("refunds the direct-Autumn charge when the ledger enqueue fails after retries", async () => {
+it("refunds the direct-Autumn charge and leaves the Exchange usage pending when the ledger enqueue fails", async () => {
   mocks.billAdd.mockRejectedValue(new Error("queue down"));
   expect((await run()).status).toBe(200);
   expect(mocks.billAdd).toHaveBeenCalledTimes(3);
   expect(mocks.refund).toHaveBeenCalledWith(
     expect.objectContaining({ teamId: "team", value: 3 }),
   );
+  expect(mocks.report).not.toHaveBeenCalled();
 });

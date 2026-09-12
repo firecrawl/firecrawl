@@ -172,6 +172,7 @@ export async function retrieveProviders(input: {
 
   let lockId: string | undefined;
   let maximumCredits: number;
+  let refundable = false;
   try {
     const denied = await authorizeProviders(
       input.teamId,
@@ -214,6 +215,7 @@ export async function retrieveProviders(input: {
             "Paid provider billing is not configured. No provider was executed.",
           ),
         );
+      refundable = !(await autumnService.isRoutedThroughFirebill(input.teamId));
       const hold = await autumnService.lockCredits({
         teamId: input.teamId,
         value: maximumCredits,
@@ -330,9 +332,17 @@ export async function retrieveProviders(input: {
 
     const credits = answer.creditsCost;
     const settled = await finalize(credits);
-    if (settled && billable && credits > 0)
-      await recordLedgerUsage(id, input.teamId, input.apiKeyId, credits);
-    if (settled || !billable)
+    const recorded =
+      settled && billable && credits > 0
+        ? await recordLedgerUsage(
+            id,
+            input.teamId,
+            input.apiKeyId,
+            credits,
+            refundable,
+          )
+        : settled;
+    if (!billable || recorded)
       void reportExchangeUsageBilling({
         requestId: id,
         status: billable ? "confirmed" : "void",
@@ -352,8 +362,8 @@ async function recordLedgerUsage(
   teamId: string,
   apiKeyId: number | null,
   credits: number,
-) {
-  const refundable = !(await autumnService.isRoutedThroughFirebill(teamId));
+  refundable: boolean,
+): Promise<boolean> {
   for (let attempt = 1; ; attempt++) {
     try {
       await getBillingQueue().add(
@@ -370,7 +380,7 @@ async function recordLedgerUsage(
         },
         { jobId: `alexandria-bill-${id}`, priority: 10 },
       );
-      return;
+      return true;
     } catch (error) {
       if (attempt < 3) {
         await new Promise(resolve => setTimeout(resolve, 250 * attempt));
@@ -378,32 +388,23 @@ async function recordLedgerUsage(
       }
       logger.error(
         refundable
-          ? "Provider usage could not be queued for the ledger; refunding the Autumn charge"
-          : "Provider usage could not be queued for the ledger; charge stands pending reconciliation",
+          ? "Provider usage could not be queued for the ledger; refunding the Autumn charge and leaving the Exchange usage pending for reconciliation"
+          : "Provider usage could not be queued for the ledger; the firebill charge stands and the Exchange usage stays pending for reconciliation",
         { chargeId: id, teamId, credits, error },
       );
       if (refundable)
-        await autumnService
-          .refundCredits({
-            teamId,
-            value: credits,
-            featureId: featureIdForBillingEndpoint("scrape"),
-            properties: {
-              source: "alexandria",
-              endpoint: "scrape",
-              chargeId: id,
-            },
-            idempotencyKey: `fc:refund:scrape:${id}`,
-          })
-          .catch(refundError =>
-            logger.error("Provider refund failed; reconcile by charge id", {
-              chargeId: id,
-              teamId,
-              credits,
-              error: refundError,
-            }),
-          );
-      return;
+        await autumnService.refundCredits({
+          teamId,
+          value: credits,
+          featureId: featureIdForBillingEndpoint("scrape"),
+          properties: {
+            source: "alexandria",
+            endpoint: "scrape",
+            chargeId: id,
+          },
+          idempotencyKey: `fc:refund:scrape:${id}`,
+        });
+      return false;
     }
   }
 }

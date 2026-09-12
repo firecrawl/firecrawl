@@ -156,6 +156,16 @@ export async function scrapeController(
         getScrapeZDR(req.acuc?.flags) === "forced" ||
         (req.body.zeroDataRetention ?? false) ||
         (req.body.lockdown ?? false);
+      if (
+        req.body.domainTools &&
+        (!req.acuc?.flags?.exchangeRetrieve || zeroDataRetention)
+      )
+        return res.status(403).json({
+          success: false,
+          error: !req.acuc?.flags?.exchangeRetrieve
+            ? "The exchange source is not enabled for this team."
+            : "Provider discovery requires access and does not support zero data retention.",
+        });
       const billing: BillingMetadata = req.body.__agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "scrape" as const, jobId };
@@ -630,10 +640,7 @@ export async function scrapeController(
         concurrencyQueueDurationMs: lockTime || undefined,
       });
       const tools =
-        req.body.domainTools &&
-        req.acuc?.flags?.exchangeRetrieve &&
-        !zeroDataRetention &&
-        config.FIRE_EXCHANGE_URL
+        req.body.domainTools && config.FIRE_EXCHANGE_URL
           ? await discoverTools(
               {
                 teamId: req.auth.team_id,
