@@ -1,4 +1,5 @@
 import { InternalOptions } from "../scraper/scrapeURL";
+import { config } from "../config";
 import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import { WebhookConfig } from "../services/webhook/types";
 import { WebCrawler } from "../scraper/WebScraper/crawler";
@@ -1001,6 +1002,7 @@ export function crawlToCrawler(
       sc.crawlerOptions?.allowExternalContentLinks ?? false,
     allowSubdomains: sc.crawlerOptions?.allowSubdomains ?? false,
     ignoreRobotsTxt:
+      config.FAST_CRAWL === true ||
       getIgnoreRobots(teamFlags) === "forced" ||
       (getIgnoreRobots(teamFlags) === "allowed" &&
         (sc.crawlerOptions?.ignoreRobotsTxt ?? false)),

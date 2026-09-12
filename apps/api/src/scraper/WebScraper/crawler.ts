@@ -469,6 +469,7 @@ export class WebCrawler {
     skipTlsVerification = false,
     abort?: AbortSignal,
   ): Promise<string> {
+    if (config.FAST_CRAWL === true) return "";
     try {
       this.logger.debug("Attempting to fetch robots.txt", {
         method: "getRobotsTxt",
