@@ -34,7 +34,7 @@ describe("V1 Types Validation", () => {
       const result = scrapeRequestSchema.parse(input);
       expect(result.url).toBe("https://example.com");
       expect(result.origin).toBe("api");
-      expect(result.timeout).toBe(30000);
+      expect(result.timeout).toBe(120000); // bumped because default proxy is "auto"
       expect(result.formats).toEqual(["markdown"]);
     });
 
@@ -286,7 +286,7 @@ describe("V1 Types Validation", () => {
 
       const result = scrapeRequestSchema.parse(input);
       expect(result.origin).toBe("api");
-      expect(result.timeout).toBe(30000);
+      expect(result.timeout).toBe(120000); // bumped because default proxy is "auto"
       expect(result.formats).toEqual(["markdown"]);
       expect(result.onlyMainContent).toBe(true);
       expect(result.onlyCleanContent).toBe(false);
@@ -296,7 +296,7 @@ describe("V1 Types Validation", () => {
       expect(result.removeBase64Images).toBe(true);
       expect(result.fastMode).toBe(false);
       expect(result.blockAds).toBe(true);
-      expect(result.proxy).toBe("basic");
+      expect(result.proxy).toBe("auto");
       expect(result.storeInCache).toBe(true);
     });
 
