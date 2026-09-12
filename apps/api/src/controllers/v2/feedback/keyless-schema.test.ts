@@ -281,6 +281,8 @@ it.each([
     },
   ],
   ["search", { kind: "useful", position: 0 }],
+  ["search", { kind: "useful", position: 1, engine: "index" }],
+  ["search", { kind: "useful", position: 1, category: "developer" }],
   ["search", { kind: "useful", position: 1.5 }],
   ["search", { kind: "useful", position: 1, reason: "off_topic" }],
   ["scrape", { kind: "correct", reason: "wrong" }],
