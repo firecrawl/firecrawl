@@ -1,0 +1,25 @@
+apps/api/src/services/alexandria/retrieve.test.ts
+  s_ee203c73d82ec7::t_d52071f43e4583 1,187-188,192,206
+  s_ee203c73d82ec7::t_d5d1aaf22f9f56 8-9,28,65
+  s_ee203c73d82ec7::t_6129a1e9b5b567 147-148,198-200
+apps/api/src/controllers/v2/scrape-alexandria.test.ts
+  s_ee203c73d82ec7::t_d5d1aaf22f9f56 34-38,61,79
+apps/api/src/search/execute.test.ts
+  s_ee203c73d82ec7::t_28ce826c196e92 133,136-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4168e110a835a2306230c4f21fbb364c6ebfc3bb",
+  "prompts": {},
+  "sessions": {
+    "s_ee203c73d82ec7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f18f8-181b-7552-a7dd-bc1d2e1cd896",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
