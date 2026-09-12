@@ -30,11 +30,13 @@ vi.mock("../../../config", () => ({
     KEYLESS_FEEDBACK_INVITATION_EVERY: 1,
   },
 }));
+import { config } from "../../../config";
 import { keylessFeedbackMetadata } from "./keyless-context";
 
 describe("keyless feedback invitation issuance", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    config.KEYLESS_FEEDBACK_INVITATION_EVERY = 1;
     mocks.set.mockResolvedValue("OK");
     mocks.eval.mockResolvedValue(1);
     mocks.attempts.mockResolvedValue(null);
@@ -54,6 +56,33 @@ describe("keyless feedback invitation issuance", () => {
       true,
       { markdown: "Example" },
     );
+
+  it("invites on every third result across categories and clients", async () => {
+    config.KEYLESS_FEEDBACK_INVITATION_EVERY = 3;
+    const counts = new Map<string, number>();
+    mocks.eval.mockImplementation(async (_script, _keys, key: string) => {
+      const count = (counts.get(key) ?? 0) + 1;
+      counts.set(key, count);
+      return count;
+    });
+    const endpoints = ["search", "scrape", "parse"] as const;
+    const clients = ["api", "mcp", "cli"];
+    for (let index = 0; index < 6; index++) {
+      const endpoint = endpoints[index % endpoints.length];
+      const metadata = await keylessFeedbackMetadata(
+        {
+          auth: { team_id: "fixture" },
+          body: { origin: clients[index % clients.length] },
+        } as any,
+        endpoint,
+        `job-${index}`,
+        true,
+        endpoint === "search" ? { web: [] } : { markdown: "Example" },
+      );
+      expect(metadata.jobId).toBe(`job-${index}`);
+      expect(Boolean(metadata.feedback)).toBe((index + 1) % 3 === 0);
+    }
+  });
 
   it("records issuance independently of submissions only after the response finishes", async () => {
     const response = new EventEmitter();

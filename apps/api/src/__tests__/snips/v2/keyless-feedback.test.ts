@@ -34,10 +34,7 @@ describeIf(enabled)("keyless feedback", () => {
       "keyless_credits:203.0.113.173",
       `keyless_feedback_attempts:${identity}`,
     );
-    await keylessFeedbackRedis!.del(
-      `keyless_feedback_invitations:${identity}:scrape`,
-      `keyless_feedback_invitations:${identity}:parse`,
-    );
+    await keylessFeedbackRedis!.del(`keyless_feedback_invitations:${identity}`);
   };
   beforeEach(cleanup);
   afterAll(cleanup);
