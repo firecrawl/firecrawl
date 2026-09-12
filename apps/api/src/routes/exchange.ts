@@ -137,7 +137,13 @@ exchangeRouter.get(
 
 // Provider agreements the web app offers for acceptance; a catalogue read, never an acceptance.
 exchangeRouter.get(
-  "/provider-terms",
+  "/provider-terms{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+);
+
+exchangeRouter.post(
+  "/provider-terms/events",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
 );
