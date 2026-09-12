@@ -15,6 +15,7 @@ import {
   getTimeoutProcessingDetails,
   TransportableError,
 } from "../../lib/error";
+import { getSiteErrorDetails } from "../../scraper/scrapeURL/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -527,11 +528,12 @@ export async function scrapeController(
           if (processing) {
             res.setHeader("Retry-After", String(processing.retryAfterSeconds));
           }
+          const details = processing ?? getSiteErrorDetails(e);
           return res.status(statusCode).json({
             success: false,
             code: e.code,
             error: e.message,
-            ...(processing && { details: processing }),
+            ...(details && { details }),
           });
         } else {
           const id = uuidv7();

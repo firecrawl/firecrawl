@@ -5,7 +5,7 @@ export function throwForBadResponse(resp: AxiosResponse, action: string): never 
   const status = resp.status;
   const body = resp.data || {};
   const msg = body?.error || body?.message || `Request failed (${status}) while trying to ${action}`;
-  throw new SdkError(msg, status, undefined, body?.details);
+  throw new SdkError(msg, status, body?.code, body?.details);
 }
 
 export function normalizeAxiosError(err: AxiosError, action: string): never {
