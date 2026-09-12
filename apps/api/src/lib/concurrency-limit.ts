@@ -1,4 +1,5 @@
 import { getRedisConnection } from "../services/queue-service";
+import { config } from "../config";
 import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
 import { abTestJob } from "../services/ab-test";
@@ -34,6 +35,7 @@ export async function getEffectiveConcurrencyLimit(
   teamId: string,
   orgId?: string | null,
 ): Promise<number> {
+  if (config.FAST_CRAWL === true) return 1000;
   const autumnValue = await autumnService.getConcurrencyLimit(teamId, orgId);
   return autumnValue ?? DEFAULT_CONCURRENCY_LIMIT;
 }
