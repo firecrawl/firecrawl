@@ -1,4 +1,5 @@
-import { generateURLPermutations } from "./crawl-redis";
+import { generateURLPermutations, crawlToCrawler } from "./crawl-redis";
+import { config } from "../config";
 
 describe("generateURLPermutations", () => {
   it("generates permutations correctly", () => {
@@ -79,5 +80,30 @@ describe("generateURLPermutations", () => {
     expect(wwwHttp.includes("http://www.firecrawl.dev/")).toBe(true);
     expect(wwwHttp.includes("http://www.firecrawl.dev/index.html")).toBe(true);
     expect(wwwHttp.includes("http://www.firecrawl.dev/index.php")).toBe(true);
+  });
+});
+
+describe("crawlToCrawler FAST_CRAWL", () => {
+  const sc = {
+    originUrl: "https://example.com",
+    crawlerOptions: {},
+    scrapeOptions: {},
+    internalOptions: {},
+  } as any;
+
+  afterEach(() => {
+    delete (config as any).FAST_CRAWL;
+  });
+
+  it("forces ignoreRobotsTxt and skips the robots fetch when FAST_CRAWL", async () => {
+    (config as any).FAST_CRAWL = true;
+    const crawler = crawlToCrawler("fast-crawl-job-1", sc, null);
+    expect((crawler as any).ignoreRobotsTxt).toBe(true);
+    await expect(crawler.getRobotsTxt()).resolves.toBe("");
+  });
+
+  it("keeps the flag-gated robots behavior when FAST_CRAWL is unset", () => {
+    const crawler = crawlToCrawler("fast-crawl-job-2", sc, null);
+    expect((crawler as any).ignoreRobotsTxt).toBe(false);
   });
 });
