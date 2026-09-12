@@ -75,7 +75,7 @@ func (c *Client) ScrapeAlexandria(ctx context.Context, calls []AlexandriaCall, o
 		ScrapeID string `json:"scrape_id"`
 		Data     *struct {
 			Alexandria  []AlexandriaScrapeResult `json:"alexandria"`
-			CreditsCost *int                   `json:"creditsCost"`
+			CreditsCost *int                     `json:"creditsCost"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {

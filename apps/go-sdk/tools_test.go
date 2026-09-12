@@ -22,7 +22,12 @@ func TestToolDiscoveryAndExecution(t *testing.T) {
 		bodies = append(bodies, body)
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/v2/search" {
-			w.Write([]byte(`{"success":true,"warning":"contextual lookup unavailable","data":{"tools":[{"id":"p/a","provider":"p","capability":"a","name":"Tool","description":"Example","creditsCost":2,"perRecord":false,"options":[{"name":"q","type":"string"}],"response":{"fields":[]},"examples":{"go":"example"},"matchedBy":["semantic","domain"],"matchedUrls":["https://example.com"]}]}}`))
+			w.Write([]byte(`{"success":true,"warning":"contextual lookup unavailable","data":{"tools":[{"id":"p/a","provider":"p","capability":"a","name":"Tool","description":"Example","creditsCost":2,"perRecord":false,"options":[{"name":"q","type":"string"}],"response":{"fields":[]},"examples":{"go":"example"},"matchedBy":["semantic","domain"],"matchedUrls":["https://example.com"]},{"id":"benzinga/calendar/ratings","provider":"benzinga","capability":"calendar/ratings","name":"Analyst ratings","description":"Ratings","creditsCost":5,"perRecord":false,"label":"Ratings","whenToUse":"Analyst ratings for a ticker","returns":{"about":"Ratings"},"discovery":{"urls":[]},"attribution":{"required":true},"options":[{"name":"tickers","type":"string"}],"response":{"fields":[]},"matchedBy":["semantic"],"matchedUrls":[]}]}}`))
+			return
+		}
+		if body["alexandria"].([]interface{})[0].(map[string]interface{})["provider"] == "benzinga" {
+			w.WriteHeader(403)
+			w.Write([]byte(`{"success":false,"code":"THIRD_PARTY_DATA_TERMS_REQUIRED","error":"An organization admin must accept the benzinga provider's terms","requiresAction":{"type":"accept_terms","terms":"benzinga","version":"C-1.0.0-draft","url":"https://www.firecrawl.dev/app/alexandria/benzinga"}}`))
 			return
 		}
 		if body["alexandria"].([]interface{})[0].(map[string]interface{})["provider"] == "firecrawl" {
@@ -47,8 +52,23 @@ func TestToolDiscoveryAndExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if search.Warning != "contextual lookup unavailable" || len(search.Tools) != 1 || len(search.Tools[0].MatchedBy) != 2 || search.Tools[0].Options[0]["name"] != "q" {
+	if search.Warning != "contextual lookup unavailable" || len(search.Tools) != 2 || len(search.Tools[0].MatchedBy) != 2 || search.Tools[0].Options[0]["name"] != "q" {
 		t.Fatalf("lost contract: %+v", search)
+	}
+	if search.Tools[1].Examples != nil || search.Tools[1].Label != "Ratings" || search.Tools[1].WhenToUse != "Analyst ratings for a ticker" {
+		t.Fatalf("lost production contract: %+v", search.Tools[1])
+	}
+	_, termsErr := client.ScrapeAlexandria(context.Background(), []AlexandriaCall{{Provider: "benzinga", Capability: "calendar/ratings"}}, &AlexandriaOptions{RequestID: "terms-1"})
+	var termsExecutionErr *AlexandriaExecutionError
+	var termsAPIErr *FirecrawlError
+	if !errors.As(termsErr, &termsExecutionErr) || termsExecutionErr.RequestID != "terms-1" || !errors.As(termsErr, &termsAPIErr) {
+		t.Fatalf("lost terms error identity: %v", termsErr)
+	}
+	if termsAPIErr.StatusCode != 403 || termsAPIErr.ErrorCode != "THIRD_PARTY_DATA_TERMS_REQUIRED" || termsAPIErr.RequiresAction == nil {
+		t.Fatalf("lost terms error details: %+v", termsAPIErr)
+	}
+	if action := termsAPIErr.RequiresAction; action.Type != "accept_terms" || action.Terms != "benzinga" || action.Version != "C-1.0.0-draft" || action.URL != "https://www.firecrawl.dev/app/alexandria/benzinga" {
+		t.Fatalf("lost requiresAction: %+v", action)
 	}
 	result, err := client.ScrapeAlexandria(context.Background(), []AlexandriaCall{{Provider: "p", Capability: "a"}}, &AlexandriaOptions{RequestID: "retry-1"})
 	if err != nil {

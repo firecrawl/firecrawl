@@ -635,13 +635,13 @@ type AlexandriaScrapeError struct {
 }
 
 type AlexandriaScrapeResult struct {
-	Provider       string               `json:"provider,omitempty"`
-	Capability     string               `json:"capability,omitempty"`
-	CreditsCost    *int                 `json:"creditsCost,omitempty"`
-	Data           interface{}          `json:"data,omitempty"`
-	Records        *int                 `json:"records,omitempty"`
-	UpstreamStatus *int                 `json:"upstreamStatus,omitempty"`
-	RecordedAt     string               `json:"recordedAt,omitempty"`
+	Provider       string                 `json:"provider,omitempty"`
+	Capability     string                 `json:"capability,omitempty"`
+	CreditsCost    *int                   `json:"creditsCost,omitempty"`
+	Data           interface{}            `json:"data,omitempty"`
+	Records        *int                   `json:"records,omitempty"`
+	UpstreamStatus *int                   `json:"upstreamStatus,omitempty"`
+	RecordedAt     string                 `json:"recordedAt,omitempty"`
 	Error          *AlexandriaScrapeError `json:"error,omitempty"`
 }
 
@@ -650,10 +650,10 @@ func (r *AlexandriaScrapeResult) Failed() bool {
 }
 
 type AlexandriaScrapeData struct {
-	RequestID   string                 `json:"requestId"`
-	ScrapeID    string                 `json:"scrapeId"`
+	RequestID   string                   `json:"requestId"`
+	ScrapeID    string                   `json:"scrapeId"`
 	Alexandria  []AlexandriaScrapeResult `json:"alexandria"`
-	CreditsCost int                    `json:"creditsCost"`
+	CreditsCost int                      `json:"creditsCost"`
 }
 
 // AgentResponse is returned when starting an async agent task.
@@ -877,7 +877,7 @@ type CreditUsage struct {
 
 // DiscoveredTool includes the contract and its semantic/domain provenance.
 type DiscoveredTool struct {
-	ID            string                   `json:"id"`
+	ID            string                   `json:"id,omitempty"`
 	Provider      string                   `json:"provider"`
 	Capability    string                   `json:"capability"`
 	Name          string                   `json:"name"`
@@ -886,11 +886,16 @@ type DiscoveredTool struct {
 	PerRecord     bool                     `json:"perRecord"`
 	Options       []map[string]interface{} `json:"options"`
 	RequiresOneOf [][]string               `json:"requiresOneOf,omitempty"`
-	Response      map[string]interface{}   `json:"response"`
-	Examples      map[string]string        `json:"examples"`
+	Response      map[string]interface{}   `json:"response,omitempty"`
+	Examples      map[string]string        `json:"examples,omitempty"`
 	Example       map[string]interface{}   `json:"example,omitempty"`
-	MatchedBy     []string                 `json:"matchedBy"`
-	MatchedURLs   []string                 `json:"matchedUrls"`
+	Label         string                   `json:"label,omitempty"`
+	WhenToUse     string                   `json:"whenToUse,omitempty"`
+	Returns       interface{}              `json:"returns,omitempty"`
+	Discovery     interface{}              `json:"discovery,omitempty"`
+	Attribution   interface{}              `json:"attribution,omitempty"`
+	MatchedBy     []string                 `json:"matchedBy,omitempty"`
+	MatchedURLs   []string                 `json:"matchedUrls,omitempty"`
 	Concept       string                   `json:"concept,omitempty"`
 	Cohorts       []string                 `json:"cohorts,omitempty"`
 	Similarity    *float64                 `json:"similarity,omitempty"`
@@ -912,5 +917,5 @@ type FindToolsData struct {
 	Level string                   `json:"level"`
 	Items []map[string]interface{} `json:"items"`
 	Total int                      `json:"total"`
-	Next  *AlexandriaCall            `json:"next"`
+	Next  *AlexandriaCall          `json:"next"`
 }
