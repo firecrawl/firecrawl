@@ -87,7 +87,7 @@ from .watcher import Watcher
 # Does not include "integration" (crawl-level param, not a scrape option).
 _SCRAPE_OPTION_KEYS = frozenset({
     "formats", "headers", "include_tags", "exclude_tags",
-    "only_main_content", "timeout", "wait_for", "mobile",
+    "only_main_content", "only_clean_content", "timeout", "wait_for", "mobile",
     "parsers", "actions", "location", "skip_tls_verification",
     "remove_base64_images", "fast_mode", "use_mock", "block_ads",
     "proxy", "max_age", "store_in_cache", "lockdown", "threat_protection",
@@ -158,6 +158,7 @@ class FirecrawlClient:
         include_tags: Optional[List[str]] = None,
         exclude_tags: Optional[List[str]] = None,
         only_main_content: Optional[bool] = None,
+        only_clean_content: Optional[bool] = None,
         timeout: Optional[int] = None,
         wait_for: Optional[int] = None,
         mobile: Optional[bool] = None,
@@ -187,6 +188,7 @@ class FirecrawlClient:
             include_tags: List of tags to include
             exclude_tags: List of tags to exclude
             only_main_content: Whether to only scrape the main content
+            only_clean_content: Whether to LLM-clean the markdown
             timeout: Timeout in milliseconds
             wait_for: Wait for a specific element to be present
             mobile: Whether to use mobile mode
@@ -215,6 +217,7 @@ class FirecrawlClient:
                 include_tags=include_tags,
                 exclude_tags=exclude_tags,
                 only_main_content=only_main_content,
+                only_clean_content=only_clean_content,
                 timeout=timeout,
                 wait_for=wait_for,
                 mobile=mobile,
@@ -235,7 +238,7 @@ class FirecrawlClient:
                 audit_metadata=audit_metadata,
                 integration=integration,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, only_clean_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration]) else None
         return scrape_module.scrape(self.http_client, url, options, auto_resume=auto_resume)
 
     # Research paper index (/v2/search/research)
@@ -530,6 +533,7 @@ class FirecrawlClient:
         include_tags: Optional[List[str]] = None,
         exclude_tags: Optional[List[str]] = None,
         only_main_content: Optional[bool] = None,
+        only_clean_content: Optional[bool] = None,
         wait_for: Optional[int] = None,
         mobile: Optional[bool] = None,
         parsers: Optional[Union[List[str], List[Union[str, PDFParser]]]] = None,
@@ -581,6 +585,7 @@ class FirecrawlClient:
             include_tags: HTML tags to include (convenience kwarg)
             exclude_tags: HTML tags to exclude (convenience kwarg)
             only_main_content: Restrict to main content (convenience kwarg)
+            only_clean_content: LLM-clean the markdown (convenience kwarg)
             wait_for: Wait condition in ms (convenience kwarg)
             mobile: Emulate mobile viewport (convenience kwarg)
             parsers: Parser list (convenience kwarg)
@@ -617,6 +622,7 @@ class FirecrawlClient:
             scrape_kwargs = {k: v for k, v in dict(
                 formats=formats, headers=headers, include_tags=include_tags,
                 exclude_tags=exclude_tags, only_main_content=only_main_content,
+                only_clean_content=only_clean_content,
                 wait_for=wait_for, mobile=mobile, parsers=parsers, actions=actions,
                 location=location, skip_tls_verification=skip_tls_verification,
                 remove_base64_images=remove_base64_images, fast_mode=fast_mode,
@@ -691,6 +697,7 @@ class FirecrawlClient:
         include_tags: Optional[List[str]] = None,
         exclude_tags: Optional[List[str]] = None,
         only_main_content: Optional[bool] = None,
+        only_clean_content: Optional[bool] = None,
         timeout: Optional[int] = None,
         wait_for: Optional[int] = None,
         mobile: Optional[bool] = None,
@@ -740,6 +747,7 @@ class FirecrawlClient:
             include_tags: HTML tags to include (convenience kwarg)
             exclude_tags: HTML tags to exclude (convenience kwarg)
             only_main_content: Restrict to main content (convenience kwarg)
+            only_clean_content: LLM-clean the markdown (convenience kwarg)
             timeout: Scrape timeout in milliseconds (convenience kwarg)
             wait_for: Wait condition in ms (convenience kwarg)
             mobile: Emulate mobile viewport (convenience kwarg)
@@ -773,6 +781,7 @@ class FirecrawlClient:
             scrape_kwargs = {k: v for k, v in dict(
                 formats=formats, headers=headers, include_tags=include_tags,
                 exclude_tags=exclude_tags, only_main_content=only_main_content,
+                only_clean_content=only_clean_content,
                 timeout=timeout, wait_for=wait_for, mobile=mobile,
                 parsers=parsers, actions=actions,
                 location=location, skip_tls_verification=skip_tls_verification,
@@ -1212,6 +1221,7 @@ class FirecrawlClient:
         include_tags: Optional[List[str]] = None,
         exclude_tags: Optional[List[str]] = None,
         only_main_content: Optional[bool] = None,
+        only_clean_content: Optional[bool] = None,
         timeout: Optional[int] = None,
         wait_for: Optional[int] = None,
         mobile: Optional[bool] = None,
@@ -1246,6 +1256,7 @@ class FirecrawlClient:
             include_tags: HTML tags to include
             exclude_tags: HTML tags to exclude
             only_main_content: Restrict scraping to main content
+            only_clean_content: LLM-clean the markdown
             timeout: Per-request timeout in milliseconds
             wait_for: Wait condition in milliseconds
             mobile: Emulate mobile viewport
@@ -1281,6 +1292,7 @@ class FirecrawlClient:
                 include_tags=include_tags,
                 exclude_tags=exclude_tags,
                 only_main_content=only_main_content,
+                only_clean_content=only_clean_content,
                 timeout=timeout,
                 wait_for=wait_for,
                 mobile=mobile,
@@ -1298,7 +1310,7 @@ class FirecrawlClient:
                 lockdown=lockdown,
                 threat_protection=threat_protection,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, only_clean_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection]) else None
 
         return batch_module.start_batch_scrape(
             self.http_client,
@@ -1725,6 +1737,7 @@ class FirecrawlClient:
         include_tags: Optional[List[str]] = None,
         exclude_tags: Optional[List[str]] = None,
         only_main_content: Optional[bool] = None,
+        only_clean_content: Optional[bool] = None,
         timeout: Optional[int] = None,
         wait_for: Optional[int] = None,
         mobile: Optional[bool] = None,
@@ -1762,6 +1775,7 @@ class FirecrawlClient:
                 include_tags=include_tags,
                 exclude_tags=exclude_tags,
                 only_main_content=only_main_content,
+                only_clean_content=only_clean_content,
                 timeout=timeout,
                 wait_for=wait_for,
                 mobile=mobile,
@@ -1779,7 +1793,7 @@ class FirecrawlClient:
                 lockdown=lockdown,
                 threat_protection=threat_protection,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, only_clean_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection]) else None
 
         return batch_module.batch_scrape(
             self.http_client,

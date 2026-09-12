@@ -140,6 +140,7 @@ export interface CrawlScrapeOptions {
   maxAge?: number;
   parsePDF?: boolean;
   auditMetadata?: AuditMetadata;
+  onlyCleanContent?: boolean;
 }
 
 export type Action = {

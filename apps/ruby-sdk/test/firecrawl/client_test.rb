@@ -182,6 +182,11 @@ class ClientTest < Minitest::Test
     assert_equal "<h1>Test</h1>", doc.html
   end
 
+  def test_scrape_options_serializes_only_clean_content
+    opts = Firecrawl::Models::ScrapeOptions.new(only_clean_content: true)
+    assert_equal true, opts.to_h["onlyCleanContent"]
+  end
+
   def test_scrape_raises_on_nil_url
     assert_raises(ArgumentError) { @client.scrape(nil) }
   end
