@@ -91,6 +91,7 @@ class AsyncFirecrawlClient:
         timeout: Optional[float] = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
+        origin: Optional[str] = None,
     ):
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
@@ -102,6 +103,7 @@ class AsyncFirecrawlClient:
             timeout=timeout,
             max_retries=max_retries,
             backoff_factor=backoff_factor,
+            origin=origin,
         )
         self.async_http_client = AsyncHttpClient(
             api_key,
@@ -109,6 +111,7 @@ class AsyncFirecrawlClient:
             timeout=timeout,
             max_retries=max_retries,
             backoff_factor=backoff_factor,
+            origin=origin,
         )
 
     # Scrape
