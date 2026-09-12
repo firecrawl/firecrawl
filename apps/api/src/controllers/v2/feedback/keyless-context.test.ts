@@ -84,15 +84,16 @@ describe("keyless feedback invitation issuance", () => {
     expect(mocks.set).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps job references but does not invite opted-out clients", async () => {
+  it("does not let caller headers suppress keyless invitations", async () => {
     const response = new EventEmitter();
-    expect(await prepare(response, { "x-firecrawl-no-feedback": "1" })).toEqual(
-      { jobId: "job" },
-    );
+    const metadata = await prepare(response, {
+      "x-firecrawl-no-feedback": "1",
+    });
+    expect(metadata.jobId).toBe("job");
+    expect(metadata.feedback).toBeDefined();
     response.emit("finish");
-    expect(mocks.eval).not.toHaveBeenCalled();
-    expect(mocks.today).not.toHaveBeenCalled();
-    expect(mocks.info).not.toHaveBeenCalled();
+    expect(mocks.eval).toHaveBeenCalledTimes(1);
+    expect(mocks.info).toHaveBeenCalledTimes(1);
   });
 
   it("does not record an invitation after an eligibility check outlives the response budget", async () => {
