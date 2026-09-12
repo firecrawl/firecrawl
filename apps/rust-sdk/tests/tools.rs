@@ -11,7 +11,7 @@ async fn unified_contracts_and_execution_identity() {
     let search = server
         .mock("POST", "/v2/search")
         .match_body(Matcher::PartialJson(
-            json!({"query":"tools","sources":["alexandria"],"skills":true}),
+            json!({"query":"tools","sources":["alexandria"],"domainTools":true}),
         ))
         .with_header("content-type", "application/json")
         .with_body(json!({"success":true,"data":{"tools":[tool.clone()]}}).to_string())
@@ -23,7 +23,7 @@ async fn unified_contracts_and_execution_identity() {
             "tools",
             SearchOptions {
                 sources: Some(vec![SearchSource::Alexandria]),
-                skills: Some(true),
+                domain_tools: Some(true),
                 ..Default::default()
             },
         )

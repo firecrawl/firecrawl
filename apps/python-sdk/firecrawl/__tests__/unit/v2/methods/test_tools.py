@@ -27,7 +27,7 @@ async def test_search_and_progressive_lookup(async_client, monkeypatch):
     if async_client:
         async def post(url, **kwargs): return httpx.Response(200,json=payload(kwargs['json']))
         monkeypatch.setattr(client._v2_client.async_http_client._client,'post',post)
-        search=await client.search('podcasts',sources=['alexandria'],skills=True)
+        search=await client.search('podcasts',sources=['alexandria'],domain_tools=True)
         found=await client.find_tools(providers=['particle'],limit=2)
         result=await client.scrape(exchange=found.items[0]['next'],request_id='walk-1')
         with pytest.raises(ValueError, match='URL cannot be empty'):
@@ -35,14 +35,14 @@ async def test_search_and_progressive_lookup(async_client, monkeypatch):
         await client._v2_client.async_http_client.close()
     else:
         monkeypatch.setattr('requests.post',lambda url,**kwargs:response(200,payload(kwargs['json'])))
-        search=client.search('podcasts',sources=['alexandria'],skills=True)
+        search=client.search('podcasts',sources=['alexandria'],domain_tools=True)
         found=client.find_tools(providers=['particle'],limit=2)
         result=client.scrape(exchange=found.items[0]['next'],request_id='walk-1')
         with pytest.raises(ValueError, match='URL cannot be empty'):
             client.scrape()
     assert search.tools[0].matched_by==['semantic','domain']
     assert search.tools[0].options==TOOL['options']
-    assert calls[0]['skills'] is True
+    assert calls[0]['domainTools'] is True
     assert calls[-1]['exchange']==[NEXT]
     assert 'request_id' not in calls[-1]
     assert result.request_id=='walk-1'

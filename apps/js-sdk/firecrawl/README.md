@@ -390,13 +390,13 @@ Please note that while this SDK is MIT licensed, it is part of a larger project 
 ### Alexandria
 
 With a matching API deployment, Search returns complete tool contracts in `tools`.
-`skills: true` adds domain matches to that same array. Find Tools walks the catalogue
+`domainTools: true` adds domain matches to that same array. Find Tools walks the catalogue
 without executing the tools it returns.
 
 ```ts
 const results = await firecrawl.search("podcast conversations about AI agents", {
   sources: ["web", "alexandria"],
-  skills: true,
+  domainTools: true,
   limit: 2,
 });
 console.log(results.tools?.[0].options);

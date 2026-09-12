@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::client::Client;
 use crate::scrape::ScrapeOptions;
 use crate::types::{
-    DiscoveredTool, Document, ExchangeSearchResult, SearchCategory, SearchResultImage,
-    SearchResultNews, SearchResultWeb, SearchSource,
+    DiscoveredTool, Document, SearchCategory, SearchResultImage, SearchResultNews, SearchResultWeb,
+    SearchSource,
 };
 use crate::FirecrawlError;
 
@@ -20,7 +20,9 @@ pub struct SearchOptions {
 
     /// Search sources to query (web, news, images, alexandria).
     pub sources: Option<Vec<SearchSource>>,
-    pub skills: Option<bool>,
+
+    /// Enable Alexandria domain-tool discovery (send alongside `sources: ["alexandria"]`).
+    pub domain_tools: Option<bool>,
 
     /// Categories to filter results (github, research, pdf).
     pub categories: Option<Vec<SearchCategory>>,
@@ -80,8 +82,6 @@ pub struct SearchData {
     /// Image search results.
     pub images: Option<Vec<SearchResultImage>>,
     pub tools: Option<Vec<DiscoveredTool>>,
-    #[serde(rename = "exchange-providers")]
-    pub exchange_providers: Option<Vec<ExchangeSearchResult>>,
 }
 
 /// A search result that may be a simple result or a full document.

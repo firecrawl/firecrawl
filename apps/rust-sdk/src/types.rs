@@ -696,6 +696,8 @@ pub struct Document {
     pub pages: Option<Vec<PdfPage>>,
     /// Typed PDF layout blocks, present only when `parsers[].blocks` is true.
     pub blocks: Option<Vec<PdfPageBlocks>>,
+    /// Alexandria domain tools discovered and matched for this document.
+    pub tools: Option<Vec<DiscoveredTool>>,
 }
 
 /// Physical markdown for a single PDF page.
@@ -1034,19 +1036,6 @@ pub enum SearchSource {
     News,
     Images,
     Alexandria,
-    #[serde(rename = "exchange-providers")]
-    ExchangeProviders,
-}
-
-#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ExchangeSearchResult {
-    pub provider: String,
-    pub capability: String,
-    pub concept: String,
-    pub cohorts: Vec<String>,
-    pub credits_cost: u32,
-    pub similarity: f64,
 }
 
 /// Search category types.

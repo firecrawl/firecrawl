@@ -28,6 +28,9 @@ type Document struct {
 	Pages []PdfPage `json:"pages,omitempty"`
 	// Blocks is typed PDF layout data, present only when parsers[].blocks is true.
 	Blocks []PdfPageBlocks `json:"blocks,omitempty"`
+	// Tools contains domain tools discovered during the scrape, present only
+	// when domainTools is enabled.
+	Tools []DiscoveredTool `json:"tools,omitempty"`
 }
 
 // PDFParser configures PDF parsing. Use in ScrapeOptions.Parsers / ParseOptions.Parsers.
@@ -604,21 +607,11 @@ type GetMonitorCheckOptions struct {
 
 // SearchData represents the result of a search request.
 type SearchData struct {
-	Warning           string                   `json:"warning,omitempty"`
-	Web               []map[string]interface{} `json:"web,omitempty"`
-	News              []map[string]interface{} `json:"news,omitempty"`
-	Images            []map[string]interface{} `json:"images,omitempty"`
-	Tools             []DiscoveredTool         `json:"tools,omitempty"`
-	ExchangeProviders []ExchangeSearchResult   `json:"exchange-providers,omitempty"`
-}
-
-type ExchangeSearchResult struct {
-	Provider    string   `json:"provider"`
-	Capability  string   `json:"capability"`
-	Concept     string   `json:"concept"`
-	Cohorts     []string `json:"cohorts"`
-	CreditsCost int      `json:"creditsCost"`
-	Similarity  float64  `json:"similarity"`
+	Warning string                   `json:"warning,omitempty"`
+	Web     []map[string]interface{} `json:"web,omitempty"`
+	News    []map[string]interface{} `json:"news,omitempty"`
+	Images  []map[string]interface{} `json:"images,omitempty"`
+	Tools   []DiscoveredTool         `json:"tools,omitempty"`
 }
 
 type ExchangeCall struct {
@@ -635,9 +628,10 @@ type ExchangeOptions struct {
 }
 
 type ExchangeScrapeError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Status  *int   `json:"status,omitempty"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Status   *int   `json:"status,omitempty"`
+	ChargeID string `json:"chargeId,omitempty"`
 }
 
 type ExchangeScrapeResult struct {

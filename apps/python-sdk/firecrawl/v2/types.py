@@ -518,6 +518,7 @@ class Document(BaseModel):
     menu: Optional[MenuProfile] = None
     pages: Optional[List[PdfPage]] = None
     blocks: Optional[List[PdfPageBlocks]] = None
+    tools: Optional[List["DiscoveredTool"]] = None
 
     @property
     def metadata_typed(self) -> DocumentMetadata:
@@ -921,6 +922,9 @@ class ScrapeOptions(BaseModel):
     )
     profile: Optional[Dict[str, Any]] = None
     integration: Optional[str] = None
+    # Enables Alexandria domain-tool discovery/execution for this scrape.
+    # Omitted from the serialized request entirely when unset or False.
+    domain_tools: Optional[bool] = Field(default=None, alias="domainTools")
 
     model_config = {"populate_by_name": True}
 
@@ -1094,6 +1098,7 @@ class ExchangeError(BaseModel):
     code: str
     message: str
     status: Optional[int] = None
+    charge_id: Optional[str] = Field(default=None, alias="chargeId")
 
 
 class ExchangeScrapeResult(BaseModel):
@@ -2244,7 +2249,7 @@ class SearchRequest(BaseModel):
     """Request for search operations."""
 
     query: str
-    skills: Optional[bool] = None
+    domain_tools: Optional[bool] = Field(default=None, alias="domainTools")
     sources: Optional[List[SourceOption]] = None
     categories: Optional[List[CategoryOption]] = None
     include_domains: Optional[List[str]] = None
@@ -2262,6 +2267,8 @@ class SearchRequest(BaseModel):
     enterprise: Optional[List[str]] = None
     threat_protection: Optional[ThreatProtectionOptions] = None
     integration: Optional[str] = None
+
+    model_config = {"populate_by_name": True}
 
     @field_validator("sources")
     @classmethod
@@ -2335,7 +2342,6 @@ class SearchData(BaseModel):
     news: Optional[List[Union[SearchResultNews, Document]]] = None
     images: Optional[List[Union[SearchResultImages, Document]]] = None
     tools: Optional[List[DiscoveredTool]] = None
-    exchange_providers: Optional[List[ExchangeSearchResult]] = Field(default=None, alias="exchange-providers")
 
     @property
     def data(self):

@@ -43,7 +43,7 @@ func TestToolDiscoveryAndExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	enabled := true
-	search, err := client.Search(context.Background(), "tools", &SearchOptions{Sources: []interface{}{"alexandria"}, Skills: &enabled})
+	search, err := client.Search(context.Background(), "tools", &SearchOptions{Sources: []interface{}{"alexandria"}, DomainTools: &enabled})
 	if err != nil {
 		t.Fatal(err)
 	}

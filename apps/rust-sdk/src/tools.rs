@@ -57,6 +57,7 @@ impl Client {
                     success: false,
                     error: error.message,
                     code: Some(error.code),
+                    charge_id: error.charge_id,
                     details: None,
                 },
             )));

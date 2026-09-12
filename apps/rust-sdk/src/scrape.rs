@@ -103,6 +103,9 @@ pub struct ScrapeOptions {
 
     /// Attribute selectors for extraction.
     pub attribute_selectors: Option<Vec<AttributeSelector>>,
+
+    /// Enable Alexandria domain-tool discovery for this scrape.
+    pub domain_tools: Option<bool>,
 }
 
 /// Parser configuration for document parsing.
@@ -183,6 +186,9 @@ pub struct ExchangeScrapeError {
     pub code: String,
     pub message: String,
     pub status: Option<u16>,
+    /// Charge identifier, present when credits were captured before the failure.
+    #[serde(default)]
+    pub charge_id: Option<String>,
 }
 
 #[serde_with::skip_serializing_none]
@@ -686,6 +692,17 @@ mod tests {
                 "query": "What is Firecrawl?"
             })
         );
+    }
+
+    #[test]
+    fn test_scrape_options_serializes_domain_tools() {
+        let options = ScrapeOptions {
+            domain_tools: Some(true),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(payload["domainTools"], json!(true));
     }
 
     #[test]

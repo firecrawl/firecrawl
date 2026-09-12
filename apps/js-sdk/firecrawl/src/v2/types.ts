@@ -275,6 +275,8 @@ export interface ScrapeOptions {
   };
   integration?: string;
   origin?: string;
+  /** Include domain-matched Alexandria contracts for this URL in `tools`. Default off. */
+  domainTools?: boolean;
 }
 
 export type RedactPIIEntity =
@@ -685,6 +687,8 @@ export interface Document {
   pages?: PdfPage[];
   /** Typed PDF layout blocks, present only when `parsers[].blocks` is true. */
   blocks?: PdfPageBlocks[];
+  /** Present when `domainTools` discovered contracts matching this URL. */
+  tools?: DiscoveredTool[];
 }
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
@@ -796,22 +800,12 @@ export interface SearchResultImages {
   position?: number;
 }
 
-export interface ExchangeSearchResult {
-  provider: string;
-  capability: string;
-  concept: string;
-  cohorts: string[];
-  creditsCost: number;
-  similarity: number;
-}
-
 export interface SearchData {
   warning?: string;
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
   tools?: DiscoveredTool[];
-  "exchange-providers"?: ExchangeSearchResult[];
 }
 
 /** A complete tool contract returned by semantic or contextual discovery. */
@@ -888,6 +882,8 @@ export interface ExchangeScrapeError {
   code: string;
   message: string;
   status?: number;
+  /** Present when credits were captured before the failure. */
+  chargeId?: string;
 }
 
 export type ExchangeScrapeResult =
@@ -953,10 +949,10 @@ export interface CategoryOption {
 export interface SearchRequest {
   query: string;
   /** Include domain-matched contracts in tools alongside semantic matches. */
-  skills?: boolean;
+  domainTools?: boolean;
   sources?: Array<
-    "web" | "news" | "images" | "alexandria" | "exchange-providers"
-    | { type: "web" | "news" | "images" | "alexandria" | "exchange-providers" }
+    "web" | "news" | "images" | "alexandria"
+    | { type: "web" | "news" | "images" | "alexandria" }
   >;
   /**
    * Narrow web search by category. See {@link CategoryOption}.
@@ -1838,12 +1834,15 @@ export class SdkError extends Error {
   code?: string;
   details?: unknown;
   jobId?: string;
+  /** Present on exchange-mediated scrape failures that already captured credits. */
+  chargeId?: string;
   constructor(
     message: string,
     status?: number,
     code?: string,
     details?: unknown,
     jobId?: string,
+    chargeId?: string,
   ) {
     super(message);
     this.name = "FirecrawlSdkError";
@@ -1851,6 +1850,7 @@ export class SdkError extends Error {
     this.code = code;
     this.details = details;
     this.jobId = jobId;
+    this.chargeId = chargeId;
   }
 }
 

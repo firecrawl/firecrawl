@@ -405,12 +405,12 @@ map_v1 = firecrawl.v1.map_url('https://firecrawl.dev')
 ### Alexandria
 
 With a matching API deployment, `search()` returns complete contracts in `tools`.
-`skills=True` adds domain matches to that same list. Find Tools provides free,
+`domain_tools=True` adds domain matches to that same list. Find Tools provides free,
 progressive catalogue lookup; Search always requires a query.
 
 ```python
 result = firecrawl.search("podcast conversations about AI agents",
-                         sources=["web", "alexandria"], skills=True, limit=2)
+                         sources=["web", "alexandria"], domain_tools=True, limit=2)
 print(result.tools[0].options)
 
 catalogue = firecrawl.find_tools(providers=["particle"], limit=2)

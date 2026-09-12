@@ -14,6 +14,10 @@ pub struct FirecrawlAPIError {
 
     pub code: Option<String>,
 
+    /// Charge identifier for an exchange execution attempt, when one was created.
+    #[serde(rename = "chargeId")]
+    pub charge_id: Option<String>,
+
     /// Additional details of this error. Schema depends on the error itself.
     pub details: Option<Value>,
 }

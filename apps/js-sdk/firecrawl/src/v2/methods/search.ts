@@ -27,7 +27,7 @@ function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     query: req.query,
   };
-  if (req.skills != null) payload.skills = req.skills;
+  if (req.domainTools != null) payload.domainTools = req.domainTools;
   if (req.sources) payload.sources = req.sources;
   if (req.categories) payload.categories = req.categories;
   if (req.includeDomains) payload.includeDomains = req.includeDomains;
@@ -107,7 +107,6 @@ export async function search(
     if (data.images)
       out.images = transformArray<SearchResultImages>(data.images);
     if (data.tools) out.tools = data.tools;
-    if (data["exchange-providers"]) out["exchange-providers"] = data["exchange-providers"];
     Object.defineProperty(out, "data", {
       get() {
         const parts: string[] = [];

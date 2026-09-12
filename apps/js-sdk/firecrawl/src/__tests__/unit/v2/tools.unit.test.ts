@@ -110,13 +110,13 @@ describe("Alexandria contracts and execution", () => {
   test("returns complete unified tools and warning beside web results", async () => {
     const result = await client.search("podcasts", {
       sources: ["web", { type: "alexandria" }],
-      skills: true,
+      domainTools: true,
       limit: 2,
     });
     expect(result.tools).toEqual([tool]);
     expect(result.warning).toBe("Example warning");
     expect(sent.at(-1)?.body).toMatchObject({
-      skills: true,
+      domainTools: true,
       sources: ["web", { type: "alexandria" }],
     });
     expect(result).not.toHaveProperty("alexandria");
