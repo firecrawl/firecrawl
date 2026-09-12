@@ -171,7 +171,7 @@ describe("keyless feedback invitation issuance", () => {
   });
 
   it.each(["search", "scrape", "parse"] as const)(
-    "bounds %s context and preserves job references and Search positions",
+    "bounds %s context and preserves job references, Search positions, and category tags",
     async endpoint => {
       const document = {
         markdown: "Observed output ".repeat(100000),
@@ -185,6 +185,7 @@ describe("keyless feedback invitation issuance", () => {
               web: Array.from({ length: 100 }, () => ({
                 url: "https://example.com/",
                 description: document.markdown,
+                category: "developer",
               })),
             }
           : document;
@@ -219,7 +220,10 @@ describe("keyless feedback invitation issuance", () => {
       expect(context.result.truncated).toBe(true);
       if (endpoint === "search") {
         expect(context.result.web).toHaveLength(100);
-        expect(context.result.web[99].position).toBe(100);
+        expect(context.result.web[99]).toMatchObject({
+          position: 100,
+          category: "developer",
+        });
       } else {
         expect(context.result.markdown.length).toBeLessThanOrEqual(16000);
       }

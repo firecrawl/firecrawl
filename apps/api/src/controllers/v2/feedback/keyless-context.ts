@@ -54,11 +54,14 @@ function resultContext(
           .slice(0, 100)
           .map((item: any, index: number) => ({
             position: index + 1,
+            category:
+              typeof item.category === "string"
+                ? item.category.slice(0, 100)
+                : undefined,
             ...snapshot.copy({
               url: item.url,
               title: item.title,
               description: item.description,
-              category: item.category,
               snippet: item.snippet,
               imageUrl: item.imageUrl,
             }),
