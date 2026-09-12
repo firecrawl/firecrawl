@@ -666,6 +666,13 @@ export const searches = pgTable("searches", {
   is_successful: boolean("is_successful").notNull(),
   error: text("error"),
   num_results: integer("num_results").notNull(),
+  /**
+   * Per-source result counts, e.g. `{"web":3,"images":0,"news":10}`. Nullable:
+   * rows written before the column existed have no value, and readers must
+   * fall back rather than assume zero.
+   */
+  num_results_by_source: jsonb("num_results_by_source"),
+  result_categories: jsonb("result_categories"),
 });
 
 export const subscriptions = pgTable("subscriptions", {

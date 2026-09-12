@@ -169,6 +169,73 @@ export interface SearchV2Response {
   news?: NewsSearchResult[];
 }
 
+/**
+ * Length of each `SearchV2Response` group as returned to the client. Every
+ * group is present and non-negative — a source that was not requested, or that
+ * returned nothing, counts 0. Persisted per search so position-based feedback
+ * can be bounded exactly per source rather than against a combined total.
+ */
+export type SearchResultCountsBySource = Record<SearchResultType, number>;
+
+export function countSearchResultsBySource(
+  response: SearchV2Response,
+): SearchResultCountsBySource {
+  return {
+    web: response.web?.length ?? 0,
+    images: response.images?.length ?? 0,
+    news: response.news?.length ?? 0,
+  };
+}
+
+/**
+ * Which vertical produced each result, keyed by group and then by the result's
+ * 1-indexed position in that group: `{"web":{"1":"developer","3":"github"}}`.
+ *
+ * Sparse on purpose. Results carry a `category` only when one applies — the
+ * developer index stamps `developer` on every hit it serves (see
+ * `search/developer.ts`), and `github` / `research` / `pdf` are derived per URL
+ * in `search/execute.ts` — so untagged results are simply absent, as are groups
+ * with no tagged results at all. An empty object therefore means "nothing was
+ * tagged", which is a different claim from a NULL column ("this row predates
+ * the column").
+ *
+ * This is the only place the serving vertical survives the response. `source`
+ * says which `data` group a result sits in, which is addressing; `category`
+ * says who answered, which is attribution. They are the same value today only
+ * because the developer category is schema-enforced as exclusive and lands in
+ * `data.web`; blend a vertical into ordinary web results and the two come
+ * apart. Persisted per search so position-based feedback can resolve the
+ * vertical behind a `(source, position)` pair it is handed later.
+ */
+export type SearchResultCategoriesBySource = Partial<
+  Record<SearchResultType, Record<string, string>>
+>;
+
+export function collectSearchResultCategories(
+  response: SearchV2Response,
+): SearchResultCategoriesBySource {
+  const collected: SearchResultCategoriesBySource = {};
+
+  for (const source of ["web", "images", "news"] as const) {
+    const results = response[source];
+    if (!results?.length) continue;
+
+    const categories: Record<string, string> = {};
+    results.forEach((result, index) => {
+      const category = (result as { category?: unknown }).category;
+      if (typeof category === "string" && category.length > 0) {
+        categories[String(index + 1)] = category;
+      }
+    });
+
+    if (Object.keys(categories).length > 0) {
+      collected[source] = categories;
+    }
+  }
+
+  return collected;
+}
+
 export interface ScrapeActionContent {
   url: string;
   html: string;

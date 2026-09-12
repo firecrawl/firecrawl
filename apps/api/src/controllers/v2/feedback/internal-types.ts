@@ -1,4 +1,5 @@
 import { logger as _logger } from "../../../lib/logger";
+import type { SearchResultType } from "../../../lib/entities";
 import {
   EndpointFeedbackEndpoint,
   EndpointFeedbackErrorCode,
@@ -8,12 +9,20 @@ import {
 
 export type FeedbackRating = "good" | "partial" | "bad";
 
+/** A valuable result addressed by its group and 1-indexed position in it. */
+export type ValuableResultInput = {
+  source: SearchResultType;
+  position: number;
+  reason?: string;
+};
+
 export type FeedbackInput = {
   rating: FeedbackRating;
   issues?: string[];
   tags?: string[];
   note?: string;
   valuableSources?: Array<{ url: string; reason?: string }>;
+  valuableResults?: ValuableResultInput[];
   missingContent?: Array<{ topic: string; description?: string }>;
   querySuggestions?: string;
   url?: string;
@@ -32,6 +41,20 @@ export type FeedbackJobRow = {
   created_at: string;
   is_successful: boolean | null;
   options: unknown;
+  /** Total results returned by the job (search only; combined across web/news/images). */
+  num_results?: number | null;
+  /**
+   * Per-source result counts (search only), e.g. `{"web":3,"images":0}`. Null on
+   * rows written before the column existed, and on searches logged by v0/v1.
+   */
+  num_results_by_source?: unknown;
+  /**
+   * Which vertical served each position (search only), e.g.
+   * `{"web":{"1":"developer"}}`. Sparse: untagged results and untagged groups
+   * are absent. Null on rows written before the column existed, on searches
+   * logged by v0/v1, and on zero-data-retention searches.
+   */
+  result_categories?: unknown;
 };
 
 export type FeedbackRecordOptions = {
