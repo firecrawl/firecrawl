@@ -111,8 +111,11 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+      # Only the pg backend uses nuq-postgres, so an unhealthy Postgres must not
+      # block startup when NUQ_BACKEND=fdb.
       nuq-postgres:
         condition: service_healthy
+        required: false
     ports:
       - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
     volumes:
