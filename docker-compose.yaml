@@ -1,6 +1,7 @@
 name: firecrawl
 
 x-common-service: &common-service
+  restart: unless-stopped
   # NOTE: If you don't want to build the service locally,
   # comment out the build: statement and uncomment the image: statement
   # image: ghcr.io/firecrawl/firecrawl
@@ -61,6 +62,7 @@ x-common-env: &common-env
 
 services:
   playwright-service:
+    restart: unless-stopped
     # NOTE: If you don't want to build the service locally,
     # comment out the build: statement and uncomment the image: statement
     # image: ghcr.io/firecrawl/playwright-service:latest
@@ -123,6 +125,7 @@ services:
     memswap_limit: 8G
 
   redis:
+    restart: unless-stopped
     # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
     # uncomment the Valkey statement and comment out the Redis statement.
     # Using Valkey with Firecrawl is untested and not guaranteed to work. Use with caution.
@@ -140,6 +143,7 @@ services:
         compress: "true"
 
   rabbitmq:
+    restart: unless-stopped
     image: rabbitmq:3-management
     networks:
       - backend
@@ -158,6 +162,7 @@ services:
         compress: "true"
 
   nuq-postgres:
+    restart: unless-stopped
     # NOTE: If you don't want to build the image locally,
     # comment out the build: statement and uncomment the image: statement
     # image: ghcr.io/firecrawl/nuq-postgres:latest
@@ -179,6 +184,7 @@ services:
   # NUQ_BACKEND=fdb; the api container reads the shared cluster file from the
   # fdb-cluster-file volume. Replaces nuq-postgres once stable.
   foundationdb:
+    restart: unless-stopped
     image: foundationdb/foundationdb:7.3.63
     environment:
       FDB_NETWORKING_MODE: container
