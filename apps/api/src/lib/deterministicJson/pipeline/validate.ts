@@ -144,7 +144,7 @@ function validateTopLevelShape(
 }
 
 // Crude check for forbidden runtime references. The generated code runs inside
-// jsdom's VM context (see sandbox/harness.ts), which has no access to certain
+// the extractor runtime (see sandbox/harness.ts), which has no access to certain
 // globals like fetch or XMLHttpRequest.
 const FORBIDDEN_GLOBALS = new Set(["fetch", "XMLHttpRequest"]);
 
