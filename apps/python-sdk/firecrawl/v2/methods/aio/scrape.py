@@ -64,6 +64,8 @@ async def interact(
     language: Literal["python", "node", "bash"] = "node",
     timeout: Optional[int] = None,
     origin: Optional[str] = None,
+    ttl: Optional[int] = None,
+    activity_ttl: Optional[int] = None,
 ) -> BrowserExecuteResponse:
     if not job_id or not job_id.strip():
         raise ValueError("Job ID cannot be empty")
@@ -83,6 +85,10 @@ async def interact(
         payload["timeout"] = timeout
     if origin is not None:
         payload["origin"] = origin
+    if ttl is not None:
+        payload["ttl"] = ttl
+    if activity_ttl is not None:
+        payload["activityTtl"] = activity_ttl
 
     response = await client.post(f"/v2/scrape/{job_id}/interact", payload)
     if response.status_code >= 400:
@@ -93,6 +99,8 @@ async def interact(
         raise Exception(body.get("error", "Unknown error occurred"))
 
     normalized = dict(body)
+    if "sessionId" in normalized and "session_id" not in normalized:
+        normalized["session_id"] = normalized["sessionId"]
     if "exitCode" in normalized and "exit_code" not in normalized:
         normalized["exit_code"] = normalized["exitCode"]
     if "cdpUrl" in normalized and "cdp_url" not in normalized:
@@ -142,6 +150,8 @@ async def scrape_execute(
     language: Literal["python", "node", "bash"] = "node",
     timeout: Optional[int] = None,
     origin: Optional[str] = None,
+    ttl: Optional[int] = None,
+    activity_ttl: Optional[int] = None,
 ) -> BrowserExecuteResponse:
     """Deprecated alias for interact()."""
     return await interact(
@@ -152,6 +162,8 @@ async def scrape_execute(
         language=language,
         timeout=timeout,
         origin=origin,
+        ttl=ttl,
+        activity_ttl=activity_ttl,
     )
 
 

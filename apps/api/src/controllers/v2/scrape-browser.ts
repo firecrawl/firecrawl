@@ -92,6 +92,8 @@ const browserExecuteRequestSchema = z
     origin: z.string().optional(),
     integration: integrationSchema.optional().transform(val => val || null),
     existingSessionId: z.string().optional(),
+    ttl: z.number().min(30).max(3600).optional(),
+    activityTtl: z.number().min(10).max(3600).optional(),
   })
   .refine(data => data.code || data.prompt, {
     message: "Either 'code' or 'prompt' must be provided.",
@@ -549,9 +551,10 @@ async function createSessionForScrape(
   | { status: number; body: { success: false; error: string }; error: true }
 > {
   const sessionId = uuidv7();
-  const { ttl, activityTtl, streamWebView } = browserCreateRequestSchema.parse(
-    {},
-  );
+  const { ttl, activityTtl, streamWebView } = browserCreateRequestSchema.parse({
+    ttl: req.body?.ttl,
+    activityTtl: req.body?.activityTtl,
+  });
   const integration = req.body?.integration ?? null;
 
   if (!config.BROWSER_SERVICE_URL) {
