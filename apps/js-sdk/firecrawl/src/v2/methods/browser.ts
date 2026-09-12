@@ -16,6 +16,7 @@ export async function browser(
     ttl?: number;
     activityTtl?: number;
     streamWebView?: boolean;
+    recordSession?: boolean;
     profile?: {
       name: string;
       saveChanges?: boolean;
@@ -28,6 +29,7 @@ export async function browser(
   if (args.ttl != null) body.ttl = args.ttl;
   if (args.activityTtl != null) body.activityTtl = args.activityTtl;
   if (args.streamWebView != null) body.streamWebView = args.streamWebView;
+  if (args.recordSession != null) body.recordSession = args.recordSession;
   if (args.profile != null) body.profile = args.profile;
   if (args.integration != null) body.integration = args.integration;
   if (args.origin) body.origin = args.origin;
