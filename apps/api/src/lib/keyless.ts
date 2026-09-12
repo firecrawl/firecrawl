@@ -43,7 +43,11 @@ const DAY_SECONDS = 86400;
 // logging. Rotation intentionally creates a new cohort namespace.
 export const KEYLESS_CONVERSION_COHORT_VERSION = "v1";
 
-function normalizeKeylessIpv4(ip: string): string {
+// Canonicalizes an IPv4-mapped IPv6 address (`::ffff:1.2.3.4`, what Node's
+// dual-stack sockets report) to plain IPv4. Every per-IP artifact (quota
+// buckets, team ids, Spur cache) must key off this form, or the same client
+// counts as two identities.
+export function normalizeKeylessIpv4(ip: string): string {
   const trimmed = ip.trim();
   const lower = trimmed.toLowerCase();
   return lower.startsWith("::ffff:") && isIPv4(trimmed.slice(7))
@@ -329,6 +333,8 @@ export async function checkKeylessEligibility(ip: string): Promise<{
   if (!ip || !isKeylessIpEligible(ip)) {
     return { eligible: false, reason: "ineligible_ip" };
   }
+  // Key the Spur cache and quota buckets below off the canonical IPv4 form.
+  ip = normalizeKeylessIpv4(ip);
   // Optional Spur Context check (only when SPUR_API_KEY is set): treat IPs on
   // anonymizing/rotating infrastructure as ineligible so the hosted MCP can
   // return a bounded recovery result instead of serving a request auth rejects.
@@ -368,24 +374,60 @@ export async function checkKeylessEligibility(ip: string): Promise<{
 }
 
 /**
- * Append a row to `keyless_credit_usage` recording the actual credits a completed
- * keyless request consumed (per-IP keyless team UUID + raw IP), for abuse
- * monitoring. No-op for non-keyless teams, non-positive credits, or when DB auth
- * is off. Best-effort — never throws.
+ * Record a completed keyless request — the only place a keyless caller's IP is
+ * persisted (`requests.team_id` collapses all keyless traffic onto one preview
+ * team).
+ *
+ * Billable requests append a row to `keyless_credit_usage` exactly as before.
+ *
+ * Zero-credit operations are recorded too, but as a canonical log line rather
+ * than a DB row: the free Research Index paper endpoints bill nothing, so
+ * skipping them meant their client IP was never written anywhere and abuse on
+ * them was invisible (during the corpus-harvest incident only 3.0% of the
+ * traffic had a resolvable IP). Zero-credit volume is orders of magnitude
+ * higher than billable volume, so the durable row for it is deferred until the
+ * companion firecrawl-db migration lands; until then the log line carries the
+ * same fields.
+ *
+ * No-op for non-keyless teams. Best-effort — never throws.
  */
 export async function logKeylessCreditUsage(
   teamId: string,
   credits: number,
 ): Promise<void> {
   const ip = keylessIpFromTeamId(teamId);
-  if (!ip || !Number.isFinite(credits) || credits <= 0) return;
+  if (!ip || !Number.isFinite(credits)) return;
   const teamUuid = keylessTeamUuid(teamId);
-  if (config.USE_DB_AUTHENTICATION !== true || !teamUuid) return;
+  if (!teamUuid) return;
+
+  // The column records consumption, so a negative reconciliation delta must
+  // not land as a negative value.
+  const creditsUsed = Math.max(0, Math.ceil(credits));
+
+  // Both branches sit behind the same gate as every other keyless usage
+  // record: self-hosted deployments without DB auth track nothing.
+  if (config.USE_DB_AUTHENTICATION !== true) return;
+
+  if (creditsUsed <= 0) {
+    // TODO(firecrawl-db): switch to a `keyless_credit_usage` row once the
+    // zero-credit usage migration is merged. The IP is repeated in the
+    // message body because the console transport only serializes metadata
+    // for warn/error lines; the structured fields are the contract for
+    // Cloud Logging queries.
+    logger.info(`Keyless zero-credit usage ip=${ip} team=${teamUuid}`, {
+      canonicalLog: "keyless/usage",
+      ip,
+      teamId: teamUuid,
+      creditsUsed: 0,
+    });
+    return;
+  }
+
   try {
     await db.insert(schema.keyless_credit_usage).values({
       team_id: teamUuid,
       ip,
-      credits_used: Math.ceil(credits),
+      credits_used: creditsUsed,
     });
   } catch {
     // Logging is best-effort.
@@ -394,26 +436,31 @@ export async function logKeylessCreditUsage(
 
 /**
  * Add the actual credits a completed request consumed to the IP's daily credit
- * counter. No-op for non-keyless teams. Best-effort; never throws. Used by the
- * worker for the non-reserved path; the controllers reserve up front and call
- * `logKeylessCreditUsage` directly at reconciliation.
+ * counter, and record the request in `keyless_credit_usage`. The counter is only
+ * touched for positive credits, so a zero-credit operation becomes observable
+ * without drawing down any budget. No-op for non-keyless teams. Best-effort;
+ * never throws. Used by the worker for the non-reserved path; the controllers
+ * reserve up front and call `logKeylessCreditUsage` directly at reconciliation.
  */
 export async function chargeKeylessCredits(
   teamId: string,
   credits: number,
 ): Promise<void> {
   const ip = keylessIpFromTeamId(teamId);
-  if (!ip || !Number.isFinite(credits) || credits <= 0) return;
-  const inc = Math.ceil(credits);
-  try {
-    const key = creditsKey(ip);
-    const total = await redisRateLimitClient.incrby(key, inc);
-    if (total === inc) {
-      await redisRateLimitClient.expire(key, DAY_SECONDS);
+  if (!ip || !Number.isFinite(credits)) return;
+
+  if (credits > 0) {
+    const inc = Math.ceil(credits);
+    try {
+      const key = creditsKey(ip);
+      const total = await redisRateLimitClient.incrby(key, inc);
+      if (total === inc) {
+        await redisRateLimitClient.expire(key, DAY_SECONDS);
+      }
+    } catch {
+      // Counter is best-effort; a missed charge just means the IP gets a few
+      // extra free credits today.
     }
-  } catch {
-    // Counter is best-effort; a missed charge just means the IP gets a few
-    // extra free credits today.
   }
 
   // Log the usage to keyless_credit_usage for abuse monitoring. Best-effort.

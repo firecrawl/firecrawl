@@ -1,14 +1,17 @@
+import os from "os";
 import { config } from "../../../config";
-import { describeIf, TEST_PRODUCTION } from "../lib";
+import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
 import { creditUsage, idmux, researchRaw } from "./lib";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gt } from "drizzle-orm";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
+import { redisRateLimitClient } from "../../../services/rate-limiter";
 
 const HAS_RESEARCH = !!config.RESEARCH_PROXY_URL;
 const KEYLESS_ENABLED =
   process.env.KEYLESS_REQUESTS_PER_DAY !== undefined &&
   process.env.KEYLESS_CREDITS_PER_DAY !== undefined;
+const KEYLESS_PROXY_SECRET = process.env.KEYLESS_PROXY_SECRET;
 
 const KEYLESS_DISABLED_OPERATIONS = config.RESEARCH_KEYLESS_DISABLED;
 const KEYLESS_SEARCH_ENABLED =
@@ -17,6 +20,16 @@ const KEYLESS_INSPECT_DISABLED =
   KEYLESS_ENABLED && KEYLESS_DISABLED_OPERATIONS.includes("inspect");
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Unique-per-run forwarded IPs inside TEST-NET-3 (RFC 5737): the keyless
+// request/credit counters live for a day per IP, so a fixed constant would
+// inherit counts from earlier runs — enough leftover requests would trip the
+// daily limit and 429 a test that hard-requires 200. One octet of entropy
+// per run plus a distinct final octet per test keeps buckets disjoint
+// across runs and across the two zero-credit tests.
+const TEST_NET_RUN_OCTET = 1 + Math.floor(Math.random() * 250);
+const testNetIp = (finalOctet: number) =>
+  `203.0.113.${((TEST_NET_RUN_OCTET + finalOctet) % 254) + 1}`;
 const sleepForBilling = () => sleep(40000);
 
 async function waitForSingleRow<T>(
@@ -31,6 +44,131 @@ async function waitForSingleRow<T>(
     await sleep(intervalMs);
   }
   return null;
+}
+
+// Keyless requests are keyed on the client IP. When the trusted-proxy secret is
+// configured we forward a unique documentation-range (RFC 5737) IP so each test
+// owns an isolated per-IP bucket; otherwise we fall back to the IP the server
+// actually keyed on, identified deterministically by diffing the limiter
+// keyspace counters around the request rather than picking an arbitrary key.
+function keylessHeaders(forwardedIp: string): Record<string, string> {
+  return KEYLESS_PROXY_SECRET
+    ? {
+        "x-firecrawl-keyless-secret": KEYLESS_PROXY_SECRET,
+        "x-firecrawl-keyless-ip": forwardedIp,
+      }
+    : {};
+}
+
+// Without the trusted-proxy secret the server keys keyless requests on the
+// real client IP, which for these tests is the loopback or a local interface
+// address. Snapshotting only those candidate keys (plain MGET) avoids the
+// blocking KEYS scan on the shared rate-limit Redis, and stays deterministic
+// under concurrency: every parallel no-secret snip bumps the same client-IP
+// key, so the diff below still identifies exactly one bumped candidate.
+// The server normalizes ::ffff:-mapped IPs to plain IPv4 before keying
+// (lib/keyless.ts normalizeKeylessIpv4, applied in auth), but keys written by
+// older builds may still carry the raw spelling, so cover both per candidate.
+function candidateKeylessIps(): string[] {
+  const bare = new Set<string>(["127.0.0.1"]);
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const addr of addrs ?? []) {
+      if (addr.family === "IPv4") bare.add(addr.address);
+    }
+  }
+  const ips = new Set<string>();
+  for (const ip of bare) {
+    ips.add(ip);
+    ips.add(`::ffff:${ip}`);
+  }
+  return [...ips];
+}
+
+async function snapshotKeylessCounts(): Promise<Map<string, number>> {
+  const candidates = candidateKeylessIps();
+  const values = await redisRateLimitClient.mget(
+    candidates.map(ip => `keyless_requests:${ip}`),
+  );
+  const counts = new Map<string, number>();
+  candidates.forEach((ip, i) => counts.set(ip, Number(values[i] ?? "0")));
+  return counts;
+}
+
+// Issues the request via `issue` and resolves the keyless IP the server keyed
+// it on. With the proxy secret the forwarded IP is authoritative. Without it,
+// the counter diff can be transiently ambiguous: keyless.test.ts flushes the
+// whole keyless_* keyspace around its own tests, and a flush landing inside
+// our snapshot window resets the counters. Ambiguity retries the whole probe
+// (the requests under test are idempotent zero-credit GETs) instead of
+// asserting on a poisoned window.
+async function issueAndResolveKeylessIp<T extends { statusCode: number }>(
+  forwardedIp: string,
+  issue: () => Promise<T>,
+): Promise<{ res: T; ip: string }> {
+  if (KEYLESS_PROXY_SECRET) {
+    return { res: await issue(), ip: forwardedIp };
+  }
+  const attempts: string[] = [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const before = await snapshotKeylessCounts();
+    const res = await issue();
+    const after = await snapshotKeylessCounts();
+    const bumped = [...after.entries()]
+      .filter(([ip, count]) => count > (before.get(ip) ?? 0))
+      .map(([ip]) => ip);
+    if (bumped.length === 1) return { res, ip: bumped[0] };
+    attempts.push(
+      bumped.length === 0 ? "none" : `multiple[${bumped.join(", ")}]`,
+    );
+  }
+  // Distinguish the two failure modes: "none" means the request was never
+  // counted against any candidate key (not treated as keyless, or the server
+  // keyed on an IP outside the candidate set - check candidateKeylessIps
+  // covers how this environment connects); "multiple" means concurrent
+  // keyless traffic or a keyless_* flush landed inside the window every time.
+  throw new Error(
+    `keyless IP resolution failed across 3 probes (${attempts.join("; ")}); ` +
+      `candidates checked: ${candidateKeylessIps().join(", ")}`,
+  );
+}
+
+// Zero-credit keyless usage is recorded as a canonical log line for now (the
+// durable keyless_credit_usage row waits on the firecrawl-db migration), so
+// these tests assert no row is written and no credit budget moves. The
+// library-level log-line contract is pinned in lib/__tests__/keyless-usage-log.
+// Row assertions are isolated against rows accumulated by earlier runs (the
+// pre-log-only version of these tests wrote durable rows for these very IPs):
+// snapshot the max id up front and only count rows past it.
+async function maxKeylessUsageRowId(): Promise<number> {
+  const rows = await db
+    .select({ id: schema.keyless_credit_usage.id })
+    .from(schema.keyless_credit_usage)
+    .orderBy(desc(schema.keyless_credit_usage.id))
+    .limit(1);
+  return rows[0]?.id ?? 0;
+}
+
+async function keylessUsageRowsAfter(
+  ip: string,
+  afterId: number,
+): Promise<number> {
+  // With the proxy secret the IP is an isolated RFC 5737 bucket, so ANY new
+  // row is a regression. Without it the IP is the shared loopback: a
+  // concurrently running keyless snip can legitimately land a *billable* row
+  // for the same IP inside our window, so only zero-credit rows — the actual
+  // regression signature of the log-only contract — count against us there.
+  const conditions = [
+    eq(schema.keyless_credit_usage.ip, ip),
+    gt(schema.keyless_credit_usage.id, afterId),
+  ];
+  if (!KEYLESS_PROXY_SECRET) {
+    conditions.push(eq(schema.keyless_credit_usage.credits_used, 0));
+  }
+  const rows = await db
+    .select({ id: schema.keyless_credit_usage.id })
+    .from(schema.keyless_credit_usage)
+    .where(and(...conditions));
+  return rows.length;
 }
 
 describeIf(HAS_RESEARCH)("Research API", () => {
@@ -213,6 +351,119 @@ describeIf(HAS_RESEARCH)("Research API", () => {
 
       expect(res.statusCode).not.toBe(401);
     }, 120000);
+
+    // The Research Index paper endpoints cost 0 credits. The zero-credit
+    // charge path must run for them (it emits the canonical keyless/usage log
+    // line carrying the client IP — during a distributed corpus-harvest
+    // incident only 3.0% of the traffic had a resolvable IP) without touching
+    // either durable store: no keyless_credit_usage row (that lands with the
+    // firecrawl-db migration) and no credit-budget draw-down.
+    itIf(config.USE_DB_AUTHENTICATION === true)(
+      "a zero-credit paper search writes no usage row and charges nothing",
+      async ctx => {
+        const forwardedIp = testNetIp(0);
+        const afterId = await maxKeylessUsageRowId();
+        // Delta-isolated like the row check: even though the forwarded IP
+        // is unique per run, the credits key lives for a day and octet reuse
+        // across runs is possible (1/250), so never compare against absolute
+        // zero.
+        const creditsBefore = KEYLESS_PROXY_SECRET
+          ? Number(
+              (await redisRateLimitClient.get(
+                `keyless_credits:${forwardedIp}`,
+              )) ?? "0",
+            )
+          : 0;
+
+        const { res, ip } = await issueAndResolveKeylessIp(forwardedIp, () =>
+          researchRaw(
+            "/v2/search/research/papers",
+            { query: "sparse attention", k: 1 },
+            undefined,
+            keylessHeaders(forwardedIp),
+          ),
+        );
+
+        // Without the proxy secret this request drew from the shared
+        // loopback quota, which keyless.test.ts legitimately exhausts to the
+        // daily cap. A 429 there is environmental, not a regression - skip
+        // rather than assert on a bucket this test cannot isolate.
+        if (!KEYLESS_PROXY_SECRET && res.statusCode === 429) {
+          ctx.skip();
+          return;
+        }
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+        // The charge path is fire-and-forget, so poll for the *wrong* outcome
+        // (a row appearing) across a generous window and require it never
+        // materializes — a fixed sleep can pass while a late write still
+        // lands, masking exactly the regression this test exists to catch.
+        const strayRow = await waitForSingleRow(
+          async () => (await keylessUsageRowsAfter(ip, afterId)) > 0 || null,
+          6000,
+          500,
+        );
+        expect(strayRow).toBeNull();
+
+        // The keyless *credit* budget must not be drawn down by a free
+        // operation. Only meaningful on the isolated forwarded IP — the
+        // loopback bucket is shared with the other keyless snips. Polled like
+        // the row check: the charge path is fire-and-forget, so a single
+        // immediate read could pass on a stale 0 before a buggy increment.
+        if (KEYLESS_PROXY_SECRET) {
+          const strayCharge = await waitForSingleRow(
+            async () =>
+              Number(
+                (await redisRateLimitClient.get(`keyless_credits:${ip}`)) ??
+                  "0",
+              ) > creditsBefore || null,
+            6000,
+            500,
+          );
+          expect(strayCharge).toBeNull();
+        }
+      },
+      120000,
+    );
+
+    // Failure path: ID enumeration — the exact shape of the incident — mostly
+    // produces upstream misses. The charge path must run there too (credits
+    // are 0 on every non-2xx path) and stay equally free of DB writes.
+    itIf(config.USE_DB_AUTHENTICATION === true)(
+      "a keyless paper lookup miss also writes no usage row",
+      async ctx => {
+        const forwardedIp = testNetIp(1);
+        const afterId = await maxKeylessUsageRowId();
+
+        const { res, ip } = await issueAndResolveKeylessIp(forwardedIp, () =>
+          researchRaw(
+            "/v2/search/research/papers/0000.00000",
+            undefined,
+            undefined,
+            keylessHeaders(forwardedIp),
+          ),
+        );
+
+        if (!KEYLESS_PROXY_SECRET && res.statusCode === 429) {
+          ctx.skip();
+          return;
+        }
+        // The upstream shape for a nonexistent ID is not pinned here (mostly
+        // a 4xx miss, but a 200-with-empty or redirect is possible): the
+        // contract under test is only that keyless auth admitted the request
+        // and that NO usage row lands regardless of outcome shape.
+        expect(res.statusCode).not.toBe(401);
+        // Same polled absence check as the success path: a late write must
+        // fail the test, not slip past a fixed sleep.
+        const strayRow = await waitForSingleRow(
+          async () => (await keylessUsageRowsAfter(ip, afterId)) > 0 || null,
+          6000,
+          500,
+        );
+        expect(strayRow).toBeNull();
+      },
+      120000,
+    );
   });
 
   describeIf(KEYLESS_INSPECT_DISABLED)("keyless research disabled", () => {
@@ -287,4 +538,95 @@ describeIf(HAS_RESEARCH)("Research API", () => {
       expect(before - after).toBe(0);
     }, 180000);
   });
+});
+
+const GITHUB_DEPRECATED_AT = "@1788393600";
+const GITHUB_SUNSET = "Tue, 03 Nov 2026 23:59:59 GMT";
+
+describeIf(HAS_RESEARCH)("Research API github search deprecation", () => {
+  it("carries the deprecation headers and body warning on the canonical mount", async () => {
+    const identity = await idmux({
+      name: "research/github deprecation canonical",
+      credits: 100,
+    });
+
+    const res = await researchRaw(
+      "/v2/search/research/github",
+      { query: "milvus hybrid search", k: 3 },
+      identity,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    expect(res.headers["deprecation"]).toBe(GITHUB_DEPRECATED_AT);
+    expect(res.headers["sunset"]).toBe(GITHUB_SUNSET);
+    expect(res.headers["link"]).toContain('rel="deprecation"');
+    expect(res.headers["link"]).toContain(
+      '</v2/search/developer>; rel="successor-version"',
+    );
+    expect(res.headers["warning"]).toMatch(/^299 - "/);
+
+    expect(Array.isArray(res.body.warnings)).toBe(true);
+    expect(
+      res.body.warnings.some((w: string) => /\/v2\/search\/developer/.test(w)),
+    ).toBe(true);
+    expect(res.body.replacement).toBe("/v2/search/developer");
+  }, 120000);
+
+  it("leaves the paper routes on the same router undeprecated", async () => {
+    const identity = await idmux({
+      name: "research/github deprecation scope",
+      credits: 100,
+    });
+
+    const res = await researchRaw(
+      "/v2/search/research/papers",
+      { query: "retrieval augmented generation", k: 1 },
+      identity,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["deprecation"]).toBeUndefined();
+    expect(res.headers["sunset"]).toBeUndefined();
+    expect(res.body.warnings).toBeUndefined();
+    expect(res.body.replacement).toBeUndefined();
+  }, 120000);
+
+  it("keeps the legacy snake_case aliases alongside the new warning", async () => {
+    const identity = await idmux({
+      name: "research/github deprecation legacy",
+      credits: 100,
+    });
+
+    const res = await researchRaw(
+      "/v2/research/github",
+      { query: "milvus hybrid search", k: 3 },
+      identity,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["deprecation"]).toBe(GITHUB_DEPRECATED_AT);
+    expect(Array.isArray(res.body.warnings)).toBe(true);
+    expect(res.body.results.length).toBeGreaterThan(0);
+    // resultType is optional, so only assert the alias when the camel key is set.
+    const first = res.body.results[0];
+    if (first.resultType !== undefined) {
+      expect(first.result_type).toBe(first.resultType);
+    }
+  }, 120000);
+
+  it("still warns when the request is rejected", async () => {
+    const identity = await idmux({
+      name: "research/github deprecation 400",
+      credits: 100,
+    });
+
+    const res = await researchRaw("/v2/search/research/github", {}, identity);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.headers["deprecation"]).toBe(GITHUB_DEPRECATED_AT);
+    expect(Array.isArray(res.body.warnings)).toBe(true);
+  }, 60000);
 });

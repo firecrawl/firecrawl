@@ -25,9 +25,16 @@ import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { AbortManagerThrownError } from "../../scraper/scrapeURL/lib/abortManager";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
-import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import {
+  withSpan,
+  setSpanAttributes,
+  recordSpanException,
+  SpanKind,
+  type Span,
+} from "../../lib/otel-tracer";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
@@ -42,6 +49,31 @@ import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
+) {
+  // Resolved before the root span starts so the whole request trace stays
+  // unrecorded for zero-data-retention requests (see otel-tracer).
+  const zeroDataRetentionTrace =
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body?.zeroDataRetention === true;
+
+  return withSpan(
+    "api.scrape.request",
+    span => scrapeControllerInner(req, res, span),
+    {
+      kind: SpanKind.SERVER,
+      attributes: {
+        "api.version": "v1",
+        "scrape.team_id": req.auth.team_id,
+      },
+      zeroDataRetention: zeroDataRetentionTrace,
+    },
+  );
+}
+
+async function scrapeControllerInner(
+  req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
+  res: Response<ScrapeResponse>,
+  span: Span,
 ) {
   // Get timing data from middleware (includes all middleware processing time)
   const middlewareStartTime =
@@ -115,6 +147,7 @@ export async function scrapeController(
     id: jobId,
     kind: "scrape",
     api_version: "v1",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: req.body.origin,
     integration: req.body.integration,
@@ -156,9 +189,9 @@ export async function scrapeController(
     );
     if (!reservation.ok) {
       applyAgentAuthDiscoveryHeader(res);
-      return res.status(429).json(
-        await keylessLimitBody(req.auth.team_id, "v1_scrape"),
-      );
+      return res
+        .status(429)
+        .json(await keylessLimitBody(req.auth.team_id, "v1_scrape"));
     }
     reservedKeylessCredits = projectedKeylessCredits;
   }
@@ -257,7 +290,8 @@ export async function scrapeController(
     }
 
     const timeoutErr =
-      e instanceof TransportableError && e.code === "SCRAPE_TIMEOUT";
+      e instanceof TransportableError &&
+      (e.code === "SCRAPE_TIMEOUT" || e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
     if (e instanceof TransportableError) {
       if (!timeoutErr) {
@@ -301,6 +335,14 @@ export async function scrapeController(
         });
       }
 
+      if (e.code === "UNSUPPORTED_SITE") {
+        return res.status(403).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
       if (e.code === "SCRAPE_MEDIA_ACCESS_DENIED") {
         return res.status(403).json({
           success: false,
@@ -309,7 +351,23 @@ export async function scrapeController(
         });
       }
 
-      return res.status(e.code === "SCRAPE_TIMEOUT" ? 408 : 500).json({
+      if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+        return res.status(403).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
+      if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
+        return res.status(400).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
+      return res.status(timeoutErr ? 408 : 500).json({
         success: false,
         code: e.code,
         error: e.message,
@@ -323,17 +381,10 @@ export async function scrapeController(
         path: req.path,
         teamId: req.auth.team_id,
       });
-      captureExceptionWithZdrCheck(e, {
-        tags: {
-          errorId: id,
-          version: "v1",
-          teamId: req.auth.team_id,
-        },
-        extra: {
-          path: req.path,
-          url: req.body.url,
-        },
-        zeroDataRetention,
+      recordSpanException(span, e);
+      setSpanAttributes(span, {
+        "scrape.status_code": 500,
+        "scrape.error_id": id,
       });
       return res.status(500).json({
         success: false,

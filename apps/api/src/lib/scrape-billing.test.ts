@@ -221,6 +221,71 @@ describe("calculateCreditsToBeBilled", () => {
 
     expect(credits).toBe(3);
   });
+
+  // =========================================
+  // lockdown + json surcharge stacking
+  // =========================================
+
+  const promptInjectionGuardCall = {
+    type: "other",
+    model: "vertex/gemini",
+    cost: 0,
+    metadata: { module: "scrapeURL", method: "checkForPromptInjection" },
+  };
+
+  // `guard` means the caller asked for the prompt injection check and the
+  // guard actually ran. Both conditions must hold for the +4 guard fee.
+  const billScrape = (args: {
+    lockdown?: boolean;
+    json?: boolean;
+    guard?: boolean;
+  }) =>
+    calculateCreditsToBeBilled(
+      {
+        lockdown: args.lockdown,
+        formats: args.json
+          ? [{ type: "json", schema: {}, checkPromptInjection: args.guard }]
+          : [{ type: "markdown" }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      {
+        metadata: {
+          statusCode: 200,
+          proxyUsed: "basic",
+        },
+      } as any,
+      {
+        totalCost: 0,
+        calls: args.guard ? [promptInjectionGuardCall] : [],
+      } as any,
+      {} as any,
+    );
+
+  // Public billing docs quote 5 credits for a json scrape. Guard that figure.
+  it("bills a json scrape alone at 5 credits", async () => {
+    expect(await billScrape({ json: true })).toBe(5);
+  });
+
+  it("bills a lockdown scrape alone at 5 credits", async () => {
+    expect(await billScrape({ lockdown: true })).toBe(5);
+  });
+
+  it("keeps the lockdown surcharge on a json scrape (9 credits)", async () => {
+    expect(await billScrape({ lockdown: true, json: true })).toBe(9);
+  });
+
+  it("stacks lockdown, json, and the prompt injection guard (13 credits)", async () => {
+    expect(await billScrape({ lockdown: true, json: true, guard: true })).toBe(
+      13,
+    );
+  });
+
+  it("bills json plus the prompt injection guard at 9 credits", async () => {
+    expect(await billScrape({ json: true, guard: true })).toBe(9);
+  });
 });
 
 // =========================================

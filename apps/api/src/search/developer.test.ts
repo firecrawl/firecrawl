@@ -58,18 +58,21 @@ describe("searchDeveloperCategory", () => {
     expect(firstCall()[1].headers).toEqual({ "firecrawl-team-id": "t1" });
   });
 
-  it("maps upstream results into web result shape", async () => {
+  it("maps results to the exact web schema and leaks nothing upstream", async () => {
+    const license = { state: "licensed", spdx_id: "MIT" };
     fetchMock.mockResolvedValue(
       upstreamOk({
         results: [
           {
-            id: "abc",
-            type: "issue",
+            id: "issue:a/b#1",
             url: "https://github.com/a/b/issues/1",
             title: "Retries drop the backoff",
-            passages: [{ text: "first passage" }],
+            passages: [
+              { text: "first passage", citation_url: "https://example.com" },
+            ],
+            license,
           },
-          { id: "def", type: "readme", url: "", passages: [] },
+          { id: "readme:a/b", url: "", passages: [] },
         ],
       }),
     );
@@ -79,7 +82,9 @@ describe("searchDeveloperCategory", () => {
       logger,
     );
 
-    expect(results).toEqual([
+    // Exact WebSearchResult shape: the upstream id/passages/license must not
+    // appear on the wire; the first passage becomes the description.
+    expect(results).toStrictEqual([
       {
         url: "https://github.com/a/b/issues/1",
         title: "Retries drop the backoff",

@@ -8,6 +8,7 @@ import { scrapeURL } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "./engines";
 import { CostTracking } from "../../lib/cost-tracking";
+import { AgentIndexOnlyError, NoCachedDataError } from "./error";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
 vi.mock("../../lib/html-to-markdown", async importOriginal => {
@@ -34,6 +35,92 @@ const testEnginesScreenshot: (Engine | undefined)[] = [
 ];
 
 describe("Standalone scrapeURL tests", () => {
+  it.each([
+    ["https://example.com/raw", "text/html; charset=utf-8"],
+    ["https://example.com/raw.pdf", "application/pdf"],
+    [
+      "https://example.com/raw.docx",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ],
+  ])(
+    "returns rawBase64 through fire-engine Chrome for %s",
+    async (url, contentType) => {
+      const out = await scrapeURL(
+        "test:raw-base64",
+        url,
+        scrapeOptions.parse({
+          formats: ["rawBase64"],
+          useMock: "raw-base64",
+          fastMode: true,
+          blockAds: false,
+          proxy: "stealth",
+        }),
+        { forceEngine: "fetch", teamId: "test", orgId: null },
+        new CostTracking(),
+      );
+
+      expect(out.success).toBe(true);
+      if (out.success) {
+        expect(out.document.rawBase64).toBe("PGh0bWw+cmF3PC9odG1sPg==");
+        expect(out.document).not.toHaveProperty("markdown");
+        expect(out.document).not.toHaveProperty("html");
+        expect(out.document).not.toHaveProperty("rawHtml");
+        expect(out.document.metadata.contentType).toBe(contentType);
+      }
+    },
+  );
+
+  it("rejects a rawBase64 engine response without file content", async () => {
+    const out = await scrapeURL(
+      "test:raw-base64-missing",
+      "https://example.com/raw-error",
+      scrapeOptions.parse({
+        formats: ["rawBase64"],
+        useMock: "raw-base64",
+      }),
+      { teamId: "test", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(false);
+  });
+
+  it("returns the canonical agent-index-only error for rawBase64", async () => {
+    const out = await scrapeURL(
+      "test:raw-base64-agent-index-only",
+      "https://example.com/raw",
+      scrapeOptions.parse({
+        formats: ["rawBase64"],
+        useMock: "raw-base64",
+      }),
+      { teamId: "test", orgId: null, agentIndexOnly: true },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(false);
+    if (!out.success) {
+      expect(out.error).toBeInstanceOf(AgentIndexOnlyError);
+    }
+  });
+
+  it("rejects rawBase64 when minAge is set", async () => {
+    const out = await scrapeURL(
+      "test:raw-base64-min-age",
+      "https://example.com/raw",
+      scrapeOptions.parse({
+        formats: ["rawBase64"],
+        minAge: 0,
+      }),
+      { teamId: "test", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(false);
+    if (!out.success) {
+      expect(out.error).toBeInstanceOf(NoCachedDataError);
+    }
+  });
+
   describe.each(testEngines)("Engine %s", (forceEngine: Engine | undefined) => {
     it("Basic scrape", async () => {
       const out = await scrapeURL(

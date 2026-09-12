@@ -2,7 +2,7 @@ import { createClient } from "@clickhouse/client";
 import { config } from "../config";
 import { logger } from "./logger";
 
-const client = config.CLICKHOUSE_ANALYTICS_URL
+export const clickhouseClient = config.CLICKHOUSE_ANALYTICS_URL
   ? createClient({
       url: config.CLICKHOUSE_ANALYTICS_URL,
       database: config.CLICKHOUSE_ANALYTICS_DATABASE ?? "default",
@@ -19,10 +19,10 @@ export async function chInsert(
   opts?: { throwOnError?: boolean },
 ): Promise<boolean> {
   if (rows.length === 0) return true;
-  if (!client) return false;
+  if (!clickhouseClient) return false;
 
   try {
-    await client.insert({
+    await clickhouseClient.insert({
       table,
       values: rows,
       format: "JSONEachRow",

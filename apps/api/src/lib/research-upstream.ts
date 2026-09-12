@@ -2,11 +2,10 @@ import { Agent, fetch } from "undici";
 import { config } from "../config";
 
 const TIMEOUT_MS = 120_000;
+const CONNECT_TIMEOUT_MS = 10_000;
 
 const dispatcher = new Agent({
-  connectTimeout: TIMEOUT_MS,
-  headersTimeout: TIMEOUT_MS,
-  bodyTimeout: TIMEOUT_MS,
+  connectTimeout: CONNECT_TIMEOUT_MS,
 });
 
 function appendQuery(

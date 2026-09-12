@@ -17,6 +17,7 @@ import { UnsafeDomainBlockedError } from "./threat-protection/error";
 const creditsPerPDFPage = 1;
 const unblockedDomainCostBonus = 4;
 const xTwitterCostBonus = 29;
+const jsonCostBonus = 4;
 const redactPIICostBonus = 4;
 // Each additional PDF page also gets redacted through fire-privacy, so
 // the per-page surcharge mirrors the +4 base — same tier as lockdown.
@@ -113,6 +114,15 @@ export async function calculateCreditsToBeBilled(
       creditsToBeBilled = 1;
     }
 
+    const promptInjectionGuardRan = costTrackingJSON.calls?.some(
+      call =>
+        call.metadata?.module === "scrapeURL" &&
+        call.metadata?.method === "checkForPromptInjection",
+    );
+    if (creditsToBeBilled === 0 && promptInjectionGuardRan) {
+      creditsToBeBilled = 5;
+    }
+
     // Failed scrapes bill no base cost (except the cases above), but threat
     // protection scans that already happened still bill — including scrapes
     // blocked by the policy itself.
@@ -141,7 +151,20 @@ export async function calculateCreditsToBeBilled(
     hasFormatOfType(options.formats, "json") ||
     changeTrackingFormat?.modes?.includes("json")
   ) {
-    creditsToBeBilled = 5;
+    // Additive, so an earlier surcharge such as lockdown survives. A json
+    // scrape on its own still totals 5 credits (1 base + 4).
+    creditsToBeBilled += jsonCostBonus;
+  }
+
+  if (hasFormatOfType(options.formats, "json")?.checkPromptInjection) {
+    const promptInjectionGuardRan = costTrackingJSON.calls?.some(
+      call =>
+        call.metadata?.module === "scrapeURL" &&
+        call.metadata?.method === "checkForPromptInjection",
+    );
+    if (promptInjectionGuardRan) {
+      creditsToBeBilled += 4;
+    }
   }
 
   if (hasFormatOfType(options.formats, "deterministicJson")) {

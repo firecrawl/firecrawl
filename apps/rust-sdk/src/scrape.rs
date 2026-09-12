@@ -117,8 +117,15 @@ pub enum ParserConfig {
         parser_type: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         mode: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "maxPages", skip_serializing_if = "Option::is_none")]
         max_pages: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pages: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        blocks: Option<bool>,
+        /// Join PDF pages in document markdown with `\n\n---\n\n<!-- page N -->\n\n`.
+        #[serde(rename = "pageMarkers", skip_serializing_if = "Option::is_none")]
+        page_markers: Option<bool>,
     },
 }
 
@@ -518,6 +525,33 @@ mod tests {
         let payload = serde_json::to_value(options).unwrap();
         assert_eq!(payload["redactPII"], json!(true));
         assert!(payload.get("formats").is_none());
+    }
+
+    #[test]
+    fn test_pdf_parser_serializes_blocks() {
+        let options = ScrapeOptions {
+            parsers: Some(vec![ParserConfig::Pdf {
+                parser_type: "pdf".to_string(),
+                mode: Some("auto".to_string()),
+                max_pages: None,
+                pages: Some(true),
+                blocks: Some(true),
+                page_markers: Some(true),
+            }]),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(
+            payload["parsers"][0],
+            json!({
+                "type": "pdf",
+                "mode": "auto",
+                "pages": true,
+                "blocks": true,
+                "pageMarkers": true
+            })
+        );
     }
 
     #[tokio::test]

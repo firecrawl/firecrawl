@@ -5,6 +5,49 @@ All notable changes to the Firecrawl PHP SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0] - 2026-09-08
+
+### Added
+- `country` option on `SearchOptions` to set the country for a v2 search. The
+  field is omitted when the caller does not set it.
+
+## [1.15.0] - 2026-08-31
+
+### Added
+- `listAgents()` returning a page of the team's agent runs (most recent
+  first) with an optional `$before` cursor. The method does not
+  auto-paginate; pass the `before` value from the response's `next` URL to
+  fetch the next page.
+
+## [1.14.0] - 2026-08-26
+
+### Added
+- Agent `effort` option ("low", "medium", "high") on `AgentOptions` to set the
+  reasoning budget (every level runs spark-2), and `AgentStatusResponse::getEffort()`
+  exposing the effort a job ran with.
+- `getAgentTrace()` returning an `AgentTraceResponse` with typed `AgentTraceEvent`
+  models for every trace event kind, plus `activeBrowserSessions` with live view
+  URLs when the `liveView` query parameter is requested.
+- `getAgentSnapshot()` returning an `AgentSnapshotResponse` with the snapshot
+  content of an artifact produced by an agent task.
+
+## [1.13.0] - 2026-08-21
+
+### Added
+- PDF parser `pageMarkers` option via `PDFParser` to join pages in
+  document markdown with `<!-- page N -->` separators.
+
+## [1.12.0] - 2026-08-19
+
+### Added
+- PDF parser `pages` option and `Document::getPages()` for per-page markdown.
+
+## [1.11.0] - 2026-08-19
+
+### Added
+- PDF parser `blocks` option and `Document::getBlocks()` for per-page typed
+  layout blocks (bounding boxes, block types, reading order).
+
 ## [1.9.0] - 2026-07-10
 
 ### Added

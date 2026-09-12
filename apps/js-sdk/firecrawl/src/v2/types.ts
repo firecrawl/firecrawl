@@ -31,6 +31,7 @@ export interface JsonFormat extends Format {
   type: "json";
   prompt?: string;
   schema?: Record<string, unknown> | ZodTypeAny;
+  checkPromptInjection?: boolean;
 }
 
 export interface ScreenshotFormat {
@@ -187,6 +188,58 @@ export interface AuditMetadata {
   username: string;
 }
 
+export type PDFParser = {
+  type: "pdf";
+  mode?: "fast" | "auto" | "ocr";
+  maxPages?: number;
+  /** Include physical per-page markdown alongside document markdown. Populates `document.pages`. */
+  pages?: boolean;
+  /**
+   * @deprecated Renamed to `pages`. The API still accepts this as a silent alias.
+   */
+  pageMarkdown?: boolean;
+  /** Include per-page typed layout blocks (bounding boxes, block types, reading order). */
+  blocks?: boolean;
+  /**
+   * Join PDF pages in `document.markdown` with `\n\n---\n\n<!-- page N -->\n\n`,
+   * where N is the 1-based physical page of the content that follows. Markers
+   * appear between pages only (no leading marker for page 1), and numbering may
+   * skip pages merged by cross-page stitching — use `pages: true` when every
+   * physical page is needed. No new response field.
+   */
+  pageMarkers?: boolean;
+};
+
+export interface PdfPage {
+  pageNumber: number;
+  markdown: string;
+}
+
+export interface PdfBlockConfidence {
+  layout: number | null;
+  ocr: number | null;
+}
+
+export interface PdfBlockItem {
+  id: string;
+  type: string;
+  label: string | null;
+  bbox: [number, number, number, number] | null;
+  content: string;
+  markdownSpan: [number, number] | null;
+  readingOrder: number;
+  source: string | null;
+  confidence: PdfBlockConfidence;
+}
+
+export interface PdfPageBlocks {
+  pageNumber: number;
+  width: number | null;
+  height: number | null;
+  status: string;
+  items: PdfBlockItem[];
+}
+
 export interface ScrapeOptions {
   formats?: FormatOption[];
   headers?: Record<string, string>;
@@ -196,9 +249,7 @@ export interface ScrapeOptions {
   timeout?: number;
   waitFor?: number;
   mobile?: boolean;
-  parsers?: Array<
-    string | { type: "pdf"; mode?: "fast" | "auto" | "ocr"; maxPages?: number }
-  >;
+  parsers?: Array<string | PDFParser>;
   actions?: ActionOption[];
   location?: LocationConfig;
   skipTlsVerification?: boolean;
@@ -227,12 +278,7 @@ export interface ScrapeOptions {
 }
 
 export type RedactPIIEntity =
-  | "PERSON"
-  | "EMAIL"
-  | "PHONE"
-  | "LOCATION"
-  | "FINANCIAL"
-  | "SECRET";
+  "PERSON" | "EMAIL" | "PHONE" | "LOCATION" | "FINANCIAL" | "SECRET";
 
 export interface RedactPIIOptions {
   /**
@@ -273,12 +319,7 @@ export interface ThreatProtectionOptions {
 }
 
 export type ParseFileData =
-  | Blob
-  | File
-  | Buffer
-  | Uint8Array
-  | ArrayBuffer
-  | string;
+  Blob | File | Buffer | Uint8Array | ArrayBuffer | string;
 
 export interface ParseFile {
   data: ParseFileData;
@@ -313,11 +354,7 @@ export interface WebhookConfig {
 
 // Agent webhook events differ from crawl: has 'action' and 'cancelled', no 'page'
 export type AgentWebhookEvent =
-  | "started"
-  | "action"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  "started" | "action" | "completed" | "failed" | "cancelled";
 
 export interface AgentWebhookConfig {
   url: string;
@@ -438,10 +475,7 @@ export interface BrandingProfile {
     headerHeight?: string;
     footerHeight?: string;
     [key: string]:
-      | number
-      | string
-      | Record<string, number | string | undefined>
-      | undefined;
+      number | string | Record<string, number | string | undefined> | undefined;
   };
   tone?: {
     voice?: string;
@@ -647,6 +681,10 @@ export interface Document {
   branding?: BrandingProfile;
   product?: ProductProfile;
   menu?: MenuProfile;
+  /** Physical PDF pages, present only when `parsers[].pages` is true. */
+  pages?: PdfPage[];
+  /** Typed PDF layout blocks, present only when `parsers[].blocks` is true. */
+  blocks?: PdfPageBlocks[];
 }
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
@@ -659,6 +697,76 @@ export interface PaginationConfig {
   maxResults?: number;
   /** Maximum time to spend fetching additional pages (in seconds). */
   maxWaitTime?: number;
+}
+
+export type DeveloperSearchType = "doc" | "issue" | "pull_request" | "readme";
+
+export interface DeveloperSearchOptions {
+  /** Total ranked results, 1–100 (default 10). */
+  k?: number;
+  /** Passages per result, 1–5 (default 1). */
+  passages?: number;
+  /** Result kinds to search (default all). */
+  types?: DeveloperSearchType[];
+  /** GitHub owner/name filters, at most 20. */
+  repos?: string[];
+  /** Developer documentation source IDs, at most 20. */
+  sources?: string[];
+  /** One case-insensitive GitHub Linguist primary language. */
+  language?: string;
+  /** Repository topics that must all match, at most 8. */
+  topic?: string[];
+  /** One case-insensitive SPDX repository license identifier. */
+  license?: string;
+  /** Minimum repository stars. */
+  minStars?: number;
+  /** Maximum repository stars. */
+  maxStars?: number;
+  /** Filter by repository archived status. */
+  archived?: boolean;
+  /** Filter by repository fork status. */
+  fork?: boolean;
+  /** Return packaged agent-skill evidence only. */
+  skills?: "only";
+}
+
+export interface DeveloperSearchLicenseDisclosure {
+  state: "licensed" | "known_absent" | "unknown";
+  spdx_id: string | null;
+}
+
+export interface DeveloperSearchPassage {
+  text: string;
+  citation_url?: string;
+}
+
+export interface DeveloperSearchResult {
+  id: string;
+  url: string;
+  title?: string;
+  passages: DeveloperSearchPassage[];
+  // Accept both shapes while the API flattens license objects to SPDX strings.
+  license?: DeveloperSearchLicenseDisclosure | string;
+}
+
+export interface DeveloperSearchRepoStatus {
+  repo: string;
+  indexed: boolean;
+  types: { issue: boolean; pullRequest: boolean; readme: boolean };
+}
+
+export interface DeveloperSearchSourceStatus {
+  source: string;
+  indexed: boolean;
+}
+
+export interface DeveloperSearchResponse {
+  success: boolean;
+  results: DeveloperSearchResult[];
+  /** Present only when repos were requested. */
+  repos?: DeveloperSearchRepoStatus[];
+  /** Present only when sources were requested. */
+  sources?: DeveloperSearchSourceStatus[];
 }
 
 export interface SearchResultWeb {
@@ -692,7 +800,6 @@ export interface SearchData {
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
-  developer?: Array<SearchResultWeb | Document>;
 }
 
 /**
@@ -705,8 +812,8 @@ export interface SearchData {
  *   ieee.org, sciencedirect.com, biorxiv.org, medrxiv.org, ...). It returns
  *   ordinary web page results from those domains, **not** paper records.
  * - `pdf` — restrict results to PDFs (adds `filetype:pdf`).
- * - `developer` — add developer results (issues, pull requests, READMEs and
- *   documentation) under `.developer`.
+ * - `developer` — developer-index results (issues, pull requests, READMEs and
+ *   documentation) served in `web`; cannot be combined with other categories.
  *
  * ⚠️ `categories: ["research"]` is **not** Firecrawl's research paper index.
  * To search papers themselves — ~43M abstracts, roughly 90% biomedical
@@ -742,6 +849,8 @@ export interface SearchRequest {
   limit?: number;
   tbs?: string;
   location?: string;
+  /** ISO 3166-1 alpha-2 country code used to geo-target the search results. */
+  country?: string;
   ignoreInvalidURLs?: boolean;
   timeout?: number; // ms
   /** Generate query-relevant highlights for search results. Defaults to true. */
@@ -971,9 +1080,7 @@ export interface MonitorSearchTarget {
 }
 
 export type MonitorTarget =
-  | MonitorScrapeTarget
-  | MonitorCrawlTarget
-  | MonitorSearchTarget;
+  MonitorScrapeTarget | MonitorCrawlTarget | MonitorSearchTarget;
 
 export interface CreateMonitorRequest {
   name: string;
@@ -1096,11 +1203,7 @@ export interface MonitorCheck {
   reservedCredits?: number | null;
   actualCredits?: number | null;
   billingStatus:
-    | "not_applicable"
-    | "reserved"
-    | "confirmed"
-    | "released"
-    | "failed";
+    "not_applicable" | "reserved" | "confirmed" | "released" | "failed";
   summary: MonitorSummary;
   targetResults?: MonitorTargetResult[];
   notificationStatus?: unknown;
@@ -1187,10 +1290,65 @@ export interface ExtractResponse {
   creditsUsed?: number;
 }
 
+/** Conversation mode for an agent run. Defaults to "extract" server-side. */
+export type AgentMode = "extract" | "chat";
+
+/** Options forwarded verbatim to the agent; the server owns every default. */
+export interface AgentExchangeOptions {
+  enabled?: boolean;
+  /** At most 5. */
+  toolkits?: string[];
+  maxCalls?: number;
+  requireApproval?: boolean;
+  /** Answers a pendingApproval from the previous turn of the thread. */
+  approve?: { approvalId: string; callIds?: string[]; always?: boolean };
+  decline?: { approvalId: string };
+}
+
+/** Per-run summary reported on a status response. */
+export interface AgentExchangeSummary {
+  enabled: boolean;
+  /** What the run resolved to after thread inheritance, not what it requested. */
+  toolkits?: string[];
+  requireApproval?: boolean;
+  paidCalls: number;
+  creditsUsed: number | null;
+}
+
+/** A follow-up the agent offers for the next turn of the thread. */
+export interface AgentSuggestion {
+  label: string;
+  prompt: string;
+}
+
+/** A turn that ended waiting for the caller to allow or refuse paid calls. */
+export interface PendingApproval {
+  id: string;
+  reason: string;
+  calls: {
+    id: string;
+    provider: string;
+    capability: string;
+    input: Record<string, unknown>;
+    more?: Record<string, unknown>[];
+    creditsEstimate: number | null;
+  }[];
+  resolution: null | {
+    approved: boolean;
+    callIds: string[];
+    always: boolean;
+    byRunId: string;
+  };
+}
+
 export interface AgentResponse {
   success: boolean;
   id: string;
   error?: string;
+  /** Thread this run belongs to; pass it back to continue the conversation. */
+  threadId?: string;
+  /** 1-based position of this run in its thread. */
+  threadTurn?: number;
 }
 
 export interface AgentStatusResponse {
@@ -1198,9 +1356,278 @@ export interface AgentStatusResponse {
   status: "processing" | "completed" | "failed";
   error?: string;
   data?: unknown;
-  model?: "spark-1-pro" | "spark-1-mini";
+  /**
+   * Server-provided model name. Widened past the request-side union on
+   * purpose: new models ship without an SDK release, so pinning this to known
+   * names makes every future model a type error at the call site.
+   */
+  model?: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
+  /**
+   * Reasoning effort the job ran with. Only set for runs that specified it;
+   * older rows and default runs have no effort.
+   */
+  effort?: "low" | "medium" | "high";
   expiresAt: string;
   creditsUsed?: number;
+  threadId?: string;
+  threadTurn?: number;
+  mode?: AgentMode;
+  /** Assistant text reply. Chat-mode runs answer here instead of in `data`. */
+  message?: string;
+  suggestions?: AgentSuggestion[];
+  pendingApproval?: PendingApproval;
+  exchange?: AgentExchangeSummary;
+}
+
+/** A single run of a thread, as returned by getAgentThread. */
+export interface AgentThreadRun {
+  id: string;
+  turn: number;
+  mode: AgentMode;
+  prompt: string;
+  urls?: string[];
+  schema?: unknown;
+  effort?: "low" | "medium" | "high";
+  status:
+    | "processing"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | "refused"
+    | "credit_limit_reached";
+  createdAt: string;
+  finishedAt: string | null;
+  creditsUsed: number | null;
+  message: string | null;
+  /** Only present when the request asked for includeData. */
+  data?: unknown;
+  suggestions?: AgentSuggestion[] | null;
+  pendingApproval?: PendingApproval | null;
+  exchange?: AgentExchangeSummary | null;
+}
+
+export interface AgentThread {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "idle" | "running";
+  runs: AgentThreadRun[];
+}
+
+export interface AgentThreadResponse {
+  success: boolean;
+  thread?: AgentThread;
+  error?: string;
+}
+
+/** Reasoning effort for agent jobs. Every level runs spark-2. */
+export type AgentEffort = "low" | "medium" | "high";
+
+/** A single agent run as returned by the agent list endpoint. */
+export interface AgentListItem {
+  id: string;
+  createdAt: string;
+  targetHint: string;
+  origin: string;
+  integration?: string;
+  settings: {
+    hidden: boolean;
+    starred: boolean;
+    label?: string;
+  };
+  status: "processing" | "completed" | "failed";
+  options?: {
+    urls?: string[];
+    prompt: string;
+    schema?: unknown;
+    /**
+     * Server-provided model name. Widened past the request-side union on
+     * purpose: new models ship without an SDK release, so pinning this to
+     * known names makes every future model a type error at the call site.
+     */
+    model: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
+    effort?: AgentEffort;
+  };
+}
+
+export interface AgentListResponse {
+  success: boolean;
+  agents?: AgentListItem[];
+  /**
+   * Absolute URL of the next page (pass its `before` value to listAgents to
+   * continue). Only present when more pages exist.
+   */
+  next?: string;
+  error?: string;
+}
+
+/** Options for listing agent runs. */
+export interface AgentListOptions {
+  /** Only return agent runs created before this unix millisecond timestamp. */
+  before?: number;
+}
+
+export type AgentTraceAgentRole =
+  "orchestrator" | "subagent" | "browser" | "system";
+
+export interface AgentTraceAgentIdentity {
+  id: string;
+  role: AgentTraceAgentRole;
+  name: string;
+  parentId?: string;
+}
+
+export interface AgentTraceError {
+  code:
+    | "cancelled"
+    | "credit_limit_reached"
+    | "parent_finished"
+    | "refused"
+    | "internal";
+  source: "agent" | "tool" | "billing" | "system";
+  retryable: boolean;
+  message: string;
+}
+
+export interface AgentTraceArtifactChange {
+  kind: "json" | "markdown" | "html" | "screenshot" | "text";
+  artifactId: string;
+  path?: string;
+  /** Fetch the full content via getAgentSnapshot(jobId, snapshotId). */
+  snapshotId: string;
+  change: "init" | "partial" | "append" | "modify" | "update";
+  changedFields?: string[];
+  itemCount?: number;
+  sourceToolCallId?: string;
+}
+
+interface AgentTraceEventBase {
+  schemaVersion: 1;
+  eventId: string;
+  runId: string;
+  occurredAt: string;
+  producerSequence: number;
+  agent: AgentTraceAgentIdentity;
+}
+
+export interface AgentTraceRunStartedEvent extends AgentTraceEventBase {
+  type: "run.started";
+}
+
+export interface AgentTraceRunCancelRequestedEvent extends AgentTraceEventBase {
+  type: "run.cancel_requested";
+  reason: "user";
+}
+
+export interface AgentTraceRunFinishedEvent extends AgentTraceEventBase {
+  type: "run.finished";
+  outcome:
+    "succeeded" | "failed" | "cancelled" | "refused" | "credit_limit_reached";
+  /** The canonical schema always writes this key (nullable), but older rows may omit it. */
+  error?: AgentTraceError | null;
+}
+
+export interface AgentTraceAgentStartedEvent extends AgentTraceEventBase {
+  type: "agent.started";
+}
+
+export interface AgentTraceAgentFinishedEvent extends AgentTraceEventBase {
+  type: "agent.finished";
+  outcome: "succeeded" | "failed" | "cancelled" | "refused";
+  durationMs: number;
+  /** The canonical schema always writes this key (nullable), but older rows may omit it. */
+  error?: AgentTraceError | null;
+}
+
+export interface AgentTraceBrowserSessionStartedEvent extends AgentTraceEventBase {
+  type: "browser.session.started";
+  sessionId: string;
+}
+
+export interface AgentTraceBrowserSessionFinishedEvent extends AgentTraceEventBase {
+  type: "browser.session.finished";
+  sessionId: string;
+  durationMs: number;
+}
+
+export interface AgentTraceProgressReportedEvent extends AgentTraceEventBase {
+  type: "progress.reported";
+  phase: "planning" | "working" | "finalizing";
+  message: string;
+}
+
+export interface AgentTraceReasoningSummaryEvent extends AgentTraceEventBase {
+  type: "reasoning.summary";
+  text: string;
+}
+
+export interface AgentTraceToolCallStartedEvent extends AgentTraceEventBase {
+  type: "tool_call.started";
+  toolCallId: string;
+  toolName: string;
+  parameters: unknown;
+}
+
+export interface AgentTraceToolCallFinishedEvent extends AgentTraceEventBase {
+  type: "tool_call.finished";
+  toolCallId: string;
+  toolName: string;
+  result: unknown;
+}
+
+export interface AgentTraceArtifactUpdatedEvent extends AgentTraceEventBase {
+  type: "artifact.updated";
+  artifact: AgentTraceArtifactChange;
+}
+
+export interface AgentTraceErrorOccurredEvent extends AgentTraceEventBase {
+  type: "error.occurred";
+  error: AgentTraceError;
+}
+
+/**
+ * One event in an agent job's trace. Mirrors the canonical event schema of
+ * the agent service (schemaVersion 1); `usage.recorded` events are withheld
+ * server-side and `agent.started` carries no model name.
+ */
+export type AgentTraceEvent =
+  | AgentTraceRunStartedEvent
+  | AgentTraceRunCancelRequestedEvent
+  | AgentTraceRunFinishedEvent
+  | AgentTraceAgentStartedEvent
+  | AgentTraceAgentFinishedEvent
+  | AgentTraceBrowserSessionStartedEvent
+  | AgentTraceBrowserSessionFinishedEvent
+  | AgentTraceProgressReportedEvent
+  | AgentTraceReasoningSummaryEvent
+  | AgentTraceToolCallStartedEvent
+  | AgentTraceToolCallFinishedEvent
+  | AgentTraceArtifactUpdatedEvent
+  | AgentTraceErrorOccurredEvent;
+
+export interface AgentTraceActiveBrowserSession {
+  id: string;
+  liveViewUrl: string;
+  viewport: { width: number; height: number };
+}
+
+export interface AgentTraceResponse {
+  success: boolean;
+  id?: string;
+  events?: AgentTraceEvent[];
+  creditsUsed?: number;
+  /** Present only when the trace was requested with liveView: true. */
+  activeBrowserSessions?: AgentTraceActiveBrowserSession[];
+  error?: string;
+}
+
+export interface AgentSnapshotResponse {
+  success: boolean;
+  id?: string;
+  snapshotId?: string;
+  /** Full artifact content as a JSON/string blob. */
+  snapshot?: string;
+  error?: string;
 }
 
 export interface AgentOptions {
@@ -1492,7 +1919,14 @@ export interface SimilarPapersResponse {
   note?: string | null;
 }
 
-/** Component scores; each field is present only when that signal contributed. */
+/**
+ * Component scores; each field is present only when that signal contributed.
+ *
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. The developer index does not
+ * expose a score breakdown. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubScoreBreakdown {
   rrf?: number;
   semantic?: number;
@@ -1501,6 +1935,11 @@ export interface GitHubScoreBreakdown {
   rerank?: number;
 }
 
+/**
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubSearchItem {
   resultType?: "github_history" | "repo_readme" | "web";
   /** `owner/name`; empty for web results whose URL is not a repo page. */
@@ -1523,9 +1962,18 @@ export interface GitHubSearchItem {
   scores: GitHubScoreBreakdown;
 }
 
+/**
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubSearchResponse {
   success: boolean;
   results: GitHubSearchItem[];
+  /** Deprecation notice while the sunset window is live. */
+  warnings?: string[];
+  /** Replacement endpoint path, while the sunset window is live. */
+  replacement?: string;
 }
 
 /** Options for `research.searchPapers`. */
@@ -1564,7 +2012,13 @@ export interface SimilarPapersOptions {
   anchor?: string[];
 }
 
-/** Options for `research.searchGithub`. */
+/**
+ * Options for `research.searchGithub`.
+ *
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface SearchGithubOptions {
   /** Number of results to return (1–100, default 20). */
   k?: number;

@@ -145,7 +145,7 @@ public class ScrapeOptions {
         /** Scrape as a mobile device. */
         public Builder mobile(Boolean mobile) { this.mobile = mobile; return this; }
 
-        /** Parsers to use (e.g., "pdf" or {"type": "pdf", "maxPages": 10}). */
+        /** Parsers to use (e.g., "pdf" or PdfParser with maxPages, pages, blocks, pageMarkers). */
         public Builder parsers(List<Object> parsers) { this.parsers = parsers; return this; }
 
         /** Actions to execute before/during scraping. */

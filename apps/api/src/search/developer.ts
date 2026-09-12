@@ -1,16 +1,12 @@
 import type { Logger } from "winston";
 import type { WebSearchResult } from "../lib/entities";
 import { fetchResearchUpstream } from "../lib/research-upstream";
-import type { CategoryOption } from "../lib/search-query-builder";
+import { hasCategory, type CategoryOption } from "../lib/search-query-builder";
 
 const DEVELOPER_QUERY_KEYS = ["query", "k"];
 
 export function wantsDeveloperCategory(categories?: CategoryOption[]): boolean {
-  return (categories ?? []).some(category =>
-    typeof category === "string"
-      ? category === "developer"
-      : category.type === "developer",
-  );
+  return hasCategory(categories, "developer");
 }
 
 export async function searchDeveloperCategory(
@@ -38,6 +34,9 @@ export async function searchDeveloperCategory(
 
     const body: any = await upstream.json();
     const results: any[] = Array.isArray(body?.results) ? body.results : [];
+    // Exact WebSearchResult shape: developer results are indistinguishable
+    // from ordinary web results on the wire. Passage text serves as the
+    // description; nothing from the upstream payload leaks through.
     return results
       .slice(0, options.limit)
       .map((result, index) => ({

@@ -5,7 +5,10 @@ import { RateLimiterMode } from "../types";
 import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
-import { searchController } from "../controllers/v2/search";
+import {
+  researchCategoryNoticeMiddleware,
+  searchController,
+} from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
@@ -57,6 +60,8 @@ import { agentStatusController } from "../controllers/v2/agent-status";
 import { agentCancelController } from "../controllers/v2/agent-cancel";
 import { agentTraceController } from "../controllers/v2/agent-trace";
 import { agentSnapshotController } from "../controllers/v2/agent-snapshot";
+import { agentSkillController } from "../controllers/v2/agent-skill";
+import { agentThreadController } from "../controllers/v2/agent-thread";
 import {
   browserCreateController,
   browserExecuteController,
@@ -111,6 +116,7 @@ import {
   slackOAuthStartController,
   slackStatusController,
 } from "../controllers/v2/slack";
+import { agentListController } from "../controllers/v2/agent-list";
 export const v2Router = express.Router();
 expressWs(express()).applyTo(v2Router);
 
@@ -182,6 +188,7 @@ registerMcpActionLogReadRoute(
 
 v2Router.post(
   "/search",
+  researchCategoryNoticeMiddleware,
   authMiddleware(RateLimiterMode.Search, { allowKeyless: true }),
   countryCheck,
   checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
@@ -376,6 +383,19 @@ v2Router.get(
   wrap(extractStatusController),
 );
 
+v2Router.get(
+  "/agent",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  wrap(agentListController),
+);
+
+// Registered ahead of "/agent/:jobId" so a thread id is never read as a job id.
+v2Router.get(
+  "/agent/threads/:threadId",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  wrap(agentThreadController),
+);
+
 v2Router.post(
   "/agent",
   authMiddleware(RateLimiterMode.Extract),
@@ -397,6 +417,13 @@ v2Router.get(
   authMiddleware(RateLimiterMode.ExtractStatus),
   validateJobIdParam,
   wrap(agentTraceController),
+);
+
+v2Router.get(
+  "/agent/:jobId/skill",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  validateJobIdParam,
+  wrap(agentSkillController),
 );
 
 v2Router.get(

@@ -25,11 +25,13 @@ import {
   formatTypesOf,
 } from "../../lib/key-restriction";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
+import { collectPathPatternIssues } from "../../lib/crawl-regex";
 import {
   crawlGroup,
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { checkUrl } from "../../lib/threat-protection";
@@ -155,6 +157,7 @@ export async function crawlController(
     id,
     kind: "crawl",
     api_version: "v2",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
@@ -243,23 +246,15 @@ export async function crawlController(
     }
   }
 
-  if (Array.isArray(finalCrawlerOptions.includePaths)) {
-    for (const x of finalCrawlerOptions.includePaths) {
-      try {
-        new RegExp(x);
-      } catch (e) {
-        return res.status(400).json({ success: false, error: e.message });
-      }
-    }
-  }
-
-  if (Array.isArray(finalCrawlerOptions.excludePaths)) {
-    for (const x of finalCrawlerOptions.excludePaths) {
-      try {
-        new RegExp(x);
-      } catch (e) {
-        return res.status(400).json({ success: false, error: e.message });
-      }
+  // The request schema already validated user-supplied includePaths /
+  // excludePaths. Options generated from a prompt bypass the schema, so hold
+  // the merged result to the same caps, budget, and engine syntax.
+  if (req.body.prompt) {
+    const pathPatternIssues = collectPathPatternIssues(finalCrawlerOptions);
+    if (pathPatternIssues.length > 0) {
+      return res
+        .status(400)
+        .json({ success: false, error: pathPatternIssues[0].message });
     }
   }
 

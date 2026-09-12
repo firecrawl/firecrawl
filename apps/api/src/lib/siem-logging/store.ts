@@ -125,7 +125,7 @@ export async function isOrgSiemLoggingEnabled(orgId: string): Promise<boolean> {
 
   let rows: { enabled: boolean }[] = [];
   try {
-    rows = await db
+    rows = await dbRr
       .select({ enabled: schema.siem_logging_config.enabled })
       .from(schema.siem_logging_config)
       .where(eq(schema.siem_logging_config.org_id, orgId))

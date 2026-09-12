@@ -1,17 +1,13 @@
 import robotsParser, { Robot } from "robots-parser";
-import { config } from "../config";
 import { Logger } from "winston";
 import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
 import { Engine } from "../scraper/scrapeURL/engines";
+import { useFireEngine } from "../scraper/scrapeURL/engines/fire-engine/available";
 import { CostTracking } from "./cost-tracking";
 import { useIndex } from "../services";
 
 const ROBOTS_MAX_AGE = 1 * 24 * 60 * 60 * 1000;
-
-const useFireEngine =
-  config.FIRE_ENGINE_BETA_URL !== "" &&
-  config.FIRE_ENGINE_BETA_URL !== undefined;
 
 interface RobotsTxtChecker {
   robotsTxtUrl: string;

@@ -18,11 +18,11 @@ overrides:
   ajv: "^8.18.0"
   fast-xml-builder: ">=1.1.6 <2.0.0"
   fast-xml-parser: "^5.7.0"
-  fast-uri: ">=3.1.5 <4.0.0"
+  fast-uri: "3.1.6"
   "glob@>=10.2.0 <10.5.0": ">=10.5.0"
-  "js-yaml@<3.15.1": "3.15.1"
-  "js-yaml@>=4.0.0 <4.3.1": "4.3.1"
-  "qs@<6.15.2": ">=6.15.2 <7.0.0"
+  "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
+  "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
+  "qs@<6.16.0": ">=6.16.0 <7.0.0"
   "minimatch@<10.2.3": ">=10.2.3"
   "bn.js@<5.2.3": ">=5.2.3"
   "@tootallnate/once@<3.0.1": ">=3.0.1"
@@ -30,7 +30,7 @@ overrides:
   undici: "7.29.0"
   "picomatch@<4.0.4": ">=4.0.4"
   "yaml@<2.8.3": ">=2.8.3"
-  "smol-toml@<1.6.1": ">=1.6.1"
+  "smol-toml@<1.7.1": "1.8.0"
   handlebars: ">=4.7.9"
   "path-to-regexp@~0.1.12": "0.1.13"
   "brace-expansion@>=5.0.0 <5.0.9": "5.0.9"
@@ -47,14 +47,27 @@ overrides:
   "js-cookie@<3.0.7": "3.0.7"
   "shell-quote@<=1.8.4": "1.10.0"
   "esbuild@>=0.17.0 <0.28.1": "0.28.1"
-  "@opentelemetry/core@>=2.0.0 <2.8.0": "2.8.0"
+  "query-string@>=9.0.0 <10.0.0": ">=9.5.0 <10.0.0"
+  # GHSA-866g-f22w-33x8: pin the 4.x line only. Exact 4.0.51 cannot
+  # resolve to 5.x.
+  "@ai-sdk/provider-utils@>=4.0.0 <4.0.33": "4.0.51"
+  # GHSA-8988-4f7v-96qf (@opentelemetry/core): only patched on the 2.x
+  # line. @google-cloud/bigtable@7 resolves its metrics chain onto OTel
+  # 1.x; Google's own exporter 0.22 already peers with 2.x, so force the
+  # trio onto the patched line the rest of the tree already uses.
+  "@google-cloud/opentelemetry-cloud-monitoring-exporter": "^0.22.0"
+  "@opentelemetry/core@<2.9.0": "2.9.0"
+  "@opentelemetry/resources@<2.9.0": "2.9.0"
+  "@opentelemetry/sdk-metrics@<2.9.0": "2.9.0"
 patchedDependencies:
   "node-fetch@2.7.0": "patches/node-fetch@2.7.0.patch"
 allowBuilds:
   "@mendable/firecrawl-rs": true
-  "@sentry-internal/node-cpu-profiler": true
-  "@sentry/cli": true
   bigint-buffer: true
+  # Optional native accelerator for fast-crc32c (pulled in by
+  # @google-cloud/bigtable); the pure-JS fallback is fine for our payload
+  # sizes, so no native compilation.
+  sse4_crc32: false
   bufferutil: true
   esbuild: true
   foundationdb: true

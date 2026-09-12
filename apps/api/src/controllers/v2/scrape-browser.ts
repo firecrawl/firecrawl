@@ -55,6 +55,7 @@ import {
 } from "../../lib/keyless";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { integrationSchema } from "../../utils/integration";
 import { supabaseGetScrapeById } from "../../lib/supabase-jobs";
 import {
@@ -655,6 +656,7 @@ async function createSessionForScrape(
           // relying on the browser service's implicit default, matching the
           // standalone browser create path.
           record: true,
+          customerId: req.auth.team_id,
           ...(activityTtl !== undefined ? { activityTtl } : {}),
           ...(persistentStorage !== undefined ? { persistentStorage } : {}),
         },
@@ -815,6 +817,7 @@ async function createSessionForScrape(
       id: sessionId,
       kind: "interact",
       api_version: "v2",
+      external_request_id: externalRequestId(req),
       team_id: req.auth.team_id,
       target_hint: "Interact session",
       origin: req.body?.origin ?? "api",

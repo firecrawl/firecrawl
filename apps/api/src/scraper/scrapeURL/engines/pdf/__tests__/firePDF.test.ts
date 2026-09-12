@@ -22,6 +22,7 @@ function makeMeta() {
     id: "sync-page-markdown-test",
     url: "https://example.com/file.pdf",
     rewrittenUrl: undefined,
+    options: {},
     logger,
     mock: null,
     abort: {
@@ -35,6 +36,118 @@ function makeMeta() {
     },
   } as any;
 }
+
+describe("scrapePDFWithFirePDF request metadata", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "Document",
+      failed_pages: null,
+      pages_processed: 1,
+    } as any);
+  });
+
+  it.each([
+    [
+      "original URL",
+      {},
+      {},
+      { source_endpoint: "scrape", url: "https://example.com/file.pdf" },
+    ],
+    [
+      "rewritten URL",
+      { rewrittenUrl: "https://example.com/download/file.pdf" },
+      {},
+      {
+        source_endpoint: "scrape",
+        url: "https://example.com/download/file.pdf",
+      },
+    ],
+    ["empty URL", { url: "" }, {}, { source_endpoint: "scrape", url: "" }],
+    [
+      "non-HTTP URL",
+      { url: "file:///document.pdf" },
+      {},
+      { source_endpoint: "scrape", url: "file:///document.pdf" },
+    ],
+    [
+      "unmodified source value",
+      { url: "  document source  " },
+      {},
+      { source_endpoint: "scrape", url: "  document source  " },
+    ],
+    ["ZDR", {}, { zeroDataRetention: true }, { source_endpoint: "scrape" }],
+    ["parse", {}, { isParse: true }, { source_endpoint: "parse" }],
+    [
+      "uploaded file",
+      {},
+      {
+        uploadedFile: {
+          buffer: Buffer.from("document"),
+          filename: "document.pdf",
+        },
+      },
+      { source_endpoint: "parse" },
+    ],
+  ] as const)(
+    "sends source metadata for %s",
+    async (_name, overrides, internalOptions, expected) => {
+      const meta = { ...makeMeta(), ...overrides };
+      meta.internalOptions = {
+        ...meta.internalOptions,
+        zeroDataRetention: false,
+        ...internalOptions,
+      };
+
+      await scrapePDFWithFirePDF(meta, "BASE64", 1);
+
+      const body = mockedRobustFetch.mock.calls[0][0].body as Record<
+        string,
+        unknown
+      >;
+      expect(body).toMatchObject({
+        source: "firecrawl",
+        source_request_context: "default",
+        ...expected,
+      });
+      expect(Object.hasOwn(body, "url")).toBe(Object.hasOwn(expected, "url"));
+    },
+  );
+
+  it.each([
+    ["empty options", {}, "default"],
+    ["empty headers and actions", { headers: {}, actions: [] }, "default"],
+    ["header", { headers: { "X-Example": "example-value" } }, "custom"],
+    ["empty header value", { headers: { "X-Example": "" } }, "custom"],
+    ["cookie header", { headers: { Cookie: "example=value" } }, "custom"],
+    ["action", { actions: [{ type: "wait", milliseconds: 1 }] }, "custom"],
+    ["profile", { profile: { name: "example-profile" } }, "custom"],
+    [
+      "profile without saving changes",
+      { profile: { name: "example-profile", saveChanges: false } },
+      "custom",
+    ],
+  ] as const)(
+    "describes %s without forwarding option values",
+    async (_name, options, expected) => {
+      const meta = { ...makeMeta(), options };
+
+      await scrapePDFWithFirePDF(meta, "BASE64", 1);
+
+      const body = mockedRobustFetch.mock.calls[0][0].body as Record<
+        string,
+        unknown
+      >;
+      expect(body.source_request_context).toBe(expected);
+      expect(body).not.toHaveProperty("headers");
+      expect(body).not.toHaveProperty("actions");
+      expect(body).not.toHaveProperty("profile");
+      expect(JSON.stringify(body)).not.toContain("example-value");
+      expect(JSON.stringify(body)).not.toContain("example=value");
+      expect(JSON.stringify(body)).not.toContain("example-profile");
+    },
+  );
+});
 
 describe("reconcilePageCountWithFirePdf", () => {
   it("uses fire-pdf's count when the upstream pass left it at 0", () => {
@@ -131,5 +244,185 @@ describe("scrapePDFWithFirePDF page markdown", () => {
         true,
       ),
     ).rejects.toThrow(/did not include requested physical page markdown/);
+  });
+});
+
+describe("scrapePDFWithFirePDF typed blocks", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("requests and returns the block payload", async () => {
+    const blocks = [
+      {
+        page: 1,
+        width: 800,
+        height: 1100,
+        status: "ok",
+        items: [
+          {
+            id: "p1.b0",
+            type: "title",
+            label: "doc_title",
+            bbox: [0.1, 0.05, 0.9, 0.1],
+            content: "# Annual Report",
+            markdown_span: [0, 15],
+            reading_order: 0,
+            source: "native_text",
+            confidence: { layout: 0.97, ocr: null },
+          },
+        ],
+      },
+    ];
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "# Annual Report",
+      failed_pages: null,
+      pages_processed: 1,
+      blocks,
+    } as any);
+
+    const result = await scrapePDFWithFirePDF(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      false,
+      true,
+    );
+
+    expect(mockedRobustFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ include_blocks: true }),
+      }),
+    );
+    expect(
+      ((mockedRobustFetch.mock.calls[0][0] as any).body as any)
+        .include_page_markdown,
+    ).toBeUndefined();
+    expect(result.blocks).toEqual(blocks);
+    expect(result.pageMarkdown).toBeUndefined();
+  });
+
+  it("rejects block-less FirePDF responses for block-aware requests", async () => {
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "document only",
+      failed_pages: null,
+      pages_processed: 1,
+    } as any);
+
+    await expect(
+      scrapePDFWithFirePDF(
+        makeMeta(),
+        "BASE64",
+        undefined,
+        undefined,
+        "auto",
+        false,
+        true,
+      ),
+    ).rejects.toThrow(/did not include requested typed blocks/);
+  });
+});
+
+describe("scrapePDFWithFirePDF page markers", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("requests marker-joined markdown and returns it verbatim", async () => {
+    const marked = "Page 1\n\n---\n\n<!-- page 2 -->\n\nPage 2";
+    mockedRobustFetch.mockResolvedValue({
+      markdown: marked,
+      failed_pages: null,
+      pages_processed: 2,
+      page_markers: true,
+    } as any);
+
+    const result = await scrapePDFWithFirePDF(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      false,
+      false,
+      true,
+    );
+
+    expect(mockedRobustFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ page_markers: true }),
+      }),
+    );
+    expect(result.markdown).toBe(marked);
+  });
+
+  it("does not send page_markers for plain requests", async () => {
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "plain",
+      failed_pages: null,
+      pages_processed: 1,
+    } as any);
+
+    await scrapePDFWithFirePDF(makeMeta(), "BASE64");
+
+    expect(
+      ((mockedRobustFetch.mock.calls[0][0] as any).body as any).page_markers,
+    ).toBeUndefined();
+  });
+
+  it("rejects FirePDF responses that do not acknowledge page markers", async () => {
+    // An old fire-pdf build ignores the unknown `page_markers` request field
+    // and returns ordinary markdown with no echo — indistinguishable from
+    // marked output by content alone, so the missing echo must fail loud.
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "Page 1\n\n---\n\nPage 2",
+      failed_pages: null,
+      pages_processed: 2,
+    } as any);
+
+    await expect(
+      scrapePDFWithFirePDF(
+        makeMeta(),
+        "BASE64",
+        undefined,
+        undefined,
+        "auto",
+        false,
+        false,
+        true,
+      ),
+    ).rejects.toThrow(/did not acknowledge requested page markers/);
+  });
+
+  it("composes page_markers with include_blocks on the wire", async () => {
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "Page 1\n\n---\n\n<!-- page 2 -->\n\nPage 2",
+      failed_pages: null,
+      pages_processed: 2,
+      blocks: [],
+      page_markers: true,
+    } as any);
+
+    await scrapePDFWithFirePDF(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      false,
+      true,
+      true,
+    );
+
+    expect(mockedRobustFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          include_blocks: true,
+          page_markers: true,
+        }),
+      }),
+    );
   });
 });

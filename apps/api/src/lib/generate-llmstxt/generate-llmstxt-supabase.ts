@@ -1,5 +1,5 @@
 import { and, desc, eq, gte } from "drizzle-orm";
-import { db } from "../../db/connection";
+import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
 import { logger } from "../logger";
@@ -23,7 +23,7 @@ export async function getLlmsTextFromCache(
   const originUrl = normalizeUrlOnlyHostname(url);
 
   try {
-    const [data] = await db
+    const [data] = await dbRr
       .select()
       .from(schema.llm_texts)
       .where(

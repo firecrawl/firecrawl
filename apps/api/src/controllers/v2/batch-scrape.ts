@@ -36,6 +36,7 @@ import {
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -47,7 +48,7 @@ import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
-import { CrawlDenialError } from "../../lib/error";
+import { UnsupportedSiteError } from "../../lib/error";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -180,7 +181,7 @@ export async function batchScrapeController(
           apiKeyId: req.acuc?.api_key_id ?? null,
           auditMetadata: req.body.auditMetadata,
           url,
-          error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
+          error: new UnsupportedSiteError(),
           origin: req.body.origin ?? "api",
           integration: req.body.integration,
           zeroDataRetention,
@@ -205,7 +206,7 @@ export async function batchScrapeController(
       apiKeyId: req.acuc?.api_key_id ?? null,
       auditMetadata: req.body.auditMetadata,
       url,
-      error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
+      error: new UnsupportedSiteError(),
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       zeroDataRetention,
@@ -319,6 +320,7 @@ export async function batchScrapeController(
       id,
       kind: "batch_scrape",
       api_version: "v2",
+      external_request_id: externalRequestId(req),
       team_id: req.auth.team_id,
       origin: req.body.origin ?? "api",
       integration: req.body.integration,

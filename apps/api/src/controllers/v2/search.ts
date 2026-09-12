@@ -1,4 +1,5 @@
-import { Response } from "express";
+import { NextFunction, Request, Response } from "express";
+import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import {
   RequestWithAuth,
@@ -22,14 +23,17 @@ import {
 import { logger as _logger } from "../../lib/logger";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
-import { CategoryOption } from "../../lib/search-query-builder";
-import {
-  applyZdrScope,
-  captureExceptionWithZdrCheck,
-} from "../../services/sentry";
+import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
+import {
+  withSpan,
+  setSpanAttributes,
+  recordSpanException,
+  SpanKind,
+  type Span,
+} from "../../lib/otel-tracer";
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
@@ -42,10 +46,58 @@ import {
 import { wantsDeveloperCategory } from "../../search/developer";
 import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { applyNotice, type Notice } from "../../lib/deprecations";
+
+const RESEARCH_CATEGORY_NOTICE: Notice = {
+  message:
+    "On 2026-11-16, the 'research' search category will query the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) rather than restricting web results to a fixed list of 14 academic domains. Results will move from data.web to data.research and will match the records returned by the Research Index endpoint GET /search/research/papers, with the fields paperId, primaryId, ids, title, abstract and score. To adopt those records today, call GET /search/research/papers (https://docs.firecrawl.dev/api-reference/endpoint/research-search-papers). To continue receiving web pages from academic domains, use includeDomains. The github, pdf and developer categories are unchanged. See https://docs.firecrawl.dev/features/research",
+  links: ['<https://docs.firecrawl.dev/features/research>; rel="help"'],
+};
+
+// Ahead of auth and validation so rejected requests carry the notice too.
+export function researchCategoryNoticeMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (hasCategory(req.body?.categories, "research")) {
+    applyNotice(res, RESEARCH_CATEGORY_NOTICE);
+  }
+  next();
+}
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
   res: Response<SearchResponse>,
+) {
+  // Resolved before any span starts so the whole request stays unrecorded for
+  // zero-data-retention and anonymous searches (see otel-tracer).
+  const enterprise: unknown[] = Array.isArray(req.body?.enterprise)
+    ? req.body.enterprise
+    : [];
+  const zeroDataRetentionTrace =
+    Boolean(getSearchForcedKind(req.acuc?.flags)) ||
+    enterprise.includes("zdr") ||
+    enterprise.includes("anon");
+
+  return withSpan(
+    "api.search.request",
+    span => searchControllerInner(req, res, span),
+    {
+      kind: SpanKind.SERVER,
+      attributes: {
+        "api.version": "v2",
+        "search.team_id": req.auth.team_id,
+      },
+      zeroDataRetention: zeroDataRetentionTrace,
+    },
+  );
+}
+
+async function searchControllerInner(
+  req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
+  res: Response<SearchResponse>,
+  span: Span,
 ) {
   const middlewareStartTime =
     (req as any).requestTiming?.startTime || new Date().getTime();
@@ -168,7 +220,6 @@ export async function searchController(
     const isZDROrAnon = isZDR || isAnon;
     zeroDataRetention = isZDROrAnon ?? false;
     logger = logger.child({ zeroDataRetention });
-    applyZdrScope(zeroDataRetention);
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
     if (isZDROrAnon && !teamForcedKind) {
@@ -181,11 +232,17 @@ export async function searchController(
       }
     }
 
+    // Kick off the `requests` row insert without blocking: it queues on the
+    // Postgres pool and can take seconds under pool pressure. We only need it
+    // committed before the child-row writes (logSearch et al. below) to keep
+    // the request_id FK ordering — same pattern as the scrape controllers.
+    let logRequestPromise: Promise<void> | undefined;
     if (!agentRequestId) {
-      await logRequest({
+      logRequestPromise = logRequest({
         id: jobId,
         kind: "search",
         api_version: "v2",
+        external_request_id: externalRequestId(req),
         team_id: req.auth.team_id,
         origin: req.body.origin ?? "api",
         integration: req.body.integration,
@@ -290,6 +347,15 @@ export async function searchController(
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
+    // Wait for the parent log before inserting the child search log.
+    const logStart = Date.now();
+    await logRequestPromise;
+    const waited = Date.now() - logStart;
+    if (waited >= 5)
+      logger.warn("Had to wait for log request promise to complete", {
+        timeMs: waited,
+      });
+
     logSearch(
       {
         id: jobId,
@@ -308,7 +374,9 @@ export async function searchController(
         zeroDataRetention,
       },
       false,
-    );
+    ).catch(error => {
+      logger.error("Failed to log search", { error, jobId });
+    });
 
     if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
       logResearchEndpoint({
@@ -325,7 +393,7 @@ export async function searchController(
           via: "search_category",
         },
         response: null,
-        num_results: result.response.developer?.length ?? 0,
+        num_results: result.developerResultsCount,
         time_taken: timeTakenInSeconds,
         // Ensure preview-mode searches don't get a non-zero credits_cost
         // in the research ledger when preview tokens are used.
@@ -388,13 +456,12 @@ export async function searchController(
       });
     }
 
-    captureExceptionWithZdrCheck(error, {
-      extra: { zeroDataRetention },
-    });
     logger.error("Unhandled error occurred in search", {
       version: "v2",
       error,
     });
+    recordSpanException(span, error);
+    setSpanAttributes(span, { "search.status_code": 500 });
     return res.status(500).json({
       success: false,
       error: error.message,

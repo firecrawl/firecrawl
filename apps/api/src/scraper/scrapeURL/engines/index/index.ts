@@ -37,11 +37,14 @@ import {
   NoCachedDataError,
 } from "../../error";
 import {
+  getPDFBlocks,
   getPDFMaxPages,
   getPDFPageMarkdown,
+  getPDFPageMarkers,
   shouldParsePDF,
 } from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
+import { hasCustomRequestContext } from "../../lib/request-context";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
   // Skip caching if screenshot format has custom viewport or quality settings
@@ -60,10 +63,13 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     // every access must go through the Exchange and its ledger.
     meta.winnerEngine !== "exchange" &&
     !(meta.winnerEngine === "pdf" && !shouldParsePDF(meta.options.parsers)) &&
-    // Page-aware results are capability-specific and are not represented in
-    // the URL index schema yet. Do not write an entry that could later be
-    // served without its required pages payload.
+    // Page-aware and block-aware results are capability-specific and are not
+    // represented in the URL index schema yet. Do not write an entry that
+    // could later be served without its required pages/blocks payload.
+    // Marker-bearing markdown is mutated output — never index it either.
     !getPDFPageMarkdown(meta.options.parsers) &&
+    !getPDFBlocks(meta.options.parsers) &&
+    !getPDFPageMarkers(meta.options.parsers) &&
     !meta.options.parsers?.some(parser => {
       if (
         typeof parser === "object" &&
@@ -80,9 +86,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
         meta.winnerEngine !== "fetch")) &&
     !meta.featureFlags.has("actions") &&
     !hasCustomScreenshotSettings &&
-    (meta.options.headers === undefined ||
-      Object.keys(meta.options.headers).length === 0) &&
-    meta.options.profile === undefined;
+    !hasCustomRequestContext(meta.options);
 
   if (!shouldCache) {
     return document;
@@ -560,6 +564,18 @@ export async function scrapeURLWithIndex(
       });
       throw new IndexMissError();
     }
+  }
+
+  // A cached image document is OCR output. The live path only OCRs images
+  // for requests that opted in with the image parser on a team with the
+  // flag, so serving that output to any other request would hand out what a
+  // fresh scrape refuses: report a miss and let the waterfall decide.
+  if (
+    doc.contentType?.startsWith("image/") &&
+    !(await meta.imageOcrEnabled())
+  ) {
+    logLookup("debug", "hit", { imageMismatch: "cached_ocr_not_requested" });
+    throw new IndexMissError();
   }
 
   logLookup("debug", "hit", {

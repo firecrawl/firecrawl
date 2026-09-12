@@ -23,6 +23,7 @@ import {
 import { configDotenv } from "dotenv";
 import { logger } from "../../lib/logger";
 import { creditsBilledByCrawlId } from "../../db/rpc";
+import { dbRr } from "../../db/connection";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import {
   scrapeQueue,
@@ -218,7 +219,7 @@ export async function crawlStatusController(
   );
 
   const creditsBilled = config.USE_DB_AUTHENTICATION
-    ? await creditsBilledByCrawlId(req.params.jobId).catch(() => null)
+    ? await creditsBilledByCrawlId(dbRr, req.params.jobId).catch(() => null)
     : null;
 
   // check if the crawl failed during kickoff (e.g. queue full)

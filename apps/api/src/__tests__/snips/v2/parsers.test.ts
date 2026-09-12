@@ -388,12 +388,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
     );
 
     it.concurrent(
-      "rejects non-boolean pageMarkdown",
+      "rejects non-boolean pages",
       async () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: [{ type: "pdf", pageMarkdown: "yes" } as any],
+            parsers: [{ type: "pdf", pages: "yes" } as any],
           },
           identity,
         );

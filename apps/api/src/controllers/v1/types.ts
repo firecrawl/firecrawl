@@ -1,9 +1,11 @@
-import { Request, Response } from "express";
+import { Request } from "express";
 import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
+import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
+import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
 import {
   ExtractorOptions,
   PageOptions,
@@ -22,11 +24,13 @@ import { ProductProfile } from "../../types/product";
 import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
+import type { RateLimiterMode } from "../../types";
 
 type Format =
   | "markdown"
   | "html"
   | "rawHtml"
+  | "rawBase64"
   | "links"
   | "screenshot"
   | "screenshot@fullPage"
@@ -219,6 +223,7 @@ export const extractOptions = z
     systemPrompt: z.string().max(10000).prefault(""),
     prompt: z.string().max(10000).optional(),
     temperature: z.number().optional(),
+    checkPromptInjection: z.boolean().optional(),
   })
   .transform(data => ({
     ...data,
@@ -253,6 +258,7 @@ const extractOptionsWithAgent = z
     systemPrompt: z.string().max(10000).prefault(""),
     prompt: z.string().max(10000).optional(),
     temperature: z.number().optional(),
+    checkPromptInjection: z.boolean().optional(),
     agent: z
       .strictObject({
         model: z.string().prefault(agentExtractModelValue),
@@ -434,6 +440,7 @@ const baseScrapeOptions = z.strictObject({
       "markdown",
       "html",
       "rawHtml",
+      "rawBase64",
       "links",
       "screenshot",
       "screenshot@fullPage",
@@ -455,6 +462,10 @@ const baseScrapeOptions = z.strictObject({
     .refine(
       x => !x.includes("changeTracking") || x.includes("markdown"),
       "The changeTracking format requires the markdown format to be specified as well",
+    )
+    .refine(
+      x => !x.includes("rawBase64") || x.length === 1,
+      "The rawBase64 format cannot be combined with other formats",
     ),
   headers: z.record(z.string(), z.string()).optional(),
   includeTags: z
@@ -531,7 +542,10 @@ const baseScrapeOptions = z.strictObject({
   fastMode: z.boolean().prefault(false),
   useMock: z.string().optional(),
   blockAds: z.boolean().prefault(true),
-  proxy: z.enum(["basic", "stealth", "enhanced", "auto"]).prefault("basic"),
+  // No prefault here: the default is conditional on location (see extractTransform).
+  // Requests without a non-default country default to "auto"; requests with one
+  // default to "basic".
+  proxy: z.enum(["basic", "stealth", "enhanced", "auto"]).optional(),
   maxAge: z
     .int()
     .gte(0)
@@ -568,6 +582,25 @@ const extractTransformRequired = <T extends ScrapeOptions>(obj: T): T => {
   return extractTransform(obj) as T;
 };
 
+// Whether the request pins a country. Both `location.country` and the
+// deprecated `geolocation.country` fill in a "us-generic" default when their
+// object is present but the country is not, so that value does not count as
+// pinned. Checking both fields means a real country in either one counts, even
+// if the other defaulted.
+const hasNonDefaultCountry = (obj: ScrapeOptionsBase): boolean =>
+  [obj.location?.country, obj.geolocation?.country].some(
+    country => country !== undefined && country.toLowerCase() !== "us-generic",
+  );
+
+// The proxy a request will actually run with. Proxy mode is no longer
+// user-selectable in effect: basic/stealth/enhanced all collapse to auto, which
+// starts on a basic proxy and escalates to stealth only when a proxy error is
+// hit. Enhanced Mode carries no surcharge, so forcing auto only improves
+// success rates. Requests that pin a country are the exception: a stealth proxy
+// cannot honour one, so they stay on basic.
+const effectiveProxy = (obj: ScrapeOptionsBase): "basic" | "auto" =>
+  hasNonDefaultCountry(obj) ? "basic" : "auto";
+
 // The timeout a request will actually run with, derived from the timeout it
 // asked for. Single source of truth for the bumps applied by extractTransform,
 // so waitForRefine (which runs before the transform) can validate waitFor
@@ -576,16 +609,20 @@ const effectiveTimeout = (obj: ScrapeOptionsBase): number | undefined => {
   if ((obj as ScrapeOptions).agent) {
     return 300000;
   }
-  if (obj.timeout === 30000) {
+  // Only the auto proxy earns the longer window, because only it can spend time
+  // escalating to stealth. A pinned country keeps the request on basic, so it
+  // keeps the historical 30s default too.
+  if (obj.timeout === 30000 && effectiveProxy(obj) === "auto") {
     return 120000;
   }
   return obj.timeout;
 };
 
 const extractTransform = (obj: ScrapeOptions) => {
-  // Resolved up front from the *requested* timeout: the json/changeTracking
+  // Both resolved up front from the *requested* timeout: the json/changeTracking
   // blocks below rewrite obj.timeout, and the auto-proxy bump must not be
   // suppressed by them (v2 already decides this from the unmutated input).
+  const requestedTimeout = obj.timeout;
   const timeout = effectiveTimeout(obj);
 
   // Handle timeout
@@ -610,12 +647,13 @@ const extractTransform = (obj: ScrapeOptions) => {
     obj = { ...obj, timeout: 60000 };
   }
 
-  // Proxy mode is no longer user-selectable in effect: basic/stealth/enhanced
-  // all collapse to auto, which starts on a basic proxy and escalates to
-  // stealth only when a proxy error is hit. Enhanced Mode carries no surcharge,
-  // so forcing auto only improves success rates.
-  obj = { ...obj, proxy: "auto" };
-  if (timeout !== undefined) {
+  // The requested proxy is ignored: every request runs on the proxy that
+  // effectiveProxy picks, which is auto unless a country is pinned.
+  obj = { ...obj, proxy: effectiveProxy(obj) };
+  // Write the timeout back only when a bump actually applies. With no bump,
+  // effectiveTimeout echoes the requested value, and writing that back would
+  // undo the json/changeTracking bumps above.
+  if (timeout !== undefined && timeout !== requestedTimeout) {
     obj = { ...obj, timeout };
   }
 
@@ -882,8 +920,8 @@ export type BatchScrapeRequest = z.infer<typeof batchScrapeRequestSchema>;
 export type BatchScrapeRequestInput = z.input<typeof batchScrapeRequestSchema>;
 
 const crawlerOptions = z.strictObject({
-  includePaths: z.string().array().prefault([]),
-  excludePaths: z.string().array().prefault([]),
+  includePaths: pathPatternsSchema.prefault([]),
+  excludePaths: pathPatternsSchema.prefault([]),
   maxDepth: z.number().prefault(10), // default?
   maxDiscoveryDepth: z.number().optional(),
   limit: z.number().prefault(10000), // default?
@@ -932,6 +970,9 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
 
 export const crawlRequestSchema = crawlRequestSchemaBase
   .strict()
+  .superRefine((x, ctx) => {
+    addPathRegexIssues(x, ctx);
+  })
   .refine(
     x => (x.scrapeOptions ? extractRefine(x.scrapeOptions) : true),
     extractRefineOpts,
@@ -1010,7 +1051,11 @@ const mapRequestSchemaBase = crawlerOptions
     auditMetadata: auditMetadataSchema.optional(),
   });
 
-export const mapRequestSchema = mapRequestSchemaBase.strict();
+export const mapRequestSchema = mapRequestSchemaBase
+  .strict()
+  .superRefine((x, ctx) => {
+    addPathRegexIssues(x, ctx);
+  });
 
 // export type MapRequest = {
 //   url: string;
@@ -1025,10 +1070,14 @@ export type Document = {
   description?: string;
   url?: string;
   markdown?: string;
-  /** Physical PDF pages, populated by the v2 pageMarkdown parser option. */
+  /** Physical PDF pages, populated by the v2 `pages` parser option. */
   pages?: Array<{ pageNumber: number; markdown: string }>;
+  /** Typed PDF layout blocks with bounding boxes, populated by the v2
+   * `blocks` parser option. */
+  blocks?: PdfPageBlocks[];
   html?: string;
   rawHtml?: string;
+  rawBase64?: string;
   links?: string[];
   images?: string[];
   screenshot?: string;
@@ -1352,6 +1401,18 @@ export type TeamFlags = {
   >;
   // routes the team's new queue work to the FoundationDB backend
   nuqFdb?: boolean;
+  // enables OCR of raster image URLs and uploads through FirePDF (see
+  // lib/image-ocr-gate.ts); rolled out per team
+  imageOcr?: boolean;
+  /**
+   * Per-endpoint rate-limit overrides, in requests per minute. A value here
+   * replaces the computed limit for that mode, so the Autumn multiplier is
+   * not applied. The map is sparse: a mode that is absent keeps the normal
+   * computation. Only a finite integer above zero is used; any other value is
+   * ignored. Read by getAutumnRateLimiter, so it never affects the preview
+   * token.
+   */
+  rateLimitOverrides?: Partial<Record<RateLimiterMode, number>>;
 } | null;
 
 export type AuthCreditUsageChunkFromTeam = Omit<
@@ -1392,11 +1453,6 @@ export interface RequestWithAuth<
 > extends RequestWithMaybeACUC<ReqParams, ReqBody, ResBody> {
   auth: AuthObject;
   account?: Account;
-}
-
-export interface ResponseWithSentry<ResBody = undefined>
-  extends Response<ResBody> {
-  sentry?: string;
 }
 
 export function toLegacyCrawlerOptions(x: CrawlerOptions) {

@@ -23,7 +23,16 @@ const RESEARCH_PAPER_OPERATIONS = [
   "similar",
 ] as const;
 
-export type ResearchPaperOperation = (typeof RESEARCH_PAPER_OPERATIONS)[number];
+// "github" is out of the default and the true/all shorthand, so keyless
+// behaviour is unchanged until someone names it. An explicit list replaces the
+// default, so closing it means RESEARCH_KEYLESS_DISABLED=search,inspect,read,similar,github
+const RESEARCH_KEYLESS_OPERATIONS = [
+  ...RESEARCH_PAPER_OPERATIONS,
+  "github",
+] as const;
+
+export type ResearchKeylessOperation =
+  (typeof RESEARCH_KEYLESS_OPERATIONS)[number];
 
 const researchKeylessDisabled = z.preprocess(
   value => {
@@ -40,7 +49,7 @@ const researchKeylessDisabled = z.preprocess(
       .filter(Boolean);
   },
   z
-    .array(z.enum(RESEARCH_PAPER_OPERATIONS))
+    .array(z.enum(RESEARCH_KEYLESS_OPERATIONS))
     .default([...RESEARCH_PAPER_OPERATIONS]),
 );
 
@@ -152,6 +161,9 @@ const configSchema = z.object({
 
   // API Keys & Authentication
   BULL_AUTH_KEY: z.string().optional(),
+  S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
@@ -159,6 +171,16 @@ const configSchema = z.object({
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
+  // How long a team → org mapping is trusted in-process before it is re-read
+  // from the DB. Bounded because a team's org changes when accounts are merged
+  // or moved: every warm pod otherwise keeps billing the old Autumn customer
+  // (and 404s on the entity that no longer lives there) until it restarts.
+  AUTUMN_ORG_CACHE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(3600)
+    .default(300),
   RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
@@ -194,6 +216,10 @@ const configSchema = z.object({
   DATABASE_URL: z.string().optional(),
   DATABASE_REPLICA_URL: z.string().optional(),
   INDEX_DATABASE_URL: z.string().optional(),
+  // Pool sizing preset for this process (see db/pool-profiles.ts). Unset keeps
+  // the historical pool settings; deployments opt into `api`, `worker` or
+  // `utility` to keep connections warm within the pooler's client budget.
+  DB_POOL_PROFILE: emptyStringAsUndefined(z.enum(["api", "worker", "utility"])),
   INDEX_CACHE_REDIS_URL: z.string().optional(),
   // Negative (miss) caching TTL for index URL->id lookups, in ms. 0 disables
   // it; the cache then only shields lookups that find data. A positive value
@@ -203,6 +229,7 @@ const configSchema = z.object({
   REDIS_URL: z.string().optional(),
   REDIS_EVICT_URL: z.string().optional(),
   REDIS_RATE_LIMIT_URL: z.string().optional(),
+  SPUR_REDIS_URL: z.string().optional(),
   NUQ_DATABASE_URL: z.string().optional(),
   NUQ_DATABASE_URL_LISTEN: z.string().optional(),
   NUQ_RABBITMQ_URL: z.string().optional(),
@@ -231,6 +258,34 @@ const configSchema = z.object({
   PARSE_UPLOAD_STORAGE_DRIVER: z.enum(["local", "gcs"]).optional(),
   PARSE_UPLOAD_REF_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   PARSE_UPLOAD_PUBLIC_BASE_URL: z.string().url().optional(),
+
+  // Google Cloud Pub/Sub
+  PUBSUB_CREDENTIALS: z.string().optional(),
+  // Publisher backlog cap, per process. Log publishing is fire-and-forget and
+  // retries for up to five minutes, so during a stall the backlog is what
+  // grows; rows beyond the cap are dropped and counted rather than letting a
+  // hung channel take the process down.
+  PUBSUB_MAX_OUTSTANDING_MESSAGES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10_000),
+  PUBSUB_MAX_OUTSTANDING_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(64 * 1024 * 1024),
+
+  // Cloud Bigtable (change tracking bookkeeping store). The client
+  // auto-detects BIGTABLE_EMULATOR_HOST, so local dev only needs the
+  // emulator plus these vars. BIGTABLE_CREDENTIALS mirrors
+  // GCS_CREDENTIALS: base64-encoded service-account JSON; unset falls
+  // back to Application Default Credentials.
+  BIGTABLE_PROJECT_ID: z.string().optional(),
+  BIGTABLE_INSTANCE_ID: z.string().optional(),
+  BIGTABLE_APP_PROFILE_ID: z.string().optional(),
+  BIGTABLE_CHANGE_TRACKING_TABLE: z.string().optional(),
+  BIGTABLE_CREDENTIALS: z.string().optional(),
 
   // ClickHouse (Search Analytics)
   CLICKHOUSE_ANALYTICS_URL: z.string().optional(),
@@ -270,6 +325,13 @@ const configSchema = z.object({
   SCRAPE_MAX_FEATURE_REMOVALS: z.coerce.number().int().positive().default(3),
   SCRAPE_MAX_PDF_PREFETCHES: z.coerce.number().int().positive().default(2),
   SCRAPE_MAX_DOCUMENT_PREFETCHES: z.coerce.number().int().positive().default(2),
+  // Max concurrent native PDF extractions per process. Each extraction holds
+  // the (≤50MB) PDF plus its parsed text/markdown in memory on a tokio blocking
+  // thread; unbounded concurrency OOM-killed pods when several large PDFs
+  // landed on one process at once. 3 keeps the worst-case transient memory
+  // (~3 × ~0.5GB) well under the 8G limit while being far above typical demand
+  // (per-pod average concurrency is ~0.02).
+  PDF_EXTRACTION_CONCURRENCY: z.coerce.number().int().positive().default(3),
 
   // Search Services
   SEARXNG_ENDPOINT: z.string().optional(),
@@ -328,9 +390,58 @@ const configSchema = z.object({
   // Async /jobs rollout is a separate, server-controlled cohort inside
   // traffic already selected for FirePDF. It is disabled by default.
   FIRE_PDF_ASYNC_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  // Separate cohort for crawl/batch-originated scrapes (any scrape
+  // carrying a crawlId): no caller waits on one specific document, so
+  // these can ramp onto the async lane ahead of interactive traffic.
+  FIRE_PDF_ASYNC_BULK_ORIGIN_PERCENT: z.coerce
+    .number()
+    .min(0)
+    .max(100)
+    .default(0),
   FIRE_PDF_ASYNC_FORCE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_DISABLE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_ALLOW_REQUEST_OVERRIDE: z.stringbool().default(false),
+  // Large-PDF by-reference submits (30-256MB files uploaded to GCS and
+  // handed to fire-pdf via `input_gcs_uri`). This is an explicit on/off
+  // switch, not a percentage: no alternative engine exists at this size,
+  // so there is no cohort to sample "out" — only text-only degradation.
+  // FIRE_PDF_ENABLE remains the master switch for both paths.
+  FIRE_PDF_BY_REFERENCE_ENABLE: z.stringbool().default(true),
+  // Bucket that receives large-PDF inputs for by-reference async submits
+  // (fire-pdf reads them back via `input_gcs_uri`). fire-pdf only accepts
+  // URIs inside its own configured bucket + `inputs/` prefix, so this must
+  // match fire-pdf's FIRE_PDF_GCS_BUCKET. Upload failures (e.g. missing
+  // IAM grant) fall back to the pre-by-reference behavior for oversized
+  // files rather than failing the scrape.
+  FIRE_PDF_GCS_INPUT_BUCKET: z
+    .string()
+    .trim()
+    .min(1)
+    .default("firecrawl-pdf-pipeline"),
+  // Bucket fire-engine uses for its large-PDF handoff (files too big to
+  // inline as base64 in its response). Acts as the allowlist for inbound
+  // `file.gcs_uri` references — objects outside it are never fetched or
+  // copied. Deliberately no default: this is a security-sensitive inbound
+  // allowlist, so consuming references requires explicit opt-in (set to
+  // fire-engine's GCS_PDF_BUCKET_NAME); unset disables the path.
+  FIRE_ENGINE_PDF_GCS_BUCKET: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Large-PDF size policy, applied per team on every acquisition path
+  // (direct download, fire-engine handoff, by-reference submit) and sent to
+  // fire-engine as the per-request pdfMaxSize. The default applies to every
+  // team; ids on the allowlist get the privileged cap. Both are clamped to
+  // the 256MB architectural ceiling.
+  PDF_BY_REFERENCE_MAX_BYTES_DEFAULT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50 * 1024 * 1024),
+  PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(256 * 1024 * 1024),
+  // Comma-separated team ids granted the privileged cap.
+  PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),
 
   // RunPod
   RUNPOD_MU_API_KEY: z.string().optional(),
@@ -412,11 +523,15 @@ const configSchema = z.object({
   SYS_INFO_MAX_CACHE_DURATION: z.coerce.number().default(150),
   USE_GO_MARKDOWN_PARSER: z.stringbool().optional(),
 
-  // Sentry
-  SENTRY_DSN: z.string().optional(),
-  SENTRY_TRACE_SAMPLE_RATE: z.coerce.number().default(0.01),
-  SENTRY_ERROR_SAMPLE_RATE: z.coerce.number().default(0.05),
   SENTRY_ENVIRONMENT: z.string().default("production"),
+
+  // OpenTelemetry. Tracing is off unless an OTLP endpoint is set; spans are then
+  // exported over http/protobuf at 100% sampling, and the SDK honors the
+  // standard OTEL_EXPORTER_OTLP_* / OTEL_BSP_* / OTEL_RESOURCE_ATTRIBUTES
+  // variables. Zero-data-retention spans are never exported (see otel-tracer).
+  OTEL_EXPORTER_OTLP_ENDPOINT: emptyStringAsUndefined(z.string().url()),
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: emptyStringAsUndefined(z.string().url()),
+  OTEL_SERVICE_NAME: emptyStringAsUndefined(z.string()),
   NUQ_POD_NAME: z.string().default("main"),
 
   // Billing
@@ -428,6 +543,25 @@ const configSchema = z.object({
   FIREBILL_URL: emptyStringAsUndefined(z.string().url()),
   FIREBILL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   FIREBILL_ORG_IDS: delimitedList(",").optional(),
+  // How long "this team is not partner-provisioned" is trusted. Only the
+  // negative is bounded: provisioning is one-way, so a positive cannot go
+  // stale, while a negative does the moment a partner provisions an account.
+  // Capped at firebill's own gateway lookup TTL (300s) — the two sides answer
+  // the same question, and trusting a negative for longer than firebill trusts
+  // an answer turns this cache back into the stale allowlist it replaced. 0
+  // disables caching negatives entirely.
+  FIREBILL_GATEWAY_NEGATIVE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(300)
+    .default(60),
+  // Sticky percentage ramp, on top of the allowlist above. The bucket is a
+  // hash of the org id, so an org that is in at 5 is still in at 30 — a ramp
+  // only ever adds, and never reshuffles who is on which path mid-rollout.
+  // 0 (the default) is also the kill switch: the allowlist still routes, and
+  // nothing else does.
+  FIREBILL_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
   // Miscellaneous
   IDMUX_URL: z.string().optional(),
@@ -473,6 +607,8 @@ const configSchema = z.object({
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 
   ZDRCLEANER_HEARTBEAT_URL: z.string().optional(),
+
+  CCLOG_WORKER_HEARTBEAT_URL: z.string().optional(),
 
   // Deterministic JSON extraction (reusable-json-mode)
   EXTRACT_CODEGEN_MODEL: z.string().default("gemini-3.1-flash-lite"),

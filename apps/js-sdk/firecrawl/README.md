@@ -183,7 +183,8 @@ const scraped = await app.search('firecrawl changelog', {
 });
 ```
 
-Results are grouped by source: `.web`, `.news`, `.images` and `.developer`.
+Results are grouped by source: `.web`, `.news` and `.images`. Developer
+category results are served inside `.web`.
 
 Use `categories` to narrow web search to a kind of site:
 
@@ -197,6 +198,36 @@ const results = await app.search('nanopore basecalling accuracy', {
 > restricts ordinary web search to roughly 14 academic domains (arxiv.org,
 > pubmed.ncbi.nlm.nih.gov, nature.com, biorxiv.org, ...) and returns web page
 > results. To search papers themselves, use `research.searchPapers` below.
+
+### Developer search
+
+Use `developerSearch` for the dedicated developer index and its complete filter
+and response contract. Generic `search(..., { categories: ['developer'] })`
+returns developer results inside `.web` in the ordinary web-result shape
+(first passage as the description) and does not accept these filters.
+
+```js
+const evidence = await app.developerSearch('configure retry backoff', {
+  repos: ['firecrawl/firecrawl'],
+  types: ['issue', 'pull_request', 'readme'],
+  passages: 3,
+  language: 'TypeScript',
+  license: 'MIT',
+});
+
+for (const result of evidence.results) {
+  // Result kind is the id prefix; the API intentionally omits a type field.
+  console.log(result.id, result.license);
+  for (const passage of result.passages) {
+    console.log(passage.text, passage.citation_url);
+  }
+}
+console.log(evidence.repos); // indexed-status echoes for requested repos
+```
+
+`developerSearch` also supports `sources`, `topic`, `minStars`, `maxStars`,
+`archived`, `fork`, and `skills: 'only'`. Supplying both `repos` and `sources`
+OR-combines GitHub-backed and documentation results.
 
 ### Research / paper search
 
@@ -230,8 +261,13 @@ const related = await app.research.similarPapers('pmid:<id>', {
 });
 ```
 
-A companion `app.research.searchGithub` searches indexed GitHub issue/PR history
-and repository readmes.
+> **`app.research.searchGithub` is deprecated.** The research index GitHub
+> endpoint stops responding after 2026-11-03. Use `app.developerSearch`
+> instead: it searches GitHub issues, pull requests and readmes plus curated
+> documentation sources, returns matched passages, and adds filters for repo,
+> language, license and stars. It does not carry over the `scores` breakdown
+> or the `resultType: "web"` fallback results. See
+> [the developer index docs](https://docs.firecrawl.dev/features/developer).
 
 ### Scrape-bound interactive browsing (v2)
 

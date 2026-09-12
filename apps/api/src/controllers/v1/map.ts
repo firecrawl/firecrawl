@@ -20,6 +20,7 @@ import {
 import { fireEngineMap } from "../../search/fireEngine";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { performCosineSimilarity } from "../../lib/map-cosine";
 import { logger } from "../../lib/logger";
 import Redis from "ioredis";
@@ -424,6 +425,7 @@ export async function mapController(
     id: mapId,
     kind: "map",
     api_version: "v1",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
@@ -543,6 +545,8 @@ export async function mapController(
     results: result.links,
     credits_cost: creditsToBill,
     zeroDataRetention: false, // not supported
+  }).catch(error => {
+    logger.error("Failed to log map", { error, mapId });
   });
 
   // Log final timing information

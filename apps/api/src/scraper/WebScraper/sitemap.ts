@@ -1,5 +1,4 @@
 import { parseStringPromise } from "xml2js";
-import { config } from "../../config";
 import { WebCrawler, SITEMAP_LIMIT } from "./crawler";
 import { scrapeURL } from "../scrapeURL";
 import { scrapeOptions } from "../../controllers/v2/types";
@@ -8,6 +7,7 @@ import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import type { ScrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "../scrapeURL/engines";
+import { useFireEngine } from "../scrapeURL/engines/fire-engine/available";
 import {
   ParsedSitemap,
   parseSitemapXml,
@@ -18,10 +18,6 @@ import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
 import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
 import { useIndex } from "../../services";
-
-const useFireEngine =
-  config.FIRE_ENGINE_BETA_URL !== "" &&
-  config.FIRE_ENGINE_BETA_URL !== undefined;
 
 const gunzipAsync = promisify(gunzip);
 

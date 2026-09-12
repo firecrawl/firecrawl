@@ -1,7 +1,6 @@
 import { logger } from "../../lib/logger";
 import { getRedisConnection } from "../queue-service";
 import { billTeam7 } from "../../db/rpc";
-import * as Sentry from "@sentry/node";
 import { withAuth } from "../../lib/withAuth";
 import {
   autumnService,
@@ -53,10 +52,7 @@ async function confirmExchangeOutcomes(
   // Exchange queues at most EXCHANGE_CONFIRM_CONCURRENCY waiters per
   // invocation on the shared budget instead of one per operation.
   let nextIndex = 0;
-  const workerCount = Math.min(
-    EXCHANGE_CONFIRM_CONCURRENCY,
-    operations.length,
-  );
+  const workerCount = Math.min(EXCHANGE_CONFIRM_CONCURRENCY, operations.length);
   await Promise.all(
     Array.from({ length: workerCount }, async () => {
       while (true) {
@@ -156,13 +152,6 @@ async function refundRequestTrackedCredits(group: GroupedBillingOperation) {
       team_id: group.team_id,
       credits: requestTrackedCredits,
       billing: group.billing,
-    });
-    Sentry.captureException(error, {
-      data: {
-        operation: "batch_billing_refund",
-        team_id: group.team_id,
-        credits: requestTrackedCredits,
-      },
     });
   }
 }
@@ -299,24 +288,12 @@ export async function processBillingBatch() {
           error,
           group,
         });
-        Sentry.captureException(error, {
-          data: {
-            operation: "batch_billing",
-            team_id: group.team_id,
-            credits: group.total_credits,
-          },
-        });
       }
     }
 
     logger.info("✅ Billing batch processing completed successfully");
   } catch (error) {
     logger.error("Error processing billing batch", { error });
-    Sentry.captureException(error, {
-      data: {
-        operation: "batch_billing_process",
-      },
-    });
   } finally {
     await releaseLock();
   }
@@ -412,13 +389,6 @@ export async function queueBillingOperation(
     return { success: true };
   } catch (error) {
     logger.error("Error queueing billing operation", { error, team_id });
-    Sentry.captureException(error, {
-      data: {
-        operation: "queue_billing",
-        team_id,
-        credits,
-      },
-    });
     return { success: false, error };
   }
 }
@@ -455,7 +425,6 @@ async function supaBillTeam(
       is_extract,
     });
   } catch (error) {
-    Sentry.captureException(error);
     _logger.error("Failed to bill team.", { error });
     return { success: false, error };
   }

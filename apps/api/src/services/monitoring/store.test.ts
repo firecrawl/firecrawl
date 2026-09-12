@@ -45,6 +45,39 @@ describe("monitoring store credit helpers", () => {
     expect(estimateMonitorCreditsPerRun(targets, true)).toBe(6);
   });
 
+  it("keeps the lockdown cost on a json monitor", () => {
+    const targets: MonitorTarget[] = [
+      {
+        id: "target-1",
+        type: "scrape",
+        urls: ["https://example.com/a"],
+        scrapeOptions: {
+          lockdown: true,
+          formats: [{ type: "json", schema: {} }],
+        },
+      },
+    ];
+
+    // 1 base + 4 lockdown + 4 json.
+    expect(estimateMonitorCreditsPerRun(targets, false)).toBe(9);
+  });
+
+  it("estimates the prompt injection guard cost on a json monitor", () => {
+    const targets: MonitorTarget[] = [
+      {
+        id: "target-1",
+        type: "scrape",
+        urls: ["https://example.com/a"],
+        scrapeOptions: {
+          formats: [{ type: "json", schema: {}, checkPromptInjection: true }],
+        },
+      },
+    ];
+
+    // 1 base + 4 json + 4 prompt injection guard.
+    expect(estimateMonitorCreditsPerRun(targets, false)).toBe(9);
+  });
+
   it("uses target options when page rows do not have recorded scrape credits", () => {
     const targets: MonitorTarget[] = [
       {
