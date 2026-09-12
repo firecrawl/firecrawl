@@ -587,14 +587,17 @@ const extractTransform = (obj: ScrapeOptions) => {
   // requests can upgrade to stealth on proxy failures. When a country is
   // specified, keep the historical "basic" default.
   if (obj.proxy === undefined) {
-    const country = obj.location?.country ?? obj.geolocation?.country;
-    obj = {
-      ...obj,
-      proxy:
-        country === undefined || country.toLowerCase() === "us-generic"
-          ? "auto"
-          : "basic",
-    };
+    // Check both location fields: a non-default country in either one counts
+    // as specified, even if the other omitted its country (its schema fills
+    // in the "us-generic" default, which must not shadow the other field).
+    const hasNonDefaultCountry = [
+      obj.location?.country,
+      obj.geolocation?.country,
+    ].some(
+      country =>
+        country !== undefined && country.toLowerCase() !== "us-generic",
+    );
+    obj = { ...obj, proxy: hasNonDefaultCountry ? "basic" : "auto" };
   }
 
   // Handle timeout
