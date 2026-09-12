@@ -137,26 +137,26 @@ print(crawl_status)
 
 ### Manual Pagination (v2)
 
-Crawl and batch scrape status responses may include a `next` URL when more data is available. The SDK auto-paginates by default; to page manually, disable auto-pagination and pass the opaque `next` URL back to the SDK.
+Crawl and batch scrape status responses may include a `next` URL when more data is available. The SDK does **not** auto-paginate by default — each status call returns one page. To fetch all pages automatically, pass `PaginationConfig(auto_paginate=True)`. To page manually, leave the default or pass `auto_paginate=False` and pass the opaque `next` URL back to the SDK.
 
 ```python
 from firecrawl.v2.types import PaginationConfig
 
-# Crawl: fetch one page at a time
+# Crawl: fetch one page at a time (default)
 crawl_job = firecrawl.start_crawl("https://firecrawl.dev", limit=100)
-status = firecrawl.get_crawl_status(
-  crawl_job.id,
-  pagination_config=PaginationConfig(auto_paginate=False),
-)
+status = firecrawl.get_crawl_status(crawl_job.id)
 if status.next:
   page2 = firecrawl.get_crawl_status_page(status.next)
 
-# Batch scrape: fetch one page at a time
-batch_job = firecrawl.start_batch_scrape(["https://firecrawl.dev"])
-status = firecrawl.get_batch_scrape_status(
-  batch_job.id,
-  pagination_config=PaginationConfig(auto_paginate=False),
+# Or opt in to auto-pagination:
+status = firecrawl.get_crawl_status(
+  crawl_job.id,
+  pagination_config=PaginationConfig(auto_paginate=True),
 )
+
+# Batch scrape: fetch one page at a time (default)
+batch_job = firecrawl.start_batch_scrape(["https://firecrawl.dev"])
+status = firecrawl.get_batch_scrape_status(batch_job.id)
 if status.next:
   page2 = firecrawl.get_batch_scrape_status_page(status.next)
 ```

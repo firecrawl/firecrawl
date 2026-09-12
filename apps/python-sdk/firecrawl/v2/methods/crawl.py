@@ -181,9 +181,11 @@ def get_crawl_status(
     Args:
         client: HTTP client instance
         job_id: ID of the crawl job
-        pagination_config: Optional configuration for pagination behavior
-        request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination 
-            is enabled (default) and there are multiple pages of results, this timeout applies to 
+        pagination_config: Optional configuration for pagination behavior. When
+            pagination_config is provided and auto_paginate is enabled (defaults to
+            False when no config is given), the SDK fetches all pages automatically.
+        request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination
+            is enabled and there are multiple pages of results, this timeout applies to
             each page request separately, not to the entire operation
 
     Returns:
@@ -207,7 +209,7 @@ def get_crawl_status(
     documents = payload["data"]
 
     # Handle pagination if requested
-    auto_paginate = pagination_config.auto_paginate if pagination_config else True
+    auto_paginate = pagination_config.auto_paginate if pagination_config else False
     if auto_paginate and payload["next"] and not (
         pagination_config
         and pagination_config.max_results is not None
@@ -377,6 +379,7 @@ def wait_for_crawl_completion(
     timeout: Optional[int] = None,
     *,
     request_timeout: Optional[float] = None,
+    pagination_config: Optional[PaginationConfig] = None,
 ) -> CrawlJob:
     """
     Wait for a crawl job to complete, polling for status updates.
@@ -387,7 +390,11 @@ def wait_for_crawl_completion(
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
         request_timeout: Optional timeout (in seconds) for each status request
-        
+        pagination_config: Optional configuration for pagination behavior.
+            Defaults to auto_paginate=True so the returned job includes all
+            documents. Pass PaginationConfig(auto_paginate=False) to receive
+            only the first page.
+    
     Returns:
         CrawlJob when job completes
         
@@ -398,15 +405,25 @@ def wait_for_crawl_completion(
     start_time = time.monotonic()
     
     while True:
+        # Poll with auto_paginate=False for efficiency
         crawl_job = get_crawl_status(
             client,
             job_id,
+            pagination_config=PaginationConfig(auto_paginate=False),
             request_timeout=request_timeout,
         )
         
         # Check if job is complete
         if crawl_job.status in ["completed", "failed", "cancelled"]:
-            return crawl_job
+            # Re-fetch with the caller's pagination config so the returned
+            # job contains all documents when auto_paginate is enabled.
+            effective_config = pagination_config or PaginationConfig(auto_paginate=True)
+            return get_crawl_status(
+                client,
+                job_id,
+                pagination_config=effective_config,
+                request_timeout=request_timeout,
+            )
         
         # Check timeout
         if timeout is not None and (time.monotonic() - start_time) > timeout:
@@ -423,6 +440,7 @@ def crawl(
     timeout: Optional[int] = None,
     *,
     request_timeout: Optional[float] = None,
+    pagination_config: Optional[PaginationConfig] = None,
 ) -> CrawlJob:
     """
     Start a crawl job and wait for it to complete.
@@ -434,7 +452,11 @@ def crawl(
         timeout: Maximum seconds to wait for the entire crawl job to complete (None for no timeout)
         request_timeout: Timeout (in seconds) for each individual HTTP request, including pagination 
             requests when fetching results. If there are multiple pages, each page request gets this timeout
-        
+        pagination_config: Optional configuration for pagination behavior.
+            Defaults to auto_paginate=True so the returned job includes all
+            documents. Pass PaginationConfig(auto_paginate=False) to receive
+            only the first page.
+    
     Returns:
         CrawlJob when job completes
         
@@ -457,12 +479,13 @@ def crawl(
         poll_interval,
         timeout,
         request_timeout=effective_request_timeout,
+        pagination_config=pagination_config,
     )
 
 
 def crawl_params_preview(client: HttpClient, request: CrawlParamsRequest) -> CrawlParamsData:
     """
-    Get crawl parameters from LLM based on URL and prompt.
+    Preview crawl parameters for a given URL and prompt.
     
     Args:
         client: HTTP client instance
