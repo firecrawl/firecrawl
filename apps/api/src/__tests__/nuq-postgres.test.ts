@@ -74,4 +74,42 @@ describeIf("NuQ Postgres queue", () => {
       }),
     ).resolves.toBeNull();
   });
+
+  // Regression test for https://github.com/firecrawl/firecrawl/issues/4113
+  // Postgres rejects JSON containing U+0000 (NUL bytes) with error 22P05.
+  // The worker must sanitise the returnvalue before the UPDATE so scraped
+  // content with embedded NUL bytes never crash-loops the api container.
+  test("jobFinish with NUL bytes in returnvalue does not throw (22P05)", async () => {
+    const jobId = randomUUID();
+    ids.push(jobId);
+
+    const job = await scrapeQueue.addJob(jobId, scrapeData());
+    expect(job).toMatchObject({ id: jobId, status: "waiting" });
+
+    // Lock the job so jobFinish's UPDATE matches
+    const locked = await scrapeQueue.getJob(jobId);
+    expect(locked).not.toBeNull();
+
+    // Build a returnvalue whose JSON contains a NUL byte — the exact shape
+    // that certain PDF parsers (e.g. pdf-parse on Google Sheets exports)
+    // produce, which triggered the Postgres 22P05 error.
+    const nulReturnvalue = {
+      markdown: "\u0000Hello from a broken PDF\u0000",
+      metadata: { title: "broken\u0000pdf" },
+    };
+
+    // jobFinish must complete without throwing, even with NUL bytes present.
+    await expect(
+      scrapeQueue.jobFinish(jobId, locked!.lock!, nulReturnvalue),
+    ).resolves.not.toThrow();
+
+    // The row must be marked completed and the stored value must be NUL-free.
+    const row = await cleanupPool.query(
+      "SELECT status, returnvalue FROM nuq.queue_scrape WHERE id = $1",
+      [jobId],
+    );
+    expect(row.rows[0].status).toBe("completed");
+    const stored = JSON.stringify(row.rows[0].returnvalue);
+    expect(stored).not.toContain("\u0000");
+  });
 });
