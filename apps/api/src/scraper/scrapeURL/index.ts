@@ -88,6 +88,11 @@ import {
 } from "../../lib/error";
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
+import {
+  mergeResolvedMetadata,
+  resolveUrlMetadata,
+  UrlResolverHttpError,
+} from "../../lib/url-resolver";
 import { rewriteUrl } from "./lib/rewriteUrl";
 import {
   DOCUMENT_EXTENSIONS,
@@ -1201,6 +1206,25 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     }
 
     document = await executeTransformers(meta, document);
+
+    if (!meta.options.lockdown) {
+      try {
+        const resolvedMetadata = await resolveUrlMetadata(
+          meta.url,
+          meta.logger.child({ method: "url-resolver" }),
+          meta.abort.asSignal(),
+        );
+        document.metadata = mergeResolvedMetadata(
+          resolvedMetadata ?? undefined,
+          document.metadata,
+        );
+      } catch (error) {
+        meta.abort.throwIfAborted();
+        if (!(error instanceof UrlResolverHttpError)) {
+          meta.logger.warn("Failed to resolve URL metadata", { error });
+        }
+      }
+    }
 
     // Set final span attributes
     setSpanAttributes(span, {
