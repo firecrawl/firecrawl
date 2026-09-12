@@ -63,3 +63,13 @@ export function documentExtensionFromUrlPath(urlPath: string): string | null {
   }
   return null;
 }
+
+export function isPdfUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.toLowerCase();
+    return path.endsWith(".pdf") || path.includes(".pdf?") || path.includes(".pdf#");
+  } catch {
+    return false;
+  }
+}
