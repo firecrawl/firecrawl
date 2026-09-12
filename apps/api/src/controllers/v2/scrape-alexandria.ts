@@ -42,8 +42,6 @@ const providerScrapeSchema = z.strictObject({
     .optional(),
 });
 
-// `/v2/scrape` with an `exchange` body, and the legacy `/exchange/retrieve`
-// route. Both are mounted through wrap(), which formats Zod errors.
 export async function providerScrapeController(
   req: RequestWithAuth<any, any, any>,
   res: Response,
@@ -134,8 +132,6 @@ export async function providerScrapeController(
       error: "Provider request unavailable. Retry with the same x-request-id.",
     });
   }
-
-  // One requests row per provider execution, not per refusal or replay.
   if (result.executed && !body.__agentInterop)
     void logRequest({
       id: result.scrapeId,

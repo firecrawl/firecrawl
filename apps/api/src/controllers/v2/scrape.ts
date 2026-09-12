@@ -1,5 +1,6 @@
 import { Response } from "express";
 import { providerScrapeController } from "./scrape-alexandria";
+import { discoverTools } from "../../search/alexandria";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import {
@@ -628,6 +629,32 @@ export async function scrapeController(
         concurrencyLimited,
         concurrencyQueueDurationMs: lockTime || undefined,
       });
+      const tools =
+        req.body.domainTools &&
+        req.acuc?.flags?.exchangeRetrieve &&
+        !zeroDataRetention &&
+        config.FIRE_EXCHANGE_URL
+          ? await discoverTools(
+              {
+                teamId: req.auth.team_id,
+                urls: [
+                  ...new Set(
+                    [
+                      req.body.url,
+                      doc!.metadata?.sourceURL,
+                      doc!.metadata?.url,
+                    ].filter((u): u is string => typeof u === "string"),
+                  ),
+                ],
+                limit: 24,
+                timeoutMs: 10000,
+              },
+              logger,
+            ).catch(error => {
+              logger.warn("Domain tool discovery failed", { error });
+              return undefined;
+            })
+          : undefined;
 
       return res.status(200).json({
         success: true,
@@ -640,7 +667,9 @@ export async function scrapeController(
               ? lockTime || 0
               : undefined,
           },
+          ...(tools ? { tools: tools.items } : {}),
         },
+        ...(tools?.warning ? { warning: tools.warning } : {}),
         scrape_id: origin?.includes("website") ? jobId : undefined,
       });
     },

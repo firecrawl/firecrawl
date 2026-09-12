@@ -18,9 +18,6 @@ const requirementsSchema = z.object({
   ),
 });
 
-// The Exchange answers 404 when any named provider is unknown or hidden, so an
-// unlisted provider never reaches the quote or `/v1/retrieve`. Agreements are
-// compared against the organization flags the URL-routed Exchange path uses.
 export async function authorizeProviders(
   teamId: string,
   calls: ProviderCall[],

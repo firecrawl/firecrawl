@@ -39,7 +39,6 @@ type Retrieval = {
 };
 
 type ProviderRetrieval = ExchangeResponse & {
-  /** Whether this request reached the provider call; false for replays and pre-execution refusals. */
   executed: boolean;
   scrapeId: string;
 };
@@ -166,7 +165,6 @@ export async function retrieveProviders(input: {
     apiKeyId: input.apiKeyId,
   };
   const remaining = () => Math.max(1, record.deadline - Date.now());
-  // Nothing reserved or executed yet: drop the claim so the same id can retry.
   const refuse = async (response: ExchangeResponse, executed = false) => {
     await redisRateLimitClient.del(key);
     return { ...response, executed, scrapeId: input.scrapeId };
@@ -251,8 +249,6 @@ export async function retrieveProviders(input: {
     await redisRateLimitClient.del(key).catch(() => {});
     throw error;
   }
-
-  // Point of no return: persist the hold before the provider call.
   record.lockId = lockId;
   record.maximumCredits = maximumCredits;
   const fail = async (reason: string): Promise<ProviderRetrieval> => {
@@ -304,7 +300,6 @@ export async function retrieveProviders(input: {
     });
 
     const body = (response.body ?? {}) as Record<string, unknown>;
-    // A refusal or a deadline already passed on arrival bought no provider work.
     if (
       (response.status >= 400 && response.status < 500) ||
       (response.status === 504 && body.code === "deadline_exceeded")
@@ -337,7 +332,6 @@ export async function retrieveProviders(input: {
     const settled = await finalize(credits);
     if (settled && billable && credits > 0)
       await recordLedgerUsage(id, input.teamId, input.apiKeyId, credits);
-    // An unsettled confirm stays pending on the Exchange, where reconciliation finds it.
     if (settled || !billable)
       void reportExchangeUsageBilling({
         requestId: id,
@@ -353,9 +347,6 @@ export async function retrieveProviders(input: {
   }
 }
 
-// The same idempotent billing queue every billed path uses. Autumn was already
-// debited by the confirm; on the direct route a failed ledger commit refunds it,
-// while on the firebill route the durable charge stands pending reconciliation.
 async function recordLedgerUsage(
   id: string,
   teamId: string,
@@ -385,8 +376,6 @@ async function recordLedgerUsage(
         await new Promise(resolve => setTimeout(resolve, 250 * attempt));
         continue;
       }
-      // Same compensation as the scrape worker: refund the direct-Autumn
-      // charge for work the ledger will never see; a firebill charge stands.
       logger.error(
         refundable
           ? "Provider usage could not be queued for the ledger; refunding the Autumn charge"

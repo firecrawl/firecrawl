@@ -1116,6 +1116,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions.extend({
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
+  domainTools: z.boolean().optional(),
   __agentInterop: z
     .object({
       auth: z.string(),
@@ -1538,7 +1539,9 @@ export type ScrapeResponse =
   | {
       success: true;
       warning?: string;
-      data: Document;
+      data: Document & {
+        tools?: import("../../services/alexandria/contracts").DiscoveredTool[];
+      };
       scrape_id?: string;
     };
 

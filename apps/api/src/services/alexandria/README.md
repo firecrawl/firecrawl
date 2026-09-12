@@ -26,8 +26,12 @@ URL matching only.
 }
 ```
 
-Scrape accepts one call or up to ten and returns `data.exchange` with
-`data.creditsCost`. `/exchange/retrieve` shares the path; its single-call
+An ordinary URL scrape accepts `domainTools: true` (default off) and, for
+teams with Exchange access, adds `data.tools` matched to the page's domain in
+the same shape as Search. Discovery is free and never fails the scrape.
+
+Scrape with `exchange` accepts one call or up to ten and returns
+`data.exchange` with `data.creditsCost`. `/exchange/retrieve` shares the path; its single-call
 shape relays a provider error with the Exchange's status and `code`.
 
 ## Billing
