@@ -20,7 +20,7 @@ jobs:
         working-directory: "./apps/go-html-to-md-service"
     steps:
       - name: "Checkout GitHub Action"
-        uses: actions/checkout@main
+        uses: actions/checkout@v5
 
       - name: Setup Blacksmith Builder
         uses: useblacksmith/setup-docker-builder@v1

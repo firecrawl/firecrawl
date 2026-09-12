@@ -359,8 +359,7 @@ You are fixing CI security audit failures in this monorepo and must mirror this 
 
 Source of truth:
 - Workflow file: \`.github/workflows/npm-audit.yml\`
-- Job: \`audit\`
-- Failure reporter step: \`Report audit failures\`
+- Job: \`audit\` — a matrix with one \`Audit <name>\` job per package directory; each failed matrix job's log contains the audit-ci output for that package.
 - Reproduce using the same \`audit-ci\` commands/flags used in that workflow.
 
 Current uncovered audit failures on main:
