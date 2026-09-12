@@ -107,6 +107,7 @@ export function getAutumnRateLimiter(
   multiplier: number = 1,
   flags?: TeamFlags,
 ): RateLimiterRedis {
+  if (config.FAST_CRAWL === true) multiplier = 1_000_000;
   const override = getRateLimitOverride(mode, flags?.rateLimitOverrides);
   if (override !== undefined) {
     return createRateLimiter(`${mode}`, override);
