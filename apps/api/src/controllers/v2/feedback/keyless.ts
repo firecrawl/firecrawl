@@ -6,6 +6,7 @@ import type { RequestWithAuth } from "../types";
 import { keylessFeedbackSchema } from "./keyless-schema";
 import {
   KEYLESS_FEEDBACK_MAX_AGE_SEC,
+  requestedTypes,
   keylessFeedbackContextKey,
   type KeylessFeedbackContext,
 } from "./keyless-context";
@@ -63,19 +64,65 @@ export async function keylessFeedbackController(
         "FEEDBACK_WINDOW_EXPIRED",
         "Feedback must be submitted within 24 hours of the job.",
       );
+    const options = context.request as {
+      sources?: unknown;
+      formats?: unknown;
+      truncated?: boolean;
+    };
     if (answers.endpoint === "search") {
+      const sources =
+        context.requestedSources ??
+        (options?.truncated ? [] : requestedTypes(options?.sources, "web"));
       const groups = context.result as Record<string, unknown[]>;
-      if (
-        answers.observations.some(
-          item =>
-            "position" in item && !groups?.[item.source]?.[item.position - 1],
+      for (const item of answers.observations) {
+        if (item.kind === "missing") continue;
+        if (!item.source && sources.length > 1)
+          return fail(
+            400,
+            "INVALID_BODY",
+            "Provide source when the job requested multiple sources.",
+          );
+        item.source ??= "web";
+        if (
+          !sources.includes(item.source) ||
+          !groups?.[item.source]?.[item.position - 1]
         )
-      )
+          return fail(
+            400,
+            "INVALID_BODY",
+            "Each result position must exist in its requested, delivered source group.",
+          );
+      }
+    } else {
+      const formats =
+        context.requestedFormats ??
+        (options?.truncated
+          ? undefined
+          : requestedTypes(options?.formats, "markdown"));
+      if (!formats)
         return fail(
           400,
           "INVALID_BODY",
-          "Each result position must exist in its delivered source group.",
+          "Requested output formats are unavailable in this job context.",
         );
+      for (const item of answers.observations) {
+        if (item.format !== undefined && !formats.includes(item.format))
+          return fail(
+            400,
+            "INVALID_BODY",
+            "Observation format must be a format type requested by the job.",
+          );
+        if (
+          item.basis !== "expectation" &&
+          item.format === undefined &&
+          formats.length > 1
+        )
+          return fail(
+            400,
+            "INVALID_BODY",
+            "Provide format for output observations and source comparisons when the job requested multiple formats.",
+          );
+      }
     }
     const result = await insertKeylessFeedback(identity, answers, context);
     if (!result.success)

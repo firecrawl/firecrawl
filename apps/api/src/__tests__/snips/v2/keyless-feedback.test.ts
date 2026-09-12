@@ -106,6 +106,7 @@ describeIf(enabled)("keyless feedback", () => {
       expect(parsed.body.data.markdown).toContain("Retry after one second");
       const submitted = await call("/v2/feedback", {
         endpoint: "parse",
+        docClass: "unknown",
         jobId: parsed.body.data.metadata.jobId,
         rating: "good",
         task: "Read the retry interval from an uploaded reference",
@@ -133,6 +134,7 @@ describeIf(enabled)("keyless feedback", () => {
   it("rejects a missing originating job and assessment-only feedback", async () => {
     const payload = {
       endpoint: "parse",
+      docClass: "unknown",
       jobId: randomUUID(),
       rating: "partial",
       task: "Extract a document table",
@@ -140,6 +142,7 @@ describeIf(enabled)("keyless feedback", () => {
       observations: [
         {
           kind: "table",
+          reason: "structure",
           basis: "output",
           detail: "The output table did not include any column headings.",
         },
