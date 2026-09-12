@@ -121,10 +121,10 @@ export function checkCreditsMiddleware(
         !(req.body as any)?.categories?.length &&
         Array.isArray(sources) &&
         sources.length > 0 &&
-        sources.every(source =>
-          ["alexandria", "exchange-providers"].includes(
-            typeof source === "string" ? source : source?.type,
-          ),
+        sources.every(
+          source =>
+            (typeof source === "string" ? source : source?.type) ===
+            "alexandria",
         );
       if (
         (req.path === "/scrape" && (req.body as any)?.exchange !== undefined) ||

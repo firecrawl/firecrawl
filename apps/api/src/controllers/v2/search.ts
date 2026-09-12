@@ -129,8 +129,8 @@ async function searchControllerInner(
       typeof req.body?.origin === "string" ? req.body.origin : undefined;
     req.body = searchRequestSchema.parse(req.body);
 
-    const wantsTools = req.body.sources.some(source =>
-      ["alexandria", "exchange-providers"].includes(source.type),
+    const wantsTools = req.body.sources.some(
+      source => source.type === "alexandria",
     );
     if (wantsTools && !req.body.query.trim())
       return res.status(400).json({

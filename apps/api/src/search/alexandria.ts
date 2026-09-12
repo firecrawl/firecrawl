@@ -7,7 +7,7 @@ import {
 } from "../services/alexandria/contracts";
 
 export const isAlexandriaSource = (source: { type: string }) =>
-  ["alexandria", "exchange-providers"].includes(source.type);
+  source.type === "alexandria";
 export type ToolDiscovery = {
   status: "available" | "unavailable";
   level: "tools";
