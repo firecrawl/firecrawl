@@ -104,9 +104,9 @@ search_result = app.search("firecrawl", limit=5)
 
 **Node.js**
 ```javascript
-import { Firecrawl } from 'firecrawl';
+import FirecrawlApp from '@mendable/firecrawl-js';
 
-const app = new Firecrawl({apiKey: "fc-YOUR_API_KEY"});
+const app = new FirecrawlApp({ apiKey: "fc-YOUR_API_KEY" });
 
 app.search("firecrawl", { limit: 5 })
 ```
@@ -161,9 +161,9 @@ result = app.scrape('firecrawl.dev')
 
 **Node.js**
 ```javascript
-import { Firecrawl } from 'firecrawl';
+import FirecrawlApp from '@mendable/firecrawl-js';
 
-const app = new Firecrawl({ apiKey: "fc-YOUR_API_KEY" });
+const app = new FirecrawlApp({ apiKey: "fc-YOUR_API_KEY" });
 
 app.scrape('firecrawl.dev')
 ```
@@ -219,9 +219,9 @@ app.interact(scrape_id, prompt="Click the first result")
 
 **Node.js**
 ```javascript
-import { Firecrawl } from 'firecrawl';
+import FirecrawlApp from '@mendable/firecrawl-js';
 
-const app = new Firecrawl({apiKey: "fc-YOUR_API_KEY"});
+const app = new FirecrawlApp({ apiKey: "fc-YOUR_API_KEY" });
 
 const result = await app.scrape("https://amazon.com");
 
@@ -568,12 +568,12 @@ print(results)
 
 Install the SDK:
 ```bash
-npm install firecrawl
+npm install @mendable/firecrawl-js
 ```
 ```javascript
-import { Firecrawl } from 'firecrawl';
+import FirecrawlApp from '@mendable/firecrawl-js';
 
-const app = new Firecrawl({ apiKey: 'fc-YOUR_API_KEY' });
+const app = new FirecrawlApp({ apiKey: 'fc-YOUR_API_KEY' });
 
 // Scrape a single URL
 const doc = await app.scrape('https://firecrawl.dev', { formats: ['markdown'] });

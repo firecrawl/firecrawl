@@ -33,10 +33,10 @@ run().catch((e) => {
 
 // old stuff:
 
-import { Firecrawl } from 'firecrawl';
+import FirecrawlApp from '@mendable/firecrawl-js';
 import { z } from 'zod';
 
-const app = new Firecrawl({apiKey: "fc-YOUR_API_KEY"});
+const app = new FirecrawlApp({apiKey: "fc-YOUR_API_KEY"});
 
 const main = async () => {
 

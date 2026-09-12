@@ -1,6 +1,6 @@
 //@ts-ignore
 import * as fs from 'fs'
-import { Firecrawl } from 'firecrawl'
+import FirecrawlApp from '@mendable/firecrawl-js'
 import 'dotenv/config'
 import { config } from 'dotenv'
 import { z } from 'zod'
@@ -9,8 +9,8 @@ config()
 
 export async function scrapeAirbnb() {
   try {
-    // Initialize the Firecrawl with your API key
-    const app = new Firecrawl({ apiKey: process.env.FIRECRAWL_API_KEY })
+    // Initialize FirecrawlApp with your API key
+    const app = new FirecrawlApp({ apiKey: process.env.FIRECRAWL_API_KEY })
 
     // Define the URL to crawl
     const listingsUrl =

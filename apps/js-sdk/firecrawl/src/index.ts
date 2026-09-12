@@ -2,7 +2,7 @@
  * Firecrawl JS/TS SDK — unified entrypoint.
  * - v2 by default on the top‑level client
  * - v1 available under `.v1` (feature‑frozen)
- * - Exports: `Firecrawl` (default), `FirecrawlClient` (v2), `FirecrawlAppV1` (v1), and v2 types
+ * - Exports: `Firecrawl` (default), `FirecrawlApp` (alias), `FirecrawlClient` (v2), `FirecrawlAppV1` (v1), and v2 types
  */
 
 /** Direct v2 client. */
@@ -58,5 +58,6 @@ export class Firecrawl extends V2 {
   }
 })();
 
+export { Firecrawl as FirecrawlApp };
 export default Firecrawl;
 
