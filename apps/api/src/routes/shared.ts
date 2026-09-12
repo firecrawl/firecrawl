@@ -121,7 +121,8 @@ export function checkCreditsMiddleware(
       const toolsOnly =
         req.path === "/search" && isToolsOnlySearch(sources, categories);
       if (
-        (req.path === "/scrape" && (req.body as any)?.exchange !== undefined) ||
+        (req.path === "/scrape" &&
+          (req.body as any)?.alexandria !== undefined) ||
         toolsOnly
       ) {
         req.account = { remainingCredits: Infinity };

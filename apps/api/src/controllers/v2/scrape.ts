@@ -52,7 +52,7 @@ export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
 ) {
-  if (req.body && "exchange" in req.body)
+  if (req.body && "alexandria" in req.body)
     return providerScrapeController(req, res);
   // Resolved before the root span starts so the whole request trace stays
   // unrecorded for zero-data-retention requests (see otel-tracer).
@@ -163,7 +163,7 @@ export async function scrapeController(
         return res.status(403).json({
           success: false,
           error: !req.acuc?.flags?.exchangeRetrieve
-            ? "The exchange source is not enabled for this team."
+            ? "The alexandria source is not enabled for this team."
             : "Provider discovery requires access and does not support zero data retention.",
         });
       const billing: BillingMetadata = req.body.__agentInterop

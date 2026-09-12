@@ -20,7 +20,7 @@ import {
 import type { RequestWithAuth } from "./types";
 
 const providerScrapeSchema = z.strictObject({
-  exchange: z.preprocess(
+  alexandria: z.preprocess(
     value => (Array.isArray(value) ? value : [value]),
     callsSchema,
   ),
@@ -55,7 +55,7 @@ export async function providerScrapeController(
   const body = providerScrapeSchema.parse(
     legacyBody
       ? {
-          exchange:
+          alexandria:
             "requests" in legacyBody ? legacyBody.requests : [legacyBody],
         }
       : req.body,
@@ -116,7 +116,7 @@ export async function providerScrapeController(
       teamId: req.auth.team_id,
       apiKeyId: req.acuc.api_key_id ?? null,
       flags: req.acuc.flags,
-      calls: body.exchange,
+      calls: body.alexandria,
       requestId,
       scrapeId: randomUUID(),
       timeoutMs: body.timeout,
@@ -142,7 +142,7 @@ export async function providerScrapeController(
       api_key_id: req.acuc.api_key_id ?? null,
       origin: body.origin,
       integration: body.integration ?? null,
-      target_hint: `exchange:${body.exchange.map(call => `${call.provider}/${call.capability}`).join(",")}`,
+      target_hint: `alexandria:${body.alexandria.map(call => `${call.provider}/${call.capability}`).join(",")}`,
       zeroDataRetention: false,
     }).catch(error =>
       logger.warn("Provider request logging failed", {
@@ -169,6 +169,6 @@ export async function providerScrapeController(
   return res.json({
     success: true,
     scrape_id: result.scrapeId,
-    data: { exchange: answer.results, creditsCost: answer.creditsCost },
+    data: { alexandria: answer.results, creditsCost: answer.creditsCost },
   });
 }

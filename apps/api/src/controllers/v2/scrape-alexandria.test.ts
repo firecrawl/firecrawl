@@ -57,12 +57,12 @@ it("returns the Scrape contract, shares identity with the legacy route, and logs
   const response = await request(app)
     .post("/v2/scrape")
     .set("x-request-id", "same-request")
-    .send({ exchange: call });
+    .send({ alexandria: call });
   expect(response.status).toBe(200);
   expect(response.body).toEqual({
     success: true,
     scrape_id: "scrape-1",
-    data: { exchange: [expect.any(Object)], creditsCost: 0 },
+    data: { alexandria: [expect.any(Object)], creditsCost: 0 },
   });
   expect(response.headers["x-request-id"]).toBe("same-request");
   expect(mocks.retrieve).toHaveBeenCalledWith(
@@ -111,7 +111,7 @@ it("only lets trusted agent interop bypass billing, and prefers its request id",
   const untrusted = await request(app)
     .post("/v2/scrape")
     .send({
-      exchange: call,
+      alexandria: call,
       __agentInterop: { auth: "wrong", requestId: "a", shouldBill: false },
     });
   expect(untrusted.status).toBe(403);
@@ -121,7 +121,7 @@ it("only lets trusted agent interop bypass billing, and prefers its request id",
     .post("/v2/scrape")
     .set("x-request-id", "hop-id")
     .send({
-      exchange: call,
+      alexandria: call,
       __agentInterop: {
         auth: "test-secret",
         requestId: "agent-id",

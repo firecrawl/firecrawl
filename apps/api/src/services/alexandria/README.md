@@ -18,7 +18,7 @@ URL matching only.
 
 ```json
 {
-  "exchange": {
+  "alexandria": {
     "provider": "fred",
     "capability": "series/observations",
     "options": { "series_id": "GDP" }
@@ -31,8 +31,8 @@ An ordinary URL scrape accepts `domainTools: true` (default off) and adds
 needs Exchange access and no zero data retention, refused with the same 403
 Search returns; discovery itself is free and never fails the scrape.
 
-Scrape with `exchange` accepts one call or up to ten and returns
-`data.exchange` with `data.creditsCost`. `/exchange/retrieve` shares the path; its single-call
+Scrape with `alexandria` accepts one call or up to ten and returns
+`data.alexandria` with `data.creditsCost`. `/exchange/retrieve` shares the path; its single-call
 shape relays a provider error with the Exchange's status and `code`.
 
 ## Billing

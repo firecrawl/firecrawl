@@ -147,7 +147,7 @@ async function searchControllerInner(
       return res.status(403).json({
         success: false,
         error: !req.acuc?.flags?.exchangeRetrieve
-          ? "The exchange source is not enabled for this team."
+          ? "The alexandria source is not enabled for this team."
           : "Provider discovery requires access and does not support zero data retention.",
       });
 
