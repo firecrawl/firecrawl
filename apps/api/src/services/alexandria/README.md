@@ -53,7 +53,9 @@ seven days:
 - same id, different payload: 409 `duplicate_request`
 - still running: 409 `request_in_flight`
 - refused before execution (authorization, quote, hold, Exchange 4xx or
-  `deadline_exceeded`): hold released, record dropped, same id may retry
+  `deadline_exceeded`): hold released, record dropped, same id may retry. A
+  release that does not land is logged; that hold expires on its own shortly
+  after the request deadline, so a retry may briefly hold credits twice
 - uncertain (Exchange 5xx, timeout, malformed or over-budget receipt, crash
   after the record was written): 503 `request_unresolved`, record kept for
   manual reconciliation, hold expires on its own; the Exchange has no
@@ -61,9 +63,10 @@ seven days:
 
 An unsettled confirm returns the answer, writes no ledger row, and sends no
 Exchange confirmation; the run stays pending on the Exchange for
-reconciliation. A ledger commit that fails is refunded at Autumn on the direct
-route; on the firebill route the durable charge stands pending reconciliation.
-ZDR-forced teams are refused because the record is retained.
+reconciliation. A ledger commit or enqueue that fails is refunded at Autumn on
+the direct route; on the firebill route the durable charge stands pending
+reconciliation. Provider tools do not support forced zero data retention;
+those teams are refused before any record is written.
 
 ## Runtime
 

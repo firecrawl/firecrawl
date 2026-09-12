@@ -381,12 +381,40 @@ async function recordLedgerUsage(
       );
       return;
     } catch (error) {
-      if (attempt >= 3)
-        return logger.error(
-          "Provider usage could not be queued for the ledger; charge stands pending reconciliation",
-          { chargeId: id, teamId, credits, error },
-        );
-      await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+      if (attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+        continue;
+      }
+      // Same compensation as the scrape worker: refund the direct-Autumn
+      // charge for work the ledger will never see; a firebill charge stands.
+      logger.error(
+        refundable
+          ? "Provider usage could not be queued for the ledger; refunding the Autumn charge"
+          : "Provider usage could not be queued for the ledger; charge stands pending reconciliation",
+        { chargeId: id, teamId, credits, error },
+      );
+      if (refundable)
+        await autumnService
+          .refundCredits({
+            teamId,
+            value: credits,
+            featureId: featureIdForBillingEndpoint("scrape"),
+            properties: {
+              source: "alexandria",
+              endpoint: "scrape",
+              chargeId: id,
+            },
+            idempotencyKey: `fc:refund:scrape:${id}`,
+          })
+          .catch(refundError =>
+            logger.error("Provider refund failed; reconcile by charge id", {
+              chargeId: id,
+              teamId,
+              credits,
+              error: refundError,
+            }),
+          );
+      return;
     }
   }
 }

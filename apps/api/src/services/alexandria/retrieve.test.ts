@@ -2,6 +2,7 @@ const mocks = vi.hoisted(() => {
   const store = new Map<string, string>();
   return {
     store,
+    config: { USE_DB_AUTHENTICATION: true, FIRE_EXCHANGE_URL: "https://x" },
     redis: {
       set: vi.fn(async (key: string, value: string, ...args: unknown[]) => {
         if (args.includes("NX") && store.has(key)) return null;
@@ -12,18 +13,18 @@ const mocks = vi.hoisted(() => {
       del: vi.fn(async (key: string) => (store.delete(key) ? 1 : 0)),
     },
     request: vi.fn(),
+    authorize: vi.fn(),
     lock: vi.fn(),
     finalize: vi.fn(),
+    refund: vi.fn(),
     billAdd: vi.fn(),
     report: vi.fn(),
   };
 });
-vi.mock("../../config", () => ({
-  config: { USE_DB_AUTHENTICATION: true, FIRE_EXCHANGE_URL: "https://x" },
-}));
+vi.mock("../../config", () => ({ config: mocks.config }));
 vi.mock("../rate-limiter", () => ({ redisRateLimitClient: mocks.redis }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
-vi.mock("./access", () => ({ authorizeProviders: async () => undefined }));
+vi.mock("./access", () => ({ authorizeProviders: mocks.authorize }));
 vi.mock("../queue-service", () => ({
   getBillingQueue: () => ({ add: mocks.billAdd }),
 }));
@@ -34,6 +35,7 @@ vi.mock("../autumn/autumn.service", () => ({
   autumnService: {
     lockCredits: mocks.lock,
     finalizeCreditsLock: mocks.finalize,
+    refundCredits: mocks.refund,
     isRoutedThroughFirebill: async () => false,
   },
   featureIdForBillingEndpoint: () => "credits",
@@ -63,18 +65,23 @@ const run = (overrides: Record<string, unknown> = {}) =>
   });
 const executions = () =>
   mocks.request.mock.calls.filter(([arg]) => arg.path === "/v1/retrieve");
-const exchangeAnswers = (body: unknown, status = 200) =>
+const exchangeAnswers = (
+  body: unknown,
+  status = 200,
+  quote: unknown = { status: 200, body: { maximumCredits: 5 } },
+) =>
   mocks.request.mockImplementation(async arg =>
-    arg.path.endsWith("/quote")
-      ? { status: 200, body: { maximumCredits: 5 } }
-      : { status, body },
+    arg.path.endsWith("/quote") ? quote : { status, body },
   );
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.store.clear();
+  mocks.config.USE_DB_AUTHENTICATION = true;
+  mocks.authorize.mockResolvedValue(undefined);
   mocks.lock.mockResolvedValue({ status: "locked", lockId: "held" });
   mocks.finalize.mockResolvedValue(true);
+  mocks.refund.mockResolvedValue(undefined);
   mocks.billAdd.mockResolvedValue({});
   mocks.report.mockResolvedValue(true);
   exchangeAnswers(answer);
@@ -140,17 +147,50 @@ it("refuses a different payload under the same x-request-id", async () => {
 });
 
 it.each([
-  ["denied", 402],
-  ["skipped", 503],
+  [
+    "authorization refusal",
+    () => mocks.authorize.mockResolvedValueOnce({ status: 403, body: {} }),
+    403,
+  ],
+  [
+    "quote outage",
+    () => exchangeAnswers(answer, 200, { status: 503, body: "down" }),
+    503,
+  ],
+  [
+    "malformed quote",
+    () => exchangeAnswers(answer, 200, { status: 200, body: { nope: 1 } }),
+    502,
+  ],
+  [
+    "billing not configured",
+    () => {
+      mocks.config.USE_DB_AUTHENTICATION = false;
+    },
+    503,
+  ],
+  [
+    "denied hold",
+    () => mocks.lock.mockResolvedValueOnce({ status: "denied" }),
+    402,
+  ],
+  [
+    "skipped hold",
+    () => mocks.lock.mockResolvedValueOnce({ status: "skipped" }),
+    503,
+  ],
 ])(
-  "does not execute after a %s hold and lets the same id retry",
-  async (status, expected) => {
-    mocks.lock.mockResolvedValueOnce({ status });
+  "fails closed on %s and lets the same id retry",
+  async (_, arrange, expected) => {
+    arrange();
     const refused = await run();
     expect(refused.status).toBe(expected);
     expect(refused.executed).toBe(false);
     expect(executions()).toHaveLength(0);
     expect(mocks.finalize).not.toHaveBeenCalled();
+    expect(mocks.store.size).toBe(0);
+    mocks.config.USE_DB_AUTHENTICATION = true;
+    exchangeAnswers(answer);
     expect((await run()).status).toBe(200);
     expect(executions()).toHaveLength(1);
   },
@@ -212,4 +252,13 @@ it("returns the answer but records nothing when the settle does not land", async
   expect((await run()).status).toBe(200);
   expect(mocks.billAdd).not.toHaveBeenCalled();
   expect(mocks.report).not.toHaveBeenCalled();
+});
+
+it("refunds the direct-Autumn charge when the ledger enqueue fails after retries", async () => {
+  mocks.billAdd.mockRejectedValue(new Error("queue down"));
+  expect((await run()).status).toBe(200);
+  expect(mocks.billAdd).toHaveBeenCalledTimes(3);
+  expect(mocks.refund).toHaveBeenCalledWith(
+    expect.objectContaining({ teamId: "team", value: 3 }),
+  );
 });

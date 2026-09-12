@@ -41,10 +41,13 @@ export async function authorizeProviders(
     response?.status === 200
       ? requirementsSchema.safeParse(response.body)
       : undefined;
+  const answered = new Set(
+    parsed?.success ? parsed.data.providers.map(item => item.provider) : [],
+  );
   if (
     !parsed?.success ||
-    parsed.data.providers.length !== providers.length ||
-    parsed.data.providers.some(item => !providers.includes(item.provider))
+    answered.size !== providers.length ||
+    providers.some(provider => !answered.has(provider))
   )
     return refusal(
       503,
