@@ -105,12 +105,7 @@ export async function keylessFeedbackMetadata(
         await cache.set(key, encoded, "EX", KEYLESS_FEEDBACK_MAX_AGE_SEC);
         const metadata: Record<string, unknown> = reference;
         const every = config.KEYLESS_FEEDBACK_INVITATION_EVERY;
-        if (
-          expired ||
-          !every ||
-          req.headers?.["x-firecrawl-no-feedback"] === "1"
-        )
-          return metadata;
+        if (expired || !every) return metadata;
         const count = Number(
           await cache.eval(
             `

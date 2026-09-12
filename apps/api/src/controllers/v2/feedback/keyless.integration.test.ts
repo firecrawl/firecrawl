@@ -273,7 +273,7 @@ suite("keyless feedback HTTP and persistence", () => {
     expect(await redis.get(`keyless_requests:${ip}`)).toBe("100000");
   });
 
-  it("preserves a non-invited context for a client that opts out at the API", async () => {
+  it("ignores caller invitation opt-out headers for keyless jobs", async () => {
     const jobId = randomUUID();
     const key = api.keylessFeedbackContextKey(team(), "parse", jobId);
     contextKeys.push(key);
@@ -281,11 +281,14 @@ suite("keyless feedback HTTP and persistence", () => {
       .post(`/test/jobs/parse/${jobId}`)
       .set("x-firecrawl-no-feedback", "1")
       .send({});
-    expect(response.body.metadata).toEqual({ jobId });
-    expect(JSON.parse((await cache.get(key))!).invited).toBe(false);
+    expect(response.body.metadata.jobId).toBe(jobId);
+    expect(response.body.metadata.feedback).toBeDefined();
+    await vi.waitFor(async () =>
+      expect(JSON.parse((await cache.get(key))!).invited).toBe(true),
+    );
     expect(
       await cache.get(`keyless_feedback_invitations:${team()}:parse`),
-    ).toBeNull();
+    ).toBe("1");
   });
   it("suppresses invitations and rejects submissions when disabled", async () => {
     const { jobId } = await job("scrape");

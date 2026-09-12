@@ -47,7 +47,7 @@ MCP exposes `firecrawl_feedback`. CLI exposes `firecrawl feedback <endpoint> <jo
 
 `KEYLESS_FEEDBACK_ENABLED` controls the keyless feature, default `true`. Feedback also requires database authentication, keyless access, and `KEYLESS_FEEDBACK_REDIS_URL`. `KEYLESS_FEEDBACK_INVITATION_EVERY` invites on every Nth eligible result per identity and category, default `3`; `0` disables invitations while retaining submission support. Context/invitation work adds at most 250 ms of waiting to operation responses and fails without failing the operation. Invitations across all three categories are suppressed after acceptance, during attempt throttling, and when eligibility or storage checks fail. Concurrent operation responses can observe eligibility before another submission commits; the submission endpoint always rechecks the authoritative limit.
 
-Clients that disable invitations send `x-firecrawl-no-feedback: 1`. The API retains the job reference but skips invitation selection and counting. MCP and CLI also filter responses locally for compatibility with older API versions.
+Keyless invitation frequency is controlled by the server. Caller headers and client feedback preferences do not suppress eligible invitations. Submitting feedback remains optional and is never required for continued keyless access.
 
 ## Limits and storage
 
