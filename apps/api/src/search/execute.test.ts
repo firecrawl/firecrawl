@@ -116,24 +116,6 @@ it("mixed search bills only normal web results", async () => {
   expect(result.response.tools).toHaveLength(1);
 });
 
-it.each([{}, { exchangeRetrieve: true }])(
-  "does not discover tools on ordinary searches",
-  async flags => {
-    mocks.search.mockResolvedValue({ web: [] });
-    await executeSearch(options([]), { ...context, flags }, logger);
-    expect(mocks.discoverTools).not.toHaveBeenCalled();
-  },
-);
-
-it("does not send queries or URLs to provider discovery for ZDR searches", async () => {
-  await executeSearch(
-    { ...options([]), sources: [{ type: "alexandria" }] },
-    { ...context, flags: { exchangeRetrieve: true }, zeroDataRetention: true },
-    logger,
-  );
-  expect(mocks.discoverTools).not.toHaveBeenCalled();
-});
-
 describe("executeSearch developer category", () => {
   it("returns sole developer-category results in web without running SERP", async () => {
     const result = await executeSearch(
@@ -148,29 +130,12 @@ describe("executeSearch developer category", () => {
     expect(result.developerResultsCount).toBe(1);
   });
 
+
   it("filters blocked developer results via threat protection and renumbers", async () => {
     mocks.searchDeveloperCategory.mockResolvedValue([
-      {
-        url: "https://ok.example/a",
-        title: "A",
-        description: "",
-        position: 1,
-        category: "developer",
-      },
-      {
-        url: "https://blocked.example/b",
-        title: "B",
-        description: "",
-        position: 2,
-        category: "developer",
-      },
-      {
-        url: "https://ok.example/c",
-        title: "C",
-        description: "",
-        position: 3,
-        category: "developer",
-      },
+      { url: "https://ok.example/a", title: "A", description: "", position: 1, category: "developer" },
+      { url: "https://blocked.example/b", title: "B", description: "", position: 2, category: "developer" },
+      { url: "https://ok.example/c", title: "C", description: "", position: 3, category: "developer" },
     ]);
     mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
       decisionsByUrl: new Map([

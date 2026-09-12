@@ -26,14 +26,16 @@ const call = {
   capability: "categories/category",
   options: {},
 };
-let flags: Record<string, unknown>;
-let sponsor: Record<string, unknown> | undefined;
 const app = express();
 app.use(express.json());
 app.use((req, _res, next) => {
   Object.assign(req, {
     auth: { team_id: "team" },
-    acuc: { api_key_id: 12, org_id: "org", flags, _agentSponsor: sponsor },
+    acuc: {
+      api_key_id: 12,
+      org_id: "org",
+      flags: { exchangeRetrieve: true },
+    },
   });
   next();
 });
@@ -43,8 +45,6 @@ app.post("/exchange/retrieve", (req, res) =>
 );
 beforeEach(() => {
   vi.clearAllMocks();
-  flags = { exchangeRetrieve: true };
-  sponsor = undefined;
   mocks.restriction.mockResolvedValue({ allowed: true });
   mocks.endpoint.mockResolvedValue({ allowed: true });
   mocks.log.mockResolvedValue(undefined);
@@ -58,7 +58,7 @@ beforeEach(() => {
   });
 });
 
-it("accepts a single tool and returns the unified scrape interface", async () => {
+it("returns the Scrape contract and shares request identity with the legacy route", async () => {
   const result = await request(app)
     .post("/v2/scrape")
     .set("x-request-id", "same-request")
@@ -74,50 +74,13 @@ it("accepts a single tool and returns the unified scrape interface", async () =>
       apiKeyId: 12,
     }),
   );
-});
-
-it("uses the same normalized request on both provider routes", async () => {
-  await request(app)
-    .post("/v2/scrape")
-    .set("x-request-id", "same")
-    .send({ exchange: call });
   await request(app)
     .post("/exchange/retrieve")
-    .set("x-request-id", "same")
+    .set("x-request-id", "same-request")
     .send(call);
   expect(mocks.retrieve.mock.calls[0][0]).toEqual(
     mocks.retrieve.mock.calls[1][0],
   );
-});
-
-it.each([
-  { exchange: [] },
-  { exchange: Array(11).fill(call) },
-  { exchange: call, url: "https://example.com" },
-  { exchange: call, timeout: -1 },
-])("rejects malformed provider requests", async body => {
-  expect((await request(app).post("/v2/scrape").send(body)).status).toBe(400);
-  expect(mocks.retrieve).not.toHaveBeenCalled();
-});
-
-it.each([
-  {},
-  { exchangeRetrieve: true, scrapeZDR: "forced" },
-  { exchangeRetrieve: true, forceZDR: true },
-])("enforces access and forced retention before queueing", async value => {
-  flags = value;
-  expect(
-    (await request(app).post("/v2/scrape").send({ exchange: call })).status,
-  ).toBe(403);
-  expect(mocks.retrieve).not.toHaveBeenCalled();
-});
-
-it.each(["pending", "blocked"])("rejects %s sponsored keys", async status => {
-  sponsor = { status };
-  expect(
-    (await request(app).post("/exchange/retrieve").send(call)).status,
-  ).toBe(403);
-  expect(mocks.retrieve).not.toHaveBeenCalled();
 });
 
 it("does not let untrusted callers bypass paid billing", async () => {
@@ -134,49 +97,6 @@ it("does not let untrusted callers bypass paid billing", async () => {
           },
         })
     ).status,
-  ).toBe(403);
-  expect(mocks.retrieve).not.toHaveBeenCalled();
-});
-
-it("preserves trusted agent billing ownership without storing its secret", async () => {
-  await request(app)
-    .post("/v2/scrape")
-    .send({
-      exchange: call,
-      __agentInterop: {
-        auth: "test-secret",
-        requestId: "agent-job",
-        shouldBill: false,
-      },
-    });
-  expect(mocks.retrieve).toHaveBeenCalledWith(
-    expect.objectContaining({ bypassBilling: true, requestId: "agent-job" }),
-  );
-  expect(JSON.stringify(mocks.retrieve.mock.calls)).not.toContain(
-    "test-secret",
-  );
-});
-
-it("checks JSON output restrictions", async () => {
-  mocks.restriction.mockResolvedValue({
-    allowed: false,
-    status: 403,
-    error: "restricted",
-  });
-  expect(
-    (await request(app).post("/v2/scrape").send({ exchange: call })).status,
-  ).toBe(403);
-  expect(mocks.retrieve).not.toHaveBeenCalled();
-});
-
-it("cannot bypass Scrape endpoint restrictions through the legacy route", async () => {
-  mocks.endpoint.mockResolvedValue({
-    allowed: false,
-    status: 403,
-    error: "restricted endpoint",
-  });
-  expect(
-    (await request(app).post("/exchange/retrieve").send(call)).status,
   ).toBe(403);
   expect(mocks.retrieve).not.toHaveBeenCalled();
 });

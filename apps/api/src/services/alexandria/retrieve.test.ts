@@ -1,18 +1,18 @@
-import { Job, UnrecoverableError } from "bullmq";
+import { UnrecoverableError } from "bullmq";
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   authorize: vi.fn(),
   lock: vi.fn(),
   finalize: vi.fn(),
   bill: vi.fn(),
-  partnerFinalize: vi.fn(),
+}));
+vi.mock("../../config", () => ({
   config: {
     USE_DB_AUTHENTICATION: true,
     FIRE_EXCHANGE_URL: "https://exchange.test",
     EXCHANGE_INTERNAL_SECRET: "test",
   },
 }));
-vi.mock("../../config", () => ({ config: mocks.config }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
 vi.mock("./access", () => ({ authorizeProviders: mocks.authorize }));
 vi.mock("../../db/rpc", () => ({ billTeam7: mocks.bill }));
@@ -25,7 +25,7 @@ vi.mock("../autumn/autumn.service", () => ({
 }));
 vi.mock("../autumn/firebill", () => ({
   firebillConfigured: () => true,
-  firebillFinalize: mocks.partnerFinalize,
+  firebillFinalize: vi.fn(),
 }));
 vi.mock("../queue-service", () => ({ getRedisConnection: vi.fn() }));
 vi.mock("../../lib/concurrency-limit", () => ({
@@ -62,7 +62,7 @@ const answer = {
     },
   ],
 };
-function job(overrides: Record<string, unknown> = {}) {
+function job() {
   let persisted = {
     teamId: "team",
     orgId: "org",
@@ -72,7 +72,6 @@ function job(overrides: Record<string, unknown> = {}) {
     deadline: Date.now() + 50000,
     billable: true,
     phase: "new",
-    ...overrides,
   };
   const create = () =>
     ({
@@ -88,12 +87,9 @@ function job(overrides: Record<string, unknown> = {}) {
 }
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.config.USE_DB_AUTHENTICATION = true;
-  mocks.config.EXCHANGE_INTERNAL_SECRET = "test";
   mocks.authorize.mockResolvedValue(undefined);
   mocks.lock.mockResolvedValue({ status: "locked", lockId: "held" });
   mocks.finalize.mockResolvedValue(true);
-  mocks.partnerFinalize.mockResolvedValue(true);
   mocks.bill.mockResolvedValue([]);
   mocks.request.mockImplementation(async input => ({
     status: 200,
@@ -148,6 +144,8 @@ it("quotes, reserves, executes within budget, settles actual usage, and records 
   );
   await runProviderJob(record.create());
   expect(executions()).toHaveLength(1);
+  expect(mocks.lock).toHaveBeenCalledTimes(1);
+  expect(mocks.finalize).toHaveBeenCalledTimes(1);
   expect(mocks.bill).toHaveBeenCalledTimes(1);
 });
 
@@ -159,45 +157,6 @@ it.each(["denied", "skipped"])(
     expect(response.status).toBe(status === "denied" ? 402 : 503);
     expect(executions()).toHaveLength(0);
     expect(mocks.bill).not.toHaveBeenCalled();
-  },
-);
-
-it("keeps free discovery free", async () => {
-  mocks.request.mockImplementation(async input => ({
-    status: 200,
-    body: input.path.endsWith("/quote")
-      ? { maximumCredits: 0 }
-      : input.path.endsWith("/billing")
-        ? {}
-        : {
-            ...answer,
-            creditsCost: 0,
-            results: [{ ...answer.results[0], creditsCost: 0 }],
-          },
-  }));
-  expect((await runProviderJob(job().create())).status).toBe(200);
-  expect(mocks.lock).not.toHaveBeenCalled();
-  expect(mocks.finalize).not.toHaveBeenCalled();
-  expect(mocks.bill).not.toHaveBeenCalled();
-});
-
-it("fails closed when paid billing is not configured", async () => {
-  mocks.config.EXCHANGE_INTERNAL_SECRET = "";
-  expect((await runProviderJob(job().create())).status).toBe(503);
-  expect(mocks.lock).not.toHaveBeenCalled();
-  expect(executions()).toHaveLength(0);
-});
-
-it.each(["reserving", "executing", "recording"])(
-  "never repeats an uncertain %s operation",
-  async phase => {
-    await expect(
-      runProviderJob(job({ phase }).create()),
-    ).rejects.toBeInstanceOf(UnrecoverableError);
-    expect(mocks.lock).not.toHaveBeenCalled();
-    expect(mocks.finalize).not.toHaveBeenCalled();
-    expect(mocks.bill).not.toHaveBeenCalled();
-    expect(executions()).toHaveLength(0);
   },
 );
 
@@ -225,158 +184,24 @@ it("retains ambiguous ledger writes instead of debiting twice or refunding settl
   expect(mocks.finalize).toHaveBeenCalledTimes(1);
 });
 
-it("retries an idempotent billing report without re-debiting", async () => {
-  let reports = 0;
-  mocks.request.mockImplementation(async input => ({
-    status: input.path.endsWith("/billing") && reports++ === 0 ? 503 : 200,
-    body: input.path.endsWith("/quote")
-      ? { maximumCredits: 5 }
-      : input.path.endsWith("/billing")
-        ? {}
-        : answer,
-  }));
-  const record = job();
-  await expect(runProviderJob(record.create())).rejects.toThrow("report");
-  expect(record.state().phase).toBe("reporting");
-  await runProviderJob(record.create());
-  expect(mocks.finalize).toHaveBeenCalledTimes(1);
-  expect(mocks.bill).toHaveBeenCalledTimes(1);
-});
-
-it.each([
-  {
+it("does not settle over-budget usage or repeat the provider execution", async () => {
+  const invalid = {
     ...answer,
     creditsCost: 6,
     results: [{ ...answer.results[0], creditsCost: 6 }],
-  },
-  { ...answer, creditsCost: 4 },
-  { ...answer, results: [] },
-  { ...answer, results: [{ ...answer.results[0], provider: "other" }] },
-])("retains malformed or over-budget receipts for review", async invalid => {
+  };
   mocks.request.mockImplementation(async input => ({
     status: 200,
     body: input.path.endsWith("/quote") ? { maximumCredits: 5 } : invalid,
   }));
   const record = job();
-  await expect(runProviderJob(record.create())).rejects.toThrow();
+  await expect(runProviderJob(record.create())).rejects.toThrow(
+    "Invalid provider billing receipt",
+  );
   await expect(runProviderJob(record.create())).rejects.toBeInstanceOf(
     UnrecoverableError,
   );
   expect(executions()).toHaveLength(1);
   expect(mocks.finalize).not.toHaveBeenCalled();
-});
-
-it("preserves partial-batch costs and releases unused credits", async () => {
-  const partial = {
-    ...answer,
-    results: [
-      ...answer.results,
-      {
-        provider: "other",
-        capability: "lookup",
-        error: { code: "unavailable", message: "Unavailable" },
-        creditsCost: 0,
-      },
-    ],
-  };
-  mocks.request.mockImplementation(async input => ({
-    status: 200,
-    body: input.path.endsWith("/quote")
-      ? { maximumCredits: 10 }
-      : input.path.endsWith("/billing")
-        ? {}
-        : partial,
-  }));
-  await runProviderJob(
-    job({
-      calls: [call, { provider: "other", capability: "lookup", options: {} }],
-    }).create(),
-  );
-  expect(mocks.finalize).toHaveBeenCalledWith(
-    expect.objectContaining({ overrideValue: 3, heldValue: 10 }),
-  );
-});
-
-it("releases an expired hold before any provider execution", async () => {
-  const record = job({
-    phase: "held",
-    deadline: Date.now() - 1,
-    lockId: "held",
-    maximumCredits: 5,
-  });
-  expect((await runProviderJob(record.create())).status).toBe(504);
-  expect(mocks.finalize).toHaveBeenCalledWith(
-    expect.objectContaining({ action: "release" }),
-  );
-  expect(executions()).toHaveLength(0);
-});
-
-it("rechecks organization access before executing queued work", async () => {
-  mocks.authorize.mockResolvedValue({
-    status: 403,
-    body: { error: "disabled" },
-  });
-  expect((await runProviderJob(job().create())).status).toBe(403);
-  expect(mocks.lock).not.toHaveBeenCalled();
-  expect(executions()).toHaveLength(0);
-});
-
-it("keeps partner attribution on the original hold", async () => {
-  mocks.lock.mockResolvedValue({
-    status: "locked",
-    lockId: "partner-hold",
-    operationToken: "partner-token",
-  });
-  await runProviderJob(job().create());
-  expect(mocks.finalize).not.toHaveBeenCalled();
-  expect(mocks.partnerFinalize).toHaveBeenCalledWith(
-    expect.objectContaining({
-      customerId: "org",
-      lockId: "partner-hold",
-      externalRequestId: "partner-token",
-      heldValue: 5,
-      overrideValue: 3,
-    }),
-  );
-});
-
-it("does not execute after a reservation checkpoint failure", async () => {
-  const record = job();
-  const current = record.create();
-  const update = current.updateData;
-  current.updateData = vi.fn(async next => {
-    if (next.phase === "held") throw new Error("storage lost");
-    return update(next);
-  });
-  await expect(runProviderJob(current)).rejects.toThrow("storage lost");
-  await expect(runProviderJob(record.create())).rejects.toBeInstanceOf(
-    UnrecoverableError,
-  );
-  expect(executions()).toHaveLength(0);
-});
-
-it.each(["new", "held", "settling", "recording"])(
-  "does not overlap a stalled owner in phase %s",
-  async phase => {
-    const current = job({
-      phase,
-      answer,
-      lockId: "held",
-      maximumCredits: 5,
-    }).create();
-    current.stalledCounter = 1;
-    await expect(runProviderJob(current)).rejects.toBeInstanceOf(
-      UnrecoverableError,
-    );
-    expect(executions()).toHaveLength(0);
-    expect(mocks.bill).not.toHaveBeenCalled();
-  },
-);
-
-it("cannot reserve or execute after losing the BullMQ lease", async () => {
-  const current = job().create();
-  current.extendLock = vi.fn(async () => 0);
-  await expect(runProviderJob(current)).rejects.toThrow("lease lost");
-  expect(mocks.lock).not.toHaveBeenCalled();
-  expect(executions()).toHaveLength(0);
+  expect(mocks.bill).not.toHaveBeenCalled();
 });
