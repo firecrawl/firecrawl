@@ -40,6 +40,11 @@ import {
   trackMonitorDeactivatedInterest,
 } from "../../services/monitoring/interest";
 import {
+  monitorUnchangedFreeThresholdMinutes,
+  monitorUnchangedPagesFree,
+  unchangedPagesFreeForMonitor,
+} from "../../services/monitoring/unchanged-billing";
+import {
   getLatestWebhookLog,
   getLatestWebhookLogsByJob,
   type WebhookLogRow,
@@ -87,6 +92,7 @@ function serializeMonitor(
       source: "team" | "opt_in" | "legacy";
       confirmationEmailSent?: boolean;
     }>;
+    unchangedPagesFree?: boolean;
   },
 ) {
   return {
@@ -108,6 +114,9 @@ function serializeMonitor(
       : {}),
     retentionDays: monitor.retention_days,
     estimatedCreditsPerMonth: monitor.estimated_credits_per_month,
+    ...(options?.unchangedPagesFree !== undefined
+      ? { unchangedPagesFree: options.unchangedPagesFree }
+      : {}),
     lastCheckSummary: monitor.last_check_summary,
     goal: monitor.goal ?? null,
     judgeEnabled: Boolean(monitor.judge_enabled),
@@ -237,6 +246,7 @@ export async function createMonitorController(
     success: true,
     data: serializeMonitor(monitor, {
       emailRecipientSubscriptions: sync.recipients,
+      unchangedPagesFree: await monitorUnchangedPagesFree(monitor),
     }),
   });
 }
@@ -252,9 +262,24 @@ export async function listMonitorsController(
     offset: query.offset,
   });
 
+  // Every monitor here belongs to one team, so the plan threshold is resolved
+  // once rather than per monitor -- a cold Autumn cache would otherwise fan
+  // one list request out into an entity fetch per monitor. An empty page
+  // needs no threshold at all.
+  const thresholdMinutes = monitors.length
+    ? await monitorUnchangedFreeThresholdMinutes(req.auth.team_id)
+    : null;
+
   res.status(200).json({
     success: true,
-    data: monitors.map(monitor => serializeMonitor(monitor)),
+    data: monitors.map(monitor =>
+      serializeMonitor(monitor, {
+        unchangedPagesFree: unchangedPagesFreeForMonitor(
+          monitor,
+          thresholdMinutes,
+        ),
+      }),
+    ),
   });
 }
 
@@ -282,6 +307,7 @@ export async function getMonitorController(
     success: true,
     data: serializeMonitor(monitor, {
       emailRecipientSubscriptions: subscriptions,
+      unchangedPagesFree: await monitorUnchangedPagesFree(monitor),
     }),
   });
 }
@@ -399,6 +425,7 @@ export async function updateMonitorController(
     success: true,
     data: serializeMonitor(monitor, {
       emailRecipientSubscriptions: subscriptions,
+      unchangedPagesFree: await monitorUnchangedPagesFree(monitor),
     }),
   });
 }
