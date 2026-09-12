@@ -96,7 +96,7 @@ func (c *Client) ScrapeAlexandria(ctx context.Context, calls []AlexandriaCall, o
 func (c *Client) FindTools(ctx context.Context, opts *FindToolsOptions) (*FindToolsData, error) {
 	options := map[string]interface{}{}
 	mergeOptions(options, opts)
-	result, err := c.ScrapeAlexandria(ctx, []AlexandriaCall{{Provider: "firecrawl-contextual-discovery", Capability: "discovery/context", Options: options}}, nil)
+	result, err := c.ScrapeAlexandria(ctx, []AlexandriaCall{{Provider: "firecrawl", Capability: "find-tools", Options: options}}, nil)
 	if err != nil {
 		return nil, err
 	}

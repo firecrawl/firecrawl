@@ -25,7 +25,7 @@ func TestToolDiscoveryAndExecution(t *testing.T) {
 			w.Write([]byte(`{"success":true,"warning":"contextual lookup unavailable","data":{"tools":[{"id":"p/a","provider":"p","capability":"a","name":"Tool","description":"Example","creditsCost":2,"perRecord":false,"options":[{"name":"q","type":"string"}],"response":{"fields":[]},"examples":{"go":"example"},"matchedBy":["semantic","domain"],"matchedUrls":["https://example.com"]}]}}`))
 			return
 		}
-		if body["alexandria"].([]interface{})[0].(map[string]interface{})["provider"] == "firecrawl-contextual-discovery" {
+		if body["alexandria"].([]interface{})[0].(map[string]interface{})["provider"] == "firecrawl" {
 			w.Write([]byte(`{"success":true,"data":{"alexandria":[{"error":{"code":"invalid_options","message":"Invalid lookup"}}],"creditsCost":0}}`))
 			return
 		}

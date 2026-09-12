@@ -7,7 +7,7 @@ TOOL = dict(id='particle/podcasts/episodes/search', provider='particle', capabil
             name='Episode search', description='Find episodes', creditsCost=15, perRecord=False,
             options=[dict(name='semantic_search', type='string')], response={'fields': []}, examples={'python':'example'},
             matchedBy=['semantic', 'domain'], matchedUrls=['https://podcasts.apple.com'])
-NEXT = dict(provider='firecrawl-contextual-discovery', capability='discovery/context', options={'providers':['particle'], 'level':'tools'})
+NEXT = dict(provider='firecrawl', capability='find-tools', options={'providers':['particle'], 'level':'tools'})
 DATA = {'alexandria':[dict(provider=NEXT['provider'], capability=NEXT['capability'], creditsCost=0,
                          data={'level':'providers','items':[{'id':'particle','next':NEXT}], 'total':1,'next':None})], 'creditsCost':0}
 

@@ -17,8 +17,8 @@ const tool = {
   matchedUrls: ["https://podcasts.apple.com"],
 };
 const next = {
-  provider: "firecrawl-contextual-discovery",
-  capability: "discovery/context",
+  provider: "firecrawl",
+  capability: "find-tools",
   options: { providers: ["particle"], level: "tools" },
 };
 let server: Server;
@@ -56,7 +56,7 @@ beforeAll(async () => {
       );
     }
     const alexandria =
-      body.alexandria[0].provider === "firecrawl-contextual-discovery"
+      body.alexandria[0].provider === "firecrawl"
         ? [
             {
               ...next,

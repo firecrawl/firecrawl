@@ -156,7 +156,7 @@ class AsyncFirecrawlClient:
         (providers/groups/tools), expand, limit, and offset to control disclosure.
         Follow a returned next request with scrape(alexandria=next).
         """
-        result = await self.scrape_alexandria({"provider": "firecrawl-contextual-discovery", "capability": "discovery/context", "options": options})
+        result = await self.scrape_alexandria({"provider": "firecrawl", "capability": "find-tools", "options": options})
         item = result.alexandria[0]
         if item.error:
             from .utils.error_handler import FirecrawlError

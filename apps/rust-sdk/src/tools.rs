@@ -33,8 +33,8 @@ impl Client {
         let result = self
             .scrape_alexandria(
                 vec![AlexandriaCall {
-                    provider: "firecrawl-contextual-discovery".into(),
-                    capability: "discovery/context".into(),
+                    provider: "firecrawl".into(),
+                    capability: "find-tools".into(),
                     options: options.as_object().cloned(),
                 }],
                 None,

@@ -120,8 +120,8 @@ export async function findTools(
 ): Promise<FindToolsData> {
   const result = await scrapeAlexandria(http, [
     {
-      provider: "firecrawl-contextual-discovery",
-      capability: "discovery/context",
+      provider: "firecrawl",
+      capability: "find-tools",
       options: { ...options },
     },
   ]);
