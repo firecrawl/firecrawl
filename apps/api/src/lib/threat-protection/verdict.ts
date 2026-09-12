@@ -51,7 +51,7 @@ function domainMatchesEntry(domain: string, entry: string): boolean {
   return domain === normalized || domain.endsWith(`.${normalized}`);
 }
 
-function domainMatchesList(domain: string, entries: string[]): boolean {
+export function domainMatchesList(domain: string, entries: string[]): boolean {
   return entries.some(entry => domainMatchesEntry(domain, entry));
 }
 

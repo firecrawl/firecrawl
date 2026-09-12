@@ -7,6 +7,7 @@ import {
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
   FireEngineScrapeRequestTLSClient,
+  safeModeParams,
 } from "./scrape";
 import { EngineScrapeResult } from "..";
 import {
@@ -490,6 +491,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
             uniqueId: `${createHash("sha256").update(meta.internalOptions.teamId).digest("hex").slice(0, 16)}_${meta.options.profile.name}`,
           }
         : undefined,
+      ...safeModeParams(meta.internalOptions.safeMode),
     };
 
     let response = await performFireEngineScrape(
@@ -642,6 +644,7 @@ export async function scrapeURLWithFireEngineTLSClient(
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      ...safeModeParams(meta.internalOptions.safeMode),
     };
 
     let response = await performFireEngineScrape(

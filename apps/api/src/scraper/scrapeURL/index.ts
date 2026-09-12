@@ -41,6 +41,7 @@ import {
   DocumentFetchProxyError,
   RemoveFeatureError,
   SiteError,
+  SiteRestrictionError,
   UnsupportedFileError,
   SSLError,
   PDFInsufficientTimeError,
@@ -113,6 +114,7 @@ import {
   type ThreatDecision,
   type ThreatProtectionPolicy,
 } from "../../lib/threat-protection";
+import type { ResolvedSafeMode } from "../../lib/safe-mode";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 
@@ -623,6 +625,8 @@ export type InternalOptions = {
    */
   threatProtection?: ThreatProtectionPolicy;
 
+  safeMode?: ResolvedSafeMode;
+
   v1Agent?: ScrapeOptionsV1["agent"];
   v1JSONAgent?: Exclude<ScrapeOptionsV1["jsonOptions"], undefined>["agent"];
   v1JSONSystemPrompt?: string;
@@ -991,6 +995,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof AddFeatureError ||
               error.error instanceof RemoveFeatureError ||
               error.error instanceof SiteError ||
+              error.error instanceof SiteRestrictionError ||
               error.error instanceof SSLError ||
               error.error instanceof DNSResolutionError ||
               error.error instanceof ActionError ||

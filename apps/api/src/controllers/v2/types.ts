@@ -813,6 +813,7 @@ const baseScrapeOptions = z.strictObject({
   minAge: z.int().gte(0).optional(),
   storeInCache: z.boolean().prefault(true),
   lockdown: z.boolean().prefault(false),
+  safeMode: z.boolean().optional(),
   redactPII: redactPIISchema,
   // Enterprise: per-request field-level override of the org's threat
   // protection policy. Gated on the team flag + org config (checkPermissions).
@@ -899,10 +900,7 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
   }
 
   if (obj.lockdown && obj.maxAge === undefined) {
-    // 2 years in ms. Number.MAX_SAFE_INTEGER lands ~285,000 years which
-    // overflows Postgres TIMESTAMP arithmetic in the index lookup and silently
-    // returns no rows. 2 years covers any practical cache retention window.
-    result = { ...result, maxAge: 2 * 365 * 24 * 60 * 60 * 1000 };
+    result = { ...result, maxAge: LOCKDOWN_DEFAULT_MAX_AGE_MS };
   }
 
   return result as T extends undefined ? undefined : T;
@@ -1887,10 +1885,28 @@ type Account = {
   remainingCredits: number;
 };
 
+export const LOCKDOWN_DEFAULT_MAX_AGE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
+
 export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
+  safeMode?: boolean;
+  safeModeConfig?: {
+    allowBypassSafeMode?: boolean;
+    lockdown?: boolean;
+    domainControls?: boolean;
+    enforceRobots?: boolean;
+    disableStealthProxy?: boolean;
+    disableAuthentication?: boolean;
+    disableSiteHandling?: boolean;
+    exposeWebdriver?: boolean;
+    useHeadlessUserAgent?: boolean;
+    disablePlatformSelection?: boolean;
+    disableCountrySelection?: boolean;
+    disableAutomaticReferrer?: boolean;
+    allowlist?: string[];
+  };
   siemLogging?: boolean;
   unblockedDomains?: string[];
   forceZDR?: boolean;
