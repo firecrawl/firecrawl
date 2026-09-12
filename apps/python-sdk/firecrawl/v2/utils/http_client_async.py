@@ -26,11 +26,17 @@ class AsyncHttpClient:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
+        norm_url = api_url if api_url.endswith("/") else f"{api_url}/"
         self._client = httpx.AsyncClient(
-            base_url=api_url,
+            base_url=norm_url,
             headers=headers,
             limits=httpx.Limits(max_keepalive_connections=0),
         )
+
+    def _resolve_endpoint(self, endpoint: str) -> str:
+        if endpoint.startswith("http://") or endpoint.startswith("https://") or endpoint.startswith("//"):
+            return endpoint
+        return endpoint.lstrip("/")
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -66,7 +72,7 @@ class AsyncHttpClient:
         for attempt in range(num_attempts):
             try:
                 response = await self._client.post(
-                    endpoint,
+                    self._resolve_endpoint(endpoint),
                     json=payload,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
@@ -107,7 +113,7 @@ class AsyncHttpClient:
         for attempt in range(num_attempts):
             try:
                 response = await self._client.post(
-                    endpoint,
+                    self._resolve_endpoint(endpoint),
                     data=data,
                     files=files,
                     headers={**self._headers(), **(headers or {})},
@@ -147,7 +153,7 @@ class AsyncHttpClient:
         for attempt in range(num_attempts):
             try:
                 response = await self._client.get(
-                    endpoint,
+                    self._resolve_endpoint(endpoint),
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
                 )
@@ -185,7 +191,7 @@ class AsyncHttpClient:
         for attempt in range(num_attempts):
             try:
                 response = await self._client.delete(
-                    endpoint,
+                    self._resolve_endpoint(endpoint),
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
                 )
@@ -227,7 +233,7 @@ class AsyncHttpClient:
         for attempt in range(num_attempts):
             try:
                 response = await self._client.patch(
-                    endpoint,
+                    self._resolve_endpoint(endpoint),
                     json=payload,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
