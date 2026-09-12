@@ -446,7 +446,8 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           const gMeta = decodeJson<GroupMeta>(await tn.get(ks.groupMeta(gid)));
           groupMetas.set(gid, gMeta);
           if (gMeta && gMeta.s === "active" && gate.teamLimit !== null) {
-            const effM = (gMeta.d ?? 0) > 0 ? 1 : gMeta.m;
+            const effM =
+              (gMeta.d ?? 0) > 0 && config.FAST_CRAWL !== true ? 1 : gMeta.m;
             if (effM !== undefined) {
               const cact = decodeI64(await tn.get(ks.groupCrawlActive(gid)));
               crawlFree.set(gid, effM - cact);

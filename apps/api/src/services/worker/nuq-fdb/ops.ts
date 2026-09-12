@@ -1,4 +1,5 @@
 import type { Transaction } from "foundationdb";
+import { config } from "../../../config";
 import { logger as _logger } from "../../../lib/logger";
 import {
   NuqFdbKeyspace,
@@ -405,7 +406,7 @@ export async function releaseSlotsAndPromote(
     if (gMeta && gMeta.s === "active") {
       crawlPromoted = await popCrawlPending(tn, ks, e.g!);
       if (crawlPromoted) {
-        crawlDelaySeconds = gMeta.d ?? 0;
+        crawlDelaySeconds = config.FAST_CRAWL === true ? 0 : (gMeta.d ?? 0);
       } else {
         tn.add(ks.groupCrawlActive(e.g!), MINUS_ONE);
       }
