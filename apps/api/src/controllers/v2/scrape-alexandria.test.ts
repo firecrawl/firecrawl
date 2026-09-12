@@ -1,26 +1,25 @@
 import express from "express";
 import request from "supertest";
-const mocks = vi.hoisted(() => ({
-  retrieve: vi.fn(),
-  restriction: vi.fn(),
-  endpoint: vi.fn(),
-  log: vi.fn(),
-}));
+const mocks = vi.hoisted(() => ({ retrieve: vi.fn(), log: vi.fn() }));
 vi.mock("../../services/alexandria/retrieve", () => ({
+  REQUEST_ID_PATTERN: /^[A-Za-z0-9._:-]{1,128}$/,
   retrieveProviders: mocks.retrieve,
 }));
 vi.mock("../../services/logging/log_job", () => ({ logRequest: mocks.log }));
 vi.mock("../../lib/key-restriction", () => ({
-  checkKeyFormatRestriction: mocks.restriction,
-  checkKeyEndpointRestriction: mocks.endpoint,
+  checkKeyFormatRestriction: async () => ({ allowed: true }),
 }));
 vi.mock("../../lib/agent-interop", () => ({
   isAgentInteropSecretValid: (value: string) => value === "test-secret",
 }));
 vi.mock("../../config", () => ({
-  config: { FIRE_EXCHANGE_URL: "https://exchange.test" },
+  config: {
+    FIRE_EXCHANGE_URL: "https://x",
+    AGENT_INTEROP_SECRET: "test-secret",
+  },
 }));
 import { providerScrapeController } from "./scrape-alexandria";
+
 const call = {
   provider: "fred",
   capability: "categories/category",
@@ -31,11 +30,7 @@ app.use(express.json());
 app.use((req, _res, next) => {
   Object.assign(req, {
     auth: { team_id: "team" },
-    acuc: {
-      api_key_id: 12,
-      org_id: "org",
-      flags: { exchangeRetrieve: true },
-    },
+    acuc: { api_key_id: 12, flags: { exchangeRetrieve: true } },
   });
   next();
 });
@@ -43,36 +38,41 @@ app.post("/v2/scrape", (req, res) => providerScrapeController(req as any, res));
 app.post("/exchange/retrieve", (req, res) =>
   providerScrapeController(req as any, res, true),
 );
-beforeEach(() => {
-  vi.clearAllMocks();
-  mocks.restriction.mockResolvedValue({ allowed: true });
-  mocks.endpoint.mockResolvedValue({ allowed: true });
-  mocks.log.mockResolvedValue(undefined);
-  mocks.retrieve.mockResolvedValue({
-    status: 200,
-    body: {
-      success: true,
-      creditsCost: 0,
-      results: [{ ...call, creditsCost: 0, data: {} }],
-    },
-  });
+const result = (results: unknown[], fresh = true) => ({
+  status: 200,
+  body: { success: true, creditsCost: 0, results },
+  fresh,
 });
 
-it("returns the Scrape contract and shares request identity with the legacy route", async () => {
-  const result = await request(app)
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.log.mockResolvedValue(undefined);
+  mocks.retrieve.mockResolvedValue(
+    result([{ ...call, creditsCost: 0, data: {} }]),
+  );
+});
+
+it("returns the Scrape contract, shares identity with the legacy route, and logs once per execution", async () => {
+  const response = await request(app)
     .post("/v2/scrape")
     .set("x-request-id", "same-request")
     .send({ exchange: call });
-  expect(result.status).toBe(200);
-  expect(result.body.data.exchange).toHaveLength(1);
-  expect(result.body.data.creditsCost).toBe(0);
-  expect(result.headers["x-request-id"]).toBe("same-request");
+  expect(response.status).toBe(200);
+  expect(response.body.data).toEqual({
+    exchange: [expect.any(Object)],
+    creditsCost: 0,
+  });
+  expect(response.headers["x-request-id"]).toBe("same-request");
   expect(mocks.retrieve).toHaveBeenCalledWith(
     expect.objectContaining({
       calls: [call],
       requestId: "same-request",
       apiKeyId: 12,
     }),
+  );
+
+  mocks.retrieve.mockResolvedValue(
+    result([{ ...call, creditsCost: 0, data: {} }], false),
   );
   await request(app)
     .post("/exchange/retrieve")
@@ -81,22 +81,53 @@ it("returns the Scrape contract and shares request identity with the legacy rout
   expect(mocks.retrieve.mock.calls[0][0]).toEqual(
     mocks.retrieve.mock.calls[1][0],
   );
+  expect(mocks.log).toHaveBeenCalledTimes(1);
 });
 
-it("does not let untrusted callers bypass paid billing", async () => {
-  expect(
-    (
-      await request(app)
-        .post("/v2/scrape")
-        .send({
-          exchange: call,
-          __agentInterop: {
-            auth: "wrong",
-            requestId: "same",
-            shouldBill: false,
-          },
-        })
-    ).status,
-  ).toBe(403);
+it("relays a failed single legacy call as an error, not a success", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      {
+        ...call,
+        creditsCost: 0,
+        error: { code: "credential_missing", message: "No key.", status: 503 },
+      },
+    ]),
+  );
+  const response = await request(app).post("/exchange/retrieve").send(call);
+  expect(response.status).toBe(503);
+  expect(response.body).toEqual({
+    success: false,
+    code: "credential_missing",
+    error: "No key.",
+  });
+});
+
+it("only lets trusted agent interop bypass billing, and prefers its request id", async () => {
+  const untrusted = await request(app)
+    .post("/v2/scrape")
+    .send({
+      exchange: call,
+      __agentInterop: { auth: "wrong", requestId: "a", shouldBill: false },
+    });
+  expect(untrusted.status).toBe(403);
   expect(mocks.retrieve).not.toHaveBeenCalled();
+
+  const trusted = await request(app)
+    .post("/v2/scrape")
+    .set("x-request-id", "hop-id")
+    .send({
+      exchange: call,
+      __agentInterop: {
+        auth: "test-secret",
+        requestId: "agent-id",
+        shouldBill: false,
+        boostConcurrency: true,
+      },
+    });
+  expect(trusted.status).toBe(200);
+  expect(mocks.retrieve).toHaveBeenCalledWith(
+    expect.objectContaining({ requestId: "agent-id", bypassBilling: true }),
+  );
+  expect(mocks.log).not.toHaveBeenCalled();
 });

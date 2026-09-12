@@ -260,7 +260,7 @@ export async function executeSearch(
             : [
                 ...(searchResponse.web ?? []),
                 ...(searchResponse.news ?? []),
-                ...(searchResponse.images ?? []),
+                ...developerResults,
               ].flatMap(item => (item.url ? [item.url] : [])),
         timeoutMs: options.timeout,
       },

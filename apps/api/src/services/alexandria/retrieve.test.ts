@@ -1,21 +1,35 @@
-import { UnrecoverableError } from "bullmq";
-const mocks = vi.hoisted(() => ({
-  request: vi.fn(),
-  authorize: vi.fn(),
-  lock: vi.fn(),
-  finalize: vi.fn(),
-  bill: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  const store = new Map<string, string>();
+  return {
+    store,
+    redis: {
+      set: vi.fn(async (key: string, value: string, ...args: unknown[]) => {
+        if (args.includes("NX") && store.has(key)) return null;
+        store.set(key, value);
+        return "OK";
+      }),
+      get: vi.fn(async (key: string) => store.get(key) ?? null),
+      del: vi.fn(async (key: string) => (store.delete(key) ? 1 : 0)),
+    },
+    request: vi.fn(),
+    lock: vi.fn(),
+    finalize: vi.fn(),
+    billAdd: vi.fn(),
+    report: vi.fn(),
+  };
+});
 vi.mock("../../config", () => ({
-  config: {
-    USE_DB_AUTHENTICATION: true,
-    FIRE_EXCHANGE_URL: "https://exchange.test",
-    EXCHANGE_INTERNAL_SECRET: "test",
-  },
+  config: { USE_DB_AUTHENTICATION: true, FIRE_EXCHANGE_URL: "https://x" },
 }));
+vi.mock("../rate-limiter", () => ({ redisRateLimitClient: mocks.redis }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
-vi.mock("./access", () => ({ authorizeProviders: mocks.authorize }));
-vi.mock("../../db/rpc", () => ({ billTeam7: mocks.bill }));
+vi.mock("./access", () => ({ authorizeProviders: async () => undefined }));
+vi.mock("../queue-service", () => ({
+  getBillingQueue: () => ({ add: mocks.billAdd }),
+}));
+vi.mock("../../lib/exchange", () => ({
+  reportExchangeUsageBilling: mocks.report,
+}));
 vi.mock("../autumn/autumn.service", () => ({
   autumnService: {
     lockCredits: mocks.lock,
@@ -23,27 +37,7 @@ vi.mock("../autumn/autumn.service", () => ({
   },
   featureIdForBillingEndpoint: () => "credits",
 }));
-vi.mock("../autumn/firebill", () => ({
-  firebillConfigured: () => true,
-  firebillFinalize: vi.fn(),
-}));
-vi.mock("../queue-service", () => ({ getRedisConnection: vi.fn() }));
-vi.mock("../../lib/concurrency-limit", () => ({
-  getEffectiveConcurrencyLimit: async () => 2,
-}));
-vi.mock("../worker/team-semaphore", () => ({
-  teamConcurrencySemaphore: {
-    withSemaphore: async (
-      _team: unknown,
-      _id: unknown,
-      _limit: unknown,
-      _signal: unknown,
-      _timeout: unknown,
-      fn: () => Promise<unknown>,
-    ) => fn(),
-  },
-}));
-import { runProviderJob } from "./retrieve";
+import { retrieveProviders } from "./retrieve";
 
 const call = {
   provider: "fred",
@@ -53,71 +47,47 @@ const call = {
 const answer = {
   success: true,
   creditsCost: 3,
-  results: [
-    {
-      provider: call.provider,
-      capability: call.capability,
-      creditsCost: 3,
-      data: { observations: [] },
-    },
-  ],
+  results: [{ ...call, creditsCost: 3, data: {} }],
 };
-function job() {
-  let persisted = {
+const run = (overrides: Record<string, unknown> = {}) =>
+  retrieveProviders({
     teamId: "team",
-    orgId: "org",
     apiKeyId: 12,
+    flags: {},
     calls: [call],
-    fingerprint: "hash",
-    deadline: Date.now() + 50000,
-    billable: true,
-    phase: "new",
-  };
-  const create = () =>
-    ({
-      id: "request",
-      token: "token",
-      extendLock: vi.fn(async () => 1),
-      data: structuredClone(persisted),
-      updateData: vi.fn(async next => {
-        persisted = structuredClone(next);
-      }),
-    }) as unknown as Parameters<typeof runProviderJob>[0];
-  return { create, state: () => persisted };
-}
+    requestId: "request-1",
+    timeoutMs: 50000,
+    ...overrides,
+  });
+const executions = () =>
+  mocks.request.mock.calls.filter(([arg]) => arg.path === "/v1/retrieve");
+const exchangeAnswers = (body: unknown, status = 200) =>
+  mocks.request.mockImplementation(async arg =>
+    arg.path.endsWith("/quote")
+      ? { status: 200, body: { maximumCredits: 5 } }
+      : { status, body },
+  );
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.authorize.mockResolvedValue(undefined);
+  mocks.store.clear();
   mocks.lock.mockResolvedValue({ status: "locked", lockId: "held" });
   mocks.finalize.mockResolvedValue(true);
-  mocks.bill.mockResolvedValue([]);
-  mocks.request.mockImplementation(async input => ({
-    status: 200,
-    body: input.path.endsWith("/quote")
-      ? { maximumCredits: 5 }
-      : input.path.endsWith("/billing")
-        ? { success: true }
-        : answer,
-  }));
+  mocks.billAdd.mockResolvedValue({});
+  mocks.report.mockResolvedValue(true);
+  exchangeAnswers(answer);
 });
-const executions = () =>
-  mocks.request.mock.calls.filter(([input]) => input.path === "/v1/retrieve");
 
-it("quotes, reserves, executes within budget, settles actual usage, and records once", async () => {
-  const record = job();
-  expect(await runProviderJob(record.create())).toEqual({
-    status: 200,
-    body: answer,
-  });
+it("quotes, reserves, executes within budget, settles actual usage, records once, and replays", async () => {
+  expect(await run()).toEqual({ status: 200, body: answer, fresh: true });
   expect(mocks.lock).toHaveBeenCalledWith(
-    expect.objectContaining({
-      value: 5,
-      lockId: "alexandria_request",
-      featureId: "credits",
-    }),
+    expect.objectContaining({ value: 5, featureId: "credits" }),
   );
   expect(executions()[0][0]).toEqual(
-    expect.objectContaining({ maximumCredits: 5, requestId: "request" }),
+    expect.objectContaining({
+      maximumCredits: 5,
+      requestId: expect.any(String),
+    }),
   );
   expect(mocks.finalize).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -127,81 +97,103 @@ it("quotes, reserves, executes within budget, settles actual usage, and records 
       heldValue: 5,
     }),
   );
-  expect(mocks.bill).toHaveBeenCalledWith(
-    expect.objectContaining({ credits: 3, api_key_id: 12, team_id: "team" }),
-  );
-  expect(mocks.request).toHaveBeenLastCalledWith(
+  expect(mocks.billAdd).toHaveBeenCalledWith(
+    "bill_team",
+    expect.objectContaining({ credits: 3, autumnTrackInRequest: true }),
     expect.objectContaining({
-      internal: true,
-      body: [
-        {
-          requestId: "request",
-          status: "confirmed",
-          billingReference: "alexandria:request",
-        },
-      ],
+      jobId: expect.stringMatching(/^alexandria-bill-/),
     }),
   );
-  await runProviderJob(record.create());
+  expect(mocks.report).toHaveBeenCalledWith(
+    expect.objectContaining({ status: "confirmed" }),
+  );
+
+  expect(await run()).toEqual({ status: 200, body: answer, fresh: false });
   expect(executions()).toHaveLength(1);
-  expect(mocks.lock).toHaveBeenCalledTimes(1);
   expect(mocks.finalize).toHaveBeenCalledTimes(1);
-  expect(mocks.bill).toHaveBeenCalledTimes(1);
+  expect(mocks.billAdd).toHaveBeenCalledTimes(1);
 });
 
-it.each(["denied", "skipped"])(
-  "does not execute after a %s credit hold",
-  async status => {
-    mocks.lock.mockResolvedValue({ status });
-    const response = await runProviderJob(job().create());
-    expect(response.status).toBe(status === "denied" ? 402 : 503);
+it("refuses a different payload under the same x-request-id", async () => {
+  await run();
+  const other = await run({
+    calls: [{ ...call, options: { series_id: "CPI" } }],
+  });
+  expect(other.status).toBe(409);
+  expect(other.body).toEqual(
+    expect.objectContaining({ code: "duplicate_request" }),
+  );
+  expect(executions()).toHaveLength(1);
+});
+
+it.each([
+  ["denied", 402],
+  ["skipped", 503],
+])(
+  "does not execute after a %s hold and lets the same id retry",
+  async (status, expected) => {
+    mocks.lock.mockResolvedValueOnce({ status });
+    expect((await run()).status).toBe(expected);
     expect(executions()).toHaveLength(0);
-    expect(mocks.bill).not.toHaveBeenCalled();
+    expect(mocks.finalize).not.toHaveBeenCalled();
+    expect((await run()).status).toBe(200);
+    expect(executions()).toHaveLength(1);
   },
 );
 
-it("retries settlement without executing or tracking a second charge", async () => {
-  mocks.finalize.mockResolvedValueOnce(false);
-  const record = job();
-  await expect(runProviderJob(record.create())).rejects.toThrow("settlement");
-  expect(record.state().phase).toBe("settling");
-  expect((await runProviderJob(record.create())).status).toBe(200);
+it("holds an ambiguous execution for reconciliation without settling or re-executing", async () => {
+  exchangeAnswers("gateway error", 502);
+  const first = await run();
+  expect(first.status).toBe(503);
+  expect(first.body).toEqual(
+    expect.objectContaining({ code: "request_unresolved" }),
+  );
+  expect(mocks.finalize).not.toHaveBeenCalled();
+
+  exchangeAnswers(answer);
+  expect((await run()).body).toEqual(
+    expect.objectContaining({ code: "request_unresolved" }),
+  );
   expect(executions()).toHaveLength(1);
-  expect(mocks.bill).toHaveBeenCalledTimes(1);
+  expect(mocks.billAdd).not.toHaveBeenCalled();
 });
 
-it("retains ambiguous ledger writes instead of debiting twice or refunding settled work", async () => {
-  mocks.bill.mockRejectedValueOnce(new Error("commit acknowledgement lost"));
-  const record = job();
-  await expect(runProviderJob(record.create())).rejects.toThrow(
-    "acknowledgement",
+it("releases the hold on a definitive refusal and relays it without caching", async () => {
+  exchangeAnswers(
+    { code: "credit_budget_exceeded", error: "Over budget." },
+    402,
   );
-  expect(record.state().phase).toBe("recording");
-  await expect(runProviderJob(record.create())).rejects.toBeInstanceOf(
-    UnrecoverableError,
+  expect(await run()).toEqual({
+    status: 402,
+    body: {
+      success: false,
+      code: "credit_budget_exceeded",
+      error: "Over budget.",
+    },
+    fresh: true,
+  });
+  expect(mocks.finalize).toHaveBeenCalledWith(
+    expect.objectContaining({ lockId: "held", action: "release" }),
   );
-  expect(mocks.bill).toHaveBeenCalledTimes(1);
-  expect(mocks.finalize).toHaveBeenCalledTimes(1);
+  expect(mocks.store.size).toBe(0);
 });
 
-it("does not settle over-budget usage or repeat the provider execution", async () => {
-  const invalid = {
+it("does not settle a receipt over budget", async () => {
+  exchangeAnswers({
     ...answer,
     creditsCost: 6,
     results: [{ ...answer.results[0], creditsCost: 6 }],
-  };
-  mocks.request.mockImplementation(async input => ({
-    status: 200,
-    body: input.path.endsWith("/quote") ? { maximumCredits: 5 } : invalid,
-  }));
-  const record = job();
-  await expect(runProviderJob(record.create())).rejects.toThrow(
-    "Invalid provider billing receipt",
+  });
+  expect((await run()).body).toEqual(
+    expect.objectContaining({ code: "request_unresolved" }),
   );
-  await expect(runProviderJob(record.create())).rejects.toBeInstanceOf(
-    UnrecoverableError,
-  );
-  expect(executions()).toHaveLength(1);
   expect(mocks.finalize).not.toHaveBeenCalled();
-  expect(mocks.bill).not.toHaveBeenCalled();
+  expect(mocks.billAdd).not.toHaveBeenCalled();
+});
+
+it("returns the answer but records nothing when the settle does not land", async () => {
+  mocks.finalize.mockResolvedValueOnce(false);
+  expect((await run()).status).toBe(200);
+  expect(mocks.billAdd).not.toHaveBeenCalled();
+  expect(mocks.report).not.toHaveBeenCalled();
 });

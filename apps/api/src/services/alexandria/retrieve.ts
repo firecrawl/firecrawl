@@ -1,373 +1,373 @@
 import { createHash } from "node:crypto";
-import { Job, Queue, QueueEvents, UnrecoverableError } from "bullmq";
 import { z } from "zod";
 import { config } from "../../config";
-import { billTeam7 } from "../../db/rpc";
-import { firebillConfigured, firebillFinalize } from "../autumn/firebill";
+import type { TeamFlags } from "../../controllers/v2/types";
+import { reportExchangeUsageBilling } from "../../lib/exchange";
 import { logger } from "../../lib/logger";
-import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import {
   autumnService,
   featureIdForBillingEndpoint,
 } from "../autumn/autumn.service";
-import { getRedisConnection } from "../queue-service";
-import { teamConcurrencySemaphore } from "../worker/team-semaphore";
+import { getBillingQueue } from "../queue-service";
+import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
 import {
   answerSchema,
   refusal,
   type ExchangeResponse,
-  type ProviderAnswer,
   type ProviderCall,
 } from "./contracts";
 
+export const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+const RETENTION_SECONDS = 7 * 86400;
+const GRACE_MS = 30_000;
+const HOLD_GRACE_MS = 15 * 60_000;
+
+// One record per charge id (team + x-request-id), written before the provider
+// call so a crash is found as unresolved instead of re-executed, and rewritten
+// with the response so replays never execute twice.
 type Retrieval = {
-  teamId: string;
-  orgId?: string | null;
-  apiKeyId: number | null;
-  calls: ProviderCall[];
   fingerprint: string;
+  phase: "executing" | "done";
   deadline: number;
-  billable: boolean;
-  phase:
-    | "new"
-    | "reserving"
-    | "held"
-    | "executing"
-    | "settling"
-    | "recording"
-    | "reporting"
-    | "done";
-  maximumCredits?: number;
   lockId?: string;
-  operationToken?: string;
-  answer?: ProviderAnswer;
+  maximumCredits?: number;
   response?: ExchangeResponse;
+  failure?: string;
 };
-const queueName = "{alexandriaQueue}";
-let queue: Queue<Retrieval, ExchangeResponse>;
-let events: QueueEvents;
-export function getAlexandriaQueue() {
-  return (queue ??= new Queue<Retrieval, ExchangeResponse>(queueName, {
-    connection: getRedisConnection(),
-    defaultJobOptions: {
-      attempts: 8,
-      backoff: { type: "exponential", delay: 1000 },
-      removeOnComplete: { age: 7 * 86400 },
-      removeOnFail: false,
-    },
-  }));
-}
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, item]) => [key, canonical(item)]),
-    );
-  return value;
-}
+
+type ProviderRetrieval = ExchangeResponse & { fresh: boolean };
+
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : value && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, item]) => [key, canonical(item)]),
+        )
+      : value;
 const hash = (value: unknown) =>
   createHash("sha256")
     .update(JSON.stringify(canonical(value)))
     .digest("hex");
-const pending = () =>
+
+const unresolved = (chargeId: string) =>
   refusal(
     503,
-    "Provider request pending or awaiting reconciliation. Retry with the same x-request-id; do not create a new request.",
+    "The provider request did not complete and its outcome is uncertain. Keep this x-request-id for reconciliation; do not create a new request.",
+    { code: "request_unresolved", chargeId },
   );
+const relay = (response: ExchangeResponse): ExchangeResponse => {
+  const body = (response.body ?? {}) as Record<string, unknown>;
+  return refusal(
+    response.status,
+    typeof body.error === "string"
+      ? body.error
+      : "The provider request was refused.",
+    typeof body.code === "string" ? { code: body.code } : {},
+  );
+};
 
 export async function retrieveProviders(input: {
   teamId: string;
-  orgId?: string | null;
   apiKeyId: number | null;
+  flags: TeamFlags | null | undefined;
   calls: ProviderCall[];
   requestId: string;
   timeoutMs: number;
   bypassBilling?: boolean;
-}): Promise<ExchangeResponse> {
-  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(input.requestId))
-    return refusal(
-      400,
-      "Invalid x-request-id; use 1-128 letters, digits, dots, underscores, colons or hyphens.",
-    );
+}): Promise<ProviderRetrieval> {
+  if (!REQUEST_ID_PATTERN.test(input.requestId))
+    return {
+      ...refusal(
+        400,
+        "Invalid x-request-id; use 1-128 letters, digits, dots, underscores, colons or hyphens.",
+      ),
+      fresh: false,
+    };
   if (Buffer.byteLength(JSON.stringify(input.calls)) > 256 * 1024)
-    return refusal(400, "Provider options exceed 256 KB.");
-  const denied = await authorizeProviders(input.teamId, input.calls);
-  if (denied) return denied;
-  const billable = !input.bypassBilling;
-  const fingerprint = hash([input.calls, billable]);
-  const jobId = hash([input.teamId, input.requestId]);
-  const q = getAlexandriaQueue();
-  await q.add(
-    "retrieve",
-    {
-      teamId: input.teamId,
-      orgId: input.orgId,
-      apiKeyId: input.apiKeyId,
-      calls: input.calls,
-      fingerprint,
-      deadline: Date.now() + input.timeoutMs,
-      billable,
-      phase: "new",
-    },
-    { jobId },
-  );
-  // add() also succeeds for an existing ID; only persisted data identifies its payload.
-  const job = await q.getJob(jobId);
-  if (!job) return pending();
-  if (job.data.fingerprint !== fingerprint)
-    return refusal(
-      409,
-      "This x-request-id already belongs to a different provider request.",
-    );
-  events ??= new QueueEvents(queueName, { connection: getRedisConnection() });
-  try {
-    return await job.waitUntilFinished(events, input.timeoutMs);
-  } catch {
-    return pending();
-  }
-}
+    return { ...refusal(400, "Provider options exceed 256 KB."), fresh: false };
 
-export async function runProviderJob(
-  job: Job<Retrieval, ExchangeResponse>,
-): Promise<ExchangeResponse> {
-  let state = job.data;
-  const id = job.id!;
+  const billable = !input.bypassBilling;
+  const id = hash([input.teamId, input.requestId]);
+  const key = `alexandria:retrieve:${id}`;
+  const fingerprint = hash([input.calls, billable]);
+  const record: Retrieval = {
+    fingerprint,
+    phase: "executing",
+    deadline: Date.now() + input.timeoutMs,
+  };
+  const write = (next: Retrieval) =>
+    redisRateLimitClient.set(
+      key,
+      JSON.stringify(next),
+      "EX",
+      RETENTION_SECONDS,
+    );
+
+  const claimed = await redisRateLimitClient.set(
+    key,
+    JSON.stringify(record),
+    "EX",
+    RETENTION_SECONDS,
+    "NX",
+  );
+  if (claimed !== "OK") {
+    const raw = await redisRateLimitClient.get(key);
+    const existing: Retrieval | null = raw ? JSON.parse(raw) : null;
+    if (existing?.phase === "done" && existing.fingerprint === fingerprint)
+      return { ...existing.response!, fresh: false };
+    if (existing && existing.fingerprint !== fingerprint)
+      return {
+        ...refusal(
+          409,
+          "This x-request-id already belongs to a different provider request.",
+          { code: "duplicate_request", chargeId: id },
+        ),
+        fresh: false,
+      };
+    if (
+      existing &&
+      !existing.failure &&
+      Date.now() <= existing.deadline + GRACE_MS
+    )
+      return {
+        ...refusal(
+          409,
+          "This provider request is still running. Retry with the same x-request-id once it has finished.",
+          { code: "request_in_flight", chargeId: id },
+        ),
+        fresh: false,
+      };
+    return { ...unresolved(id), fresh: false };
+  }
+
+  const featureId = featureIdForBillingEndpoint("scrape");
   const properties = {
     source: "alexandria",
     endpoint: "scrape",
     chargeId: id,
-    apiKeyId: state.apiKeyId,
+    apiKeyId: input.apiKeyId,
   };
-  const featureId = featureIdForBillingEndpoint("scrape");
-  const save = async (patch: Partial<Retrieval>) => {
-    if (!job.token || (await job.extendLock(job.token, 60000)) !== 1)
-      throw new UnrecoverableError(`Provider job lease lost: ${id}`);
-    const next = { ...state, ...patch };
-    await job.updateData(next);
-    state = next;
-  };
-  const finish = async (response: ExchangeResponse) => {
-    await save({ phase: "done", response, answer: undefined });
-    return response;
-  };
-  const finalize = async (action: "confirm" | "release", credits?: number) => {
-    if (!state.lockId) return;
-    const params = {
-      teamId: state.teamId,
-      lockId: state.lockId,
-      action,
-      overrideValue: credits,
-      externalRequestId: state.operationToken,
-      heldValue: state.maximumCredits,
-      featureId,
-      properties,
-    };
-    const settled = state.operationToken
-      ? Boolean(state.orgId) &&
-        firebillConfigured() &&
-        (await firebillFinalize({ ...params, customerId: state.orgId! }))
-      : await autumnService.finalizeCreditsLock(params);
-    if (!settled) throw new Error("Provider credit settlement is unavailable");
+  const remaining = () => Math.max(1, record.deadline - Date.now());
+  // Nothing reserved or executed yet: drop the claim so the same id can retry.
+  const refuse = async (response: ExchangeResponse) => {
+    await redisRateLimitClient.del(key);
+    return { ...response, fresh: true };
   };
 
-  if (state.phase === "done") return state.response!;
-  // A stalled owner can resume; only read-only or idempotent reporting may overlap it.
-  if (job.stalledCounter > 0 && state.phase !== "reporting")
-    throw new UnrecoverableError(
-      `Stalled provider job requires reconciliation: ${id}`,
-    );
-  // These writes precede non-idempotent calls. A crash cannot prove whether they landed.
-  if (["reserving", "executing", "recording"].includes(state.phase))
-    throw new UnrecoverableError(
-      `Provider ${state.phase} outcome requires reconciliation: ${id}`,
-    );
+  let lockId: string | undefined;
+  let maximumCredits: number;
+  try {
+    const denied = await authorizeProviders(input.calls, input.flags);
+    if (denied) return refuse(denied);
 
-  if (state.phase === "new" || state.phase === "held") {
-    const denied = await authorizeProviders(state.teamId, state.calls);
-    if (denied || Date.now() >= state.deadline) {
-      await finalize("release");
-      return finish(
-        denied ?? refusal(504, "Provider request expired before execution."),
+    const quote = await exchangeRequest({
+      teamId: input.teamId,
+      path: "/v1/retrieve/quote",
+      body: { requests: input.calls },
+      timeoutMs: Math.min(10000, remaining()),
+    }).catch(error => {
+      logger.warn("Provider quote unavailable", { error, chargeId: id });
+      return undefined;
+    });
+    if (!quote || quote.status >= 500 || quote.status < 200)
+      return refuse(
+        refusal(
+          503,
+          "Provider quote is unavailable. No provider was executed.",
+        ),
       );
-    }
-    if (state.phase === "new") {
-      const quote = await exchangeRequest({
-        teamId: state.teamId,
-        path: "/v1/retrieve/quote",
-        body: { requests: state.calls },
-        timeoutMs: Math.min(10000, state.deadline - Date.now()),
+    if (quote.status !== 200) return refuse(relay(quote));
+    const parsedQuote = z
+      .object({ maximumCredits: z.number().int().nonnegative().safe() })
+      .safeParse(quote.body);
+    if (!parsedQuote.success)
+      return refuse(
+        refusal(502, "Provider quote was malformed. No provider was executed."),
+      );
+    maximumCredits = parsedQuote.data.maximumCredits;
+
+    if (billable && maximumCredits > 0) {
+      if (!config.USE_DB_AUTHENTICATION)
+        return refuse(
+          refusal(
+            503,
+            "Paid provider billing is not configured. No provider was executed.",
+          ),
+        );
+      const hold = await autumnService.lockCredits({
+        teamId: input.teamId,
+        value: maximumCredits,
+        lockId: `alexandria_${id}`,
+        expiresAt: record.deadline + HOLD_GRACE_MS,
+        featureId,
+        properties,
       });
-      if (quote.status !== 200) return finish(quote);
-      const { maximumCredits } = z
-        .object({
-          maximumCredits: z
-            .number()
-            .int()
-            .min(0)
-            .max(state.calls.length * 100),
-        })
-        .parse(quote.body);
-      await save({ maximumCredits });
-      if (state.billable && maximumCredits > 0) {
-        if (
-          !config.USE_DB_AUTHENTICATION ||
-          !config.EXCHANGE_INTERNAL_SECRET ||
-          !config.FIRE_EXCHANGE_URL?.startsWith("https://")
-        )
-          return finish(
-            refusal(
-              503,
-              "Paid provider billing is not configured. No provider was executed.",
-            ),
-          );
-        await save({ phase: "reserving", lockId: `alexandria_${id}` });
-        const hold = await autumnService.lockCredits({
-          teamId: state.teamId,
-          value: maximumCredits,
-          lockId: state.lockId,
-          expiresAt: Date.now() + 3600000,
-          featureId,
-          properties,
-        });
-        if (hold.status !== "locked") {
-          if (hold.status === "skipped") await finalize("release");
-          return finish(
-            refusal(
-              hold.status === "denied" && hold.reason !== "gate_unavailable"
-                ? 402
-                : 503,
-              "Credit reservation failed. No provider was executed.",
-            ),
-          );
-        }
-        await save({
-          phase: "held",
-          lockId: hold.lockId.trim() || state.lockId,
-          operationToken: hold.operationToken,
-        });
-      } else await save({ phase: "held" });
+      if (hold.status === "denied")
+        return refuse(
+          hold.reason === "gate_unavailable"
+            ? refusal(
+                503,
+                "Credit reservation is unavailable. No provider was executed.",
+                { code: "billing_unavailable" },
+              )
+            : refusal(
+                402,
+                `This request needs up to ${maximumCredits} credits reserved. No provider was executed.`,
+                { code: "insufficient_credits" },
+              ),
+        );
+      if (hold.status === "skipped")
+        return refuse(
+          refusal(
+            503,
+            "Credit reservation is unavailable. No provider was executed.",
+          ),
+        );
+      lockId = hold.lockId;
     }
-    const timeout = state.deadline - Date.now();
-    if (timeout <= 0) {
-      await finalize("release");
-      return finish(refusal(504, "Provider request expired before execution."));
-    }
-    const limit = await getEffectiveConcurrencyLimit(state.teamId, state.orgId);
-    const response = await teamConcurrencySemaphore.withSemaphore(
-      state.teamId,
-      id,
-      limit,
-      AbortSignal.timeout(timeout),
-      timeout,
-      async () => {
-        if (Date.now() >= state.deadline)
-          throw new Error("Provider execution deadline exceeded");
-        await save({ phase: "executing" });
-        if (Date.now() >= state.deadline)
-          throw new Error("Provider execution deadline exceeded");
-        return exchangeRequest({
-          teamId: state.teamId,
-          path: "/v1/retrieve",
-          body: { requests: state.calls },
-          timeoutMs: Math.max(1, state.deadline - Date.now()),
-          requestId: id,
-          maximumCredits: state.maximumCredits,
-        });
+  } catch (error) {
+    await redisRateLimitClient.del(key).catch(() => {});
+    throw error;
+  }
+
+  // Point of no return: persist the hold before the provider call.
+  record.lockId = lockId;
+  record.maximumCredits = maximumCredits;
+  const fail = async (reason: string) => {
+    logger.error(
+      "Provider request outcome is uncertain; needs reconciliation",
+      {
+        chargeId: id,
+        teamId: input.teamId,
+        lockId,
+        maximumCredits,
+        reason,
       },
     );
-    if (response.status < 200 || response.status >= 300) {
-      // Definitive client refusals did not buy work. Server failures remain ambiguous.
-      if (response.status >= 500)
-        throw new UnrecoverableError(
-          `Provider execution requires reconciliation: ${id}`,
-        );
-      await save({ phase: "settling", response });
-    } else {
-      const answer = answerSchema.parse(response.body);
-      if (
-        answer.results.length !== state.calls.length ||
-        answer.creditsCost > state.maximumCredits! ||
-        answer.results.reduce(
-          (sum, item) => sum + (item.creditsCost ?? 0),
-          0,
-        ) !== answer.creditsCost ||
-        answer.results.some(
-          (item, i) =>
-            (item.provider !== undefined &&
-              item.provider !== state.calls[i].provider) ||
-            (item.capability !== undefined &&
-              item.capability !== state.calls[i].capability),
-        )
-      )
-        throw new UnrecoverableError(`Invalid provider billing receipt: ${id}`);
-      await save({ phase: "settling", answer });
-    }
-  }
-  if (state.phase === "settling") {
-    const credits = state.answer?.creditsCost ?? 0;
-    await finalize(credits > 0 ? "confirm" : "release", credits);
-    if (state.response) return finish(state.response);
-    if (state.billable && credits > 0) {
-      await save({ phase: "recording" });
-      // This existing RPC is not idempotent. Never automatically repeat an uncertain insert.
-      await billTeam7({
-        team_id: state.teamId,
-        subscription_id: null,
+    await write({ ...record, failure: reason }).catch(() => {});
+    return { ...unresolved(id), fresh: true };
+  };
+  const finalize = async (credits: number) => {
+    if (!lockId) return true;
+    const settled = await autumnService.finalizeCreditsLock({
+      teamId: input.teamId,
+      lockId,
+      action: credits > 0 ? "confirm" : "release",
+      ...(credits > 0 ? { overrideValue: credits } : {}),
+      heldValue: maximumCredits,
+      featureId,
+      properties,
+    });
+    if (!settled)
+      logger.error("Provider credits were not settled; hold expires unbilled", {
+        chargeId: id,
+        teamId: input.teamId,
+        lockId,
         credits,
-        api_key_id: state.apiKeyId,
-        is_extract: false,
       });
+    return settled;
+  };
+
+  try {
+    await write(record);
+    const response = await exchangeRequest({
+      teamId: input.teamId,
+      path: "/v1/retrieve",
+      body: { requests: input.calls },
+      timeoutMs: remaining(),
+      requestId: id,
+      maximumCredits,
+    }).catch(error => {
+      throw new Error(`Exchange did not answer: ${error?.message ?? error}`);
+    });
+
+    const body = (response.body ?? {}) as Record<string, unknown>;
+    // A refusal or a deadline already passed on arrival bought no provider work.
+    if (
+      (response.status >= 400 && response.status < 500) ||
+      (response.status === 504 && body.code === "deadline_exceeded")
+    ) {
+      await finalize(0);
+      return refuse(relay(response));
     }
-    await save({ phase: "reporting" });
-  }
-  if (state.phase === "reporting") {
-    if (state.billable) {
-      const report = await exchangeRequest({
-        teamId: state.teamId,
-        path: "/v1/usage-events/billing",
-        internal: true,
-        timeoutMs: 5000,
-        body: [
-          {
-            requestId: id,
-            status: "confirmed",
-            billingReference: `alexandria:${id}`,
-          },
-        ],
+    if (response.status < 200 || response.status >= 300)
+      return fail(`Exchange answered ${response.status}`);
+
+    const parsed = answerSchema.safeParse(response.body);
+    if (!parsed.success) return fail("Exchange answer was malformed");
+    const answer = parsed.data;
+    const receiptMatches =
+      answer.results.length === input.calls.length &&
+      answer.creditsCost <= maximumCredits &&
+      answer.results.reduce((sum, item) => sum + (item.creditsCost ?? 0), 0) ===
+        answer.creditsCost &&
+      answer.results.every(
+        (item, i) =>
+          (item.provider ?? input.calls[i].provider) ===
+            input.calls[i].provider &&
+          (item.capability ?? input.calls[i].capability) ===
+            input.calls[i].capability,
+      );
+    if (!receiptMatches)
+      return fail("Exchange receipt did not match the request");
+
+    const credits = answer.creditsCost;
+    const settled = await finalize(credits);
+    if (settled && billable && credits > 0)
+      await recordLedgerUsage(id, input.teamId, input.apiKeyId, credits);
+    // An unsettled confirm stays pending on the Exchange, where reconciliation finds it.
+    if (settled || !billable)
+      void reportExchangeUsageBilling({
+        requestId: id,
+        status: billable ? "confirmed" : "void",
+        billingReference: `alexandria:${id}`,
       });
-      if (report.status !== 200)
-        throw new Error("Provider billing report is pending");
-    }
-    return finish({ status: 200, body: state.answer! });
+
+    const done: ExchangeResponse = { status: 200, body: answer };
+    await write({ ...record, phase: "done", response: done });
+    return { ...done, fresh: true };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : String(error));
   }
-  throw new UnrecoverableError(
-    `Unexpected provider request state: ${state.phase}`,
-  );
 }
 
-export async function processProviderJob(token: string, job: Job) {
-  const renewal = setInterval(() => {
-    void job.extendLock(token, 60000).catch(error =>
-      logger.error("Provider job lock renewal failed", {
-        jobId: job.id,
-        error,
-      }),
-    );
-  }, 10000);
-  try {
-    await job.moveToCompleted(await runProviderJob(job), token, false);
-  } catch (error) {
-    logger.error("Provider request failed or needs reconciliation", {
-      jobId: job.id,
-      phase: job.data.phase,
-      error,
-    });
-    await job.moveToFailed(error as Error, token, false);
-  } finally {
-    clearInterval(renewal);
+// The same idempotent billing queue every billed path uses; Autumn was already
+// debited by the confirm, hence autumnTrackInRequest.
+async function recordLedgerUsage(
+  id: string,
+  teamId: string,
+  apiKeyId: number | null,
+  credits: number,
+) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await getBillingQueue().add(
+        "bill_team",
+        {
+          team_id: teamId,
+          credits,
+          billing: { endpoint: "scrape", chargeId: id },
+          is_extract: false,
+          timestamp: new Date().toISOString(),
+          originating_job_id: id,
+          api_key_id: apiKeyId,
+          autumnTrackInRequest: true,
+        },
+        { jobId: `alexandria-bill-${id}`, priority: 10 },
+      );
+      return;
+    } catch (error) {
+      if (attempt >= 3)
+        return logger.error(
+          "Provider usage could not be queued for the ledger; charge stands pending reconciliation",
+          { chargeId: id, teamId, credits, error },
+        );
+      await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+    }
   }
 }

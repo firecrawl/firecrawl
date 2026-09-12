@@ -15,15 +15,9 @@ export async function exchangeRequest(input: {
   timeoutMs: number;
   requestId?: string;
   maximumCredits?: number;
-  internal?: boolean;
 }): Promise<ExchangeResponse> {
   if (!config.FIRE_EXCHANGE_URL) throw new Error("Exchange is not configured");
   const base = config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
-  if (
-    input.internal &&
-    (!config.EXCHANGE_INTERNAL_SECRET || new URL(base).protocol !== "https:")
-  )
-    throw new Error("Exchange billing requires HTTPS and an internal secret");
   const response = await fetch(base + input.path, {
     method: input.body === undefined ? "GET" : "POST",
     redirect: "manual",
@@ -38,15 +32,13 @@ export async function exchangeRequest(input: {
         ? {}
         : {
             "x-exchange-max-credits": String(input.maximumCredits),
+            // Leave the Exchange a margin to answer before our own timeout.
             "x-exchange-deadline": String(
               Date.now() +
                 input.timeoutMs -
                 Math.min(2000, input.timeoutMs / 10),
             ),
           }),
-      ...(input.internal
-        ? { "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET! }
-        : {}),
     },
     body: input.body === undefined ? undefined : JSON.stringify(input.body),
   });

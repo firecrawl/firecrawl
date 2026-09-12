@@ -149,17 +149,16 @@ function getExchangeBaseUrl(): string | null {
 function normalizeProviders(
   raw: z.infer<typeof exchangeProvidersSchema>,
 ): ExchangeProvider[] {
-  return raw.data
-    .map(provider => ({
-      id: provider.id,
-      creditsCost: provider.creditsCost,
-      ...(provider.terms === undefined ? {} : { terms: provider.terms }),
-      routes: (provider.capabilities.scrape?.urlRoutes ?? []).map(route => ({
-        domains: new Set(route.domains.map(normalizeHost)),
-        pathPrefixes: route.pathPrefixes.map(normalizePathPrefix),
-      })),
-    }))
-    .filter(provider => provider.routes.length > 0);
+  // Route-less providers never match a URL but still carry terms for tool execution.
+  return raw.data.map(provider => ({
+    id: provider.id,
+    creditsCost: provider.creditsCost,
+    ...(provider.terms === undefined ? {} : { terms: provider.terms }),
+    routes: (provider.capabilities.scrape?.urlRoutes ?? []).map(route => ({
+      domains: new Set(route.domains.map(normalizeHost)),
+      pathPrefixes: route.pathPrefixes.map(normalizePathPrefix),
+    })),
+  }));
 }
 
 async function fetchExchangeProviders(): Promise<ExchangeProvider[] | null> {
@@ -389,6 +388,34 @@ function getProviderAccessDecision(
     : "terms_required";
 }
 
+/**
+ * Access decision for an explicitly named provider, from the same catalog and
+ * organization flags the URL-routed path checks. An unlisted provider has no
+ * known terms; only its enablement row can refuse it here.
+ */
+export async function getExchangeProviderAccess(
+  providerId: string,
+  flags: RouteInput["flags"] | undefined,
+): Promise<
+  | { decision: "unavailable" | "allowed" | "not_enabled" }
+  | { decision: "terms_required"; terms: ExchangeTerms }
+> {
+  const providers = await getExchangeProviders();
+  if (providers === null) {
+    return { decision: "unavailable" };
+  }
+
+  const provider = providers.find(entry => entry.id === providerId) ?? {
+    id: providerId,
+    creditsCost: 0,
+    routes: [],
+  };
+  const decision = getProviderAccessDecision(provider, flags);
+  return decision === "terms_required" && provider.terms !== undefined
+    ? { decision, terms: provider.terms }
+    : { decision: decision === "terms_required" ? "allowed" : decision };
+}
+
 function isExchangeEligibleRequest(input: RouteInput): boolean {
   if (input.flags?.[EXCHANGE_BETA_FLAG] !== true) {
     return false;
@@ -599,24 +626,72 @@ export async function reportExchangeBilling(input: {
     return false;
   }
 
+  return deliverBillingReport({
+    url: `${baseUrl}/v1/access-events/${encodeURIComponent(input.accessEventId)}/billing`,
+    headers: { "Content-Type": "application/json" },
+    body: {
+      status: input.status,
+      ...(input.billingReference === undefined
+        ? {}
+        : { billingReference: input.billingReference }),
+    },
+    retryNotFound: false,
+    context: { accessEventId: input.accessEventId, status: input.status },
+  });
+}
+
+/**
+ * Report the billing outcome of a tool execution's usage rows, keyed by the
+ * `x-request-id` sent with `/v1/retrieve`. Internal-secret route; usage is
+ * recorded asynchronously on the Exchange, so a 404 is retried like a 5xx.
+ */
+export async function reportExchangeUsageBilling(input: {
+  requestId: string;
+  status: "confirmed" | "void";
+  billingReference?: string;
+}): Promise<boolean> {
+  const baseUrl = getExchangeBaseUrl();
+  if (!baseUrl || !config.EXCHANGE_INTERNAL_SECRET) {
+    return false;
+  }
+
+  return deliverBillingReport({
+    url: `${baseUrl}/v1/usage-events/billing`,
+    headers: {
+      "Content-Type": "application/json",
+      "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET,
+    },
+    body: [
+      {
+        requestId: input.requestId,
+        status: input.status,
+        ...(input.billingReference === undefined
+          ? {}
+          : { billingReference: input.billingReference }),
+      },
+    ],
+    retryNotFound: true,
+    context: { requestId: input.requestId, status: input.status },
+  });
+}
+
+async function deliverBillingReport(input: {
+  url: string;
+  headers: Record<string, string>;
+  body: unknown;
+  retryNotFound: boolean;
+  context: Record<string, unknown>;
+}): Promise<boolean> {
   for (let attempt = 1; attempt <= EXCHANGE_BILLING_ATTEMPTS; attempt++) {
     let retryAfterMs: number | undefined;
 
     try {
-      const response = await fetch(
-        `${baseUrl}/v1/access-events/${encodeURIComponent(input.accessEventId)}/billing`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status: input.status,
-            ...(input.billingReference === undefined
-              ? {}
-              : { billingReference: input.billingReference }),
-          }),
-          signal: AbortSignal.timeout(EXCHANGE_BILLING_TIMEOUT_MS),
-        },
-      );
+      const response = await fetch(input.url, {
+        method: "POST",
+        headers: input.headers,
+        body: JSON.stringify(input.body),
+        signal: AbortSignal.timeout(EXCHANGE_BILLING_TIMEOUT_MS),
+      });
 
       if (response.ok) {
         return true;
@@ -624,11 +699,15 @@ export async function reportExchangeBilling(input: {
 
       // 4xx responses other than 429 are definitive (conflict, unknown
       // event) - the Exchange has spoken and a retry cannot change the
-      // answer. 429 is transient rate limiting and retries.
-      if (response.status < 500 && response.status !== 429) {
+      // answer. 429 is transient rate limiting and retries, as does a 404
+      // where the caller knows the rows are written asynchronously.
+      if (
+        response.status < 500 &&
+        response.status !== 429 &&
+        !(input.retryNotFound && response.status === 404)
+      ) {
         rootLogger.warn("Exchange billing report rejected", {
-          accessEventId: input.accessEventId,
-          status: input.status,
+          ...input.context,
           statusCode: response.status,
         });
         return false;
@@ -639,15 +718,13 @@ export async function reportExchangeBilling(input: {
       }
 
       rootLogger.warn("Exchange billing report failed", {
-        accessEventId: input.accessEventId,
-        status: input.status,
+        ...input.context,
         statusCode: response.status,
         attempt,
       });
     } catch (error) {
       rootLogger.warn("Exchange billing report errored", {
-        accessEventId: input.accessEventId,
-        status: input.status,
+        ...input.context,
         attempt,
         error,
       });

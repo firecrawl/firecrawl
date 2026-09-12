@@ -8,12 +8,30 @@ import {
 
 export const isAlexandriaSource = (source: { type: string }) =>
   source.type === "alexandria";
-export type ToolDiscovery = {
-  status: "available" | "unavailable";
-  level: "tools";
+type ToolDiscovery = {
   items: DiscoveredTool[];
   warning?: string;
 };
+
+type SourceLike = string | { type: string };
+type CategoryLike = string | { type: string };
+
+const typeOf = (value: SourceLike | CategoryLike) =>
+  typeof value === "string" ? value : value?.type;
+
+export function isToolsOnlySearch(
+  sources: unknown,
+  categories: unknown,
+): boolean {
+  if (!Array.isArray(sources) || sources.length === 0) return false;
+  if (!sources.every(source => typeOf(source) === "alexandria")) return false;
+  if (
+    Array.isArray(categories) &&
+    categories.some(category => typeOf(category) === "developer")
+  )
+    return false;
+  return true;
+}
 
 export async function discoverTools(
   input: {
@@ -73,13 +91,20 @@ export async function discoverTools(
     )
       return;
     selected[source].add(id);
-    items.set(id, {
-      ...tool,
-      ...previous,
-      id,
-      matchedBy: [...new Set([...(previous?.matchedBy ?? []), source])],
-      matchedUrls: [...new Set([...(previous?.matchedUrls ?? []), ...urls])],
-    });
+    if (previous) {
+      items.set(id, {
+        ...previous,
+        matchedBy: [...new Set([...(previous.matchedBy ?? []), source])],
+        matchedUrls: [...new Set([...(previous.matchedUrls ?? []), ...urls])],
+      });
+    } else {
+      items.set(id, {
+        ...tool,
+        id,
+        matchedBy: [source],
+        matchedUrls: [...new Set(urls)],
+      });
+    }
   };
   if (input.query) {
     try {
@@ -198,16 +223,18 @@ export async function discoverTools(
             ),
           })
           .parse(result.body).skills;
+        const hostOf = (value: string) =>
+          new URL(value).hostname.toLowerCase().replace(/\.$/, "");
         for (const match of matches) {
-          const matchedUrls = urls
-            .slice(i, i + 100)
-            .filter(value =>
-              match.matchedDomains.includes(
-                new URL(value).hostname.toLowerCase().replace(/\.$/, ""),
-              ),
+          const matchedUrls = urls.slice(i, i + 100).filter(value => {
+            const host = hostOf(value);
+            return (
+              match.matchedDomains.includes(host) ||
+              match.matchedDomains.includes(host.replace(/^www\./, ""))
             );
+          });
           const capabilitiesFor = (url: string) => {
-            const host = new URL(url).hostname;
+            const host = hostOf(url);
             return [
               ...new Set([
                 ...(match.domainCapabilities?.[url] ?? []),
@@ -247,8 +274,6 @@ export async function discoverTools(
     }
   }
   return {
-    status: failed && !items.size ? "unavailable" : "available",
-    level: "tools",
     items: [...items.values()],
     ...(failed
       ? { warning: "Some tool discovery results are unavailable." }

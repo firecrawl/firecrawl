@@ -24,7 +24,13 @@ const resultSchema = z.union([
       provider: z.string().optional(),
       capability: z.string().optional(),
       creditsCost: z.literal(0).optional(),
-      error: z.object({ code: z.string(), message: z.string() }).passthrough(),
+      error: z
+        .object({
+          code: z.string(),
+          message: z.string(),
+          status: z.number().int().optional(),
+        })
+        .passthrough(),
     })
     .passthrough(),
 ]);
@@ -33,7 +39,6 @@ export const answerSchema = z.object({
   creditsCost: credits,
   results: z.array(resultSchema).min(1).max(10),
 });
-export type ProviderAnswer = z.infer<typeof answerSchema>;
 
 export const toolSchema = z
   .object({
@@ -62,7 +67,11 @@ export type DiscoveredTool = z.infer<typeof toolSchema> & {
 };
 
 export type ExchangeResponse = { status: number; body: unknown };
-export const refusal = (status: number, error: string): ExchangeResponse => ({
+export const refusal = (
+  status: number,
+  error: string,
+  extra: Record<string, unknown> = {},
+): ExchangeResponse => ({
   status,
-  body: { success: false, error },
+  body: { success: false, error, ...extra },
 });

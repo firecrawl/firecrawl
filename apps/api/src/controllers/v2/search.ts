@@ -37,6 +37,7 @@ import {
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import { isToolsOnlySearch } from "../../search/alexandria";
 import {
   actionTypesOf,
   checkKeyEndpointRestriction,
@@ -145,8 +146,9 @@ async function searchControllerInner(
     )
       return res.status(403).json({
         success: false,
-        error:
-          "Provider discovery requires access and does not support zero data retention.",
+        error: !req.acuc?.flags?.exchangeRetrieve
+          ? "The exchange source is not enabled for this team."
+          : "Provider discovery requires access and does not support zero data retention.",
       });
 
     const requestedFormats = formatTypesOf(req.body.scrapeOptions?.formats);
@@ -272,8 +274,9 @@ async function searchControllerInner(
       });
     }
 
+    const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
     const projectedKeylessCredits =
-      !isSearchPreview && shouldBill
+      !isSearchPreview && shouldBill && !toolsOnly
         ? projectSearchTotalCredits(
             {
               limit: req.body.limit,

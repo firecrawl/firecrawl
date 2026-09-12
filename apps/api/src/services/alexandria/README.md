@@ -1,7 +1,7 @@
 # Alexandria Search and Scrape
 
-Search discovers tools; Scrape executes them. Both require `exchangeRetrieve`.
-Ordinary Search and Scrape keep their existing paths and billing.
+Search discovers tools; Scrape executes them. Both require the
+`exchangeRetrieve` flag. Ordinary Search and Scrape keep their paths and billing.
 
 ```json
 {
@@ -11,66 +11,57 @@ Ordinary Search and Scrape keep their existing paths and billing.
 }
 ```
 
-Search returns contracts in `data.tools`: provider, capability, options,
-response schema, pricing, and match provenance. Tool discovery is free;
-ordinary web results are still billed. `domainTools: false` disables URL
-matching without disabling semantic discovery. Contracts and recorded examples
-come from Exchange; this API does not generate SDK snippets.
+Search returns contracts in `data.tools`. Discovery is free and never counts
+toward `creditsUsed`; web results are billed as before. `domainTools: false`
+disables URL matching only.
 
 ```json
 {
   "exchange": {
     "provider": "fred",
     "capability": "series/observations",
-    "options": { "series_id": "GDP", "limit": 1 }
+    "options": { "series_id": "GDP" }
   }
 }
 ```
 
 Scrape accepts one call or up to ten and returns `data.exchange` with
-`data.creditsCost`. `/exchange/retrieve` uses the same execution and billing
-path. URL scraping and explicit tool execution cannot be combined in one body.
-The separate docs/client branches still need their `skills` option renamed
-to `domainTools`; this branch does not change those repositories.
+`data.creditsCost`. `/exchange/retrieve` shares the path; its single-call
+shape relays a provider error with the Exchange's status and `code`.
 
-## Billing and Recovery
+## Billing
 
-One BullMQ job owns the request, reservation, provider response, and settlement.
-The existing index worker consumes the dedicated Alexandria queue; failed jobs
-are visible in the existing Bull Board. No SQL migration is required.
+Inline in the request (`retrieve.ts`): authorize from the Exchange catalog
+terms and `organizationDataSourceAccess` flags, quote (`/v1/retrieve/quote`),
+reserve with Autumn (`lockCredits`, lock `alexandria_<chargeId>`), execute
+`/v1/retrieve` with the budget and deadline headers, settle the receipt
+(`finalizeCreditsLock`), enqueue the ledger write on the billing queue with job
+id `alexandria-bill-<chargeId>`, and report to `/v1/usage-events/billing`.
+Paid requests fail closed when quote, reservation, or `USE_DB_AUTHENTICATION`
+is unavailable. No worker, queue, or migration is needed.
 
-1. Verify current organization provider access and agreements on the primary DB.
-2. Quote the maximum cost and reserve credits with Autumn. Paid requests fail
-   closed if reservation or billing configuration is unavailable.
-3. Execute under the existing team concurrency limit, with that budget and a deadline.
-4. Finalize actual credits using the original hold and partner token.
-5. Record usage through `billTeam7`, then confirm Exchange's usage event.
+## Idempotency
 
-The request ID is scoped to the authenticated team and bound to the normalized
-payload. Concurrent requests and cross-route retries share the same job.
-Completed results, including definitive refusals, are retained for seven days.
-Use a new ID for a new attempt after an explicit refusal stating no provider
-executed. Never use a new ID to retry a timeout or an uncertain outcome.
+The charge id is `sha256(teamId, x-request-id)`; send `x-request-id` on every
+paid request or a retry is a new charge. One Redis record per charge id lives
+seven days:
 
-Checkpoints precede reservation, execution, and the non-idempotent usage insert.
-An interrupted operation in one of those phases is retained as a failed job
-for manual reconciliation, not automatically executed or debited again.
-Handled settlement and reporting failures retry from their checkpoints. A
-stalled worker requires review except for idempotent reporting; its old owner
-could still resume. Each checkpoint checks the worker's BullMQ lease.
-Inspect the job
-and Exchange execution history before resolving an ambiguous outcome. Do not
-delete the failed job or reset its phase to retry provider execution.
+- completed: replays the response, no second execution
+- same id, different payload: 409 `duplicate_request`
+- still running: 409 `request_in_flight`
+- refused before execution (authorization, quote, hold, Exchange 4xx or
+  `deadline_exceeded`): hold released, record dropped, same id may retry
+- uncertain (Exchange 5xx, timeout, malformed or over-budget receipt, crash
+  after the record was written): 503 `request_unresolved`, record kept for
+  manual reconciliation, hold expires on its own; the Exchange has no
+  request-id idempotency, so this is never re-executed automatically
 
-Autumn owns the customer balance; the existing core DB records internal usage.
-A usage-write failure does not refund already settled provider work. There is
-no claim of an atomic transaction across Autumn, core Postgres, and Exchange.
-Failed jobs retain their payload and response until explicitly reconciled.
-ZDR provider calls are refused because this workflow retains request state.
+An unsettled confirm returns the answer, writes no ledger row, and sends no
+Exchange confirmation; the run stays pending on the Exchange for
+reconciliation. ZDR-forced teams are refused because the record is retained.
 
 ## Runtime
 
-Requires the API, index worker, Redis, existing core database, and Exchange.
-`FIRE_EXCHANGE_URL` and `EXCHANGE_INTERNAL_SECRET` configure Exchange; billing
-reports require HTTPS. Paid execution additionally requires working Autumn
-billing. Exchange remains the owner of provider pricing and execution history.
+API, Redis, Exchange (`FIRE_EXCHANGE_URL`; `EXCHANGE_INTERNAL_SECRET` enables
+the usage report) and Autumn for paid execution. Paid settlement is covered
+by mocked tests only and has not run against an Autumn sandbox.

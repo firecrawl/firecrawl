@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { getAlexandriaQueue } from "./services/alexandria/retrieve";
 import { config } from "./config";
 import { shutdownTracing } from "./otel";
 import express, { NextFunction, Request, Response } from "express";
@@ -105,7 +104,6 @@ const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
     new BullMQAdapter(getGenerateLlmsTxtQueue()),
     new BullMQAdapter(getDeepResearchQueue()),
     new BullMQAdapter(getBillingQueue()),
-    new BullMQAdapter(getAlexandriaQueue()),
     new BullMQAdapter(getPrecrawlQueue()),
     // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
     // management UI, not here.
