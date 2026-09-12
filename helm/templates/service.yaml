@@ -1,0 +1,60 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ include "firecrawl.api.fullname" .  }}
+  labels:
+    app.kubernetes.io/name: {{ include "firecrawl.api.fullname" . }}
+  annotations:
+    kubesphere.io/creator: admin
+    kubesphere.io/serviceType: statefulservice
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: {{.Values.service.api.port }}
+      targetPort: {{.Values.api.port }}
+  selector:
+    app.kubernetes.io/name: {{ include "firecrawl.api.fullname" . }}
+  type: {{.Values.service.api.type}}
+  sessionAffinity: None
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ include "firecrawl.redis.fullname" .  }}
+  labels:
+    app.kubernetes.io/name: {{ include "firecrawl.redis.fullname" . }}
+  annotations:
+    kubesphere.io/creator: admin
+    kubesphere.io/serviceType: statefulservice
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: {{.Values.service.redis.port }}
+      targetPort: {{.Values.redis.port }}
+  selector:
+    app.kubernetes.io/name: {{ include "firecrawl.redis.fullname" . }}
+  type: {{.Values.service.api.type}}
+  sessionAffinity: None
+
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ include "firecrawl.playwright-service.fullname" .  }}
+  labels:
+    app.kubernetes.io/name: {{ include "firecrawl.playwright-service.fullname" . }}
+  annotations:
+    kubesphere.io/creator: admin
+    kubesphere.io/serviceType: statefulservice
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: {{.Values.service.playwrightService.port }}
+      targetPort: {{.Values.playwrightService.port }}
+  selector:
+    app.kubernetes.io/name: {{ include "firecrawl.playwright-service.fullname" . }}
+  type: {{.Values.service.playwrightService.type}}
+  sessionAffinity: None
