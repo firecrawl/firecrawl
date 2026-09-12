@@ -744,9 +744,17 @@ async function scrapeURLLoopIter(
     // engine in its waterfall, surface as an all-engines failure.
     const isParsedImage =
       engine === "image" && isGoodStatusCode && hasNoPageError;
+    // A text/plain response (e.g. llms.txt) is a complete result even when
+    // the body is empty: the server deliberately served an empty plain-text
+    // document, so the minimum-length check must not reject it and trigger
+    // pointless engine fallbacks. Media types are case-insensitive per RFC,
+    // so normalize before matching.
+    const isPlainText =
+      hasNoPageError &&
+      engineResult.contentType?.toLowerCase().includes("text/plain") === true;
     const hasRequiredOutput = hasRawBase64
       ? engineResult.rawBase64 !== undefined
-      : isParsedImage || isLongEnough || !isGoodStatusCode;
+      : isParsedImage || isPlainText || isLongEnough || !isGoodStatusCode;
     const isLikelyProxyError = [401, 403, 429].includes(
       engineResult.statusCode,
     );
@@ -779,6 +787,7 @@ async function scrapeURLLoopIter(
           isGoodStatusCode,
           hasNoPageError,
           isParsedImage,
+          isPlainText,
         },
       });
       return engineResult;
