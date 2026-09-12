@@ -1,4 +1,5 @@
 import { TeamFlags } from "../controllers/v2/types";
+import { config } from "../config";
 import {
   getScrapeZDR,
   getIgnoreRobots,
@@ -61,6 +62,7 @@ export function checkPermissions(
   // robots perms — ignoreRobots must be 'allowed' or 'forced'
   const robotsMode = getIgnoreRobots(flags);
   if (
+    config.FAST_CRAWL !== true &&
     request.crawlerOptions?.ignoreRobotsTxt &&
     robotsMode !== "allowed" &&
     robotsMode !== "forced"
