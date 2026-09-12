@@ -18,7 +18,8 @@ type Provider =
   | "openrouter"
   | "fireworks"
   | "deepinfra"
-  | "vertex";
+  | "vertex"
+  | "novita";
 const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
 
 const providerList: Record<Provider, any> = {
@@ -37,6 +38,10 @@ const providerList: Record<Provider, any> = {
   }),
   fireworks, //FIREWORKS_API_KEY
   deepinfra, //DEEPINFRA_API_KEY
+  novita: createOpenAI({
+    apiKey: config.NOVITA_API_KEY,
+    baseURL: "https://api.novita.ai/openai",
+  }), //NOVITA_API_KEY
   vertex: createVertex({
     project: "firecrawl",
     //https://github.com/vercel/ai/issues/6644 bug
@@ -61,6 +66,10 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
   // o3-mini returns empty text via the Responses API — force Chat Completions
   if (provider === "openai" && modelName.startsWith("o3-mini")) {
     return providerList.openai.chat(modelName);
+  }
+  // Novita only supports the Chat Completions path, not Responses
+  if (provider === "novita") {
+    return providerList.novita.chat(modelName);
   }
   return providerList[provider](modelName);
 }
