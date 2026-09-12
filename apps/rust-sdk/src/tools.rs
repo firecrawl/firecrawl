@@ -1,5 +1,5 @@
 use crate::error::FirecrawlAPIError;
-use crate::{Client, AlexandriaCall, FirecrawlError};
+use crate::{AlexandriaCall, Client, FirecrawlError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -58,6 +58,7 @@ impl Client {
                     error: error.message,
                     code: Some(error.code),
                     charge_id: error.charge_id,
+                    requires_action: None,
                     details: None,
                 },
             )));

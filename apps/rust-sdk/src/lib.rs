@@ -38,7 +38,7 @@ pub use audit_metadata::*;
 pub use batch_scrape::*;
 pub use client::Client;
 pub use crawl::*;
-pub use error::FirecrawlError;
+pub use error::{FirecrawlAPIError, FirecrawlError, RequiresAction};
 pub use map::*;
 pub use monitor::*;
 pub use parse::*;

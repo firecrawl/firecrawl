@@ -1,5 +1,5 @@
 use firecrawl::{
-    Client, AlexandriaCall, AlexandriaOptions, FirecrawlError, SearchOptions, SearchSource,
+    AlexandriaCall, AlexandriaOptions, Client, FirecrawlError, SearchOptions, SearchSource,
 };
 use mockito::Matcher;
 use serde_json::json;
@@ -8,13 +8,17 @@ use serde_json::json;
 async fn unified_contracts_and_execution_identity() {
     let mut server = mockito::Server::new_async().await;
     let tool = json!({"id":"p/a","provider":"p","capability":"a","name":"Tool","description":"Example","creditsCost":2,"perRecord":false,"options":[{"name":"q","type":"string"}],"response":{"fields":[]},"examples":{},"matchedBy":["semantic","domain"],"matchedUrls":["https://example.com"]});
+    let production_tool = json!({"id":"benzinga/calendar/ratings","provider":"benzinga","capability":"calendar/ratings","name":"Analyst ratings","description":"Ratings","creditsCost":5,"perRecord":false,"label":"Ratings","whenToUse":"Analyst ratings for a ticker","returns":{"about":"Ratings"},"discovery":{"urls":[]},"attribution":{"required":true},"options":[{"name":"tickers","type":"string"}],"response":{"fields":[]},"matchedBy":["semantic"],"matchedUrls":[]});
     let search = server
         .mock("POST", "/v2/search")
         .match_body(Matcher::PartialJson(
             json!({"query":"tools","sources":["alexandria"],"domainTools":true}),
         ))
         .with_header("content-type", "application/json")
-        .with_body(json!({"success":true,"data":{"tools":[tool.clone()]}}).to_string())
+        .with_body(
+            json!({"success":true,"data":{"tools":[tool.clone(), production_tool.clone()]}})
+                .to_string(),
+        )
         .create_async()
         .await;
     let client = Client::new_selfhosted(server.url(), Some("fc-test")).unwrap();
@@ -29,11 +33,64 @@ async fn unified_contracts_and_execution_identity() {
         )
         .await
         .unwrap();
+    let tools = found.data.tools.as_ref().unwrap();
+    assert_eq!(serde_json::to_value(&tools[0]).unwrap(), tool);
+    assert!(tools[1].examples.is_empty());
+    assert_eq!(tools[1].label.as_deref(), Some("Ratings"));
     assert_eq!(
-        serde_json::to_value(&found.data.tools.as_ref().unwrap()[0]).unwrap(),
-        tool
+        tools[1].when_to_use.as_deref(),
+        Some("Analyst ratings for a ticker")
     );
+    assert_eq!(tools[1].matched_by, vec!["semantic"]);
     search.assert_async().await;
+    let terms = server
+        .mock("POST", "/v2/scrape")
+        .match_header("x-request-id", "terms-1")
+        .with_status(403)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{"success":false,"code":"THIRD_PARTY_DATA_TERMS_REQUIRED","error":"An organization admin must accept the benzinga provider's terms","requiresAction":{"type":"accept_terms","terms":"benzinga","version":"C-1.0.0-draft","url":"https://www.firecrawl.dev/app/alexandria/benzinga"}}"#,
+        )
+        .create_async()
+        .await;
+    match client
+        .scrape_alexandria(
+            vec![AlexandriaCall {
+                provider: "benzinga".into(),
+                capability: "calendar/ratings".into(),
+                options: None,
+            }],
+            AlexandriaOptions {
+                request_id: Some("terms-1".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err()
+    {
+        FirecrawlError::AlexandriaExecution { request_id, source } => {
+            assert_eq!(request_id, "terms-1");
+            match *source {
+                FirecrawlError::APIError(_, error) => {
+                    assert_eq!(
+                        error.code.as_deref(),
+                        Some("THIRD_PARTY_DATA_TERMS_REQUIRED")
+                    );
+                    let action = error.requires_action.expect("requires_action");
+                    assert_eq!(action.kind, "accept_terms");
+                    assert_eq!(action.terms.as_deref(), Some("benzinga"));
+                    assert_eq!(action.version.as_deref(), Some("C-1.0.0-draft"));
+                    assert_eq!(
+                        action.url.as_deref(),
+                        Some("https://www.firecrawl.dev/app/alexandria/benzinga")
+                    );
+                }
+                _ => panic!("missing terms API error"),
+            }
+        }
+        _ => panic!("missing terms execution identity"),
+    }
+    terms.assert_async().await;
     let denied = server
         .mock("POST", "/v2/scrape")
         .match_header("x-request-id", "denied-1")

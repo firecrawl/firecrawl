@@ -1320,17 +1320,33 @@ mod tests {
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoveredTool {
-    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub provider: String,
     pub capability: String,
     pub name: String,
     pub description: String,
     pub credits_cost: u32,
     pub per_record: bool,
+    #[serde(default)]
     pub options: Vec<serde_json::Value>,
-    pub response: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response: Option<serde_json::Value>,
+    #[serde(default)]
     pub examples: std::collections::HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_to_use: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returns: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discovery: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<serde_json::Value>,
+    #[serde(default)]
     pub matched_by: Vec<String>,
+    #[serde(default)]
     pub matched_urls: Vec<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
