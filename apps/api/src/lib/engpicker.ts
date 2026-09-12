@@ -40,8 +40,10 @@ async function evaluateURL(
   const scrapeResult = await scrapeURL(
     id,
     url,
+    // Proxy selection comes from the forced engine, not from options: every
+    // request proxy value normalizes to auto, and the stealth engines add the
+    // stealthProxy flag themselves.
     scrapeOptions.parse({
-      proxy: stealth ? "stealth" : "basic",
       maxAge: 0,
       storeInCache: false,
     }),

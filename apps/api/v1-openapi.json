@@ -2155,7 +2155,7 @@
           "timeout": {
             "type": "integer",
             "description": "Timeout in milliseconds for the request",
-            "default": 30000
+            "default": 120000
           },
           "parsePDF": {
             "type": "boolean",
@@ -2368,7 +2368,7 @@
           "proxy": {
             "type": "string",
             "enum": ["basic", "enhanced", "auto"],
-            "description": "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **enhanced**: Enhanced proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Billed at the same credit cost as basic.\n - **auto**: Firecrawl will automatically retry scraping with enhanced proxies if the basic proxy fails. Enhanced proxies carry no credit surcharge, so either way only the regular cost is billed.\n\nIf you do not specify a proxy, Firecrawl will default to basic."
+            "description": "Deprecated and ignored: every request now uses **auto** proxying, which starts on a basic proxy and automatically retries with an enhanced proxy if the basic proxy fails. The legacy values are still accepted for backwards compatibility, but they no longer change behaviour: a request that asks for basic or enhanced is handled exactly like auto. Enhanced proxies carry no credit surcharge, so only the regular cost is billed either way."
           },
           "changeTrackingOptions": {
             "type": "object",
