@@ -101,6 +101,9 @@ class AsyncHttpClient:
         if backoff_factor is None:
             backoff_factor = self.backoff_factor
 
+        data = dict(data)
+        data.setdefault("origin", f"python-sdk@{version}")
+
         last_exception = None
         num_attempts = max(1, retries)
 
