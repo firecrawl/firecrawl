@@ -26,7 +26,20 @@ export type KeylessFeedbackContext = {
   invited: boolean;
   request: unknown;
   result: unknown;
+  requestedSources?: string[];
+  requestedFormats?: string[];
 };
+
+export function requestedTypes(value: unknown, defaultType: string): string[] {
+  if (!Array.isArray(value)) return [defaultType];
+  return [
+    ...new Set(
+      value
+        .map(item => (typeof item === "string" ? item : item?.type))
+        .filter((type): type is string => typeof type === "string"),
+    ),
+  ];
+}
 
 function resultContext(
   endpoint: KeylessFeedbackEndpoint,
@@ -94,6 +107,12 @@ export async function keylessFeedbackMetadata(
         context = {
           createdAt: new Date().toISOString(),
           success,
+          // Preserve validation identifiers independently of snapshot truncation.
+          ...(endpoint === "search"
+            ? { requestedSources: requestedTypes(req.body?.sources, "web") }
+            : {
+                requestedFormats: requestedTypes(req.body?.formats, "markdown"),
+              }),
           invited: false,
           request: options.truncated
             ? { ...request, truncated: true }
@@ -105,7 +124,8 @@ export async function keylessFeedbackMetadata(
         await cache.set(key, encoded, "EX", KEYLESS_FEEDBACK_MAX_AGE_SEC);
         const metadata: Record<string, unknown> = reference;
         const every = config.KEYLESS_FEEDBACK_INVITATION_EVERY;
-        if (expired || !every) return metadata;
+        if (expired || !every || (endpoint === "scrape" && !success))
+          return metadata;
         const count = Number(
           await cache.eval(
             `

@@ -33,6 +33,7 @@ suite("keyless feedback HTTP and persistence", () => {
   const body = (endpoint: "search" | "scrape" | "parse", jobId: string) => ({
     endpoint,
     jobId,
+    ...(endpoint === "parse" ? { docClass: "unknown" } : {}),
     rating: "partial",
     task: "Read the API retry documentation",
     assessment: "The output answered part of the retry question.",
@@ -65,6 +66,7 @@ suite("keyless feedback HTTP and persistence", () => {
     endpoint: "search" | "scrape" | "parse",
     success = true,
     clientIp = ip,
+    options: Record<string, unknown> = {},
   ) {
     const jobId = randomUUID();
     const owner = identity.keylessTeamUuid(identity.keylessTeamId(clientIp))!;
@@ -74,6 +76,7 @@ suite("keyless feedback HTTP and persistence", () => {
         res: response,
         auth: { team_id: identity.keylessTeamId(clientIp) },
         body: {
+          ...options,
           query: "retry behavior",
           categories: ["developer"],
           headers: { Authorization: "redact-me" },
@@ -426,21 +429,207 @@ suite("keyless feedback HTTP and persistence", () => {
       set.mockRestore();
     }
   });
-  it("accepts a failed scrape with task intent and only the observed failure", async () => {
-    const { jobId } = await job("scrape", false);
-    const result = await submit({
-      ...body("scrape", jobId),
-      observations: [
-        {
-          kind: "failure",
-          basis: "output",
-          detail: "The request timed out with no returned content.",
-        },
-      ],
+  it("does not invite or advance invitation cadence for a hard-failed scrape", async () => {
+    const { jobId, metadata } = await job("scrape", false);
+    expect(metadata).toEqual({ jobId });
+    expect(
+      await cache.get(`keyless_feedback_invitations:${team()}`),
+    ).toBeNull();
+    const context = JSON.parse(
+      (await cache.get(
+        api.keylessFeedbackContextKey(team(), "scrape", jobId),
+      ))!,
+    );
+    expect(context).toMatchObject({ success: false, invited: false });
+  });
+  it("requires an explicit group for multi-source Search and persists valid reasons and verticals", async () => {
+    const { jobId } = await job("search", true, ip, {
+      sources: [{ type: "web" }, { type: "news" }],
     });
-    expect(result.status).toBe(200);
+    const item = {
+      kind: "irrelevant",
+      position: 1,
+      reason: "off_topic",
+      vertical: "developer",
+      basis: "output",
+      detail: "The delivered result covers a different API.",
+    };
+    expect(
+      (await submit({ ...body("search", jobId), observations: [item] })).status,
+    ).toBe(400);
+    expect(
+      (
+        await submit({
+          ...body("search", jobId),
+          observations: [{ ...item, source: "news" }],
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await submit({
+          ...body("search", jobId),
+          observations: [
+            { ...item, source: "web" },
+            {
+              kind: "missing",
+              vertical: "research",
+              basis: "expectation",
+              detail: "The task needed a study of retry performance.",
+            },
+          ],
+        })
+      ).status,
+    ).toBe(200);
     const [row] = await fixture.db!.select().from(table);
-    expect(row.job_status).toBe("failed");
+    expect(row.metadata).toMatchObject({
+      answers: {
+        observations: [expect.objectContaining(item), expect.anything()],
+      },
+    });
+  });
+  it("defaults omitted Search source to web and validates positions", async () => {
+    const { jobId } = await job("search");
+    const item = {
+      kind: "useful",
+      position: 1,
+      basis: "output",
+      detail: "The reference documents supported retry intervals.",
+    };
+    expect(
+      (
+        await submit({
+          ...body("search", jobId),
+          observations: [{ ...item, position: 2 }],
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await submit({ ...body("search", jobId), observations: [item] })).status,
+    ).toBe(200);
+    const [row] = await fixture.db!.select().from(table);
+    expect(row.metadata).toMatchObject({
+      answers: { observations: [{ source: "web" }] },
+    });
+  });
+  it.each(["images", "news"])(
+    "keeps single-source %s positions in their delivered group",
+    async source => {
+      const { jobId } = await job("search", true, ip, { sources: [source] });
+      const key = api.keylessFeedbackContextKey(team(), "search", jobId);
+      const context = JSON.parse((await cache.get(key))!);
+      context.result = {
+        [source]: [{ position: 1, url: "https://example.com/result" }],
+      };
+      await cache.set(key, JSON.stringify(context), "KEEPTTL");
+      const item = {
+        kind: "useful",
+        position: 1,
+        basis: "output",
+        detail: "The first delivered result answered the retry question.",
+      };
+      expect(
+        (await submit({ ...body("search", jobId), observations: [item] }))
+          .status,
+      ).toBe(400);
+      expect(
+        (
+          await submit({
+            ...body("search", jobId),
+            observations: [{ ...item, source }],
+          })
+        ).status,
+      ).toBe(200);
+      const [row] = await fixture.db!.select().from(table);
+      expect(row.metadata).toMatchObject({
+        answers: { observations: [{ source, position: 1 }] },
+      });
+    },
+  );
+  it.each(["scrape", "parse"] as const)(
+    "validates %s output formats against job options, including object formats",
+    async endpoint => {
+      const { jobId } = await job(endpoint, true, ip, {
+        padding: "x".repeat(20000),
+        formats: ["markdown", { type: "json", schema: { type: "object" } }],
+      });
+      const item = {
+        kind: "incorrect",
+        reason: "missing_fields",
+        basis: "output",
+        detail: "The returned object omits the documented retry interval.",
+      };
+      for (const format of [undefined, "html"])
+        expect(
+          (
+            await submit({
+              ...body(endpoint, jobId),
+              observations: [{ ...item, format }],
+            })
+          ).status,
+        ).toBe(400);
+      expect(
+        (
+          await submit({
+            ...body(endpoint, jobId),
+            observations: [
+              {
+                ...item,
+                basis: "source_comparison",
+                comparison: {
+                  reference: "Source retry section",
+                  detail:
+                    "The source contains the interval missing from output.",
+                },
+              },
+            ],
+          })
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await submit({
+            ...body(endpoint, jobId),
+            observations: [
+              { ...item, format: "json" },
+              { ...item, basis: "expectation" },
+            ],
+          })
+        ).status,
+      ).toBe(200);
+      const [row] = await fixture.db!.select().from(table);
+      expect(row.metadata).toMatchObject({
+        answers: {
+          observations: [
+            expect.objectContaining({ ...item, format: "json" }),
+            expect.anything(),
+          ],
+        },
+      });
+      if (endpoint === "parse")
+        expect(row.metadata).toMatchObject({
+          answers: { docClass: "unknown" },
+        });
+    },
+  );
+  it("accepts any requested format type and does not require format for single-format output", async () => {
+    const { jobId } = await job("scrape", true, ip, {
+      formats: [{ type: "links" }],
+    });
+    const item = {
+      kind: "incomplete",
+      reason: "pagination",
+      basis: "output",
+      detail: "The output only includes links from the first page.",
+    };
+    expect(
+      (
+        await submit({
+          ...body("scrape", jobId),
+          observations: [item, { ...item, format: "links" }],
+        })
+      ).status,
+    ).toBe(200);
   });
   it("throttles malformed attempts separately and rejects blocked or invalid identities", async () => {
     for (let i = 0; i < 10; i++) expect((await submit({})).status).toBe(400);

@@ -29,19 +29,121 @@ const common = {
   origin: z.string().trim().max(100).optional().default("api"),
   integration: z.string().trim().max(100).nullable().optional(),
 };
+const vertical = z.enum([
+  "web_general",
+  "social",
+  "business",
+  "research",
+  "developer",
+  "news",
+  "government",
+  "finance",
+  "other",
+]);
+const searchResult = {
+  source: z.enum(["web", "images", "news"]).optional(),
+  position: z.number().int().positive(),
+  vertical: vertical.optional(),
+};
 const searchObservation = z.union([
+  observation({ ...searchResult, kind: z.literal("useful") }),
   observation({
-    kind: z.enum(["useful", "irrelevant"]),
-    source: z.enum(["web", "images", "news"]),
-    position: z.number().int().min(1).max(100),
+    ...searchResult,
+    kind: z.literal("irrelevant"),
+    reason: z.enum([
+      "aggregator_over_official",
+      "off_topic",
+      "stale",
+      "wrong_content_type",
+      "snippet_misleading",
+      "blocked_or_paywalled",
+    ]),
   }),
   observation({
     kind: z.literal("missing"),
-    topic: z.string().trim().min(1).max(200),
+    vertical,
+    topic: z.string().trim().min(1).max(200).optional(),
     knownSources: z
       .array(z.url({ protocol: /^https?$/ }))
       .max(20)
       .optional(),
+  }),
+]);
+const format = z.string().trim().min(1).optional();
+const incorrectReason = z.enum(["wrong", "hallucinated", "missing_fields"]);
+const scrapeFields = {
+  format,
+  location: z.string().trim().min(1).max(200).optional(),
+};
+const scrapeObservation = z.union([
+  observation({ ...scrapeFields, kind: z.literal("correct") }),
+  observation({
+    ...scrapeFields,
+    kind: z.literal("wrong_success"),
+    reason: z.enum([
+      "blocked_shell",
+      "login_required",
+      "paywall",
+      "empty",
+      "wrong_page",
+      "stale",
+      "wrong_locale",
+    ]),
+  }),
+  observation({
+    ...scrapeFields,
+    kind: z.literal("incomplete"),
+    reason: z.enum([
+      "partial_content",
+      "dynamic_content",
+      "pagination",
+      "main_content_stripped",
+      "format_lost",
+    ]),
+  }),
+  observation({
+    ...scrapeFields,
+    kind: z.literal("incorrect"),
+    reason: incorrectReason,
+  }),
+]);
+const parseFields = { format, page: z.number().int().positive().optional() };
+const parseObservation = z.union([
+  observation({
+    ...parseFields,
+    kind: z.enum([
+      "correct",
+      "formula",
+      "chart_figure",
+      "reading_order",
+      "headers_footers",
+      "headings_formatting",
+      "images_dropped",
+    ]),
+  }),
+  observation({
+    ...parseFields,
+    kind: z.literal("text_ocr"),
+    reason: z.enum(["misread_chars", "garbled", "missing_text"]),
+  }),
+  observation({
+    ...parseFields,
+    kind: z.literal("table"),
+    reason: z.enum(["structure", "cells_glued", "digits"]),
+  }),
+  observation({
+    ...parseFields,
+    kind: z.literal("completeness"),
+    reason: z.enum([
+      "pages_missing",
+      "truncated_at_max_pages",
+      "sections_dropped",
+    ]),
+  }),
+  observation({
+    ...parseFields,
+    kind: z.literal("incorrect"),
+    reason: incorrectReason,
   }),
 ]);
 
@@ -54,29 +156,13 @@ export const keylessFeedbackSchema = z.discriminatedUnion("endpoint", [
   z.strictObject({
     ...common,
     endpoint: z.literal("scrape"),
-    observations: z
-      .array(
-        observation({
-          kind: z.enum(["correct", "missing", "incorrect", "failure"]),
-          location: z.string().trim().min(1).max(500).optional(),
-          retryOutcome: detail.optional(),
-        }),
-      )
-      .min(1)
-      .max(20),
+    observations: z.array(scrapeObservation).min(1).max(20),
   }),
   z.strictObject({
     ...common,
     endpoint: z.literal("parse"),
-    observations: z
-      .array(
-        observation({
-          kind: z.enum(["correct", "text", "table", "layout", "completeness"]),
-          location: z.string().trim().min(1).max(500).optional(),
-        }),
-      )
-      .min(1)
-      .max(20),
+    docClass: z.enum(["born_digital", "scanned", "mixed", "unknown"]),
+    observations: z.array(parseObservation).min(1).max(20),
   }),
 ]);
 

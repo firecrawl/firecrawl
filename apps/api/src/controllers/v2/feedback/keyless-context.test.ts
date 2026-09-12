@@ -262,4 +262,33 @@ describe("keyless feedback invitation issuance", () => {
     response.emit("finish");
     expect(mocks.info).not.toHaveBeenCalled();
   });
+
+  it("retains requested type identifiers even when earlier request content exhausts the snapshot", async () => {
+    for (const endpoint of ["search", "scrape", "parse"] as const) {
+      mocks.set.mockClear();
+      await keylessFeedbackMetadata(
+        {
+          auth: { team_id: "fixture" },
+          body: {
+            query: "x".repeat(20000),
+            other: "x".repeat(20000),
+            formats: [
+              { type: "json", schema: { description: "x".repeat(20000) } },
+              "markdown",
+            ],
+            sources: [{ type: "web" }, "news"],
+          },
+        } as any,
+        endpoint,
+        "job",
+        true,
+        {},
+      );
+      const context = JSON.parse(mocks.set.mock.calls[0][1]);
+      expect(context.request.truncated).toBe(true);
+      if (endpoint === "search")
+        expect(context.requestedSources).toEqual(["web", "news"]);
+      else expect(context.requestedFormats).toEqual(["json", "markdown"]);
+    }
+  });
 });
