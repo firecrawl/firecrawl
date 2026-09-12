@@ -212,6 +212,21 @@ services:
       - backend
     restart: "no"
 
+  firecrawl-ui:
+    image: ghcr.io/obeone/firecrawl-ui:latest
+    ports:
+      - "${FIRECRAWL_UI_PORT:-8080}:8080"
+    networks:
+      - backend
+    depends_on:
+      - api
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
 networks:
   backend:
     driver: bridge
