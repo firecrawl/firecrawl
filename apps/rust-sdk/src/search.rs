@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::client::Client;
 use crate::scrape::ScrapeOptions;
 use crate::types::{
-    Document, SearchCategory, SearchResultImage, SearchResultNews, SearchResultWeb, SearchSource,
+    DiscoveredTool, Document, SearchCategory, SearchResultImage, SearchResultNews, SearchResultWeb,
+    SearchSource,
 };
 use crate::FirecrawlError;
 
@@ -17,8 +18,11 @@ pub struct SearchOptions {
     /// Maximum number of results to return. Default: 5, Max: 20.
     pub limit: Option<u32>,
 
-    /// Search sources to query (web, news, images).
+    /// Search sources to query (web, news, images, alexandria).
     pub sources: Option<Vec<SearchSource>>,
+
+    /// Enable Alexandria domain-tool discovery (send alongside `sources: ["alexandria"]`).
+    pub domain_tools: Option<bool>,
 
     /// Categories to filter results (github, research, pdf).
     pub categories: Option<Vec<SearchCategory>>,
@@ -77,6 +81,7 @@ pub struct SearchData {
     pub news: Option<Vec<SearchResultNews>>,
     /// Image search results.
     pub images: Option<Vec<SearchResultImage>>,
+    pub tools: Option<Vec<DiscoveredTool>>,
 }
 
 /// A search result that may be a simple result or a full document.
@@ -182,6 +187,9 @@ impl Client {
         query: impl AsRef<str>,
         options: impl Into<Option<SearchOptions>>,
     ) -> Result<SearchResponse, FirecrawlError> {
+        if query.as_ref().trim().is_empty() {
+            return Err(FirecrawlError::Misuse("Query cannot be empty".into()));
+        }
         let mut options = options.into().unwrap_or_default();
         if options.origin.is_none() {
             options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
@@ -434,14 +442,22 @@ mod tests {
             .with_body(
                 json!({
                     "success": false,
-                    "error": "Invalid query"
+                    "error": "Invalid limit"
                 })
                 .to_string(),
             )
             .create();
 
         let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
-        let result = client.search("", None).await;
+        let result = client
+            .search(
+                "test",
+                SearchOptions {
+                    limit: Some(0),
+                    ..Default::default()
+                },
+            )
+            .await;
 
         assert!(result.is_err());
         mock.assert();

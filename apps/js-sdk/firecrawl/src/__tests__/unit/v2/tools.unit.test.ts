@@ -1,0 +1,220 @@
+import { afterAll, beforeAll, describe, expect, test } from "@jest/globals";
+import { createServer, type Server } from "node:http";
+import { FirecrawlClient } from "../../../v2/client";
+
+const tool = {
+  id: "particle/podcasts/episodes/search",
+  provider: "particle",
+  capability: "podcasts/episodes/search",
+  name: "Episode search",
+  description: "Find episodes",
+  creditsCost: 15,
+  perRecord: false,
+  options: [{ name: "semantic_search", type: "string" }],
+  response: { about: "Episodes", key: "data", fields: [] },
+  examples: { javascript: "example", python: "example", curl: "example" },
+  matchedBy: ["semantic", "domain"],
+  matchedUrls: ["https://podcasts.apple.com"],
+};
+const productionTool = {
+  id: "benzinga/calendar/ratings",
+  provider: "benzinga",
+  capability: "calendar/ratings",
+  name: "Analyst ratings",
+  description: "Ratings",
+  creditsCost: 5,
+  perRecord: false,
+  label: "Ratings",
+  whenToUse: "Analyst ratings for a ticker",
+  returns: { about: "Ratings" },
+  discovery: { urls: [] },
+  attribution: { required: true },
+  options: [{ name: "tickers", type: "string" }],
+  response: { fields: [] },
+  matchedBy: ["semantic"],
+  matchedUrls: [],
+};
+const termsRequired = {
+  success: false,
+  code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
+  error: "An organization admin must accept the benzinga provider's terms",
+  requiresAction: {
+    type: "accept_terms",
+    terms: "benzinga",
+    version: "C-1.0.0-draft",
+    url: "https://www.firecrawl.dev/app/alexandria/benzinga",
+  },
+};
+const next = {
+  provider: "firecrawl",
+  capability: "find-tools",
+  options: { providers: ["particle"], level: "tools" },
+};
+let server: Server;
+let client: FirecrawlClient;
+const sent: Array<{ body: any; id: string | undefined }> = [];
+let attempts = 0;
+
+beforeAll(async () => {
+  server = createServer(async (req, res) => {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    const body = JSON.parse(raw);
+    sent.push({ body, id: req.headers["x-request-id"] as string | undefined });
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v2/search")
+      return res.end(
+        JSON.stringify({
+          success: true,
+          warning: "Example warning",
+          data: {
+            web: [{ url: "https://podcasts.apple.com" }],
+            tools: [tool, productionTool],
+          },
+        }),
+      );
+    if (body.alexandria[0].provider === "retry" && attempts++ === 0) {
+      res.statusCode = 502;
+      return res.end("{}");
+    }
+    if (body.alexandria[0].provider === "benzinga") {
+      res.statusCode = 403;
+      return res.end(JSON.stringify(termsRequired));
+    }
+    if (body.alexandria[0].provider === "denied") {
+      res.statusCode = 402;
+      return res.end(
+        JSON.stringify({
+          success: false,
+          code: "insufficient_credits",
+          error: "Insufficient credits",
+        }),
+      );
+    }
+    const alexandria =
+      body.alexandria[0].provider === "firecrawl"
+        ? [
+            {
+              ...next,
+              creditsCost: 0,
+              data: {
+                level: "providers",
+                items: [{ id: "particle", name: "Particle", next }],
+                total: 1,
+                next: null,
+              },
+            },
+          ]
+        : [
+            {
+              provider: "retry",
+              capability: "a/b",
+              creditsCost: 15,
+              data: { nested: { value: 1 } },
+            },
+            {
+              provider: "x",
+              capability: "b",
+              error: {
+                code: "unavailable",
+                message: "Unavailable",
+                status: 503,
+              },
+            },
+          ];
+    res.end(
+      JSON.stringify({
+        success: true,
+        scrape_id: "scrape-1",
+        data: { alexandria, creditsCost: alexandria.length === 1 ? 0 : 15 },
+      }),
+    );
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  client = new FirecrawlClient({
+    apiKey: "fc-test",
+    apiUrl: `http://127.0.0.1:${port}`,
+    backoffFactor: 0,
+  });
+});
+afterAll(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+describe("Alexandria contracts and execution", () => {
+  test("returns complete unified tools and warning beside web results", async () => {
+    const result = await client.search("podcasts", {
+      sources: ["web", { type: "alexandria" }],
+      domainTools: true,
+      limit: 2,
+    });
+    expect(result.tools).toEqual([tool, productionTool]);
+    expect(result.tools?.[1].examples).toBeUndefined();
+    expect(result.tools?.[1].whenToUse).toBe("Analyst ratings for a ticker");
+    expect(result.warning).toBe("Example warning");
+    expect(sent.at(-1)?.body).toMatchObject({
+      domainTools: true,
+      sources: ["web", { type: "alexandria" }],
+    });
+    expect(result).not.toHaveProperty("alexandria");
+  });
+  test("retains one ID through transport retries and per-tool failures", async () => {
+    const result = await client.scrape({
+      alexandria: [{ provider: "retry", capability: "a/b" }],
+      requestId: "same-request",
+    });
+    const retries = sent.filter(
+      (r) => r.body.alexandria?.[0].provider === "retry",
+    );
+    expect(retries).toHaveLength(2);
+    expect(retries.map((r) => r.id)).toEqual(["same-request", "same-request"]);
+    expect(retries[0].body).not.toHaveProperty("requestId");
+    expect(result.requestId).toBe("same-request");
+    expect(result.creditsCost).toBe(15);
+    expect(result.alexandria[1].error?.code).toBe("unavailable");
+  });
+  test("returns an error code and retry identity on failed execution", async () => {
+    await expect(
+      client.scrape({
+        alexandria: { provider: "denied", capability: "a/b" },
+        requestId: "denied-1",
+      }),
+    ).rejects.toMatchObject({
+      status: 402,
+      code: "insufficient_credits",
+      requestId: "denied-1",
+    });
+  });
+  test("exposes requiresAction on a provider terms rejection", async () => {
+    await expect(
+      client.scrape({
+        alexandria: { provider: "benzinga", capability: "calendar/ratings" },
+        requestId: "terms-1",
+      }),
+    ).rejects.toMatchObject({
+      status: 403,
+      code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
+      message: termsRequired.error,
+      requestId: "terms-1",
+      requiresAction: termsRequired.requiresAction,
+    });
+  });
+  test("walks with Find Tools and feeds next directly into scrape", async () => {
+    const found = await client.findTools({ providers: ["particle"], limit: 2 });
+    const result = await client.scrape({ alexandria: found.items[0].next! });
+    expect(result.creditsCost).toBe(0);
+    expect(sent.at(-1)?.id).toBeTruthy();
+    expect(sent.at(-1)?.body.alexandria).toEqual([next]);
+  });
+  test("rejects URL options and queryless browsing before dispatch", async () => {
+    const count = sent.length;
+    await expect(
+      client.scrape({ alexandria: next, url: "https://example.com" } as any),
+    ).rejects.toThrow();
+    await expect(
+      client.search("", { sources: ["alexandria"] }),
+    ).rejects.toThrow("Query cannot be empty");
+    expect(sent).toHaveLength(count);
+  });
+});

@@ -696,6 +696,8 @@ pub struct Document {
     pub pages: Option<Vec<PdfPage>>,
     /// Typed PDF layout blocks, present only when `parsers[].blocks` is true.
     pub blocks: Option<Vec<PdfPageBlocks>>,
+    /// Alexandria domain tools discovered and matched for this document.
+    pub tools: Option<Vec<DiscoveredTool>>,
 }
 
 /// Physical markdown for a single PDF page.
@@ -1033,6 +1035,7 @@ pub enum SearchSource {
     Web,
     News,
     Images,
+    Alexandria,
 }
 
 /// Search category types.
@@ -1312,4 +1315,39 @@ mod tests {
         assert_eq!(pages[1].page_number, 2);
         assert_eq!(pages[1].markdown, "## Intro");
     }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredTool {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub provider: String,
+    pub capability: String,
+    pub name: String,
+    pub description: String,
+    pub credits_cost: u32,
+    pub per_record: bool,
+    #[serde(default)]
+    pub options: Vec<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response: Option<serde_json::Value>,
+    #[serde(default)]
+    pub examples: std::collections::HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_to_use: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returns: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discovery: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<serde_json::Value>,
+    #[serde(default)]
+    pub matched_by: Vec<String>,
+    #[serde(default)]
+    pub matched_urls: Vec<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }

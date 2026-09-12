@@ -1,0 +1,136 @@
+import type {
+  AlexandriaCall,
+  AlexandriaOptions,
+  AlexandriaScrapeData,
+  AlexandriaScrapeResult,
+  FindToolsData,
+  FindToolsOptions,
+} from "../types";
+import { SdkError } from "../types";
+import { HttpClient } from "../utils/httpClient";
+import {
+  normalizeAxiosError,
+  throwForBadResponse,
+} from "../utils/errorHandler";
+
+const ALEXANDRIA_MAX_CALLS = 10;
+
+function prepareAlexandriaPayload(
+  calls: AlexandriaCall[],
+  opts: AlexandriaOptions,
+): Record<string, unknown> {
+  if (!Array.isArray(calls) || calls.length === 0) {
+    throw new Error("alexandria requires at least one call");
+  }
+  if (calls.length > ALEXANDRIA_MAX_CALLS) {
+    throw new Error(`alexandria accepts at most ${ALEXANDRIA_MAX_CALLS} calls`);
+  }
+  const alexandria = calls.map((call, index) => {
+    if (!call || typeof call.provider !== "string" || !call.provider.trim()) {
+      throw new Error(`alexandria[${index}].provider cannot be empty`);
+    }
+    if (typeof call.capability !== "string" || !call.capability.trim()) {
+      throw new Error(`alexandria[${index}].capability cannot be empty`);
+    }
+    if (
+      Object.keys(call).some(
+        (key) => !["provider", "capability", "options"].includes(key),
+      )
+    )
+      throw new Error("Unknown alexandria call option");
+    const item: Record<string, unknown> = {
+      provider: call.provider.trim(),
+      capability: call.capability.trim(),
+    };
+    if (call.options != null) {
+      if (typeof call.options !== "object" || Array.isArray(call.options)) {
+        throw new Error(`alexandria[${index}].options must be an object`);
+      }
+      item.options = call.options;
+    }
+    return item;
+  });
+  if (
+    opts.timeout != null &&
+    (!Number.isInteger(opts.timeout) || opts.timeout <= 0)
+  ) {
+    throw new Error("timeout must be a positive integer");
+  }
+  const payload: Record<string, unknown> = { alexandria };
+  if (opts.timeout != null) payload.timeout = opts.timeout;
+  if (opts.integration && opts.integration.trim())
+    payload.integration = opts.integration.trim();
+  if (opts.origin) payload.origin = opts.origin;
+  return payload;
+}
+
+export async function scrapeAlexandria(
+  http: HttpClient,
+  calls: AlexandriaCall[],
+  opts: AlexandriaOptions = {},
+): Promise<AlexandriaScrapeData> {
+  const payload = prepareAlexandriaPayload(calls, opts);
+  const requestId = opts.requestId ?? crypto.randomUUID();
+  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(requestId))
+    throw new Error("Invalid requestId");
+  try {
+    const res = await http.post<{
+      success: boolean;
+      scrape_id?: string;
+      data?: { alexandria?: AlexandriaScrapeResult[]; creditsCost?: number };
+      error?: string;
+    }>("/v2/scrape", payload, {
+      headers: { "x-request-id": requestId },
+      ...(opts.timeout != null ? { timeoutMs: opts.timeout + 5000 } : {}),
+    });
+    if (res.status !== 200 || !res.data?.success) {
+      throwForBadResponse(res, "alexandria");
+    }
+    const data = res.data.data;
+    if (
+      !data ||
+      !Array.isArray(data.alexandria) ||
+      typeof data.creditsCost !== "number" ||
+      !Number.isInteger(data.creditsCost) ||
+      data.creditsCost < 0
+    ) {
+      throw new SdkError("Invalid alexandria response");
+    }
+    return {
+      scrapeId: res.data.scrape_id ?? "",
+      requestId,
+      alexandria: data.alexandria,
+      creditsCost: data.creditsCost,
+    };
+  } catch (err: any) {
+    try {
+      if (err?.isAxiosError) normalizeAxiosError(err, "alexandria");
+      throw err;
+    } catch (error) {
+      if (error && typeof error === "object")
+        Object.assign(error, { requestId });
+      throw error;
+    }
+  }
+}
+
+export async function findTools(
+  http: HttpClient,
+  options: FindToolsOptions = {},
+): Promise<FindToolsData> {
+  const result = await scrapeAlexandria(http, [
+    {
+      provider: "firecrawl",
+      capability: "find-tools",
+      options: { ...options },
+    },
+  ]);
+  const item = result.alexandria[0];
+  if (!item) throw new SdkError("Missing Find Tools result");
+  if (item.error)
+    throw Object.assign(
+      new SdkError(item.error.message, item.error.status, item.error.code),
+      { requestId: result.requestId },
+    );
+  return item.data as FindToolsData;
+}
