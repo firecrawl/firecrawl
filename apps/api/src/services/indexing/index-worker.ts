@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { getAlexandriaQueue, processProviderJob } from "../alexandria/retrieve";
 import { config } from "../../config";
 import { shutdownTracing } from "../../otel";
 import { Job, Queue, Worker } from "bullmq";
@@ -702,6 +703,10 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
     processBillingJobInternal,
   );
 
+  const providerWorkerPromise = config.FIRE_EXCHANGE_URL
+    ? workerFun(getAlexandriaQueue(), processProviderJob)
+    : Promise.resolve();
+
   const precrawlWorkerPromise = config.PRECRAWL_TEAM_ID
     ? workerFun(getPrecrawlQueue(), processPrecrawlJob)
     : (async () => {
@@ -792,6 +797,7 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
   // Wait for all workers to complete (which should only happen on shutdown)
   await Promise.all([
     billingWorkerPromise,
+    providerWorkerPromise,
     precrawlWorkerPromise,
     engpickerPromise,
   ]);

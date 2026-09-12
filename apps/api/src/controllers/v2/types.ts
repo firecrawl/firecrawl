@@ -1888,6 +1888,7 @@ type Account = {
 };
 
 export type TeamFlags = {
+  exchangeRetrieve?: boolean;
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
@@ -2323,13 +2324,18 @@ export const searchRequestSchema = z
     sources: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["web", "images", "news"])),
+        z.array(
+          z.enum(["web", "images", "news", "alexandria", "exchange-providers"]),
+        ),
         // Array of objects (advanced format)
         z.array(
           z.union([
             webSearchSourceOptions,
             imagesSearchSourceOptions,
             newsSearchSourceOptions,
+            z.strictObject({
+              type: z.enum(["alexandria", "exchange-providers"]),
+            }),
           ]),
         ),
       ])
@@ -2367,6 +2373,7 @@ export const searchRequestSchema = z
     // our index. When omitted, the caller integration and rollout cohort decide
     // whether generated highlights are returned or only run in shadow mode.
     highlights: z.boolean().optional(),
+    domainTools: z.boolean().optional(),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions

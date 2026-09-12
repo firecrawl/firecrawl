@@ -1,4 +1,5 @@
 import { bountyBlocklistMiddleware } from "./exchange-blocklist";
+import { providerScrapeController } from "../controllers/v2/scrape-alexandria";
 import express, { Request, Response } from "express";
 import { Agent, fetch } from "undici";
 import { config } from "../config";
@@ -137,7 +138,9 @@ exchangeRouter.get(
 exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
+  wrap((req, res) =>
+    providerScrapeController(req as RequestWithAuth<any, any, any>, res, true),
+  ),
 );
 
 exchangeRouter.get(

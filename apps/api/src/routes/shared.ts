@@ -114,6 +114,26 @@ export function checkCreditsMiddleware(
         // If verified, fall through to normal credit check (key is now on real account)
       }
 
+      // Discovery is free; provider execution reserves its quoted cost in the worker.
+      const sources = (req.body as any)?.sources;
+      const toolsOnly =
+        req.path === "/search" &&
+        !(req.body as any)?.categories?.length &&
+        Array.isArray(sources) &&
+        sources.length > 0 &&
+        sources.every(source =>
+          ["alexandria", "exchange-providers"].includes(
+            typeof source === "string" ? source : source?.type,
+          ),
+        );
+      if (
+        (req.path === "/scrape" && (req.body as any)?.exchange !== undefined) ||
+        toolsOnly
+      ) {
+        req.account = { remainingCredits: Infinity };
+        return next();
+      }
+
       if (!minimum && req.body) {
         minimum = Number(
           (req.body as any)?.limit ?? (req.body as any)?.urls?.length ?? 1,

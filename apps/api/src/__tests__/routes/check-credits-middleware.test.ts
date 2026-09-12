@@ -82,6 +82,49 @@ function runMiddleware(
   });
 }
 
+describe("provider discovery and execution credit routing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
+  });
+  it.each([
+    { path: "/search", body: { sources: ["alexandria"] } },
+    { path: "/search", body: { sources: [{ type: "alexandria" }] } },
+    {
+      path: "/scrape",
+      body: {
+        exchange: { provider: "fred", capability: "series/observations" },
+      },
+    },
+  ])(
+    "defers only free discovery or quoted execution to its controller",
+    async input => {
+      expect((await runMiddleware(buildReq(input))).nextCalled).toBe(true);
+      expect(checkCreditsMock).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    { sources: ["web", "alexandria"] },
+    { sources: ["alexandria"], categories: ["developer"] },
+  ])(
+    "does not bypass credit checks for billable search results",
+    async body => {
+      const result = await runMiddleware(buildReq({ path: "/search", body }));
+      expect(result.res.status).toHaveBeenCalledWith(402);
+    },
+  );
+  it("does not bypass a sponsor block", async () => {
+    const result = await runMiddleware(
+      buildReq({
+        path: "/scrape",
+        body: { exchange: {} },
+        acuc: { _agentSponsor: { status: "blocked" } },
+      }),
+    );
+    expect(result.res.status).toHaveBeenCalledWith(403);
+  });
+});
+
 describe("checkCreditsMiddleware – Autumn overage handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();

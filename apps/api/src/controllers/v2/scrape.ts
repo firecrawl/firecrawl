@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { providerScrapeController } from "./scrape-alexandria";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import {
@@ -50,6 +51,8 @@ export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
 ) {
+  if (req.body && "exchange" in req.body)
+    return providerScrapeController(req, res);
   // Resolved before the root span starts so the whole request trace stays
   // unrecorded for zero-data-retention requests (see otel-tracer).
   const zeroDataRetentionTrace =

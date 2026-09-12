@@ -2,6 +2,13 @@ const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   searchDeveloperCategory: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
+  discoverTools: vi.fn(),
+}));
+
+vi.mock("./alexandria", () => ({
+  discoverTools: mocks.discoverTools,
+  isAlexandriaSource: (source: { type: string }) =>
+    source.type === "alexandria",
 }));
 
 vi.mock("./v2", () => ({ search: mocks.search }));
@@ -78,6 +85,53 @@ function options(categories: Array<{ type: string }>) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.searchDeveloperCategory.mockResolvedValue([developerResult]);
+  mocks.discoverTools.mockResolvedValue({
+    status: "available",
+    items: [{ id: "fred/series/observations" }],
+  });
+});
+
+it("tool-only search never runs or bills SERP", async () => {
+  const result = await executeSearch(
+    { ...options([]), sources: [{ type: "alexandria" }] },
+    { ...context, flags: { exchangeRetrieve: true } },
+    logger,
+  );
+  expect(mocks.search).not.toHaveBeenCalled();
+  expect(result.searchCredits).toBe(0);
+  expect(result.response.tools).toEqual([{ id: "fred/series/observations" }]);
+});
+
+it("mixed search bills only normal web results", async () => {
+  mocks.search.mockResolvedValue({ web: [developerResult] });
+  const result = await executeSearch(
+    { ...options([]), sources: [{ type: "web" }, { type: "alexandria" }] },
+    { ...context, flags: { exchangeRetrieve: true } },
+    logger,
+  );
+  expect(mocks.search).toHaveBeenCalledWith(
+    expect.objectContaining({ type: ["web"] }),
+  );
+  expect(result.searchCredits).toBe(2);
+  expect(result.response.tools).toHaveLength(1);
+});
+
+it.each([{}, { exchangeRetrieve: true }])(
+  "does not discover tools on ordinary searches",
+  async flags => {
+    mocks.search.mockResolvedValue({ web: [] });
+    await executeSearch(options([]), { ...context, flags }, logger);
+    expect(mocks.discoverTools).not.toHaveBeenCalled();
+  },
+);
+
+it("does not send queries or URLs to provider discovery for ZDR searches", async () => {
+  await executeSearch(
+    { ...options([]), sources: [{ type: "alexandria" }] },
+    { ...context, flags: { exchangeRetrieve: true }, zeroDataRetention: true },
+    logger,
+  );
+  expect(mocks.discoverTools).not.toHaveBeenCalled();
 });
 
 describe("executeSearch developer category", () => {
@@ -94,12 +148,29 @@ describe("executeSearch developer category", () => {
     expect(result.developerResultsCount).toBe(1);
   });
 
-
   it("filters blocked developer results via threat protection and renumbers", async () => {
     mocks.searchDeveloperCategory.mockResolvedValue([
-      { url: "https://ok.example/a", title: "A", description: "", position: 1, category: "developer" },
-      { url: "https://blocked.example/b", title: "B", description: "", position: 2, category: "developer" },
-      { url: "https://ok.example/c", title: "C", description: "", position: 3, category: "developer" },
+      {
+        url: "https://ok.example/a",
+        title: "A",
+        description: "",
+        position: 1,
+        category: "developer",
+      },
+      {
+        url: "https://blocked.example/b",
+        title: "B",
+        description: "",
+        position: 2,
+        category: "developer",
+      },
+      {
+        url: "https://ok.example/c",
+        title: "C",
+        description: "",
+        position: 3,
+        category: "developer",
+      },
     ]);
     mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
       decisionsByUrl: new Map([
