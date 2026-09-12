@@ -317,7 +317,7 @@ function buildFeatureFlags(
     flags.add("skipTlsVerification");
   }
 
-  if (options.fastMode) {
+  if (options.fastMode || config.FAST_CRAWL === true) {
     flags.add("useFastMode");
   }
 
