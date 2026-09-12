@@ -114,7 +114,7 @@ if count == 1 then redis.call('EXPIRE', KEYS[1], 86400) end
 return count
 `,
             1,
-            `keyless_feedback_invitations:${identity}:${endpoint}`,
+            `keyless_feedback_invitations:${identity}`,
           ),
         );
         if (expired || count % every !== 0) return metadata;

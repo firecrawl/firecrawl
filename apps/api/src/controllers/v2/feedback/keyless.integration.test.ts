@@ -174,11 +174,7 @@ suite("keyless feedback HTTP and persistence", () => {
     config.KEYLESS_FEEDBACK_INVITATION_EVERY = 1;
     await fixture.pool!.query("DELETE FROM search_feedback");
     await redis.del(`keyless_feedback_attempts:${team()}`);
-    await cache.del(
-      `keyless_feedback_invitations:${team()}:search`,
-      `keyless_feedback_invitations:${team()}:scrape`,
-      `keyless_feedback_invitations:${team()}:parse`,
-    );
+    await cache.del(`keyless_feedback_invitations:${team()}`);
   });
   afterAll(async () => {
     if (redis) {
@@ -188,11 +184,7 @@ suite("keyless feedback HTTP and persistence", () => {
         `keyless_credits:${ip}`,
         `keyless_feedback_attempts:${team()}`,
       );
-      await cache.del(
-        ...["search", "scrape", "parse"].map(
-          category => `keyless_feedback_invitations:${team()}:${category}`,
-        ),
-      );
+      await cache.del(`keyless_feedback_invitations:${team()}`);
     }
     if (fixture.pool) {
       await fixture.pool.query(`DROP SCHEMA ${schemaName} CASCADE`);
@@ -260,7 +252,7 @@ suite("keyless feedback HTTP and persistence", () => {
     expect(await cache.ttl(key)).toBeGreaterThan(86000);
     expect(await redis.get(key)).toBeNull();
     expect(
-      await redis.get(`keyless_feedback_invitations:${team()}:scrape`),
+      await redis.get(`keyless_feedback_invitations:${team()}`),
     ).toBeNull();
     expect(await fixture.db!.select().from(table)).toHaveLength(0);
     const runId = (info: string) => info.match(/^run_id:(.+)$/m)?.[1];
@@ -286,9 +278,7 @@ suite("keyless feedback HTTP and persistence", () => {
     await vi.waitFor(async () =>
       expect(JSON.parse((await cache.get(key))!).invited).toBe(true),
     );
-    expect(
-      await cache.get(`keyless_feedback_invitations:${team()}:parse`),
-    ).toBe("1");
+    expect(await cache.get(`keyless_feedback_invitations:${team()}`)).toBe("1");
   });
   it("suppresses invitations and rejects submissions when disabled", async () => {
     const { jobId } = await job("scrape");
@@ -379,13 +369,42 @@ suite("keyless feedback HTTP and persistence", () => {
     ).toBe(1);
     expect(await fixture.db!.select().from(table)).toHaveLength(1);
   });
-  it("configures invitation frequency without disabling job references", async () => {
+  it("shares invitation frequency across categories and clients and suppresses invitations after acceptance", async () => {
     config.KEYLESS_FEEDBACK_INVITATION_EVERY = 3;
-    expect((await job("parse")).metadata.feedback).toBeUndefined();
-    expect((await job("parse")).metadata.feedback).toBeUndefined();
-    expect((await job("parse")).metadata.feedback).toBeDefined();
+    const endpoints = ["search", "scrape", "parse"] as const;
+    const clients = ["api", "mcp", "cli"] as const;
+    const jobs: { endpoint: (typeof endpoints)[number]; jobId: string }[] = [];
+    for (let index = 0; index < 6; index++) {
+      const endpoint = endpoints[index % endpoints.length];
+      const client = clients[index % clients.length];
+      const jobId = randomUUID();
+      contextKeys.push(api.keylessFeedbackContextKey(team(), endpoint, jobId));
+      const result = await request(app)
+        .post(`/test/jobs/${endpoint}/${jobId}`)
+        .send({ origin: client, integration: client });
+      expect(result.status).toBe(200);
+      expect(result.body.metadata.jobId).toBe(jobId);
+      if ((index + 1) % 3 === 0) {
+        expect(result.body.metadata.feedback).toMatchObject({
+          endpoint,
+          jobId,
+        });
+      } else {
+        expect(result.body.metadata.feedback).toBeUndefined();
+      }
+      jobs.push({ endpoint, jobId });
+    }
+    expect(await cache.get(`keyless_feedback_invitations:${team()}`)).toBe("6");
+    const accepted = jobs[2];
+    expect((await submit(body(accepted.endpoint, accepted.jobId))).status).toBe(
+      200,
+    );
+    for (const endpoint of endpoints) {
+      expect((await job(endpoint)).metadata.feedback).toBeUndefined();
+    }
     config.KEYLESS_FEEDBACK_INVITATION_EVERY = 0;
     expect((await job("parse")).metadata.feedback).toBeUndefined();
+    expect(await cache.get(`keyless_feedback_invitations:${team()}`)).toBe("9");
   });
   it("bounds waiting when optional context storage is unavailable", async () => {
     const set = vi
@@ -473,7 +492,7 @@ suite("keyless feedback HTTP and persistence", () => {
       expect(await fixture.db!.select().from(table)).toHaveLength(2);
     } finally {
       await redis.del(`keyless_feedback_attempts:${otherIdentity}`);
-      await cache.del(`keyless_feedback_invitations:${otherIdentity}:search`);
+      await cache.del(`keyless_feedback_invitations:${otherIdentity}`);
     }
   });
   it("rolls back failed persistence without burning the daily slot", async () => {
