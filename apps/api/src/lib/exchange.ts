@@ -149,16 +149,17 @@ function getExchangeBaseUrl(): string | null {
 function normalizeProviders(
   raw: z.infer<typeof exchangeProvidersSchema>,
 ): ExchangeProvider[] {
-  // Route-less providers never match a URL but still carry terms for tool execution.
-  return raw.data.map(provider => ({
-    id: provider.id,
-    creditsCost: provider.creditsCost,
-    ...(provider.terms === undefined ? {} : { terms: provider.terms }),
-    routes: (provider.capabilities.scrape?.urlRoutes ?? []).map(route => ({
-      domains: new Set(route.domains.map(normalizeHost)),
-      pathPrefixes: route.pathPrefixes.map(normalizePathPrefix),
-    })),
-  }));
+  return raw.data
+    .map(provider => ({
+      id: provider.id,
+      creditsCost: provider.creditsCost,
+      ...(provider.terms === undefined ? {} : { terms: provider.terms }),
+      routes: (provider.capabilities.scrape?.urlRoutes ?? []).map(route => ({
+        domains: new Set(route.domains.map(normalizeHost)),
+        pathPrefixes: route.pathPrefixes.map(normalizePathPrefix),
+      })),
+    }))
+    .filter(provider => provider.routes.length > 0);
 }
 
 async function fetchExchangeProviders(): Promise<ExchangeProvider[] | null> {
@@ -386,34 +387,6 @@ function getProviderAccessDecision(
     entry.termsVersion === provider.terms.version
     ? "allowed"
     : "terms_required";
-}
-
-/**
- * Access decision for an explicitly named provider, from the same catalog and
- * organization flags the URL-routed path checks. An unlisted provider has no
- * known terms; only its enablement row can refuse it here.
- */
-export async function getExchangeProviderAccess(
-  providerId: string,
-  flags: RouteInput["flags"] | undefined,
-): Promise<
-  | { decision: "unavailable" | "allowed" | "not_enabled" }
-  | { decision: "terms_required"; terms: ExchangeTerms }
-> {
-  const providers = await getExchangeProviders();
-  if (providers === null) {
-    return { decision: "unavailable" };
-  }
-
-  const provider = providers.find(entry => entry.id === providerId) ?? {
-    id: providerId,
-    creditsCost: 0,
-    routes: [],
-  };
-  const decision = getProviderAccessDecision(provider, flags);
-  return decision === "terms_required" && provider.terms !== undefined
-    ? { decision, terms: provider.terms }
-    : { decision: decision === "terms_required" ? "allowed" : decision };
 }
 
 function isExchangeEligibleRequest(input: RouteInput): boolean {

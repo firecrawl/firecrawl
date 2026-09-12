@@ -31,13 +31,18 @@ type Retrieval = {
   fingerprint: string;
   phase: "executing" | "done";
   deadline: number;
+  scrapeId: string;
   lockId?: string;
   maximumCredits?: number;
   response?: ExchangeResponse;
   failure?: string;
 };
 
-type ProviderRetrieval = ExchangeResponse & { fresh: boolean };
+type ProviderRetrieval = ExchangeResponse & {
+  /** Whether this request reached the provider call; false for replays and pre-execution refusals. */
+  executed: boolean;
+  scrapeId: string;
+};
 
 const canonical = (value: unknown): unknown =>
   Array.isArray(value)
@@ -77,19 +82,24 @@ export async function retrieveProviders(input: {
   flags: TeamFlags | null | undefined;
   calls: ProviderCall[];
   requestId: string;
+  scrapeId: string;
   timeoutMs: number;
   bypassBilling?: boolean;
 }): Promise<ProviderRetrieval> {
+  const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
+    ...response,
+    executed: false,
+    scrapeId: input.scrapeId,
+  });
   if (!REQUEST_ID_PATTERN.test(input.requestId))
-    return {
-      ...refusal(
+    return notExecuted(
+      refusal(
         400,
         "Invalid x-request-id; use 1-128 letters, digits, dots, underscores, colons or hyphens.",
       ),
-      fresh: false,
-    };
+    );
   if (Buffer.byteLength(JSON.stringify(input.calls)) > 256 * 1024)
-    return { ...refusal(400, "Provider options exceed 256 KB."), fresh: false };
+    return notExecuted(refusal(400, "Provider options exceed 256 KB."));
 
   const billable = !input.bypassBilling;
   const id = hash([input.teamId, input.requestId]);
@@ -99,6 +109,7 @@ export async function retrieveProviders(input: {
     fingerprint,
     phase: "executing",
     deadline: Date.now() + input.timeoutMs,
+    scrapeId: input.scrapeId,
   };
   const write = (next: Retrieval) =>
     redisRateLimitClient.set(
@@ -119,30 +130,32 @@ export async function retrieveProviders(input: {
     const raw = await redisRateLimitClient.get(key);
     const existing: Retrieval | null = raw ? JSON.parse(raw) : null;
     if (existing?.phase === "done" && existing.fingerprint === fingerprint)
-      return { ...existing.response!, fresh: false };
-    if (existing && existing.fingerprint !== fingerprint)
       return {
-        ...refusal(
+        ...existing.response!,
+        executed: false,
+        scrapeId: existing.scrapeId ?? input.scrapeId,
+      };
+    if (existing && existing.fingerprint !== fingerprint)
+      return notExecuted(
+        refusal(
           409,
           "This x-request-id already belongs to a different provider request.",
           { code: "duplicate_request", chargeId: id },
         ),
-        fresh: false,
-      };
+      );
     if (
       existing &&
       !existing.failure &&
       Date.now() <= existing.deadline + GRACE_MS
     )
-      return {
-        ...refusal(
+      return notExecuted(
+        refusal(
           409,
           "This provider request is still running. Retry with the same x-request-id once it has finished.",
           { code: "request_in_flight", chargeId: id },
         ),
-        fresh: false,
-      };
-    return { ...unresolved(id), fresh: false };
+      );
+    return notExecuted(unresolved(id));
   }
 
   const featureId = featureIdForBillingEndpoint("scrape");
@@ -154,15 +167,19 @@ export async function retrieveProviders(input: {
   };
   const remaining = () => Math.max(1, record.deadline - Date.now());
   // Nothing reserved or executed yet: drop the claim so the same id can retry.
-  const refuse = async (response: ExchangeResponse) => {
+  const refuse = async (response: ExchangeResponse, executed = false) => {
     await redisRateLimitClient.del(key);
-    return { ...response, fresh: true };
+    return { ...response, executed, scrapeId: input.scrapeId };
   };
 
   let lockId: string | undefined;
   let maximumCredits: number;
   try {
-    const denied = await authorizeProviders(input.calls, input.flags);
+    const denied = await authorizeProviders(
+      input.teamId,
+      input.calls,
+      input.flags,
+    );
     if (denied) return refuse(denied);
 
     const quote = await exchangeRequest({
@@ -238,7 +255,7 @@ export async function retrieveProviders(input: {
   // Point of no return: persist the hold before the provider call.
   record.lockId = lockId;
   record.maximumCredits = maximumCredits;
-  const fail = async (reason: string) => {
+  const fail = async (reason: string): Promise<ProviderRetrieval> => {
     logger.error(
       "Provider request outcome is uncertain; needs reconciliation",
       {
@@ -250,7 +267,7 @@ export async function retrieveProviders(input: {
       },
     );
     await write({ ...record, failure: reason }).catch(() => {});
-    return { ...unresolved(id), fresh: true };
+    return { ...unresolved(id), executed: true, scrapeId: input.scrapeId };
   };
   const finalize = async (credits: number) => {
     if (!lockId) return true;
@@ -293,7 +310,7 @@ export async function retrieveProviders(input: {
       (response.status === 504 && body.code === "deadline_exceeded")
     ) {
       await finalize(0);
-      return refuse(relay(response));
+      return refuse(relay(response), true);
     }
     if (response.status < 200 || response.status >= 300)
       return fail(`Exchange answered ${response.status}`);
@@ -330,20 +347,22 @@ export async function retrieveProviders(input: {
 
     const done: ExchangeResponse = { status: 200, body: answer };
     await write({ ...record, phase: "done", response: done });
-    return { ...done, fresh: true };
+    return { ...done, executed: true, scrapeId: input.scrapeId };
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
   }
 }
 
-// The same idempotent billing queue every billed path uses; Autumn was already
-// debited by the confirm, hence autumnTrackInRequest.
+// The same idempotent billing queue every billed path uses. Autumn was already
+// debited by the confirm; on the direct route a failed ledger commit refunds it,
+// while on the firebill route the durable charge stands pending reconciliation.
 async function recordLedgerUsage(
   id: string,
   teamId: string,
   apiKeyId: number | null,
   credits: number,
 ) {
+  const refundable = !(await autumnService.isRoutedThroughFirebill(teamId));
   for (let attempt = 1; ; attempt++) {
     try {
       await getBillingQueue().add(
@@ -356,7 +375,7 @@ async function recordLedgerUsage(
           timestamp: new Date().toISOString(),
           originating_job_id: id,
           api_key_id: apiKeyId,
-          autumnTrackInRequest: true,
+          autumnTrackInRequest: refundable,
         },
         { jobId: `alexandria-bill-${id}`, priority: 10 },
       );

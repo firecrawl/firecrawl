@@ -120,6 +120,7 @@ export async function providerScrapeController(
       flags: req.acuc.flags,
       calls: body.exchange,
       requestId,
+      scrapeId: randomUUID(),
       timeoutMs: body.timeout,
       bypassBilling: body.__agentInterop?.shouldBill === false,
     });
@@ -134,11 +135,10 @@ export async function providerScrapeController(
     });
   }
 
-  const jobId = randomUUID();
-  // One requests row per execution, not per replay of the same x-request-id.
-  if (result.fresh && !body.__agentInterop)
+  // One requests row per provider execution, not per refusal or replay.
+  if (result.executed && !body.__agentInterop)
     void logRequest({
-      id: jobId,
+      id: result.scrapeId,
       kind: "scrape",
       api_version: "v2",
       external_request_id: externalRequestId(req),
@@ -149,7 +149,10 @@ export async function providerScrapeController(
       target_hint: `exchange:${body.exchange.map(call => `${call.provider}/${call.capability}`).join(",")}`,
       zeroDataRetention: false,
     }).catch(error =>
-      logger.warn("Provider request logging failed", { error, jobId }),
+      logger.warn("Provider request logging failed", {
+        error,
+        scrapeId: result.scrapeId,
+      }),
     );
 
   if (result.status !== 200) return res.status(result.status).json(result.body);
@@ -157,17 +160,19 @@ export async function providerScrapeController(
   if (legacy) {
     if (legacyBody && "requests" in legacyBody) return res.json(answer);
     const first = answer.results[0];
-    if (first.error)
-      return res.status(first.error.status ?? 502).json({
+    if (first.error) {
+      const status = first.error.status ?? 502;
+      return res.status(status >= 400 && status <= 599 ? status : 502).json({
         success: false,
         code: first.error.code,
         error: first.error.message,
       });
+    }
     return res.json({ success: true, ...first });
   }
   return res.json({
     success: true,
-    scrape_id: jobId,
+    scrape_id: result.scrapeId,
     data: { exchange: answer.results, creditsCost: answer.creditsCost },
   });
 }

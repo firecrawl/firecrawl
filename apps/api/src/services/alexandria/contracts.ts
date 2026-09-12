@@ -28,7 +28,7 @@ const resultSchema = z.union([
         .object({
           code: z.string(),
           message: z.string(),
-          status: z.number().int().optional(),
+          status: z.number().int().min(100).max(999).optional(),
         })
         .passthrough(),
     })

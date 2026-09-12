@@ -34,6 +34,7 @@ vi.mock("../autumn/autumn.service", () => ({
   autumnService: {
     lockCredits: mocks.lock,
     finalizeCreditsLock: mocks.finalize,
+    isRoutedThroughFirebill: async () => false,
   },
   featureIdForBillingEndpoint: () => "credits",
 }));
@@ -56,6 +57,7 @@ const run = (overrides: Record<string, unknown> = {}) =>
     flags: {},
     calls: [call],
     requestId: "request-1",
+    scrapeId: "scrape-1",
     timeoutMs: 50000,
     ...overrides,
   });
@@ -79,7 +81,12 @@ beforeEach(() => {
 });
 
 it("quotes, reserves, executes within budget, settles actual usage, records once, and replays", async () => {
-  expect(await run()).toEqual({ status: 200, body: answer, fresh: true });
+  expect(await run()).toEqual({
+    status: 200,
+    body: answer,
+    executed: true,
+    scrapeId: "scrape-1",
+  });
   expect(mocks.lock).toHaveBeenCalledWith(
     expect.objectContaining({ value: 5, featureId: "credits" }),
   );
@@ -108,7 +115,13 @@ it("quotes, reserves, executes within budget, settles actual usage, records once
     expect.objectContaining({ status: "confirmed" }),
   );
 
-  expect(await run()).toEqual({ status: 200, body: answer, fresh: false });
+  // The replay keeps the original scrape id and executes nothing.
+  expect(await run({ scrapeId: "scrape-2" })).toEqual({
+    status: 200,
+    body: answer,
+    executed: false,
+    scrapeId: "scrape-1",
+  });
   expect(executions()).toHaveLength(1);
   expect(mocks.finalize).toHaveBeenCalledTimes(1);
   expect(mocks.billAdd).toHaveBeenCalledTimes(1);
@@ -133,7 +146,9 @@ it.each([
   "does not execute after a %s hold and lets the same id retry",
   async (status, expected) => {
     mocks.lock.mockResolvedValueOnce({ status });
-    expect((await run()).status).toBe(expected);
+    const refused = await run();
+    expect(refused.status).toBe(expected);
+    expect(refused.executed).toBe(false);
     expect(executions()).toHaveLength(0);
     expect(mocks.finalize).not.toHaveBeenCalled();
     expect((await run()).status).toBe(200);
@@ -170,7 +185,8 @@ it("releases the hold on a definitive refusal and relays it without caching", as
       code: "credit_budget_exceeded",
       error: "Over budget.",
     },
-    fresh: true,
+    executed: true,
+    scrapeId: "scrape-1",
   });
   expect(mocks.finalize).toHaveBeenCalledWith(
     expect.objectContaining({ lockId: "held", action: "release" }),

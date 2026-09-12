@@ -38,10 +38,11 @@ app.post("/v2/scrape", (req, res) => providerScrapeController(req as any, res));
 app.post("/exchange/retrieve", (req, res) =>
   providerScrapeController(req as any, res, true),
 );
-const result = (results: unknown[], fresh = true) => ({
+const result = (results: unknown[], executed = true) => ({
   status: 200,
   body: { success: true, creditsCost: 0, results },
-  fresh,
+  executed,
+  scrapeId: "scrape-1",
 });
 
 beforeEach(() => {
@@ -58,9 +59,10 @@ it("returns the Scrape contract, shares identity with the legacy route, and logs
     .set("x-request-id", "same-request")
     .send({ exchange: call });
   expect(response.status).toBe(200);
-  expect(response.body.data).toEqual({
-    exchange: [expect.any(Object)],
-    creditsCost: 0,
+  expect(response.body).toEqual({
+    success: true,
+    scrape_id: "scrape-1",
+    data: { exchange: [expect.any(Object)], creditsCost: 0 },
   });
   expect(response.headers["x-request-id"]).toBe("same-request");
   expect(mocks.retrieve).toHaveBeenCalledWith(
@@ -78,9 +80,11 @@ it("returns the Scrape contract, shares identity with the legacy route, and logs
     .post("/exchange/retrieve")
     .set("x-request-id", "same-request")
     .send(call);
-  expect(mocks.retrieve.mock.calls[0][0]).toEqual(
-    mocks.retrieve.mock.calls[1][0],
-  );
+  const [first, second] = mocks.retrieve.mock.calls.map(([arg]) => arg);
+  expect({ ...first, scrapeId: undefined }).toEqual({
+    ...second,
+    scrapeId: undefined,
+  });
   expect(mocks.log).toHaveBeenCalledTimes(1);
 });
 

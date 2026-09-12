@@ -1,35 +1,73 @@
+import { z } from "zod";
+import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
-import {
-  getExchangeProviderAccess,
-  getThirdPartyDataTermsRequiredResponse,
-} from "../../lib/exchange";
+import { getThirdPartyDataTermsRequiredResponse } from "../../lib/exchange";
+import { exchangeRequest } from "./client";
 import { refusal, type ExchangeResponse, type ProviderCall } from "./contracts";
 
-/**
- * The same catalog terms and organization access flags the URL-routed
- * Exchange scrape path checks, applied to the providers a request names.
- * Returns the refusal to send, or undefined when every provider may run.
- */
+const requirementsSchema = z.object({
+  providers: z.array(
+    z.object({
+      provider: z.string(),
+      required: z.boolean(),
+      terms: z
+        .object({ key: z.string(), version: z.string() })
+        .passthrough()
+        .nullable(),
+    }),
+  ),
+});
+
+// The Exchange answers 404 when any named provider is unknown or hidden, so an
+// unlisted provider never reaches the quote or `/v1/retrieve`. Agreements are
+// compared against the organization flags the URL-routed Exchange path uses.
 export async function authorizeProviders(
+  teamId: string,
   calls: ProviderCall[],
   flags: TeamFlags | null | undefined,
 ): Promise<ExchangeResponse | undefined> {
-  for (const provider of new Set(calls.map(call => call.provider))) {
-    const access = await getExchangeProviderAccess(provider, flags);
-    if (access.decision === "unavailable")
-      return refusal(
-        503,
-        "Provider catalog is unavailable. No provider was executed.",
-      );
-    if (access.decision === "not_enabled")
+  const providers = [...new Set(calls.map(call => call.provider))];
+  const response = await exchangeRequest({
+    teamId,
+    path: "/v1/provider-terms/requirements",
+    body: { providers },
+    timeoutMs: 10000,
+  }).catch(() => undefined);
+  if (response?.status === 404)
+    return refusal(404, "Unknown provider. No provider was executed.", {
+      code: "unknown_provider",
+    });
+  const parsed =
+    response?.status === 200
+      ? requirementsSchema.safeParse(response.body)
+      : undefined;
+  if (
+    !parsed?.success ||
+    parsed.data.providers.length !== providers.length ||
+    parsed.data.providers.some(item => !providers.includes(item.provider))
+  )
+    return refusal(
+      503,
+      "Provider agreements are unavailable. No provider was executed.",
+    );
+  if (config.USE_DB_AUTHENTICATION !== true) return undefined;
+
+  for (const item of parsed.data.providers) {
+    const access = flags?.organizationDataSourceAccess?.[item.provider];
+    if (access && access.status !== "enabled")
       return refusal(
         403,
-        `Access to ${provider} is disabled for this organization.`,
+        `Access to ${item.provider} is disabled for this organization.`,
       );
-    if (access.decision === "terms_required")
+    if (
+      item.required &&
+      item.terms &&
+      (access?.termsKey !== item.terms.key ||
+        access?.termsVersion !== item.terms.version)
+    )
       return {
         status: 403,
-        body: getThirdPartyDataTermsRequiredResponse(access.terms),
+        body: getThirdPartyDataTermsRequiredResponse(item.terms),
       };
   }
   return undefined;
