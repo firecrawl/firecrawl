@@ -58,8 +58,8 @@ export async function discoverTools(
       timeoutMs: remaining(),
       maximumCredits: 0,
       body: {
-        provider: "firecrawl-contextual-discovery",
-        capability: "discovery/context",
+        provider: "firecrawl",
+        capability: "find-tools",
         options: {
           ...options,
           level: "tools",
