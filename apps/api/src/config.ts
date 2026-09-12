@@ -512,6 +512,7 @@ const configSchema = z.object({
   TEST_SUITE_SELF_HOSTED: z.stringbool().optional(),
   TEST_SUITE_WEBSITE: z.string().default("http://127.0.0.1:4321"),
   USE_DB_AUTHENTICATION: z.stringbool().optional(),
+  FAST_CRAWL: z.stringbool().optional(),
 
   // Indexing
   BACKGROUND_INDEX_TEAM_ID: z.string().optional(),
