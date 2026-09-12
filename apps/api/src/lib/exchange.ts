@@ -70,8 +70,6 @@ type ExchangeProvider = {
 const SUPPORTED_FORMATS = new Set(["markdown", "json"]);
 const EXCHANGE_BETA_FLAG = "professionalProfileCompanyDataBeta";
 const THIRD_PARTY_DATA_TERMS_REQUIRED_CODE = "THIRD_PARTY_DATA_TERMS_REQUIRED";
-const THIRD_PARTY_DATA_TERMS_REQUIRED_MESSAGE =
-  "An organization admin must accept this data source's terms before this URL can be processed.";
 
 const EXCHANGE_PROVIDERS_PATH = "/v1/providers";
 const EXCHANGE_PROVIDERS_TIMEOUT_MS = 2_000;
@@ -515,20 +513,22 @@ export async function canUseExchangeForRequest(
   return (await getExchangeAccessForRequest(input)).allowed;
 }
 
-function getThirdPartyDataTermsSettingsUrl(): string {
-  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/settings?tab=data-sources`;
+// Terms are keyed by provider id, so the key doubles as the provider page to accept them on.
+function getThirdPartyDataTermsUrl(terms: ExchangeTerms): string {
+  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria/${encodeURIComponent(terms.key)}`;
 }
 
 export function getThirdPartyDataTermsRequiredResponse(terms: ExchangeTerms) {
+  const url = getThirdPartyDataTermsUrl(terms);
   return {
     success: false as const,
     code: THIRD_PARTY_DATA_TERMS_REQUIRED_CODE as "THIRD_PARTY_DATA_TERMS_REQUIRED",
-    error: THIRD_PARTY_DATA_TERMS_REQUIRED_MESSAGE,
+    error: `An organization admin must accept the ${terms.key} provider's terms (version ${terms.version}) before this request can run. Accept them at ${url}`,
     requiresAction: {
       type: "accept_terms",
       terms: terms.key,
       version: terms.version,
-      url: getThirdPartyDataTermsSettingsUrl(),
+      url,
     },
   };
 }
