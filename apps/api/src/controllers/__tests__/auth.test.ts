@@ -1,9 +1,12 @@
 import { vi } from "vitest";
 import { createHmac } from "node:crypto";
-import { authenticateUser, clearACUC } from "../auth";
+import { authenticateUser, clearACUC, getACUCTeam } from "../auth";
 import { config } from "../../config";
 import { RateLimiterMode } from "../../types";
-import { authCreditUsageChunk } from "../../db/rpc";
+import {
+  authCreditUsageChunk,
+  authCreditUsageChunkFromTeam,
+} from "../../db/rpc";
 import { redlock } from "../../services/redlock";
 import { deleteKey, getValue, setValue } from "../../services/redis";
 import {
@@ -736,6 +739,26 @@ describe("authenticateUser", () => {
     expect(auth.success).toBe(true);
     expect(getRateLimiter).toHaveBeenCalledWith(RateLimiterMode.Preview);
     expect(getAutumnRateLimiter).not.toHaveBeenCalled();
+  });
+
+  it("treats a malformed team ACUC cache entry as a miss", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(getValue).mockResolvedValue("{not-json");
+    vi.mocked(deleteKey).mockResolvedValue(undefined);
+    vi.mocked(authCreditUsageChunkFromTeam).mockResolvedValue([
+      { team_id: "team-1", org_id: "org-1" },
+    ] as never);
+
+    // The DB answers, rather than the corrupt entry failing the caller: every
+    // `.catch(() => null)` on this lookup would otherwise fail open.
+    await expect(getACUCTeam("team-1")).resolves.toMatchObject({
+      team_id: "team-1",
+      org_id: "org-1",
+    });
+    expect(authCreditUsageChunkFromTeam).toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(deleteKey).toHaveBeenCalledWith("acuc_team_team-1_scrape"),
+    );
   });
 
   it("clears purpose-qualified and legacy ACUC cache entries", async () => {

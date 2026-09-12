@@ -365,6 +365,7 @@ function createResearchController(
         if (credits > 0) {
           billTeam(
             authedReq.auth.team_id,
+            authedReq.acuc?.org_id ?? null,
             credits,
             authedReq.acuc?.api_key_id ?? null,
             {

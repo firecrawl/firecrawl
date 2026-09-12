@@ -183,6 +183,41 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
     );
   });
 
+  it("hands the ACUC's org to both checks, so neither reads teams.org_id", async () => {
+    checkCreditsMock
+      .mockResolvedValueOnce({ allowed: false, remaining: 5 })
+      .mockResolvedValueOnce({ allowed: true, remaining: 5 });
+
+    const req = buildReq({ body: { limit: 100 } });
+    await runMiddleware(req);
+
+    expect(checkCreditsMock).toHaveBeenCalledTimes(2);
+    for (const [params] of checkCreditsMock.mock.calls) {
+      expect(params).toEqual(
+        expect.objectContaining({ orgId: "org_test", teamId: "team_test" }),
+      );
+    }
+  });
+
+  // Keyless and preview identities carry no org, and neither does the DB-auth
+  // bypass. checkCredits answered null for all of them, so the middleware takes
+  // that fail-open answer itself rather than asking with an org it hasn't got.
+  it.each([null, undefined])(
+    "fails open without asking Autumn when org_id is %s",
+    async orgId => {
+      const req = buildReq({
+        auth: { team_id: "preview_1.2.3.4", org_id: orgId },
+      });
+      const { res, nextCalled } = await runMiddleware(req);
+
+      expect(checkCreditsMock).not.toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+      expect(nextCalled).toBe(true);
+      expect(req.account.remainingCredits).toBe(Infinity);
+      expect(req.body.limit).toBe(100);
+    },
+  );
+
   it("sends a null apiKeyId when the request has no resolved api key id", async () => {
     checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
 

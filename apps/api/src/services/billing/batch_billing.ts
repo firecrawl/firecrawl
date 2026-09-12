@@ -13,6 +13,8 @@ import {
   type BillingMetadata,
 } from "./types";
 import { reportExchangeBilling } from "../../lib/exchange";
+import { getACUCTeam } from "../../controllers/auth";
+import { orgIdFromAcuc } from "../../lib/team-org";
 
 // Upper bound on concurrent Exchange confirmation requests across the
 // whole worker, so slow or retrying deliveries from overlapping batch
@@ -85,6 +87,12 @@ const LOCK_TIMEOUT = 30000; // 30 seconds lock timeout
 // Define interfaces for billing operations
 interface BillingOperation {
   team_id: string;
+  /**
+   * The team's org — the Autumn customer a refund would go back to. Absent
+   * (not null) on operations enqueued before this field existed; `null` is a
+   * team that genuinely has no org. See the transitional lookup below.
+   */
+  org_id?: string | null;
   credits: number;
   billing?: BillingMetadata;
   endpoint?: BillingEndpoint;
@@ -102,6 +110,7 @@ interface BillingOperation {
 // Grouped billing operations for batch processing
 interface GroupedBillingOperation {
   team_id: string;
+  org_id: string | null;
   total_credits: number;
   billing: BillingMetadata;
   is_extract: boolean;
@@ -135,9 +144,20 @@ async function refundRequestTrackedCredits(group: GroupedBillingOperation) {
 
   if (requestTrackedCredits <= 0) return;
 
+  if (group.org_id === null) {
+    // No org, no Autumn customer to refund against — the same nothing the
+    // refund did when it could not name one.
+    logger.warn("Skipping Autumn refund: no org for the team", {
+      team_id: group.team_id,
+      credits: requestTrackedCredits,
+    });
+    return;
+  }
+
   try {
     await autumnService.refundCredits({
       teamId: group.team_id,
+      orgId: group.org_id,
       value: requestTrackedCredits,
       properties: {
         source: "processBillingBatch",
@@ -190,8 +210,37 @@ export async function processBillingBatch() {
       `📦 Processing batch of ${operations.length} billing operations`,
     );
 
-    // Group operations by team_id, endpoint, is_extract, and api_key_id
+    // transitional: operations enqueued before org_id was carried; remove
+    // after one deploy. An answer of null is a team that genuinely has no org
+    // and is memoized as such; a lookup that throws leaves the org unknown, and
+    // billing those as org-less would silently skip their refund — so they are
+    // requeued untouched instead. The failure is memoized too, so a failing
+    // lookup costs one call per team per batch rather than one per operation.
+    const legacyOrgIds = new Map<
+      string,
+      { resolved: true; orgId: string | null } | { resolved: false }
+    >();
+    const resolveLegacyOrgId = async (teamId: string) => {
+      if (!legacyOrgIds.has(teamId)) {
+        try {
+          legacyOrgIds.set(teamId, {
+            resolved: true,
+            orgId: orgIdFromAcuc(await getACUCTeam(teamId)),
+          });
+        } catch (error) {
+          logger.warn("Failed to resolve the org for a legacy billing op", {
+            team_id: teamId,
+            error,
+          });
+          legacyOrgIds.set(teamId, { resolved: false });
+        }
+      }
+      return legacyOrgIds.get(teamId)!;
+    };
+
+    // Group operations by team_id, org_id, endpoint, is_extract, and api_key_id
     const groupedOperations = new Map<string, GroupedBillingOperation>();
+    const unresolvedOperations: BillingOperation[] = [];
 
     for (const op of operations) {
       const billing = resolveBillingMetadata({
@@ -199,11 +248,23 @@ export async function processBillingBatch() {
           op.billing ?? (op.endpoint ? { endpoint: op.endpoint } : undefined),
         isExtract: op.is_extract,
       });
-      const key = `${op.team_id}:${billing.endpoint}:${op.is_extract}:${op.api_key_id}`;
+      let orgId: string | null;
+      if (op.org_id === undefined) {
+        const lookup = await resolveLegacyOrgId(op.team_id);
+        if (!lookup.resolved) {
+          unresolvedOperations.push(op);
+          continue;
+        }
+        orgId = lookup.orgId;
+      } else {
+        orgId = op.org_id;
+      }
+      const key = `${op.team_id}:${orgId}:${billing.endpoint}:${op.is_extract}:${op.api_key_id}`;
 
       if (!groupedOperations.has(key)) {
         groupedOperations.set(key, {
           team_id: op.team_id,
+          org_id: orgId,
           total_credits: 0,
           billing,
           is_extract: op.is_extract,
@@ -215,6 +276,20 @@ export async function processBillingBatch() {
       const group = groupedOperations.get(key)!;
       group.total_credits += op.credits;
       group.operations.push(op);
+    }
+
+    if (unresolvedOperations.length > 0) {
+      // Back onto the same list in the same shape — still without org_id — so
+      // the next batch retries the lookup. Nothing is billed or refunded for
+      // them here.
+      logger.warn(
+        "Requeueing legacy billing operations whose org could not be resolved",
+        { count: unresolvedOperations.length },
+      );
+      await redis.rpush(
+        BATCH_KEY,
+        ...unresolvedOperations.map(op => JSON.stringify(op)),
+      );
     }
 
     // Process each group of operations
@@ -325,6 +400,11 @@ export function startBillingBatchProcessing() {
  */
 export async function queueBillingOperation(
   team_id: string,
+  /**
+   * The team's org. `undefined` only while draining `bill_team` jobs enqueued
+   * before the field existed; those resolve it in the batch instead.
+   */
+  org_id: string | null | undefined,
   credits: number,
   api_key_id: number | null,
   billing: BillingMetadata,
@@ -348,6 +428,7 @@ export async function queueBillingOperation(
   try {
     const operation: BillingOperation = {
       team_id,
+      ...(org_id === undefined ? {} : { org_id }),
       credits,
       billing,
       is_extract,

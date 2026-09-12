@@ -32,7 +32,7 @@ vi.mock("./search/judge", () => ({}));
 vi.mock("./search/dedupe", () => ({}));
 vi.mock("./search/persist", () => ({}));
 vi.mock("../../scraper/WebScraper/utils/blocklist", () => ({}));
-vi.mock("../../controllers/auth", () => ({}));
+vi.mock("../../controllers/auth", () => ({ getACUCTeam: vi.fn() }));
 vi.mock("./store", () => ({
   getMonitorCheckForUpdate: vi.fn(),
   getMonitorForUpdate: vi.fn(),
@@ -58,6 +58,8 @@ import {
   reconcileRunningMonitorChecks,
 } from "./runner";
 import * as store from "./store";
+import { config } from "../../config";
+import { getACUCTeam } from "../../controllers/auth";
 import { autumnService } from "../autumn/autumn.service";
 import { getBillingQueue } from "../queue-service";
 import { redisEvictConnection } from "../redis";
@@ -136,6 +138,9 @@ describe("monitor check finalization ownership", () => {
       async ({ status }) => (!status || status === "same" ? 1 : 0),
     );
     vi.mocked(store.calculateMonitorCheckActualCredits).mockResolvedValue(1);
+    (config as { USE_DB_AUTHENTICATION?: boolean }).USE_DB_AUTHENTICATION =
+      true;
+    vi.mocked(getACUCTeam).mockResolvedValue({ org_id: "org-1" } as any);
     vi.mocked(autumnService.finalizeCreditsLock).mockResolvedValue(true);
     vi.mocked(getBillingQueue).mockReturnValue({
       add: bill,
@@ -315,6 +320,63 @@ describe("monitor check finalization ownership", () => {
       );
     },
   );
+
+  it.each([
+    {
+      name: "answers no org",
+      acuc: async () => ({ org_id: null }) as any,
+    },
+    {
+      name: "cannot be read",
+      acuc: async () => {
+        throw new Error("ACUC unavailable");
+      },
+    },
+  ])(
+    "releases a stale hold with no team when the ACUC $name",
+    async ({ acuc }) => {
+      vi.mocked(getACUCTeam).mockImplementation(acuc);
+      current.started_at = new Date(
+        Date.now() - 2 * 60 * 60 * 1000,
+      ).toISOString();
+
+      await reconcileRunningMonitorChecks();
+
+      expect(current).toMatchObject({
+        status: "failed",
+        billing_status: "released",
+      });
+      // Fail open: the release still happens, just without a team to name.
+      const calls = vi.mocked(autumnService.finalizeCreditsLock).mock.calls;
+      expect(calls).toHaveLength(1);
+      expect(calls[0][0]).toMatchObject({
+        action: "release",
+        lockId: "monitor_check-1",
+      });
+      expect(calls[0][0].team).toBeUndefined();
+    },
+  );
+
+  it("names no team when DB authentication is off", async () => {
+    // The mock ACUC's org is the sentinel "bypass", so the ACUC is not even
+    // read: releasing against "bypass" would name a customer that isn't one.
+    (config as { USE_DB_AUTHENTICATION?: boolean }).USE_DB_AUTHENTICATION =
+      false;
+    vi.mocked(getACUCTeam).mockResolvedValue({
+      team_id: "bypass",
+      org_id: "bypass",
+    } as any);
+    current.started_at = new Date(
+      Date.now() - 2 * 60 * 60 * 1000,
+    ).toISOString();
+
+    await reconcileRunningMonitorChecks();
+
+    const calls = vi.mocked(autumnService.finalizeCreditsLock).mock.calls;
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0].team).toBeUndefined();
+    expect(getACUCTeam).not.toHaveBeenCalled();
+  });
 
   it.each([
     { kind: "stale", throws: false },
@@ -543,7 +605,7 @@ describe("monitor check finalization ownership", () => {
             endpoint: "monitor",
             jobId: current.id,
           },
-          teamId: monitor.team_id,
+          team: { teamId: monitor.team_id, orgId: "org-1" },
         });
       } else {
         expect(autumnService.finalizeCreditsLock).not.toHaveBeenCalled();

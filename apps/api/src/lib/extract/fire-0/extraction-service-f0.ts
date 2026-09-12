@@ -39,6 +39,7 @@ import {
 } from "./usage/llm-cost-f0";
 import { SourceTracker_F0 } from "./helpers/source-tracker-f0";
 import { getACUCTeam } from "../../../controllers/auth";
+import { orgIdFromAcuc } from "../../team-org";
 import { resolveThreatProtection } from "../../threat-protection/request";
 
 interface ExtractServiceOptions {
@@ -871,6 +872,7 @@ export async function performExtraction_F0(
   // Bill team for usage
   billTeam(
     teamId,
+    orgIdFromAcuc(acuc),
     creditsToBill,
     apiKeyId,
     { endpoint: "extract", jobId: extractId, chargeId: extractId },

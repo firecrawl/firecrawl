@@ -141,8 +141,21 @@ export function checkCreditsMiddleware(
 
       const requestedCredits = minimum ?? 1;
 
+      // No org means no billable identity to gate: keyless and preview teams
+      // carry none, and neither does the DB-authentication bypass. `checkCredits`
+      // answered null for exactly those, so take its fail-open branch here
+      // rather than hand the service an org it would have to go and find.
+      const orgId = req.auth.org_id;
+      if (!orgId) {
+        req.account = { remainingCredits: Infinity };
+        return next();
+      }
+
       const autumnResult = await autumnService.checkCredits({
         teamId: req.auth.team_id,
+        // The ACUC already carries the org, so the credit check does not have
+        // to read `teams.org_id` for it.
+        orgId,
         value: requestedCredits,
         properties: {
           source: "checkCreditsMiddleware",
@@ -183,6 +196,7 @@ export function checkCreditsMiddleware(
           // to the 402 below. A null re-check keeps the fail-open behavior.
           const clampedResult = await autumnService.checkCredits({
             teamId: req.auth.team_id,
+            orgId,
             value: clampedLimit,
             properties: {
               source: "checkCreditsMiddleware:clamp",

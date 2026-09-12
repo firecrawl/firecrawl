@@ -102,13 +102,19 @@ export async function mapController(
     if (avgrabResults !== null) {
       const creditsCost = avgrabResults.length;
 
-      billTeam(req.auth.team_id, creditsCost, req.acuc?.api_key_id ?? null, {
-        endpoint: "map",
-        jobId: mapId,
-        // Suffixed so this early-return path can never collide with the main
-        // map charge below, even if both ever billed the same mapId.
-        chargeId: `${mapId}:avgrab`,
-      }).catch(error => {
+      billTeam(
+        req.auth.team_id,
+        req.acuc?.org_id ?? null,
+        creditsCost,
+        req.acuc?.api_key_id ?? null,
+        {
+          endpoint: "map",
+          jobId: mapId,
+          // Suffixed so this early-return path can never collide with the main
+          // map charge below, even if both ever billed the same mapId.
+          chargeId: `${mapId}:avgrab`,
+        },
+      ).catch(error => {
         logger.error(
           `Failed to bill team ${req.auth.team_id} for ${creditsCost} credits: ${error}`,
         );
@@ -240,11 +246,17 @@ export async function mapController(
 
   // Bill the team
   const creditsToBill = 1 + threatScanCredits;
-  billTeam(req.auth.team_id, creditsToBill, req.acuc?.api_key_id ?? null, {
-    endpoint: "map",
-    jobId: mapId,
-    chargeId: mapId,
-  }).catch(error => {
+  billTeam(
+    req.auth.team_id,
+    req.acuc?.org_id ?? null,
+    creditsToBill,
+    req.acuc?.api_key_id ?? null,
+    {
+      endpoint: "map",
+      jobId: mapId,
+      chargeId: mapId,
+    },
+  ).catch(error => {
     logger.error("Failed to bill team for map credits", {
       teamId: req.auth.team_id,
       creditsToBill,

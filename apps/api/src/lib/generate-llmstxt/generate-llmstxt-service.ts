@@ -14,6 +14,7 @@ import { getModel } from "../generic-ai";
 import { generateCompletions } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
+import { orgIdFromAcuc } from "../team-org";
 interface GenerateLLMsTextServiceOptions {
   generationId: string;
   teamId: string;
@@ -280,6 +281,7 @@ export async function performGenerateLlmsTxt(
     // Bill team for usage
     billTeam(
       teamId,
+      orgIdFromAcuc(acuc),
       urls.length,
       apiKeyId,
       { endpoint: "llms_txt", jobId: generationId, chargeId: generationId },

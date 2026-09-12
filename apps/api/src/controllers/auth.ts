@@ -361,7 +361,22 @@ export async function getACUCTeam(
       }
     }
     if (cachedACUC !== null) {
-      return JSON.parse(cachedACUC);
+      // A corrupt entry is a miss, not a failure: callers that fall back to a
+      // null org on a throw would otherwise take the high fail-open limits.
+      try {
+        return JSON.parse(cachedACUC);
+      } catch (error) {
+        logger.warn("Ignoring malformed ACUC cache entry", {
+          cacheKey: cacheKeyACUC,
+          error,
+        });
+        void deleteKey(cacheKeyACUC).catch(deleteError => {
+          logger.warn("Failed to delete malformed ACUC cache entry", {
+            cacheKey: cacheKeyACUC,
+            error: deleteError,
+          });
+        });
+      }
     }
   }
 
@@ -657,7 +672,10 @@ async function buildAuthenticatedRateLimiter(
   if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
     multiplier = 1;
   } else {
-    multiplier = await autumnService.getRateLimitMultiplier(teamId, orgId);
+    multiplier = await autumnService.getRateLimitMultiplier(
+      teamId,
+      orgId ?? null,
+    );
     if (minMultiplier !== undefined) {
       multiplier = Math.max(multiplier, minMultiplier);
     }
