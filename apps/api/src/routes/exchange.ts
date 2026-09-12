@@ -135,6 +135,13 @@ exchangeRouter.get(
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
 );
 
+// Provider agreements the web app offers for acceptance; a catalogue read, never an acceptance.
+exchangeRouter.get(
+  "/provider-terms",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+);
+
 exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
