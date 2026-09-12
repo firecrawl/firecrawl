@@ -1,6 +1,7 @@
 import { BrandingProfile } from "../../types/branding";
 import {
   isUsableBrandPrimary,
+  isUsableCtaBackground,
   normalizeRoleHex,
   shouldApplyLlmColorRoles,
 } from "./color-roles";
@@ -268,6 +269,11 @@ export function mergeBrandingResults(
     }
   }
 
+  // Captured before the LLM gate can overwrite colors.background — the
+  // ghost-button guards below must compare CTA fills against the real page
+  // background, not whatever the LLM decided the background should be.
+  const heuristicPageBg = normalizeRoleHex(merged.colors?.background);
+
   if (
     shouldApplyLlmColorRoles(
       llm.colorRoles.confidence,
@@ -281,8 +287,15 @@ export function mergeBrandingResults(
     const llmAccent = normalizeRoleHex(llm.colorRoles.accentColor);
     const llmBackground = normalizeRoleHex(llm.colorRoles.backgroundColor);
     const llmText = normalizeRoleHex(llm.colorRoles.textPrimary);
+    const ctaRaw = normalizeRoleHex(
+      merged.components?.buttonPrimary?.background,
+    );
+    // An outline/ghost button reports the page background as its fill — that
+    // is chrome, not a CTA color.
+    const cta = ctaRaw && ctaRaw !== heuristicPageBg ? ctaRaw : undefined;
     const usablePrimary =
-      llmPrimary && isUsableBrandPrimary(llmPrimary, merged.colorScheme)
+      llmPrimary &&
+      isUsableBrandPrimary(llmPrimary, merged.colorScheme, { cta })
         ? llmPrimary
         : undefined;
     const rawSecondary = llm.colorRoles.secondaryColor;
@@ -316,6 +329,23 @@ export function mergeBrandingResults(
         confidence: llm.colorRoles.confidence,
       };
     }
+  }
+
+  // Identity/CTA wins primary — including black buttons. A lilac wash or
+  // default-link blue from the LLM must not replace a detected CTA fill.
+  // A fill that matches the page background (outline/ghost button) is chrome
+  // and must not become the brand primary.
+  const ctaPrimary = normalizeRoleHex(
+    merged.components?.buttonPrimary?.background,
+  );
+  const mergedPageBg = normalizeRoleHex(merged.colors?.background);
+  if (
+    ctaPrimary &&
+    ctaPrimary !== heuristicPageBg &&
+    ctaPrimary !== mergedPageBg &&
+    isUsableCtaBackground(ctaPrimary)
+  ) {
+    merged.colors = { ...merged.colors, primary: ctaPrimary };
   }
 
   if (llm.personality) {

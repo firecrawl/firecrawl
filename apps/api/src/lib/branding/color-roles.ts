@@ -32,11 +32,34 @@ export function isNearBlack(hex: string): boolean {
   return contrastYIQ(hex) < 40 && max < 140;
 }
 
-/** Chromatic brand color — not gray chrome, and not a near-black nav on light pages. */
+function isNearWhite(hex: string): boolean {
+  const h = hex.replace("#", "");
+  if (h.length < 6) return contrastYIQ(hex) > 220;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  // Bright but saturated fills (#FFFF00) are real CTA colors; only a bright
+  // AND low-chroma fill reads as white / a pale wash.
+  const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+  return contrastYIQ(hex) > 220 && chroma < 60;
+}
+
+/** Solid CTA fill — black is allowed; white / pale washes are not. */
+export function isUsableCtaBackground(hex: string): boolean {
+  return !!hex && !isNearWhite(hex);
+}
+
+function sameHex(a?: string, b?: string): boolean {
+  return !!a && !!b && a.toUpperCase() === b.toUpperCase();
+}
+
+/** Chromatic brand color, or a near-black that is the chosen CTA. */
 export function isUsableBrandPrimary(
   hex: string,
   colorScheme?: "light" | "dark",
+  opts?: { cta?: string },
 ): boolean {
+  if (sameHex(hex, opts?.cta) && isUsableCtaBackground(hex)) return true;
   if (isGrayish(hex)) return false;
   if (colorScheme !== "dark" && isNearBlack(hex)) return false;
   return true;
@@ -56,8 +79,9 @@ export function normalizeRoleHex(value?: string | null): string | undefined {
 }
 
 /**
- * Brand primary is a chromatic color — not page chrome.
- * On light pages, skip near-black (navy headers, dark nav bars).
+ * Brand primary is the identity / CTA color.
+ * A black CTA wins over a chromatic wash. Near-black header chrome does not
+ * win when a different CTA exists.
  */
 export function pickBrandPrimary(
   ranked: string[],
@@ -65,12 +89,15 @@ export function pickBrandPrimary(
     background?: string;
     textPrimary?: string;
     colorScheme?: "light" | "dark";
+    cta?: string;
   },
 ): string {
   const skip = new Set(
     [opts.background, opts.textPrimary].filter((h): h is string => !!h),
   );
   const lightPage = opts.colorScheme !== "dark";
+  const cta = opts.cta && !skip.has(opts.cta) ? opts.cta : undefined;
+  if (cta && isUsableCtaBackground(cta)) return cta;
 
   const chromatic = ranked.find(h => {
     if (skip.has(h) || isGrayish(h)) return false;
