@@ -406,8 +406,29 @@ const next = catalogue.items[0]?.next;
 if (next) console.log(await firecrawl.scrape({ alexandria: next }));
 ```
 
-Execute a selected contract with `scrape({ alexandria: { provider, capability, options } })`,
-or pass an array of up to ten calls. Check each returned `alexandria` item's `error`
-before using its `data`. The result and execution errors expose `requestId`; reuse it
-with the identical payload for a retry. Automatic retries retain the same ID.
-Find Tools costs zero credits; provider execution uses its published price.
+Execute a selected contract with `scrape({ alexandria, requestId })`, where `alexandria`
+is one `{ provider, capability, options }` call or an array of up to ten calls:
+
+```ts
+const requestId = crypto.randomUUID();
+const result = await firecrawl.scrape({
+  alexandria: {
+    provider: "particle",
+    capability: "podcasts/episodes/search",
+    options: { semantic_search: "AI agents" },
+  },
+  requestId,
+});
+for (const item of result.alexandria) {
+  if (item.error) console.error(item.error.code, item.error.message);
+  else console.log(item.data);
+}
+```
+
+Check each returned `alexandria` item's `error` before using its `data`. The result and
+execution errors expose `requestId`; reuse it with the identical payload for a retry.
+Automatic retries retain the same ID. Find Tools costs zero credits; provider execution
+uses its published price. A provider whose data terms have not been accepted rejects the
+call with a 403 whose `SdkError` carries `code: "THIRD_PARTY_DATA_TERMS_REQUIRED"` and a
+`requiresAction: { type: "accept_terms", terms, version, url }` pointing at the page where
+an organization admin can accept them.

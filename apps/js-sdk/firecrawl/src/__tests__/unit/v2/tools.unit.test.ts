@@ -16,6 +16,35 @@ const tool = {
   matchedBy: ["semantic", "domain"],
   matchedUrls: ["https://podcasts.apple.com"],
 };
+const productionTool = {
+  id: "benzinga/calendar/ratings",
+  provider: "benzinga",
+  capability: "calendar/ratings",
+  name: "Analyst ratings",
+  description: "Ratings",
+  creditsCost: 5,
+  perRecord: false,
+  label: "Ratings",
+  whenToUse: "Analyst ratings for a ticker",
+  returns: { about: "Ratings" },
+  discovery: { urls: [] },
+  attribution: { required: true },
+  options: [{ name: "tickers", type: "string" }],
+  response: { fields: [] },
+  matchedBy: ["semantic"],
+  matchedUrls: [],
+};
+const termsRequired = {
+  success: false,
+  code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
+  error: "An organization admin must accept the benzinga provider's terms",
+  requiresAction: {
+    type: "accept_terms",
+    terms: "benzinga",
+    version: "C-1.0.0-draft",
+    url: "https://www.firecrawl.dev/app/alexandria/benzinga",
+  },
+};
 const next = {
   provider: "firecrawl",
   capability: "find-tools",
@@ -38,12 +67,19 @@ beforeAll(async () => {
         JSON.stringify({
           success: true,
           warning: "Example warning",
-          data: { web: [{ url: "https://podcasts.apple.com" }], tools: [tool] },
+          data: {
+            web: [{ url: "https://podcasts.apple.com" }],
+            tools: [tool, productionTool],
+          },
         }),
       );
     if (body.alexandria[0].provider === "retry" && attempts++ === 0) {
       res.statusCode = 502;
       return res.end("{}");
+    }
+    if (body.alexandria[0].provider === "benzinga") {
+      res.statusCode = 403;
+      return res.end(JSON.stringify(termsRequired));
     }
     if (body.alexandria[0].provider === "denied") {
       res.statusCode = 402;
@@ -113,7 +149,9 @@ describe("Alexandria contracts and execution", () => {
       domainTools: true,
       limit: 2,
     });
-    expect(result.tools).toEqual([tool]);
+    expect(result.tools).toEqual([tool, productionTool]);
+    expect(result.tools?.[1].examples).toBeUndefined();
+    expect(result.tools?.[1].whenToUse).toBe("Analyst ratings for a ticker");
     expect(result.warning).toBe("Example warning");
     expect(sent.at(-1)?.body).toMatchObject({
       domainTools: true,
@@ -146,6 +184,20 @@ describe("Alexandria contracts and execution", () => {
       status: 402,
       code: "insufficient_credits",
       requestId: "denied-1",
+    });
+  });
+  test("exposes requiresAction on a provider terms rejection", async () => {
+    await expect(
+      client.scrape({
+        alexandria: { provider: "benzinga", capability: "calendar/ratings" },
+        requestId: "terms-1",
+      }),
+    ).rejects.toMatchObject({
+      status: 403,
+      code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
+      message: termsRequired.error,
+      requestId: "terms-1",
+      requiresAction: termsRequired.requiresAction,
     });
   });
   test("walks with Find Tools and feeds next directly into scrape", async () => {

@@ -810,7 +810,7 @@ export interface SearchData {
 
 /** A complete tool contract returned by semantic or contextual discovery. */
 export interface DiscoveredTool {
-  id: string;
+  id?: string;
   provider: string;
   capability: string;
   name: string;
@@ -824,20 +824,26 @@ export interface DiscoveredTool {
     [key: string]: unknown;
   }>;
   requiresOneOf?: string[][];
-  response: {
-    about: string;
-    key: string;
-    fields: Array<{ name: string; type: string; [key: string]: unknown }>;
+  response?: {
+    about?: string;
+    key?: string;
+    fields?: Array<{ name: string; type: string; [key: string]: unknown }>;
     [key: string]: unknown;
   };
-  examples: { javascript: string; python: string; curl: string };
+  examples?: Partial<Record<"javascript" | "python" | "curl", string>> &
+    Record<string, string>;
   example?: {
     recordedAt: string;
     request: Record<string, unknown>;
     response: unknown;
   };
-  matchedBy: Array<"semantic" | "domain">;
-  matchedUrls: string[];
+  label?: string;
+  whenToUse?: string;
+  returns?: unknown;
+  discovery?: unknown;
+  attribution?: unknown;
+  matchedBy?: Array<"semantic" | "domain">;
+  matchedUrls?: string[];
   concept?: string;
   cohorts?: string[];
   similarity?: number;
@@ -1828,6 +1834,25 @@ export interface ErrorDetails {
   status?: number;
 }
 
+/** An out-of-band step the API requires before the request can succeed. */
+export interface RequiresAction {
+  type: "accept_terms" | (string & {});
+  terms?: string;
+  version?: string;
+  url?: string;
+}
+
+export function parseRequiresAction(value: unknown): RequiresAction | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.type !== "string") return undefined;
+  const action: RequiresAction = { type: record.type };
+  if (typeof record.terms === "string") action.terms = record.terms;
+  if (typeof record.version === "string") action.version = record.version;
+  if (typeof record.url === "string") action.url = record.url;
+  return action;
+}
+
 export class SdkError extends Error {
   requestId?: string;
   status?: number;
@@ -1836,6 +1861,8 @@ export class SdkError extends Error {
   jobId?: string;
   /** Present on exchange-mediated scrape failures that already captured credits. */
   chargeId?: string;
+  /** Present when the API needs an out-of-band step first, such as accepting provider terms. */
+  requiresAction?: RequiresAction;
   constructor(
     message: string,
     status?: number,
@@ -1843,6 +1870,7 @@ export class SdkError extends Error {
     details?: unknown,
     jobId?: string,
     chargeId?: string,
+    requiresAction?: RequiresAction,
   ) {
     super(message);
     this.name = "FirecrawlSdkError";
@@ -1851,6 +1879,7 @@ export class SdkError extends Error {
     this.details = details;
     this.jobId = jobId;
     this.chargeId = chargeId;
+    this.requiresAction = requiresAction;
   }
 }
 
