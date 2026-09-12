@@ -26,6 +26,12 @@ pnpm start
 
 `pnpm start` builds Firecrawl and launches the API, workers, and local dependency containers. Keep Redis running separately as described in the public guide.
 
+If `pnpm install` fails building the `foundationdb` native binding (`fatal error: 'foundationdb/fdb_c.h' file not found`), pass `--ignore-scripts`. The queue defaults to PostgreSQL and the module is required lazily only when `NUQ_BACKEND=fdb`, so skipping the build is safe for the default setup — CI does the same on the non-FDB matrix rows.
+
+```bash
+pnpm install --ignore-scripts
+```
+
 ## Make a focused change
 
 1. Fork the repository and create a branch whose name describes the change.
