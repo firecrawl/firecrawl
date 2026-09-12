@@ -1065,17 +1065,22 @@ class ExchangeSearchResult(BaseModel):
 
 class DiscoveredTool(ExchangeSearchResult):
     credits_cost: int = Field(alias="creditsCost")
-    id: str
+    id: Optional[str] = None
     name: str
     description: str
     per_record: bool = Field(alias="perRecord")
-    options: List[Dict[str, Any]]
+    options: List[Dict[str, Any]] = Field(default_factory=list)
     requires_one_of: Optional[List[List[str]]] = Field(default=None, alias="requiresOneOf")
-    response: Dict[str, Any]
-    examples: Dict[str, str]
+    response: Dict[str, Any] = Field(default_factory=dict)
+    examples: Dict[str, str] = Field(default_factory=dict)
     example: Optional[Dict[str, Any]] = None
-    matched_by: List[Literal["semantic", "domain"]] = Field(alias="matchedBy")
-    matched_urls: List[str] = Field(alias="matchedUrls")
+    label: Optional[str] = None
+    when_to_use: Optional[str] = Field(default=None, alias="whenToUse")
+    returns: Optional[Any] = None
+    discovery: Optional[Any] = None
+    attribution: Optional[Any] = None
+    matched_by: List[Literal["semantic", "domain"]] = Field(default_factory=list, alias="matchedBy")
+    matched_urls: List[str] = Field(default_factory=list, alias="matchedUrls")
 
 
 class FindToolsData(BaseModel):

@@ -7,6 +7,15 @@ TOOL = dict(id='particle/podcasts/episodes/search', provider='particle', capabil
             name='Episode search', description='Find episodes', creditsCost=15, perRecord=False,
             options=[dict(name='semantic_search', type='string')], response={'fields': []}, examples={'python':'example'},
             matchedBy=['semantic', 'domain'], matchedUrls=['https://podcasts.apple.com'])
+PRODUCTION_TOOL = dict(id='benzinga/calendar/ratings', provider='benzinga', capability='calendar/ratings',
+            name='Analyst ratings', description='Ratings', creditsCost=5, perRecord=False, label='Ratings',
+            whenToUse='Analyst ratings for a ticker', returns={'about': 'Ratings'}, discovery={'urls': []},
+            attribution={'required': True}, options=[dict(name='tickers', type='string')], response={'fields': []},
+            matchedBy=['semantic'], matchedUrls=[])
+TERMS_403 = {'success': False, 'code': 'THIRD_PARTY_DATA_TERMS_REQUIRED',
+             'error': "An organization admin must accept the benzinga provider's terms",
+             'requiresAction': {'type': 'accept_terms', 'terms': 'benzinga', 'version': 'C-1.0.0-draft',
+                                'url': 'https://www.firecrawl.dev/app/alexandria/benzinga'}}
 NEXT = dict(provider='firecrawl', capability='find-tools', options={'providers':['particle'], 'level':'tools'})
 DATA = {'alexandria':[dict(provider=NEXT['provider'], capability=NEXT['capability'], creditsCost=0,
                          data={'level':'providers','items':[{'id':'particle','next':NEXT}], 'total':1,'next':None})], 'creditsCost':0}
@@ -22,7 +31,7 @@ async def test_search_and_progressive_lookup(async_client, monkeypatch):
     calls=[]
     def payload(body):
         calls.append(body)
-        return {'success':True, 'data': {'tools':[TOOL], 'web':[]} if 'query' in body else DATA}
+        return {'success':True, 'data': {'tools':[TOOL, PRODUCTION_TOOL], 'web':[]} if 'query' in body else DATA}
     client = AsyncFirecrawl(api_key='fc-test') if async_client else Firecrawl(api_key='fc-test')
     if async_client:
         async def post(url, **kwargs): return httpx.Response(200,json=payload(kwargs['json']))
@@ -42,6 +51,9 @@ async def test_search_and_progressive_lookup(async_client, monkeypatch):
             client.scrape()
     assert search.tools[0].matched_by==['semantic','domain']
     assert search.tools[0].options==TOOL['options']
+    assert search.tools[1].examples=={}
+    assert search.tools[1].when_to_use=='Analyst ratings for a ticker'
+    assert search.tools[1].label=='Ratings'
     assert calls[0]['domainTools'] is True
     assert calls[-1]['alexandria']==[NEXT]
     assert 'request_id' not in calls[-1]
@@ -88,3 +100,45 @@ async def test_execution_failure_preserves_cause_and_retry_identity(async_client
             client.scrape(alexandria=NEXT, request_id='uncertain-1')
     assert caught.value.request_id == 'uncertain-1'
     assert caught.value.__cause__ is cause
+
+
+def test_provider_terms_required_is_first_class(monkeypatch):
+    from firecrawl.v2.utils.error_handler import ProviderTermsRequiredError
+
+    monkeypatch.setattr('requests.post', lambda url, **kwargs: response(403, TERMS_403))
+    client = Firecrawl(api_key='fc-test')
+    with pytest.raises(ProviderTermsRequiredError) as caught:
+        client.scrape(alexandria={'provider': 'benzinga', 'capability': 'calendar/ratings'}, request_id='terms-1')
+    error = caught.value
+    assert error.status_code == 403
+    assert error.code == 'THIRD_PARTY_DATA_TERMS_REQUIRED'
+    assert error.request_id == 'terms-1'
+    assert 'Website Not Supported' not in str(error)
+    assert str(error) == TERMS_403['error']
+    assert error.requires_action.type == 'accept_terms'
+    assert error.requires_action.terms == 'benzinga'
+    assert error.requires_action.version == 'C-1.0.0-draft'
+    assert error.requires_action.url == 'https://www.firecrawl.dev/app/alexandria/benzinga'
+
+
+@pytest.mark.parametrize('async_client', [False, True])
+@pytest.mark.asyncio
+async def test_find_tools_error_keeps_code(async_client, monkeypatch):
+    from firecrawl.v2.utils.error_handler import FirecrawlError
+
+    body = {'success': True, 'data': {'alexandria': [dict(provider='firecrawl', capability='find-tools',
+            error={'code': 'invalid_options', 'message': 'Invalid lookup', 'status': 400})], 'creditsCost': 0}}
+    client = AsyncFirecrawl(api_key='fc-test') if async_client else Firecrawl(api_key='fc-test')
+    if async_client:
+        async def post(url, **kwargs): return httpx.Response(200, json=body)
+        monkeypatch.setattr(client._v2_client.async_http_client._client, 'post', post)
+        with pytest.raises(FirecrawlError) as caught:
+            await client.find_tools(providers=['particle'])
+        await client._v2_client.async_http_client.close()
+    else:
+        monkeypatch.setattr('requests.post', lambda url, **kwargs: response(200, body))
+        with pytest.raises(FirecrawlError) as caught:
+            client.find_tools(providers=['particle'])
+    assert caught.value.code == 'invalid_options'
+    assert caught.value.status_code == 400
+    assert caught.value.request_id

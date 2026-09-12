@@ -5,11 +5,13 @@ Error handling utilities for v2 API.
 import requests
 from typing import Dict, Any, Optional
 
+PROVIDER_TERMS_REQUIRED_CODE = "THIRD_PARTY_DATA_TERMS_REQUIRED"
+
 
 class FirecrawlError(Exception):
     """Base exception for Firecrawl API errors."""
     
-    def __init__(self, message: str, status_code: Optional[int] = None, response: Optional[requests.Response] = None, *, request_id: Optional[str] = None, code: Optional[str] = None, charge_id: Optional[str] = None):
+    def __init__(self, message: str, status_code: Optional[int] = None, response: Optional[requests.Response] = None, *, request_id: Optional[str] = None, code: Optional[str] = None, charge_id: Optional[str] = None, requires_action: Optional["RequiresAction"] = None):
         super().__init__(message)
         self.status_code = status_code
         self.response = response
@@ -20,6 +22,26 @@ class FirecrawlError(Exception):
         # when a charge was created before the failure, a `charge_id`.
         self.code = code
         self.charge_id = charge_id
+        self.requires_action = requires_action
+
+
+class RequiresAction:
+    """An out-of-band step the API requires before the request can succeed."""
+
+    def __init__(self, type: str, terms: Optional[str] = None, version: Optional[str] = None, url: Optional[str] = None):
+        self.type = type
+        self.terms = terms
+        self.version = version
+        self.url = url
+
+    @classmethod
+    def from_payload(cls, payload: Any) -> Optional["RequiresAction"]:
+        if not isinstance(payload, dict) or not isinstance(payload.get("type"), str):
+            return None
+        return cls(payload["type"], payload.get("terms"), payload.get("version"), payload.get("url"))
+
+    def __repr__(self) -> str:
+        return f"RequiresAction(type={self.type!r}, terms={self.terms!r}, version={self.version!r}, url={self.url!r})"
 
 
 class BadRequestError(FirecrawlError):
@@ -40,6 +62,11 @@ class PaymentRequiredError(FirecrawlError):
 
 class WebsiteNotSupportedError(FirecrawlError):
     """Raised when website is not supported (403)."""
+    pass
+
+
+class ProviderTermsRequiredError(FirecrawlError):
+    """Raised when a provider's data terms must be accepted first (403 THIRD_PARTY_DATA_TERMS_REQUIRED)."""
     pass
 
 
@@ -71,13 +98,15 @@ def handle_response_error(response: requests.Response, action: str) -> None:
     """
     code = None
     charge_id = None
+    requires_action = None
     try:
         response_json = response.json()
         error_message = response_json.get('error', 'No error message provided.')
         error_details = response_json.get('details', 'No additional error details provided.')
-        # Exchange-mediated scrape errors: { success: false, error, code?, chargeId? }
+        # Exchange-mediated scrape errors: { success: false, error, code?, chargeId?, requiresAction? }
         code = response_json.get('code')
         charge_id = response_json.get('chargeId')
+        requires_action = RequiresAction.from_payload(response_json.get('requiresAction'))
     except:
         # If we can't parse JSON, provide a helpful error message
         try:
@@ -102,6 +131,8 @@ def handle_response_error(response: requests.Response, action: str) -> None:
     elif response.status_code == 402:
         message = f"Payment Required: Failed to {action}. {error_message} - {error_details}"
         raise PaymentRequiredError(message, response.status_code, response, code=code, charge_id=charge_id)
+    elif response.status_code == 403 and (code == PROVIDER_TERMS_REQUIRED_CODE or requires_action is not None):
+        raise ProviderTermsRequiredError(error_message, response.status_code, response, code=code, charge_id=charge_id, requires_action=requires_action)
     elif response.status_code == 403:
         message = f"Website Not Supported: Failed to {action}. {error_message} - {error_details}"
         raise WebsiteNotSupportedError(message, response.status_code, response, code=code, charge_id=charge_id)

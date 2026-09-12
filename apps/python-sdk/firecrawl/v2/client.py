@@ -285,7 +285,13 @@ class FirecrawlClient:
         item = result.alexandria[0]
         if item.error:
             from .utils.error_handler import FirecrawlError
-            raise FirecrawlError(item.error.message, item.error.status, request_id=result.request_id)
+            raise FirecrawlError(
+                item.error.message,
+                item.error.status,
+                request_id=result.request_id,
+                code=item.error.code,
+                charge_id=item.error.charge_id,
+            )
         return FindToolsData(**item.data)
 
     # Research paper index (/v2/search/research)
