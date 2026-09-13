@@ -343,6 +343,26 @@ describe("processBillingBatch", () => {
     );
   });
 
+  it("retries at refund time past a lookup that failed earlier in the batch", async () => {
+    queue = [
+      // The legacy op's lookup throws and is memoized unresolved; the null-org
+      // op that follows must not inherit that failure.
+      makeOp({ org_id: undefined, autumnTrackInRequest: true }),
+      makeOp({ org_id: null, autumnTrackInRequest: true, api_key_id: 456 }),
+    ];
+    getACUCTeam
+      .mockRejectedValueOnce(new Error("acuc unavailable"))
+      .mockResolvedValue({ team_id: "team-1", org_id: "org-legacy" });
+    billTeam7.mockRejectedValue(new Error("db failed"));
+
+    await processBillingBatch();
+
+    expect(getACUCTeam).toHaveBeenCalledTimes(2);
+    expect(refundCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: "team-1", orgId: "org-legacy" }),
+    );
+  });
+
   it("skips the refund when the refund-time lookup throws", async () => {
     queue = [makeOp({ org_id: null, autumnTrackInRequest: true })];
     getACUCTeam.mockRejectedValue(new Error("acuc unavailable"));

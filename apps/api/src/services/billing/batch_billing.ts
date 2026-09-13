@@ -145,7 +145,10 @@ type TeamOrgLookup =
 
 async function refundRequestTrackedCredits(
   group: GroupedBillingOperation,
-  resolveOrgIdForTeam: (teamId: string) => Promise<TeamOrgLookup>,
+  resolveOrgIdForTeam: (
+    teamId: string,
+    retryFailed?: boolean,
+  ) => Promise<TeamOrgLookup>,
 ) {
   const requestTrackedCredits = group.operations
     .filter(op => op.autumnTrackInRequest)
@@ -154,11 +157,11 @@ async function refundRequestTrackedCredits(
   if (requestTrackedCredits <= 0) return;
 
   // The refund compensates an Autumn charge that already happened, so a null
-  // recorded by a lookup that failed earlier gets one more look here — the
-  // second chance main's refund-time DB read gave it.
+  // recorded by a lookup that failed earlier gets one more look here — past a
+  // memoized failure too, which is not an answer.
   let orgId = group.org_id;
   if (orgId === null) {
-    const lookup = await resolveOrgIdForTeam(group.team_id);
+    const lookup = await resolveOrgIdForTeam(group.team_id, true);
     orgId = lookup.resolved ? lookup.orgId : null;
   }
 
@@ -232,22 +235,25 @@ export async function processBillingBatch() {
     // such; a lookup that throws leaves the org unknown and is memoized too, so
     // a failing lookup costs one call per team per batch rather than one per
     // operation. Read by the transitional legacy branch below and by the
-    // refund path, which re-checks a recorded null.
+    // refund path, which re-checks a recorded null and passes retryFailed to
+    // take one fresh look past a memoized failure.
     const orgIds = new Map<string, TeamOrgLookup>();
-    const resolveOrgIdForTeam = async (teamId: string) => {
-      if (!orgIds.has(teamId)) {
-        try {
-          orgIds.set(teamId, {
-            resolved: true,
-            orgId: orgIdFromAcuc(await getACUCTeam(teamId)),
-          });
-        } catch (error) {
-          logger.warn("Failed to resolve the org for a billing op", {
-            team_id: teamId,
-            error,
-          });
-          orgIds.set(teamId, { resolved: false });
-        }
+    const resolveOrgIdForTeam = async (teamId: string, retryFailed = false) => {
+      const cached = orgIds.get(teamId);
+      if (cached !== undefined && (cached.resolved || !retryFailed)) {
+        return cached;
+      }
+      try {
+        orgIds.set(teamId, {
+          resolved: true,
+          orgId: orgIdFromAcuc(await getACUCTeam(teamId)),
+        });
+      } catch (error) {
+        logger.warn("Failed to resolve the org for a billing op", {
+          team_id: teamId,
+          error,
+        });
+        orgIds.set(teamId, { resolved: false });
       }
       return orgIds.get(teamId)!;
     };
