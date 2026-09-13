@@ -138,10 +138,11 @@ async function releaseLock() {
 }
 
 /** A memoized org lookup: unresolved is an ACUC call that threw, not a team
- *  confirmed to have no org. */
+ *  confirmed to have no org. `retried` records that the one refund-time retry
+ *  for this team has been spent. */
 type TeamOrgLookup =
   | { resolved: true; orgId: string | null }
-  | { resolved: false };
+  | { resolved: false; retried: boolean };
 
 async function refundRequestTrackedCredits(
   group: GroupedBillingOperation,
@@ -158,7 +159,7 @@ async function refundRequestTrackedCredits(
 
   // The refund compensates an Autumn charge that already happened, so a null
   // recorded by a lookup that failed earlier gets one more look here — past a
-  // memoized failure too, which is not an answer.
+  // memoized failure too, which is not an answer, but only once per team.
   let orgId = group.org_id;
   if (orgId === null) {
     const lookup = await resolveOrgIdForTeam(group.team_id, true);
@@ -236,11 +237,15 @@ export async function processBillingBatch() {
     // a failing lookup costs one call per team per batch rather than one per
     // operation. Read by the transitional legacy branch below and by the
     // refund path, which re-checks a recorded null and passes retryFailed to
-    // take one fresh look past a memoized failure.
+    // take one fresh look past a memoized failure — once per team, so an
+    // outage costs one extra call rather than one per null-org group.
     const orgIds = new Map<string, TeamOrgLookup>();
     const resolveOrgIdForTeam = async (teamId: string, retryFailed = false) => {
       const cached = orgIds.get(teamId);
-      if (cached !== undefined && (cached.resolved || !retryFailed)) {
+      if (
+        cached !== undefined &&
+        (cached.resolved || !retryFailed || cached.retried)
+      ) {
         return cached;
       }
       try {
@@ -253,7 +258,7 @@ export async function processBillingBatch() {
           team_id: teamId,
           error,
         });
-        orgIds.set(teamId, { resolved: false });
+        orgIds.set(teamId, { resolved: false, retried: retryFailed });
       }
       return orgIds.get(teamId)!;
     };

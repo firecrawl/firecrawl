@@ -363,6 +363,24 @@ describe("processBillingBatch", () => {
     );
   });
 
+  it("spends the refund-time retry once per team across a batch", async () => {
+    queue = [
+      // The legacy op's lookup throws and is memoized unresolved; the two
+      // null-org groups that follow share the single retry it earns, so an
+      // outage costs one extra call rather than one per group.
+      makeOp({ org_id: undefined, autumnTrackInRequest: true }),
+      makeOp({ org_id: null, autumnTrackInRequest: true, api_key_id: 456 }),
+      makeOp({ org_id: null, autumnTrackInRequest: true, api_key_id: 789 }),
+    ];
+    getACUCTeam.mockRejectedValue(new Error("acuc unavailable"));
+    billTeam7.mockRejectedValue(new Error("db failed"));
+
+    await processBillingBatch();
+
+    expect(getACUCTeam).toHaveBeenCalledTimes(2);
+    expect(refundCredits).not.toHaveBeenCalled();
+  });
+
   it("skips the refund when the refund-time lookup throws", async () => {
     queue = [makeOp({ org_id: null, autumnTrackInRequest: true })];
     getACUCTeam.mockRejectedValue(new Error("acuc unavailable"));

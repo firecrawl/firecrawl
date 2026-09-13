@@ -7,6 +7,7 @@ import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
+import { orgIdFromAcuc } from "../../lib/team-org";
 import { logRequest } from "../../services/logging/log_job";
 import {
   callsSchema,
@@ -114,7 +115,7 @@ export async function providerScrapeController(
   try {
     result = await retrieveProviders({
       teamId: req.auth.team_id,
-      orgId: req.acuc?.org_id ?? null,
+      orgId: orgIdFromAcuc(req.acuc),
       apiKeyId: req.acuc.api_key_id ?? null,
       flags: req.acuc.flags,
       calls: body.alexandria,

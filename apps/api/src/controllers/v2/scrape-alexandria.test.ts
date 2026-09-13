@@ -12,10 +12,12 @@ vi.mock("../../lib/key-restriction", () => ({
 vi.mock("../../lib/agent-interop", () => ({
   isAgentInteropSecretValid: (value: string) => value === "test-secret",
 }));
+// orgIdFromAcuc answers null without it, so the ACUC's org needs it on.
 vi.mock("../../config", () => ({
   config: {
     FIRE_EXCHANGE_URL: "https://x",
     AGENT_INTEROP_SECRET: "test-secret",
+    USE_DB_AUTHENTICATION: true,
   },
 }));
 import { providerScrapeController } from "./scrape-alexandria";
