@@ -262,6 +262,24 @@ jobs:
           docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
           docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
 
+      - name: Test keyless feedback admission
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        working-directory: apps/api
+        env:
+          KEYLESS_FEEDBACK_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+          KEYLESS_REQUESTS_PER_DAY: '100'
+          KEYLESS_CREDITS_PER_DAY: '100'
+          REDIS_RATE_LIMIT_URL: redis://localhost:6379
+          KEYLESS_FEEDBACK_REDIS_URL: redis://localhost:6380
+        run: |
+          docker run -d --rm -p 6380:6379 --name feedback-cache redis:7-alpine redis-server --maxmemory 32mb --maxmemory-policy allkeys-lru
+          for attempt in $(seq 1 30); do
+            docker exec postgres pg_isready -U postgres && break
+            sleep 1
+          done
+          docker exec postgres pg_isready -U postgres
+          pnpm exec vitest run src/controllers/v2/feedback/keyless.integration.test.ts src/controllers/v2/feedback/keyless-schema.test.ts src/controllers/v2/feedback/keyless-context.test.ts src/controllers/v2/feedback/keyless-redis.test.ts
+
       - name: Start FoundationDB
         if: matrix.nuq == 'fdb'
         run: |

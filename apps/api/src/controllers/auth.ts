@@ -1,3 +1,4 @@
+import { consumeKeylessFeedbackAttempt } from "./v2/feedback/keyless-limits";
 import { RateLimiterRedis } from "rate-limiter-flexible";
 import { isValidUuid } from "../lib/owner-id";
 import { config } from "../config";
@@ -19,6 +20,7 @@ import {
   keylessExhaustionTelemetry,
   isKeylessIpEligible,
   keylessTeamId,
+  keylessTeamUuid,
   normalizeKeylessIpv4,
 } from "../lib/keyless";
 import { isKeylessIpSuspicious } from "../lib/spur";
@@ -465,6 +467,7 @@ async function handleKeylessAuth(
   req,
   mode: RateLimiterMode,
   allowKeyless: boolean | undefined,
+  keylessFeedback = false,
 ): Promise<AuthResponse> {
   const unauthorized: AuthResponse = {
     success: false,
@@ -540,6 +543,37 @@ async function handleKeylessAuth(
   }
 
   const teamId = keylessTeamId(ip);
+  if (keylessFeedback) {
+    if (!config.KEYLESS_FEEDBACK_ENABLED)
+      return {
+        success: false,
+        status: 503,
+        error: "Feedback is unavailable on this deployment.",
+      };
+    try {
+      if (!(await consumeKeylessFeedbackAttempt(keylessTeamUuid(teamId)!))) {
+        return {
+          success: false,
+          status: 429,
+          error: "Too many feedback attempts. Retry in one minute.",
+          retryAfterSeconds: 60,
+        };
+      }
+    } catch {
+      return {
+        success: false,
+        status: 503,
+        error: "Feedback is temporarily unavailable.",
+      };
+    }
+    return {
+      success: true,
+      team_id: teamId,
+      org_id: null,
+      chunk: mockPreviewACUC(teamId, false),
+    };
+  }
+
   const modeLabel =
     mode === RateLimiterMode.Search
       ? "search"
@@ -616,7 +650,7 @@ export async function authenticateUser(
   req,
   res,
   mode: RateLimiterMode,
-  options?: { allowKeyless?: boolean },
+  options?: { allowKeyless?: boolean; keylessFeedback?: boolean },
 ): Promise<AuthResponse> {
   const bypassChunk = mockACUC();
   bypassChunk.is_extract =
@@ -679,7 +713,7 @@ async function supaAuthenticateUser(
   req,
   res,
   mode: RateLimiterMode,
-  options?: { allowKeyless?: boolean },
+  options?: { allowKeyless?: boolean; keylessFeedback?: boolean },
 ): Promise<AuthResponse> {
   const authHeader =
     req.headers.authorization ??
@@ -687,7 +721,12 @@ async function supaAuthenticateUser(
       ? `Bearer ${req.headers["sec-websocket-protocol"]}`
       : null);
   if (!authHeader) {
-    return handleKeylessAuth(req, mode, options?.allowKeyless);
+    return handleKeylessAuth(
+      req,
+      mode,
+      options?.allowKeyless,
+      options?.keylessFeedback,
+    );
   }
   const token = authHeader.split(" ")[1]; // Extract the token from "Bearer <token>"
   if (!token) {

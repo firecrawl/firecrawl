@@ -718,9 +718,10 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
         ? "<redacted due to zero data retention>"
         : sanitizeString(search.query),
       team_id:
-        search.team_id === "preview" || search.team_id?.startsWith("preview_")
+        keylessTeamUuid(search.team_id) ??
+        (search.team_id === "preview" || search.team_id?.startsWith("preview_")
           ? previewTeamId
-          : search.team_id,
+          : search.team_id),
       options: search.zeroDataRetention
         ? { enterprise: search.options?.enterprise }
         : options,
