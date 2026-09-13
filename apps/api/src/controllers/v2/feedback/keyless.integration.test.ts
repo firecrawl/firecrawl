@@ -268,6 +268,55 @@ suite("keyless feedback HTTP and persistence", () => {
     expect(await redis.get(`keyless_requests:${ip}`)).toBe("100000");
   });
 
+  it("excludes validated Search lockdown jobs from feedback storage and invitations", async () => {
+    const { searchRequestSchema } = await import("../types.js");
+    const jobId = randomUUID();
+    const key = api.keylessFeedbackContextKey(team(), "search", jobId);
+    contextKeys.push(key);
+    const options = searchRequestSchema.parse({
+      query: "retry reference",
+      scrapeOptions: { formats: ["markdown"], lockdown: true },
+    });
+    const response = await request(app)
+      .post(`/test/jobs/search/${jobId}`)
+      .send(options);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ success: true, metadata: {} });
+    expect(await cache.get(key)).toBeNull();
+    expect(
+      await cache.get(`keyless_feedback_invitations:${team()}`),
+    ).toBeNull();
+    expect((await submit(body("search", jobId))).status).toBe(404);
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+    const eligibleId = randomUUID();
+    const eligibleKey = api.keylessFeedbackContextKey(
+      team(),
+      "search",
+      eligibleId,
+    );
+    contextKeys.push(eligibleKey);
+    const eligible = await request(app)
+      .post(`/test/jobs/search/${eligibleId}`)
+      .send(
+        searchRequestSchema.parse({
+          query: "retry reference",
+          scrapeOptions: { formats: ["markdown"], lockdown: false },
+        }),
+      );
+    expect(eligible.body.metadata.feedback).toBeDefined();
+    expect(await cache.get(eligibleKey)).not.toBeNull();
+  });
+
+  it("rejects unsupported nested Search zeroDataRetention before job execution", async () => {
+    const { searchRequestSchema } = await import("../types.js");
+    expect(
+      searchRequestSchema.safeParse({
+        query: "retry reference",
+        scrapeOptions: { formats: ["markdown"], zeroDataRetention: true },
+      }).success,
+    ).toBe(false);
+  });
+
   it("ignores caller invitation opt-out headers for keyless jobs", async () => {
     const jobId = randomUUID();
     const key = api.keylessFeedbackContextKey(team(), "parse", jobId);
