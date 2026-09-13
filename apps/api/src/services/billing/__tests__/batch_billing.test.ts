@@ -292,13 +292,71 @@ describe("processBillingBatch", () => {
     expect(queue).toHaveLength(0);
   });
 
-  it("does not look anything up for an operation whose org is a known null", async () => {
-    queue = [makeOp({ org_id: null, autumnTrackInRequest: true })];
+  it("does not look anything up for an operation that carries its org", async () => {
+    queue = [makeOp({ org_id: "org-1", autumnTrackInRequest: true })];
     billTeam7.mockRejectedValueOnce(new Error("db failed"));
 
     await processBillingBatch();
 
     expect(getACUCTeam).not.toHaveBeenCalled();
+    expect(refundCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: "team-1", orgId: "org-1" }),
+    );
+  });
+
+  it("refunds against an org resolved at refund time when the op recorded null", async () => {
+    queue = [makeOp({ org_id: null, autumnTrackInRequest: true })];
+    billTeam7.mockRejectedValueOnce(new Error("db failed"));
+
+    await processBillingBatch();
+
+    expect(getACUCTeam).toHaveBeenCalledWith("team-1");
+    expect(refundCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: "team-1", orgId: "org-legacy" }),
+    );
+  });
+
+  it("resolves the refund-time org once per team across a batch", async () => {
+    queue = [
+      makeOp({ org_id: null, autumnTrackInRequest: true }),
+      makeOp({ org_id: null, autumnTrackInRequest: true, api_key_id: 456 }),
+    ];
+    billTeam7.mockRejectedValue(new Error("db failed"));
+
+    await processBillingBatch();
+
+    expect(getACUCTeam).toHaveBeenCalledTimes(1);
+    expect(refundCredits).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips the refund when the refund-time lookup confirms no org", async () => {
+    queue = [makeOp({ org_id: null, autumnTrackInRequest: true })];
+    getACUCTeam.mockResolvedValue({ team_id: "team-1", org_id: null });
+    billTeam7.mockRejectedValueOnce(new Error("db failed"));
+
+    await processBillingBatch();
+
     expect(refundCredits).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Skipping Autumn refund: no org for the team",
+      { team_id: "team-1", credits: 10 },
+    );
+  });
+
+  it("skips the refund when the refund-time lookup throws", async () => {
+    queue = [makeOp({ org_id: null, autumnTrackInRequest: true })];
+    getACUCTeam.mockRejectedValue(new Error("acuc unavailable"));
+    billTeam7.mockRejectedValueOnce(new Error("db failed"));
+
+    await processBillingBatch();
+
+    expect(refundCredits).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Skipping Autumn refund: no org for the team",
+      { team_id: "team-1", credits: 10 },
+    );
+    // The op still billed and is not requeued: only the legacy branch defers.
+    expect(billTeam7).toHaveBeenCalled();
+    expect(queue).toHaveLength(0);
   });
 });

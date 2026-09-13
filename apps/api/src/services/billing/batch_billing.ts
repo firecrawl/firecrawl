@@ -137,14 +137,32 @@ async function releaseLock() {
   logger.info("🔓 Released billing batch processing lock");
 }
 
-async function refundRequestTrackedCredits(group: GroupedBillingOperation) {
+/** A memoized org lookup: unresolved is an ACUC call that threw, not a team
+ *  confirmed to have no org. */
+type TeamOrgLookup =
+  | { resolved: true; orgId: string | null }
+  | { resolved: false };
+
+async function refundRequestTrackedCredits(
+  group: GroupedBillingOperation,
+  resolveOrgIdForTeam: (teamId: string) => Promise<TeamOrgLookup>,
+) {
   const requestTrackedCredits = group.operations
     .filter(op => op.autumnTrackInRequest)
     .reduce((sum, op) => sum + op.credits, 0);
 
   if (requestTrackedCredits <= 0) return;
 
-  if (group.org_id === null) {
+  // The refund compensates an Autumn charge that already happened, so a null
+  // recorded by a lookup that failed earlier gets one more look here — the
+  // second chance main's refund-time DB read gave it.
+  let orgId = group.org_id;
+  if (orgId === null) {
+    const lookup = await resolveOrgIdForTeam(group.team_id);
+    orgId = lookup.resolved ? lookup.orgId : null;
+  }
+
+  if (orgId === null) {
     // No org, no Autumn customer to refund against — the same nothing the
     // refund did when it could not name one.
     logger.warn("Skipping Autumn refund: no org for the team", {
@@ -157,7 +175,7 @@ async function refundRequestTrackedCredits(group: GroupedBillingOperation) {
   try {
     await autumnService.refundCredits({
       teamId: group.team_id,
-      orgId: group.org_id,
+      orgId,
       value: requestTrackedCredits,
       properties: {
         source: "processBillingBatch",
@@ -210,32 +228,28 @@ export async function processBillingBatch() {
       `📦 Processing batch of ${operations.length} billing operations`,
     );
 
-    // transitional: operations enqueued before org_id was carried; remove
-    // after one deploy. An answer of null is a team that genuinely has no org
-    // and is memoized as such; a lookup that throws leaves the org unknown, and
-    // billing those as org-less would silently skip their refund — so they are
-    // requeued untouched instead. The failure is memoized too, so a failing
-    // lookup costs one call per team per batch rather than one per operation.
-    const legacyOrgIds = new Map<
-      string,
-      { resolved: true; orgId: string | null } | { resolved: false }
-    >();
-    const resolveLegacyOrgId = async (teamId: string) => {
-      if (!legacyOrgIds.has(teamId)) {
+    // An answer of null is a team that genuinely has no org and is memoized as
+    // such; a lookup that throws leaves the org unknown and is memoized too, so
+    // a failing lookup costs one call per team per batch rather than one per
+    // operation. Read by the transitional legacy branch below and by the
+    // refund path, which re-checks a recorded null.
+    const orgIds = new Map<string, TeamOrgLookup>();
+    const resolveOrgIdForTeam = async (teamId: string) => {
+      if (!orgIds.has(teamId)) {
         try {
-          legacyOrgIds.set(teamId, {
+          orgIds.set(teamId, {
             resolved: true,
             orgId: orgIdFromAcuc(await getACUCTeam(teamId)),
           });
         } catch (error) {
-          logger.warn("Failed to resolve the org for a legacy billing op", {
+          logger.warn("Failed to resolve the org for a billing op", {
             team_id: teamId,
             error,
           });
-          legacyOrgIds.set(teamId, { resolved: false });
+          orgIds.set(teamId, { resolved: false });
         }
       }
-      return legacyOrgIds.get(teamId)!;
+      return orgIds.get(teamId)!;
     };
 
     // Group operations by team_id, org_id, endpoint, is_extract, and api_key_id
@@ -250,7 +264,10 @@ export async function processBillingBatch() {
       });
       let orgId: string | null;
       if (op.org_id === undefined) {
-        const lookup = await resolveLegacyOrgId(op.team_id);
+        // transitional: operations enqueued before org_id was carried; remove
+        // after one deploy. Billing an unknown org as org-less would silently
+        // skip its refund, so those are requeued untouched instead.
+        const lookup = await resolveOrgIdForTeam(op.team_id);
         if (!lookup.resolved) {
           unresolvedOperations.push(op);
           continue;
@@ -325,7 +342,7 @@ export async function processBillingBatch() {
         );
 
         if (!billingResult.success) {
-          await refundRequestTrackedCredits(group);
+          await refundRequestTrackedCredits(group, resolveOrgIdForTeam);
           // Deliberately no Exchange outcome here: supaBillTeam maps thrown
           // errors to success: false, and a transport error can occur after
           // the debit committed, so voiding could erase a real debit. The
@@ -356,7 +373,7 @@ export async function processBillingBatch() {
           ),
         );
       } catch (error) {
-        await refundRequestTrackedCredits(group);
+        await refundRequestTrackedCredits(group, resolveOrgIdForTeam);
         // No Exchange outcome here either — same ambiguity as the
         // success: false branch above; the events stay pending.
         logger.error(`❌ Failed to bill team ${group.team_id}`, {
