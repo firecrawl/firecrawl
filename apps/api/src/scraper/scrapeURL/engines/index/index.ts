@@ -44,6 +44,7 @@ import {
   shouldParsePDF,
 } from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
+import { hasCustomRequestContext } from "../../lib/request-context";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
   // Skip caching if screenshot format has custom viewport or quality settings
@@ -85,9 +86,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
         meta.winnerEngine !== "fetch")) &&
     !meta.featureFlags.has("actions") &&
     !hasCustomScreenshotSettings &&
-    (meta.options.headers === undefined ||
-      Object.keys(meta.options.headers).length === 0) &&
-    meta.options.profile === undefined;
+    !hasCustomRequestContext(meta.options);
 
   if (!shouldCache) {
     return document;

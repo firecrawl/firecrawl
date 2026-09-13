@@ -68,7 +68,7 @@
     "tsc-watch": "^7.1.1",
     "tsx": "^4.20.3",
     "undici-types": "^7.16.0",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.84",
@@ -127,7 +127,7 @@
     "langsmith": "^0.6.0",
     "lodash": "^4.18.0",
     "marked": "^14.1.2",
-    "multer": "^2.2.0",
+    "multer": "^2.3.0",
     "ollama-ai-provider-v2": "^3.6.0",
     "parse-diff": "^0.11.1",
     "pdf-parse": "^1.1.1",

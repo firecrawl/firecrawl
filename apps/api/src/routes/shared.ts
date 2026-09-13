@@ -31,6 +31,7 @@ import {
 import { getTeamBalance } from "../services/autumn/usage";
 import { getThirdPartyDataTermsRequiredResponse } from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
+import { isToolsOnlySearch } from "../search/alexandria";
 import { getScrapeZDR } from "../lib/zdr-helpers";
 import { isAgentInteropSecretValid } from "../lib/agent-interop";
 
@@ -112,6 +113,20 @@ export function checkCreditsMiddleware(
           (req as any).agentIndexOnly = true;
         }
         // If verified, fall through to normal credit check (key is now on real account)
+      }
+
+      // Tool discovery is free; provider execution reserves its own credits.
+      const sources = (req.body as any)?.sources;
+      const categories = (req.body as any)?.categories;
+      const toolsOnly =
+        req.path === "/search" && isToolsOnlySearch(sources, categories);
+      if (
+        (req.path === "/scrape" &&
+          (req.body as any)?.alexandria !== undefined) ||
+        toolsOnly
+      ) {
+        req.account = { remainingCredits: Infinity };
+        return next();
       }
 
       if (!minimum && req.body) {
