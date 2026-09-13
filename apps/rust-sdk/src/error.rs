@@ -37,7 +37,7 @@ pub struct FirecrawlAPIError {
 
     /// Set when the API needs an out-of-band step first, such as accepting provider terms.
     #[serde(rename = "requiresAction", default)]
-    pub requires_action: Option<RequiresAction>,
+    pub requires_action: Option<Box<RequiresAction>>,
 
     /// Additional details of this error. Schema depends on the error itself.
     pub details: Option<Value>,

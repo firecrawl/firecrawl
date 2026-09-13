@@ -1039,40 +1039,4 @@ mod tests {
         assert!(result.is_err());
         mock.assert();
     }
-
-    fn alexandria_scrape_fixture() -> serde_json::Value {
-        json!({
-            "success": true,
-            "scrape_id": "x",
-            "data": {
-                "alexandria": [
-                    {
-                        "provider": "fred",
-                        "capability": "finance/series/observations",
-                        "creditsCost": 1,
-                        "data": { "observations": [{ "date": "2024-01-01", "value": "308.417" }] },
-                        "records": 12,
-                        "upstreamStatus": 200,
-                        "recordedAt": "2026-09-02T10:00:00.000Z"
-                    },
-                    {
-                        "provider": "sec",
-                        "capability": "filings/search",
-                        "creditsCost": 1,
-                        "data": [1, 2, 3]
-                    },
-                    {
-                        "provider": "fred",
-                        "capability": "finance/series/missing",
-                        "error": {
-                            "code": "credential_missing",
-                            "message": "no credential",
-                            "status": 503
-                        }
-                    }
-                ],
-                "creditsCost": 2
-            }
-        })
-    }
 }
