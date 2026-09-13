@@ -275,6 +275,8 @@ export interface ScrapeOptions {
   };
   integration?: string;
   origin?: string;
+  /** Include domain-matched Alexandria contracts for this URL in `tools`. Default off. */
+  domainTools?: boolean;
 }
 
 export type RedactPIIEntity =
@@ -685,6 +687,8 @@ export interface Document {
   pages?: PdfPage[];
   /** Typed PDF layout blocks, present only when `parsers[].blocks` is true. */
   blocks?: PdfPageBlocks[];
+  /** Present when `domainTools` discovered contracts matching this URL. */
+  tools?: DiscoveredTool[];
 }
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
@@ -797,9 +801,129 @@ export interface SearchResultImages {
 }
 
 export interface SearchData {
+  warning?: string;
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
+  tools?: DiscoveredTool[];
+}
+
+/** A complete tool contract returned by semantic or contextual discovery. */
+export interface DiscoveredTool {
+  id?: string;
+  provider: string;
+  capability: string;
+  name: string;
+  description: string;
+  creditsCost: number;
+  perRecord: boolean;
+  options: Array<{
+    name: string;
+    type: string;
+    required?: boolean;
+    [key: string]: unknown;
+  }>;
+  requiresOneOf?: string[][];
+  response?: {
+    about?: string;
+    key?: string;
+    fields?: Array<{ name: string; type: string; [key: string]: unknown }>;
+    [key: string]: unknown;
+  };
+  examples?: Partial<Record<"javascript" | "python" | "curl", string>> &
+    Record<string, string>;
+  example?: {
+    recordedAt: string;
+    request: Record<string, unknown>;
+    response: unknown;
+  };
+  label?: string;
+  whenToUse?: string;
+  returns?: unknown;
+  discovery?: unknown;
+  attribution?: unknown;
+  matchedBy?: Array<"semantic" | "domain">;
+  matchedUrls?: string[];
+  concept?: string;
+  cohorts?: string[];
+  similarity?: number;
+}
+
+export interface FindToolsOptions {
+  urls?: string[];
+  providers?: string[];
+  categories?: string[];
+  groups?: string[];
+  capabilities?: string[];
+  level?: "providers" | "groups" | "tools";
+  expand?: Array<"options" | "response" | "examples">;
+  limit?: number;
+  offset?: number;
+}
+
+export interface FindToolsData {
+  level: "providers" | "groups" | "tools";
+  items: Array<{
+    id: string;
+    name: string;
+    next?: AlexandriaCall;
+    execute?: Pick<AlexandriaCall, "provider" | "capability">;
+    [key: string]: unknown;
+  }>;
+  total: number;
+  next: AlexandriaCall | null;
+}
+
+export interface AlexandriaScrapeRequest extends AlexandriaOptions {
+  alexandria: AlexandriaCall | AlexandriaCall[];
+}
+
+export interface AlexandriaCall {
+  provider: string;
+  capability: string;
+  options?: Record<string, unknown>;
+}
+
+export interface AlexandriaScrapeError {
+  code: string;
+  message: string;
+  status?: number;
+  /** Present when credits were captured before the failure. */
+  chargeId?: string;
+}
+
+export type AlexandriaScrapeResult =
+  | {
+      provider: string;
+      capability: string;
+      creditsCost: number;
+      data: unknown;
+      records?: number;
+      upstreamStatus?: number;
+      recordedAt?: string;
+      error?: undefined;
+      [key: string]: unknown;
+    }
+  | {
+      provider?: string;
+      capability?: string;
+      error: AlexandriaScrapeError;
+      [key: string]: unknown;
+    };
+
+export interface AlexandriaScrapeData {
+  scrapeId: string;
+  requestId: string;
+  alexandria: AlexandriaScrapeResult[];
+  creditsCost: number;
+}
+
+export interface AlexandriaOptions {
+  /** Reuse this ID with the identical payload when retrying an execution. */
+  requestId?: string;
+  timeout?: number;
+  integration?: string;
+  origin?: string;
 }
 
 /**
@@ -830,8 +954,11 @@ export interface CategoryOption {
 
 export interface SearchRequest {
   query: string;
+  /** Include domain-matched contracts in tools alongside semantic matches. */
+  domainTools?: boolean;
   sources?: Array<
-    "web" | "news" | "images" | { type: "web" | "news" | "images" }
+    "web" | "news" | "images" | "alexandria"
+    | { type: "web" | "news" | "images" | "alexandria" }
   >;
   /**
    * Narrow web search by category. See {@link CategoryOption}.
@@ -1707,17 +1834,43 @@ export interface ErrorDetails {
   status?: number;
 }
 
+/** An out-of-band step the API requires before the request can succeed. */
+export interface RequiresAction {
+  type: "accept_terms" | (string & {});
+  terms?: string;
+  version?: string;
+  url?: string;
+}
+
+export function parseRequiresAction(value: unknown): RequiresAction | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.type !== "string") return undefined;
+  const action: RequiresAction = { type: record.type };
+  if (typeof record.terms === "string") action.terms = record.terms;
+  if (typeof record.version === "string") action.version = record.version;
+  if (typeof record.url === "string") action.url = record.url;
+  return action;
+}
+
 export class SdkError extends Error {
+  requestId?: string;
   status?: number;
   code?: string;
   details?: unknown;
   jobId?: string;
+  /** Present on exchange-mediated scrape failures that already captured credits. */
+  chargeId?: string;
+  /** Present when the API needs an out-of-band step first, such as accepting provider terms. */
+  requiresAction?: RequiresAction;
   constructor(
     message: string,
     status?: number,
     code?: string,
     details?: unknown,
     jobId?: string,
+    chargeId?: string,
+    requiresAction?: RequiresAction,
   ) {
     super(message);
     this.name = "FirecrawlSdkError";
@@ -1725,6 +1878,8 @@ export class SdkError extends Error {
     this.code = code;
     this.details = details;
     this.jobId = jobId;
+    this.chargeId = chargeId;
+    this.requiresAction = requiresAction;
   }
 }
 

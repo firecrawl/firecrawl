@@ -103,6 +103,9 @@ pub struct ScrapeOptions {
 
     /// Attribute selectors for extraction.
     pub attribute_selectors: Option<Vec<AttributeSelector>>,
+
+    /// Enable Alexandria domain-tool discovery for this scrape.
+    pub domain_tools: Option<bool>,
 }
 
 /// Parser configuration for document parsing.
@@ -146,6 +149,88 @@ struct ScrapeResponse {
     data: Document,
     #[serde(skip_serializing_if = "Option::is_none")]
     warning: Option<String>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AlexandriaCall {
+    pub provider: String,
+    pub capability: String,
+    pub options: Option<serde_json::Map<String, Value>>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AlexandriaOptions {
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    pub timeout: Option<u32>,
+    pub integration: Option<String>,
+    pub origin: Option<String>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct AlexandriaRequest {
+    alexandria: Vec<AlexandriaCall>,
+    #[serde(flatten)]
+    options: AlexandriaOptions,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AlexandriaScrapeError {
+    pub code: String,
+    pub message: String,
+    pub status: Option<u16>,
+    /// Charge identifier, present when credits were captured before the failure.
+    #[serde(default)]
+    pub charge_id: Option<String>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AlexandriaScrapeResult {
+    pub provider: Option<String>,
+    pub capability: Option<String>,
+    pub credits_cost: Option<u32>,
+    pub data: Option<Value>,
+    pub records: Option<u64>,
+    pub upstream_status: Option<u16>,
+    pub recorded_at: Option<String>,
+    pub error: Option<AlexandriaScrapeError>,
+}
+
+impl AlexandriaScrapeResult {
+    pub fn failed(&self) -> bool {
+        self.error.is_some()
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AlexandriaScrapeData {
+    pub request_id: String,
+    pub scrape_id: String,
+    pub alexandria: Vec<AlexandriaScrapeResult>,
+    pub credits_cost: u32,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct AlexandriaScrapePayload {
+    alexandria: Vec<AlexandriaScrapeResult>,
+    credits_cost: u32,
+}
+
+#[derive(Deserialize, Debug)]
+struct AlexandriaScrapeResponse {
+    scrape_id: String,
+    data: AlexandriaScrapePayload,
 }
 
 /// Supported languages for scrape-bound browser execution.
@@ -283,6 +368,100 @@ impl Client {
         let response: ScrapeResponse = self.handle_response(response, "scrape").await?;
 
         Ok(response.data)
+    }
+
+    pub async fn scrape_alexandria(
+        &self,
+        calls: Vec<AlexandriaCall>,
+        options: impl Into<Option<AlexandriaOptions>>,
+    ) -> Result<AlexandriaScrapeData, FirecrawlError> {
+        if calls.is_empty() {
+            return Err(FirecrawlError::Misuse(
+                "at least one alexandria call is required".to_string(),
+            ));
+        }
+        if calls.len() > 10 {
+            return Err(FirecrawlError::Misuse(
+                "at most 10 alexandria calls are allowed per request".to_string(),
+            ));
+        }
+        for (index, call) in calls.iter().enumerate() {
+            if call.provider.trim().is_empty() {
+                return Err(FirecrawlError::Misuse(format!(
+                    "alexandria call {index}: provider is required"
+                )));
+            }
+            if call.capability.trim().is_empty() {
+                return Err(FirecrawlError::Misuse(format!(
+                    "alexandria call {index}: capability is required"
+                )));
+            }
+        }
+        let mut options = options.into().unwrap_or_default();
+        if options.timeout == Some(0) {
+            return Err(FirecrawlError::Misuse(
+                "timeout must be positive".to_string(),
+            ));
+        }
+        if options.origin.is_none() {
+            options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
+        }
+        let request_timeout = options
+            .timeout
+            .map(|ms| std::time::Duration::from_millis(u64::from(ms) + 5000));
+        let request_id = options
+            .request_id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        if request_id.is_empty()
+            || request_id.len() > 128
+            || !request_id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"._:-".contains(&c))
+        {
+            return Err(FirecrawlError::Misuse("Invalid request_id".into()));
+        }
+        let body = AlexandriaRequest {
+            alexandria: calls,
+            options,
+        };
+
+        let headers = self.prepare_headers(None);
+
+        let mut request = self
+            .client
+            .post(self.url("/scrape"))
+            .headers(headers)
+            .header("x-request-id", &request_id)
+            .json(&body);
+        if let Some(timeout) = request_timeout {
+            request = request.timeout(timeout);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|e| FirecrawlError::AlexandriaExecution {
+                request_id: request_id.clone(),
+                source: Box::new(FirecrawlError::HttpError(
+                    "Executing alexandria calls".to_string(),
+                    e,
+                )),
+            })?;
+
+        let response: AlexandriaScrapeResponse = self
+            .handle_response(response, "alexandria")
+            .await
+            .map_err(|e| FirecrawlError::AlexandriaExecution {
+                request_id: request_id.clone(),
+                source: Box::new(e),
+            })?;
+
+        Ok(AlexandriaScrapeData {
+            request_id,
+            scrape_id: response.scrape_id,
+            alexandria: response.data.alexandria,
+            credits_cost: response.data.credits_cost,
+        })
     }
 
     /// Scrapes a URL with a JSON schema for structured extraction.
@@ -513,6 +692,17 @@ mod tests {
                 "query": "What is Firecrawl?"
             })
         );
+    }
+
+    #[test]
+    fn test_scrape_options_serializes_domain_tools() {
+        let options = ScrapeOptions {
+            domain_tools: Some(true),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(payload["domainTools"], json!(true));
     }
 
     #[test]
