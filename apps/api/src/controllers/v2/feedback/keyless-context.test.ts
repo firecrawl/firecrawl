@@ -57,6 +57,31 @@ describe("keyless feedback invitation issuance", () => {
       { markdown: "Example" },
     );
 
+  it("does not retain or invite Search requests with nested lockdown", async () => {
+    const response = new EventEmitter();
+    const metadata = await keylessFeedbackMetadata(
+      {
+        auth: { team_id: "fixture" },
+        res: response,
+        body: {
+          query: "retry reference",
+          scrapeOptions: { formats: ["markdown"], lockdown: true },
+        },
+      } as any,
+      "search",
+      "job",
+      true,
+      {
+        web: [{ url: "https://example.com", description: "Observed content" }],
+      },
+    );
+    response.emit("finish");
+    expect(metadata).toEqual({});
+    expect(mocks.set).not.toHaveBeenCalled();
+    expect(mocks.eval).not.toHaveBeenCalled();
+    expect(mocks.info).not.toHaveBeenCalled();
+  });
+
   it("invites on every third result across categories and clients", async () => {
     config.KEYLESS_FEEDBACK_INVITATION_EVERY = 3;
     const counts = new Map<string, number>();

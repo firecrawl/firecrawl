@@ -91,6 +91,7 @@ export async function keylessFeedbackMetadata(
     req.acuc?.flags?.searchFeedbackOptOut ||
     req.body?.zeroDataRetention ||
     req.body?.lockdown ||
+    (endpoint === "search" && req.body?.scrapeOptions?.lockdown) ||
     req.body?.enterprise?.includes("zdr") ||
     getScrapeZDR(req.acuc?.flags) === "forced" ||
     getSearchZDR(req.acuc?.flags) === "forced-zdr"
