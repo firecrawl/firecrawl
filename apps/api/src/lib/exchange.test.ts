@@ -292,9 +292,7 @@ describe("Exchange routing", () => {
 
   it("accepts only formats the Exchange can return directly", () => {
     expect(isSupportedExchangeFormatRequest(undefined)).toBe(true);
-    expect(isSupportedExchangeFormatRequest([{ type: "markdown" }])).toBe(
-      true,
-    );
+    expect(isSupportedExchangeFormatRequest([{ type: "markdown" }])).toBe(true);
     expect(isSupportedExchangeFormatRequest(["json"])).toBe(true);
     expect(
       isSupportedExchangeFormatRequest([
@@ -305,9 +303,9 @@ describe("Exchange routing", () => {
     expect(isSupportedExchangeFormatRequest([{ type: "html" }])).toBe(false);
     // deterministicJson extractors run against page HTML, which Exchange
     // responses do not carry.
-    expect(isSupportedExchangeFormatRequest([{ type: "deterministicJson" }])).toBe(
-      false,
-    );
+    expect(
+      isSupportedExchangeFormatRequest([{ type: "deterministicJson" }]),
+    ).toBe(false);
     expect(isSupportedExchangeFormatRequest([])).toBe(false);
   });
 
@@ -403,15 +401,21 @@ describe("Exchange routing", () => {
       terms: ACME_TERMS,
     });
 
-    expect(getThirdPartyDataTermsRequiredResponse(ACME_TERMS)).toMatchObject({
+    const response = getThirdPartyDataTermsRequiredResponse(ACME_TERMS);
+    expect(response).toMatchObject({
       success: false,
       code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
       requiresAction: {
         type: "accept_terms",
         terms: "acme",
         version: "2026-01-01",
+        url: expect.stringMatching(/\/app\/alexandria\/acme$/),
       },
     });
+    // The message carries the provider, version and link, since most clients relay only `error`.
+    expect(response.error).toContain("acme");
+    expect(response.error).toContain("2026-01-01");
+    expect(response.error).toContain(response.requiresAction.url);
   });
 
   it("requires current terms when the accepted version is stale", async () => {
@@ -562,7 +566,10 @@ describe("Exchange routing", () => {
       "https://exchange.example/v1/access-events/6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60/billing",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ status: "confirmed", billingReference: "bill-1" }),
+        body: JSON.stringify({
+          status: "confirmed",
+          billingReference: "bill-1",
+        }),
       }),
     );
 

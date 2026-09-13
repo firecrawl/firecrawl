@@ -1,4 +1,5 @@
 import { bountyBlocklistMiddleware } from "./exchange-blocklist";
+import { providerScrapeController } from "../controllers/v2/scrape-alexandria";
 import express, { Request, Response } from "express";
 import { Agent, fetch } from "undici";
 import { config } from "../config";
@@ -134,10 +135,25 @@ exchangeRouter.get(
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
 );
 
+// Provider agreements the web app offers for acceptance; a catalogue read, never an acceptance.
+exchangeRouter.get(
+  "/provider-terms{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+);
+
+exchangeRouter.post(
+  "/provider-terms/events",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+);
+
 exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
+  wrap((req, res) =>
+    providerScrapeController(req as RequestWithAuth<any, any, any>, res, true),
+  ),
 );
 
 exchangeRouter.get(

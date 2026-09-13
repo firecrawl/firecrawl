@@ -1,6 +1,7 @@
 import type { Logger } from "winston";
+import { discoverTools, isAlexandriaSource } from "./alexandria";
 import { search } from "./v2";
-import { SearchV2Response } from "../lib/entities";
+import { SearchV2Response, SearchResultType } from "../lib/entities";
 import {
   buildSearchQuery,
   getCategoryFromUrl,
@@ -43,6 +44,7 @@ interface SearchOptions {
   enterprise?: ("default" | "anon" | "zdr")[];
   scrapeOptions?: ScrapeOptions;
   highlights?: boolean;
+  domainTools?: boolean;
   timeout: number;
 }
 
@@ -66,6 +68,7 @@ interface SearchContext {
 }
 
 interface SearchExecuteResult {
+  toolsWarning?: string;
   response: SearchV2Response;
   totalResultsCount: number;
   developerResultsCount: number;
@@ -106,7 +109,14 @@ export async function executeSearch(
 
   logger.info("Searching for results");
 
-  const searchTypes = [...new Set(sources.map((s: any) => s.type))];
+  const wantsTools = sources.some(isAlexandriaSource);
+  const searchTypes = [
+    ...new Set(
+      sources
+        .filter(source => !isAlexandriaSource(source))
+        .map(source => source.type as SearchResultType),
+    ),
+  ];
   const { query: searchQuery, categoryMap } = buildSearchQuery(
     query,
     categories,
@@ -124,23 +134,26 @@ export async function executeSearch(
       )
     : null;
 
-  const searchResponse = hasOnlyDeveloperCategory(categories)
-    ? ({} as SearchV2Response)
-    : ((await search({
-        query: searchQuery,
-        logger,
-        requestId: context.requestId,
-        advanced: false,
-        num_results: num_results_buffer,
-        tbs: options.tbs,
-        filter: options.filter,
-        lang: options.lang,
-        country: options.country,
-        location: options.location,
-        safe: options.safe,
-        type: searchTypes,
-        enterprise: options.enterprise,
-      })) as SearchV2Response);
+  const searchResponse =
+    (wantsTools && !searchTypes.length) || hasOnlyDeveloperCategory(categories)
+      ? ({} as SearchV2Response)
+      : ((await search({
+          query: searchQuery,
+          logger,
+          requestId: context.requestId,
+          advanced: false,
+          num_results: num_results_buffer,
+          tbs: options.tbs,
+          filter: options.filter,
+          lang: options.lang,
+          country: options.country,
+          location: options.location,
+          safe: options.safe,
+          type: searchTypes,
+          enterprise: options.enterprise,
+          includeDomains: options.includeDomains,
+          excludeDomains: options.excludeDomains,
+        })) as SearchV2Response);
   let developerResults = developerResultsPromise
     ? await developerResultsPromise
     : [];
@@ -228,6 +241,34 @@ export async function executeSearch(
 
   const developerResultsCount = developerResults.length;
   totalResultsCount += developerResultsCount;
+  let toolsWarning: string | undefined;
+
+  if (
+    flags?.exchangeRetrieve &&
+    !zeroDataRetention &&
+    !options.enterprise?.some(mode => mode === "zdr" || mode === "anon") &&
+    (wantsTools || options.domainTools)
+  ) {
+    const discovery = await discoverTools(
+      {
+        teamId,
+        limit,
+        query: wantsTools ? query : undefined,
+        urls:
+          options.domainTools === false
+            ? []
+            : [
+                ...(searchResponse.web ?? []),
+                ...(searchResponse.news ?? []),
+                ...developerResults,
+              ].flatMap(item => (item.url ? [item.url] : [])),
+        timeoutMs: options.timeout,
+      },
+      logger,
+    );
+    searchResponse.tools = discovery.items;
+    toolsWarning = discovery.warning;
+  }
 
   const isZDR = options.enterprise?.includes("zdr");
   const creditsPerTenResults = isZDR ? 10 : 2;
@@ -376,6 +417,7 @@ export async function executeSearch(
 
   return {
     response: searchResponse,
+    toolsWarning,
     totalResultsCount,
     developerResultsCount,
     searchCredits,

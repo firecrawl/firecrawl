@@ -1,5 +1,10 @@
 import { vi } from "vitest";
 
+const mockFeedbackMetadata = vi.fn();
+vi.mock("../feedback/keyless-context", () => ({
+  keylessFeedbackMetadata: (...args: any[]) => mockFeedbackMetadata(...args),
+}));
+
 const mockLogRequest = vi.fn();
 const mockLogSearch = vi.fn();
 const mockLogResearchEndpoint = vi.fn();
@@ -120,6 +125,7 @@ async function flushAsync() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockFeedbackMetadata.mockResolvedValue({});
   mockLogRequest.mockResolvedValue(undefined);
   mockLogSearch.mockResolvedValue(undefined);
   mockLogResearchEndpoint.mockResolvedValue(undefined);
@@ -320,4 +326,26 @@ describe("developer category code_searches ledger", () => {
     ]);
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
+});
+
+it("returns both provider warnings and feedback metadata", async () => {
+  const metadata = {
+    jobId: "feedback-job",
+    feedback: { message: "Optional feedback." },
+  };
+  mockFeedbackMetadata.mockResolvedValue(metadata);
+  mockExecuteSearch.mockResolvedValue(
+    executeResult({ toolsWarning: "Provider discovery is unavailable." }),
+  );
+  const res = makeRes();
+  await searchController(makeReq({ query: "http client" }), res);
+  expect(res.status).toHaveBeenCalledWith(200);
+  expect(res.json).toHaveBeenCalledWith(
+    expect.objectContaining({
+      success: true,
+      metadata,
+      warning: "Provider discovery is unavailable.",
+      data: { web: developerResults },
+    }),
+  );
 });
