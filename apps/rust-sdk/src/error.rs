@@ -40,7 +40,7 @@ pub struct FirecrawlAPIError {
     pub requires_action: Option<Box<RequiresAction>>,
 
     /// Additional details of this error. Schema depends on the error itself.
-    pub details: Option<Value>,
+    pub details: Option<Box<Value>>,
 }
 
 impl Display for FirecrawlAPIError {
