@@ -36,6 +36,16 @@ describe("v2 threatProtection request serialization", () => {
     );
   });
 
+  test("scrape sends domainTools when true", async () => {
+    const http = makeHttp({ success: true, data: {} });
+    await scrape(http, "https://example.com", { domainTools: true });
+    expect(http.post).toHaveBeenCalledWith(
+      "/v2/scrape",
+      expect.objectContaining({ url: "https://example.com", domainTools: true }),
+      expect.anything(),
+    );
+  });
+
   test("batch scrape sends threatProtection at top level", async () => {
     const http = makeHttp({ success: true, id: "job", url: "u" });
     await startBatchScrape(http, ["https://example.com"], {
