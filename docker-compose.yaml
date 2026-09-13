@@ -56,8 +56,9 @@ x-common-env: &common-env
   SEARXNG_ENGINES: ${SEARXNG_ENGINES}
   SEARXNG_CATEGORIES: ${SEARXNG_CATEGORIES}
   # Set NUQ_BACKEND=fdb to run the queue on FoundationDB instead of Postgres
-  NUQ_BACKEND: ${NUQ_BACKEND}
-  FDB_CLUSTER_FILE: ${NUQ_BACKEND:+/var/fdb/fdb.cluster}
+  # (FDB services commented out — see below)
+  # NUQ_BACKEND: ${NUQ_BACKEND}
+  # FDB_CLUSTER_FILE: ${NUQ_BACKEND:+/var/fdb/fdb.cluster}
   FAST_CRAWL: ${FAST_CRAWL}
   ALLOW_LOCAL_WEBHOOKS: ${ALLOW_LOCAL_WEBHOOKS}
 
@@ -115,8 +116,8 @@ services:
         condition: service_healthy
     ports:
       - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
-    volumes:
-      - fdb-cluster-file:/var/fdb:ro
+    # volumes:
+    #   - fdb-cluster-file:/var/fdb:ro
     command: node dist/src/harness.js --start-docker
     # Resource limits for Docker Compose (not Swarm)
     # Increase if you have more CPU cores/RAM available
@@ -180,40 +181,43 @@ services:
   # FoundationDB queue backend (experimental). Enable by setting
   # NUQ_BACKEND=fdb; the api container reads the shared cluster file from the
   # fdb-cluster-file volume. Replaces nuq-postgres once stable.
-  foundationdb:
-    image: foundationdb/foundationdb:7.3.63
-    environment:
-      FDB_NETWORKING_MODE: container
-      FDB_COORDINATOR_PORT: 4500
-    networks:
-      - backend
-    volumes:
-      - fdb-data:/var/fdb/data
-      - fdb-cluster-file:/var/fdb
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-        compress: "true"
+  # foundationdb:
+  #   image: foundationdb/foundationdb:7.3.63
+  #   environment:
+  #     FDB_NETWORKING_MODE: container
+  #     FDB_COORDINATOR_PORT: 4500
+  #   networks:
+  #     - backend
+  #   volumes:
+  #     - fdb-data:/var/fdb/data
+  #     - fdb-cluster-file:/var/fdb
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #       compress: "true"
 
   # one-shot: creates the database on first boot (no-op afterwards)
-  foundationdb-init:
-    image: foundationdb/foundationdb:7.3.63
-    depends_on:
-      - foundationdb
-    entrypoint:
-      - /bin/bash
-      - -c
-      - "sleep 5 && out=$(fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single ssd' 2>&1); status=$$?; printf '%s\n' \"$$out\"; if [ \"$$status\" -eq 0 ]; then exit 0; fi; printf '%s\n' \"$$out\" | grep -Eiq 'already.*configured|database.*configured|database.*already exists'"
-    volumes:
-      - fdb-cluster-file:/var/fdb
-    networks:
-      - backend
-    restart: "no"
+  # foundationdb-init:
+  #   image: foundationdb/foundationdb:7.3.63
+  #   depends_on:
+  #     - foundationdb
+  #   entrypoint:
+  #     - /bin/bash
+  #     - -c
+  #     - "sleep 5 && out=$(fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single ssd' 2>&1); status=$$?; printf '%s\n' \"$$out\"; if [ \"$$status\" -eq 0 ]; then exit 0; fi; printf '%s\n' \"$$out\" | grep -Eiq 'already.*configured|database.*configured|database.*already exists'"
+  #   volumes:
+  #     - fdb-cluster-file:/var/fdb
+  #   networks:
+  #     - backend
+  #   restart: "no"
 
   firecrawl-ui:
-    image: ghcr.io/obeone/firecrawl-ui:latest
+    # NOTE: If you don't want to build the service locally,
+    # comment out the build: statement and uncomment the image: statement
+    # image: ghcr.io/obeone/firecrawl-ui:latest
+    build: firecrawl-ui
     ports:
       - "${FIRECRAWL_UI_PORT:-8080}:8080"
     networks:
@@ -227,10 +231,50 @@ services:
         max-file: "2"
         compress: "true"
 
+  searxng:
+    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-latest}
+    environment:
+      SEARXNG_HOST: "0.0.0.0"
+      SEARXNG_PORT: ${SEARXNG_PORT:-8808}
+    ports:
+      - "${SEARXNG_PORT:-8808}:${SEARXNG_PORT:-8808}"
+    volumes:
+      - ./searxng/core-config/:/etc/searxng/:Z
+      - searxng-data:/var/cache/searxng/
+    networks:
+      - backend
+    depends_on:
+      - searxng-valkey
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
+  searxng-valkey:
+    image: docker.io/valkey/valkey:9-alpine
+    command: valkey-server --save 30 1 --loglevel warning
+    volumes:
+      - searxng-valkey-data:/data/
+    networks:
+      - backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
 networks:
   backend:
     driver: bridge
 
 volumes:
-  fdb-data:
-  fdb-cluster-file:
+  searxng-data:
+  searxng-valkey-data:
+
+# FDB volumes (commented out while FDB services are disabled)
+# volumes:
+#   fdb-data:
+#   fdb-cluster-file:
