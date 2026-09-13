@@ -2003,7 +2003,7 @@
             }
           },
           "429": {
-            "description": "Daily submission cap or attempt limit reached",
+            "description": "Too many feedback requests",
             "content": {
               "application/json": {
                 "schema": {
@@ -2013,7 +2013,7 @@
             }
           },
           "503": {
-            "description": "Feedback storage is unavailable",
+            "description": "Feedback is temporarily unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -2023,7 +2023,7 @@
             }
           }
         },
-        "description": "Eligible keyless callers can submit Search, Scrape, or Parse evidence with KeylessFeedbackRequest. One accepted submission per identity per UTC day, shared across Search, Scrape, Parse, and all clients. Attempts are limited separately to 10 per minute. Operation quota exhaustion does not affect feedback eligibility. Job context expires after 24 hours. Authenticated callers retain EndpointFeedbackRequest and existing behavior."
+        "description": "Submit optional feedback for a Search, Scrape, or Parse job. Keyless callers use KeylessFeedbackRequest and may submit once per identity per UTC day, shared across all three categories and clients. Authenticated callers continue to use EndpointFeedbackRequest."
       }
     },
     "/search/{jobId}/feedback": {
