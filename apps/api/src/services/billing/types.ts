@@ -64,3 +64,22 @@ export function toAutumnBillingProperties(
   }
   return props;
 }
+
+/**
+ * Payload of a `bill_team` job on the billing queue. `org_id` is required so a
+ * new producer cannot omit it; the consumer still tolerates its absence, which
+ * is all that a job enqueued by the previous deploy can be.
+ */
+export type BillTeamJobData = {
+  team_id: string;
+  org_id: string | null;
+  credits: number;
+  billing?: BillingMetadata;
+  endpoint?: BillingEndpoint;
+  is_extract: boolean;
+  timestamp: string;
+  originating_job_id?: string;
+  api_key_id: number | null;
+  autumnTrackInRequest: boolean;
+  exchangeAccessEventId?: string;
+};

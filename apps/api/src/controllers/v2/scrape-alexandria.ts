@@ -114,6 +114,7 @@ export async function providerScrapeController(
   try {
     result = await retrieveProviders({
       teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
       apiKeyId: req.acuc.api_key_id ?? null,
       flags: req.acuc.flags,
       calls: body.alexandria,

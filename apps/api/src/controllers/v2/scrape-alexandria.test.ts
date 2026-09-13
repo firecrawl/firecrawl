@@ -30,7 +30,11 @@ app.use(express.json());
 app.use((req, _res, next) => {
   Object.assign(req, {
     auth: { team_id: "team" },
-    acuc: { api_key_id: 12, flags: { exchangeRetrieve: true } },
+    acuc: {
+      api_key_id: 12,
+      org_id: "org",
+      flags: { exchangeRetrieve: true },
+    },
   });
   next();
 });
@@ -70,6 +74,7 @@ it("returns the Scrape contract, shares identity with the legacy route, and logs
       calls: [call],
       requestId: "same-request",
       apiKeyId: 12,
+      orgId: "org",
     }),
   );
 

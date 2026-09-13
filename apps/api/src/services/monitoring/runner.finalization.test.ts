@@ -185,6 +185,11 @@ describe("monitor check finalization ownership", () => {
       }),
     );
     expect(bill).toHaveBeenCalledTimes(1);
+    expect(bill).toHaveBeenCalledWith(
+      "bill_team",
+      expect.objectContaining({ team_id: "team-1", org_id: "org-1" }),
+      expect.anything(),
+    );
     expect(store.updateMonitorScheduleAfterRun).toHaveBeenCalledTimes(1);
   });
 

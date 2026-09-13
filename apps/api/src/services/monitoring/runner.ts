@@ -409,6 +409,7 @@ async function billMonitorCheck(params: {
     "bill_team",
     {
       team_id: params.monitor.team_id,
+      org_id: params.orgId,
       credits: params.actualCredits,
       billing: { endpoint: "monitor", jobId: params.check.id },
       is_extract: false,
