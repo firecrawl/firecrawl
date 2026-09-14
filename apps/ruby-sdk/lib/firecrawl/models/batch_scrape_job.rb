@@ -5,7 +5,7 @@ module Firecrawl
     # Status and results of a batch scrape job.
     class BatchScrapeJob
       attr_reader :id, :status, :total, :completed, :credits_used,
-                  :expires_at, :next_url
+                  :expires_at, :created_at, :completed_at, :duration, :next_url
       attr_accessor :data
 
       def initialize(raw)
@@ -15,6 +15,9 @@ module Firecrawl
         @completed = raw["completed"].to_i
         @credits_used = raw["creditsUsed"]
         @expires_at = raw["expiresAt"]
+        @created_at = raw["createdAt"]
+        @completed_at = raw["completedAt"]
+        @duration = raw["duration"]&.to_f
         @next_url = raw["next"]
         @data = (raw["data"] || []).map { |d| Document.new(d) }
       end
