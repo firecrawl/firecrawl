@@ -76,7 +76,7 @@ export async function insertKeylessFeedback(
         origin: answers.origin,
         integration: answers.integration ?? null,
         job_status: job.is_successful === false ? "failed" : "completed",
-        metadata: { version: "keyless_feedback_v1", answers },
+        metadata: { schemaVersion: 1, answers },
         created_at: sql`clock_timestamp()`,
       });
       return { success: true as const, feedbackId };
