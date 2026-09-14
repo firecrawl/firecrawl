@@ -14,7 +14,7 @@ import (
 
 func TestToolDiscoveryAndExecution(t *testing.T) {
 	idsReceived := make(chan string, 2)
-	bodiesReceived := make(chan map[string]interface{}, 5)
+	bodiesReceived := make(chan map[string]interface{}, 8)
 	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]interface{}
