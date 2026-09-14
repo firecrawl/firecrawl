@@ -876,6 +876,7 @@ class ScrapeOptions(BaseModel):
     include_tags: Optional[List[str]] = None
     exclude_tags: Optional[List[str]] = None
     only_main_content: Optional[bool] = None
+    only_clean_content: Optional[bool] = None
     timeout: Optional[int] = None
     wait_for: Optional[int] = None
     mobile: Optional[bool] = None

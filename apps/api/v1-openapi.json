@@ -2114,6 +2114,11 @@
             "description": "Only return the main content of the page excluding headers, navs, footers, etc.",
             "default": true
           },
+          "onlyCleanContent": {
+            "type": "boolean",
+            "description": "Use an LLM to strip navigation, ads and other boilerplate from the markdown.",
+            "default": false
+          },
           "includeTags": {
             "type": "array",
             "items": {

@@ -27,6 +27,10 @@ public class ScrapeOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? OnlyMainContent { get; set; }
 
+    [JsonPropertyName("onlyCleanContent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? OnlyCleanContent { get; set; }
+
     [JsonPropertyName("timeout")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Timeout { get; set; }

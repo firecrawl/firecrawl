@@ -19,6 +19,7 @@ public class ScrapeOptions {
     private List<String> includeTags;
     private List<String> excludeTags;
     private Boolean onlyMainContent;
+    private Boolean onlyCleanContent;
     private Integer timeout;
     private Integer waitFor;
     private Boolean mobile;
@@ -45,6 +46,7 @@ public class ScrapeOptions {
     public List<String> getIncludeTags() { return includeTags; }
     public List<String> getExcludeTags() { return excludeTags; }
     public Boolean getOnlyMainContent() { return onlyMainContent; }
+    public Boolean getOnlyCleanContent() { return onlyCleanContent; }
     public Integer getTimeout() { return timeout; }
     public Integer getWaitFor() { return waitFor; }
     public Boolean getMobile() { return mobile; }
@@ -73,6 +75,7 @@ public class ScrapeOptions {
         b.includeTags = this.includeTags != null ? new ArrayList<>(this.includeTags) : null;
         b.excludeTags = this.excludeTags != null ? new ArrayList<>(this.excludeTags) : null;
         b.onlyMainContent = this.onlyMainContent;
+        b.onlyCleanContent = this.onlyCleanContent;
         b.timeout = this.timeout;
         b.waitFor = this.waitFor;
         b.mobile = this.mobile;
@@ -98,6 +101,7 @@ public class ScrapeOptions {
         private List<String> includeTags;
         private List<String> excludeTags;
         private Boolean onlyMainContent;
+        private Boolean onlyCleanContent;
         private Integer timeout;
         private Integer waitFor;
         private Boolean mobile;
@@ -135,6 +139,9 @@ public class ScrapeOptions {
 
         /** Only return the main content of the page, excluding navbars/footers. */
         public Builder onlyMainContent(Boolean onlyMainContent) { this.onlyMainContent = onlyMainContent; return this; }
+
+        /** Use an LLM to strip navigation, ads and other boilerplate from the markdown. */
+        public Builder onlyCleanContent(Boolean onlyCleanContent) { this.onlyCleanContent = onlyCleanContent; return this; }
 
         /** Timeout in milliseconds for the scrape request. */
         public Builder timeout(Integer timeout) { this.timeout = timeout; return this; }
@@ -191,6 +198,7 @@ public class ScrapeOptions {
             o.includeTags = this.includeTags != null ? Collections.unmodifiableList(new ArrayList<>(this.includeTags)) : null;
             o.excludeTags = this.excludeTags != null ? Collections.unmodifiableList(new ArrayList<>(this.excludeTags)) : null;
             o.onlyMainContent = this.onlyMainContent;
+            o.onlyCleanContent = this.onlyCleanContent;
             o.timeout = this.timeout;
             o.waitFor = this.waitFor;
             o.mobile = this.mobile;

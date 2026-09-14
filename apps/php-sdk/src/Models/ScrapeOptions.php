@@ -41,6 +41,7 @@ final class ScrapeOptions
         private readonly ?bool $changeTracking = null,
         private readonly ?bool $redactPII = null,
         private readonly ?AuditMetadata $auditMetadata = null,
+        private readonly ?bool $onlyCleanContent = null,
     ) {}
 
     /**
@@ -78,13 +79,14 @@ final class ScrapeOptions
         ?bool $changeTracking = null,
         ?bool $redactPII = null,
         ?AuditMetadata $auditMetadata = null,
+        ?bool $onlyCleanContent = null,
     ): self {
         return new self(
             $formats, $headers, $includeTags, $excludeTags, $onlyMainContent,
             $timeout, $waitFor, $mobile, $parsers, $actions, $location,
             $skipTlsVerification, $removeBase64Images, $blockAds, $proxy,
             $maxAge, $minAge, $storeInCache, $lockdown, $integration, $profile,
-            $changeTracking, $redactPII, $auditMetadata,
+            $changeTracking, $redactPII, $auditMetadata, $onlyCleanContent,
         );
     }
 
@@ -112,6 +114,7 @@ final class ScrapeOptions
             'includeTags' => $this->includeTags,
             'excludeTags' => $this->excludeTags,
             'onlyMainContent' => $this->onlyMainContent,
+            'onlyCleanContent' => $this->onlyCleanContent,
             'timeout' => $this->timeout,
             'waitFor' => $this->waitFor,
             'mobile' => $this->mobile,
@@ -172,6 +175,11 @@ final class ScrapeOptions
     public function getOnlyMainContent(): ?bool
     {
         return $this->onlyMainContent;
+    }
+
+    public function getOnlyCleanContent(): ?bool
+    {
+        return $this->onlyCleanContent;
     }
 
     public function getTimeout(): ?int
