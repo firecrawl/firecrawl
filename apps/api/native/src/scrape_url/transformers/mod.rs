@@ -1,6 +1,6 @@
 use tracing::instrument;
 
-use super::{document::Document, meta::Meta};
+use super::{document::Document, llm::LlmError, meta::Meta};
 
 macro_rules! generate_execute_tranformers {
     ($($f:path),+ $(,)?) => {
@@ -18,6 +18,7 @@ macro_rules! generate_execute_tranformers {
 use attributes::derive_attributes_from_html;
 use html::derive_html_from_raw_html;
 use images::derive_images_from_html;
+use json::perform_llm_extract;
 use links::derive_links_from_html;
 use markdown::derive_markdown_from_html;
 use metadata::derive_metadata_from_raw_html;
@@ -25,6 +26,7 @@ use metadata::derive_metadata_from_raw_html;
 mod attributes;
 mod html;
 mod images;
+mod json;
 mod links;
 mod markdown;
 mod metadata;
@@ -42,6 +44,12 @@ pub enum TransformerError {
 
   #[error(transparent)]
   Join(#[from] tokio::task::JoinError),
+
+  #[error("The scraped page content is too large for JSON extraction, so extraction was aborted.")]
+  JsonContentTooLarge,
+
+  #[error(transparent)]
+  Llm(#[from] LlmError),
 }
 
 generate_execute_tranformers!(
@@ -57,7 +65,7 @@ generate_execute_tranformers!(
   // TODO: fetch_menu
   // TODO: send_document_to_index
   // TODO: send_document_to_search_index
-  // TODO: perform_llm_extract
+  perform_llm_extract,
   // TODO: perform_deterministic_json
   // TODO: perform_summary
   // TODO: perform_query

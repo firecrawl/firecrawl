@@ -146,6 +146,7 @@ impl ScrapeURLError {
       Self::UnsupportedFileError { .. } => "SCRAPE_UNSUPPORTED_FILE_ERROR",
       Self::ActionError { .. } => "SCRAPE_ACTION_ERROR",
       Self::ProxySelectionError => "SCRAPE_PROXY_SELECTION_ERROR",
+      Self::Transformer(TransformerError::JsonContentTooLarge) => "SCRAPE_JSON_CONTENT_TOO_LARGE",
       Self::ReliableRetrievalError(_)
       | Self::InsecureConnectionError
       | Self::InvalidURLError
@@ -208,6 +209,12 @@ impl Serialize for ScrapeURLError {
         map.serialize_entry("pdfType", pdf_type_name(pdf_type))?;
       }
       Self::LockdownMissError | Self::AgentIndexOnlyError | Self::ProxySelectionError => {}
+      Self::Transformer(TransformerError::JsonContentTooLarge) => {
+        map.serialize_entry(
+          "message",
+          "The scraped page content is too large for JSON extraction, so extraction was aborted.",
+        )?;
+      }
       e => {
         map.serialize_entry("message", &unknown_error_message(&e.to_string()))?;
       }

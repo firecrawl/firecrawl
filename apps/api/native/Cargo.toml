@@ -16,6 +16,9 @@ anydoc = "0.2.2"
 bytes = "1.12.1"
 chrono = { version = "0.4", features = ["serde"] }
 encoding_rs = "0.8"
+# otel feature disabled: genai 0.7.0-beta.23's otel module fails to compile
+# (non-exhaustive match on Error::ClientBuildFail in otel/error.rs)
+genai = "0.7.0-beta.23"
 hex = "0.4"
 kinded-macro = { path = "kinded-macro" }
 kuchikiki = "0.8.2"

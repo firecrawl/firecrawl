@@ -104,6 +104,7 @@ pub fn parse_fallback(meta: &Meta, result: RawPageResult) -> Result<Document, Sc
     images: None,
     audio: None,
     video: None,
+    json: None,
     summary: None,
     answer: None,
     highlights: None,

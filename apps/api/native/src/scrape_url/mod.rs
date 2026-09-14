@@ -25,6 +25,7 @@ mod file_size_limit;
 mod formats;
 mod index;
 mod kinded;
+mod llm;
 mod meta;
 mod options;
 mod parsers;

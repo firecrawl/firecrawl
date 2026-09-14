@@ -69,7 +69,7 @@ pub struct Document {
   pub video: Option<String>,
   // videos:
   // extract:
-  // json:
+  pub json: Option<Value>,
   pub summary: Option<String>,
   pub answer: Option<String>,
   pub highlights: Option<String>,

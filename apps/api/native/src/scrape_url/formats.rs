@@ -2,8 +2,13 @@ use serde::{Deserialize, Serialize};
 
 use super::kinded::{KindedSet, kinded};
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
-pub struct JsonOptions;
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JsonOptions {
+  pub prompt: Option<String>,
+  pub schema: Option<serde_json::Value>,
+  pub check_prompt_injection: Option<bool>,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 pub struct DeterministicJsonOptions;
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
@@ -42,7 +47,7 @@ pub struct HighlightsOptions;
 pub struct QueryOptions;
 
 #[kinded(noun = "format", default = [Markdown])]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Format {
   Markdown,
   Html,
