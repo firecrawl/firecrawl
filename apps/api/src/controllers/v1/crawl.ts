@@ -18,6 +18,7 @@ import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
+import { resolveSafeMode } from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -48,11 +49,14 @@ export async function crawlController(
   const zeroDataRetention =
     getScrapeZDR(req.acuc?.flags) === "forced" || req.body.zeroDataRetention;
 
+  const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
+
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
     override: req.body.scrapeOptions?.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
     return res.status(403).json({
@@ -61,10 +65,15 @@ export async function crawlController(
     });
   }
 
+  // Scrape params live under scrapeOptions; checkPermissions reads them
+  // top-level, so spread scrapeOptions (crawlerOptions carries ignoreRobotsTxt).
   const permissions = checkPermissions(
-    { ...req.body, crawlerOptions: req.body },
+    { ...req.body.scrapeOptions, crawlerOptions: req.body },
     req.acuc?.flags,
-    { threatProtectionOrgConfig: threatProtection.orgConfig },
+    {
+      threatProtectionOrgConfig: threatProtection.orgConfig,
+      safeMode: safeMode.safeMode ?? null,
+    },
   );
   if (permissions.error) {
     return res.status(403).json({
@@ -227,6 +236,8 @@ export async function crawlController(
       zeroDataRetention,
       agentIndexOnly: (req as any).agentIndexOnly ?? false,
       threatProtection: threatProtection.policy ?? undefined,
+      // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
+      teamFlags: req.acuc?.flags ?? undefined,
     }, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
     team_id: req.auth.team_id,
     createdAt: Date.now(),

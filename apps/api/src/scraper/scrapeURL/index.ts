@@ -114,7 +114,12 @@ import {
   type ThreatDecision,
   type ThreatProtectionPolicy,
 } from "../../lib/threat-protection";
-import type { ResolvedSafeMode } from "../../lib/safe-mode";
+import {
+  type ResolvedSafeMode,
+  resolveSafeMode,
+  applySafeMode,
+} from "../../lib/safe-mode";
+import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 
@@ -626,6 +631,10 @@ export type InternalOptions = {
   threatProtection?: ThreatProtectionPolicy;
 
   safeMode?: ResolvedSafeMode;
+  /** Set when a request legitimately opted out of Safe Mode at the controller
+   * (allowBypassSafeMode + safeMode:false). Tells the worker backstop NOT to
+   * re-resolve safe mode from teamFlags — otherwise the bypass would be undone. */
+  safeModeBypassed?: boolean;
 
   v1Agent?: ScrapeOptionsV1["agent"];
   v1JSONAgent?: Exclude<ScrapeOptionsV1["jsonOptions"], undefined>["agent"];
@@ -1237,6 +1246,40 @@ export async function scrapeURL(
   return withSpan(
     "scrape.pipeline",
     async span => {
+      // Safe Mode: the universal enforcement choke point. The controller
+      // pre-resolves safe mode for a single scrape, but jobs that carry only
+      // team flags (crawl children, search / extract URLs, allowlisted single
+      // scrapes) resolve here, per-URL, so the allowlist applies to each
+      // discovered URL. Runs before buildMetaObject so forced lockdown reaches
+      // feature-flag/engine selection, and covers every endpoint that stamps
+      // teamFlags onto its job payload.
+      if (
+        !internalOptions.safeMode &&
+        !internalOptions.safeModeBypassed &&
+        internalOptions.teamFlags
+      ) {
+        internalOptions.safeMode = resolveSafeMode(
+          internalOptions.teamFlags,
+          undefined,
+          url,
+        ).safeMode;
+      }
+      if (internalOptions.safeMode) {
+        applySafeMode(internalOptions.safeMode, options);
+        if (
+          internalOptions.safeMode.domainControls &&
+          !internalOptions.threatProtection
+        ) {
+          const tp = await resolveThreatProtection({
+            teamId: internalOptions.teamId,
+            orgId: internalOptions.orgId,
+            flags: internalOptions.teamFlags ?? {},
+            force: true,
+          });
+          internalOptions.threatProtection = tp.policy ?? undefined;
+        }
+      }
+
       const meta = await buildMetaObject(
         id,
         url,

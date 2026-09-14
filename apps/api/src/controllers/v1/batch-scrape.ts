@@ -26,6 +26,7 @@ import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
+import { resolveSafeMode } from "../../lib/safe-mode";
 import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
@@ -59,11 +60,14 @@ export async function batchScrapeController(
     req.body = batchScrapeRequestSchema.parse(req.body);
   }
 
+  const safeMode = resolveSafeMode(req.acuc?.flags, undefined);
+
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
     override: req.body.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
     return res.status(403).json({
@@ -74,6 +78,7 @@ export async function batchScrapeController(
 
   const permissions = checkPermissions(req.body, req.acuc?.flags, {
     threatProtectionOrgConfig: threatProtection.orgConfig,
+    safeMode: safeMode.safeMode ?? null,
   });
   if (permissions.error) {
     return res.status(403).json({
@@ -325,6 +330,8 @@ export async function batchScrapeController(
           zeroDataRetention,
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
           threatProtection: threatProtection.policy ?? undefined,
+          // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
+          teamFlags: req.acuc?.flags ?? undefined,
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,
         createdAt: Date.now(),

@@ -1,6 +1,9 @@
 import { TeamFlags } from "../controllers/v2/types";
 import type { ErrorCodes } from "./error";
-import type { ResolvedSafeMode } from "./safe-mode";
+import {
+  type ResolvedSafeMode,
+  SAFE_MODE_CREDENTIAL_HEADERS,
+} from "./safe-mode";
 import {
   getScrapeZDR,
   getIgnoreRobots,
@@ -46,11 +49,6 @@ interface PermissionOptions {
   safeMode?: ResolvedSafeMode | null;
 }
 
-const SAFE_MODE_CREDENTIAL_HEADERS = [
-  "authorization",
-  "cookie",
-  "proxy-authorization",
-];
 const SAFE_MODE_LOGIN_ACTIONS = ["write", "press", "executeJavascript"];
 
 const SUPPORT_EMAIL = "support@firecrawl.com";

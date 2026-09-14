@@ -251,10 +251,12 @@ describe("resolveSafeMode — allowlist", () => {
 });
 
 describe("applySafeMode", () => {
-  it("forces auto to basic when stealth proxy is disabled", () => {
-    const options = { proxy: "auto" as const };
-    applySafeMode(strict, options);
-    expect(options.proxy).toBe("basic");
+  it("forces any escalated proxy tier to basic when stealth proxy is disabled", () => {
+    for (const tier of ["auto", "stealth", "enhanced"] as const) {
+      const options = { proxy: tier };
+      applySafeMode(strict, options);
+      expect(options.proxy).toBe("basic");
+    }
   });
 
   it("leaves proxy untouched for non-auto values, allowed stealth, or lockdown", () => {

@@ -9,6 +9,7 @@ import {
   FireEngineScrapeRequestTLSClient,
   safeModeParams,
 } from "./scrape";
+import { stripCredentialHeaders } from "../../../../lib/safe-mode";
 import { EngineScrapeResult } from "..";
 import {
   fireEngineCheckStatus,
@@ -494,6 +495,17 @@ export async function scrapeURLWithFireEngineChromeCDP(
       ...safeModeParams(meta.internalOptions.safeMode),
     };
 
+    // Safe Mode worker-side hardening: neutralize anything that request-time
+    // enforcement would reject but that inherited scrape options can still carry.
+    const sm = meta.internalOptions.safeMode;
+    if (sm?.disableStealthProxy) {
+      request.mobileProxy = false;
+    }
+    if (sm?.disableAuthentication) {
+      request.persistentStorage = undefined;
+      request.headers = stripCredentialHeaders(request.headers);
+    }
+
     let response = await performFireEngineScrape(
       meta,
       meta.logger.child({
@@ -646,6 +658,14 @@ export async function scrapeURLWithFireEngineTLSClient(
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       ...safeModeParams(meta.internalOptions.safeMode),
     };
+
+    const sm = meta.internalOptions.safeMode;
+    if (sm?.disableStealthProxy) {
+      request.mobileProxy = false;
+    }
+    if (sm?.disableAuthentication) {
+      request.headers = stripCredentialHeaders(request.headers);
+    }
 
     let response = await performFireEngineScrape(
       meta,

@@ -73,6 +73,8 @@ export async function scrapeDocument_F0(
           orgId: options.orgId ?? null,
           bypassBilling: true,
           threatProtection: options.threatProtectionPolicy ?? undefined,
+          // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
+          teamFlags: options.flags ?? undefined,
         },
         origin: options.origin,
         is_scrape: true,

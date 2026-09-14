@@ -14,6 +14,7 @@ import { fromV1ScrapeOptions } from "../v2/types";
 import { TransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
+import { resolveSafeMode, applySafeMode } from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -84,11 +85,16 @@ async function scrapeControllerInner(
   const preNormalizedBody = { ...req.body };
   req.body = scrapeRequestSchema.parse(req.body);
 
+  // v1 has no per-request safeMode param; enforcement still applies via the
+  // resolved org config (and the scrapeURL backstop).
+  const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
+
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
     override: req.body.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
     return res.status(403).json({
@@ -99,6 +105,7 @@ async function scrapeControllerInner(
 
   const permissions = checkPermissions(req.body, req.acuc?.flags, {
     threatProtectionOrgConfig: threatProtection.orgConfig,
+    safeMode: safeMode.safeMode ?? null,
   });
   if (permissions.error) {
     return res.status(403).json({
@@ -173,6 +180,7 @@ async function scrapeControllerInner(
     req.body.timeout,
     req.auth.team_id,
   );
+  applySafeMode(safeMode.safeMode, scrapeOptions);
   const projectedKeylessCredits = !isDirectToBullMQ
     ? projectScrapeCredits(
         scrapeOptions,

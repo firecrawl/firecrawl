@@ -26,6 +26,7 @@ import { logger as _logger } from "../../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { checkPermissions } from "../../lib/permissions";
+import { resolveSafeMode } from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -61,11 +62,23 @@ export async function batchScrapeController(
     req.body = batchScrapeRequestSchema.parse(req.body);
   }
 
+  // Batch has many URLs; per-URL allowlist is applied at the scrapeURL backstop.
+  // Resolve org-level here only for the bypass/enablement decision.
+  const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
+  if (safeMode.error) {
+    return res.status(403).json({
+      success: false,
+      code: safeMode.code,
+      error: safeMode.error,
+    });
+  }
+
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
     override: req.body.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
     return res.status(403).json({
@@ -76,6 +89,7 @@ export async function batchScrapeController(
 
   const permissions = checkPermissions(req.body, req.acuc?.flags, {
     threatProtectionOrgConfig: threatProtection.orgConfig,
+    safeMode: safeMode.safeMode ?? null,
   });
   if (permissions.error) {
     return res.status(403).json({
@@ -347,6 +361,10 @@ export async function batchScrapeController(
           bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
           threatProtection: threatProtection.policy ?? undefined,
+          // Safe Mode rides the batch payload so each URL resolves it per-URL
+          // at the scrapeURL backstop.
+          teamFlags: req.acuc?.flags ?? undefined,
+          safeModeBypassed: safeMode.bypassed === true,
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,
         createdAt: Date.now(),

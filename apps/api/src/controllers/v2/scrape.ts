@@ -405,6 +405,7 @@ export async function scrapeController(
                       safeMode: safeMode.allowlisted
                         ? undefined
                         : safeMode.safeMode,
+                      safeModeBypassed: safeMode.bypassed === true,
                     },
                     skipNuq: true,
                     origin,

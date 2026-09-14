@@ -10,6 +10,28 @@ import {
 
 const SUPPORT_EMAIL = "support@firecrawl.com";
 
+// Credential-bearing request headers rejected at request time and stripped at
+// the worker under Safe Mode's disableAuthentication (case-insensitive match).
+export const SAFE_MODE_CREDENTIAL_HEADERS = [
+  "authorization",
+  "cookie",
+  "proxy-authorization",
+];
+
+// Remove credential-bearing headers. Used by the fire-engine builders so
+// inherited scrape options (crawl children, sub-scrapes) can't carry credentials
+// even when no request-time gate ran.
+export function stripCredentialHeaders(
+  headers: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!headers) return headers;
+  return Object.fromEntries(
+    Object.entries(headers).filter(
+      ([k]) => !SAFE_MODE_CREDENTIAL_HEADERS.includes(k.toLowerCase()),
+    ),
+  );
+}
+
 function isSafeModeAllowlisted(
   url: string,
   allowlist: string[] | undefined,
@@ -64,10 +86,16 @@ export function applySafeMode(
 ): void {
   if (!safeMode) return;
 
+  // Force a non-stealth proxy. Request-time enforcement rejects an *explicit*
+  // stealth/enhanced proxy with a 403, but inherited scrape options (crawl
+  // children, search/extract sub-scrapes) reach the worker without that gate —
+  // downgrade any escalated tier to basic here so the worker never uses stealth.
   if (
     !safeMode.lockdown &&
     safeMode.disableStealthProxy &&
-    scrapeOptions.proxy === "auto"
+    (scrapeOptions.proxy === "auto" ||
+      scrapeOptions.proxy === "stealth" ||
+      scrapeOptions.proxy === "enhanced")
   ) {
     scrapeOptions.proxy = "basic";
   }
