@@ -444,7 +444,6 @@ if err != nil {
 fmt.Println(result.Tools, result.Warning)
 ```
 
-Set `Skills` to a pointer to `true` for contextual matches in the same tools array.
 For progressive disclosure, Find Tools returns an item's next detail request and,
 when more results are available, a top-level next page request:
 

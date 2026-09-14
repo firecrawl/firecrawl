@@ -81,7 +81,8 @@ export async function scrapeAlexandria(
       error?: string;
     }>("/v2/scrape", payload, {
       headers: { "x-request-id": requestId },
-      ...(opts.timeout != null ? { timeoutMs: opts.timeout + 5000 } : {}),
+      // Allow response delivery after the API's capped execution deadline.
+      timeoutMs: Math.min(opts.timeout ?? 50000, 50000) + 30000,
     });
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "alexandria");

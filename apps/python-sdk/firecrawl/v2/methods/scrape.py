@@ -126,8 +126,8 @@ def _prepare_scrape_alexandria_request(
         items.append(item)
     payload: Dict[str, Any] = {"alexandria": items}
     if timeout is not None:
-        if timeout <= 0:
-            raise ValueError("Timeout must be positive")
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
+            raise ValueError("Timeout must be a positive integer")
         payload["timeout"] = timeout
     if integration is not None and str(integration).strip():
         payload["integration"] = str(integration).strip()
@@ -159,7 +159,7 @@ def scrape_alexandria(client: HttpClient, calls, *, timeout: Optional[int] = Non
     headers = {**client._prepare_headers(), "x-request-id": request_id}
     try:
         response = client.post("/v2/scrape", payload, headers=headers,
-                                    timeout=(timeout + 5000) / 1000 if timeout else None)
+                                    timeout=(min(timeout if timeout is not None else 50000, 50000) + 30000) / 1000)
         if response.status_code != 200 or not response.json().get("success"):
             handle_response_error(response, "scrape alexandria")
         return _parse_scrape_alexandria_response(response.json(), request_id)

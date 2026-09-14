@@ -108,7 +108,11 @@ func (c *Client) FindTools(ctx context.Context, opts *FindToolsOptions) (*FindTo
 	}
 	item := result.Alexandria[0]
 	if item.Error != nil {
-		return fail(&FirecrawlError{ErrorCode: item.Error.Code, Message: item.Error.Message})
+		status := 0
+		if item.Error.Status != nil {
+			status = *item.Error.Status
+		}
+		return fail(&FirecrawlError{StatusCode: status, ErrorCode: item.Error.Code, Message: item.Error.Message})
 	}
 	raw, err := json.Marshal(item.Data)
 	if err != nil {

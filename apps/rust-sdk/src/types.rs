@@ -1348,6 +1348,16 @@ pub struct DiscoveredTool {
     pub matched_by: Vec<String>,
     #[serde(default)]
     pub matched_urls: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires_one_of: Option<Vec<Vec<String>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub example: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub concept: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cohorts: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub similarity: Option<f64>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }

@@ -7,7 +7,13 @@ use serde_json::json;
 #[tokio::test]
 async fn unified_contracts_and_execution_identity() {
     let mut server = mockito::Server::new_async().await;
-    let tool = json!({"id":"p/a","provider":"p","capability":"a","name":"Tool","description":"Example","creditsCost":2,"perRecord":false,"options":[{"name":"q","type":"string"}],"response":{"fields":[]},"examples":{},"matchedBy":["semantic","domain"],"matchedUrls":["https://example.com"]});
+    let mut tool = json!({"id":"p/a","provider":"p","capability":"a","name":"Tool","description":"Example","creditsCost":2,"perRecord":false,"options":[{"name":"q","type":"string"}],"response":{"fields":[]},"examples":{},"matchedBy":["semantic","domain"],"matchedUrls":["https://example.com"]});
+    tool["requiresOneOf"] = json!([["q", "url"]]);
+    tool["example"] = json!({"q": "test"});
+    tool["concept"] = json!("search");
+    tool["cohorts"] = json!(["research"]);
+    tool["similarity"] = json!(0.9);
+    tool["futureField"] = json!(true);
     let production_tool = json!({"id":"benzinga/calendar/ratings","provider":"benzinga","capability":"calendar/ratings","name":"Analyst ratings","description":"Ratings","creditsCost":5,"perRecord":false,"label":"Ratings","whenToUse":"Analyst ratings for a ticker","returns":{"about":"Ratings"},"discovery":{"urls":[]},"attribution":{"required":true},"options":[{"name":"tickers","type":"string"}],"response":{"fields":[]},"matchedBy":["semantic"],"matchedUrls":[]});
     let search = server
         .mock("POST", "/v2/search")
@@ -35,6 +41,16 @@ async fn unified_contracts_and_execution_identity() {
         .unwrap();
     let tools = found.data.tools.as_ref().unwrap();
     assert_eq!(serde_json::to_value(&tools[0]).unwrap(), tool);
+    assert_eq!(
+        tools[0].requires_one_of,
+        Some(vec![vec!["q".into(), "url".into()]])
+    );
+    assert_eq!(tools[0].example, Some(json!({"q": "test"})));
+    assert_eq!(tools[0].concept.as_deref(), Some("search"));
+    assert_eq!(tools[0].cohorts, Some(vec!["research".into()]));
+    assert_eq!(tools[0].similarity, Some(0.9));
+    assert_eq!(tools[0].extra.get("futureField"), Some(&json!(true)));
+    assert!(tools[1].requires_one_of.is_none());
     assert!(tools[1].examples.is_empty());
     assert_eq!(tools[1].label.as_deref(), Some("Ratings"));
     assert_eq!(

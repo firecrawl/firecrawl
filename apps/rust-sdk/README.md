@@ -300,8 +300,7 @@ if let Some(next_page) = found.next {
 }
 ```
 
-Set `SearchOptions.skills` to `Some(true)` for contextual matches in the same tools
-array. Find Tools reveals providers, groups, and contracts without a search query.
+Find Tools reveals providers, groups, and contracts without a search query.
 An item's `next` reveals more detail; top-level `next` requests another page.
 Both are Alexandria calls accepted by `scrape_alexandria`.
 

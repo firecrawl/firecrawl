@@ -31,17 +31,19 @@ async def test_search_and_progressive_lookup(async_client, monkeypatch):
     calls=[]
     def payload(body):
         calls.append(body)
-        return {'success':True, 'data': {'tools':[TOOL, PRODUCTION_TOOL], 'web':[]} if 'query' in body else DATA}
+        return {'success':True, 'scrape_id': 'scrape-1', 'data': {'tools':[TOOL, PRODUCTION_TOOL], 'web':[]} if 'query' in body else DATA}
     client = AsyncFirecrawl(api_key='fc-test') if async_client else Firecrawl(api_key='fc-test')
     if async_client:
-        async def post(url, **kwargs): return httpx.Response(200,json=payload(kwargs['json']))
-        monkeypatch.setattr(client._v2_client.async_http_client._client,'post',post)
-        search=await client.search('podcasts',sources=['alexandria'],domain_tools=True)
-        found=await client.find_tools(providers=['particle'],limit=2)
-        result=await client.scrape(alexandria=found.items[0]['next'],request_id='walk-1')
-        with pytest.raises(ValueError, match='URL cannot be empty'):
-            await client.scrape()
-        await client._v2_client.async_http_client.close()
+        try:
+            async def post(url, **kwargs): return httpx.Response(200,json=payload(kwargs['json']))
+            monkeypatch.setattr(client._v2_client.async_http_client._client,'post',post)
+            search=await client.search('podcasts',sources=['alexandria'],domain_tools=True)
+            found=await client.find_tools(providers=['particle'],limit=2)
+            result=await client.scrape(alexandria=found.items[0]['next'],request_id='walk-1')
+            with pytest.raises(ValueError, match='URL cannot be empty'):
+                await client.scrape()
+        finally:
+            await client._v2_client.async_http_client.close()
     else:
         monkeypatch.setattr('requests.post',lambda url,**kwargs:response(200,payload(kwargs['json'])))
         search=client.search('podcasts',sources=['alexandria'],domain_tools=True)
@@ -59,6 +61,10 @@ async def test_search_and_progressive_lookup(async_client, monkeypatch):
     assert 'request_id' not in calls[-1]
     assert result.request_id=='walk-1'
     assert result.credits_cost==0
+    assert result.scrape_id == 'scrape-1'
+    assert result.alexandria[0].provider == NEXT['provider']
+    assert result.alexandria[0].data == DATA['alexandria'][0]['data']
+    assert result.alexandria[0].error is None
 
 
 def test_retry_id_and_errors(monkeypatch):
@@ -86,12 +92,14 @@ async def test_execution_failure_preserves_cause_and_retry_identity(async_client
     cause = ValueError('Malformed response')
     client = AsyncFirecrawl(api_key='fc-test') if async_client else Firecrawl(api_key='fc-test')
     if async_client:
-        async def post(*args, **kwargs):
-            raise cause
-        monkeypatch.setattr(client._v2_client.async_http_client, 'post', post)
-        with pytest.raises(FirecrawlError) as caught:
-            await client.scrape(alexandria=NEXT, request_id='uncertain-1')
-        await client._v2_client.async_http_client.close()
+        try:
+            async def post(*args, **kwargs):
+                raise cause
+            monkeypatch.setattr(client._v2_client.async_http_client, 'post', post)
+            with pytest.raises(FirecrawlError) as caught:
+                await client.scrape(alexandria=NEXT, request_id='uncertain-1')
+        finally:
+            await client._v2_client.async_http_client.close()
     else:
         def post(*args, **kwargs):
             raise cause
@@ -130,11 +138,13 @@ async def test_find_tools_error_keeps_code(async_client, monkeypatch):
             error={'code': 'invalid_options', 'message': 'Invalid lookup', 'status': 400})], 'creditsCost': 0}}
     client = AsyncFirecrawl(api_key='fc-test') if async_client else Firecrawl(api_key='fc-test')
     if async_client:
-        async def post(url, **kwargs): return httpx.Response(200, json=body)
-        monkeypatch.setattr(client._v2_client.async_http_client._client, 'post', post)
-        with pytest.raises(FirecrawlError) as caught:
-            await client.find_tools(providers=['particle'])
-        await client._v2_client.async_http_client.close()
+        try:
+            async def post(url, **kwargs): return httpx.Response(200, json=body)
+            monkeypatch.setattr(client._v2_client.async_http_client._client, 'post', post)
+            with pytest.raises(FirecrawlError) as caught:
+                await client.find_tools(providers=['particle'])
+        finally:
+            await client._v2_client.async_http_client.close()
     else:
         monkeypatch.setattr('requests.post', lambda url, **kwargs: response(200, body))
         with pytest.raises(FirecrawlError) as caught:
@@ -142,3 +152,61 @@ async def test_find_tools_error_keeps_code(async_client, monkeypatch):
     assert caught.value.code == 'invalid_options'
     assert caught.value.status_code == 400
     assert caught.value.request_id
+
+
+def test_document_tools_resolve_forward_reference():
+    from firecrawl.v2.types import Document
+    document = Document(markdown="Result", tools=[PRODUCTION_TOOL])
+    assert document.tools[0].provider == "benzinga"
+    assert document.tools[0].when_to_use == "Analyst ratings for a ticker"
+
+
+@pytest.mark.parametrize("code", [None, "OTHER_ACTION_REQUIRED"])
+def test_unrelated_403_action_is_not_provider_terms(code):
+    from firecrawl.v2.utils.error_handler import handle_response_error, WebsiteNotSupportedError
+    body = {**TERMS_403, "code": code}
+    with pytest.raises(WebsiteNotSupportedError):
+        handle_response_error(response(403, body), "scrape")
+
+
+@pytest.mark.parametrize("timeout", [True, False, 1.5, "100", 0, -1])
+def test_alexandria_rejects_invalid_timeout(timeout):
+    from firecrawl.v2.methods.scrape import _prepare_scrape_alexandria_request
+    with pytest.raises(ValueError, match="positive integer"):
+        _prepare_scrape_alexandria_request([NEXT], timeout=timeout)
+
+
+@pytest.mark.parametrize("count", [1, 2, 10])
+def test_alexandria_call_boundaries_and_result_errors(count):
+    from firecrawl.v2.methods.scrape import _prepare_scrape_alexandria_request, _parse_scrape_alexandria_response
+    assert len(_prepare_scrape_alexandria_request([NEXT] * count)["alexandria"]) == count
+    with pytest.raises(ValueError, match="At most 10"):
+        _prepare_scrape_alexandria_request([NEXT] * 11)
+    with pytest.raises(ValueError, match="At least one"):
+        _prepare_scrape_alexandria_request([])
+    item = {"provider": "p", "capability": "a", "error": {"code": "unavailable", "message": "Unavailable", "status": 503}}
+    result = _parse_scrape_alexandria_response({"scrape_id": "s1", "data": {"alexandria": [item] * count, "creditsCost": 0}}, "r1")
+    assert result.scrape_id == "s1"
+    assert len(result.alexandria) == count
+    assert result.alexandria[0].error.status == 503
+    assert result.alexandria[0].error.code == "unavailable"
+
+
+@pytest.mark.parametrize("async_client", [False, True])
+@pytest.mark.parametrize("timeout, expected", [(None, 80), (1000, 31), (100000, 80)])
+@pytest.mark.asyncio
+async def test_alexandria_transport_timeout(async_client, timeout, expected):
+    from unittest.mock import AsyncMock
+    from firecrawl.v2.methods.scrape import scrape_alexandria
+    from firecrawl.v2.methods.aio.scrape import scrape_alexandria as async_scrape
+    client = Mock()
+    client._prepare_headers.return_value = {}
+    reply = response(200, {"success": True, "data": DATA})
+    client.post = AsyncMock(return_value=reply) if async_client else Mock(return_value=reply)
+    if async_client:
+        await async_scrape(client, [NEXT], timeout=timeout)
+    else:
+        scrape_alexandria(client, [NEXT], timeout=timeout)
+    assert client.post.call_args.kwargs["timeout"] == expected
+    payload = client.post.call_args.args[1]
+    assert payload.get("timeout") == timeout

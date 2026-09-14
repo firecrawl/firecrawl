@@ -1,6 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from "@jest/globals";
+import { afterAll, beforeAll, beforeEach, describe, expect, jest, test } from "@jest/globals";
 import { createServer, type Server } from "node:http";
 import { FirecrawlClient } from "../../../v2/client";
+
+import { scrapeAlexandria } from "../../../v2/methods/tools";
 
 const tool = {
   id: "particle/podcasts/episodes/search",
@@ -54,6 +56,11 @@ let server: Server;
 let client: FirecrawlClient;
 const sent: Array<{ body: any; id: string | undefined }> = [];
 let attempts = 0;
+
+beforeEach(() => {
+  sent.length = 0;
+  attempts = 0;
+});
 
 beforeAll(async () => {
   server = createServer(async (req, res) => {
@@ -218,3 +225,16 @@ describe("Alexandria contracts and execution", () => {
     expect(sent).toHaveLength(count);
   });
 });
+
+
+test.each([[undefined, 80000], [1000, 31000], [100000, 80000]])(
+  "Alexandria timeout %s allows response delivery (%s ms)",
+  async (timeout, timeoutMs) => {
+    const http = { post: jest.fn(async () => ({ status: 200, data: {
+      success: true, data: { alexandria: [], creditsCost: 0 },
+    } })) };
+    await scrapeAlexandria(http as any, [next], { timeout });
+    expect(http.post).toHaveBeenCalledWith("/v2/scrape", expect.anything(),
+      expect.objectContaining({ timeoutMs }));
+  },
+);

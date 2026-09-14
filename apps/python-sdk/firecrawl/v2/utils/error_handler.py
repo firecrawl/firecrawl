@@ -131,7 +131,7 @@ def handle_response_error(response: requests.Response, action: str) -> None:
     elif response.status_code == 402:
         message = f"Payment Required: Failed to {action}. {error_message} - {error_details}"
         raise PaymentRequiredError(message, response.status_code, response, code=code, charge_id=charge_id)
-    elif response.status_code == 403 and (code == PROVIDER_TERMS_REQUIRED_CODE or requires_action is not None):
+    elif response.status_code == 403 and code == PROVIDER_TERMS_REQUIRED_CODE:
         raise ProviderTermsRequiredError(error_message, response.status_code, response, code=code, charge_id=charge_id, requires_action=requires_action)
     elif response.status_code == 403:
         message = f"Website Not Supported: Failed to {action}. {error_message} - {error_details}"

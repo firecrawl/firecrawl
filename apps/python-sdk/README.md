@@ -416,7 +416,11 @@ print(result.tools[0].options)
 catalogue = firecrawl.find_tools(providers=["particle"], limit=2)
 if catalogue.items and catalogue.items[0].get("next"):
     details = firecrawl.scrape(alexandria=catalogue.items[0]["next"])
-    print(details.alexandria[0].data)
+    for item in details.alexandria:
+        if item.error:
+            print(f"Lookup failed: {item.error.message}")
+        else:
+            print(item.data)
 ```
 
 Use `scrape(alexandria={"provider": ..., "capability": ..., "options": ...})` to

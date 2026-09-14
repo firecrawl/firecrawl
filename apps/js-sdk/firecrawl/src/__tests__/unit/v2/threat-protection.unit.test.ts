@@ -32,7 +32,7 @@ describe("v2 threatProtection request serialization", () => {
     expect(http.post).toHaveBeenCalledWith(
       "/v2/scrape",
       expect.objectContaining({ url: "https://example.com", threatProtection }),
-      {},
+      { timeoutMs: 330000 },
     );
   });
 
@@ -130,4 +130,11 @@ describe("v2 threatProtection request serialization", () => {
     const body = http.post.mock.calls[0][1] as Record<string, unknown>;
     expect(body).not.toHaveProperty("threatProtection");
   });
+});
+
+
+test.each([false, undefined])("scrape omits domainTools when %s", async (domainTools) => {
+  const http = makeHttp({ success: true, data: {} });
+  await scrape(http, "https://example.com", { domainTools });
+  expect(http.post.mock.calls[0][1]).not.toHaveProperty("domainTools");
 });
