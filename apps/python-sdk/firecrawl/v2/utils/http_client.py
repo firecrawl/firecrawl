@@ -47,7 +47,11 @@ class HttpClient:
             ep2 = urlparse(f"https:{endpoint}")
             path = ep2.path or "/"
             return urlunparse((base.scheme or "https", base.netloc, path, "", ep2.query, ""))
-        return urljoin(base_str, endpoint)
+        # A leading-slash endpoint (every v2 method passes one, e.g. "/v2/search") would make
+        # urljoin() replace the base URL's entire path per RFC 3986, dropping any prefix a
+        # self-hosted deployment serves Firecrawl under (e.g. behind nginx at "/firecrawl").
+        # Strip the leading slash so it joins as a relative reference onto base_str instead.
+        return urljoin(base_str, endpoint.lstrip("/"))
     
     def _prepare_headers(
         self,
