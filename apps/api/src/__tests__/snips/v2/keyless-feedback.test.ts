@@ -3,7 +3,6 @@ import { db } from "../../../db/connection";
 import { search_feedback } from "../../../db/schema";
 import { keylessTeamId, keylessTeamUuid } from "../../../lib/keyless";
 import { redisRateLimitClient } from "../../../services/rate-limiter";
-import { keylessFeedbackRedis } from "../../../controllers/v2/feedback/keyless-redis";
 import request from "supertest";
 import { randomUUID } from "node:crypto";
 import { config } from "../../../config";
@@ -18,7 +17,6 @@ import { scrapeTimeout } from "./lib";
 const enabled =
   TEST_PRODUCTION &&
   config.KEYLESS_FEEDBACK_ENABLED &&
-  !!keylessFeedbackRedis &&
   !!config.KEYLESS_PROXY_SECRET &&
   config.KEYLESS_REQUESTS_PER_DAY !== undefined &&
   config.KEYLESS_CREDITS_PER_DAY !== undefined;
@@ -34,7 +32,7 @@ describeIf(enabled)("keyless feedback", () => {
       "keyless_credits:203.0.113.173",
       `keyless_feedback_attempts:${identity}`,
     );
-    await keylessFeedbackRedis!.del(`keyless_feedback_invitations:${identity}`);
+    await redisRateLimitClient.del(`keyless_feedback_invitations:${identity}`);
   };
   beforeEach(cleanup);
   afterAll(cleanup);

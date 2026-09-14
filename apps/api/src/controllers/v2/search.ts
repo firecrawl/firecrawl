@@ -1,4 +1,4 @@
-import { keylessFeedbackMetadata } from "./feedback/keyless-context";
+import { keylessFeedbackMetadata } from "./feedback/keyless-invitation";
 import { NextFunction, Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
@@ -463,7 +463,6 @@ async function searchControllerInner(
       "search",
       jobId,
       true,
-      result.response,
     );
     return res.status(200).json({
       success: true,

@@ -3,7 +3,7 @@ import { v7 as uuidv7 } from "uuid";
 import { db } from "../../../db/connection";
 import { search_feedback } from "../../../db/schema";
 import type { KeylessFeedbackRequest } from "./keyless-schema";
-import type { KeylessFeedbackContext } from "./keyless-context";
+import type { FeedbackJobRow } from "./internal-types";
 
 const utcDayStart = sql`date_trunc('day', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
 
@@ -24,7 +24,7 @@ export async function hasKeylessFeedbackToday(identity: string) {
 export async function insertKeylessFeedback(
   identity: string,
   answers: KeylessFeedbackRequest,
-  context: KeylessFeedbackContext,
+  job: FeedbackJobRow,
 ) {
   return db.transaction(
     async tx => {
@@ -67,15 +67,16 @@ export async function insertKeylessFeedback(
       await tx.insert(search_feedback).values({
         id: feedbackId,
         endpoint: answers.endpoint,
-        job_id: answers.jobId,
+        job_id: job.id,
+        request_id: job.request_id,
         search_id: answers.endpoint === "search" ? answers.jobId : null,
         team_id: identity,
         overall_rating: answers.rating,
         comment: answers.assessment,
         origin: answers.origin,
         integration: answers.integration ?? null,
-        job_status: context.success ? "completed" : "failed",
-        metadata: { version: "keyless_feedback_v1", answers, context },
+        job_status: job.is_successful === false ? "failed" : "completed",
+        metadata: { version: "keyless_feedback_v1", answers },
         created_at: sql`clock_timestamp()`,
       });
       return { success: true as const, feedbackId };
