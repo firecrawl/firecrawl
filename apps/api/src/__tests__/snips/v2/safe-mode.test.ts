@@ -449,7 +449,10 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
       "crawl rejects a stealth proxy nested under scrapeOptions",
       async () => {
         const res = await crawlStart(
-          { url: createTestIdUrl(), scrapeOptions: { proxy: "stealth" } },
+          {
+            url: createTestIdUrl(),
+            scrapeOptions: { formats: ["markdown"], proxy: "stealth" },
+          },
           identity,
         );
         expect(res.statusCode).toBe(403);

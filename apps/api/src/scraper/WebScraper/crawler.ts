@@ -85,6 +85,8 @@ export class WebCrawler {
   private location?: ScrapeOptions["location"];
   private headers?: Record<string, string>;
   private robotsUserAgent?: string;
+  // Safe Mode lockdown: no outbound discovery to the target (robots/sitemap).
+  private lockdown: boolean = false;
 
   constructor({
     jobId,
@@ -107,6 +109,7 @@ export class WebCrawler {
     location,
     headers,
     robotsUserAgent,
+    lockdown,
   }: {
     jobId: string;
     initialUrl: string;
@@ -128,6 +131,7 @@ export class WebCrawler {
     location?: ScrapeOptions["location"];
     headers?: Record<string, string>;
     robotsUserAgent?: string;
+    lockdown?: boolean;
   }) {
     this.jobId = jobId;
     this.initialUrl = initialUrl;
@@ -158,6 +162,7 @@ export class WebCrawler {
     this.location = location;
     this.headers = headers;
     this.robotsUserAgent = robotsUserAgent;
+    this.lockdown = lockdown ?? false;
   }
 
   public setBaseUrl(newBase: string): void {
@@ -469,6 +474,11 @@ export class WebCrawler {
     skipTlsVerification = false,
     abort?: AbortSignal,
   ): Promise<string> {
+    // Lockdown: no outbound fetch to the target. Empty robots => fail-open,
+    // consistent with a failed robots fetch.
+    if (this.lockdown) {
+      return "";
+    }
     try {
       this.logger.debug("Attempting to fetch robots.txt", {
         method: "getRobotsTxt",
@@ -550,6 +560,13 @@ export class WebCrawler {
     mock?: string,
     maxAge: number = SITEMAP_MAX_AGE,
   ): Promise<number> {
+    // Lockdown: no outbound sitemap discovery to the target (index-only crawl).
+    if (this.lockdown) {
+      this.logger.debug("Skipping sitemap discovery under Safe Mode lockdown", {
+        method: "tryGetSitemap",
+      });
+      return 0;
+    }
     this.logger.debug(`Fetching sitemap links from ${this.initialUrl}`, {
       method: "tryGetSitemap",
     });

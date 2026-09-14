@@ -8,6 +8,7 @@ import { getAdjustedMaxDepth } from "../scraper/WebScraper/utils/maxDepthUtils";
 import type { Logger } from "winston";
 import { withSpan, setSpanAttributes } from "./otel-tracer";
 import { getScrapeZDR, getIgnoreRobots } from "./zdr-helpers";
+import { resolveSafeMode } from "./safe-mode";
 import {
   firstPipelineError,
   reportPipelineError,
@@ -1012,6 +1013,10 @@ export function crawlToCrawler(
     location: sc.scrapeOptions?.location,
     headers: sc.scrapeOptions?.headers,
     robotsUserAgent: sc.crawlerOptions?.robotsUserAgent,
+    // Safe Mode lockdown: skip robots/sitemap discovery (outbound to target).
+    lockdown:
+      resolveSafeMode(teamFlags, undefined, sc.originUrl ?? undefined).safeMode
+        ?.lockdown ?? false,
   });
 
   if (sc.robots !== undefined) {
