@@ -28,3 +28,19 @@ export const spurBypassesTotal = new Counter({
   help: "Spur checks skipped or failed open without a reputation result; includes eligibility probes, not necessarily admitted requests",
   labelNames: ["reason"],
 });
+
+// Export quiet error and bypass series before their first event.
+for (const event of ["lookup_error", "cache_error", "wait_timeout"]) {
+  spurEventsTotal.inc({ event }, 0);
+}
+
+for (const reason of [
+  "disabled",
+  "non_ipv4",
+  "lookup_error",
+  "cached_failure",
+  "lock_error",
+  "wait_timeout",
+]) {
+  spurBypassesTotal.inc({ reason }, 0);
+}
