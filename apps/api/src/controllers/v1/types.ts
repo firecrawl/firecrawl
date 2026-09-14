@@ -542,10 +542,7 @@ const baseScrapeOptions = z.strictObject({
   fastMode: z.boolean().prefault(false),
   useMock: z.string().optional(),
   blockAds: z.boolean().prefault(true),
-  // No prefault here: the default is conditional on location (see extractTransform).
-  // Requests without a non-default country default to "auto"; requests with one
-  // default to "basic".
-  proxy: z.enum(["basic", "stealth", "enhanced", "auto"]).optional(),
+  proxy: z.enum(["basic", "stealth", "enhanced", "auto"]).prefault("basic"),
   maxAge: z
     .int()
     .gte(0)
@@ -583,23 +580,6 @@ const extractTransformRequired = <T extends ScrapeOptions>(obj: T): T => {
 };
 
 const extractTransform = (obj: ScrapeOptions) => {
-  // Proxy default: "auto" when no non-default country is specified, so
-  // requests can upgrade to stealth on proxy failures. When a country is
-  // specified, keep the historical "basic" default.
-  if (obj.proxy === undefined) {
-    // Check both location fields: a non-default country in either one counts
-    // as specified, even if the other omitted its country (its schema fills
-    // in the "us-generic" default, which must not shadow the other field).
-    const hasNonDefaultCountry = [
-      obj.location?.country,
-      obj.geolocation?.country,
-    ].some(
-      country =>
-        country !== undefined && country.toLowerCase() !== "us-generic",
-    );
-    obj = { ...obj, proxy: hasNonDefaultCountry ? "basic" : "auto" };
-  }
-
   // Handle timeout
   if (
     (includesFormat(obj.formats, "extract") ||
@@ -944,7 +924,8 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
 export const crawlRequestSchema = crawlRequestSchemaBase
   .strict()
   .superRefine((x, ctx) => {
-    addPathRegexIssues(x, ctx);
+    addPathRegexIssues(x.includePaths, "includePaths", ctx);
+    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
   })
   .refine(
     x => (x.scrapeOptions ? extractRefine(x.scrapeOptions) : true),
@@ -1027,7 +1008,8 @@ const mapRequestSchemaBase = crawlerOptions
 export const mapRequestSchema = mapRequestSchemaBase
   .strict()
   .superRefine((x, ctx) => {
-    addPathRegexIssues(x, ctx);
+    addPathRegexIssues(x.includePaths, "includePaths", ctx);
+    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
   });
 
 // export type MapRequest = {
@@ -1360,6 +1342,9 @@ export type TeamFlags = {
   labsSearch?: boolean;
   exchangeRetrieve?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
+  // The org's DPA (or partner amendment) restricts how its data may be
+  // handled. Informational only: the API does not change behavior on it.
+  dpaRestricted?: boolean;
   organizationDataSourceAccess?: Record<
     string,
     {

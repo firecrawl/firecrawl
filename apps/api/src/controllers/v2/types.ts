@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
@@ -1116,7 +1115,6 @@ const scrapeRequestSchemaBase = baseScrapeOptions.extend({
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
-  domainTools: z.boolean().optional(),
   __agentInterop: z
     .object({
       auth: z.string(),
@@ -1319,7 +1317,8 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
 
 export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
   .superRefine((x, ctx) => {
-    addPathRegexIssues(x, ctx);
+    addPathRegexIssues(x.includePaths, "includePaths", ctx);
+    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
   })
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
@@ -1373,7 +1372,8 @@ const mapRequestSchemaBase = crawlerOptions
 export const mapRequestSchema = strictWithMessage(
   mapRequestSchemaBase,
 ).superRefine((x, ctx) => {
-  addPathRegexIssues(x, ctx);
+  addPathRegexIssues(x.includePaths, "includePaths", ctx);
+  addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
 });
 
 // export type MapRequest = {
@@ -1539,9 +1539,7 @@ export type ScrapeResponse =
   | {
       success: true;
       warning?: string;
-      data: Document & {
-        tools?: import("../../services/alexandria/contracts").DiscoveredTool[];
-      };
+      data: Document;
       scrape_id?: string;
     };
 
@@ -1891,7 +1889,6 @@ type Account = {
 };
 
 export type TeamFlags = {
-  exchangeRetrieve?: boolean;
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
@@ -1916,6 +1913,9 @@ export type TeamFlags = {
   menuBeta?: boolean;
   enrichBeta?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
+  // The org's DPA (or partner amendment) restricts how its data may be
+  // handled. Informational only: the API does not change behavior on it.
+  dpaRestricted?: boolean;
   organizationDataSourceAccess?: Record<
     string,
     {
@@ -2327,16 +2327,13 @@ export const searchRequestSchema = z
     sources: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["web", "images", "news", "alexandria"])),
+        z.array(z.enum(["web", "images", "news"])),
         // Array of objects (advanced format)
         z.array(
           z.union([
             webSearchSourceOptions,
             imagesSearchSourceOptions,
             newsSearchSourceOptions,
-            z.strictObject({
-              type: z.literal("alexandria"),
-            }),
           ]),
         ),
       ])
@@ -2374,7 +2371,6 @@ export const searchRequestSchema = z
     // our index. When omitted, the caller integration and rollout cohort decide
     // whether generated highlights are returned or only run in shadow mode.
     highlights: z.boolean().optional(),
-    domainTools: z.boolean().optional(),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions
@@ -2429,7 +2425,12 @@ export const searchRequestSchema = z
   )
   .refine(x => {
     const categories = x.categories ?? [];
-    return !hasCategory(categories, "developer") || categories.length === 1;
+    const hasDeveloper = categories.some(category =>
+      typeof category === "string"
+        ? category === "developer"
+        : category.type === "developer",
+    );
+    return !hasDeveloper || categories.length === 1;
   }, "the developer category cannot be combined with other categories")
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
