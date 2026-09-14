@@ -43,6 +43,10 @@ import {
   isThreatProtectionForced,
   THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/threat-protection/request";
+import {
+  getSafeMode,
+  SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
+} from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
 export async function crawlController(req: Request, res: Response) {
@@ -65,6 +69,12 @@ export async function crawlController(req: Request, res: Response) {
     if (isThreatProtectionForced(chunk?.flags)) {
       return res.status(403).json({
         error: THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE,
+      });
+    }
+
+    if (getSafeMode(chunk?.flags)) {
+      return res.status(403).json({
+        error: SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
       });
     }
 

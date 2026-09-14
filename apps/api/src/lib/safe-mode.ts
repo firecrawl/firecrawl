@@ -10,6 +10,11 @@ import {
 
 const SUPPORT_EMAIL = "support@firecrawl.com";
 
+// v0 content endpoints can't enforce Safe Mode's per-request surface, so a
+// Safe Mode org is rejected there outright (mirrors the threat-protection v0 gate).
+export const SAFE_MODE_V0_UNSUPPORTED_MESSAGE =
+  "Safe Mode is enabled for your organization, which is not supported on the v0 API. Please update your code to use the v1 or v2 API.";
+
 // Credential-bearing request headers rejected at request time and stripped at
 // the worker under Safe Mode's disableAuthentication (case-insensitive match).
 export const SAFE_MODE_CREDENTIAL_HEADERS = [
