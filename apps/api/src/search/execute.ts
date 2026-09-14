@@ -244,7 +244,6 @@ export async function executeSearch(
   let toolsWarning: string | undefined;
 
   if (
-    flags?.exchangeRetrieve &&
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon") &&
     (wantsTools || options.domainTools)

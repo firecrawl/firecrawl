@@ -12,10 +12,12 @@ vi.mock("../../lib/key-restriction", () => ({
 vi.mock("../../lib/agent-interop", () => ({
   isAgentInteropSecretValid: (value: string) => value === "test-secret",
 }));
+// orgIdFromAcuc answers null without it, so the ACUC's org needs it on.
 vi.mock("../../config", () => ({
   config: {
     FIRE_EXCHANGE_URL: "https://x",
     AGENT_INTEROP_SECRET: "test-secret",
+    USE_DB_AUTHENTICATION: true,
   },
 }));
 import { providerScrapeController } from "./scrape-alexandria";
@@ -30,7 +32,11 @@ app.use(express.json());
 app.use((req, _res, next) => {
   Object.assign(req, {
     auth: { team_id: "team" },
-    acuc: { api_key_id: 12, flags: { exchangeRetrieve: true } },
+    acuc: {
+      api_key_id: 12,
+      org_id: "org",
+      flags: { exchangeRetrieve: true },
+    },
   });
   next();
 });
@@ -70,6 +76,7 @@ it("returns the Scrape contract, shares identity with the legacy route, and logs
       calls: [call],
       requestId: "same-request",
       apiKeyId: 12,
+      orgId: "org",
     }),
   );
 

@@ -134,6 +134,15 @@ async function searchControllerInner(
     const wantsTools = req.body.sources.some(
       source => source.type === "alexandria",
     );
+    if (
+      (wantsTools || req.body.domainTools) &&
+      req.auth.team_id.startsWith("preview_keyless_")
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: "An API key is required for provider tools.",
+      });
+    }
     if (wantsTools && !req.body.query.trim())
       return res.status(400).json({
         success: false,
@@ -141,15 +150,13 @@ async function searchControllerInner(
       });
     if (
       (wantsTools || req.body.domainTools) &&
-      (!req.acuc?.flags?.exchangeRetrieve ||
-        teamForcedKind ||
+      (teamForcedKind ||
         req.body.enterprise?.some(mode => mode === "zdr" || mode === "anon"))
     )
       return res.status(403).json({
         success: false,
-        error: !req.acuc?.flags?.exchangeRetrieve
-          ? "The alexandria source is not enabled for this team."
-          : "Provider discovery requires access and does not support zero data retention.",
+        error:
+          "Provider discovery requires access and does not support zero data retention.",
       });
 
     const requestedFormats = formatTypesOf(req.body.scrapeOptions?.formats);
@@ -346,6 +353,7 @@ async function searchControllerInner(
     if (!isSearchPreview && shouldBill) {
       billTeam(
         req.auth.team_id,
+        req.acuc?.org_id ?? null,
         result.searchCredits,
         req.acuc?.api_key_id ?? null,
         { ...billing, chargeId: jobId },

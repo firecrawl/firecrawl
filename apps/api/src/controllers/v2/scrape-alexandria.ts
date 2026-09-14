@@ -7,6 +7,7 @@ import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
+import { orgIdFromAcuc } from "../../lib/team-org";
 import { logRequest } from "../../services/logging/log_job";
 import {
   callsSchema,
@@ -76,7 +77,14 @@ export async function providerScrapeController(
   if (REQUEST_ID_PATTERN.test(requestId))
     res.setHeader("x-request-id", requestId);
 
-  if (!req.acuc?.flags?.exchangeRetrieve)
+  if (req.auth.team_id.startsWith("preview_keyless_")) {
+    return res.status(403).json({
+      success: false,
+      error: "An API key is required for provider tools.",
+    });
+  }
+
+  if (!req.acuc)
     return res.status(403).json({
       success: false,
       error: "This endpoint is not enabled for this team.",
@@ -114,6 +122,7 @@ export async function providerScrapeController(
   try {
     result = await retrieveProviders({
       teamId: req.auth.team_id,
+      orgId: orgIdFromAcuc(req.acuc),
       apiKeyId: req.acuc.api_key_id ?? null,
       flags: req.acuc.flags,
       calls: body.alexandria,

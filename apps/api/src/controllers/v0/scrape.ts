@@ -111,7 +111,7 @@ async function scrapeHelper(
       apiKeyId,
     },
     jobId,
-    await getJobPriority({ team_id, basePriority: 10 }),
+    await getJobPriority({ team_id, org_id, basePriority: 10 }),
     false,
     true,
   );
@@ -270,14 +270,20 @@ export async function scrapeController(req: Request, res: Response) {
 
     // checkCredits — Autumn is the source of truth for credits.
     try {
-      const autumnResult = await autumnService.checkCredits({
-        teamId: team_id,
-        value: 1,
-        properties: {
-          source: "v0/scrape",
-          apiKeyId: chunk?.api_key_id ?? null,
-        },
-      });
+      // No org, no Autumn customer to gate against: fail open, exactly as
+      // checkCredits answered for an identity it could not name.
+      const orgId = chunk?.org_id ?? null;
+      const autumnResult = orgId
+        ? await autumnService.checkCredits({
+            teamId: team_id,
+            orgId,
+            value: 1,
+            properties: {
+              source: "v0/scrape",
+              apiKeyId: chunk?.api_key_id ?? null,
+            },
+          })
+        : null;
       // null = Autumn unavailable / self-hosted -> fail open, matching v1/v2.
       if (autumnResult !== null && !autumnResult.allowed) {
         earlyReturn = true;

@@ -119,7 +119,7 @@ export const exchangeRouter = express.Router();
 exchangeRouter.get(
   "/discover{/*path}",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
 // Both skills routes intentionally require the exchangeRetrieve flag during preview.

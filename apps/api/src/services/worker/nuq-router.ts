@@ -3,6 +3,7 @@ import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import { RateLimiterMode, ScrapeJobData } from "../../types";
 import { getACUCTeam } from "../../controllers/auth";
+import { orgIdForTeam } from "../../lib/team-org";
 import { autumnService } from "../autumn/autumn.service";
 import { redisEvictConnection } from "../../services/redis";
 import { isSelfHosted } from "../../lib/deployment";
@@ -248,11 +249,25 @@ export async function fdbEnqueueScrapeJobs(
   teamLimit: number | null;
 }> {
   let teamLimit: number | null = null;
-  if (!isSelfHosted() && !fdbForced()) {
-    teamLimit = (await autumnService.getConcurrencyLimit(teamId)) ?? 2;
-  } else if (!isSelfHosted()) {
+  if (!isSelfHosted()) {
+    // The org rides the job payload, snapshotted from the request ACUC at
+    // acceptance; every job in a batch is one team's, so any of them answers.
+    // The ACUC lookup is the fallback for a job enqueued without one (monitor
+    // jobs null the field deliberately — it also gates blocklist enforcement),
+    // so a monitor team is still gated on its real limit rather than falling
+    // open. Batches are enqueued per discovered link, so the payload org keeps
+    // the common path free of a lookup.
+    const orgId =
+      jobs
+        .map(j =>
+          "internalOptions" in j.data
+            ? (j.data.internalOptions?.orgId ?? null)
+            : null,
+        )
+        .find(o => o !== null) ?? (await orgIdForTeam(teamId));
+    const autumnLimit = await autumnService.getConcurrencyLimit(teamId, orgId);
     // fdbForced: leave unlimited (null) when Autumn has no concurrency value.
-    teamLimit = await autumnService.getConcurrencyLimit(teamId);
+    teamLimit = fdbForced() ? autumnLimit : (autumnLimit ?? 2);
   }
 
   const queueCap =

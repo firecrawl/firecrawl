@@ -55,6 +55,7 @@ const answer = {
 const run = (overrides: Record<string, unknown> = {}) =>
   retrieveProviders({
     teamId: "team",
+    orgId: "org",
     apiKeyId: 12,
     flags: {},
     calls: [call],
@@ -95,7 +96,7 @@ it("quotes, reserves, executes within budget, settles actual usage, records once
     scrapeId: "scrape-1",
   });
   expect(mocks.lock).toHaveBeenCalledWith(
-    expect.objectContaining({ value: 5, featureId: "credits" }),
+    expect.objectContaining({ value: 5, featureId: "credits", orgId: "org" }),
   );
   expect(executions()[0][0]).toEqual(
     expect.objectContaining({
@@ -109,11 +110,16 @@ it("quotes, reserves, executes within budget, settles actual usage, records once
       action: "confirm",
       overrideValue: 3,
       heldValue: 5,
+      team: { teamId: "team", orgId: "org" },
     }),
   );
   expect(mocks.billAdd).toHaveBeenCalledWith(
     "bill_team",
-    expect.objectContaining({ credits: 3, autumnTrackInRequest: true }),
+    expect.objectContaining({
+      credits: 3,
+      org_id: "org",
+      autumnTrackInRequest: true,
+    }),
     expect.objectContaining({
       jobId: expect.stringMatching(/^alexandria-bill-/),
     }),
@@ -259,7 +265,16 @@ it("refunds the direct-Autumn charge and leaves the Exchange usage pending when 
   expect((await run()).status).toBe(200);
   expect(mocks.billAdd).toHaveBeenCalledTimes(3);
   expect(mocks.refund).toHaveBeenCalledWith(
-    expect.objectContaining({ teamId: "team", value: 3 }),
+    expect.objectContaining({ teamId: "team", orgId: "org", value: 3 }),
   );
   expect(mocks.report).not.toHaveBeenCalled();
+});
+
+it("treats a team with no org as a skipped hold and executes nothing", async () => {
+  const refused = await run({ orgId: null });
+  expect(refused.status).toBe(503);
+  expect(refused.executed).toBe(false);
+  expect(mocks.lock).not.toHaveBeenCalled();
+  expect(executions()).toHaveLength(0);
+  expect(mocks.store.size).toBe(0);
 });

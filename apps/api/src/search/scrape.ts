@@ -220,6 +220,7 @@ export async function scrapeSearchResults(
 
   const jobPriority = await getJobPriority({
     team_id: options.teamId,
+    org_id: options.orgId ?? null,
     basePriority: 10,
   });
 

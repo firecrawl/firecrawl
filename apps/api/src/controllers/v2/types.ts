@@ -1917,6 +1917,9 @@ export type TeamFlags = {
   menuBeta?: boolean;
   enrichBeta?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
+  // The org's DPA (or partner amendment) restricts how its data may be
+  // handled. Informational only: the API does not change behavior on it.
+  dpaRestricted?: boolean;
   organizationDataSourceAccess?: Record<
     string,
     {

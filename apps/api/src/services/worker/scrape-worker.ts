@@ -51,6 +51,7 @@ import { getJobPriority } from "../../lib/job-priority";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
+import { orgIdForTeam } from "../../lib/team-org";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { CustomError } from "../../lib/custom-error";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
@@ -121,6 +122,18 @@ if (require.main === module) {
   warmExchangeCatalog();
 }
 
+// The org for a job's Autumn lookups. It rides the job payload, snapshotted
+// from the request ACUC at acceptance; the ACUC answers only for a job
+// enqueued without one (monitor jobs null it deliberately, since the field
+// also gates blocklist enforcement) — the same lookup getJobPriority used to
+// make for itself, now hoisted to once per job instead of once per link.
+async function orgIdForJob(
+  orgIdFromJob: string | null | undefined,
+  teamId: string,
+): Promise<string | null> {
+  return orgIdFromJob ?? (await orgIdForTeam(teamId));
+}
+
 async function billScrapeJob(
   job: NuQJob<any>,
   document: Document | null,
@@ -172,24 +185,35 @@ async function billScrapeJob(
       job.data.team_id !== config.BACKGROUND_INDEX_TEAM_ID! &&
       config.USE_DB_AUTHENTICATION
     ) {
+      // The org rides the job payload, snapshotted from the request ACUC at
+      // acceptance. The ACUC answers only for a job enqueued without one —
+      // the same lookup the billing service used to make on every charge.
+      const orgId = await orgIdForJob(
+        job.data.internalOptions?.orgId,
+        job.data.team_id,
+      );
+
       // Resolved outside the try so the catch's refund decision can see it.
       let routedToFirebill = false;
       try {
-        routedToFirebill = await autumnService.isRoutedThroughFirebill(
-          job.data.team_id,
-        );
-        trackedInRequest = await autumnService.trackCredits({
-          teamId: job.data.team_id,
-          value: creditsToBeBilled,
-          properties: autumnProperties,
-          featureId,
-          // The worker job id is the one identity that is unique per charge
-          // (a crawl id is shared by every page — keying on it would collapse
-          // a crawl's pages into one billed event) AND survives a stall
-          // requeue, which re-runs the job under the same id: with this key,
-          // the re-run dedupes instead of double-billing (firebill route).
-          idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
-        });
+        routedToFirebill = orgId
+          ? await autumnService.isRoutedThroughFirebill(job.data.team_id, orgId)
+          : false;
+        trackedInRequest = orgId
+          ? await autumnService.trackCredits({
+              teamId: job.data.team_id,
+              orgId,
+              value: creditsToBeBilled,
+              properties: autumnProperties,
+              featureId,
+              // The worker job id is the one identity that is unique per charge
+              // (a crawl id is shared by every page — keying on it would collapse
+              // a crawl's pages into one billed event) AND survives a stall
+              // requeue, which re-runs the job under the same id: with this key,
+              // the re-run dedupes instead of double-billing (firebill route).
+              idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
+            })
+          : false;
         // On the firebill route the ledger enqueue must be idempotent by the
         // originating job: a stalled job reruns under the same job.id, the
         // track dedupes in firebill, and a fresh random billing job id would
@@ -226,6 +250,7 @@ async function billScrapeJob(
               "bill_team",
               {
                 team_id: job.data.team_id,
+                org_id: orgId,
                 credits: creditsToBeBilled,
                 billing,
                 is_extract: false,
@@ -280,9 +305,10 @@ async function billScrapeJob(
                 billing,
               },
             );
-          } else {
+          } else if (orgId) {
             await autumnService.refundCredits({
               teamId: job.data.team_id,
+              orgId,
               value: creditsToBeBilled,
               properties: autumnProperties,
               featureId,
@@ -325,6 +351,8 @@ async function billScrapeJob(
 function billThreatBlockedDiscoveries(
   args: {
     teamId: string;
+    /** Snapshotted onto the job at acceptance; see InternalOptions.orgId. */
+    orgId: string | null;
     apiKeyId: number | null;
     billing: BillingMetadata;
     bypassBilling: boolean;
@@ -341,14 +369,18 @@ function billThreatBlockedDiscoveries(
   // billing metadata (each page job that discovers new blocked URLs bills its
   // own batch under the same crawl id) — a shared key would collapse them
   // into one charge, i.e. underbill. Keyless until per-batch identity exists.
-  billTeam(args.teamId, threatScanCredits, args.apiKeyId, args.billing).catch(
-    error => {
-      logger.error(
-        `Failed to bill team ${args.teamId} for ${threatScanCredits} threat scan credit(s)`,
-        { error },
-      );
-    },
-  );
+  billTeam(
+    args.teamId,
+    args.orgId,
+    threatScanCredits,
+    args.apiKeyId,
+    args.billing,
+  ).catch(error => {
+    logger.error(
+      `Failed to bill team ${args.teamId} for ${threatScanCredits} threat scan credit(s)`,
+      { error },
+    );
+  });
 }
 
 async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
@@ -649,6 +681,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 billThreatBlockedDiscoveries(
                   {
                     teamId: job.data.team_id,
+                    // A null org here would drop a real charge, so this falls
+                    // through the payload, the stored crawl, then the ACUC.
+                    orgId: await orgIdForJob(
+                      job.data.internalOptions?.orgId ??
+                        sc.internalOptions?.orgId,
+                      job.data.team_id,
+                    ),
                     apiKeyId: job.data.apiKeyId ?? null,
                     billing: resolveBillingMetadata({
                       billing: job.data.billing,
@@ -672,11 +711,18 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               }
             }
 
+            // Hoisted: one org resolution per job, not one per discovered link.
+            const crawlOrgId =
+              discoveredLinks.length > 0
+                ? await orgIdForJob(sc.internalOptions?.orgId, sc.team_id)
+                : null;
+
             for (const link of discoveredLinks) {
               if (await lockURL(job.data.crawl_id, sc, link)) {
                 // This seems to work really welel
                 const jobPriority = await getJobPriority({
                   team_id: sc.team_id,
+                  org_id: crawlOrgId,
                   basePriority: job.data.crawl_id ? 20 : 10,
                 });
                 const jobId = uuidv7();
@@ -1301,7 +1347,11 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
           : undefined,
       },
       jobId,
-      await getJobPriority({ team_id: job.data.team_id, basePriority: 15 }),
+      await getJobPriority({
+        team_id: job.data.team_id,
+        org_id: await orgIdForJob(sc.internalOptions?.orgId, job.data.team_id),
+        basePriority: 15,
+      }),
     );
     logger.debug("Adding scrape job to BullMQ...", { jobId });
     await addCrawlJob(job.data.crawl_id, jobId, logger);
@@ -1390,6 +1440,12 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         billThreatBlockedDiscoveries(
           {
             teamId: job.data.team_id,
+            // Kickoff jobs may carry no internalOptions; the stored crawl and
+            // then the ACUC answer, since a null org would drop a real charge.
+            orgId: await orgIdForJob(
+              job.data.internalOptions?.orgId ?? sc.internalOptions?.orgId,
+              job.data.team_id,
+            ),
             apiKeyId: job.data.apiKeyId ?? null,
             billing: resolveBillingMetadata({
               billing: job.data.billing,
@@ -1411,6 +1467,10 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
       let jobPriority = await getJobPriority({
         team_id: job.data.team_id,
+        org_id: await orgIdForJob(
+          job.data.internalOptions?.orgId,
+          job.data.team_id,
+        ),
         basePriority: 21,
       });
       logger.debug("Using job priority " + jobPriority, { jobPriority });
@@ -1557,6 +1617,12 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         billThreatBlockedDiscoveries(
           {
             teamId: job.data.team_id,
+            // Same as the other kickoff path: the ACUC answers when the crawl
+            // names no org, so a real charge is not dropped.
+            orgId: await orgIdForJob(
+              sc.internalOptions?.orgId,
+              job.data.team_id,
+            ),
             apiKeyId: job.data.apiKeyId ?? null,
             billing: resolveBillingMetadata({
               billing: job.data.billing,
@@ -1578,6 +1644,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
 
       const jobPriority = await getJobPriority({
         team_id: job.data.team_id,
+        org_id: await orgIdForJob(sc.internalOptions?.orgId, job.data.team_id),
         basePriority: 21,
       });
 
