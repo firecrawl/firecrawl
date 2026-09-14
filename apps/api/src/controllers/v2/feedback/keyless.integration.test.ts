@@ -232,10 +232,13 @@ suite("keyless feedback HTTP and persistence", () => {
         answers: { origin: "mcp", integration: "cli" },
         context: {
           invited: true,
-          request: {
-            categories: ["developer"],
-            file: { filename: "fixture.html", kind: "html" },
-          },
+          request:
+            endpoint === "parse"
+              ? null
+              : {
+                  categories: ["developer"],
+                  file: { filename: "fixture.html", kind: "html" },
+                },
         },
       });
       expect(JSON.stringify(rows)).not.toContain("redact-me");
@@ -679,6 +682,97 @@ suite("keyless feedback HTTP and persistence", () => {
         })
       ).status,
     ).toBe(200);
+  });
+  it("stores replacement sources for an irrelevant Search result", async () => {
+    const { jobId } = await job("search");
+    const observation = {
+      kind: "irrelevant",
+      position: 1,
+      reason: "aggregator_over_official",
+      knownSources: ["https://example.com/official"],
+      basis: "output",
+      detail: "The official reference should appear before the aggregator.",
+    };
+    expect(
+      (await submit({ ...body("search", jobId), observations: [observation] }))
+        .status,
+    ).toBe(200);
+    const [row] = await fixture.db!.select().from(table);
+    expect(row.metadata).toMatchObject({
+      answers: { observations: [{ ...observation, source: "web" }] },
+    });
+  });
+  it.each([
+    ["scrape", "markdown", "hallucinated", false],
+    ["scrape", "summary", "missing_fields", false],
+    ["scrape", "json", "missing_fields", true],
+    ["scrape", "deterministicJson", "missing_fields", true],
+    ["scrape", "json", "hallucinated", true],
+    ["scrape", "deterministicJson", "hallucinated", true],
+    ["scrape", "summary", "hallucinated", true],
+    ["scrape", "question", "hallucinated", true],
+    ["scrape", "highlights", "hallucinated", true],
+    [
+      "scrape",
+      { type: "changeTracking", modes: ["json"] },
+      "hallucinated",
+      true,
+    ],
+    [
+      "scrape",
+      { type: "changeTracking", modes: ["git-diff"] },
+      "hallucinated",
+      false,
+    ],
+    ["scrape", "markdown", "wrong", true],
+    ["parse", "markdown", "wrong", false],
+    ["parse", "json", "missing_fields", true],
+    ["parse", "summary", "hallucinated", true],
+  ] as const)(
+    "checks %s incorrect reason compatibility: %j / %s",
+    async (endpoint, format, reason, accepted) => {
+      const { jobId } = await job(endpoint, true, ip, {
+        padding: "x".repeat(20000),
+        formats: [format],
+      });
+      const observation = {
+        kind: "incorrect",
+        reason,
+        basis: "output",
+        detail: "The returned output does not match the expected information.",
+      };
+      expect(
+        (
+          await submit({
+            ...body(endpoint, jobId),
+            observations: [observation],
+          })
+        ).status,
+      ).toBe(accepted ? 200 : 400);
+    },
+  );
+  it("does not persist Parse document content from an older cached context", async () => {
+    const { jobId } = await job("parse");
+    const key = api.keylessFeedbackContextKey(team(), "parse", jobId);
+    const context = JSON.parse((await cache.get(key))!);
+    expect(context).toMatchObject({ request: null, result: null });
+    context.request = {
+      file: { filename: "document-secret.pdf" },
+      formats: ["markdown"],
+    };
+    context.result = {
+      markdown: "document-secret",
+      pages: ["document-secret"],
+      blocks: ["document-secret"],
+    };
+    await cache.set(key, JSON.stringify(context), "KEEPTTL");
+    expect((await submit(body("parse", jobId))).status).toBe(200);
+    const [row] = await fixture.db!.select().from(table);
+    expect(row.metadata).toMatchObject({
+      context: { request: null, result: null },
+      answers: { docClass: "unknown" },
+    });
+    expect(JSON.stringify(row.metadata)).not.toContain("document-secret");
   });
   it("throttles malformed attempts separately and rejects blocked or invalid identities", async () => {
     for (let i = 0; i < 10; i++) expect((await submit({})).status).toBe(400);

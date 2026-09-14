@@ -195,7 +195,7 @@ describe("keyless feedback invitation issuance", () => {
     expect(mocks.eval).not.toHaveBeenCalled();
   });
 
-  it.each(["search", "scrape", "parse"] as const)(
+  it.each(["search", "scrape"] as const)(
     "bounds %s context and preserves job references, Search positions, and category tags",
     async endpoint => {
       const document = {
@@ -262,7 +262,7 @@ describe("keyless feedback invitation issuance", () => {
         auth: { team_id: "fixture" },
         body: { query: large, nested: { value: large } },
       } as any,
-      "parse",
+      "scrape",
       "job",
       true,
       { json: { text: large }, markdown: large },
@@ -273,6 +273,49 @@ describe("keyless feedback invitation issuance", () => {
     const stored = JSON.parse(encoded);
     expect(stored.request.truncated).toBe(true);
     expect(stored.result.truncated).toBe(true);
+  });
+
+  it("retains only job metadata for Parse without reading document content", async () => {
+    const response = new EventEmitter();
+    const document = {
+      get markdown() {
+        throw new Error("Must not read parsed content");
+      },
+      get pages() {
+        throw new Error("Must not read page images");
+      },
+      get blocks() {
+        throw new Error("Must not read layout blocks");
+      },
+    };
+    await keylessFeedbackMetadata(
+      {
+        res: response,
+        auth: { team_id: "fixture" },
+        body: {
+          formats: [{ type: "json", prompt: "document-secret" }, "markdown"],
+          get file() {
+            throw new Error("Must not read the document");
+          },
+          url: "https://example.com/document-secret.pdf",
+        },
+      } as any,
+      "parse",
+      "job",
+      true,
+      document,
+    );
+    response.emit("finish");
+    for (const [, encoded] of mocks.set.mock.calls) {
+      const context = JSON.parse(encoded);
+      expect(context).toMatchObject({
+        requestedFormats: ["json", "markdown"],
+        request: null,
+        result: null,
+      });
+      expect(encoded).not.toContain("document-secret");
+    }
+    expect(mocks.set).toHaveBeenCalledTimes(2);
   });
 
   it("retains the issuance event and reports a failed context update", async () => {
@@ -314,7 +357,8 @@ describe("keyless feedback invitation issuance", () => {
         {},
       );
       const context = JSON.parse(mocks.set.mock.calls[0][1]);
-      expect(context.request.truncated).toBe(true);
+      if (endpoint === "parse") expect(context.request).toBeNull();
+      else expect(context.request.truncated).toBe(true);
       if (endpoint === "search")
         expect(context.requestedSources).toEqual(["web", "news"]);
       else expect(context.requestedFormats).toEqual(["json", "markdown"]);

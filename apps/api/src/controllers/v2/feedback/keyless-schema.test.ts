@@ -325,3 +325,43 @@ it("retains HTTP(S) missing sources and source comparison evidence", () => {
     false,
   );
 });
+
+it.each(["missing", "irrelevant"])(
+  "validates optional knownSources on %s",
+  kind => {
+    const item = {
+      kind,
+      ...(kind === "missing"
+        ? { vertical: "other" }
+        : { position: 1, reason: "aggregator_over_official" }),
+    };
+    const knownSources = [
+      "https://example.com/official",
+      "http://example.com/docs",
+    ];
+    const parsed = keylessFeedbackSchema.parse(
+      payload("search", { ...item, knownSources }),
+    );
+    expect(parsed.observations[0]).toMatchObject({ knownSources });
+    for (const sources of [
+      ["file:///private"],
+      Array(21).fill("https://example.com"),
+    ])
+      expect(
+        keylessFeedbackSchema.safeParse(
+          payload("search", { ...item, knownSources: sources }),
+        ).success,
+      ).toBe(false);
+  },
+);
+it("does not accept knownSources on useful results", () => {
+  expect(
+    keylessFeedbackSchema.safeParse(
+      payload("search", {
+        kind: "useful",
+        position: 1,
+        knownSources: ["https://example.com"],
+      }),
+    ).success,
+  ).toBe(false);
+});

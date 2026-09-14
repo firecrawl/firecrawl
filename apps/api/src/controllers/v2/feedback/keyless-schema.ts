@@ -18,7 +18,7 @@ const observation = <T extends z.ZodRawShape>(shape: T) =>
     },
     {
       message:
-        "Source comparisons require a reference and observed difference.",
+        "Source comparisons require a reference and the correct content.",
     },
   );
 const common = {
@@ -45,11 +45,16 @@ const searchResult = {
   position: z.number().int().positive(),
   vertical: vertical.optional(),
 };
+const knownSources = z
+  .array(z.url({ protocol: /^https?$/ }))
+  .max(20)
+  .optional();
 const searchObservation = z.union([
   observation({ ...searchResult, kind: z.literal("useful") }),
   observation({
     ...searchResult,
     kind: z.literal("irrelevant"),
+    knownSources,
     reason: z.enum([
       "aggregator_over_official",
       "off_topic",
@@ -63,10 +68,7 @@ const searchObservation = z.union([
     kind: z.literal("missing"),
     vertical,
     topic: z.string().trim().min(1).max(200).optional(),
-    knownSources: z
-      .array(z.url({ protocol: /^https?$/ }))
-      .max(20)
-      .optional(),
+    knownSources,
   }),
 ]);
 const format = z.string().trim().min(1).optional();
