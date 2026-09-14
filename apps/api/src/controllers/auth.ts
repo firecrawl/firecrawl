@@ -22,6 +22,7 @@ import {
   normalizeKeylessIpv4,
 } from "../lib/keyless";
 import { isKeylessIpSuspicious } from "../lib/spur";
+import { keylessAuthTotal } from "../lib/keyless-metrics";
 import { checkIpRestriction } from "../lib/ip-restriction";
 import { checkKeyEndpointRestriction } from "../lib/key-restriction";
 import { deleteKey, getValue, setValue } from "../services/redis";
@@ -537,6 +538,7 @@ async function handleKeylessAuth(
   // main way the per-IP caps get bypassed. Fails open on any Spur error, and
   // runs before consuming quota so a flagged IP doesn't burn a request slot.
   if (await isKeylessIpSuspicious(ip)) {
+    keylessAuthTotal.inc({ mode, outcome: "suspicious" });
     logger.warn("Keyless request blocked: suspicious IP", {
       canonicalLog: "keyless/consume",
       ip,
@@ -570,6 +572,7 @@ async function handleKeylessAuth(
   try {
     result = await consumeKeylessRequest(ip);
   } catch (error) {
+    keylessAuthTotal.inc({ mode, outcome: "error" });
     // Limiter store (Redis) unavailable — fail closed with a controlled auth
     // response instead of surfacing a 500, and shed the free traffic while the
     // limiter can't enforce quotas.
@@ -594,6 +597,7 @@ async function handleKeylessAuth(
   };
 
   if (!result.ok) {
+    keylessAuthTotal.inc({ mode, outcome: result.reason ?? "error" });
     logger.warn("Keyless request blocked", {
       ...baseLog,
       blocked: true,
@@ -614,6 +618,7 @@ async function handleKeylessAuth(
   }
 
   logger.debug("Keyless request consumed", { ...baseLog, blocked: false });
+  keylessAuthTotal.inc({ mode, outcome: "allowed" });
 
   // Tag as a preview team so billing (autumn isPreviewTeam) and GCS persistence
   // are skipped automatically; mockPreviewACUC supplies concurrency 2 + credits.

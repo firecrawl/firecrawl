@@ -14,6 +14,7 @@ import { isIPv4 } from "net";
 import { config } from "../config";
 import { redisSpurClient } from "../services/spur-redis";
 import { logger } from "./logger";
+import { spurEventsTotal } from "./keyless-metrics";
 
 const FETCH_TIMEOUT_MS = 5000;
 // Headroom over the fetch timeout for the Redis round-trips around it.
@@ -89,6 +90,7 @@ function isSuspicious(ctx: SpurContext): boolean {
 
 function verdict(ip: string, ctx: SpurContext | null): boolean {
   if (!ctx || !isSuspicious(ctx)) return false;
+  spurEventsTotal.inc({ event: "suspicious" });
   logger.info("Keyless IP flagged suspicious by Spur", {
     ...meta(ip),
     suspicious: true,
@@ -99,6 +101,9 @@ function verdict(ip: string, ctx: SpurContext | null): boolean {
 
 // Verdict for a cache entry that is not a miss: a failure marker fails open.
 function cachedVerdict(ip: string, cached: CacheState): boolean {
+  spurEventsTotal.inc({
+    event: cached.state === "hit" ? "cache_hit" : "cached_failure",
+  });
   return verdict(ip, cached.state === "hit" ? cached.ctx : null);
 }
 
@@ -118,6 +123,7 @@ async function readCache(ip: string): Promise<CacheState> {
     [raw, failed] = await redisSpurClient.mget(contextKey(ip), failedKey(ip));
   } catch (error) {
     logger.warn("Spur cache read failed", { ...meta(ip), error });
+    spurEventsTotal.inc({ event: "cache_error" });
     return { state: "miss" };
   }
   const ctx = parseContext(raw);
@@ -136,6 +142,7 @@ async function writeCache(
     await redisSpurClient.set(key, value, "EX", ttlSec);
   } catch (error) {
     logger.warn("Spur cache write failed", { ...meta(ip), key, error });
+    spurEventsTotal.inc({ event: "cache_error" });
   }
 }
 
@@ -144,6 +151,7 @@ async function releaseLock(ip: string, token: string) {
     await redisSpurClient.eval(RELEASE_LOCK_SCRIPT, 1, lockKey(ip), token);
   } catch (error) {
     logger.warn("Spur lock release failed", { ...meta(ip), error });
+    spurEventsTotal.inc({ event: "cache_error" });
   }
 }
 
@@ -152,6 +160,7 @@ async function fetchContext(
   apiKey: string,
 ): Promise<SpurContext | null> {
   logger.info("Spur Context API request (cache miss)", meta(ip));
+  spurEventsTotal.inc({ event: "lookup" });
   const res = await fetch(
     `https://api.spur.us/v2/context/${encodeURIComponent(ip)}`,
     {
@@ -190,6 +199,7 @@ async function lookup(ip: string, apiKey: string): Promise<boolean> {
   if (ctx) {
     await writeCache(ip, contextKey(ip), JSON.stringify(ctx), CONTEXT_TTL_SEC);
   } else {
+    spurEventsTotal.inc({ event: "lookup_error" });
     await writeCache(ip, failedKey(ip), "1", FAILED_TTL_SEC);
   }
   return verdict(ip, ctx);
@@ -211,6 +221,7 @@ async function waitForResult(ip: string): Promise<boolean> {
     ...meta(ip),
     savedApiCall: false,
   });
+  spurEventsTotal.inc({ event: "wait_timeout" });
   return false;
 }
 
@@ -233,6 +244,7 @@ export async function isKeylessIpSuspicious(ip: string): Promise<boolean> {
         "NX",
       )) === "OK";
   } catch (error) {
+    spurEventsTotal.inc({ event: "cache_error" });
     logger.warn("Spur context lookup failed; failing open", {
       ...meta(ip),
       timedOut: false,
