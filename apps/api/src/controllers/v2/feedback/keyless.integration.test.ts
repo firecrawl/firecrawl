@@ -348,6 +348,70 @@ suite("keyless feedback HTTP and persistence", () => {
     ).toBeNull();
   });
 
+  describe.each(["search", "scrape", "parse"] as const)(
+    "%s feedback metadata size",
+    endpoint => {
+      it.each(["x", "é", '"'])(
+        "enforces 8192 serialized UTF-8 bytes with %j text without consuming the daily allowance",
+        async character => {
+          const { jobId } = await job(endpoint);
+          const base = body(endpoint, jobId);
+          const characterBytes =
+            Buffer.byteLength(JSON.stringify(character)) - 2;
+          const metadata = {
+            schemaVersion: 1,
+            answers: {
+              ...base,
+              origin: "api",
+              task: "x".repeat(2000),
+              assessment: "x".repeat(2000),
+              observations: Array.from({ length: 5 }, () => ({
+                ...base.observations[0],
+                detail: character.repeat(600 / characterBytes),
+              })),
+            },
+          };
+          const padding = 8192 - Buffer.byteLength(JSON.stringify(metadata));
+          expect(padding).toBeGreaterThanOrEqual(0);
+          metadata.answers.observations[0].detail += "x".repeat(padding);
+          expect(
+            metadata.answers.observations[0].detail.length,
+          ).toBeLessThanOrEqual(2000);
+          expect(Buffer.byteLength(JSON.stringify(metadata))).toBe(8192);
+
+          // Defaults are added by the server and count toward the saved limit.
+          const payload = {
+            ...metadata.answers,
+            origin: undefined,
+            observations: metadata.answers.observations.map(item => ({
+              ...item,
+              source: undefined,
+            })),
+          };
+          const oversized = structuredClone(payload);
+          oversized.observations[0].detail += "x";
+          const rejected = await submit(oversized);
+          expect(rejected.status).toBe(400);
+          expect(rejected.body).toMatchObject({
+            success: false,
+            feedbackErrorCode: "INVALID_BODY",
+            error: expect.stringContaining("8192 bytes"),
+          });
+          expect(await fixture.db!.select().from(table)).toHaveLength(0);
+
+          expect((await submit(payload)).status).toBe(200);
+          const rows = await fixture.db!.select().from(table);
+          expect(rows).toHaveLength(1);
+          expect(rows[0].metadata).toEqual(metadata);
+          expect(Buffer.byteLength(JSON.stringify(rows[0].metadata))).toBe(
+            8192,
+          );
+          expect(fixture.refund).not.toHaveBeenCalled();
+        },
+      );
+    },
+  );
+
   it("excludes validated Search lockdown jobs from feedback and invitations", async () => {
     const { searchRequestSchema } = await import("../types.js");
     const { jobId, metadata } = await job(
@@ -1037,6 +1101,49 @@ suite("keyless feedback HTTP and persistence", () => {
     expect(expired.status).toBe(409);
     expect(fixture.refund).not.toHaveBeenCalled();
     expect(await fixture.db!.select().from(table)).toHaveLength(0);
+  });
+  it("preserves the authenticated metadata limit independently of other feedback fields", async () => {
+    const { jobId } = await job("scrape");
+    await fixture.pool!.query(
+      "UPDATE scrapes SET team_id = $1, credits_cost = 8 WHERE id = $2",
+      [authenticatedTeam, jobId],
+    );
+    const metadata = { context: "" };
+    metadata.context = "x".repeat(
+      8192 - Buffer.byteLength(JSON.stringify(metadata)),
+    );
+    const payload = {
+      endpoint: "scrape",
+      jobId,
+      rating: "bad",
+      note: "The output omitted the requested retry intervals.",
+      url: "https://example.com/retry",
+      pageNumbers: [1],
+      metadata,
+    };
+    const rejected = await request(app)
+      .post("/test/authenticated/feedback")
+      .send({ ...payload, metadata: { context: metadata.context + "x" } });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.feedbackErrorCode).toBe("INVALID_BODY");
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+    expect(fixture.refund).not.toHaveBeenCalled();
+
+    const accepted = await request(app)
+      .post("/test/authenticated/feedback")
+      .send(payload);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.creditsRefunded).toBe(1);
+    const [row] = await fixture.db!.select().from(table);
+    expect(row.metadata).toEqual({
+      ...metadata,
+      url: payload.url,
+      pageNumbers: payload.pageNumbers,
+    });
+    expect(Buffer.byteLength(JSON.stringify(row.metadata))).toBeGreaterThan(
+      8192,
+    );
+    expect(fixture.refund).toHaveBeenCalledTimes(1);
   });
   it.each(["scrape", "parse"] as const)(
     "preserves authenticated %s refunds independently of keyless limits",

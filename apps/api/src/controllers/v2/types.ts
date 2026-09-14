@@ -2678,7 +2678,7 @@ const feedbackIssueSchema = z
   );
 
 const MAX_FEEDBACK_METADATA_BYTES = 8 * 1024;
-const feedbackMetadataSchema = z
+export const feedbackMetadataSchema = z
   .record(z.string(), z.unknown())
   .refine(
     value =>
