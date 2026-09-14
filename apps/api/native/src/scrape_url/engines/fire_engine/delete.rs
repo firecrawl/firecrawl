@@ -5,7 +5,7 @@ use super::super::super::error::ScrapeURLError;
 use super::FireEngine;
 
 impl FireEngine {
-  #[instrument(name = "FireEngine::call_delete", err)]
+  #[instrument(name = "FireEngine::call_delete", skip(self), err)]
   pub(super) async fn call_delete(&self, job_id: &str) -> Result<(), ScrapeURLError> {
     let client = Client::new(); // TODO: cache and reuse
     // TODO: timeout

@@ -52,7 +52,12 @@ pub struct FireEngineScrape {
 }
 
 impl FireEngine {
-  #[instrument(name = "FireEngine::do_scrape", skip(meta), err)]
+  #[instrument(
+    name = "FireEngine::do_scrape",
+    skip(self, meta),
+    fields(fire_engine.job_id = tracing::field::Empty),
+    err
+  )]
   pub async fn do_scrape(
     &self,
     meta: &Meta,
@@ -168,6 +173,10 @@ impl FireEngine {
       },
       FireEngineScrapeResponse::Failed(e) => (None, Err(e)),
     };
+
+    if let Some(job_id) = &job_id {
+      tracing::Span::current().record("fire_engine.job_id", job_id.as_str());
+    }
 
     // Dispatch delete if deleting the job is our responsibility
     if let Some(job_id) = job_id {
@@ -360,6 +369,7 @@ impl Engine for FireEngine {
       .map(|url| super::EngineKind::FireEngine(Self { url }))
   }
 
+  #[instrument(name = "FireEngine::scrape", skip_all, err)]
   async fn scrape(
     &self,
     meta: &Meta,

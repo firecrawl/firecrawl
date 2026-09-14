@@ -8,7 +8,12 @@ use super::TransformerError;
 
 #[instrument(
   name = "transformers::html::_derive_html_from_raw_html",
-  skip(meta, document),
+  skip(meta, document, only_main_content),
+  fields(
+    options.only_main_content = only_main_content,
+    options.include_tags = ?meta.options.include_tags,
+    options.exclude_tags = ?meta.options.exclude_tags,
+  ),
   err
 )]
 pub async fn _derive_html_from_raw_html(

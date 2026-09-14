@@ -127,7 +127,17 @@ pub enum FireEngineScrapeResponse {
 }
 
 impl FireEngine {
-  #[instrument(name = "FireEngine::call_scrape", err)]
+  #[instrument(
+    name = "FireEngine::call_scrape",
+    skip(self, request),
+    fields(
+      request = serde_json::to_string(&request).unwrap_or_default(),
+      response.status = tracing::field::Empty,
+      response.error = tracing::field::Empty,
+      response.retry_with_stealth = tracing::field::Empty,
+    ),
+    err
+  )]
   pub(super) async fn call_scrape<'a>(
     &self,
     request: FireEngineScrapeRequest<'a>,
@@ -143,6 +153,27 @@ impl FireEngine {
     // NOTE: Explicitly do not check status code here.
     // Fire-engine can send 500 for things that we want to parse.
 
-    Ok(res.json::<FireEngineScrapeResponse>().await?)
+    let response = res.json::<FireEngineScrapeResponse>().await?;
+
+    // Failures arrive as `Failed` values, not transport errors, so `err` never
+    // fires for them -- record the state and mark the span as errored here,
+    // matching the status `do_scrape` gets when it maps this into an error.
+    let span = tracing::Span::current();
+    match &response {
+      FireEngineScrapeResponse::Completed(_) => {
+        span.record("response.status", "completed");
+      }
+      FireEngineScrapeResponse::Processing(_) => {
+        span.record("response.status", "processing");
+      }
+      FireEngineScrapeResponse::Failed(e) => {
+        span.record("response.status", "failed");
+        span.record("response.error", e.error.as_str());
+        span.record("response.retry_with_stealth", e.retry_with_stealth);
+        span.in_scope(|| tracing::error!(error = %e.error));
+      }
+    }
+
+    Ok(response)
   }
 }

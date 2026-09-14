@@ -136,6 +136,12 @@ impl Engine for FetchEngine {
     Some(Self::get_guaranteed())
   }
 
+  #[tracing::instrument(
+    name = "FetchEngine::scrape",
+    skip_all,
+    fields(skip_tls_verification = meta.options.should_skip_tls_verification()),
+    err
+  )]
   async fn scrape(
     &self,
     meta: &Meta,

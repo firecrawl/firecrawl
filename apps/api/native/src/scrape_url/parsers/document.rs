@@ -54,6 +54,7 @@ pub fn has_document_signal(result: &RawPageResult) -> bool {
   is_document_content_type || is_document_binary || is_document_file_extension
 }
 
+#[tracing::instrument(name = "parsers::document::parse_document", skip_all, err)]
 pub fn parse_document(meta: &Meta, result: RawPageResult) -> Result<Document, ScrapeURLError> {
   match result.content {
     RawPageContent::Bytes(bytes) => {

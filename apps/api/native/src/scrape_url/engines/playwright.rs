@@ -55,6 +55,7 @@ impl Engine for PlaywrightEngine {
       .map(|url| super::EngineKind::Playwright(Self { url }))
   }
 
+  #[tracing::instrument(name = "PlaywrightEngine::scrape", skip_all, err)]
   async fn scrape(
     &self,
     meta: &Meta,

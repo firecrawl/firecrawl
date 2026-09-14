@@ -38,6 +38,7 @@ fn deduce_encoding(content: &Bytes, content_type: &str) -> &'static Encoding {
   .unwrap_or(UTF_8)
 }
 
+#[tracing::instrument(name = "parsers::fallback::parse_fallback", skip_all, err)]
 pub fn parse_fallback(meta: &Meta, result: RawPageResult) -> Result<Document, ScrapeURLError> {
   let (base64, content, markdown): (String, String, Option<String>) = match result.content {
     RawPageContent::Bytes(bytes) => {

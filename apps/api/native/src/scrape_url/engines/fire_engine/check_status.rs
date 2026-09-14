@@ -27,7 +27,12 @@ pub enum FireEngineScrapeStatus {
 }
 
 impl FireEngine {
-  #[instrument(name = "FireEngine::call_check_status", err)]
+  #[instrument(
+    name = "FireEngine::call_check_status",
+    skip(self),
+    fields(response.status = tracing::field::Empty),
+    err
+  )]
   pub(super) async fn call_check_status(
     &self,
     job_id: &str,
@@ -42,6 +47,17 @@ impl FireEngine {
     // NOTE: Explicitly do not check status code here.
     // Fire-engine can send 500 for things that we want to parse.
 
-    Ok(res.json::<FireEngineScrapeStatus>().await?)
+    let status = res.json::<FireEngineScrapeStatus>().await?;
+
+    tracing::Span::current().record(
+      "response.status",
+      match &status {
+        FireEngineScrapeStatus::Completed(_) => "completed",
+        FireEngineScrapeStatus::Processing(_) => "processing",
+        FireEngineScrapeStatus::Failed(_) => "failed",
+      },
+    );
+
+    Ok(status)
   }
 }

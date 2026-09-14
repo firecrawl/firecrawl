@@ -169,6 +169,7 @@ struct PdfResult {
   pages_processed: u32,
 }
 
+#[tracing::instrument(name = "parsers::pdf::parse_pdf", skip_all, err)]
 pub async fn parse_pdf(
   meta: &Meta,
   result: RawPageResult,

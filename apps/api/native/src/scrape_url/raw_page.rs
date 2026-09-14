@@ -113,3 +113,94 @@ pub struct RawPageResult {
   pub timezone: Option<String>,
   pub filename: Option<String>,
 }
+
+/// A span carrying every [`RawPageResult`] field, declared here and recorded by
+/// [`record_raw_page`] so the two can't drift apart. Extra creation-time fields
+/// are passed through (with a trailing comma).
+macro_rules! raw_page_span {
+  ($name:expr, $($extra:tt)*) => {
+    tracing::info_span!(
+      $name,
+      $($extra)*
+      page.url = tracing::field::Empty,
+      page.status_code = tracing::field::Empty,
+      page.content_type = tracing::field::Empty,
+      page.proxy_used = tracing::field::Empty,
+      page.timezone = tracing::field::Empty,
+      page.filename = tracing::field::Empty,
+      page.cached_at = tracing::field::Empty,
+      page.screenshot = tracing::field::Empty,
+      page.content.kind = tracing::field::Empty,
+      page.content.num_bytes = tracing::field::Empty,
+      page.content.gcs_uri = tracing::field::Empty,
+      page.content.sha256 = tracing::field::Empty,
+      page.content.num_pages = tracing::field::Empty,
+      page.content.total_pages = tracing::field::Empty,
+      page.content.title = tracing::field::Empty,
+      page.actions.screenshots = tracing::field::Empty,
+      page.actions.scrapes = tracing::field::Empty,
+      page.actions.javascript_returns = tracing::field::Empty,
+      page.actions.pdfs = tracing::field::Empty,
+    )
+  };
+}
+
+pub(crate) use raw_page_span;
+
+pub fn record_raw_page(span: &tracing::Span, result: &RawPageResult) {
+  span.record("page.url", result.url.as_str());
+  span.record("page.status_code", result.status_code);
+  span.record("page.content_type", result.content_type.as_str());
+  span.record("page.proxy_used", result.proxy_used.to_string());
+  span.record("page.timezone", result.timezone.as_deref());
+  span.record("page.filename", result.filename.as_deref());
+  span.record(
+    "page.cached_at",
+    result.cached_at.map(|x| x.to_rfc3339()).as_deref(),
+  );
+  span.record(
+    "page.screenshot",
+    result.screenshot.as_ref().map(|x| x.as_str()),
+  );
+
+  match &result.content {
+    RawPageContent::Bytes(x) => {
+      span.record("page.content.kind", "bytes");
+      span.record("page.content.num_bytes", x.len());
+    }
+    RawPageContent::BytesOffloaded(x) => {
+      span.record("page.content.kind", "bytes_offloaded");
+      span.record("page.content.num_bytes", x.size_bytes);
+      span.record("page.content.gcs_uri", x.gcs_uri.as_str());
+      span.record("page.content.sha256", x.sha256.as_str());
+    }
+    RawPageContent::ChromeRenderedDOM(x) => {
+      span.record("page.content.kind", "chrome_rendered_dom");
+      span.record("page.content.num_bytes", x.len());
+    }
+    RawPageContent::IndexFakeHTML(x, pdf_metadata) => {
+      span.record("page.content.kind", "index_fake_html");
+      span.record("page.content.num_bytes", x.len());
+      if let Some(pdf_metadata) = pdf_metadata {
+        span.record("page.content.num_pages", pdf_metadata.num_pages);
+        span.record("page.content.total_pages", pdf_metadata.total_pages);
+        span.record("page.content.title", pdf_metadata.title.as_deref());
+      }
+    }
+    RawPageContent::GeneratedMarkdown(x) => {
+      span.record("page.content.kind", "generated_markdown");
+      span.record("page.content.num_bytes", x.len());
+    }
+  }
+
+  if let Some(actions) = &result.actions {
+    span.record("page.actions.screenshots", actions.screenshots.len());
+    span.record("page.actions.scrapes", actions.scrapes.len());
+    span.record(
+      "page.actions.javascript_returns",
+      actions.javascript_returns.len(),
+    );
+    span.record("page.actions.pdfs", actions.pdfs.len());
+  }
+}
+

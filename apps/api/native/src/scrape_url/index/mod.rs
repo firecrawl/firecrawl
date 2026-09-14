@@ -2,7 +2,7 @@ use std::{net::IpAddr, time::Duration};
 
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
-use tracing::instrument;
+use tracing::Instrument;
 use url::Url;
 
 use self::{
@@ -15,7 +15,7 @@ use super::{
   feature_flags::FeatureFlag,
   formats::FormatKind,
   meta::Meta,
-  raw_page::{RawPageContent, RawPageResult, ScrapeProxy},
+  raw_page::{RawPageContent, RawPageResult, ScrapeProxy, raw_page_span, record_raw_page},
 };
 
 pub use self::gcs::IndexPDFMetadata;
@@ -206,8 +206,32 @@ impl Index {
     }))
   }
 
-  #[instrument(name = "Index::lookup", skip(meta, self), err)]
   pub async fn lookup(
+    &self,
+    meta: &Meta,
+    proxy: ScrapeProxy,
+  ) -> Result<Option<RawPageResult>, ScrapeURLError> {
+    let span = raw_page_span!("Index::lookup", outcome = tracing::field::Empty,);
+
+    let result = self._lookup(meta, proxy).instrument(span.clone()).await;
+
+    match &result {
+      Ok(Some(page)) => {
+        span.record("outcome", "hit");
+        record_raw_page(&span, page);
+      }
+      Ok(None) => {
+        span.record("outcome", "miss");
+      }
+      Err(e) => {
+        span.in_scope(|| tracing::error!(error = %e));
+      }
+    }
+
+    result
+  }
+
+  async fn _lookup(
     &self,
     meta: &Meta,
     proxy: ScrapeProxy,

@@ -2,11 +2,13 @@ use regex::Regex;
 
 use self::{fetch::FetchEngine, fire_engine::FireEngine, playwright::PlaywrightEngine};
 
+use tracing::Instrument;
+
 use super::{
   error::ScrapeURLError,
   feature_flags::ConstFeatureFlags,
   meta::Meta,
-  raw_page::{RawPageResult, ScrapeProxy},
+  raw_page::{RawPageResult, ScrapeProxy, raw_page_span, record_raw_page},
 };
 
 mod fetch;
@@ -63,11 +65,37 @@ impl EngineKind {
     meta: &Meta,
     proxy: ScrapeProxy,
   ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError> {
-    match self {
-      EngineKind::Fetch(x) => x.scrape(meta, proxy).await,
-      EngineKind::FireEngine(x) => x.scrape(meta, proxy).await,
-      EngineKind::Playwright(x) => x.scrape(meta, proxy).await,
+    let span = raw_page_span!(
+      "engine::scrape",
+      engine = self.get_name(),
+      proxy = ?proxy,
+      outcome = tracing::field::Empty,
+    );
+
+    let outcome = async {
+      match self {
+        EngineKind::Fetch(x) => x.scrape(meta, proxy).await,
+        EngineKind::FireEngine(x) => x.scrape(meta, proxy).await,
+        EngineKind::Playwright(x) => x.scrape(meta, proxy).await,
+      }
     }
+    .instrument(span.clone())
+    .await;
+
+    match &outcome {
+      Ok(EngineOutcome::Scraped(result)) => {
+        span.record("outcome", "scraped");
+        record_raw_page(&span, result);
+      }
+      Ok(EngineOutcome::ProxyElevationNeeded) => {
+        span.record("outcome", "proxy_elevation_needed");
+      }
+      Err(e) => {
+        span.in_scope(|| tracing::error!(error = %e));
+      }
+    }
+
+    outcome
   }
 }
 

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 // use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use tracing::{Span, field::Empty, instrument};
+use tracing::{Instrument, Span, field::Empty};
 use url::Url;
 
 use self::{
@@ -34,28 +34,6 @@ mod rewrite_url;
 mod robots;
 mod transformers;
 
-#[instrument(
-  name = "scrape_url",
-  fields(
-    scrape_id = meta.id,
-    scrape_url = meta.url.as_str(),
-    zero_data_retention = meta.internal_options.zero_data_retention,
-    team_id = meta.team_id,
-    crawl_id = meta.internal_options.crawl_id,
-    features = meta.feature_flags.iter().cloned().map(|x| x.to_string()).collect::<Vec<String>>().join(","),
-    rewritten_url = Empty,
-    is_pre_crawl = meta.internal_options.is_pre_crawl,
-    scrape.success = Empty,
-    engine.winner = Empty,
-    engine.unsupported_features = Empty,
-    engine.final_status_code = Empty,
-    engine.final_url = Empty,
-    engine.proxy_used = Empty,
-    engine.cache_state = Empty,
-  ),
-  skip(meta),
-  err
-)]
 async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
   tracing::info!("scrapeURL entered");
 
@@ -153,22 +131,6 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
     }
   };
 
-  Span::current()
-    .record("engine.winner", page.source.name())
-    .record(
-      "engine.unsupported_features",
-      page
-        .source
-        .unsupported_features()
-        .map(|x| {
-          x.iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>()
-            .join(",")
-        })
-        .unwrap_or_default(),
-    );
-
   let cached_at = page.result.cached_at;
   let mut document = parsers::parse_engine_result(&meta, page.result).await?;
   if page.index_attempted {
@@ -195,26 +157,7 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
 
   let document = execute_tranformers(&meta, document).await?;
 
-  Span::current()
-    .record("engine.final_status_code", document.metadata.status_code)
-    .record("engine.final_url", document.metadata.url.as_str())
-    .record("engine.content_type", &document.metadata.content_type)
-    .record(
-      "engine.proxy_used",
-      document.metadata.proxy_used.to_string(),
-    )
-    .record(
-      "engine.cache_state",
-      document.metadata.cache_state.to_string(),
-    );
-
   // log metrics
-
-  // set span attribs
-  Span::current().record("scrape.success", true).record(
-    "scrape.index_hit",
-    document.metadata.cache_state == DocumentMetadataCacheState::Hit,
-  );
 
   // return result
 
@@ -254,18 +197,40 @@ pub async fn scrape_url(
   // exports the spans it produced before the process tears down.
   let _flush = crate::telemetry::FlushGuard;
 
-  let options: ScrapeOptions = serde_json::from_value(serde_json::Value::Object(options))
+  let options_raw = serde_json::Value::Object(options);
+  let internal_options_raw = serde_json::Value::Object(internal_options);
+  let options_json = options_raw.to_string();
+  let internal_options_json = internal_options_raw.to_string();
+
+  let options: ScrapeOptions = serde_json::from_value(options_raw)
     .map_err(ScrapeURLError::from)
     .map_err(napi_error)?;
-  let internal_options: InternalOptions =
-    serde_json::from_value(serde_json::Value::Object(internal_options))
-      .map_err(ScrapeURLError::from)
-      .map_err(napi_error)?;
+  let internal_options: InternalOptions = serde_json::from_value(internal_options_raw)
+    .map_err(ScrapeURLError::from)
+    .map_err(napi_error)?;
   let url = Url::parse(&url)
     .map_err(|_| ScrapeURLError::InvalidURLError)
     .map_err(napi_error)?;
 
-  let result = _scrape_url(Meta::new(id, url, team_id, options, internal_options)).await;
+  let meta = Meta::new(id, url, team_id, options, internal_options);
+
+  let span = tracing::info_span!(
+    "scrape_url",
+    scrape_id = meta.id.as_str(),
+    scrape_url = meta.url.as_str(),
+    zero_data_retention = meta.internal_options.zero_data_retention,
+    team_id = meta.team_id.as_str(),
+    features = meta.feature_flags.iter().cloned().map(|x| x.to_string()).collect::<Vec<String>>().join(","),
+    options = options_json,
+    internal_options = internal_options_json,
+    rewritten_url = Empty,
+  );
+
+  let result = _scrape_url(meta).instrument(span.clone()).await;
+
+  if let Err(e) = &result {
+    span.in_scope(|| tracing::error!(error = %e));
+  }
 
   match result {
     Ok(x) => Ok(
