@@ -331,7 +331,7 @@ suite("keyless feedback HTTP and persistence", () => {
       const rows = await fixture.db!.select().from(table);
       expect(rows).toHaveLength(1);
       expect(rows[0].metadata).toMatchObject({
-        version: "keyless_feedback_v1",
+        schemaVersion: 1,
         answers: { origin: "mcp", integration: "cli" },
       });
       expect(rows[0].request_id).toBe(jobId);
