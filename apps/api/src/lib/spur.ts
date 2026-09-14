@@ -236,7 +236,10 @@ export async function isKeylessIpSuspicious(ip: string): Promise<boolean> {
     spurBypassesTotal.inc({ reason: "disabled" });
     return false;
   }
-  if (!isIPv4(ip)) return false;
+  if (!isIPv4(ip)) {
+    spurBypassesTotal.inc({ reason: "non_ipv4" });
+    return false;
+  }
 
   const cached = await readCache(ip);
   if (cached.state !== "miss") return cachedVerdict(ip, cached);

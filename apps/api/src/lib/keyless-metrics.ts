@@ -3,7 +3,7 @@ import { Counter } from "prom-client";
 // Fixed labels only: never put IPs, team IDs, or caller-provided values here.
 export const keylessAuthTotal = new Counter({
   name: "firecrawl_keyless_auth_total",
-  help: "Keyless auth decisions; allowed does not imply downstream success",
+  help: "Keyless auth decisions for eligible IPs on supported endpoints with the tier configured; allowed does not imply downstream success",
   labelNames: ["mode", "outcome"],
 });
 
