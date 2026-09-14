@@ -28,6 +28,7 @@ export type KeylessFeedbackContext = {
   result: unknown;
   requestedSources?: string[];
   requestedFormats?: string[];
+  changeTrackingJson?: boolean;
 };
 
 export function requestedTypes(value: unknown, defaultType: string): string[] {
@@ -45,6 +46,7 @@ function resultContext(
   endpoint: KeylessFeedbackEndpoint,
   result: any,
 ): unknown {
+  if (endpoint === "parse") return null;
   const snapshot = snapshotCopier(24 * 1024);
   if (endpoint === "search") {
     const groups = Object.fromEntries(
@@ -107,7 +109,7 @@ export async function keylessFeedbackMetadata(
     const metadata = await Promise.race([
       (async () => {
         const options = snapshotCopier(16 * 1024);
-        const request = options.copy(req.body);
+        const request = endpoint === "parse" ? null : options.copy(req.body);
         context = {
           createdAt: new Date().toISOString(),
           success,
@@ -118,6 +120,16 @@ export async function keylessFeedbackMetadata(
                 requestedFormats: requestedTypes(req.body?.formats, "markdown"),
               }),
           invited: false,
+          ...(endpoint === "scrape"
+            ? {
+                changeTrackingJson:
+                  req.body?.formats?.some(
+                    (format: any) =>
+                      format?.type === "changeTracking" &&
+                      format.modes?.includes("json"),
+                  ) ?? false,
+              }
+            : {}),
           request: options.truncated
             ? { ...request, truncated: true }
             : request,

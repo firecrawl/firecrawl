@@ -122,7 +122,40 @@ export async function keylessFeedbackController(
             "INVALID_BODY",
             "Provide format for output observations and source comparisons when the job requested multiple formats.",
           );
+        if (item.kind === "incorrect") {
+          const observedFormats = item.format ? [item.format] : formats;
+          const compatible = observedFormats.some(format => {
+            if (answers.endpoint === "parse")
+              return format === "json" || format === "summary";
+            if (item.reason === "missing_fields")
+              return format === "json" || format === "deterministicJson";
+            if (item.reason === "hallucinated")
+              return (
+                [
+                  "json",
+                  "deterministicJson",
+                  "summary",
+                  "question",
+                  "highlights",
+                ].includes(format) ||
+                (format === "changeTracking" &&
+                  context.changeTrackingJson === true)
+              );
+            return true;
+          });
+          if (!compatible)
+            return fail(
+              400,
+              "INVALID_BODY",
+              "Observation kind and reason must apply to the requested output format.",
+            );
+        }
       }
+    }
+    if (answers.endpoint === "parse") {
+      // Do not persist document content from contexts created before this policy.
+      context.request = null;
+      context.result = null;
     }
     const result = await insertKeylessFeedback(identity, answers, context);
     if (!result.success)
