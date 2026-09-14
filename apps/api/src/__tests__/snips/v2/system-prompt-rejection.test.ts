@@ -42,7 +42,8 @@ describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
 
         expect(response.statusCode).toBe(400);
         expect(response.body.success).toBe(false);
-        expect(response.body.error).toBe("Bad Request");
+        expect(response.body.error).not.toBe("Bad Request");
+        expect(response.body.error).toContain("systemPrompt");
       },
       scrapeTimeout,
     );
