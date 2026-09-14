@@ -11,7 +11,7 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { scrape, scrapeRaw } from "./lib";
+import { scrape, scrapeRaw, crawlStart } from "./lib";
 
 const TEST_SUITE_HOST = new URL(TEST_SUITE_WEBSITE).hostname;
 
@@ -429,6 +429,46 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
           identity,
         );
         expect(body.error).toMatch(/prox/i);
+      },
+      scrapeTimeout,
+    );
+  });
+
+  // Ticket 08: enforcement reaches beyond /v2/scrape.
+  describeIf(TEST_PRODUCTION)("endpoint coverage", () => {
+    let identity: Identity;
+
+    beforeAll(async () => {
+      identity = await idmux({
+        name: "safe-mode/endpoints",
+        flags: { safeMode: true },
+      });
+    }, 10000);
+
+    it.concurrent(
+      "crawl rejects a stealth proxy nested under scrapeOptions",
+      async () => {
+        const res = await crawlStart(
+          { url: createTestIdUrl(), scrapeOptions: { proxy: "stealth" } },
+          identity,
+        );
+        expect(res.statusCode).toBe(403);
+        expect(res.body.code).toBe("SAFE_MODE_BLOCKED");
+        expect(res.body.error).toMatch(/prox/i);
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "v0 content endpoints reject a Safe Mode org",
+      async () => {
+        const res = await request(TEST_API_URL)
+          .post("/v0/scrape")
+          .set("Authorization", `Bearer ${identity.apiKey}`)
+          .set("Content-Type", "application/json")
+          .send({ url: createTestIdUrl() });
+        expect(res.statusCode).toBe(403);
+        expect(res.body.error).toMatch(/v0 API/i);
       },
       scrapeTimeout,
     );
