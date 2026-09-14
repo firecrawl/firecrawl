@@ -179,6 +179,8 @@ def interact(
     language: Literal["python", "node", "bash"] = "node",
     timeout: Optional[int] = None,
     origin: Optional[str] = None,
+    ttl: Optional[int] = None,
+    activity_ttl: Optional[int] = None,
 ) -> BrowserExecuteResponse:
     """
     Interact with the scrape-bound browser session for a scrape job.
@@ -195,6 +197,8 @@ def interact(
         language: Programming language ("python", "node", or "bash")
         timeout: Execution timeout in seconds (1-300)
         origin: Optional request origin tag
+        ttl: Total time-to-live in seconds (30-3600, default 600)
+        activity_ttl: Inactivity TTL in seconds (10-3600, default 300)
 
     Returns:
         BrowserExecuteResponse with execution output
@@ -217,6 +221,10 @@ def interact(
         body["timeout"] = timeout
     if origin is not None:
         body["origin"] = origin
+    if ttl is not None:
+        body["ttl"] = ttl
+    if activity_ttl is not None:
+        body["activityTtl"] = activity_ttl
 
     response = client.post(f"/v2/scrape/{job_id}/interact", body)
     if not response.ok:
@@ -227,6 +235,8 @@ def interact(
         raise Exception(payload.get("error", "Unknown error occurred"))
 
     normalized = dict(payload)
+    if "sessionId" in normalized and "session_id" not in normalized:
+        normalized["session_id"] = normalized["sessionId"]
     if "exitCode" in normalized and "exit_code" not in normalized:
         normalized["exit_code"] = normalized["exitCode"]
     if "cdpUrl" in normalized and "cdp_url" not in normalized:
@@ -286,6 +296,8 @@ def scrape_execute(
     language: Literal["python", "node", "bash"] = "node",
     timeout: Optional[int] = None,
     origin: Optional[str] = None,
+    ttl: Optional[int] = None,
+    activity_ttl: Optional[int] = None,
 ) -> BrowserExecuteResponse:
     """Deprecated alias for interact()."""
     return interact(
@@ -296,6 +308,8 @@ def scrape_execute(
         language=language,
         timeout=timeout,
         origin=origin,
+        ttl=ttl,
+        activity_ttl=activity_ttl,
     )
 
 
