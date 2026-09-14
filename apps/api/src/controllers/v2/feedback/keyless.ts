@@ -4,7 +4,7 @@ import { keylessTeamUuid } from "../../../lib/keyless";
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
 import { lookupJobWithRetry } from "./record";
 import { isKeylessFeedbackRestricted } from "./zdr-persistence";
-import type { RequestWithAuth } from "../types";
+import { feedbackMetadataSchema, type RequestWithAuth } from "../types";
 import { keylessFeedbackSchema } from "./keyless-schema";
 import { KEYLESS_FEEDBACK_MAX_AGE_SEC } from "./keyless-limits";
 import { insertKeylessFeedback } from "./keyless-store";
@@ -153,7 +153,15 @@ export async function keylessFeedbackController(
         }
       }
     }
-    const result = await insertKeylessFeedback(identity, answers, job);
+    // Count the final metadata, including job-dependent defaults, before storing it.
+    const metadata = { schemaVersion: 1, answers } as const;
+    if (!feedbackMetadataSchema.safeParse(metadata).success)
+      return fail(
+        400,
+        "INVALID_BODY",
+        "Feedback must be 8 KiB (8192 bytes) or smaller. Shorten the task, assessment, or observations.",
+      );
+    const result = await insertKeylessFeedback(identity, metadata, job);
     if (!result.success)
       return fail(
         429,

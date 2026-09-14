@@ -23,9 +23,10 @@ export async function hasKeylessFeedbackToday(identity: string) {
 
 export async function insertKeylessFeedback(
   identity: string,
-  answers: KeylessFeedbackRequest,
+  metadata: { schemaVersion: 1; answers: KeylessFeedbackRequest },
   job: FeedbackJobRow,
 ) {
+  const { answers } = metadata;
   return db.transaction(
     async tx => {
       await tx.execute(sql`SET LOCAL statement_timeout = '5s'`);
@@ -76,7 +77,7 @@ export async function insertKeylessFeedback(
         origin: answers.origin,
         integration: answers.integration ?? null,
         job_status: job.is_successful === false ? "failed" : "completed",
-        metadata: { schemaVersion: 1, answers },
+        metadata,
         created_at: sql`clock_timestamp()`,
       });
       return { success: true as const, feedbackId };
