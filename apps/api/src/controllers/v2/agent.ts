@@ -49,20 +49,6 @@ export async function agentController(
     });
   }
 
-  // The agent service would reject every call from an unentitled team anyway;
-  // failing here keeps the run — and its request row — from being created.
-  if (
-    req.body.exchange !== undefined &&
-    req.body.exchange.enabled !== false &&
-    !req.acuc?.flags?.exchangeRetrieve
-  ) {
-    return res.status(403).json({
-      success: false,
-      code: "exchange_not_enabled",
-      error: "This option is not enabled for this team.",
-    });
-  }
-
   _logger.info("Agent starting...", {
     request: req.body,
     originalRequest,
