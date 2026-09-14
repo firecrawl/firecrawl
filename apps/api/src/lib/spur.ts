@@ -14,7 +14,7 @@ import { isIPv4 } from "net";
 import { config } from "../config";
 import { redisSpurClient } from "../services/spur-redis";
 import { logger } from "./logger";
-import { spurEventsTotal } from "./keyless-metrics";
+import { spurBypassesTotal, spurEventsTotal } from "./keyless-metrics";
 
 const FETCH_TIMEOUT_MS = 5000;
 // Headroom over the fetch timeout for the Redis round-trips around it.
@@ -104,6 +104,9 @@ function cachedVerdict(ip: string, cached: CacheState): boolean {
   spurEventsTotal.inc({
     event: cached.state === "hit" ? "cache_hit" : "cached_failure",
   });
+  if (cached.state === "failed") {
+    spurBypassesTotal.inc({ reason: "cached_failure" });
+  }
   return verdict(ip, cached.state === "hit" ? cached.ctx : null);
 }
 
@@ -200,6 +203,7 @@ async function lookup(ip: string, apiKey: string): Promise<boolean> {
     await writeCache(ip, contextKey(ip), JSON.stringify(ctx), CONTEXT_TTL_SEC);
   } else {
     spurEventsTotal.inc({ event: "lookup_error" });
+    spurBypassesTotal.inc({ reason: "lookup_error" });
     await writeCache(ip, failedKey(ip), "1", FAILED_TTL_SEC);
   }
   return verdict(ip, ctx);
@@ -222,12 +226,17 @@ async function waitForResult(ip: string): Promise<boolean> {
     savedApiCall: false,
   });
   spurEventsTotal.inc({ event: "wait_timeout" });
+  spurBypassesTotal.inc({ reason: "wait_timeout" });
   return false;
 }
 
 export async function isKeylessIpSuspicious(ip: string): Promise<boolean> {
   const apiKey = config.SPUR_API_KEY;
-  if (!apiKey || !isIPv4(ip)) return false;
+  if (!apiKey) {
+    spurBypassesTotal.inc({ reason: "disabled" });
+    return false;
+  }
+  if (!isIPv4(ip)) return false;
 
   const cached = await readCache(ip);
   if (cached.state !== "miss") return cachedVerdict(ip, cached);
@@ -245,6 +254,7 @@ export async function isKeylessIpSuspicious(ip: string): Promise<boolean> {
       )) === "OK";
   } catch (error) {
     spurEventsTotal.inc({ event: "cache_error" });
+    spurBypassesTotal.inc({ reason: "lock_error" });
     logger.warn("Spur context lookup failed; failing open", {
       ...meta(ip),
       timedOut: false,

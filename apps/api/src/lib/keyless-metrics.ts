@@ -22,3 +22,9 @@ export const spurEventsTotal = new Counter({
   help: "Spur lookup, cache, suspicious verdict and error events; a check may emit multiple events and includes eligibility probes",
   labelNames: ["event"],
 });
+
+export const spurBypassesTotal = new Counter({
+  name: "firecrawl_spur_bypasses_total",
+  help: "Spur checks skipped or failed open without a reputation result; includes eligibility probes, not necessarily admitted requests",
+  labelNames: ["reason"],
+});
