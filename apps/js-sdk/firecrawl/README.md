@@ -7,7 +7,7 @@ The Firecrawl Node SDK is a library that lets you easily search, scrape, and int
 To install the Firecrawl Node SDK, you can use npm:
 
 ```bash
-npm install firecrawl
+npm install @mendable/firecrawl-js
 ```
 
 ## Usage
@@ -18,9 +18,9 @@ npm install firecrawl
 Here's an example of how to use the SDK with error handling:
 
 ```js
-import { Firecrawl } from 'firecrawl';
+import FirecrawlApp from '@mendable/firecrawl-js';
 
-const app = new Firecrawl({ apiKey: 'fc-YOUR_API_KEY' });
+const app = new FirecrawlApp({ apiKey: 'fc-YOUR_API_KEY' });
 
 // Scrape a website
 const scrapeResponse = await app.scrape('https://firecrawl.dev', {
@@ -138,10 +138,10 @@ const status = await app.getCrawlStatus(id);
 Use `extract` with a prompt and schema. Zod schemas are supported directly.
 
 ```js
-import { Firecrawl } from 'firecrawl';
+import FirecrawlApp from '@mendable/firecrawl-js';
 import { z } from 'zod';
 
-const app = new Firecrawl({ apiKey: 'fc-YOUR_API_KEY' });
+const app = new FirecrawlApp({ apiKey: 'fc-YOUR_API_KEY' });
 
 const schema = z.object({
   title: z.string(),
@@ -363,9 +363,9 @@ await watch.start();
 The feature‑frozen v1 is still available under `app.v1` with the original method names.
 
 ```js
-import { Firecrawl } from 'firecrawl';
+import FirecrawlApp from '@mendable/firecrawl-js';
 
-const app = new Firecrawl({ apiKey: 'fc-YOUR_API_KEY' });
+const app = new FirecrawlApp({ apiKey: 'fc-YOUR_API_KEY' });
 
 // v1 methods (feature‑frozen)
 const scrapeV1 = await app.v1.scrapeUrl('https://firecrawl.dev', { formats: ['markdown', 'html'] });
