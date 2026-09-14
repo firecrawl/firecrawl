@@ -1,5 +1,10 @@
 import { vi } from "vitest";
 
+const mockFeedbackMetadata = vi.fn();
+vi.mock("../feedback/keyless-invitation", () => ({
+  keylessFeedbackMetadata: (...args: any[]) => mockFeedbackMetadata(...args),
+}));
+
 const mockLogRequest = vi.fn();
 const mockLogSearch = vi.fn();
 const mockLogResearchEndpoint = vi.fn();

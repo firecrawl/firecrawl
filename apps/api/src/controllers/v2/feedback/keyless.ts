@@ -1,15 +1,12 @@
 import type { Response } from "express";
 import { config } from "../../../config";
 import { keylessTeamUuid } from "../../../lib/keyless";
-import { keylessFeedbackRedis } from "./keyless-redis";
+import { getJobFromGCS } from "../../../lib/gcs-jobs";
+import { lookupJobWithRetry } from "./record";
+import { isKeylessFeedbackRestricted } from "./zdr-persistence";
 import type { RequestWithAuth } from "../types";
 import { keylessFeedbackSchema } from "./keyless-schema";
-import {
-  KEYLESS_FEEDBACK_MAX_AGE_SEC,
-  requestedTypes,
-  keylessFeedbackContextKey,
-  type KeylessFeedbackContext,
-} from "./keyless-context";
+import { KEYLESS_FEEDBACK_MAX_AGE_SEC } from "./keyless-limits";
 import { insertKeylessFeedback } from "./keyless-store";
 import { logger } from "../../../lib/logger";
 
@@ -19,11 +16,7 @@ export async function keylessFeedbackController(
 ) {
   const fail = (status: number, feedbackErrorCode: string, error: string) =>
     res.status(status).json({ success: false, feedbackErrorCode, error });
-  if (
-    !config.KEYLESS_FEEDBACK_ENABLED ||
-    !config.USE_DB_AUTHENTICATION ||
-    !keylessFeedbackRedis
-  )
+  if (!config.KEYLESS_FEEDBACK_ENABLED || !config.USE_DB_AUTHENTICATION)
     return fail(
       503,
       "FEEDBACK_UNAVAILABLE",
@@ -43,17 +36,21 @@ export async function keylessFeedbackController(
   const answers = parsed.data;
   const identity = keylessTeamUuid(req.auth.team_id)!;
   try {
-    const stored = await keylessFeedbackRedis.get(
-      keylessFeedbackContextKey(identity, answers.endpoint, answers.jobId),
-    );
-    if (!stored)
+    const job = await lookupJobWithRetry(answers, identity, logger);
+    if ("status" in job) return res.status(job.status).json(job.body);
+    if (
+      isKeylessFeedbackRestricted(
+        answers.endpoint,
+        job.options,
+        req.acuc?.flags,
+      )
+    )
       return fail(
         404,
         "JOB_NOT_FOUND",
-        "No eligible job found for this caller and category. Job references expire after 24 hours.",
+        "No eligible job found for this caller and category.",
       );
-    const context: KeylessFeedbackContext = JSON.parse(stored);
-    const age = Date.now() - Date.parse(context.createdAt);
+    const age = Date.now() - new Date(job.created_at).getTime();
     if (
       !Number.isFinite(age) ||
       age < 0 ||
@@ -64,16 +61,23 @@ export async function keylessFeedbackController(
         "FEEDBACK_WINDOW_EXPIRED",
         "Feedback must be submitted within 24 hours of the job.",
       );
-    const options = context.request as {
+    const options = job.options as {
       sources?: unknown;
       formats?: unknown;
-      truncated?: boolean;
     };
     if (answers.endpoint === "search") {
-      const sources =
-        context.requestedSources ??
-        (options?.truncated ? [] : requestedTypes(options?.sources, "web"));
-      const groups = context.result as Record<string, unknown[]>;
+      const sources = requestedTypes(options.sources, "web");
+      let groups: Record<string, unknown> | undefined;
+      if (answers.observations.some(item => item.kind !== "missing")) {
+        const results: unknown = await getJobFromGCS(job.id);
+        if (!results || typeof results !== "object" || Array.isArray(results))
+          return fail(
+            503,
+            "FEEDBACK_UNAVAILABLE",
+            "Search results are unavailable. Retry later.",
+          );
+        groups = results as Record<string, unknown>;
+      }
       for (const item of answers.observations) {
         if (item.kind === "missing") continue;
         if (!item.source && sources.length > 1)
@@ -83,9 +87,11 @@ export async function keylessFeedbackController(
             "Provide source when the job requested multiple sources.",
           );
         item.source ??= "web";
+        const results = groups?.[item.source];
         if (
           !sources.includes(item.source) ||
-          !groups?.[item.source]?.[item.position - 1]
+          !Array.isArray(results) ||
+          !results[item.position - 1]
         )
           return fail(
             400,
@@ -94,16 +100,12 @@ export async function keylessFeedbackController(
           );
       }
     } else {
-      const formats =
-        context.requestedFormats ??
-        (options?.truncated
-          ? undefined
-          : requestedTypes(options?.formats, "markdown"));
-      if (!formats)
-        return fail(
-          400,
-          "INVALID_BODY",
-          "Requested output formats are unavailable in this job context.",
+      const formats = requestedTypes(options.formats, "markdown");
+      const changeTrackingJson =
+        Array.isArray(options.formats) &&
+        options.formats.some(
+          format =>
+            format?.type === "changeTracking" && format.modes?.includes("json"),
         );
       for (const item of answers.observations) {
         if (item.format !== undefined && !formats.includes(item.format))
@@ -138,8 +140,7 @@ export async function keylessFeedbackController(
                   "question",
                   "highlights",
                 ].includes(format) ||
-                (format === "changeTracking" &&
-                  context.changeTrackingJson === true)
+                (format === "changeTracking" && changeTrackingJson)
               );
             return true;
           });
@@ -152,12 +153,7 @@ export async function keylessFeedbackController(
         }
       }
     }
-    if (answers.endpoint === "parse") {
-      // Do not persist document content from contexts created before this policy.
-      context.request = null;
-      context.result = null;
-    }
-    const result = await insertKeylessFeedback(identity, answers, context);
+    const result = await insertKeylessFeedback(identity, answers, job);
     if (!result.success)
       return fail(
         429,
@@ -177,4 +173,15 @@ export async function keylessFeedbackController(
       "Feedback could not be recorded. Retry later.",
     );
   }
+}
+
+function requestedTypes(value: unknown, defaultType: string): string[] {
+  if (!Array.isArray(value)) return [defaultType];
+  return [
+    ...new Set(
+      value
+        .map(item => (typeof item === "string" ? item : item?.type))
+        .filter((type): type is string => typeof type === "string"),
+    ),
+  ];
 }

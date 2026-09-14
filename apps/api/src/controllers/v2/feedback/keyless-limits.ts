@@ -18,3 +18,5 @@ return count
   );
   return count <= KEYLESS_FEEDBACK_ATTEMPTS;
 }
+
+export const KEYLESS_FEEDBACK_MAX_AGE_SEC = 86400;

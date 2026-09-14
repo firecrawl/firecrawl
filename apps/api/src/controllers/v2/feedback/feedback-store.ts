@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, DrizzleQueryError } from "drizzle-orm";
 import { config } from "../../../config";
 import { db, dbRr } from "../../../db/connection";
 import * as schema from "../../../db/schema";
@@ -165,7 +165,9 @@ export async function insertFeedback(params: {
     });
     return null;
   } catch (error) {
-    return error as DbError;
+    return (
+      error instanceof DrizzleQueryError ? (error.cause ?? error) : error
+    ) as DbError;
   }
 }
 

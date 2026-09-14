@@ -118,8 +118,8 @@ function validateAccess(
   return null;
 }
 
-async function lookupJobWithRetry(
-  options: FeedbackRecordOptions,
+export async function lookupJobWithRetry(
+  options: Pick<FeedbackRecordOptions, "endpoint" | "jobId" | "notFoundCode">,
   dbTeamId: string,
   logger: FeedbackLogger,
 ): Promise<FeedbackJobRow | FeedbackRecordResult> {
