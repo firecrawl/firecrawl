@@ -131,7 +131,7 @@ func (h *Handler) ConvertHTML(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate input
-	if req.HTML == "" {
+	if strings.TrimSpace(req.HTML) == "" {
 		logger.Warn().Msg("Empty HTML field in request")
 		h.sendError(w, "HTML field is required", "The 'html' field cannot be empty", http.StatusBadRequest)
 		return

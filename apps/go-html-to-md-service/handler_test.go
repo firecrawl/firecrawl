@@ -201,6 +201,33 @@ func TestConvertHTML_EmptyHTML(t *testing.T) {
 	}
 }
 
+func TestConvertHTML_WhitespaceOnlyHTML(t *testing.T) {
+	converter := NewConverter()
+	handler := NewHandler(converter)
+
+	router := mux.NewRouter()
+	handler.RegisterRoutes(router)
+
+	reqBody := ConvertRequest{
+		HTML: " \n\t ",
+	}
+	jsonBody, _ := json.Marshal(reqBody)
+
+	req, err := http.NewRequest("POST", "/convert", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusBadRequest {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusBadRequest)
+	}
+}
+
 func TestConvertHTML_InvalidJSON(t *testing.T) {
 	converter := NewConverter()
 	handler := NewHandler(converter)
