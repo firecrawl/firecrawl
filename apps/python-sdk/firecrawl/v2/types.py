@@ -1231,6 +1231,7 @@ class MapOptions(BaseModel):
     sitemap: Literal["only", "include", "skip"] = "include"
     include_subdomains: Optional[bool] = None
     ignore_query_parameters: Optional[bool] = None
+    ignore_cache: Optional[bool] = None
     limit: Optional[int] = None
     timeout: Optional[int] = None
     integration: Optional[str] = None
