@@ -60,7 +60,14 @@ export async function batchScrapeController(
     req.body = batchScrapeRequestSchema.parse(req.body);
   }
 
-  const safeMode = resolveSafeMode(req.acuc?.flags, undefined);
+  const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
+  if (safeMode.error) {
+    return res.status(403).json({
+      success: false,
+      code: safeMode.code,
+      error: safeMode.error,
+    } as any);
+  }
 
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
@@ -335,6 +342,7 @@ export async function batchScrapeController(
           threatProtection: threatProtection.policy ?? undefined,
           // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
           teamFlags: req.acuc?.flags ?? undefined,
+          safeModeBypassed: safeMode.bypassed === true,
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,
         createdAt: Date.now(),
@@ -355,6 +363,7 @@ export async function batchScrapeController(
     // current policy, not whatever was stored when the batch was created.
     sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
     sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
+    sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
   }
 
   if (!req.body.appendToId) {

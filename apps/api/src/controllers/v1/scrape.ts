@@ -60,8 +60,10 @@ export async function scrapeController(
     req.body?.zeroDataRetention === true ||
     // Resolve lockdown WITHOUT the (still-unvalidated) URL: lockdown never
     // depends on the allowlist, and passing a non-string URL here would throw
-    // before the schema can return its 400.
-    (resolveSafeMode(req.acuc?.flags, undefined).safeMode?.lockdown ?? false);
+    // before the schema can return its 400. A honored bypass (safeMode:false)
+    // resolves to no lockdown, so pass the raw request value.
+    (resolveSafeMode(req.acuc?.flags, req.body?.safeMode).safeMode?.lockdown ??
+      false);
 
   return withSpan(
     "api.scrape.request",
@@ -91,9 +93,19 @@ async function scrapeControllerInner(
   const preNormalizedBody = { ...req.body };
   req.body = scrapeRequestSchema.parse(req.body);
 
-  // v1 has no per-request safeMode param; enforcement still applies via the
-  // resolved org config (and the scrapeURL backstop).
-  const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
+  // Honor a per-request Safe Mode opt-out/affirmation, consistent with v2.
+  const safeMode = resolveSafeMode(
+    req.acuc?.flags,
+    req.body.safeMode,
+    req.body.url,
+  );
+  if (safeMode.error) {
+    return res.status(403).json({
+      success: false,
+      code: safeMode.code,
+      error: safeMode.error,
+    } as any);
+  }
 
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
@@ -280,6 +292,8 @@ async function scrapeControllerInner(
               orgId: req.acuc?.org_id ?? null,
               agentIndexOnly: (req as any).agentIndexOnly ?? false,
               threatProtection: threatProtection.policy ?? undefined,
+              safeMode: safeMode.allowlisted ? undefined : safeMode.safeMode,
+              safeModeBypassed: safeMode.bypassed === true,
             },
             skipNuq: true,
             origin,

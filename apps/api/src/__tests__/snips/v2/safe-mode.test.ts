@@ -46,6 +46,20 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
       scrapeTimeout,
     );
 
+    it.concurrent(
+      "v1 accepts + honors the safeMode param (rejects safeMode: true)",
+      async () => {
+        const res = await request(TEST_API_URL)
+          .post("/v1/scrape")
+          .set("Authorization", `Bearer ${identity.apiKey}`)
+          .set("Content-Type", "application/json")
+          .send({ url: createTestIdUrl(), safeMode: true });
+        expect(res.statusCode).toBe(403);
+        expect(res.body.code).toBe("SAFE_MODE_BLOCKED");
+      },
+      scrapeTimeout,
+    );
+
     concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
       "treats safeMode: false as a no-op",
       async () => {

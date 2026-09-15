@@ -47,7 +47,18 @@ export async function crawlController(
   req.body = crawlRequestSchema.parse(req.body);
   const id = uuidv7();
 
-  const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
+  const safeMode = resolveSafeMode(
+    req.acuc?.flags,
+    req.body.scrapeOptions?.safeMode,
+    req.body.url,
+  );
+  if (safeMode.error) {
+    return res.status(403).json({
+      success: false,
+      code: safeMode.code,
+      error: safeMode.error,
+    } as any);
+  }
 
   // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
@@ -249,6 +260,7 @@ export async function crawlController(
       threatProtection: threatProtection.policy ?? undefined,
       // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
       teamFlags: req.acuc?.flags ?? undefined,
+      safeModeBypassed: safeMode.bypassed === true,
     }, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
     team_id: req.auth.team_id,
     createdAt: Date.now(),
