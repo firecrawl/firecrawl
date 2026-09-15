@@ -1,5 +1,4 @@
 import express, { NextFunction, Request, Response } from "express";
-import crypto from "node:crypto";
 import { config } from "../config";
 import { acucCacheClearController } from "../controllers/v0/admin/acuc-cache-clear";
 import { autumnHealthController } from "../controllers/v0/admin/autumn-health";
@@ -25,53 +24,88 @@ import {
 import { logger } from "../lib/logger";
 import { RateLimiterMode } from "../types";
 import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
+import {
+  bullAuthRoute,
+  createRequireBullAuth,
+  secretsMatch,
+} from "../lib/bull-auth";
 
 export const adminRouter = express.Router();
 
 if (config.BULL_AUTH_KEY) {
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/redis-health`, redisHealthController);
+  const key = config.BULL_AUTH_KEY;
+  const requireBullAuth = createRequireBullAuth(key);
+  const bull = (rest: string) => bullAuthRoute(key, rest);
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/autumn-health`, autumnHealthController);
+  adminRouter.get(
+    bull("/redis-health"),
+    requireBullAuth,
+    redisHealthController,
+  );
+
+  adminRouter.get(
+    bull("/autumn-health"),
+    requireBullAuth,
+    autumnHealthController,
+  );
 
   adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/acuc-cache-clear`,
+    bull("/acuc-cache-clear"),
+    requireBullAuth,
     wrap(acucCacheClearController),
   );
 
   adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/ip-restriction-cache-clear`,
+    bull("/ip-restriction-cache-clear"),
+    requireBullAuth,
     wrap(ipRestrictionCacheClearController),
   );
 
   adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/key-restriction-cache-clear`,
+    bull("/key-restriction-cache-clear"),
+    requireBullAuth,
     wrap(keyRestrictionCacheClearController),
   );
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/feng-check`, wrap(checkFireEngine));
+  adminRouter.get(bull("/feng-check"), requireBullAuth, wrap(checkFireEngine));
 
   adminRouter.get(
-    `/admin/${config.BULL_AUTH_KEY}/index-queue-prometheus`,
+    bull("/index-queue-prometheus"),
+    requireBullAuth,
     wrap(indexQueuePrometheus),
   );
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/precrawl`, wrap(triggerPrecrawl));
+  adminRouter.get(bull("/precrawl"), requireBullAuth, wrap(triggerPrecrawl));
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/metrics`, wrap(metricsController));
+  adminRouter.get(bull("/metrics"), requireBullAuth, wrap(metricsController));
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/nuq-metrics`, wrap(nuqMetricsController));
+  adminRouter.get(
+    bull("/nuq-metrics"),
+    requireBullAuth,
+    wrap(nuqMetricsController),
+  );
 
-  adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/nuq-fdb-metrics`, wrap(nuqFdbMetricsController));
-
-  adminRouter.post(`/admin/${config.BULL_AUTH_KEY}/fsearch`, wrap(realtimeSearchController));
+  adminRouter.get(
+    bull("/nuq-fdb-metrics"),
+    requireBullAuth,
+    wrap(nuqFdbMetricsController),
+  );
 
   adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/concurrency-queue-backfill`,
+    bull("/fsearch"),
+    requireBullAuth,
+    wrap(realtimeSearchController),
+  );
+
+  adminRouter.post(
+    bull("/concurrency-queue-backfill"),
+    requireBullAuth,
     wrap(concurrencyQueueBackfillController),
   );
 
   adminRouter.post(
-    `/admin/${config.BULL_AUTH_KEY}/crawl-monitor`,
+    bull("/crawl-monitor"),
+    requireBullAuth,
     authMiddleware(RateLimiterMode.Crawl),
     checkCreditsMiddleware(2),
     wrap(crawlMonitorController),
@@ -84,14 +118,11 @@ if (config.S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY) {
     return header?.startsWith("Bearer ") ? header.slice(7) : null;
   }
 
-  function secretsMatch(provided: string | null, expected?: string): boolean {
-    if (!provided || !expected) return false;
-    const left = Buffer.from(provided);
-    const right = Buffer.from(expected);
-    return left.length === right.length && crypto.timingSafeEqual(left, right);
-  }
-
-  function firecrawlIntegrationsMiddleware(req: Request, res: Response, next: NextFunction) {
+  function firecrawlIntegrationsMiddleware(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     if (
       !secretsMatch(
         bearerToken(req.headers.authorization),
@@ -100,7 +131,9 @@ if (config.S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY) {
     ) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    logger.info(`firecrawl-integrations service calling ${req.method} ${req.path}`);
+    logger.info(
+      `firecrawl-integrations service calling ${req.method} ${req.path}`,
+    );
     next();
   }
 
@@ -111,8 +144,17 @@ if (config.S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY) {
   );
 }
 
-adminRouter.post(`/admin/integration/create-user`, wrap(handleIntegrationAdminCreateUserProxy));
+adminRouter.post(
+  `/admin/integration/create-user`,
+  wrap(handleIntegrationAdminCreateUserProxy),
+);
 
-adminRouter.post(`/admin/integration/validate-api-key`, wrap(handleIntegrationAdminValidateProxy));
+adminRouter.post(
+  `/admin/integration/validate-api-key`,
+  wrap(handleIntegrationAdminValidateProxy),
+);
 
-adminRouter.post(`/admin/integration/rotate-api-key`, wrap(handleIntegrationAdminRotateProxy));
+adminRouter.post(
+  `/admin/integration/rotate-api-key`,
+  wrap(handleIntegrationAdminRotateProxy),
+);
