@@ -119,6 +119,7 @@ import {
   resolveSafeMode,
   applySafeMode,
   stripCredentialHeaders,
+  stripUrlUserinfo,
   SAFE_MODE_LOGIN_ACTIONS,
 } from "../../lib/safe-mode";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
@@ -1279,16 +1280,13 @@ export async function scrapeURL(
           }
           options.profile = undefined;
           // Basic Auth embedded in the URL (user:pass@host) is another way to
-          // authenticate; strip the userinfo so no engine can use it.
-          try {
-            const u = new URL(url);
-            if (u.username || u.password) {
-              u.username = "";
-              u.password = "";
-              url = u.toString();
-            }
-          } catch {
-            // non-parseable URL: leave as-is, engine selection will handle it
+          // authenticate; strip the userinfo so no engine can use it, and from
+          // the preserved source URL so it isn't returned/persisted in metadata.
+          url = stripUrlUserinfo(url);
+          if (internalOptions.unnormalizedSourceURL) {
+            internalOptions.unnormalizedSourceURL = stripUrlUserinfo(
+              internalOptions.unnormalizedSourceURL,
+            );
           }
         }
         if (

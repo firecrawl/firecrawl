@@ -52,10 +52,15 @@ export async function scrapeController(
   res: Response<ScrapeResponse>,
 ) {
   // Resolved before the root span starts so the whole request trace stays
-  // unrecorded for zero-data-retention requests (see otel-tracer).
+  // unrecorded for zero-data-retention requests (see otel-tracer). Safe Mode
+  // lockdown implies ZDR, so fold it in here too — otherwise child spans could
+  // export target URLs before the inner handler applies lockdown.
   const zeroDataRetentionTrace =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
-    req.body?.zeroDataRetention === true;
+    req.body?.zeroDataRetention === true ||
+    (resolveSafeMode(req.acuc?.flags, undefined, req.body?.url).safeMode
+      ?.lockdown ??
+      false);
 
   return withSpan(
     "api.scrape.request",

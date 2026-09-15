@@ -348,8 +348,10 @@ export async function batchScrapeController(
     });
   }
   if (req.body.appendToId && sc?.internalOptions) {
-    // Refresh Safe Mode flags so appended jobs enforce the team's current policy.
+    // Refresh Safe Mode + threat-protection so appended jobs enforce the team's
+    // current policy, not whatever was stored when the batch was created.
     sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
+    sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
   }
 
   if (!req.body.appendToId) {

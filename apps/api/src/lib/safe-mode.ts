@@ -27,6 +27,22 @@ export const SAFE_MODE_CREDENTIAL_HEADERS = [
 // and stripped at the worker under Safe Mode's disableAuthentication.
 export const SAFE_MODE_LOGIN_ACTIONS = ["write", "press", "executeJavascript"];
 
+// Remove Basic Auth embedded in a URL (user:pass@host). Returns the URL
+// unchanged if it has no userinfo or can't be parsed.
+export function stripUrlUserinfo(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.username || u.password) {
+      u.username = "";
+      u.password = "";
+      return u.toString();
+    }
+  } catch {
+    // leave non-parseable URLs as-is
+  }
+  return url;
+}
+
 // Remove credential-bearing headers. Used by the fire-engine builders so
 // inherited scrape options (crawl children, sub-scrapes) can't carry credentials
 // even when no request-time gate ran.
