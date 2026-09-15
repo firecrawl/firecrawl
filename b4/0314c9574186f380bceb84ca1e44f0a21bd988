@@ -1,0 +1,97 @@
+apps/go-sdk/tools.go
+  ai_agent 1-122
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/tools.unit.test.ts
+  ai_agent 1-220
+apps/python-sdk/firecrawl/v2/__init__.py
+  ai_agent 3-11,13-23
+apps/rust-sdk/src/scrape.rs
+  ai_agent 106-108,154-235,373-466,697-707,1042-1076
+apps/go-sdk/README.md
+  ai_agent 429-473
+apps/python-sdk/firecrawl/client.py
+  ai_agent 74-75,166-167,278-279,419-420
+apps/go-sdk/firecrawl_error.go
+  ai_agent 5-16,25-26
+apps/js-sdk/firecrawl/src/v2/client.ts
+  ai_agent 9,51-54,179,182-214
+apps/js-sdk/firecrawl/README.md
+  ai_agent 389-434
+apps/rust-sdk/tests/tools.rs
+  ai_agent 1-150
+apps/go-sdk/models.go
+  ai_agent 31-33,610-656,877-920
+apps/js-sdk/firecrawl/src/v2/methods/tools.ts
+  ai_agent 1-136
+apps/python-sdk/firecrawl/v2/client_async.py
+  ai_agent 23-25,120,123-124,127-133,139-170
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_scrape_request_preparation.py
+  ai_agent 145-159
+apps/rust-sdk/Cargo.toml
+  ai_agent 18
+apps/go-sdk/http_client.go
+  ai_agent 168,173,177,182,185,262,268,272,277,281,303-304,307,322-333
+apps/rust-sdk/README.md
+  ai_agent 274-312
+apps/js-sdk/firecrawl/src/v2/utils/errorHandler.ts
+  ai_agent 2,8-16,24-32
+apps/python-sdk/firecrawl/v2/utils/error_handler.py
+  ai_agent 8-9,14,18-44,68-72,99-101,106-109,123,127,130,133-135,138,141,144,147,150
+apps/rust-sdk/src/types.rs
+  ai_agent 699-700,1038,1319-1352
+apps/python-sdk/firecrawl/v2/methods/scrape.py
+  ai_agent 6-8,14-16,19,96-172,307
+apps/go-sdk/options_test.go
+  ai_agent 165-177
+apps/js-sdk/firecrawl/src/v2/methods/search.ts
+  ai_agent 30,91,104,109,117-118,121
+apps/rust-sdk/src/tools.rs
+  ai_agent 1-69
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/threat-protection.unit.test.ts
+  ai_agent 39-48
+apps/python-sdk/README.md
+  ai_agent 404-426
+apps/python-sdk/firecrawl/v2/utils/__init__.py
+  ai_agent 6,9
+apps/rust-sdk/src/search.rs
+  ai_agent 8-9,21,24-26,84,190-192,445,452-460
+apps/js-sdk/firecrawl/src/v2/types.ts
+  ai_agent 278-279,690-691,804,808-926,957-958,960-961,1837-1855,1857,1862-1865,1872-1873,1881-1882
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_tools.py
+  ai_agent 1-144
+apps/python-sdk/firecrawl/v2/client.py
+  ai_agent 21-23,156,159-160,185-186,243,245-251,254-296,469,510
+apps/python-sdk/firecrawl/v2/types.py
+  ai_agent 521,612-613,925-927,1055-1134,2257,2276-2277,2345,2349,2360-2362
+apps/go-sdk/tools_test.go
+  ai_agent 1-95
+apps/python-sdk/firecrawl/__init__.py
+  ai_agent 12-21,93-99
+apps/python-sdk/firecrawl/v2/methods/aio/scrape.py
+  ai_agent 2,8-9,11,13,61-78
+apps/python-sdk/firecrawl/v2/methods/aio/search.py
+  ai_agent 3,44,51-52,115
+apps/python-sdk/firecrawl/v2/utils/validation.py
+  ai_agent 817-820
+apps/go-sdk/options.go
+  ai_agent 97,168
+apps/rust-sdk/Cargo.lock
+  ai_agent 262,353,357-367,1023-1028,1730-1739
+apps/rust-sdk/src/error.rs
+  ai_agent 7-23,32-41,58-63
+apps/rust-sdk/src/lib.rs
+  ai_agent 41,49-51
+apps/go-sdk/firecrawl.go
+  ai_agent 535,557-563
+apps/js-sdk/firecrawl/package-lock.json
+  ai_agent 1-6561
+apps/js-sdk/firecrawl/src/v2/methods/scrape.ts
+  ai_agent 91,94-95
+apps/python-sdk/firecrawl/v2/methods/search.py
+  ai_agent 6,38,45-46,127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b40314c9574186f380bceb84ca1e44f0a21bd988",
+  "prompts": {}
+}

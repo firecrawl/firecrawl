@@ -1,0 +1,79 @@
+apps/python-sdk/firecrawl/v2/client.py
+  s_d5a66f40b1ab9a::t_b65c37f9c89a23 504
+  s_d5a66f40b1ab9a::t_7be3979809329f 243,245
+  s_d5a66f40b1ab9a::t_a447a748ce6162 185
+  s_d5a66f40b1ab9a::t_7a59b671b6afa8 463
+apps/go-sdk/tools_test.go
+  s_d5a66f40b1ab9a::t_c7d15a68680aaf 46
+apps/js-sdk/firecrawl/src/v2/types.ts
+  s_d5a66f40b1ab9a::t_e5f67fc3e01e07 278-279
+  s_d5a66f40b1ab9a::t_41727f850e5ff2 952,954-955
+  s_d5a66f40b1ab9a::t_78fedd03e90e63 690-691
+  s_d5a66f40b1ab9a::t_31885e5b423e1f 1837-1838,1845,1853
+apps/python-sdk/firecrawl/v2/methods/search.py
+  s_d5a66f40b1ab9a::t_1c4ee05a9358f8 6
+apps/python-sdk/firecrawl/v2/utils/validation.py
+  s_d5a66f40b1ab9a::t_c5974b96668924 817-820
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/threat-protection.unit.test.ts
+  s_d5a66f40b1ab9a::t_950e52f90316c8 39-44,46-48
+  s_d5a66f40b1ab9a::t_826285c1ee0316 45
+apps/python-sdk/README.md
+  s_d5a66f40b1ab9a::t_08bb23922ac974 408,413
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/tools.unit.test.ts
+  s_d5a66f40b1ab9a::t_fddcb6cc372bfc 113,119
+apps/python-sdk/firecrawl/v2/types.py
+  s_d5a66f40b1ab9a::t_202c1ee25c6257 521
+  s_d5a66f40b1ab9a::t_b4bccb98573a52 2271-2272
+  s_d5a66f40b1ab9a::t_22c8d4322aa76e 925-927
+apps/js-sdk/firecrawl/src/v2/methods/search.ts
+  s_d5a66f40b1ab9a::t_9f2f8b08f57ec9 30
+apps/js-sdk/firecrawl/src/v2/utils/errorHandler.ts
+  s_d5a66f40b1ab9a::t_8d2442aa3dc893 16
+  s_d5a66f40b1ab9a::t_32ce189144a52e 8
+apps/go-sdk/models.go
+  s_d5a66f40b1ab9a::t_0e72e02ffba56b 631-634
+  s_d5a66f40b1ab9a::t_124e1cb982d44b 31-33
+apps/rust-sdk/src/scrape.rs
+  s_d5a66f40b1ab9a::t_244a3cea9c96bb 698-707
+  s_d5a66f40b1ab9a::t_eda3e220636a63 106-108
+apps/rust-sdk/src/types.rs
+  s_d5a66f40b1ab9a::t_e2456d850b3df7 699-700
+apps/js-sdk/firecrawl/README.md
+  s_d5a66f40b1ab9a::t_976332f0a73584 393,399
+apps/rust-sdk/src/error.rs
+  s_d5a66f40b1ab9a::t_7ee1263fc21c93 17-20
+apps/rust-sdk/src/search.rs
+  s_d5a66f40b1ab9a::t_75e2aefa159a1a 8
+  s_d5a66f40b1ab9a::t_11d1d9a5991915 23-25
+apps/js-sdk/firecrawl/src/v2/methods/scrape.ts
+  s_d5a66f40b1ab9a::t_53d32d2efcb617 91,94-95
+apps/go-sdk/options_test.go
+  s_d5a66f40b1ab9a::t_746f30b805e6ed 165-177
+apps/rust-sdk/tests/tools.rs
+  s_d5a66f40b1ab9a::t_3607cc7917c2b8 26
+  s_d5a66f40b1ab9a::t_1d7f432dbe0620 14
+apps/python-sdk/firecrawl/v2/utils/error_handler.py
+  s_d5a66f40b1ab9a::t_b982f52734a5af 12,17-22
+  s_d5a66f40b1ab9a::t_c529ced6397f47 72-73,78-80,94,98,101,104,107,110,113,116,119
+apps/python-sdk/firecrawl/__tests__/unit/v2/methods/test_scrape_request_preparation.py
+  s_d5a66f40b1ab9a::t_ad57f3e17f1fe3 145-159
+apps/go-sdk/options.go
+  s_d5a66f40b1ab9a::t_200360d532be4b 97
+  s_d5a66f40b1ab9a::t_28aa2bbf39001a 168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "09d2882f2883476c1aecf2dd2427b94dff05949d",
+  "prompts": {},
+  "sessions": {
+    "s_d5a66f40b1ab9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d98ef7f-6653-4344-b150-58a978da5f54",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

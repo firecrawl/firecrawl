@@ -1,0 +1,25 @@
+apps/api/src/search/alexandria.ts
+  s_ee203c73d82ec7::t_a935916056ec53 10
+apps/api/src/controllers/v2/search.ts
+  s_ee203c73d82ec7::t_a935916056ec53 132-133
+apps/api/src/controllers/v2/types.ts
+  s_ee203c73d82ec7::t_a935916056ec53 2327,2335
+apps/api/src/routes/shared.ts
+  s_ee203c73d82ec7::t_a935916056ec53 124-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2f543b5d821a0d9cf4916e50a1391b6a497b3909",
+  "prompts": {},
+  "sessions": {
+    "s_ee203c73d82ec7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f18f8-181b-7552-a7dd-bc1d2e1cd896",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

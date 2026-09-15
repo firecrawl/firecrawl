@@ -1,0 +1,29 @@
+apps/api/src/controllers/v2/scrape.ts
+  s_d5a66f40b1ab9a::t_8b463b5a9aba31 55,166
+apps/api/src/controllers/v2/scrape-alexandria.ts
+  s_d5a66f40b1ab9a::t_8b463b5a9aba31 23,58,119,145,172
+apps/api/src/routes/shared.ts
+  s_d5a66f40b1ab9a::t_8b463b5a9aba31 124-125
+apps/api/src/controllers/v2/scrape-alexandria.test.ts
+  s_d5a66f40b1ab9a::t_8b463b5a9aba31 60,65,114,124
+apps/api/src/controllers/v2/search.ts
+  s_d5a66f40b1ab9a::t_8b463b5a9aba31 150
+apps/api/src/services/alexandria/README.md
+  s_d5a66f40b1ab9a::t_8b463b5a9aba31 21,34-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "47ef264ca911462c02585e98fafa8d28c31a6148",
+  "prompts": {},
+  "sessions": {
+    "s_d5a66f40b1ab9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d98ef7f-6653-4344-b150-58a978da5f54",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
