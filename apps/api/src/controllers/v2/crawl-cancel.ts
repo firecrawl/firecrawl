@@ -20,17 +20,19 @@ export async function crawlCancelController(
   try {
     const group = await crawlGroup.getGroup(req.params.jobId);
     if (!group) {
-      return res.status(404).json({ error: "Job not found" });
+      return res.status(404).json({ success: false, error: "Job not found" });
     }
 
     // group.ownerId is normalized to a UUID in NuQ, so the raw team_id
     // (e.g. "bypass" when self-hosted) must be normalized before comparing
     if (group.ownerId !== normalizeOwnerId(req.auth.team_id)) {
-      return res.status(404).json({ error: "Job not found" });
+      return res.status(404).json({ success: false, error: "Job not found" });
     }
 
     if (group.status === "completed") {
-      return res.status(409).json({ error: "Crawl is already completed" });
+      return res
+        .status(409)
+        .json({ success: false, error: "Crawl is already completed" });
     }
 
     const sc: StoredCrawl = (await getCrawl(req.params.jobId)) ?? {
@@ -59,10 +61,11 @@ export async function crawlCancelController(
     }
 
     res.json({
+      success: true,
       status: "cancelled",
     });
   } catch (error) {
     logger.error(error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ success: false, error: error.message });
   }
 }
