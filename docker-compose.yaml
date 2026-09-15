@@ -81,9 +81,9 @@ services:
     cap_drop:
       - ALL
     # Resource limits for Docker Compose (not Swarm)
-    cpus: 2.0
-    mem_limit: 4G
-    memswap_limit: 4G
+    # cpus: 2.0
+    # mem_limit: 4G
+    # memswap_limit: 4G
     logging:
       driver: "json-file"
       options:
@@ -118,9 +118,9 @@ services:
     command: node dist/src/harness.js --start-docker
     # Resource limits for Docker Compose (not Swarm)
     # Increase if you have more CPU cores/RAM available
-    cpus: 4.0
-    mem_limit: 8G
-    memswap_limit: 8G
+    # cpus: 4.0
+    # mem_limit: 8G
+    # memswap_limit: 8G
 
   redis:
     # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
