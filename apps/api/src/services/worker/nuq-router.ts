@@ -9,6 +9,10 @@ import { redisEvictConnection } from "../../services/redis";
 import { isSelfHosted } from "../../lib/deployment";
 import { getApiKeyConcurrencyLimit } from "../../lib/api-key-concurrency";
 import {
+  getGatewayConcurrencyLimit,
+  withGatewayFloor,
+} from "../../lib/gateway-concurrency";
+import {
   getTeamQueueLimit,
   getConcurrencyLimitActiveJobsCount,
   pushConcurrencyLimitActiveJob,
@@ -265,9 +269,17 @@ export async function fdbEnqueueScrapeJobs(
             : null,
         )
         .find(o => o !== null) ?? (await orgIdForTeam(teamId));
-    const autumnLimit = await autumnService.getConcurrencyLimit(teamId, orgId);
+    const [autumnLimit, gatewayLimit] = await Promise.all([
+      autumnService.getConcurrencyLimit(teamId, orgId),
+      getGatewayConcurrencyLimit(teamId),
+    ]);
     // fdbForced: leave unlimited (null) when Autumn has no concurrency value.
-    teamLimit = fdbForced() ? autumnLimit : (autumnLimit ?? 2);
+    // A Gateway-provisioned team's partner figure only raises a finite limit
+    // (lib/gateway-concurrency.ts), so an unlimited team stays unlimited.
+    teamLimit = withGatewayFloor(
+      fdbForced() ? autumnLimit : (autumnLimit ?? 2),
+      gatewayLimit,
+    );
   }
 
   const queueCap =
