@@ -58,9 +58,10 @@ export async function scrapeController(
   const zeroDataRetentionTrace =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
     req.body?.zeroDataRetention === true ||
-    (resolveSafeMode(req.acuc?.flags, undefined, req.body?.url).safeMode
-      ?.lockdown ??
-      false);
+    // Resolve lockdown WITHOUT the (still-unvalidated) URL: lockdown never
+    // depends on the allowlist, and passing a non-string URL here would throw
+    // before the schema can return its 400.
+    (resolveSafeMode(req.acuc?.flags, undefined).safeMode?.lockdown ?? false);
 
   return withSpan(
     "api.scrape.request",

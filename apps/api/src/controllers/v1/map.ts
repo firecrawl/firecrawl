@@ -392,7 +392,10 @@ export async function mapController(
   // serve index-only under lockdown (no sitemap/robots fetch to the target).
   const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
   if (safeMode.safeMode?.lockdown) {
+    // Sitemap discovery is outbound and blocked under lockdown, so serve from
+    // the index only — otherwise a sitemapOnly map would return nothing.
     req.body.useIndex = true;
+    req.body.sitemapOnly = false;
   }
 
   const threatProtection = await resolveThreatProtection({
