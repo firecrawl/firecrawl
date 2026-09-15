@@ -338,6 +338,13 @@ const scrapePage = async (
 
   return {
     content,
+    // Where the browser ACTUALLY ended up. page.url() reflects the post-
+    // navigation location, so it covers client-side redirects (location.href
+    // from a bot-detection script) as well as HTTP 3xx — neither of which the
+    // caller could previously see. Without this the API can only echo the
+    // REQUESTED url, so a page fetched from somebody else's site is
+    // indistinguishable from the real one.
+    url: page.url(),
     status: response ? response.status() : null,
     headers,
     contentType: ct,
@@ -537,6 +544,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
       content: result.content,
       pageStatusCode: result.status,
       contentType: result.contentType,
+      url: result.url,
       ...(pageError && { pageError }),
     });
   } catch (error) {
