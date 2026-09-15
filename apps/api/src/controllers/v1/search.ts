@@ -23,7 +23,10 @@ import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { executeSearch } from "../../search/execute";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import { resolveSafeMode } from "../../lib/safe-mode";
+import {
+  resolveSafeMode,
+  isLockdownZeroDataRetention,
+} from "../../lib/safe-mode";
 import { checkPermissions } from "../../lib/permissions";
 import {
   DocumentWithCostTracking,
@@ -105,7 +108,15 @@ export async function searchController(
 
   const jobId = uuidv7();
   const teamForcedKind = getSearchForcedKind(req.acuc?.flags);
-  const zeroDataRetention = teamForcedKind !== null;
+  // Safe Mode lockdown is cache-only, which implies zero data retention for
+  // the search job and its result scrapes (retention only; the enterprise
+  // kind, routing and billing are unchanged).
+  const zeroDataRetention =
+    teamForcedKind !== null ||
+    isLockdownZeroDataRetention(
+      req.acuc?.flags,
+      req.body.scrapeOptions?.safeMode,
+    );
   const teamEnterprise = teamForcedKind ? [teamForcedKind] : undefined;
   let logger = _logger.child({
     jobId,

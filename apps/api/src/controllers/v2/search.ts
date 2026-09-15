@@ -37,7 +37,10 @@ import {
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import { resolveSafeMode } from "../../lib/safe-mode";
+import {
+  resolveSafeMode,
+  isLockdownZeroDataRetention,
+} from "../../lib/safe-mode";
 import { checkPermissions } from "../../lib/permissions";
 import {
   actionTypesOf,
@@ -61,7 +64,11 @@ export async function searchController(
   const zeroDataRetentionTrace =
     Boolean(getSearchForcedKind(req.acuc?.flags)) ||
     enterprise.includes("zdr") ||
-    enterprise.includes("anon");
+    enterprise.includes("anon") ||
+    isLockdownZeroDataRetention(
+      req.acuc?.flags,
+      req.body?.scrapeOptions?.safeMode,
+    );
 
   return withSpan(
     "api.search.request",
@@ -89,12 +96,19 @@ async function searchControllerInner(
   const jobId = uuidv7();
   const searchZDRMode = getSearchZDR(req.acuc?.flags);
   const teamForcedKind = getSearchForcedKind(req.acuc?.flags);
+  // Safe Mode lockdown is cache-only, which implies zero data retention for
+  // the search job and its result scrapes. Retention only: it does not inject
+  // the enterprise "zdr" kind, so upstream routing and billing are unchanged.
+  const lockdownZDR = isLockdownZeroDataRetention(
+    req.acuc?.flags,
+    req.body?.scrapeOptions?.safeMode,
+  );
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "searchController",
-    zeroDataRetention: teamForcedKind !== null,
+    zeroDataRetention: teamForcedKind !== null || lockdownZDR,
     teamForcedKind,
   });
 
@@ -103,7 +117,7 @@ async function searchControllerInner(
     config.SEARCH_PREVIEW_TOKEN !== undefined &&
     config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
 
-  let zeroDataRetention = teamForcedKind !== null;
+  let zeroDataRetention = teamForcedKind !== null || lockdownZDR;
   let reservedKeylessCredits = 0;
   let reconciledKeylessCredits = false;
 
@@ -241,7 +255,7 @@ async function searchControllerInner(
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
-    zeroDataRetention = isZDROrAnon ?? false;
+    zeroDataRetention = (isZDROrAnon ?? false) || lockdownZDR;
     logger = logger.child({ zeroDataRetention });
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
