@@ -1,3 +1,4 @@
+import { keylessFeedbackMetadata } from "./feedback/keyless-invitation";
 import { NextFunction, Request, Response } from "express";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
@@ -21,13 +22,14 @@ import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { getJobPriority } from "../../lib/job-priority";
-import { logRequest } from "../../services/logging/log_job";
+import { logRequest, logScrape } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   adjustKeylessCredits,
+  keylessTeamUuid,
   keylessLimitBody,
   logKeylessCreditUsage,
   reserveKeylessCredits,
@@ -439,8 +441,9 @@ export async function parseController(
         account: req.account,
       });
 
+      let logRequestPromise: Promise<void> | undefined;
       if (!agentRequestId) {
-        logRequest({
+        logRequestPromise = logRequest({
           id: jobId,
           kind: "parse",
           api_version: "v2",
@@ -451,9 +454,9 @@ export async function parseController(
           target_hint: req.body.file.filename,
           zeroDataRetention: zeroDataRetention || false,
           api_key_id: req.acuc?.api_key_id ?? null,
-        }).catch(err =>
-          logger.warn("Background request log failed", { error: err, jobId }),
-        );
+        }).catch(err => {
+          logger.warn("Background request log failed", { error: err, jobId });
+        });
       }
 
       setSpanAttributes(span, {
@@ -473,6 +476,7 @@ export async function parseController(
 
       let timeoutHandle: NodeJS.Timeout | null = null;
       let doc: Document | null = null;
+      let workerStarted = false;
 
       try {
         const lockStart = Date.now();
@@ -569,9 +573,11 @@ export async function parseController(
                     concurrencyLimited: limited,
                     keylessReserved: reservedKeylessCredits > 0,
                     requestId: agentRequestId ?? undefined,
+                    logRequestPromise,
                   },
                 };
 
+                workerStarted = true;
                 const result = await processJobInternal(job);
 
                 setSpanAttributes(waitSpan, {
@@ -586,6 +592,43 @@ export async function parseController(
           },
         );
       } catch (e) {
+        if (!workerStarted && keylessTeamUuid(req.auth.team_id)) {
+          try {
+            await logRequestPromise;
+            const { file, ...options } = req.body;
+            await logScrape(
+              {
+                id: jobId,
+                request_id: agentRequestId ?? jobId,
+                team_id: req.auth.team_id,
+                url: `https://parse.firecrawl.dev/uploads/${encodeURIComponent(getSyntheticFilename(file))}`,
+                options: { ...options, maxAge: 0, storeInCache: false },
+                is_successful: false,
+                error:
+                  e instanceof TransportableError
+                    ? e.message
+                    : "Request failed",
+                time_taken: (Date.now() - controllerStartTime) / 1000,
+                credits_cost: 0,
+                skipNuq: true,
+                zeroDataRetention,
+                is_parse: true,
+              },
+              true,
+            );
+          } catch (error) {
+            logger.warn("Failed to log job before worker execution", {
+              error,
+              jobId,
+            });
+          }
+        }
+        const feedbackMetadata = await keylessFeedbackMetadata(
+          req,
+          "parse",
+          jobId,
+          false,
+        );
         if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
           reconciledKeylessCredits = true;
           adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
@@ -618,6 +661,9 @@ export async function parseController(
             });
             return res.status(404).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -629,6 +675,9 @@ export async function parseController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
               sponsor_status: "pending",
@@ -642,6 +691,9 @@ export async function parseController(
             });
             return res.status(400).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -653,6 +705,9 @@ export async function parseController(
           });
           return res.status(statusCode).json({
             success: false,
+            ...(Object.keys(feedbackMetadata).length
+              ? { metadata: feedbackMetadata }
+              : {}),
             code: e.code,
             error: e.message,
           });
@@ -671,6 +726,9 @@ export async function parseController(
           });
           return res.status(500).json({
             success: false,
+            ...(Object.keys(feedbackMetadata).length
+              ? { metadata: feedbackMetadata }
+              : {}),
             code: "UNKNOWN_ERROR",
             error: getErrorContactMessage(id),
           });
@@ -752,6 +810,7 @@ export async function parseController(
           ...doc!,
           metadata: {
             ...doc!.metadata,
+            ...(await keylessFeedbackMetadata(req, "parse", jobId, true)),
             concurrencyLimited,
             concurrencyQueueDurationMs: concurrencyLimited
               ? lockTime || 0

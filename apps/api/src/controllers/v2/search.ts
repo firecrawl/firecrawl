@@ -1,3 +1,4 @@
+import { keylessFeedbackMetadata } from "./feedback/keyless-invitation";
 import { NextFunction, Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
@@ -523,11 +524,20 @@ async function searchControllerInner(
       scrapeful: result.shouldScrape,
     });
 
+    const feedbackMetadata = await keylessFeedbackMetadata(
+      req,
+      "search",
+      jobId,
+      true,
+    );
     return res.status(200).json({
       success: true,
       data: result.response,
       creditsUsed: result.totalCredits,
       id: jobId,
+      ...(Object.keys(feedbackMetadata).length
+        ? { metadata: feedbackMetadata }
+        : {}),
       ...(result.toolsWarning ? { warning: result.toolsWarning } : {}),
     });
   } catch (error) {
