@@ -67,8 +67,10 @@ interface ResolvedThreatProtection {
  * - Flag "forced": an override may never set `mode: "off"` → 403.
  * - Effective mode "off" resolves to `policy: null` so callers can skip all
  *   enforcement work.
- * - `force: true`: treated as flag "forced"; the feature always runs, so this
- *   never resolves to `policy: null`.
+ * - `force: true` (Safe Mode domain controls): treated as flag "forced", and
+ *   an "off" policy is raised to "manual-only" so the org's own lists are
+ *   enforced without a provider scan (no scan fee). Never resolves to
+ *   `policy: null`; an org that chose "normal"/"zscaler" keeps that mode.
  */
 export async function resolveThreatProtection(args: {
   teamId: string;
@@ -113,7 +115,7 @@ export async function resolveThreatProtection(args: {
 
   let policy = resolveEffectivePolicy(orgConfig, args.override);
   if (args.force === true && policy.mode === "off") {
-    policy = { ...policy, mode: "normal" };
+    policy = { ...policy, mode: "manual-only" };
   }
 
   // "zscaler" mode without a connection can only happen via a per-request

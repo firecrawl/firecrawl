@@ -189,9 +189,10 @@ export function evaluatePolicy(
     return { allowed: true, rule: "default-allow", ...base };
   }
 
-  // No verdict: the provider failed or was unavailable (mode "off" never
-  // reaches here via checkUrl). Fail open or closed per the org policy.
-  if (policy.mode === "off") {
+  // No verdict: the provider failed or was unavailable (modes "off" and
+  // "manual-only" never consult one, so they never fail). Otherwise fail open
+  // or closed per the org policy.
+  if (policy.mode === "off" || policy.mode === "manual-only") {
     return { allowed: true, rule: "default-allow", ...base };
   }
   return {

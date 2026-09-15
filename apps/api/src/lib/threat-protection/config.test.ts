@@ -28,6 +28,18 @@ describe("threatProtectionPolicySchema", () => {
     expect(policy.failurePolicy).toBe("open");
   });
 
+  it('accepts the "manual-only" mode in every schema', () => {
+    expect(
+      threatProtectionPolicySchema.parse({ mode: "manual-only" }).mode,
+    ).toBe("manual-only");
+    expect(
+      threatProtectionOverrideSchema.parse({ mode: "manual-only" }).mode,
+    ).toBe("manual-only");
+    expect(
+      threatProtectionConfigSchema.parse({ mode: "manual-only" }).mode,
+    ).toBe("manual-only");
+  });
+
   it("rejects an invalid mode", () => {
     expect(() =>
       threatProtectionPolicySchema.parse({ mode: "paranoid" }),

@@ -1,7 +1,10 @@
 // Shared type contract for the threat protection feature.
 // NOTE: concurrent in-flight branches create this exact file — do not modify without coordinating.
 
-export type ThreatProtectionMode = "off" | "normal" | "zscaler";
+// "manual-only": enforce the org's own lists (whitelist / blacklist /
+// blocked TLDs) and nothing else — no provider lookup, so no scan fee. This
+// is also what Safe Mode's domain controls raise an "off" policy to.
+export type ThreatProtectionMode = "off" | "manual-only" | "normal" | "zscaler";
 
 /**
  * The non-secret slice of an org's Zscaler settings that policy evaluation
