@@ -112,9 +112,11 @@ export async function batchScrapeController(
     });
   }
 
+  // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
-    (req.body.zeroDataRetention ?? false);
+    (req.body.zeroDataRetention ?? false) ||
+    (safeMode.safeMode?.lockdown ?? false);
 
   if (
     req.body.__agentInterop &&

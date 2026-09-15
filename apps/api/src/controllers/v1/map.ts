@@ -141,7 +141,8 @@ export async function getMapResults({
   let links: string[] = [url];
   let mapResults: MapDocument[] = [];
 
-  const zeroDataRetention = getScrapeZDR(flags) === "forced" || false;
+  // Lockdown (index-only) is cache-only, which implies zero data retention.
+  const zeroDataRetention = getScrapeZDR(flags) === "forced" || indexOnly;
 
   const sc: StoredCrawl = {
     originUrl: url,
@@ -452,7 +453,7 @@ export async function mapController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.url,
-    zeroDataRetention: false, // not supported for map
+    zeroDataRetention: lockdownIndexOnly,
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 
@@ -567,7 +568,7 @@ export async function mapController(
     },
     results: result.links,
     credits_cost: creditsToBill,
-    zeroDataRetention: false, // not supported
+    zeroDataRetention: lockdownIndexOnly,
   }).catch(error => {
     logger.error("Failed to log map", { error, mapId });
   });

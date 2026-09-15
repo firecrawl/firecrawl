@@ -381,7 +381,7 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
             safeModeConfig: { disableStealthProxy: false },
           },
         });
-        // stealth relaxed above, but authentication stays enforced
+        // stealth relaxed above, but the profile (auth-path) restriction stays
         const res = await scrapeRaw(
           { url: createTestIdUrl(), profile: { name: "test-profile" } },
           identity,

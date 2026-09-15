@@ -30,12 +30,16 @@ export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
   res: Response<MapResponse>,
 ) {
+  // Safe Mode lockdown is cache-only, which implies zero data retention.
+  const zeroDataRetention =
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    (resolveSafeMode(req.acuc?.flags, undefined).safeMode?.lockdown ?? false);
   const logger = _logger.child({
     jobId: uuidv7(),
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "mapController",
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention,
   });
   // Get timing data from middleware (includes all middleware processing time)
   const middlewareStartTime =
@@ -101,7 +105,7 @@ export async function mapController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.url,
-    zeroDataRetention: false, // not supported for map
+    zeroDataRetention,
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 
@@ -283,7 +287,7 @@ export async function mapController(
     },
     results: result.mapResults,
     credits_cost: creditsToBill,
-    zeroDataRetention: false, // not supported
+    zeroDataRetention,
   }).catch(error => {
     logger.error(`Failed to log job for team ${req.auth.team_id}: ${error}`);
   });

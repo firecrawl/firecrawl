@@ -46,10 +46,14 @@ export async function crawlController(
   const preNormalizedBody = req.body;
   req.body = crawlRequestSchema.parse(req.body);
   const id = uuidv7();
-  const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" || req.body.zeroDataRetention;
 
   const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
+
+  // Safe Mode lockdown is cache-only, which implies zero data retention.
+  const zeroDataRetention =
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body.zeroDataRetention ||
+    (safeMode.safeMode?.lockdown ?? false);
 
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
