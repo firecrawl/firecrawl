@@ -44,7 +44,7 @@ Mendable
 Co-Founder @ Mendable.ai
 March 2022 - Present (2 years 7 months)
 San Francisco, California, United States
-- Built an AI powered search platform that that served millions of queries for
+- Built an AI powered search platform that served millions of queries for
 hundreds of customers (YC S22)
 - We were one of the first LLM powered apps adopted by industry leaders like
 Coinbase, Snap, DoorDash, and MongoDB
