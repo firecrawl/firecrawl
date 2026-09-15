@@ -37,7 +37,7 @@ export async function scrapeURLWithPlaywright(
   }
 
   return {
-    url: meta.rewrittenUrl ?? meta.url, // TODO: impove redirect following
+    url: meta.rewrittenUrl ?? meta.url, // TODO: improve redirect following
     html: response.content,
     statusCode: response.pageStatusCode,
     error: response.pageError,
