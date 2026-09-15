@@ -9,7 +9,9 @@ export type MonitorSlackPage = {
 
 type MonitorSlackPayload = {
   monitorName: string;
+  monitorGoal?: string | null;
   dashboardUrl: string;
+  monitorUrl: string;
   checkId: string;
   summary: {
     changed: number;
@@ -28,10 +30,17 @@ const MAX_PAGE_BLOCKS = 8;
 // unbounded input we render, so bound them and clamp the assembled line.
 const SECTION_TEXT_LIMIT = 3000;
 const MAX_LINK_URL_LEN = 2000;
+// Truncate change descriptions so a single alert doesn't dominate the channel.
+const MAX_DESCRIPTION_LEN = 280;
+// Truncate the monitor goal so it stays compact at the top of the alert.
+const MAX_GOAL_LEN = 200;
 
 // Slack mrkdwn requires these three characters escaped in text spans.
 export function escapeSlackText(input: string): string {
-  return input.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 export function slackLink(url: string, label?: string): string {
@@ -53,6 +62,14 @@ function boundedPageLink(url: string): string {
 
 // Builds the change-detection alert posted to a channel. Returns both a
 // fallback `text` (for notifications/screen readers) and rich Block Kit blocks.
+//
+// Layout (top to bottom):
+//  1. Header: "Monitor <name> · Check <id>"
+//  2. Monitor goal in italics (if set)
+//  3. Per-page: URL link first, then truncated change description below
+//  4. Divider + summary tally
+//  5. "View in dashboard" button
+//  6. Check ID + credits context
 export function buildMonitorAlertMessage(payload: MonitorSlackPayload): {
   text: string;
   blocks: unknown[];
@@ -72,14 +89,26 @@ export function buildMonitorAlertMessage(payload: MonitorSlackPayload): {
       type: "header",
       text: {
         type: "plain_text",
-        text: `🔥 ${truncate(payload.monitorName, 140)}`,
+        text: `🔥 Monitor ${truncate(payload.monitorName, 100)} · Check ${truncate(payload.checkId, 24)}`,
         emoji: true,
       },
     },
   ];
 
-  // Headline each page with WHAT changed (the judged description). The page's
-  // status + URL becomes a small secondary context line beneath it.
+  // Monitor goal in italics at the top, linking to the monitor dashboard so the
+  // user can jump straight to the monitor page.
+  const goalText = payload.monitorGoal?.trim();
+  if (goalText) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `_${slackLink(payload.monitorUrl, truncate(goalText, MAX_GOAL_LEN))}_`,
+      },
+    });
+  }
+
+  // Per-page: URL link first (as a section headline), then description below.
   for (const page of shownPages) {
     const reason = page.judgment?.reason?.trim();
     const tag = page.judgment
@@ -87,26 +116,26 @@ export function buildMonitorAlertMessage(payload: MonitorSlackPayload): {
         ? " · _meaningful_"
         : " · _noise_"
       : "";
-    const meta = `${statusEmoji(page.status)} *${escapeSlackText(page.status)}* · ${boundedPageLink(page.url)}${tag}`;
+    const urlLine = `${statusEmoji(page.status)} *${escapeSlackText(page.status)}* · ${boundedPageLink(page.url)}${tag}`;
+
+    // URL goes first as a section, description below as context.
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: truncate(urlLine, SECTION_TEXT_LIMIT),
+      },
+    });
 
     if (reason) {
       blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          // The change description leads; clamp only at Slack's hard limit.
-          text: truncate(escapeSlackText(reason), SECTION_TEXT_LIMIT),
-        },
-      });
-      blocks.push({
         type: "context",
-        elements: [{ type: "mrkdwn", text: truncate(meta, SECTION_TEXT_LIMIT) }],
-      });
-    } else {
-      // No judged description (e.g. unjudged monitor) — the page itself leads.
-      blocks.push({
-        type: "section",
-        text: { type: "mrkdwn", text: truncate(meta, SECTION_TEXT_LIMIT) },
+        elements: [
+          {
+            type: "mrkdwn",
+            text: truncate(escapeSlackText(reason), MAX_DESCRIPTION_LEN),
+          },
+        ],
       });
     }
   }
@@ -167,13 +196,13 @@ export function buildMonitorAlertMessage(payload: MonitorSlackPayload): {
     ],
   });
 
-  // Notification preview / fallback text also leads with the change itself.
+  // Notification preview / fallback text leads with the change itself.
   const leadReason =
     shownPages.find(p => p.judgment?.meaningful && p.judgment.reason)?.judgment
       ?.reason ?? shownPages.find(p => p.judgment?.reason)?.judgment?.reason;
   const text = leadReason
-    ? `${payload.monitorName}: ${truncate(leadReason.trim(), 280)}`
-    : `Monitor "${payload.monitorName}" detected activity: ${summary.changed} changed, ${summary.new} new, ${summary.removed} removed, ${summary.error} errors.`;
+    ? `Monitor ${payload.monitorName} (check ${payload.checkId}): ${truncate(leadReason.trim(), MAX_DESCRIPTION_LEN)}`
+    : `Monitor "${payload.monitorName}" (check ${payload.checkId}): ${summary.changed} changed, ${summary.new} new, ${summary.removed} removed, ${summary.error} errors.`;
 
   return { text, blocks };
 }
