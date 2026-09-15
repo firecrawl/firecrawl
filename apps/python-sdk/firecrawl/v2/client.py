@@ -50,6 +50,7 @@ from .types import (
     AgentOptions,
     AuditMetadata,
     ThreatProtectionOptions,
+    RedactPIIOptions,
     Monitor,
     MonitorCheck,
     MonitorCheckDetail,
@@ -93,8 +94,8 @@ _SCRAPE_OPTION_KEYS = frozenset({
     "only_main_content", "timeout", "wait_for", "mobile",
     "parsers", "actions", "location", "skip_tls_verification",
     "remove_base64_images", "fast_mode", "use_mock", "block_ads",
-    "proxy", "max_age", "store_in_cache", "lockdown", "threat_protection",
-    "profile", "audit_metadata",
+    "proxy", "max_age", "min_age", "store_in_cache", "lockdown",
+    "redact_pii", "threat_protection", "profile", "audit_metadata",
 })
 
 
@@ -176,8 +177,10 @@ class FirecrawlClient:
         block_ads: Optional[bool] = None,
         proxy: Optional[str] = None,
         max_age: Optional[int] = None,
+        min_age: Optional[int] = None,
         store_in_cache: Optional[bool] = None,
         lockdown: Optional[bool] = None,
+        redact_pii: Optional[Union[bool, RedactPIIOptions]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         profile: Optional[Dict[str, Any]] = None,
         audit_metadata: Optional[AuditMetadata] = None,
@@ -234,15 +237,17 @@ class FirecrawlClient:
                 block_ads=block_ads,
                 proxy=proxy,
                 max_age=max_age,
+                min_age=min_age,
                 store_in_cache=store_in_cache,
                 lockdown=lockdown,
+                redact_pii=redact_pii,
                 threat_protection=threat_protection,
                 profile=profile,
                 audit_metadata=audit_metadata,
                 integration=integration,
                 domain_tools=domain_tools,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration, domain_tools]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, min_age, store_in_cache, lockdown, redact_pii, threat_protection, profile, audit_metadata, integration, domain_tools]) else None
         if alexandria is not None:
             if url is not None or auto_resume is not None or (options and set(options.model_dump(exclude_none=True, exclude_unset=True)) - {"timeout", "integration"}):
                 raise ValueError("alexandria cannot be combined with URL scrape options")
@@ -600,8 +605,10 @@ class FirecrawlClient:
         block_ads: Optional[bool] = None,
         proxy: Optional[str] = None,
         max_age: Optional[int] = None,
+        min_age: Optional[int] = None,
         store_in_cache: Optional[bool] = None,
         lockdown: Optional[bool] = None,
+        redact_pii: Optional[Union[bool, RedactPIIOptions]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         profile: Optional[Dict[str, Any]] = None,
         audit_metadata: Optional[AuditMetadata] = None,
@@ -679,7 +686,8 @@ class FirecrawlClient:
                 location=location, skip_tls_verification=skip_tls_verification,
                 remove_base64_images=remove_base64_images, fast_mode=fast_mode,
                 use_mock=use_mock, block_ads=block_ads, proxy=proxy,
-                max_age=max_age, store_in_cache=store_in_cache, lockdown=lockdown,
+                max_age=max_age, min_age=min_age, store_in_cache=store_in_cache,
+                lockdown=lockdown, redact_pii=redact_pii,
                 threat_protection=threat_protection, profile=profile,
                 audit_metadata=audit_metadata,
             ).items() if v is not None}
@@ -762,8 +770,10 @@ class FirecrawlClient:
         block_ads: Optional[bool] = None,
         proxy: Optional[str] = None,
         max_age: Optional[int] = None,
+        min_age: Optional[int] = None,
         store_in_cache: Optional[bool] = None,
         lockdown: Optional[bool] = None,
+        redact_pii: Optional[Union[bool, RedactPIIOptions]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         profile: Optional[Dict[str, Any]] = None,
         audit_metadata: Optional[AuditMetadata] = None,
@@ -836,7 +846,8 @@ class FirecrawlClient:
                 location=location, skip_tls_verification=skip_tls_verification,
                 remove_base64_images=remove_base64_images, fast_mode=fast_mode,
                 use_mock=use_mock, block_ads=block_ads, proxy=proxy,
-                max_age=max_age, store_in_cache=store_in_cache, lockdown=lockdown,
+                max_age=max_age, min_age=min_age, store_in_cache=store_in_cache,
+                lockdown=lockdown, redact_pii=redact_pii,
                 threat_protection=threat_protection, profile=profile,
                 audit_metadata=audit_metadata,
             ).items() if v is not None}
