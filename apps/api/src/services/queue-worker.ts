@@ -61,7 +61,9 @@ const processDeepResearchJobInternal = async (
 
   const extendLockInterval = setInterval(async () => {
     logger.info(`🔄 Worker extending lock on job ${job.id}`);
-    await job.extendLock(token, jobLockExtensionTime);
+    job.extendLock(token, jobLockExtensionTime).catch((err) => {
+      logger.error(`Failed to extend lock on job ${job.id}: ${err}`);
+    });
   }, jobLockExtendInterval);
 
   try {
@@ -130,7 +132,9 @@ const processGenerateLlmsTxtJobInternal = async (
 
   const extendLockInterval = setInterval(async () => {
     logger.info(`🔄 Worker extending lock on job ${job.id}`);
-    await job.extendLock(token, jobLockExtensionTime);
+    job.extendLock(token, jobLockExtensionTime).catch((err) => {
+      logger.error(`Failed to extend lock on job ${job.id}: ${err}`);
+    });
   }, jobLockExtendInterval);
 
   try {
