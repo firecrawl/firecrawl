@@ -95,20 +95,24 @@ async function searchControllerInner(
 
   const jobId = uuidv7();
   const searchZDRMode = getSearchZDR(req.acuc?.flags);
-  const teamForcedKind = getSearchForcedKind(req.acuc?.flags);
-  // Safe Mode lockdown is cache-only, which implies zero data retention for
-  // the search job and its result scrapes. Retention only: it does not inject
-  // the enterprise "zdr" kind, so upstream routing and billing are unchanged.
-  const lockdownZDR = isLockdownZeroDataRetention(
-    req.acuc?.flags,
-    req.body?.scrapeOptions?.safeMode,
-  );
+  // Safe Mode lockdown is cache-only and implies zero data retention, so it
+  // forces the "zdr" search kind exactly like the searchZDR flag does: the
+  // query is routed to the zero-retention provider, billed at the ZDR rate,
+  // and the request, job and result scrapes are all recorded as ZDR.
+  const teamForcedKind =
+    getSearchForcedKind(req.acuc?.flags) ??
+    (isLockdownZeroDataRetention(
+      req.acuc?.flags,
+      req.body?.scrapeOptions?.safeMode,
+    )
+      ? "zdr"
+      : null);
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "searchController",
-    zeroDataRetention: teamForcedKind !== null || lockdownZDR,
+    zeroDataRetention: teamForcedKind !== null,
     teamForcedKind,
   });
 
@@ -117,7 +121,7 @@ async function searchControllerInner(
     config.SEARCH_PREVIEW_TOKEN !== undefined &&
     config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
 
-  let zeroDataRetention = teamForcedKind !== null || lockdownZDR;
+  let zeroDataRetention = teamForcedKind !== null;
   let reservedKeylessCredits = 0;
   let reconciledKeylessCredits = false;
 
@@ -255,7 +259,7 @@ async function searchControllerInner(
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
-    zeroDataRetention = (isZDROrAnon ?? false) || lockdownZDR;
+    zeroDataRetention = isZDROrAnon ?? false;
     logger = logger.child({ zeroDataRetention });
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
