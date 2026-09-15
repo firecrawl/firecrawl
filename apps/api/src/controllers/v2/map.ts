@@ -67,6 +67,7 @@ export async function mapController(
   ) {
     return res.status(403).json({
       success: false,
+      code: "SAFE_MODE_BLOCKED",
       error:
         "Safe Mode: robots.txt is always honored for your organization; the ignoreRobotsTxt parameter is not allowed.",
     });

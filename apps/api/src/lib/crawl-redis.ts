@@ -980,6 +980,15 @@ export function crawlToCrawler(
   newBase?: string,
   crawlerOptions?: any,
 ): WebCrawler {
+  // Resolve the crawl's Safe Mode once (honoring a stored request bypass) to
+  // drive both lockdown and the robots override below.
+  const crawlerSafeMode = sc.internalOptions?.safeModeBypassed
+    ? undefined
+    : resolveSafeMode(
+        sc.internalOptions?.teamFlags ?? teamFlags,
+        undefined,
+        sc.originUrl ?? undefined,
+      ).safeMode;
   const crawler = new WebCrawler({
     jobId: id,
     initialUrl: sc.originUrl!,
@@ -1001,10 +1010,12 @@ export function crawlToCrawler(
     allowExternalContentLinks:
       sc.crawlerOptions?.allowExternalContentLinks ?? false,
     allowSubdomains: sc.crawlerOptions?.allowSubdomains ?? false,
+    // Safe Mode enforceRobots overrides even a team's forced ignore-robots.
     ignoreRobotsTxt:
-      getIgnoreRobots(teamFlags) === "forced" ||
-      (getIgnoreRobots(teamFlags) === "allowed" &&
-        (sc.crawlerOptions?.ignoreRobotsTxt ?? false)),
+      !crawlerSafeMode?.enforceRobots &&
+      (getIgnoreRobots(teamFlags) === "forced" ||
+        (getIgnoreRobots(teamFlags) === "allowed" &&
+          (sc.crawlerOptions?.ignoreRobotsTxt ?? false))),
     regexOnFullURL: sc.crawlerOptions?.regexOnFullURL ?? false,
     maxDiscoveryDepth: sc.crawlerOptions?.maxDiscoveryDepth,
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,
@@ -1014,15 +1025,7 @@ export function crawlToCrawler(
     headers: sc.scrapeOptions?.headers,
     robotsUserAgent: sc.crawlerOptions?.robotsUserAgent,
     // Safe Mode lockdown: skip robots/sitemap discovery (outbound to target).
-    // Resolve from the crawl's own stored flags (covers monitors, whose flags
-    // live in internalOptions) and honor a stored request bypass.
-    lockdown: sc.internalOptions?.safeModeBypassed
-      ? false
-      : (resolveSafeMode(
-          sc.internalOptions?.teamFlags ?? teamFlags,
-          undefined,
-          sc.originUrl ?? undefined,
-        ).safeMode?.lockdown ?? false),
+    lockdown: crawlerSafeMode?.lockdown ?? false,
   });
 
   if (sc.robots !== undefined) {
