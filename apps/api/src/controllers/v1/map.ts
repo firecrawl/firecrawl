@@ -406,6 +406,19 @@ export async function mapController(
     // yields no links (the sitemap can't be fetched under lockdown).
     req.body.useIndex = true;
   }
+  // Map's ignoreRobotsTxt is top-level, so checkPermissions (which reads it
+  // under crawlerOptions) can't see it — enforce robots here for Safe Mode.
+  if (
+    safeMode.safeMode?.enforceRobots &&
+    !lockdownIndexOnly &&
+    req.body.ignoreRobotsTxt
+  ) {
+    return res.status(403).json({
+      success: false,
+      error:
+        "Safe Mode: robots.txt is always honored for your organization; the ignoreRobotsTxt parameter is not allowed.",
+    });
+  }
 
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
