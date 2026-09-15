@@ -129,9 +129,11 @@ async def get_crawl_status(
     Args:
         client: Async HTTP client instance
         job_id: ID of the crawl job
-        pagination_config: Optional configuration for pagination limits
+        pagination_config: Optional configuration for pagination limits. When
+            pagination_config is provided and auto_paginate is enabled (defaults to
+            False when no config is given), the SDK fetches all pages automatically.
         request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination 
-            is enabled (default) and there are multiple pages of results, this timeout applies to 
+            is enabled and there are multiple pages of results, this timeout applies to 
             each page request separately, not to the entire operation
         
     Returns:
@@ -149,7 +151,7 @@ async def get_crawl_status(
     documents = payload["data"]
 
     # Handle pagination if requested
-    auto_paginate = pagination_config.auto_paginate if pagination_config else True
+    auto_paginate = pagination_config.auto_paginate if pagination_config else False
     if auto_paginate and payload["next"]:
         documents = await _fetch_all_pages_async(
             client,
