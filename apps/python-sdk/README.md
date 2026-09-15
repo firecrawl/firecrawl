@@ -6,7 +6,7 @@ The Firecrawl Python SDK is a library that lets you easily search, scrape, and i
 
 To install the Firecrawl Python SDK, you can use pip:
 
-```bash 
+```bash
 pip install firecrawl-py
 ```
 
@@ -17,7 +17,7 @@ pip install firecrawl-py
 
 Here's an example of how to use the SDK:
 
-```python 
+```python
 from firecrawl import Firecrawl
 from firecrawl.types import ScrapeOptions
 
@@ -43,7 +43,7 @@ print(crawl_status)
 
 To scrape a single URL, use the `scrape` method. It takes the URL as a parameter and returns a document with the requested formats.
 
-```python 
+```python
 # Scrape a website (v2):
 scrape_result = firecrawl.scrape('https://firecrawl.dev', formats=['markdown', 'html'])
 print(scrape_result)
@@ -101,7 +101,7 @@ print(doc.markdown)
 
 To crawl a website, use the `crawl` method. It takes the starting URL and optional parameters as arguments. You can control depth, limits, formats, and more.
 
-```python 
+```python
 crawl_status = firecrawl.crawl(
   'https://firecrawl.dev', 
   limit=100, 
@@ -117,7 +117,7 @@ print(crawl_status)
 
 To enqueue a crawl asynchronously, use `start_crawl`. It returns the crawl `ID` which you can use to check the status of the crawl job.
 
-```python 
+```python
 crawl_job = firecrawl.start_crawl(
   'https://firecrawl.dev', 
   limit=100, 
@@ -130,7 +130,7 @@ print(crawl_job)
 
 To check the status of a crawl job, use the `get_crawl_status` method. It takes the job ID as a parameter and returns the current status of the crawl job.
 
-```python 
+```python
 crawl_status = firecrawl.get_crawl_status("<crawl_id>")
 print(crawl_status)
 ```
@@ -165,7 +165,7 @@ if status.next:
 
 To cancel an asynchronous crawl job, use the `cancel_crawl` method. It takes the job ID of the asynchronous crawl as a parameter and returns the cancellation status.
 
-```python 
+```python
 cancel_crawl = firecrawl.cancel_crawl(id)
 print(cancel_crawl)
 ```
@@ -174,7 +174,7 @@ print(cancel_crawl)
 
 Use `map` to generate a list of URLs from a website. Options let you customize the mapping process, including whether to use the sitemap or include subdomains.
 
-```python 
+```python
 # Map a website (v2):
 map_result = firecrawl.map('https://firecrawl.dev')
 print(map_result)
@@ -323,7 +323,7 @@ firecrawl.stop_interaction(scrape_job_id)
 
 To crawl a website with WebSockets, use the `crawl_url_and_watch` method. It takes the starting URL and optional parameters as arguments. The `params` argument allows you to specify additional options for the crawl job, such as the maximum number of pages to crawl, allowed domains, and the output format.
 
-```python 
+```python
 # inside an async function...
 nest_asyncio.apply()
 
@@ -362,7 +362,7 @@ The SDK handles errors returned by the Firecrawl API and raises appropriate exce
 
 For async operations, you can use the `AsyncFirecrawl` class. Its methods mirror the `Firecrawl` class, but you `await` them.
 
-```python 
+```python
 from firecrawl import AsyncFirecrawl
 
 firecrawl = AsyncFirecrawl(api_key="YOUR_API_KEY")
