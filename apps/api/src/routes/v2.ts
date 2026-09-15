@@ -91,6 +91,7 @@ import {
   createDeveloperRouter,
   createResearchRouter,
 } from "../controllers/v2/research-proxy";
+import { mountUnconfiguredResearchRoutes } from "../controllers/v2/research-unavailable";
 import {
   scrapeInteractController,
   scrapeStopInteractiveBrowserController,
@@ -706,4 +707,6 @@ if (config.RESEARCH_PROXY_URL) {
     authMiddleware(RateLimiterMode.DeveloperSearch),
     createDeveloperRouter(),
   );
+} else {
+  mountUnconfiguredResearchRoutes(v2Router);
 }
