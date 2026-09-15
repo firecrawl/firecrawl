@@ -104,6 +104,7 @@ export async function getMapResults({
   filterByPath = true,
   flags,
   useIndex = true,
+  indexOnly = false,
   ignoreCache = false,
   timeout,
   location,
@@ -126,6 +127,9 @@ export async function getMapResults({
   filterByPath?: boolean;
   flags: TeamFlags;
   useIndex?: boolean;
+  // Safe Mode lockdown: serve links from the index only — skip the live
+  // fireEngineMap search and any sitemap fetch (both are live discovery).
+  indexOnly?: boolean;
   ignoreCache?: boolean;
   timeout?: number;
   location?: ScrapeOptions["location"];
@@ -211,7 +215,10 @@ export async function getMapResults({
     let allResults: any[] = [];
     let pagePromises: Promise<any>[] = [];
 
-    if (cachedResult) {
+    if (indexOnly) {
+      // Lockdown: no live search discovery, serve from the index only.
+      allResults = [];
+    } else if (cachedResult) {
       allResults = JSON.parse(cachedResult);
     } else {
       const fetchPage = async (page: number) => {
@@ -252,7 +259,7 @@ export async function getMapResults({
 
     // If sitemap is not ignored, fetch sitemap
     // This will attempt to find it in the index at first, or fetch a fresh one if it's older than 2 days
-    if (!ignoreSitemap) {
+    if (!ignoreSitemap && !indexOnly) {
       try {
         await crawler.tryGetSitemap(
           urls => {
@@ -391,11 +398,12 @@ export async function mapController(
   // Safe Mode: force domainControls so discovered links are filtered, and
   // serve index-only under lockdown (no sitemap/robots fetch to the target).
   const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
-  if (safeMode.safeMode?.lockdown) {
-    // Sitemap discovery is outbound and blocked under lockdown, so serve from
-    // the index only — otherwise a sitemapOnly map would return nothing.
+  const lockdownIndexOnly = safeMode.safeMode?.lockdown === true;
+  if (lockdownIndexOnly) {
+    // Lockdown: serve links from the index only — no live search / sitemap /
+    // robots discovery. A sitemapOnly request keeps its contract and simply
+    // yields no links (the sitemap can't be fetched under lockdown).
     req.body.useIndex = true;
-    req.body.sitemapOnly = false;
   }
 
   const threatProtection = await resolveThreatProtection({
@@ -469,6 +477,7 @@ export async function mapController(
         filterByPath: req.body.filterByPath !== false,
         flags: req.acuc?.flags ?? null,
         useIndex: req.body.useIndex,
+        indexOnly: lockdownIndexOnly,
         ignoreCache: req.body.ignoreCache,
         timeout: req.body.timeout,
         location: req.body.location,

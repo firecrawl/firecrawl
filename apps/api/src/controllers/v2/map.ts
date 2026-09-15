@@ -50,7 +50,8 @@ export async function mapController(
   // filtered, and under lockdown serve from the index only (no sitemap/robots
   // fetch to the target).
   const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
-  if (safeMode.safeMode?.lockdown) {
+  const lockdownIndexOnly = safeMode.safeMode?.lockdown === true;
+  if (lockdownIndexOnly) {
     req.body.useIndex = true;
   }
 
@@ -192,6 +193,7 @@ export async function mapController(
         filterByPath: req.body.filterByPath !== false,
         flags: req.acuc?.flags ?? null,
         useIndex: req.body.useIndex,
+        indexOnly: lockdownIndexOnly,
         ignoreCache: req.body.ignoreCache,
         location: req.body.location,
         headers: req.body.headers,

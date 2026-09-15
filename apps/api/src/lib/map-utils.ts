@@ -92,6 +92,7 @@ export async function getMapResults({
   filterByPath = true,
   flags,
   useIndex = true,
+  indexOnly = false,
   ignoreCache = false,
   location,
   headers,
@@ -113,6 +114,9 @@ export async function getMapResults({
   filterByPath?: boolean;
   flags: TeamFlags | null;
   useIndex?: boolean;
+  // Safe Mode lockdown: serve links from the index only — skip live search +
+  // sitemap discovery.
+  indexOnly?: boolean;
   ignoreCache?: boolean;
   location?: ScrapeOptions["location"];
   headers?: Record<string, string>;
@@ -224,6 +228,10 @@ export async function getMapResults({
     };
 
     const fetchAllPages = async (): Promise<any[]> => {
+      if (indexOnly) {
+        // Lockdown: no live search discovery, serve from the index only.
+        return [];
+      }
       if (cachedResult) {
         return JSON.parse(cachedResult);
       }
@@ -256,7 +264,7 @@ export async function getMapResults({
       mapResults.push(...indexResults);
     }
 
-    if (crawlerOptions.sitemap === "include") {
+    if (crawlerOptions.sitemap === "include" && !indexOnly) {
       try {
         await crawler.tryGetSitemap(
           urls => {
