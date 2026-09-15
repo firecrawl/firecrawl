@@ -814,6 +814,10 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                     scrape_data["location"] = value
                 else:
                     scrape_data["location"] = value.model_dump(exclude_none=True)
+            elif key == "domain_tools":
+                # Only ever sent when explicitly enabled; never emit `false`.
+                if value:
+                    scrape_data["domainTools"] = True
             elif key == "profile":
                 if isinstance(value, dict):
                     profile_data = {

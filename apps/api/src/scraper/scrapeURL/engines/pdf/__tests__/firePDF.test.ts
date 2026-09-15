@@ -22,6 +22,7 @@ function makeMeta() {
     id: "sync-page-markdown-test",
     url: "https://example.com/file.pdf",
     rewrittenUrl: undefined,
+    options: {},
     logger,
     mock: null,
     abort: {
@@ -104,8 +105,46 @@ describe("scrapePDFWithFirePDF request metadata", () => {
         string,
         unknown
       >;
-      expect(body).toMatchObject({ source: "firecrawl", ...expected });
+      expect(body).toMatchObject({
+        source: "firecrawl",
+        source_request_context: "default",
+        ...expected,
+      });
       expect(Object.hasOwn(body, "url")).toBe(Object.hasOwn(expected, "url"));
+    },
+  );
+
+  it.each([
+    ["empty options", {}, "default"],
+    ["empty headers and actions", { headers: {}, actions: [] }, "default"],
+    ["header", { headers: { "X-Example": "example-value" } }, "custom"],
+    ["empty header value", { headers: { "X-Example": "" } }, "custom"],
+    ["cookie header", { headers: { Cookie: "example=value" } }, "custom"],
+    ["action", { actions: [{ type: "wait", milliseconds: 1 }] }, "custom"],
+    ["profile", { profile: { name: "example-profile" } }, "custom"],
+    [
+      "profile without saving changes",
+      { profile: { name: "example-profile", saveChanges: false } },
+      "custom",
+    ],
+  ] as const)(
+    "describes %s without forwarding option values",
+    async (_name, options, expected) => {
+      const meta = { ...makeMeta(), options };
+
+      await scrapePDFWithFirePDF(meta, "BASE64", 1);
+
+      const body = mockedRobustFetch.mock.calls[0][0].body as Record<
+        string,
+        unknown
+      >;
+      expect(body.source_request_context).toBe(expected);
+      expect(body).not.toHaveProperty("headers");
+      expect(body).not.toHaveProperty("actions");
+      expect(body).not.toHaveProperty("profile");
+      expect(JSON.stringify(body)).not.toContain("example-value");
+      expect(JSON.stringify(body)).not.toContain("example=value");
+      expect(JSON.stringify(body)).not.toContain("example-profile");
     },
   );
 });

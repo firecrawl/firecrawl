@@ -1,4 +1,6 @@
 import { Response } from "express";
+import { providerScrapeController } from "./scrape-alexandria";
+import { discoverTools } from "../../search/alexandria";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import {
@@ -56,6 +58,8 @@ export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
 ) {
+  if (req.body && "alexandria" in req.body)
+    return providerScrapeController(req, res);
   // Resolved before the root span starts so the whole request trace stays
   // unrecorded for zero-data-retention requests (see otel-tracer). Safe Mode
   // lockdown implies ZDR, so fold it in here too — otherwise the rejection
@@ -208,6 +212,16 @@ export async function scrapeController(
         getScrapeZDR(req.acuc?.flags) === "forced" ||
         (req.body.zeroDataRetention ?? false) ||
         (req.body.lockdown ?? false);
+      if (
+        req.body.domainTools &&
+        (!req.acuc?.flags?.exchangeRetrieve || zeroDataRetention)
+      )
+        return res.status(403).json({
+          success: false,
+          error: !req.acuc?.flags?.exchangeRetrieve
+            ? "The alexandria source is not enabled for this team."
+            : "Provider discovery requires access and does not support zero data retention.",
+        });
       const billing: BillingMetadata = req.body.__agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "scrape" as const, jobId };
@@ -340,7 +354,7 @@ export async function scrapeController(
 
         const baseConcurrency = await getEffectiveConcurrencyLimit(
           req.auth.team_id,
-          req.acuc?.org_id,
+          req.acuc?.org_id ?? null,
         );
         const concurrency = boostConcurrency
           ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
@@ -355,6 +369,7 @@ export async function scrapeController(
           async limited => {
             const jobPriority = await getJobPriority({
               team_id: req.auth.team_id,
+              org_id: req.acuc?.org_id ?? null,
               basePriority: 10,
             });
 
@@ -691,6 +706,29 @@ export async function scrapeController(
         concurrencyLimited,
         concurrencyQueueDurationMs: lockTime || undefined,
       });
+      const tools =
+        req.body.domainTools && config.FIRE_EXCHANGE_URL
+          ? await discoverTools(
+              {
+                teamId: req.auth.team_id,
+                urls: [
+                  ...new Set(
+                    [
+                      req.body.url,
+                      doc!.metadata?.sourceURL,
+                      doc!.metadata?.url,
+                    ].filter((u): u is string => typeof u === "string"),
+                  ),
+                ],
+                limit: 24,
+                timeoutMs: 10000,
+              },
+              logger,
+            ).catch(error => {
+              logger.warn("Domain tool discovery failed", { error });
+              return undefined;
+            })
+          : undefined;
 
       return res.status(200).json({
         success: true,
@@ -703,7 +741,9 @@ export async function scrapeController(
               ? lockTime || 0
               : undefined,
           },
+          ...(tools ? { tools: tools.items } : {}),
         },
+        ...(tools?.warning ? { warning: tools.warning } : {}),
         scrape_id: origin?.includes("website") ? jobId : undefined,
       });
     },

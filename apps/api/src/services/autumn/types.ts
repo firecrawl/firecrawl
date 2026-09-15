@@ -15,6 +15,8 @@ export type CreateEntityParams = {
   entityId: string;
   featureId: string;
   name?: string | null;
+  /** Method doing the creation, for the inline-creation counter's `path`. */
+  path: string;
 };
 
 export type TrackParams = {
@@ -41,7 +43,8 @@ export type EnsureOrgProvisionedParams = {
 
 export type EnsureTeamProvisionedParams = {
   teamId: string;
-  orgId?: string | null;
+  /** See TrackCreditsParams.orgId. */
+  orgId: string;
   name?: string | null;
 };
 
@@ -52,6 +55,8 @@ export type LockCreditsParams = {
   expiresAt?: number;
   properties?: Record<string, unknown>;
   featureId?: string;
+  /** See TrackCreditsParams.orgId. */
+  orgId: string;
   /** Arms firebill's partner credit gate, which is asked before Autumn holds anything. */
   partnerJobToken?: string | null;
 };
@@ -85,13 +90,14 @@ export type FinalizeCreditsLockParams = {
   overrideValue?: number;
   properties?: Record<string, unknown>;
   /**
-   * The team the lock was taken for. Needed to route the settle through
-   * firebill for allowlisted orgs — a finalize carries no customer context of
-   * its own. When omitted, the settle goes directly to Autumn (which also
-   * works for a firebill-taken lock: the hold lives in Autumn either way, but
-   * loses firebill's durable retry).
+   * The team the lock was taken for, and its org. Needed to route the settle
+   * through firebill for allowlisted orgs — a finalize carries no customer
+   * context of its own. When omitted, the settle goes directly to Autumn
+   * (which also works for a firebill-taken lock: the hold lives in Autumn
+   * either way, but loses firebill's durable retry). A caller that cannot name
+   * the org omits this, which is the route an unnameable org already took.
    */
-  teamId?: string;
+  team?: { teamId: string; orgId: string };
   /** For a gated run, the `operationToken` its lock handed back. */
   externalRequestId?: string | null;
   /** Which balance the hold was against; lets firebill split the settle. */
@@ -108,6 +114,13 @@ export type TrackCreditsParams = {
   featureId?: string;
   /** See TrackParams.idempotencyKey. */
   idempotencyKey?: string;
+  /**
+   * The team's org — the Autumn customer this usage bills against. The service
+   * never looks it up: callers hold it already (a request's ACUC, a job's
+   * payload), and a lookup buried in here is one an agentic edit reaches for
+   * instead of passing the org it has.
+   */
+  orgId: string;
 };
 
 export type CreateEntityResult =

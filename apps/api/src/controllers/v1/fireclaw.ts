@@ -2,6 +2,7 @@ import { Response } from "express";
 import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getACUCTeam } from "../auth";
+import { orgIdFromAcuc } from "../../lib/team-org";
 import { RateLimiterMode } from "../../types";
 import { logger } from "../../lib/logger";
 import { autumnService } from "../../services/autumn/autumn.service";
@@ -49,11 +50,17 @@ export async function fireclawController(
   // full multi-play cost is checked here. Fail open on an Autumn outage
   // (checkCredits returns null), matching checkCreditsMiddleware — don't turn an
   // Autumn outage into a customer outage.
-  const creditCheck = await autumnService.checkCredits({
-    teamId: req.auth.team_id,
-    value: totalCredits,
-    properties: { source: "fireclaw", apiKeyId: chunk?.api_key_id ?? null },
-  });
+  // No org, no Autumn customer to gate against: fail open, exactly as
+  // checkCredits answered for an identity it could not name.
+  const orgId = orgIdFromAcuc(chunk);
+  const creditCheck = orgId
+    ? await autumnService.checkCredits({
+        teamId: req.auth.team_id,
+        orgId,
+        value: totalCredits,
+        properties: { source: "fireclaw", apiKeyId: chunk?.api_key_id ?? null },
+      })
+    : null;
 
   if (creditCheck !== null && !creditCheck.allowed) {
     res.status(402).json({
@@ -66,8 +73,11 @@ export async function fireclawController(
   try {
     await billTeam(
       req.auth.team_id,
+      // The same chunk the credit check ran against: with req.acuc absent, the
+      // fallback ACUC is what named the org, so billing must use it too.
+      orgId,
       totalCredits,
-      req.acuc?.api_key_id ?? null,
+      chunk?.api_key_id ?? null,
       // No chargeId: fireclaw has no per-charge identity to key on — a
       // server-minted UUID here would be equivalent to firebill's own
       // per-request key, so this stays keyless until fireclaw carries one.

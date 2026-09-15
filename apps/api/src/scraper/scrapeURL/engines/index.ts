@@ -42,6 +42,7 @@ import {
   NoCachedDataError,
 } from "../error";
 import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
+import { hasCustomRequestContext } from "../lib/request-context";
 import {
   canUseExchangeForRequest,
   type ExchangeScrapeMetadata,
@@ -629,10 +630,7 @@ export function shouldUseIndex(meta: Meta) {
     !getPDFPageMarkers(meta.options.parsers) &&
     !hasCustomScreenshotSettings &&
     meta.options.maxAge !== 0 &&
-    (meta.options.headers === undefined ||
-      Object.keys(meta.options.headers).length === 0) &&
-    (meta.options.actions === undefined || meta.options.actions.length === 0) &&
-    meta.options.profile === undefined
+    !hasCustomRequestContext(meta.options)
   );
 }
 

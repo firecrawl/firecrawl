@@ -75,6 +75,7 @@ import { computeGoalVersion } from "./search/dedupe";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { getACUCTeam } from "../../controllers/auth";
 import type { TeamFlags } from "../../controllers/v1/types";
+import { orgIdForTeam } from "../../lib/team-org";
 import {
   reconstructKnownState,
   searchStatusToPageStatus,
@@ -360,6 +361,9 @@ async function billMonitorCheck(params: {
   check: MonitorCheckRow;
   actualCredits: number;
   lockId: string | null;
+  /** The team's org. Null means none could be named, which is how the settle
+   * already behaved then: straight to Autumn, and unreportable to a partner. */
+  orgId: string | null;
 }): Promise<boolean> {
   let settled = true;
   if (params.lockId) {
@@ -372,7 +376,9 @@ async function billMonitorCheck(params: {
         endpoint: "monitor",
         jobId: params.check.id,
       },
-      teamId: params.monitor.team_id,
+      team: params.orgId
+        ? { teamId: params.monitor.team_id, orgId: params.orgId }
+        : undefined,
       // Confirm only: a release bills nothing, so there is nothing to report.
       externalRequestId: params.check.partner_run_token,
       // What the lock reserved. firebill adds it back to the ghost's reported
@@ -407,6 +413,7 @@ async function billMonitorCheck(params: {
     "bill_team",
     {
       team_id: params.monitor.team_id,
+      org_id: params.orgId,
       credits: params.actualCredits,
       billing: { endpoint: "monitor", jobId: params.check.id },
       is_extract: false,
@@ -949,6 +956,7 @@ async function releaseUnpersistedMonitorHold(
   monitor: MonitorRow,
   checkId: string,
   lockId: string | null,
+  orgId: string | null,
 ): Promise<void> {
   if (!lockId) return;
   const latest = await getMonitorCheckForUpdate(
@@ -972,7 +980,7 @@ async function releaseUnpersistedMonitorHold(
         endpoint: "monitor",
         jobId: checkId,
       },
-      teamId: monitor.team_id,
+      team: orgId ? { teamId: monitor.team_id, orgId } : undefined,
     });
   }
 }
@@ -1022,25 +1030,39 @@ export async function processMonitorCheckJob(
     }),
   );
 
+  // One org lookup for the whole check job — the billing service no longer
+  // makes it, so every hold, settle and release below shares this one. A
+  // failure answers null, which is what the lookup inside the biller did.
+  const orgId = await orgIdForTeam(monitor.team_id);
+  const partnerJobToken = check.partner_run_token
+    ? null
+    : monitor.partner_job_token;
+
   let lockId: string | null = null;
   try {
-    const lock = await autumnService.lockCredits({
-      teamId: monitor.team_id,
-      value: check.estimated_credits ?? 1,
-      lockId: `monitor_${check.id}`,
-      expiresAt: Date.now() + 60 * 60 * 1000,
-      properties: {
-        source: "monitorCheck",
-        endpoint: "monitor",
-        jobId: check.id,
-      },
-      // Arms firebill's partner gate; NULL is today's lock. Withheld once this
-      // check holds a run token: a redelivery is the same occurrence, and
-      // asking twice would orphan the first token.
-      partnerJobToken: check.partner_run_token
-        ? null
-        : monitor.partner_job_token,
-    });
+    const lock = orgId
+      ? await autumnService.lockCredits({
+          teamId: monitor.team_id,
+          orgId,
+          value: check.estimated_credits ?? 1,
+          lockId: `monitor_${check.id}`,
+          expiresAt: Date.now() + 60 * 60 * 1000,
+          properties: {
+            source: "monitorCheck",
+            endpoint: "monitor",
+            jobId: check.id,
+          },
+          // Arms firebill's partner gate; NULL is today's lock. Withheld once this
+          // check holds a run token: a redelivery is the same occurrence, and
+          // asking twice would orphan the first token.
+          partnerJobToken,
+        })
+      : // No org, no customer to hold against — the same answers the hold gave
+        // when it could not name one: proceed unlocked, except for a gated run,
+        // which is unauthorized until a partner says otherwise.
+        partnerJobToken
+        ? ({ status: "denied", reason: "gate_unavailable" } as const)
+        : ({ status: "skipped" } as const);
 
     if (lock.status === "denied") {
       const revoked = lock.reason === "job_revoked";
@@ -1107,7 +1129,7 @@ export async function processMonitorCheckJob(
     });
 
     if (!reserved) {
-      await releaseUnpersistedMonitorHold(monitor, check.id, lockId);
+      await releaseUnpersistedMonitorHold(monitor, check.id, lockId, orgId);
       return;
     }
     check = reserved;
@@ -1185,7 +1207,7 @@ export async function processMonitorCheckJob(
     });
 
     if (!failed) {
-      await releaseUnpersistedMonitorHold(monitor, check.id, lockId);
+      await releaseUnpersistedMonitorHold(monitor, check.id, lockId, orgId);
       throw error;
     }
     check = failed;
@@ -1204,7 +1226,7 @@ export async function processMonitorCheckJob(
             endpoint: "monitor",
             jobId: check.id,
           },
-          teamId: monitor.team_id,
+          team: orgId ? { teamId: monitor.team_id, orgId } : undefined,
         })
         .catch(releaseError => {
           logger.warn("Failed to release monitor check credit lock", {
@@ -1379,6 +1401,8 @@ async function isMonitorCheckComplete(
 async function failStaleMonitorCheck(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
+  /** See billMonitorCheck's orgId. */
+  orgId: string | null;
 }): Promise<boolean> {
   if (!isMonitorCheckStale(params.check, new Date(), params.monitor.targets))
     return false;
@@ -1403,7 +1427,9 @@ async function failStaleMonitorCheck(params: {
           endpoint: "monitor",
           jobId: params.check.id,
         },
-        teamId: params.monitor.team_id,
+        team: params.orgId
+          ? { teamId: params.monitor.team_id, orgId: params.orgId }
+          : undefined,
       })
       .catch(releaseError => {
         logger.warn("Failed to release stale monitor check credit lock", {
@@ -1511,6 +1537,10 @@ export async function reconcileRunningMonitorChecks(
       );
       if (!check || check.status !== "running") continue;
 
+      // One org lookup per check — the billing service no longer makes it, so
+      // the release, the stale-fail and the settle below all share this one.
+      const orgId = await orgIdForTeam(check.team_id);
+
       const monitor = await getMonitorForUpdate(
         check.team_id,
         check.monitor_id,
@@ -1535,7 +1565,7 @@ export async function reconcileRunningMonitorChecks(
                 endpoint: "monitor",
                 jobId: check.id,
               },
-              teamId: check.team_id,
+              team: orgId ? { teamId: check.team_id, orgId } : undefined,
             })
             .catch(error => {
               logger.warn(
@@ -1565,7 +1595,7 @@ export async function reconcileRunningMonitorChecks(
         continue;
       }
 
-      if (await failStaleMonitorCheck({ monitor, check })) continue;
+      if (await failStaleMonitorCheck({ monitor, check, orgId })) continue;
 
       // The inline handler may still write target results after our primary read.
       let targetResults = Array.isArray(check.target_results)
@@ -1651,6 +1681,7 @@ export async function reconcileRunningMonitorChecks(
           check: finalized,
           actualCredits,
           lockId: claimed.autumn_lock_id,
+          orgId,
         });
       } catch (error) {
         logger.warn("Failed to bill monitor check during reconciliation", {

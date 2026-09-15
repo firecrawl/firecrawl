@@ -670,6 +670,12 @@ export async function executeTransformers(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
+  if (meta.internalOptions.teamId === "sitemap") {
+    document.metadata.scrapeId = meta.id;
+    if (useIndex) document = await sendDocumentToIndex(meta, document);
+    return coerceFieldsToFormats(meta, document);
+  }
+
   if (hasFormatOfType(meta.options.formats, "rawBase64")) {
     return coerceFieldsToFormats(meta, document);
   }
