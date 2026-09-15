@@ -55,15 +55,19 @@ export async function scrapeController(
   // unrecorded for zero-data-retention requests (see otel-tracer). Safe Mode
   // lockdown implies ZDR, so fold it in here too — otherwise child spans could
   // export target URLs before the inner handler applies lockdown.
+  // Lockdown implies ZDR. It only stops applying when a per-request bypass is
+  // actually HONORED (bypassed: true) — a rejected/invalid safeMode:false must
+  // still record as ZDR for a lockdown org. So key off the org's lockdown
+  // (resolved without the request param, which lockdown never depends on) and
+  // only drop it when the bypass is confirmed.
+  const bypassHonored =
+    resolveSafeMode(req.acuc?.flags, req.body?.safeMode).bypassed === true;
   const zeroDataRetentionTrace =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
     req.body?.zeroDataRetention === true ||
-    // Resolve lockdown WITHOUT the (still-unvalidated) URL: lockdown never
-    // depends on the allowlist, and passing a non-string URL here would throw
-    // before the schema can return its 400. A honored bypass (safeMode:false)
-    // resolves to no lockdown, so pass the raw request value.
-    (resolveSafeMode(req.acuc?.flags, req.body?.safeMode).safeMode?.lockdown ??
-      false);
+    (!bypassHonored &&
+      (resolveSafeMode(req.acuc?.flags, undefined).safeMode?.lockdown ??
+        false));
 
   return withSpan(
     "api.scrape.request",
