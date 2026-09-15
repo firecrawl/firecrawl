@@ -1014,9 +1014,15 @@ export function crawlToCrawler(
     headers: sc.scrapeOptions?.headers,
     robotsUserAgent: sc.crawlerOptions?.robotsUserAgent,
     // Safe Mode lockdown: skip robots/sitemap discovery (outbound to target).
-    lockdown:
-      resolveSafeMode(teamFlags, undefined, sc.originUrl ?? undefined).safeMode
-        ?.lockdown ?? false,
+    // Resolve from the crawl's own stored flags (covers monitors, whose flags
+    // live in internalOptions) and honor a stored request bypass.
+    lockdown: sc.internalOptions?.safeModeBypassed
+      ? false
+      : (resolveSafeMode(
+          sc.internalOptions?.teamFlags ?? teamFlags,
+          undefined,
+          sc.originUrl ?? undefined,
+        ).safeMode?.lockdown ?? false),
   });
 
   if (sc.robots !== undefined) {

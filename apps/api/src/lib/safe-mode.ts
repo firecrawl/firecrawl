@@ -23,6 +23,10 @@ export const SAFE_MODE_CREDENTIAL_HEADERS = [
   "proxy-authorization",
 ];
 
+// Actions that can enter credentials / run scripts; rejected at request time
+// and stripped at the worker under Safe Mode's disableAuthentication.
+export const SAFE_MODE_LOGIN_ACTIONS = ["write", "press", "executeJavascript"];
+
 // Remove credential-bearing headers. Used by the fire-engine builders so
 // inherited scrape options (crawl children, sub-scrapes) can't carry credentials
 // even when no request-time gate ran.

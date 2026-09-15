@@ -129,7 +129,9 @@ async function scrapeControllerInner(
   }
 
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" || req.body.zeroDataRetention;
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body.zeroDataRetention ||
+    (safeMode.safeMode?.lockdown ?? false);
 
   const logger = _logger.child({
     method: "scrapeController",

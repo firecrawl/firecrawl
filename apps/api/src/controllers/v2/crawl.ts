@@ -79,9 +79,16 @@ export async function crawlController(
   }
 
   // Scrape params live under scrapeOptions; checkPermissions reads them
-  // top-level, so spread scrapeOptions (crawlerOptions carries ignoreRobotsTxt).
+  // top-level, so spread scrapeOptions while keeping the top-level fields it
+  // also reads (zeroDataRetention, crawlerOptions.ignoreRobotsTxt) and the
+  // nested scrapeOptions (location / threatProtection).
   const permissions = checkPermissions(
-    { ...req.body.scrapeOptions, crawlerOptions: req.body },
+    {
+      ...req.body.scrapeOptions,
+      zeroDataRetention: req.body.zeroDataRetention,
+      crawlerOptions: req.body,
+      scrapeOptions: req.body.scrapeOptions,
+    },
     req.acuc?.flags,
     {
       threatProtectionOrgConfig: threatProtection.orgConfig,

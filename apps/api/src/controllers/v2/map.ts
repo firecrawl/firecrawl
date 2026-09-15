@@ -104,13 +104,13 @@ export async function mapController(
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 
-  // Short-circuit: if the URL matches avgrab's resolve pattern, delegate entirely
+  // Short-circuit: if the URL matches avgrab's resolve pattern, delegate
+  // entirely. Skipped under Safe Mode so results still flow through the
+  // standard path (domain-controls filtering + lockdown index-only).
   try {
-    const avgrabResults = await resolveViaAvgrab(
-      req.body.url,
-      req.body.limit,
-      logger,
-    );
+    const avgrabResults = safeMode.safeMode
+      ? null
+      : await resolveViaAvgrab(req.body.url, req.body.limit, logger);
 
     if (avgrabResults !== null) {
       const creditsCost = avgrabResults.length;

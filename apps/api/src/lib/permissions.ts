@@ -3,6 +3,7 @@ import type { ErrorCodes } from "./error";
 import {
   type ResolvedSafeMode,
   SAFE_MODE_CREDENTIAL_HEADERS,
+  SAFE_MODE_LOGIN_ACTIONS,
 } from "./safe-mode";
 import {
   getScrapeZDR,
@@ -48,8 +49,6 @@ interface PermissionOptions {
   threatProtectionOrgConfig?: { allowRequestOverrides: boolean } | null;
   safeMode?: ResolvedSafeMode | null;
 }
-
-const SAFE_MODE_LOGIN_ACTIONS = ["write", "press", "executeJavascript"];
 
 const SUPPORT_EMAIL = "support@firecrawl.com";
 

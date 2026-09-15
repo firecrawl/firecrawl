@@ -347,6 +347,10 @@ export async function batchScrapeController(
       error: "Job not found",
     });
   }
+  if (req.body.appendToId && sc?.internalOptions) {
+    // Refresh Safe Mode flags so appended jobs enforce the team's current policy.
+    sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
+  }
 
   if (!req.body.appendToId) {
     sc.queueBackend = await resolveNewGroupBackend(sc.team_id);

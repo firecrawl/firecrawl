@@ -118,6 +118,8 @@ import {
   type ResolvedSafeMode,
   resolveSafeMode,
   applySafeMode,
+  stripCredentialHeaders,
+  SAFE_MODE_LOGIN_ACTIONS,
 } from "../../lib/safe-mode";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
@@ -1266,6 +1268,17 @@ export async function scrapeURL(
       }
       if (internalOptions.safeMode) {
         applySafeMode(internalOptions.safeMode, options);
+        // Auth-path enforcement for every engine (not just fire-engine) and for
+        // inherited options a request-time gate never saw (crawl children etc.).
+        if (internalOptions.safeMode.disableAuthentication) {
+          options.headers = stripCredentialHeaders(options.headers);
+          if (options.actions) {
+            options.actions = options.actions.filter(
+              a => !SAFE_MODE_LOGIN_ACTIONS.includes(a.type),
+            );
+          }
+          options.profile = undefined;
+        }
         if (
           internalOptions.safeMode.domainControls &&
           !internalOptions.threatProtection
@@ -1276,6 +1289,12 @@ export async function scrapeURL(
             flags: internalOptions.teamFlags ?? {},
             force: true,
           });
+          // Fail closed: domainControls must never silently disable itself.
+          if (tp.error) {
+            throw new Error(
+              `Safe Mode domain controls could not be resolved: ${tp.error}`,
+            );
+          }
           internalOptions.threatProtection = tp.policy ?? undefined;
         }
       }
