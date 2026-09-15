@@ -304,8 +304,14 @@ export interface RedactPIIOptions {
  * fields you provide replace the team policy's values.
  */
 export interface ThreatProtectionOptions {
-  /** "off" disables scanning for this request; "normal" applies the policy. */
-  mode?: "off" | "normal";
+  /**
+   * "off" disables scanning for this request; "manual-only" enforces only the
+   * blacklist / whitelist / blocked TLDs (no provider scan, no scan fee);
+   * "normal" scans with Google Web Risk; "zscaler" classifies through your
+   * organization's Zscaler connection. Enforced teams may raise the mode per
+   * request but never lower it.
+   */
+  mode?: "off" | "manual-only" | "normal" | "zscaler";
   /** Block verdicts at or above this risk score (integer 0-100). */
   riskScoreThreshold?: number;
   /** Exact domains or globs like "*.example.com" to always block (max 1000). */

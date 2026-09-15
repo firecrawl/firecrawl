@@ -840,8 +840,12 @@ class ThreatProtectionOptions(BaseModel):
     explicitly provide replace the team policy's values.
     """
 
-    # "off" disables scanning for this request; "normal" applies the policy.
-    mode: Optional[Literal["off", "normal"]] = None
+    # "off" disables scanning for this request; "manual-only" enforces only the
+    # blacklist / whitelist / blocked TLDs (no provider scan, no scan fee);
+    # "normal" scans with Google Web Risk; "zscaler" classifies through your
+    # organization's Zscaler connection. Enforced teams may raise the mode per
+    # request but never lower it.
+    mode: Optional[Literal["off", "manual-only", "normal", "zscaler"]] = None
     # Block verdicts at or above this risk score (integer 0-100).
     risk_score_threshold: Optional[int] = Field(
         default=None, alias="riskScoreThreshold"
