@@ -659,6 +659,8 @@ export interface DocumentMetadata {
 }
 
 export interface Document {
+  /** API guidance, separate from extracted page content. */
+  agent_hints?: string[];
   markdown?: string;
   html?: string;
   rawHtml?: string;
@@ -801,6 +803,7 @@ export interface SearchResultImages {
 }
 
 export interface SearchData {
+  agent_hints?: string[];
   warning?: string;
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;
@@ -862,6 +865,7 @@ export interface FindToolsOptions {
 }
 
 export interface FindToolsData {
+  agent_hints?: string[];
   level: "providers" | "groups" | "tools";
   items: Array<{
     id: string;
@@ -912,6 +916,7 @@ export type AlexandriaScrapeResult =
     };
 
 export interface AlexandriaScrapeData {
+  agent_hints?: string[];
   scrapeId: string;
   requestId: string;
   alexandria: AlexandriaScrapeResult[];
@@ -1064,6 +1069,7 @@ export interface BatchScrapeJob {
 }
 
 export interface MapData {
+  agent_hints?: string[];
   id?: string;
   links: SearchResultWeb[];
 }
@@ -1854,6 +1860,7 @@ export function parseRequiresAction(value: unknown): RequiresAction | undefined 
 }
 
 export class SdkError extends Error {
+  declare agent_hints?: string[];
   requestId?: string;
   status?: number;
   code?: string;

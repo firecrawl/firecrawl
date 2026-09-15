@@ -3,7 +3,8 @@ Error handling utilities for v2 API.
 """
 
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from .agent_hints import agent_hint_metadata
 
 PROVIDER_TERMS_REQUIRED_CODE = "THIRD_PARTY_DATA_TERMS_REQUIRED"
 
@@ -11,7 +12,7 @@ PROVIDER_TERMS_REQUIRED_CODE = "THIRD_PARTY_DATA_TERMS_REQUIRED"
 class FirecrawlError(Exception):
     """Base exception for Firecrawl API errors."""
     
-    def __init__(self, message: str, status_code: Optional[int] = None, response: Optional[requests.Response] = None, *, request_id: Optional[str] = None, code: Optional[str] = None, charge_id: Optional[str] = None, requires_action: Optional["RequiresAction"] = None):
+    def __init__(self, message: str, status_code: Optional[int] = None, response: Optional[requests.Response] = None, *, request_id: Optional[str] = None, code: Optional[str] = None, charge_id: Optional[str] = None, requires_action: Optional["RequiresAction"] = None, agent_hints: Optional[List[str]] = None):
         super().__init__(message)
         self.status_code = status_code
         self.response = response
@@ -23,6 +24,7 @@ class FirecrawlError(Exception):
         self.code = code
         self.charge_id = charge_id
         self.requires_action = requires_action
+        self.agent_hints = agent_hints
 
 
 class RequiresAction:
@@ -99,8 +101,10 @@ def handle_response_error(response: requests.Response, action: str) -> None:
     code = None
     charge_id = None
     requires_action = None
+    hints = {}
     try:
         response_json = response.json()
+        hints = agent_hint_metadata(response_json)
         error_message = response_json.get('error', 'No error message provided.')
         error_details = response_json.get('details', 'No additional error details provided.')
         # Exchange-mediated scrape errors: { success: false, error, code?, chargeId?, requiresAction? }
@@ -124,27 +128,27 @@ def handle_response_error(response: requests.Response, action: str) -> None:
     # Create appropriate error message
     if response.status_code == 400:
         message = f"Bad Request: Failed to {action}. {error_message} - {error_details}"
-        raise BadRequestError(message, response.status_code, response, code=code, charge_id=charge_id)
+        raise BadRequestError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
     elif response.status_code == 401:
         message = f"Unauthorized: Failed to {action}. {error_message} - {error_details}"
-        raise UnauthorizedError(message, response.status_code, response, code=code, charge_id=charge_id)
+        raise UnauthorizedError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
     elif response.status_code == 402:
         message = f"Payment Required: Failed to {action}. {error_message} - {error_details}"
-        raise PaymentRequiredError(message, response.status_code, response, code=code, charge_id=charge_id)
+        raise PaymentRequiredError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
     elif response.status_code == 403 and code == PROVIDER_TERMS_REQUIRED_CODE:
-        raise ProviderTermsRequiredError(error_message, response.status_code, response, code=code, charge_id=charge_id, requires_action=requires_action)
+        raise ProviderTermsRequiredError(error_message, response.status_code, response, code=code, charge_id=charge_id, requires_action=requires_action, **hints)
     elif response.status_code == 403:
         message = f"Website Not Supported: Failed to {action}. {error_message} - {error_details}"
-        raise WebsiteNotSupportedError(message, response.status_code, response, code=code, charge_id=charge_id)
+        raise WebsiteNotSupportedError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
     elif response.status_code == 408:
         message = f"Request Timeout: Failed to {action} as the request timed out. {error_message} - {error_details}"
-        raise RequestTimeoutError(message, response.status_code, response, code=code, charge_id=charge_id)
+        raise RequestTimeoutError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
     elif response.status_code == 429:
         message = f"Rate Limit Exceeded: Failed to {action}. {error_message} - {error_details}"
-        raise RateLimitError(message, response.status_code, response, code=code, charge_id=charge_id)
+        raise RateLimitError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
     elif response.status_code == 500:
         message = f"Internal Server Error: Failed to {action}. {error_message} - {error_details}"
-        raise InternalServerError(message, response.status_code, response, code=code, charge_id=charge_id)
+        raise InternalServerError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
     else:
         message = f"Unexpected error during {action}: Status code {response.status_code}. {error_message} - {error_details}"
-        raise FirecrawlError(message, response.status_code, response, code=code, charge_id=charge_id)
+        raise FirecrawlError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)

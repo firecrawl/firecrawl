@@ -166,8 +166,9 @@ class AsyncFirecrawlClient:
                 request_id=result.request_id,
                 code=item.error.code,
                 charge_id=item.error.charge_id,
+                agent_hints=result.agent_hints,
             )
-        return FindToolsData(**item.data)
+        return FindToolsData(**{**item.data, "agent_hints": result.agent_hints})
 
     # Research paper index (/v2/search/research)
     @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)

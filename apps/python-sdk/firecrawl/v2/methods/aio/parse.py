@@ -4,6 +4,7 @@ import json
 from typing import Optional, Dict, Any, Tuple
 
 from ...types import Document, ParseOptions
+from ...utils.agent_hints import agent_hint_metadata
 from ...utils.normalize import normalize_document_input
 from ...utils.error_handler import handle_response_error
 from ...utils.http_client_async import AsyncHttpClient
@@ -56,8 +57,8 @@ async def parse(
 
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        handle_response_error(response, "parse")
 
     document_data = body.get("data", {})
-    normalized = normalize_document_input(document_data)
+    normalized = {**normalize_document_input(document_data), **agent_hint_metadata(body)}
     return Document(**normalized)

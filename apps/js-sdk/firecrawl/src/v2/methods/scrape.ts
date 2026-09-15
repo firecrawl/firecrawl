@@ -6,6 +6,7 @@ import {
   type ScrapeOptions,
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
+import { agentHintMetadata } from "../utils/agentHints";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import {
   throwForBadResponse,
@@ -131,7 +132,7 @@ export async function scrape(
       if (res.status !== 200 || !res.data?.success) {
         throwForBadResponse(res, "scrape");
       }
-      return (res.data.data || {}) as Document;
+      return { ...res.data.data, ...agentHintMetadata(res.data) };
     } catch (err: any) {
       const delayMs = autoResume !== false ? processingContinuesDelayMs(err) : undefined;
       if (
