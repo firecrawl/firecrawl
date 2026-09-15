@@ -1,6 +1,7 @@
 import {
   applySafeMode,
   getSafeMode,
+  isLockdownZeroDataRetention,
   resolveSafeMode,
   ResolvedSafeMode,
   SafeModeConfig,
@@ -54,6 +55,32 @@ describe("getSafeMode", () => {
   it("is true only when the flag is exactly true", () => {
     expect(getSafeMode({ safeMode: true })).toBe(true);
     expect(getSafeMode({ safeMode: false })).toBe(false);
+  });
+});
+
+describe("isLockdownZeroDataRetention", () => {
+  const lockdownOrg = { safeMode: true, safeModeConfig: { lockdown: true } };
+
+  it("is false without org lockdown", () => {
+    expect(isLockdownZeroDataRetention(null, undefined)).toBe(false);
+    expect(isLockdownZeroDataRetention({ safeMode: true }, undefined)).toBe(
+      false,
+    );
+  });
+
+  it("is true for a lockdown org, including a rejected bypass attempt", () => {
+    expect(isLockdownZeroDataRetention(lockdownOrg, undefined)).toBe(true);
+    expect(isLockdownZeroDataRetention(lockdownOrg, true)).toBe(true);
+    expect(isLockdownZeroDataRetention(lockdownOrg, false)).toBe(true);
+  });
+
+  it("is false only when a bypass is actually honored", () => {
+    const bypassable = {
+      safeMode: true,
+      safeModeConfig: { lockdown: true, allowBypassSafeMode: true },
+    };
+    expect(isLockdownZeroDataRetention(bypassable, false)).toBe(false);
+    expect(isLockdownZeroDataRetention(bypassable, undefined)).toBe(true);
   });
 });
 

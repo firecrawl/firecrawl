@@ -75,9 +75,13 @@ export function checkPermissions(
     request.crawlerOptions?.ignoreRobotsTxt &&
     robotsMode !== "allowed" &&
     robotsMode !== "forced" &&
-    // Under Safe Mode the robots rejection below returns SAFE_MODE_BLOCKED;
-    // don't preempt it with the generic entitlement error.
-    !options?.safeMode?.enforceRobots
+    // Under Safe Mode (outside lockdown) the robots rejection below returns
+    // SAFE_MODE_BLOCKED; don't preempt it with the generic entitlement error.
+    !(
+      options?.safeMode &&
+      !options.safeMode.lockdown &&
+      options.safeMode.enforceRobots
+    )
   ) {
     return {
       error: `The ignoreRobotsTxt parameter is an enterprise feature. Contact ${SUPPORT_EMAIL} to explore whether it can be enabled for your team.`,

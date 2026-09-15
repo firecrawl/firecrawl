@@ -17,7 +17,11 @@ import {
 } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
-import { applySafeMode, resolveSafeMode } from "../../lib/safe-mode";
+import {
+  applySafeMode,
+  resolveSafeMode,
+  isLockdownZeroDataRetention,
+} from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -53,11 +57,14 @@ export async function scrapeController(
   res: Response<ScrapeResponse>,
 ) {
   // Resolved before the root span starts so the whole request trace stays
-  // unrecorded for zero-data-retention requests (see otel-tracer).
+  // unrecorded for zero-data-retention requests (see otel-tracer). Safe Mode
+  // lockdown implies ZDR, so fold it in here too — otherwise the rejection
+  // paths below would export the target URL on the root span.
   const zeroDataRetentionTrace =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
     req.body?.zeroDataRetention === true ||
-    req.body?.lockdown === true;
+    req.body?.lockdown === true ||
+    isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
 
   return withSpan(
     "api.scrape.request",

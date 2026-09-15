@@ -37,6 +37,8 @@ import {
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import { resolveSafeMode } from "../../lib/safe-mode";
+import { checkPermissions } from "../../lib/permissions";
 import {
   actionTypesOf,
   checkKeyEndpointRestriction,
@@ -158,6 +160,21 @@ async function searchControllerInner(
       });
     }
 
+    // Safe Mode: validate the per-request param up front and reject scrape
+    // options it forbids (the worker backstop would otherwise strip them
+    // silently). Domain controls force threat protection over the results.
+    const safeMode = resolveSafeMode(
+      req.acuc?.flags,
+      req.body.scrapeOptions?.safeMode,
+    );
+    if (safeMode.error) {
+      return res.status(403).json({
+        success: false,
+        code: safeMode.code,
+        error: safeMode.error,
+      });
+    }
+
     // Threat protection: resolve the effective policy. Blocked domains are
     // removed from search results entirely, and scraped results inherit the
     // policy through the scrape pipeline.
@@ -167,12 +184,37 @@ async function searchControllerInner(
       flags: req.acuc?.flags ?? null,
       override:
         req.body.threatProtection ?? req.body.scrapeOptions?.threatProtection,
+      force: safeMode.safeMode?.domainControls === true,
     });
     if (threatProtection.error) {
       return res.status(403).json({
         success: false,
         error: threatProtection.error,
       });
+    }
+
+    // Search only scrapes (and only honors scrapeOptions) when formats are
+    // requested, so the scrape-option checks apply only then.
+    if (
+      safeMode.safeMode &&
+      requestedFormats.length > 0 &&
+      req.body.scrapeOptions
+    ) {
+      const permissions = checkPermissions(
+        req.body.scrapeOptions,
+        req.acuc?.flags,
+        {
+          threatProtectionOrgConfig: threatProtection.orgConfig,
+          safeMode: safeMode.safeMode,
+        },
+      );
+      if (permissions.error) {
+        return res.status(403).json({
+          success: false,
+          code: permissions.code,
+          error: permissions.error,
+        });
+      }
     }
 
     const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
@@ -294,6 +336,7 @@ async function searchControllerInner(
         agentIndexOnly: (req as any).agentIndexOnly ?? false,
         keylessReserved: reservedKeylessCredits > 0,
         threatProtectionPolicy: threatProtection.policy,
+        safeModeBypassed: safeMode.bypassed === true,
       },
       logger,
     );

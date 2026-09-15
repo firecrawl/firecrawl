@@ -15,6 +15,12 @@ const SUPPORT_EMAIL = "support@firecrawl.com";
 export const SAFE_MODE_V0_UNSUPPORTED_MESSAGE =
   "Safe Mode is enabled for your organization, which is not supported on the v0 API. Please update your code to use the v1 or v2 API.";
 
+// Interactive browser sessions (browser, scrape interact) run arbitrary code
+// against live sites and can't enforce Safe Mode's controls, so a Safe Mode
+// org is rejected there outright (mirrors the v0 gate).
+export const SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE =
+  "Safe Mode is enabled for your organization, which does not support interactive browser sessions.";
+
 // Credential-bearing request headers rejected at request time and stripped at
 // the worker under Safe Mode's disableAuthentication (case-insensitive match).
 export const SAFE_MODE_CREDENTIAL_HEADERS = [
@@ -131,6 +137,19 @@ export function applySafeMode(
       scrapeOptions.maxAge = LOCKDOWN_DEFAULT_MAX_AGE_MS;
     }
   }
+}
+
+// Lockdown is cache-only and implies zero data retention. Resolved from the
+// org flags alone (lockdown never depends on the request param) and dropped
+// only when a per-request bypass is actually HONORED — a rejected/invalid
+// safeMode:false must still record as ZDR for a lockdown org. Safe to call
+// before schema validation (a non-boolean request value is treated as unset).
+export function isLockdownZeroDataRetention(
+  flags: TeamFlags | null | undefined,
+  requestSafeMode: boolean | undefined,
+): boolean {
+  if (resolveSafeMode(flags, requestSafeMode).bypassed === true) return false;
+  return resolveSafeMode(flags, undefined).safeMode?.lockdown === true;
 }
 
 export function resolveSafeMode(

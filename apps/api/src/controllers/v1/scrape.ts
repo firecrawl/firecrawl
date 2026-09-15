@@ -14,7 +14,11 @@ import { fromV1ScrapeOptions } from "../v2/types";
 import { TransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
-import { resolveSafeMode, applySafeMode } from "../../lib/safe-mode";
+import {
+  resolveSafeMode,
+  applySafeMode,
+  isLockdownZeroDataRetention,
+} from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -55,19 +59,10 @@ export async function scrapeController(
   // unrecorded for zero-data-retention requests (see otel-tracer). Safe Mode
   // lockdown implies ZDR, so fold it in here too — otherwise child spans could
   // export target URLs before the inner handler applies lockdown.
-  // Lockdown implies ZDR. It only stops applying when a per-request bypass is
-  // actually HONORED (bypassed: true) — a rejected/invalid safeMode:false must
-  // still record as ZDR for a lockdown org. So key off the org's lockdown
-  // (resolved without the request param, which lockdown never depends on) and
-  // only drop it when the bypass is confirmed.
-  const bypassHonored =
-    resolveSafeMode(req.acuc?.flags, req.body?.safeMode).bypassed === true;
   const zeroDataRetentionTrace =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
     req.body?.zeroDataRetention === true ||
-    (!bypassHonored &&
-      (resolveSafeMode(req.acuc?.flags, undefined).safeMode?.lockdown ??
-        false));
+    isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
 
   return withSpan(
     "api.scrape.request",
@@ -204,6 +199,11 @@ async function scrapeControllerInner(
     req.body.timeout,
     req.auth.team_id,
   );
+  // v1 prefaults maxAge (1 day), which would shadow the lockdown default —
+  // keep only a maxAge the request actually sent under forced lockdown.
+  if (safeMode.safeMode?.lockdown && preNormalizedBody.maxAge === undefined) {
+    scrapeOptions.maxAge = undefined;
+  }
   applySafeMode(safeMode.safeMode, scrapeOptions);
   const projectedKeylessCredits = !isDirectToBullMQ
     ? projectScrapeCredits(

@@ -12,7 +12,10 @@ import { externalRequestId } from "../../lib/external-request-id";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError, MapFailedError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
-import { resolveSafeMode } from "../../lib/safe-mode";
+import {
+  resolveSafeMode,
+  isLockdownZeroDataRetention,
+} from "../../lib/safe-mode";
 import { getMapResults, MapResult } from "../../lib/map-utils";
 import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
@@ -33,7 +36,7 @@ export async function mapController(
   // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
-    (resolveSafeMode(req.acuc?.flags, undefined).safeMode?.lockdown ?? false);
+    isLockdownZeroDataRetention(req.acuc?.flags, undefined);
   const logger = _logger.child({
     jobId: uuidv7(),
     teamId: req.auth.team_id,
@@ -211,7 +214,6 @@ export async function mapController(
         filterByPath: req.body.filterByPath !== false,
         flags: req.acuc?.flags ?? null,
         useIndex: req.body.useIndex,
-        indexOnly: lockdownIndexOnly,
         ignoreCache: req.body.ignoreCache,
         location: req.body.location,
         headers: req.body.headers,

@@ -56,6 +56,18 @@ describe("checkPermissions — safe mode", () => {
     expect(result.code).toBe("SAFE_MODE_BLOCKED");
   });
 
+  it("keeps the ignoreRobotsTxt entitlement check under lockdown", () => {
+    // Lockdown skips the Safe Mode robots rejection, so the generic
+    // enterprise gate must still apply to a non-entitled team.
+    const result = checkPermissions(
+      { crawlerOptions: { ignoreRobotsTxt: true } },
+      null,
+      { safeMode: { ...strictSafeMode, lockdown: true } },
+    );
+    expect(result.error).toMatch(/enterprise feature/i);
+    expect(result.code).toBeUndefined();
+  });
+
   it("allows ignoreRobotsTxt when the org relaxes enforceRobots", () => {
     expect(
       checkPermissions(

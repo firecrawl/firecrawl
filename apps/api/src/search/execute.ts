@@ -63,6 +63,8 @@ interface SearchContext {
   keylessReserved?: boolean;
   /** Effective threat protection policy; blocked domains are removed from results entirely. */
   threatProtectionPolicy?: ThreatProtectionPolicy | null;
+  /** Set when the request legitimately opted out of Safe Mode at the controller. */
+  safeModeBypassed?: boolean;
 }
 
 interface SearchExecuteResult {
@@ -265,6 +267,7 @@ export async function executeSearch(
         agentIndexOnly: context.agentIndexOnly,
         keylessReserved: context.keylessReserved,
         threatProtectionPolicy: threatPolicy ?? null,
+        safeModeBypassed: context.safeModeBypassed ?? false,
       };
 
       const allDocsWithCostTracking = await scrapeSearchResults(

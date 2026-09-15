@@ -1815,6 +1815,11 @@ export async function scrapeURL(
           meta.logger.warn("scrapeURL: Site failed to load in browser", {
             error,
           });
+        } else if (error instanceof SiteRestrictionError) {
+          errorType = "SiteRestrictionError";
+          meta.logger.warn("scrapeURL: Site restriction returned (Safe Mode)", {
+            error,
+          });
         } else if (error instanceof SSLError) {
           errorType = "SSLError";
           meta.logger.warn("scrapeURL: SSL error", { error });

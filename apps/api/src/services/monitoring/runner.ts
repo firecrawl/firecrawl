@@ -74,6 +74,7 @@ import { verdictJsonSchema } from "./search/judge";
 import { computeGoalVersion } from "./search/dedupe";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { getACUCTeam } from "../../controllers/auth";
+import type { TeamFlags } from "../../controllers/v1/types";
 import {
   reconstructKnownState,
   searchStatusToPageStatus,
@@ -270,6 +271,7 @@ export function estimateActualCredits(doc: any, options?: any): number {
 // per-page — search monitors bill flat at the check level.
 async function scrapeSearchMonitorPage(params: {
   teamId: string;
+  teamFlags: TeamFlags | null;
   checkId: string;
   url: string;
   judgePrompt: string;
@@ -315,6 +317,8 @@ async function scrapeSearchMonitorPage(params: {
         saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
         bypassBilling: true,
         zeroDataRetention: false,
+        // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
+        teamFlags: params.teamFlags ?? undefined,
       },
       skipNuq: true,
       origin: "monitor",
@@ -826,6 +830,7 @@ async function runMonitorSearchTarget(params: {
     scrapePage: ({ url, judgePrompt }) =>
       scrapeSearchMonitorPage({
         teamId: monitor.team_id,
+        teamFlags,
         checkId: check.id,
         url,
         judgePrompt,

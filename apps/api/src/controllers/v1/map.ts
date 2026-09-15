@@ -104,7 +104,6 @@ export async function getMapResults({
   filterByPath = true,
   flags,
   useIndex = true,
-  indexOnly = false,
   ignoreCache = false,
   timeout,
   location,
@@ -127,9 +126,6 @@ export async function getMapResults({
   filterByPath?: boolean;
   flags: TeamFlags;
   useIndex?: boolean;
-  // Safe Mode lockdown: serve links from the index only — skip the live
-  // fireEngineMap search and any sitemap fetch (both are live discovery).
-  indexOnly?: boolean;
   ignoreCache?: boolean;
   timeout?: number;
   location?: ScrapeOptions["location"];
@@ -140,6 +136,12 @@ export async function getMapResults({
   const id = providedId ?? uuidv7();
   let links: string[] = [url];
   let mapResults: MapDocument[] = [];
+
+  // Safe Mode lockdown: serve links from the index only — skip the live
+  // fireEngineMap search and any sitemap fetch (both are live discovery).
+  // Derived from the team flags so every caller honors it.
+  const indexOnly =
+    resolveSafeMode(flags, undefined, url).safeMode?.lockdown === true;
 
   // Lockdown (index-only) is cache-only, which implies zero data retention.
   const zeroDataRetention = getScrapeZDR(flags) === "forced" || indexOnly;
@@ -492,7 +494,6 @@ export async function mapController(
         filterByPath: req.body.filterByPath !== false,
         flags: req.acuc?.flags ?? null,
         useIndex: req.body.useIndex,
-        indexOnly: lockdownIndexOnly,
         ignoreCache: req.body.ignoreCache,
         timeout: req.body.timeout,
         location: req.body.location,

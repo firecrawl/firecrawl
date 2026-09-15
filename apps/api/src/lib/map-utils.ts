@@ -8,6 +8,7 @@ import {
 } from "../controllers/v2/types";
 import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
 import { getScrapeZDR } from "./zdr-helpers";
+import { resolveSafeMode } from "./safe-mode";
 import {
   checkAndUpdateURLForMap,
   isSameDomain,
@@ -92,7 +93,6 @@ export async function getMapResults({
   filterByPath = true,
   flags,
   useIndex = true,
-  indexOnly = false,
   ignoreCache = false,
   location,
   headers,
@@ -114,9 +114,6 @@ export async function getMapResults({
   filterByPath?: boolean;
   flags: TeamFlags | null;
   useIndex?: boolean;
-  // Safe Mode lockdown: serve links from the index only — skip live search +
-  // sitemap discovery.
-  indexOnly?: boolean;
   ignoreCache?: boolean;
   location?: ScrapeOptions["location"];
   headers?: Record<string, string>;
@@ -124,6 +121,12 @@ export async function getMapResults({
   id?: string;
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
+
+  // Safe Mode lockdown: serve links from the index only — skip live search +
+  // sitemap discovery. Derived here from the team flags so every caller
+  // (map, extract, llmstxt, prompt enhancement) honors it.
+  const indexOnly =
+    resolveSafeMode(flags, undefined, url).safeMode?.lockdown === true;
 
   // Under lockdown (index-only) resolving redirects would HEAD/GET the target,
   // which the zero-outbound guarantee forbids — use the URL as given.
@@ -139,7 +142,9 @@ export async function getMapResults({
 
   const id = providedId ?? uuidv7();
   let mapResults: MapDocument[] = [];
-  const zeroDataRetention = getScrapeZDR(flags) === "forced" || false;
+  // Lockdown (index-only) is cache-only, which implies zero data retention —
+  // and must never write its empty live-search result into the shared cache.
+  const zeroDataRetention = getScrapeZDR(flags) === "forced" || indexOnly;
 
   const sc: StoredCrawl = {
     originUrl: url,

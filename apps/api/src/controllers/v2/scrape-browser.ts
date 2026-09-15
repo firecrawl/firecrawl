@@ -43,6 +43,10 @@ import {
 } from "../../lib/scrape-interact/browser-agent";
 import { sanitizeUrlForTrace } from "../../lib/scrape-interact/langsmith";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import {
+  getSafeMode,
+  SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+} from "../../lib/safe-mode";
 import { RequestWithAuth, ScrapeOptions } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import {
@@ -135,6 +139,13 @@ export async function scrapeInteractController(
   res: Response<BrowserExecuteResponse>,
 ) {
   req.body = browserExecuteRequestSchema.parse(req.body);
+
+  if (getSafeMode(req.acuc?.flags)) {
+    return res.status(403).json({
+      success: false,
+      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+    });
+  }
 
   const scrapeId = req.params.jobId;
   const { code: rawCode, prompt, language, timeout, origin } = req.body;
