@@ -3,6 +3,7 @@ import {
   TeamFlags,
 } from "../controllers/v2/types";
 import type { ErrorCodes } from "./error";
+import { getSearchForcedKind } from "./zdr-helpers";
 import {
   domainMatchesList,
   normalizeDomain,
@@ -150,6 +151,20 @@ export function isLockdownZeroDataRetention(
 ): boolean {
   if (resolveSafeMode(flags, requestSafeMode).bypassed === true) return false;
   return resolveSafeMode(flags, undefined).safeMode?.lockdown === true;
+}
+
+// Search's forced enterprise kind, with Safe Mode lockdown folded in: lockdown
+// forces the "zdr" kind exactly like the searchZDR flag does (zero-retention
+// upstream routing, the ZDR credit rate, ZDR recording). The flag still wins
+// when set (it may force "anon" instead).
+export function getEffectiveSearchForcedKind(
+  flags: TeamFlags | null | undefined,
+  requestSafeMode: boolean | undefined,
+): ReturnType<typeof getSearchForcedKind> {
+  return (
+    getSearchForcedKind(flags ?? undefined) ??
+    (isLockdownZeroDataRetention(flags, requestSafeMode) ? "zdr" : null)
+  );
 }
 
 export function resolveSafeMode(

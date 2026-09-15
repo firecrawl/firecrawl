@@ -621,6 +621,23 @@ describeIf(TEST_PRODUCTION)("Threat protection enforcement", () => {
     );
 
     it(
+      "rejects a per-request override that lowers the mode to manual-only",
+      async () => {
+        const res = await scrapeRaw(
+          {
+            url: CLEAN_URL,
+            threatProtection: { mode: "manual-only" },
+          } as any,
+          identity,
+        );
+        expect(res.statusCode).toBe(403);
+        expect(res.body.success).toBe(false);
+        expect(res.body.error).toContain("cannot be disabled");
+      },
+      scrapeTimeout,
+    );
+
+    it(
       "still allows narrowing overrides (mode stays on)",
       async () => {
         const res = await scrapeRaw(

@@ -25,7 +25,7 @@ import { executeSearch } from "../../search/execute";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import {
   resolveSafeMode,
-  isLockdownZeroDataRetention,
+  getEffectiveSearchForcedKind,
 } from "../../lib/safe-mode";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -37,7 +37,6 @@ import {
   filterDocumentsWithContent,
 } from "../../search/transform";
 import { fromV1ScrapeOptions } from "../v2/types";
-import { getSearchForcedKind } from "../../lib/zdr-helpers";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
@@ -107,18 +106,12 @@ export async function searchController(
   const controllerStartTime = new Date().getTime();
 
   const jobId = uuidv7();
-  // Safe Mode lockdown is cache-only and implies zero data retention, so it
-  // forces the "zdr" search kind exactly like the searchZDR flag does: the
-  // query is routed to the zero-retention provider, billed at the ZDR rate,
-  // and the request, job and result scrapes are all recorded as ZDR.
-  const teamForcedKind =
-    getSearchForcedKind(req.acuc?.flags) ??
-    (isLockdownZeroDataRetention(
-      req.acuc?.flags,
-      req.body.scrapeOptions?.safeMode,
-    )
-      ? "zdr"
-      : null);
+  // Safe Mode lockdown forces the "zdr" kind like the searchZDR flag does
+  // (see getEffectiveSearchForcedKind).
+  const teamForcedKind = getEffectiveSearchForcedKind(
+    req.acuc?.flags,
+    req.body.scrapeOptions?.safeMode,
+  );
   const zeroDataRetention = teamForcedKind !== null;
   const teamEnterprise = teamForcedKind ? [teamForcedKind] : undefined;
   let logger = _logger.child({

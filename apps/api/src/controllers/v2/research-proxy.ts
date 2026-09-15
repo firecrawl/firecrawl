@@ -6,7 +6,7 @@ import { logger as rootLogger } from "../../lib/logger";
 import { fetchResearchUpstream } from "../../lib/research-upstream";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import { billTeam } from "../../services/billing/credit_billing";
-import { getSearchForcedKind } from "../../lib/zdr-helpers";
+import { getEffectiveSearchForcedKind } from "../../lib/safe-mode";
 import {
   logRequest,
   logResearchEndpoint,
@@ -223,7 +223,7 @@ function creditsFor(
   if (freeResearchKinds.has(config.kind)) return 0;
 
   if (config.billAs === "scrape") return 1;
-  const forcedKind = getSearchForcedKind(req.acuc?.flags);
+  const forcedKind = getEffectiveSearchForcedKind(req.acuc?.flags, undefined);
   const perTen =
     forcedKind === "zdr"
       ? ZDR_SEARCH_CREDITS_PER_TEN_RESULTS
@@ -286,7 +286,7 @@ function createResearchController(
   return async (req, res: Response) => {
     const authedReq = req as RequestWithAuth<any, any, any>;
     const zeroDataRetention =
-      getSearchForcedKind(authedReq.acuc?.flags) !== null;
+      getEffectiveSearchForcedKind(authedReq.acuc?.flags, undefined) !== null;
 
     const started = Date.now();
     const jobId = uuidv7();

@@ -40,6 +40,7 @@ import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import {
   resolveSafeMode,
   isLockdownZeroDataRetention,
+  getEffectiveSearchForcedKind,
 } from "../../lib/safe-mode";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -95,18 +96,13 @@ async function searchControllerInner(
 
   const jobId = uuidv7();
   const searchZDRMode = getSearchZDR(req.acuc?.flags);
-  // Safe Mode lockdown is cache-only and implies zero data retention, so it
-  // forces the "zdr" search kind exactly like the searchZDR flag does: the
-  // query is routed to the zero-retention provider, billed at the ZDR rate,
-  // and the request, job and result scrapes are all recorded as ZDR.
-  const teamForcedKind =
-    getSearchForcedKind(req.acuc?.flags) ??
-    (isLockdownZeroDataRetention(
-      req.acuc?.flags,
-      req.body?.scrapeOptions?.safeMode,
-    )
-      ? "zdr"
-      : null);
+  // Safe Mode lockdown forces the "zdr" kind like the searchZDR flag does
+  // (see getEffectiveSearchForcedKind).
+  const flagForcedKind = getSearchForcedKind(req.acuc?.flags);
+  const teamForcedKind = getEffectiveSearchForcedKind(
+    req.acuc?.flags,
+    req.body?.scrapeOptions?.safeMode,
+  );
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
@@ -247,6 +243,13 @@ async function searchControllerInner(
       origin: req.body.origin,
     });
 
+    // Kinds the request itself asked for, captured before the forced kind is
+    // injected: the entitlement check below applies to these only.
+    const requestedZDROrAnon =
+      req.body.enterprise?.includes("zdr") ||
+      req.body.enterprise?.includes("anon") ||
+      false;
+
     // Inject the team-forced enterprise mode so downstream billing,
     // upstream routing, and ZDR cleanup all see it.
     if (teamForcedKind) {
@@ -263,7 +266,9 @@ async function searchControllerInner(
     logger = logger.child({ zeroDataRetention });
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
-    if (isZDROrAnon && !teamForcedKind) {
+    // it asked for. Only the flag-forced kind exempts a team: a lockdown-forced
+    // "zdr" must not let an unentitled request add "anon".
+    if (requestedZDROrAnon && !flagForcedKind) {
       if (searchZDRMode !== "allowed") {
         return res.status(403).json({
           success: false,
