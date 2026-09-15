@@ -1,0 +1,18 @@
+{
+  "name": "firecrawl-extraction-regression-suite",
+  "gates": {
+    "minAverageScore": 0.9,
+    "maxFailedCases": 0
+  },
+  "suites": [
+    {
+      "name": "structured-extraction",
+      "cases": [
+        "fixtures/careers-page.json",
+        "fixtures/pricing-table.json",
+        "fixtures/docs-api-page.json",
+        "fixtures/noisy-spa-careers.json"
+      ]
+    }
+  ]
+}
