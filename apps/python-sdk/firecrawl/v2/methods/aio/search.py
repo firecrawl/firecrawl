@@ -8,6 +8,7 @@ from ...types import (
     SearchResultNews,
     SearchResultImages,
 )
+from ...utils.agent_hints import agent_hint_metadata
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.error_handler import handle_response_error
 from ...utils.normalize import normalize_document_input
@@ -41,7 +42,7 @@ async def search(
         if not response_data.get("success"):
             handle_response_error(response, "search")
         data = response_data.get("data", {}) or {}
-        out = SearchData(warning=response_data.get("warning"))
+        out = SearchData(warning=response_data.get("warning"), **agent_hint_metadata(response_data))
         if "web" in data:
             out.web = _transform_array(data["web"], SearchResultWeb)
         if "news" in data:

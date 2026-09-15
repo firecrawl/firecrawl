@@ -8,6 +8,7 @@ import {
   type SearchResultImages,
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
+import { agentHintMetadata } from "../utils/agentHints";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import {
   throwForBadResponse,
@@ -100,7 +101,7 @@ export async function search(
       throwForBadResponse(res, "search");
     }
     const data = (res.data.data || {}) as Record<string, any>;
-    const out: SearchData = {};
+    const out: SearchData = { ...agentHintMetadata(res.data) };
     if (res.data.warning) out.warning = res.data.warning;
     if (data.web) out.web = transformArray<SearchResultWeb>(data.web);
     if (data.news) out.news = transformArray<SearchResultNews>(data.news);

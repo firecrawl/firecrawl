@@ -1,3 +1,4 @@
+import { setAgentHintFeedback } from "../../middlewares/agent-hints";
 import { NextFunction, Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
@@ -456,6 +457,8 @@ async function searchControllerInner(
       totalCredits: result.totalCredits,
       scrapeful: result.shouldScrape,
     });
+
+    setAgentHintFeedback(res, jobId, zeroDataRetention);
 
     return res.status(200).json({
       success: true,
