@@ -125,7 +125,9 @@ export async function getMapResults({
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
 
-  const resolvedUrl = await resolveRedirects(url, abort);
+  // Under lockdown (index-only) resolving redirects would HEAD/GET the target,
+  // which the zero-outbound guarantee forbids — use the URL as given.
+  const resolvedUrl = indexOnly ? url : await resolveRedirects(url, abort);
 
   // If the resolved URL is on a different domain, replace the hostname
   if (!isSameDomain(url, resolvedUrl)) {
