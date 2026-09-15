@@ -121,11 +121,10 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
         ),
       ]);
 
-      // Guard against a vacuous pass: the enhanced request must actually have
-      // run on the enhanced proxy for the credit assertion to mean anything.
-      // `proxyUsed` still reports that proxy under its original wire value.
+      // The proxy param is ignored now: both requests run in auto, which on
+      // this non-stealth site resolves to a basic proxy.
       expect(basicScrape.metadata.proxyUsed).toBe("basic");
-      expect(enhancedScrape.metadata.proxyUsed).toBe("stealth");
+      expect(enhancedScrape.metadata.proxyUsed).toBe("basic");
 
       // Enhanced proxies carry no surcharge: same 1 credit as basic.
       expect(basicScrape.metadata.creditsUsed).toBe(1);

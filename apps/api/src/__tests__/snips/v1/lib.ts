@@ -63,11 +63,9 @@ export async function scrape(
 ): Promise<Document> {
   const raw = await scrapeRaw(body, identity);
   expectScrapeToSucceed(raw);
-  if (body.proxy === "stealth" || body.proxy === "enhanced") {
-    expect(raw.body.data.metadata.proxyUsed).toBe("stealth");
-  } else if (!body.proxy || body.proxy === "basic") {
-    expect(raw.body.data.metadata.proxyUsed).toBe("basic");
-  }
+  // The proxy param no longer selects a mode — every request runs in auto,
+  // so proxyUsed is decided at runtime (basic unless a proxy error forces an
+  // escalation to stealth) and is not assertable from the request here.
   return raw.body.data;
 }
 

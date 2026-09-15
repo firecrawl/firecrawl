@@ -582,23 +582,48 @@ const extractTransformRequired = <T extends ScrapeOptions>(obj: T): T => {
   return extractTransform(obj) as T;
 };
 
-const extractTransform = (obj: ScrapeOptions) => {
-  // Proxy default: "auto" when no non-default country is specified, so
-  // requests can upgrade to stealth on proxy failures. When a country is
-  // specified, keep the historical "basic" default.
-  if (obj.proxy === undefined) {
-    // Check both location fields: a non-default country in either one counts
-    // as specified, even if the other omitted its country (its schema fills
-    // in the "us-generic" default, which must not shadow the other field).
-    const hasNonDefaultCountry = [
-      obj.location?.country,
-      obj.geolocation?.country,
-    ].some(
-      country =>
-        country !== undefined && country.toLowerCase() !== "us-generic",
-    );
-    obj = { ...obj, proxy: hasNonDefaultCountry ? "basic" : "auto" };
+// Whether the request pins a country. Both `location.country` and the
+// deprecated `geolocation.country` fill in a "us-generic" default when their
+// object is present but the country is not, so that value does not count as
+// pinned. Checking both fields means a real country in either one counts, even
+// if the other defaulted.
+const hasNonDefaultCountry = (obj: ScrapeOptionsBase): boolean =>
+  [obj.location?.country, obj.geolocation?.country].some(
+    country => country !== undefined && country.toLowerCase() !== "us-generic",
+  );
+
+// The proxy a request will actually run with. Proxy mode is no longer
+// user-selectable in effect: basic/stealth/enhanced all collapse to auto, which
+// starts on a basic proxy and escalates to stealth only when a proxy error is
+// hit. Enhanced Mode carries no surcharge, so forcing auto only improves
+// success rates. Requests that pin a country are the exception: a stealth proxy
+// cannot honour one, so they stay on basic.
+const effectiveProxy = (obj: ScrapeOptionsBase): "basic" | "auto" =>
+  hasNonDefaultCountry(obj) ? "basic" : "auto";
+
+// The timeout a request will actually run with, derived from the timeout it
+// asked for. Single source of truth for the bumps applied by extractTransform,
+// so waitForRefine (which runs before the transform) can validate waitFor
+// against the effective timeout rather than the requested one.
+const effectiveTimeout = (obj: ScrapeOptionsBase): number | undefined => {
+  if ((obj as ScrapeOptions).agent) {
+    return 300000;
   }
+  // Only the auto proxy earns the longer window, because only it can spend time
+  // escalating to stealth. A pinned country keeps the request on basic, so it
+  // keeps the historical 30s default too.
+  if (obj.timeout === 30000 && effectiveProxy(obj) === "auto") {
+    return 120000;
+  }
+  return obj.timeout;
+};
+
+const extractTransform = (obj: ScrapeOptions) => {
+  // Both resolved up front from the *requested* timeout: the json/changeTracking
+  // blocks below rewrite obj.timeout, and the auto-proxy bump must not be
+  // suppressed by them (v2 already decides this from the unmutated input).
+  const requestedTimeout = obj.timeout;
+  const timeout = effectiveTimeout(obj);
 
   // Handle timeout
   if (
@@ -622,17 +647,14 @@ const extractTransform = (obj: ScrapeOptions) => {
     obj = { ...obj, timeout: 60000 };
   }
 
-  if ((obj as ScrapeOptions).agent) {
-    obj = { ...obj, timeout: 300000 };
-  }
-
-  if (
-    (obj.proxy === "stealth" ||
-      obj.proxy === "enhanced" ||
-      obj.proxy === "auto") &&
-    obj.timeout === 30000
-  ) {
-    obj = { ...obj, timeout: 120000 };
+  // The requested proxy is ignored: every request runs on the proxy that
+  // effectiveProxy picks, which is auto unless a country is pinned.
+  obj = { ...obj, proxy: effectiveProxy(obj) };
+  // Write the timeout back only when a bump actually applies. With no bump,
+  // effectiveTimeout echoes the requested value, and writing that back would
+  // undo the json/changeTracking bumps above.
+  if (timeout !== undefined && timeout !== requestedTimeout) {
+    obj = { ...obj, timeout };
   }
 
   if (includesFormat(obj.formats, "json")) {
@@ -680,7 +702,12 @@ const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
     if (typeof obj.timeout !== "number" || obj.timeout <= 0) {
       return false;
     }
-    return obj.waitFor <= obj.timeout / 2;
+    // Refinements run before the transform, so compare against the timeout the
+    // request will actually use. Math.max keeps this a pure loosening: an agent
+    // request is pinned to 300000, which can be below an explicitly requested
+    // timeout, and that must not start rejecting waitFor values we accepted.
+    const timeout = Math.max(obj.timeout, effectiveTimeout(obj) ?? obj.timeout);
+    return obj.waitFor <= timeout / 2;
   }
   return true;
 };
