@@ -97,6 +97,13 @@ export async function extractStatusController(
       }
     }
 
+    if (!extractRequest) {
+      return res.status(404).json({
+        success: false,
+        error: "Extract job not found",
+      });
+    }
+
     // Fall back to extractRequest info
     return res.status(200).json({
       success: true,
