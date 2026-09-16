@@ -29,6 +29,11 @@ import { sanitizeLogData, sanitizeText } from "./sanitize";
 import { isApiJobKind, writeApiJobAccess } from "../../lib/job-access-store";
 import { writeFeedbackJob } from "../../lib/feedback-job-store";
 import { setSpanAttributes, withSpan } from "../../lib/otel-tracer";
+import {
+  writeExtractJobState,
+  writeScrapeJobState,
+} from "../../lib/job-state-store";
+import { buildReplayContextFromScrape } from "../../lib/scrape-interact/scrape-replay";
 configDotenv();
 
 const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
@@ -709,6 +714,39 @@ async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
     await saveScrapeToGCS(scrape, logger);
   }
 
+  if (!scrape.is_parse && scrape.id === scrape.request_id) {
+    try {
+      const replay = scrape.zeroDataRetention
+        ? undefined
+        : buildReplayContextFromScrape({
+            id: scrape.id,
+            team_id: storedTeamId,
+            url: scrape.url,
+            options: scrape.options,
+          }).context;
+      await writeScrapeJobState(scrape.id, {
+        status: scrape.is_successful ? "completed" : "failed",
+        requestId: scrape.request_id,
+        completedAtMs: Date.now(),
+        creditsBilled: scrape.credits_cost,
+        ...(scrape.zeroDataRetention
+          ? {}
+          : {
+              ...(scrape.error ? { error: scrape.error } : {}),
+              ...(replay ? { replay } : {}),
+              ...(scrape.options.profile
+                ? { profile: scrape.options.profile }
+                : {}),
+              ...(typeof (scrape.options as any).origin === "string"
+                ? { origin: (scrape.options as any).origin }
+                : {}),
+            }),
+      });
+    } catch (error) {
+      logger.error("Failed to write scrape state to Bigtable", { error });
+    }
+  }
+
   if (
     !scrape.is_parse &&
     scrape.is_successful &&
@@ -1111,6 +1149,17 @@ async function logExtractInternal(
       // Fallback: save result to Redis with 24h TTL when GCS is not configured
       await saveExtractResult(extract.id, extract.result);
     }
+  }
+
+  try {
+    await writeExtractJobState(extract.id, {
+      status: extract.is_successful ? "completed" : "failed",
+      completedAtMs: Date.now(),
+      creditsBilled: extract.credits_cost,
+      ...(extract.error ? { error: extract.error } : {}),
+    });
+  } catch (error) {
+    logger.error("Failed to write extract state to Bigtable", { error });
   }
 }
 

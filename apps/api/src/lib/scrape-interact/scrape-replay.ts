@@ -11,7 +11,7 @@ export interface ScrapeContextRow {
   options: unknown;
 }
 
-type ReplayAction =
+export type ReplayAction =
   | { type: "wait"; milliseconds?: number; selector?: string }
   | { type: "click"; selector: string; all?: boolean }
   | { type: "write"; text: string }
@@ -20,7 +20,7 @@ type ReplayAction =
   | { type: "executeJavascript"; script: string }
   | { type: "screenshot" | "pdf" | "scrape" };
 
-interface ScrapeReplayContext {
+export interface ScrapeReplayContext {
   targetUrl: string;
   waitForMs: number;
   actions: ReplayAction[];

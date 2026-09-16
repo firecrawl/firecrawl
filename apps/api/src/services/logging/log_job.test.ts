@@ -15,6 +15,8 @@ const {
   metricInc,
   writeApiJobAccess,
   writeFeedbackJob,
+  writeScrapeJobState,
+  writeExtractJobState,
   withSpan,
   setSpanAttributes,
   spans,
@@ -61,6 +63,8 @@ const {
     metricInc: vi.fn(),
     writeApiJobAccess: vi.fn(async () => true),
     writeFeedbackJob: vi.fn(async () => true),
+    writeScrapeJobState: vi.fn(async () => true),
+    writeExtractJobState: vi.fn(async () => true),
     withSpan,
     setSpanAttributes: vi.fn(),
     spans,
@@ -110,6 +114,11 @@ vi.mock("../../lib/feedback-job-store", () => ({
   writeFeedbackJob,
 }));
 
+vi.mock("../../lib/job-state-store", () => ({
+  writeScrapeJobState,
+  writeExtractJobState,
+}));
+
 vi.mock("../../lib/keyless", () => ({
   keylessTeamUuid: vi.fn(() => null),
 }));
@@ -146,6 +155,8 @@ vi.mock("../../lib/otel-tracer", () => ({
 
 import {
   logRequest,
+  logScrape,
+  logExtract,
   logSearch,
   shutdownPubSubLogging,
   type LoggedSearch,
@@ -270,6 +281,63 @@ describe("logSearch", () => {
       name: "log_job.search",
       options: { zeroDataRetention: true },
     });
+  });
+});
+
+describe("operational job state logging", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    values.mockResolvedValue(undefined);
+    publishMessage.mockResolvedValue("message-id");
+  });
+
+  it("writes terminal standalone scrape state", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+    await logScrape({
+      id,
+      request_id: id,
+      url: "https://example.com",
+      is_successful: true,
+      time_taken: 1,
+      team_id: "team-id",
+      options: { formats: ["markdown"] } as any,
+      credits_cost: 2,
+      skipNuq: false,
+      zeroDataRetention: false,
+    });
+
+    expect(writeScrapeJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({
+        status: "completed",
+        requestId: id,
+        creditsBilled: 2,
+      }),
+    );
+  });
+
+  it("writes terminal extract state", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+    await logExtract({
+      id,
+      request_id: id,
+      urls: ["https://example.com"],
+      team_id: "team-id",
+      options: {},
+      model_kind: "fire-1",
+      credits_cost: 3,
+      is_successful: false,
+      error: "failed",
+    });
+
+    expect(writeExtractJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({
+        status: "failed",
+        creditsBilled: 3,
+        error: "failed",
+      }),
+    );
   });
 });
 

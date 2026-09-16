@@ -34,6 +34,7 @@ import {
 import { ScrapeJobSingleUrls } from "../../types";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
+import { readScrapeJobState } from "../../lib/job-state-store";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -61,18 +62,25 @@ export async function getJob(
   id: string,
   _logger = logger,
 ): Promise<PseudoJob<any> | null> {
-  const [nuqJob, dbScrape, gcsJob] = await Promise.all([
+  const [nuqJob, scrapeState, dbScrape, gcsJob] = await Promise.all([
     scrapeQueue.getJob(
       id,
       _logger,
     ) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
+    readScrapeJobState(id).catch(error => {
+      _logger.warn("Bigtable scrape state read failed; using legacy lookup", {
+        error,
+        scrapeId: id,
+      });
+      return null;
+    }),
     (config.USE_DB_AUTHENTICATION
       ? supabaseGetScrapeById(id)
       : null) as Promise<DBScrape | null>,
     (config.GCS_BUCKET_NAME ? getJobFromGCS(id) : null) as Promise<any | null>,
   ]);
 
-  if (!nuqJob && !dbScrape) return null;
+  if (!nuqJob && !scrapeState && !dbScrape) return null;
 
   if (nuqJob && nuqJob.data.mode !== "single_urls") {
     return null;
@@ -87,19 +95,24 @@ export async function getJob(
 
   const job: PseudoJob<any> = {
     id,
-    status: dbScrape
-      ? dbScrape.success
-        ? "completed"
-        : "failed"
-      : nuqJob!.status,
+    status:
+      scrapeState?.status ??
+      (dbScrape ? (dbScrape.success ? "completed" : "failed") : nuqJob!.status),
     returnvalue: Array.isArray(data) ? data[0] : data,
     data: {
-      scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : dbScrape!.options,
+      scrapeOptions: nuqJob
+        ? nuqJob.data.scrapeOptions
+        : (dbScrape?.options ?? null),
     },
-    timestamp: nuqJob
-      ? nuqJob.createdAt.valueOf()
-      : new Date(dbScrape!.created_at).valueOf(),
-    failedReason: (nuqJob ? nuqJob.failedReason : dbScrape!.error) || undefined,
+    timestamp:
+      scrapeState?.completedAtMs ??
+      (nuqJob
+        ? nuqJob.createdAt.valueOf()
+        : new Date(dbScrape!.created_at).valueOf()),
+    failedReason:
+      (scrapeState?.error ??
+        (nuqJob ? nuqJob.failedReason : dbScrape?.error)) ||
+      undefined,
   };
 
   return job;
