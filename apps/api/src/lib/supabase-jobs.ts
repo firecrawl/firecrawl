@@ -37,7 +37,11 @@ export const supabaseGetScrapeByIdDirect = async (
       .limit(1);
     return data ?? null;
   } catch (error) {
-    return null;
+    logger.error("Error in supabaseGetScrapeByIdDirect", {
+      error,
+      scrapeId,
+    });
+    throw error;
   }
 };
 
