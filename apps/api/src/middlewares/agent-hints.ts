@@ -37,7 +37,6 @@ export function agentHintsMiddleware(
         !feedback.zeroDataRetention;
       const hints = buildAgentHints({
         endpoint,
-        request: req.body,
         response: body,
         feedbackJobId: canSubmitFeedback ? feedback.jobId : undefined,
         searchFeedbackMaxAgeSec: config.SEARCH_FEEDBACK_MAX_AGE_SEC,

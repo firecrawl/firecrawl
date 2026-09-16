@@ -8,7 +8,6 @@ import type {
 } from "../types";
 import { SdkError } from "../types";
 import { HttpClient } from "../utils/httpClient";
-import { agentHintMetadata } from "../utils/agentHints";
 import {
   normalizeAxiosError,
   throwForBadResponse,
@@ -103,7 +102,6 @@ export async function scrapeAlexandria(
       requestId,
       alexandria: data.alexandria,
       creditsCost: data.creditsCost,
-      ...agentHintMetadata(res.data),
     };
   } catch (err: any) {
     try {
@@ -134,7 +132,6 @@ export async function findTools(
     throw Object.assign(
       new SdkError(item.error.message, item.error.status, item.error.code),
       { requestId: result.requestId },
-      agentHintMetadata(result),
     );
-  return { ...(item.data as FindToolsData), ...agentHintMetadata(result) };
+  return item.data as FindToolsData;
 }

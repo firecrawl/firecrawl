@@ -41,7 +41,7 @@ describe("agent hint response middleware", () => {
   it("opt-out header preserves the original envelope", async () => {
     const body = {
       success: true,
-      data: { tools: [{ options: [], response: {} }] },
+      data: { web: [{ url: "https://example.com" }] },
     };
     const response = await request(appFor({ body }))
       .post("/")
@@ -81,16 +81,6 @@ describe("agent hint response middleware", () => {
       .post("/")
       .send({});
     expect(response.statusCode).toBe(400);
-    expect(response.body).toEqual(body);
-  });
-
-  it("does not attach feedback to an unpersisted Alexandria scrape id", async () => {
-    const body = { success: true, scrape_id: jobId, data: { alexandria: [] } };
-    const response = await request(
-      appFor({ endpoint: "scrape", body, feedback: false }),
-    )
-      .post("/")
-      .send({ alexandria: [] });
     expect(response.body).toEqual(body);
   });
 });

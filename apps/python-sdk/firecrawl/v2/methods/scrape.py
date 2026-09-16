@@ -143,7 +143,6 @@ def _parse_scrape_alexandria_response(body: Dict[str, Any], request_id: str) -> 
         alexandria=results,
         credits_cost=data["creditsCost"],
         request_id=request_id,
-        **agent_hint_metadata(body),
     )
 
 

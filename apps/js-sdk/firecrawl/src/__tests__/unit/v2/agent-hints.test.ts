@@ -3,14 +3,13 @@ import { search } from "../../../v2/methods/search";
 import { scrape } from "../../../v2/methods/scrape";
 import { parse } from "../../../v2/methods/parse";
 import { map } from "../../../v2/methods/map";
-import { findTools, scrapeAlexandria } from "../../../v2/methods/tools";
 import {
   normalizeAxiosError,
   throwForBadResponse,
 } from "../../../v2/utils/errorHandler";
 
 const hints = [
-  "Inspect the returned definitions before choosing a tool.",
+  "Scrape a selected search result if you need full page content.",
   "Evaluate this result before submitting feedback.",
 ];
 function httpFor(body: object) {
@@ -70,46 +69,6 @@ describe("agent hints survive SDK response unwrapping", () => {
     expect(result).toEqual({
       id: "map-id",
       links: [{ url: "https://example.com" }],
-      agent_hints: hints,
-    });
-  });
-
-  it("preserves hints for Alexandria and its Find Tools convenience method", async () => {
-    const body = {
-      success: true,
-      scrape_id: "scrape-id",
-      agent_hints: hints,
-      data: {
-        creditsCost: 0,
-        alexandria: [{ data: { level: "tools", total: 0, items: [] } }],
-      },
-    };
-    const result = await scrapeAlexandria(httpFor(body), [
-      { provider: "firecrawl", capability: "find-tools" },
-    ]);
-    expect(result.agent_hints).toEqual(hints);
-    expect((await findTools(httpFor(body))).agent_hints).toEqual(hints);
-  });
-
-  it("keeps hints when Find Tools returns a nested validation error", async () => {
-    const http = httpFor({
-      success: true,
-      agent_hints: hints,
-      data: {
-        creditsCost: 0,
-        alexandria: [
-          {
-            error: {
-              message: "Invalid options",
-              status: 400,
-              code: "invalid_option",
-            },
-          },
-        ],
-      },
-    });
-    await expect(findTools(http)).rejects.toMatchObject({
-      code: "invalid_option",
       agent_hints: hints,
     });
   });
