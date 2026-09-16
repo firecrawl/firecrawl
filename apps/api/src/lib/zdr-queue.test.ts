@@ -10,8 +10,10 @@ const {
   withSpan,
   setSpanAttributes,
   recordSpanException,
+  publishEvents,
 } = vi.hoisted(() => {
   const consumerCallbacks: Array<(message: any) => Promise<void>> = [];
+  const publishEvents = new Map<string, (...args: any[]) => void>();
   const spans: Array<{ name: string; attributes: Record<string, unknown> }> =
     [];
   const withSpan = vi.fn(async (name: string, fn: (span: any) => any) => {
@@ -35,7 +37,9 @@ const {
       },
     ),
     close: vi.fn(async () => {}),
-    on: vi.fn(),
+    on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+      publishEvents.set(event, handler);
+    }),
   };
   const consumeChannel: any = {
     assertExchange: vi.fn(async () => {}),
@@ -67,6 +71,7 @@ const {
     withSpan,
     setSpanAttributes,
     recordSpanException: vi.fn(),
+    publishEvents,
   };
 });
 
@@ -101,8 +106,10 @@ function message(body: unknown) {
 
 describe("ZDR cleanup queue", () => {
   beforeEach(() => {
+    vi.resetModules();
     vi.clearAllMocks();
     consumerCallbacks.length = 0;
+    publishEvents.clear();
     spans.length = 0;
   });
 
@@ -125,6 +132,7 @@ describe("ZDR cleanup queue", () => {
       expect.objectContaining({
         persistent: true,
         messageId: "request-1",
+        correlationId: expect.any(String),
         timestamp: expect.any(Number),
         mandatory: true,
       }),
@@ -144,7 +152,6 @@ describe("ZDR cleanup queue", () => {
   });
 
   it("uses replicated queues and at-least-once delayed delivery", async () => {
-    vi.resetModules();
     const { enqueueZdrCleanupJob, shutdownZdrQueue } = await import(
       "./zdr-queue.js"
     );
@@ -180,7 +187,6 @@ describe("ZDR cleanup queue", () => {
   });
 
   it("acks completed jobs and requeues failures without a delivery cap", async () => {
-    vi.resetModules();
     const { consumeZdrCleanupJobs, shutdownZdrQueue } = await import(
       "./zdr-queue.js"
     );

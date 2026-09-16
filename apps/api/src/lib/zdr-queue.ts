@@ -1,4 +1,5 @@
 import amqp from "amqplib";
+import { randomUUID } from "node:crypto";
 import { config } from "../config";
 import { logger as _logger } from "./logger";
 import {
@@ -36,6 +37,10 @@ let subscribed = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
 let closed = false;
+const pendingPublishes = new WeakMap<
+  amqp.ConfirmChannel,
+  Map<string, { returned: boolean }>
+>();
 
 async function assertTopology(ch: amqp.Channel): Promise<void> {
   await ch.assertExchange(EXCHANGE, "direct", { durable: true });
@@ -102,6 +107,12 @@ function scheduleReconnect(): void {
     try {
       if (registeredHandler) {
         const ch = await getConsumeChannel();
+        if (closed) {
+          await ch.close().catch(() => {});
+          await connection?.close().catch(() => {});
+          resetCachedState();
+          return;
+        }
         await subscribe(ch, registeredHandler);
       }
       reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
@@ -124,6 +135,10 @@ async function getConnection(): Promise<amqp.ChannelModel> {
         clientProperties: { connection_name: "zdr-cleanup" },
       })
       .then(conn => {
+        if (closed) {
+          void conn.close().catch(() => {});
+          throw new Error("ZDR queue closed while connecting");
+        }
         connection = conn;
         conn.on("close", () => handleConnectionDrop("connection closed"));
         conn.on("error", error =>
@@ -150,6 +165,15 @@ async function createPublishChannel(): Promise<amqp.ConfirmChannel> {
     }
   });
   ch.on("error", error => logger.error("ZDR publish channel error", { error }));
+  const publishes = new Map<string, { returned: boolean }>();
+  pendingPublishes.set(ch, publishes);
+  ch.on("return", msg => {
+    const correlationId = msg.properties.correlationId;
+    if (correlationId) {
+      const publish = publishes.get(correlationId);
+      if (publish) publish.returned = true;
+    }
+  });
   return ch;
 }
 
@@ -205,6 +229,11 @@ function publishConfirmed(
   ch: amqp.ConfirmChannel,
   job: ZdrCleanupJob,
 ): Promise<void> {
+  const correlationId = randomUUID();
+  const publish = { returned: false };
+  const publishes = pendingPublishes.get(ch);
+  publishes?.set(correlationId, publish);
+
   return new Promise((resolve, reject) => {
     ch.sendToQueue(
       DELAY_QUEUE,
@@ -213,10 +242,19 @@ function publishConfirmed(
         persistent: true,
         contentType: "application/json",
         messageId: job.requestId,
+        correlationId,
         timestamp: Math.floor(Date.now() / 1000),
         mandatory: true,
       },
-      error => (error ? reject(error) : resolve()),
+      error => {
+        setImmediate(() => {
+          publishes?.delete(correlationId);
+          if (error) reject(error);
+          else if (publish.returned) {
+            reject(new Error("RabbitMQ returned unroutable ZDR cleanup job"));
+          } else resolve();
+        });
+      },
     );
   });
 }
@@ -349,8 +387,15 @@ export async function consumeZdrCleanupJobs(
   closed = false;
   try {
     const ch = await getConsumeChannel();
+    if (closed) {
+      await ch.close().catch(() => {});
+      await connection?.close().catch(() => {});
+      resetCachedState();
+      return;
+    }
     await subscribe(ch, handler);
   } catch (error) {
+    if (closed) return;
     logger.error("Failed to start ZDR queue consumer; retrying", { error });
     resetCachedState();
     scheduleReconnect();
