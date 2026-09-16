@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
 import { Response } from "express";
+import type { Logger } from "winston";
 import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
@@ -47,6 +48,7 @@ import {
   getSafeMode,
   SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
+import { uuidv7AgeMs } from "../../lib/uuidv7-timestamp";
 import { RequestWithAuth, ScrapeOptions } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import {
@@ -126,6 +128,37 @@ interface BrowserDeleteResponse {
   error?: string;
 }
 
+type InteractRejection =
+  | "safe_mode"
+  | "db_auth_disabled"
+  | "scrape_not_found"
+  | "forbidden"
+  | "no_replay_context"
+  | "session_destroyed"
+  | "session_not_found";
+
+/**
+ * One structured line per rejected interact request. `scrapeAgeMs` is decoded
+ * from the UUIDv7 scrape id so a rejection can be read alongside how old the
+ * scrape is.
+ */
+function logInteractRejected(
+  logger: Logger,
+  scrapeId: string,
+  status: number,
+  reason: InteractRejection,
+  extra: Record<string, unknown> = {},
+): void {
+  logger.warn("Interact request rejected", {
+    canonicalLog: "api/v2/scrapeInteract",
+    outcome: "rejected",
+    status,
+    reason,
+    scrapeAgeMs: uuidv7AgeMs(scrapeId),
+    ...extra,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // POST /v2/scrape/:jobId/interact
 // ---------------------------------------------------------------------------
@@ -140,13 +173,6 @@ export async function scrapeInteractController(
 ) {
   req.body = browserExecuteRequestSchema.parse(req.body);
 
-  if (getSafeMode(req.acuc?.flags)) {
-    return res.status(403).json({
-      success: false,
-      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
-    });
-  }
-
   const scrapeId = req.params.jobId;
   const { code: rawCode, prompt, language, timeout, origin } = req.body;
 
@@ -157,9 +183,18 @@ export async function scrapeInteractController(
     method: "scrapeInteractController",
   });
 
+  if (getSafeMode(req.acuc?.flags)) {
+    logInteractRejected(logger, scrapeId, 403, "safe_mode");
+    return res.status(403).json({
+      success: false,
+      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+    });
+  }
+
   // --- Validate scrape ownership ---
 
   if (config.USE_DB_AUTHENTICATION !== true) {
+    logInteractRejected(logger, scrapeId, 501, "db_auth_disabled");
     return res.status(501).json({
       success: false,
       error:
@@ -167,10 +202,15 @@ export async function scrapeInteractController(
     });
   }
 
+  const lookupStartedAt = Date.now();
   const scrape = (await supabaseGetScrapeById(
     scrapeId,
   )) as ScrapeContextRow | null;
   if (!scrape) {
+    logInteractRejected(logger, scrapeId, 404, "scrape_not_found", {
+      source: "replica",
+      lookupMs: Date.now() - lookupStartedAt,
+    });
     return res.status(404).json({ success: false, error: "Job not found." });
   }
   // Keyless scrapes are persisted under a deterministic per-IP UUID (the
@@ -179,6 +219,9 @@ export async function scrapeInteractController(
   const expectedScrapeTeam =
     keylessTeamUuid(req.auth.team_id) ?? req.auth.team_id;
   if (scrape.team_id !== expectedScrapeTeam) {
+    logInteractRejected(logger, scrapeId, 403, "forbidden", {
+      scrapeTeamId: scrape.team_id,
+    });
     return res.status(403).json({ success: false, error: "Forbidden." });
   }
 
@@ -186,6 +229,9 @@ export async function scrapeInteractController(
 
   const replay = buildReplayContextFromScrape(scrape);
   if (!replay.context) {
+    logInteractRejected(logger, scrapeId, 409, "no_replay_context", {
+      replayError: replay.error ?? null,
+    });
     return res.status(409).json({
       success: false,
       error:
@@ -253,9 +299,15 @@ export async function scrapeInteractController(
   }
 
   if (session.team_id !== req.auth.team_id) {
+    logInteractRejected(logger, scrapeId, 403, "forbidden", {
+      sessionId: session.id,
+    });
     return res.status(403).json({ success: false, error: "Forbidden." });
   }
   if (session.status === "destroyed") {
+    logInteractRejected(logger, scrapeId, 410, "session_destroyed", {
+      sessionId: session.id,
+    });
     return res
       .status(410)
       .json({ success: false, error: "Browser session has been destroyed." });
@@ -416,11 +468,15 @@ export async function scrapeStopInteractiveBrowserController(
   const session = await getBrowserSessionFromScrape(req.params.jobId);
 
   if (!session) {
+    logInteractRejected(logger, req.params.jobId, 404, "session_not_found");
     return res
       .status(404)
       .json({ success: false, error: "Browser session not found." });
   }
   if (session.team_id !== req.auth.team_id) {
+    logInteractRejected(logger, req.params.jobId, 403, "forbidden", {
+      sessionId: session.id,
+    });
     return res.status(403).json({ success: false, error: "Forbidden." });
   }
 

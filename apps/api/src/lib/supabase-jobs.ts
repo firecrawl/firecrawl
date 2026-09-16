@@ -10,6 +10,7 @@ import { logger } from "./logger";
  * @returns Scrape data or null
  */
 export const supabaseGetScrapeById = async (scrapeId: string): Promise<any> => {
+  const startedAt = Date.now();
   try {
     const [data] = await dbRr
       .select()
@@ -18,6 +19,16 @@ export const supabaseGetScrapeById = async (scrapeId: string): Promise<any> => {
       .limit(1);
     return data ?? null;
   } catch (error) {
+    // Callers treat null as "row does not exist". Log the thrown error here so
+    // it stays distinguishable from a missing row.
+    logger.error("Scrape lookup error on replica", {
+      module: "supabase-jobs",
+      method: "supabaseGetScrapeById",
+      scrapeId,
+      source: "replica",
+      durationMs: Date.now() - startedAt,
+      error,
+    });
     return null;
   }
 };
