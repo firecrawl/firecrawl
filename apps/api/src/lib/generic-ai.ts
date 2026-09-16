@@ -9,8 +9,9 @@ import { fireworks } from "@ai-sdk/fireworks";
 import { deepinfra } from "@ai-sdk/deepinfra";
 import { createVertex } from "@ai-sdk/google-vertex";
 
-type Provider =
+export type Provider =
   | "openai"
+  | "atlascloud"
   | "ollama"
   | "anthropic"
   | "groq"
@@ -19,13 +20,30 @@ type Provider =
   | "fireworks"
   | "deepinfra"
   | "vertex";
-const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
+
+export function selectDefaultProvider(
+  ollamaBaseUrl?: string,
+  atlasCloudApiKey?: string,
+): Provider {
+  if (ollamaBaseUrl) return "ollama";
+  if (atlasCloudApiKey) return "atlascloud";
+  return "openai";
+}
+
+const defaultProvider = selectDefaultProvider(
+  config.OLLAMA_BASE_URL,
+  config.ATLASCLOUD_API_KEY,
+);
 
 const providerList: Record<Provider, any> = {
   openai: createOpenAI({
     apiKey: config.OPENAI_API_KEY,
     baseURL: config.OPENAI_BASE_URL,
   }), //OPENAI_API_KEY
+  atlascloud: createOpenAI({
+    apiKey: config.ATLASCLOUD_API_KEY,
+    baseURL: "https://api.atlascloud.ai/v1",
+  }),
   ollama: createOllama({
     baseURL: config.OLLAMA_BASE_URL,
   }),
@@ -57,10 +75,15 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
   if (name === "gemini-2.5-pro") {
     name = "gemini-2.5-pro";
   }
-  const modelName = config.MODEL_NAME || name;
+  const modelName =
+    config.MODEL_NAME ||
+    (provider === "atlascloud" ? "deepseek-ai/deepseek-v4-pro" : name);
   // o3-mini returns empty text via the Responses API — force Chat Completions
   if (provider === "openai" && modelName.startsWith("o3-mini")) {
     return providerList.openai.chat(modelName);
+  }
+  if (provider === "atlascloud") {
+    return providerList.atlascloud.chat(modelName);
   }
   return providerList[provider](modelName);
 }
