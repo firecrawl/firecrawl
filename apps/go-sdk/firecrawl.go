@@ -1081,9 +1081,8 @@ func (c *Client) paginateCrawl(ctx context.Context, job *CrawlJob) (*CrawlJob, e
 	if job.Data == nil {
 		job.Data = []Document{}
 	}
-	current := job
-	for current.Next != "" {
-		raw, err := c.http.getAbsolute(ctx, current.Next)
+	for job.Next != "" {
+		raw, err := c.http.getAbsolute(ctx, job.Next)
 		if err != nil {
 			return nil, err
 		}
@@ -1092,7 +1091,7 @@ func (c *Client) paginateCrawl(ctx context.Context, job *CrawlJob) (*CrawlJob, e
 			return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode pagination response: %v", err)}
 		}
 		job.Data = append(job.Data, nextPage.Data...)
-		current = &nextPage
+		job.Next = nextPage.Next
 	}
 	return job, nil
 }
@@ -1101,9 +1100,8 @@ func (c *Client) paginateBatchScrape(ctx context.Context, job *BatchScrapeJob) (
 	if job.Data == nil {
 		job.Data = []Document{}
 	}
-	current := job
-	for current.Next != "" {
-		raw, err := c.http.getAbsolute(ctx, current.Next)
+	for job.Next != "" {
+		raw, err := c.http.getAbsolute(ctx, job.Next)
 		if err != nil {
 			return nil, err
 		}
@@ -1112,7 +1110,7 @@ func (c *Client) paginateBatchScrape(ctx context.Context, job *BatchScrapeJob) (
 			return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode pagination response: %v", err)}
 		}
 		job.Data = append(job.Data, nextPage.Data...)
-		current = &nextPage
+		job.Next = nextPage.Next
 	}
 	return job, nil
 }
