@@ -145,3 +145,28 @@ it("only lets trusted agent interop bypass billing, and prefers its request id",
   );
   expect(mocks.log).not.toHaveBeenCalled();
 });
+
+it("uses a UUIDv7 scrape ID for request storage while preserving caller identity", async () => {
+  mocks.retrieve.mockImplementation(async ({ scrapeId }) => ({
+    ...result([{ ...call, creditsCost: 0, data: {} }]),
+    scrapeId,
+  }));
+  const response = await request(app)
+    .post("/v2/scrape")
+    .set("x-request-id", "caller-id")
+    .send({ alexandria: call });
+  expect(response.status).toBe(200);
+  expect(response.body.scrape_id).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  expect(mocks.retrieve).toHaveBeenCalledWith(
+    expect.objectContaining({
+      requestId: "caller-id",
+      scrapeId: response.body.scrape_id,
+    }),
+  );
+  expect(mocks.log).toHaveBeenCalledWith(
+    expect.objectContaining({ id: response.body.scrape_id }),
+  );
+  expect(response.headers["x-request-id"]).toBe("caller-id");
+});
