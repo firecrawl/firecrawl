@@ -25,14 +25,16 @@ export async function getExtractV3AgentStatus(
     throw new Error("Agent beta is not enabled.");
   }
 
-  const response = await fetch(
-    `${config.EXTRACT_V3_BETA_URL}/internal/extracts/${encodeURIComponent(id)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
-      },
-    },
+  const url = new URL(
+    `/internal/extracts/${encodeURIComponent(id)}`,
+    config.EXTRACT_V3_BETA_URL,
   );
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
 
   if (!response.ok) {
     throw new Error(

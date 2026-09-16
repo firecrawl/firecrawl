@@ -68,7 +68,11 @@ describe("agentStatusController", () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "spark-1-pro" }),
+      expect.objectContaining({
+        success: true,
+        status: "failed",
+        model: "spark-1-pro",
+      }),
     );
   });
   it("returns effort from agent options", async () => {
