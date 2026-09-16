@@ -269,7 +269,10 @@ export async function fireEngineScrape<
     logger.debug("Scrape job failed", {
       status,
     });
-    if (failedParse.data.failureReason === "site_protection") {
+    if (
+      failedParse.data.failureReason === "site_protection" &&
+      meta.internalOptions.safeMode?.disableSiteHandling
+    ) {
       throw new SiteRestrictionError();
     }
     if (
