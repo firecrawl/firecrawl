@@ -33,8 +33,11 @@ const parseViewportDimension = (
   value: string | undefined,
   fallback: number,
 ) => {
-  const parsed = Number.parseInt(value ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  // Accept only a whole positive integer ("4000px", "1e3" and "12.5" fall back).
+  const trimmed = (value ?? '').trim();
+  if (!/^\d+$/.test(trimmed)) return fallback;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 const VIEWPORT_WIDTH = parseViewportDimension(
   process.env.VIEWPORT_WIDTH,
