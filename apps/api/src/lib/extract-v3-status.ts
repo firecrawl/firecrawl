@@ -26,8 +26,7 @@ export async function getExtractV3AgentStatus(
   }
 
   const url = new URL(
-    `/internal/extracts/${encodeURIComponent(id)}`,
-    config.EXTRACT_V3_BETA_URL,
+    `${config.EXTRACT_V3_BETA_URL.replace(/\/$/, "")}/internal/extracts/${encodeURIComponent(id)}`,
   );
   const response = await fetch(url, {
     headers: {
