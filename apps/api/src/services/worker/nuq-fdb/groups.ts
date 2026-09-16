@@ -65,11 +65,13 @@ export class NuqFdbGroupOps {
     if (countable) {
       bumpGroupStatusCount(tn, this.ks, gid, prevStatus, -1);
       bumpGroupStatusCount(tn, this.ks, gid, outcome, 1);
-      tn.setVersionstampSuffixedKey(
-        this.ks.groupTerminalPrefix(gid, outcome),
-        Buffer.from(id, "utf8"),
-        uvSuffix(txc),
-      );
+      if (outcome === "completed") {
+        tn.setVersionstampSuffixedKey(
+          this.ks.groupDonePrefix(gid),
+          Buffer.from(id, "utf8"),
+          uvSuffix(txc),
+        );
+      }
     }
 
     const remSnap = decodeI64(

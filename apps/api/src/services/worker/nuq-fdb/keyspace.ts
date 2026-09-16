@@ -270,22 +270,6 @@ export class NuqFdbKeyspace {
   groupDoneRange(gid: string) {
     return this.packRange(["g", gid, "done"]);
   }
-  groupFailedPrefix(gid: string): Buffer {
-    return this.pack(["g", gid, "failed"]);
-  }
-  groupFailedRange(gid: string) {
-    return this.packRange(["g", gid, "failed"]);
-  }
-  groupTerminalPrefix(gid: string, status: "completed" | "failed"): Buffer {
-    return status === "completed"
-      ? this.groupDonePrefix(gid)
-      : this.groupFailedPrefix(gid);
-  }
-  groupTerminalRange(gid: string, status: "completed" | "failed") {
-    return status === "completed"
-      ? this.groupDoneRange(gid)
-      : this.groupFailedRange(gid);
-  }
   groupFinishedJob(gid: string): Buffer {
     return this.pack(["g", gid, "fjob"]);
   }

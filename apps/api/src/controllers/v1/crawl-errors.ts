@@ -8,9 +8,6 @@ import {
 import { getCrawl } from "../../lib/crawl-redis";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { configDotenv } from "dotenv";
-import { eq } from "drizzle-orm";
-import { dbRr } from "../../db/connection";
-import * as schema from "../../db/schema";
 import { getCrawlJobAccess } from "../../lib/operational-job-access";
 import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
