@@ -151,6 +151,38 @@ describe("ZDR cleanup queue", () => {
     await shutdownZdrQueue();
   });
 
+  it("retries a mandatory publish returned as unroutable", async () => {
+    vi.useFakeTimers();
+    try {
+      publishChannel.sendToQueue.mockImplementationOnce(
+        (
+          _queue: string,
+          _content: Buffer,
+          options: { correlationId: string },
+          callback: (error: Error | null) => void,
+        ) => {
+          publishEvents.get("return")?.({
+            properties: { correlationId: options.correlationId },
+          });
+          callback(null);
+          return true;
+        },
+      );
+      const { enqueueZdrCleanupJob, shutdownZdrQueue } = await import(
+        "./zdr-queue.js"
+      );
+
+      const enqueue = enqueueZdrCleanupJob("request-returned");
+      await vi.runAllTimersAsync();
+      await enqueue;
+
+      expect(publishChannel.sendToQueue).toHaveBeenCalledTimes(2);
+      await shutdownZdrQueue();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("uses replicated queues and at-least-once delayed delivery", async () => {
     const { enqueueZdrCleanupJob, shutdownZdrQueue } = await import(
       "./zdr-queue.js"
