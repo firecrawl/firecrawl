@@ -66,11 +66,7 @@ export async function extractStatusController(
             : "failed",
         error: agent?.error || undefined,
         data,
-        expiresAt: new Date(
-          agent?.created_at
-            ? new Date(agent.created_at).getTime() + 1000 * 60 * 60 * 24
-            : access.expiresAtMs,
-        ).toISOString(),
+        expiresAt: new Date(access.expiresAtMs).toISOString(),
         creditsUsed: agent?.credits_cost,
       });
     }
@@ -95,9 +91,7 @@ export async function extractStatusController(
           data,
           status: dbExtract.is_successful ? "completed" : "failed",
           error: dbExtract.error || undefined,
-          expiresAt: new Date(
-            new Date(dbExtract.created_at).getTime() + 1000 * 60 * 60 * 24,
-          ).toISOString(),
+          expiresAt: new Date(access!.expiresAtMs).toISOString(),
         });
       }
     }

@@ -206,11 +206,7 @@ export async function agentStatusController(
     suggestions,
     pendingApproval,
     exchange,
-    expiresAt: new Date(
-      agent?.created_at
-        ? new Date(agent.created_at).getTime() + 1000 * 60 * 60 * 24
-        : access.expiresAtMs,
-    ).toISOString(),
+    expiresAt: new Date(access.expiresAtMs).toISOString(),
     creditsUsed: agent?.credits_cost,
   });
 }
