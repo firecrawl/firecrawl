@@ -38,10 +38,10 @@ export function shouldSkipPersistenceForJobZdr(
   job: FeedbackJobRow,
   options: FeedbackRecordOptions,
 ): boolean {
-  if (options.skipZdrPersistence === false) return false;
   if (job.zero_data_retention !== undefined) {
     return job.zero_data_retention;
   }
+  if (options.skipZdrPersistence === false) return false;
 
   if (job.endpoint === "search") {
     return searchOptionsUseZdr(job.options);
