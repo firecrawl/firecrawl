@@ -27,6 +27,23 @@ const MAX_CONCURRENT_PAGES = Math.max(
   1,
   Number.parseInt(process.env.MAX_CONCURRENT_PAGES ?? '10', 10) || 10,
 );
+// Browser viewport for every context. A taller viewport lets pages that
+// virtualize long lists render more rows without scroll actions.
+const parseViewportDimension = (
+  value: string | undefined,
+  fallback: number,
+) => {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+const VIEWPORT_WIDTH = parseViewportDimension(
+  process.env.VIEWPORT_WIDTH,
+  1280,
+);
+const VIEWPORT_HEIGHT = parseViewportDimension(
+  process.env.VIEWPORT_HEIGHT,
+  800,
+);
 const ALLOW_LOCAL_WEBHOOKS =
   (process.env.ALLOW_LOCAL_WEBHOOKS || 'False').toUpperCase() === 'TRUE';
 
@@ -209,7 +226,7 @@ const createContext = async (
   securityState: ContextSecurityState;
 }> => {
   const userAgent = userAgentOverride || new UserAgent().toString();
-  const viewport = { width: 1280, height: 800 };
+  const viewport = { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT };
   const securityState: ContextSecurityState = {
     blockedNavigationRequestUrl: null,
   };
