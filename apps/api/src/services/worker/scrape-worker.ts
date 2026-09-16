@@ -1105,7 +1105,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         sourceURL: job.data.url,
       } as any;
 
-      if (sender) {
+      if (sender && !isCancelled) {
         if (job.data.crawlerOptions !== null) {
           sender.send(WebhookEvent.CRAWL_PAGE, {
             success: false,

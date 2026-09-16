@@ -7,6 +7,7 @@ export enum WebhookEvent {
   CRAWL_STARTED = "crawl.started",
   CRAWL_PAGE = "crawl.page",
   CRAWL_COMPLETED = "crawl.completed",
+  CRAWL_CANCELLED = "crawl.cancelled",
   BATCH_SCRAPE_STARTED = "batch_scrape.started",
   BATCH_SCRAPE_PAGE = "batch_scrape.page",
   BATCH_SCRAPE_COMPLETED = "batch_scrape.completed",
@@ -21,6 +22,7 @@ export type WebhookEventDataMap = {
   [WebhookEvent.CRAWL_STARTED]: CrawlStartedData;
   [WebhookEvent.CRAWL_PAGE]: CrawlPageData;
   [WebhookEvent.CRAWL_COMPLETED]: CrawlCompletedData;
+  [WebhookEvent.CRAWL_CANCELLED]: CrawlCancelledData;
   [WebhookEvent.BATCH_SCRAPE_STARTED]: BatchScrapeStartedData;
   [WebhookEvent.BATCH_SCRAPE_PAGE]: BatchScrapePageData;
   [WebhookEvent.BATCH_SCRAPE_COMPLETED]: BatchScrapeCompletedData;
@@ -84,6 +86,12 @@ interface CrawlPageData extends BaseWebhookData {
 interface CrawlCompletedData extends BaseWebhookData {
   success: true;
   data: Document[] | WebhookDocumentLink[]; // empty array or links (v0 compatible)
+}
+
+interface CrawlCancelledData extends BaseWebhookData {
+  success: false;
+  error: string;
+  data: [];
 }
 
 // batch scrape
