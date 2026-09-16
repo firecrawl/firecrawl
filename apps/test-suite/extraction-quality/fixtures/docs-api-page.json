@@ -1,0 +1,68 @@
+{
+  "name": "API docs extraction",
+  "url": "https://example.com/docs/api/scrape",
+  "actual": {
+    "product": {
+      "name": "Example API"
+    },
+    "endpoint": {
+      "method": "POST",
+      "path": "/v1/scrape",
+      "auth": "Bearer token"
+    },
+    "parameters": [
+      {
+        "name": "url",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "formats",
+        "type": "array",
+        "required": false
+      },
+      {
+        "name": "timeout",
+        "type": "number",
+        "required": false
+      }
+    ],
+    "markdown": "# Scrape API\n\nSend a `POST /v1/scrape` request with a target URL.\n\n```bash\ncurl -X POST https://api.example.com/v1/scrape\n```\n\n## Parameters\n\n- `url` string required\n- `formats` array optional\n- `timeout` number optional\n\n[API reference](/docs/api)"
+  },
+  "expected": {
+    "minScore": 0.93,
+    "requiredFields": [
+      "product.name",
+      "endpoint.method",
+      "endpoint.path",
+      "parameters.0.name",
+      "parameters.0.required"
+    ],
+    "values": [
+      {
+        "path": "endpoint.path",
+        "value": "/v1/scrape",
+        "threshold": 0.75
+      },
+      {
+        "path": "parameters.1.name",
+        "value": "formats",
+        "threshold": 0.8
+      }
+    ],
+    "tables": [
+      {
+        "path": "parameters",
+        "minRows": 3,
+        "requiredColumns": ["name", "type", "required"]
+      }
+    ],
+    "sections": ["Scrape API", "Parameters"],
+    "markdown": {
+      "headings": true,
+      "lists": true,
+      "links": true,
+      "codeBlocks": true
+    }
+  }
+}
