@@ -50,6 +50,12 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function isNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = (error as { code?: unknown }).code;
+  return code === 5 || code === 404;
+}
+
 function parseScrapeState(value: Buffer | string): ScrapeJobState {
   const row = parseState<StoredScrapeJobState>(
     value,
@@ -131,7 +137,7 @@ async function readState<T>(params: {
   id: string;
   tableId: string | undefined;
   spanName: string;
-  parse: (value: Buffer | string) => T;
+  parse: (value: Buffer | string) => T & { completedAtMs: number };
 }): Promise<T | null> {
   const tableId = params.tableId;
   if (!tableId) return null;
@@ -143,18 +149,30 @@ async function readState<T>(params: {
       "bigtable.operation": "getRows",
     });
     const table = await getBigtableTable(tableId);
-    const [rows] = await table.getRows({
-      keys: [saltedUuidV7RowKey(params.id)],
-      filter: [{ column: { name: QUALIFIER, cellLimit: 1 } }],
-    });
+    let rows;
+    try {
+      [rows] = await table.getRows({
+        keys: [saltedUuidV7RowKey(params.id)],
+        filter: [{ column: { name: QUALIFIER, cellLimit: 1 } }],
+      });
+    } catch (error) {
+      if (!isNotFoundError(error)) throw error;
+      setSpanAttributes(span, { "bigtable.read.outcome": "not_found" });
+      return null;
+    }
     const cells = rows[0]?.data?.[FAMILY]?.[QUALIFIER];
     const cell = Array.isArray(cells) ? cells[0] : undefined;
     if (cell?.value == null) {
       setSpanAttributes(span, { "bigtable.read.outcome": "not_found" });
       return null;
     }
+    const state = params.parse(cell.value);
+    if (state.completedAtMs + STATE_RETENTION_MS <= Date.now()) {
+      setSpanAttributes(span, { "bigtable.read.outcome": "expired" });
+      return null;
+    }
     setSpanAttributes(span, { "bigtable.read.outcome": "found" });
-    return params.parse(cell.value);
+    return state;
   });
 }
 

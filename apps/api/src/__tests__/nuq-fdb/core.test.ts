@@ -649,26 +649,52 @@ describeIf("NuQ FDB core", () => {
       gate(10),
     );
     const taken = await takeAll(queue, 4);
-    const failureOrder: string[] = [];
-    const urlOrder: string[] = [];
+    const expectedFailed: {
+      id: string;
+      failedReason: string;
+      url: string;
+    }[] = [];
     for (const [index, job] of taken.entries()) {
       await queue.jobFail(job.id, job.lock!, `failure-${index}`);
-      failureOrder.push(job.id);
-      urlOrder.push(job.data.url);
+      expectedFailed.push({
+        id: job.id,
+        failedReason: `failure-${index}`,
+        url: job.data.url,
+      });
     }
+    expectedFailed.sort((a, b) => a.id.localeCompare(b.id));
 
     const page1 = await queue.getGroupJobs(gid, "failed", 2, 0);
     const page2 = await queue.getGroupJobs(gid, "failed", 2, 2);
-    expect(page1.map(j => j.id)).toEqual(failureOrder.slice(0, 2));
-    expect(page2.map(j => j.id)).toEqual(failureOrder.slice(2));
-    expect([...page1, ...page2].map(j => j.failedReason)).toEqual([
-      "failure-0",
-      "failure-1",
-      "failure-2",
-      "failure-3",
-    ]);
-    expect([...page1, ...page2].map(j => j.data.url)).toEqual(urlOrder);
+    expect(
+      [...page1, ...page2].map(job => ({
+        id: job.id,
+        failedReason: job.failedReason,
+        url: job.data.url,
+      })),
+    ).toEqual(expectedFailed);
     expect(await queue.getGroupJobs(gid, "completed")).toEqual([]);
+  });
+
+  test("getGroupJobs keeps failed ZDR jobs listable after input cleanup", async () => {
+    const { queue, group } = await makeCtx("failed-zdr-listing");
+    const owner = freshOwner();
+    const gid = randomUUID();
+    const id = randomUUID();
+    await group.addGroup(gid, owner);
+    await queue.addJob(
+      id,
+      scrapeData({ zeroDataRetention: true }),
+      { ownerId: owner, groupId: gid },
+      gate(10),
+    );
+    const [job] = await takeAll(queue, 1);
+    await queue.jobFail(job.id, job.lock!, "zdr failure");
+
+    const failed = await queue.getGroupJobs(gid, "failed");
+    expect(failed).toHaveLength(1);
+    expect(failed[0]).toMatchObject({ id, failedReason: "zdr failure" });
+    expect(failed[0].data).toBeNull();
   });
 
   test("getGroupAnyJob returns a single_urls member and checks ownership", async () => {

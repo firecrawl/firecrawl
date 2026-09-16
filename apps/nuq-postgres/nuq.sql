@@ -93,9 +93,8 @@ CREATE INDEX IF NOT EXISTS nuq_queue_scrape_group_owner_mode_idx ON nuq.queue_sc
 -- For getGroupNumericStats: query by group_id and data->>'mode', grouped by status
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_group_mode_status_idx ON nuq.queue_scrape (group_id, status) WHERE ((data->>'mode') = 'single_urls');
 
--- For getGroupJobs: query by group_id and terminal status, data->>'mode', ordered by finished_at, created_at
+-- For getGroupJobs: query completed jobs by group_id and data->>'mode', ordered by finished_at, created_at
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_group_completed_listing_idx ON nuq.queue_scrape (group_id, finished_at ASC, created_at ASC) WHERE (status = 'completed'::nuq.job_status AND (data->>'mode') = 'single_urls');
-CREATE INDEX IF NOT EXISTS nuq_queue_scrape_group_failed_listing_idx ON nuq.queue_scrape (group_id, finished_at ASC, created_at ASC) WHERE (status = 'failed'::nuq.job_status AND (data->>'mode') = 'single_urls');
 
 -- For group finish cron
 CREATE INDEX IF NOT EXISTS idx_queue_scrape_group_status ON nuq.queue_scrape (group_id, status) WHERE status IN ('active', 'queued');
@@ -165,7 +164,6 @@ SELECT cron.schedule('nuq_reindex_queue_scrape_backlog_group_id',       '0 6 * *
 SELECT cron.schedule('nuq_reindex_queue_scrape_backlog_times_out_at',   '20 6 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_backlog_times_out_at_idx;$$);
 
 SELECT cron.schedule('nuq_reindex_queue_scrape_completed_standalone',   '40 6 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_completed_standalone_created_at_idx;$$);
-SELECT cron.schedule('nuq_reindex_queue_scrape_group_failed_listing',   '20 8 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_group_failed_listing_idx;$$);
 SELECT cron.schedule('nuq_reindex_queue_scrape_failed_standalone',      '40 8 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_failed_standalone_created_at_idx;$$);
 SELECT cron.schedule('nuq_reindex_queue_scrape_group_id',               '40 9 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_group_id_idx;$$);
 

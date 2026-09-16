@@ -26,7 +26,11 @@ import { trackFirstSurfaceUse } from "../posthog";
 import { PubSub, type PublishOptions, type Topic } from "@google-cloud/pubsub";
 import { pubsubLogPublishTotal } from "../../lib/pubsub-log-metrics";
 import { sanitizeLogData, sanitizeText } from "./sanitize";
-import { isApiJobKind, writeApiJobAccess } from "../../lib/job-access-store";
+import {
+  isApiJobKind,
+  normalizeJobAccessTeamId,
+  writeApiJobAccess,
+} from "../../lib/job-access-store";
 import { writeFeedbackJob } from "../../lib/feedback-job-store";
 import { setSpanAttributes, withSpan } from "../../lib/otel-tracer";
 import {
@@ -556,7 +560,7 @@ async function logRequestInternal(request: LoggedRequest) {
     request.team_id === "preview" || request.team_id?.startsWith("preview_")
       ? previewTeamId
       : request.team_id;
-  const jobAccessTeamId = keylessTeamUuid(request.team_id) ?? storedTeamId;
+  const jobAccessTeamId = normalizeJobAccessTeamId(request.team_id);
 
   if (request.jobAccess !== false && isApiJobKind(request.kind)) {
     try {
@@ -705,15 +709,6 @@ async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
     logger,
   );
 
-  if (
-    !scrape.is_parse &&
-    scrape.doc &&
-    config.GCS_BUCKET_NAME &&
-    !(scrape.skipNuq && scrape.zeroDataRetention)
-  ) {
-    await saveScrapeToGCS(scrape, logger);
-  }
-
   if (!scrape.is_parse && scrape.id === scrape.request_id) {
     try {
       const replay = scrape.zeroDataRetention
@@ -745,6 +740,15 @@ async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
     } catch (error) {
       logger.error("Failed to write scrape state to Bigtable", { error });
     }
+  }
+
+  if (
+    !scrape.is_parse &&
+    scrape.doc &&
+    config.GCS_BUCKET_NAME &&
+    !(scrape.skipNuq && scrape.zeroDataRetention)
+  ) {
+    await saveScrapeToGCS(scrape, logger);
   }
 
   if (
@@ -1142,15 +1146,6 @@ async function logExtractInternal(
     logger,
   );
 
-  if (extract.result) {
-    if (config.GCS_BUCKET_NAME) {
-      await saveExtractToGCS(extract, logger);
-    } else {
-      // Fallback: save result to Redis with 24h TTL when GCS is not configured
-      await saveExtractResult(extract.id, extract.result);
-    }
-  }
-
   try {
     await writeExtractJobState(extract.id, {
       status: extract.is_successful ? "completed" : "failed",
@@ -1160,6 +1155,15 @@ async function logExtractInternal(
     });
   } catch (error) {
     logger.error("Failed to write extract state to Bigtable", { error });
+  }
+
+  if (extract.result) {
+    if (config.GCS_BUCKET_NAME) {
+      await saveExtractToGCS(extract, logger);
+    } else {
+      // Fallback: save result to Redis with 24h TTL when GCS is not configured
+      await saveExtractResult(extract.id, extract.result);
+    }
   }
 }
 

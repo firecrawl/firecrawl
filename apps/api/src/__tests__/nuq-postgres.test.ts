@@ -148,14 +148,21 @@ describeIf("NuQ Postgres queue", () => {
     });
 
     const failed = await scrapeQueue.getGroupJobs(groupId, "failed");
-    expect(failed.map(job => job.id)).toEqual(failedIds);
-    expect(failed.map(job => job.failedReason)).toEqual([
-      "failure-1",
-      "failure-2",
-    ]);
-    expect(failed.map(job => (job.data as any).url)).toEqual([
-      "https://example.com/failed-1",
-      "https://example.com/failed-2",
-    ]);
+    const expectedFailed = rows
+      .filter(row => row.status === "failed")
+      .sort((a, b) => a.id.localeCompare(b.id));
+    expect(
+      failed.map(job => ({
+        id: job.id,
+        failedReason: job.failedReason,
+        url: (job.data as any).url,
+      })),
+    ).toEqual(
+      expectedFailed.map(row => ({
+        id: row.id,
+        failedReason: row.failedReason,
+        url: row.data.url,
+      })),
+    );
   });
 });

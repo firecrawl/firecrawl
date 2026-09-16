@@ -71,6 +71,7 @@ describe("Bigtable job state stores", () => {
   });
 
   it("reads extract state from its dedicated table", async () => {
+    const completedAtMs = Date.now();
     getRows.mockResolvedValueOnce([
       [
         {
@@ -82,7 +83,7 @@ describe("Bigtable job state stores", () => {
                     JSON.stringify({
                       version: 1,
                       status: "failed",
-                      completedAtMs: 456,
+                      completedAtMs,
                       creditsBilled: 2,
                       error: "failed",
                     }),
@@ -97,7 +98,7 @@ describe("Bigtable job state stores", () => {
 
     await expect(readExtractJobState(JOB_ID)).resolves.toEqual({
       status: "failed",
-      completedAtMs: 456,
+      completedAtMs,
       creditsBilled: 2,
       error: "failed",
     });
@@ -108,7 +109,43 @@ describe("Bigtable job state stores", () => {
     });
   });
 
+  it("treats state beyond its logical retention window as absent", async () => {
+    getRows.mockResolvedValueOnce([
+      [
+        {
+          data: {
+            s: {
+              v: [
+                {
+                  value: Buffer.from(
+                    JSON.stringify({
+                      version: 1,
+                      status: "completed",
+                      requestId: JOB_ID,
+                      completedAtMs: Date.now() - 24 * 60 * 60 * 1000 - 1,
+                      creditsBilled: 1,
+                    }),
+                  ),
+                },
+              ],
+            },
+          },
+        },
+      ],
+    ] as any);
+
+    await expect(readScrapeJobState(JOB_ID)).resolves.toBeNull();
+  });
+
   it("returns null when state is absent", async () => {
+    await expect(readScrapeJobState(JOB_ID)).resolves.toBeNull();
+  });
+
+  it("returns null when the configured state table is not found", async () => {
+    getRows.mockRejectedValueOnce(
+      Object.assign(new Error("missing"), { code: 5 }),
+    );
+
     await expect(readScrapeJobState(JOB_ID)).resolves.toBeNull();
   });
 

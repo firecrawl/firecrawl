@@ -739,7 +739,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE ${this.queueName}.group_id = $1
             AND ${this.queueName}.status = $2::nuq.job_status
             AND ${this.queueName}.data->>'mode' = 'single_urls'
-            ORDER BY finished_at ASC, created_at ASC
+            ORDER BY ${status === "completed" ? "finished_at ASC, created_at ASC, id ASC" : "id ASC"}
             LIMIT $3 OFFSET $4;
           `,
           [groupId, status, limit ?? null, offset],

@@ -21,6 +21,7 @@ const {
   setSpanAttributes,
   spans,
   enqueueZdrCleanupJob,
+  saveExtractResult,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -69,6 +70,7 @@ const {
     setSpanAttributes: vi.fn(),
     spans,
     enqueueZdrCleanupJob: vi.fn(async () => {}),
+    saveExtractResult: vi.fn(async () => {}),
   };
 });
 
@@ -137,7 +139,7 @@ vi.mock("../../lib/zdr-queue", () => ({
 }));
 
 vi.mock("../../lib/extract/extract-redis", () => ({
-  saveExtractResult: vi.fn(),
+  saveExtractResult,
 }));
 
 vi.mock("../posthog", () => ({
@@ -337,6 +339,33 @@ describe("operational job state logging", () => {
         creditsBilled: 3,
         error: "failed",
       }),
+    );
+  });
+
+  it("writes extract state before result storage fails", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+    saveExtractResult.mockRejectedValueOnce(new Error("Redis unavailable"));
+
+    await expect(
+      logExtract({
+        id,
+        request_id: id,
+        urls: ["https://example.com"],
+        team_id: "team-id",
+        options: {},
+        model_kind: "fire-1",
+        credits_cost: 3,
+        is_successful: true,
+        result: { ok: true },
+      }),
+    ).rejects.toThrow("Redis unavailable");
+
+    expect(writeExtractJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({ status: "completed" }),
+    );
+    expect(writeExtractJobState.mock.invocationCallOrder[0]).toBeLessThan(
+      saveExtractResult.mock.invocationCallOrder[0],
     );
   });
 });

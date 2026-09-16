@@ -67,9 +67,6 @@ export async function crawlErrorsController(
   return res.status(200).json({
     errors: failedJobs
       .map(x => {
-        if (x.data?.mode !== "single_urls") {
-          return null;
-        }
         const error = deserializeTransportableError(
           x.failedReason!,
         ) as TransportableError | null;
@@ -82,7 +79,10 @@ export async function crawlErrorsController(
             x.finishedAt !== undefined
               ? new Date(x.finishedAt).toISOString()
               : undefined,
-          url: x.data.url,
+          url:
+            x.data && "url" in x.data
+              ? x.data.url
+              : "<redacted due to zero data retention>",
           ...(error
             ? {
                 code: error.code,

@@ -1299,28 +1299,33 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   ): Promise<NuQFdbJob<JobData, JobReturnValue>[]> {
     const ks = this.ks;
     if (status === "failed") {
-      const ids = await this.db.doTn(async tn => {
-        const r = ks.groupJobRange(groupId);
-        const rows = await tn.snapshot().getRangeAll(r.begin, r.end);
-        return rows
-          .filter(([, value]) => {
-            const groupJob = decodeJson<GroupJobIndexValue>(value as Buffer);
-            return groupJob?.m === 1 && groupJob.s === "failed";
-          })
-          .map(([key]) => ks.unpackId(key as Buffer));
-      });
-      const jobs = (await this.getJobs(ids, logger))
-        .filter(job => job.status === "failed")
-        .sort((a, b) => {
-          const finishedDiff =
-            (a.finishedAt?.valueOf() ?? 0) - (b.finishedAt?.valueOf() ?? 0);
-          if (finishedDiff !== 0) return finishedDiff;
-          const createdDiff = a.createdAt.valueOf() - b.createdAt.valueOf();
-          return createdDiff !== 0 ? createdDiff : a.id.localeCompare(b.id);
-        });
-      return jobs.slice(
-        offset,
-        limit === undefined ? undefined : offset + limit,
+      const r = ks.groupJobRange(groupId);
+      const ids: string[] = [];
+      const target = limit === undefined ? Infinity : offset + limit;
+      let begin: Buffer | FdbKeySelector = r.begin;
+
+      while (ids.length < target) {
+        const rows = await this.db.doTn(async tn =>
+          tn.snapshot().getRangeAll(begin as any, r.end, { limit: 500 }),
+        );
+        for (const [key, value] of rows) {
+          const groupJob = decodeJson<GroupJobIndexValue>(value as Buffer);
+          if (groupJob?.m === 1 && groupJob.s === "failed") {
+            ids.push(ks.unpackId(key as Buffer));
+            if (ids.length === target) break;
+          }
+        }
+        if (rows.length < 500 || ids.length === target) break;
+        begin = {
+          key: rows[rows.length - 1][0] as Buffer,
+          orEqual: true,
+          offset: 1,
+          _isKeySelector: true,
+        };
+      }
+
+      return (await this.getJobs(ids.slice(offset), logger)).filter(
+        job => job.status === "failed",
       );
     }
 
