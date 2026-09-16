@@ -2,7 +2,6 @@ import type { Logger } from "winston";
 import { eq, inArray, and } from "drizzle-orm";
 import { db, dbRr } from "../db/connection";
 import * as schema from "../db/schema";
-import { logger } from "./logger";
 
 /**
  * Get a single scrape by ID from the scrapes table
@@ -19,44 +18,6 @@ export const supabaseGetScrapeById = async (scrapeId: string): Promise<any> => {
     return data ?? null;
   } catch (error) {
     return null;
-  }
-};
-
-/**
- * Get multiple scrapes by ID from the scrapes table
- * @param scrapeIds IDs of Scrapes
- * @returns Scrape data array
- */
-export const supabaseGetScrapesById = async (
-  scrapeIds: string[],
-): Promise<any[]> => {
-  try {
-    return await dbRr
-      .select()
-      .from(schema.scrapes)
-      .where(inArray(schema.scrapes.id, scrapeIds));
-  } catch (error) {
-    logger.error(`Error in supabaseGetScrapesById: ${error}`);
-    return [];
-  }
-};
-
-/**
- * Get multiple scrapes by request ID (crawl/batch scrape ID) from the scrapes table
- * @param requestId ID of the parent request (crawl or batch scrape)
- * @returns Scrape data array
- */
-export const supabaseGetScrapesByRequestId = async (
-  requestId: string,
-): Promise<any[]> => {
-  try {
-    return await dbRr
-      .select()
-      .from(schema.scrapes)
-      .where(eq(schema.scrapes.request_id, requestId));
-  } catch (error) {
-    logger.error(`Error in supabaseGetScrapesByRequestId: ${error}`);
-    return [];
   }
 };
 

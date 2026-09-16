@@ -1290,20 +1290,24 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     return job;
   }
 
-  public async getCrawlJobsForListing(
+  public async getGroupJobs(
     groupId: string,
-    limit: number,
-    offset: number,
+    status: "completed" | "failed",
+    limit?: number,
+    offset = 0,
     logger: Logger = _logger,
   ): Promise<NuQFdbJob<JobData, JobReturnValue>[]> {
     const ks = this.ks;
     const ids = await this.db.doTn(async tn => {
-      const r = ks.groupDoneRange(groupId);
-      const rows = await tn
-        .snapshot()
-        .getRangeAll(r.begin, r.end, { limit: offset + limit });
+      const r = ks.groupTerminalRange(groupId, status);
+      const rows =
+        limit === undefined
+          ? await tn.snapshot().getRangeAll(r.begin, r.end)
+          : await tn
+              .snapshot()
+              .getRangeAll(r.begin, r.end, { limit: offset + limit });
       return rows
-        .slice(offset)
+        .slice(offset, limit === undefined ? undefined : offset + limit)
         .map(([, value]) => (value as Buffer).toString("utf8"));
     });
     const jobs = await this.getJobs(ids, logger);
@@ -1312,7 +1316,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       .map(id => byId.get(id))
       .filter(
         (j): j is NuQFdbJob<JobData, JobReturnValue> =>
-          !!j && j.status === "completed",
+          !!j && j.status === status,
       );
   }
 

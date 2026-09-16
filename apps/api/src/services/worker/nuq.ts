@@ -722,11 +722,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
     }
   }
 
-  // TODO: make more generalizable
-  public async getCrawlJobsForListing(
+  public async getGroupJobs(
     groupId: string,
-    limit: number,
-    offset: number,
+    status: "completed" | "failed",
+    limit?: number,
+    offset = 0,
     _logger: Logger = logger,
   ): Promise<NuQJob<JobData, JobReturnValue>[]> {
     const start = Date.now();
@@ -737,20 +737,21 @@ class NuQ<JobData = any, JobReturnValue = any> {
             SELECT ${this.jobReturning.join(", ")}
             FROM ${this.queueName}
             WHERE ${this.queueName}.group_id = $1
-            AND ${this.queueName}.status = 'completed'
+            AND ${this.queueName}.status = $2::nuq.job_status
             AND ${this.queueName}.data->>'mode' = 'single_urls'
             ORDER BY finished_at ASC, created_at ASC
-            LIMIT $2 OFFSET $3;
+            LIMIT $3 OFFSET $4;
           `,
-          [groupId, limit, offset],
+          [groupId, status, limit ?? null, offset],
         )
       ).rows.map(row => this.rowToJob(row)!);
     } finally {
-      _logger.info("nuqGetCrawlJobsForListing metrics", {
+      _logger.info("nuqGetGroupJobs metrics", {
         module: "nuq/metrics",
-        method: "nuqGetCrawlJobsForListing",
+        method: "nuqGetGroupJobs",
         duration: Date.now() - start,
         crawlId: groupId,
+        status,
       });
     }
   }
