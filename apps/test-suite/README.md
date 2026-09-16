@@ -56,4 +56,4 @@ If you encounter any failures or unexpected results, please check the following:
 
 ## Contributing
 
-Contributions to the test suite are welcome. Please refer to the project's main [CONTRIBUTING.md](../CONTRIBUTING.md) file for guidelines on how to contribute.
+Contributions to the test suite are welcome. Please refer to the project's main [CONTRIBUTING.md](../../CONTRIBUTING.md) file for guidelines on how to contribute.
