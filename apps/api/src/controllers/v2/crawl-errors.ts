@@ -11,6 +11,7 @@ import { configDotenv } from "dotenv";
 import { and, eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
+import { getOperationalCrawlRequest } from "../../lib/supabase-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
 import { TransportableError } from "../../lib/error";
@@ -76,20 +77,13 @@ export async function crawlErrorsController(
       ),
     });
   } else if (config.USE_DB_AUTHENTICATION) {
-    // Check the requests table for the crawl/batch scrape request
-    let request: (typeof schema.requests.$inferSelect)[];
+    let requestData;
     try {
-      request = await dbRr
-        .select()
-        .from(schema.requests)
-        .where(eq(schema.requests.id, req.params.jobId))
-        .limit(1);
+      requestData = await getOperationalCrawlRequest(req.params.jobId);
     } catch (requestError) {
       _logger.error("Error getting request", { error: requestError });
       throw requestError;
     }
-
-    const requestData = request?.[0];
 
     if (requestData && requestData.team_id !== req.auth.team_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
@@ -98,15 +92,17 @@ export async function crawlErrorsController(
     const crawlTtlHours = req.acuc?.flags?.crawlTtlHours ?? 24;
     const crawlTtlMs = crawlTtlHours * 60 * 60 * 1000;
 
+    const expiresAtMs = requestData?.expires_at_ms;
     if (
       requestData &&
-      new Date().valueOf() - new Date(requestData.created_at!).valueOf() >
-        crawlTtlMs
+      (expiresAtMs !== undefined
+        ? expiresAtMs <= Date.now()
+        : Date.now() - new Date(requestData.created_at!).getTime() > crawlTtlMs)
     ) {
       return res.status(404).json({ success: false, error: "Job expired" });
     }
 
-    if (!request || request.length === 0) {
+    if (!requestData) {
       return res.status(404).json({ success: false, error: "Job not found" });
     }
 

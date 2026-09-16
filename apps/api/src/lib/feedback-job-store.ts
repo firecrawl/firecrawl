@@ -18,6 +18,86 @@ export type RefundClass =
   | "scrape_json"
   | "scrape_addon";
 
+const REFUND_CLASSES: readonly RefundClass[] = [
+  "search",
+  "map",
+  "parse",
+  "scrape_basic",
+  "scrape_pdf",
+  "scrape_json",
+  "scrape_addon",
+];
+
+export type FeedbackJob = {
+  requestId: string;
+  teamId: string;
+  refundClass: RefundClass;
+  feedbackDeadlineMs: number;
+  succeeded: boolean;
+  creditsBilled: number;
+  zeroDataRetention: boolean;
+};
+
+function parseFeedbackJob(value: Buffer | string): FeedbackJob {
+  const parsed: unknown = JSON.parse(value.toString());
+  const row = parsed as Record<string, unknown>;
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    row.version !== 1 ||
+    typeof row.requestId !== "string" ||
+    typeof row.teamId !== "string" ||
+    typeof row.refundClass !== "string" ||
+    !REFUND_CLASSES.includes(row.refundClass as RefundClass) ||
+    typeof row.feedbackDeadlineMs !== "number" ||
+    !Number.isFinite(row.feedbackDeadlineMs) ||
+    typeof row.succeeded !== "boolean" ||
+    typeof row.creditsBilled !== "number" ||
+    !Number.isFinite(row.creditsBilled) ||
+    typeof row.zeroDataRetention !== "boolean"
+  ) {
+    throw new Error("Invalid Bigtable feedback job row");
+  }
+  return parsed as FeedbackJob;
+}
+
+export async function readFeedbackJob(
+  jobId: string,
+): Promise<FeedbackJob | null> {
+  const tableId = config.BIGTABLE_FEEDBACK_JOBS_TABLE;
+  if (!tableId) return null;
+
+  return withSpan("bigtable.feedback_job.read", async span => {
+    setSpanAttributes(span, {
+      "db.system": "bigtable",
+      "bigtable.table": tableId,
+      "bigtable.operation": "getRows",
+    });
+    const table = await getBigtableTable(tableId);
+    const [rows] = await table.getRows({
+      keys: [saltedUuidV7RowKey(jobId)],
+      filter: [{ column: { name: QUALIFIER, cellLimit: 1 } }],
+    });
+    const cells = rows[0]?.data?.[FAMILY]?.[QUALIFIER];
+    const cell = Array.isArray(cells) ? cells[0] : undefined;
+    if (cell?.value == null) {
+      setSpanAttributes(span, { "bigtable.read.outcome": "not_found" });
+      return null;
+    }
+
+    const job = parseFeedbackJob(cell.value);
+    if (job.feedbackDeadlineMs <= Date.now()) {
+      setSpanAttributes(span, { "bigtable.read.outcome": "expired" });
+      return job;
+    }
+    setSpanAttributes(span, {
+      "bigtable.read.outcome": "found",
+      "feedback.refund_class": job.refundClass,
+    });
+    return job;
+  });
+}
+
 function scrapeRefundClass(options: ScrapeOptions): RefundClass {
   if (
     options.parsers?.some(

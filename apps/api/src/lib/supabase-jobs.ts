@@ -2,7 +2,26 @@ import type { Logger } from "winston";
 import { eq, inArray, and } from "drizzle-orm";
 import { db, dbRr } from "../db/connection";
 import * as schema from "../db/schema";
+import { readApiJobAccess } from "./job-access-store";
+import type { ApiJobAccess, ApiJobKind } from "./job-access-store";
 import { logger } from "./logger";
+
+async function getOperationalJobAccess(
+  id: string,
+  kinds: readonly ApiJobKind[],
+): Promise<ApiJobAccess | null | undefined> {
+  try {
+    const access = await readApiJobAccess(id);
+    if (!access) return undefined;
+    return kinds.includes(access.kind) ? access : null;
+  } catch (error) {
+    logger.warn("Bigtable job access read failed; falling back to PostgreSQL", {
+      error,
+      jobId: id,
+    });
+    return undefined;
+  }
+}
 
 /**
  * Get a single scrape by ID from the scrapes table
@@ -94,6 +113,14 @@ export const supabaseGetScrapeByIdOnlyData = async (
   log?: Logger,
 ): Promise<any> => {
   try {
+    const access = await getOperationalJobAccess(scrapeId, ["scrape"]);
+    if (access) {
+      return access.expiresAtMs > Date.now()
+        ? { team_id: access.teamId }
+        : null;
+    }
+    if (access === null) return null;
+
     const [data] = await dbRr
       .select({ team_id: schema.scrapes.team_id })
       .from(schema.scrapes)
@@ -127,6 +154,24 @@ export const supabaseGetExtractRequestByIdDirect = async (
   extractId: string,
 ): Promise<any> => {
   try {
+    const access = await getOperationalJobAccess(extractId, [
+      "extract",
+      "agent",
+    ]);
+    if (access) {
+      if (access.expiresAtMs <= Date.now()) return null;
+      return {
+        id: extractId,
+        team_id: access.teamId,
+        kind: access.kind,
+        origin: access.clientOrigin ?? null,
+        created_at: new Date(
+          access.expiresAtMs - 24 * 60 * 60 * 1000,
+        ).toISOString(),
+      };
+    }
+    if (access === null) return null;
+
     const [data] = await db
       .select()
       .from(schema.requests)
@@ -147,6 +192,18 @@ export const supabaseGetAgentRequestByIdDirect = async (
   agentId: string,
 ): Promise<any> => {
   try {
+    const access = await getOperationalJobAccess(agentId, ["agent"]);
+    if (access) {
+      if (access.expiresAtMs <= Date.now()) return null;
+      return {
+        id: agentId,
+        team_id: access.teamId,
+        kind: access.kind,
+        origin: access.clientOrigin ?? null,
+      };
+    }
+    if (access === null) return null;
+
     const [data] = await db
       .select()
       .from(schema.requests)
@@ -158,6 +215,41 @@ export const supabaseGetAgentRequestByIdDirect = async (
   } catch (error) {
     return null;
   }
+};
+
+export type OperationalCrawlRequest = {
+  team_id: string;
+  created_at: Date | string | null;
+  expires_at_ms?: number;
+};
+
+export const getOperationalCrawlRequest = async (
+  id: string,
+): Promise<OperationalCrawlRequest | null> => {
+  const access = await getOperationalJobAccess(id, ["crawl", "batch_scrape"]);
+  if (access) {
+    return {
+      team_id: access.teamId,
+      created_at: null,
+      expires_at_ms: access.expiresAtMs,
+    };
+  }
+  if (access === null) return null;
+
+  const [request] = await dbRr
+    .select({
+      team_id: schema.requests.team_id,
+      created_at: schema.requests.created_at,
+    })
+    .from(schema.requests)
+    .where(
+      and(
+        eq(schema.requests.id, id),
+        inArray(schema.requests.kind, ["crawl", "batch_scrape"]),
+      ),
+    )
+    .limit(1);
+  return request ?? null;
 };
 
 export const supabaseGetAgentByIdDirect = async (

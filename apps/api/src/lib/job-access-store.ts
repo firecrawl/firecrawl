@@ -18,8 +18,71 @@ export const API_JOB_KINDS = [
 
 export type ApiJobKind = (typeof API_JOB_KINDS)[number];
 
+export type ApiJobAccess = {
+  teamId: string;
+  kind: ApiJobKind;
+  expiresAtMs: number;
+  clientOrigin?: string;
+};
+
 export function isApiJobKind(kind: string): kind is ApiJobKind {
   return API_JOB_KINDS.includes(kind as ApiJobKind);
+}
+
+function parseApiJobAccess(value: Buffer | string): ApiJobAccess {
+  const parsed: unknown = JSON.parse(value.toString());
+  const row = parsed as Record<string, unknown>;
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    row.version !== 1 ||
+    typeof row.teamId !== "string" ||
+    typeof row.kind !== "string" ||
+    !isApiJobKind(row.kind) ||
+    typeof row.expiresAtMs !== "number" ||
+    !Number.isFinite(row.expiresAtMs) ||
+    (row.clientOrigin !== undefined && typeof row.clientOrigin !== "string")
+  ) {
+    throw new Error("Invalid Bigtable job access row");
+  }
+  return parsed as ApiJobAccess;
+}
+
+export async function readApiJobAccess(
+  id: string,
+): Promise<ApiJobAccess | null> {
+  const tableId = config.BIGTABLE_JOB_ACCESS_TABLE;
+  if (!tableId) return null;
+
+  return withSpan("bigtable.job_access.read", async span => {
+    setSpanAttributes(span, {
+      "db.system": "bigtable",
+      "bigtable.table": tableId,
+      "bigtable.operation": "getRows",
+    });
+    const table = await getBigtableTable(tableId);
+    const [rows] = await table.getRows({
+      keys: [saltedUuidV7RowKey(id)],
+      filter: [{ column: { name: QUALIFIER, cellLimit: 1 } }],
+    });
+    const cells = rows[0]?.data?.[FAMILY]?.[QUALIFIER];
+    const cell = Array.isArray(cells) ? cells[0] : undefined;
+    if (cell?.value == null) {
+      setSpanAttributes(span, { "bigtable.read.outcome": "not_found" });
+      return null;
+    }
+
+    const access = parseApiJobAccess(cell.value);
+    if (access.expiresAtMs <= Date.now()) {
+      setSpanAttributes(span, { "bigtable.read.outcome": "expired" });
+      return access;
+    }
+    setSpanAttributes(span, {
+      "bigtable.read.outcome": "found",
+      "job_access.kind": access.kind,
+    });
+    return access;
+  });
 }
 
 export async function writeApiJobAccess(params: {
