@@ -1,6 +1,23 @@
 import { buildAgentHints, type AgentHintContext } from "./agent-hints";
 
 const jobId = "0199412e-7590-7000-8000-000000000001";
+const fullTool = {
+  provider: "zillow",
+  capability: "properties/property",
+  options: [],
+  response: { fields: [] },
+};
+const call = {
+  provider: "firecrawl",
+  capability: "find-tools",
+  options: { providers: ["zillow"] },
+};
+const catalogue = (data: unknown) => ({
+  success: true,
+  data: {
+    alexandria: [{ provider: "firecrawl", capability: "find-tools", data }],
+  },
+});
 const hints = (overrides: Partial<AgentHintContext>) =>
   buildAgentHints({
     endpoint: "search",
@@ -18,6 +35,16 @@ describe("deterministic agent hints", () => {
     expect(result[0]).toContain("valuableSources");
     expect(result[0]).toContain("missingContent");
     expect(result[0]).not.toContain('"rating":"good"');
+  });
+
+  it("never labels tool count as relevance or expands full definitions again", () => {
+    const result = hints({
+      response: { success: true, data: { tools: [fullTool] } },
+    });
+    expect(result.join(" ")).toContain("matching your task");
+    expect(result.join(" ")).not.toMatch(
+      /relevant|rental|expand|next request/i,
+    );
   });
 
   it("checks missing full content per result and does not scrape everything", () => {
@@ -44,6 +71,59 @@ describe("deterministic agent hints", () => {
     expect(result.join(" ").toLowerCase()).toContain("if you need");
   });
 
+  it("selects only one cross-endpoint hint when both tools and excerpts exist", () => {
+    const result = hints({
+      response: {
+        success: true,
+        data: { tools: [fullTool], web: [{ url: "https://example.com" }] },
+      },
+      feedbackJobId: jobId,
+    });
+    expect(result).toHaveLength(2);
+    expect(result.join(" ")).not.toContain('"url"');
+  });
+
+  it("distinguishes summary expansion from catalogue paging within the three-hint cap", () => {
+    const result = hints({
+      endpoint: "scrape",
+      response: catalogue({ items: [{ next: call }], next: call }),
+      feedbackJobId: jobId,
+    });
+    expect(result.length).toBeLessThanOrEqual(3);
+    expect(result.join(" ")).toContain("full input and output definitions");
+    expect(result.join(" ")).toContain("item's next");
+    expect(result.join(" ")).not.toContain("More tools");
+  });
+
+  it("accepts a continuation with defaulted options", () => {
+    const result = hints({
+      endpoint: "scrape",
+      response: catalogue({
+        level: "tools",
+        items: [],
+        total: 12,
+        next: { provider: "firecrawl", capability: "find-tools" },
+      }),
+    });
+    expect(result.join(" ")).toContain("More tools");
+    expect(result.join(" ")).not.toContain("POST /v2/search");
+  });
+
+  it("offers web search for this empty lookup only when it has no continuation", () => {
+    expect(
+      hints({
+        endpoint: "scrape",
+        response: catalogue({ items: [], next: null }),
+      }).join(" "),
+    ).toContain("This catalogue lookup");
+    expect(
+      hints({
+        endpoint: "scrape",
+        response: catalogue({ items: [], next: call }),
+      }).join(" "),
+    ).not.toContain("POST /v2/search");
+  });
+
   it("uses explicit page status instead of API 404s such as cache misses", () => {
     const result = hints({
       endpoint: "scrape",
@@ -65,6 +145,65 @@ describe("deterministic agent hints", () => {
           success: false,
           code: "SCRAPE_NO_CACHED_DATA",
           error: "Not cached",
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("prioritizes missing-page recovery over domain tool promotion", () => {
+    const result = hints({
+      endpoint: "scrape",
+      response: {
+        success: true,
+        data: { tools: [fullTool], metadata: { statusCode: 410 } },
+      },
+    });
+    expect(result.join(" ")).toContain("POST /v2/search");
+    expect(result.join(" ")).not.toContain("Alexandria tool definitions");
+  });
+
+  it("prioritizes a typed find-tools query correction over promotion and paging", () => {
+    const result = hints({
+      endpoint: "scrape",
+      request: { alexandria: { ...call, options: { query: "rentals" } } },
+      response: {
+        success: true,
+        data: {
+          alexandria: [
+            { ...call, error: { code: "invalid_option", message: "invalid" } },
+          ],
+        },
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]).toContain("does not accept query");
+    expect(result[0]).toContain('"query":"rentals"');
+  });
+
+  it("preserves a top-level typed rejection while supplying the query correction", () => {
+    const result = hints({
+      endpoint: "scrape",
+      request: { alexandria: { ...call, options: { query: "rentals" } } },
+      response: {
+        success: false,
+        code: "invalid_option",
+        error: "Find Tools does not take query",
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]).toContain("does not accept query");
+    expect(result[0]).not.toContain("/v2/feedback");
+  });
+
+  it("does not turn provider-result errors into a success workflow", () => {
+    expect(
+      hints({
+        endpoint: "scrape",
+        response: {
+          success: true,
+          data: {
+            alexandria: [{ error: { code: "unknown", message: "failed" } }],
+          },
         },
       }),
     ).toEqual([]);
