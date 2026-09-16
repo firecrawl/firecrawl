@@ -113,18 +113,3 @@ export const supabaseGetCrawlRequestById = async (requestId: string) => {
     .limit(1);
   return data ?? null;
 };
-
-export const supabaseGetAgentByIdDirect = async (
-  agentId: string,
-): Promise<any> => {
-  try {
-    const [data] = await db
-      .select()
-      .from(schema.agents)
-      .where(eq(schema.agents.id, agentId))
-      .limit(1);
-    return data ?? null;
-  } catch (error) {
-    return null;
-  }
-};

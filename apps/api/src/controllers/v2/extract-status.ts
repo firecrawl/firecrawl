@@ -6,15 +6,13 @@ import {
   getExtractExpiry,
   getExtractResult,
 } from "../../lib/extract/extract-redis";
-import {
-  supabaseGetAgentByIdDirect,
-  supabaseGetExtractByIdDirect,
-} from "../../lib/supabase-jobs";
+import { supabaseGetExtractByIdDirect } from "../../lib/supabase-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { getExtractJobAccess } from "../../lib/operational-job-access";
 import { readExtractJobState } from "../../lib/job-state-store";
 import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
+import { getExtractV3AgentStatus } from "../../lib/extract-v3-status";
 
 async function getExtractData(id: string): Promise<any> {
   // Try GCS first if configured
@@ -52,24 +50,15 @@ export async function extractStatusController(
     }
 
     if (access.kind === "agent") {
-      const agent = await supabaseGetAgentByIdDirect(req.params.jobId);
-
-      let data: any = undefined;
-      if (agent?.is_successful) {
-        data = await getJobFromGCS(agent.id);
-      }
+      const agent = await getExtractV3AgentStatus(req.params.jobId);
 
       return res.status(200).json({
         success: true,
-        status: !agent
-          ? "processing"
-          : agent.is_successful
-            ? "completed"
-            : "failed",
-        error: agent?.error || undefined,
-        data,
+        status: agent.status === "success" ? "completed" : agent.status,
+        error: agent.error,
+        data: agent.data,
         expiresAt: new Date(access.expiresAtMs).toISOString(),
-        creditsUsed: agent?.credits_cost,
+        creditsUsed: agent.creditsUsed,
       });
     }
   }

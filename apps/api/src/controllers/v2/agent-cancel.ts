@@ -1,6 +1,5 @@
 import { Response } from "express";
 import { AgentCancelResponse, RequestWithAuth } from "./types";
-import { supabaseGetAgentByIdDirect } from "../../lib/supabase-jobs";
 import { config } from "../../config";
 import { getAgentJobAccess } from "../../lib/operational-job-access";
 
@@ -21,14 +20,6 @@ export async function agentCancelController(
     });
   }
 
-  const agent = await supabaseGetAgentByIdDirect(req.params.jobId);
-  if (agent) {
-    return res.status(409).json({
-      success: false,
-      error: "Agent already finished",
-    });
-  }
-
   const resp = await fetch(
     config.EXTRACT_V3_BETA_URL + "/internal/extracts/" + req.params.jobId,
     {
@@ -40,9 +31,22 @@ export async function agentCancelController(
   );
 
   if (resp.status === 409) {
+    const body = (await resp.json().catch(() => null)) as {
+      error?: string;
+    } | null;
     return res.status(409).json({
       success: false,
-      error: "Agent is already cancelled",
+      error:
+        body?.error === "Agent already finished"
+          ? body.error
+          : "Agent is already cancelled",
+    });
+  }
+
+  if (!resp.ok) {
+    return res.status(500).json({
+      success: false,
+      error: "Failed to cancel agent",
     });
   }
 

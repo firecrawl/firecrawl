@@ -7,11 +7,8 @@ import {
   AgentSuggestion,
   RequestWithAuth,
 } from "./types";
-import { supabaseGetAgentByIdDirect } from "../../lib/supabase-jobs";
-import { logger as _logger, logger } from "../../lib/logger";
-import { getJobFromGCS } from "../../lib/gcs-jobs";
-import { config } from "../../config";
 import { getAgentJobAccess } from "../../lib/operational-job-access";
+import { getExtractV3AgentStatus } from "../../lib/extract-v3-status";
 
 // python-sdk versions before 4.37.1 validate the status response's `model`
 // with pydantic as Literal["spark-1-pro", "spark-1-mini"], so any other value
@@ -45,32 +42,6 @@ function isIncompatiblePythonSdkOrigin(origin: unknown): boolean {
   );
 }
 
-// Runs that produce more than a JSON result store an envelope instead of the
-// raw result, so `data` keeps its original meaning for every existing object.
-const AGENT_RESULT_KEY = "__agentResult";
-
-type StoredAgentResult = {
-  [AGENT_RESULT_KEY]: 1;
-  data: unknown | null;
-  message: string | null;
-  suggestions?: AgentSuggestion[];
-  pendingApproval?: AgentPendingApproval;
-  // The per-run summary rides the envelope because options holds what the run
-  // was asked to do, not what it did.
-  exchange?: AgentExchangeSummary;
-};
-
-function isStoredAgentResult(value: unknown): value is StoredAgentResult {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    (value as Record<string, unknown>)[AGENT_RESULT_KEY] === 1
-  );
-}
-
-// The agent service persists these next to `model`/`effort`, so they come from
-// the same two sources and are absent on runs that predate threads.
 type ThreadOptions = {
   threadId?: string;
   threadTurn?: number;
@@ -102,61 +73,14 @@ export async function agentStatusController(
     });
   }
 
-  const agent = await supabaseGetAgentByIdDirect(req.params.jobId);
+  const agent = await getExtractV3AgentStatus(req.params.jobId);
 
-  let model: "spark-1-pro" | "spark-1-mini" | "spark-2";
+  let model: "spark-1-pro" | "spark-1-mini" | "spark-2" =
+    agent.model ?? "spark-1-pro";
   // The agent service persists the effort of a run that used it. Older rows
   // and runs that picked a model have no effort, so this stays undefined.
-  let effort: "low" | "medium" | "high" | undefined;
-  let thread: ThreadOptions = {};
-  if (agent) {
-    model = (agent.options?.model ?? "spark-1-pro") as
-      | "spark-1-pro"
-      | "spark-1-mini"
-      | "spark-2";
-    effort = agent.options?.effort as "low" | "medium" | "high" | undefined;
-    thread = readThreadOptions(agent.options);
-  } else {
-    try {
-      const optionsRequest = await fetch(
-        config.EXTRACT_V3_BETA_URL +
-          "/v2/extract/" +
-          req.params.jobId +
-          "/options",
-        {
-          headers: {
-            Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
-          },
-        },
-      );
-
-      if (optionsRequest.status !== 200) {
-        logger.warn("Failed to get agent request details", {
-          status: optionsRequest.status,
-          method: "agentStatusController",
-          module: "api/v2",
-          text: await optionsRequest.text(),
-        });
-        model = "spark-1-pro"; // fall back to this value
-      } else {
-        const options = await optionsRequest.json();
-        model = (options.model ?? "spark-1-pro") as
-          | "spark-1-pro"
-          | "spark-1-mini"
-          | "spark-2";
-        effort = options.effort as "low" | "medium" | "high" | undefined;
-        thread = readThreadOptions(options);
-      }
-    } catch (error) {
-      logger.warn("Failed to get agent request details", {
-        error,
-        method: "agentStatusController",
-        module: "api/v2",
-        extractId: req.params.jobId,
-      });
-      model = "spark-1-pro"; // fall back to this value
-    }
-  }
+  const effort = agent.effort;
+  const thread = readThreadOptions(agent);
 
   // Lie about the model to python-sdk versions that cannot parse "spark-2"
   // (see isIncompatiblePythonSdkOrigin). Only spark-2 needs disguising — a
@@ -170,43 +94,21 @@ export async function agentStatusController(
     model = "spark-1-pro";
   }
 
-  let data: any = undefined;
-  let message: string | undefined;
-  let suggestions: AgentSuggestion[] | undefined;
-  let pendingApproval: AgentPendingApproval | undefined;
-  let exchange: AgentExchangeSummary | undefined;
-  if (agent?.is_successful) {
-    const stored: unknown = await getJobFromGCS(agent.id);
-    if (isStoredAgentResult(stored)) {
-      data = stored.data ?? null;
-      message = stored.message ?? undefined;
-      suggestions = stored.suggestions;
-      pendingApproval = stored.pendingApproval;
-      exchange = stored.exchange;
-    } else {
-      data = stored;
-    }
-  }
-
   return res.status(200).json({
     success: true,
-    status: !agent
-      ? "processing"
-      : agent.is_successful
-        ? "completed"
-        : "failed",
-    error: agent?.error || undefined,
-    data,
+    status: agent.status === "success" ? "completed" : agent.status,
+    error: agent.error,
+    data: agent.data,
     model,
     effort,
     threadId: thread.threadId,
     threadTurn: thread.threadTurn,
     mode: thread.mode,
-    message,
-    suggestions,
-    pendingApproval,
-    exchange,
+    message: agent.message,
+    suggestions: agent.suggestions as AgentSuggestion[] | undefined,
+    pendingApproval: agent.pendingApproval as AgentPendingApproval | undefined,
+    exchange: agent.exchange as AgentExchangeSummary | undefined,
     expiresAt: new Date(access.expiresAtMs).toISOString(),
-    creditsUsed: agent?.credits_cost,
+    creditsUsed: agent.creditsUsed,
   });
 }
