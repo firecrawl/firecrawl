@@ -5,8 +5,7 @@ import { setSpanAttributes, withSpan } from "./otel-tracer";
 import type { ScrapeReplayContext } from "./scrape-interact/scrape-replay";
 
 const QUALIFIER = "v";
-const SCRAPE_FAMILY = "scrape_state";
-const EXTRACT_FAMILY = "extract_state";
+const FAMILY = "s";
 const STATE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_ERROR_LENGTH = 16_384;
 
@@ -96,11 +95,11 @@ function parseExtractState(value: Buffer | string): ExtractJobState {
 
 async function writeState(params: {
   id: string;
-  family: string;
+  tableId: string | undefined;
   spanName: string;
   value: object;
 }): Promise<boolean> {
-  const tableId = config.BIGTABLE_JOB_ACCESS_TABLE;
+  const tableId = params.tableId;
   if (!tableId) return false;
 
   return withSpan(params.spanName, async span => {
@@ -115,7 +114,7 @@ async function writeState(params: {
         key: saltedUuidV7RowKey(params.id),
         method: "insert",
         data: {
-          [params.family]: {
+          [FAMILY]: {
             [QUALIFIER]: {
               value: Buffer.from(JSON.stringify(params.value)),
               timestamp: new Date(Date.now() + STATE_RETENTION_MS),
@@ -130,11 +129,11 @@ async function writeState(params: {
 
 async function readState<T>(params: {
   id: string;
-  family: string;
+  tableId: string | undefined;
   spanName: string;
   parse: (value: Buffer | string) => T;
 }): Promise<T | null> {
-  const tableId = config.BIGTABLE_JOB_ACCESS_TABLE;
+  const tableId = params.tableId;
   if (!tableId) return null;
 
   return withSpan(params.spanName, async span => {
@@ -148,7 +147,7 @@ async function readState<T>(params: {
       keys: [saltedUuidV7RowKey(params.id)],
       filter: [{ column: { name: QUALIFIER, cellLimit: 1 } }],
     });
-    const cells = rows[0]?.data?.[params.family]?.[QUALIFIER];
+    const cells = rows[0]?.data?.[FAMILY]?.[QUALIFIER];
     const cell = Array.isArray(cells) ? cells[0] : undefined;
     if (cell?.value == null) {
       setSpanAttributes(span, { "bigtable.read.outcome": "not_found" });
@@ -165,7 +164,7 @@ export function writeScrapeJobState(
 ): Promise<boolean> {
   return writeState({
     id,
-    family: SCRAPE_FAMILY,
+    tableId: config.BIGTABLE_SCRAPE_STATE_TABLE,
     spanName: "bigtable.scrape_state.write",
     value: {
       version: 1,
@@ -178,7 +177,7 @@ export function writeScrapeJobState(
 export function readScrapeJobState(id: string): Promise<ScrapeJobState | null> {
   return readState({
     id,
-    family: SCRAPE_FAMILY,
+    tableId: config.BIGTABLE_SCRAPE_STATE_TABLE,
     spanName: "bigtable.scrape_state.read",
     parse: parseScrapeState,
   });
@@ -190,7 +189,7 @@ export function writeExtractJobState(
 ): Promise<boolean> {
   return writeState({
     id,
-    family: EXTRACT_FAMILY,
+    tableId: config.BIGTABLE_EXTRACT_STATE_TABLE,
     spanName: "bigtable.extract_state.write",
     value: {
       version: 1,
@@ -205,7 +204,7 @@ export function readExtractJobState(
 ): Promise<ExtractJobState | null> {
   return readState({
     id,
-    family: EXTRACT_FAMILY,
+    tableId: config.BIGTABLE_EXTRACT_STATE_TABLE,
     spanName: "bigtable.extract_state.read",
     parse: parseExtractState,
   });

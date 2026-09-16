@@ -9,8 +9,12 @@ const { mutate, getRows, getBigtableTable, mutableConfig, withSpan } =
     getRows: vi.fn(async () => [[]]),
     getBigtableTable: vi.fn(),
     mutableConfig: {
-      BIGTABLE_JOB_ACCESS_TABLE: "api-job-access",
-    } as { BIGTABLE_JOB_ACCESS_TABLE?: string },
+      BIGTABLE_SCRAPE_STATE_TABLE: "scrape-state",
+      BIGTABLE_EXTRACT_STATE_TABLE: "extract-state",
+    } as {
+      BIGTABLE_SCRAPE_STATE_TABLE?: string;
+      BIGTABLE_EXTRACT_STATE_TABLE?: string;
+    },
     withSpan: vi.fn(
       async (_name: string, fn: (span: any) => any) => await fn({}),
     ),
@@ -33,19 +37,20 @@ import { saltedUuidV7RowKey } from "./bigtable-row-key";
 
 const JOB_ID = "019e6f45-7778-727d-adf0-0abe9d5062b6";
 
-function writtenValue(family: "scrape_state" | "extract_state") {
+function writtenValue() {
   const mutation = mutate.mock.calls[0][0][0];
-  return JSON.parse(mutation.data[family].v.value.toString());
+  return JSON.parse(mutation.data.s.v.value.toString());
 }
 
 describe("Bigtable job state stores", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mutableConfig.BIGTABLE_JOB_ACCESS_TABLE = "api-job-access";
+    mutableConfig.BIGTABLE_SCRAPE_STATE_TABLE = "scrape-state";
+    mutableConfig.BIGTABLE_EXTRACT_STATE_TABLE = "extract-state";
     getBigtableTable.mockResolvedValue({ mutate, getRows });
   });
 
-  it("writes versioned scrape state to its own family", async () => {
+  it("writes versioned scrape state to its dedicated table", async () => {
     await writeScrapeJobState(JOB_ID, {
       status: "completed",
       requestId: JOB_ID,
@@ -54,7 +59,8 @@ describe("Bigtable job state stores", () => {
       replay: { targetUrl: "https://example.com", waitForMs: 0, actions: [] },
     });
 
-    expect(writtenValue("scrape_state")).toEqual({
+    expect(getBigtableTable).toHaveBeenCalledWith("scrape-state");
+    expect(writtenValue()).toEqual({
       version: 1,
       status: "completed",
       requestId: JOB_ID,
@@ -64,12 +70,12 @@ describe("Bigtable job state stores", () => {
     });
   });
 
-  it("reads extract state from its own family", async () => {
+  it("reads extract state from its dedicated table", async () => {
     getRows.mockResolvedValueOnce([
       [
         {
           data: {
-            extract_state: {
+            s: {
               v: [
                 {
                   value: Buffer.from(
@@ -95,18 +101,19 @@ describe("Bigtable job state stores", () => {
       creditsBilled: 2,
       error: "failed",
     });
+    expect(getBigtableTable).toHaveBeenCalledWith("extract-state");
     expect(getRows).toHaveBeenCalledWith({
       keys: [saltedUuidV7RowKey(JOB_ID)],
       filter: [{ column: { name: "v", cellLimit: 1 } }],
     });
   });
 
-  it("returns null when a state family is absent", async () => {
+  it("returns null when state is absent", async () => {
     await expect(readScrapeJobState(JOB_ID)).resolves.toBeNull();
   });
 
   it("does not initialize Bigtable when the table is disabled", async () => {
-    mutableConfig.BIGTABLE_JOB_ACCESS_TABLE = undefined;
+    mutableConfig.BIGTABLE_EXTRACT_STATE_TABLE = undefined;
     await expect(
       writeExtractJobState(JOB_ID, {
         status: "completed",
