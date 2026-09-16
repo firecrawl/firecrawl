@@ -16,7 +16,7 @@ export const API_JOB_KINDS = [
   "deep_research",
 ] as const;
 
-export type ApiJobKind = (typeof API_JOB_KINDS)[number];
+type ApiJobKind = (typeof API_JOB_KINDS)[number];
 
 export function isApiJobKind(kind: string): kind is ApiJobKind {
   return API_JOB_KINDS.includes(kind as ApiJobKind);
