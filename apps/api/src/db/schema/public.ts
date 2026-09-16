@@ -711,7 +711,6 @@ export const user_referring_integration = pgTable(
   "user_referring_integration",
   {
     id: bigintNum("id").notNull(),
-    slug: varchar("slug").notNull(),
     partner_org_id: uuid("partner_org_id"),
     gateway_enabled: boolean("gateway_enabled").notNull().default(false),
   },
