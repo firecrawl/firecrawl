@@ -1,5 +1,20 @@
 import type { Mock } from "vitest";
 import { redisEvictConnection } from "../../../services/redis";
+
+const { writeApiJobAccess, redisMock } = vi.hoisted(() => ({
+  writeApiJobAccess: vi.fn(async () => true),
+  redisMock: {
+    set: vi.fn(async () => "OK"),
+    get: vi.fn(),
+    pttl: vi.fn(),
+  },
+}));
+
+vi.mock("../../../lib/job-access-store", () => ({ writeApiJobAccess }));
+vi.mock("../../../services/redis", () => ({
+  redisEvictConnection: redisMock,
+}));
+
 import {
   saveDeepResearch,
   getDeepResearch,
@@ -7,15 +22,6 @@ import {
   getDeepResearchExpiry,
   StoredDeepResearch,
 } from "../../../lib/deep-research/deep-research-redis";
-
-vi.mock("../../../services/queue-service", () => ({
-  redisConnection: {
-    set: vi.fn(),
-    get: vi.fn(),
-    expire: vi.fn(),
-    pttl: vi.fn(),
-  },
-}));
 
 describe("Deep Research Redis Operations", () => {
   const mockResearch: StoredDeepResearch = {
@@ -35,6 +41,7 @@ describe("Deep Research Redis Operations", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    writeApiJobAccess.mockResolvedValue(true);
   });
 
   describe("saveDeepResearch", () => {
@@ -44,11 +51,27 @@ describe("Deep Research Redis Operations", () => {
       expect(redisEvictConnection.set).toHaveBeenCalledWith(
         "deep-research:test-id",
         JSON.stringify(mockResearch),
-      );
-      expect(redisEvictConnection.expire).toHaveBeenCalledWith(
-        "deep-research:test-id",
+        "EX",
         6 * 60 * 60,
       );
+      expect(writeApiJobAccess).toHaveBeenCalledWith({
+        id: "test-id",
+        teamId: "team-1",
+        kind: "deep_research",
+        expiresAt: expect.any(Date),
+      });
+    });
+
+    it("keeps the Redis write when the access refresh fails", async () => {
+      writeApiJobAccess.mockRejectedValueOnce(
+        new Error("Bigtable unavailable"),
+      );
+
+      await expect(
+        saveDeepResearch("test-id", mockResearch),
+      ).resolves.toBeUndefined();
+
+      expect(redisEvictConnection.set).toHaveBeenCalledOnce();
     });
   });
 
@@ -104,11 +127,15 @@ describe("Deep Research Redis Operations", () => {
       expect(redisEvictConnection.set).toHaveBeenCalledWith(
         "deep-research:test-id",
         JSON.stringify(expectedUpdate),
-      );
-      expect(redisEvictConnection.expire).toHaveBeenCalledWith(
-        "deep-research:test-id",
+        "EX",
         6 * 60 * 60,
       );
+      expect(writeApiJobAccess).toHaveBeenCalledWith({
+        id: "test-id",
+        teamId: "team-1",
+        kind: "deep_research",
+        expiresAt: expect.any(Date),
+      });
     });
 
     it("should do nothing if research not found", async () => {
@@ -117,7 +144,7 @@ describe("Deep Research Redis Operations", () => {
       await updateDeepResearch("test-id", { status: "completed" });
 
       expect(redisEvictConnection.set).not.toHaveBeenCalled();
-      expect(redisEvictConnection.expire).not.toHaveBeenCalled();
+      expect(writeApiJobAccess).not.toHaveBeenCalled();
     });
   });
 
@@ -126,13 +153,12 @@ describe("Deep Research Redis Operations", () => {
       const mockTTL = 3600000; // 1 hour in milliseconds
       (redisEvictConnection.pttl as Mock).mockResolvedValue(mockTTL);
 
+      const before = Date.now();
       const result = await getDeepResearchExpiry("test-id");
 
       expect(result).toBeInstanceOf(Date);
-      expect(result.getTime()).toBeCloseTo(
-        new Date().getTime() + mockTTL,
-        -2, // Allow 100ms precision
-      );
+      expect(result.getTime()).toBeGreaterThanOrEqual(before + mockTTL - 999);
+      expect(result.getTime()).toBeLessThanOrEqual(Date.now() + mockTTL);
     });
   });
 });

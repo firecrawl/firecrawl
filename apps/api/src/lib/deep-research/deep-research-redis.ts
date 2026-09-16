@@ -1,4 +1,5 @@
 import { redisEvictConnection } from "../../services/redis";
+import { writeApiJobAccess } from "../job-access-store";
 import { logger as _logger } from "../logger";
 
 export type DeepResearchActivity = {
@@ -47,17 +48,39 @@ export type StoredDeepResearch = {
 // TTL of 6 hours
 export const DEEP_RESEARCH_TTL = 6 * 60 * 60;
 
+async function refreshDeepResearchAccess(
+  id: string,
+  teamId: string,
+  expiresAt: Date,
+): Promise<void> {
+  try {
+    await writeApiJobAccess({
+      id,
+      teamId,
+      kind: "deep_research",
+      expiresAt,
+    });
+  } catch (error) {
+    _logger.error("Failed to refresh deep research access in Bigtable", {
+      error,
+      researchId: id,
+    });
+  }
+}
+
 export async function saveDeepResearch(
   id: string,
   research: StoredDeepResearch,
 ) {
   _logger.debug("Saving deep research " + id + " to Redis...");
+  const expiresAt = new Date(Date.now() + DEEP_RESEARCH_TTL * 1000);
   await redisEvictConnection.set(
     "deep-research:" + id,
     JSON.stringify(research),
     "EX",
     DEEP_RESEARCH_TTL,
   );
+  await refreshDeepResearchAccess(id, research.team_id, expiresAt);
 }
 
 export async function getDeepResearch(
@@ -95,12 +118,14 @@ export async function updateDeepResearch(
       : current.summaries,
   };
 
+  const expiresAt = new Date(Date.now() + DEEP_RESEARCH_TTL * 1000);
   await redisEvictConnection.set(
     "deep-research:" + id,
     JSON.stringify(updatedResearch),
     "EX",
     DEEP_RESEARCH_TTL,
   );
+  await refreshDeepResearchAccess(id, current.team_id, expiresAt);
 }
 
 export async function getDeepResearchExpiry(id: string): Promise<Date> {

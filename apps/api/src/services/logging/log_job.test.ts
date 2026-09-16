@@ -97,19 +97,12 @@ vi.mock("../../lib/change-tracking-store", () => ({
   changeTrackingInsertScrape: vi.fn(),
 }));
 
-vi.mock("../../lib/job-access-store", () => ({
-  isApiJobKind: (kind: string) =>
-    [
-      "scrape",
-      "crawl",
-      "batch_scrape",
-      "extract",
-      "agent",
-      "llmstxt",
-      "deep_research",
-    ].includes(kind),
-  writeApiJobAccess,
-}));
+vi.mock("../../lib/job-access-store", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../lib/job-access-store")
+  >("../../lib/job-access-store");
+  return { ...actual, writeApiJobAccess };
+});
 
 vi.mock("../../lib/feedback-job-store", () => ({
   writeFeedbackJob,
@@ -264,7 +257,7 @@ describe("logSearch", () => {
     );
   });
 
-  it("suppresses the log span tree for zero-data-retention searches", async () => {
+  it("forwards zeroDataRetention to the root log span", async () => {
     await logSearch(makeSearch({ zeroDataRetention: true }));
 
     expect(spans).toContainEqual({
