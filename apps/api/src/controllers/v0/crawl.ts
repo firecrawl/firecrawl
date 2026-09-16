@@ -91,6 +91,9 @@ export async function crawlController(req: Request, res: Response) {
       target_hint: req.body.url ?? "",
       zeroDataRetention: false, // not supported on v0
       api_key_id: chunk?.api_key_id ?? null,
+      jobAccessExpiresAt: new Date(
+        Date.now() + (chunk?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      ),
     });
 
     redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>

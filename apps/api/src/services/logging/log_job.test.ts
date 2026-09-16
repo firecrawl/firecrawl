@@ -13,6 +13,11 @@ const {
   flush,
   close,
   metricInc,
+  writeApiJobAccess,
+  writeFeedbackJob,
+  withSpan,
+  setSpanAttributes,
+  spans,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -27,6 +32,13 @@ const {
   const flush = vi.fn(async () => {});
   const close = vi.fn(async () => {});
   const publishes: { name: string; options: any }[] = [];
+  const spans: { name: string; options: any }[] = [];
+  const withSpan = vi.fn(
+    async (name: string, fn: (span: any) => any, options?: any) => {
+      spans.push({ name, options });
+      return fn({});
+    },
+  );
   const topic = vi.fn((name: string, options: any) => {
     return {
       publishMessage: (message: any) => {
@@ -46,6 +58,11 @@ const {
     flush,
     close,
     metricInc: vi.fn(),
+    writeApiJobAccess: vi.fn(async () => true),
+    writeFeedbackJob: vi.fn(async () => true),
+    withSpan,
+    setSpanAttributes: vi.fn(),
+    spans,
   };
 });
 
@@ -80,6 +97,24 @@ vi.mock("../../lib/change-tracking-store", () => ({
   changeTrackingInsertScrape: vi.fn(),
 }));
 
+vi.mock("../../lib/job-access-store", () => ({
+  isApiJobKind: (kind: string) =>
+    [
+      "scrape",
+      "crawl",
+      "batch_scrape",
+      "extract",
+      "agent",
+      "llmstxt",
+      "deep_research",
+    ].includes(kind),
+  writeApiJobAccess,
+}));
+
+vi.mock("../../lib/feedback-job-store", () => ({
+  writeFeedbackJob,
+}));
+
 vi.mock("../../lib/keyless", () => ({
   keylessTeamUuid: vi.fn(() => null),
 }));
@@ -103,6 +138,11 @@ vi.mock("../posthog", () => ({
 
 vi.mock("../../lib/pubsub-log-metrics", () => ({
   pubsubLogPublishTotal: { inc: metricInc },
+}));
+
+vi.mock("../../lib/otel-tracer", () => ({
+  withSpan,
+  setSpanAttributes,
 }));
 
 import {
@@ -150,6 +190,7 @@ describe("logSearch", () => {
     values.mockResolvedValue(undefined);
     publishMessage.mockResolvedValue("message-id");
     publishes.length = 0;
+    spans.length = 0;
   });
 
   it("removes null bytes from search query log fields", async () => {
@@ -169,6 +210,14 @@ describe("logSearch", () => {
     expect(inserted.options.query).toBe("nestedquery");
     expect(inserted.options.sources[0].location).toBe("NewYork");
     expect(search.options.query).toBe("nested\u0000query");
+    expect(writeFeedbackJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: search.id,
+        endpoint: "search",
+        succeeded: true,
+        creditsBilled: 1,
+      }),
+    );
   });
 
   it("reports serialization failures without losing the PostgreSQL attempt", async () => {
@@ -186,6 +235,42 @@ describe("logSearch", () => {
       "Failed to publish log to Pub/Sub",
       expect.objectContaining({ logId: search.id, error: expect.any(Error) }),
     );
+  });
+
+  it("keeps logging when the feedback Bigtable shadow write fails", async () => {
+    writeFeedbackJob.mockRejectedValueOnce(new Error("Bigtable unavailable"));
+
+    await expect(logSearch(makeSearch())).resolves.toBeUndefined();
+
+    expect(values).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledWith(
+      "Failed to write feedback job to Bigtable",
+      expect.objectContaining({
+        error: expect.any(Error),
+        endpoint: "search",
+      }),
+    );
+  });
+
+  it("profiles the log, PostgreSQL insert, and Pub/Sub publish", async () => {
+    await logSearch(makeSearch());
+
+    expect(spans).toEqual(
+      expect.arrayContaining([
+        { name: "log_job.search", options: { zeroDataRetention: false } },
+        { name: "log_job.postgres.insert", options: undefined },
+        { name: "log_job.pubsub.publish", options: undefined },
+      ]),
+    );
+  });
+
+  it("suppresses the log span tree for zero-data-retention searches", async () => {
+    await logSearch(makeSearch({ zeroDataRetention: true }));
+
+    expect(spans).toContainEqual({
+      name: "log_job.search",
+      options: { zeroDataRetention: true },
+    });
   });
 });
 
@@ -246,6 +331,15 @@ describe("logRequest", () => {
     expect(values.mock.calls[0][0].created_at.toISOString()).toBe(
       published.created_at,
     );
+    expect(writeApiJobAccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "019e6f45-7778-727d-adf0-0abe9d5062b6",
+        teamId: "team-id",
+        kind: "scrape",
+        clientOrigin: "api",
+        expiresAt: expect.any(Date),
+      }),
+    );
   });
 
   it("keeps the database write when Pub/Sub fails", async () => {
@@ -257,6 +351,39 @@ describe("logRequest", () => {
     expect(logger.error).toHaveBeenCalledWith(
       "Failed to publish log to Pub/Sub",
       expect.objectContaining({ error: expect.any(Error) }),
+    );
+  });
+
+  it("keeps logging when the job access Bigtable shadow write fails", async () => {
+    writeApiJobAccess.mockRejectedValueOnce(new Error("Bigtable unavailable"));
+
+    await expect(logRequest(makeRequest(null))).resolves.toBeUndefined();
+
+    expect(values).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      "Failed to write API job access to Bigtable",
+      expect.objectContaining({ error: expect.any(Error), kind: "scrape" }),
+    );
+  });
+
+  it("does not write access metadata for a non-operational request id", async () => {
+    await logRequest({ ...makeRequest(null), jobAccess: false });
+
+    expect(writeApiJobAccess).not.toHaveBeenCalled();
+    expect(values).toHaveBeenCalledOnce();
+  });
+
+  it("uses a job's explicit operational expiry", async () => {
+    const expiresAt = new Date("2026-09-15T18:00:00.000Z");
+
+    await logRequest({
+      ...makeRequest(null),
+      kind: "deep_research",
+      jobAccessExpiresAt: expiresAt,
+    });
+
+    expect(writeApiJobAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "deep_research", expiresAt }),
     );
   });
 

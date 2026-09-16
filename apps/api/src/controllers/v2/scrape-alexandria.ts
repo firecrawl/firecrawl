@@ -153,6 +153,7 @@ export async function providerScrapeController(
       integration: body.integration ?? null,
       target_hint: `alexandria:${body.alexandria.map(call => `${call.provider}/${call.capability}`).join(",")}`,
       zeroDataRetention: false,
+      jobAccess: false,
     }).catch(error =>
       logger.warn("Provider request logging failed", {
         error,

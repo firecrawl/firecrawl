@@ -45,7 +45,7 @@ export type StoredDeepResearch = {
 };
 
 // TTL of 6 hours
-const DEEP_RESEARCH_TTL = 6 * 60 * 60;
+export const DEEP_RESEARCH_TTL = 6 * 60 * 60;
 
 export async function saveDeepResearch(
   id: string,
