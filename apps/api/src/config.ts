@@ -555,6 +555,21 @@ const configSchema = z.object({
   // 0 (the default) is also the kill switch: the allowlist still routes, and
   // nothing else does.
   FIREBILL_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  // Concurrency floor for teams provisioned through a gateway partner
+  // integration (lib/gateway-concurrency.ts). Such a team sits on the free
+  // plan while the partner funds it, so its limit follows the partner's
+  // organization: CONTRACTED when that organization has a signed contract on
+  // file, SELF_SERVE otherwise.
+  GATEWAY_GHOST_CONCURRENCY_CONTRACTED: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(100),
+  GATEWAY_GHOST_CONCURRENCY_SELF_SERVE: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(5),
 
   // Miscellaneous
   IDMUX_URL: z.string().optional(),
