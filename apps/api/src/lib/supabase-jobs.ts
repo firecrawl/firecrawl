@@ -1,4 +1,3 @@
-import type { Logger } from "winston";
 import { eq, inArray, and } from "drizzle-orm";
 import { db, dbRr } from "../db/connection";
 import * as schema from "../db/schema";
@@ -80,31 +79,6 @@ export const supabaseGetScrapesByRequestId = async (
   } catch (error) {
     logger.error(`Error in supabaseGetScrapesByRequestId: ${error}`);
     return [];
-  }
-};
-
-/**
- * Get only team_id from a scrape by ID (lightweight query)
- * @param scrapeId ID of Scrape
- * @param logger Optional logger for error reporting
- * @returns Object with team_id or null
- */
-export const supabaseGetScrapeByIdOnlyData = async (
-  scrapeId: string,
-  log?: Logger,
-): Promise<any> => {
-  try {
-    const [data] = await dbRr
-      .select({ team_id: schema.scrapes.team_id })
-      .from(schema.scrapes)
-      .where(eq(schema.scrapes.id, scrapeId))
-      .limit(1);
-    return data ?? null;
-  } catch (error) {
-    if (log) {
-      log.error("Error in supabaseGetScrapeByIdOnlyData", { error });
-    }
-    return null;
   }
 };
 

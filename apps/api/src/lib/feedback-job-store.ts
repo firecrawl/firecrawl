@@ -8,7 +8,7 @@ import { setSpanAttributes, withSpan } from "./otel-tracer";
 const FAMILY = "f";
 const QUALIFIER = "v";
 
-export type FeedbackEndpoint = "search" | "scrape" | "parse" | "map";
+type FeedbackEndpoint = "search" | "scrape" | "parse" | "map";
 export type RefundClass =
   | "search"
   | "map"
@@ -28,7 +28,7 @@ const REFUND_CLASSES: readonly RefundClass[] = [
   "scrape_addon",
 ];
 
-export type FeedbackJob = {
+type FeedbackJob = {
   requestId: string;
   teamId: string;
   refundClass: RefundClass;
@@ -128,7 +128,7 @@ type FeedbackJobBase = {
   completedAt?: Date;
 };
 
-export type FeedbackJobWrite = FeedbackJobBase &
+type FeedbackJobWrite = FeedbackJobBase &
   (
     | { endpoint: "scrape"; scrapeOptions: ScrapeOptions }
     | { endpoint: Exclude<FeedbackEndpoint, "scrape"> }

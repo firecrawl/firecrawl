@@ -7,6 +7,7 @@ import {
 } from "../../../controllers/v2/types";
 import { Logger } from "winston";
 import { Meta } from "..";
+import { config } from "../../../config";
 import { logger } from "../../../lib/logger";
 import { modelPrices } from "../../../lib/extract/usage/model-prices";
 import {
@@ -80,11 +81,14 @@ type LanguageModelV1ProviderMetadata = {
 const getModelLimits = (model: string) => {
   const modelConfig = modelPrices[model];
   if (!modelConfig) {
-    // Default fallback values
+    // Model isn't in our hosted pricing table -- likely a self-hosted/local
+    // model (e.g. Ollama). Use the configured budget if set, otherwise fall
+    // back to a conservative default.
+    const maxInputTokens = config.MODEL_MAX_INPUT_TOKENS || 8192;
     return {
-      maxInputTokens: 8192,
+      maxInputTokens,
       maxOutputTokens: 4096,
-      maxTokens: 12288,
+      maxTokens: maxInputTokens + 4096,
     };
   }
   return {
@@ -341,6 +345,30 @@ export async function generateCompletions({
   if (markdown === undefined) {
     throw new Error("document.markdown is undefined -- this is unexpected");
   }
+
+  // Trim the page content to the model's input budget before it's woven into the
+  // prompt below. Without this, a page that's larger than the configured model's
+  // context window (common for self-hosted/local models) gets silently truncated
+  // by the provider from the *front*, dropping the instructions and schema that
+  // precede it in the prompt and leaving the model to guess -- see #4653.
+  const modelLimits = getModelLimits(modelId);
+  const PROMPT_OVERHEAD_TOKENS = 1000;
+  const markdownTokenBudget = Math.max(
+    1,
+    modelLimits.maxInputTokens - PROMPT_OVERHEAD_TOKENS,
+  );
+  // Tokenize with a tiktoken-known model regardless of which model actually serves
+  // the request (mirrors performCleanContent/performSummary below) -- most
+  // self-hosted model names (e.g. Ollama models) aren't in tiktoken's model list,
+  // which would otherwise force every call through its no-count fallback path.
+  const trimResult = trimToTokenLimit(
+    markdown,
+    markdownTokenBudget,
+    "gpt-4o-mini",
+    previousWarning,
+  );
+  markdown = trimResult.text;
+  warning = trimResult.warning;
 
   try {
     const prompt =

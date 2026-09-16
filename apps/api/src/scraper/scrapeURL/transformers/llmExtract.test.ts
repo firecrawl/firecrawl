@@ -12,7 +12,19 @@ vi.mock("../lib/extractSmartScrape", async importOriginal => {
     })),
   };
 });
-import { performLLMExtract, removeDefaultProperty } from "./llmExtract";
+const generateObjectMock = vi.fn();
+vi.mock("ai", async importOriginal => {
+  const actual = await importOriginal<typeof import("ai")>();
+  return {
+    ...actual,
+    generateObject: (...args: any[]) => generateObjectMock(...args),
+  };
+});
+import {
+  performLLMExtract,
+  removeDefaultProperty,
+  generateCompletions,
+} from "./llmExtract";
 import { trimToTokenLimit } from "./llmExtract";
 import { performSummary } from "./llmExtract";
 import { performCleanContent } from "./llmExtract";
@@ -349,6 +361,84 @@ describe("performCleanContent", () => {
     const result = await performCleanContent(makeMeta(false), document);
 
     expect(result.markdown).toBe("Some content");
+    expect(result.warning).toBeUndefined();
+  });
+});
+
+describe("generateCompletions markdown trimming for local/self-hosted models", () => {
+  let realEncodingForModel: typeof import("@dqbd/tiktoken").encoding_for_model;
+
+  beforeAll(async () => {
+    ({ encoding_for_model: realEncodingForModel } =
+      await vi.importActual<typeof import("@dqbd/tiktoken")>("@dqbd/tiktoken"));
+  });
+
+  beforeEach(() => {
+    generateObjectMock.mockReset();
+    (encoding_for_model as Mock).mockImplementation(realEncodingForModel);
+    generateObjectMock.mockImplementation(async config => ({
+      object: { ok: true },
+      usage: { inputTokens: 1, outputTokens: 1 },
+    }));
+  });
+
+  const fakeCostTracking = () => ({
+    costTracking: { addCall: vi.fn() } as any,
+    metadata: {},
+  });
+
+  it("trims oversized markdown to the unknown-model default budget before prompting, and warns", async () => {
+    // A local model name absent from our hosted pricing table (e.g. an Ollama
+    // model) -- falls back to the conservative 8192-token default.
+    const modelId = "some-local-model-not-in-price-table";
+    // Repeated words tokenize predictably and comfortably exceed the ~7192
+    // token budget (8192 default minus the 1000-token prompt overhead reserve).
+    const hugeMarkdown = "hello world ".repeat(20000);
+
+    const result = await generateCompletions({
+      logger: { debug: vi.fn(), error: vi.fn() } as any,
+      model: { modelId } as any,
+      options: {
+        schema: {
+          type: "object",
+          properties: { ok: { type: "boolean" } },
+          required: ["ok"],
+        },
+      },
+      markdown: hugeMarkdown,
+      costTrackingOptions: fakeCostTracking(),
+      metadata: { teamId: "test-team" },
+    });
+
+    expect(generateObjectMock).toHaveBeenCalledTimes(1);
+    const sentPrompt: string = generateObjectMock.mock.calls[0][0].prompt;
+
+    // The prompt must no longer contain the tail of the original markdown --
+    // proof it was trimmed from the end, keeping the head (instructions/schema
+    // context comes first in the prompt, followed by the markdown).
+    expect(sentPrompt.length).toBeLessThan(hugeMarkdown.length);
+    expect(sentPrompt.endsWith(hugeMarkdown.trim())).toBe(false);
+    expect(result.warning).toContain("automatically trimmed");
+  });
+
+  it("does not trim markdown that already fits comfortably in the budget", async () => {
+    const result = await generateCompletions({
+      logger: { debug: vi.fn(), error: vi.fn() } as any,
+      model: { modelId: "some-local-model-not-in-price-table" } as any,
+      options: {
+        schema: {
+          type: "object",
+          properties: { ok: { type: "boolean" } },
+          required: ["ok"],
+        },
+      },
+      markdown: "short page content",
+      costTrackingOptions: fakeCostTracking(),
+      metadata: { teamId: "test-team" },
+    });
+
+    const sentPrompt: string = generateObjectMock.mock.calls[0][0].prompt;
+    expect(sentPrompt).toContain("short page content");
     expect(result.warning).toBeUndefined();
   });
 });

@@ -485,6 +485,9 @@ const configSchema = z.object({
   // AI/ML
   MODEL_NAME: z.string().optional(),
   MODEL_EMBEDDING_NAME: z.string().optional(),
+  // Input token budget for self-hosted/local models unknown to our pricing table
+  // (e.g. Ollama models). Falls back to a conservative default when unset.
+  MODEL_MAX_INPUT_TOKENS: z.coerce.number().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
 
