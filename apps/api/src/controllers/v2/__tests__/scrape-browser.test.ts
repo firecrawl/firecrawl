@@ -1,7 +1,7 @@
 import type { Response } from "express";
 import { vi } from "vitest";
 import { config } from "../../../config";
-import { supabaseGetScrapeById } from "../../../lib/supabase-jobs";
+import { supabaseGetScrapeByIdDirect } from "../../../lib/supabase-jobs";
 import { scrapeInteractController } from "../scrape-browser";
 import type { RequestWithAuth } from "../types";
 
@@ -10,7 +10,7 @@ vi.mock("uuid", () => ({
 }));
 
 vi.mock("../../../lib/supabase-jobs", () => ({
-  supabaseGetScrapeById: vi.fn(),
+  supabaseGetScrapeByIdDirect: vi.fn(),
 }));
 
 vi.mock("../../../lib/browser-sessions", () => ({
@@ -93,7 +93,7 @@ describe("scrapeInteractController", () => {
 
     await scrapeInteractController(req, res);
 
-    expect(supabaseGetScrapeById).not.toHaveBeenCalled();
+    expect(supabaseGetScrapeByIdDirect).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(501);
     expect(res.json).toHaveBeenCalledWith({
       success: false,

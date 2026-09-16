@@ -23,6 +23,25 @@ export const supabaseGetScrapeById = async (scrapeId: string): Promise<any> => {
 };
 
 /**
+ * Get a single scrape by ID from the primary database.
+ * Use this when the scrape may have been created immediately before the read.
+ */
+export const supabaseGetScrapeByIdDirect = async (
+  scrapeId: string,
+): Promise<any> => {
+  try {
+    const [data] = await db
+      .select()
+      .from(schema.scrapes)
+      .where(eq(schema.scrapes.id, scrapeId))
+      .limit(1);
+    return data ?? null;
+  } catch (error) {
+    return null;
+  }
+};
+
+/**
  * Get multiple scrapes by ID from the scrapes table
  * @param scrapeIds IDs of Scrapes
  * @returns Scrape data array
