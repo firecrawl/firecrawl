@@ -7,13 +7,11 @@ import {
   AgentSuggestion,
   RequestWithAuth,
 } from "./types";
-import {
-  supabaseGetAgentByIdDirect,
-  supabaseGetAgentRequestByIdDirect,
-} from "../../lib/supabase-jobs";
+import { supabaseGetAgentByIdDirect } from "../../lib/supabase-jobs";
 import { logger as _logger, logger } from "../../lib/logger";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { config } from "../../config";
+import { getAgentJobAccess } from "../../lib/operational-job-access";
 
 // python-sdk versions before 4.37.1 validate the status response's `model`
 // with pydantic as Literal["spark-1-pro", "spark-1-mini"], so any other value
@@ -91,11 +89,13 @@ export async function agentStatusController(
   req: RequestWithAuth<{ jobId: string }, AgentStatusResponse, any>,
   res: Response<AgentStatusResponse>,
 ) {
-  const agentRequest = await supabaseGetAgentRequestByIdDirect(
-    req.params.jobId,
-  );
+  const access = await getAgentJobAccess(req.params.jobId);
 
-  if (!agentRequest || agentRequest.team_id !== req.auth.team_id) {
+  if (
+    !access ||
+    access.expiresAtMs <= Date.now() ||
+    access.teamId !== req.auth.team_id
+  ) {
     return res.status(404).json({
       success: false,
       error: "Agent job not found",
@@ -165,7 +165,7 @@ export async function agentStatusController(
   if (
     model !== "spark-1-pro" &&
     model !== "spark-1-mini" &&
-    isIncompatiblePythonSdkOrigin(agentRequest.origin)
+    isIncompatiblePythonSdkOrigin(access.clientOrigin)
   ) {
     model = "spark-1-pro";
   }
@@ -207,8 +207,9 @@ export async function agentStatusController(
     pendingApproval,
     exchange,
     expiresAt: new Date(
-      new Date(agent?.created_at ?? agentRequest.created_at).getTime() +
-        1000 * 60 * 60 * 24,
+      agent?.created_at
+        ? new Date(agent.created_at).getTime() + 1000 * 60 * 60 * 24
+        : access.expiresAtMs,
     ).toISOString(),
     creditsUsed: agent?.credits_cost,
   });
