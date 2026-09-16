@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { shutdownTracing } from "../otel";
 import { logger } from "../lib/logger";
-import { zdrcleaner } from "../lib/zdrcleaner";
+import { cleanZdrRequest, zdrcleaner } from "../lib/zdrcleaner";
+import { consumeZdrCleanupJobs, shutdownZdrQueue } from "../lib/zdr-queue";
 
 let isShuttingDown = false;
 
@@ -16,10 +17,13 @@ process.on("SIGTERM", () => {
 });
 
 (async () => {
+  await consumeZdrCleanupJobs(job => cleanZdrRequest(job.requestId));
+
   while (!isShuttingDown) {
     await zdrcleaner();
   }
 
+  await shutdownZdrQueue();
   await shutdownTracing();
   logger.info("zdr-worker exiting");
   process.exit(0);

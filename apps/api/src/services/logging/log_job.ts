@@ -2,6 +2,7 @@ import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { changeTrackingInsertScrape } from "../../lib/change-tracking-store";
 import { config } from "../../config";
+import { enqueueZdrCleanupJob } from "../../lib/zdr-queue";
 import "dotenv/config";
 import { logger as _logger } from "../../lib/logger";
 import { EXTERNAL_REQUEST_ID_MAX_BYTES } from "../../lib/external-request-id";
@@ -572,6 +573,10 @@ async function logRequestInternal(request: LoggedRequest) {
     }
   }
 
+  if (request.zeroDataRetention && config.USE_DB_AUTHENTICATION === true) {
+    await enqueueZdrCleanupJob(request.id);
+  }
+
   await robustInsert(
     "requests",
     {
@@ -582,13 +587,10 @@ async function logRequestInternal(request: LoggedRequest) {
       origin: sanitizedOrigin,
       integration: sanitizedIntegration,
       target_hint: sanitizedTargetHint,
-      dr_clean_by: request.zeroDataRetention
-        ? new Date(Date.now() + 24 * 60 * 60 * 1000)
-        : null,
       api_key_id: request.api_key_id ?? null,
       // Not redacted under zero data retention: it is the caller's own
       // operation id (attribution it asked for), not customer content — and
-      // the row is cleaned at dr_clean_by regardless.
+      // the row's blobs are cleaned by the ZDR queue regardless.
       external_request_id: boundedExternalRequestId(
         sanitizeString(request.external_request_id ?? null),
         logger,

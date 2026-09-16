@@ -18,6 +18,7 @@ const {
   withSpan,
   setSpanAttributes,
   spans,
+  enqueueZdrCleanupJob,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -63,6 +64,7 @@ const {
     withSpan,
     setSpanAttributes: vi.fn(),
     spans,
+    enqueueZdrCleanupJob: vi.fn(async () => {}),
   };
 });
 
@@ -119,6 +121,10 @@ vi.mock("../../lib/gcs-jobs", () => ({
   saveMapToGCS: vi.fn(),
   saveScrapeToGCS: vi.fn(),
   saveSearchToGCS: vi.fn(),
+}));
+
+vi.mock("../../lib/zdr-queue", () => ({
+  enqueueZdrCleanupJob,
 }));
 
 vi.mock("../../lib/extract/extract-redis", () => ({
@@ -333,6 +339,32 @@ describe("logRequest", () => {
         expiresAt: expect.any(Date),
       }),
     );
+  });
+
+  it("durably queues ZDR cleanup before writing the request", async () => {
+    await logRequest({
+      ...makeRequest("op_integration_42"),
+      zeroDataRetention: true,
+    });
+
+    expect(enqueueZdrCleanupJob).toHaveBeenCalledWith(
+      "019e6f45-7778-727d-adf0-0abe9d5062b6",
+    );
+    expect(enqueueZdrCleanupJob.mock.invocationCallOrder[0]).toBeLessThan(
+      values.mock.invocationCallOrder[0],
+    );
+    expect(values.mock.calls[0][0]).not.toHaveProperty("dr_clean_by");
+  });
+
+  it("does not write a ZDR request unless its cleanup job was confirmed", async () => {
+    enqueueZdrCleanupJob.mockRejectedValueOnce(
+      new Error("RabbitMQ unavailable"),
+    );
+
+    await expect(
+      logRequest({ ...makeRequest(null), zeroDataRetention: true }),
+    ).rejects.toThrow("RabbitMQ unavailable");
+    expect(values).not.toHaveBeenCalled();
   });
 
   it("keeps the database write when Pub/Sub fails", async () => {
