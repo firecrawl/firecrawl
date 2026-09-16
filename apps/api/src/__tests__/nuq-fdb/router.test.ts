@@ -263,6 +263,9 @@ describeIf("NuQ router (forced FDB mode)", () => {
 
   test("routed group listing probes FDB when crawl state is missing", async () => {
     const forcedBackend = config.NUQ_BACKEND;
+    const redisGet = vi
+      .spyOn(redisEvictConnection, "get")
+      .mockResolvedValue(null);
     config.NUQ_BACKEND = "pg";
     try {
       const teamId = randomUUID();
@@ -298,6 +301,7 @@ describeIf("NuQ router (forced FDB mode)", () => {
       });
     } finally {
       config.NUQ_BACKEND = forcedBackend;
+      redisGet.mockRestore();
     }
   });
 
