@@ -9,10 +9,10 @@ import {
 import {
   supabaseGetAgentByIdDirect,
   supabaseGetExtractByIdDirect,
-  supabaseGetExtractRequestByIdDirect,
 } from "../../lib/supabase-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
+import { getExtractJobAccess } from "../../lib/operational-job-access";
 
 async function getExtractData(id: string): Promise<any> {
   // Try GCS first if configured
@@ -34,18 +34,22 @@ export async function extractStatusController(
   req: RequestWithAuth<{ jobId: string }, any, any>,
   res: Response,
 ) {
-  const extractRequest = config.USE_DB_AUTHENTICATION
-    ? await supabaseGetExtractRequestByIdDirect(req.params.jobId)
+  const access = config.USE_DB_AUTHENTICATION
+    ? await getExtractJobAccess(req.params.jobId)
     : null;
   if (config.USE_DB_AUTHENTICATION) {
-    if (!extractRequest || extractRequest.team_id !== req.auth.team_id) {
+    if (
+      !access ||
+      access.expiresAtMs <= Date.now() ||
+      access.teamId !== req.auth.team_id
+    ) {
       return res.status(404).json({
         success: false,
         error: "Extract job not found",
       });
     }
 
-    if (extractRequest.kind === "agent") {
+    if (access.kind === "agent") {
       const agent = await supabaseGetAgentByIdDirect(req.params.jobId);
 
       let data: any = undefined;
@@ -62,10 +66,7 @@ export async function extractStatusController(
             : "failed",
         error: agent?.error || undefined,
         data,
-        expiresAt: new Date(
-          new Date(agent?.created_at ?? extractRequest.created_at).getTime() +
-            1000 * 60 * 60 * 24,
-        ).toISOString(),
+        expiresAt: new Date(access.expiresAtMs).toISOString(),
         creditsUsed: agent?.credits_cost,
       });
     }
@@ -90,9 +91,7 @@ export async function extractStatusController(
           data,
           status: dbExtract.is_successful ? "completed" : "failed",
           error: dbExtract.error || undefined,
-          expiresAt: new Date(
-            new Date(dbExtract.created_at).getTime() + 1000 * 60 * 60 * 24,
-          ).toISOString(),
+          expiresAt: new Date(access!.expiresAtMs).toISOString(),
         });
       }
     }
@@ -102,9 +101,7 @@ export async function extractStatusController(
       success: true,
       data: [],
       status: "processing",
-      expiresAt: new Date(
-        new Date(extractRequest.created_at).getTime() + 1000 * 60 * 60 * 24,
-      ).toISOString(),
+      expiresAt: new Date(access!.expiresAtMs).toISOString(),
     });
   }
 

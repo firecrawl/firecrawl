@@ -275,6 +275,8 @@ const configSchema = z.object({
   BIGTABLE_INSTANCE_ID: z.string().optional(),
   BIGTABLE_APP_PROFILE_ID: z.string().optional(),
   BIGTABLE_CHANGE_TRACKING_TABLE: z.string().optional(),
+  BIGTABLE_JOB_ACCESS_TABLE: z.string().optional(),
+  BIGTABLE_FEEDBACK_JOBS_TABLE: z.string().optional(),
   BIGTABLE_CREDENTIALS: z.string().optional(),
 
   // ClickHouse (Search Analytics)

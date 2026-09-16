@@ -162,6 +162,17 @@ function validateJob(
     );
   }
 
+  if (job.feedback_deadline_ms !== undefined) {
+    if (job.feedback_deadline_ms > Date.now()) return null;
+    const maxAgeSec = options.maxAgeSec ?? config.FEEDBACK_MAX_AGE_SEC;
+    return feedbackFailure(
+      409,
+      "FEEDBACK_WINDOW_EXPIRED",
+      options.windowExpiredMessage ??
+        `Feedback must be submitted within ${maxAgeSec} seconds of the job.`,
+    );
+  }
+
   const maxAgeSec = options.maxAgeSec ?? config.FEEDBACK_MAX_AGE_SEC;
   const createdAtMs = new Date(job.created_at).getTime();
   if (Number.isNaN(createdAtMs)) {

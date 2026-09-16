@@ -192,6 +192,9 @@ export async function crawlController(
     target_hint: req.body.url,
     zeroDataRetention: zeroDataRetention || false,
     api_key_id: req.acuc?.api_key_id ?? null,
+    jobAccessExpiresAt: new Date(
+      Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+    ),
   });
 
   // checkCreditsMiddleware (always runs before this controller) is the source

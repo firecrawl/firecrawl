@@ -3,15 +3,16 @@ import type { Response } from "express";
 import { agentStatusController } from "../agent-status";
 import { agentRequestSchema } from "../types";
 import type { RequestWithAuth } from "../types";
-import {
-  supabaseGetAgentByIdDirect,
-  supabaseGetAgentRequestByIdDirect,
-} from "../../../lib/supabase-jobs";
+import { supabaseGetAgentByIdDirect } from "../../../lib/supabase-jobs";
+import { getAgentJobAccess } from "../../../lib/operational-job-access";
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
 
 vi.mock("../../../lib/supabase-jobs", () => ({
   supabaseGetAgentByIdDirect: vi.fn(),
-  supabaseGetAgentRequestByIdDirect: vi.fn(),
+}));
+
+vi.mock("../../../lib/operational-job-access", () => ({
+  getAgentJobAccess: vi.fn(),
 }));
 
 vi.mock("../../../lib/gcs-jobs", () => ({
@@ -35,9 +36,9 @@ describe("agentStatusController", () => {
   });
 
   it("returns model from agent options", async () => {
-    (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
-      team_id: "team-123",
-      created_at: "2025-01-01T00:00:00Z",
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
     });
     (supabaseGetAgentByIdDirect as Mock).mockResolvedValue({
       id: "job-123",
@@ -57,9 +58,9 @@ describe("agentStatusController", () => {
   });
 
   it("defaults model to spark-1-pro when missing", async () => {
-    (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
-      team_id: "team-123",
-      created_at: "2025-01-01T00:00:00Z",
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
     });
     (supabaseGetAgentByIdDirect as Mock).mockResolvedValue({
       id: "job-123",
@@ -77,9 +78,9 @@ describe("agentStatusController", () => {
     );
   });
   it("returns effort from agent options", async () => {
-    (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
-      team_id: "team-123",
-      created_at: "2025-01-01T00:00:00Z",
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
     });
     (supabaseGetAgentByIdDirect as Mock).mockResolvedValue({
       id: "job-123",
@@ -99,9 +100,9 @@ describe("agentStatusController", () => {
   });
 
   it("leaves effort undefined when the agent options omit it", async () => {
-    (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
-      team_id: "team-123",
-      created_at: "2025-01-01T00:00:00Z",
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
     });
     (supabaseGetAgentByIdDirect as Mock).mockResolvedValue({
       id: "job-123",
@@ -136,10 +137,10 @@ describe("agentStatusController", () => {
   ] as const)(
     "reports a spark-2 job to %s as %s",
     async (origin, expectedModel) => {
-      (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
-        team_id: "team-123",
-        created_at: "2025-01-01T00:00:00Z",
-        origin,
+      (getAgentJobAccess as Mock).mockResolvedValue({
+        teamId: "team-123",
+        expiresAtMs: Date.now() + 60_000,
+        clientOrigin: origin,
       });
       (supabaseGetAgentByIdDirect as Mock).mockResolvedValue({
         id: "job-123",
@@ -159,10 +160,10 @@ describe("agentStatusController", () => {
   );
 
   it("keeps a genuine spark-1 model truthful even for old python-sdk clients", async () => {
-    (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
-      team_id: "team-123",
-      created_at: "2025-01-01T00:00:00Z",
-      origin: "python-sdk@4.37.0",
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+      clientOrigin: "python-sdk@4.37.0",
     });
     (supabaseGetAgentByIdDirect as Mock).mockResolvedValue({
       id: "job-123",

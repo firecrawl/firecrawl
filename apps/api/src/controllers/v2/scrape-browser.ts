@@ -61,7 +61,7 @@ import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activit
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { integrationSchema } from "../../utils/integration";
-import { supabaseGetScrapeById } from "../../lib/supabase-jobs";
+import { supabaseGetScrapeByIdDirect } from "../../lib/supabase-jobs";
 import {
   BROWSER_CREDITS_PER_HOUR,
   INTERACT_CREDITS_PER_HOUR,
@@ -167,7 +167,7 @@ export async function scrapeInteractController(
     });
   }
 
-  const scrape = (await supabaseGetScrapeById(
+  const scrape = (await supabaseGetScrapeByIdDirect(
     scrapeId,
   )) as ScrapeContextRow | null;
   if (!scrape) {

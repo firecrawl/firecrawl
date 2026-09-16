@@ -93,6 +93,9 @@ it("returns the Scrape contract, shares identity with the legacy route, and logs
     scrapeId: undefined,
   });
   expect(mocks.log).toHaveBeenCalledTimes(1);
+  expect(mocks.log).toHaveBeenCalledWith(
+    expect.objectContaining({ kind: "scrape", jobAccess: false }),
+  );
 });
 
 it("relays a failed single legacy call as an error, not a success", async () => {

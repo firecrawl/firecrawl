@@ -2,7 +2,10 @@ import { v7 as uuidv7 } from "uuid";
 import { Request, Response } from "express";
 import { ErrorResponse, extractOptions, RequestWithAuth } from "./types";
 import { getDeepResearchQueue } from "../../services/queue-service";
-import { saveDeepResearch } from "../../lib/deep-research/deep-research-redis";
+import {
+  DEEP_RESEARCH_TTL,
+  saveDeepResearch,
+} from "../../lib/deep-research/deep-research-redis";
 import { z } from "zod";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
@@ -104,6 +107,7 @@ export async function deepResearchController(
     target_hint: req.body.query ?? "",
     zeroDataRetention: false, // not supported for deep research
     api_key_id: req.acuc?.api_key_id ?? null,
+    jobAccessExpiresAt: new Date(Date.now() + DEEP_RESEARCH_TTL * 1000),
   });
 
   const jobData = {

@@ -1,8 +1,8 @@
 import { Response } from "express";
-import { supabaseGetScrapeByIdOnlyData } from "../../lib/supabase-jobs";
 import { getJob } from "./crawl-status";
 import { logger as _logger } from "../../lib/logger";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { getScrapeJobAccess } from "../../lib/operational-job-access";
 
 export async function scrapeStatusController(req: any, res: any) {
   const logger = _logger.child({
@@ -22,16 +22,16 @@ export async function scrapeStatusController(req: any, res: any) {
     });
   }
 
-  const job = await supabaseGetScrapeByIdOnlyData(req.params.jobId, logger);
+  const access = await getScrapeJobAccess(req.params.jobId);
 
-  if (!job) {
+  if (!access || access.expiresAtMs <= Date.now()) {
     return res.status(404).json({
       success: false,
       error: "Job not found.",
     });
   }
 
-  if (job?.team_id !== req.auth.team_id) {
+  if (access.teamId !== req.auth.team_id) {
     return res.status(403).json({
       success: false,
       error: "You are not allowed to access this resource.",

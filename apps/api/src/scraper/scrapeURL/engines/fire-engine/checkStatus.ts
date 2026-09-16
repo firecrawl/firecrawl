@@ -192,7 +192,10 @@ export async function fireEngineCheckStatus(
     throw new StillProcessingError(jobId);
   } else if (failedParse.success) {
     logger.debug("Scrape job failed", { status, jobId });
-    if (failedParse.data.failureReason === "site_protection") {
+    if (
+      failedParse.data.failureReason === "site_protection" &&
+      meta.internalOptions.safeMode?.disableSiteHandling
+    ) {
       throw new SiteRestrictionError();
     }
     if (

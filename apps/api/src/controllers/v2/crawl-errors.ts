@@ -8,9 +8,7 @@ import {
 import { getCrawl } from "../../lib/crawl-redis";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { configDotenv } from "dotenv";
-import { eq } from "drizzle-orm";
-import { dbRr } from "../../db/connection";
-import * as schema from "../../db/schema";
+import { getCrawlJobAccess } from "../../lib/operational-job-access";
 import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
 import { TransportableError } from "../../lib/error";
@@ -28,37 +26,24 @@ export async function crawlErrorsController(
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
   } else if (config.USE_DB_AUTHENTICATION) {
-    // Check the requests table for the crawl/batch scrape request
-    let request: (typeof schema.requests.$inferSelect)[];
+    const crawlTtlHours = req.acuc?.flags?.crawlTtlHours ?? 24;
+    let access;
     try {
-      request = await dbRr
-        .select()
-        .from(schema.requests)
-        .where(eq(schema.requests.id, req.params.jobId))
-        .limit(1);
+      access = await getCrawlJobAccess(req.params.jobId, crawlTtlHours);
     } catch (requestError) {
       _logger.error("Error getting request", { error: requestError });
       throw requestError;
     }
 
-    const requestData = request?.[0];
-
-    if (requestData && requestData.team_id !== req.auth.team_id) {
+    if (access && access.teamId !== req.auth.team_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
-    const crawlTtlHours = req.acuc?.flags?.crawlTtlHours ?? 24;
-    const crawlTtlMs = crawlTtlHours * 60 * 60 * 1000;
-
-    if (
-      requestData &&
-      new Date().valueOf() - new Date(requestData.created_at!).valueOf() >
-        crawlTtlMs
-    ) {
+    if (access && access.expiresAtMs <= Date.now()) {
       return res.status(404).json({ success: false, error: "Job expired" });
     }
 
-    if (!request || request.length === 0) {
+    if (!access) {
       return res.status(404).json({ success: false, error: "Job not found" });
     }
   } else {
