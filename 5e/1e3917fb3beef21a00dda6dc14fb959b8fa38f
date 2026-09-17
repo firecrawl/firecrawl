@@ -1,0 +1,9 @@
+apps/api/src/services/alexandria/terms.ts
+  ai_agent 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5e1e3917fb3beef21a00dda6dc14fb959b8fa38f",
+  "prompts": {}
+}
