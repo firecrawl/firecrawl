@@ -1,4 +1,5 @@
 import type { Meta } from "../../..";
+import { config } from "../../../../../config";
 import {
   getPDFRefresh,
   type PDFMode,
@@ -17,6 +18,7 @@ import {
   firePdfCacheEventsTotal,
   firePdfCacheRefusedWritesTotal,
 } from "./metrics";
+import { consumeRefresh } from "./refresh-budget";
 import { firePdfBlockPagesSchema, type FirePdfProvenance } from "./schema";
 
 // Raster images ride the same cache as PDFs (the image engine posts their
@@ -194,19 +196,35 @@ export async function tryGetCached(
   const cacheKey = resolvePdfCacheKey(base64Content);
 
   // `parsers: [{ type: "pdf", refresh: true }]`: the caller wants this
-  // document parsed again with the current pipeline. Skip the read; the
-  // fresh result is still written, so the entry is corrected for everyone.
+  // document parsed again with the current pipeline. Within the team's
+  // budget the read is skipped; the fresh result is still written, so the
+  // entry is corrected for everyone. Over budget (or with the limiter
+  // unavailable) the request is served normally and the decision logged.
   if (getPDFRefresh(meta.options?.parsers)) {
+    const decision = await consumeRefresh(meta.internalOptions.teamId);
+    if (decision === "allowed") {
+      firePdfCacheEventsTotal.inc({
+        event: "bypass_refresh",
+        variant: ownVariant ?? "base",
+      });
+      meta.logger.info("FirePDF cache bypassed by refresh", {
+        scrapeId: meta.id,
+        requestedMode: mode,
+        cacheKey,
+      });
+      return null;
+    }
     firePdfCacheEventsTotal.inc({
-      event: "bypass_refresh",
+      event: "bypass_refresh_denied",
       variant: ownVariant ?? "base",
     });
-    meta.logger.info("FirePDF cache bypassed by refresh", {
+    meta.logger.warn("FirePDF cache refresh not applied", {
       scrapeId: meta.id,
       requestedMode: mode,
       cacheKey,
+      decision,
+      perMinute: config.FIRE_PDF_CACHE_REFRESH_PER_MINUTE,
     });
-    return null;
   }
 
   for (const variant of lookupVariants) {

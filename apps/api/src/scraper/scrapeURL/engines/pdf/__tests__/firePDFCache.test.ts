@@ -7,6 +7,11 @@ import {
   maybeSaveResult,
   tryGetCached,
 } from "../fire-pdf/cache";
+import { consumeRefresh } from "../fire-pdf/refresh-budget";
+
+vi.mock("../fire-pdf/refresh-budget", () => ({
+  consumeRefresh: vi.fn(async () => "allowed"),
+}));
 
 vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
   getPdfResultFromCache: vi.fn(),
@@ -955,5 +960,29 @@ describe("FirePDF cache provenance and write rules", () => {
       provenance,
     });
     expect(saveCached).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves the cache normally when the team's refresh budget is spent, and says so", async () => {
+    vi.mocked(consumeRefresh).mockResolvedValueOnce("limited");
+    getCached.mockResolvedValue({ markdown: "cached", html: "<p>cached</p>" });
+    const meta = makeMeta(false, [{ type: "pdf", refresh: true }]);
+    const result = await tryGetCached(
+      meta,
+      "BASE64",
+      "auto",
+      undefined,
+      1,
+      false,
+      false,
+    );
+    expect(result?.markdown).toBe("cached");
+    expect(getCached).toHaveBeenCalled();
+    expect(meta.logger.warn).toHaveBeenCalledWith(
+      "FirePDF cache refresh not applied",
+      expect.objectContaining({
+        decision: "limited",
+        cacheKey: "key-of-BASE64",
+      }),
+    );
   });
 });
