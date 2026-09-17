@@ -17,9 +17,10 @@ import {
  * (PNG/JPEG/JPEG 2000/TIFF/GIF/BMP), finds no text layer, and runs the same
  * layout + OCR path a scanned PDF page takes.
  *
- * OCR is on by default and opt-out per request (a `parsers` list without
- * `image`; a parse upload of an image always counts), behind the deployment
- * switch; both are folded into `meta.imageOcrEnabled`. The pdf
+ * Image OCR is off until the deployment enables it (`IMAGE_OCR_ENABLED`,
+ * default false). Once it is on, every request gets it unless it opts out
+ * per request (a `parsers` list without `image`; a parse upload of an image
+ * always counts); both conditions are folded into `meta.imageOcrEnabled`. The pdf
  * parser's options (mode, maxPages, pages, blocks, pageMarkers) are not
  * consulted: an image has no text layer to fall back on, so every admitted
  * image is OCR'd. A caller who wants the bytes instead uses the `rawBase64`
@@ -58,10 +59,10 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     // Requests already identified as images (a browser handoff, the image
-    // flag, a forceEngine pin, or an image-extension URL) resolve the
-    // per-team gate up front. Anything else is a waterfall tail that has to
-    // sniff its bytes first, so an ordinary failed page never pays for a
-    // team lookup here.
+    // flag, a forceEngine pin, or an image-extension URL) consult the gate
+    // up front. Anything else is a waterfall tail that has to sniff its
+    // bytes first, so an ordinary failed page is rejected on its bytes, not
+    // on the gate.
     const knownImage =
       meta.imagePrefetch != null ||
       meta.featureFlags.has("image") ||
