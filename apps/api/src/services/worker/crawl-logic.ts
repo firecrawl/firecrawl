@@ -8,6 +8,7 @@ import {
 import { getCrawl } from "../../lib/crawl-redis";
 import { creditsBilledByCrawlId } from "../../db/rpc";
 import { db } from "../../db/connection";
+import { readRequestCredits } from "../../lib/request-credits-store";
 import { getJobs } from "../../controllers/v1/crawl-status";
 import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
@@ -143,7 +144,13 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
 
     let credits_billed: number | null = null;
 
-    if (config.USE_DB_AUTHENTICATION) {
+    try {
+      credits_billed = await readRequestCredits(crawlId);
+    } catch (error) {
+      logger.warn("Bigtable request credits read failed", { error });
+    }
+
+    if (credits_billed === null && config.USE_DB_AUTHENTICATION) {
       try {
         const creditsRows = await creditsBilledByCrawlId(db, crawlId);
         credits_billed = creditsRows?.[0]?.credits_billed ?? null;

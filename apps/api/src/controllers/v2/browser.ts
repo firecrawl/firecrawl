@@ -37,6 +37,7 @@ import {
 import { autumnService } from "../../services/autumn/autumn.service";
 import { orgIdForTeam } from "../../lib/team-org";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { recordRequestCredits } from "../../lib/request-credits-store";
 import {
   getSafeMode,
   SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
@@ -686,6 +687,21 @@ export async function browserDeleteController(
 
   await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
 
+  if (session.request_id && session.request_id !== session.id) {
+    await recordRequestCredits({
+      requestId: session.request_id,
+      jobId: session.id,
+      credits: creditsBilled,
+    }).catch(error => {
+      logger.error("Failed to record browser request credits in Bigtable", {
+        error,
+        requestId: session.request_id,
+        sessionId: session.id,
+        creditsBilled,
+      });
+    });
+  }
+
   if (session.should_bill) {
     const agentRequestId =
       session.request_id && session.request_id !== session.id
@@ -853,6 +869,21 @@ export async function browserWebhookDestroyedController(
   clearBrowserSessionPromptFlag(session.id).catch(() => {});
 
   await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
+
+  if (session.request_id && session.request_id !== session.id) {
+    await recordRequestCredits({
+      requestId: session.request_id,
+      jobId: session.id,
+      credits: creditsBilled,
+    }).catch(error => {
+      logger.error("Failed to record browser request credits in Bigtable", {
+        error,
+        requestId: session.request_id,
+        sessionId: session.id,
+        creditsBilled,
+      });
+    });
+  }
 
   if (session.should_bill) {
     const agentRequestId =

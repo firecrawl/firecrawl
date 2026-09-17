@@ -41,6 +41,7 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
+import { requestCreditsShards } from "../../lib/request-credits-store";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -200,6 +201,7 @@ export async function crawlController(
     jobAccessExpiresAt: new Date(
       Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
     ),
+    creditsShards: requestCreditsShards(req.body.limit ?? 10_000),
   });
 
   // checkCreditsMiddleware (always runs before this controller) is the source

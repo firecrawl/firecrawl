@@ -32,6 +32,7 @@ import { ScrapeJobSingleUrls } from "../../types";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { readScrapeJobState } from "../../lib/job-state-store";
+import { readRequestCredits } from "../../lib/request-credits-store";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -214,9 +215,14 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
-  const creditsBilled = config.USE_DB_AUTHENTICATION
-    ? await creditsBilledByCrawlId(dbRr, req.params.jobId).catch(() => null)
-    : null;
+  let creditsBilled = await readRequestCredits(req.params.jobId).catch(
+    () => null,
+  );
+  if (creditsBilled === null && config.USE_DB_AUTHENTICATION) {
+    creditsBilled = await creditsBilledByCrawlId(dbRr, req.params.jobId)
+      .then(rows => rows[0]?.credits_billed ?? null)
+      .catch(() => null);
+  }
 
   // check if the crawl failed during kickoff (e.g. queue full)
   const crawlError = await getCrawlError(req.params.jobId);
@@ -238,7 +244,7 @@ export async function crawlStatusController(
       (numericStats.active ?? 0) +
       (numericStats.queued ?? 0) +
       (numericStats.backlog ?? 0),
-    creditsUsed: creditsBilled?.[0]?.credits_billed ?? -1,
+    creditsUsed: creditsBilled ?? -1,
   };
 
   // if the crawl has a stored error and no jobs were ever created, mark as failed

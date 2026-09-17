@@ -50,6 +50,7 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
+import { requestCreditsShards } from "../../lib/request-credits-store";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -348,6 +349,7 @@ export async function batchScrapeController(
       jobAccessExpiresAt: new Date(
         Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
       ),
+      creditsShards: requestCreditsShards(urls.length),
     });
   }
 

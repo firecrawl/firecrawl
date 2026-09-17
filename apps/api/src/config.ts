@@ -279,6 +279,7 @@ const configSchema = z.object({
   BIGTABLE_FEEDBACK_JOBS_TABLE: z.string().optional(),
   BIGTABLE_SCRAPE_STATE_TABLE: z.string().optional(),
   BIGTABLE_EXTRACT_STATE_TABLE: z.string().optional(),
+  BIGTABLE_REQUEST_CREDITS_TABLE: z.string().optional(),
   BIGTABLE_CREDENTIALS: z.string().optional(),
 
   // ClickHouse (Search Analytics)
