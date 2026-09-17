@@ -2,7 +2,7 @@ import { z } from "zod";
 import { exchangeRequest } from "./client";
 import { refusal, type ExchangeResponse } from "./contracts";
 
-const TIMEOUT_MS = 10000;
+const TIMEOUT_MS = 10_000;
 
 export const acceptTermsSchema = z.strictObject({
   provider: z.string().min(1).max(200),
