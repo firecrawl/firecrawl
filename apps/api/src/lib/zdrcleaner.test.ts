@@ -67,7 +67,8 @@ describe("ZDR cleaner", () => {
 
     expect(query).toHaveBeenCalledOnce();
     expect(query.mock.calls[0][0]).toMatchObject({
-      query: expect.stringContaining("FROM request_children"),
+      query:
+        "SELECT DISTINCT id FROM request_children WHERE request_id = {requestId: UUID}",
       query_params: { requestId: "request-1" },
       format: "JSONEachRow",
     });
@@ -99,13 +100,14 @@ describe("ZDR cleaner", () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it("completes but warns when a request has no indexed blobs", async () => {
+  it("completes quietly when a request has no indexed blobs", async () => {
     mockChildren([]);
 
     await cleanZdrRequest("request-empty");
 
     expect(removeJobFromGCS).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith(
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
       "ZDR request has no indexed result blobs",
       expect.objectContaining({ requestId: "request-empty" }),
     );

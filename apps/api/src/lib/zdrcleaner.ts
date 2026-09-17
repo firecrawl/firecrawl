@@ -66,8 +66,10 @@ export async function cleanZdrRequest(requestId: string): Promise<void> {
     setSpanAttributes(span, { "zdr.request_id": requestId });
     const blobIds = await getRequestBlobIds(requestId);
     setSpanAttributes(span, { "zdr.blob_count": blobIds.length });
+    // A request that failed before producing a job row has no children; the
+    // span attribute above is the signal for that, so this stays at debug.
     if (blobIds.length === 0) {
-      _logger.warn("ZDR request has no indexed result blobs", {
+      _logger.debug("ZDR request has no indexed result blobs", {
         module: "zdrcleaner",
         method: "cleanZdrRequest",
         zeroDataRetention: true,
