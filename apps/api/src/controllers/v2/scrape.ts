@@ -493,7 +493,6 @@ export async function scrapeController(
           req,
           "scrape",
           jobId,
-          false,
         );
         if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
           reconciledKeylessCredits = true;
@@ -843,7 +842,7 @@ export async function scrapeController(
           ...doc!,
           metadata: {
             ...doc!.metadata,
-            ...(await keylessFeedbackMetadata(req, "scrape", jobId, true)),
+            ...(await keylessFeedbackMetadata(req, "scrape", jobId)),
             concurrencyLimited,
             concurrencyQueueDurationMs: concurrencyLimited
               ? lockTime || 0

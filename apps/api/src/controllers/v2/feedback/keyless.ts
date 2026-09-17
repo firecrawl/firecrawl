@@ -61,25 +61,26 @@ export async function keylessFeedbackController(
         "FEEDBACK_WINDOW_EXPIRED",
         "Feedback must be submitted within 24 hours of the job.",
       );
+    if (
+      job.is_successful !== false &&
+      answers.observations.some(item => item.kind === "failure")
+    )
+      return fail(
+        400,
+        "INVALID_BODY",
+        "Failure observations require a failed job.",
+      );
+    let unverified = false;
     const options = job.options as {
       sources?: unknown;
       formats?: unknown;
     };
     if (answers.endpoint === "search") {
       const sources = requestedTypes(options.sources, "web");
-      let groups: Record<string, unknown> | undefined;
-      if (answers.observations.some(item => item.kind !== "missing")) {
-        const results: unknown = await getJobFromGCS(job.id);
-        if (!results || typeof results !== "object" || Array.isArray(results))
-          return fail(
-            503,
-            "FEEDBACK_UNAVAILABLE",
-            "Search results are unavailable. Retry later.",
-          );
-        groups = results as Record<string, unknown>;
-      }
-      for (const item of answers.observations) {
-        if (item.kind === "missing") continue;
+      const positions = answers.observations.filter(
+        item => item.kind === "useful" || item.kind === "irrelevant",
+      );
+      for (const item of positions) {
         if (!item.source && sources.length > 1)
           return fail(
             400,
@@ -87,17 +88,34 @@ export async function keylessFeedbackController(
             "Provide source when the job requested multiple sources.",
           );
         item.source ??= "web";
-        const results = groups?.[item.source];
-        if (
-          !sources.includes(item.source) ||
-          !Array.isArray(results) ||
-          !results[item.position - 1]
-        )
+        if (!sources.includes(item.source))
           return fail(
             400,
             "INVALID_BODY",
-            "Each result position must exist in its requested, delivered source group.",
+            "Observation source must be a source requested by the job.",
           );
+      }
+      if (positions.length) {
+        let results: unknown;
+        try {
+          results = await getJobFromGCS(job.id);
+        } catch {
+          // Ownership was verified in Postgres. Preserve observations if the artifact is unavailable.
+        }
+        if (!results || typeof results !== "object" || Array.isArray(results)) {
+          unverified = true;
+        } else {
+          const groups = results as Record<string, unknown>;
+          for (const item of positions) {
+            const group = groups[item.source!];
+            if (!Array.isArray(group) || !group[item.position - 1])
+              return fail(
+                400,
+                "INVALID_BODY",
+                "Each result position must exist in its requested, delivered source group.",
+              );
+          }
+        }
       }
     } else {
       const formats = requestedTypes(options.formats, "markdown");
@@ -108,6 +126,7 @@ export async function keylessFeedbackController(
             format?.type === "changeTracking" && format.modes?.includes("json"),
         );
       for (const item of answers.observations) {
+        if (item.kind === "failure") continue;
         if (item.format !== undefined && !formats.includes(item.format))
           return fail(
             400,
@@ -154,7 +173,11 @@ export async function keylessFeedbackController(
       }
     }
     // Count the final metadata, including job-dependent defaults, before storing it.
-    const metadata = { schemaVersion: 1, answers } as const;
+    const metadata = {
+      schemaVersion: 1,
+      answers,
+      ...(unverified ? { unverified: true as const } : {}),
+    } as const;
     if (!feedbackMetadataSchema.safeParse(metadata).success)
       return fail(
         400,
@@ -166,7 +189,7 @@ export async function keylessFeedbackController(
       return fail(
         429,
         "DAILY_LIMIT_REACHED",
-        "Feedback was already accepted for this identity today. The daily limit is shared across Search, Scrape, and Parse. Try another UTC day.",
+        `The daily limit of ${config.KEYLESS_FEEDBACK_DAILY_LIMIT} accepted submissions per caller IP was reached. It is shared across Search, Scrape, and Parse. Try another UTC day.`,
       );
     return res.status(200).json({ ...result, creditsRefunded: 0 });
   } catch {

@@ -32,7 +32,6 @@ describeIf(enabled)("keyless feedback", () => {
       "keyless_credits:203.0.113.173",
       `keyless_feedback_attempts:${identity}`,
     );
-    await redisRateLimitClient.del(`keyless_feedback_invitations:${identity}`);
   };
   beforeEach(cleanup);
   afterAll(cleanup);
@@ -56,6 +55,10 @@ describeIf(enabled)("keyless feedback", () => {
       expect(scraped.body.data.markdown.trim().length).toBeGreaterThan(0);
       const jobId = scraped.body.data.metadata.jobId;
       expect(jobId).toEqual(expect.any(String));
+      expect(scraped.body.data.metadata.feedback).toMatchObject({
+        jobId,
+        docs: "https://docs.firecrawl.dev/api-reference/endpoint/feedback",
+      });
       const payload = {
         endpoint: "scrape",
         jobId,

@@ -626,7 +626,6 @@ export async function parseController(
           req,
           "parse",
           jobId,
-          false,
         );
         if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
           reconciledKeylessCredits = true;
@@ -809,7 +808,7 @@ export async function parseController(
           ...doc!,
           metadata: {
             ...doc!.metadata,
-            ...(await keylessFeedbackMetadata(req, "parse", jobId, true)),
+            ...(await keylessFeedbackMetadata(req, "parse", jobId)),
             concurrencyLimited,
             concurrencyQueueDurationMs: concurrencyLimited
               ? lockTime || 0

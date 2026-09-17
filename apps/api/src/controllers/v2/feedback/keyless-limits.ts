@@ -1,7 +1,7 @@
 import { redisRateLimitClient } from "../../../services/rate-limiter";
 
-export const KEYLESS_FEEDBACK_ATTEMPTS = 10;
-export const keylessFeedbackAttemptKey = (identity: string) =>
+const KEYLESS_FEEDBACK_ATTEMPTS = 30;
+const keylessFeedbackAttemptKey = (identity: string) =>
   `keyless_feedback_attempts:${identity}`;
 
 export async function consumeKeylessFeedbackAttempt(identity: string) {
