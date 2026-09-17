@@ -9,6 +9,8 @@ import {
   savePdfResultToCache,
 } from "../../../../lib/gcs-pdf-cache";
 import type { PDFProcessorResult } from "./types";
+import { getPDFRefresh } from "../../../../controllers/v2/types";
+import { consumeRefresh } from "./fire-pdf/refresh-budget";
 
 export async function scrapePDFWithRunPodMU(
   meta: Meta,
@@ -22,19 +24,41 @@ export async function scrapePDFWithRunPodMU(
   });
 
   if (!maxPages) {
-    try {
-      const cachedResult = await getPdfResultFromCache(base64Content);
-      if (cachedResult) {
-        meta.logger.info("Using cached RunPod MU result for PDF", {
+    // `parsers: [{ type: "pdf", refresh: true }]` skips this cache too, under
+    // the same per-team budget as the fire-pdf path: a MinerU-diverted request
+    // never reaches that path, so the budget has to be applied here as well.
+    // Over budget, or with the limiter unavailable, the entry is served.
+    let bypass = false;
+    if (getPDFRefresh(meta.options?.parsers)) {
+      const decision = await consumeRefresh(meta.internalOptions.teamId);
+      bypass = decision === "allowed";
+      if (bypass) {
+        meta.logger.info("RunPod MU cache bypassed by refresh", {
           tempFilePath,
         });
-        return cachedResult;
+      } else {
+        meta.logger.warn("RunPod MU cache refresh not applied", {
+          tempFilePath,
+          decision,
+          perMinute: config.FIRE_PDF_CACHE_REFRESH_PER_MINUTE,
+        });
       }
-    } catch (error) {
-      meta.logger.warn("Error checking PDF cache, proceeding with RunPod MU", {
-        error,
-        tempFilePath,
-      });
+    }
+    if (!bypass) {
+      try {
+        const cachedResult = await getPdfResultFromCache(base64Content);
+        if (cachedResult) {
+          meta.logger.info("Using cached RunPod MU result for PDF", {
+            tempFilePath,
+          });
+          return cachedResult;
+        }
+      } catch (error) {
+        meta.logger.warn(
+          "Error checking PDF cache, proceeding with RunPod MU",
+          { error, tempFilePath },
+        );
+      }
     }
   }
 

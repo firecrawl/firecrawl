@@ -208,13 +208,15 @@ export const firePdfProvenanceSchema = z
     built_at: z.string().nullable(),
     produced_at: z.string(),
     stages: z.array(z.string()).optional(),
+    // Page counts: the write rule reads them, so a malformed stamp must
+    // fail validation rather than pass as a healthy result.
     quality: z
       .object({
-        total_pages: z.number(),
-        failed_pages: z.number(),
-        partial_pages: z.number(),
-        degraded_pages: z.number(),
-        ocr_pages: z.number(),
+        total_pages: z.int().nonnegative(),
+        failed_pages: z.int().nonnegative(),
+        partial_pages: z.int().nonnegative(),
+        degraded_pages: z.int().nonnegative(),
+        ocr_pages: z.int().nonnegative(),
       })
       .passthrough()
       .optional(),

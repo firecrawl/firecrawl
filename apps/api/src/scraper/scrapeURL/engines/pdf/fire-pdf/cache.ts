@@ -392,7 +392,28 @@ export async function maybeSaveResult(args: {
   };
 
   try {
-    await savePdfResultToCache(base64Content, entry, "firepdf", ownVariant);
+    // savePdfResultToCache returns null (without throwing) when GCS is not
+    // configured or its retries are exhausted; only a persisted write is a
+    // write.
+    const savedKey = await savePdfResultToCache(
+      base64Content,
+      entry,
+      "firepdf",
+      ownVariant,
+    );
+    if (savedKey === null) {
+      firePdfCacheEventsTotal.inc({
+        event: "write_failed",
+        variant: ownVariant ?? "base",
+      });
+      meta.logger.warn("FirePDF result not persisted to cache", {
+        scrapeId: meta.id,
+        requestedMode: mode,
+        cacheVariant: ownVariant ?? "base",
+        cacheKey,
+      });
+      return;
+    }
     firePdfCacheEventsTotal.inc({
       event: "write",
       variant: ownVariant ?? "base",
@@ -428,14 +449,14 @@ export async function maybeSaveResult(args: {
           cachedAt,
           variant: baseVariant ?? "base",
         };
-        await savePdfResultToCache(
+        const savedBase = await savePdfResultToCache(
           base64Content,
           baseEntry,
           "firepdf",
           baseVariant,
         );
         firePdfCacheEventsTotal.inc({
-          event: "write",
+          event: savedBase === null ? "write_failed" : "write",
           variant: baseVariant ?? "base",
         });
       }

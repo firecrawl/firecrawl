@@ -2,7 +2,7 @@ import { Counter, Histogram } from "prom-client";
 
 export const firePdfCacheEventsTotal = new Counter({
   name: "firecrawl_fire_pdf_cache_events_total",
-  help: "fire-pdf content-cache events by outcome: hit, miss, bypass_refresh, bypass_refresh_denied, write, refused_write",
+  help: "fire-pdf content-cache events by outcome: hit, miss, bypass_refresh, bypass_refresh_denied, write, write_failed, refused_write",
   labelNames: ["event", "variant"],
 });
 

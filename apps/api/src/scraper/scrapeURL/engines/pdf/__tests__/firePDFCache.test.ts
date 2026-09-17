@@ -8,6 +8,7 @@ import {
   tryGetCached,
 } from "../fire-pdf/cache";
 import { consumeRefresh } from "../fire-pdf/refresh-budget";
+import { firePdfProvenanceSchema } from "../fire-pdf/schema";
 
 vi.mock("../fire-pdf/refresh-budget", () => ({
   consumeRefresh: vi.fn(async () => "allowed"),
@@ -55,7 +56,9 @@ describe("FirePDF page-markdown cache capabilities", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getCached.mockResolvedValue(null);
-    saveCached.mockResolvedValue(null);
+    // The real save returns the cache key on success and null when it could
+    // not persist; a null default would read as "not written".
+    saveCached.mockResolvedValue("saved-key");
   });
 
   it("uses versioned page-capable variants", () => {
@@ -650,7 +653,9 @@ describe("FirePDF cache and empty raster-image results", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getCached.mockResolvedValue(null);
-    saveCached.mockResolvedValue(null);
+    // The real save returns the cache key on success and null when it could
+    // not persist; a null default would read as "not written".
+    saveCached.mockResolvedValue("saved-key");
   });
 
   it("treats a cached empty result for an image as a miss", async () => {
@@ -749,7 +754,9 @@ describe("FirePDF cache provenance and write rules", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getCached.mockResolvedValue(null);
-    saveCached.mockResolvedValue(null);
+    // The real save returns the cache key on success and null when it could
+    // not persist; a null default would read as "not written".
+    saveCached.mockResolvedValue("saved-key");
   });
 
   it("stores the stamp, the write time and the variant with the entry", async () => {
@@ -984,5 +991,41 @@ describe("FirePDF cache provenance and write rules", () => {
         cacheKey: "key-of-BASE64",
       }),
     );
+  });
+  it("does not report a write the cache layer could not persist", async () => {
+    saveCached.mockResolvedValueOnce(null);
+    const meta = makeMeta();
+    await maybeSaveResult({
+      meta,
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "whole", html: "<p>whole</p>" },
+      provenance,
+    });
+    expect(saveCached).toHaveBeenCalledTimes(1);
+    expect(meta.logger.warn).toHaveBeenCalledWith(
+      "FirePDF result not persisted to cache",
+      expect.objectContaining({ cacheKey: "key-of-BASE64" }),
+    );
+    expect(meta.logger.info).not.toHaveBeenCalledWith(
+      "Saved FirePDF result to cache",
+      expect.anything(),
+    );
+  });
+
+  it("rejects a stamp whose page counts are negative or fractional", () => {
+    expect(firePdfProvenanceSchema.safeParse(provenance).success).toBe(true);
+    for (const bad of [
+      { ...provenance.quality, degraded_pages: -1 },
+      { ...provenance.quality, failed_pages: 0.5 },
+    ]) {
+      expect(
+        firePdfProvenanceSchema.safeParse({ ...provenance, quality: bad })
+          .success,
+      ).toBe(false);
+    }
   });
 });
