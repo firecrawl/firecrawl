@@ -2,10 +2,10 @@
 
 The v2 `POST /search`, `/scrape`, `/parse`, and `/map` routes may return an optional top-level `agent_hints: string[]`. Each response contains at most two hints: one cross-endpoint suggestion and a feedback request when the receiver supports the completed operation. Existing data, errors, warning fields, and HTTP statuses remain unchanged.
 
-Clients can suppress all hints for one request with:
+Hints are disabled by default. Trusted agent adapters such as the Firecrawl MCP server and CLI can enable them for one request with:
 
 ```http
-X-Firecrawl-Agent-Hints: false
+X-Firecrawl-Agent-Hints: true
 ```
 
 The header applies to the business request. No request-body schema changes are required. SDKs and other adapters should retain the top-level field when unwrapping `data` and should preserve it on error results. The strings recommend conditional next steps; receiving one does not execute another request or indicate user authorization.
@@ -14,7 +14,7 @@ The header applies to the business request. No request-body schema changes are r
 
 The accompanying JavaScript and Python SDK changes preserve `agent_hints` alongside normal flattened Document, SearchData, and MapData results and on typed errors. Python covers synchronous and asynchronous clients. Markdown and HTML retain their existing content.
 
-Raw HTTP callers can opt out with the header above. This change does not add a client-wide SDK hint option; applications can omit the metadata when passing results to a model. The SDK release must precede upgrading pinned CLI/MCP dependencies for their keyed SDK paths to retain the field.
+Raw HTTP and ordinary SDK callers receive no hints unless their adapter explicitly sets the header above. This change does not add a client-wide SDK hint option. The SDK release must precede upgrading pinned CLI/MCP dependencies for their keyed SDK paths to retain the field.
 
 ## Initial rules
 

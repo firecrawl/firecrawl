@@ -18,7 +18,7 @@ export function agentHintsMiddleware(
   endpoint: AgentHintEndpoint,
 ): RequestHandler {
   return (req, res, next) => {
-    if (req.get("X-Firecrawl-Agent-Hints")?.trim().toLowerCase() === "false")
+    if (req.get("X-Firecrawl-Agent-Hints")?.trim().toLowerCase() !== "true")
       return next();
     const json = res.json;
     res.json = function (body) {
