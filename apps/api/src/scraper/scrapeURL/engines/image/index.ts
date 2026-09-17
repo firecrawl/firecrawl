@@ -18,8 +18,9 @@ import {
  * layout + OCR path a scanned PDF page takes.
  *
  * OCR is on by default and opt-out per request (a `parsers` list without
- * `image`; a parse upload of an image always counts), and rolled out per
- * team (imageOcr flag); both are folded into `meta.imageOcrEnabled`. The pdf
+ * `image`; a parse upload of an image always counts) and per team (imageOcr
+ * flag over the deployment default); both are folded into
+ * `meta.imageOcrEnabled`. The pdf
  * parser's options (mode, maxPages, pages, blocks, pageMarkers) are not
  * consulted: an image has no text layer to fall back on, so every admitted
  * image is OCR'd. A caller who wants the bytes instead uses the `rawBase64`
@@ -70,9 +71,9 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
         new URL(meta.rewrittenUrl ?? meta.url).pathname,
       ) !== null;
     if (knownImage && !(await meta.imageOcrEnabled())) {
-      // Opted out (parsers without image) or no team flag: the request gets
-      // the unsupported-file error the URL path has always produced, whose
-      // message names the parser.
+      // Opted out (parsers without image) or off for the team: the request
+      // gets the unsupported-file error the URL path has always produced,
+      // whose message names the parser.
       throw new UnsupportedFileError(
         meta.imagePrefetch?.contentType ?? "image",
       );

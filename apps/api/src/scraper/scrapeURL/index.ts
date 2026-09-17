@@ -160,7 +160,7 @@ export type Meta = {
   mock: MockState | null;
   /** Whether this scrape may OCR raster images: the request's parsers
    * include `image` (the default; a parse upload of an image always counts)
-   * and the team has the imageOcr flag with FirePDF configured. Lazy and
+   * and image OCR is on for the team with FirePDF configured. Lazy and
    * memoized: the browser handoff, the image engine and the index only ask
    * once a request actually looks like an image, so plain documents never
    * pay for the team lookup. */
@@ -336,9 +336,9 @@ function buildFeatureFlags(
     flags.add("pdf");
   } else if (imageExtensionFromUrlPath(lowerPath) !== null && imageOcrEnabled) {
     // Raster images are OCR'd through FirePDF when the request's parsers
-    // include `image` (the default) and the team has the imageOcr flag (see
-    // engines/image). Everyone else stays on the ordinary waterfall and
-    // fails as an unsupported file, exactly as before.
+    // include `image` (the default) and image OCR is on for the team (see
+    // engines/image and lib/image-ocr-gate). Everyone else stays on the
+    // ordinary waterfall and fails as an unsupported file, exactly as before.
     flags.add("image");
   }
 

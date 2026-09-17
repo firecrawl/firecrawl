@@ -6,6 +6,7 @@ import { imageOcrGate, isImageOcrEnabled } from "./image-ocr-gate";
 vi.mock("../config", () => ({
   config: {
     FIRE_PDF_BASE_URL: "http://fire-pdf.test",
+    IMAGE_OCR_ENABLED: false,
   },
 }));
 
@@ -18,25 +19,53 @@ vi.mock("./logger", () => ({
 }));
 
 const mockedGetACUCTeam = vi.mocked(getACUCTeam);
+const mutableConfig = config as {
+  FIRE_PDF_BASE_URL?: string;
+  IMAGE_OCR_ENABLED: boolean;
+};
+
+async function withConfig<T>(
+  overrides: Partial<typeof mutableConfig>,
+  run: () => T | Promise<T>,
+): Promise<T> {
+  const previous = { ...mutableConfig };
+  Object.assign(mutableConfig, overrides);
+  try {
+    return await run();
+  } finally {
+    Object.assign(mutableConfig, previous);
+  }
+}
 
 describe("isImageOcrEnabled", () => {
-  it("requires the imageOcr team flag", () => {
+  it("follows the deployment default for teams without the flag", async () => {
     expect(isImageOcrEnabled(null)).toBe(false);
     expect(isImageOcrEnabled(undefined)).toBe(false);
     expect(isImageOcrEnabled({})).toBe(false);
-    expect(isImageOcrEnabled({ imageOcr: false })).toBe(false);
-    expect(isImageOcrEnabled({ imageOcr: true })).toBe(true);
+    await withConfig({ IMAGE_OCR_ENABLED: true }, () => {
+      expect(isImageOcrEnabled(null)).toBe(true);
+      expect(isImageOcrEnabled(undefined)).toBe(true);
+      expect(isImageOcrEnabled({})).toBe(true);
+    });
   });
 
-  it("requires FirePDF to be configured even for flagged teams", () => {
-    const mutable = config as { FIRE_PDF_BASE_URL?: string };
-    const previous = mutable.FIRE_PDF_BASE_URL;
-    mutable.FIRE_PDF_BASE_URL = undefined;
-    try {
-      expect(isImageOcrEnabled({ imageOcr: true })).toBe(false);
-    } finally {
-      mutable.FIRE_PDF_BASE_URL = previous;
-    }
+  it("lets the imageOcr team flag override the default in both directions", async () => {
+    expect(isImageOcrEnabled({ imageOcr: true })).toBe(true);
+    expect(isImageOcrEnabled({ imageOcr: false })).toBe(false);
+    await withConfig({ IMAGE_OCR_ENABLED: true }, () => {
+      expect(isImageOcrEnabled({ imageOcr: true })).toBe(true);
+      expect(isImageOcrEnabled({ imageOcr: false })).toBe(false);
+    });
+  });
+
+  it("requires FirePDF to be configured whatever the flag or default", async () => {
+    await withConfig(
+      { FIRE_PDF_BASE_URL: undefined, IMAGE_OCR_ENABLED: true },
+      () => {
+        expect(isImageOcrEnabled({ imageOcr: true })).toBe(false);
+        expect(isImageOcrEnabled(null)).toBe(false);
+      },
+    );
   });
 });
 
@@ -50,6 +79,9 @@ describe("imageOcrGate", () => {
       imageOcrGate("team", { imageOcr: true }, false)(),
     ).resolves.toBe(false);
     await expect(imageOcrGate("team", undefined, false)()).resolves.toBe(false);
+    await withConfig({ IMAGE_OCR_ENABLED: true }, () =>
+      expect(imageOcrGate("team", undefined, false)()).resolves.toBe(false),
+    );
     expect(mockedGetACUCTeam).not.toHaveBeenCalled();
   });
 
@@ -58,6 +90,12 @@ describe("imageOcrGate", () => {
       imageOcrGate("team", { imageOcr: true }, true)(),
     ).resolves.toBe(true);
     await expect(imageOcrGate("team", null, true)()).resolves.toBe(false);
+    await withConfig({ IMAGE_OCR_ENABLED: true }, async () => {
+      await expect(imageOcrGate("team", null, true)()).resolves.toBe(true);
+      await expect(
+        imageOcrGate("team", { imageOcr: false }, true)(),
+      ).resolves.toBe(false);
+    });
     expect(mockedGetACUCTeam).not.toHaveBeenCalled();
   });
 
@@ -75,11 +113,31 @@ describe("imageOcrGate", () => {
     await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(false);
   });
 
-  it("leaves image OCR off when the lookup fails or there is no team", async () => {
+  it("honours a team opt-out found through the lookup when the default is on", async () => {
+    await withConfig({ IMAGE_OCR_ENABLED: true }, async () => {
+      mockedGetACUCTeam.mockResolvedValueOnce({
+        flags: { imageOcr: false },
+      } as Awaited<ReturnType<typeof getACUCTeam>>);
+      await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(
+        false,
+      );
+      mockedGetACUCTeam.mockResolvedValueOnce(null);
+      await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(true);
+    });
+  });
+
+  it("uses the deployment default when the lookup fails or there is no team", async () => {
     mockedGetACUCTeam.mockRejectedValueOnce(new Error("redis down"));
     await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(false);
     await expect(imageOcrGate(undefined, undefined, true)()).resolves.toBe(
       false,
     );
+    await withConfig({ IMAGE_OCR_ENABLED: true }, async () => {
+      mockedGetACUCTeam.mockRejectedValueOnce(new Error("redis down"));
+      await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(true);
+      await expect(imageOcrGate(undefined, undefined, true)()).resolves.toBe(
+        true,
+      );
+    });
   });
 });

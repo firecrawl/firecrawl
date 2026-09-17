@@ -387,6 +387,10 @@ const configSchema = z.object({
   FIRE_PDF_PERCENT: z.coerce.number().min(0).max(100).default(10),
   FIRE_PDF_BASE_URL: z.string().optional(),
   FIRE_PDF_API_KEY: z.string().optional(),
+  // Raster image OCR (see lib/image-ocr-gate.ts) for teams whose `imageOcr`
+  // team flag is unset. `imageOcr: true` forces it on and `imageOcr: false`
+  // forces it off regardless of this value. Needs FIRE_PDF_BASE_URL.
+  IMAGE_OCR_ENABLED: z.stringbool().default(false),
   // Async /jobs rollout is a separate, server-controlled cohort inside
   // traffic already selected for FirePDF. It is disabled by default.
   FIRE_PDF_ASYNC_PERCENT: z.coerce.number().min(0).max(100).default(0),

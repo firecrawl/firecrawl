@@ -84,8 +84,8 @@ export function detectUploadedFileKind(
     return "document";
   }
 
-  // Image uploads are OCR'd through FirePDF for teams with the imageOcr
-  // flag; for everyone else they stay unsupported.
+  // Image uploads are OCR'd through FirePDF where image OCR is on for the
+  // team (lib/image-ocr-gate.ts); for everyone else they stay unsupported.
   const isImage =
     imageOcrEnabled &&
     (IMAGE_EXTENSIONS.has(extension) ||

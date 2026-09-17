@@ -4,15 +4,21 @@ import { getACUCTeam } from "../controllers/auth";
 import { logger } from "./logger";
 
 /**
- * Raster image OCR rides on FirePDF and is rolled out per team through the
- * `imageOcr` team flag. Every entry point (URL-extension routing, the browser
- * handoff, parse uploads) consults this one check, so a team without the flag
- * gets exactly the pre-existing behaviour.
+ * Raster image OCR rides on FirePDF. Whether a team gets it is decided here
+ * and nowhere else: the `imageOcr` team flag forces it on (`true`) or off
+ * (`false`), and a team without the flag follows the deployment-wide
+ * `IMAGE_OCR_ENABLED` default. Every entry point (URL-extension routing, the
+ * browser handoff, parse uploads) consults this one check, so a team for
+ * which it is off gets exactly the pre-existing unsupported-file behaviour.
  */
 export function isImageOcrEnabled(
   teamFlags: TeamFlags | null | undefined,
 ): boolean {
-  return !!config.FIRE_PDF_BASE_URL && teamFlags?.imageOcr === true;
+  if (!config.FIRE_PDF_BASE_URL) return false;
+  const flag = teamFlags?.imageOcr;
+  if (flag === true) return true;
+  if (flag === false) return false;
+  return config.IMAGE_OCR_ENABLED;
 }
 
 /** Per-scrape gate: resolved lazily on first call and memoized. */
@@ -25,8 +31,9 @@ const OFF: Promise<boolean> = Promise.resolve(false);
  *
  * Two conditions fold into it. The request's `parsers` must include the
  * `image` parser — it does by default, and a parse upload of an image counts
- * regardless — and the team must have the `imageOcr` flag while the feature
- * rolls out. A request that opted out is settled up front without any I/O.
+ * regardless — and image OCR must be on for the team (its `imageOcr` flag,
+ * else the deployment default; see isImageOcrEnabled). A request that opted
+ * out is settled up front without any I/O.
  *
  * For the team side, single scrapes and parse uploads carry the
  * authenticated team's flags in their internalOptions and resolve without
@@ -34,8 +41,8 @@ const OFF: Promise<boolean> = Promise.resolve(false);
  * the cached team ACUC. That lookup is deferred until a caller actually needs
  * the answer (an image-extension URL, an image handoff, the image engine, a
  * cached image document) and memoized, so the ordinary HTML documents that
- * make up almost every crawl never pay for it. Any lookup failure keeps the
- * pre-existing behaviour.
+ * make up almost every crawl never pay for it. A lookup failure falls back
+ * to the deployment default, as if the team carried no flag.
  */
 export function imageOcrGate(
   teamId: string | undefined,
@@ -56,15 +63,15 @@ async function resolveImageOcrEnabled(
 ): Promise<boolean> {
   if (!config.FIRE_PDF_BASE_URL) return false;
   if (teamFlags !== undefined) return isImageOcrEnabled(teamFlags);
-  if (!teamId) return false;
+  if (!teamId) return isImageOcrEnabled(null);
   try {
     const acuc = await getACUCTeam(teamId);
     return isImageOcrEnabled(acuc?.flags ?? null);
   } catch (error) {
-    logger.warn("Failed to resolve team flags for image OCR; leaving it off", {
-      teamId,
-      error,
-    });
-    return false;
+    logger.warn(
+      "Failed to resolve team flags for image OCR; using the deployment default",
+      { teamId, error },
+    );
+    return isImageOcrEnabled(null);
   }
 }

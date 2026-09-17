@@ -531,8 +531,8 @@ async function resolveUploadRef(
     );
     if (!kind) {
       // The type was accepted when the upload URL was minted, so this only
-      // happens when eligibility changed in between (e.g. the imageOcr team
-      // flag was turned off). Discard the upload instead of stranding it and
+      // happens when eligibility changed in between (e.g. image OCR was
+      // turned off for the team). Discard the upload instead of stranding it and
       // its quota reservation.
       localUploads.delete(payload.uploadId);
       await releaseRejectedUploadRef(payload);

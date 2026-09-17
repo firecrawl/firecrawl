@@ -1,8 +1,10 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
+  itIf,
   TEST_SUITE_WEBSITE,
 } from "../lib";
+import { config } from "../../../config";
 import {
   idmux,
   Identity,
@@ -21,14 +23,21 @@ beforeAll(async () => {
   });
 }, 10000 + scrapeTimeout);
 
+// Mirrors the API's decision for a team without the imageOcr flag (the
+// harness shares its environment with the server under test).
+const IMAGE_OCR_DEFAULT_ON =
+  !!config.FIRE_PDF_BASE_URL && config.IMAGE_OCR_ENABLED;
+
 // The browser engine hands files it cannot render back to the API, which
 // routes them to a parser by content type — and servers mislabel. Static
 // hosts serve a `.jp2` file as image/jp2 whatever its bytes are, so
 // mislabeled-pdf.jp2 reproduces a PDF served with an image content type,
 // while tiny-image.jp2 is a real JPEG 2000 image. This identity has no
-// imageOcr team flag, so the real image must keep the historical rejection
-// (the flagged behaviour lives in scrape-image-ocr.test.ts). Only
-// fire-engine performs the handoff, hence the gate.
+// imageOcr team flag, so the real image follows the deployment default:
+// rejected while image OCR is off, an empty document (it is 16 px and has
+// no text) while it is on. The flagged behaviour lives in
+// scrape-image-ocr.test.ts. Only fire-engine performs the handoff, hence
+// the gate.
 describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
   "Mislabeled file handoff (f-e dependent)",
   () => {
@@ -51,8 +60,8 @@ describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
       scrapeTimeout,
     );
 
-    it(
-      "keeps rejecting a real JPEG 2000 image for a team without image OCR",
+    itIf(!IMAGE_OCR_DEFAULT_ON)(
+      "keeps rejecting a real JPEG 2000 image while image OCR is off by default",
       async () => {
         const response = await scrapeWithFailure(
           {
@@ -64,6 +73,24 @@ describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
 
         expect(response.error).toContain("cannot process");
         expect(response.error).toContain("image/jp2");
+      },
+      scrapeTimeout,
+    );
+
+    itIf(IMAGE_OCR_DEFAULT_ON)(
+      "OCRs a real JPEG 2000 image while image OCR is on by default",
+      async () => {
+        const response = await scrape(
+          {
+            url: `${TEST_SUITE_WEBSITE}/tiny-image.jp2`,
+            formats: ["markdown"],
+          },
+          identity,
+        );
+
+        expect(response.metadata.contentType).toBe("image/jp2");
+        expect(response.metadata.statusCode).toBe(200);
+        expect(response.markdown).toBe("");
       },
       scrapeTimeout,
     );

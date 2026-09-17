@@ -98,7 +98,7 @@ const engines: Engine[] = [
   "document",
   // Image OCR needs FirePDF; without it the engine would only be a wasted
   // tail download on every failed scrape. Per-team enablement is decided
-  // where images are routed (the imageOcr team flag), not here.
+  // where images are routed (lib/image-ocr-gate.ts), not here.
   ...(config.FIRE_PDF_BASE_URL ? ["image" as const] : []),
 ];
 
