@@ -21,6 +21,31 @@ function cacheShardCount(requestId: string, shards: number): void {
   }
 }
 
+/**
+ * Restore the raw bytes of a cell value read with `decode: false`.
+ *
+ * The Bigtable client converts any 8-byte value that fits a safe integer into
+ * a JavaScript number *before* it honours `decode: false`, so the `agg:total`
+ * Int64 aggregate (and, in principle, an 8-character text cell) arrives as a
+ * number. The conversion is `Long.fromBytes(buf).toNumber()`, which is exact
+ * for safe integers, so writing the number back as a big-endian Int64 yields
+ * the original bytes.
+ */
+export function cellBytes(
+  value: Buffer | Uint8Array | string | number,
+): Buffer {
+  if (Buffer.isBuffer(value)) return value;
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) {
+      throw new Error(`Unexpected non-integer Bigtable cell value: ${value}`);
+    }
+    const buffer = Buffer.alloc(8);
+    buffer.writeBigInt64BE(BigInt(value));
+    return buffer;
+  }
+  return Buffer.from(value as any);
+}
+
 function requestHash(requestId: string): Buffer {
   return crypto.createHash("sha256").update(requestId, "utf8").digest();
 }
@@ -155,7 +180,7 @@ async function readShardCount(
   });
   const value = rows[0]?.data?.[JOBS_FAMILY]?.[SHARDS_QUALIFIER]?.[0]?.value;
   if (value == null) return null;
-  const shards = Number(Buffer.from(value).toString("utf8"));
+  const shards = Number(cellBytes(value).toString("utf8"));
   if (!Number.isInteger(shards) || shards <= 0 || shards > 512) {
     throw new Error(`Invalid stored request credits shard count: ${shards}`);
   }
@@ -182,7 +207,7 @@ async function readJobCredits(
   });
   const value = rows[0]?.data?.[JOBS_FAMILY]?.[jobId]?.[0]?.value;
   if (value == null) return null;
-  const credits = Number(Buffer.from(value).toString("utf8"));
+  const credits = Number(cellBytes(value).toString("utf8"));
   if (!Number.isSafeInteger(credits)) {
     throw new Error(`Invalid stored request credits value: ${credits}`);
   }
@@ -310,7 +335,7 @@ export async function readRequestCredits(
     for (const row of rows) {
       const value = row.data?.[AGG_FAMILY]?.[TOTAL_QUALIFIER]?.[0]?.value;
       if (value == null) continue;
-      const encoded = Buffer.from(value);
+      const encoded = cellBytes(value);
       if (encoded.length !== 8) {
         throw new Error(
           `Invalid request credits aggregate length: ${encoded.length}`,

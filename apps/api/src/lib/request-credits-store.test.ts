@@ -23,6 +23,7 @@ vi.mock("./otel-tracer", () => ({
 import {
   clearRequestCreditsShardCacheForTest,
   initializeRequestCredits,
+  cellBytes,
   readRequestCredits,
   recordRequestCredits,
   requestCreditsRowKey,
@@ -179,6 +180,33 @@ describe("request credits store", () => {
       requestCreditsRowKey("request-1", 0),
       requestCreditsRowKey("request-1", 1),
     ]);
+  });
+
+  it("restores the bytes of cells the client pre-decoded to numbers", () => {
+    // @google-cloud/bigtable converts any 8-byte value that fits a safe
+    // integer into a number before honouring `decode: false`.
+    expect(cellBytes(7)).toEqual(int64(7n));
+    expect(cellBytes(-4)).toEqual(int64(-4n));
+    expect(cellBytes(0)).toEqual(int64(0n));
+    expect(cellBytes(int64(9n))).toEqual(int64(9n));
+    expect(cellBytes("16")).toEqual(Buffer.from("16"));
+    expect(() => cellBytes(1.5)).toThrow(/non-integer/);
+  });
+
+  it("sums aggregate cells that arrive as numbers instead of bytes", async () => {
+    getRows
+      .mockResolvedValueOnce([
+        [row({ jobs: { "\x00shards": [{ value: Buffer.from("3") }] } })],
+      ])
+      .mockResolvedValueOnce([
+        [
+          row({ agg: { total: [{ value: 1 }] } }),
+          row({ agg: { total: [{ value: int64(2n) }] } }),
+          row({ agg: { total: [{ value: 0 }] } }),
+        ],
+      ]);
+
+    await expect(readRequestCredits("request-1")).resolves.toBe(3);
   });
 
   it("is disabled when the table is not configured", async () => {
