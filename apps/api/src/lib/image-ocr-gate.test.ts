@@ -121,8 +121,11 @@ describe("imageOcrGate", () => {
       await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(
         false,
       );
+      // A missing team record is unreadable too: fail closed, not default.
       mockedGetACUCTeam.mockResolvedValueOnce(null);
-      await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(true);
+      await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(
+        false,
+      );
     });
   });
 
