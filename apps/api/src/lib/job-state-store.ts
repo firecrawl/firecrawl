@@ -9,7 +9,7 @@ const FAMILY = "s";
 const STATE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_ERROR_LENGTH = 16_384;
 
-export type ScrapeJobState = {
+type ScrapeJobState = {
   status: "completed" | "failed";
   requestId: string;
   completedAtMs: number;
@@ -20,7 +20,7 @@ export type ScrapeJobState = {
   origin?: string;
 };
 
-export type ExtractJobState = {
+type ExtractJobState = {
   status: "completed" | "failed";
   completedAtMs: number;
   creditsBilled: number;

@@ -1,6 +1,6 @@
 import { config } from "../config";
 
-export type ExtractV3AgentStatus = {
+type ExtractV3AgentStatus = {
   success: true;
   id: string;
   status: "processing" | "success" | "failed";
