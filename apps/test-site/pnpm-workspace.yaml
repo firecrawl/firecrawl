@@ -4,7 +4,9 @@ allowBuilds:
 overrides:
   fast-xml-builder: ">=1.1.6 <2.0.0"
   fast-xml-parser: "^5.7.0"
-  devalue: ">=5.8.1 <6.0.0"
+  # GHSA-9rgm-9g3h-6x36: keep the 5.x line only. The
+  # <6.0.0 ceiling cannot resolve to 6.x.
+  devalue: ">=5.9.1 <6.0.0"
   h3: ">=1.15.9"
   "picomatch@<4.0.4": ">=4.0.4"
   "smol-toml@<1.7.1": "1.8.0"
