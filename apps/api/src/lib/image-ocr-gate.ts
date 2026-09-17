@@ -41,8 +41,9 @@ const OFF: Promise<boolean> = Promise.resolve(false);
  * the cached team ACUC. That lookup is deferred until a caller actually needs
  * the answer (an image-extension URL, an image handoff, the image engine, a
  * cached image document) and memoized, so the ordinary HTML documents that
- * make up almost every crawl never pay for it. A lookup failure falls back
- * to the deployment default, as if the team carried no flag.
+ * make up almost every crawl never pay for it. A lookup failure leaves
+ * image OCR off for that scrape: the team may have opted out, and the
+ * deployment default must never override an opt-out it could not read.
  */
 export function imageOcrGate(
   teamId: string | undefined,
@@ -68,10 +69,10 @@ async function resolveImageOcrEnabled(
     const acuc = await getACUCTeam(teamId);
     return isImageOcrEnabled(acuc?.flags ?? null);
   } catch (error) {
-    logger.warn(
-      "Failed to resolve team flags for image OCR; using the deployment default",
-      { teamId, error },
-    );
-    return isImageOcrEnabled(null);
+    logger.warn("Failed to resolve team flags for image OCR; leaving it off", {
+      teamId,
+      error,
+    });
+    return false;
   }
 }
