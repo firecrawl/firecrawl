@@ -26,10 +26,11 @@ async function removeBlobs(blobIds: string[]): Promise<unknown[]> {
 }
 
 /**
- * Every result blob a request produced, from the `request_children` table
- * (see ../../clickhouse/0001_request_children.sql), which materialized views
- * fill from the Pub/Sub-ingested scrapes, searches, extracts, maps, llmstxts
- * and deep_researches rows. Cleanup runs 24 hours after the request, far
+ * Every result blob a request produced, from the `request_children` table in
+ * the analytics ClickHouse service, which materialized views fill from the
+ * Pub/Sub-ingested scrapes, searches, extracts, maps, llmstxts and
+ * deep_researches rows. The table is created by hand (statements in the PR
+ * that introduced this reader), not by this codebase. Cleanup runs 24 hours after the request, far
  * beyond ClickPipes ingest lag, so the index is complete by the time it is
  * read.
  */
