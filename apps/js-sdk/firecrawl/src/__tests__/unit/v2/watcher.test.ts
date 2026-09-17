@@ -129,9 +129,38 @@ describe("v2 watcher deadline", () => {
     await jest.advanceTimersByTimeAsync(10000);
     expect(run.document).not.toHaveBeenCalled();
     expect(run.error).not.toHaveBeenCalled();
+    // Preserve existing behavior: manual close does not settle start().
+    expect(run.settled).not.toHaveBeenCalled();
   });
 
-  test.each([0, null])("timeout=%s keeps the watcher open until completion", async (timeout) => {
+  test.each(["crawl", "batch"] as const)("%s supports deadlines beyond the timer delay limit", async (kind) => {
+    const maxDelay = 2 ** 31 - 1;
+    const run = await start(kind, (maxDelay + 5000) / 1000);
+    await jest.advanceTimersByTimeAsync(maxDelay);
+    expect(run.error).not.toHaveBeenCalled();
+    expect(run.settled).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(4999);
+    expect(run.error).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);
+    expect(run.error).toHaveBeenCalledTimes(1);
+    expect(run.error).toHaveBeenCalledWith(expect.objectContaining({ error: "Watcher timeout" }));
+    await run.completion;
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test("completion cancels a rescheduled long deadline", async () => {
+    const maxDelay = 2 ** 31 - 1;
+    const run = await start("crawl", (maxDelay + 5000) / 1000);
+    await jest.advanceTimersByTimeAsync(maxDelay);
+    expect(run.error).not.toHaveBeenCalled();
+    run.ws.message({ type: "done", data: { data: [] } });
+    await run.completion;
+    expect(jest.getTimerCount()).toBe(0);
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(run.error).not.toHaveBeenCalled();
+  });
+
+  test.each([0, null, Infinity])("timeout=%s keeps the watcher open until completion", async (timeout) => {
     const run = await start("crawl", timeout);
     expect(jest.getTimerCount()).toBe(0);
     await jest.advanceTimersByTimeAsync(60000);

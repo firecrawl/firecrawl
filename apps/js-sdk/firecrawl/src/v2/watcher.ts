@@ -122,11 +122,21 @@ export class Watcher extends EventEmitter {
       this.on("error", onError);
 
       // One deadline covers connection setup, WebSocket traffic, and polling fallback.
-      if (this.timeout) {
-        this.timeoutId = setTimeout(() => {
+      if (this.timeout && this.timeout !== Infinity) {
+        const startedAt = Date.now();
+        const timeoutMs = this.timeout * 1000;
+        // Larger delays overflow the signed 32-bit timer limit in Node and browsers.
+        const maxDelay = 2 ** 31 - 1;
+        const onTimeout = () => {
+          const remaining = timeoutMs - (Date.now() - startedAt);
+          if (remaining > 0) {
+            this.timeoutId = setTimeout(onTimeout, Math.min(remaining, maxDelay));
+            return;
+          }
           this.emit("error", { status: "failed", data: [], error: "Watcher timeout", id: this.jobId });
           this.close();
-        }, this.timeout * 1000);
+        };
+        this.timeoutId = setTimeout(onTimeout, Math.min(timeoutMs, maxDelay));
       }
 
       (async () => {
