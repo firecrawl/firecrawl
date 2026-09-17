@@ -19,6 +19,7 @@ describeIf(TEST_PRODUCTION)("Agent hints", () => {
       const response = await request(TEST_API_URL)
         .post("/v2/scrape")
         .set("Authorization", `Bearer ${identity.apiKey}`)
+        .set("X-Firecrawl-Agent-Hints", "true")
         .send({ url: TEST_SUITE_WEBSITE, timeout: scrapeTimeout });
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
@@ -37,12 +38,11 @@ describeIf(TEST_PRODUCTION)("Agent hints", () => {
   );
 
   it(
-    "honors the opt-out header on a completed map",
+    "leaves hints off by default on a completed map",
     async () => {
       const response = await request(TEST_API_URL)
         .post("/v2/map")
         .set("Authorization", `Bearer ${identity.apiKey}`)
-        .set("X-Firecrawl-Agent-Hints", "false")
         .send({ url: TEST_SUITE_WEBSITE, limit: 1, timeout: scrapeTimeout });
       expect(response.statusCode).toBe(200);
       expect(response.body).not.toHaveProperty("agent_hints");
@@ -54,6 +54,7 @@ describeIf(TEST_PRODUCTION)("Agent hints", () => {
     const response = await request(TEST_API_URL)
       .post("/v2/scrape")
       .set("Authorization", `Bearer ${identity.apiKey}`)
+      .set("X-Firecrawl-Agent-Hints", "true")
       .send({ url: "not-a-url" });
     expect(response.statusCode).toBe(400);
     expect(response.body.success).toBe(false);

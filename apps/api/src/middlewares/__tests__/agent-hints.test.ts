@@ -30,15 +30,25 @@ function appFor(
 }
 
 describe("agent hint response middleware", () => {
-  it("adds top-level metadata without changing data or warning", async () => {
+  it("leaves the original envelope unchanged by default", async () => {
     const body = { success: true, data: { web: [] }, warning: "existing" };
     const response = await request(appFor({ body })).post("/").send({});
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual(body);
+  });
+
+  it("adds top-level metadata only when explicitly enabled", async () => {
+    const body = { success: true, data: { web: [] }, warning: "existing" };
+    const response = await request(appFor({ body }))
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", " TRUE ")
+      .send({});
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject(body);
     expect(response.body.agent_hints).toHaveLength(1);
   });
 
-  it("opt-out header preserves the original envelope", async () => {
+  it("values other than true preserve the original envelope", async () => {
     const body = {
       success: true,
       data: { tools: [{ options: [], response: {} }] },
@@ -56,14 +66,20 @@ describe("agent hint response middleware", () => {
     { zdr: true },
     { feedback: false },
   ])("does not invent accepted feedback for %j", async settings => {
-    const response = await request(appFor(settings)).post("/").send({});
+    const response = await request(appFor(settings))
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
     expect(response.body).not.toHaveProperty("agent_hints");
   });
 
   it("omits feedback when database authentication is unavailable", async () => {
     config.USE_DB_AUTHENTICATION = false;
     try {
-      const response = await request(appFor()).post("/").send({});
+      const response = await request(appFor())
+        .post("/")
+        .set("X-Firecrawl-Agent-Hints", "true")
+        .send({});
       expect(response.body).not.toHaveProperty("agent_hints");
     } finally {
       config.USE_DB_AUTHENTICATION = true;
@@ -79,6 +95,7 @@ describe("agent hint response middleware", () => {
     };
     const response = await request(appFor({ body, status: 400 }))
       .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
       .send({});
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual(body);
