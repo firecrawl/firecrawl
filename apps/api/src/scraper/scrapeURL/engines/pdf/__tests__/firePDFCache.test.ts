@@ -10,6 +10,10 @@ import {
 } from "../fire-pdf/cache";
 import { consumeRefresh, refreshDecisionFor } from "../fire-pdf/refresh-budget";
 import { firePdfProvenanceSchema } from "../fire-pdf/schema";
+import {
+  firePdfCacheEventsTotal,
+  firePdfCacheRefusedWritesTotal,
+} from "../fire-pdf/metrics";
 
 vi.mock("../fire-pdf/refresh-budget", () => ({
   consumeRefresh: vi.fn(async () => "allowed"),
@@ -1214,5 +1218,116 @@ describe("FirePDF cache provenance and write rules", () => {
           .success,
       ).toBe(false);
     }
+  });
+});
+
+// The counters are the headline deliverable: spy on the real prom-client
+// counters so a change to an event name, a label or a refusal reason fails
+// here instead of silently on a dashboard.
+describe("FirePDF cache counters", () => {
+  const events = vi.spyOn(firePdfCacheEventsTotal, "inc");
+  const refused = vi.spyOn(firePdfCacheRefusedWritesTotal, "inc");
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCached.mockResolvedValue(null);
+    saveCached.mockResolvedValue("saved-key");
+    vi.mocked(consumeRefresh).mockResolvedValue("allowed");
+  });
+
+  const save = (
+    overrides: Partial<Parameters<typeof maybeSaveResult>[0]> = {},
+  ) =>
+    maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "whole", html: "<p>whole</p>" },
+      provenance,
+      failedPages: [],
+      ...overrides,
+    });
+
+  const read = (meta = makeMeta()) =>
+    tryGetCached(meta, "BASE64", "auto", undefined, 1, false, false);
+
+  it("counts a persisted write, and a write that was not persisted", async () => {
+    await save();
+    expect(events).toHaveBeenCalledWith({ event: "write", variant: "base" });
+    saveCached.mockResolvedValueOnce(null);
+    await save();
+    expect(events).toHaveBeenCalledWith({
+      event: "write_failed",
+      variant: "base",
+    });
+  });
+
+  it("counts the alias write under its own variant", async () => {
+    saveCached.mockResolvedValueOnce("saved-key").mockResolvedValueOnce(null);
+    await save({
+      includePageMarkdown: true,
+      result: {
+        markdown: "whole",
+        html: "<p>whole</p>",
+        pageMarkdown: [{ page: 1, markdown: "whole" }],
+      },
+    });
+    expect(events).toHaveBeenCalledWith({
+      event: "write",
+      variant: "page-markdown-v1",
+    });
+    expect(events).toHaveBeenCalledWith({
+      event: "write_failed",
+      variant: "base",
+    });
+  });
+
+  it("counts every refusal reason", async () => {
+    await save({ failedPages: [2] });
+    await save({
+      provenance: {
+        ...provenance,
+        quality: { ...provenance.quality, degraded_pages: 1 },
+      },
+    });
+    const { quality: _quality, ...withoutQuality } = provenance;
+    await save({ provenance: withoutQuality });
+    await save({ provenance: null });
+    for (const reason of [
+      "failed_pages",
+      "degraded_pages",
+      "missing_quality",
+      "malformed_provenance",
+    ]) {
+      expect(refused).toHaveBeenCalledWith({ reason });
+    }
+    expect(
+      events.mock.calls.filter(
+        ([labels]) => (labels as { event?: string }).event === "refused_write",
+      ),
+    ).toHaveLength(4);
+    expect(saveCached).not.toHaveBeenCalled();
+  });
+
+  it("counts hits, misses and both refresh outcomes", async () => {
+    await read();
+    expect(events).toHaveBeenCalledWith({ event: "miss", variant: "base" });
+    getCached.mockResolvedValueOnce({ markdown: "cached", html: "<p>c</p>" });
+    await read();
+    expect(events).toHaveBeenCalledWith({ event: "hit", variant: "base" });
+    await read(makeMeta(false, [{ type: "pdf", refresh: true }]));
+    expect(events).toHaveBeenCalledWith({
+      event: "bypass_refresh",
+      variant: "base",
+    });
+    vi.mocked(consumeRefresh).mockResolvedValueOnce("limited");
+    await read(makeMeta(false, [{ type: "pdf", refresh: true }]));
+    expect(events).toHaveBeenCalledWith({
+      event: "bypass_refresh_denied",
+      variant: "base",
+    });
   });
 });

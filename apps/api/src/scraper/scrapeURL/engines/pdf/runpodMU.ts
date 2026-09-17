@@ -24,6 +24,14 @@ export async function scrapePDFWithRunPodMU(
     tempFilePath,
   });
 
+  // The cache key (sha256 of the payload, a full pass over the document) is
+  // computed at most once per request and reused for the read, the write
+  // and the log lines. This cache lives under the legacy `pdf-cache-v2/`
+  // prefix; the key is logged so a report can name the entry.
+  let cacheKeyMemo: string | undefined;
+  const cacheKeyOf = (): string =>
+    (cacheKeyMemo ??= resolvePdfCacheKey(base64Content));
+
   // Zero-data-retention requests never read the shared cache, as on the
   // fire-pdf path. `parsers: [{ type: "pdf", refresh: true }]` skips it too,
   // under the same per-team budget: a MinerU-diverted request never reaches
@@ -32,9 +40,7 @@ export async function scrapePDFWithRunPodMU(
   // keeps the decision the first engine got instead of spending a second
   // token. Over budget, or with the limiter unavailable, the entry is served.
   if (!maxPages && !meta.internalOptions.zeroDataRetention) {
-    // This cache lives under the legacy `pdf-cache-v2/` prefix; the key is
-    // the same sha256 of the payload, logged so a report can name the entry.
-    const cacheKey = resolvePdfCacheKey(base64Content);
+    const cacheKey = cacheKeyOf();
     let bypass = false;
     if (getPDFRefresh(meta.options?.parsers)) {
       const decision = await consumeRefresh(
@@ -60,7 +66,7 @@ export async function scrapePDFWithRunPodMU(
     }
     if (!bypass) {
       try {
-        const cachedResult = await getPdfResultFromCache(base64Content);
+        const cachedResult = await getPdfResultFromCache({ key: cacheKey });
         if (cachedResult) {
           meta.logger.info("Using cached RunPod MU result for PDF", {
             tempFilePath,
@@ -72,7 +78,7 @@ export async function scrapePDFWithRunPodMU(
       } catch (error) {
         meta.logger.warn(
           "Error checking PDF cache, proceeding with RunPod MU",
-          { error, tempFilePath },
+          { error, tempFilePath, cacheKey, cacheProvider: "runpod" },
         );
       }
     }
@@ -233,7 +239,7 @@ export async function scrapePDFWithRunPodMU(
 
   if (!meta.internalOptions.zeroDataRetention) {
     try {
-      await savePdfResultToCache(base64Content, processorResult);
+      await savePdfResultToCache({ key: cacheKeyOf() }, processorResult);
     } catch (error) {
       meta.logger.warn("Error saving PDF to cache", {
         error,

@@ -42,7 +42,8 @@ describe("RunPod MU cache read and refresh", () => {
     await expect(
       scrapePDFWithRunPodMU(meta, "/tmp/doc.pdf", "BASE64"),
     ).resolves.toEqual(cached);
-    expect(getCached).toHaveBeenCalledWith("BASE64");
+    // The key is hashed once and handed to the cache layer as is.
+    expect(getCached).toHaveBeenCalledWith({ key: "key-of-BASE64" });
     expect(budget).not.toHaveBeenCalled();
   });
 
@@ -68,12 +69,27 @@ describe("RunPod MU cache read and refresh", () => {
     await expect(
       scrapePDFWithRunPodMU(meta, "/tmp/doc.pdf", "BASE64"),
     ).resolves.toEqual(cached);
-    expect(getCached).toHaveBeenCalledWith("BASE64");
+    expect(getCached).toHaveBeenCalledWith({ key: "key-of-BASE64" });
     expect(meta.logger.warn).toHaveBeenCalledWith(
       "RunPod MU cache refresh not applied",
       expect.objectContaining({
         decision: "limited",
         cacheKey: "key-of-BASE64",
+      }),
+    );
+  });
+
+  it("names the entry when the cache lookup itself fails", async () => {
+    getCached.mockRejectedValueOnce(new Error("gcs down"));
+    const meta = makeMeta();
+    await expect(
+      scrapePDFWithRunPodMU(meta, "/tmp/doc.pdf", "BASE64"),
+    ).rejects.toThrow();
+    expect(meta.logger.warn).toHaveBeenCalledWith(
+      "Error checking PDF cache, proceeding with RunPod MU",
+      expect.objectContaining({
+        cacheKey: "key-of-BASE64",
+        cacheProvider: "runpod",
       }),
     );
   });
