@@ -90,6 +90,7 @@ vi.mock("../../config", () => ({
     USE_DB_AUTHENTICATION: true,
     PUBSUB_MAX_OUTSTANDING_MESSAGES: 10_000,
     PUBSUB_MAX_OUTSTANDING_BYTES: 64 * 1024 * 1024,
+    PUBSUB_TOPIC_PREFIX: "",
   },
 }));
 
@@ -399,6 +400,19 @@ describe("logRequest", () => {
     expect(values.mock.calls[0][0].external_request_id).toBe(
       "op_integration_42",
     );
+  });
+
+  it("prefixes the Pub/Sub topic name with PUBSUB_TOPIC_PREFIX", async () => {
+    config.PUBSUB_TOPIC_PREFIX = "staging-";
+    try {
+      await logRequest(makeRequest("op_integration_42"));
+    } finally {
+      config.PUBSUB_TOPIC_PREFIX = "";
+    }
+
+    expect(publishes[0].name).toBe("staging-requests");
+    // The metric and span keep the bare table name.
+    expect(publishes[0].name.endsWith("requests")).toBe(true);
   });
 
   it("writes the request to the database and its Pub/Sub topic", async () => {

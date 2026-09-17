@@ -251,6 +251,11 @@ const configSchema = z.object({
 
   // Google Cloud Pub/Sub
   PUBSUB_CREDENTIALS: z.string().optional(),
+  // Prepended to every log topic name. Production leaves it unset and
+  // publishes to `<table>`; staging sets `staging-` so its rows land in the
+  // `staging-<table>` topics and the staging ClickHouse database instead of
+  // the production tables.
+  PUBSUB_TOPIC_PREFIX: z.string().default(""),
   // Publisher backlog cap, per process. Log publishing is fire-and-forget and
   // retries for up to five minutes, so during a stall the backlog is what
   // grows; rows beyond the cap are dropped and counted rather than letting a
