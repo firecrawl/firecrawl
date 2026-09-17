@@ -1,5 +1,6 @@
 import { ApiError } from "@google-cloud/storage";
 import type { FirePdfPageBlocks } from "../scraper/scrapeURL/engines/pdf/types";
+import type { FirePdfProvenance } from "../scraper/scrapeURL/engines/pdf/fire-pdf/schema";
 import { logger } from "./logger";
 import { config } from "../config";
 import crypto from "crypto";
@@ -10,7 +11,7 @@ type PdfCacheProvider = "runpod" | "firepdf";
 // Cache shape — markdown/html are required; pagesProcessed is optional so
 // pre-existing entries (written before the field existed) round-trip cleanly
 // and the caller can fall back to its own page-count signal on a stale hit.
-type CachedPdfResult = {
+export type CachedPdfResult = {
   markdown: string;
   html: string;
   pagesProcessed?: number;
@@ -19,6 +20,13 @@ type CachedPdfResult = {
   /** Typed layout blocks (fire-pdf wire shape); present only in
    * block-capable cache variants. */
   blocks?: FirePdfPageBlocks[];
+  /** fire-pdf's stamp for the result this entry holds. Absent on entries
+   * written before it existed, which a cache policy reads as "unknown". */
+  provenance?: FirePdfProvenance;
+  /** When this entry was written (ISO-8601). */
+  cachedAt?: string;
+  /** The variant this entry was written under ("base" for the bare key). */
+  variant?: string;
 };
 
 const PROVIDER_PREFIXES: Record<PdfCacheProvider, string> = {
@@ -37,7 +45,10 @@ export function createPdfCacheKey(pdfContent: string | Buffer): string {
  * distinct. */
 export type PdfCacheKeyInput = string | { key: string };
 
-function resolvePdfCacheKey(input: PdfCacheKeyInput): string {
+/** The cache key for an input: sha256 of the inline base64 payload, or the
+ * caller's precomputed `raw-<sha256>` key. Logged on every cache event so a
+ * team report can be turned into the keys to purge. */
+export function resolvePdfCacheKey(input: PdfCacheKeyInput): string {
   return typeof input === "string" ? createPdfCacheKey(input) : input.key;
 }
 

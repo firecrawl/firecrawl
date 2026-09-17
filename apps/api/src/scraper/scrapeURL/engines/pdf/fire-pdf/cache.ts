@@ -1,13 +1,23 @@
 import type { Meta } from "../../..";
-import type { PDFMode } from "../../../../../controllers/v2/types";
+import {
+  getPDFRefresh,
+  type PDFMode,
+} from "../../../../../controllers/v2/types";
 import type { PDFProcessorResult } from "../types";
 import {
+  type CachedPdfResult,
   getPdfResultFromCache,
+  resolvePdfCacheKey,
   savePdfResultToCache,
   type PdfCacheKeyInput,
 } from "../../../../../lib/gcs-pdf-cache";
 import { sniffImageContentTypeFromBase64 } from "../../../../../lib/image-formats";
-import { firePdfBlockPagesSchema } from "./schema";
+import {
+  type CacheRefusedReason,
+  firePdfCacheEventsTotal,
+  firePdfCacheRefusedWritesTotal,
+} from "./metrics";
+import { firePdfBlockPagesSchema, type FirePdfProvenance } from "./schema";
 
 // Raster images ride the same cache as PDFs (the image engine posts their
 // bytes to the same FirePDF endpoint), but an EMPTY result for an image is
@@ -173,7 +183,7 @@ export async function tryGetCached(
   pageMarkers = false,
 ): Promise<PDFProcessorResult | null> {
   if (meta.internalOptions.zeroDataRetention) return null;
-  const { cacheable, lookupVariants } = cacheKeyShape(
+  const { cacheable, lookupVariants, ownVariant } = cacheKeyShape(
     mode,
     maxPages,
     includePageMarkdown,
@@ -181,6 +191,23 @@ export async function tryGetCached(
     pageMarkers,
   );
   if (!cacheable) return null;
+  const cacheKey = resolvePdfCacheKey(base64Content);
+
+  // `parsers: [{ type: "pdf", refresh: true }]`: the caller wants this
+  // document parsed again with the current pipeline. Skip the read; the
+  // fresh result is still written, so the entry is corrected for everyone.
+  if (getPDFRefresh(meta.options?.parsers)) {
+    firePdfCacheEventsTotal.inc({
+      event: "bypass_refresh",
+      variant: ownVariant ?? "base",
+    });
+    meta.logger.info("FirePDF cache bypassed by refresh", {
+      scrapeId: meta.id,
+      requestedMode: mode,
+      cacheKey,
+    });
+    return null;
+  }
 
   for (const variant of lookupVariants) {
     try {
@@ -216,14 +243,33 @@ export async function tryGetCached(
           );
           continue;
         }
+        firePdfCacheEventsTotal.inc({
+          event: "hit",
+          variant: variant ?? "base",
+        });
         meta.logger.info("Using cached FirePDF result", {
           scrapeId: meta.id,
           requestedMode: mode,
           cacheVariant: variant ?? "base",
+          cacheKey,
+          // Provenance of the entry, for cache-policy work and team reports.
+          // Entries written before the stamp existed read as "unknown".
+          generation: cached.provenance?.generation ?? "unknown",
+          buildSha: cached.provenance?.build_sha ?? "unknown",
+          cachedAt: cached.cachedAt ?? null,
         });
         // Strip payloads the request didn't ask for so a richer sidecar
-        // serves a poorer request without leaking extra capabilities.
-        const { pageMarkdown, blocks, ...compactCached } = cached;
+        // serves a poorer request without leaking extra capabilities, and
+        // the entry-only fields (provenance, cachedAt, variant) that are
+        // cache bookkeeping rather than document content.
+        const {
+          pageMarkdown,
+          blocks,
+          provenance: _provenance,
+          cachedAt: _cachedAt,
+          variant: _variant,
+          ...compactCached
+        } = cached;
         return {
           ...compactCached,
           ...(includePageMarkdown ? { pageMarkdown } : {}),
@@ -235,9 +281,28 @@ export async function tryGetCached(
       meta.logger.warn("Error checking FirePDF cache, proceeding", {
         error,
         cacheVariant: variant ?? "base",
+        cacheKey,
       });
     }
   }
+  firePdfCacheEventsTotal.inc({ event: "miss", variant: ownVariant ?? "base" });
+  return null;
+}
+
+/**
+ * Why a result must not be remembered. Failed pages and pages that lost
+ * layout (fire-pdf's `degraded_pages`) are usually transient — a fleet
+ * incident, a deadline — and a cached copy would serve that outcome to
+ * every later request for the document. Partial pages are content-caused
+ * and expensive to redo, so those results are still cached; the stamp's
+ * quality counts let a later policy refresh them first.
+ */
+export function cacheRefusalReason(
+  failedPages: readonly number[] | null | undefined,
+  provenance: FirePdfProvenance | undefined,
+): CacheRefusedReason | null {
+  if (failedPages && failedPages.length > 0) return "failed_pages";
+  if ((provenance?.quality?.degraded_pages ?? 0) > 0) return "degraded_pages";
   return null;
 }
 
@@ -250,6 +315,10 @@ export async function maybeSaveResult(args: {
   includeBlocks: boolean;
   pageMarkers?: boolean;
   result: PDFProcessorResult & { markdown: string };
+  /** fire-pdf's stamp for this result; stored verbatim with the entry. */
+  provenance?: FirePdfProvenance;
+  /** fire-pdf's `failed_pages` for this result; a non-empty list is not cached. */
+  failedPages?: readonly number[] | null;
 }): Promise<void> {
   const {
     meta,
@@ -260,6 +329,8 @@ export async function maybeSaveResult(args: {
     includeBlocks,
     pageMarkers = false,
     result,
+    provenance,
+    failedPages,
   } = args;
   if (meta.internalOptions.zeroDataRetention) return;
   const { cacheable, ownVariant, baseVariant } = cacheKeyShape(
@@ -273,9 +344,49 @@ export async function maybeSaveResult(args: {
   // See isRasterImagePayload: never remember an empty result for an image.
   if (isEmptyMarkdown(result.markdown) && isRasterImagePayload(base64Content))
     return;
+  const cacheKey = resolvePdfCacheKey(base64Content);
+
+  const refusal = cacheRefusalReason(failedPages, provenance);
+  if (refusal !== null) {
+    firePdfCacheRefusedWritesTotal.inc({ reason: refusal });
+    firePdfCacheEventsTotal.inc({
+      event: "refused_write",
+      variant: ownVariant ?? "base",
+    });
+    meta.logger.info("FirePDF result not cached", {
+      scrapeId: meta.id,
+      requestedMode: mode,
+      cacheVariant: ownVariant ?? "base",
+      cacheKey,
+      reason: refusal,
+      failedPages: failedPages?.length ?? 0,
+      degradedPages: provenance?.quality?.degraded_pages ?? 0,
+    });
+    return;
+  }
+
+  const cachedAt = new Date().toISOString();
+  const entry: CachedPdfResult = {
+    ...result,
+    ...(provenance ? { provenance } : {}),
+    cachedAt,
+    variant: ownVariant ?? "base",
+  };
 
   try {
-    await savePdfResultToCache(base64Content, result, "firepdf", ownVariant);
+    await savePdfResultToCache(base64Content, entry, "firepdf", ownVariant);
+    firePdfCacheEventsTotal.inc({
+      event: "write",
+      variant: ownVariant ?? "base",
+    });
+    meta.logger.info("Saved FirePDF result to cache", {
+      scrapeId: meta.id,
+      requestedMode: mode,
+      cacheVariant: ownVariant ?? "base",
+      cacheKey,
+      generation: provenance?.generation ?? "unknown",
+      buildSha: provenance?.build_sha ?? "unknown",
+    });
     // An enriched (page/block-capable) parse is also a valid legacy result.
     // Populate the compact base key when it is missing so a later legacy
     // request never repeats the conversion. A sidecar miss can coexist with
@@ -293,12 +404,22 @@ export async function maybeSaveResult(args: {
           blocks: _blocks,
           ...baseResult
         } = result;
+        const baseEntry: CachedPdfResult = {
+          ...baseResult,
+          ...(provenance ? { provenance } : {}),
+          cachedAt,
+          variant: baseVariant ?? "base",
+        };
         await savePdfResultToCache(
           base64Content,
-          baseResult,
+          baseEntry,
           "firepdf",
           baseVariant,
         );
+        firePdfCacheEventsTotal.inc({
+          event: "write",
+          variant: baseVariant ?? "base",
+        });
       }
     }
   } catch (error) {

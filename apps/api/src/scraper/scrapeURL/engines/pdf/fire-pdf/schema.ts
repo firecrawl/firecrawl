@@ -195,6 +195,43 @@ export const firePdfBlockPagesSchema = z.array(
 
 export const firePdfBlocksSchema = firePdfBlockPagesSchema.optional();
 
+/**
+ * fire-pdf's provenance stamp: who produced a result and how complete it is.
+ * Stored verbatim with every cache entry so a later cache policy can judge
+ * the entry without reading its content (fire-pdf docs/cache-policy.md).
+ * `passthrough` keeps fields a newer fire-pdf adds.
+ */
+export const firePdfProvenanceSchema = z
+  .object({
+    generation: z.string(),
+    build_sha: z.string(),
+    built_at: z.string().nullable(),
+    produced_at: z.string(),
+    stages: z.array(z.string()).optional(),
+    quality: z
+      .object({
+        total_pages: z.number(),
+        failed_pages: z.number(),
+        partial_pages: z.number(),
+        degraded_pages: z.number(),
+        ocr_pages: z.number(),
+      })
+      .passthrough()
+      .optional(),
+    contributing_builds: z
+      .array(
+        z.object({
+          generation: z.string(),
+          build_sha: z.string(),
+          built_at: z.string().nullable(),
+        }),
+      )
+      .optional(),
+  })
+  .passthrough();
+
+export type FirePdfProvenance = z.infer<typeof firePdfProvenanceSchema>;
+
 export const resultResponseSchema = z.object({
   schema_version: z
     .union([z.literal(1), z.literal(2), z.literal(3)])
@@ -210,6 +247,7 @@ export const resultResponseSchema = z.object({
   // is the only proof the fire-pdf worker build understood the option —
   // older workers ignore unknown option keys and omit it.
   page_markers: z.literal(true).optional(),
+  provenance: firePdfProvenanceSchema.optional(),
 });
 
 export type PollResponse = z.infer<typeof pollResponseSchema>;

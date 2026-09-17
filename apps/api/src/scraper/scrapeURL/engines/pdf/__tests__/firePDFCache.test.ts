@@ -11,12 +11,15 @@ import {
 vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
   getPdfResultFromCache: vi.fn(),
   savePdfResultToCache: vi.fn(),
+  resolvePdfCacheKey: vi.fn((input: string | { key: string }) =>
+    typeof input === "string" ? `key-of-${input}` : input.key,
+  ),
 }));
 
 const getCached = vi.mocked(getPdfResultFromCache);
 const saveCached = vi.mocked(savePdfResultToCache);
 
-function makeMeta(zeroDataRetention = false) {
+function makeMeta(zeroDataRetention = false, parsers?: unknown[]) {
   return {
     id: "page-cache-test",
     logger: {
@@ -24,8 +27,24 @@ function makeMeta(zeroDataRetention = false) {
       warn: vi.fn(),
     },
     internalOptions: { zeroDataRetention },
+    ...(parsers ? { options: { parsers } } : {}),
   } as any;
 }
+
+const provenance = {
+  generation: "2026-09-16.1",
+  build_sha: "25c376ac15489dc6d5cab9af8728de41357ffc69",
+  built_at: "2026-09-17T20:11:39Z",
+  produced_at: "2026-09-17T20:12:00.000Z",
+  stages: ["native_text", "layout", "ocr"],
+  quality: {
+    total_pages: 3,
+    failed_pages: 0,
+    partial_pages: 0,
+    degraded_pages: 0,
+    ocr_pages: 1,
+  },
+};
 
 describe("FirePDF page-markdown cache capabilities", () => {
   beforeEach(() => {
@@ -718,5 +737,223 @@ describe("FirePDF cache and empty raster-image results", () => {
       "firepdf",
       "ocr",
     );
+  });
+});
+
+describe("FirePDF cache provenance and write rules", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCached.mockResolvedValue(null);
+    saveCached.mockResolvedValue(null);
+  });
+
+  it("stores the stamp, the write time and the variant with the entry", async () => {
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "whole", html: "<p>whole</p>", pagesProcessed: 3 },
+      provenance,
+      failedPages: null,
+    });
+
+    expect(saveCached).toHaveBeenCalledTimes(1);
+    const entry = saveCached.mock.calls[0][1];
+    expect(entry).toMatchObject({
+      markdown: "whole",
+      provenance,
+      variant: "base",
+    });
+    expect(typeof entry.cachedAt).toBe("string");
+    expect(Number.isNaN(Date.parse(entry.cachedAt!))).toBe(false);
+  });
+
+  it("stamps the compact legacy entry it back-fills beside a sidecar", async () => {
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: true,
+      includeBlocks: false,
+      result: {
+        markdown: "whole",
+        html: "<p>whole</p>",
+        pagesProcessed: 2,
+        pageMarkdown: [{ page: 1, markdown: "one" }],
+      },
+      provenance,
+    });
+
+    expect(saveCached).toHaveBeenCalledTimes(2);
+    expect(saveCached.mock.calls[0][1]).toMatchObject({
+      provenance,
+      variant: "page-markdown-v1",
+    });
+    expect(saveCached.mock.calls[1][1]).toMatchObject({
+      provenance,
+      variant: "base",
+    });
+  });
+
+  it("writes entries without a stamp when fire-pdf sent none", async () => {
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "whole", html: "<p>whole</p>" },
+    });
+    expect(saveCached).toHaveBeenCalledTimes(1);
+    expect(saveCached.mock.calls[0][1]).not.toHaveProperty("provenance");
+    expect(saveCached.mock.calls[0][1]).toMatchObject({ variant: "base" });
+  });
+
+  it("does not cache a result with failed pages, and says why", async () => {
+    const meta = makeMeta();
+    await maybeSaveResult({
+      meta,
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "most of it", html: "<p>most of it</p>" },
+      provenance,
+      failedPages: [4],
+    });
+    expect(saveCached).not.toHaveBeenCalled();
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "FirePDF result not cached",
+      expect.objectContaining({
+        reason: "failed_pages",
+        cacheKey: "key-of-BASE64",
+      }),
+    );
+  });
+
+  it("does not cache a result whose pages lost layout (degraded), but does cache partial pages", async () => {
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "text only", html: "<p>text only</p>" },
+      provenance: {
+        ...provenance,
+        quality: { ...provenance.quality, degraded_pages: 2 },
+      },
+      failedPages: null,
+    });
+    expect(saveCached).not.toHaveBeenCalled();
+
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "nearly all", html: "<p>nearly all</p>" },
+      provenance: {
+        ...provenance,
+        quality: { ...provenance.quality, partial_pages: 1 },
+      },
+      failedPages: null,
+    });
+    expect(saveCached).toHaveBeenCalledTimes(1);
+    expect(saveCached.mock.calls[0][1]).toMatchObject({
+      provenance: expect.objectContaining({
+        quality: expect.objectContaining({ partial_pages: 1 }),
+      }),
+    });
+  });
+
+  it("serves a stamped entry without leaking the bookkeeping fields, and logs the key and generation", async () => {
+    getCached.mockResolvedValueOnce({
+      markdown: "whole",
+      html: "<p>whole</p>",
+      pagesProcessed: 3,
+      provenance,
+      cachedAt: "2026-09-17T20:12:01.000Z",
+      variant: "base",
+    });
+    const meta = makeMeta();
+    const result = await tryGetCached(
+      meta,
+      "BASE64",
+      "auto",
+      undefined,
+      undefined,
+      false,
+      false,
+    );
+    expect(result).toEqual({
+      markdown: "whole",
+      html: "<p>whole</p>",
+      pagesProcessed: 3,
+    });
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "Using cached FirePDF result",
+      expect.objectContaining({
+        cacheKey: "key-of-BASE64",
+        generation: "2026-09-16.1",
+        buildSha: provenance.build_sha,
+        cachedAt: "2026-09-17T20:12:01.000Z",
+      }),
+    );
+  });
+
+  it("reads an entry written before the stamp existed as unknown provenance", async () => {
+    getCached.mockResolvedValueOnce({ markdown: "old", html: "<p>old</p>" });
+    const meta = makeMeta();
+    await tryGetCached(meta, "BASE64", "auto", undefined, 1, false, false);
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "Using cached FirePDF result",
+      expect.objectContaining({
+        generation: "unknown",
+        buildSha: "unknown",
+        cachedAt: null,
+      }),
+    );
+  });
+
+  it("bypasses the read, but not the write, when the pdf parser asks for a refresh", async () => {
+    getCached.mockResolvedValue({ markdown: "stale", html: "<p>stale</p>" });
+    const meta = makeMeta(false, [{ type: "pdf", refresh: true }]);
+    const result = await tryGetCached(
+      meta,
+      "BASE64",
+      "auto",
+      undefined,
+      1,
+      false,
+      false,
+    );
+    expect(result).toBeNull();
+    expect(getCached).not.toHaveBeenCalled();
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "FirePDF cache bypassed by refresh",
+      expect.objectContaining({ cacheKey: "key-of-BASE64" }),
+    );
+
+    await maybeSaveResult({
+      meta,
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "fresh", html: "<p>fresh</p>" },
+      provenance,
+    });
+    expect(saveCached).toHaveBeenCalledTimes(1);
   });
 });

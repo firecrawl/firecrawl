@@ -2,6 +2,8 @@
 // setup as firePDFAsync.test.ts, which covers the orchestration end to end.
 vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
   createPdfCacheKey: (s: string) => `sha-${s.length}`,
+  resolvePdfCacheKey: (input: string | { key: string }) =>
+    typeof input === "string" ? `sha-${input.length}` : input.key,
   getPdfResultFromCache: vi.fn(async () => null),
   savePdfResultToCache: vi.fn(async () => null),
 }));
