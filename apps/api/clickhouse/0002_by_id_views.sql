@@ -13,9 +13,15 @@
 --
 -- These tables are the replacement index. Materialized views fill them on
 -- every insert; history is backfilled once with 0002_by_id_views_backfill.sh.
--- The base tables never get duplicate ids in practice (`_first_wins` dedupe,
--- zero duplicates observed over 24h), so plain MergeTree targets are fine;
--- readers that must be exact use DISTINCT or GROUP BY id.
+-- Every row is unique on its sorting key, so ReplacingMergeTree collapses the
+-- exact duplicates a redelivered job row or an overlapping backfill can leave
+-- behind. Point lookups tolerate a pre-merge duplicate; readers that count or
+-- sum read with FINAL or DISTINCT.
+--
+-- ClickHouse compares UUIDs by their two 64-bit halves in swapped order, so
+-- `ORDER BY id` is a stable order for point lookups and paging, NOT the
+-- chronological order a uuidv7 range in PostgreSQL gave. Time windows use
+-- `scrapes_by_time`, sorted by created_at.
 
 -- requests by id: everything a by-id reader has needed so far.
 CREATE TABLE IF NOT EXISTS requests_by_id
@@ -31,7 +37,7 @@ CREATE TABLE IF NOT EXISTS requests_by_id
     api_key_id Nullable(Int64),
     external_request_id Nullable(String)
 )
-ENGINE = MergeTree
+ENGINE = ReplacingMergeTree
 PARTITION BY toYYYYMM(created_at)
 ORDER BY id
 SETTINGS index_granularity = 8192;
@@ -51,8 +57,8 @@ AS SELECT
     external_request_id
 FROM requests;
 
--- scrapes by id: firebill's "completed, positive-credit scrapes in a uuidv7
--- window" scan and the dashboard's scrape-id search.
+-- scrapes by id: the dashboard's scrape-id search ("which request produced
+-- this scrape id").
 CREATE TABLE IF NOT EXISTS scrapes_by_id
 (
     id UUID,
@@ -62,7 +68,7 @@ CREATE TABLE IF NOT EXISTS scrapes_by_id
     credits_cost Int32,
     created_at DateTime64(9)
 )
-ENGINE = MergeTree
+ENGINE = ReplacingMergeTree
 PARTITION BY toYYYYMM(created_at)
 ORDER BY id
 SETTINGS index_granularity = 8192;
@@ -86,7 +92,7 @@ CREATE TABLE IF NOT EXISTS scrapes_by_request
     credits_cost Int32,
     created_at DateTime64(9)
 )
-ENGINE = MergeTree
+ENGINE = ReplacingMergeTree
 PARTITION BY toYYYYMM(created_at)
 ORDER BY (request_id, id)
 SETTINGS index_granularity = 8192;
@@ -112,4 +118,27 @@ AS SELECT
     ) AS is_real_error,
     credits_cost,
     created_at
+FROM scrapes;
+
+-- scrapes by time: firebill's reconciliation enumerates the completed,
+-- positive-credit scrapes of a time window. The window used to be a uuidv7 id
+-- range on a PostgreSQL table sorted by id; here it is a created_at range on a
+-- table sorted by created_at, paged by (created_at, id).
+CREATE TABLE IF NOT EXISTS scrapes_by_time
+(
+    created_at DateTime64(9),
+    id UUID,
+    request_id UUID,
+    team_id UUID,
+    is_successful Bool,
+    credits_cost Int32
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toYYYYMM(created_at)
+ORDER BY (created_at, id)
+SETTINGS index_granularity = 8192;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS scrapes_by_time_mv
+TO scrapes_by_time
+AS SELECT created_at, id, request_id, team_id, is_successful, credits_cost
 FROM scrapes;
