@@ -10,6 +10,7 @@ import {
   supabaseGetExtractRequestByIdDirect,
   supabaseGetScrapeById,
 } from "./supabase-jobs";
+import { recordJobStorePostgresFallback } from "./job-store-fallback";
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -40,7 +41,11 @@ async function resolveOperationalJobAccess(params: {
   }
 
   const fallback = await params.fallback();
-  return fallback && Number.isFinite(fallback.expiresAtMs) ? fallback : null;
+  if (!fallback || !Number.isFinite(fallback.expiresAtMs)) return null;
+  recordJobStorePostgresFallback("job_access", params.id, {
+    kind: fallback.kind,
+  });
+  return fallback;
 }
 
 export function getScrapeJobAccess(

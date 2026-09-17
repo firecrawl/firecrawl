@@ -72,6 +72,7 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { getScrapeJobAccess } from "../../lib/operational-job-access";
 import { readScrapeJobState } from "../../lib/job-state-store";
 import { scrapeQueue } from "../../services/worker/nuq-router";
+import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -217,6 +218,11 @@ export async function scrapeInteractController(
     legacyScrape = (await supabaseGetScrapeByIdDirect(
       scrapeId,
     )) as ScrapeContextRow | null;
+    if (legacyScrape) {
+      recordJobStorePostgresFallback("scrape_state", scrapeId, {
+        reason: "replay_context",
+      });
+    }
     const replay = legacyScrape
       ? buildReplayContextFromScrape(legacyScrape)
       : { error: "Replay context is unavailable for this scrape job." };

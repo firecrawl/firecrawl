@@ -13,6 +13,7 @@ import { getJobs } from "../../controllers/v1/crawl-status";
 import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
+import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 
 export async function finishCrawlSuper(job: NuQJob<any>) {
   const crawlId = job.groupId;
@@ -154,6 +155,9 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       try {
         const creditsRows = await creditsBilledByCrawlId(db, crawlId);
         credits_billed = creditsRows?.[0]?.credits_billed ?? null;
+        if (credits_billed !== null) {
+          recordJobStorePostgresFallback("request_credits", requestId);
+        }
       } catch (error) {
         logger.warn("Credits billed is null", { error });
       }

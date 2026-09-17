@@ -33,6 +33,7 @@ import { redisEvictConnection } from "../../../src/services/redis";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { readScrapeJobState } from "../../lib/job-state-store";
 import { readRequestCredits } from "../../lib/request-credits-store";
+import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -79,6 +80,9 @@ export async function getJob(
   ]);
 
   if (!nuqJob && !scrapeState && !dbScrape) return null;
+  if (!scrapeState && dbScrape) {
+    recordJobStorePostgresFallback("scrape_state", id);
+  }
 
   if (nuqJob && nuqJob.data.mode !== "single_urls") {
     return null;
@@ -222,6 +226,9 @@ export async function crawlStatusController(
     creditsBilled = await creditsBilledByCrawlId(dbRr, req.params.jobId)
       .then(rows => rows[0]?.credits_billed ?? null)
       .catch(() => null);
+    if (creditsBilled !== null) {
+      recordJobStorePostgresFallback("request_credits", req.params.jobId);
+    }
   }
 
   // check if the crawl failed during kickoff (e.g. queue full)

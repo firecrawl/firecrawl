@@ -12,6 +12,7 @@ import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { getExtractJobAccess } from "../../lib/operational-job-access";
 import { readExtractJobState } from "../../lib/job-state-store";
 import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
+import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 
 async function getExtractData(id: string): Promise<any> {
   // Try GCS first if configured
@@ -90,6 +91,9 @@ export async function extractStatusController(
       }
 
       const dbExtract = await supabaseGetExtractByIdDirect(req.params.jobId);
+      if (dbExtract) {
+        recordJobStorePostgresFallback("extract_state", req.params.jobId);
+      }
       if (!dbExtract) {
         logger.warn("Extract job was not found");
         return res.status(404).json({

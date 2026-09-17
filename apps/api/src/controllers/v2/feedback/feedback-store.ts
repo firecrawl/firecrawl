@@ -13,6 +13,7 @@ import {
   FeedbackRecordOptions,
   RefundPolicySnapshot,
 } from "./internal-types";
+import { recordJobStorePostgresFallback } from "../../../lib/job-store-fallback";
 
 type DbError = { code?: string } & Record<string, unknown>;
 
@@ -98,6 +99,7 @@ export async function lookupFeedbackJob(
     .limit(1);
 
   if (!row) return null;
+  recordJobStorePostgresFallback("feedback_job", jobId, { endpoint });
 
   return {
     endpoint,

@@ -13,6 +13,7 @@ import { getExtractJobAccess } from "../../lib/operational-job-access";
 import { readExtractJobState } from "../../lib/job-state-store";
 import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
 import { getExtractV3AgentStatus } from "../../lib/extract-v3-status";
+import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 
 async function getExtractData(id: string): Promise<any> {
   // Try GCS first if configured
@@ -91,6 +92,9 @@ export async function extractStatusController(
       }
 
       const dbExtract = await supabaseGetExtractByIdDirect(req.params.jobId);
+      if (dbExtract) {
+        recordJobStorePostgresFallback("extract_state", req.params.jobId);
+      }
       if (dbExtract) {
         // Get result data
         let data: any = [];
