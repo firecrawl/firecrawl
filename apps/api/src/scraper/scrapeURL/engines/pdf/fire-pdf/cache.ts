@@ -339,22 +339,24 @@ export function provenanceFromResponse(
  * is absent) and pages that lost layout (`degraded_pages`) are usually
  * transient — a fleet incident, a deadline — and a cached copy would serve
  * that outcome to every later request for the document. A stamp this build
- * cannot read (`provenance === null`) is refused too. Partial pages are
- * content-caused and expensive to redo, so those results are still cached;
- * the stamp's quality counts let a later policy refresh them first.
+ * cannot read (`provenance === null`) is refused, and so is a stamp without
+ * quality counts: "no counts" is not "no failures", and a later policy
+ * reads the same counts. Only an unstamped result (a build from before the
+ * stamp) is judged on the list alone. Partial pages are content-caused and
+ * expensive to redo, so those results are still cached; the stamp's counts
+ * let a later policy refresh them first.
  */
 export function cacheRefusalReason(
   failedPages: readonly number[] | null | undefined,
   provenance: FirePdfProvenance | null | undefined,
 ): CacheRefusedReason | null {
   if (provenance === null) return "malformed_provenance";
-  if (
-    (failedPages?.length ?? 0) > 0 ||
-    (provenance?.quality?.failed_pages ?? 0) > 0
-  ) {
-    return "failed_pages";
-  }
-  if ((provenance?.quality?.degraded_pages ?? 0) > 0) return "degraded_pages";
+  if ((failedPages?.length ?? 0) > 0) return "failed_pages";
+  if (provenance === undefined) return null;
+  const quality = provenance.quality;
+  if (quality === undefined) return "missing_quality";
+  if (quality.failed_pages > 0) return "failed_pages";
+  if (quality.degraded_pages > 0) return "degraded_pages";
   return null;
 }
 
@@ -432,41 +434,51 @@ export async function maybeSaveResult(args: {
     variant: ownVariant ?? "base",
   };
 
+  // savePdfResultToCache returns null (without throwing) when GCS is not
+  // configured or its retries are exhausted; only a persisted write is a
+  // write. Every outcome is counted and logged with its key and variant so
+  // a stale or missing entry can be traced to the write that produced it.
+  const recordWrite = (
+    savedKey: string | null,
+    variant: string | undefined,
+    alias: boolean,
+  ): boolean => {
+    const cacheVariant = variant ?? "base";
+    if (savedKey === null) {
+      firePdfCacheEventsTotal.inc({
+        event: "write_failed",
+        variant: cacheVariant,
+      });
+      meta.logger.warn("FirePDF result not persisted to cache", {
+        scrapeId: meta.id,
+        requestedMode: mode,
+        cacheVariant,
+        cacheKey,
+        alias,
+      });
+      return false;
+    }
+    firePdfCacheEventsTotal.inc({ event: "write", variant: cacheVariant });
+    meta.logger.info("Saved FirePDF result to cache", {
+      scrapeId: meta.id,
+      requestedMode: mode,
+      cacheVariant,
+      cacheKey,
+      alias,
+      generation: provenance?.generation ?? "unknown",
+      buildSha: provenance?.build_sha ?? "unknown",
+    });
+    return true;
+  };
+
   try {
-    // savePdfResultToCache returns null (without throwing) when GCS is not
-    // configured or its retries are exhausted; only a persisted write is a
-    // write.
     const savedKey = await savePdfResultToCache(
       base64Content,
       entry,
       "firepdf",
       ownVariant,
     );
-    if (savedKey === null) {
-      firePdfCacheEventsTotal.inc({
-        event: "write_failed",
-        variant: ownVariant ?? "base",
-      });
-      meta.logger.warn("FirePDF result not persisted to cache", {
-        scrapeId: meta.id,
-        requestedMode: mode,
-        cacheVariant: ownVariant ?? "base",
-        cacheKey,
-      });
-      return;
-    }
-    firePdfCacheEventsTotal.inc({
-      event: "write",
-      variant: ownVariant ?? "base",
-    });
-    meta.logger.info("Saved FirePDF result to cache", {
-      scrapeId: meta.id,
-      requestedMode: mode,
-      cacheVariant: ownVariant ?? "base",
-      cacheKey,
-      generation: provenance?.generation ?? "unknown",
-      buildSha: provenance?.build_sha ?? "unknown",
-    });
+    if (!recordWrite(savedKey, ownVariant, false)) return;
     // An enriched (page/block-capable) parse is also a valid legacy result.
     // Populate the compact base key when it is missing so a later legacy
     // request never repeats the conversion. A sidecar miss can coexist with
@@ -500,10 +512,7 @@ export async function maybeSaveResult(args: {
           "firepdf",
           baseVariant,
         );
-        firePdfCacheEventsTotal.inc({
-          event: savedBase === null ? "write_failed" : "write",
-          variant: baseVariant ?? "base",
-        });
+        recordWrite(savedBase, baseVariant, true);
       }
     }
   } catch (error) {

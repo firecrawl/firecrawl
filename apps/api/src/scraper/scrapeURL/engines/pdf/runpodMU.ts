@@ -6,6 +6,7 @@ import { z } from "zod";
 import path from "node:path";
 import {
   getPdfResultFromCache,
+  resolvePdfCacheKey,
   savePdfResultToCache,
 } from "../../../../lib/gcs-pdf-cache";
 import type { PDFProcessorResult } from "./types";
@@ -31,6 +32,9 @@ export async function scrapePDFWithRunPodMU(
   // keeps the decision the first engine got instead of spending a second
   // token. Over budget, or with the limiter unavailable, the entry is served.
   if (!maxPages && !meta.internalOptions.zeroDataRetention) {
+    // This cache lives under the legacy `pdf-cache-v2/` prefix; the key is
+    // the same sha256 of the payload, logged so a report can name the entry.
+    const cacheKey = resolvePdfCacheKey(base64Content);
     let bypass = false;
     if (getPDFRefresh(meta.options?.parsers)) {
       const decision = await consumeRefresh(
@@ -41,10 +45,14 @@ export async function scrapePDFWithRunPodMU(
       if (bypass) {
         meta.logger.info("RunPod MU cache bypassed by refresh", {
           tempFilePath,
+          cacheKey,
+          cacheProvider: "runpod",
         });
       } else {
         meta.logger.warn("RunPod MU cache refresh not applied", {
           tempFilePath,
+          cacheKey,
+          cacheProvider: "runpod",
           decision,
           perMinute: config.FIRE_PDF_CACHE_REFRESH_PER_MINUTE,
         });
@@ -56,6 +64,8 @@ export async function scrapePDFWithRunPodMU(
         if (cachedResult) {
           meta.logger.info("Using cached RunPod MU result for PDF", {
             tempFilePath,
+            cacheKey,
+            cacheProvider: "runpod",
           });
           return cachedResult;
         }

@@ -221,13 +221,17 @@ export const firePdfProvenanceSchema = z
       })
       .passthrough()
       .optional(),
+    // `passthrough` on each item too: a newer fire-pdf may add per-build
+    // fields, and the entry stores the stamp verbatim.
     contributing_builds: z
       .array(
-        z.object({
-          generation: z.string(),
-          build_sha: z.string(),
-          built_at: z.string().nullable(),
-        }),
+        z
+          .object({
+            generation: z.string(),
+            build_sha: z.string(),
+            built_at: z.string().nullable(),
+          })
+          .passthrough(),
       )
       .optional(),
   })
@@ -247,7 +251,10 @@ export type ProvenanceParse =
   | { status: "malformed"; issue: string };
 
 export function parseProvenance(raw: unknown): ProvenanceParse {
-  if (raw === undefined || raw === null) return { status: "absent" };
+  // Only a missing field is "no stamp" (a build from before the stamp
+  // existed). fire-pdf never sends an explicit null; one is unreadable.
+  if (raw === undefined) return { status: "absent" };
+  if (raw === null) return { status: "malformed", issue: "provenance: null" };
   const parsed = firePdfProvenanceSchema.safeParse(raw);
   if (parsed.success) return { status: "ok", provenance: parsed.data };
   return {

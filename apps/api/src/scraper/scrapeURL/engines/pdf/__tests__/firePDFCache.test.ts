@@ -1117,6 +1117,92 @@ describe("FirePDF cache provenance and write rules", () => {
     );
   });
 
+  it("refuses a stamped result that carries no quality counts", async () => {
+    const meta = makeMeta();
+    const { quality: _quality, ...withoutQuality } = provenance;
+    await maybeSaveResult({
+      meta,
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "whole", html: "<p>whole</p>" },
+      provenance: withoutQuality,
+      failedPages: [],
+    });
+    expect(saveCached).not.toHaveBeenCalled();
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "FirePDF result not cached",
+      expect.objectContaining({ reason: "missing_quality" }),
+    );
+  });
+
+  it("treats an explicit null stamp as unreadable, not as absent", () => {
+    const logger = { warn: vi.fn(), info: vi.fn() } as any;
+    expect(
+      provenanceFromResponse(null, logger, {
+        scrapeId: "s1",
+        cacheKey: "key-of-BASE64",
+      }),
+    ).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "FirePDF provenance stamp not understood",
+      expect.objectContaining({ issue: expect.stringContaining("null") }),
+    );
+  });
+
+  it("keeps fields a newer fire-pdf adds to a contributing build", () => {
+    const parsed = firePdfProvenanceSchema.parse({
+      ...provenance,
+      contributing_builds: [
+        {
+          generation: "2026-09-16.1",
+          build_sha: "abc",
+          built_at: null,
+          lane: "heavy",
+        },
+      ],
+    });
+    expect(parsed.contributing_builds?.[0]).toMatchObject({ lane: "heavy" });
+  });
+
+  it("logs an alias write the cache layer could not persist", async () => {
+    saveCached.mockResolvedValueOnce("saved-key").mockResolvedValueOnce(null);
+    const meta = makeMeta();
+    await maybeSaveResult({
+      meta,
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: true,
+      includeBlocks: false,
+      result: {
+        markdown: "whole",
+        html: "<p>whole</p>",
+        pageMarkdown: [{ page: 1, markdown: "whole" }],
+      },
+      provenance,
+    });
+    expect(saveCached).toHaveBeenCalledTimes(2);
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "Saved FirePDF result to cache",
+      expect.objectContaining({
+        cacheVariant: "page-markdown-v1",
+        alias: false,
+        cacheKey: "key-of-BASE64",
+      }),
+    );
+    expect(meta.logger.warn).toHaveBeenCalledWith(
+      "FirePDF result not persisted to cache",
+      expect.objectContaining({
+        cacheVariant: "base",
+        alias: true,
+        cacheKey: "key-of-BASE64",
+      }),
+    );
+  });
+
   it("rejects a stamp whose page counts are negative or fractional", () => {
     expect(firePdfProvenanceSchema.safeParse(provenance).success).toBe(true);
     for (const bad of [

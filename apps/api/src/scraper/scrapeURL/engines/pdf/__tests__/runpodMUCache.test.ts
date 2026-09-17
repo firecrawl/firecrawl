@@ -6,6 +6,7 @@ import { consumeRefresh } from "../fire-pdf/refresh-budget";
 vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
   getPdfResultFromCache: vi.fn(),
   savePdfResultToCache: vi.fn(),
+  resolvePdfCacheKey: vi.fn(() => "key-of-BASE64"),
 }));
 
 vi.mock("../fire-pdf/refresh-budget", () => ({
@@ -54,7 +55,10 @@ describe("RunPod MU cache read and refresh", () => {
     expect(getCached).not.toHaveBeenCalled();
     expect(meta.logger.info).toHaveBeenCalledWith(
       "RunPod MU cache bypassed by refresh",
-      expect.objectContaining({ tempFilePath: "/tmp/doc.pdf" }),
+      expect.objectContaining({
+        tempFilePath: "/tmp/doc.pdf",
+        cacheKey: "key-of-BASE64",
+      }),
     );
   });
 
@@ -67,7 +71,10 @@ describe("RunPod MU cache read and refresh", () => {
     expect(getCached).toHaveBeenCalledWith("BASE64");
     expect(meta.logger.warn).toHaveBeenCalledWith(
       "RunPod MU cache refresh not applied",
-      expect.objectContaining({ decision: "limited" }),
+      expect.objectContaining({
+        decision: "limited",
+        cacheKey: "key-of-BASE64",
+      }),
     );
   });
 
