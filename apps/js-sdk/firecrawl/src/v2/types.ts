@@ -865,6 +865,7 @@ export interface FindToolsOptions {
 }
 
 export interface FindToolsData {
+  agent_hints?: string[];
   level: "providers" | "groups" | "tools";
   items: Array<{
     id: string;
@@ -915,6 +916,7 @@ export type AlexandriaScrapeResult =
     };
 
 export interface AlexandriaScrapeData {
+  agent_hints?: string[];
   scrapeId: string;
   requestId: string;
   alexandria: AlexandriaScrapeResult[];

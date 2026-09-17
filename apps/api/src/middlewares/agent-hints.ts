@@ -14,6 +14,7 @@ export function agentHintsMiddleware(
         return json.call(this, body);
       const hints = buildAgentHints({
         endpoint,
+        request: req.body,
         response: body,
       });
       return json.call(

@@ -43,7 +43,7 @@ describe("agent hint response middleware", () => {
   it("values other than true preserve the original envelope", async () => {
     const body = {
       success: true,
-      data: { web: [{ url: "https://example.com" }] },
+      data: { tools: [{ options: [], response: {} }] },
     };
     const response = await request(appFor({ body }))
       .post("/")
