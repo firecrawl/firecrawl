@@ -886,7 +886,7 @@ class ScrapeOptions(BaseModel):
     timeout: Optional[int] = None
     wait_for: Optional[int] = None
     mobile: Optional[bool] = None
-    parsers: Optional[Union[List[str], List[Union[str, "PDFParser"]]]] = None
+    parsers: Optional[Union[List[str], List[Union[str, "PDFParser", "ImageParser"]]]] = None
     actions: Optional[
         List[
             Union[
@@ -2175,6 +2175,15 @@ class PDFParser(BaseModel):
         if folded.get("pages") is None and alias is not None:
             folded["pages"] = alias
         return folded
+
+
+class ImageParser(BaseModel):
+    """Image parser: OCR raster images (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP,
+    WebP, AVIF) as one-page documents. Part of the default parsers list next to
+    "pdf"; takes no options, so the string "image" is equivalent. Omit it from
+    an explicit list to keep image URLs failing as unsupported files."""
+
+    type: Literal["image"] = "image"
 
 
 # Location types

@@ -188,6 +188,16 @@ export interface AuditMetadata {
   username: string;
 }
 
+/**
+ * OCR raster images (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP, WebP, AVIF) as
+ * one-page documents. Part of the default parsers list next to "pdf"; takes
+ * no options, so the string "image" is equivalent. Omit it from an explicit
+ * list to keep image URLs failing as unsupported files.
+ */
+export type ImageParser = {
+  type: "image";
+};
+
 export type PDFParser = {
   type: "pdf";
   mode?: "fast" | "auto" | "ocr";
@@ -249,7 +259,7 @@ export interface ScrapeOptions {
   timeout?: number;
   waitFor?: number;
   mobile?: boolean;
-  parsers?: Array<string | PDFParser>;
+  parsers?: Array<string | PDFParser | ImageParser>;
   actions?: ActionOption[];
   location?: LocationConfig;
   skipTlsVerification?: boolean;

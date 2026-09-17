@@ -152,6 +152,12 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
         undefined,
         1,
         "ocr",
+        false,
+        false,
+        false,
+        // Tag the request so fire-pdf can measure (and later route) image
+        // OCR separately from PDF parsing.
+        "image",
       );
     } catch (error) {
       // FirePDF answers 400 when it cannot open the bytes (truncated or
