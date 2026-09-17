@@ -126,18 +126,26 @@ describe("imageOcrGate", () => {
     });
   });
 
-  it("uses the deployment default when the lookup fails or there is no team", async () => {
+  it("leaves image OCR off when the lookup fails, whatever the default", async () => {
     mockedGetACUCTeam.mockRejectedValueOnce(new Error("redis down"));
     await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(false);
+    await withConfig({ IMAGE_OCR_ENABLED: true }, async () => {
+      // The team may have opted out; an unreadable flag must not be
+      // overridden by the deployment default.
+      mockedGetACUCTeam.mockRejectedValueOnce(new Error("redis down"));
+      await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(
+        false,
+      );
+    });
+  });
+
+  it("uses the deployment default when the job carries no team", async () => {
     await expect(imageOcrGate(undefined, undefined, true)()).resolves.toBe(
       false,
     );
-    await withConfig({ IMAGE_OCR_ENABLED: true }, async () => {
-      mockedGetACUCTeam.mockRejectedValueOnce(new Error("redis down"));
-      await expect(imageOcrGate("team", undefined, true)()).resolves.toBe(true);
-      await expect(imageOcrGate(undefined, undefined, true)()).resolves.toBe(
-        true,
-      );
-    });
+    await withConfig({ IMAGE_OCR_ENABLED: true }, () =>
+      expect(imageOcrGate(undefined, undefined, true)()).resolves.toBe(true),
+    );
+    expect(mockedGetACUCTeam).not.toHaveBeenCalled();
   });
 });
