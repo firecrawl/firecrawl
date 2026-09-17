@@ -9,7 +9,17 @@ const AGG_FAMILY = "agg";
 const TOTAL_QUALIFIER = "total";
 const SHARDS_QUALIFIER = "\x00shards";
 const FIXED_TIMESTAMP_MICROS = 0;
+const MAX_CACHED_SHARD_COUNTS = 10_000;
 const shardCounts = new Map<string, number>();
+
+function cacheShardCount(requestId: string, shards: number): void {
+  shardCounts.delete(requestId);
+  shardCounts.set(requestId, shards);
+  if (shardCounts.size > MAX_CACHED_SHARD_COUNTS) {
+    const oldest = shardCounts.keys().next().value;
+    if (oldest !== undefined) shardCounts.delete(oldest);
+  }
+}
 
 function requestHash(requestId: string): Buffer {
   return crypto.createHash("sha256").update(requestId, "utf8").digest();
@@ -149,7 +159,7 @@ async function readShardCount(
   if (!Number.isInteger(shards) || shards <= 0 || shards > 512) {
     throw new Error(`Invalid stored request credits shard count: ${shards}`);
   }
-  shardCounts.set(requestId, shards);
+  cacheShardCount(requestId, shards);
   return shards;
 }
 
@@ -212,7 +222,7 @@ export async function initializeRequestCredits(
         `Request credits shard count mismatch for ${requestId}: ${stored} != ${shards}`,
       );
     }
-    shardCounts.set(requestId, shards);
+    cacheShardCount(requestId, shards);
     return true;
   });
 }

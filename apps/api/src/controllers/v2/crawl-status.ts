@@ -215,9 +215,9 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
-  let creditsBilled = await readRequestCredits(req.params.jobId).catch(
-    () => null,
-  );
+  let creditsBilled = await readRequestCredits(
+    sc?.requestId ?? req.params.jobId,
+  ).catch(() => null);
   if (creditsBilled === null && config.USE_DB_AUTHENTICATION) {
     creditsBilled = await creditsBilledByCrawlId(dbRr, req.params.jobId)
       .then(rows => rows[0]?.credits_billed ?? null)

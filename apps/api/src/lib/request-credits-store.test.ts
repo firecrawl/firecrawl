@@ -76,7 +76,7 @@ describe("request credits store", () => {
     expect(requestCreditsShards(10_000_000)).toBe(512);
   });
 
-  it("initializes shard zero exactly once", async () => {
+  it("keeps the stored shard count on repeated initialization", async () => {
     await expect(initializeRequestCredits("request-1", 16)).resolves.toBe(true);
 
     const call = request.mock.calls[0][0];
@@ -98,6 +98,17 @@ describe("request credits store", () => {
         ],
       },
     });
+
+    request.mockImplementationOnce((_options, callback) =>
+      callback(null, { predicateMatched: true }),
+    );
+    getRows.mockResolvedValueOnce([
+      [row({ jobs: { "\x00shards": [{ value: Buffer.from("16") }] } })],
+    ]);
+
+    await expect(initializeRequestCredits("request-1", 16)).resolves.toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(getRows).toHaveBeenCalledTimes(1);
   });
 
   it("atomically records one job marker and aggregate addition", async () => {

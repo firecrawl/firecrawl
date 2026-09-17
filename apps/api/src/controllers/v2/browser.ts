@@ -687,26 +687,11 @@ export async function browserDeleteController(
 
   await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
 
-  if (session.request_id && session.request_id !== session.id) {
-    await recordRequestCredits({
-      requestId: session.request_id,
-      jobId: session.id,
-      credits: creditsBilled,
-    }).catch(error => {
-      logger.error("Failed to record browser request credits in Bigtable", {
-        error,
-        requestId: session.request_id,
-        sessionId: session.id,
-        creditsBilled,
-      });
-    });
-  }
-
+  const agentRequestId =
+    session.request_id && session.request_id !== session.id
+      ? session.request_id
+      : null;
   if (session.should_bill) {
-    const agentRequestId =
-      session.request_id && session.request_id !== session.id
-        ? session.request_id
-        : null;
     billTeam(
       req.auth.team_id,
       req.acuc?.org_id ?? null,
@@ -731,6 +716,21 @@ export async function browserDeleteController(
         error,
         creditsBilled,
         durationMs,
+      });
+    });
+  }
+
+  if (agentRequestId) {
+    await recordRequestCredits({
+      requestId: agentRequestId,
+      jobId: session.id,
+      credits: creditsBilled,
+    }).catch(error => {
+      logger.error("Failed to record browser request credits in Bigtable", {
+        error,
+        requestId: agentRequestId,
+        sessionId: session.id,
+        creditsBilled,
       });
     });
   }
@@ -870,26 +870,11 @@ export async function browserWebhookDestroyedController(
 
   await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
 
-  if (session.request_id && session.request_id !== session.id) {
-    await recordRequestCredits({
-      requestId: session.request_id,
-      jobId: session.id,
-      credits: creditsBilled,
-    }).catch(error => {
-      logger.error("Failed to record browser request credits in Bigtable", {
-        error,
-        requestId: session.request_id,
-        sessionId: session.id,
-        creditsBilled,
-      });
-    });
-  }
-
+  const agentRequestId =
+    session.request_id && session.request_id !== session.id
+      ? session.request_id
+      : null;
   if (session.should_bill) {
-    const agentRequestId =
-      session.request_id && session.request_id !== session.id
-        ? session.request_id
-        : null;
     // The webhook carries no request context, so the team's ACUC answers for
     // the org — the same lookup the biller used to make for itself.
     billTeam(
@@ -916,6 +901,21 @@ export async function browserWebhookDestroyedController(
         sessionId: session.id,
         creditsBilled,
         durationMs,
+      });
+    });
+  }
+
+  if (agentRequestId) {
+    await recordRequestCredits({
+      requestId: agentRequestId,
+      jobId: session.id,
+      credits: creditsBilled,
+    }).catch(error => {
+      logger.error("Failed to record browser request credits in Bigtable", {
+        error,
+        requestId: agentRequestId,
+        sessionId: session.id,
+        creditsBilled,
       });
     });
   }

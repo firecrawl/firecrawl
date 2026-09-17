@@ -145,7 +145,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     let credits_billed: number | null = null;
 
     try {
-      credits_billed = await readRequestCredits(crawlId);
+      credits_billed = await readRequestCredits(requestId);
     } catch (error) {
       logger.warn("Bigtable request credits read failed", { error });
     }
