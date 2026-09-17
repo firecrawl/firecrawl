@@ -1,6 +1,5 @@
 import { buildAgentHints, type AgentHintContext } from "./agent-hints";
 
-const jobId = "0199412e-7590-7000-8000-000000000001";
 const fullTool = {
   provider: "zillow",
   capability: "properties/property",
@@ -26,17 +25,6 @@ const hints = (overrides: Partial<AgentHintContext>) =>
   });
 
 describe("deterministic agent hints", () => {
-  it("keeps empty search feedback actionable and does not assume a positive rating", () => {
-    const result = hints({ feedbackJobId: jobId });
-    expect(result).toHaveLength(1);
-    expect(result[0]).toContain(`"jobId":"${jobId}"`);
-    expect(result[0]).toContain('"endpoint":"search"');
-    expect(result[0]).toContain("good, partial, or bad");
-    expect(result[0]).toContain("valuableSources");
-    expect(result[0]).toContain("missingContent");
-    expect(result[0]).not.toContain('"rating":"good"');
-  });
-
   it("never labels tool count as relevance or expands full definitions again", () => {
     const result = hints({
       response: { success: true, data: { tools: [fullTool] } },
@@ -77,19 +65,17 @@ describe("deterministic agent hints", () => {
         success: true,
         data: { tools: [fullTool], web: [{ url: "https://example.com" }] },
       },
-      feedbackJobId: jobId,
     });
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(1);
     expect(result.join(" ")).not.toContain('"url"');
   });
 
-  it("distinguishes summary expansion from catalogue paging within the three-hint cap", () => {
+  it("distinguishes summary expansion from catalogue paging within the two-hint cap", () => {
     const result = hints({
       endpoint: "scrape",
       response: catalogue({ items: [{ next: call }], next: call }),
-      feedbackJobId: jobId,
     });
-    expect(result.length).toBeLessThanOrEqual(3);
+    expect(result.length).toBeLessThanOrEqual(2);
     expect(result.join(" ")).toContain("full input and output definitions");
     expect(result.join(" ")).toContain("item's next");
     expect(result.join(" ")).not.toContain("More tools");
@@ -192,7 +178,6 @@ describe("deterministic agent hints", () => {
     });
     expect(result).toHaveLength(1);
     expect(result[0]).toContain("does not accept query");
-    expect(result[0]).not.toContain("/v2/feedback");
   });
 
   it("does not turn provider-result errors into a success workflow", () => {
@@ -209,21 +194,12 @@ describe("deterministic agent hints", () => {
     ).toEqual([]);
   });
 
-  it("does not suggest feedback for failed searches even if identity is supplied", () => {
-    expect(
-      hints({
-        response: { success: false, error: "failed" },
-        feedbackJobId: jobId,
-      }),
-    ).toEqual([]);
+  it("does not add static feedback guidance to otherwise hint-free results", () => {
+    expect(hints({ response: { success: true, data: { web: [] } } })).toEqual(
+      [],
+    );
+    expect(hints({ response: { success: false, error: "failed" } })).toEqual(
+      [],
+    );
   });
-
-  it.each(["scrape", "parse", "map"] as const)(
-    "uses %s feedback identity and accepted substantive note",
-    endpoint => {
-      const result = hints({ endpoint, feedbackJobId: jobId });
-      expect(result.join(" ")).toContain(`"endpoint":"${endpoint}"`);
-      expect(result.join(" ")).toContain("note");
-    },
-  );
 });

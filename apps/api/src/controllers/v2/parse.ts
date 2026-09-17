@@ -1,4 +1,3 @@
-import { setAgentHintFeedback } from "../../middlewares/agent-hints";
 import { NextFunction, Request, Response } from "express";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
@@ -745,8 +744,6 @@ export async function parseController(
         concurrencyLimited,
         concurrencyQueueDurationMs: lockTime || undefined,
       });
-
-      setAgentHintFeedback(res, jobId, zeroDataRetention);
 
       return res.status(200).json({
         success: true,

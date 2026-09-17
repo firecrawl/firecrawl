@@ -10,11 +10,9 @@ beforeAll(async () => {
   });
 }, 20000);
 
-// Feedback requires the hosted database. The selector/route fixture tests also
-// exercise self-hosted and unavailable-feedback behavior without external calls.
 describeIf(TEST_PRODUCTION)("Agent hints", () => {
   it(
-    "includes feedback for the actual completed scrape",
+    "does not add static feedback guidance to a completed scrape",
     async () => {
       const response = await request(TEST_API_URL)
         .post("/v2/scrape")
@@ -23,16 +21,7 @@ describeIf(TEST_PRODUCTION)("Agent hints", () => {
         .send({ url: TEST_SUITE_WEBSITE, timeout: scrapeTimeout });
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.agent_hints.length).toBeLessThanOrEqual(3);
-      expect(response.body.agent_hints.join(" ")).toContain(
-        "POST /v2/feedback",
-      );
-      expect(response.body.agent_hints.join(" ")).toContain(
-        '"endpoint":"scrape"',
-      );
-      expect(response.body.agent_hints.join(" ")).toContain(
-        response.body.data.metadata.scrapeId,
-      );
+      expect(response.body).not.toHaveProperty("agent_hints");
     },
     scrapeTimeout + 10000,
   );
@@ -50,7 +39,7 @@ describeIf(TEST_PRODUCTION)("Agent hints", () => {
     scrapeTimeout + 10000,
   );
 
-  it("preserves validation errors without inventing a feedback job", async () => {
+  it("preserves validation errors without inventing hints", async () => {
     const response = await request(TEST_API_URL)
       .post("/v2/scrape")
       .set("Authorization", `Bearer ${identity.apiKey}`)
@@ -59,8 +48,6 @@ describeIf(TEST_PRODUCTION)("Agent hints", () => {
     expect(response.statusCode).toBe(400);
     expect(response.body.success).toBe(false);
     expect(typeof response.body.error).toBe("string");
-    expect((response.body.agent_hints ?? []).join(" ")).not.toContain(
-      "/v2/feedback",
-    );
+    expect(response.body).not.toHaveProperty("agent_hints");
   });
 });

@@ -4,9 +4,6 @@ export interface AgentHintContext {
   endpoint: AgentHintEndpoint;
   request?: unknown;
   response: unknown;
-  /** Set only by a controller that created a feedback-supported job. */
-  feedbackJobId?: string;
-  searchFeedbackMaxAgeSec?: number;
 }
 
 type ObjectValue = Record<string, unknown>;
@@ -42,31 +39,6 @@ const pageTools =
   'More tools are available in this catalogue lookup. If the items shown do not cover your task, send POST /v2/scrape with {"alexandria": <this catalogue page\'s next object>}. This fetches another catalogue page, not provider records.';
 const searchWeb =
   'This catalogue lookup returned no tools and no next page. If it does not cover your task, use POST /v2/search with {"query":"<remaining research need>","sources":["web"]}; this does not imply that every Alexandria provider was searched.';
-
-function feedbackHint(context: AgentHintContext): string | undefined {
-  if (!context.feedbackJobId || object(context.response).success !== true)
-    return;
-  const identity = JSON.stringify({
-    endpoint: context.endpoint,
-    jobId: context.feedbackJobId,
-  });
-  const prefix = `After evaluating this ${context.endpoint} result, submit feedback once via POST /v2/feedback. Use ${identity}, add rating chosen honestly from good, partial, or bad, and add evidence. `;
-  if (context.endpoint === "search") {
-    const window =
-      context.searchFeedbackMaxAgeSec && context.searchFeedbackMaxAgeSec > 0
-        ? ` Submit within ${context.searchFeedbackMaxAgeSec} seconds of this search.`
-        : "";
-    return (
-      prefix +
-      `For good, include valuableSources:[{url,reason}]; for partial, include valuableSources or missingContent:[{topic,description}]; for bad, include missingContent or querySuggestions. Report useful sources as well as missing, stale, or irrelevant information; do not rate success from the HTTP status alone. Add metadata:{"assessmentSource":"agent"} for an agent assessment.` +
-      window
-    );
-  }
-  return (
-    prefix +
-    'Include note with what was useful and what was missing or incorrect. An optional metadata:{"assessmentSource":"agent"} identifies an agent assessment. Do not submit again for a retry of this same job.'
-  );
-}
 
 export function buildAgentHints(context: AgentHintContext): string[] {
   const response = object(context.response);
@@ -161,10 +133,8 @@ export function buildAgentHints(context: AgentHintContext): string[] {
     }
   }
 
-  // Separate slots keep feedback present while bounding promotions and next steps.
-  const feedback = feedbackHint(context);
-  return [resultStep, crossEndpoint, feedback]
+  return [resultStep, crossEndpoint]
     .filter((hint): hint is string => !!hint)
     .filter((hint, index, hints) => hints.indexOf(hint) === index)
-    .slice(0, 3);
+    .slice(0, 2);
 }
