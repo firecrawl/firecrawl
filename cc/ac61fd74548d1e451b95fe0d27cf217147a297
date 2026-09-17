@@ -1,0 +1,19 @@
+apps/api/src/lib/image-ocr-gate.test.ts
+  s_8ea5798f71e747::t_f7cb59ca20af55 124,126-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ccac61fd74548d1e451b95fe0d27cf217147a297",
+  "prompts": {},
+  "sessions": {
+    "s_8ea5798f71e747": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b3d73404-7f91-4014-957e-2fd173d63c45",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
