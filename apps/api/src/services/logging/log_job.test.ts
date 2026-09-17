@@ -412,7 +412,15 @@ describe("logRequest", () => {
 
     expect(publishes[0].name).toBe("staging-requests");
     // The metric and span keep the bare table name.
-    expect(publishes[0].name.endsWith("requests")).toBe(true);
+    await new Promise(resolve => setImmediate(resolve));
+    expect(metricInc).toHaveBeenCalledWith({
+      table: "requests",
+      outcome: "published",
+    });
+    expect(setSpanAttributes).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ "log_job.table": "requests" }),
+    );
   });
 
   it("writes the request to the database and its Pub/Sub topic", async () => {
