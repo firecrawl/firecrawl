@@ -70,10 +70,12 @@ export async function extractStatusController(
   // If not in Redis, check the database for completed jobs
   if (!extract) {
     if (config.USE_DB_AUTHENTICATION) {
+      let stateReadFailed = false;
       const state = await readExtractJobState(req.params.jobId).catch(error => {
         logger.warn("Bigtable extract state read failed; using legacy lookup", {
           error,
         });
+        stateReadFailed = true;
         return null;
       });
       if (state) {
@@ -91,15 +93,15 @@ export async function extractStatusController(
       }
 
       const dbExtract = await supabaseGetExtractByIdDirect(req.params.jobId);
-      if (dbExtract) {
-        recordJobStorePostgresFallback("extract_state", req.params.jobId);
-      }
       if (!dbExtract) {
         logger.warn("Extract job was not found");
         return res.status(404).json({
           success: false,
           error: "Extract job not found",
         });
+      }
+      if (!stateReadFailed) {
+        recordJobStorePostgresFallback("extract_state", req.params.jobId);
       }
 
       if (dbExtract.team_id !== req.auth.team_id) {

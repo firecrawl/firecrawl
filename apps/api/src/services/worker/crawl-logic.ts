@@ -144,10 +144,12 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     const num_docs = await getDoneJobsOrderedLength(crawlId);
 
     let credits_billed: number | null = null;
+    let creditsReadFailed = false;
 
     try {
       credits_billed = await readRequestCredits(requestId);
     } catch (error) {
+      creditsReadFailed = true;
       logger.warn("Bigtable request credits read failed", { error });
     }
 
@@ -155,7 +157,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       try {
         const creditsRows = await creditsBilledByCrawlId(db, crawlId);
         credits_billed = creditsRows?.[0]?.credits_billed ?? null;
-        if (credits_billed !== null) {
+        if (credits_billed !== null && !creditsReadFailed) {
           recordJobStorePostgresFallback("request_credits", requestId);
         }
       } catch (error) {

@@ -55,6 +55,7 @@ type DBScrape = {
 };
 
 export async function getJob(id: string): Promise<PseudoJob<any> | null> {
+  let scrapeStateFailed = false;
   const [nuqJob, scrapeState, dbScrape, gcsJob] = await Promise.all([
     scrapeQueue.getJob(id) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
     readScrapeJobState(id).catch(error => {
@@ -62,6 +63,7 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
         error,
         scrapeId: id,
       });
+      scrapeStateFailed = true;
       return null;
     }),
     (config.USE_DB_AUTHENTICATION
@@ -71,7 +73,7 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
   ]);
 
   if (!nuqJob && !scrapeState && !dbScrape) return null;
-  if (!scrapeState && dbScrape) {
+  if (!scrapeState && !scrapeStateFailed && dbScrape) {
     recordJobStorePostgresFallback("scrape_state", id);
   }
 
@@ -198,14 +200,16 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
-  let creditsBilled = await readRequestCredits(req.params.jobId).catch(
-    () => null,
-  );
+  let creditsReadFailed = false;
+  let creditsBilled = await readRequestCredits(req.params.jobId).catch(() => {
+    creditsReadFailed = true;
+    return null;
+  });
   if (creditsBilled === null && config.USE_DB_AUTHENTICATION) {
     creditsBilled = await creditsBilledByCrawlId(dbRr, req.params.jobId)
       .then(rows => rows[0]?.credits_billed ?? null)
       .catch(() => null);
-    if (creditsBilled !== null) {
+    if (creditsBilled !== null && !creditsReadFailed) {
       recordJobStorePostgresFallback("request_credits", req.params.jobId);
     }
   }

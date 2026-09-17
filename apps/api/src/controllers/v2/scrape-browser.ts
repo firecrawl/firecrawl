@@ -171,12 +171,14 @@ export async function scrapeInteractController(
     });
   }
 
+  let stateReadFailed = false;
   const [nuqJob, state] = await Promise.all([
     scrapeQueue.getJob(scrapeId, logger),
     readScrapeJobState(scrapeId).catch(error => {
       logger.warn("Bigtable scrape state read failed; using legacy lookup", {
         error,
       });
+      stateReadFailed = true;
       return null;
     }),
   ]);
@@ -218,7 +220,7 @@ export async function scrapeInteractController(
     legacyScrape = (await supabaseGetScrapeByIdDirect(
       scrapeId,
     )) as ScrapeContextRow | null;
-    if (legacyScrape) {
+    if (legacyScrape && !stateReadFailed) {
       recordJobStorePostgresFallback("scrape_state", scrapeId, {
         reason: "replay_context",
       });
