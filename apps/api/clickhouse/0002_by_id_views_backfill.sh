@@ -44,8 +44,18 @@ month_ok "$to" || { echo "to: expected YYYYMM with month 01-12, got $to" >&2; ex
 live_month="${views_at:0:4}${views_at:5:2}"
 [ "$to" -le "$live_month" ] || { echo "to ($to) is after the month the views were created ($live_month); the views own those rows" >&2; exit 2; }
 
+# curl config strings are double-quoted with backslash escapes, so a quote or
+# backslash inside a credential must be escaped or it truncates the value.
+curl_quote() {
+  local v="$1"
+  v="${v//\\/\\\\}"
+  v="${v//\"/\\\"}"
+  printf '%s' "$v"
+}
+
 ch() {
-  curl -sS --fail --max-time 7200 -K <(printf 'user = "%s:%s"\n' "$user" "$password") \
+  curl -sS --fail --max-time 7200 \
+    -K <(printf 'user = "%s:%s"\n' "$(curl_quote "$user")" "$(curl_quote "$password")") \
     "$url" --data-binary "$1"
 }
 
@@ -86,7 +96,7 @@ while [ "$month" -le "$to" ]; do
               AND position(ifNull(error, ''), 'includePaths parameter') = 0
               AND position(ifNull(error, ''), 'URL matches exclude pattern') = 0
               AND position(ifNull(error, ''), 'excludePaths parameter') = 0
-              AND position(ifNull(error, ''), 'URL exceeds maximum crawl depth') = 0
+              AND position(ifNull(error, ''), 'exceeds the maximum crawl depth') = 0
               AND position(ifNull(error, ''), 'Maximum discovery depth reached') = 0
               AND position(ifNull(error, ''), 'maximum discovery depth') = 0
             ) AS is_real_error,

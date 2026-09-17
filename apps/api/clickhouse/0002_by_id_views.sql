@@ -81,7 +81,10 @@ FROM scrapes;
 -- scrapes by request: the children of a crawl, batch scrape or search.
 -- `is_real_error` mirrors the MATERIALIZED column the dashboard relied on in
 -- `public_scrapes`: a failure that is not one of the crawler's own scope
--- rejections (include/exclude paths, depth limits, raced redirects).
+-- rejections (include/exclude paths, depth limits, raced redirects). The
+-- phrases match the messages in scraper/WebScraper/crawler.ts; the depth one
+-- is "exceeds the maximum crawl depth" (the mirror's column looked for it
+-- without "the" and never matched).
 CREATE TABLE IF NOT EXISTS scrapes_by_request
 (
     request_id UUID,
@@ -112,7 +115,7 @@ AS SELECT
         AND position(ifNull(error, ''), 'includePaths parameter') = 0
         AND position(ifNull(error, ''), 'URL matches exclude pattern') = 0
         AND position(ifNull(error, ''), 'excludePaths parameter') = 0
-        AND position(ifNull(error, ''), 'URL exceeds maximum crawl depth') = 0
+        AND position(ifNull(error, ''), 'exceeds the maximum crawl depth') = 0
         AND position(ifNull(error, ''), 'Maximum discovery depth reached') = 0
         AND position(ifNull(error, ''), 'maximum discovery depth') = 0
     ) AS is_real_error,
