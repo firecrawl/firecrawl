@@ -1,4 +1,3 @@
-import { setAgentHintFeedback } from "../../middlewares/agent-hints";
 import { Response } from "express";
 import { providerScrapeController } from "./scrape-alexandria";
 import { discoverTools } from "../../search/alexandria";
@@ -664,8 +663,6 @@ export async function scrapeController(
               return undefined;
             })
           : undefined;
-
-      setAgentHintFeedback(res, jobId, zeroDataRetention);
 
       return res.status(200).json({
         success: true,

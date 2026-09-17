@@ -1,29 +1,17 @@
 import express from "express";
 import request from "supertest";
-import { config } from "../../config";
-import { agentHintsMiddleware, setAgentHintFeedback } from "../agent-hints";
+import { agentHintsMiddleware } from "../agent-hints";
 
-vi.mock("../../config", () => ({ config: { USE_DB_AUTHENTICATION: true } }));
-const jobId = "0199412e-7590-7000-8000-000000000001";
 function appFor(
   {
     endpoint = "search",
     body = { success: true, data: {} },
     status = 200,
-    feedback = true,
-    zdr = false,
-    preview = false,
-    optOut = false,
   } = {} as any,
 ) {
   const app = express();
   app.use(express.json());
-  app.post("/", agentHintsMiddleware(endpoint), (req, res) => {
-    Object.assign(req, {
-      auth: { team_id: preview ? "preview_keyless_x" : "team" },
-      acuc: { flags: { searchFeedbackOptOut: optOut } },
-    });
-    if (feedback) setAgentHintFeedback(res, jobId, zdr);
+  app.post("/", agentHintsMiddleware(endpoint), (_req, res) => {
     res.status(status).json(body);
   });
   return app;
@@ -38,7 +26,11 @@ describe("agent hint response middleware", () => {
   });
 
   it("adds top-level metadata only when explicitly enabled", async () => {
-    const body = { success: true, data: { web: [] }, warning: "existing" };
+    const body = {
+      success: true,
+      data: { web: [{ url: "https://example.com", description: "excerpt" }] },
+      warning: "existing",
+    };
     const response = await request(appFor({ body }))
       .post("/")
       .set("X-Firecrawl-Agent-Hints", " TRUE ")
@@ -60,33 +52,15 @@ describe("agent hint response middleware", () => {
     expect(response.body).toEqual(body);
   });
 
-  it.each([
-    { preview: true },
-    { optOut: true },
-    { zdr: true },
-    { feedback: false },
-  ])("does not invent accepted feedback for %j", async settings => {
-    const response = await request(appFor(settings))
+  it("does not add static feedback guidance to an otherwise hint-free result", async () => {
+    const response = await request(appFor())
       .post("/")
       .set("X-Firecrawl-Agent-Hints", "true")
       .send({});
     expect(response.body).not.toHaveProperty("agent_hints");
   });
 
-  it("omits feedback when database authentication is unavailable", async () => {
-    config.USE_DB_AUTHENTICATION = false;
-    try {
-      const response = await request(appFor())
-        .post("/")
-        .set("X-Firecrawl-Agent-Hints", "true")
-        .send({});
-      expect(response.body).not.toHaveProperty("agent_hints");
-    } finally {
-      config.USE_DB_AUTHENTICATION = true;
-    }
-  });
-
-  it("preserves failure status, code, and details without bogus feedback", async () => {
+  it("preserves failure status, code, and details without inventing hints", async () => {
     const body = {
       success: false,
       error: "Bad URL",

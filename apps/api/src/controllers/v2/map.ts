@@ -1,4 +1,3 @@
-import { setAgentHintFeedback } from "../../middlewares/agent-hints";
 import { Response } from "express";
 import {
   mapRequestSchema,
@@ -143,8 +142,6 @@ export async function mapController(
           `Failed to log job for team ${req.auth.team_id}: ${error}`,
         );
       });
-
-      setAgentHintFeedback(res, mapId);
 
       return res.status(200).json({
         success: true,
@@ -324,8 +321,6 @@ export async function mapController(
     links: result.mapResults,
     ...(warning && { warning }),
   };
-
-  setAgentHintFeedback(res, result.job_id);
 
   return res.status(200).json(response);
 }
