@@ -409,13 +409,31 @@ describe("Exchange routing", () => {
         type: "accept_terms",
         terms: "acme",
         version: "2026-01-01",
-        url: expect.stringMatching(/\/app\/alexandria\/acme$/),
+        url: expect.stringMatching(/\/app\/settings\?tab=data-sources$/),
       },
     });
     // The message carries the provider, version and link, since most clients relay only `error`.
     expect(response.error).toContain("acme");
     expect(response.error).toContain("2026-01-01");
     expect(response.error).toContain(response.requiresAction.url);
+  });
+
+  it("links terms actions to data-source settings on the configured dashboard", () => {
+    const originalDashboard = config.FIRECRAWL_DASHBOARD_URL;
+    try {
+      config.FIRECRAWL_DASHBOARD_URL = "https://dashboard.example///";
+      const response = getThirdPartyDataTermsRequiredResponse({
+        key: "provider/with spaces",
+        version: "v2",
+      });
+      expect(response.requiresAction.url).toBe(
+        "https://dashboard.example/app/settings?tab=data-sources",
+      );
+      expect(response.requiresAction.terms).toBe("provider/with spaces");
+      expect(response.error).toContain(response.requiresAction.url);
+    } finally {
+      config.FIRECRAWL_DASHBOARD_URL = originalDashboard;
+    }
   });
 
   it("requires current terms when the accepted version is stale", async () => {

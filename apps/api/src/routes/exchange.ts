@@ -175,7 +175,7 @@ exchangeRouter.get(
 exchangeRouter.get(
   "/provider-terms{/*path}",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
 exchangeRouter.post(

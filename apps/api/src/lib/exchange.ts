@@ -513,13 +513,12 @@ export async function canUseExchangeForRequest(
   return (await getExchangeAccessForRequest(input)).allowed;
 }
 
-// Terms are keyed by provider id, so the key doubles as the provider page to accept them on.
-function getThirdPartyDataTermsUrl(terms: ExchangeTerms): string {
-  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria/${encodeURIComponent(terms.key)}`;
+function getThirdPartyDataTermsUrl(): string {
+  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/settings?tab=data-sources`;
 }
 
 export function getThirdPartyDataTermsRequiredResponse(terms: ExchangeTerms) {
-  const url = getThirdPartyDataTermsUrl(terms);
+  const url = getThirdPartyDataTermsUrl();
   return {
     success: false as const,
     code: THIRD_PARTY_DATA_TERMS_REQUIRED_CODE as "THIRD_PARTY_DATA_TERMS_REQUIRED",
