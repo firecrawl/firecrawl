@@ -1,0 +1,25 @@
+apps/api/src/lib/extract-v3-status.ts
+  s_8ea5798f71e747::t_b75dda8025a7c3 3
+apps/api/src/lib/feedback-job-store.ts
+  s_8ea5798f71e747::t_9107a0f394b1ee 11,31,131
+apps/api/src/lib/job-state-store.ts
+  s_8ea5798f71e747::t_e33487370adf9a 12,23
+apps/api/src/lib/operational-job-access.ts
+  s_8ea5798f71e747::t_d010e0d96ffadf 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bcf61c3c3bf33d73e2eac8580b1a4b551593841a",
+  "prompts": {},
+  "sessions": {
+    "s_8ea5798f71e747": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b3d73404-7f91-4014-957e-2fd173d63c45",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+apps/api/.env.example
+  h_b58237c6fffd77 162-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "13648870feaa4e4f9b8b312f7c3fb9278cf96c9e",
+  "prompts": {},
+  "humans": {
+    "h_b58237c6fffd77": {
+      "author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+apps/api/src/scraper/scrapeURL/engines/image/index.ts
+  h_b58237c6fffd77 20-23,62-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9cddc5db037edf927fca82866c4a79818bd1e3d1",
+  "prompts": {},
+  "humans": {
+    "h_b58237c6fffd77": {
+      "author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
