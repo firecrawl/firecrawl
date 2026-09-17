@@ -1,0 +1,48 @@
+apps/api/src/controllers/v1/types.ts
+  s_8ea5798f71e747::t_b70593ac23003c 1377-1379
+apps/api/src/config.ts
+  s_8ea5798f71e747::t_b70593ac23003c 390-393
+apps/api/src/lib/image-ocr-gate.ts
+  s_8ea5798f71e747::t_b70593ac23003c 7-12,17-21,34-36,44-45,66,71-75
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_8ea5798f71e747::t_b70593ac23003c 121,132
+apps/api/src/__tests__/snips/v2/scrape-image-ocr.test.ts
+  s_8ea5798f71e747::t_91bb552d5f3ad6 4,21,24-26,38-43,48,52-54,1158-1266,1281,1301
+apps/api/src/scraper/scrapeURL/engines/image/index.ts
+  s_8ea5798f71e747::t_b70593ac23003c 21-23,74-76
+apps/api/src/controllers/v2/parse-upload.ts
+  s_8ea5798f71e747::t_b70593ac23003c 534-535
+apps/api/src/controllers/v2/parse.ts
+  s_8ea5798f71e747::t_b70593ac23003c 87-88
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_8ea5798f71e747::t_b70593ac23003c 101
+apps/api/src/controllers/v2/types.ts
+  s_8ea5798f71e747::t_b70593ac23003c 530-532
+apps/api/src/__tests__/snips/v2/scrape-mislabeled-files.test.ts
+  s_8ea5798f71e747::t_1c0979f198e87c 4,7,26-29
+  s_8ea5798f71e747::t_91bb552d5f3ad6 36-40,63-64,79-93
+  s_8ea5798f71e747::t_82870660c726eb 30,94-96
+apps/api/src/lib/image-ocr-gate.test.ts
+  s_8ea5798f71e747::t_77a45a59edc8e3 9,22-25,28,31-33,35-38,46-51,54,56-58,82-84,93-98,116-124,126-129,135-136,138-141
+  s_8ea5798f71e747::t_ea28f4bf3817bc 27,29-30,34,41,45,52,55,61-62
+  s_8ea5798f71e747::t_1c0979f198e87c 63-68,125,137
+  s_8ea5798f71e747::t_f1052db5db0e5c 26
+apps/api/src/scraper/scrapeURL/index.ts
+  s_8ea5798f71e747::t_b70593ac23003c 163,339-341
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b4717076e51d4586f9a1f8fe61c6bd19827f848",
+  "prompts": {},
+  "sessions": {
+    "s_8ea5798f71e747": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b3d73404-7f91-4014-957e-2fd173d63c45",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
