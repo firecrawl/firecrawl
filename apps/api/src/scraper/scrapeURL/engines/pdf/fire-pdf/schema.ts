@@ -209,7 +209,8 @@ export const firePdfProvenanceSchema = z
     produced_at: z.string(),
     stages: z.array(z.string()).optional(),
     // Page counts: the write rule reads them, so a malformed stamp must
-    // fail validation rather than pass as a healthy result.
+    // fail validation rather than pass as a healthy result. parseProvenance
+    // turns that failure into a refused cache write, never a failed scrape.
     quality: z
       .object({
         total_pages: z.int().nonnegative(),
@@ -234,6 +235,30 @@ export const firePdfProvenanceSchema = z
 
 export type FirePdfProvenance = z.infer<typeof firePdfProvenanceSchema>;
 
+/**
+ * The stamp is parsed apart from the document. The document is what the
+ * caller asked for; the stamp only decides what the cache may remember, so
+ * a stamp this build cannot read degrades to `malformed` (the result is
+ * served, not cached) instead of failing the response.
+ */
+export type ProvenanceParse =
+  | { status: "absent" }
+  | { status: "ok"; provenance: FirePdfProvenance }
+  | { status: "malformed"; issue: string };
+
+export function parseProvenance(raw: unknown): ProvenanceParse {
+  if (raw === undefined || raw === null) return { status: "absent" };
+  const parsed = firePdfProvenanceSchema.safeParse(raw);
+  if (parsed.success) return { status: "ok", provenance: parsed.data };
+  return {
+    status: "malformed",
+    issue: parsed.error.issues
+      .slice(0, 3)
+      .map(i => `${i.path.join(".") || "<root>"}: ${i.message}`)
+      .join("; "),
+  };
+}
+
 export const resultResponseSchema = z.object({
   schema_version: z
     .union([z.literal(1), z.literal(2), z.literal(3)])
@@ -249,7 +274,9 @@ export const resultResponseSchema = z.object({
   // is the only proof the fire-pdf worker build understood the option —
   // older workers ignore unknown option keys and omit it.
   page_markers: z.literal(true).optional(),
-  provenance: firePdfProvenanceSchema.optional(),
+  // Raw on purpose: parsed separately by parseProvenance so a stamp this
+  // build does not understand never fails the scrape.
+  provenance: z.unknown().optional(),
 });
 
 export type PollResponse = z.infer<typeof pollResponseSchema>;

@@ -23,14 +23,20 @@ export async function scrapePDFWithRunPodMU(
     tempFilePath,
   });
 
-  if (!maxPages) {
-    // `parsers: [{ type: "pdf", refresh: true }]` skips this cache too, under
-    // the same per-team budget as the fire-pdf path: a MinerU-diverted request
-    // never reaches that path, so the budget has to be applied here as well.
-    // Over budget, or with the limiter unavailable, the entry is served.
+  // Zero-data-retention requests never read the shared cache, as on the
+  // fire-pdf path. `parsers: [{ type: "pdf", refresh: true }]` skips it too,
+  // under the same per-team budget: a MinerU-diverted request never reaches
+  // the fire-pdf path, so the budget has to be applied here as well, and
+  // the decision is taken once per request, so a fire-pdf → MU fallback
+  // keeps the decision the first engine got instead of spending a second
+  // token. Over budget, or with the limiter unavailable, the entry is served.
+  if (!maxPages && !meta.internalOptions.zeroDataRetention) {
     let bypass = false;
     if (getPDFRefresh(meta.options?.parsers)) {
-      const decision = await consumeRefresh(meta.internalOptions.teamId);
+      const decision = await consumeRefresh(
+        meta.internalOptions.teamId,
+        meta.id,
+      );
       bypass = decision === "allowed";
       if (bypass) {
         meta.logger.info("RunPod MU cache bypassed by refresh", {

@@ -17,11 +17,11 @@ const budget = vi.mocked(consumeRefresh);
 
 const cached = { markdown: "cached", html: "<p>cached</p>" };
 
-function makeMeta(parsers?: unknown[]) {
+function makeMeta(parsers?: unknown[], zeroDataRetention = false) {
   return {
     id: "mu-cache-test",
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), child: vi.fn() },
-    internalOptions: { teamId: "team-1" },
+    internalOptions: { teamId: "team-1", zeroDataRetention },
     // Already aborted: the engine stops right after the cache step, before
     // any network call, which is all these tests exercise.
     abort: AbortSignal.abort(),
@@ -50,7 +50,7 @@ describe("RunPod MU cache read and refresh", () => {
     await expect(
       scrapePDFWithRunPodMU(meta, "/tmp/doc.pdf", "BASE64"),
     ).rejects.toThrow();
-    expect(budget).toHaveBeenCalledWith("team-1");
+    expect(budget).toHaveBeenCalledWith("team-1", "mu-cache-test");
     expect(getCached).not.toHaveBeenCalled();
     expect(meta.logger.info).toHaveBeenCalledWith(
       "RunPod MU cache bypassed by refresh",
@@ -69,6 +69,15 @@ describe("RunPod MU cache read and refresh", () => {
       "RunPod MU cache refresh not applied",
       expect.objectContaining({ decision: "limited" }),
     );
+  });
+
+  it("never reads the cache for a zero-data-retention request", async () => {
+    const meta = makeMeta([{ type: "pdf", refresh: true }], true);
+    await expect(
+      scrapePDFWithRunPodMU(meta, "/tmp/doc.pdf", "BASE64"),
+    ).rejects.toThrow();
+    expect(getCached).not.toHaveBeenCalled();
+    expect(budget).not.toHaveBeenCalled();
   });
 
   it("does not spend the budget when maxPages already skips the cache", async () => {

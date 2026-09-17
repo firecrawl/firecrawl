@@ -6,12 +6,12 @@ import type { PDFProcessorResult } from "./types";
 import type { PDFMode } from "../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import { createPdfCacheKey } from "../../../../lib/gcs-pdf-cache";
-import { maybeSaveResult, tryGetCached } from "./fire-pdf/cache";
 import {
-  firePdfBlocksSchema,
-  firePdfPagesSchema,
-  firePdfProvenanceSchema,
-} from "./fire-pdf/schema";
+  maybeSaveResult,
+  provenanceFromResponse,
+  tryGetCached,
+} from "./fire-pdf/cache";
+import { firePdfBlocksSchema, firePdfPagesSchema } from "./fire-pdf/schema";
 import {
   buildFirePdfRequestMetadata,
   type FirePdfSourceKind,
@@ -161,9 +161,11 @@ export async function scrapePDFWithFirePDF(
       pages_processed: z.number().optional(),
       pages: firePdfPagesSchema,
       blocks: firePdfBlocksSchema,
-      // fire-pdf's stamp (generation, build, stages, quality). Stored with
-      // the cache entry; a missing stamp means an older fire-pdf build.
-      provenance: firePdfProvenanceSchema.optional(),
+      // fire-pdf's stamp (generation, build, stages, quality). Taken raw
+      // and parsed separately (provenanceFromResponse) so a stamp this
+      // build cannot read never fails the scrape; a missing stamp means an
+      // older fire-pdf build.
+      provenance: z.unknown().optional(),
       // Echo of an honored page_markers request. Markers are baked into
       // `markdown` and their absence is not reliably detectable there (a
       // single-page or fully-stitched document legitimately has none), so
@@ -192,6 +194,10 @@ export async function scrapePDFWithFirePDF(
     );
   }
   const pages = resp.pages_processed ?? pagesProcessed;
+  const provenance = provenanceFromResponse(resp.provenance, logger, {
+    scrapeId: meta.id,
+    cacheKey: pdfSha256,
+  });
 
   logger.info("FirePDF completed", {
     scrapeId: meta.id,
@@ -205,8 +211,8 @@ export async function scrapePDFWithFirePDF(
     // The content-cache key and the producer, so a report can be turned
     // into keys to purge and a result can be tied to a fire-pdf build.
     cacheKey: pdfSha256,
-    generation: resp.provenance?.generation ?? "unknown",
-    buildSha: resp.provenance?.build_sha ?? "unknown",
+    generation: provenance?.generation ?? "unknown",
+    buildSha: provenance?.build_sha ?? "unknown",
   });
 
   const processorResult: PDFProcessorResult & { markdown: string } = {
@@ -227,7 +233,7 @@ export async function scrapePDFWithFirePDF(
       includeBlocks,
       pageMarkers,
       result: processorResult,
-      provenance: resp.provenance,
+      provenance,
       failedPages: resp.failed_pages,
     });
   }

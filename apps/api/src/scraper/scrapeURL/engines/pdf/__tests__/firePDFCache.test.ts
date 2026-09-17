@@ -5,13 +5,15 @@ import {
 import {
   cacheKeyShape,
   maybeSaveResult,
+  provenanceFromResponse,
   tryGetCached,
 } from "../fire-pdf/cache";
-import { consumeRefresh } from "../fire-pdf/refresh-budget";
+import { consumeRefresh, refreshDecisionFor } from "../fire-pdf/refresh-budget";
 import { firePdfProvenanceSchema } from "../fire-pdf/schema";
 
 vi.mock("../fire-pdf/refresh-budget", () => ({
   consumeRefresh: vi.fn(async () => "allowed"),
+  refreshDecisionFor: vi.fn(() => undefined),
 }));
 
 vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
@@ -1013,6 +1015,105 @@ describe("FirePDF cache provenance and write rules", () => {
     expect(meta.logger.info).not.toHaveBeenCalledWith(
       "Saved FirePDF result to cache",
       expect.anything(),
+    );
+  });
+
+  it("refuses a result whose stamp reports failed pages when the list is absent", async () => {
+    const meta = makeMeta();
+    await maybeSaveResult({
+      meta,
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "whole", html: "<p>whole</p>" },
+      provenance: {
+        ...provenance,
+        quality: { ...provenance.quality, failed_pages: 2 },
+      },
+      failedPages: undefined,
+    });
+    expect(saveCached).not.toHaveBeenCalled();
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "FirePDF result not cached",
+      expect.objectContaining({ reason: "failed_pages", failedPages: 2 }),
+    );
+  });
+
+  it("refuses a result whose stamp could not be read", async () => {
+    const meta = makeMeta();
+    await maybeSaveResult({
+      meta,
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "whole", html: "<p>whole</p>" },
+      provenance: null,
+      failedPages: [],
+    });
+    expect(saveCached).not.toHaveBeenCalled();
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "FirePDF result not cached",
+      expect.objectContaining({ reason: "malformed_provenance" }),
+    );
+  });
+
+  it("reads the stamp apart from the document and never throws", () => {
+    const logger = { warn: vi.fn(), info: vi.fn() } as any;
+    const context = { scrapeId: "s1", cacheKey: "key-of-BASE64" };
+    expect(provenanceFromResponse(provenance, logger, context)).toEqual(
+      provenance,
+    );
+    expect(provenanceFromResponse(undefined, logger, context)).toBeUndefined();
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(
+      provenanceFromResponse(
+        {
+          ...provenance,
+          quality: { ...provenance.quality, failed_pages: "2" },
+        },
+        logger,
+        context,
+      ),
+    ).toBeNull();
+    expect(provenanceFromResponse("garbage", logger, context)).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "FirePDF provenance stamp not understood",
+      expect.objectContaining({
+        cacheKey: "key-of-BASE64",
+        issue: expect.stringContaining("quality.failed_pages"),
+      }),
+    );
+  });
+
+  it("rewrites the base alias on an allowed refresh even when one exists", async () => {
+    vi.mocked(refreshDecisionFor).mockReturnValueOnce("allowed");
+    const meta = makeMeta(false, [{ type: "pdf", refresh: true }]);
+    await maybeSaveResult({
+      meta,
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: true,
+      includeBlocks: false,
+      result: {
+        markdown: "fresh",
+        html: "<p>fresh</p>",
+        pageMarkdown: [{ page: 1, markdown: "fresh" }],
+      },
+      provenance,
+    });
+    // No read of the existing alias: it is overwritten regardless.
+    expect(getCached).not.toHaveBeenCalled();
+    expect(saveCached).toHaveBeenCalledTimes(2);
+    expect(saveCached).toHaveBeenLastCalledWith(
+      "BASE64",
+      expect.objectContaining({ markdown: "fresh", variant: "base" }),
+      "firepdf",
+      undefined,
     );
   });
 

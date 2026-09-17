@@ -7,7 +7,7 @@ import type { PDFProcessorResult } from "../types";
 import { safeMarkdownToHtml } from "../markdownToHtml";
 import { scrapePDFWithFirePDF } from "../firePDF";
 import { cancelJob } from "./cancel";
-import { tryGetCached, maybeSaveResult } from "./cache";
+import { maybeSaveResult, provenanceFromResponse, tryGetCached } from "./cache";
 import { resolvePdfCacheKey } from "../../../../../lib/gcs-pdf-cache";
 import {
   firePdfAsyncAbandonedTotal,
@@ -404,6 +404,12 @@ export async function scrapePDFWithFirePDFAsync(
   const durationMs = now() - overallStartedAt;
   firePdfAsyncTotalDurationSeconds.observe(durationMs / 1000);
 
+  const cacheKey = resolvePdfCacheKey(cacheInput);
+  const provenance = provenanceFromResponse(fetched.provenance, meta.logger, {
+    scrapeId: meta.id,
+    cacheKey,
+  });
+
   meta.logger.info("FirePDF async completed", {
     scrapeId: meta.id,
     durationMs,
@@ -416,9 +422,9 @@ export async function scrapePDFWithFirePDFAsync(
     pollCount: polled.pollCount,
     // The content-cache key and the producer, so a report can be turned
     // into keys to purge and a result can be tied to a fire-pdf build.
-    cacheKey: resolvePdfCacheKey(cacheInput),
-    generation: fetched.provenance?.generation ?? "unknown",
-    buildSha: fetched.provenance?.build_sha ?? "unknown",
+    cacheKey,
+    generation: provenance?.generation ?? "unknown",
+    buildSha: provenance?.build_sha ?? "unknown",
   });
 
   const processorResult: PDFProcessorResult & { markdown: string } = {
@@ -438,7 +444,7 @@ export async function scrapePDFWithFirePDFAsync(
     includeBlocks,
     pageMarkers,
     result: processorResult,
-    provenance: fetched.provenance,
+    provenance,
     failedPages: fetched.failed_pages,
   });
 

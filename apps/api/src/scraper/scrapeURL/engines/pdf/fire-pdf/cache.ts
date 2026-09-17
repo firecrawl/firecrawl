@@ -18,8 +18,12 @@ import {
   firePdfCacheEventsTotal,
   firePdfCacheRefusedWritesTotal,
 } from "./metrics";
-import { consumeRefresh } from "./refresh-budget";
-import { firePdfBlockPagesSchema, type FirePdfProvenance } from "./schema";
+import { consumeRefresh, refreshDecisionFor } from "./refresh-budget";
+import {
+  firePdfBlockPagesSchema,
+  parseProvenance,
+  type FirePdfProvenance,
+} from "./schema";
 
 // Raster images ride the same cache as PDFs (the image engine posts their
 // bytes to the same FirePDF endpoint), but an EMPTY result for an image is
@@ -201,7 +205,7 @@ export async function tryGetCached(
   // entry is corrected for everyone. Over budget (or with the limiter
   // unavailable) the request is served normally and the decision logged.
   if (getPDFRefresh(meta.options?.parsers)) {
-    const decision = await consumeRefresh(meta.internalOptions.teamId);
+    const decision = await consumeRefresh(meta.internalOptions.teamId, meta.id);
     if (decision === "allowed") {
       firePdfCacheEventsTotal.inc({
         event: "bypass_refresh",
@@ -308,18 +312,48 @@ export async function tryGetCached(
 }
 
 /**
- * Why a result must not be remembered. Failed pages and pages that lost
- * layout (fire-pdf's `degraded_pages`) are usually transient — a fleet
- * incident, a deadline — and a cached copy would serve that outcome to
- * every later request for the document. Partial pages are content-caused
- * and expensive to redo, so those results are still cached; the stamp's
- * quality counts let a later policy refresh them first.
+ * fire-pdf's stamp off a response. `undefined`: none was sent (a build
+ * from before the stamp existed); the result is cached unstamped. `null`:
+ * a stamp was sent but this build cannot read it; the result is served but
+ * not cached, since an entry whose stamp cannot be judged later is worse
+ * than a miss. Never throws: the document does not depend on the stamp.
+ */
+export function provenanceFromResponse(
+  raw: unknown,
+  logger: Meta["logger"],
+  context: { scrapeId: string; cacheKey: string },
+): FirePdfProvenance | null | undefined {
+  const stamp = parseProvenance(raw);
+  if (stamp.status === "ok") return stamp.provenance;
+  if (stamp.status === "absent") return undefined;
+  logger.warn("FirePDF provenance stamp not understood", {
+    ...context,
+    issue: stamp.issue,
+  });
+  return null;
+}
+
+/**
+ * Why a result must not be remembered. Failed pages (fire-pdf's
+ * `failed_pages` list, or the stamp's `quality.failed_pages` when the list
+ * is absent) and pages that lost layout (`degraded_pages`) are usually
+ * transient — a fleet incident, a deadline — and a cached copy would serve
+ * that outcome to every later request for the document. A stamp this build
+ * cannot read (`provenance === null`) is refused too. Partial pages are
+ * content-caused and expensive to redo, so those results are still cached;
+ * the stamp's quality counts let a later policy refresh them first.
  */
 export function cacheRefusalReason(
   failedPages: readonly number[] | null | undefined,
-  provenance: FirePdfProvenance | undefined,
+  provenance: FirePdfProvenance | null | undefined,
 ): CacheRefusedReason | null {
-  if (failedPages && failedPages.length > 0) return "failed_pages";
+  if (provenance === null) return "malformed_provenance";
+  if (
+    (failedPages?.length ?? 0) > 0 ||
+    (provenance?.quality?.failed_pages ?? 0) > 0
+  ) {
+    return "failed_pages";
+  }
   if ((provenance?.quality?.degraded_pages ?? 0) > 0) return "degraded_pages";
   return null;
 }
@@ -333,8 +367,12 @@ export async function maybeSaveResult(args: {
   includeBlocks: boolean;
   pageMarkers?: boolean;
   result: PDFProcessorResult & { markdown: string };
-  /** fire-pdf's stamp for this result; stored verbatim with the entry. */
-  provenance?: FirePdfProvenance;
+  /**
+   * fire-pdf's stamp for this result, stored verbatim with the entry.
+   * `null` means a stamp was sent but could not be read (see
+   * provenanceFromResponse); such a result is not cached.
+   */
+  provenance?: FirePdfProvenance | null;
   /** fire-pdf's `failed_pages` for this result; a non-empty list is not cached. */
   failedPages?: readonly number[] | null;
 }): Promise<void> {
@@ -377,7 +415,10 @@ export async function maybeSaveResult(args: {
       cacheVariant: ownVariant ?? "base",
       cacheKey,
       reason: refusal,
-      failedPages: failedPages?.length ?? 0,
+      failedPages: Math.max(
+        failedPages?.length ?? 0,
+        provenance?.quality?.failed_pages ?? 0,
+      ),
       degradedPages: provenance?.quality?.degraded_pages ?? 0,
     });
     return;
@@ -429,14 +470,18 @@ export async function maybeSaveResult(args: {
     // An enriched (page/block-capable) parse is also a valid legacy result.
     // Populate the compact base key when it is missing so a later legacy
     // request never repeats the conversion. A sidecar miss can coexist with
-    // a warm legacy key during rollout, so avoid rewriting that object.
-    // Strip the enriched payloads to keep the hot-path cache object small.
+    // a warm legacy key during rollout, so avoid rewriting that object —
+    // except on an allowed refresh, where the old alias is exactly what the
+    // caller asked to correct: plain requests would keep being served the
+    // stale content otherwise. Strip the enriched payloads to keep the
+    // hot-path cache object small.
     if ((includePageMarkdown || includeBlocks) && ownVariant !== baseVariant) {
-      const existingBase = await getPdfResultFromCache(
-        base64Content,
-        "firepdf",
-        baseVariant,
-      );
+      const refreshed =
+        getPDFRefresh(meta.options?.parsers) &&
+        refreshDecisionFor(meta.id) === "allowed";
+      const existingBase = refreshed
+        ? null
+        : await getPdfResultFromCache(base64Content, "firepdf", baseVariant);
       if (!existingBase || !isValidCachedDocument(existingBase)) {
         const {
           pageMarkdown: _pageMarkdown,
