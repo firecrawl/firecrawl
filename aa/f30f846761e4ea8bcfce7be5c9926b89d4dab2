@@ -1,0 +1,19 @@
+apps/api/src/routes/exchange.ts
+  s_e8ed6d2017e64d::t_ea3da7b5bcfb10 5,19,41-49,86,123-212,239-244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "aaf30f846761e4ea8bcfce7be5c9926b89d4dab2",
+  "prompts": {},
+  "sessions": {
+    "s_e8ed6d2017e64d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "41c739e5-4091-48f8-acca-eddc4c8789e9",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
