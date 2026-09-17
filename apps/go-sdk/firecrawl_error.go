@@ -2,6 +2,18 @@ package firecrawl
 
 import "fmt"
 
+// RequiresAction describes an out-of-band step the API requires before the request can succeed.
+type RequiresAction struct {
+	// Type identifies the step, such as "accept_terms".
+	Type string `json:"type"`
+	// Terms names the provider whose terms must be accepted.
+	Terms string `json:"terms,omitempty"`
+	// Version is the terms version awaiting acceptance.
+	Version string `json:"version,omitempty"`
+	// URL is where the step can be completed.
+	URL string `json:"url,omitempty"`
+}
+
 // FirecrawlError represents an error returned by the Firecrawl API.
 type FirecrawlError struct {
 	// StatusCode is the HTTP status code (0 if not an HTTP error).
@@ -10,6 +22,8 @@ type FirecrawlError struct {
 	ErrorCode string
 	// Message is the human-readable error message.
 	Message string
+	// RequiresAction is set when the API needs an out-of-band step first, such as accepting provider terms.
+	RequiresAction *RequiresAction
 }
 
 func (e *FirecrawlError) Error() string {

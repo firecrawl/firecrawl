@@ -7,7 +7,11 @@ import {
   resolveEffectivePolicy,
   type OrgThreatProtectionConfig,
 } from "./store";
-import type { ThreatDecision, ThreatProtectionPolicy } from "./types";
+import type {
+  ThreatDecision,
+  ThreatProtectionMode,
+  ThreatProtectionPolicy,
+} from "./types";
 
 // Controller-layer glue for threat protection enforcement. One helper
 // (resolveThreatProtection) is shared by every endpoint: it turns
@@ -23,10 +27,19 @@ export const THREAT_PROTECTION_OVERRIDES_DISABLED_MESSAGE =
   "Per-request threat protection overrides are disabled by your organization's threat protection configuration.";
 
 export const THREAT_PROTECTION_CANNOT_DISABLE_MESSAGE =
-  'Threat protection is enforced for your team and cannot be disabled per-request (threatProtection.mode may not be "off"). Remove the mode field or contact your organization administrator.';
+  'Threat protection is enforced for your team and cannot be disabled or weakened per-request (threatProtection.mode may not be "off" or lower than the mode your organization configured). Remove the mode field or contact your organization administrator.';
 
 export const THREAT_PROTECTION_CANNOT_TURN_OFF_MESSAGE =
-  'Threat protection is enforced for your team and its mode cannot be set to "off". Contact your organization administrator.';
+  'Threat protection is enforced for your team and its mode cannot be set to "off" or "manual-only". Contact your organization administrator.';
+
+// Strength order for the never-weaken rule. "normal" and "zscaler" are peers
+// (both provider-backed); switching between them is allowed.
+const MODE_RANK: Record<ThreatProtectionMode, number> = {
+  off: 0,
+  "manual-only": 1,
+  normal: 2,
+  zscaler: 2,
+};
 
 export const THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE =
   "Threat protection is enforced for your team and is not supported on the deprecated v0 API. Please update your code to use the v1 or v2 API.";
@@ -67,16 +80,22 @@ interface ResolvedThreatProtection {
  * - Flag "forced": an override may never set `mode: "off"` → 403.
  * - Effective mode "off" resolves to `policy: null` so callers can skip all
  *   enforcement work.
+ * - `force: true` (Safe Mode domain controls): treated as flag "forced", and
+ *   an "off" policy is raised to "manual-only" so the org's own lists are
+ *   enforced without a provider scan (no scan fee). Never resolves to
+ *   `policy: null`; an org that chose "normal"/"zscaler" keeps that mode.
  */
 export async function resolveThreatProtection(args: {
   teamId: string;
   orgId?: string | null;
   flags: TeamFlags;
   override?: Partial<ThreatProtectionPolicy>;
+  force?: boolean;
 }): Promise<ResolvedThreatProtection> {
-  const flagMode = getThreatProtection(args.flags);
+  const effectiveFlagMode =
+    args.force === true ? "forced" : getThreatProtection(args.flags);
 
-  if (flagMode !== "allowed" && flagMode !== "forced") {
+  if (effectiveFlagMode !== "allowed" && effectiveFlagMode !== "forced") {
     if (args.override !== undefined) {
       return {
         error: THREAT_PROTECTION_NOT_ENABLED_MESSAGE,
@@ -98,16 +117,30 @@ export async function resolveThreatProtection(args: {
         orgConfig,
       };
     }
-    if (flagMode === "forced" && args.override.mode === "off") {
-      return {
-        error: THREAT_PROTECTION_CANNOT_DISABLE_MESSAGE,
-        policy: null,
-        orgConfig,
-      };
+    if (effectiveFlagMode === "forced" && args.override.mode !== undefined) {
+      // Enforced teams may tighten per-request but never weaken: "off" is
+      // always refused, and the mode may not drop below the org's effective
+      // mode (Safe Mode's raise puts that floor at "manual-only").
+      const orgMode = orgConfig?.policy.mode ?? "off";
+      const floor: ThreatProtectionMode =
+        args.force === true && orgMode === "off" ? "manual-only" : orgMode;
+      if (
+        args.override.mode === "off" ||
+        MODE_RANK[args.override.mode] < MODE_RANK[floor]
+      ) {
+        return {
+          error: THREAT_PROTECTION_CANNOT_DISABLE_MESSAGE,
+          policy: null,
+          orgConfig,
+        };
+      }
     }
   }
 
-  const policy = resolveEffectivePolicy(orgConfig, args.override);
+  let policy = resolveEffectivePolicy(orgConfig, args.override);
+  if (args.force === true && policy.mode === "off") {
+    policy = { ...policy, mode: "manual-only" };
+  }
 
   // "zscaler" mode without a connection can only happen via a per-request
   // override on an org that never saved credentials (the config API refuses

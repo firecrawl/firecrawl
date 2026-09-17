@@ -13,6 +13,15 @@ const {
   flush,
   close,
   metricInc,
+  writeApiJobAccess,
+  writeFeedbackJob,
+  writeScrapeJobState,
+  writeExtractJobState,
+  withSpan,
+  setSpanAttributes,
+  spans,
+  enqueueZdrCleanupJob,
+  saveExtractResult,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -27,6 +36,13 @@ const {
   const flush = vi.fn(async () => {});
   const close = vi.fn(async () => {});
   const publishes: { name: string; options: any }[] = [];
+  const spans: { name: string; options: any }[] = [];
+  const withSpan = vi.fn(
+    async (name: string, fn: (span: any) => any, options?: any) => {
+      spans.push({ name, options });
+      return fn({});
+    },
+  );
   const topic = vi.fn((name: string, options: any) => {
     return {
       publishMessage: (message: any) => {
@@ -46,6 +62,15 @@ const {
     flush,
     close,
     metricInc: vi.fn(),
+    writeApiJobAccess: vi.fn(async () => true),
+    writeFeedbackJob: vi.fn(async () => true),
+    writeScrapeJobState: vi.fn(async () => true),
+    writeExtractJobState: vi.fn(async () => true),
+    withSpan,
+    setSpanAttributes: vi.fn(),
+    spans,
+    enqueueZdrCleanupJob: vi.fn(async () => {}),
+    saveExtractResult: vi.fn(async () => {}),
   };
 });
 
@@ -80,6 +105,22 @@ vi.mock("../../lib/change-tracking-store", () => ({
   changeTrackingInsertScrape: vi.fn(),
 }));
 
+vi.mock("../../lib/job-access-store", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../lib/job-access-store")
+  >("../../lib/job-access-store");
+  return { ...actual, writeApiJobAccess };
+});
+
+vi.mock("../../lib/feedback-job-store", () => ({
+  writeFeedbackJob,
+}));
+
+vi.mock("../../lib/job-state-store", () => ({
+  writeScrapeJobState,
+  writeExtractJobState,
+}));
+
 vi.mock("../../lib/keyless", () => ({
   keylessTeamUuid: vi.fn(() => null),
 }));
@@ -93,8 +134,12 @@ vi.mock("../../lib/gcs-jobs", () => ({
   saveSearchToGCS: vi.fn(),
 }));
 
+vi.mock("../../lib/zdr-queue", () => ({
+  enqueueZdrCleanupJob,
+}));
+
 vi.mock("../../lib/extract/extract-redis", () => ({
-  saveExtractResult: vi.fn(),
+  saveExtractResult,
 }));
 
 vi.mock("../posthog", () => ({
@@ -105,14 +150,22 @@ vi.mock("../../lib/pubsub-log-metrics", () => ({
   pubsubLogPublishTotal: { inc: metricInc },
 }));
 
+vi.mock("../../lib/otel-tracer", () => ({
+  withSpan,
+  setSpanAttributes,
+}));
+
 import {
   logRequest,
+  logScrape,
+  logExtract,
   logSearch,
   shutdownPubSubLogging,
   type LoggedSearch,
 } from "./log_job";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
+import { keylessTeamUuid } from "../../lib/keyless";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -150,6 +203,17 @@ describe("logSearch", () => {
     values.mockResolvedValue(undefined);
     publishMessage.mockResolvedValue("message-id");
     publishes.length = 0;
+    spans.length = 0;
+  });
+
+  it("keeps the same keyless identity in PostgreSQL and compact feedback records", async () => {
+    const identity = "2b73a01c-5fd4-4628-a628-e3a0a5bf8f4b";
+    vi.mocked(keylessTeamUuid).mockReturnValueOnce(identity);
+    await logSearch(makeSearch({ team_id: "preview_keyless_fixture" }));
+    expect(values.mock.calls[0][0].team_id).toBe(identity);
+    expect(writeFeedbackJob).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: identity }),
+    );
   });
 
   it("removes null bytes from search query log fields", async () => {
@@ -169,6 +233,14 @@ describe("logSearch", () => {
     expect(inserted.options.query).toBe("nestedquery");
     expect(inserted.options.sources[0].location).toBe("NewYork");
     expect(search.options.query).toBe("nested\u0000query");
+    expect(writeFeedbackJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: search.id,
+        endpoint: "search",
+        succeeded: true,
+        creditsBilled: 1,
+      }),
+    );
   });
 
   it("reports serialization failures without losing the PostgreSQL attempt", async () => {
@@ -185,6 +257,126 @@ describe("logSearch", () => {
     expect(logger.error).toHaveBeenCalledWith(
       "Failed to publish log to Pub/Sub",
       expect.objectContaining({ logId: search.id, error: expect.any(Error) }),
+    );
+  });
+
+  it("keeps logging when the feedback Bigtable shadow write fails", async () => {
+    writeFeedbackJob.mockRejectedValueOnce(new Error("Bigtable unavailable"));
+
+    await expect(logSearch(makeSearch())).resolves.toBeUndefined();
+
+    expect(values).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledWith(
+      "Failed to write feedback job to Bigtable",
+      expect.objectContaining({
+        error: expect.any(Error),
+        endpoint: "search",
+      }),
+    );
+  });
+
+  it("profiles the log, PostgreSQL insert, and Pub/Sub publish", async () => {
+    await logSearch(makeSearch());
+
+    expect(spans).toEqual(
+      expect.arrayContaining([
+        { name: "log_job.search", options: { zeroDataRetention: false } },
+        { name: "log_job.postgres.insert", options: undefined },
+        { name: "log_job.pubsub.publish", options: undefined },
+      ]),
+    );
+  });
+
+  it("forwards zeroDataRetention to the root log span", async () => {
+    await logSearch(makeSearch({ zeroDataRetention: true }));
+
+    expect(spans).toContainEqual({
+      name: "log_job.search",
+      options: { zeroDataRetention: true },
+    });
+  });
+});
+
+describe("operational job state logging", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    values.mockResolvedValue(undefined);
+    publishMessage.mockResolvedValue("message-id");
+  });
+
+  it("writes terminal standalone scrape state", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+    await logScrape({
+      id,
+      request_id: id,
+      url: "https://example.com",
+      is_successful: true,
+      time_taken: 1,
+      team_id: "team-id",
+      options: { formats: ["markdown"] } as any,
+      credits_cost: 2,
+      skipNuq: false,
+      zeroDataRetention: false,
+    });
+
+    expect(writeScrapeJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({
+        status: "completed",
+        requestId: id,
+        creditsBilled: 2,
+      }),
+    );
+  });
+
+  it("writes terminal extract state", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+    await logExtract({
+      id,
+      request_id: id,
+      urls: ["https://example.com"],
+      team_id: "team-id",
+      options: {},
+      model_kind: "fire-1",
+      credits_cost: 3,
+      is_successful: false,
+      error: "failed",
+    });
+
+    expect(writeExtractJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({
+        status: "failed",
+        creditsBilled: 3,
+        error: "failed",
+      }),
+    );
+  });
+
+  it("writes extract state before result storage fails", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+    saveExtractResult.mockRejectedValueOnce(new Error("Redis unavailable"));
+
+    await expect(
+      logExtract({
+        id,
+        request_id: id,
+        urls: ["https://example.com"],
+        team_id: "team-id",
+        options: {},
+        model_kind: "fire-1",
+        credits_cost: 3,
+        is_successful: true,
+        result: { ok: true },
+      }),
+    ).rejects.toThrow("Redis unavailable");
+
+    expect(writeExtractJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({ status: "completed" }),
+    );
+    expect(writeExtractJobState.mock.invocationCallOrder[0]).toBeLessThan(
+      saveExtractResult.mock.invocationCallOrder[0],
     );
   });
 });
@@ -246,6 +438,41 @@ describe("logRequest", () => {
     expect(values.mock.calls[0][0].created_at.toISOString()).toBe(
       published.created_at,
     );
+    expect(writeApiJobAccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "019e6f45-7778-727d-adf0-0abe9d5062b6",
+        teamId: "team-id",
+        kind: "scrape",
+        clientOrigin: "api",
+        expiresAt: expect.any(Date),
+      }),
+    );
+  });
+
+  it("durably queues ZDR cleanup before writing the request", async () => {
+    await logRequest({
+      ...makeRequest("op_integration_42"),
+      zeroDataRetention: true,
+    });
+
+    expect(enqueueZdrCleanupJob).toHaveBeenCalledWith(
+      "019e6f45-7778-727d-adf0-0abe9d5062b6",
+    );
+    expect(enqueueZdrCleanupJob.mock.invocationCallOrder[0]).toBeLessThan(
+      values.mock.invocationCallOrder[0],
+    );
+    expect(values.mock.calls[0][0]).not.toHaveProperty("dr_clean_by");
+  });
+
+  it("does not write a ZDR request unless its cleanup job was confirmed", async () => {
+    enqueueZdrCleanupJob.mockRejectedValueOnce(
+      new Error("RabbitMQ unavailable"),
+    );
+
+    await expect(
+      logRequest({ ...makeRequest(null), zeroDataRetention: true }),
+    ).rejects.toThrow("RabbitMQ unavailable");
+    expect(values).not.toHaveBeenCalled();
   });
 
   it("keeps the database write when Pub/Sub fails", async () => {
@@ -257,6 +484,39 @@ describe("logRequest", () => {
     expect(logger.error).toHaveBeenCalledWith(
       "Failed to publish log to Pub/Sub",
       expect.objectContaining({ error: expect.any(Error) }),
+    );
+  });
+
+  it("keeps logging when the job access Bigtable shadow write fails", async () => {
+    writeApiJobAccess.mockRejectedValueOnce(new Error("Bigtable unavailable"));
+
+    await expect(logRequest(makeRequest(null))).resolves.toBeUndefined();
+
+    expect(values).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      "Failed to write API job access to Bigtable",
+      expect.objectContaining({ error: expect.any(Error), kind: "scrape" }),
+    );
+  });
+
+  it("does not write access metadata for a non-operational request id", async () => {
+    await logRequest({ ...makeRequest(null), jobAccess: false });
+
+    expect(writeApiJobAccess).not.toHaveBeenCalled();
+    expect(values).toHaveBeenCalledOnce();
+  });
+
+  it("uses a job's explicit operational expiry", async () => {
+    const expiresAt = new Date("2026-09-15T18:00:00.000Z");
+
+    await logRequest({
+      ...makeRequest(null),
+      kind: "deep_research",
+      jobAccessExpiresAt: expiresAt,
+    });
+
+    expect(writeApiJobAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "deep_research", expiresAt }),
     );
   });
 

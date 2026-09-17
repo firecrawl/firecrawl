@@ -19,6 +19,7 @@ import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
 import { checkPermissions } from "../../lib/permissions";
+import { resolveSafeMode } from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -40,6 +41,10 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
+import {
+  initializeRequestCredits,
+  requestCreditsShards,
+} from "../../lib/request-credits-store";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -48,14 +53,32 @@ export async function crawlController(
   const preNormalizedBody = req.body;
   req.body = crawlRequestSchema.parse(req.body);
   const id = uuidv7();
+
+  const safeMode = resolveSafeMode(
+    req.acuc?.flags,
+    req.body.scrapeOptions?.safeMode,
+    req.body.url,
+  );
+  if (safeMode.error) {
+    return res.status(403).json({
+      success: false,
+      code: safeMode.code,
+      error: safeMode.error,
+    });
+  }
+
+  // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" || req.body.zeroDataRetention;
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body.zeroDataRetention ||
+    (safeMode.safeMode?.lockdown ?? false);
 
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
     override: req.body.scrapeOptions?.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
     return res.status(403).json({
@@ -64,14 +87,27 @@ export async function crawlController(
     });
   }
 
+  // Scrape params live under scrapeOptions; checkPermissions reads them
+  // top-level, so spread scrapeOptions while keeping the top-level fields it
+  // also reads (zeroDataRetention, crawlerOptions.ignoreRobotsTxt) and the
+  // nested scrapeOptions (location / threatProtection).
   const permissions = checkPermissions(
-    { ...req.body, crawlerOptions: req.body },
+    {
+      ...req.body.scrapeOptions,
+      zeroDataRetention: req.body.zeroDataRetention,
+      crawlerOptions: req.body,
+      scrapeOptions: req.body.scrapeOptions,
+    },
     req.acuc?.flags,
-    { threatProtectionOrgConfig: threatProtection.orgConfig },
+    {
+      threatProtectionOrgConfig: threatProtection.orgConfig,
+      safeMode: safeMode.safeMode ?? null,
+    },
   );
   if (permissions.error) {
     return res.status(403).json({
       success: false,
+      code: permissions.code,
       error: permissions.error,
     });
   }
@@ -165,6 +201,9 @@ export async function crawlController(
     target_hint: req.body.url,
     zeroDataRetention: zeroDataRetention || false,
     api_key_id: req.acuc?.api_key_id ?? null,
+    jobAccessExpiresAt: new Date(
+      Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+    ),
   });
 
   // checkCreditsMiddleware (always runs before this controller) is the source
@@ -270,6 +309,14 @@ export async function crawlController(
     originalBodyLimit: preNormalizedBody.limit,
   });
 
+  const creditsShards = requestCreditsShards(finalCrawlerOptions.limit);
+  await initializeRequestCredits(id, creditsShards).catch(error => {
+    logger.warn("Failed to initialize Bigtable request credits", {
+      error,
+      shards: creditsShards,
+    });
+  });
+
   const effectiveConcurrency = await getEffectiveConcurrencyLimit(
     req.auth.team_id,
     req.acuc?.org_id ?? null,
@@ -286,6 +333,10 @@ export async function crawlController(
       zeroDataRetention,
       agentIndexOnly: (req as any).agentIndexOnly ?? false,
       threatProtection: threatProtection.policy ?? undefined,
+      // Safe Mode rides the crawl payload so every child scrape resolves it
+      // per-URL at the scrapeURL backstop (allowlist applies per child).
+      teamFlags: req.acuc?.flags ?? undefined,
+      safeModeBypassed: safeMode.bypassed === true,
     },
     team_id: req.auth.team_id,
     createdAt: Date.now(),

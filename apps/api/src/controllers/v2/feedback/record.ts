@@ -122,16 +122,23 @@ export async function lookupJobWithRetry(
   options: Pick<FeedbackRecordOptions, "endpoint" | "jobId" | "notFoundCode">,
   dbTeamId: string,
   logger: FeedbackLogger,
+  lookupOptions?: { requireOptions: boolean },
 ): Promise<FeedbackJobRow | FeedbackRecordResult> {
   try {
     let job = await lookupFeedbackJob(
       options.endpoint,
       options.jobId,
       dbTeamId,
+      lookupOptions,
     );
     if (!job) {
       await new Promise(resolve => setTimeout(resolve, LOOKUP_RACE_RETRY_MS));
-      job = await lookupFeedbackJob(options.endpoint, options.jobId, dbTeamId);
+      job = await lookupFeedbackJob(
+        options.endpoint,
+        options.jobId,
+        dbTeamId,
+        lookupOptions,
+      );
     }
 
     if (!job) {
@@ -159,6 +166,17 @@ function validateJob(
       409,
       options.failedJobCode ?? "INTERNAL",
       `Cannot submit feedback for a ${options.endpoint} job that did not succeed.`,
+    );
+  }
+
+  if (job.feedback_deadline_ms !== undefined) {
+    if (job.feedback_deadline_ms > Date.now()) return null;
+    const maxAgeSec = options.maxAgeSec ?? config.FEEDBACK_MAX_AGE_SEC;
+    return feedbackFailure(
+      409,
+      "FEEDBACK_WINDOW_EXPIRED",
+      options.windowExpiredMessage ??
+        `Feedback must be submitted within ${maxAgeSec} seconds of the job.`,
     );
   }
 

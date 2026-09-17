@@ -200,7 +200,7 @@ describeIf("NuQ router (forced FDB mode)", () => {
     expect(await scrapeQueue.getGroupNumericStats(gid)).toMatchObject({
       completed: 1,
     });
-    const listing = await scrapeQueue.getCrawlJobsForListing(gid, 10, 0);
+    const listing = await scrapeQueue.getGroupJobs(gid, "completed", 10, 0);
     expect(listing.map(j => j.id)).toEqual([jobId]);
 
     // the emitted crawl_finished job is consumable through the router
@@ -218,6 +218,91 @@ describeIf("NuQ router (forced FDB mode)", () => {
 
     // cancel on an already-completed group is a no-op
     expect(await crawlGroup.cancelGroup(gid)).toBe(false);
+  });
+
+  test("routed group listing returns failed job data and reason", async () => {
+    const teamId = randomUUID();
+    const gid = randomUUID();
+    const jobId = randomUUID();
+    await crawlGroup.addGroup(gid, teamId, 60_000, { backend: "fdb" });
+    await fdbEnqueueScrapeJobs(
+      [
+        {
+          jobId,
+          data: {
+            mode: "single_urls",
+            url: "https://example.com/failed",
+            team_id: teamId,
+            crawl_id: gid,
+          } as any,
+          priority: 0,
+          backlogTimeoutMs: 60_000,
+        },
+      ],
+      teamId,
+    );
+
+    let taken: any = null;
+    for (let i = 0; i < 10 && !taken; i++) {
+      try {
+        taken = await scrapeQueue.getJobToProcess();
+      } catch {}
+    }
+    expect(taken?.id).toBe(jobId);
+    await scrapeQueue.jobFail(jobId, taken.lock!, "routed failure");
+
+    const failed = await scrapeQueue.getGroupJobs(gid, "failed");
+    expect(failed).toHaveLength(1);
+    expect(failed[0]).toMatchObject({
+      id: jobId,
+      failedReason: "routed failure",
+      data: { url: "https://example.com/failed" },
+    });
+    expect(await scrapeQueue.getGroupJobs(gid, "completed")).toEqual([]);
+  });
+
+  test("routed group listing probes FDB when crawl state is missing", async () => {
+    const forcedBackend = config.NUQ_BACKEND;
+    const redisGet = vi
+      .spyOn(redisEvictConnection, "get")
+      .mockResolvedValue(null);
+    config.NUQ_BACKEND = "pg";
+    try {
+      const teamId = randomUUID();
+      const gid = randomUUID();
+      const jobId = randomUUID();
+      await crawlGroup.addGroup(gid, teamId, 60_000, { backend: "fdb" });
+      await fdbEnqueueScrapeJobs(
+        [
+          {
+            jobId,
+            data: {
+              mode: "single_urls",
+              url: "https://example.com/probed",
+              team_id: teamId,
+              crawl_id: gid,
+            } as any,
+            priority: 0,
+            backlogTimeoutMs: 60_000,
+          },
+        ],
+        teamId,
+      );
+
+      const taken = await scrapeQueueFdb.getJobToProcess();
+      expect(taken?.id).toBe(jobId);
+      await scrapeQueueFdb.jobFail(jobId, taken!.lock!, "probed failure");
+
+      const failed = await scrapeQueue.getGroupJobs(gid, "failed");
+      expect(failed).toHaveLength(1);
+      expect(failed[0]).toMatchObject({
+        id: jobId,
+        failedReason: "probed failure",
+      });
+    } finally {
+      config.NUQ_BACKEND = forcedBackend;
+      redisGet.mockRestore();
+    }
   });
 
   test("external slot mirror consumes and releases FDB capacity", async () => {

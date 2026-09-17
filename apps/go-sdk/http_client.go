@@ -165,24 +165,24 @@ func (h *httpClient) postMultipart(
 			return json.RawMessage(respBody), nil
 		}
 
-		errMsg, errCode := extractError(respBody, resp.StatusCode)
+		errMsg, errCode, requiresAction := extractError(respBody, resp.StatusCode)
 
 		switch resp.StatusCode {
 		case 401:
 			return nil, &AuthenticationError{
-				FirecrawlError: FirecrawlError{StatusCode: 401, ErrorCode: errCode, Message: errMsg},
+				FirecrawlError: FirecrawlError{StatusCode: 401, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction},
 			}
 		case 429:
 			return nil, &RateLimitError{
-				FirecrawlError: FirecrawlError{StatusCode: 429, ErrorCode: errCode, Message: errMsg},
+				FirecrawlError: FirecrawlError{StatusCode: 429, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction},
 			}
 		}
 
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 408 && resp.StatusCode != 409 {
-			return nil, &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg}
+			return nil, &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}
 		}
 
-		lastErr = &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg}
+		lastErr = &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}
 	}
 
 	if lastErr != nil {
@@ -259,26 +259,26 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 		}
 
 		// Parse error details from the response.
-		errMsg, errCode := extractError(respBody, resp.StatusCode)
+		errMsg, errCode, requiresAction := extractError(respBody, resp.StatusCode)
 
 		// Non-retryable client errors.
 		switch resp.StatusCode {
 		case 401:
 			return nil, &AuthenticationError{
-				FirecrawlError: FirecrawlError{StatusCode: 401, ErrorCode: errCode, Message: errMsg},
+				FirecrawlError: FirecrawlError{StatusCode: 401, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction},
 			}
 		case 429:
 			return nil, &RateLimitError{
-				FirecrawlError: FirecrawlError{StatusCode: 429, ErrorCode: errCode, Message: errMsg},
+				FirecrawlError: FirecrawlError{StatusCode: 429, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction},
 			}
 		}
 
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 408 && resp.StatusCode != 409 {
-			return nil, &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg}
+			return nil, &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}
 		}
 
 		// Retryable: 408, 409, 5xx
-		lastErr = &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg}
+		lastErr = &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}
 	}
 
 	if lastErr != nil {
@@ -300,11 +300,11 @@ func (h *httpClient) sleepBackoff(ctx context.Context, attempt int) error {
 	}
 }
 
-// extractError parses an API error response to get the message and error code.
-func extractError(body []byte, statusCode int) (string, string) {
+// extractError parses an API error response to get the message, error code, and any required action.
+func extractError(body []byte, statusCode int) (string, string, *RequiresAction) {
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return fmt.Sprintf("HTTP %d error", statusCode), ""
+		return fmt.Sprintf("HTTP %d error", statusCode), "", nil
 	}
 
 	msg := fmt.Sprintf("HTTP %d error", statusCode)
@@ -319,5 +319,16 @@ func extractError(body []byte, statusCode int) (string, string) {
 		errCode = fmt.Sprintf("%v", v)
 	}
 
-	return msg, errCode
+	var requiresAction *RequiresAction
+	if raw, ok := parsed["requiresAction"].(map[string]interface{}); ok {
+		encoded, err := json.Marshal(raw)
+		if err == nil {
+			var action RequiresAction
+			if json.Unmarshal(encoded, &action) == nil && action.Type != "" {
+				requiresAction = &action
+			}
+		}
+	}
+
+	return msg, errCode, requiresAction
 }

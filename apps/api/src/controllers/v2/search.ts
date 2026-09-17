@@ -41,6 +41,12 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { isToolsOnlySearch } from "../../search/alexandria";
 import {
+  resolveSafeMode,
+  isLockdownZeroDataRetention,
+  getEffectiveSearchForcedKind,
+} from "../../lib/safe-mode";
+import { checkPermissions } from "../../lib/permissions";
+import {
   actionTypesOf,
   checkKeyEndpointRestriction,
   checkKeyFormatRestriction,
@@ -81,7 +87,11 @@ export async function searchController(
   const zeroDataRetentionTrace =
     Boolean(getSearchForcedKind(req.acuc?.flags)) ||
     enterprise.includes("zdr") ||
-    enterprise.includes("anon");
+    enterprise.includes("anon") ||
+    isLockdownZeroDataRetention(
+      req.acuc?.flags,
+      req.body?.scrapeOptions?.safeMode,
+    );
 
   return withSpan(
     "api.search.request",
@@ -108,7 +118,13 @@ async function searchControllerInner(
 
   const jobId = uuidv7();
   const searchZDRMode = getSearchZDR(req.acuc?.flags);
-  const teamForcedKind = getSearchForcedKind(req.acuc?.flags);
+  // Safe Mode lockdown forces the "zdr" kind like the searchZDR flag does
+  // (see getEffectiveSearchForcedKind).
+  const flagForcedKind = getSearchForcedKind(req.acuc?.flags);
+  const teamForcedKind = getEffectiveSearchForcedKind(
+    req.acuc?.flags,
+    req.body?.scrapeOptions?.safeMode,
+  );
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
@@ -210,6 +226,21 @@ async function searchControllerInner(
       });
     }
 
+    // Safe Mode: validate the per-request param up front and reject scrape
+    // options it forbids (the worker backstop would otherwise strip them
+    // silently). Domain controls force threat protection over the results.
+    const safeMode = resolveSafeMode(
+      req.acuc?.flags,
+      req.body.scrapeOptions?.safeMode,
+    );
+    if (safeMode.error) {
+      return res.status(403).json({
+        success: false,
+        code: safeMode.code,
+        error: safeMode.error,
+      });
+    }
+
     // Threat protection: resolve the effective policy. Blocked domains are
     // removed from search results entirely, and scraped results inherit the
     // policy through the scrape pipeline.
@@ -219,12 +250,37 @@ async function searchControllerInner(
       flags: req.acuc?.flags ?? null,
       override:
         req.body.threatProtection ?? req.body.scrapeOptions?.threatProtection,
+      force: safeMode.safeMode?.domainControls === true,
     });
     if (threatProtection.error) {
       return res.status(403).json({
         success: false,
         error: threatProtection.error,
       });
+    }
+
+    // Search only scrapes (and only honors scrapeOptions) when formats are
+    // requested, so the scrape-option checks apply only then.
+    if (
+      safeMode.safeMode &&
+      requestedFormats.length > 0 &&
+      req.body.scrapeOptions
+    ) {
+      const permissions = checkPermissions(
+        req.body.scrapeOptions,
+        req.acuc?.flags,
+        {
+          threatProtectionOrgConfig: threatProtection.orgConfig,
+          safeMode: safeMode.safeMode,
+        },
+      );
+      if (permissions.error) {
+        return res.status(403).json({
+          success: false,
+          code: permissions.code,
+          error: permissions.error,
+        });
+      }
     }
 
     const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
@@ -238,6 +294,13 @@ async function searchControllerInner(
       query: req.body.query,
       origin: req.body.origin,
     });
+
+    // Kinds the request itself asked for, captured before the forced kind is
+    // injected: the entitlement check below applies to these only.
+    const requestedZDROrAnon =
+      req.body.enterprise?.includes("zdr") ||
+      req.body.enterprise?.includes("anon") ||
+      false;
 
     // Inject the team-forced enterprise mode so downstream billing,
     // upstream routing, and ZDR cleanup all see it.
@@ -255,7 +318,9 @@ async function searchControllerInner(
     logger = logger.child({ zeroDataRetention });
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
-    if (isZDROrAnon && !teamForcedKind) {
+    // it asked for. Only the flag-forced kind exempts a team: a lockdown-forced
+    // "zdr" must not let an unentitled request add "anon".
+    if (requestedZDROrAnon && !flagForcedKind) {
       if (searchZDRMode !== "allowed") {
         return res.status(403).json({
           success: false,
@@ -348,6 +413,7 @@ async function searchControllerInner(
         agentIndexOnly: (req as any).agentIndexOnly ?? false,
         keylessReserved: reservedKeylessCredits > 0,
         threatProtectionPolicy: threatProtection.policy,
+        safeModeBypassed: safeMode.bypassed === true,
       },
       logger,
     );

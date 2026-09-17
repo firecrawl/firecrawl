@@ -31,6 +31,7 @@ import {
 } from "../../services/index";
 import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
+import { resolveSafeMode } from "../../lib/safe-mode";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   checkUrlsAgainstThreatPolicy,
@@ -136,7 +137,14 @@ export async function getMapResults({
   let links: string[] = [url];
   let mapResults: MapDocument[] = [];
 
-  const zeroDataRetention = getScrapeZDR(flags) === "forced" || false;
+  // Safe Mode lockdown: serve links from the index only — skip the live
+  // fireEngineMap search and any sitemap fetch (both are live discovery).
+  // Derived from the team flags so every caller honors it.
+  const indexOnly =
+    resolveSafeMode(flags, undefined, url).safeMode?.lockdown === true;
+
+  // Lockdown (index-only) is cache-only, which implies zero data retention.
+  const zeroDataRetention = getScrapeZDR(flags) === "forced" || indexOnly;
 
   const sc: StoredCrawl = {
     originUrl: url,
@@ -210,7 +218,10 @@ export async function getMapResults({
     let allResults: any[] = [];
     let pagePromises: Promise<any>[] = [];
 
-    if (cachedResult) {
+    if (indexOnly) {
+      // Lockdown: no live search discovery, serve from the index only.
+      allResults = [];
+    } else if (cachedResult) {
       allResults = JSON.parse(cachedResult);
     } else {
       const fetchPage = async (page: number) => {
@@ -251,7 +262,7 @@ export async function getMapResults({
 
     // If sitemap is not ignored, fetch sitemap
     // This will attempt to find it in the index at first, or fetch a fresh one if it's older than 2 days
-    if (!ignoreSitemap) {
+    if (!ignoreSitemap && !indexOnly) {
       try {
         await crawler.tryGetSitemap(
           urls => {
@@ -387,11 +398,37 @@ export async function mapController(
     });
   }
 
+  // Safe Mode: force domainControls so discovered links are filtered, and
+  // serve index-only under lockdown (no sitemap/robots fetch to the target).
+  const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
+  const lockdownIndexOnly = safeMode.safeMode?.lockdown === true;
+  if (lockdownIndexOnly) {
+    // Lockdown: serve links from the index only — no live search / sitemap /
+    // robots discovery. A sitemapOnly request keeps its contract and simply
+    // yields no links (the sitemap can't be fetched under lockdown).
+    req.body.useIndex = true;
+  }
+  // Map's ignoreRobotsTxt is top-level, so checkPermissions (which reads it
+  // under crawlerOptions) can't see it — enforce robots here for Safe Mode.
+  if (
+    safeMode.safeMode?.enforceRobots &&
+    !lockdownIndexOnly &&
+    req.body.ignoreRobotsTxt
+  ) {
+    return res.status(403).json({
+      success: false,
+      code: "SAFE_MODE_BLOCKED",
+      error:
+        "Safe Mode: robots.txt is always honored for your organization; the ignoreRobotsTxt parameter is not allowed.",
+    });
+  }
+
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
     override: req.body.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
     return res.status(403).json({
@@ -402,10 +439,12 @@ export async function mapController(
 
   const permissions = checkPermissions(req.body, req.acuc?.flags, {
     threatProtectionOrgConfig: threatProtection.orgConfig,
+    safeMode: safeMode.safeMode ?? null,
   });
   if (permissions.error) {
     return res.status(403).json({
       success: false,
+      code: permissions.code,
       error: permissions.error,
     });
   }
@@ -430,7 +469,7 @@ export async function mapController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.url,
-    zeroDataRetention: false, // not supported for map
+    zeroDataRetention: lockdownIndexOnly,
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 
@@ -550,7 +589,7 @@ export async function mapController(
     },
     results: result.links,
     credits_cost: creditsToBill,
-    zeroDataRetention: false, // not supported
+    zeroDataRetention: lockdownIndexOnly,
   }).catch(error => {
     logger.error("Failed to log map", { error, mapId });
   });

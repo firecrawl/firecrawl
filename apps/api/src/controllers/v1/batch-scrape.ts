@@ -26,6 +26,7 @@ import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
+import { resolveSafeMode } from "../../lib/safe-mode";
 import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
@@ -47,6 +48,7 @@ import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
+import { requestCreditsShards } from "../../lib/request-credits-store";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -59,11 +61,21 @@ export async function batchScrapeController(
     req.body = batchScrapeRequestSchema.parse(req.body);
   }
 
+  const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
+  if (safeMode.error) {
+    return res.status(403).json({
+      success: false,
+      code: safeMode.code,
+      error: safeMode.error,
+    } as any);
+  }
+
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
     override: req.body.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
     return res.status(403).json({
@@ -74,10 +86,12 @@ export async function batchScrapeController(
 
   const permissions = checkPermissions(req.body, req.acuc?.flags, {
     threatProtectionOrgConfig: threatProtection.orgConfig,
+    safeMode: safeMode.safeMode ?? null,
   });
   if (permissions.error) {
     return res.status(403).json({
       success: false,
+      code: permissions.code,
       error: permissions.error,
     });
   }
@@ -95,8 +109,11 @@ export async function batchScrapeController(
     });
   }
 
+  // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" || req.body.zeroDataRetention;
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body.zeroDataRetention ||
+    (safeMode.safeMode?.lockdown ?? false);
 
   const id = req.body.appendToId ?? uuidv7();
   const logger = _logger.child({
@@ -300,6 +317,10 @@ export async function batchScrapeController(
       target_hint: urls[0] ?? "",
       zeroDataRetention: zeroDataRetention || false,
       api_key_id: req.acuc?.api_key_id ?? null,
+      jobAccessExpiresAt: new Date(
+        Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      ),
+      creditsShards: requestCreditsShards(urls.length),
     });
   }
 
@@ -308,6 +329,11 @@ export async function batchScrapeController(
     req.body.timeout,
     req.auth.team_id,
   );
+  // v1 prefaults maxAge (1 day), which would shadow the lockdown default the
+  // scrape backstop applies — keep only a maxAge the request actually sent.
+  if (safeMode.safeMode?.lockdown && preNormalizedBody.maxAge === undefined) {
+    scrapeOptions.maxAge = undefined;
+  }
 
   const sc: StoredCrawl = req.body.appendToId
     ? ((await getCrawl(req.body.appendToId)) as StoredCrawl)
@@ -325,6 +351,9 @@ export async function batchScrapeController(
           zeroDataRetention,
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
           threatProtection: threatProtection.policy ?? undefined,
+          // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
+          teamFlags: req.acuc?.flags ?? undefined,
+          safeModeBypassed: safeMode.bypassed === true,
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,
         createdAt: Date.now(),
@@ -339,6 +368,13 @@ export async function batchScrapeController(
       success: false,
       error: "Job not found",
     });
+  }
+  if (req.body.appendToId && sc?.internalOptions) {
+    // Refresh Safe Mode + threat-protection so appended jobs enforce the team's
+    // current policy, not whatever was stored when the batch was created.
+    sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
+    sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
+    sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
   }
 
   if (!req.body.appendToId) {

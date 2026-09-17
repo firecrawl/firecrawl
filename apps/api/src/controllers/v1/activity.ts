@@ -1,8 +1,6 @@
 import { Response } from "express";
-import { and, desc, eq, gte, lt, or } from "drizzle-orm";
 import { RequestWithAuth, ErrorResponse } from "./types";
-import { dbRr } from "../../db/connection";
-import * as schema from "../../db/schema";
+import { clickhouseClient } from "../../lib/clickhouse-client";
 import { logger as _logger } from "../../lib/logger";
 
 const ACTIVITY_WINDOW_HOURS = 24;
@@ -27,6 +25,10 @@ function decodeCursor(
   } catch {
     return null;
   }
+}
+
+function toClickHouseDateTime(value: string): string {
+  return value.replace("T", " ").replace(/Z$/, "");
 }
 
 const VALID_ENDPOINTS = [
@@ -58,6 +60,14 @@ interface ActivityResponse {
   data: ActivityItem[];
   cursor: string | null;
   has_more: boolean;
+}
+
+interface ActivityRow {
+  id: string;
+  kind: ActivityEndpoint;
+  api_version: string;
+  created_at: string;
+  target_hint: string | null;
 }
 
 export async function activityController(
@@ -95,54 +105,54 @@ export async function activityController(
     });
   }
 
-  // Build query
-  const windowStart = new Date(
-    Date.now() - ACTIVITY_WINDOW_HOURS * 60 * 60 * 1000,
-  ).toISOString();
+  if (clickhouseClient === null) {
+    return res.status(501).json({
+      success: false,
+      error: "This endpoint is only available if ClickHouse is configured.",
+    });
+  }
+
+  const windowStart = toClickHouseDateTime(
+    new Date(Date.now() - ACTIVITY_WINDOW_HOURS * 60 * 60 * 1000).toISOString(),
+  );
 
   const conditions = [
-    eq(schema.requests.team_id, req.auth.team_id),
-    gte(schema.requests.created_at, windowStart),
+    "team_id = {teamId: UUID}",
+    "created_at >= {windowStart: DateTime64(3)}",
   ];
+  const queryParams: Record<string, string | number> = {
+    teamId: req.auth.team_id,
+    windowStart,
+    limit: limit + 1,
+  };
 
   if (endpoint) {
-    conditions.push(eq(schema.requests.kind, endpoint));
+    conditions.push("kind = {endpoint: String}");
+    queryParams.endpoint = endpoint;
   }
 
   if (cursor) {
-    // For keyset pagination: fetch rows where (created_at, id) < (cursor.createdAt, cursor.id)
-    // This translates to: created_at < cursor OR (created_at = cursor AND id < cursor.id)
     conditions.push(
-      or(
-        lt(schema.requests.created_at, cursor.createdAt),
-        and(
-          eq(schema.requests.created_at, cursor.createdAt),
-          lt(schema.requests.id, cursor.id),
-        ),
-      )!,
+      "(created_at < {cursorCreatedAt: DateTime64(3)} OR (created_at = {cursorCreatedAt: DateTime64(3)} AND id < {cursorId: UUID}))",
     );
+    queryParams.cursorCreatedAt = toClickHouseDateTime(cursor.createdAt);
+    queryParams.cursorId = cursor.id;
   }
 
-  let data: {
-    id: string;
-    kind: string | null;
-    api_version: string | null;
-    created_at: string | null;
-    target_hint: string | null;
-  }[];
+  let data: ActivityRow[];
   try {
-    data = await dbRr
-      .select({
-        id: schema.requests.id,
-        kind: schema.requests.kind,
-        api_version: schema.requests.api_version,
-        created_at: schema.requests.created_at,
-        target_hint: schema.requests.target_hint,
-      })
-      .from(schema.requests)
-      .where(and(...conditions))
-      .orderBy(desc(schema.requests.created_at), desc(schema.requests.id))
-      .limit(limit + 1); // fetch one extra to determine has_more
+    const result = await clickhouseClient.query({
+      query: `
+        SELECT id, kind, api_version, created_at, target_hint
+        FROM requests
+        WHERE ${conditions.join(" AND ")}
+        ORDER BY created_at DESC, id DESC
+        LIMIT {limit: UInt32}
+      `,
+      query_params: queryParams,
+      format: "JSONEachRow",
+    });
+    data = await result.json<ActivityRow>();
   } catch (error) {
     logger.error("Failed to fetch activity", { error });
     return res.status(500).json({
@@ -151,10 +161,10 @@ export async function activityController(
     });
   }
 
-  const hasMore = (data?.length ?? 0) > limit;
-  const items = hasMore ? data!.slice(0, limit) : (data ?? []);
+  const hasMore = data.length > limit;
+  const items = hasMore ? data.slice(0, limit) : data;
 
-  const responseData: ActivityItem[] = items.map((row: any) => ({
+  const responseData: ActivityItem[] = items.map(row => ({
     id: row.id,
     endpoint: row.kind,
     api_version: row.api_version,

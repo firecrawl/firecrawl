@@ -9,6 +9,7 @@ import { eq, sql } from "drizzle-orm";
 const fixture = vi.hoisted(() => ({
   pool: undefined as Pool | undefined,
   refund: vi.fn(),
+  readFeedbackJob: vi.fn(),
   results: new Map<string, unknown>(),
   readResult: vi.fn<(id: string) => Promise<unknown>>(),
   db: undefined as ReturnType<typeof drizzle> | undefined,
@@ -18,6 +19,10 @@ vi.mock("../../../lib/spur", () => ({
   isKeylessIpSuspicious: async (ip: string) => ip === "203.0.113.99",
 }));
 
+vi.mock("../../../lib/feedback-job-store", async importOriginal => ({
+  ...(await importOriginal<typeof import("../../../lib/feedback-job-store")>()),
+  readFeedbackJob: fixture.readFeedbackJob,
+}));
 vi.mock("../../../lib/gcs-jobs", async importOriginal => ({
   ...(await importOriginal<typeof import("../../../lib/gcs-jobs")>()),
   saveSearchToGCS: async (search: { id: string; results: unknown }) => {
@@ -272,6 +277,7 @@ suite("keyless feedback HTTP and persistence", () => {
   beforeEach(async () => {
     config.KEYLESS_FEEDBACK_DAILY_LIMIT = 1;
     fixture.refund.mockReset().mockResolvedValue(undefined);
+    fixture.readFeedbackJob.mockReset().mockResolvedValue(null);
     fixture.results.clear();
     fixture.readResult
       .mockReset()
@@ -1084,6 +1090,49 @@ suite("keyless feedback HTTP and persistence", () => {
       }
     },
   );
+  it.each(["search", "scrape", "parse"] as const)(
+    "uses full PostgreSQL options for keyless %s when compact feedback records exist",
+    async endpoint => {
+      const { jobId } = await job(endpoint);
+      fixture.readFeedbackJob.mockResolvedValue({
+        requestId: jobId,
+        teamId: team(),
+        refundClass: endpoint === "scrape" ? "scrape_basic" : endpoint,
+        feedbackDeadlineMs: Date.now() + 120000,
+        succeeded: true,
+        creditsBilled: 0,
+        zeroDataRetention: false,
+      });
+      expect((await submit(body(endpoint, jobId))).status).toBe(200);
+      expect(fixture.readFeedbackJob).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps authenticated feedback on compact records without PostgreSQL job rows", async () => {
+    const jobId = randomUUID();
+    fixture.readFeedbackJob.mockResolvedValue({
+      requestId: jobId,
+      teamId: authenticatedTeam,
+      refundClass: "scrape_basic",
+      feedbackDeadlineMs: Date.now() + 120000,
+      succeeded: true,
+      creditsBilled: 8,
+      zeroDataRetention: false,
+    });
+    const response = await request(app)
+      .post("/test/authenticated/feedback")
+      .send({
+        endpoint: "scrape",
+        jobId,
+        rating: "bad",
+        note: "The output omitted the requested retry intervals.",
+      });
+    expect(response.status).toBe(200);
+    expect(response.body.creditsRefunded).toBe(1);
+    expect(fixture.readFeedbackJob).toHaveBeenCalledWith(jobId);
+    expect(fixture.refund).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves authenticated Search failure and age restrictions", async () => {
     const { jobId } = await job("search", false);
     await fixture.pool!.query(

@@ -36,7 +36,9 @@ export async function keylessFeedbackController(
   const answers = parsed.data;
   const identity = keylessTeamUuid(req.auth.team_id)!;
   try {
-    const job = await lookupJobWithRetry(answers, identity, logger);
+    const job = await lookupJobWithRetry(answers, identity, logger, {
+      requireOptions: true,
+    });
     if ("status" in job) return res.status(job.status).json(job.body);
     if (
       isKeylessFeedbackRestricted(

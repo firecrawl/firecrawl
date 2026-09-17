@@ -15,6 +15,11 @@ import { TransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
+  resolveSafeMode,
+  applySafeMode,
+  isLockdownZeroDataRetention,
+} from "../../lib/safe-mode";
+import {
   actionTypesOf,
   checkKeyFormatRestriction,
   formatTypesOf,
@@ -51,10 +56,13 @@ export async function scrapeController(
   res: Response<ScrapeResponse>,
 ) {
   // Resolved before the root span starts so the whole request trace stays
-  // unrecorded for zero-data-retention requests (see otel-tracer).
+  // unrecorded for zero-data-retention requests (see otel-tracer). Safe Mode
+  // lockdown implies ZDR, so fold it in here too — otherwise child spans could
+  // export target URLs before the inner handler applies lockdown.
   const zeroDataRetentionTrace =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
-    req.body?.zeroDataRetention === true;
+    req.body?.zeroDataRetention === true ||
+    isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
 
   return withSpan(
     "api.scrape.request",
@@ -84,11 +92,26 @@ async function scrapeControllerInner(
   const preNormalizedBody = { ...req.body };
   req.body = scrapeRequestSchema.parse(req.body);
 
+  // Honor a per-request Safe Mode opt-out/affirmation, consistent with v2.
+  const safeMode = resolveSafeMode(
+    req.acuc?.flags,
+    req.body.safeMode,
+    req.body.url,
+  );
+  if (safeMode.error) {
+    return res.status(403).json({
+      success: false,
+      code: safeMode.code,
+      error: safeMode.error,
+    } as any);
+  }
+
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
     override: req.body.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
     return res.status(403).json({
@@ -99,10 +122,12 @@ async function scrapeControllerInner(
 
   const permissions = checkPermissions(req.body, req.acuc?.flags, {
     threatProtectionOrgConfig: threatProtection.orgConfig,
+    safeMode: safeMode.safeMode ?? null,
   });
   if (permissions.error) {
     return res.status(403).json({
       success: false,
+      code: permissions.code,
       error: permissions.error,
     });
   }
@@ -121,7 +146,9 @@ async function scrapeControllerInner(
   }
 
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" || req.body.zeroDataRetention;
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body.zeroDataRetention ||
+    (safeMode.safeMode?.lockdown ?? false);
 
   const logger = _logger.child({
     method: "scrapeController",
@@ -172,6 +199,12 @@ async function scrapeControllerInner(
     req.body.timeout,
     req.auth.team_id,
   );
+  // v1 prefaults maxAge (1 day), which would shadow the lockdown default —
+  // keep only a maxAge the request actually sent under forced lockdown.
+  if (safeMode.safeMode?.lockdown && preNormalizedBody.maxAge === undefined) {
+    scrapeOptions.maxAge = undefined;
+  }
+  applySafeMode(safeMode.safeMode, scrapeOptions);
   const projectedKeylessCredits = !isDirectToBullMQ
     ? projectScrapeCredits(
         scrapeOptions,
@@ -267,6 +300,8 @@ async function scrapeControllerInner(
               orgId: req.acuc?.org_id ?? null,
               agentIndexOnly: (req as any).agentIndexOnly ?? false,
               threatProtection: threatProtection.policy ?? undefined,
+              safeMode: safeMode.allowlisted ? undefined : safeMode.safeMode,
+              safeModeBypassed: safeMode.bypassed === true,
             },
             skipNuq: true,
             origin,

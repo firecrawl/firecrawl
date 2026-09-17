@@ -74,6 +74,7 @@ import { verdictJsonSchema } from "./search/judge";
 import { computeGoalVersion } from "./search/dedupe";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { getACUCTeam } from "../../controllers/auth";
+import type { TeamFlags } from "../../controllers/v1/types";
 import { orgIdForTeam } from "../../lib/team-org";
 import {
   reconstructKnownState,
@@ -271,6 +272,7 @@ export function estimateActualCredits(doc: any, options?: any): number {
 // per-page — search monitors bill flat at the check level.
 async function scrapeSearchMonitorPage(params: {
   teamId: string;
+  teamFlags: TeamFlags | null;
   checkId: string;
   url: string;
   judgePrompt: string;
@@ -316,6 +318,8 @@ async function scrapeSearchMonitorPage(params: {
         saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
         bypassBilling: true,
         zeroDataRetention: false,
+        // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
+        teamFlags: params.teamFlags ?? undefined,
       },
       skipNuq: true,
       origin: "monitor",
@@ -555,6 +559,10 @@ async function enqueueMonitorScrapeTarget(params: {
     throw new Error("Expected scrape target");
   }
 
+  // Safe Mode applies to monitor scrapes: resolve per-URL at the backstop from
+  // the team's flags. orgId stays null (monitors' separate no-blocklist rule).
+  const acuc = await getACUCTeam(params.monitor.team_id);
+
   for (const [index, url] of params.target.urls.entries()) {
     const scrapeId = params.targetRun.expectedJobs[index];
     const scrapeOptions = scrapeRequestSchema.parse({
@@ -588,6 +596,7 @@ async function enqueueMonitorScrapeTarget(params: {
           saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
           bypassBilling: true,
           zeroDataRetention: false,
+          teamFlags: acuc?.flags ?? undefined,
         },
         origin: "monitor",
         integration: null,
@@ -646,6 +655,10 @@ async function enqueueMonitorCrawlTarget(params: {
     prompt: undefined,
   };
 
+  // Safe Mode applies to monitor crawls: each child resolves it per-URL at the
+  // backstop from the team's flags. orgId stays null (monitors' no-blocklist rule).
+  const acuc = await getACUCTeam(params.monitor.team_id);
+
   const sc: StoredCrawl = {
     originUrl: body.url,
     crawlerOptions: toV0CrawlerOptions(crawlerOptions),
@@ -658,6 +671,7 @@ async function enqueueMonitorCrawlTarget(params: {
       saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
       zeroDataRetention: false,
       bypassBilling: true,
+      teamFlags: acuc?.flags ?? undefined,
     },
     team_id: params.monitor.team_id,
     createdAt: Date.now(),
@@ -823,6 +837,7 @@ async function runMonitorSearchTarget(params: {
     scrapePage: ({ url, judgePrompt }) =>
       scrapeSearchMonitorPage({
         teamId: monitor.team_id,
+        teamFlags,
         checkId: check.id,
         url,
         judgePrompt,

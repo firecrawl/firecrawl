@@ -268,7 +268,7 @@ const configSchema = z.object({
     .positive()
     .default(64 * 1024 * 1024),
 
-  // Cloud Bigtable (change tracking bookkeeping store). The client
+  // Cloud Bigtable operational stores. The client
   // auto-detects BIGTABLE_EMULATOR_HOST, so local dev only needs the
   // emulator plus these vars. BIGTABLE_CREDENTIALS mirrors
   // GCS_CREDENTIALS: base64-encoded service-account JSON; unset falls
@@ -277,6 +277,11 @@ const configSchema = z.object({
   BIGTABLE_INSTANCE_ID: z.string().optional(),
   BIGTABLE_APP_PROFILE_ID: z.string().optional(),
   BIGTABLE_CHANGE_TRACKING_TABLE: z.string().optional(),
+  BIGTABLE_JOB_ACCESS_TABLE: z.string().optional(),
+  BIGTABLE_FEEDBACK_JOBS_TABLE: z.string().optional(),
+  BIGTABLE_SCRAPE_STATE_TABLE: z.string().optional(),
+  BIGTABLE_EXTRACT_STATE_TABLE: z.string().optional(),
+  BIGTABLE_REQUEST_CREDITS_TABLE: z.string().optional(),
   BIGTABLE_CREDENTIALS: z.string().optional(),
 
   // ClickHouse (Search Analytics)
@@ -380,6 +385,9 @@ const configSchema = z.object({
   FIRE_PDF_PERCENT: z.coerce.number().min(0).max(100).default(10),
   FIRE_PDF_BASE_URL: z.string().optional(),
   FIRE_PDF_API_KEY: z.string().optional(),
+  // Raster image OCR of image URLs and parse uploads through FirePDF (see
+  // lib/image-ocr-gate.ts). Needs FIRE_PDF_BASE_URL.
+  IMAGE_OCR_ENABLED: z.stringbool().default(false),
   // Async /jobs rollout is a separate, server-controlled cohort inside
   // traffic already selected for FirePDF. It is disabled by default.
   FIRE_PDF_ASYNC_PERCENT: z.coerce.number().min(0).max(100).default(0),
@@ -564,7 +572,7 @@ const configSchema = z.object({
   DISABLE_ENGPICKER: z.stringbool().optional(),
   DISABLE_MONITORING: z.stringbool().default(false),
 
-  EXTRACT_V3_BETA_URL: z.string().optional(),
+  EXTRACT_V3_BETA_URL: z.string().url().optional(),
   AGENT_INTEROP_SECRET: z
     .string()
     .refine(value => value.trim().length > 0, {

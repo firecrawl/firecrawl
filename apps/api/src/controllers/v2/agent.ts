@@ -219,6 +219,7 @@ export async function agentController(
     target_hint: req.body.urls?.[0] ?? req.body.prompt ?? "",
     zeroDataRetention: false, // not supported for agent
     api_key_id: req.acuc?.api_key_id ?? null,
+    creditsShards: 8,
   });
 
   const passthrough = await fetch(

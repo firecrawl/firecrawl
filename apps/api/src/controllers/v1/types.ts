@@ -551,6 +551,10 @@ const baseScrapeOptions = z.strictObject({
     .gte(0)
     .prefault(1 * 24 * 60 * 60 * 1000),
   storeInCache: z.boolean().prefault(true),
+  // Enterprise: per-request Safe Mode opt-out/affirmation. Tri-state, so NOT
+  // prefaulted — an absent value must stay undefined (a default of false would
+  // read as an explicit bypass attempt). Honored only if the org allows it.
+  safeMode: z.boolean().optional(),
   // Enterprise: per-request field-level override of the org's threat
   // protection policy. Gated on the team flag + org config (checkPermissions).
   threatProtection: threatProtectionOverrideSchema.optional(),
@@ -1334,6 +1338,22 @@ export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
+  safeMode?: boolean;
+  safeModeConfig?: {
+    allowBypassSafeMode?: boolean;
+    lockdown?: boolean;
+    domainControls?: boolean;
+    enforceRobots?: boolean;
+    disableStealthProxy?: boolean;
+    disableAuthentication?: boolean;
+    disableSiteHandling?: boolean;
+    exposeWebdriver?: boolean;
+    useHeadlessUserAgent?: boolean;
+    disablePlatformSelection?: boolean;
+    disableCountrySelection?: boolean;
+    disableAutomaticReferrer?: boolean;
+    allowlist?: string[];
+  };
   siemLogging?: boolean;
   unblockedDomains?: string[];
   forceZDR?: boolean;
@@ -1377,9 +1397,6 @@ export type TeamFlags = {
   >;
   // routes the team's new queue work to the FoundationDB backend
   nuqFdb?: boolean;
-  // enables OCR of raster image URLs and uploads through FirePDF (see
-  // lib/image-ocr-gate.ts); rolled out per team
-  imageOcr?: boolean;
   /**
    * Per-endpoint rate-limit overrides, in requests per minute. A value here
    * replaces the computed limit for that mode, so the Autumn multiplier is

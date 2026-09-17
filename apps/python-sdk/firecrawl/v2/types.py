@@ -518,6 +518,7 @@ class Document(BaseModel):
     menu: Optional[MenuProfile] = None
     pages: Optional[List[PdfPage]] = None
     blocks: Optional[List[PdfPageBlocks]] = None
+    tools: Optional[List["DiscoveredTool"]] = None
 
     @property
     def metadata_typed(self) -> DocumentMetadata:
@@ -607,6 +608,8 @@ class WebhookData(BaseModel):
 
 class Source(BaseModel):
     """Configuration for a search source."""
+
+    model_config = {"extra": "forbid"}
 
     type: str
 
@@ -840,8 +843,12 @@ class ThreatProtectionOptions(BaseModel):
     explicitly provide replace the team policy's values.
     """
 
-    # "off" disables scanning for this request; "normal" applies the policy.
-    mode: Optional[Literal["off", "normal"]] = None
+    # "off" disables scanning for this request; "manual-only" enforces only the
+    # blacklist / whitelist / blocked TLDs (no provider scan, no scan fee);
+    # "normal" scans with Google Web Risk; "zscaler" classifies through your
+    # organization's Zscaler connection. Enforced teams may raise the mode per
+    # request but never lower it.
+    mode: Optional[Literal["off", "manual-only", "normal", "zscaler"]] = None
     # Block verdicts at or above this risk score (integer 0-100).
     risk_score_threshold: Optional[int] = Field(
         default=None, alias="riskScoreThreshold"
@@ -879,7 +886,7 @@ class ScrapeOptions(BaseModel):
     timeout: Optional[int] = None
     wait_for: Optional[int] = None
     mobile: Optional[bool] = None
-    parsers: Optional[Union[List[str], List[Union[str, "PDFParser"]]]] = None
+    parsers: Optional[Union[List[str], List[Union[str, "PDFParser", "ImageParser"]]]] = None
     actions: Optional[
         List[
             Union[
@@ -919,6 +926,9 @@ class ScrapeOptions(BaseModel):
     )
     profile: Optional[Dict[str, Any]] = None
     integration: Optional[str] = None
+    # Enables Alexandria domain-tool discovery/execution for this scrape.
+    # Omitted from the serialized request entirely when unset or False.
+    domain_tools: Optional[bool] = Field(default=None, alias="domainTools")
 
     model_config = {"populate_by_name": True}
 
@@ -1044,6 +1054,86 @@ class SearchResultImages(BaseModel):
     image_height: Optional[int] = None
     url: Optional[str] = None
     position: Optional[int] = None
+
+
+class ExchangeSearchResult(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    provider: str
+    capability: str
+    concept: Optional[str] = None
+    cohorts: List[str] = Field(default_factory=list)
+    credits_cost: Optional[Union[int, float]] = Field(default=None, alias="creditsCost")
+    similarity: Optional[float] = None
+
+
+class DiscoveredTool(ExchangeSearchResult):
+    credits_cost: int = Field(alias="creditsCost")
+    id: Optional[str] = None
+    name: str
+    description: str
+    per_record: bool = Field(alias="perRecord")
+    options: List[Dict[str, Any]] = Field(default_factory=list)
+    requires_one_of: Optional[List[List[str]]] = Field(default=None, alias="requiresOneOf")
+    response: Dict[str, Any] = Field(default_factory=dict)
+    examples: Dict[str, str] = Field(default_factory=dict)
+    example: Optional[Dict[str, Any]] = None
+    label: Optional[str] = None
+    when_to_use: Optional[str] = Field(default=None, alias="whenToUse")
+    returns: Optional[Any] = None
+    discovery: Optional[Any] = None
+    attribution: Optional[Any] = None
+    matched_by: List[Literal["semantic", "domain"]] = Field(default_factory=list, alias="matchedBy")
+    matched_urls: List[str] = Field(default_factory=list, alias="matchedUrls")
+
+
+class FindToolsData(BaseModel):
+    level: Literal["providers", "groups", "tools"]
+    items: List[Dict[str, Any]]
+    total: int
+    next: Optional[Dict[str, Any]] = None
+
+
+class AlexandriaCall(BaseModel):
+    model_config = {"extra": "forbid"}
+    provider: str
+    capability: str
+    options: Optional[Dict[str, Any]] = None
+
+
+class AlexandriaError(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    code: str
+    message: str
+    status: Optional[int] = None
+    charge_id: Optional[str] = Field(default=None, alias="chargeId")
+
+
+class AlexandriaScrapeResult(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    provider: Optional[str] = None
+    capability: Optional[str] = None
+    credits_cost: Optional[Union[int, float]] = Field(default=None, alias="creditsCost")
+    data: Any = None
+    records: Optional[int] = None
+    upstream_status: Optional[int] = Field(default=None, alias="upstreamStatus")
+    recorded_at: Optional[str] = Field(default=None, alias="recordedAt")
+    error: Optional[AlexandriaError] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+class AlexandriaScrapeData(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    scrape_id: Optional[str] = None
+    request_id: Optional[str] = None
+    alexandria: List[AlexandriaScrapeResult] = Field(default_factory=list)
+    credits_cost: Union[int, float] = Field(default=0, alias="creditsCost")
 
 
 class MapDocument(Document):
@@ -2087,6 +2177,15 @@ class PDFParser(BaseModel):
         return folded
 
 
+class ImageParser(BaseModel):
+    """Image parser: OCR raster images (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP,
+    WebP, AVIF) as one-page documents. Part of the default parsers list next to
+    "pdf"; takes no options, so the string "image" is equivalent. Omit it from
+    an explicit list to keep image URLs failing as unsupported files."""
+
+    type: Literal["image"] = "image"
+
+
 # Location types
 class Location(BaseModel):
     """Location configuration for scraping."""
@@ -2168,6 +2267,7 @@ class SearchRequest(BaseModel):
     """Request for search operations."""
 
     query: str
+    domain_tools: Optional[bool] = Field(default=None, alias="domainTools")
     sources: Optional[List[SourceOption]] = None
     categories: Optional[List[CategoryOption]] = None
     include_domains: Optional[List[str]] = None
@@ -2185,6 +2285,8 @@ class SearchRequest(BaseModel):
     enterprise: Optional[List[str]] = None
     threat_protection: Optional[ThreatProtectionOptions] = None
     integration: Optional[str] = None
+
+    model_config = {"populate_by_name": True}
 
     @field_validator("sources")
     @classmethod
@@ -2253,9 +2355,11 @@ SearchResult = LinkResult
 class SearchData(BaseModel):
     """Search results grouped by source type."""
 
+    warning: Optional[str] = None
     web: Optional[List[Union[SearchResultWeb, Document]]] = None
     news: Optional[List[Union[SearchResultNews, Document]]] = None
     images: Optional[List[Union[SearchResultImages, Document]]] = None
+    tools: Optional[List[DiscoveredTool]] = None
 
     @property
     def data(self):
@@ -2266,7 +2370,9 @@ class SearchData(BaseModel):
             parts.append(f".news ({len(self.news)} results)")
         if self.images:
             parts.append(f".images ({len(self.images)} results)")
-        available = ", ".join(parts) if parts else ".web, .news, or .images"
+        if self.tools:
+            parts.append(f".tools ({len(self.tools)} results)")
+        available = ", ".join(parts) if parts else ".web, .news, .images, or .tools"
         raise AttributeError(
             f"SearchData has no '.data'. Results are grouped by source: {available}"
         )

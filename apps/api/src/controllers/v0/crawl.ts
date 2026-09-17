@@ -43,6 +43,10 @@ import {
   isThreatProtectionForced,
   THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/threat-protection/request";
+import {
+  getSafeMode,
+  SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
+} from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
 export async function crawlController(req: Request, res: Response) {
@@ -68,6 +72,12 @@ export async function crawlController(req: Request, res: Response) {
       });
     }
 
+    if (getSafeMode(chunk?.flags)) {
+      return res.status(403).json({
+        error: SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
+      });
+    }
+
     const id = uuidv7();
 
     await logRequest({
@@ -81,6 +91,9 @@ export async function crawlController(req: Request, res: Response) {
       target_hint: req.body.url ?? "",
       zeroDataRetention: false, // not supported on v0
       api_key_id: chunk?.api_key_id ?? null,
+      jobAccessExpiresAt: new Date(
+        Date.now() + (chunk?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      ),
     });
 
     redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>

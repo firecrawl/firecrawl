@@ -26,6 +26,7 @@ import { logger as _logger } from "../../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { checkPermissions } from "../../lib/permissions";
+import { resolveSafeMode } from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -49,6 +50,7 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
+import { requestCreditsShards } from "../../lib/request-credits-store";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -61,11 +63,23 @@ export async function batchScrapeController(
     req.body = batchScrapeRequestSchema.parse(req.body);
   }
 
+  // Batch has many URLs; per-URL allowlist is applied at the scrapeURL backstop.
+  // Resolve org-level here only for the bypass/enablement decision.
+  const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
+  if (safeMode.error) {
+    return res.status(403).json({
+      success: false,
+      code: safeMode.code,
+      error: safeMode.error,
+    });
+  }
+
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
     override: req.body.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
     return res.status(403).json({
@@ -76,10 +90,12 @@ export async function batchScrapeController(
 
   const permissions = checkPermissions(req.body, req.acuc?.flags, {
     threatProtectionOrgConfig: threatProtection.orgConfig,
+    safeMode: safeMode.safeMode ?? null,
   });
   if (permissions.error) {
     return res.status(403).json({
       success: false,
+      code: permissions.code,
       error: permissions.error,
     });
   }
@@ -97,9 +113,11 @@ export async function batchScrapeController(
     });
   }
 
+  // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
-    (req.body.zeroDataRetention ?? false);
+    (req.body.zeroDataRetention ?? false) ||
+    (safeMode.safeMode?.lockdown ?? false);
 
   if (
     req.body.__agentInterop &&
@@ -328,6 +346,10 @@ export async function batchScrapeController(
       target_hint: urls[0] ?? "",
       zeroDataRetention: zeroDataRetention || false,
       api_key_id: req.acuc?.api_key_id ?? null,
+      jobAccessExpiresAt: new Date(
+        Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      ),
+      creditsShards: requestCreditsShards(urls.length),
     });
   }
 
@@ -347,6 +369,10 @@ export async function batchScrapeController(
           bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
           threatProtection: threatProtection.policy ?? undefined,
+          // Safe Mode rides the batch payload so each URL resolves it per-URL
+          // at the scrapeURL backstop.
+          teamFlags: req.acuc?.flags ?? undefined,
+          safeModeBypassed: safeMode.bypassed === true,
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,
         createdAt: Date.now(),
@@ -364,6 +390,12 @@ export async function batchScrapeController(
         error: "Job not found",
       });
     }
+    // Refresh Safe Mode + threat-protection context so appended jobs enforce
+    // the team's current policy, not whatever was stored when the batch was
+    // first created.
+    sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
+    sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
+    sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
   }
 
   if (!req.body.appendToId) {

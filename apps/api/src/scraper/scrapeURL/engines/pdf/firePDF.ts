@@ -8,7 +8,10 @@ import { safeMarkdownToHtml } from "./markdownToHtml";
 import { createPdfCacheKey } from "../../../../lib/gcs-pdf-cache";
 import { maybeSaveResult, tryGetCached } from "./fire-pdf/cache";
 import { firePdfBlocksSchema, firePdfPagesSchema } from "./fire-pdf/schema";
-import { buildFirePdfRequestMetadata } from "./fire-pdf/request-metadata";
+import {
+  buildFirePdfRequestMetadata,
+  type FirePdfSourceKind,
+} from "./fire-pdf/request-metadata";
 
 /**
  * Reconcile an existing page count with what fire-pdf reported.
@@ -49,6 +52,7 @@ export async function scrapePDFWithFirePDF(
   includePageMarkdown = false,
   includeBlocks = false,
   pageMarkers = false,
+  sourceKind: FirePdfSourceKind = "pdf",
 ): Promise<PDFProcessorResult> {
   const logger = meta.logger;
 
@@ -139,7 +143,7 @@ export async function scrapePDFWithFirePDF(
       ...(meta.internalOptions.crawlId && {
         crawl_id: meta.internalOptions.crawlId,
       }),
-      ...buildFirePdfRequestMetadata(meta),
+      ...buildFirePdfRequestMetadata(meta, sourceKind),
       pdf_sha256: pdfSha256,
       source: "firecrawl",
       zdr,

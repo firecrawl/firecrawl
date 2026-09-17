@@ -28,7 +28,8 @@ const redactPIIPdfPageCostBonus = 4;
 // scope — a scrape and its same-URL re-check share one fee, while a crawl of
 // N pages bills N scans (each page job is its own scope). Verdicts are never
 // reused across requests (no verdict cache — ZDR). Local-only decisions
-// (whitelist/blacklist/blocked-tld, mode off, provider failure) never bill.
+// (whitelist/blacklist/blocked-tld, modes off / manual-only, provider
+// failure) never bill.
 const threatScanCost = 2;
 
 /**

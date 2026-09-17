@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Response } from "express";
 import { randomUUID } from "node:crypto";
+import { v7 as uuidv7 } from "uuid";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
@@ -127,7 +128,7 @@ export async function providerScrapeController(
       flags: req.acuc.flags,
       calls: body.alexandria,
       requestId,
-      scrapeId: randomUUID(),
+      scrapeId: uuidv7(),
       timeoutMs: body.timeout,
       bypassBilling: body.__agentInterop?.shouldBill === false,
     });
@@ -153,6 +154,7 @@ export async function providerScrapeController(
       integration: body.integration ?? null,
       target_hint: `alexandria:${body.alexandria.map(call => `${call.provider}/${call.capability}`).join(",")}`,
       zeroDataRetention: false,
+      jobAccess: false,
     }).catch(error =>
       logger.warn("Provider request logging failed", {
         error,

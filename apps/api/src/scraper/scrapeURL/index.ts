@@ -41,6 +41,7 @@ import {
   DocumentFetchProxyError,
   RemoveFeatureError,
   SiteError,
+  SiteRestrictionError,
   UnsupportedFileError,
   SSLError,
   PDFInsufficientTimeError,
@@ -113,6 +114,15 @@ import {
   type ThreatDecision,
   type ThreatProtectionPolicy,
 } from "../../lib/threat-protection";
+import {
+  type ResolvedSafeMode,
+  resolveSafeMode,
+  applySafeMode,
+  stripCredentialHeaders,
+  stripUrlUserinfo,
+  SAFE_MODE_LOGIN_ACTIONS,
+} from "../../lib/safe-mode";
+import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 
@@ -160,10 +170,8 @@ export type Meta = {
   mock: MockState | null;
   /** Whether this scrape may OCR raster images: the request's parsers
    * include `image` (the default; a parse upload of an image always counts)
-   * and the team has the imageOcr flag with FirePDF configured. Lazy and
-   * memoized: the browser handoff, the image engine and the index only ask
-   * once a request actually looks like an image, so plain documents never
-   * pay for the team lookup. */
+   * and the deployment has image OCR switched on with FirePDF configured.
+   * Consulted by the browser handoff, the image engine and the index. */
   imageOcrEnabled: ImageOcrGate;
   pdfPrefetch:
     | {
@@ -336,9 +344,9 @@ function buildFeatureFlags(
     flags.add("pdf");
   } else if (imageExtensionFromUrlPath(lowerPath) !== null && imageOcrEnabled) {
     // Raster images are OCR'd through FirePDF when the request's parsers
-    // include `image` (the default) and the team has the imageOcr flag (see
-    // engines/image). Everyone else stays on the ordinary waterfall and
-    // fails as an unsupported file, exactly as before.
+    // include `image` (the default) and the deployment has image OCR on (see
+    // engines/image and lib/image-ocr-gate). Everything else stays on the
+    // ordinary waterfall and fails as an unsupported file, exactly as before.
     flags.add("image");
   }
 
@@ -528,16 +536,14 @@ async function buildMetaObject(
   const effectiveOptions = applyScrapeOptionsDefaults(options);
   // Image OCR follows the parsers option: on by default, off when the caller
   // sends a list without `image`. A parse upload of an image is a request to
-  // parse that file, so it counts regardless. The team flag is checked lazily
+  // parse that file, so it counts regardless. The deployment switch sits
   // behind this.
   const imageOcrEnabled = imageOcrGate(
-    internalOptions.teamId,
-    internalOptions.teamFlags,
     shouldParseImages(effectiveOptions.parsers) ||
       internalOptions.uploadedFile?.kind === "image",
   );
   // Only an image-extension URL needs the answer up front; everything else
-  // resolves lazily on an image handoff, if one ever happens.
+  // consults the gate on an image handoff, if one ever happens.
   const imageOcrForUrl =
     imageExtensionFromUrlPath(new URL(url).pathname) !== null &&
     (await imageOcrEnabled());
@@ -622,6 +628,12 @@ export type InternalOptions = {
    * redirect destinations are re-checked. Absent => zero enforcement overhead.
    */
   threatProtection?: ThreatProtectionPolicy;
+
+  safeMode?: ResolvedSafeMode;
+  /** Set when a request legitimately opted out of Safe Mode at the controller
+   * (allowBypassSafeMode + safeMode:false). Tells the worker backstop NOT to
+   * re-resolve safe mode from teamFlags — otherwise the bypass would be undone. */
+  safeModeBypassed?: boolean;
 
   v1Agent?: ScrapeOptionsV1["agent"];
   v1JSONAgent?: Exclude<ScrapeOptionsV1["jsonOptions"], undefined>["agent"];
@@ -991,6 +1003,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof AddFeatureError ||
               error.error instanceof RemoveFeatureError ||
               error.error instanceof SiteError ||
+              error.error instanceof SiteRestrictionError ||
               error.error instanceof SSLError ||
               error.error instanceof DNSResolutionError ||
               error.error instanceof ActionError ||
@@ -1231,6 +1244,66 @@ export async function scrapeURL(
   return withSpan(
     "scrape.pipeline",
     async span => {
+      // Safe Mode: the universal enforcement choke point. The controller
+      // pre-resolves safe mode for a single scrape, but jobs that carry only
+      // team flags (crawl children, search / extract URLs, allowlisted single
+      // scrapes) resolve here, per-URL, so the allowlist applies to each
+      // discovered URL. Runs before buildMetaObject so forced lockdown reaches
+      // feature-flag/engine selection, and covers every endpoint that stamps
+      // teamFlags onto its job payload.
+      if (
+        !internalOptions.safeMode &&
+        !internalOptions.safeModeBypassed &&
+        internalOptions.teamFlags
+      ) {
+        internalOptions.safeMode = resolveSafeMode(
+          internalOptions.teamFlags,
+          undefined,
+          url,
+        ).safeMode;
+      }
+      if (internalOptions.safeMode) {
+        applySafeMode(internalOptions.safeMode, options);
+        // Auth-path enforcement for every engine (not just fire-engine) and for
+        // inherited options a request-time gate never saw (crawl children etc.).
+        if (internalOptions.safeMode.disableAuthentication) {
+          options.headers = stripCredentialHeaders(options.headers);
+          if (options.actions) {
+            options.actions = options.actions.filter(
+              a => !SAFE_MODE_LOGIN_ACTIONS.includes(a.type),
+            );
+          }
+          options.profile = undefined;
+          // Basic Auth embedded in the URL (user:pass@host) is another way to
+          // authenticate; strip the userinfo so no engine can use it, and from
+          // the preserved source URL so it isn't returned/persisted in metadata.
+          url = stripUrlUserinfo(url);
+          if (internalOptions.unnormalizedSourceURL) {
+            internalOptions.unnormalizedSourceURL = stripUrlUserinfo(
+              internalOptions.unnormalizedSourceURL,
+            );
+          }
+        }
+        if (
+          internalOptions.safeMode.domainControls &&
+          !internalOptions.threatProtection
+        ) {
+          const tp = await resolveThreatProtection({
+            teamId: internalOptions.teamId,
+            orgId: internalOptions.orgId,
+            flags: internalOptions.teamFlags ?? {},
+            force: true,
+          });
+          // Fail closed: domainControls must never silently disable itself.
+          if (tp.error) {
+            throw new Error(
+              `Safe Mode domain controls could not be resolved: ${tp.error}`,
+            );
+          }
+          internalOptions.threatProtection = tp.policy ?? undefined;
+        }
+      }
+
       const meta = await buildMetaObject(
         id,
         url,
@@ -1735,6 +1808,11 @@ export async function scrapeURL(
         } else if (error instanceof SiteError) {
           errorType = "SiteError";
           meta.logger.warn("scrapeURL: Site failed to load in browser", {
+            error,
+          });
+        } else if (error instanceof SiteRestrictionError) {
+          errorType = "SiteRestrictionError";
+          meta.logger.warn("scrapeURL: Site restriction returned (Safe Mode)", {
             error,
           });
         } else if (error instanceof SSLError) {

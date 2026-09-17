@@ -1,16 +1,97 @@
 import "dotenv/config";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
 import { getZdrCleanupBatch } from "../db/rpc";
 import { removeJobFromGCS } from "./gcs-jobs";
 import { logger as _logger } from "./logger";
 import { config } from "../config";
+import { setSpanAttributes, withSpan } from "./otel-tracer";
 
 async function sendHeartbeat() {
   if (config.ZDRCLEANER_HEARTBEAT_URL) {
     fetch(config.ZDRCLEANER_HEARTBEAT_URL).catch(() => {});
   }
+}
+
+async function removeBlobs(blobIds: string[]): Promise<unknown[]> {
+  const logger = _logger.child({
+    module: "zdrcleaner",
+    method: "removeBlobs",
+    zeroDataRetention: true,
+  });
+  const results = await Promise.allSettled(
+    blobIds.map(blobId => removeJobFromGCS(blobId, logger)),
+  );
+  return results.flatMap(result =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+}
+
+async function getRequestBlobIds(requestId: string): Promise<string[]> {
+  return withSpan("zdr.postgres.read_blobs", async span => {
+    setSpanAttributes(span, {
+      "db.system": "postgresql",
+      "db.operation.name": "select",
+      "zdr.request_id": requestId,
+    });
+    const [scrapes, searches, extracts, maps, llmstxts, deepResearches] =
+      await Promise.all([
+        db
+          .select({ id: schema.scrapes.id })
+          .from(schema.scrapes)
+          .where(eq(schema.scrapes.request_id, requestId)),
+        db
+          .select({ id: schema.searches.id })
+          .from(schema.searches)
+          .where(eq(schema.searches.request_id, requestId)),
+        db
+          .select({ id: schema.extracts.id })
+          .from(schema.extracts)
+          .where(eq(schema.extracts.request_id, requestId)),
+        db
+          .select({ id: schema.maps.id })
+          .from(schema.maps)
+          .where(eq(schema.maps.request_id, requestId)),
+        db
+          .select({ id: schema.llmstxts.id })
+          .from(schema.llmstxts)
+          .where(eq(schema.llmstxts.request_id, requestId)),
+        db
+          .select({ id: schema.deep_researches.id })
+          .from(schema.deep_researches)
+          .where(eq(schema.deep_researches.request_id, requestId)),
+      ]);
+
+    const blobIds = [
+      ...scrapes,
+      ...searches,
+      ...extracts,
+      ...maps,
+      ...llmstxts,
+      ...deepResearches,
+    ].map(row => row.id);
+    setSpanAttributes(span, {
+      "db.response.returned_rows": blobIds.length,
+    });
+    return blobIds;
+  });
+}
+
+export async function cleanZdrRequest(requestId: string): Promise<void> {
+  await withSpan("zdr.cleanup.request", async span => {
+    setSpanAttributes(span, { "zdr.request_id": requestId });
+    const blobIds = await getRequestBlobIds(requestId);
+    setSpanAttributes(span, { "zdr.blob_count": blobIds.length });
+    const errors = await removeBlobs(blobIds);
+    if (errors.length > 0) {
+      throw new AggregateError(
+        errors,
+        `Failed to remove ${errors.length} blobs for ZDR request ${requestId}`,
+      );
+    }
+    setSpanAttributes(span, { "zdr.cleanup.outcome": "completed" });
+  });
 }
 
 export async function zdrcleaner() {
@@ -38,43 +119,17 @@ export async function zdrcleaner() {
       return;
     }
 
-    const requestBlobs = new Map<string, Set<string>>();
-    const successfulBlobs = new Set<string>();
-
-    // Track all blobs for each request before processing
-    for (const row of rows) {
-      requestBlobs.set(row.request_id, new Set(row.ids));
-    }
-
-    // Process in batches of 50 for GCS cleanup
     const deleteErrors: any[] = [];
+    const fullyCleanedRequests: string[] = [];
     for (let j = 0; j < Math.ceil(rows.length / 50); j++) {
       const batch = rows.slice(j * 50, (j + 1) * 50);
-      await Promise.allSettled(
-        batch
-          .flatMap(x => x.ids)
-          .map(async blob_id => {
-            try {
-              await removeJobFromGCS(
-                blob_id,
-                logger.child({ zeroDataRetention: true }),
-              );
-              successfulBlobs.add(blob_id);
-            } catch (error) {
-              deleteErrors.push(error);
-            }
-          }),
+      await Promise.all(
+        batch.map(async row => {
+          const errors = await removeBlobs(row.ids);
+          if (errors.length === 0) fullyCleanedRequests.push(row.request_id);
+          else deleteErrors.push(...errors);
+        }),
       );
-    }
-
-    const fullyCleanedRequests: string[] = [];
-    for (const [requestId, blobIds] of requestBlobs) {
-      const allBlobsCleaned = [...blobIds].every(blobId =>
-        successfulBlobs.has(blobId),
-      );
-      if (allBlobsCleaned) {
-        fullyCleanedRequests.push(requestId);
-      }
     }
 
     const updateErrors: any[] = [];

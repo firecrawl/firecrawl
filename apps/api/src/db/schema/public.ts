@@ -63,19 +63,6 @@ export const agent_session_settings = pgTable("agent_session_settings", {
   share_id: uuid("share_id"),
 });
 
-export const agents = pgTable("agents", {
-  id: uuid("id").notNull(),
-  request_id: uuid("request_id").notNull(),
-  team_id: uuid("team_id").notNull(),
-  options: jsonb("options"),
-  created_at: ts("created_at").notNull().defaultNow(),
-  time_taken: num("time_taken").notNull(),
-  credits_cost: integer("credits_cost").notNull(),
-  cost_tracking: jsonb("cost_tracking"),
-  is_successful: boolean("is_successful").notNull(),
-  error: text("error"),
-});
-
 export const api_keys = pgTable(
   "api_keys",
   {

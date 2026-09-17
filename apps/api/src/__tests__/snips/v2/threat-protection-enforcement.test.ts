@@ -9,7 +9,15 @@ import {
   TEST_SUITE_WEBSITE,
   scrapeTimeout,
 } from "../lib";
-import { crawl, crawlStart, map, scrape, scrapeRaw, search } from "./lib";
+import {
+  crawl,
+  crawlStart,
+  creditUsage,
+  map,
+  scrape,
+  scrapeRaw,
+  search,
+} from "./lib";
 import {
   createWebRiskMockCounters,
   createWebRiskMockHandler,
@@ -46,6 +54,11 @@ const RISKY_DOMAIN = "threat-risky.example.com";
 
 // The scrape target for happy-path tests.
 const CLEAN_URL = TEST_SUITE_WEBSITE;
+
+const sleep = (ms: number) => new Promise(x => setTimeout(() => x(true), ms));
+// Scrape credits are billed in batches; wait for the batch to land before
+// reading a credit delta.
+const sleepForBatchBilling = () => sleep(40000);
 const CLEAN_DOMAIN = new URL(TEST_SUITE_WEBSITE).hostname;
 
 // A stable cross-hostname redirect: google.com 301s to www.google.com.
@@ -427,6 +440,70 @@ describeIf(TEST_PRODUCTION)("Threat protection enforcement", () => {
     );
   });
 
+  describe("manual-only mode (lists only, no scans)", () => {
+    let identity: Identity;
+
+    beforeAll(async () => {
+      identity = await idmux({
+        name: "threat-protection-enforcement/manual-only",
+        flags: { threatProtection: "allowed" },
+        credits: 1_000_000,
+      });
+    });
+
+    it(
+      "blocks a blacklisted domain",
+      async () => {
+        const res = await scrapeRaw(
+          {
+            url: `https://${BLACKLISTED_DOMAIN}/`,
+            threatProtection: {
+              mode: "manual-only",
+              blacklist: [BLACKLISTED_DOMAIN],
+            },
+          },
+          identity,
+        );
+        expect(res.statusCode).toBe(403);
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe("unsafe_domain_blocked");
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "allows an unlisted URL without a scan fee",
+      async () => {
+        // A fresh team's credit grant can land a moment after idmux returns;
+        // poll until the baseline reflects the full grant so the delta is exact.
+        let before = 0;
+        for (let i = 0; i < 30 && before < 100_000; i++) {
+          before = (await creditUsage(identity)).remainingCredits;
+          if (before < 100_000) await sleep(1000);
+        }
+        expect(before).toBeGreaterThanOrEqual(100_000);
+
+        const res = await scrapeRaw(
+          {
+            url: CLEAN_URL,
+            threatProtection: {
+              mode: "manual-only",
+              blacklist: [BLACKLISTED_DOMAIN],
+            },
+          },
+          identity,
+        );
+        expect(res.statusCode).toBe(200);
+
+        await sleepForBatchBilling();
+        const after = (await creditUsage(identity)).remainingCredits;
+        // One credit for the scrape itself; no +2 threat-scan surcharge.
+        expect(before - after).toBe(1);
+      },
+      scrapeTimeout + 90000,
+    );
+  });
+
   describe("provider verdicts (mock Google Web Risk)", () => {
     let identity: Identity;
 
@@ -533,6 +610,23 @@ describeIf(TEST_PRODUCTION)("Threat protection enforcement", () => {
           {
             url: CLEAN_URL,
             threatProtection: { mode: "off" },
+          } as any,
+          identity,
+        );
+        expect(res.statusCode).toBe(403);
+        expect(res.body.success).toBe(false);
+        expect(res.body.error).toContain("cannot be disabled");
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "rejects a per-request override that lowers the mode to manual-only",
+      async () => {
+        const res = await scrapeRaw(
+          {
+            url: CLEAN_URL,
+            threatProtection: { mode: "manual-only" },
           } as any,
           identity,
         );
