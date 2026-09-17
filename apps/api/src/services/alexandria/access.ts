@@ -4,6 +4,7 @@ import type { TeamFlags } from "../../controllers/v2/types";
 import { getThirdPartyDataTermsRequiredResponse } from "../../lib/exchange";
 import { exchangeRequest } from "./client";
 import { refusal, type ExchangeResponse, type ProviderCall } from "./contracts";
+import { acceptedProviders, type LedgerAcceptance } from "./terms";
 
 const requirementsSchema = z.object({
   providers: z.array(
@@ -11,7 +12,11 @@ const requirementsSchema = z.object({
       provider: z.string(),
       required: z.boolean(),
       terms: z
-        .object({ key: z.string(), version: z.string() })
+        .object({
+          key: z.string(),
+          version: z.string(),
+          digest: z.string().optional(),
+        })
         .passthrough()
         .nullable(),
     }),
@@ -22,6 +27,7 @@ export async function authorizeProviders(
   teamId: string,
   calls: ProviderCall[],
   flags: TeamFlags | null | undefined,
+  orgId: string | null = null,
 ): Promise<ExchangeResponse | undefined> {
   const providers = [...new Set(calls.map(call => call.provider))];
   const response = await exchangeRequest({
@@ -52,6 +58,7 @@ export async function authorizeProviders(
     );
   if (config.USE_DB_AUTHENTICATION !== true) return undefined;
 
+  let ledger: Map<string, LedgerAcceptance> | undefined;
   for (const item of parsed.data.providers) {
     const access = flags?.organizationDataSourceAccess?.[item.provider];
     if (access && access.status !== "enabled")
@@ -59,16 +66,26 @@ export async function authorizeProviders(
         403,
         `Access to ${item.provider} is disabled for this organization.`,
       );
+    if (!item.required || !item.terms) continue;
     if (
-      item.required &&
-      item.terms &&
-      (access?.termsKey !== item.terms.key ||
-        access?.termsVersion !== item.terms.version)
+      access?.termsKey === item.terms.key &&
+      access?.termsVersion === item.terms.version
     )
-      return {
-        status: 403,
-        body: getThirdPartyDataTermsRequiredResponse(item.terms),
-      };
+      continue;
+    if (orgId !== null) {
+      ledger ??= await acceptedProviders(teamId, orgId);
+      const accepted = ledger.get(item.provider);
+      if (
+        item.terms.digest !== undefined &&
+        accepted?.version === item.terms.version &&
+        accepted.textHash === item.terms.digest
+      )
+        continue;
+    }
+    return {
+      status: 403,
+      body: getThirdPartyDataTermsRequiredResponse(item.terms),
+    };
   }
   return undefined;
 }
