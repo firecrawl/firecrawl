@@ -19,12 +19,14 @@ type Provider =
   | "fireworks"
   | "deepinfra"
   | "vertex";
-const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
+const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : config.OPENROUTER_API_KEY ? "openrouter" : "openai";
 
 const providerList: Record<Provider, any> = {
   openai: createOpenAI({
     apiKey: config.OPENAI_API_KEY,
     baseURL: config.OPENAI_BASE_URL,
+    // Use chat completions API for non-OpenAI base URLs (e.g. OpenRouter, local proxies)
+    ...(config.OPENAI_BASE_URL ? { compatibility: "compatible" } : {}),
   }), //OPENAI_API_KEY
   ollama: createOllama({
     baseURL: config.OLLAMA_BASE_URL,
