@@ -31,8 +31,11 @@ export const getTypography = (): Typography => {
 
   // Computed font-weight resolves to a number string, but fall back to the
   // same defaults the sizes above use when a document has no usable style.
+  // parseFloat, not parseInt: a variable font may compute to a fractional
+  // weight such as "412.5", and truncating it would report a weight the page
+  // does not use.
   const pickFontWeight = (el: Element, fallback: number): number =>
-    parseInt(getComputedStyleCached(el).fontWeight, 10) || fallback;
+    parseFloat(getComputedStyleCached(el).fontWeight) || fallback;
 
   // Fallback to documentElement when body is null (e.g. incomplete or non-HTML doc)
   const bodyOrRoot =
