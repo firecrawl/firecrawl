@@ -12,6 +12,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
+  keylessTeamUuid,
   logKeylessCreditUsage,
   reserveKeylessCredits,
 } from "../../lib/keyless";
@@ -125,6 +126,8 @@ async function searchControllerInner(
   let zeroDataRetention = teamForcedKind !== null;
   let reservedKeylessCredits = 0;
   let reconciledKeylessCredits = false;
+  let logRequestPromise: Promise<void> | undefined;
+  let searchInProgress = false;
 
   try {
     const rawOrigin =
@@ -266,7 +269,6 @@ async function searchControllerInner(
     // Postgres pool and can take seconds under pool pressure. We only need it
     // committed before the child-row writes (logSearch et al. below) to keep
     // the request_id FK ordering — same pattern as the scrape controllers.
-    let logRequestPromise: Promise<void> | undefined;
     if (!agentRequestId) {
       logRequestPromise = logRequest({
         id: jobId,
@@ -309,6 +311,7 @@ async function searchControllerInner(
       reservedKeylessCredits = projectedKeylessCredits;
     }
 
+    searchInProgress = true;
     const result = await executeSearch(
       {
         query: req.body.query,
@@ -348,6 +351,8 @@ async function searchControllerInner(
       },
       logger,
     );
+
+    searchInProgress = false;
 
     // Bill team for search credits only (scrape jobs bill themselves)
     if (!isSearchPreview && shouldBill) {
@@ -462,7 +467,6 @@ async function searchControllerInner(
       req,
       "search",
       jobId,
-      true,
     );
     return res.status(200).json({
       success: true,
@@ -491,11 +495,45 @@ async function searchControllerInner(
       });
     }
 
+    let feedbackMetadata: Record<string, unknown> = {};
+    if (searchInProgress && keylessTeamUuid(req.auth.team_id)) {
+      try {
+        await logRequestPromise;
+        await logSearch(
+          {
+            id: jobId,
+            request_id: req.body.__agentInterop?.requestId ?? jobId,
+            query: req.body.query,
+            is_successful: false,
+            error: error instanceof Error ? error.message : String(error),
+            results: null,
+            num_results: 0,
+            time_taken: (Date.now() - middlewareStartTime) / 1000,
+            team_id: req.auth.team_id,
+            options: req.body,
+            credits_cost: 0,
+            zeroDataRetention,
+          },
+          true,
+        );
+        feedbackMetadata = keylessFeedbackMetadata(req, "search", jobId);
+      } catch (logError) {
+        logger.warn("Failed to log keyless search failure", {
+          error: logError,
+          jobId,
+        });
+      }
+    }
+    const feedbackReference = Object.keys(feedbackMetadata).length
+      ? { metadata: feedbackMetadata }
+      : {};
+
     if (error instanceof ScrapeJobTimeoutError) {
       return res.status(408).json({
         success: false,
         code: error.code,
         error: error.message,
+        ...feedbackReference,
       });
     }
 
@@ -508,6 +546,7 @@ async function searchControllerInner(
     return res.status(500).json({
       success: false,
       error: error.message,
+      ...feedbackReference,
     });
   }
 }

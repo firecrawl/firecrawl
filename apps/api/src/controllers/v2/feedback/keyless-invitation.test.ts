@@ -1,15 +1,8 @@
 import { EventEmitter } from "node:events";
 
 const mocks = vi.hoisted(() => ({
-  eval: vi.fn(),
-  attempts: vi.fn(),
-  today: vi.fn(),
   info: vi.fn(),
   warn: vi.fn(),
-}));
-vi.mock("./keyless-store", () => ({ hasKeylessFeedbackToday: mocks.today }));
-vi.mock("../../../services/rate-limiter", () => ({
-  redisRateLimitClient: { get: mocks.attempts, eval: mocks.eval },
 }));
 vi.mock("../../../lib/logger", () => ({
   logger: { info: mocks.info, warn: mocks.warn },
@@ -21,7 +14,7 @@ vi.mock("../../../config", () => ({
   config: {
     KEYLESS_FEEDBACK_ENABLED: true,
     USE_DB_AUTHENTICATION: true,
-    KEYLESS_FEEDBACK_INVITATION_EVERY: 1,
+    KEYLESS_FEEDBACK_DAILY_LIMIT: 1,
   },
 }));
 import { config } from "../../../config";
@@ -32,10 +25,7 @@ describe("keyless feedback invitations", () => {
     vi.resetAllMocks();
     config.KEYLESS_FEEDBACK_ENABLED = true;
     config.USE_DB_AUTHENTICATION = true;
-    config.KEYLESS_FEEDBACK_INVITATION_EVERY = 1;
-    mocks.eval.mockResolvedValue(1);
-    mocks.attempts.mockResolvedValue(null);
-    mocks.today.mockResolvedValue(false);
+    config.KEYLESS_FEEDBACK_DAILY_LIMIT = 1;
   });
   afterEach(() => vi.useRealTimers());
   const prepare = (res = new EventEmitter(), overrides = {}) =>
@@ -48,7 +38,6 @@ describe("keyless feedback invitations", () => {
       } as any,
       "scrape",
       "job",
-      true,
     );
 
   it("records issuance once, only after the response finishes", async () => {
@@ -79,7 +68,6 @@ describe("keyless feedback invitations", () => {
     async key => {
       config[key] = false;
       expect(await prepare()).toEqual({ jobId: "job" });
-      expect(mocks.eval).not.toHaveBeenCalled();
     },
   );
 
@@ -87,7 +75,6 @@ describe("keyless feedback invitations", () => {
     expect(
       await prepare(undefined, { auth: { team_id: "authenticated" } }),
     ).toEqual({});
-    expect(mocks.eval).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -102,7 +89,6 @@ describe("keyless feedback invitations", () => {
     "preserves the reference without inviting restricted jobs: %j",
     async overrides => {
       expect(await prepare(undefined, overrides)).toEqual({ jobId: "job" });
-      expect(mocks.eval).not.toHaveBeenCalled();
     },
   );
 
@@ -115,35 +101,30 @@ describe("keyless feedback invitations", () => {
         } as any,
         "search",
         "job",
-        true,
       ),
     ).toEqual({ jobId: "job" });
-    expect(mocks.eval).not.toHaveBeenCalled();
   });
 
-  it("shares invitation cadence across categories and clients", async () => {
-    config.KEYLESS_FEEDBACK_INVITATION_EVERY = 3;
-    const counts = new Map<string, number>();
-    mocks.eval.mockImplementation(async (_script, _keys, key: string) => {
-      const count = (counts.get(key) ?? 0) + 1;
-      counts.set(key, count);
-      return count;
-    });
+  it("includes the contract on every eligible response across endpoints and clients", async () => {
+    config.KEYLESS_FEEDBACK_DAILY_LIMIT = 3;
     const endpoints = ["search", "scrape", "parse"] as const;
     for (let index = 0; index < 6; index++) {
-      const metadata = await keylessFeedbackMetadata(
+      const metadata = keylessFeedbackMetadata(
         {
           auth: { team_id: "fixture" },
           body: { origin: ["api", "cli", "mcp"][index % 3] },
         } as any,
         endpoints[index % 3],
         `job-${index}`,
-        true,
       );
-      expect(metadata.jobId).toBe(`job-${index}`);
-      expect(Boolean(metadata.feedback)).toBe((index + 1) % 3 === 0);
+      expect(metadata).toMatchObject({
+        jobId: `job-${index}`,
+        feedback: {
+          docs: "https://docs.firecrawl.dev/api-reference/endpoint/feedback",
+          message: expect.stringContaining("3 accepted submissions"),
+        },
+      });
     }
-    expect(counts.size).toBe(1);
   });
 
   it("does not let caller headers suppress keyless invitations", async () => {
@@ -154,38 +135,6 @@ describe("keyless feedback invitations", () => {
         })
       ).feedback,
     ).toBeDefined();
-  });
-
-  it("suppresses invitations after acceptance or excessive attempts", async () => {
-    mocks.today.mockResolvedValueOnce(true);
-    expect(await prepare()).toEqual({ jobId: "job" });
-    mocks.attempts.mockResolvedValueOnce("10");
-    expect(await prepare()).toEqual({ jobId: "job" });
-  });
-
-  it("preserves the reference when invitation eligibility fails", async () => {
-    mocks.today.mockRejectedValueOnce(new Error("database unavailable"));
-    expect(await prepare()).toEqual({ jobId: "job" });
-    expect(mocks.info).not.toHaveBeenCalled();
-  });
-
-  it("does not record an invitation after a timed-out eligibility check", async () => {
-    vi.useFakeTimers();
-    let release!: (value: boolean) => void;
-    mocks.today.mockImplementationOnce(
-      () =>
-        new Promise(resolve => {
-          release = resolve;
-        }),
-    );
-    const response = new EventEmitter();
-    const pending = prepare(response);
-    await vi.advanceTimersByTimeAsync(251);
-    expect(await pending).toEqual({ jobId: "job" });
-    response.emit("finish");
-    release(false);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(mocks.info).not.toHaveBeenCalled();
   });
 
   it("does not inspect uploaded content when creating invitations", async () => {
@@ -200,7 +149,6 @@ describe("keyless feedback invitations", () => {
       } as any,
       "parse",
       "job",
-      true,
     );
     expect(metadata.feedback).toBeDefined();
   });

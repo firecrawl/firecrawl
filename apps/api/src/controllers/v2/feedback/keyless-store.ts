@@ -1,4 +1,5 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { config } from "../../../config";
+import { and, count, eq, gte, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import { db } from "../../../db/connection";
 import { search_feedback } from "../../../db/schema";
@@ -7,23 +8,13 @@ import type { FeedbackJobRow } from "./internal-types";
 
 const utcDayStart = sql`date_trunc('day', statement_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
 
-export async function hasKeylessFeedbackToday(identity: string) {
-  const [row] = await db
-    .select({ id: search_feedback.id })
-    .from(search_feedback)
-    .where(
-      and(
-        eq(search_feedback.team_id, identity),
-        gte(search_feedback.created_at, utcDayStart),
-      ),
-    )
-    .limit(1);
-  return !!row;
-}
-
 export async function insertKeylessFeedback(
   identity: string,
-  metadata: { schemaVersion: 1; answers: KeylessFeedbackRequest },
+  metadata: {
+    schemaVersion: 1;
+    answers: KeylessFeedbackRequest;
+    unverified?: true;
+  },
   job: FeedbackJobRow,
 ) {
   const { answers } = metadata;
@@ -53,16 +44,16 @@ export async function insertKeylessFeedback(
 
       // Use the database clock after acquiring the lock, including at UTC midnight.
       const [today] = await tx
-        .select({ id: search_feedback.id })
+        .select({ count: count() })
         .from(search_feedback)
         .where(
           and(
             eq(search_feedback.team_id, identity),
             gte(search_feedback.created_at, utcDayStart),
           ),
-        )
-        .limit(1);
-      if (today) return { success: false as const };
+        );
+      if (today.count >= config.KEYLESS_FEEDBACK_DAILY_LIMIT)
+        return { success: false as const };
 
       const feedbackId = uuidv7();
       await tx.insert(search_feedback).values({

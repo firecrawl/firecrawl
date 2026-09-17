@@ -159,7 +159,6 @@ suite("keyless feedback HTTP and persistence", () => {
       } as any,
       endpoint,
       jobId,
-      success,
     );
     expect(metadata.jobId).toBe(jobId);
     response.emit("finish");
@@ -179,8 +178,10 @@ suite("keyless feedback HTTP and persistence", () => {
     config.PUBSUB_CREDENTIALS = undefined;
     config.KEYLESS_FEEDBACK_ENABLED = true;
     config.FEEDBACK_REFUND_ENABLED = true;
-    config.KEYLESS_FEEDBACK_INVITATION_EVERY = 1;
+    config.KEYLESS_FEEDBACK_DAILY_LIMIT = 1;
     config.KEYLESS_PROXY_SECRET = "feedback-integration-secret";
+    config.KEYLESS_REQUESTS_PER_DAY = 100;
+    config.KEYLESS_CREDITS_PER_DAY = 100;
     identity = await import("../../../lib/keyless.js");
     ({ redisRateLimitClient: redis } = await import(
       "../../../services/rate-limiter.js"
@@ -256,7 +257,6 @@ suite("keyless feedback HTTP and persistence", () => {
         }) as any,
         req.params.endpoint as "search" | "scrape" | "parse",
         req.params.jobId,
-        true,
       );
       res.json({ success: true, metadata });
     });
@@ -270,7 +270,7 @@ suite("keyless feedback HTTP and persistence", () => {
     );
   });
   beforeEach(async () => {
-    config.KEYLESS_FEEDBACK_INVITATION_EVERY = 1;
+    config.KEYLESS_FEEDBACK_DAILY_LIMIT = 1;
     fixture.refund.mockReset().mockResolvedValue(undefined);
     fixture.results.clear();
     fixture.readResult
@@ -280,7 +280,6 @@ suite("keyless feedback HTTP and persistence", () => {
       "TRUNCATE search_feedback, searches, scrapes, parses, requests CASCADE",
     );
     await redis.del(`keyless_feedback_attempts:${team()}`);
-    await redis.del(`keyless_feedback_invitations:${team()}`);
   });
   afterAll(async () => {
     if (redis) {
@@ -289,7 +288,6 @@ suite("keyless feedback HTTP and persistence", () => {
         `keyless_credits:${ip}`,
         `keyless_feedback_attempts:${team()}`,
       );
-      await redis.del(`keyless_feedback_invitations:${team()}`);
     }
     if (fixture.pool) {
       await fixture.pool.query(`DROP SCHEMA ${schemaName} CASCADE`);
@@ -318,7 +316,7 @@ suite("keyless feedback HTTP and persistence", () => {
       expect(retry.body.feedbackId).toBe(accepted.body.feedbackId);
       for (const category of ["search", "scrape", "parse"] as const) {
         const next = await job(category);
-        expect(next.metadata.feedback).toBeUndefined();
+        expect(next.metadata.feedback).toBeDefined();
         const rejected = await submit({
           ...body(category, next.jobId),
           origin: "cli",
@@ -339,26 +337,32 @@ suite("keyless feedback HTTP and persistence", () => {
       expect(JSON.stringify(rows)).not.toContain("job-private-content");
     },
   );
-  it("accepts persisted jobs when invitation counters are missing", async () => {
+  it("accepts persisted jobs without a separate feedback context", async () => {
     const { jobId } = await job("scrape");
-    await redis.del(`keyless_feedback_invitations:${team()}`);
     expect((await submit(body("scrape", jobId))).status).toBe(200);
     expect(
       await redis.get(`keyless_feedback_context:${team()}:scrape:${jobId}`),
     ).toBeNull();
   });
 
-  describe.each(["search", "scrape", "parse"] as const)(
-    "%s feedback metadata size",
-    endpoint => {
+  describe.each([
+    ["search", false],
+    ["search", true],
+    ["scrape", false],
+    ["parse", false],
+  ] as const)(
+    "%s feedback metadata size (unverified: %s)",
+    (endpoint, unverified) => {
       it.each(["x", "é", '"'])(
         "enforces 8192 serialized UTF-8 bytes with %j text without consuming the daily allowance",
         async character => {
           const { jobId } = await job(endpoint);
+          if (unverified) fixture.results.delete(jobId);
           const base = body(endpoint, jobId);
           const characterBytes =
             Buffer.byteLength(JSON.stringify(character)) - 2;
           const metadata = {
+            ...(unverified ? { unverified: true } : {}),
             schemaVersion: 1,
             answers: {
               ...base,
@@ -451,7 +455,9 @@ suite("keyless feedback HTTP and persistence", () => {
       .send({});
     expect(response.body.metadata.jobId).toBe(jobId);
     expect(response.body.metadata.feedback).toBeDefined();
-    expect(await redis.get(`keyless_feedback_invitations:${team()}`)).toBe("1");
+    expect(
+      await redis.get(`keyless_feedback_invitations:${team()}`),
+    ).toBeNull();
   });
 
   it("suppresses invitations and rejects submissions when disabled", async () => {
@@ -462,7 +468,6 @@ suite("keyless feedback HTTP and persistence", () => {
         { auth: { team_id: identity.keylessTeamId(ip) }, body: {} } as any,
         "scrape",
         randomUUID(),
-        true,
       );
       expect(metadata).toEqual({ jobId: expect.any(String) });
       expect((await submit(body("scrape", jobId))).status).toBe(503);
@@ -472,41 +477,49 @@ suite("keyless feedback HTTP and persistence", () => {
     }
   });
 
-  it("serializes simultaneous submissions across categories and clients", async () => {
-    const endpoints = [
-      "search",
-      "scrape",
-      "parse",
-      "search",
-      "scrape",
-      "parse",
-    ] as const;
-    const jobs = await Promise.all(
-      endpoints.map(async endpoint => ({ endpoint, ...(await job(endpoint)) })),
-    );
-    const responses = await Promise.all(
-      jobs.map(({ endpoint, jobId }, index) =>
-        submit({
-          ...body(endpoint, jobId),
-          origin: ["api", "mcp", "cli"][index % 3],
-        }),
-      ),
-    );
-    expect(responses.filter(response => response.status === 200)).toHaveLength(
-      1,
-    );
-    expect(responses.filter(response => response.status === 429)).toHaveLength(
-      5,
-    );
-    expect(
-      responses
-        .filter(response => response.status === 429)
-        .every(
-          response => response.body.feedbackErrorCode === "DAILY_LIMIT_REACHED",
+  it.each([1, 3])(
+    "atomically enforces a daily limit of %i across categories and clients",
+    async limit => {
+      config.KEYLESS_FEEDBACK_DAILY_LIMIT = limit;
+      const endpoints = [
+        "search",
+        "scrape",
+        "parse",
+        "search",
+        "scrape",
+        "parse",
+      ] as const;
+      const jobs = await Promise.all(
+        endpoints.map(async endpoint => ({
+          endpoint,
+          ...(await job(endpoint)),
+        })),
+      );
+      const responses = await Promise.all(
+        jobs.map(({ endpoint, jobId }, index) =>
+          submit({
+            ...body(endpoint, jobId),
+            origin: ["api", "mcp", "cli"][index % 3],
+          }),
         ),
-    ).toBe(true);
-    expect(await fixture.db!.select().from(table)).toHaveLength(1);
-  });
+      );
+      expect(
+        responses.filter(response => response.status === 200),
+      ).toHaveLength(limit);
+      expect(
+        responses.filter(response => response.status === 429),
+      ).toHaveLength(6 - limit);
+      expect(
+        responses
+          .filter(response => response.status === 429)
+          .every(
+            response =>
+              response.body.feedbackErrorCode === "DAILY_LIMIT_REACHED",
+          ),
+      ).toBe(true);
+      expect(await fixture.db!.select().from(table)).toHaveLength(limit);
+    },
+  );
   it("rejects another identity, wrong category, nonexistent positions and malformed evidence without using the daily slot", async () => {
     const { jobId } = await job("search");
     expect((await submit(body("search", jobId), "203.0.113.72")).status).toBe(
@@ -543,74 +556,58 @@ suite("keyless feedback HTTP and persistence", () => {
     ).toBe(1);
     expect(await fixture.db!.select().from(table)).toHaveLength(1);
   });
-  it("shares invitation frequency across categories and clients and suppresses invitations after acceptance", async () => {
-    config.KEYLESS_FEEDBACK_INVITATION_EVERY = 3;
-    const endpoints = ["search", "scrape", "parse"] as const;
-    const clients = ["api", "mcp", "cli"] as const;
-    const jobs: { endpoint: (typeof endpoints)[number]; jobId: string }[] = [];
-    for (let index = 0; index < 6; index++) {
-      const endpoint = endpoints[index % endpoints.length];
-      const client = clients[index % clients.length];
-      const jobId = randomUUID();
-      const result = await request(app)
-        .post(`/test/jobs/${endpoint}/${jobId}`)
-        .send({ origin: client, integration: client });
-      expect(result.status).toBe(200);
-      expect(result.body.metadata.jobId).toBe(jobId);
-      if ((index + 1) % 3 === 0) {
-        expect(result.body.metadata.feedback).toMatchObject({
-          endpoint,
-          jobId,
-        });
-      } else {
-        expect(result.body.metadata.feedback).toBeUndefined();
-      }
-      jobs.push({ endpoint, jobId });
+  it("invites every eligible job even after the daily allowance is used", async () => {
+    for (const endpoint of ["search", "scrape", "parse"] as const) {
+      const { metadata } = await job(endpoint);
+      expect(metadata.feedback).toMatchObject({
+        endpoint,
+        docs: "https://docs.firecrawl.dev/api-reference/endpoint/feedback",
+      });
     }
-    expect(await redis.get(`keyless_feedback_invitations:${team()}`)).toBe("6");
-    const accepted = jobs[2];
-    expect((await submit(body(accepted.endpoint, accepted.jobId))).status).toBe(
-      200,
-    );
-    for (const endpoint of endpoints) {
-      expect((await job(endpoint)).metadata.feedback).toBeUndefined();
-    }
-    config.KEYLESS_FEEDBACK_INVITATION_EVERY = 0;
-    expect((await job("parse")).metadata.feedback).toBeUndefined();
-    expect(await redis.get(`keyless_feedback_invitations:${team()}`)).toBe("9");
-  });
-  it("bounds waiting when invitation counters are unavailable", async () => {
-    const evaluate = vi
-      .spyOn(redis, "eval")
-      .mockImplementationOnce(() => new Promise(() => {}));
-    const started = Date.now();
-    try {
-      expect(
-        await api.keylessFeedbackMetadata(
-          {
-            auth: { team_id: identity.keylessTeamId(ip) },
-            body: {},
-          } as any,
-          "parse",
-          randomUUID(),
-          true,
-        ),
-      ).toEqual({ jobId: expect.any(String) });
-      expect(Date.now() - started).toBeLessThan(1000);
-    } finally {
-      evaluate.mockRestore();
-    }
-  });
-  it("keeps failed scrape jobs eligible without inviting or advancing cadence", async () => {
-    const { jobId, metadata } = await job("scrape", false);
-    expect(metadata).toEqual({ jobId });
+    const { jobId } = await job("scrape");
+    expect((await submit(body("scrape", jobId))).status).toBe(200);
+    expect((await job("parse")).metadata.feedback).toBeDefined();
     expect(
       await redis.get(`keyless_feedback_invitations:${team()}`),
     ).toBeNull();
-    expect((await submit(body("scrape", jobId))).status).toBe(200);
-    const [row] = await fixture.db!.select().from(table);
-    expect(row.job_status).toBe("failed");
   });
+
+  it.each(["search", "scrape", "parse"] as const)(
+    "accepts failure observations only for failed %s jobs",
+    async endpoint => {
+      const observation = {
+        kind: "failure",
+        reason: "proxy_error",
+        basis: "output",
+        detail: "The operation returned an explicit proxy error.",
+      };
+      const completed = await job(endpoint);
+      expect(
+        (
+          await submit({
+            ...body(endpoint, completed.jobId),
+            observations: [observation],
+          })
+        ).status,
+      ).toBe(400);
+      const { jobId, metadata } = await job(endpoint, false);
+      expect(metadata.feedback).toBeDefined();
+      expect(
+        (
+          await submit({
+            ...body(endpoint, jobId),
+            observations: [observation],
+          })
+        ).status,
+      ).toBe(200);
+      const [row] = await fixture.db!.select().from(table);
+      expect(row.job_status).toBe("failed");
+      expect(row.metadata).toMatchObject({
+        answers: { observations: [observation] },
+      });
+      expect(fixture.readResult).not.toHaveBeenCalled();
+    },
+  );
 
   it("requires an explicit group for multi-source Search and persists valid reasons and verticals", async () => {
     const { jobId } = await job("search", true, ip, {
@@ -879,10 +876,10 @@ suite("keyless feedback HTTP and persistence", () => {
   });
 
   it("throttles malformed attempts separately and rejects blocked or invalid identities", async () => {
-    for (let i = 0; i < 10; i++) expect((await submit({})).status).toBe(400);
+    for (let i = 0; i < 30; i++) expect((await submit({})).status).toBe(400);
     expect((await submit({})).status).toBe(429);
     const invitation = await job("scrape");
-    expect(invitation.metadata.feedback).toBeUndefined();
+    expect(invitation.metadata.feedback).toBeDefined();
     expect((await submit({}, "203.0.113.99")).status).toBe(403);
     expect((await submit({}, "not-an-ip")).status).toBe(401);
     expect(await fixture.db!.select().from(table)).toHaveLength(0);
@@ -928,7 +925,6 @@ suite("keyless feedback HTTP and persistence", () => {
       expect(await fixture.db!.select().from(table)).toHaveLength(2);
     } finally {
       await redis.del(`keyless_feedback_attempts:${otherIdentity}`);
-      await redis.del(`keyless_feedback_invitations:${otherIdentity}`);
     }
   });
   it("rolls back failed persistence without burning the daily slot", async () => {
@@ -979,17 +975,31 @@ suite("keyless feedback HTTP and persistence", () => {
     const { jobId } = await job("scrape");
     expect((await submit(body("scrape", jobId))).status).toBe(200);
   });
-  it("keeps Search feedback retryable until its existing result is available", async () => {
-    const { jobId } = await job("search");
-    const results = fixture.results.get(jobId);
-    fixture.results.delete(jobId);
-    const unavailable = await submit(body("search", jobId));
-    expect(unavailable.status).toBe(503);
-    expect(unavailable.body.feedbackErrorCode).toBe("FEEDBACK_UNAVAILABLE");
-    expect(await fixture.db!.select().from(table)).toHaveLength(0);
-    fixture.results.set(jobId, results);
-    expect((await submit(body("search", jobId))).status).toBe(200);
-  });
+  it.each(["missing", "error", "malformed"])(
+    "accepts Search observations as unverified when its artifact is %s",
+    async state => {
+      const { jobId } = await job("search");
+      fixture.results.delete(jobId);
+      if (state === "error")
+        fixture.readResult.mockRejectedValue(new Error("Unavailable"));
+      if (state === "malformed") fixture.readResult.mockResolvedValue([]);
+      const invalid = body("search", jobId);
+      (invalid.observations[0] as any).source = "news";
+      expect((await submit(invalid)).status).toBe(400);
+      expect(fixture.readResult).not.toHaveBeenCalled();
+      const accepted = await submit(body("search", jobId));
+      expect(accepted.status).toBe(200);
+      const [row] = await fixture.db!.select().from(table);
+      expect(row.metadata).toMatchObject({
+        unverified: true,
+        answers: { jobId },
+      });
+      const retry = await submit(body("search", jobId));
+      expect(retry.body.feedbackId).toBe(accepted.body.feedbackId);
+      expect(retry.body.alreadySubmitted).toBe(true);
+      expect(await fixture.db!.select().from(table)).toHaveLength(1);
+    },
+  );
   it("does not load Search results for missing-content observations", async () => {
     const { jobId } = await job("search");
     fixture.results.delete(jobId);

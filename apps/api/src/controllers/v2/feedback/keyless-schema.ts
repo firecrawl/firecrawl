@@ -21,6 +21,10 @@ const observation = <T extends z.ZodRawShape>(shape: T) =>
         "Source comparisons require a reference and the correct content.",
     },
   );
+const failureObservation = observation({
+  kind: z.literal("failure"),
+  reason: z.enum(["timeout", "transport_error", "proxy_error", "other"]),
+});
 const common = {
   jobId: z.uuid(),
   rating: z.enum(["good", "partial", "bad"]),
@@ -50,6 +54,7 @@ const knownSources = z
   .max(20)
   .optional();
 const searchObservation = z.union([
+  failureObservation,
   observation({ ...searchResult, kind: z.literal("useful") }),
   observation({
     ...searchResult,
@@ -78,6 +83,7 @@ const scrapeFields = {
   location: z.string().trim().min(1).max(200).optional(),
 };
 const scrapeObservation = z.union([
+  failureObservation,
   observation({ ...scrapeFields, kind: z.literal("correct") }),
   observation({
     ...scrapeFields,
@@ -111,6 +117,7 @@ const scrapeObservation = z.union([
 ]);
 const parseFields = { format, page: z.number().int().positive().optional() };
 const parseObservation = z.union([
+  failureObservation,
   observation({
     ...parseFields,
     kind: z.enum([

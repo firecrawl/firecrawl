@@ -91,6 +91,8 @@ afterAll(() => {
 it.each(["scrape", "parse"] as const)(
   "logs a %s failure before worker execution after its parent request",
   async endpoint => {
+    config.KEYLESS_FEEDBACK_ENABLED = true;
+    config.USE_DB_AUTHENTICATION = true;
     let release!: () => void;
     mocks.requestLog.mockImplementationOnce(
       () =>
@@ -111,6 +113,10 @@ it.each(["scrape", "parse"] as const)(
     await promise;
     expect(res.status).toHaveBeenCalledWith(408);
     const jobId = res.json.mock.calls[0][0].metadata.jobId;
+    expect(res.json.mock.calls[0][0].metadata.feedback).toMatchObject({
+      endpoint,
+      jobId,
+    });
     expect(mocks.worker).not.toHaveBeenCalled();
     expect(mocks.scrapeLog).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
