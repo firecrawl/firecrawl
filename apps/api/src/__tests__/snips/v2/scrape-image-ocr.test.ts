@@ -1,7 +1,6 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
-  itIf,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { config } from "../../../config";
@@ -17,41 +16,22 @@ import {
 } from "./lib";
 
 let identity: Identity;
-let ungatedIdentity: Identity;
-let optedOutIdentity: Identity;
 
 beforeAll(async () => {
-  // Image OCR is decided per team by the imageOcr team flag: true forces it
-  // on, false forces it off, and a team without the flag follows the
-  // deployment's IMAGE_OCR_ENABLED default.
   identity = await idmux({
     name: "scrape-image-ocr",
     concurrency: 100,
     credits: 1000000,
-    flags: { imageOcr: true },
-  });
-  ungatedIdentity = await idmux({
-    name: "scrape-image-ocr-ungated",
-    concurrency: 100,
-    credits: 1000000,
-  });
-  optedOutIdentity = await idmux({
-    name: "scrape-image-ocr-opted-out",
-    concurrency: 100,
-    credits: 1000000,
-    flags: { imageOcr: false },
   });
 }, 10000 + scrapeTimeout);
 
-// Image OCR rides on fire-engine (the browser hands the image bytes to the
-// API) and FirePDF (which opens the bytes as a one-page scanned document).
-// The flagged identities only exist where idmux is reachable: the self-hosted
-// fallback identity carries no team flags.
-const IMAGE_OCR_AVAILABLE = !!config.FIRE_PDF_BASE_URL && !!config.IDMUX_URL;
-const SHOULD_RUN = !process.env.TEST_SUITE_SELF_HOSTED && IMAGE_OCR_AVAILABLE;
-// What a team without the flag gets. The harness shares its environment with
-// the API under test, so this mirrors the server's decision.
-const DEFAULT_ON = !!config.FIRE_PDF_BASE_URL && config.IMAGE_OCR_ENABLED;
+// Image OCR rides on FirePDF (which opens the bytes as a one-page scanned
+// document) behind the IMAGE_OCR_ENABLED switch; image URLs additionally
+// need fire-engine (the browser hands the image bytes to the API). The
+// harness shares its environment with the API under test, so these mirror
+// the server's decision.
+const IMAGE_OCR_ON = !!config.FIRE_PDF_BASE_URL && config.IMAGE_OCR_ENABLED;
+const SHOULD_RUN = !process.env.TEST_SUITE_SELF_HOSTED && IMAGE_OCR_ON;
 
 // 760x220 four-colour PNG rendered from three lines of text:
 //   "Firecrawl OCR fixture"
@@ -1005,7 +985,7 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
   );
 });
 
-describeIf(SHOULD_RUN)("Image OCR parse upload (fire-pdf dependent)", () => {
+describeIf(IMAGE_OCR_ON)("Image OCR parse upload (fire-pdf dependent)", () => {
   it(
     "OCRs an uploaded PNG",
     async () => {
@@ -1154,116 +1134,9 @@ describeIf(SHOULD_RUN)("Image OCR parse upload (fire-pdf dependent)", () => {
   );
 });
 
-describe("Image OCR for a team without the imageOcr flag", () => {
-  itIf(!DEFAULT_ON)(
-    "rejects image uploads as unsupported while the default is off",
-    async () => {
-      const failure = await parseWithFailure(
-        {
-          options: {
-            formats: ["markdown"],
-          },
-          file: {
-            content: Buffer.from(OCR_FIXTURE_PNG_BASE64, "base64"),
-            filename: "ocr-fixture.png",
-            contentType: "image/png",
-          },
-        },
-        ungatedIdentity,
-      );
-
-      expect(failure.code).toBe("UNSUPPORTED_FILE_TYPE");
-    },
-    scrapeTimeout,
-  );
-
-  itIf(DEFAULT_ON)(
-    "OCRs image uploads while the default is on",
-    async () => {
-      const result = await parse(
-        {
-          options: {
-            formats: ["markdown"],
-          },
-          file: {
-            content: Buffer.from(OCR_FIXTURE_PNG_BASE64, "base64"),
-            filename: "ocr-fixture.png",
-            contentType: "image/png",
-          },
-        },
-        ungatedIdentity,
-      );
-
-      expect(result.markdown).toMatch(/firecrawl/i);
-      expect(result.metadata.contentType).toBe("image/png");
-      expect(result.metadata.creditsUsed).toBe(1);
-    },
-    scrapeTimeout,
-  );
-
-  describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
-    "scrape (f-e dependent)",
-    () => {
-      itIf(!DEFAULT_ON)(
-        "keeps failing image URLs as unsupported files while the default is off",
-        async () => {
-          const response = await scrapeWithFailure(
-            {
-              url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
-              formats: ["markdown"],
-              parsers: ["pdf", "image"],
-            },
-            ungatedIdentity,
-          );
-
-          expect(response.error).toContain("cannot process");
-        },
-        scrapeTimeout,
-      );
-
-      itIf(DEFAULT_ON)(
-        "OCRs image URLs while the default is on",
-        async () => {
-          const response = await scrape(
-            {
-              url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
-              formats: ["markdown"],
-            },
-            ungatedIdentity,
-          );
-
-          expect(response.markdown).toMatch(/fire/i);
-          expect(response.markdown).toMatch(/crawl/i);
-          expect(response.metadata.contentType).toBe("image/png");
-          expect(response.metadata.statusCode).toBe(200);
-        },
-        scrapeTimeout,
-      );
-
-      itIf(DEFAULT_ON)(
-        "still honours a request that opts out of the image parser",
-        async () => {
-          const response = await scrapeWithFailure(
-            {
-              url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
-              formats: ["markdown"],
-              parsers: ["pdf"],
-            },
-            ungatedIdentity,
-          );
-
-          expect(response.error).toContain("cannot process");
-        },
-        scrapeTimeout,
-      );
-    },
-  );
-});
-
-// A team that opted out keeps the historical rejection whatever the
-// deployment default. The opted-out identity only exists where idmux is
-// reachable; the fallback identity has no flags and is covered above.
-describeIf(!!config.IDMUX_URL)("Image OCR for a team that opted out", () => {
+// With the switch off, images keep the historical unsupported-file rejection
+// even when the request asks for the image parser.
+describeIf(!IMAGE_OCR_ON)("Image OCR switched off", () => {
   it(
     "rejects image uploads as unsupported",
     async () => {
@@ -1278,7 +1151,7 @@ describeIf(!!config.IDMUX_URL)("Image OCR for a team that opted out", () => {
             contentType: "image/png",
           },
         },
-        optedOutIdentity,
+        identity,
       );
 
       expect(failure.code).toBe("UNSUPPORTED_FILE_TYPE");
@@ -1298,7 +1171,7 @@ describeIf(!!config.IDMUX_URL)("Image OCR for a team that opted out", () => {
               formats: ["markdown"],
               parsers: ["pdf", "image"],
             },
-            optedOutIdentity,
+            identity,
           );
 
           expect(response.error).toContain("cannot process");

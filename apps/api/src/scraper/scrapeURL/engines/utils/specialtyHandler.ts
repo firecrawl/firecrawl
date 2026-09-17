@@ -118,7 +118,7 @@ async function feResToImagePrefetch(
  * Sniffs a browser handoff for a raster image the image engine can OCR.
  * Returns the canonical content type from the magic bytes, or null when the
  * payload is missing, is not a supported format, or the request may not OCR
- * images (no image parser, or off for the team) — in which case the
+ * images (no image parser, or the switch is off) — in which case the
  * caller falls through to the historical unsupported-file rejection.
  */
 async function sniffImageHandoff(
@@ -129,8 +129,8 @@ async function sniffImageHandoff(
   if (content === undefined) return null;
   const contentType = sniffImageContentTypeFromBase64(content);
   if (contentType === null) return null;
-  // Only now consult the gate (image parser + team setting): this is the one
-  // lookup an image request may cost, and non-image responses never reach it.
+  // Only now consult the gate (image parser + deployment switch); non-image
+  // responses never reach it.
   return (await imageOcrEnabled()) ? contentType : null;
 }
 

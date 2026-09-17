@@ -293,7 +293,7 @@ export async function parseUploadUrlController(
       }
 
       const { filename, contentType, declaredSizeBytes } = parsed.data;
-      const imageOcrEnabled = isImageOcrEnabled(req.acuc?.flags);
+      const imageOcrEnabled = isImageOcrEnabled();
       if (!isSupportedParseUpload(filename, contentType, imageOcrEnabled)) {
         return res.status(400).json({
           success: false,
@@ -532,7 +532,7 @@ async function resolveUploadRef(
     if (!kind) {
       // The type was accepted when the upload URL was minted, so this only
       // happens when eligibility changed in between (e.g. image OCR was
-      // turned off for the team). Discard the upload instead of stranding it and
+      // switched off). Discard the upload instead of stranding it and
       // its quota reservation.
       localUploads.delete(payload.uploadId);
       await releaseRejectedUploadRef(payload);
@@ -648,10 +648,7 @@ export async function parseUploadRefPayloadMiddleware(
   }
 
   try {
-    const resolved = await resolveUploadRef(
-      payload,
-      isImageOcrEnabled(req.acuc?.flags),
-    );
+    const resolved = await resolveUploadRef(payload, isImageOcrEnabled());
     const { uploadRef: _uploadRef, ...options } = req.body;
     req.body = {
       ...options,

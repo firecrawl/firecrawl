@@ -23,19 +23,17 @@ beforeAll(async () => {
   });
 }, 10000 + scrapeTimeout);
 
-// Mirrors the API's decision for a team without the imageOcr flag (the
-// harness shares its environment with the server under test).
-const IMAGE_OCR_DEFAULT_ON =
-  !!config.FIRE_PDF_BASE_URL && config.IMAGE_OCR_ENABLED;
+// Mirrors the API's image OCR switch (the harness shares its environment
+// with the server under test).
+const IMAGE_OCR_ON = !!config.FIRE_PDF_BASE_URL && config.IMAGE_OCR_ENABLED;
 
 // The browser engine hands files it cannot render back to the API, which
 // routes them to a parser by content type — and servers mislabel. Static
 // hosts serve a `.jp2` file as image/jp2 whatever its bytes are, so
 // mislabeled-pdf.jp2 reproduces a PDF served with an image content type,
-// while tiny-image.jp2 is a real JPEG 2000 image. This identity has no
-// imageOcr team flag, so the real image follows the deployment default:
-// rejected while image OCR is off, an empty document (it is 16 px and has
-// no text) while it is on. The flagged behaviour lives in
+// while tiny-image.jp2 is a real JPEG 2000 image, which follows the image
+// OCR switch: rejected while it is off, an empty document (it is 16 px and
+// has no text) while it is on. The OCR behaviour itself lives in
 // scrape-image-ocr.test.ts. Only fire-engine performs the handoff, hence
 // the gate.
 describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
@@ -60,8 +58,8 @@ describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
       scrapeTimeout,
     );
 
-    itIf(!IMAGE_OCR_DEFAULT_ON)(
-      "keeps rejecting a real JPEG 2000 image while image OCR is off by default",
+    itIf(!IMAGE_OCR_ON)(
+      "keeps rejecting a real JPEG 2000 image while image OCR is off",
       async () => {
         const response = await scrapeWithFailure(
           {
@@ -77,8 +75,8 @@ describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
       scrapeTimeout,
     );
 
-    itIf(IMAGE_OCR_DEFAULT_ON)(
-      "OCRs a real JPEG 2000 image while image OCR is on by default",
+    itIf(IMAGE_OCR_ON)(
+      "OCRs a real JPEG 2000 image while image OCR is on",
       async () => {
         const response = await scrape(
           {
