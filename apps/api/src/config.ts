@@ -175,7 +175,7 @@ const configSchema = z.object({
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
   SEARCH_SERVICE_API_SECRET: z.string().optional(),
-  SEARCH_FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
+  SEARCH_FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(1800),
   SEARCH_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
     .number()
     .int()
