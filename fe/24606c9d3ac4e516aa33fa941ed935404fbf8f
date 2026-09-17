@@ -1,0 +1,26 @@
+apps/api/src/routes/shared.ts
+  s_8faf22d852794a::t_6615ed54f8aac5 306-308
+apps/api/src/controllers/__tests__/auth.test.ts
+  s_8faf22d852794a::t_2f6dfdbe0d27c1 723-756,758-759
+apps/api/src/controllers/auth.ts
+  s_8faf22d852794a::t_6615ed54f8aac5 956,970
+apps/api/src/__tests__/routes/auth-rate-limit.routes.test.ts
+  s_8faf22d852794a::t_2b9cbd211dd0a1 1-13,20-31,53-81,83-89
+  s_8faf22d852794a::t_038514aa24b96a 14-19,32-52,82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fe24606c9d3ac4e516aa33fa941ed935404fbf8f",
+  "prompts": {},
+  "sessions": {
+    "s_8faf22d852794a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a6b8-22f2-7903-9cd1-38d24672b2f2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
