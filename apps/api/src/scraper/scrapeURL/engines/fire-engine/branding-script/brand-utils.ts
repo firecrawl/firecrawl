@@ -12,6 +12,11 @@ export interface Typography {
     h2: string;
     body: string;
   };
+  weights: {
+    h1: number;
+    h2: number;
+    body: number;
+  };
 }
 
 export const getTypography = (): Typography => {
@@ -23,6 +28,11 @@ export const getTypography = (): Typography => {
         .filter(Boolean) || []
     );
   };
+
+  // Computed font-weight resolves to a number string, but fall back to the
+  // same defaults the sizes above use when a document has no usable style.
+  const pickFontWeight = (el: Element, fallback: number): number =>
+    parseInt(getComputedStyleCached(el).fontWeight, 10) || fallback;
 
   // Fallback to documentElement when body is null (e.g. incomplete or non-HTML doc)
   const bodyOrRoot =
@@ -42,6 +52,11 @@ export const getTypography = (): Typography => {
       h1: getComputedStyleCached(h1).fontSize || "32px",
       h2: getComputedStyleCached(h2).fontSize || "24px",
       body: getComputedStyleCached(p).fontSize || "16px",
+    },
+    weights: {
+      h1: pickFontWeight(h1, 700),
+      h2: pickFontWeight(h2, 700),
+      body: pickFontWeight(p, 400),
     },
   };
 };
