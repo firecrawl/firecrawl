@@ -386,6 +386,25 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
     expect(handoff.featureFlags).toEqual(["pdf"]);
   });
 
+  it("does not sniff a page that merely mentions the PDF magic", async () => {
+    const page =
+      "<!DOCTYPE html><html><body><p>%PDF-1.4 files start with %PDF</p></body></html>";
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "text/plain" },
+        inline(page),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(Buffer.from(page)),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
   it("only looks for the PDF header within the sniff window", async () => {
     // A page that merely mentions the header further down is still a page.
     const page =

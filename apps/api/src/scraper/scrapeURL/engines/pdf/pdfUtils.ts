@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { rename, unlink } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
@@ -5,7 +6,8 @@ import { pipeline } from "node:stream/promises";
 export {
   fromPdfHeader,
   isPdfBuffer,
-  pdfHeaderOffset,
+  pdfHeaderLineOffset,
+  PDF_HEADER_PROBE_BYTES,
   PDF_SNIFF_WINDOW,
 } from "../../../../lib/pdf-format";
 
@@ -22,7 +24,7 @@ export async function stripLeadingBytes(
   offset: number,
 ): Promise<void> {
   if (offset <= 0) return;
-  const tmpPath = `${filePath}.strip`;
+  const tmpPath = `${filePath}.${randomUUID()}.strip`;
   try {
     await pipeline(
       createReadStream(filePath, { start: offset }),

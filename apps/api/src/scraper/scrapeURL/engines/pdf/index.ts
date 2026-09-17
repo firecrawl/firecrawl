@@ -61,8 +61,8 @@ import { toPublicBlocks } from "./blocks";
 import {
   fromPdfHeader,
   isPdfBuffer,
-  pdfHeaderOffset,
-  PDF_SNIFF_WINDOW,
+  pdfHeaderLineOffset,
+  PDF_HEADER_PROBE_BYTES,
   stripLeadingBytes,
 } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
@@ -282,22 +282,24 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   try {
     // Validate the downloaded file is actually a PDF by checking magic bytes
-    const header = Buffer.alloc(PDF_SNIFF_WINDOW);
+    // (the probe carries a few bytes past the sniff window so a header line
+    // starting at its very end is still seen whole).
+    const header = Buffer.alloc(PDF_HEADER_PROBE_BYTES);
     const fh = await open(tempFilePath, "r");
     let headerBytesRead: number;
     try {
       ({ bytesRead: headerBytesRead } = await fh.read(
         header,
         0,
-        PDF_SNIFF_WINDOW,
+        PDF_HEADER_PROBE_BYTES,
         0,
       ));
     } finally {
       await fh.close();
     }
 
-    const headerOffset = pdfHeaderOffset(header.subarray(0, headerBytesRead));
-    if (headerOffset === -1) {
+    const headerWindow = header.subarray(0, headerBytesRead);
+    if (!isPdfBuffer(headerWindow)) {
       // (null prefetch = browser round trip ran but delivered no file —
       // still PDFAntibotError so the retry loop can give the browser
       // another shot, exactly like the no-prefetch case)
@@ -312,13 +314,16 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       }
     }
 
+    // Leading bytes before the header line — a multipart boundary and part
+    // headers a server echoed around the file, for instance. Repairing
+    // readers skip them, but the native extractor rejects the file and the
+    // cross-reference offsets are relative to the header, so drop them once
+    // here for every consumer downstream (native detection and extraction,
+    // FirePDF, the cache key). Only a real header line qualifies: bytes
+    // that merely mention the magic passed the gate above as they always
+    // have and are left exactly as served.
+    const headerOffset = pdfHeaderLineOffset(headerWindow);
     if (headerOffset > 0) {
-      // Leading bytes before the header — a multipart boundary and part
-      // headers a server echoed around the file, for instance. Repairing
-      // readers skip them, but the native extractor rejects the file and
-      // the cross-reference offsets are relative to the header, so drop
-      // them once here for every consumer downstream (native detection
-      // and extraction, FirePDF, the cache key).
       await stripLeadingBytes(tempFilePath, headerOffset);
       if (meta.pdfPrefetch?.gcsReference) {
         // The handoff object holds the wrapped bytes; a server-side copy

@@ -12,7 +12,10 @@ import {
   sniffImageContentTypeFromBase64,
 } from "../../../../lib/image-formats";
 import type { ImageOcrGate } from "../../../../lib/image-ocr-gate";
-import { isPdfBuffer, PDF_SNIFF_WINDOW } from "../../../../lib/pdf-format";
+import {
+  pdfHeaderLineOffset,
+  PDF_HEADER_PROBE_BYTES,
+} from "../../../../lib/pdf-format";
 
 async function feResToFilePrefetch(
   logger: Logger,
@@ -191,15 +194,23 @@ function matchHandoffSignature(
 
 /**
  * Sniffs the leading bytes of a body: a container signature at byte 0, or
- * else a PDF header anywhere in the first 1KB — the same window the pdf
- * engine accepts. Some servers wrap a PDF in leading bytes (a multipart
- * boundary and part headers echoed from an upload) that every PDF reader
- * skips; a byte-0 check would miss the file and let it render as a page of
- * garbage. Containers go first: an archive may store a PDF entry
- * uncompressed, with that file's header inside the window.
+ * else a PDF header line (`%PDF-1.x` starting a line) anywhere in the first
+ * 1KB — the same window the pdf engine accepts. Some servers wrap a PDF in
+ * leading bytes (a multipart boundary and part headers echoed from an
+ * upload) that every PDF reader skips; a byte-0 check would miss the file
+ * and let it render as a page of garbage. The header must start a line so a
+ * page that merely mentions the magic is not diverted — stricter than the
+ * pdf engine's own acceptance gate on purpose: a false positive here turns
+ * a page into a failed scrape, while that gate only sees bytes the URL,
+ * header or this sniff already vouched for. Containers go first: an
+ * archive may store a PDF entry uncompressed, with that file's header
+ * inside the window.
  */
 function sniffHead(head: Buffer): HandoffFileKind | null {
-  return matchHandoffSignature(head) ?? (isPdfBuffer(head) ? "pdf" : null);
+  return (
+    matchHandoffSignature(head) ??
+    (pdfHeaderLineOffset(head) !== -1 ? "pdf" : null)
+  );
 }
 
 /**
@@ -215,7 +226,7 @@ function sniffHandoffFileKind(
 ): HandoffFileKind | null {
   if (!feRes) return null;
   if (feRes.file?.content !== undefined) {
-    const chars = Math.ceil(PDF_SNIFF_WINDOW / 3) * 4;
+    const chars = Math.ceil(PDF_HEADER_PROBE_BYTES / 3) * 4;
     const kind = sniffHead(
       Buffer.from(feRes.file.content.slice(0, chars), "base64"),
     );
@@ -223,7 +234,7 @@ function sniffHandoffFileKind(
   }
   return sniffHead(
     Buffer.from(
-      Array.from(feRes.content.slice(0, PDF_SNIFF_WINDOW), c => {
+      Array.from(feRes.content.slice(0, PDF_HEADER_PROBE_BYTES), c => {
         const code = c.charCodeAt(0);
         return code > 0xff ? 0 : code;
       }),
