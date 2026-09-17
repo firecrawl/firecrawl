@@ -13,3 +13,5 @@ tables and materialized views. Table and view statements are idempotent
 | --------------------------- | ------------------------------------------------------------------ |
 | `concurrency_logs.sql`      | Concurrency limit events (`lib/cclog.ts`). Predates the numbering. |
 | `0001_request_children.sql` | Result blob ids per request, for ZDR cleanup.                      |
+| `0002_by_id_views.sql` | `requests_by_id`, `scrapes_by_id`, `scrapes_by_request`, `scrapes_by_time`: lookups that do not know the team (firebill, dashboard, exporter). |
+| `0002_by_id_views_backfill.sh` | One-off history copy into the four tables above, month by month. |
