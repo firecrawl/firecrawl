@@ -113,9 +113,7 @@ export async function activityController(
   }
 
   const windowStart = toClickHouseDateTime(
-    new Date(
-      Date.now() - ACTIVITY_WINDOW_HOURS * 60 * 60 * 1000,
-    ).toISOString(),
+    new Date(Date.now() - ACTIVITY_WINDOW_HOURS * 60 * 60 * 1000).toISOString(),
   );
 
   const conditions = [
@@ -146,7 +144,7 @@ export async function activityController(
     const result = await clickhouseClient.query({
       query: `
         SELECT id, kind, api_version, created_at, target_hint
-        FROM public_requests
+        FROM requests
         WHERE ${conditions.join(" AND ")}
         ORDER BY created_at DESC, id DESC
         LIMIT {limit: UInt32}
