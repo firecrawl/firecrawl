@@ -58,7 +58,10 @@ function parseFeedbackJob(value: Buffer | string): FeedbackJob {
   ) {
     throw new Error("Invalid Bigtable feedback job row");
   }
-  return parsed as FeedbackJob;
+  // The stored shape carries a `version` for forward compatibility; the
+  // in-memory job does not, matching the scrape and extract state readers.
+  const { version: _, ...job } = row;
+  return job as FeedbackJob;
 }
 
 export async function readFeedbackJob(
