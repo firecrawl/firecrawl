@@ -212,15 +212,10 @@ export async function scrapeController(
         getScrapeZDR(req.acuc?.flags) === "forced" ||
         (req.body.zeroDataRetention ?? false) ||
         (req.body.lockdown ?? false);
-      if (
-        req.body.domainTools &&
-        (!req.acuc?.flags?.exchangeRetrieve || zeroDataRetention)
-      )
+      if (req.body.domainTools && zeroDataRetention)
         return res.status(403).json({
           success: false,
-          error: !req.acuc?.flags?.exchangeRetrieve
-            ? "The alexandria source is not enabled for this team."
-            : "Provider discovery requires access and does not support zero data retention.",
+          error: "Provider discovery does not support zero data retention.",
         });
       const billing: BillingMetadata = req.body.__agentInterop
         ? { endpoint: "agent" as const, jobId }
