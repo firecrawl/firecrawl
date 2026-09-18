@@ -319,6 +319,37 @@ describe("operational job state logging", () => {
     );
   });
 
+  it("writes job access and terminal state for a crawl child", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b7";
+    const crawlId = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+    await logScrape({
+      id,
+      request_id: crawlId,
+      url: "https://example.com/page",
+      is_successful: false,
+      error: "boom",
+      time_taken: 1,
+      team_id: "team-id",
+      options: { formats: ["markdown"] } as any,
+      credits_cost: 1,
+      skipNuq: false,
+      zeroDataRetention: false,
+    });
+
+    expect(writeApiJobAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ id, teamId: "team-id", kind: "scrape" }),
+    );
+    expect(writeScrapeJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({
+        status: "failed",
+        requestId: crawlId,
+        creditsBilled: 1,
+        error: "boom",
+      }),
+    );
+  });
+
   it("writes terminal extract state", async () => {
     const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
     await logExtract({

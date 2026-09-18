@@ -34,6 +34,7 @@ import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { readScrapeJobState } from "../../lib/job-state-store";
 import { readRequestCredits } from "../../lib/request-credits-store";
 import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
+import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -82,7 +83,7 @@ export async function getJob(
   ]);
 
   if (!nuqJob && !scrapeState && !dbScrape) return null;
-  if (!scrapeState && !scrapeStateFailed && dbScrape) {
+  if (!nuqJob && !scrapeState && !scrapeStateFailed && dbScrape) {
     recordJobStorePostgresFallback("scrape_state", id);
   }
 
@@ -228,6 +229,16 @@ export async function crawlStatusController(
     creditsReadFailed = true;
     return null;
   });
+  if (creditsBilled === null) {
+    // Requests from before the Bigtable credit rows existed: sum the scrape
+    // job log instead.
+    creditsBilled = await readRequestCreditsFromAnalytics(
+      req.params.jobId,
+    ).catch(error => {
+      logger.warn("Analytics request credits read failed", { error });
+      return null;
+    });
+  }
   if (creditsBilled === null && config.USE_DB_AUTHENTICATION) {
     creditsBilled = await creditsBilledByCrawlId(dbRr, req.params.jobId)
       .then(rows => rows[0]?.credits_billed ?? null)

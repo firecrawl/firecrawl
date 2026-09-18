@@ -663,6 +663,8 @@ export type LoggedScrape = {
   is_parse?: boolean;
   monitor_id?: string | null;
   monitor_check_id?: string | null;
+  /** False for jobs that must not be fetchable by id (defaults to true). */
+  jobAccess?: boolean;
 };
 
 export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
@@ -752,9 +754,30 @@ async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
       },
       logger,
     );
+
+    // A crawl or batch child is fetched by its own id (`GET /scrape/{id}`,
+    // typically off the crawl `page` webhook), so it needs its own access row.
+    // Standalone scrapes get theirs from logRequest.
+    if (!scrape.is_parse && scrape.jobAccess !== false) {
+      try {
+        await writeApiJobAccess({
+          id: scrape.id,
+          teamId: normalizeJobAccessTeamId(scrape.team_id),
+          kind: "scrape",
+          expiresAt: new Date(Date.now() + DEFAULT_JOB_ACCESS_TTL_MS),
+          zeroDataRetention: scrape.zeroDataRetention,
+        });
+      } catch (error) {
+        logger.error("Failed to write child scrape job access to Bigtable", {
+          error,
+        });
+      }
+    }
   }
 
-  if (!scrape.is_parse && scrape.id === scrape.request_id) {
+  // Terminal state for every scrape job, standalone or child, so status reads
+  // never need the PostgreSQL row.
+  if (!scrape.is_parse) {
     try {
       const replay = scrape.zeroDataRetention
         ? undefined

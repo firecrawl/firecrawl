@@ -44,7 +44,9 @@ async function resolveOperationalJobAccess(params: {
 
   const fallback = await params.fallback();
   if (!fallback || !Number.isFinite(fallback.expiresAtMs)) return null;
-  if (!readFailed) {
+  // An expired row makes the caller answer 404 exactly as a miss would, so
+  // only a live row counts as PostgreSQL having been needed.
+  if (!readFailed && fallback.expiresAtMs > Date.now()) {
     recordJobStorePostgresFallback("job_access", params.id, {
       kind: fallback.kind,
     });

@@ -14,6 +14,7 @@ import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
 import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
+import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
 
 export async function finishCrawlSuper(job: NuQJob<any>) {
   const crawlId = job.groupId;
@@ -151,6 +152,14 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     } catch (error) {
       creditsReadFailed = true;
       logger.warn("Bigtable request credits read failed", { error });
+    }
+
+    if (credits_billed === null) {
+      try {
+        credits_billed = await readRequestCreditsFromAnalytics(crawlId);
+      } catch (error) {
+        logger.warn("Analytics request credits read failed", { error });
+      }
     }
 
     if (credits_billed === null && config.USE_DB_AUTHENTICATION) {
