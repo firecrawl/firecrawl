@@ -12,12 +12,20 @@ import { setSpanAttributes, withSpan } from "./otel-tracer";
  * `FINAL` collapses any redelivered copy, so the sum matches what the job log
  * recorded.
  *
- * A request with no scrape rows yet has been billed nothing, so that is 0,
- * the same answer the PostgreSQL sum gave (COALESCE(SUM, 0)). Only an
- * unconfigured ClickHouse client yields null, meaning "unknown".
+ * ClickPipes lands rows about a second after the worker logs them, so a
+ * request whose scrapes are still in flight can read as having none. What
+ * that means depends on the caller:
+ *
+ * - a status endpoint answering a customer treats it as 0 (nothing billed
+ *   yet), the same answer the PostgreSQL sum gave (COALESCE(SUM, 0));
+ * - crawl finalization, which records `credits_cost` for good, treats it as
+ *   unknown (null) rather than writing a zero that a second's lag produced.
+ *
+ * An unconfigured ClickHouse client always yields null.
  */
 export async function readRequestCreditsFromAnalytics(
   requestId: string,
+  options: { emptyAsZero: boolean },
 ): Promise<number | null> {
   const client = clickhouseClient;
   if (client === null) return null;
@@ -40,11 +48,8 @@ export async function readRequestCreditsFromAnalytics(
     }>();
     const jobs = Number(row?.jobs ?? 0);
     if (!Number.isFinite(jobs) || jobs === 0) {
-      setSpanAttributes(span, {
-        "request_credits.outcome": "no_jobs",
-        "request_credits.total": 0,
-      });
-      return 0;
+      setSpanAttributes(span, { "request_credits.outcome": "no_jobs" });
+      return options.emptyAsZero ? 0 : null;
     }
     const credits = Number(row.credits);
     if (!Number.isSafeInteger(credits)) {
