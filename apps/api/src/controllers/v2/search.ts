@@ -345,7 +345,7 @@ async function searchControllerInner(
         api_key_id: req.acuc?.api_key_id ?? null,
       });
       // The rejection is surfaced where the promise is awaited below; this
-      // only stops it counting as unhandled while the search runs.
+      // only stops it counting as unhandled until then.
       logRequestPromise.catch(() => {});
     }
 
@@ -375,6 +375,17 @@ async function searchControllerInner(
       }
       reservedKeylessCredits = projectedKeylessCredits;
     }
+
+    // The request must be on record before anything runs or bills. A failed
+    // log fails the request here, before the search executes and before any
+    // credit is charged, so the customer is never billed for an error.
+    const logStart = Date.now();
+    await logRequestPromise;
+    const waited = Date.now() - logStart;
+    if (waited >= 5)
+      logger.warn("Had to wait for log request promise to complete", {
+        timeMs: waited,
+      });
 
     const result = await executeSearch(
       {
@@ -447,15 +458,6 @@ async function searchControllerInner(
 
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
-
-    // Wait for the parent log before inserting the child search log.
-    const logStart = Date.now();
-    await logRequestPromise;
-    const waited = Date.now() - logStart;
-    if (waited >= 5)
-      logger.warn("Had to wait for log request promise to complete", {
-        timeMs: waited,
-      });
 
     logSearch(
       {

@@ -301,17 +301,17 @@ async function publishLog(table: string, data: any, logger: Logger) {
       }
     });
   } catch (error) {
-    // The backlog refusal counted itself as "dropped" above.
+    // A backlog refusal counted itself as "dropped" and warned, rate-limited,
+    // above; only a genuine publish failure is an error here.
     if (!(error instanceof PubSubBacklogFullError)) {
       pubsubLogPublishTotal.inc({ table, outcome: "failed" });
+      logger.error("Failed to publish log to Pub/Sub", {
+        error,
+        table,
+        logId: data.id,
+        durationMs: Date.now() - startedAt,
+      });
     }
-
-    logger.error("Failed to publish log to Pub/Sub", {
-      error,
-      table,
-      logId: data.id,
-      durationMs: Date.now() - startedAt,
-    });
     throw error;
   }
 }

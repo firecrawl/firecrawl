@@ -796,6 +796,12 @@ describe("logRequest", () => {
       table: "requests",
       outcome: "dropped",
     });
+    // A refusal is the rate-limited warning, not a per-row error.
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(metricInc).not.toHaveBeenCalledWith({
+      table: "requests",
+      outcome: "failed",
+    });
     expect(logger.warn).toHaveBeenCalledWith(
       "Refusing Pub/Sub log: publisher backlog is full",
       expect.objectContaining({
