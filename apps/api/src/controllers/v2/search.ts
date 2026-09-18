@@ -362,6 +362,17 @@ async function searchControllerInner(
             zeroDataRetention,
           )
         : 0;
+    // The request must be on record before anything is reserved, runs, or
+    // bills. A failed log fails the request here, ahead of the keyless
+    // reservation and the search, so there is nothing to refund or unbill.
+    const logStart = Date.now();
+    await logRequestPromise;
+    const waited = Date.now() - logStart;
+    if (waited >= 5)
+      logger.warn("Had to wait for log request promise to complete", {
+        timeMs: waited,
+      });
+
     if (projectedKeylessCredits > 0) {
       const reservation = await reserveKeylessCredits(
         req.auth.team_id,
@@ -375,17 +386,6 @@ async function searchControllerInner(
       }
       reservedKeylessCredits = projectedKeylessCredits;
     }
-
-    // The request must be on record before anything runs or bills. A failed
-    // log fails the request here, before the search executes and before any
-    // credit is charged, so the customer is never billed for an error.
-    const logStart = Date.now();
-    await logRequestPromise;
-    const waited = Date.now() - logStart;
-    if (waited >= 5)
-      logger.warn("Had to wait for log request promise to complete", {
-        timeMs: waited,
-      });
 
     const result = await executeSearch(
       {
