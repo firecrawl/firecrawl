@@ -151,17 +151,20 @@ let pubSubShutdown: Promise<void> | undefined;
 // A retry can deliver a batch twice when the first attempt was persisted but
 // its response was lost; the ClickHouse tables dedupe on row id, not message
 // id, so those copies collapse.
+//
+// The log call waits for the publish, so the budget is what a caller can be
+// held for while Pub/Sub is unreachable before the log call fails.
 const PUBSUB_PUBLISH_OPTIONS: PublishOptions = {
   gaxOpts: {
     retry: {
       backoffSettings: {
         initialRetryDelayMillis: 250,
         retryDelayMultiplier: 2,
-        maxRetryDelayMillis: 15_000,
-        initialRpcTimeoutMillis: 15_000,
+        maxRetryDelayMillis: 5_000,
+        initialRpcTimeoutMillis: 10_000,
         rpcTimeoutMultiplier: 1,
-        maxRpcTimeoutMillis: 15_000,
-        totalTimeoutMillis: 300_000,
+        maxRpcTimeoutMillis: 10_000,
+        totalTimeoutMillis: 30_000,
       },
     },
   },
@@ -212,6 +215,20 @@ function getTopic(client: PubSub, table: string): Topic {
   return topic;
 }
 
+/** The publisher already holds as many unacknowledged rows as it may. */
+class PubSubBacklogFullError extends Error {
+  constructor() {
+    super("Pub/Sub log publisher backlog is full");
+    this.name = "PubSubBacklogFullError";
+  }
+}
+
+/**
+ * Publishes one job-log row to its Pub/Sub topic and waits for the
+ * acknowledgement. Pub/Sub is the log's store of record, so a publish that
+ * fails, is refused by a full backlog, or arrives during shutdown throws to
+ * the caller; nothing else is written for that row.
+ */
 async function publishLog(table: string, data: any, logger: Logger) {
   const startedAt = Date.now();
   try {
@@ -252,7 +269,7 @@ async function publishLog(table: string, data: any, logger: Logger) {
         const now = Date.now();
         if (now - lastDropWarningAt >= 60_000) {
           lastDropWarningAt = now;
-          logger.warn("Dropping Pub/Sub log: publisher backlog is full", {
+          logger.warn("Refusing Pub/Sub log: publisher backlog is full", {
             table,
             logId: data.id,
             payloadBytes: payload.length,
@@ -261,7 +278,7 @@ async function publishLog(table: string, data: any, logger: Logger) {
             droppedTotal,
           });
         }
-        return;
+        throw new PubSubBacklogFullError();
       }
 
       const publication = getTopic(client, table).publishMessage({
@@ -284,7 +301,10 @@ async function publishLog(table: string, data: any, logger: Logger) {
       }
     });
   } catch (error) {
-    pubsubLogPublishTotal.inc({ table, outcome: "failed" });
+    // The backlog refusal counted itself as "dropped" above.
+    if (!(error instanceof PubSubBacklogFullError)) {
+      pubsubLogPublishTotal.inc({ table, outcome: "failed" });
+    }
 
     logger.error("Failed to publish log to Pub/Sub", {
       error,
@@ -292,6 +312,7 @@ async function publishLog(table: string, data: any, logger: Logger) {
       logId: data.id,
       durationMs: Date.now() - startedAt,
     });
+    throw error;
   }
 }
 
@@ -388,37 +409,36 @@ async function robustInsert(
     canonicalLog: "log_job/robustInsert",
   });
 
+  if (config.USE_DB_AUTHENTICATION !== true) {
+    logger.info(
+      "Skipping database insertion due to USE_DB_AUTHENTICATION being off",
+    );
+    return;
+  }
+
+  // The single point where a row leaves for both stores: clean it once so
+  // PostgreSQL and ClickHouse receive identical, accepted values.
+  data = sanitizeLogData({
+    ...data,
+    created_at: data.created_at ?? new Date(),
+  });
+
+  // Pub/Sub is the store of record: publish first and wait for it. A failed
+  // publish fails the log call, and the PostgreSQL copy is not attempted.
+  await publishLog(table, data, logger);
+
+  // The PostgreSQL copy is on its way out; its failure is logged, not thrown.
   const attempts: { error: any; timeMs: number; backoffMs: number }[] = [];
   try {
-    const inserted = await withSpan("log_job.postgres.insert", async span => {
+    await withSpan("log_job.postgres.insert", async span => {
       setSpanAttributes(span, {
         "db.system": "postgresql",
         "log_job.table": table,
         "log_job.id": data.id,
         "log_job.force": force,
+        "log_job.postgres.enabled": true,
       });
-
-      if (config.USE_DB_AUTHENTICATION !== true) {
-        logger.info(
-          "Skipping database insertion due to USE_DB_AUTHENTICATION being off",
-        );
-        setSpanAttributes(span, {
-          "log_job.postgres.enabled": false,
-          "log_job.postgres.outcome": "skipped",
-        });
-        return false;
-      }
-
-      setSpanAttributes(span, { "log_job.postgres.enabled": true });
       const target = tableMap[table];
-      // The single point where a row leaves for both stores: clean it once so
-      // PostgreSQL and ClickHouse receive identical, accepted values.
-      data = sanitizeLogData({
-        ...data,
-        created_at: data.created_at ?? new Date(),
-      });
-      // Publish in the background. Customer responses must not wait for Pub/Sub.
-      void publishLog(table, data, logger);
 
       const maxAttempts = force ? 10 : 1;
       for (let i = 0; i < maxAttempts; i++) {
@@ -456,10 +476,8 @@ async function robustInsert(
           lastAttempt?.error ?? new Error("Database insert was not attempted")
         );
       }
-      return true;
     });
 
-    if (!inserted) return;
     if (attempts.length === 1) {
       logger.debug("Inserted into database successfully", { attempts });
     } else {

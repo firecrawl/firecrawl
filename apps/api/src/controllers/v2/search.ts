@@ -344,6 +344,9 @@ async function searchControllerInner(
         zeroDataRetention,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
+      // The rejection is surfaced where the promise is awaited below; this
+      // only stops it counting as unhandled while the search runs.
+      logRequestPromise.catch(() => {});
     }
 
     const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
