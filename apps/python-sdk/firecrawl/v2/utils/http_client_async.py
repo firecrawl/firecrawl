@@ -14,12 +14,15 @@ class AsyncHttpClient:
         timeout: Optional[float] = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
+        origin: Optional[str] = None,
     ):
         self.api_key = api_key
         self.api_url = api_url
         self.timeout = timeout
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
+        # Attribution string stamped into request payloads / research query params.
+        self.origin = origin or f"python-sdk@{version}"
 
         headers = {}
 
@@ -58,7 +61,7 @@ class AsyncHttpClient:
             backoff_factor = self.backoff_factor
 
         payload = dict(data)
-        payload["origin"] = f"python-sdk@{version}"
+        payload["origin"] = self.origin
 
         last_exception = None
         num_attempts = max(1, retries)
@@ -219,7 +222,7 @@ class AsyncHttpClient:
             backoff_factor = self.backoff_factor
 
         payload = dict(data)
-        payload["origin"] = f"python-sdk@{version}"
+        payload["origin"] = self.origin
 
         last_exception = None
         num_attempts = max(1, retries)
