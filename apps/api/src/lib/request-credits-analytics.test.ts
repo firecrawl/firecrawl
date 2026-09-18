@@ -44,9 +44,18 @@ describe("readRequestCreditsFromAnalytics", () => {
     });
   });
 
-  it("is zero when the request has no scrape rows yet", async () => {
+  it("reads no scrape rows as zero for a status answer", async () => {
     rows([{ credits: 0, jobs: 0 }]);
-    await expect(readRequestCreditsFromAnalytics("request-1")).resolves.toBe(0);
+    await expect(
+      readRequestCreditsFromAnalytics("request-1", { emptyAsZero: true }),
+    ).resolves.toBe(0);
+  });
+
+  it("reads no scrape rows as unknown for finalization", async () => {
+    rows([{ credits: 0, jobs: 0 }]);
+    await expect(
+      readRequestCreditsFromAnalytics("request-1", { emptyAsZero: false }),
+    ).resolves.toBeNull();
   });
 
   it("is null when ClickHouse is not configured", async () => {
