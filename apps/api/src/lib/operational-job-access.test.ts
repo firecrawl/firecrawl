@@ -1,11 +1,13 @@
 const {
   readApiJobAccess,
+  recordJobStorePostgresFallback,
   supabaseGetAgentRequestByIdDirect,
   supabaseGetCrawlRequestById,
   supabaseGetExtractRequestByIdDirect,
   supabaseGetScrapeById,
 } = vi.hoisted(() => ({
   readApiJobAccess: vi.fn(),
+  recordJobStorePostgresFallback: vi.fn(),
   supabaseGetAgentRequestByIdDirect: vi.fn(),
   supabaseGetCrawlRequestById: vi.fn(),
   supabaseGetExtractRequestByIdDirect: vi.fn(),
@@ -13,6 +15,10 @@ const {
 }));
 
 vi.mock("./job-access-store", () => ({ readApiJobAccess }));
+vi.mock("./job-store-fallback", () => ({ recordJobStorePostgresFallback }));
+vi.mock("./logger", () => ({
+  logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
+}));
 vi.mock("./supabase-jobs", () => ({
   supabaseGetAgentRequestByIdDirect,
   supabaseGetCrawlRequestById,
@@ -44,14 +50,15 @@ describe("operational job access", () => {
     expect(supabaseGetAgentRequestByIdDirect).not.toHaveBeenCalled();
   });
 
-  it("maps a PostgreSQL fallback into the operational access type", async () => {
+  it("maps a live PostgreSQL fallback into the operational access type and counts it", async () => {
+    const createdAt = new Date(Date.now() - 60_000);
     readApiJobAccess.mockResolvedValue(null);
     supabaseGetExtractRequestByIdDirect.mockResolvedValue({
       id: JOB_ID,
       team_id: "team-id",
       kind: "extract",
       origin: "api",
-      created_at: "2026-09-16T12:00:00.000Z",
+      created_at: createdAt.toISOString(),
       unrelated_column: "not returned",
     });
 
@@ -59,8 +66,41 @@ describe("operational job access", () => {
       teamId: "team-id",
       kind: "extract",
       clientOrigin: "api",
-      expiresAtMs: new Date("2026-09-17T12:00:00.000Z").getTime(),
+      expiresAtMs: createdAt.getTime() + 24 * 60 * 60 * 1000,
     });
+    expect(recordJobStorePostgresFallback).toHaveBeenCalledWith(
+      "job_access",
+      JOB_ID,
+      { kind: "extract" },
+    );
+  });
+
+  it("does not count an expired PostgreSQL fallback (the caller 404s either way)", async () => {
+    readApiJobAccess.mockResolvedValue(null);
+    supabaseGetScrapeById.mockResolvedValue({
+      id: JOB_ID,
+      team_id: "team-id",
+      created_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+    });
+
+    const access = await getScrapeJobAccess(JOB_ID);
+    expect(access?.expiresAtMs).toBeLessThan(Date.now());
+    expect(recordJobStorePostgresFallback).not.toHaveBeenCalled();
+  });
+
+  it("does not count a fallback taken because the Bigtable read failed", async () => {
+    readApiJobAccess.mockRejectedValue(new Error("Bigtable unavailable"));
+    supabaseGetScrapeById.mockResolvedValue({
+      id: JOB_ID,
+      team_id: "team-id",
+      created_at: new Date().toISOString(),
+    });
+
+    await expect(getScrapeJobAccess(JOB_ID)).resolves.toMatchObject({
+      teamId: "team-id",
+      kind: "scrape",
+    });
+    expect(recordJobStorePostgresFallback).not.toHaveBeenCalled();
   });
 
   it("does not fall back when Bigtable has an expired record", async () => {
