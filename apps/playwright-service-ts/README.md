@@ -42,6 +42,17 @@ curl -X POST http://localhost:3000/scrape \
 }'
 ```
 
+## CONFIGURATION
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VIEWPORT_WIDTH` | `1280` | Browser viewport width in pixels. |
+| `VIEWPORT_HEIGHT` | `800` | Browser viewport height in pixels. Pages that virtualize long lists only render rows that fit in the viewport, so a larger value (for example `4000`) captures more rows without scroll actions. |
+
+Values must be whole positive integers (for example `4000`); anything else, such as `4000px`, `1e3`, `12.5` or an
+empty value, falls back to the default. In the root `docker-compose.yaml` these are set through
+`PLAYWRIGHT_VIEWPORT_WIDTH` and `PLAYWRIGHT_VIEWPORT_HEIGHT`.
+
 ## USING WITH FIRECRAWL
 
 Add `PLAYWRIGHT_MICROSERVICE_URL=http://localhost:3003/scrape` to `/apps/api/.env` to configure the API to use this Playwright microservice for scraping operations.
