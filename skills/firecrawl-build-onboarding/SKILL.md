@@ -16,7 +16,6 @@ inputs:
     required: false
 references:
   - references/auth-flow.md
-  - references/stripe-projects.md
   - references/sdk-installation.md
   - references/project-setup.md
 ---
@@ -47,7 +46,7 @@ an account. No separate `npx skills add` step is needed.
 
 If the human still needs to sign up, sign in, or authorize access in the browser, use the auth flow reference in this skill.
 
-If the project already uses Stripe Projects (a `.projects/` directory, or `stripe projects status` succeeds), provision the key from the terminal instead: `stripe projects add firecrawl/api --name firecrawl`, then `stripe projects env --pull`. See [references/stripe-projects.md](references/stripe-projects.md).
+If the project already uses [Stripe Projects](https://docs.firecrawl.dev/integrations/stripe-projects) (a `.projects/` directory, or `stripe projects status` succeeds), the key can come from there instead of the browser flow: `stripe projects add firecrawl/api --name firecrawl`, then `stripe projects env --pull`.
 
 ## Quick Start
 
@@ -73,7 +72,7 @@ Then decide which integration path applies:
 | Task | Reference |
 |---|---|
 | **Run the browser auth flow and save `FIRECRAWL_API_KEY`** | [references/auth-flow.md](references/auth-flow.md) |
-| **Provision the key through Stripe Projects (no browser)** | [references/stripe-projects.md](references/stripe-projects.md) |
+| **Provision the key through Stripe Projects** | [docs.firecrawl.dev/integrations/stripe-projects](https://docs.firecrawl.dev/integrations/stripe-projects) |
 | **Install the right SDK** | [references/sdk-installation.md](references/sdk-installation.md) |
 | **Put credentials into `.env` or project config** | [references/project-setup.md](references/project-setup.md) |
 | **Choose the right endpoint after setup** | [firecrawl-build](../firecrawl-build/SKILL.md) |
