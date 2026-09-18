@@ -80,6 +80,7 @@ import {
   reconstructKnownState,
   searchStatusToPageStatus,
 } from "./search/persist";
+import { requestCreditsShards } from "../../lib/request-credits-store";
 
 const logger = _logger.child({ module: "monitoring-runner" });
 export { isMonitorCheckStale, MONITOR_CHECK_STALE_TIMEOUT_MS };
@@ -646,6 +647,9 @@ async function enqueueMonitorCrawlTarget(params: {
     target_hint: body.url,
     zeroDataRetention: false,
     api_key_id: null,
+    creditsShards: requestCreditsShards(
+      body.limit ?? MONITOR_CHECK_PAGE_SCAN_LIMIT,
+    ),
   });
 
   const crawlerOptions = {

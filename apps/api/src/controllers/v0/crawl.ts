@@ -48,6 +48,7 @@ import {
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { requestCreditsShards } from "../../lib/request-credits-store";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -93,6 +94,9 @@ export async function crawlController(req: Request, res: Response) {
       api_key_id: chunk?.api_key_id ?? null,
       jobAccessExpiresAt: new Date(
         Date.now() + (chunk?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      ),
+      creditsShards: requestCreditsShards(
+        req.body?.crawlerOptions?.limit ?? 10_000,
       ),
     });
 
