@@ -10,6 +10,7 @@ const fixture = vi.hoisted(() => ({
   pool: undefined as Pool | undefined,
   refund: vi.fn(),
   readFeedbackJob: vi.fn(),
+  recordFallback: vi.fn(),
   results: new Map<string, unknown>(),
   readResult: vi.fn<(id: string) => Promise<unknown>>(),
   db: undefined as ReturnType<typeof drizzle> | undefined,
@@ -22,6 +23,9 @@ vi.mock("../../../lib/spur", () => ({
 vi.mock("../../../lib/feedback-job-store", async importOriginal => ({
   ...(await importOriginal<typeof import("../../../lib/feedback-job-store")>()),
   readFeedbackJob: fixture.readFeedbackJob,
+}));
+vi.mock("../../../lib/job-store-fallback", () => ({
+  recordJobStorePostgresFallback: fixture.recordFallback,
 }));
 vi.mock("../../../lib/gcs-jobs", async importOriginal => ({
   ...(await importOriginal<typeof import("../../../lib/gcs-jobs")>()),
@@ -278,6 +282,7 @@ suite("keyless feedback HTTP and persistence", () => {
     config.KEYLESS_FEEDBACK_DAILY_LIMIT = 1;
     fixture.refund.mockReset().mockResolvedValue(undefined);
     fixture.readFeedbackJob.mockReset().mockResolvedValue(null);
+    fixture.recordFallback.mockReset();
     fixture.results.clear();
     fixture.readResult
       .mockReset()
@@ -1105,6 +1110,7 @@ suite("keyless feedback HTTP and persistence", () => {
       });
       expect((await submit(body(endpoint, jobId))).status).toBe(200);
       expect(fixture.readFeedbackJob).not.toHaveBeenCalled();
+      expect(fixture.recordFallback).not.toHaveBeenCalled();
     },
   );
 
@@ -1130,8 +1136,38 @@ suite("keyless feedback HTTP and persistence", () => {
     expect(response.status).toBe(200);
     expect(response.body.creditsRefunded).toBe(1);
     expect(fixture.readFeedbackJob).toHaveBeenCalledWith(jobId);
+    expect(fixture.recordFallback).not.toHaveBeenCalled();
     expect(fixture.refund).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["missing", "error"])(
+    "records an authenticated PostgreSQL fallback only for a compact-record miss: %s",
+    async state => {
+      const { jobId } = await job("scrape");
+      await fixture.pool!.query(
+        "UPDATE scrapes SET team_id = $1 WHERE id = $2",
+        [authenticatedTeam, jobId],
+      );
+      if (state === "error")
+        fixture.readFeedbackJob.mockRejectedValue(new Error("Unavailable"));
+      const response = await request(app)
+        .post("/test/authenticated/feedback")
+        .send({
+          endpoint: "scrape",
+          jobId,
+          rating: "bad",
+          note: "The output omitted the requested retry intervals.",
+        });
+      expect(response.status).toBe(200);
+      if (state === "missing")
+        expect(fixture.recordFallback).toHaveBeenCalledExactlyOnceWith(
+          "feedback_job",
+          jobId,
+          { endpoint: "scrape" },
+        );
+      else expect(fixture.recordFallback).not.toHaveBeenCalled();
+    },
+  );
 
   it("preserves authenticated Search failure and age restrictions", async () => {
     const { jobId } = await job("search", false);

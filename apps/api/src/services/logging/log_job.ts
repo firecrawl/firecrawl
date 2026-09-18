@@ -200,12 +200,14 @@ function getPubSubClient(logger: Logger): PubSub | null {
   }
 }
 
-// One Topic per table so publishes share a batch.
+// One Topic per table so publishes share a batch. The topic is named after
+// the table, behind the optional environment prefix (see PUBSUB_TOPIC_PREFIX).
 function getTopic(client: PubSub, table: string): Topic {
-  let topic = pubSubTopics.get(table);
+  const name = `${config.PUBSUB_TOPIC_PREFIX}${table}`;
+  let topic = pubSubTopics.get(name);
   if (!topic) {
-    topic = client.topic(table, PUBSUB_PUBLISH_OPTIONS);
-    pubSubTopics.set(table, topic);
+    topic = client.topic(name, PUBSUB_PUBLISH_OPTIONS);
+    pubSubTopics.set(name, topic);
   }
   return topic;
 }

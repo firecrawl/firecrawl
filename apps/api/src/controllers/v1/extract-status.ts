@@ -12,6 +12,7 @@ import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { getExtractJobAccess } from "../../lib/operational-job-access";
 import { readExtractJobState } from "../../lib/job-state-store";
 import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
+import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 
 async function getExtractData(id: string): Promise<any> {
   // Try GCS first if configured
@@ -69,10 +70,12 @@ export async function extractStatusController(
   // If not in Redis, check the database for completed jobs
   if (!extract) {
     if (config.USE_DB_AUTHENTICATION) {
+      let stateReadFailed = false;
       const state = await readExtractJobState(req.params.jobId).catch(error => {
         logger.warn("Bigtable extract state read failed; using legacy lookup", {
           error,
         });
+        stateReadFailed = true;
         return null;
       });
       if (state) {
@@ -96,6 +99,9 @@ export async function extractStatusController(
           success: false,
           error: "Extract job not found",
         });
+      }
+      if (!stateReadFailed) {
+        recordJobStorePostgresFallback("extract_state", req.params.jobId);
       }
 
       if (dbExtract.team_id !== req.auth.team_id) {

@@ -33,6 +33,7 @@ import { redisEvictConnection } from "../../../src/services/redis";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { readScrapeJobState } from "../../lib/job-state-store";
 import { readRequestCredits } from "../../lib/request-credits-store";
+import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -60,6 +61,7 @@ export async function getJob(
   id: string,
   _logger = logger,
 ): Promise<PseudoJob<any> | null> {
+  let scrapeStateFailed = false;
   const [nuqJob, scrapeState, dbScrape, gcsJob] = await Promise.all([
     scrapeQueue.getJob(
       id,
@@ -70,6 +72,7 @@ export async function getJob(
         error,
         scrapeId: id,
       });
+      scrapeStateFailed = true;
       return null;
     }),
     (config.USE_DB_AUTHENTICATION
@@ -79,6 +82,9 @@ export async function getJob(
   ]);
 
   if (!nuqJob && !scrapeState && !dbScrape) return null;
+  if (!scrapeState && !scrapeStateFailed && dbScrape) {
+    recordJobStorePostgresFallback("scrape_state", id);
+  }
 
   if (nuqJob && nuqJob.data.mode !== "single_urls") {
     return null;
@@ -215,13 +221,20 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
+  let creditsReadFailed = false;
   let creditsBilled = await readRequestCredits(
     sc?.requestId ?? req.params.jobId,
-  ).catch(() => null);
+  ).catch(() => {
+    creditsReadFailed = true;
+    return null;
+  });
   if (creditsBilled === null && config.USE_DB_AUTHENTICATION) {
     creditsBilled = await creditsBilledByCrawlId(dbRr, req.params.jobId)
       .then(rows => rows[0]?.credits_billed ?? null)
       .catch(() => null);
+    if (creditsBilled !== null && !creditsReadFailed) {
+      recordJobStorePostgresFallback("request_credits", req.params.jobId);
+    }
   }
 
   // check if the crawl failed during kickoff (e.g. queue full)

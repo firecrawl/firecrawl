@@ -13,6 +13,7 @@ import {
   FeedbackRecordOptions,
   RefundPolicySnapshot,
 } from "./internal-types";
+import { recordJobStorePostgresFallback } from "../../../lib/job-store-fallback";
 
 type DbError = { code?: string } & Record<string, unknown>;
 
@@ -46,6 +47,7 @@ export async function lookupFeedbackJob(
   dbTeamId: string,
   { requireOptions = false }: { requireOptions?: boolean } = {},
 ): Promise<FeedbackJobRow | null> {
+  let bigtableFailed = false;
   // Compact feedback records omit the options required by keyless validation.
   if (!requireOptions) {
     try {
@@ -75,6 +77,7 @@ export async function lookupFeedbackJob(
         };
       }
     } catch (error) {
+      bigtableFailed = true;
       logger.warn(
         "Bigtable feedback job read failed; falling back to PostgreSQL",
         {
@@ -102,6 +105,9 @@ export async function lookupFeedbackJob(
     .limit(1);
 
   if (!row) return null;
+  if (!requireOptions && !bigtableFailed) {
+    recordJobStorePostgresFallback("feedback_job", jobId, { endpoint });
+  }
 
   return {
     endpoint,

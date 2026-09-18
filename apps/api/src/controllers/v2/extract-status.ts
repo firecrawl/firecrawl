@@ -13,6 +13,7 @@ import { getExtractJobAccess } from "../../lib/operational-job-access";
 import { readExtractJobState } from "../../lib/job-state-store";
 import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
 import { getExtractV3AgentStatus } from "../../lib/extract-v3-status";
+import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 
 async function getExtractData(id: string): Promise<any> {
   // Try GCS first if configured
@@ -69,11 +70,13 @@ export async function extractStatusController(
   // If not in Redis, check the database for completed jobs
   if (!redisExtract) {
     if (config.USE_DB_AUTHENTICATION) {
+      let stateReadFailed = false;
       const state = await readExtractJobState(req.params.jobId).catch(error => {
         _logger.warn(
           "Bigtable extract state read failed; using legacy lookup",
           { error, extractId: req.params.jobId },
         );
+        stateReadFailed = true;
         return null;
       });
       if (state) {
@@ -92,6 +95,9 @@ export async function extractStatusController(
 
       const dbExtract = await supabaseGetExtractByIdDirect(req.params.jobId);
       if (dbExtract) {
+        if (!stateReadFailed) {
+          recordJobStorePostgresFallback("extract_state", req.params.jobId);
+        }
         // Get result data
         let data: any = [];
         if (dbExtract.is_successful) {
