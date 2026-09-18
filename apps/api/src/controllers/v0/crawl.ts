@@ -96,7 +96,7 @@ export async function crawlController(req: Request, res: Response) {
         Date.now() + (chunk?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
       ),
       creditsShards: requestCreditsShards(
-        req.body?.crawlerOptions?.limit ?? 10_000,
+        req.body?.crawlerOptions?.limit ?? defaultCrawlerOptions.limit,
       ),
     });
 
