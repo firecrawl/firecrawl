@@ -44,6 +44,22 @@ export async function agentListController(
     });
   }
 
+  // Tiebreaker for agents created in the same millisecond as the cursor. A
+  // `next` link always carries it; a hand-built `before` may omit it.
+  const beforeId = req.query.beforeId ? String(req.query.beforeId) : undefined;
+  if (
+    beforeId !== undefined &&
+    (parsedBefore === undefined ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        beforeId,
+      ))
+  ) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid beforeId cursor.",
+    });
+  }
+
   if (!config.USE_DB_AUTHENTICATION) {
     return res.status(501).json({
       success: false,
@@ -91,18 +107,28 @@ export async function agentListController(
       );
     })(),
     (async () => {
+      // Keyset pagination on (created_at, id), the same order the rows are
+      // returned in, so agents created in the same millisecond as the last
+      // one on a page are not skipped. Millisecond precision matches the
+      // `before` value the `next` link carries; the old whole-second cursor
+      // dropped every other agent created in that second.
+      const cursorPredicate =
+        beforeId !== undefined
+          ? "(created_at, id) < ({before: DateTime64(3)}, {beforeId: UUID})"
+          : "created_at < {before: DateTime64(3)}";
       const requestsRes = await clickhouseClient.query({
-        query:
-          "SELECT id, created_at, target_hint, origin, integration FROM requests WHERE team_id = {teamId: UUID} AND kind = 'agent' AND created_at < {before: DateTime} ORDER BY created_at DESC, id DESC LIMIT 1 BY id LIMIT {limit: UInt32};",
+        query: `SELECT id, created_at, target_hint, origin, integration FROM requests WHERE team_id = {teamId: UUID} AND kind = 'agent' AND ${cursorPredicate} ORDER BY created_at DESC, id DESC LIMIT 1 BY id LIMIT {limit: UInt32};`,
         query_params: {
           teamId: req.auth.team_id,
           // Fetch one extra row so we can tell whether another page exists
           // instead of emitting a next cursor whenever the page is full.
           limit: limit + 1,
-          before: (parsedBefore !== undefined
-            ? new Date(parsedBefore).toISOString()
-            : new Date().toISOString()
-          ).split(".")[0], // slice .nnnZ off the end of the ISO string because clickhouse hates it
+          // "YYYY-MM-DD hh:mm:ss.mmm": what a DateTime64(3) parameter takes.
+          before: new Date(parsedBefore ?? Date.now())
+            .toISOString()
+            .replace("T", " ")
+            .replace("Z", ""),
+          ...(beforeId !== undefined ? { beforeId } : {}),
         },
         format: "JSONEachRow",
       });
@@ -279,7 +305,7 @@ export async function agentListController(
     success: true,
     agents: page,
     next: hasMore
-      ? `${req.protocol}://${req.host}/v2/agent?before=${new Date(page.slice(-1)[0].createdAt).valueOf()}`
+      ? `${req.protocol}://${req.host}/v2/agent?before=${new Date(page.slice(-1)[0].createdAt).valueOf()}&beforeId=${encodeURIComponent(page.slice(-1)[0].id)}`
       : undefined,
   });
 }
