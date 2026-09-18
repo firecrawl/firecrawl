@@ -540,7 +540,8 @@ def crawl_params_preview(client: HttpClient, request: CrawlParamsRequest) -> Cra
                         "onlyMainContent": "only_main_content",
                         "waitFor": "wait_for",
                         "skipTlsVerification": "skip_tls_verification",
-                        "removeBase64Images": "remove_base64_images"
+                        "removeBase64Images": "remove_base64_images",
+                        "onlyCleanContent": "only_clean_content"
                     }
                     
                     for scrape_camel, scrape_snake in scrape_field_mappings.items():
