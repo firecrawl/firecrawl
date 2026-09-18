@@ -22,7 +22,8 @@ RUN pnpm run build
 RUN chown -R node:node /usr/src/app \
   && chmod -R a+rX /usr/local/share/playwright
 
-ARG PORT
+ARG PORT=3000
+
 ENV PORT=${PORT}
 
 EXPOSE ${PORT}
