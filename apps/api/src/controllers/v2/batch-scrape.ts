@@ -51,6 +51,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
 import {
+  AGENT_REQUEST_CREDITS_SHARDS,
   initializeRequestCredits,
   requestCreditsShards,
 } from "../../lib/request-credits-store";
@@ -356,9 +357,26 @@ export async function batchScrapeController(
     });
   } else if (!req.body.appendToId) {
     // An agent-started batch is recorded under the agent's request rather
-    // than as a request of its own, but its status is still polled by batch
-    // id and reads credits from Bigtable. Give it the credit row logRequest
-    // would have created, so the read finds the batch instead of missing it.
+    // than as a request of its own, so logRequest never created a credit
+    // row for it. Its status is still polled: v2 reads credits under the
+    // saved agent request id, v1 under the batch id, and its children record
+    // credits under the agent request id. Make sure both rows exist. The
+    // agent row is created once with the agent controller's shard count;
+    // for an agent that came through that controller this is a no-op, for
+    // one that reaches the API first through interop it is the only writer.
+    const agentRequestId = req.body.__agentInterop?.requestId;
+    if (agentRequestId) {
+      await initializeRequestCredits(
+        agentRequestId,
+        AGENT_REQUEST_CREDITS_SHARDS,
+      ).catch(error => {
+        logger.warn("Failed to initialize Bigtable request credits", {
+          error,
+          requestId: agentRequestId,
+          shards: AGENT_REQUEST_CREDITS_SHARDS,
+        });
+      });
+    }
     const creditsShards = requestCreditsShards(urls.length);
     await initializeRequestCredits(id, creditsShards).catch(error => {
       logger.warn("Failed to initialize Bigtable request credits", {

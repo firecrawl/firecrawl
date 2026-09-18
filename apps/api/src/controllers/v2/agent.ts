@@ -1,4 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
+import { AGENT_REQUEST_CREDITS_SHARDS } from "../../lib/request-credits-store";
 import { Response } from "express";
 import {
   AgentRequest,
@@ -219,7 +220,7 @@ export async function agentController(
     target_hint: req.body.urls?.[0] ?? req.body.prompt ?? "",
     zeroDataRetention: false, // not supported for agent
     api_key_id: req.acuc?.api_key_id ?? null,
-    creditsShards: 8,
+    creditsShards: AGENT_REQUEST_CREDITS_SHARDS,
   });
 
   const passthrough = await fetch(
