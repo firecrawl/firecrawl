@@ -39,6 +39,7 @@ describe("executeTransformers", () => {
 
   it.each([
     "application/json",
+    "Application/JSON; charset=utf-8",
     "application/vnd.api+json",
     "application/ld+json; charset=utf-8",
     "Application/Problem+JSON",
@@ -59,7 +60,10 @@ describe("executeTransformers", () => {
     expect(document.markdown).toBe("```json\n" + rawHtml + "\n```");
   });
 
-  it("does not treat JSON media types in HTML parameters as JSON", async () => {
+  it.each([
+    'text/html; profile="application/json"',
+    'text/html; profile="application/vnd.api+json"',
+  ])("does not treat %s as JSON", async contentType => {
     const document = await executeTransformers(
       {
         url: "https://example.com",
@@ -71,7 +75,7 @@ describe("executeTransformers", () => {
         rawHtml:
           "<html><body><p>Hello <strong>world</strong></p></body></html>",
         metadata: {
-          contentType: 'text/html; profile="application/vnd.api+json"',
+          contentType,
         },
       } as any,
     );

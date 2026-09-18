@@ -16,10 +16,7 @@ describeIf(!TEST_PRODUCTION && !HAS_PROXY)("JSON media types", () => {
     });
     server = http.createServer((req, res) => {
       if (req.url === "/html") {
-        res.setHeader(
-          "Content-Type",
-          'text/html; profile="application/vnd.api+json"',
-        );
+        res.setHeader("Content-Type", 'text/html; profile="application/json"');
         res.end(
           "<html><body><p>Hello <strong>world</strong></p></body></html>",
         );
