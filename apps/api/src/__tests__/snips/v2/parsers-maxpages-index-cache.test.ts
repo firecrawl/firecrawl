@@ -19,7 +19,9 @@ describeIf(TEST_PRODUCTION)(
     test(
       "caches a PDF whose page count fits under maxPages",
       async () => {
-        const url = `${TEST_SUITE_WEBSITE}/example.pdf`;
+        // Unique query param: other suites index /example.pdf without
+        // maxPages, and index lookup keys ignore parser settings.
+        const url = `${TEST_SUITE_WEBSITE}/example.pdf?testId=${crypto.randomUUID()}`;
         const body = {
           url,
           parsers: [{ type: "pdf", maxPages: 10000 }],
@@ -41,7 +43,7 @@ describeIf(TEST_PRODUCTION)(
     test(
       "does not cache a PDF truncated by maxPages",
       async () => {
-        const url = `${TEST_SUITE_WEBSITE}/example-long.pdf`;
+        const url = `${TEST_SUITE_WEBSITE}/example-long.pdf?testId=${crypto.randomUUID()}`;
         const body = {
           url,
           parsers: [{ type: "pdf", maxPages: 3 }],
