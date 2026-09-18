@@ -12,8 +12,9 @@ import { setSpanAttributes, withSpan } from "./otel-tracer";
  * `FINAL` collapses any redelivered copy, so the sum matches what the job log
  * recorded.
  *
- * Returns null when ClickHouse is not configured or the request has no scrape
- * rows at all, so callers can tell "nothing billed yet" from "unknown".
+ * A request with no scrape rows yet has been billed nothing, so that is 0,
+ * the same answer the PostgreSQL sum gave (COALESCE(SUM, 0)). Only an
+ * unconfigured ClickHouse client yields null, meaning "unknown".
  */
 export async function readRequestCreditsFromAnalytics(
   requestId: string,
@@ -39,8 +40,11 @@ export async function readRequestCreditsFromAnalytics(
     }>();
     const jobs = Number(row?.jobs ?? 0);
     if (!Number.isFinite(jobs) || jobs === 0) {
-      setSpanAttributes(span, { "request_credits.outcome": "not_found" });
-      return null;
+      setSpanAttributes(span, {
+        "request_credits.outcome": "no_jobs",
+        "request_credits.total": 0,
+      });
+      return 0;
     }
     const credits = Number(row.credits);
     if (!Number.isSafeInteger(credits)) {
