@@ -257,7 +257,7 @@ describe("operational Bigtable stores", () => {
       zeroDataRetention: false,
     });
     expect(mutate.mock.calls[0][0][0].data.f.v.timestamp).toEqual(
-      new Date(completedAt.getTime() + 180_000),
+      new Date(completedAt.getTime() + 24 * 60 * 60 * 1000),
     );
     expect(spans).toContainEqual({
       name: "bigtable.feedback_job.write",
