@@ -46,7 +46,14 @@ an account. No separate `npx skills add` step is needed.
 
 If the human still needs to sign up, sign in, or authorize access in the browser, use the auth flow reference in this skill.
 
-If the project already uses [Stripe Projects](https://docs.firecrawl.dev/integrations/stripe-projects) (a `.projects/` directory, or `stripe projects status` succeeds), the key can come from there instead of the browser flow: `stripe projects add firecrawl/api --name firecrawl`, then `stripe projects env --pull`.
+If the project already uses [Stripe Projects](https://docs.firecrawl.dev/integrations/stripe-projects) (a `.projects/` directory, or `stripe projects status` succeeds), the key can come from there instead of the browser flow:
+
+```bash
+stripe projects add firecrawl/api --name firecrawl
+stripe projects env --pull
+```
+
+`--name firecrawl` is what puts the key in `FIRECRAWL_API_KEY`; without it the CLI writes `FIRECRAWL_API_API_KEY`, which the SDKs do not read. Ignore the `FIRECRAWL_API_BASE_URL` the CLI also writes: the SDKs read `FIRECRAWL_API_URL`, and only for self-hosted deployments, so leave it unset for a hosted account. Paid plans are the human's call, since `stripe projects upgrade firecrawl` charges their card. The docs page carries the catalog and troubleshooting.
 
 ## Quick Start
 
