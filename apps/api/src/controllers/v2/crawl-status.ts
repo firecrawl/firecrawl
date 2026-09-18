@@ -199,9 +199,9 @@ export async function crawlStatusController(
   if (creditsBilled === null) {
     // Requests from before the Bigtable credit rows existed: sum the scrape
     // job log instead.
-    creditsBilled = await readRequestCreditsFromAnalytics(
-      req.params.jobId,
-    ).catch(error => {
+    creditsBilled = await readRequestCreditsFromAnalytics(req.params.jobId, {
+      emptyAsZero: true,
+    }).catch(error => {
       logger.warn("Analytics request credits read failed", { error });
       return null;
     });

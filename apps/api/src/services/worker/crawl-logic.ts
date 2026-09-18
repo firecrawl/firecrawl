@@ -150,7 +150,11 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
 
     if (credits_billed === null) {
       try {
-        credits_billed = await readRequestCreditsFromAnalytics(crawlId);
+        // Finalization records credits_cost for good; a second of ClickPipes
+        // lag must read as unknown, not as zero.
+        credits_billed = await readRequestCreditsFromAnalytics(crawlId, {
+          emptyAsZero: false,
+        });
       } catch (error) {
         logger.warn("Analytics request credits read failed", { error });
       }
