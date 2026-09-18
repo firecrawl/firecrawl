@@ -147,6 +147,7 @@ export async function activityController(
         FROM requests
         WHERE ${conditions.join(" AND ")}
         ORDER BY created_at DESC, id DESC
+        LIMIT 1 BY id
         LIMIT {limit: UInt32}
       `,
       query_params: queryParams,

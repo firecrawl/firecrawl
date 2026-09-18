@@ -104,6 +104,7 @@ describe("activityController", () => {
     expect(mocks.query).toHaveBeenCalledOnce();
     const options = mocks.query.mock.calls[0][0];
     expect(options.query).toContain("FROM requests");
+    expect(options.query).toContain("LIMIT 1 BY id");
     expect(options.query).toContain("team_id = {teamId: UUID}");
     expect(options.query).toContain(
       "created_at >= {windowStart: DateTime64(3)}",

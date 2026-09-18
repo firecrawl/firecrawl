@@ -93,7 +93,7 @@ export async function agentListController(
     (async () => {
       const requestsRes = await clickhouseClient.query({
         query:
-          "SELECT id, created_at, target_hint, origin, integration FROM requests WHERE team_id = {teamId: UUID} AND kind = 'agent' AND created_at < {before: DateTime} ORDER BY created_at DESC LIMIT {limit: UInt32};",
+          "SELECT id, created_at, target_hint, origin, integration FROM requests WHERE team_id = {teamId: UUID} AND kind = 'agent' AND created_at < {before: DateTime} ORDER BY created_at DESC, id DESC LIMIT 1 BY id LIMIT {limit: UInt32};",
         query_params: {
           teamId: req.auth.team_id,
           // Fetch one extra row so we can tell whether another page exists
@@ -130,10 +130,11 @@ export async function agentListController(
       );
 
       // `agents` is keyed by (team_id, id); the team filter keeps this a
-      // primary-key read instead of a scan.
+      // primary-key read instead of a scan. The table keeps the latest
+      // publication per id on merge; argMax picks the same row before it.
       const agentsRes = await clickhouseClient.query({
         query:
-          "SELECT id, options, is_successful, error FROM agents WHERE team_id = {teamId: UUID} AND id IN {ids: Array(UUID)};",
+          "SELECT id, argMax(options, _publish_time) AS options, argMax(is_successful, _publish_time) AS is_successful, argMax(error, _publish_time) AS error FROM agents WHERE team_id = {teamId: UUID} AND id IN {ids: Array(UUID)} GROUP BY id;",
         query_params: {
           teamId: req.auth.team_id,
           ids: bareRequests.map(x => x.id),
