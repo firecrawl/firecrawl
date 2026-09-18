@@ -1,7 +1,6 @@
 import type { Response } from "express";
 import { vi } from "vitest";
 import { config } from "../../../config";
-import { supabaseGetScrapeByIdDirect } from "../../../lib/supabase-jobs";
 import {
   insertBrowserSession,
   getBrowserSession,
@@ -56,9 +55,6 @@ vi.mock("../../../lib/operational-job-access", () => ({
 vi.mock("../../../lib/job-state-store", () => ({
   readScrapeJobState: vi.fn(async () => null),
 }));
-vi.mock("../../../lib/job-store-fallback", () => ({
-  recordJobStorePostgresFallback: vi.fn(),
-}));
 vi.mock("../../auth", () => ({
   getACUCTeam: vi.fn(async () => ({ org_id: null })),
 }));
@@ -74,9 +70,6 @@ vi.mock("../../../lib/scrape-interact/langsmith", () => ({
   sanitizeUrlForTrace: (url: string) => url,
 }));
 
-vi.mock("../../../lib/supabase-jobs", () => ({
-  supabaseGetScrapeByIdDirect: vi.fn(),
-}));
 
 vi.mock("../../../lib/browser-sessions", () => ({
   insertBrowserSession: vi.fn(),
@@ -170,7 +163,6 @@ describe("scrapeInteractController", () => {
 
     await scrapeInteractController(req, res);
 
-    expect(supabaseGetScrapeByIdDirect).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(501);
     expect(res.json).toHaveBeenCalledWith({
       success: false,

@@ -6,13 +6,11 @@ import {
   getExtractExpiry,
   getExtractResult,
 } from "../../lib/extract/extract-redis";
-import { supabaseGetExtractByIdDirect } from "../../lib/supabase-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { getExtractJobAccess } from "../../lib/operational-job-access";
 import { readExtractJobState } from "../../lib/job-state-store";
 import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
-import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 
 async function getExtractData(id: string): Promise<any> {
   // Try GCS first if configured
@@ -67,64 +65,24 @@ export async function extractStatusController(
     });
   }
 
-  // If not in Redis, check the database for completed jobs
+  // Not in Redis: the job finished (or never existed). Bigtable holds the
+  // terminal state for 24 hours; after that the job has expired.
   if (!extract) {
-    if (config.USE_DB_AUTHENTICATION) {
-      let stateReadFailed = false;
-      const state = await readExtractJobState(req.params.jobId).catch(error => {
-        logger.warn("Bigtable extract state read failed; using legacy lookup", {
-          error,
-        });
-        stateReadFailed = true;
-        return null;
-      });
-      if (state) {
-        return res.status(200).json({
-          success: state.status === "completed",
-          data:
-            state.status === "completed"
-              ? await getExtractData(req.params.jobId)
-              : [],
-          status: state.status,
-          error: state.error,
-          expiresAt: new Date(access!.expiresAtMs).toISOString(),
-          creditsUsed: state.creditsBilled,
-        });
-      }
-
-      const dbExtract = await supabaseGetExtractByIdDirect(req.params.jobId);
-      if (!dbExtract) {
-        logger.warn("Extract job was not found");
-        return res.status(404).json({
-          success: false,
-          error: "Extract job not found",
-        });
-      }
-      if (!stateReadFailed) {
-        recordJobStorePostgresFallback("extract_state", req.params.jobId);
-      }
-
-      if (dbExtract.team_id !== req.auth.team_id) {
-        return res.status(404).json({
-          success: false,
-          error: "Extract job not found",
-        });
-      }
-
-      let data: any = [];
-      if (dbExtract.is_successful) {
-        data = await getExtractData(req.params.jobId);
-      }
-
-      // Return DB-based status
+    const state = await readExtractJobState(req.params.jobId).catch(error => {
+      logger.warn("Bigtable extract state read failed", { error });
+      return null;
+    });
+    if (state) {
       return res.status(200).json({
-        success: dbExtract.is_successful,
-        data,
-        status: dbExtract.is_successful ? "completed" : "failed",
-        error: dbExtract.error || undefined,
-        expiresAt: new Date(
-          new Date(dbExtract.created_at).getTime() + 1000 * 60 * 60 * 24,
-        ).toISOString(),
+        success: state.status === "completed",
+        data:
+          state.status === "completed"
+            ? await getExtractData(req.params.jobId)
+            : [],
+        status: state.status,
+        error: state.error,
+        expiresAt: new Date(access!.expiresAtMs).toISOString(),
+        creditsUsed: state.creditsBilled,
       });
     }
 

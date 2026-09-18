@@ -6,14 +6,12 @@ import {
   getExtractExpiry,
   getExtractResult,
 } from "../../lib/extract/extract-redis";
-import { supabaseGetExtractByIdDirect } from "../../lib/supabase-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { getExtractJobAccess } from "../../lib/operational-job-access";
 import { readExtractJobState } from "../../lib/job-state-store";
 import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
 import { getExtractV3AgentStatus } from "../../lib/extract-v3-status";
-import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 
 async function getExtractData(id: string): Promise<any> {
   // Try GCS first if configured
@@ -67,51 +65,28 @@ export async function extractStatusController(
   // Get extract status from Redis (for in-progress jobs)
   const redisExtract = await getExtract(req.params.jobId);
 
-  // If not in Redis, check the database for completed jobs
+  // Not in Redis: finished, or still being set up. Bigtable holds the
+  // terminal state for 24 hours; a request row without either is in flight.
   if (!redisExtract) {
-    if (config.USE_DB_AUTHENTICATION) {
-      let stateReadFailed = false;
-      const state = await readExtractJobState(req.params.jobId).catch(error => {
-        _logger.warn(
-          "Bigtable extract state read failed; using legacy lookup",
-          { error, extractId: req.params.jobId },
-        );
-        stateReadFailed = true;
-        return null;
+    const state = await readExtractJobState(req.params.jobId).catch(error => {
+      _logger.warn("Bigtable extract state read failed", {
+        error,
+        extractId: req.params.jobId,
       });
-      if (state) {
-        return res.status(200).json({
-          success: state.status === "completed",
-          data:
-            state.status === "completed"
-              ? await getExtractData(req.params.jobId)
-              : [],
-          status: state.status,
-          error: state.error,
-          expiresAt: new Date(access!.expiresAtMs).toISOString(),
-          creditsUsed: state.creditsBilled,
-        });
-      }
-
-      const dbExtract = await supabaseGetExtractByIdDirect(req.params.jobId);
-      if (dbExtract) {
-        if (!stateReadFailed) {
-          recordJobStorePostgresFallback("extract_state", req.params.jobId);
-        }
-        // Get result data
-        let data: any = [];
-        if (dbExtract.is_successful) {
-          data = await getExtractData(req.params.jobId);
-        }
-
-        return res.status(200).json({
-          success: dbExtract.is_successful,
-          data,
-          status: dbExtract.is_successful ? "completed" : "failed",
-          error: dbExtract.error || undefined,
-          expiresAt: new Date(access!.expiresAtMs).toISOString(),
-        });
-      }
+      return null;
+    });
+    if (state) {
+      return res.status(200).json({
+        success: state.status === "completed",
+        data:
+          state.status === "completed"
+            ? await getExtractData(req.params.jobId)
+            : [],
+        status: state.status,
+        error: state.error,
+        expiresAt: new Date(access!.expiresAtMs).toISOString(),
+        creditsUsed: state.creditsBilled,
+      });
     }
 
     // Fall back to extractRequest info

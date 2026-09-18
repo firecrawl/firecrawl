@@ -13,7 +13,6 @@ import {
   FeedbackRecordOptions,
   RefundPolicySnapshot,
 } from "./internal-types";
-import { recordJobStorePostgresFallback } from "../../../lib/job-store-fallback";
 
 type DbError = { code?: string } & Record<string, unknown>;
 
@@ -21,13 +20,6 @@ type ExistingFeedback = {
   id: string;
   credits_refunded: number | null;
 };
-
-const JOB_TABLES = {
-  search: schema.searches,
-  scrape: schema.scrapes,
-  parse: schema.parses,
-  map: schema.maps,
-} as const;
 
 function feedbackMetadata(
   options: FeedbackRecordOptions,
@@ -46,74 +38,40 @@ export async function lookupFeedbackJob(
   jobId: string,
   dbTeamId: string,
 ): Promise<FeedbackJobRow | null> {
-  let bigtableFailed = false;
+  let job;
   try {
-    const job = await readFeedbackJob(jobId);
-    if (job) {
-      const storedEndpoint = endpointForRefundClass(job.refundClass);
-      if (job.teamId !== dbTeamId || storedEndpoint !== endpoint) return null;
-
-      const feedbackWindowSec =
-        endpoint === "search"
-          ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
-          : config.FEEDBACK_MAX_AGE_SEC;
-      return {
-        endpoint,
-        id: jobId,
-        request_id: job.requestId,
-        team_id: job.teamId,
-        credits_cost: job.creditsBilled,
-        created_at: new Date(
-          job.feedbackDeadlineMs - feedbackWindowSec * 1000,
-        ).toISOString(),
-        is_successful: job.succeeded,
-        options: null,
-        feedback_deadline_ms: job.feedbackDeadlineMs,
-        refund_class: job.refundClass,
-        zero_data_retention: job.zeroDataRetention,
-      };
-    }
+    job = await readFeedbackJob(jobId);
   } catch (error) {
-    bigtableFailed = true;
-    logger.warn(
-      "Bigtable feedback job read failed; falling back to PostgreSQL",
-      {
-        error,
-        jobId,
-        endpoint,
-      },
-    );
+    logger.warn("Bigtable feedback job read failed", {
+      error,
+      jobId,
+      endpoint,
+    });
+    return null;
   }
+  if (!job) return null;
 
-  const table = JOB_TABLES[endpoint] as any;
-  const [row] = await dbRr
-    .select({
-      id: table.id,
-      request_id: table.request_id,
-      team_id: table.team_id,
-      credits_cost: table.credits_cost,
-      created_at: table.created_at,
-      options: table.options,
-      ...(endpoint === "map" ? {} : { is_successful: table.is_successful }),
-    })
-    .from(table)
-    .where(and(eq(table.id, jobId), eq(table.team_id, dbTeamId)))
-    .limit(1);
+  const storedEndpoint = endpointForRefundClass(job.refundClass);
+  if (job.teamId !== dbTeamId || storedEndpoint !== endpoint) return null;
 
-  if (!row) return null;
-  if (!bigtableFailed) {
-    recordJobStorePostgresFallback("feedback_job", jobId, { endpoint });
-  }
-
+  const feedbackWindowSec =
+    endpoint === "search"
+      ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
+      : config.FEEDBACK_MAX_AGE_SEC;
   return {
     endpoint,
-    id: row.id,
-    request_id: row.request_id ?? null,
-    team_id: row.team_id,
-    credits_cost: row.credits_cost ?? 0,
-    created_at: row.created_at,
-    is_successful: endpoint === "map" ? true : (row.is_successful ?? null),
-    options: row.options ?? null,
+    id: jobId,
+    request_id: job.requestId,
+    team_id: job.teamId,
+    credits_cost: job.creditsBilled,
+    created_at: new Date(
+      job.feedbackDeadlineMs - feedbackWindowSec * 1000,
+    ).toISOString(),
+    is_successful: job.succeeded,
+    options: null,
+    feedback_deadline_ms: job.feedbackDeadlineMs,
+    refund_class: job.refundClass,
+    zero_data_retention: job.zeroDataRetention,
   };
 }
 
