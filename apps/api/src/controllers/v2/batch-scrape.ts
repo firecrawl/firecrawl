@@ -50,7 +50,10 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
-import { requestCreditsShards } from "../../lib/request-credits-store";
+import {
+  initializeRequestCredits,
+  requestCreditsShards,
+} from "../../lib/request-credits-store";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -350,6 +353,18 @@ export async function batchScrapeController(
         Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
       ),
       creditsShards: requestCreditsShards(urls.length),
+    });
+  } else if (!req.body.appendToId) {
+    // An agent-started batch is recorded under the agent's request rather
+    // than as a request of its own, but its status is still polled by batch
+    // id and reads credits from Bigtable. Give it the credit row logRequest
+    // would have created, so the read finds the batch instead of missing it.
+    const creditsShards = requestCreditsShards(urls.length);
+    await initializeRequestCredits(id, creditsShards).catch(error => {
+      logger.warn("Failed to initialize Bigtable request credits", {
+        error,
+        shards: creditsShards,
+      });
     });
   }
 
