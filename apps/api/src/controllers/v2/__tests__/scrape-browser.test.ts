@@ -1,16 +1,11 @@
 import type { Response } from "express";
 import { vi } from "vitest";
 import { config } from "../../../config";
-import { supabaseGetScrapeByIdDirect } from "../../../lib/supabase-jobs";
 import { scrapeInteractController } from "../scrape-browser";
 import type { RequestWithAuth } from "../types";
 
 vi.mock("uuid", () => ({
   v7: vi.fn(() => "session-123"),
-}));
-
-vi.mock("../../../lib/supabase-jobs", () => ({
-  supabaseGetScrapeByIdDirect: vi.fn(),
 }));
 
 vi.mock("../../../lib/browser-sessions", () => ({
@@ -93,7 +88,6 @@ describe("scrapeInteractController", () => {
 
     await scrapeInteractController(req, res);
 
-    expect(supabaseGetScrapeByIdDirect).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(501);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
