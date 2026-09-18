@@ -344,6 +344,9 @@ async function searchControllerInner(
         zeroDataRetention,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
+      // The rejection is surfaced where the promise is awaited below; this
+      // only stops it counting as unhandled until then.
+      logRequestPromise.catch(() => {});
     }
 
     const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
@@ -359,6 +362,17 @@ async function searchControllerInner(
             zeroDataRetention,
           )
         : 0;
+    // The request must be on record before anything is reserved, runs, or
+    // bills. A failed log fails the request here, ahead of the keyless
+    // reservation and the search, so there is nothing to refund or unbill.
+    const logStart = Date.now();
+    await logRequestPromise;
+    const waited = Date.now() - logStart;
+    if (waited >= 5)
+      logger.warn("Had to wait for log request promise to complete", {
+        timeMs: waited,
+      });
+
     if (projectedKeylessCredits > 0) {
       const reservation = await reserveKeylessCredits(
         req.auth.team_id,
@@ -444,15 +458,6 @@ async function searchControllerInner(
 
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
-
-    // Wait for the parent log before inserting the child search log.
-    const logStart = Date.now();
-    await logRequestPromise;
-    const waited = Date.now() - logStart;
-    if (waited >= 5)
-      logger.warn("Had to wait for log request promise to complete", {
-        timeMs: waited,
-      });
 
     logSearch(
       {
