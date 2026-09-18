@@ -88,6 +88,7 @@ export async function retrieveProviders(input: {
   scrapeId: string;
   timeoutMs: number;
   bypassBilling?: boolean;
+  resultAuthorization?: string;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -315,6 +316,14 @@ export async function retrieveProviders(input: {
       body: { requests: input.calls },
       timeoutMs: remaining(),
       requestId: id,
+      ...(input.calls.some(
+        call =>
+          call.provider === "firecrawl" &&
+          call.capability === "bash" &&
+          typeof call.options?.requestId === "string",
+      ) && input.resultAuthorization
+        ? { resultAuthorization: input.resultAuthorization }
+        : {}),
       maximumCredits,
     }).catch(error => {
       throw new Error(`Exchange did not answer: ${error?.message ?? error}`);

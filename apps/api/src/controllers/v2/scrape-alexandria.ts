@@ -127,6 +127,7 @@ export async function providerScrapeController(
       apiKeyId: req.acuc.api_key_id ?? null,
       flags: req.acuc.flags,
       calls: body.alexandria,
+      resultAuthorization: req.get("authorization"),
       requestId,
       scrapeId: uuidv7(),
       timeoutMs: body.timeout,

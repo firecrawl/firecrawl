@@ -15,6 +15,7 @@ export async function exchangeRequest(input: {
   timeoutMs: number;
   requestId?: string;
   maximumCredits?: number;
+  resultAuthorization?: string;
 }): Promise<ExchangeResponse> {
   if (!config.FIRE_EXCHANGE_URL) throw new Error("Exchange is not configured");
   const base = config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
@@ -25,6 +26,9 @@ export async function exchangeRequest(input: {
     signal: AbortSignal.timeout(Math.max(1, input.timeoutMs)),
     headers: {
       "content-type": "application/json",
+      ...(input.resultAuthorization
+        ? { authorization: input.resultAuthorization }
+        : {}),
       "x-exchange-team-id": input.teamId,
       "x-exchange-extended-catalog-access": "true",
       ...(input.requestId ? { "x-request-id": input.requestId } : {}),
