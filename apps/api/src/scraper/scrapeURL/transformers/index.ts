@@ -140,7 +140,10 @@ async function deriveMarkdownFromHTML(
   // Media types are case-insensitive per RFC, so normalize before matching.
   const contentType = document.metadata.contentType?.toLowerCase();
 
-  if (contentType?.includes("application/json")) {
+  if (
+    contentType?.includes("application/json") ||
+    contentType?.split(";", 1)[0].trim().endsWith("+json")
+  ) {
     document.markdown = "```json\n" + requireRawHtml(document) + "\n```";
     return document;
   }
