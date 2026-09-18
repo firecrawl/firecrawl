@@ -29,7 +29,7 @@ export async function crawlErrorsController(
     const crawlTtlHours = req.acuc?.flags?.crawlTtlHours ?? 24;
     let access;
     try {
-      access = await getCrawlJobAccess(req.params.jobId, crawlTtlHours);
+      access = await getCrawlJobAccess(req.params.jobId);
     } catch (requestError) {
       _logger.error("Error getting request", { error: requestError });
       throw requestError;

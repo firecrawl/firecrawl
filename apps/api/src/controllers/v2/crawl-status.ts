@@ -16,11 +16,8 @@ import {
   getLastDoneJobTimestamp,
   isCrawlKickoffFinished,
 } from "../../lib/crawl-redis";
-import { supabaseGetScrapeById } from "../../lib/supabase-jobs";
 import { configDotenv } from "dotenv";
 import { logger } from "../../lib/logger";
-import { creditsBilledByCrawlId } from "../../db/rpc";
-import { dbRr } from "../../db/connection";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import {
   scrapeQueue,
@@ -33,7 +30,6 @@ import { redisEvictConnection } from "../../../src/services/redis";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { readScrapeJobState } from "../../lib/job-state-store";
 import { readRequestCredits } from "../../lib/request-credits-store";
-import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
 configDotenv();
 
@@ -49,43 +45,26 @@ export type PseudoJob<T> = {
   failedReason?: string;
 };
 
-type DBScrape = {
-  id: string;
-  success: boolean;
-  options: any;
-  created_at: any;
-  error: string | null;
-  team_id: string;
-};
-
 export async function getJob(
   id: string,
   _logger = logger,
 ): Promise<PseudoJob<any> | null> {
-  let scrapeStateFailed = false;
-  const [nuqJob, scrapeState, dbScrape, gcsJob] = await Promise.all([
+  const [nuqJob, scrapeState, gcsJob] = await Promise.all([
     scrapeQueue.getJob(
       id,
       _logger,
     ) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
     readScrapeJobState(id).catch(error => {
-      _logger.warn("Bigtable scrape state read failed; using legacy lookup", {
+      _logger.warn("Bigtable scrape state read failed", {
         error,
         scrapeId: id,
       });
-      scrapeStateFailed = true;
       return null;
     }),
-    (config.USE_DB_AUTHENTICATION
-      ? supabaseGetScrapeById(id)
-      : null) as Promise<DBScrape | null>,
     (config.GCS_BUCKET_NAME ? getJobFromGCS(id) : null) as Promise<any | null>,
   ]);
 
-  if (!nuqJob && !scrapeState && !dbScrape) return null;
-  if (!nuqJob && !scrapeState && !scrapeStateFailed && dbScrape) {
-    recordJobStorePostgresFallback("scrape_state", id);
-  }
+  if (!nuqJob && !scrapeState) return null;
 
   if (nuqJob && nuqJob.data.mode !== "single_urls") {
     return null;
@@ -100,24 +79,13 @@ export async function getJob(
 
   const job: PseudoJob<any> = {
     id,
-    status:
-      scrapeState?.status ??
-      (dbScrape ? (dbScrape.success ? "completed" : "failed") : nuqJob!.status),
+    status: scrapeState?.status ?? nuqJob!.status,
     returnvalue: Array.isArray(data) ? data[0] : data,
     data: {
-      scrapeOptions: nuqJob
-        ? nuqJob.data.scrapeOptions
-        : (dbScrape?.options ?? null),
+      scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : null,
     },
-    timestamp:
-      scrapeState?.completedAtMs ??
-      (nuqJob
-        ? nuqJob.createdAt.valueOf()
-        : new Date(dbScrape!.created_at).valueOf()),
-    failedReason:
-      (scrapeState?.error ??
-        (nuqJob ? nuqJob.failedReason : dbScrape?.error)) ||
-      undefined,
+    timestamp: scrapeState?.completedAtMs ?? nuqJob!.createdAt.valueOf(),
+    failedReason: (scrapeState?.error ?? nuqJob?.failedReason) || undefined,
   };
 
   return job;
@@ -222,11 +190,10 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
-  let creditsReadFailed = false;
   let creditsBilled = await readRequestCredits(
     sc?.requestId ?? req.params.jobId,
-  ).catch(() => {
-    creditsReadFailed = true;
+  ).catch(error => {
+    logger.warn("Bigtable request credits read failed", { error });
     return null;
   });
   if (creditsBilled === null) {
@@ -238,14 +205,6 @@ export async function crawlStatusController(
       logger.warn("Analytics request credits read failed", { error });
       return null;
     });
-  }
-  if (creditsBilled === null && config.USE_DB_AUTHENTICATION) {
-    creditsBilled = await creditsBilledByCrawlId(dbRr, req.params.jobId)
-      .then(rows => rows[0]?.credits_billed ?? null)
-      .catch(() => null);
-    if (creditsBilled !== null && !creditsReadFailed) {
-      recordJobStorePostgresFallback("request_credits", req.params.jobId);
-    }
   }
 
   // check if the crawl failed during kickoff (e.g. queue full)
