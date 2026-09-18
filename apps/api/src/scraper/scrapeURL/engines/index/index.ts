@@ -53,6 +53,15 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     screenshotFormat?.viewport !== undefined ||
     screenshotFormat?.quality !== undefined;
 
+  // A PDF capped by maxPages is truncated, but one whose true page count
+  // fits under the cap is identical to an unlimited scrape and safe to cache.
+  const pdfMaxPages = getPDFMaxPages(meta.options.parsers);
+  const isTruncatedPdf =
+    pdfMaxPages !== undefined &&
+    document.metadata.contentType === "application/pdf" &&
+    (document.metadata.totalPages === undefined ||
+      document.metadata.totalPages > pdfMaxPages);
+
   const shouldCache =
     meta.options.storeInCache &&
     !meta.internalOptions.isParse &&
@@ -70,16 +79,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     !getPDFPageMarkdown(meta.options.parsers) &&
     !getPDFBlocks(meta.options.parsers) &&
     !getPDFPageMarkers(meta.options.parsers) &&
-    !meta.options.parsers?.some(parser => {
-      if (
-        typeof parser === "object" &&
-        parser !== null &&
-        "maxPages" in parser
-      ) {
-        return true;
-      }
-      return false;
-    }) &&
+    !isTruncatedPdf &&
     (meta.internalOptions.teamId === "sitemap" ||
       (meta.winnerEngine !== "fire-engine;tlsclient" &&
         meta.winnerEngine !== "fire-engine;tlsclient;stealth" &&
