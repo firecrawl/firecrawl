@@ -667,7 +667,21 @@ export type LoggedScrape = {
   jobAccess?: boolean;
 };
 
-export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
+type LogScrapeHooks = {
+  /**
+   * Called once the scrape's terminal state is readable from Bigtable, or as
+   * soon as it is known that it will not be written. The sync scrape path
+   * waits on this before answering, so an interact call that follows the
+   * response finds its replay context.
+   */
+  onStateWritten?: () => void;
+};
+
+export async function logScrape(
+  scrape: LoggedScrape,
+  force: boolean = false,
+  hooks?: LogScrapeHooks,
+) {
   return withLogSpan(
     {
       operation: scrape.is_parse ? "parse" : "scrape",
@@ -677,11 +691,15 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
       force,
       zeroDataRetention: scrape.zeroDataRetention,
     },
-    () => logScrapeInternal(scrape, force),
+    () => logScrapeInternal(scrape, force, hooks),
   );
 }
 
-async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
+async function logScrapeInternal(
+  scrape: LoggedScrape,
+  force: boolean = false,
+  hooks?: LogScrapeHooks,
+) {
   const logger = _logger.child({
     module: "log_job",
     method: "logScrape",
@@ -697,6 +715,44 @@ async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
     (scrape.team_id === "preview" || scrape.team_id?.startsWith("preview_")
       ? previewTeamId
       : scrape.team_id);
+
+  // Terminal state for every scrape job, standalone or child, so status reads
+  // never need the PostgreSQL row. It goes first: the sync scrape response
+  // waits for it, and nothing else here has to be readable that early.
+  try {
+    if (!scrape.is_parse) {
+      const replay = scrape.zeroDataRetention
+        ? undefined
+        : buildReplayContextFromScrape({
+            id: scrape.id,
+            team_id: storedTeamId,
+            url: scrape.url,
+            options: scrape.options,
+          }).context;
+      await writeScrapeJobState(scrape.id, {
+        status: scrape.is_successful ? "completed" : "failed",
+        requestId: scrape.request_id,
+        completedAtMs: Date.now(),
+        creditsBilled: scrape.credits_cost,
+        ...(scrape.zeroDataRetention
+          ? {}
+          : {
+              ...(scrape.error ? { error: scrape.error } : {}),
+              ...(replay ? { replay } : {}),
+              ...(scrape.options.profile
+                ? { profile: scrape.options.profile }
+                : {}),
+              ...(typeof (scrape.options as any).origin === "string"
+                ? { origin: (scrape.options as any).origin }
+                : {}),
+            }),
+      });
+    }
+  } catch (error) {
+    logger.error("Failed to write scrape state to Bigtable", { error });
+  } finally {
+    hooks?.onStateWritten?.();
+  }
 
   const feedbackJob = {
     jobId: scrape.id,
@@ -772,41 +828,6 @@ async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
           error,
         });
       }
-    }
-  }
-
-  // Terminal state for every scrape job, standalone or child, so status reads
-  // never need the PostgreSQL row.
-  if (!scrape.is_parse) {
-    try {
-      const replay = scrape.zeroDataRetention
-        ? undefined
-        : buildReplayContextFromScrape({
-            id: scrape.id,
-            team_id: storedTeamId,
-            url: scrape.url,
-            options: scrape.options,
-          }).context;
-      await writeScrapeJobState(scrape.id, {
-        status: scrape.is_successful ? "completed" : "failed",
-        requestId: scrape.request_id,
-        completedAtMs: Date.now(),
-        creditsBilled: scrape.credits_cost,
-        ...(scrape.zeroDataRetention
-          ? {}
-          : {
-              ...(scrape.error ? { error: scrape.error } : {}),
-              ...(replay ? { replay } : {}),
-              ...(scrape.options.profile
-                ? { profile: scrape.options.profile }
-                : {}),
-              ...(typeof (scrape.options as any).origin === "string"
-                ? { origin: (scrape.options as any).origin }
-                : {}),
-            }),
-      });
-    } catch (error) {
-      logger.error("Failed to write scrape state to Bigtable", { error });
     }
   }
 

@@ -319,6 +319,97 @@ describe("operational job state logging", () => {
     );
   });
 
+  it("reports the state written before the PostgreSQL insert starts", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b8";
+    const stateWrite = deferred<boolean>();
+    writeScrapeJobState.mockReturnValueOnce(stateWrite.promise);
+    let insertsWhenStateWritten = -1;
+    const onStateWritten = vi.fn(() => {
+      insertsWhenStateWritten = values.mock.calls.length;
+    });
+
+    const logging = logScrape(
+      {
+        id,
+        request_id: id,
+        url: "https://example.com",
+        is_successful: true,
+        time_taken: 1,
+        team_id: "team-id",
+        options: { formats: ["markdown"] } as any,
+        credits_cost: 1,
+        skipNuq: true,
+        zeroDataRetention: false,
+      },
+      false,
+      { onStateWritten },
+    );
+    await Promise.resolve();
+
+    expect(writeScrapeJobState).toHaveBeenCalledTimes(1);
+    expect(onStateWritten).not.toHaveBeenCalled();
+    expect(values).not.toHaveBeenCalled();
+
+    stateWrite.resolve(true);
+    await logging;
+
+    expect(onStateWritten).toHaveBeenCalledTimes(1);
+    expect(insertsWhenStateWritten).toBe(0);
+    expect(values).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports the state written when the Bigtable write fails", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b9";
+    writeScrapeJobState.mockRejectedValueOnce(new Error("bigtable down"));
+    const onStateWritten = vi.fn();
+
+    await logScrape(
+      {
+        id,
+        request_id: id,
+        url: "https://example.com",
+        is_successful: true,
+        time_taken: 1,
+        team_id: "team-id",
+        options: { formats: ["markdown"] } as any,
+        credits_cost: 1,
+        skipNuq: true,
+        zeroDataRetention: false,
+      },
+      false,
+      { onStateWritten },
+    );
+
+    expect(onStateWritten).toHaveBeenCalledTimes(1);
+    expect(values).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports the state written for a parse, which stores none", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062ba";
+    const onStateWritten = vi.fn();
+
+    await logScrape(
+      {
+        id,
+        request_id: id,
+        url: "https://example.com/file.pdf",
+        is_successful: true,
+        time_taken: 1,
+        team_id: "team-id",
+        options: { formats: ["markdown"] } as any,
+        credits_cost: 1,
+        skipNuq: true,
+        zeroDataRetention: false,
+        is_parse: true,
+      },
+      false,
+      { onStateWritten },
+    );
+
+    expect(writeScrapeJobState).not.toHaveBeenCalled();
+    expect(onStateWritten).toHaveBeenCalledTimes(1);
+  });
+
   it("writes job access and terminal state for a crawl child", async () => {
     const id = "019e6f45-7778-727d-adf0-0abe9d5062b7";
     const crawlId = "019e6f45-7778-727d-adf0-0abe9d5062b6";

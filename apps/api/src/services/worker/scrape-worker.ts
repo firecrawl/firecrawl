@@ -113,6 +113,12 @@ import { emitScrapeActivityEvent } from "../../lib/siem-logging";
 
 configDotenv();
 
+/**
+ * How long a sync scrape waits for its Bigtable terminal state to be written
+ * before answering anyway. A write normally takes a few milliseconds.
+ */
+const SCRAPE_STATE_BARRIER_MS = 2_000;
+
 const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
 const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 
@@ -931,6 +937,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
+      let stateWritten: () => void = () => {};
+      const scrapeStateWritten = new Promise<void>(resolve => {
+        stateWritten = resolve;
+      });
       const logScrapePromise = logScrape(
         {
           id: job.id,
@@ -952,7 +962,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           monitor_check_id: job.data.monitoring?.checkId,
         },
         false,
+        { onStateWritten: stateWritten },
       );
+      // Release the barrier if logging fails before the state write is reached.
+      logScrapePromise.then(stateWritten, stateWritten);
 
       trackScrape({
         scrapeId: job.id,
@@ -972,10 +985,25 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       );
 
       if (job.data.skipNuq) {
-        // doesn't use GCS for result retrieval, safe to not await
+        // doesn't use GCS for result retrieval, safe to not await the rest
         logScrapePromise.catch(err =>
           logger.warn("Background scrape log failed", { error: err }),
         );
+        // ...but the terminal state must be readable before the sync response
+        // goes out: an interact call right after a fast scrape reads it for
+        // its replay context, and there is no NuQ job to fall back on. The
+        // wait is bounded so a Bigtable stall cannot hold every sync scrape.
+        const stateWrittenInTime = await Promise.race([
+          scrapeStateWritten.then(() => true),
+          new Promise<false>(resolve =>
+            setTimeout(() => resolve(false), SCRAPE_STATE_BARRIER_MS).unref(),
+          ),
+        ]);
+        if (!stateWrittenInTime) {
+          logger.warn("Scrape state write did not finish before the response", {
+            barrierMs: SCRAPE_STATE_BARRIER_MS,
+          });
+        }
       } else {
         // v0 - must await because waitForJob reads from GCS
         await logScrapePromise;
