@@ -667,14 +667,21 @@ export type LoggedScrape = {
   jobAccess?: boolean;
 };
 
+export type ScrapeStateOutcome =
+  /** The terminal state is readable from Bigtable. */
+  | "written"
+  /** Nothing to write: a parse job, or no state table configured. */
+  | "skipped"
+  /** The Bigtable write threw; the error is logged here. */
+  | "failed";
+
 type LogScrapeHooks = {
   /**
-   * Called once the scrape's terminal state is readable from Bigtable, or as
-   * soon as it is known that it will not be written. The sync scrape path
-   * waits on this before answering, so an interact call that follows the
-   * response finds its replay context.
+   * Called once the terminal state write has settled, before anything else
+   * is logged. The sync scrape path waits on this before answering, so an
+   * interact call that follows the response finds its replay context.
    */
-  onStateWritten?: () => void;
+  onStateWritten?: (outcome: ScrapeStateOutcome) => void;
 };
 
 export async function logScrape(
@@ -719,6 +726,7 @@ async function logScrapeInternal(
   // Terminal state for every scrape job, standalone or child, so status reads
   // never need the PostgreSQL row. It goes first: the sync scrape response
   // waits for it, and nothing else here has to be readable that early.
+  let stateOutcome: ScrapeStateOutcome = "skipped";
   try {
     if (!scrape.is_parse) {
       const replay = scrape.zeroDataRetention
@@ -729,7 +737,7 @@ async function logScrapeInternal(
             url: scrape.url,
             options: scrape.options,
           }).context;
-      await writeScrapeJobState(scrape.id, {
+      const written = await writeScrapeJobState(scrape.id, {
         status: scrape.is_successful ? "completed" : "failed",
         requestId: scrape.request_id,
         completedAtMs: Date.now(),
@@ -747,11 +755,13 @@ async function logScrapeInternal(
                 : {}),
             }),
       });
+      stateOutcome = written ? "written" : "skipped";
     }
   } catch (error) {
+    stateOutcome = "failed";
     logger.error("Failed to write scrape state to Bigtable", { error });
   } finally {
-    hooks?.onStateWritten?.();
+    hooks?.onStateWritten?.(stateOutcome);
   }
 
   const feedbackJob = {

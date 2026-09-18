@@ -98,7 +98,7 @@ import {
   setSpanAttributes,
 } from "../../lib/otel-tracer";
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
-import { logScrape } from "../logging/log_job";
+import { logScrape, type ScrapeStateOutcome } from "../logging/log_job";
 import { FeatureFlag } from "../../scraper/scrapeURL/engines";
 import {
   recordMonitorScrapeFailure,
@@ -937,8 +937,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
-      let stateWritten: () => void = () => {};
-      const scrapeStateWritten = new Promise<void>(resolve => {
+      let stateWritten: (outcome: ScrapeStateOutcome) => void = () => {};
+      const scrapeStateWritten = new Promise<ScrapeStateOutcome>(resolve => {
         stateWritten = resolve;
       });
       const logScrapePromise = logScrape(
@@ -964,8 +964,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         false,
         { onStateWritten: stateWritten },
       );
-      // Release the barrier if logging fails before the state write is reached.
-      logScrapePromise.then(stateWritten, stateWritten);
+      // Release the barrier if logging dies before the state write settles.
+      logScrapePromise.then(
+        () => stateWritten("failed"),
+        () => stateWritten("failed"),
+      );
 
       trackScrape({
         scrapeId: job.id,
@@ -993,16 +996,25 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         // goes out: an interact call right after a fast scrape reads it for
         // its replay context, and there is no NuQ job to fall back on. The
         // wait is bounded so a Bigtable stall cannot hold every sync scrape.
-        const stateWrittenInTime = await Promise.race([
-          scrapeStateWritten.then(() => true),
-          new Promise<false>(resolve =>
-            setTimeout(() => resolve(false), SCRAPE_STATE_BARRIER_MS).unref(),
-          ),
+        let barrier: NodeJS.Timeout | undefined;
+        const outcome = await Promise.race([
+          scrapeStateWritten,
+          new Promise<"timed_out">(resolve => {
+            barrier = setTimeout(
+              () => resolve("timed_out"),
+              SCRAPE_STATE_BARRIER_MS,
+            );
+          }),
         ]);
-        if (!stateWrittenInTime) {
-          logger.warn("Scrape state write did not finish before the response", {
-            barrierMs: SCRAPE_STATE_BARRIER_MS,
-          });
+        if (barrier !== undefined) clearTimeout(barrier);
+        if (outcome === "failed" || outcome === "timed_out") {
+          logger.warn(
+            "Sync scrape answered without a readable terminal state",
+            {
+              outcome,
+              barrierMs: SCRAPE_STATE_BARRIER_MS,
+            },
+          );
         }
       } else {
         // v0 - must await because waitForJob reads from GCS

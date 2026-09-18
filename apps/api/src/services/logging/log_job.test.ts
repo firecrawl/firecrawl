@@ -353,12 +353,12 @@ describe("operational job state logging", () => {
     stateWrite.resolve(true);
     await logging;
 
-    expect(onStateWritten).toHaveBeenCalledTimes(1);
+    expect(onStateWritten).toHaveBeenCalledWith("written");
     expect(insertsWhenStateWritten).toBe(0);
     expect(values).toHaveBeenCalledTimes(1);
   });
 
-  it("reports the state written when the Bigtable write fails", async () => {
+  it("reports a failed state write and keeps logging", async () => {
     const id = "019e6f45-7778-727d-adf0-0abe9d5062b9";
     writeScrapeJobState.mockRejectedValueOnce(new Error("bigtable down"));
     const onStateWritten = vi.fn();
@@ -380,11 +380,11 @@ describe("operational job state logging", () => {
       { onStateWritten },
     );
 
-    expect(onStateWritten).toHaveBeenCalledTimes(1);
+    expect(onStateWritten).toHaveBeenCalledWith("failed");
     expect(values).toHaveBeenCalledTimes(1);
   });
 
-  it("reports the state written for a parse, which stores none", async () => {
+  it("reports a skipped state write for a parse, which stores none", async () => {
     const id = "019e6f45-7778-727d-adf0-0abe9d5062ba";
     const onStateWritten = vi.fn();
 
@@ -407,7 +407,32 @@ describe("operational job state logging", () => {
     );
 
     expect(writeScrapeJobState).not.toHaveBeenCalled();
-    expect(onStateWritten).toHaveBeenCalledTimes(1);
+    expect(onStateWritten).toHaveBeenCalledWith("skipped");
+  });
+
+  it("reports a skipped state write when no state table is configured", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062bb";
+    writeScrapeJobState.mockResolvedValueOnce(false);
+    const onStateWritten = vi.fn();
+
+    await logScrape(
+      {
+        id,
+        request_id: id,
+        url: "https://example.com",
+        is_successful: true,
+        time_taken: 1,
+        team_id: "team-id",
+        options: { formats: ["markdown"] } as any,
+        credits_cost: 1,
+        skipNuq: true,
+        zeroDataRetention: false,
+      },
+      false,
+      { onStateWritten },
+    );
+
+    expect(onStateWritten).toHaveBeenCalledWith("skipped");
   });
 
   it("writes job access and terminal state for a crawl child", async () => {
