@@ -105,6 +105,20 @@ export async function retrieveProviders(input: {
   if (Buffer.byteLength(JSON.stringify(input.calls)) > 256 * 1024)
     return notExecuted(refusal(400, "Provider options exceed 256 KB."));
 
+  const loadsBashResult = input.calls.some(
+    call =>
+      call.provider === "firecrawl" &&
+      call.capability === "bash" &&
+      typeof call.options?.requestId === "string",
+  );
+  if (loadsBashResult && input.calls.length !== 1)
+    return notExecuted(
+      refusal(
+        400,
+        "Bash source loading must be sent as a separate request; do not batch it with other calls.",
+      ),
+    );
+
   const billable = !input.bypassBilling;
   const id = hash([input.teamId, input.requestId]);
   const key = `alexandria:retrieve:${id}`;
@@ -316,12 +330,7 @@ export async function retrieveProviders(input: {
       body: { requests: input.calls },
       timeoutMs: remaining(),
       requestId: id,
-      ...(input.calls.some(
-        call =>
-          call.provider === "firecrawl" &&
-          call.capability === "bash" &&
-          typeof call.options?.requestId === "string",
-      ) && input.resultAuthorization
+      ...(loadsBashResult && input.resultAuthorization
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
       maximumCredits,

@@ -79,3 +79,9 @@ API, Redis, Exchange (`FIRE_EXCHANGE_URL`; a non-blank
 `EXCHANGE_INTERNAL_SECRET` enables the usage report) and Autumn for paid
 execution. Paid settlement is covered by mocked tests only and has not run
 against an Autumn sandbox.
+
+Bash source loading (`firecrawl/bash` with `options.requestId`) must be sent as a
+single-call request. Mixed batches are rejected before billing or dispatch because
+caller authorization is request-scoped. Workspace reuse (`options.workspaceId`)
+does not forward the caller credential. Exchange consumes the forwarded credential
+only in its Bash saved-scrape reader; provider integrations use their own credentials.
