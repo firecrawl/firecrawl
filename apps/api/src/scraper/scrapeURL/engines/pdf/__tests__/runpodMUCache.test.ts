@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { scrapePDFWithRunPodMU } from "../runpodMU";
-import { getPdfResultFromCache } from "../../../../../lib/gcs-pdf-cache";
+import {
+  getPdfResultFromCache,
+  pdfCacheConfigured,
+  resolvePdfCacheKey,
+} from "../../../../../lib/gcs-pdf-cache";
 import { consumeRefresh } from "../fire-pdf/refresh-budget";
 
 vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
+  pdfCacheConfigured: vi.fn(() => true),
   getPdfResultFromCache: vi.fn(),
   savePdfResultToCache: vi.fn(),
   resolvePdfCacheKey: vi.fn(() => "key-of-BASE64"),
@@ -92,6 +97,17 @@ describe("RunPod MU cache read and refresh", () => {
         cacheProvider: "runpod",
       }),
     );
+  });
+
+  it("neither hashes nor spends the budget when no cache is configured", async () => {
+    vi.mocked(pdfCacheConfigured).mockReturnValueOnce(false);
+    const meta = makeMeta([{ type: "pdf", refresh: true }]);
+    await expect(
+      scrapePDFWithRunPodMU(meta, "/tmp/doc.pdf", "BASE64"),
+    ).rejects.toThrow();
+    expect(resolvePdfCacheKey).not.toHaveBeenCalled();
+    expect(getCached).not.toHaveBeenCalled();
+    expect(budget).not.toHaveBeenCalled();
   });
 
   it("never reads the cache for a zero-data-retention request", async () => {

@@ -8,6 +8,7 @@ import type { PDFProcessorResult } from "../types";
 import {
   type CachedPdfResult,
   getPdfResultFromCache,
+  pdfCacheConfigured,
   resolvePdfCacheKey,
   savePdfResultToCache,
   type PdfCacheKeyInput,
@@ -189,6 +190,8 @@ export async function tryGetCached(
   pageMarkers = false,
 ): Promise<PDFProcessorResult | null> {
   if (meta.internalOptions.zeroDataRetention) return null;
+  // No bucket, no cache: nothing to hash, no refresh budget to spend.
+  if (!pdfCacheConfigured()) return null;
   const { cacheable, lookupVariants, ownVariant } = cacheKeyShape(
     mode,
     maxPages,
@@ -391,6 +394,7 @@ export async function maybeSaveResult(args: {
     failedPages,
   } = args;
   if (meta.internalOptions.zeroDataRetention) return;
+  if (!pdfCacheConfigured()) return;
   const { cacheable, ownVariant, baseVariant } = cacheKeyShape(
     mode,
     maxPages,

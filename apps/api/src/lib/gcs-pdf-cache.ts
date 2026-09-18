@@ -52,6 +52,13 @@ export function resolvePdfCacheKey(input: PdfCacheKeyInput): string {
   return typeof input === "string" ? createPdfCacheKey(input) : input.key;
 }
 
+/** Whether the content cache exists at all (self-hosted deployments may run
+ * without a bucket). Callers check this before hashing a payload or spending
+ * a refresh token for a cache that would neither read nor write. */
+export function pdfCacheConfigured(): boolean {
+  return !!config.GCS_BUCKET_NAME;
+}
+
 export async function savePdfResultToCache(
   pdfContent: PdfCacheKeyInput,
   result: CachedPdfResult,

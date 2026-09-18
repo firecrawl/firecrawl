@@ -1,6 +1,7 @@
 // Stub the GCS cache so unit tests never reach real cloud storage — same
 // setup as firePDFAsync.test.ts, which covers the orchestration end to end.
 vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
+  pdfCacheConfigured: vi.fn(() => true),
   createPdfCacheKey: (s: string) => `sha-${s.length}`,
   resolvePdfCacheKey: (input: string | { key: string }) =>
     typeof input === "string" ? `sha-${input.length}` : input.key,

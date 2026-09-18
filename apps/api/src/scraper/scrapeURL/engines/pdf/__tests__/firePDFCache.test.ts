@@ -1,5 +1,6 @@
 import {
   getPdfResultFromCache,
+  pdfCacheConfigured,
   savePdfResultToCache,
 } from "../../../../../lib/gcs-pdf-cache";
 import {
@@ -21,6 +22,7 @@ vi.mock("../fire-pdf/refresh-budget", () => ({
 }));
 
 vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
+  pdfCacheConfigured: vi.fn(() => true),
   getPdfResultFromCache: vi.fn(),
   savePdfResultToCache: vi.fn(),
   resolvePdfCacheKey: vi.fn((input: string | { key: string }) =>
@@ -1310,6 +1312,21 @@ describe("FirePDF cache counters", () => {
       ),
     ).toHaveLength(4);
     expect(saveCached).not.toHaveBeenCalled();
+  });
+
+  it("does nothing, and counts nothing, when no cache is configured", async () => {
+    vi.mocked(pdfCacheConfigured).mockReturnValue(false);
+    try {
+      const meta = makeMeta(false, [{ type: "pdf", refresh: true }]);
+      await expect(read(meta)).resolves.toBeNull();
+      await save({ meta });
+      expect(getCached).not.toHaveBeenCalled();
+      expect(saveCached).not.toHaveBeenCalled();
+      expect(consumeRefresh).not.toHaveBeenCalled();
+      expect(events).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(pdfCacheConfigured).mockReturnValue(true);
+    }
   });
 
   it("counts hits, misses and both refresh outcomes", async () => {

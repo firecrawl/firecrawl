@@ -2,6 +2,7 @@
 // client calls these on the happy path; without the stub the first cache lookup
 // blows up trying to download from GCS using the credentials in .env.
 vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
+  pdfCacheConfigured: vi.fn(() => true),
   createPdfCacheKey: (s: string) => `sha-${s.length}`,
   resolvePdfCacheKey: (input: string | { key: string }) =>
     typeof input === "string" ? `sha-${input.length}` : input.key,

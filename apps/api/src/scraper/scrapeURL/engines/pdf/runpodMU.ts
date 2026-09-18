@@ -6,6 +6,7 @@ import { z } from "zod";
 import path from "node:path";
 import {
   getPdfResultFromCache,
+  pdfCacheConfigured,
   resolvePdfCacheKey,
   savePdfResultToCache,
 } from "../../../../lib/gcs-pdf-cache";
@@ -32,14 +33,17 @@ export async function scrapePDFWithRunPodMU(
   const cacheKeyOf = (): string =>
     (cacheKeyMemo ??= resolvePdfCacheKey(base64Content));
 
-  // Zero-data-retention requests never read the shared cache, as on the
-  // fire-pdf path. `parsers: [{ type: "pdf", refresh: true }]` skips it too,
-  // under the same per-team budget: a MinerU-diverted request never reaches
-  // the fire-pdf path, so the budget has to be applied here as well, and
-  // the decision is taken once per request, so a fire-pdf → MU fallback
-  // keeps the decision the first engine got instead of spending a second
-  // token. Over budget, or with the limiter unavailable, the entry is served.
-  if (!maxPages && !meta.internalOptions.zeroDataRetention) {
+  // Without a bucket there is no cache: nothing is hashed and no refresh
+  // budget is spent. Zero-data-retention requests never read the shared
+  // cache, as on the fire-pdf path. `parsers: [{ type: "pdf", refresh: true }]`
+  // skips it too, under the same per-team budget: a MinerU-diverted request
+  // never reaches the fire-pdf path, so the budget has to be applied here as
+  // well, and the decision is taken once per request, so a fire-pdf → MU
+  // fallback keeps the decision the first engine got instead of spending a
+  // second token. Over budget, or with the limiter unavailable, the entry is
+  // served.
+  const cacheOn = pdfCacheConfigured();
+  if (cacheOn && !maxPages && !meta.internalOptions.zeroDataRetention) {
     const cacheKey = cacheKeyOf();
     let bypass = false;
     if (getPDFRefresh(meta.options?.parsers)) {
@@ -237,7 +241,7 @@ export async function scrapePDFWithRunPodMU(
     html: await safeMarkdownToHtml(result.markdown, meta.logger, meta.id),
   };
 
-  if (!meta.internalOptions.zeroDataRetention) {
+  if (cacheOn && !meta.internalOptions.zeroDataRetention) {
     try {
       await savePdfResultToCache({ key: cacheKeyOf() }, processorResult);
     } catch (error) {
