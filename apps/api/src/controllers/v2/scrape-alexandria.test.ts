@@ -5,7 +5,10 @@ vi.mock("../../services/alexandria/retrieve", () => ({
   REQUEST_ID_PATTERN: /^[A-Za-z0-9._:-]{1,128}$/,
   retrieveProviders: mocks.retrieve,
 }));
-vi.mock("../../services/logging/log_job", () => ({ logRequest: mocks.log }));
+vi.mock("../../services/logging/log_job", () => ({
+  logRequest: mocks.log,
+  logProviderScrape: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("../../lib/key-restriction", () => ({
   checkKeyFormatRestriction: async () => ({ allowed: true }),
 }));

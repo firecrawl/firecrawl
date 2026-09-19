@@ -9,7 +9,7 @@ import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
-import { logRequest } from "../../services/logging/log_job";
+import { logProviderScrape, logRequest } from "../../services/logging/log_job";
 import {
   callsSchema,
   callSchema,
@@ -119,6 +119,8 @@ export async function providerScrapeController(
       .status(503)
       .json({ success: false, error: "This endpoint is not available." });
 
+  const target = `alexandria:${body.alexandria.map(call => `${call.provider}/${call.capability}`).join(",")}`;
+  const startedAt = Date.now();
   let result;
   try {
     result = await retrieveProviders({
@@ -153,11 +155,32 @@ export async function providerScrapeController(
       api_key_id: req.acuc.api_key_id ?? null,
       origin: body.origin,
       integration: body.integration ?? null,
-      target_hint: `alexandria:${body.alexandria.map(call => `${call.provider}/${call.capability}`).join(",")}`,
+      target_hint: target,
       zeroDataRetention: false,
       jobAccess: false,
     }).catch(error =>
       logger.warn("Provider request logging failed", {
+        error,
+        scrapeId: result.scrapeId,
+      }),
+    );
+  const served =
+    result.executed && !body.__agentInterop && result.status === 200
+      ? answerSchema.safeParse(result.body)
+      : undefined;
+  if (served?.success)
+    void logProviderScrape({
+      id: result.scrapeId,
+      request_id: result.scrapeId,
+      target,
+      team_id: req.auth.team_id,
+      options: { alexandria: body.alexandria },
+      time_taken: (Date.now() - startedAt) / 1000,
+      credits_cost: served.data.creditsCost,
+      is_successful: served.data.results.every(item => !item.error),
+      error: served.data.results.find(item => item.error)?.error?.message,
+    }).catch(error =>
+      logger.warn("Provider scrape logging failed", {
         error,
         scrapeId: result.scrapeId,
       }),

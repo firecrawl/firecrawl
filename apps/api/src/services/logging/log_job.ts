@@ -884,6 +884,68 @@ async function logScrapeInternal(
   }
 }
 
+type LoggedProviderScrape = {
+  id: string;
+  request_id: string;
+  target: string;
+  team_id: string;
+  options: unknown;
+  time_taken: number;
+  credits_cost: number;
+  is_successful: boolean;
+  error?: string;
+};
+
+export async function logProviderScrape(scrape: LoggedProviderScrape) {
+  return withLogSpan(
+    {
+      operation: "provider_scrape",
+      table: "scrapes",
+      id: scrape.id,
+      requestId: scrape.request_id,
+      zeroDataRetention: false,
+    },
+    () => logProviderScrapeInternal(scrape),
+  );
+}
+
+async function logProviderScrapeInternal(scrape: LoggedProviderScrape) {
+  const logger = _logger.child({
+    module: "log_job",
+    method: "logProviderScrape",
+    scrapeId: scrape.id,
+    requestId: scrape.request_id,
+    teamId: scrape.team_id,
+  });
+  const storedTeamId =
+    keylessTeamUuid(scrape.team_id) ??
+    (scrape.team_id === "preview" || scrape.team_id?.startsWith("preview_")
+      ? previewTeamId
+      : scrape.team_id);
+
+  await robustInsert(
+    "scrapes",
+    {
+      id: scrape.id,
+      request_id: scrape.request_id,
+      url: scrape.target,
+      is_successful: scrape.is_successful,
+      error: scrape.error ?? null,
+      time_taken: scrape.time_taken,
+      team_id: storedTeamId,
+      options: scrape.options,
+      cost_tracking: null,
+      pdf_num_pages: null,
+      credits_cost: scrape.credits_cost,
+      monitor_id: null,
+      monitor_check_id: null,
+      content_type: null,
+    },
+    false,
+    logger,
+  );
+}
+
 type LoggedCrawl = {
   id: string;
   request_id: string;
