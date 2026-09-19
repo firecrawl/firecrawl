@@ -1,5 +1,5 @@
 import asyncio
-import httpx
+import httpx2
 from typing import Optional, Dict, Any
 from .get_version import get_version
 
@@ -26,10 +26,10 @@ class AsyncHttpClient:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        self._client = httpx.AsyncClient(
+        self._client = httpx2.AsyncClient(
             base_url=api_url,
             headers=headers,
-            limits=httpx.Limits(max_keepalive_connections=0),
+            limits=httpx2.Limits(max_keepalive_connections=0),
         )
 
     async def close(self) -> None:
@@ -49,7 +49,7 @@ class AsyncHttpClient:
         timeout: Optional[float] = None,
         retries: Optional[int] = None,
         backoff_factor: Optional[float] = None,
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -76,7 +76,7 @@ class AsyncHttpClient:
                         await asyncio.sleep(backoff_factor * (2 ** attempt))
                         continue
                 return response
-            except httpx.HTTPError as e:
+            except httpx2.HTTPError as e:
                 last_exception = e
                 if attempt == num_attempts - 1:
                     raise e
@@ -93,7 +93,7 @@ class AsyncHttpClient:
         timeout: Optional[float] = None,
         retries: Optional[int] = None,
         backoff_factor: Optional[float] = None,
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -118,7 +118,7 @@ class AsyncHttpClient:
                         await asyncio.sleep(backoff_factor * (2 ** attempt))
                         continue
                 return response
-            except httpx.HTTPError as e:
+            except httpx2.HTTPError as e:
                 last_exception = e
                 if attempt == num_attempts - 1:
                     raise e
@@ -133,7 +133,7 @@ class AsyncHttpClient:
         timeout: Optional[float] = None,
         retries: Optional[int] = None,
         backoff_factor: Optional[float] = None,
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -156,7 +156,7 @@ class AsyncHttpClient:
                         await asyncio.sleep(backoff_factor * (2 ** attempt))
                         continue
                 return response
-            except httpx.HTTPError as e:
+            except httpx2.HTTPError as e:
                 last_exception = e
                 if attempt == num_attempts - 1:
                     raise e
@@ -171,7 +171,7 @@ class AsyncHttpClient:
         timeout: Optional[float] = None,
         retries: Optional[int] = None,
         backoff_factor: Optional[float] = None,
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -194,7 +194,7 @@ class AsyncHttpClient:
                         await asyncio.sleep(backoff_factor * (2 ** attempt))
                         continue
                 return response
-            except httpx.HTTPError as e:
+            except httpx2.HTTPError as e:
                 last_exception = e
                 if attempt == num_attempts - 1:
                     raise e
@@ -210,7 +210,7 @@ class AsyncHttpClient:
         timeout: Optional[float] = None,
         retries: Optional[int] = None,
         backoff_factor: Optional[float] = None,
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -236,7 +236,7 @@ class AsyncHttpClient:
                     await asyncio.sleep(backoff_factor * (2 ** attempt))
                     continue
                 return response
-            except httpx.HTTPError as e:
+            except httpx2.HTTPError as e:
                 last_exception = e
                 if attempt == num_attempts - 1:
                     raise e
