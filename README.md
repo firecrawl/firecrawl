@@ -19,6 +19,9 @@
   <a href="https://firecrawl.dev">
     <img src="https://img.shields.io/badge/Visit-firecrawl.dev-orange" alt="Visit firecrawl.dev">
   </a>
+  <a href="https://lintspace.com/verdict/530a60a2-c0c5-4a88-b6ca-97de35775735">
+    <img src="https://lintspace.com/api/badge/530a60a2-c0c5-4a88-b6ca-97de35775735.svg" alt="Lintspace Score">
+  </a>
 </div>
 
 <div>
