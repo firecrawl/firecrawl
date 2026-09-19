@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, DrizzleQueryError } from "drizzle-orm";
 import { config } from "../../../config";
 import { db, dbRr } from "../../../db/connection";
 import * as schema from "../../../db/schema";
@@ -45,44 +45,48 @@ export async function lookupFeedbackJob(
   endpoint: EndpointFeedbackEndpoint,
   jobId: string,
   dbTeamId: string,
+  { requireOptions = false }: { requireOptions?: boolean } = {},
 ): Promise<FeedbackJobRow | null> {
   let bigtableFailed = false;
-  try {
-    const job = await readFeedbackJob(jobId);
-    if (job) {
-      const storedEndpoint = endpointForRefundClass(job.refundClass);
-      if (job.teamId !== dbTeamId || storedEndpoint !== endpoint) return null;
+  // Compact feedback records omit the options required by keyless validation.
+  if (!requireOptions) {
+    try {
+      const job = await readFeedbackJob(jobId);
+      if (job) {
+        const storedEndpoint = endpointForRefundClass(job.refundClass);
+        if (job.teamId !== dbTeamId || storedEndpoint !== endpoint) return null;
 
-      const feedbackWindowSec =
-        endpoint === "search"
-          ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
-          : config.FEEDBACK_MAX_AGE_SEC;
-      return {
-        endpoint,
-        id: jobId,
-        request_id: job.requestId,
-        team_id: job.teamId,
-        credits_cost: job.creditsBilled,
-        created_at: new Date(
-          job.feedbackDeadlineMs - feedbackWindowSec * 1000,
-        ).toISOString(),
-        is_successful: job.succeeded,
-        options: null,
-        feedback_deadline_ms: job.feedbackDeadlineMs,
-        refund_class: job.refundClass,
-        zero_data_retention: job.zeroDataRetention,
-      };
+        const feedbackWindowSec =
+          endpoint === "search"
+            ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
+            : config.FEEDBACK_MAX_AGE_SEC;
+        return {
+          endpoint,
+          id: jobId,
+          request_id: job.requestId,
+          team_id: job.teamId,
+          credits_cost: job.creditsBilled,
+          created_at: new Date(
+            job.feedbackDeadlineMs - feedbackWindowSec * 1000,
+          ).toISOString(),
+          is_successful: job.succeeded,
+          options: null,
+          feedback_deadline_ms: job.feedbackDeadlineMs,
+          refund_class: job.refundClass,
+          zero_data_retention: job.zeroDataRetention,
+        };
+      }
+    } catch (error) {
+      bigtableFailed = true;
+      logger.warn(
+        "Bigtable feedback job read failed; falling back to PostgreSQL",
+        {
+          error,
+          jobId,
+          endpoint,
+        },
+      );
     }
-  } catch (error) {
-    bigtableFailed = true;
-    logger.warn(
-      "Bigtable feedback job read failed; falling back to PostgreSQL",
-      {
-        error,
-        jobId,
-        endpoint,
-      },
-    );
   }
 
   const table = JOB_TABLES[endpoint] as any;
@@ -101,7 +105,7 @@ export async function lookupFeedbackJob(
     .limit(1);
 
   if (!row) return null;
-  if (!bigtableFailed) {
+  if (!requireOptions && !bigtableFailed) {
     recordJobStorePostgresFallback("feedback_job", jobId, { endpoint });
   }
 
@@ -165,7 +169,9 @@ export async function insertFeedback(params: {
     });
     return null;
   } catch (error) {
-    return error as DbError;
+    return (
+      error instanceof DrizzleQueryError ? (error.cause ?? error) : error
+    ) as DbError;
   }
 }
 

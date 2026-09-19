@@ -118,20 +118,27 @@ function validateAccess(
   return null;
 }
 
-async function lookupJobWithRetry(
-  options: FeedbackRecordOptions,
+export async function lookupJobWithRetry(
+  options: Pick<FeedbackRecordOptions, "endpoint" | "jobId" | "notFoundCode">,
   dbTeamId: string,
   logger: FeedbackLogger,
+  lookupOptions?: { requireOptions: boolean },
 ): Promise<FeedbackJobRow | FeedbackRecordResult> {
   try {
     let job = await lookupFeedbackJob(
       options.endpoint,
       options.jobId,
       dbTeamId,
+      lookupOptions,
     );
     if (!job) {
       await new Promise(resolve => setTimeout(resolve, LOOKUP_RACE_RETRY_MS));
-      job = await lookupFeedbackJob(options.endpoint, options.jobId, dbTeamId);
+      job = await lookupFeedbackJob(
+        options.endpoint,
+        options.jobId,
+        dbTeamId,
+        lookupOptions,
+      );
     }
 
     if (!job) {

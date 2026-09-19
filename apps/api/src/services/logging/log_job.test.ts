@@ -166,6 +166,7 @@ import {
 } from "./log_job";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
+import { keylessTeamUuid } from "../../lib/keyless";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -204,6 +205,16 @@ describe("logSearch", () => {
     publishMessage.mockResolvedValue("message-id");
     publishes.length = 0;
     spans.length = 0;
+  });
+
+  it("keeps the same keyless identity in PostgreSQL and compact feedback records", async () => {
+    const identity = "2b73a01c-5fd4-4628-a628-e3a0a5bf8f4b";
+    vi.mocked(keylessTeamUuid).mockReturnValueOnce(identity);
+    await logSearch(makeSearch({ team_id: "preview_keyless_fixture" }));
+    expect(values.mock.calls[0][0].team_id).toBe(identity);
+    expect(writeFeedbackJob).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: identity }),
+    );
   });
 
   it("removes null bytes from search query log fields", async () => {
