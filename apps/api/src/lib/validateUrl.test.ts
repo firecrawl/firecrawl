@@ -17,6 +17,14 @@ describe("isSameDomain", () => {
     expect(result).toBe(false);
   });
 
+  it("should treat different registrable domains under a multi-part suffix as different", () => {
+    // co.uk / github.io are public suffixes, so foo.co.uk and bar.co.uk are
+    // different sites. The last-two-labels split wrongly reported them equal.
+    expect(isSameDomain("https://foo.co.uk", "https://bar.co.uk")).toBe(false);
+    expect(isSameDomain("https://a.github.io", "https://b.github.io")).toBe(false);
+    expect(isSameDomain("https://x.example.co.uk", "https://y.example.co.uk")).toBe(true);
+  });
+
   it("should return true for a subdomain with different protocols", () => {
     const result = isSameDomain(
       "https://sub.example.com",
@@ -77,6 +85,18 @@ describe("isSameSubdomain", () => {
   it("should return false for different domains", () => {
     const result = isSameSubdomain("http://example.com", "http://another.com");
     expect(result).toBe(false);
+  });
+
+  it("should compare subdomains under a multi-part suffix correctly", () => {
+    // Registrable domain is example.co.uk and the subdomain is just "sub":
+    // the last-two-labels split treated the domain as co.uk and the subdomain
+    // as sub.example, so two different sites compared equal.
+    expect(
+      isSameSubdomain("https://sub.example.co.uk", "https://other.example.co.uk"),
+    ).toBe(false);
+    expect(
+      isSameSubdomain("https://sub.example.co.uk", "https://sub.example.co.uk"),
+    ).toBe(true);
   });
 
   it("should return false for invalid URLs", () => {
