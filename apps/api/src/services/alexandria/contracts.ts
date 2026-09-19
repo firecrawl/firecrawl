@@ -3,6 +3,12 @@ import { z } from "zod";
 export const callSchema = z.strictObject({
   provider: z.string().min(1).max(200),
   capability: z.string().min(1).max(200),
+  version: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/)
+    .optional(),
   options: z.record(z.string(), z.unknown()).default({}),
 });
 export const callsSchema = z.array(callSchema).min(1).max(10);

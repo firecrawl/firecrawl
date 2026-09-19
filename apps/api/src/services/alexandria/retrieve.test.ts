@@ -372,3 +372,15 @@ it.each([123, null, false, {}, []])(
     expect(executions()[0][0].resultAuthorization).toBeUndefined();
   },
 );
+
+it("forwards an optional version to quote and execution", async () => {
+  const pinned = { ...call, version: "1.2.3" };
+  await run({ calls: [pinned] });
+  const forwarded = mocks.request.mock.calls.filter(
+    ([r]) => r.path.endsWith("/quote") || r.path === "/v1/retrieve",
+  );
+  expect(forwarded).toHaveLength(2);
+  for (const [request] of forwarded) {
+    expect(request.body.requests).toEqual([pinned]);
+  }
+});
