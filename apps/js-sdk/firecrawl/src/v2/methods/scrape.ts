@@ -60,6 +60,11 @@ export function processingContinuesDelayMs(err: unknown): number | undefined {
  */
 export type ScrapeCallOptions = ScrapeOptions & {
   /**
+   * Prevent Firecrawl from storing the scraped data. Availability depends on
+   * the plan associated with the API key.
+   */
+  zeroDataRetention?: boolean;
+  /**
    * SDK-only (never sent to the API). Large documents (big PDFs) that
    * outlive the request window keep processing server-side; the API's
    * timeout error then carries `details.state === "processing_continues"`
