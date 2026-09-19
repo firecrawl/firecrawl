@@ -71,6 +71,12 @@ export type ScrapeCallOptions = ScrapeOptions & {
    * immediately instead.
    */
   autoResume?: boolean;
+  /**
+   * Top-level API option (like crawl and batch scrape): when true, scraped
+   * data is deleted after 24 hours. Sent as a top-level payload field, not
+   * inside nested scrape options.
+   */
+  zeroDataRetention?: boolean;
 };
 
 export async function scrape(
