@@ -83,7 +83,7 @@ _Pst. Hey, you, join our stargazers :)_
 
 ---
 
-## Quick Start
+## Quickstart
 
 Sign up at [firecrawl.dev](https://firecrawl.dev) to get your API key. Try the [playground](https://firecrawl.dev/playground) to test it out.
 
@@ -428,7 +428,7 @@ A request without `model` and without `effort` runs `spark-1-pro`.
 - Research tasks where the agent needs to explore multiple paths
 - Critical data where accuracy is paramount
 
-Learn more about Spark models in our [Agent documentation](https://docs.firecrawl.dev/features/agent).
+Learn more about Spark models in [Agent documentation](https://docs.firecrawl.dev/features/agent).
 
 ### Crawl
 
