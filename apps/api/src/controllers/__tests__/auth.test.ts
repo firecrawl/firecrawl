@@ -720,6 +720,43 @@ describe("authenticateUser", () => {
     });
   });
 
+  it.each([
+    [1549, 2],
+    [1, 1],
+    [1000, 1],
+    [0, 1],
+  ])(
+    "rounds a rate-limit wait of %i ms up to %i seconds",
+    async (msBeforeNext, seconds) => {
+      config.USE_DB_AUTHENTICATION = true;
+      config.PREVIEW_TOKEN = "preview-token";
+      vi.mocked(getRateLimiter).mockReturnValue({
+        consume: vi.fn().mockRejectedValue({
+          msBeforeNext,
+          consumedPoints: 101,
+          remainingPoints: 0,
+        }),
+      } as never);
+
+      const auth = await authenticateUser(
+        {
+          headers: { authorization: "Bearer preview-token" },
+          socket: { remoteAddress: "127.0.0.1" },
+        },
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth).toMatchObject({
+        success: false,
+        status: 429,
+        retryAfterSeconds: seconds,
+      });
+      if (auth.success) throw new Error("expected rate-limit rejection");
+      expect(auth.error).toContain(`please retry after ${seconds}s`);
+    },
+  );
+
   it("leaves the preview token on the static rate limiter", async () => {
     config.USE_DB_AUTHENTICATION = true;
     config.PREVIEW_TOKEN = "preview-token";
