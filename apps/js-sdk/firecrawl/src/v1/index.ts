@@ -1079,7 +1079,7 @@ export default class FirecrawlApp {
 
   /**
    * Initiates a batch scrape job for multiple URLs using the Firecrawl API.
-   * @param url - The URLs to scrape.
+   * @param urls - The URLs to scrape.
    * @param params - Additional parameters for the scrape request.
    * @param pollInterval - Time in seconds for job status checks.
    * @param idempotencyKey - Optional idempotency key for the request.
