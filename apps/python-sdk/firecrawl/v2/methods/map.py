@@ -25,6 +25,8 @@ def _prepare_map_request(url: str, options: Optional[MapOptions] = None) -> Dict
             data["includeSubdomains"] = options.include_subdomains
         if options.ignore_query_parameters is not None:
             data["ignoreQueryParameters"] = options.ignore_query_parameters
+        if options.ignore_cache is not None:
+            data["ignoreCache"] = options.ignore_cache
         if options.limit is not None:
             if options.limit <= 0:
                 raise ValueError("Limit must be positive")
