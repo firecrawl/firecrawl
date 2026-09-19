@@ -12,10 +12,6 @@ vi.mock("../../lib/crawl-redis", () => ({
   getDoneJobsOrderedLength: vi.fn(async () => 2),
 }));
 
-vi.mock("../../db/rpc", () => ({
-  creditsBilledByCrawlId: vi.fn(async () => [{ credits_billed: 0 }]),
-}));
-
 vi.mock("../../controllers/v1/crawl-status", () => ({
   getJobs: vi.fn(async () => []),
 }));

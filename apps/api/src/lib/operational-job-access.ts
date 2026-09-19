@@ -4,15 +4,6 @@ import {
   type ApiJobAccess,
   type ApiJobKind,
 } from "./job-access-store";
-import {
-  supabaseGetAgentRequestByIdDirect,
-  supabaseGetCrawlRequestById,
-  supabaseGetExtractRequestByIdDirect,
-  supabaseGetScrapeById,
-} from "./supabase-jobs";
-import { recordJobStorePostgresFallback } from "./job-store-fallback";
-
-const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
 type OperationalJobAccess = {
   teamId: string;
@@ -21,114 +12,50 @@ type OperationalJobAccess = {
   expiresAtMs: number;
 };
 
+/**
+ * Who owns a job and until when it may be fetched, from the Bigtable job
+ * access row that logRequest (and, for crawl and batch children, logScrape)
+ * writes. A missing or expired row is the documented end of the job's
+ * fetchable life; there is no other store to ask.
+ */
 async function resolveOperationalJobAccess(params: {
   id: string;
   kinds: readonly ApiJobKind[];
-  fallback: () => Promise<OperationalJobAccess | null>;
 }): Promise<OperationalJobAccess | null> {
   let access: ApiJobAccess | null = null;
-  let readFailed = false;
   try {
     access = await readApiJobAccess(params.id);
   } catch (error) {
-    readFailed = true;
-    logger.warn("Bigtable job access read failed; using legacy lookup", {
+    logger.warn("Bigtable job access read failed", {
       error,
       jobId: params.id,
     });
+    return null;
   }
-
-  if (access) {
-    return params.kinds.includes(access.kind) ? access : null;
-  }
-
-  const fallback = await params.fallback();
-  if (!fallback || !Number.isFinite(fallback.expiresAtMs)) return null;
-  // An expired row makes the caller answer 404 exactly as a miss would, so
-  // only a live row counts as PostgreSQL having been needed.
-  if (!readFailed && fallback.expiresAtMs > Date.now()) {
-    recordJobStorePostgresFallback("job_access", params.id, {
-      kind: fallback.kind,
-    });
-  }
-  return fallback;
+  if (!access) return null;
+  return params.kinds.includes(access.kind) ? access : null;
 }
 
 export function getScrapeJobAccess(
   id: string,
 ): Promise<OperationalJobAccess | null> {
-  return resolveOperationalJobAccess({
-    id,
-    kinds: ["scrape"],
-    fallback: async () => {
-      const row = await supabaseGetScrapeById(id);
-      return row
-        ? {
-            teamId: row.team_id,
-            kind: "scrape",
-            expiresAtMs: new Date(row.created_at).getTime() + DEFAULT_TTL_MS,
-          }
-        : null;
-    },
-  });
+  return resolveOperationalJobAccess({ id, kinds: ["scrape"] });
 }
 
 export function getExtractJobAccess(
   id: string,
 ): Promise<OperationalJobAccess | null> {
-  return resolveOperationalJobAccess({
-    id,
-    kinds: ["extract", "agent"],
-    fallback: async () => {
-      const row = await supabaseGetExtractRequestByIdDirect(id);
-      if (!row || (row.kind !== "extract" && row.kind !== "agent")) return null;
-      return {
-        teamId: row.team_id,
-        kind: row.kind,
-        clientOrigin: row.origin ?? undefined,
-        expiresAtMs: new Date(row.created_at).getTime() + DEFAULT_TTL_MS,
-      };
-    },
-  });
+  return resolveOperationalJobAccess({ id, kinds: ["extract", "agent"] });
 }
 
 export function getAgentJobAccess(
   id: string,
 ): Promise<OperationalJobAccess | null> {
-  return resolveOperationalJobAccess({
-    id,
-    kinds: ["agent"],
-    fallback: async () => {
-      const row = await supabaseGetAgentRequestByIdDirect(id);
-      if (!row) return null;
-      return {
-        teamId: row.team_id,
-        kind: "agent",
-        clientOrigin: row.origin ?? undefined,
-        expiresAtMs: new Date(row.created_at).getTime() + DEFAULT_TTL_MS,
-      };
-    },
-  });
+  return resolveOperationalJobAccess({ id, kinds: ["agent"] });
 }
 
 export function getCrawlJobAccess(
   id: string,
-  ttlHours: number,
 ): Promise<OperationalJobAccess | null> {
-  return resolveOperationalJobAccess({
-    id,
-    kinds: ["crawl", "batch_scrape"],
-    fallback: async () => {
-      const row = await supabaseGetCrawlRequestById(id);
-      if (!row || (row.kind !== "crawl" && row.kind !== "batch_scrape")) {
-        return null;
-      }
-      return {
-        teamId: row.team_id,
-        kind: row.kind,
-        expiresAtMs:
-          new Date(row.created_at!).getTime() + ttlHours * 60 * 60 * 1000,
-      };
-    },
-  });
+  return resolveOperationalJobAccess({ id, kinds: ["crawl", "batch_scrape"] });
 }
