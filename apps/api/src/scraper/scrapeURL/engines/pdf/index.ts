@@ -58,7 +58,13 @@ import { runFirePdfByReferenceAttempt } from "./fire-pdf/by-reference-flow";
 import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { toPublicBlocks } from "./blocks";
-import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
+import {
+  fromPdfHeader,
+  isPdfBuffer,
+  pdfHeaderLineOffset,
+  PDF_HEADER_PROBE_BYTES,
+  stripLeadingBytes,
+} from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
 import { withPdfExtractionPermit } from "./semaphore";
 
@@ -169,9 +175,12 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
         throw new UnsupportedFileError("File exceeds size limit");
       }
-      const content = (await readFile(meta.pdfPrefetch.filePath)).toString(
-        "base64",
-      );
+      // The raw path returns the document, not the server's framing: any
+      // leading bytes ahead of the header (see the parse path below) are
+      // dropped here too, so both paths hand out the same PDF.
+      const content = fromPdfHeader(
+        await readFile(meta.pdfPrefetch.filePath),
+      ).toString("base64");
       return {
         url: meta.pdfPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
         statusCode: meta.pdfPrefetch.status,
@@ -212,7 +221,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         }
       }
 
-      const content = file.buffer.toString("base64");
+      const content = fromPdfHeader(file.buffer).toString("base64");
       return {
         url: file.response.url,
         statusCode: file.response.status,
@@ -273,21 +282,24 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   try {
     // Validate the downloaded file is actually a PDF by checking magic bytes
-    const header = Buffer.alloc(PDF_SNIFF_WINDOW);
+    // (the probe carries a few bytes past the sniff window so a header line
+    // starting at its very end is still seen whole).
+    const header = Buffer.alloc(PDF_HEADER_PROBE_BYTES);
     const fh = await open(tempFilePath, "r");
     let headerBytesRead: number;
     try {
       ({ bytesRead: headerBytesRead } = await fh.read(
         header,
         0,
-        PDF_SNIFF_WINDOW,
+        PDF_HEADER_PROBE_BYTES,
         0,
       ));
     } finally {
       await fh.close();
     }
 
-    if (!isPdfBuffer(header.subarray(0, headerBytesRead))) {
+    const headerWindow = header.subarray(0, headerBytesRead);
+    if (!isPdfBuffer(headerWindow)) {
       // (null prefetch = browser round trip ran but delivered no file —
       // still PDFAntibotError so the retry loop can give the browser
       // another shot, exactly like the no-prefetch case)
@@ -300,6 +312,32 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       } else {
         throw new PDFPrefetchFailed();
       }
+    }
+
+    // Leading bytes before the header line — a multipart boundary and part
+    // headers a server echoed around the file, for instance. Repairing
+    // readers skip them, but the native extractor rejects the file and the
+    // cross-reference offsets are relative to the header, so drop them once
+    // here for every consumer downstream (native detection and extraction,
+    // FirePDF, the cache key). Only a real header line qualifies: bytes
+    // that merely mention the magic passed the gate above as they always
+    // have and are left exactly as served.
+    const headerOffset = pdfHeaderLineOffset(headerWindow);
+    if (headerOffset > 0) {
+      await stripLeadingBytes(tempFilePath, headerOffset);
+      if (meta.pdfPrefetch?.gcsReference) {
+        // The handoff object holds the wrapped bytes; a server-side copy
+        // would send them to FirePDF as-is. Drop the reference so the
+        // by-reference path uploads the stripped local file instead.
+        meta.pdfPrefetch = { ...meta.pdfPrefetch, gcsReference: undefined };
+      }
+      meta.logger.info("Stripped leading bytes before the PDF header", {
+        method: "scrapePDF",
+        event: "pdf_header_offset_stripped",
+        header_offset: headerOffset,
+        scrape_id: meta.id,
+        team_id: meta.internalOptions.teamId,
+      });
     }
 
     let result: PDFProcessorResult | null = null;
