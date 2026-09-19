@@ -1,3 +1,4 @@
+{{- if .Values.redis.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -10,3 +11,4 @@ spec:
     - protocol: TCP
       port: {{ .Values.service.redis.port }}
       targetPort: {{ .Values.service.redis.port }}
+{{- end }}
