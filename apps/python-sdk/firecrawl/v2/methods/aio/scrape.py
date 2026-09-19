@@ -9,6 +9,7 @@ from ...types import (
     AlexandriaScrapeData,
 )
 from ..scrape import _alexandria_request_id, _prepare_scrape_alexandria_request, _parse_scrape_alexandria_response
+from ...utils.agent_hints import agent_hint_metadata
 from ...utils.normalize import normalize_document_input
 from ...utils.error_handler import FirecrawlError, handle_response_error
 from ...utils.validation import prepare_scrape_options, validate_scrape_options
@@ -52,9 +53,9 @@ async def scrape(
             handle_response_error(response, "scrape")
         body = response.json()
         if not body.get("success"):
-            raise Exception(body.get("error", "Unknown error occurred"))
+            handle_response_error(response, "scrape")
         document_data = body.get("data", {})
-        normalized = normalize_document_input(document_data)
+        normalized = {**normalize_document_input(document_data), **agent_hint_metadata(body)}
         return Document(**normalized)
 
 

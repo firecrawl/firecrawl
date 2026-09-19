@@ -1,5 +1,6 @@
 import { type MapData, type MapOptions, type SearchResultWeb } from "../types";
 import { HttpClient } from "../utils/httpClient";
+import { agentHintMetadata } from "../utils/agentHints";
 import {
   throwForBadResponse,
   normalizeAxiosError,
@@ -65,7 +66,7 @@ export async function map(
           description: (item as any).description,
         });
     }
-    return { id: res.data.id, links };
+    return { id: res.data.id, links, ...agentHintMetadata(res.data) };
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "map");
     throw err;

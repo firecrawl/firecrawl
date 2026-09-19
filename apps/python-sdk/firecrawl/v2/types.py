@@ -68,6 +68,7 @@ class BaseResponse(BaseModel, Generic[T]):
     """Base response structure for all API responses."""
 
     success: bool
+    agent_hints: Optional[List[str]] = None
     data: Optional[T] = None
     error: Optional[str] = None
     warning: Optional[str] = None
@@ -497,6 +498,7 @@ class PdfPage(BaseModel):
 class Document(BaseModel):
     """A scraped document."""
 
+    agent_hints: Optional[List[str]] = None
     markdown: Optional[str] = None
     html: Optional[str] = None
     raw_html: Optional[str] = None
@@ -1253,6 +1255,7 @@ class MapRequest(BaseModel):
 class MapData(BaseModel):
     """Map results data."""
 
+    agent_hints: Optional[List[str]] = None
     links: List["SearchResult"]
 
 
@@ -2355,6 +2358,7 @@ SearchResult = LinkResult
 class SearchData(BaseModel):
     """Search results grouped by source type."""
 
+    agent_hints: Optional[List[str]] = None
     warning: Optional[str] = None
     web: Optional[List[Union[SearchResultWeb, Document]]] = None
     news: Optional[List[Union[SearchResultNews, Document]]] = None
