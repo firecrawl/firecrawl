@@ -473,6 +473,7 @@ async function robustInsert(
 type LoggedRequest = {
   id: string;
   kind:
+    | "alexandria"
     | "scrape"
     | "crawl"
     | "batch_scrape"

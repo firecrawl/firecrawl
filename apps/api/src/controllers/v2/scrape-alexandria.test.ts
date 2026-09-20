@@ -113,7 +113,7 @@ it("returns the Scrape contract, shares identity with the legacy route, and logs
   );
   expect(mocks.log).toHaveBeenCalledTimes(1);
   expect(mocks.log).toHaveBeenCalledWith(
-    expect.objectContaining({ kind: "scrape", jobAccess: false }),
+    expect.objectContaining({ kind: "alexandria", jobAccess: false }),
   );
 });
 

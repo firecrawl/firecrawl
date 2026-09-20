@@ -168,7 +168,7 @@ export async function providerScrapeController(
     void (async () => {
       await logRequest({
         id: result.scrapeId,
-        kind: "scrape",
+        kind: "alexandria",
         api_version: "v2",
         external_request_id: externalRequestId(req),
         team_id: req.auth.team_id,
