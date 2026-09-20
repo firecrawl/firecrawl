@@ -484,7 +484,11 @@ it("does not derive terms credential identity from numeric API-key IDs", async (
   );
   for (const apiKeyId of [12, Number("9007199254740993")]) {
     mocks.store.clear();
-    await run({ calls: [termsCall], apiKeyId });
+    const previousCount = executions().length;
+    expect(await run({ calls: [termsCall], apiKeyId })).toMatchObject({
+      executed: true,
+    });
+    expect(executions()).toHaveLength(previousCount + 1);
     const execution = executions().at(-1);
     if (!execution) throw new Error("Expected a provider execution");
     expect(execution[0].termsIdentity).toBeUndefined();
