@@ -27,7 +27,7 @@ from .v1 import (
     V1ChangeTrackingOptions,
 )
 
-__version__ = "4.43.0"
+__version__ = "4.44.0"
 
 # Define the logger for the Firecrawl project
 logger: logging.Logger = logging.getLogger("firecrawl")
