@@ -20,7 +20,11 @@ describe("v2.extract unit", () => {
       urls: ["https://example.com"],
       scrapeOptions: { onlyMainContent: true },
     });
-    expect(scrapeOptions.toolDetail).toBe("compact");
+    expect(scrapeOptions).toEqual({
+      toolDetail: "compact",
+      domainTools: true,
+      onlyMainContent: true,
+    });
   });
   test("startExtract forwards string webhook in request payload", async () => {
     const post = jest.fn().mockResolvedValue({
