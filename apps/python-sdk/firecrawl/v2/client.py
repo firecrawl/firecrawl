@@ -492,7 +492,7 @@ class FirecrawlClient:
 
         Args:
             query: Search query string
-            tool_detail: "compact" returns provider, capability and description; "summary" (default) adds metadata and a follow-up request; "full" includes contracts.
+            tool_detail: "compact" (default) returns provider, capability and description; "summary" adds metadata and a follow-up request; "full" includes contracts.
             limit: Maximum number of results to return (default: 5)
             tbs: Time-based search filter
             location: Location string for search

@@ -976,7 +976,7 @@ export interface SearchRequest {
   query: string;
   /** Include domain-matched tools in tools alongside semantic matches. */
   domainTools?: boolean;
-  /** Summary by default; compact returns identity and description, full includes contracts. */
+  /** Compact by default; summary adds metadata, full includes contracts. */
   toolDetail?: "compact" | "summary" | "full";
   sources?: Array<
     "web" | "news" | "images" | "alexandria"

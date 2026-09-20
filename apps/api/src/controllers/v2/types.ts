@@ -2411,7 +2411,7 @@ export const searchRequestSchema = z
     // whether generated highlights are returned or only run in shadow mode.
     highlights: z.boolean().optional(),
     domainTools: z.boolean().optional(),
-    toolDetail: z.enum(["compact", "summary", "full"]).optional(),
+    toolDetail: z.enum(["compact", "summary", "full"]).prefault("compact"),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions

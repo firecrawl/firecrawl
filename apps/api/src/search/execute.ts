@@ -253,7 +253,7 @@ export async function executeSearch(
   ) {
     const discovery = await discoverTools(
       {
-        toolDetail: options.toolDetail,
+        toolDetail: options.toolDetail ?? "compact",
         teamId,
         limit,
         query: wantsTools ? query : undefined,

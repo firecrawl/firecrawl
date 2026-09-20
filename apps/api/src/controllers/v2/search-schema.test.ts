@@ -27,6 +27,10 @@ describe("searchRequestSchema highlights", () => {
     const request = searchRequestSchema.parse({ query: "firecrawl" });
 
     expect(request.highlights).toBeUndefined();
+    expect(request.toolDetail).toBe("compact");
+    expect(
+      scrapeRequestSchema.parse({ url: "https://example.com" }).toolDetail,
+    ).toBeUndefined();
   });
 
   it("allows highlights to be enabled explicitly", () => {
