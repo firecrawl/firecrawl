@@ -187,7 +187,7 @@ exchangeRouter.post(
 exchangeRouter.post(
   "/provider-terms/events",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
 exchangeRouter.post(
