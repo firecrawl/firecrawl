@@ -236,7 +236,8 @@ it("accepts the Alexandria activity filter and includes historical scrape rows",
   const res = makeRes();
   await activityController(makeReq({ endpoint: "alexandria" }), res);
   expect(res.status).toHaveBeenCalledWith(200);
-  expect(mocks.query.mock.calls.at(-1)[0].query).toContain(
+  expect(mocks.query).toHaveBeenCalled();
+  expect(mocks.query.mock.calls.at(-1)?.[0].query).toContain(
     "(kind = 'alexandria' OR (kind = 'scrape' AND startsWith(target_hint, 'alexandria:')))",
   );
 });
