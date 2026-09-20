@@ -105,17 +105,17 @@ export async function retrieveProviders(input: {
   if (Buffer.byteLength(JSON.stringify(input.calls)) > 256 * 1024)
     return notExecuted(refusal(400, "Provider options exceed 256 KB."));
 
-  const loadsBashResult = input.calls.some(
+  const loadsSavedResult = input.calls.some(
     call =>
       call.provider === "firecrawl" &&
-      call.capability === "bash" &&
+      (call.capability === "bash" || call.capability === "jev") &&
       typeof call.options?.requestId === "string",
   );
-  if (loadsBashResult && input.calls.length !== 1)
+  if (loadsSavedResult && input.calls.length !== 1)
     return notExecuted(
       refusal(
         400,
-        "Bash source loading must be sent as a separate request; do not batch it with other calls.",
+        "Saved-result loading must be sent as a separate request; do not batch it with other calls.",
       ),
     );
 
@@ -330,7 +330,7 @@ export async function retrieveProviders(input: {
       body: { requests: input.calls },
       timeoutMs: remaining(),
       requestId: id,
-      ...(loadsBashResult && input.resultAuthorization
+      ...(loadsSavedResult && input.resultAuthorization
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
       maximumCredits,

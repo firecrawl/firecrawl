@@ -279,99 +279,106 @@ it("treats a team with no org as a skipped hold and executes nothing", async () 
   expect(mocks.store.size).toBe(0);
 });
 
-it.each([false, true])(
-  "rejects mixed Bash source loading before side effects (Bash first: %s)",
-  async bashFirst => {
+describe.each(["bash", "jev"])("%s saved-result authorization", capability => {
+  it.each([false, true])(
+    "rejects mixed saved-result source loading before side effects (saved-result first: %s)",
+    async bashFirst => {
+      const bash = {
+        provider: "firecrawl",
+        capability,
+        options: { requestId: "source", command: "ls" },
+      };
+      const result = await run({
+        calls: bashFirst ? [bash, call] : [call, bash],
+        resultAuthorization: "Bearer caller",
+      });
+      expect(result).toMatchObject({ status: 400, executed: false });
+      expect(mocks.request).not.toHaveBeenCalled();
+      expect(mocks.authorize).not.toHaveBeenCalled();
+      expect(mocks.lock).not.toHaveBeenCalled();
+      expect(mocks.store.size).toBe(0);
+    },
+  );
+
+  it("allows standalone saved-result source loading and forwards credentials only to execution", async () => {
     const bash = {
       provider: "firecrawl",
-      capability: "bash",
+      capability,
       options: { requestId: "source", command: "ls" },
     };
+    exchangeAnswers({
+      success: true,
+      creditsCost: 0,
+      results: [
+        { ...bash, creditsCost: 0, data: { workspaceId: "workspace" } },
+      ],
+    });
     const result = await run({
-      calls: bashFirst ? [bash, call] : [call, bash],
+      calls: [bash],
       resultAuthorization: "Bearer caller",
     });
-    expect(result).toMatchObject({ status: 400, executed: false });
-    expect(mocks.request).not.toHaveBeenCalled();
-    expect(mocks.authorize).not.toHaveBeenCalled();
-    expect(mocks.lock).not.toHaveBeenCalled();
-    expect(mocks.store.size).toBe(0);
-  },
-);
-
-it("allows standalone Bash source loading and forwards credentials only to execution", async () => {
-  const bash = {
-    provider: "firecrawl",
-    capability: "bash",
-    options: { requestId: "source", command: "ls" },
-  };
-  exchangeAnswers({
-    success: true,
-    creditsCost: 0,
-    results: [{ ...bash, creditsCost: 0, data: { workspaceId: "workspace" } }],
-  });
-  const result = await run({
-    calls: [bash],
-    resultAuthorization: "Bearer caller",
-  });
-  expect(result).toMatchObject({ status: 200, executed: true });
-  expect(executions()).toHaveLength(1);
-  expect(executions()[0][0].resultAuthorization).toBe("Bearer caller");
-  expect(
-    mocks.request.mock.calls
-      .filter(([arg]) => arg.path !== "/v1/retrieve")
-      .every(([arg]) => arg.resultAuthorization === undefined),
-  ).toBe(true);
-  expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
-});
-
-it.each([
-  {
-    provider: "firecrawl",
-    capability: "bash",
-    options: { workspaceId: "workspace", command: "ls" },
-  },
-  {
-    provider: "firecrawl",
-    capability: "find-tools",
-    options: { requestId: "source" },
-  },
-  { provider: "other", capability: "bash", options: { requestId: "source" } },
-])("does not forward credentials for other calls: %j", async other => {
-  exchangeAnswers({
-    success: true,
-    creditsCost: 0,
-    results: [call, other].map(entry => ({
-      ...entry,
-      creditsCost: 0,
-      data: {},
-    })),
-  });
-  expect(
-    await run({ calls: [call, other], resultAuthorization: "Bearer caller" }),
-  ).toMatchObject({ status: 200, executed: true });
-  expect(executions()[0][0].resultAuthorization).toBeUndefined();
-});
-
-it.each([123, null, false, {}, []])(
-  "never forwards credentials for a non-string Bash requestId: %j",
-  async requestId => {
-    const bash = {
-      provider: "firecrawl",
-      capability: "bash",
-      options: { requestId, command: "ls" },
-    };
-    exchangeAnswers(
-      { success: false, error: "invalid option", code: "invalid_option" },
-      400,
-    );
-    expect(
-      await run({ calls: [call, bash], resultAuthorization: "Bearer caller" }),
-    ).toMatchObject({ status: 400 });
+    expect(result).toMatchObject({ status: 200, executed: true });
     expect(executions()).toHaveLength(1);
+    expect(executions()[0][0].resultAuthorization).toBe("Bearer caller");
+    expect(
+      mocks.request.mock.calls
+        .filter(([arg]) => arg.path !== "/v1/retrieve")
+        .every(([arg]) => arg.resultAuthorization === undefined),
+    ).toBe(true);
+    expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
+  });
+
+  it.each([
+    {
+      provider: "firecrawl",
+      capability,
+      options: { workspaceId: "workspace", command: "ls" },
+    },
+    {
+      provider: "firecrawl",
+      capability: "find-tools",
+      options: { requestId: "source" },
+    },
+    { provider: "other", capability, options: { requestId: "source" } },
+  ])("does not forward credentials for other calls: %j", async other => {
+    exchangeAnswers({
+      success: true,
+      creditsCost: 0,
+      results: [call, other].map(entry => ({
+        ...entry,
+        creditsCost: 0,
+        data: {},
+      })),
+    });
+    expect(
+      await run({ calls: [call, other], resultAuthorization: "Bearer caller" }),
+    ).toMatchObject({ status: 200, executed: true });
     expect(executions()[0][0].resultAuthorization).toBeUndefined();
-  },
-);
+  });
+
+  it.each([123, null, false, {}, []])(
+    "never forwards credentials for a non-string saved-result requestId: %j",
+    async requestId => {
+      const bash = {
+        provider: "firecrawl",
+        capability,
+        options: { requestId, command: "ls" },
+      };
+      exchangeAnswers(
+        { success: false, error: "invalid option", code: "invalid_option" },
+        400,
+      );
+      expect(
+        await run({
+          calls: [call, bash],
+          resultAuthorization: "Bearer caller",
+        }),
+      ).toMatchObject({ status: 400 });
+      expect(executions()).toHaveLength(1);
+      expect(executions()[0][0].resultAuthorization).toBeUndefined();
+    },
+  );
+});
 
 it("forwards an optional version to quote and execution", async () => {
   const pinned = { ...call, version: "1.2.3" };
