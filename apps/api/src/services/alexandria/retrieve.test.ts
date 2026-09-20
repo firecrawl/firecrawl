@@ -429,3 +429,62 @@ it("forwards verified terms identity only for terms-only executions", async () =
     expect(executions()[0][0].termsIdentity).toBeUndefined();
   }
 });
+
+it("binds terms replay to exact organization and credential identity", async () => {
+  const termsCall = {
+    provider: "firecrawl",
+    capability: "terms/accept",
+    options: { provider: "benzinga" },
+  };
+  exchangeAnswers(
+    {
+      success: true,
+      creditsCost: 0,
+      results: [{ ...termsCall, creditsCost: 0, data: {} }],
+    },
+    200,
+    { status: 200, body: { maximumCredits: 0 } },
+  );
+  const input = { calls: [termsCall], apiKeyIdText: "9007199254740993" };
+  expect((await run(input)).executed).toBe(true);
+  expect(executions()[0][0].termsIdentity.apiKeyId).toBe("9007199254740993");
+  expect((await run(input)).executed).toBe(false);
+  for (const change of [
+    { apiKeyIdText: "9007199254740994" },
+    { orgId: "other-org" },
+    { apiKeyIdText: undefined },
+  ]) {
+    expect(await run({ ...input, ...change })).toMatchObject({
+      status: 409,
+      executed: false,
+    });
+  }
+  expect(executions()).toHaveLength(1);
+  expect(
+    (
+      await run({
+        ...input,
+        apiKeyIdText: "9007199254740994",
+        requestId: "another-request",
+      })
+    ).executed,
+  ).toBe(true);
+});
+
+it("does not derive terms credential identity from numeric API-key IDs", async () => {
+  const termsCall = { provider: "firecrawl", capability: "terms/show" };
+  exchangeAnswers(
+    {
+      success: true,
+      creditsCost: 0,
+      results: [{ ...termsCall, creditsCost: 0, data: {} }],
+    },
+    200,
+    { status: 200, body: { maximumCredits: 0 } },
+  );
+  for (const apiKeyId of [12, Number("9007199254740993")]) {
+    mocks.store.clear();
+    await run({ calls: [termsCall], apiKeyId });
+    expect(executions().at(-1)[0].termsIdentity).toBeUndefined();
+  }
+});
