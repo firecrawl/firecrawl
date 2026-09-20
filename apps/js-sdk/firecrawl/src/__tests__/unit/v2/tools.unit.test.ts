@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, jest, test } from "@jest/globals";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test,
+} from "@jest/globals";
 import { createServer, type Server } from "node:http";
 import { FirecrawlClient } from "../../../v2/client";
 
@@ -76,7 +84,16 @@ beforeAll(async () => {
           warning: "Example warning",
           data: {
             web: [{ url: "https://podcasts.apple.com" }],
-            tools: [tool, productionTool],
+            tools:
+              body.toolDetail === "compact"
+                ? [
+                    {
+                      provider: tool.provider,
+                      capability: tool.capability,
+                      description: tool.description,
+                    },
+                  ]
+                : [tool, productionTool],
           },
         }),
       );
@@ -150,10 +167,21 @@ afterAll(async () => {
 });
 
 describe("Alexandria contracts and execution", () => {
-  test.each(["summary", "full"] as const)("forwards %s discovery detail", async toolDetail => {
-    await client.search("records", { toolDetail });
-    expect(sent.at(-1)?.body).toMatchObject({ toolDetail });
-  });
+  test.each(["compact", "summary", "full"] as const)(
+    "forwards %s discovery detail",
+    async (toolDetail) => {
+      const result = await client.search("records", { toolDetail });
+      if (toolDetail === "compact")
+        expect(result.tools).toEqual([
+          {
+            provider: tool.provider,
+            capability: tool.capability,
+            description: tool.description,
+          },
+        ]);
+      expect(sent.at(-1)?.body).toMatchObject({ toolDetail });
+    },
+  );
   test("returns complete unified tools and warning beside web results", async () => {
     const result = await client.search("podcasts", {
       sources: ["web", { type: "alexandria" }],
@@ -230,15 +258,27 @@ describe("Alexandria contracts and execution", () => {
   });
 });
 
-
-test.each([[undefined, 80000], [1000, 31000], [100000, 80000]])(
+test.each([
+  [undefined, 80000],
+  [1000, 31000],
+  [100000, 80000],
+])(
   "Alexandria timeout %s allows response delivery (%s ms)",
   async (timeout, timeoutMs) => {
-    const http = { post: jest.fn(async () => ({ status: 200, data: {
-      success: true, data: { alexandria: [], creditsCost: 0 },
-    } })) };
+    const http = {
+      post: jest.fn(async () => ({
+        status: 200,
+        data: {
+          success: true,
+          data: { alexandria: [], creditsCost: 0 },
+        },
+      })),
+    };
     await scrapeAlexandria(http as any, [next], { timeout });
-    expect(http.post).toHaveBeenCalledWith("/v2/scrape", expect.anything(),
-      expect.objectContaining({ timeoutMs }));
+    expect(http.post).toHaveBeenCalledWith(
+      "/v2/scrape",
+      expect.anything(),
+      expect.objectContaining({ timeoutMs }),
+    );
   },
 );

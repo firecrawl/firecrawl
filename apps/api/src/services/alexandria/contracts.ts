@@ -77,7 +77,7 @@ export const toolSummarySchema = toolSchema
     recordsPerUnit: z.number().positive().optional(),
     zeroDataRetentionCreditsCost: credits.optional(),
   });
-export type DiscoveredTool = (
+export type DetailedDiscoveredTool = (
   | z.infer<typeof toolSchema>
   | z.infer<typeof toolSummarySchema>
 ) & {
@@ -95,3 +95,9 @@ export const refusal = (
   status,
   body: { success: false, error, ...extra },
 });
+
+export type CompactDiscoveredTool = Pick<
+  z.infer<typeof toolSummarySchema>,
+  "provider" | "capability" | "description"
+>;
+export type DiscoveredTool = CompactDiscoveredTool | DetailedDiscoveredTool;

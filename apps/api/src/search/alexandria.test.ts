@@ -25,9 +25,14 @@ const tool = {
   example: { query: "test" },
   next,
 };
+const compact = {
+  provider: tool.provider,
+  capability: tool.capability,
+  description: tool.description,
+};
 const input = { teamId: "team", query: "records", limit: 5, timeoutMs: 10000 };
 beforeEach(() => vi.clearAllMocks());
-it.each([undefined, "summary", "full"] as const)(
+it.each([undefined, "compact", "summary", "full"] as const)(
   "supports %s discovery detail",
   async toolDetail => {
     request.mockResolvedValue({
@@ -45,6 +50,10 @@ it.each([undefined, "summary", "full"] as const)(
           toolDetail === "full" ? ["options", "response", "examples"] : [],
       },
     });
+    if (toolDetail === "compact") {
+      expect(result.items).toEqual([compact]);
+      return;
+    }
     expect(result.items[0]).toMatchObject({
       id: "sample/records/search",
       matchedBy: ["semantic"],
@@ -67,7 +76,7 @@ it("keeps a warning when discovery fails", async () => {
   expect(result.items).toEqual([]);
   expect(result.warning).toBeTruthy();
 });
-it.each([undefined, "full"] as const)(
+it.each([undefined, "compact", "full"] as const)(
   "deduplicates semantic and domain tools with %s detail",
   async toolDetail => {
     request.mockImplementation(async args =>
@@ -94,6 +103,10 @@ it.each([undefined, "full"] as const)(
       logger,
     );
     expect(result.items).toHaveLength(1);
+    if (toolDetail === "compact") {
+      expect(result.items).toEqual([compact]);
+      return;
+    }
     expect(result.items[0]).toMatchObject({
       matchedBy: ["semantic", "domain"],
       matchedUrls: ["https://example.com/records"],
@@ -140,7 +153,7 @@ it("keeps tools when optional navigation is absent, extended or malformed", asyn
   const result = await discoverTools(input, logger);
   expect(result.items).toHaveLength(3);
   expect(result.warning).toBeUndefined();
-  expect(result.items[1].next).toMatchObject({ ...next, label: "Inspect" });
-  expect(result.items[0].next).toBeUndefined();
-  expect(result.items[2].next).toBeUndefined();
+  expect(result.items[1]).toHaveProperty("next", { ...next, label: "Inspect" });
+  expect(result.items[0]).toMatchObject({ next: undefined });
+  expect(result.items[2]).toMatchObject({ next: undefined });
 });

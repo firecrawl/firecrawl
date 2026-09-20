@@ -45,7 +45,7 @@ interface SearchOptions {
   scrapeOptions?: ScrapeOptions;
   highlights?: boolean;
   domainTools?: boolean;
-  toolDetail?: "summary" | "full";
+  toolDetail?: "compact" | "summary" | "full";
   timeout: number;
 }
 

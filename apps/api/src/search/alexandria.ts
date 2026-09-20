@@ -5,6 +5,7 @@ import {
   toolSchema,
   toolSummarySchema,
   type DiscoveredTool,
+  type DetailedDiscoveredTool,
 } from "../services/alexandria/contracts";
 
 export const isAlexandriaSource = (source: { type: string }) =>
@@ -37,7 +38,7 @@ export function isToolsOnlySearch(
 export async function discoverTools(
   input: {
     teamId: string;
-    toolDetail?: "summary" | "full";
+    toolDetail?: "compact" | "summary" | "full";
     query?: string;
     urls?: string[];
     limit: number;
@@ -46,7 +47,7 @@ export async function discoverTools(
   logger: Logger,
 ): Promise<ToolDiscovery> {
   const deadline = Date.now() + Math.min(10000, input.timeoutMs);
-  const items = new Map<string, DiscoveredTool>();
+  const items = new Map<string, DetailedDiscoveredTool>();
   const selected = { semantic: new Set<string>(), domain: new Set<string>() };
   let failed = false;
   const remaining = () => {
@@ -210,7 +211,15 @@ export async function discoverTools(
     }
   }
   return {
-    items: [...items.values()],
+    items: [...items.values()].map(tool =>
+      input.toolDetail === "compact"
+        ? {
+            provider: tool.provider,
+            capability: tool.capability,
+            description: tool.description,
+          }
+        : tool,
+    ),
     ...(failed
       ? { warning: "Some tool discovery results are unavailable." }
       : {}),

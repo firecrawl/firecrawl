@@ -1,12 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { searchRequestSchema } from "./types";
+import { searchRequestSchema, scrapeRequestSchema } from "./types";
 
 describe("searchRequestSchema highlights", () => {
-  it.each(["summary", "full"])("accepts %s tool detail", toolDetail => {
-    expect(
-      searchRequestSchema.parse({ query: "records", toolDetail }).toolDetail,
-    ).toBe(toolDetail);
-  });
+  it.each(["compact", "summary", "full"])(
+    "accepts %s tool detail",
+    toolDetail => {
+      expect(
+        searchRequestSchema.parse({ query: "records", toolDetail }).toolDetail,
+      ).toBe(toolDetail);
+      expect(
+        scrapeRequestSchema.parse({
+          url: "https://example.com",
+          domainTools: true,
+          toolDetail,
+        }).toolDetail,
+      ).toBe(toolDetail);
+    },
+  );
   it("rejects unknown tool detail", () => {
     expect(
       searchRequestSchema.safeParse({ query: "records", toolDetail: "all" })

@@ -212,7 +212,7 @@ async def test_alexandria_transport_timeout(async_client, timeout, expected):
     payload = client.post.call_args.args[1]
     assert payload.get("timeout") == timeout
 
-@pytest.mark.parametrize('detail', ['summary', 'full'])
+@pytest.mark.parametrize('detail', ['compact', 'summary', 'full'])
 def test_discovery_detail_serialization(detail):
     from firecrawl.v2.types import ScrapeOptions, SearchRequest, DiscoveredTool
     from firecrawl.v2.utils.validation import prepare_scrape_options
@@ -222,3 +222,10 @@ def test_discovery_detail_serialization(detail):
     summary = {key:value for key,value in TOOL.items() if key not in ('options','response','examples')}
     summary['next'] = NEXT
     assert DiscoveredTool(**summary).next == NEXT
+
+
+def test_compact_discovery_response_parsing():
+    from firecrawl.v2.types import SearchData, Document
+    compact = {"provider": "sample", "capability": "records/search", "description": "Search records"}
+    for parsed in [SearchData(tools=[compact]), Document(tools=[compact])]:
+        assert parsed.tools[0].model_dump(by_alias=True, exclude_unset=True) == compact

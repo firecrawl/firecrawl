@@ -184,7 +184,7 @@ class FirecrawlClient:
         audit_metadata: Optional[AuditMetadata] = None,
         integration: Optional[str] = None,
         domain_tools: Optional[bool] = None,
-        tool_detail: Optional[Literal["summary", "full"]] = None,
+        tool_detail: Optional[Literal["compact", "summary", "full"]] = None,
     ) -> Union[Document, AlexandriaScrapeData]:
         """
         Scrape a single URL and return the document.
@@ -212,7 +212,7 @@ class FirecrawlClient:
             lockdown: Serve only previously cached results; never make outbound requests. Returns 404 SCRAPE_LOCKDOWN_CACHE_MISS on cache miss.
             threat_protection: Enterprise per-request override of the team's threat protection policy
             profile: Browser profile for persistent state (e.g. {"name": "my-profile", "saveChanges": True})
-            tool_detail: "summary" (default) returns compact tool summaries; "full" includes contracts when domain discovery is enabled.
+            tool_detail: "compact" returns provider, capability and description; "summary" (default) adds metadata; "full" includes contracts when domain discovery is enabled.
             audit_metadata: Metadata to include in SIEM logging events
         Returns:
             Document
@@ -471,7 +471,7 @@ class FirecrawlClient:
         *,
         sources: Optional[List[SourceOption]] = None,
         domain_tools: Optional[bool] = None,
-        tool_detail: Optional[Literal["summary", "full"]] = None,
+        tool_detail: Optional[Literal["compact", "summary", "full"]] = None,
         categories: Optional[List[CategoryOption]] = None,
         include_domains: Optional[List[str]] = None,
         exclude_domains: Optional[List[str]] = None,
@@ -492,7 +492,7 @@ class FirecrawlClient:
 
         Args:
             query: Search query string
-            tool_detail: "summary" (default) returns compact tool summaries with a follow-up request; "full" includes contracts immediately.
+            tool_detail: "compact" returns provider, capability and description; "summary" (default) adds metadata and a follow-up request; "full" includes contracts.
             limit: Maximum number of results to return (default: 5)
             tbs: Time-based search filter
             location: Location string for search
