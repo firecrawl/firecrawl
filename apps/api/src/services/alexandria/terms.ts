@@ -45,7 +45,7 @@ const statusSchema = z.object({
         version: z.string().nullable(),
         textHash: z.string().nullable(),
         revoked: z.boolean(),
-        acceptedAt: z.string().nullable().optional(),
+        acceptedAt: z.unknown().optional(),
       })
       .passthrough(),
   ),
@@ -77,7 +77,8 @@ export async function acceptedProviders(
       accepted.set(item.provider, {
         version: item.version,
         textHash: item.textHash,
-        acceptedAt: item.acceptedAt,
+        acceptedAt:
+          typeof item.acceptedAt === "string" ? item.acceptedAt : null,
       });
   }
   return accepted;

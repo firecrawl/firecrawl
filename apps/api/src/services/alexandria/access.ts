@@ -23,6 +23,24 @@ const requirementsSchema = z.object({
   ),
 });
 
+const timestampSchema = z.iso.datetime({ offset: true });
+
+function timestamp(value: unknown): number {
+  const parsed = timestampSchema.safeParse(value);
+  return parsed.success ? Date.parse(parsed.data) : NaN;
+}
+
+function matchesAcceptance(
+  accepted: LedgerAcceptance | undefined,
+  terms: { version: string; digest?: string },
+): boolean {
+  return (
+    terms.digest !== undefined &&
+    accepted?.version === terms.version &&
+    accepted.textHash === terms.digest
+  );
+}
+
 export async function authorizeProviders(
   teamId: string,
   calls: ProviderCall[],
@@ -68,12 +86,10 @@ export async function authorizeProviders(
       if (revokedByOwner && item.required && item.terms && orgId !== null) {
         ledger ??= await acceptedProviders(teamId, orgId);
         const accepted = ledger.get(item.provider);
-        const acceptedAt = Date.parse(accepted?.acceptedAt ?? "");
-        const disabledAt = Date.parse(access.disabledAt ?? "");
+        const acceptedAt = timestamp(accepted?.acceptedAt);
+        const disabledAt = timestamp(access.disabledAt);
         if (
-          accepted?.version === item.terms.version &&
-          item.terms.digest !== undefined &&
-          accepted.textHash === item.terms.digest &&
+          matchesAcceptance(accepted, item.terms) &&
           Number.isFinite(acceptedAt) &&
           Number.isFinite(disabledAt) &&
           acceptedAt > disabledAt
@@ -98,12 +114,7 @@ export async function authorizeProviders(
     if (orgId !== null) {
       ledger ??= await acceptedProviders(teamId, orgId);
       const accepted = ledger.get(item.provider);
-      if (
-        item.terms.digest !== undefined &&
-        accepted?.version === item.terms.version &&
-        accepted.textHash === item.terms.digest
-      )
-        continue;
+      if (matchesAcceptance(accepted, item.terms)) continue;
     }
     return {
       status: 403,

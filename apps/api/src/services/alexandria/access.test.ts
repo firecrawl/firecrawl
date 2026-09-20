@@ -71,7 +71,7 @@ it("allows a current agreement accepted after owner revocation, then blocks a la
   const flags = { organizationDataSourceAccess: { fred: access } };
   let acceptance = {
     provider: "fred",
-    revoked: true,
+    revoked: false,
     version: "2026-01",
     textHash: "a".repeat(64),
     acceptedAt: "2026-09-20T11:00:00Z",
@@ -203,19 +203,119 @@ it.each([
             },
           },
     );
-    expect(
-      (
-        await authorizeProviders(
-          "team",
-          calls,
-          {
-            organizationDataSourceAccess: {
-              fred: { status, disabledReason, disabledAt },
-            },
-          },
-          "org",
-        )
-      )?.status,
-    ).toBe(403);
+    const denied = await authorizeProviders(
+      "team",
+      calls,
+      {
+        organizationDataSourceAccess: {
+          fred: { status, disabledReason, disabledAt },
+        },
+      },
+      "org",
+    );
+    expect(denied?.status).toBe(403);
+    if (
+      status === "disabled" &&
+      disabledReason === "revoked_by_organization_admin"
+    )
+      expect(denied?.body).toMatchObject({
+        code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
+      });
+    else {
+      expect(denied?.body).toMatchObject({
+        success: false,
+        error: "Access to fred is disabled for this organization.",
+      });
+      expect(denied?.body).not.toHaveProperty(
+        "code",
+        "THIRD_PARTY_DATA_TERMS_REQUIRED",
+      );
+    }
   },
 );
+
+it.each([
+  "0",
+  "2026-02-30T12:00:00Z",
+  "2026-09-20",
+  "2026-09-20T12:00:00",
+  1789905600000,
+  null,
+])(
+  "fails closed for invalid revocation or acceptance timestamp %s",
+  async bad => {
+    const terms = requirement(true);
+    Object.assign(terms.body.providers[0].terms, { digest: "a".repeat(64) });
+    for (const side of ["revocation", "acceptance"]) {
+      mocks.request.mockImplementation(async ({ path }) =>
+        path.includes("requirements")
+          ? terms
+          : {
+              status: 200,
+              body: {
+                providers: [
+                  {
+                    provider: "fred",
+                    revoked: false,
+                    version: "2026-01",
+                    textHash: "a".repeat(64),
+                    acceptedAt:
+                      side === "acceptance" ? bad : "2026-09-20T12:01:00Z",
+                  },
+                ],
+              },
+            },
+      );
+      const result = await authorizeProviders(
+        "team",
+        calls,
+        {
+          organizationDataSourceAccess: {
+            fred: {
+              status: "disabled",
+              disabledReason: "revoked_by_organization_admin",
+              disabledAt: (side === "revocation"
+                ? bad
+                : "2026-09-20T12:00:00Z") as string,
+            },
+          },
+        },
+        "org",
+      );
+      expect(result?.body, side).toMatchObject({
+        code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
+      });
+    }
+  },
+);
+
+it("does not discard other acceptances when a timestamp has an unexpected shape", async () => {
+  const terms = requirement(true);
+  Object.assign(terms.body.providers[0].terms, { digest: "a".repeat(64) });
+  mocks.request.mockImplementation(async ({ path }) =>
+    path.includes("requirements")
+      ? terms
+      : {
+          status: 200,
+          body: {
+            providers: [
+              {
+                provider: "other",
+                revoked: false,
+                version: "v1",
+                textHash: "b".repeat(64),
+                acceptedAt: { invalid: true },
+              },
+              {
+                provider: "fred",
+                revoked: false,
+                version: "2026-01",
+                textHash: "a".repeat(64),
+                acceptedAt: "2026-09-20T12:01:00Z",
+              },
+            ],
+          },
+        },
+  );
+  expect(await authorizeProviders("team", calls, {}, "org")).toBeUndefined();
+});
