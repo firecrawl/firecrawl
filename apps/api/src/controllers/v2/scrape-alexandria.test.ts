@@ -1,13 +1,17 @@
 import express from "express";
 import request from "supertest";
-const mocks = vi.hoisted(() => ({ retrieve: vi.fn(), log: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  retrieve: vi.fn(),
+  log: vi.fn(),
+  scrapeLog: vi.fn(),
+}));
 vi.mock("../../services/alexandria/retrieve", () => ({
   REQUEST_ID_PATTERN: /^[A-Za-z0-9._:-]{1,128}$/,
   retrieveProviders: mocks.retrieve,
 }));
 vi.mock("../../services/logging/log_job", () => ({
   logRequest: mocks.log,
-  logProviderScrape: vi.fn().mockResolvedValue(undefined),
+  logProviderScrape: mocks.scrapeLog,
 }));
 vi.mock("../../lib/key-restriction", () => ({
   checkKeyFormatRestriction: async () => ({ allowed: true }),
@@ -57,6 +61,7 @@ const result = (results: unknown[], executed = true) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.log.mockResolvedValue(undefined);
+  mocks.scrapeLog.mockResolvedValue(undefined);
   mocks.retrieve.mockResolvedValue(
     result([{ ...call, creditsCost: 0, data: {} }]),
   );
@@ -95,6 +100,17 @@ it("returns the Scrape contract, shares identity with the legacy route, and logs
     ...second,
     scrapeId: undefined,
   });
+  expect(mocks.scrapeLog).toHaveBeenCalledTimes(1);
+  expect(mocks.scrapeLog).toHaveBeenCalledWith(
+    expect.objectContaining({
+      id: "scrape-1",
+      request_id: "scrape-1",
+      target: "alexandria:fred/categories/category",
+      credits_cost: 0,
+      is_successful: true,
+      time_taken: expect.any(Number),
+    }),
+  );
   expect(mocks.log).toHaveBeenCalledTimes(1);
   expect(mocks.log).toHaveBeenCalledWith(
     expect.objectContaining({ kind: "scrape", jobAccess: false }),
@@ -147,4 +163,44 @@ it("only lets trusted agent interop bypass billing, and prefers its request id",
     expect.objectContaining({ requestId: "agent-id", bypassBilling: true }),
   );
   expect(mocks.log).not.toHaveBeenCalled();
+  expect(mocks.scrapeLog).not.toHaveBeenCalled();
+});
+
+it("returns before logging finishes but orders the child after the parent", async () => {
+  let finish!: () => void;
+  mocks.log.mockReturnValue(
+    new Promise<void>(resolve => {
+      finish = resolve;
+    }),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(response.status).toBe(200);
+  expect(mocks.scrapeLog).not.toHaveBeenCalled();
+  finish();
+  await vi.waitFor(() => expect(mocks.scrapeLog).toHaveBeenCalledTimes(1));
+});
+
+it("logs executed non-200 responses with known credits and failure details", async () => {
+  mocks.retrieve.mockResolvedValue({
+    executed: true,
+    scrapeId: "failed-1",
+    status: 503,
+    body: { error: "Provider unavailable", creditsCost: 2 },
+  });
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(response.status).toBe(503);
+  expect(mocks.scrapeLog).toHaveBeenCalledWith(
+    expect.objectContaining({
+      id: "failed-1",
+      request_id: "failed-1",
+      is_successful: false,
+      error: "Provider unavailable",
+      credits_cost: 2,
+      time_taken: expect.any(Number),
+    }),
+  );
 });
