@@ -360,6 +360,7 @@ export type ParseOptions = Omit<
   | "lockdown"
   | "proxy"
   | "threatProtection"
+  | "toolDetail"
 > & {
   formats?: ParseFormatOption[];
   proxy?: "basic" | "auto";
@@ -1003,7 +1004,7 @@ export interface SearchRequest {
   timeout?: number; // ms
   /** Generate query-relevant highlights for search results. Defaults to true. */
   highlights?: boolean;
-  scrapeOptions?: ScrapeOptions;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail">;
   /**
    * Enterprise search options. Use `["zdr"]` for end-to-end Zero Data
    * Retention or `["anon"]` for anonymized search. Must be enabled for
@@ -1032,7 +1033,7 @@ export interface CrawlOptions {
   delay?: number | null;
   maxConcurrency?: number | null;
   webhook?: string | WebhookConfig | null;
-  scrapeOptions?: ScrapeOptions | null;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail"> | null;
   regexOnFullURL?: boolean;
   zeroDataRetention?: boolean;
   integration?: string;
@@ -1056,7 +1057,7 @@ export interface CrawlJob {
 }
 
 export interface BatchScrapeOptions {
-  options?: ScrapeOptions;
+  options?: Omit<ScrapeOptions, "toolDetail">;
   webhook?: string | WebhookConfig;
   appendToId?: string;
   ignoreInvalidURLs?: boolean;
@@ -1206,7 +1207,7 @@ export interface MonitorScrapeTarget {
   id?: string;
   type: "scrape";
   urls: string[];
-  scrapeOptions?: ScrapeOptions;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail">;
 }
 
 export interface MonitorCrawlTarget {
@@ -1214,7 +1215,7 @@ export interface MonitorCrawlTarget {
   type: "crawl";
   url: string;
   crawlOptions?: CrawlOptions;
-  scrapeOptions?: ScrapeOptions;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail">;
 }
 
 export interface MonitorSearchTarget {

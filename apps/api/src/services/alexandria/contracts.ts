@@ -72,7 +72,7 @@ export const toolSummarySchema = toolSchema
   .omit({ options: true, response: true })
   .strip()
   .extend({
-    next: callSchema,
+    next: callSchema.passthrough().optional().catch(undefined),
     attribution: z.unknown().optional(),
     recordsPerUnit: z.number().positive().optional(),
     zeroDataRetentionCreditsCost: credits.optional(),

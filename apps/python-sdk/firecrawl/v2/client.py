@@ -212,6 +212,7 @@ class FirecrawlClient:
             lockdown: Serve only previously cached results; never make outbound requests. Returns 404 SCRAPE_LOCKDOWN_CACHE_MISS on cache miss.
             threat_protection: Enterprise per-request override of the team's threat protection policy
             profile: Browser profile for persistent state (e.g. {"name": "my-profile", "saveChanges": True})
+            tool_detail: "summary" (default) returns compact tool summaries; "full" includes contracts when domain discovery is enabled.
             audit_metadata: Metadata to include in SIEM logging events
         Returns:
             Document
@@ -491,6 +492,7 @@ class FirecrawlClient:
 
         Args:
             query: Search query string
+            tool_detail: "summary" (default) returns compact tool summaries with a follow-up request; "full" includes contracts immediately.
             limit: Maximum number of results to return (default: 5)
             tbs: Time-based search filter
             location: Location string for search

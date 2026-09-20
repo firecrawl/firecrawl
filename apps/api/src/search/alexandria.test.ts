@@ -67,40 +67,80 @@ it("keeps a warning when discovery fails", async () => {
   expect(result.items).toEqual([]);
   expect(result.warning).toBeTruthy();
 });
-it("deduplicates semantic and domain summaries and preserves inspection", async () => {
-  request.mockImplementation(async args =>
-    args.path === "/v1/skills/resolve"
-      ? {
-          status: 200,
-          body: {
-            skills: [
-              {
-                id: "sample",
-                matchedDomains: ["example.com"],
-                domainCapabilities: { "example.com": ["records/search"] },
-              },
-            ],
+it.each([undefined, "full"] as const)(
+  "deduplicates semantic and domain tools with %s detail",
+  async toolDetail => {
+    request.mockImplementation(async args =>
+      args.path === "/v1/skills/resolve"
+        ? {
+            status: 200,
+            body: {
+              skills: [
+                {
+                  id: "sample",
+                  matchedDomains: ["example.com"],
+                  domainCapabilities: { "example.com": ["records/search"] },
+                },
+              ],
+            },
+          }
+        : {
+            status: 200,
+            body: { success: true, creditsCost: 0, data: { items: [tool] } },
           },
-        }
-      : {
-          status: 200,
-          body: { success: true, creditsCost: 0, data: { items: [tool] } },
-        },
-  );
-  const result = await discoverTools(
-    { ...input, urls: ["https://example.com/records"] },
-    logger,
-  );
-  expect(result.items).toHaveLength(1);
-  expect(result.items[0]).toMatchObject({
-    matchedBy: ["semantic", "domain"],
-    matchedUrls: ["https://example.com/records"],
-    next,
+    );
+    const result = await discoverTools(
+      { ...input, toolDetail, urls: ["https://example.com/records"] },
+      logger,
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      matchedBy: ["semantic", "domain"],
+      matchedUrls: ["https://example.com/records"],
+      next,
+    });
+    if (toolDetail === "full")
+      expect(result.items[0]).toMatchObject({
+        options: tool.options,
+        response: tool.response,
+      });
+    else expect(result.items[0]).not.toHaveProperty("options");
+    expect(
+      request.mock.calls
+        .filter(([args]) => args.path === "/v1/retrieve")
+        .map(([args]) => (args.body as any).options.expand),
+    ).toEqual(
+      toolDetail === "full"
+        ? [next.options.expand, next.options.expand]
+        : [[], []],
+    );
+  },
+);
+
+it("keeps tools when optional navigation is absent, extended or malformed", async () => {
+  const variants = [
+    undefined,
+    { ...next, label: "Inspect" },
+    { provider: "firecrawl" },
+  ];
+  request.mockResolvedValue({
+    status: 200,
+    body: {
+      success: true,
+      creditsCost: 0,
+      data: {
+        items: variants.map((next, i) => ({
+          ...tool,
+          capability: `records/${i}`,
+          next,
+        })),
+      },
+    },
   });
-  expect(result.items[0]).not.toHaveProperty("options");
-  expect(
-    request.mock.calls
-      .filter(([args]) => args.path === "/v1/retrieve")
-      .map(([args]) => (args.body as any).options.expand),
-  ).toEqual([[], []]);
+  const result = await discoverTools(input, logger);
+  expect(result.items).toHaveLength(3);
+  expect(result.warning).toBeUndefined();
+  expect(result.items[1].next).toMatchObject({ ...next, label: "Inspect" });
+  expect(result.items[0].next).toBeUndefined();
+  expect(result.items[2].next).toBeUndefined();
 });
