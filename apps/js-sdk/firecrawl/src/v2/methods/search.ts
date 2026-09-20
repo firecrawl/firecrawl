@@ -27,6 +27,7 @@ function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     query: req.query,
   };
+  if (req.toolDetail != null) payload.toolDetail = req.toolDetail;
   if (req.domainTools != null) payload.domainTools = req.domainTools;
   if (req.sources) payload.sources = req.sources;
   if (req.categories) payload.categories = req.categories;

@@ -45,6 +45,7 @@ interface SearchOptions {
   scrapeOptions?: ScrapeOptions;
   highlights?: boolean;
   domainTools?: boolean;
+  toolDetail?: "summary" | "full";
   timeout: number;
 }
 
@@ -252,6 +253,7 @@ export async function executeSearch(
   ) {
     const discovery = await discoverTools(
       {
+        toolDetail: options.toolDetail,
         teamId,
         limit,
         query: wantsTools ? query : undefined,

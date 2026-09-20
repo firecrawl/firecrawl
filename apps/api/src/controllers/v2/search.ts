@@ -391,6 +391,7 @@ async function searchControllerInner(
         scrapeOptions: req.body.scrapeOptions,
         highlights: req.body.highlights,
         domainTools: req.body.domainTools,
+        toolDetail: req.body.toolDetail,
         timeout: req.body.timeout,
       },
       {

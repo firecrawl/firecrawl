@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { searchRequestSchema } from "./types";
 
 describe("searchRequestSchema highlights", () => {
+  it.each(["summary", "full"])("accepts %s tool detail", toolDetail => {
+    expect(
+      searchRequestSchema.parse({ query: "records", toolDetail }).toolDetail,
+    ).toBe(toolDetail);
+  });
+  it("rejects unknown tool detail", () => {
+    expect(
+      searchRequestSchema.safeParse({ query: "records", toolDetail: "all" })
+        .success,
+    ).toBe(false);
+  });
   it("preserves an omitted value for integration and rollout selection", () => {
     const request = searchRequestSchema.parse({ query: "firecrawl" });
 

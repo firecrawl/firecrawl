@@ -37,7 +37,7 @@ async def test_search_and_progressive_lookup(async_client, monkeypatch):
         try:
             async def post(url, **kwargs): return httpx.Response(200,json=payload(kwargs['json']))
             monkeypatch.setattr(client._v2_client.async_http_client._client,'post',post)
-            search=await client.search('podcasts',sources=['alexandria'],domain_tools=True)
+            search=await client.search('podcasts',sources=['alexandria'],domain_tools=True,tool_detail='full')
             found=await client.find_tools(providers=['particle'],limit=2)
             result=await client.scrape(alexandria=found.items[0]['next'],request_id='walk-1')
             with pytest.raises(ValueError, match='URL cannot be empty'):
@@ -46,7 +46,7 @@ async def test_search_and_progressive_lookup(async_client, monkeypatch):
             await client._v2_client.async_http_client.close()
     else:
         monkeypatch.setattr('requests.post',lambda url,**kwargs:response(200,payload(kwargs['json'])))
-        search=client.search('podcasts',sources=['alexandria'],domain_tools=True)
+        search=client.search('podcasts',sources=['alexandria'],domain_tools=True,tool_detail='full')
         found=client.find_tools(providers=['particle'],limit=2)
         result=client.scrape(alexandria=found.items[0]['next'],request_id='walk-1')
         with pytest.raises(ValueError, match='URL cannot be empty'):
@@ -57,6 +57,7 @@ async def test_search_and_progressive_lookup(async_client, monkeypatch):
     assert search.tools[1].when_to_use=='Analyst ratings for a ticker'
     assert search.tools[1].label=='Ratings'
     assert calls[0]['domainTools'] is True
+    assert calls[0]['toolDetail'] == 'full'
     assert calls[-1]['alexandria']==[NEXT]
     assert 'request_id' not in calls[-1]
     assert result.request_id=='walk-1'
@@ -210,3 +211,14 @@ async def test_alexandria_transport_timeout(async_client, timeout, expected):
     assert client.post.call_args.kwargs["timeout"] == expected
     payload = client.post.call_args.args[1]
     assert payload.get("timeout") == timeout
+
+@pytest.mark.parametrize('detail', ['summary', 'full'])
+def test_discovery_detail_serialization(detail):
+    from firecrawl.v2.types import ScrapeOptions, SearchRequest, DiscoveredTool
+    from firecrawl.v2.utils.validation import prepare_scrape_options
+    from firecrawl.v2.methods.search import _prepare_search_request
+    assert prepare_scrape_options(ScrapeOptions(tool_detail=detail))['toolDetail'] == detail
+    assert _prepare_search_request(SearchRequest(query='records', tool_detail=detail))['toolDetail'] == detail
+    summary = {key:value for key,value in TOOL.items() if key not in ('options','response','examples')}
+    summary['next'] = NEXT
+    assert DiscoveredTool(**summary).next == NEXT

@@ -184,6 +184,7 @@ class FirecrawlClient:
         audit_metadata: Optional[AuditMetadata] = None,
         integration: Optional[str] = None,
         domain_tools: Optional[bool] = None,
+        tool_detail: Optional[Literal["summary", "full"]] = None,
     ) -> Union[Document, AlexandriaScrapeData]:
         """
         Scrape a single URL and return the document.
@@ -242,8 +243,9 @@ class FirecrawlClient:
                 audit_metadata=audit_metadata,
                 integration=integration,
                 domain_tools=domain_tools,
+                tool_detail=tool_detail,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration, domain_tools]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration, domain_tools, tool_detail]) else None
         if alexandria is not None:
             if url is not None or auto_resume is not None or (options and set(options.model_dump(exclude_none=True, exclude_unset=True)) - {"timeout", "integration"}):
                 raise ValueError("alexandria cannot be combined with URL scrape options")
@@ -468,6 +470,7 @@ class FirecrawlClient:
         *,
         sources: Optional[List[SourceOption]] = None,
         domain_tools: Optional[bool] = None,
+        tool_detail: Optional[Literal["summary", "full"]] = None,
         categories: Optional[List[CategoryOption]] = None,
         include_domains: Optional[List[str]] = None,
         exclude_domains: Optional[List[str]] = None,
@@ -509,6 +512,7 @@ class FirecrawlClient:
             query=query,
             sources=sources,
             domain_tools=domain_tools,
+            tool_detail=tool_detail,
             categories=categories,
             include_domains=include_domains,
             exclude_domains=exclude_domains,

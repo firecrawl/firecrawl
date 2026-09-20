@@ -150,6 +150,10 @@ afterAll(async () => {
 });
 
 describe("Alexandria contracts and execution", () => {
+  test.each(["summary", "full"] as const)("forwards %s discovery detail", async toolDetail => {
+    await client.search("records", { toolDetail });
+    expect(sent.at(-1)?.body).toMatchObject({ toolDetail });
+  });
   test("returns complete unified tools and warning beside web results", async () => {
     const result = await client.search("podcasts", {
       sources: ["web", { type: "alexandria" }],

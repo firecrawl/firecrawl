@@ -1131,6 +1131,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions.extend({
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
   domainTools: z.boolean().optional(),
+  toolDetail: z.enum(["summary", "full"]).optional(),
   __agentInterop: z
     .object({
       auth: z.string(),
@@ -2410,6 +2411,7 @@ export const searchRequestSchema = z
     // whether generated highlights are returned or only run in shadow mode.
     highlights: z.boolean().optional(),
     domainTools: z.boolean().optional(),
+    toolDetail: z.enum(["summary", "full"]).optional(),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions

@@ -285,8 +285,10 @@ export interface ScrapeOptions {
   };
   integration?: string;
   origin?: string;
-  /** Include domain-matched Alexandria contracts for this URL in `tools`. Default off. */
+  /** Include domain-matched Alexandria tools for this URL in `tools`. Default off. */
   domainTools?: boolean;
+  /** Tool summaries by default; full includes input/output contracts. */
+  toolDetail?: "summary" | "full";
 }
 
 export type RedactPIIEntity =
@@ -826,6 +828,7 @@ export interface SearchData {
 
 /** A complete tool contract returned by semantic or contextual discovery. */
 export interface DiscoveredTool {
+  next?: AlexandriaCall;
   id?: string;
   provider: string;
   capability: string;
@@ -833,7 +836,7 @@ export interface DiscoveredTool {
   description: string;
   creditsCost: number;
   perRecord: boolean;
-  options: Array<{
+  options?: Array<{
     name: string;
     type: string;
     required?: boolean;
@@ -970,8 +973,10 @@ export interface CategoryOption {
 
 export interface SearchRequest {
   query: string;
-  /** Include domain-matched contracts in tools alongside semantic matches. */
+  /** Include domain-matched tools in tools alongside semantic matches. */
   domainTools?: boolean;
+  /** Tool summaries by default; full includes input/output contracts. */
+  toolDetail?: "summary" | "full";
   sources?: Array<
     "web" | "news" | "images" | "alexandria"
     | { type: "web" | "news" | "images" | "alexandria" }

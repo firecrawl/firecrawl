@@ -706,6 +706,7 @@ export async function scrapeController(
           ? await discoverTools(
               {
                 teamId: req.auth.team_id,
+                toolDetail: req.body.toolDetail,
                 urls: [
                   ...new Set(
                     [
