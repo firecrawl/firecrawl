@@ -60,6 +60,13 @@ const next = {
   capability: "find-tools",
   options: { providers: ["particle"], level: "tools" },
 };
+const compactTools = [tool, productionTool].map(
+  ({ provider, capability, description }) => ({
+    provider,
+    capability,
+    description,
+  }),
+);
 let server: Server;
 let client: FirecrawlClient;
 const sent: Array<{ body: any; id: string | undefined }> = [];
@@ -86,15 +93,16 @@ beforeAll(async () => {
             web: [{ url: "https://podcasts.apple.com" }],
             tools:
               body.toolDetail === "compact"
-                ? [
-                    {
-                      provider: tool.provider,
-                      capability: tool.capability,
-                      description: tool.description,
-                    },
-                  ]
+                ? compactTools
                 : [tool, productionTool],
           },
+        }),
+      );
+    if (req.url === "/v2/scrape" && body.url)
+      return res.end(
+        JSON.stringify({
+          success: true,
+          data: { markdown: "Example", tools: compactTools },
         }),
       );
     if (body.alexandria[0].provider === "retry" && attempts++ === 0) {
@@ -171,17 +179,22 @@ describe("Alexandria contracts and execution", () => {
     "forwards %s discovery detail",
     async (toolDetail) => {
       const result = await client.search("records", { toolDetail });
-      if (toolDetail === "compact")
-        expect(result.tools).toEqual([
-          {
-            provider: tool.provider,
-            capability: tool.capability,
-            description: tool.description,
-          },
-        ]);
+      if (toolDetail === "compact") expect(result.tools).toEqual(compactTools);
       expect(sent.at(-1)?.body).toMatchObject({ toolDetail });
     },
   );
+  test("URL scrape forwards compact detail and preserves tools", async () => {
+    const result = await client.scrape("https://example.com", {
+      domainTools: true,
+      toolDetail: "compact",
+    });
+    expect(sent.at(-1)?.body).toMatchObject({
+      url: "https://example.com",
+      domainTools: true,
+      toolDetail: "compact",
+    });
+    expect(result.tools).toEqual(compactTools);
+  });
   test("returns complete unified tools and warning beside web results", async () => {
     const result = await client.search("podcasts", {
       sources: ["web", { type: "alexandria" }],
