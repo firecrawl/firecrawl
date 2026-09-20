@@ -16,6 +16,7 @@ export async function exchangeRequest(input: {
   requestId?: string;
   maximumCredits?: number;
   resultAuthorization?: string;
+  termsIdentity?: { organizationId: string; apiKeyId: string };
 }): Promise<ExchangeResponse> {
   if (!config.FIRE_EXCHANGE_URL) throw new Error("Exchange is not configured");
   const base = config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
@@ -30,6 +31,12 @@ export async function exchangeRequest(input: {
         ? { authorization: input.resultAuthorization }
         : {}),
       "x-exchange-team-id": input.teamId,
+      ...(input.termsIdentity
+        ? {
+            "x-exchange-organization-id": input.termsIdentity.organizationId,
+            "x-exchange-api-key-id": input.termsIdentity.apiKeyId,
+          }
+        : {}),
       "x-exchange-extended-catalog-access": "true",
       ...(input.requestId ? { "x-request-id": input.requestId } : {}),
       ...(input.maximumCredits === undefined

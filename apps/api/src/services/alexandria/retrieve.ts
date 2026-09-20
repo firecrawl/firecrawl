@@ -82,6 +82,7 @@ export async function retrieveProviders(input: {
    *  can be named, which is a skipped hold, the same as an unresolvable org. */
   orgId: string | null;
   apiKeyId: number | null;
+  apiKeyIdText?: string | null;
   flags: TeamFlags | null | undefined;
   calls: ProviderCall[];
   requestId: string;
@@ -332,6 +333,21 @@ export async function retrieveProviders(input: {
       requestId: id,
       ...(loadsSavedResult && input.resultAuthorization
         ? { resultAuthorization: input.resultAuthorization }
+        : {}),
+      ...(input.orgId &&
+      (input.apiKeyIdText || input.apiKeyId != null) &&
+      input.calls.every(
+        call =>
+          call.provider === "firecrawl" &&
+          (call.capability === "terms/show" ||
+            call.capability === "terms/accept"),
+      )
+        ? {
+            termsIdentity: {
+              organizationId: input.orgId,
+              apiKeyId: input.apiKeyIdText || String(input.apiKeyId),
+            },
+          }
         : {}),
       maximumCredits,
     }).catch(error => {

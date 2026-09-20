@@ -384,3 +384,48 @@ it("forwards an optional version to quote and execution", async () => {
     expect(request.body.requests).toEqual([pinned]);
   }
 });
+
+it("forwards verified terms identity only for terms-only executions", async () => {
+  for (const capability of ["terms/show", "terms/accept"]) {
+    mocks.store.clear();
+    mocks.request.mockClear();
+    const termsCall = {
+      provider: "firecrawl",
+      capability,
+      options: { provider: "benzinga" },
+    };
+    exchangeAnswers({
+      success: true,
+      creditsCost: 0,
+      results: [{ ...termsCall, creditsCost: 0, data: {} }],
+    });
+    await run({ calls: [termsCall], apiKeyIdText: "verified-key" });
+    expect(executions()[0][0].termsIdentity).toEqual({
+      organizationId: "org",
+      apiKeyId: "verified-key",
+    });
+    expect(
+      mocks.request.mock.calls
+        .filter(([arg]) => arg.path !== "/v1/retrieve")
+        .every(([arg]) => arg.termsIdentity === undefined),
+    ).toBe(true);
+  }
+  for (const overrides of [
+    {},
+    { calls: [{ provider: "firecrawl", capability: "terms/show" }, call] },
+    {
+      calls: [{ provider: "firecrawl", capability: "terms/accept" }],
+      orgId: null,
+    },
+    {
+      calls: [{ provider: "firecrawl", capability: "terms/accept" }],
+      apiKeyId: null,
+    },
+  ]) {
+    mocks.store.clear();
+    mocks.request.mockClear();
+    exchangeAnswers(answer, 200, { status: 200, body: { maximumCredits: 0 } });
+    await run(overrides);
+    expect(executions()[0][0].termsIdentity).toBeUndefined();
+  }
+});

@@ -125,6 +125,7 @@ export async function providerScrapeController(
       teamId: req.auth.team_id,
       orgId: orgIdFromAcuc(req.acuc),
       apiKeyId: req.acuc.api_key_id ?? null,
+      apiKeyIdText: req.acuc.api_key_id_text ?? null,
       flags: req.acuc.flags,
       calls: body.alexandria,
       resultAuthorization: req.get("authorization"),
