@@ -146,6 +146,7 @@ export async function providerScrapeController(
   }
   const timeTaken = (Date.now() - startedAt) / 1000;
   if (result.executed && !body.__agentInterop) {
+    const apiKeyId = req.acuc.api_key_id ?? null;
     const served = answerSchema.safeParse(result.body);
     const failure = result.body as {
       error?: unknown;
@@ -171,7 +172,7 @@ export async function providerScrapeController(
         api_version: "v2",
         external_request_id: externalRequestId(req),
         team_id: req.auth.team_id,
-        api_key_id: req.acuc.api_key_id ?? null,
+        api_key_id: apiKeyId,
         origin: body.origin,
         integration: body.integration ?? null,
         target_hint: target,
