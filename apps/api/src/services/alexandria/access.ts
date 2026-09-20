@@ -61,11 +61,34 @@ export async function authorizeProviders(
   let ledger: Map<string, LedgerAcceptance> | undefined;
   for (const item of parsed.data.providers) {
     const access = flags?.organizationDataSourceAccess?.[item.provider];
-    if (access && access.status !== "enabled")
+    if (access && access.status !== "enabled") {
+      const revokedByOwner =
+        access.status === "disabled" &&
+        access.disabledReason === "revoked_by_organization_admin";
+      if (revokedByOwner && item.required && item.terms && orgId !== null) {
+        ledger ??= await acceptedProviders(teamId, orgId);
+        const accepted = ledger.get(item.provider);
+        const acceptedAt = Date.parse(accepted?.acceptedAt ?? "");
+        const disabledAt = Date.parse(access.disabledAt ?? "");
+        if (
+          accepted?.version === item.terms.version &&
+          item.terms.digest !== undefined &&
+          accepted.textHash === item.terms.digest &&
+          Number.isFinite(acceptedAt) &&
+          Number.isFinite(disabledAt) &&
+          acceptedAt > disabledAt
+        )
+          continue;
+        return {
+          status: 403,
+          body: getThirdPartyDataTermsRequiredResponse(item.terms),
+        };
+      }
       return refusal(
         403,
         `Access to ${item.provider} is disabled for this organization.`,
       );
+    }
     if (!item.required || !item.terms) continue;
     if (
       access?.termsKey === item.terms.key &&
