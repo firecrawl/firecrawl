@@ -204,3 +204,86 @@ it("logs executed non-200 responses with known credits and failure details", asy
     }),
   );
 });
+
+it("does not log activity when retrieval rejects", async () => {
+  mocks.retrieve.mockRejectedValue(new Error("Unavailable"));
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(response.status).toBe(503);
+  expect(response.body).toEqual({
+    success: false,
+    error: "Provider request unavailable. Retry with the same x-request-id.",
+  });
+  expect(mocks.log).not.toHaveBeenCalled();
+  expect(mocks.scrapeLog).not.toHaveBeenCalled();
+});
+
+it("logs per-tool errors even when the response is HTTP 200", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      {
+        ...call,
+        creditsCost: 0,
+        error: {
+          code: "provider_unavailable",
+          message: "Provider unavailable",
+          status: 503,
+        },
+      },
+    ]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(response.status).toBe(200);
+  expect(mocks.scrapeLog).toHaveBeenCalledWith(
+    expect.objectContaining({
+      is_successful: false,
+      error: "Provider unavailable",
+      credits_cost: 0,
+    }),
+  );
+});
+
+it("uses a failure fallback when no error message is available", async () => {
+  mocks.retrieve.mockResolvedValue({
+    executed: true,
+    scrapeId: "failed-1",
+    status: 503,
+    body: {},
+  });
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(response.status).toBe(503);
+  expect(mocks.scrapeLog).toHaveBeenCalledWith(
+    expect.objectContaining({
+      is_successful: false,
+      error: "Provider request failed (503).",
+      credits_cost: 0,
+    }),
+  );
+});
+
+it("executes with supplied arguments but stores only tool identifiers in activity options", async () => {
+  const supplied = {
+    ...call,
+    options: {
+      query: "private customer data",
+      token: "secret-token",
+      nested: { authorization: "Bearer secret" },
+    },
+  };
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: supplied });
+  expect(response.status).toBe(200);
+  expect(mocks.retrieve).toHaveBeenCalledWith(
+    expect.objectContaining({ calls: [supplied] }),
+  );
+  expect(mocks.scrapeLog).toHaveBeenCalledTimes(1);
+  expect(mocks.scrapeLog.mock.calls[0][0].options).toEqual({
+    alexandria: [{ provider: call.provider, capability: call.capability }],
+  });
+});

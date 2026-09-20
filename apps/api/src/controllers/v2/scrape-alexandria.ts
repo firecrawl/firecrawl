@@ -184,7 +184,12 @@ export async function providerScrapeController(
         request_id: result.scrapeId,
         target,
         team_id: req.auth.team_id,
-        options: { alexandria: body.alexandria },
+        options: {
+          alexandria: body.alexandria.map(({ provider, capability }) => ({
+            provider,
+            capability,
+          })),
+        },
         time_taken: timeTaken,
         credits_cost:
           typeof credits === "number" &&
