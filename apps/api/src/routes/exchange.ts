@@ -158,17 +158,17 @@ exchangeRouter.get(
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
-// Both skills routes intentionally require the exchangeRetrieve flag during preview.
+// These read-only discovery routes remain authenticated; they do not execute paid tools.
 exchangeRouter.post(
   "/skills/resolve",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
 exchangeRouter.get(
   "/skills/:id/SKILL.md",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
 // Provider agreements the web app offers for acceptance; a catalogue read, never an acceptance.
