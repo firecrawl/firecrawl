@@ -144,8 +144,9 @@ export async function providerScrapeController(
       error: "Provider request unavailable. Retry with the same x-request-id.",
     });
   }
+  const timeTaken = (Date.now() - startedAt) / 1000;
   if (result.executed && !body.__agentInterop)
-    void logRequest({
+    await logRequest({
       id: result.scrapeId,
       kind: "scrape",
       api_version: "v2",
@@ -174,7 +175,7 @@ export async function providerScrapeController(
       target,
       team_id: req.auth.team_id,
       options: { alexandria: body.alexandria },
-      time_taken: (Date.now() - startedAt) / 1000,
+      time_taken: timeTaken,
       credits_cost: served.data.creditsCost,
       is_successful: served.data.results.every(item => !item.error),
       error: served.data.results.find(item => item.error)?.error?.message,
