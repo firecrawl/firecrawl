@@ -25,6 +25,7 @@ serde_json = "1.0.143"
 strsim = "0.11"
 texting_robots = "0.2.2"
 url = "2.5.7"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 tokio = "1.48.0"
 # Transitive dep (pdf-inspector -> unicode-normalization -> tinyvec). Pinned because
 # tinyvec 1.13.0 fails to compile (https://github.com/Lokathor/tinyvec/issues/225)
