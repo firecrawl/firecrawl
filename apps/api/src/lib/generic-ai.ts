@@ -21,6 +21,10 @@ type Provider =
   | "vertex";
 const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
 
+function isDeepInfraOpenAIBaseURL(): boolean {
+  return (config.OPENAI_BASE_URL || "").toLowerCase().includes("deepinfra.com");
+}
+
 const providerList: Record<Provider, any> = {
   openai: createOpenAI({
     apiKey: config.OPENAI_API_KEY,
@@ -59,7 +63,10 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
   }
   const modelName = config.MODEL_NAME || name;
   // o3-mini returns empty text via the Responses API — force Chat Completions
-  if (provider === "openai" && modelName.startsWith("o3-mini")) {
+  if (
+    provider === "openai" &&
+    (modelName.startsWith("o3-mini") || isDeepInfraOpenAIBaseURL())
+  ) {
     return providerList.openai.chat(modelName);
   }
   return providerList[provider](modelName);
