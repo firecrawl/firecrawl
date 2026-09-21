@@ -572,15 +572,12 @@ describe("/v2/parse", () => {
         identity,
       );
 
-      expect(result.markdown).toContain("Parse DOCX Upload Test Header");
-      expect(result.markdown).toContain("Parse DOCX Upload Test Body");
-      expect(result.markdown).toContain("Parse DOCX Upload Test Footer");
-      expect(result.markdown.indexOf("Header")).toBeLessThan(
-        result.markdown.indexOf("Body"),
-      );
-      expect(result.markdown.indexOf("Body")).toBeLessThan(
-        result.markdown.indexOf("Footer"),
-      );
+      const markdown = result.markdown!;
+      expect(markdown).toContain("Parse DOCX Upload Test Header");
+      expect(markdown).toContain("Parse DOCX Upload Test Body");
+      expect(markdown).toContain("Parse DOCX Upload Test Footer");
+      expect(markdown.indexOf("Header")).toBeLessThan(markdown.indexOf("Body"));
+      expect(markdown.indexOf("Body")).toBeLessThan(markdown.indexOf("Footer"));
       expect(result.metadata.creditsUsed).toBe(1);
     },
     scrapeTimeout,
