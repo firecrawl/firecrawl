@@ -43,7 +43,7 @@ export async function feedbackController(
     throw error;
   }
 
-  if ("categories" in parsedBody) {
+  if (parsedBody.endpoint === "alexandria") {
     const result = await recordAlexandriaFeedback(req, parsedBody);
     return res.status(result.status).json(result.body);
   }

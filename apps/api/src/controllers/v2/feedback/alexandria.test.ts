@@ -22,7 +22,7 @@ import { config } from "../../../config";
 import { feedbackController } from "./controller";
 
 const minimal = {
-  categories: ["alexandria"],
+  endpoint: "alexandria",
   rating: "partial",
   requestedWebsite: "https://sam.gov",
   requestedVertical: "government",
@@ -82,7 +82,7 @@ it.each(["good", "partial", "bad"])(
         refund_policy: null,
         metadata: {
           schemaVersion: 1,
-          categories: ["alexandria"],
+          endpoint: "alexandria",
           requestedWebsite: minimal.requestedWebsite,
           requestedVertical: "government",
         },
@@ -108,7 +108,7 @@ it.each([
   ).toBe(true);
 });
 
-it.each(["categories", "rating", "requestedWebsite", "requestedVertical"])(
+it.each(["endpoint", "rating", "requestedWebsite", "requestedVertical"])(
   "requires %s",
   async field => {
     const response = await submit({ ...minimal, [field]: undefined });
@@ -118,11 +118,38 @@ it.each(["categories", "rating", "requestedWebsite", "requestedVertical"])(
   },
 );
 
+it("rejects the unpublished categories discriminator", async () => {
+  const response = await submit({
+    ...minimal,
+    endpoint: undefined,
+    categories: ["alexandria"],
+  });
+  expect(response.status).toBe(400);
+  expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
+  expect(mocks.values).not.toHaveBeenCalled();
+  expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
+});
+
+it.each(["search", "scrape", "parse", "map"])(
+  "still requires a job ID for %s feedback",
+  async endpoint => {
+    const response = await submit({
+      endpoint,
+      rating: "bad",
+      missingContent: [{ topic: "Required data" }],
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
+    expect(mocks.values).not.toHaveBeenCalled();
+    expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
+  },
+);
+
 it.each([
-  { categories: "alexandria" },
-  { categories: [] },
-  { categories: ["alexandria", "search"] },
-  { categories: ["alexandria", "alexandria"] },
+  { endpoint: ["alexandria"] },
+  { endpoint: "unknown" },
+  { endpoint: null },
+  { categories: ["alexandria"] },
   { requestedWebsite: "ftp://sam.gov" },
   { requestedWebsite: "not a website" },
   { requestedVertical: "unknown" },
@@ -274,22 +301,26 @@ it("returns a failure without logging the payload if persistence fails", async (
   expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
 });
 
-it("preserves the existing job feedback path", async () => {
-  mocks.recordEndpointFeedback.mockResolvedValueOnce({
-    status: 200,
-    body: { success: true, feedbackId: jobId, creditsRefunded: 1 },
-  });
-  const response = await submit({
-    endpoint: "scrape",
-    jobId,
-    rating: "bad",
-    note: "The expected page content was missing.",
-  });
-  expect(response.status).toBe(200);
-  expect(response.body.creditsRefunded).toBe(1);
-  expect(mocks.recordEndpointFeedback).toHaveBeenCalledWith(
-    expect.anything(),
-    expect.objectContaining({ endpoint: "scrape", jobId }),
-  );
-  expect(mocks.values).not.toHaveBeenCalled();
-});
+it.each(["search", "scrape", "parse", "map"])(
+  "preserves the existing %s job feedback path",
+  async endpoint => {
+    mocks.recordEndpointFeedback.mockResolvedValueOnce({
+      status: 200,
+      body: { success: true, feedbackId: jobId, creditsRefunded: 1 },
+    });
+    const response = await submit({
+      endpoint,
+      jobId,
+      rating: "bad",
+      note: "The expected page content was missing.",
+      missingContent: [{ topic: "Required data" }],
+    });
+    expect(response.status).toBe(200);
+    expect(response.body.creditsRefunded).toBe(1);
+    expect(mocks.recordEndpointFeedback).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ endpoint, jobId }),
+    );
+    expect(mocks.values).not.toHaveBeenCalled();
+  },
+);

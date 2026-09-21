@@ -8,7 +8,7 @@ import * as schema from "../../../db/schema";
 describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
   let identity: Identity;
   const body = {
-    categories: ["alexandria"],
+    endpoint: "alexandria",
     rating: "partial",
     requestedWebsite: "https://sam.gov",
     requestedVertical: "government",
@@ -43,7 +43,7 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
         overall_rating: "partial",
         credits_refunded: 0,
         metadata: {
-          categories: ["alexandria"],
+          endpoint: "alexandria",
           requestedWebsite: body.requestedWebsite,
           requestedVertical: "government",
         },

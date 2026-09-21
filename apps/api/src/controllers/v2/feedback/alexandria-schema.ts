@@ -111,7 +111,7 @@ const scrapeObservation = z.union([
 
 export const alexandriaFeedbackSchema = z
   .strictObject({
-    categories: z.tuple([z.literal("alexandria")]),
+    endpoint: z.literal("alexandria"),
     rating: z.enum(["good", "partial", "bad"]),
     requestedWebsite: website,
     requestedVertical: feedbackVerticalSchema,

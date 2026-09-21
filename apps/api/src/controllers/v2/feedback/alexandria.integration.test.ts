@@ -27,7 +27,7 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
   let config: typeof import("../../../config").config;
   let originalAuthentication: boolean | undefined;
   const minimal = {
-    categories: ["alexandria"],
+    endpoint: "alexandria",
     rating: "bad",
     requestedWebsite: "https://sam.gov",
     requestedVertical: "government",
@@ -102,7 +102,7 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
         refund_policy: null,
         metadata: {
           schemaVersion: 1,
-          categories: ["alexandria"],
+          endpoint: "alexandria",
           requestedWebsite: "https://sam.gov",
           requestedVertical: "government",
         },
