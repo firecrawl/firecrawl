@@ -1,14 +1,25 @@
 import { EndpointFeedbackRequest, SearchFeedbackRequest } from "../types";
 import { FeedbackInput } from "./internal-types";
 
+type RecordableEndpointFeedbackRequest = Extract<
+  EndpointFeedbackRequest,
+  { rating: "good" | "bad" | "partial" }
+>;
+
 export function toFeedbackInput(
-  body: EndpointFeedbackRequest | SearchFeedbackRequest,
+  body: RecordableEndpointFeedbackRequest | SearchFeedbackRequest,
 ): FeedbackInput {
   return {
     rating: body.rating,
-    valuableSources: body.valuableSources,
-    missingContent: body.missingContent,
-    querySuggestions: body.querySuggestions,
+    ...("valuableSources" in body
+      ? { valuableSources: body.valuableSources }
+      : {}),
+    ...("missingContent" in body
+      ? { missingContent: body.missingContent }
+      : {}),
+    ...("querySuggestions" in body
+      ? { querySuggestions: body.querySuggestions }
+      : {}),
     origin: body.origin,
     integration: body.integration,
     ...("issues" in body ? { issues: body.issues } : {}),

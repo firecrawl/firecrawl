@@ -2717,49 +2717,53 @@ const feedbackMetadataSchema = z
     "metadata must be 8KB or smaller",
   );
 
-export const endpointFeedbackSchema = z
-  .strictObject({
+const endpointFeedbackDetailsSchema = z.strictObject({
+  rating: z.enum(["good", "bad", "partial"]),
+  issues: z.array(feedbackIssueSchema).max(20).optional(),
+  tags: z.array(feedbackIssueSchema).max(20).optional(),
+  note: z.string().trim().max(4000).optional(),
+  valuableSources: z
+    .array(
+      z.strictObject({
+        url: searchFeedbackUrlSchema,
+        reason: z.string().trim().max(1000).optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
+  missingContent: z.array(missingContentEntrySchema).max(50).optional(),
+  querySuggestions: z.string().trim().max(2000).optional(),
+  url: searchFeedbackUrlSchema.optional(),
+  pageNumbers: z.array(z.number().int().positive()).max(100).optional(),
+  metadata: feedbackMetadataSchema.optional(),
+  origin: z.string().optional().prefault("api"),
+  integration: integrationSchema.optional().transform(val => val || null),
+});
+
+function hasSubstantiveEndpointFeedback(
+  data: z.infer<typeof endpointFeedbackDetailsSchema>,
+) {
+  return (
+    (data.issues?.length ?? 0) > 0 ||
+    (data.tags?.length ?? 0) > 0 ||
+    (data.note?.length ?? 0) > 0 ||
+    (data.valuableSources?.length ?? 0) > 0 ||
+    (data.missingContent?.length ?? 0) > 0 ||
+    !!data.querySuggestions ||
+    !!data.url ||
+    (data.pageNumbers?.length ?? 0) > 0
+  );
+}
+
+const legacyEndpointFeedbackSchema = endpointFeedbackDetailsSchema
+  .extend({
     endpoint: endpointFeedbackEndpointSchema,
     jobId: z.uuid(),
-    rating: z.enum(["good", "bad", "partial"]),
-    issues: z.array(feedbackIssueSchema).max(20).optional(),
-    tags: z.array(feedbackIssueSchema).max(20).optional(),
-    note: z.string().trim().max(4000).optional(),
-    valuableSources: z
-      .array(
-        z.strictObject({
-          url: searchFeedbackUrlSchema,
-          reason: z.string().trim().max(1000).optional(),
-        }),
-      )
-      .max(50)
-      .optional(),
-    missingContent: z.array(missingContentEntrySchema).max(50).optional(),
-    querySuggestions: z.string().trim().max(2000).optional(),
-    url: searchFeedbackUrlSchema.optional(),
-    pageNumbers: z.array(z.number().int().positive()).max(100).optional(),
-    metadata: feedbackMetadataSchema.optional(),
-    origin: z.string().optional().prefault("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
   })
-  .refine(
-    data => {
-      return (
-        (data.issues?.length ?? 0) > 0 ||
-        (data.tags?.length ?? 0) > 0 ||
-        (data.note?.length ?? 0) > 0 ||
-        (data.valuableSources?.length ?? 0) > 0 ||
-        (data.missingContent?.length ?? 0) > 0 ||
-        !!data.querySuggestions ||
-        !!data.url ||
-        (data.pageNumbers?.length ?? 0) > 0
-      );
-    },
-    {
-      message:
-        "Feedback must include at least one substantive signal: issues, note, sources, missingContent, querySuggestions, url, or pageNumbers.",
-    },
-  )
+  .refine(data => hasSubstantiveEndpointFeedback(data), {
+    message:
+      "Feedback must include at least one substantive signal: issues, note, sources, missingContent, querySuggestions, url, or pageNumbers.",
+  })
   .refine(
     data => data.endpoint !== "search" || hasSubstantiveSearchFeedback(data),
     {
@@ -2767,6 +2771,94 @@ export const endpointFeedbackSchema = z
         "Search feedback must be substantive. 'good' requires at least one valuableSources entry; 'partial' requires valuableSources or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
     },
   );
+
+const firecrawlJobFeedbackSchema = endpointFeedbackDetailsSchema
+  .extend({
+    target: z.strictObject({
+      type: z.literal("firecrawl_job"),
+      endpoint: endpointFeedbackEndpointSchema,
+      jobId: z.uuid(),
+    }),
+  })
+  .refine(data => hasSubstantiveEndpointFeedback(data), {
+    message:
+      "Feedback must include at least one substantive signal: issues, note, sources, missingContent, querySuggestions, url, or pageNumbers.",
+  })
+  .refine(
+    data =>
+      data.target.endpoint !== "search" || hasSubstantiveSearchFeedback(data),
+    {
+      message:
+        "Search feedback must be substantive. 'good' requires at least one valuableSources entry; 'partial' requires valuableSources or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
+    },
+  );
+
+const alexandriaResultIssueSchema = z.enum([
+  "inaccurate_data",
+  "stale_data",
+  "missing_data",
+  "wrong_entity",
+  "schema_mismatch",
+  "provider_error",
+  "irrelevant_provider",
+  "wrong_capability",
+  "contract_unclear",
+  "slow",
+  "too_expensive",
+  "other",
+]);
+
+const alexandriaResultFeedbackSchema = z
+  .strictObject({
+    target: z.strictObject({
+      type: z.literal("alexandria_result"),
+      feedbackRef: z.uuid(),
+    }),
+    rating: z.enum(["good", "bad", "partial"]),
+    issues: z.array(alexandriaResultIssueSchema).max(8).optional(),
+    note: z.string().trim().max(2000).optional(),
+    origin: z.string().trim().min(1).max(64).optional().prefault("api"),
+    integration: integrationSchema.optional().transform(val => val || null),
+  })
+  .refine(data => (data.issues?.length ?? 0) > 0 || !!data.note, {
+    message: "Alexandria result feedback must include an issue or note.",
+  });
+
+const alexandriaCatalogFeedbackSchema = z.strictObject({
+  target: z.strictObject({ type: z.literal("alexandria_catalog") }),
+  request: z.strictObject({
+    kind: z.enum([
+      "new_provider",
+      "new_capability",
+      "new_data",
+      "website_support",
+    ]),
+    need: z.string().trim().min(1).max(2000),
+    providerName: z.string().trim().min(1).max(200).optional(),
+    providerUrl: searchFeedbackUrlSchema.optional(),
+    exampleUrls: z.array(searchFeedbackUrlSchema).max(5).optional(),
+    requiredFields: z
+      .array(z.string().trim().min(1).max(200))
+      .max(20)
+      .optional(),
+    geography: z.string().trim().min(1).max(200).optional(),
+    freshness: z.string().trim().min(1).max(200).optional(),
+  }),
+  note: z.string().trim().max(2000).optional(),
+  origin: z.string().trim().min(1).max(64).optional().prefault("api"),
+  integration: integrationSchema.optional().transform(val => val || null),
+});
+
+/**
+ * One public feedback contract. The legacy top-level endpoint/jobId form remains accepted while
+ * new callers use a typed target for Firecrawl jobs or Alexandria results/catalogue requests.
+ */
+export const endpointFeedbackSchema = z.union([
+  legacyEndpointFeedbackSchema,
+  firecrawlJobFeedbackSchema,
+  alexandriaResultFeedbackSchema,
+  alexandriaCatalogFeedbackSchema,
+]);
 
 export type EndpointFeedbackRequest = z.infer<typeof endpointFeedbackSchema>;
 export type EndpointFeedbackRequestInput = z.input<
@@ -2780,6 +2872,7 @@ export type EndpointFeedbackErrorCode =
   | "TEAM_OPTED_OUT"
   | "INVALID_BODY"
   | "DB_DISABLED"
+  | "ALEXANDRIA_UNAVAILABLE"
   | "INTERNAL";
 
 export type EndpointFeedbackResponse =
@@ -2793,6 +2886,8 @@ export type EndpointFeedbackResponse =
       creditsRefundedToday?: number;
       dailyRefundCap?: number;
       warning?: string;
+      provider?: string | null;
+      capability?: string | null;
     };
 
 export type TokenUsage = {

@@ -115,4 +115,59 @@ describe("feedback schema", () => {
       }).success,
     ).toBe(true);
   });
+
+  it("accepts typed Firecrawl, Alexandria result, and catalogue targets", () => {
+    expect(
+      endpointFeedbackSchema.safeParse({
+        target: {
+          type: "firecrawl_job",
+          endpoint: "scrape",
+          jobId: "01933161-0000-7000-8000-000000000001",
+        },
+        rating: "bad",
+        issues: ["blocked"],
+      }).success,
+    ).toBe(true);
+
+    expect(
+      endpointFeedbackSchema.safeParse({
+        target: {
+          type: "alexandria_result",
+          feedbackRef: "01933161-0000-7000-8000-000000000002",
+        },
+        rating: "partial",
+        issues: ["stale_data"],
+      }).success,
+    ).toBe(true);
+
+    expect(
+      endpointFeedbackSchema.safeParse({
+        target: { type: "alexandria_catalog" },
+        request: {
+          kind: "website_support",
+          need: "Use this authenticated industry directory as a source.",
+          providerUrl: "https://example.com/directory",
+          requiredFields: ["company", "headcount"],
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects unstructured or unsupported Alexandria feedback", () => {
+    expect(
+      endpointFeedbackSchema.safeParse({
+        target: {
+          type: "alexandria_result",
+          feedbackRef: "01933161-0000-7000-8000-000000000002",
+        },
+        rating: "bad",
+      }).success,
+    ).toBe(false);
+    expect(
+      endpointFeedbackSchema.safeParse({
+        target: { type: "alexandria_catalog" },
+        request: { kind: "other", need: "Something else" },
+      }).success,
+    ).toBe(false);
+  });
 });

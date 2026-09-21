@@ -1126,7 +1126,7 @@ export interface SearchFeedbackRequest {
   origin?: string;
 }
 
-export interface EndpointFeedbackRequest extends SearchFeedbackRequest {
+export interface LegacyEndpointFeedbackRequest extends SearchFeedbackRequest {
   endpoint: EndpointFeedbackEndpoint;
   jobId: string;
   issues?: string[];
@@ -1138,6 +1138,66 @@ export interface EndpointFeedbackRequest extends SearchFeedbackRequest {
   metadata?: Record<string, unknown>;
 }
 
+export interface FirecrawlJobFeedbackRequest
+  extends Omit<LegacyEndpointFeedbackRequest, "endpoint" | "jobId"> {
+  target: {
+    type: "firecrawl_job";
+    endpoint: EndpointFeedbackEndpoint;
+    jobId: string;
+  };
+}
+
+export type AlexandriaResultIssue =
+  | "inaccurate_data"
+  | "stale_data"
+  | "missing_data"
+  | "wrong_entity"
+  | "schema_mismatch"
+  | "provider_error"
+  | "irrelevant_provider"
+  | "wrong_capability"
+  | "contract_unclear"
+  | "slow"
+  | "too_expensive"
+  | "other";
+
+export interface AlexandriaResultFeedbackRequest {
+  target: { type: "alexandria_result"; feedbackRef: string };
+  rating: FeedbackRating;
+  issues?: AlexandriaResultIssue[];
+  note?: string;
+  integration?: string | null;
+  origin?: string;
+}
+
+export interface AlexandriaCatalogFeedbackRequest {
+  target: { type: "alexandria_catalog" };
+  request: {
+    kind:
+      | "new_provider"
+      | "new_capability"
+      | "new_data"
+      | "website_support";
+    need: string;
+    providerName?: string;
+    providerUrl?: string;
+    exampleUrls?: string[];
+    requiredFields?: string[];
+    geography?: string;
+    freshness?: string;
+  };
+  note?: string;
+  integration?: string | null;
+  origin?: string;
+}
+
+/** One feedback method for Firecrawl jobs, Alexandria results, and catalogue requests. */
+export type EndpointFeedbackRequest =
+  | LegacyEndpointFeedbackRequest
+  | FirecrawlJobFeedbackRequest
+  | AlexandriaResultFeedbackRequest
+  | AlexandriaCatalogFeedbackRequest;
+
 export interface FeedbackResponse {
   success: true;
   feedbackId: string;
@@ -1147,6 +1207,8 @@ export interface FeedbackResponse {
   creditsRefundedToday?: number;
   dailyRefundCap?: number;
   warning?: string;
+  provider?: string | null;
+  capability?: string | null;
 }
 
 /**

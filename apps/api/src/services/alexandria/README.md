@@ -35,6 +35,13 @@ Scrape with `alexandria` accepts one call or up to ten and returns
 `data.alexandria` with `data.creditsCost`. `/exchange/retrieve` shares the path; its single-call
 shape relays a provider error with the Exchange's status and `code`.
 
+Each Alexandria result also carries an opaque `feedbackRef`. Clients submit that reference to the
+same public `POST /v2/feedback` endpoint used for Firecrawl job feedback with target type
+`alexandria_result`; the Exchange derives provider and capability from the recorded retrieval.
+The endpoint also accepts target type `alexandria_catalog` for missing providers, capabilities,
+data, and website support. Feedback is explicit—the SDK and MCP tool expose it, but no result is
+rated automatically—and Alexandria feedback does not issue credit refunds.
+
 ## Billing
 
 Inline in the request (`retrieve.ts`): authorize through the Exchange

@@ -15,16 +15,56 @@ function validateRating(rating: string): void {
   }
 }
 
+type TargetedFeedbackRequest = Exclude<
+  EndpointFeedbackRequest,
+  { endpoint: unknown }
+>;
+type FirecrawlJobFeedbackRequest = Extract<
+  TargetedFeedbackRequest,
+  { target: { type: "firecrawl_job" } }
+>;
+type AlexandriaResultFeedbackRequest = Extract<
+  TargetedFeedbackRequest,
+  { target: { type: "alexandria_result" } }
+>;
+
+function isFirecrawlJobFeedback(
+  request: TargetedFeedbackRequest,
+): request is FirecrawlJobFeedbackRequest {
+  return request.target.type === "firecrawl_job";
+}
+
+function isAlexandriaResultFeedback(
+  request: TargetedFeedbackRequest,
+): request is AlexandriaResultFeedbackRequest {
+  return request.target.type === "alexandria_result";
+}
+
 export async function feedback(
   http: HttpClient,
   request: EndpointFeedbackRequest,
 ): Promise<FeedbackResponse> {
-  if (!request.endpoint) throw new Error("endpoint is required");
-  if (!request.jobId) throw new Error("jobId is required");
-  validateRating(request.rating);
+  if ("endpoint" in request) {
+    if (!request.endpoint) throw new Error("endpoint is required");
+    if (!request.jobId) throw new Error("jobId is required");
+    validateRating(request.rating);
+  } else if (isFirecrawlJobFeedback(request)) {
+    if (!request.target.endpoint) throw new Error("target.endpoint is required");
+    if (!request.target.jobId) throw new Error("target.jobId is required");
+    validateRating(request.rating);
+  } else if (isAlexandriaResultFeedback(request)) {
+    if (!request.target.feedbackRef)
+      throw new Error("target.feedbackRef is required");
+    validateRating(request.rating);
+  } else if (!request.request.need) {
+    throw new Error("request.need is required");
+  }
 
   try {
-    const res = await http.post<FeedbackResponse>("/v2/feedback", request);
+    const res = await http.post<FeedbackResponse>(
+      "/v2/feedback",
+      request as unknown as Record<string, unknown>,
+    );
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "feedback");
     }
@@ -45,8 +85,11 @@ export async function searchFeedback(
 
   try {
     const res = await http.post<FeedbackResponse>(
-      `/v2/search/${encodeURIComponent(jobId)}/feedback`,
-      request,
+      "/v2/feedback",
+      {
+        target: { type: "firecrawl_job", endpoint: "search", jobId },
+        ...request,
+      },
     );
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "searchFeedback");
