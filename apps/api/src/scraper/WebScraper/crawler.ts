@@ -1,4 +1,3 @@
-import { AxiosError } from "axios";
 import { config } from "../../config";
 import { load } from "cheerio"; // rustified
 import { URL } from "url";
@@ -1064,26 +1063,6 @@ export class WebCrawler {
             sitemapUrl: baseUrlSitemap,
             error,
           });
-          if (error instanceof AxiosError && error.response?.status === 404) {
-            // ignore 404
-          } else {
-            sitemapCount += await getLinksFromSitemap(
-              {
-                sitemapUrl: baseUrlSitemap,
-                urlsHandler,
-                mode: "fire-engine",
-                maxAge,
-                zeroDataRetention: this.zeroDataRetention,
-                location: this.location,
-                headers: this.headers,
-              },
-              this.logger,
-              this.jobId,
-              this.sitemapsHit,
-              abort,
-              mock,
-            );
-          }
         }
       }
     }
