@@ -3,7 +3,6 @@ use napi_derive::napi;
 use roxmltree::Document;
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
-use std::path::{Component, Path, PathBuf};
 
 const MAX_OOXML_PART_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_OOXML_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
@@ -160,16 +159,15 @@ fn read_zip_text<R: Read + std::io::Seek>(
   budget.parts_remaining -= 1;
   let mut bytes = Vec::with_capacity(file.size() as usize);
   let read_limit = MAX_OOXML_PART_BYTES.min(budget.bytes_remaining);
-  file
-    .by_ref()
-    .take(read_limit + 1)
-    .read_to_end(&mut bytes)
-    .ok()?;
+  let read_result = file.by_ref().take(read_limit + 1).read_to_end(&mut bytes);
+  budget.bytes_remaining = budget.bytes_remaining.saturating_sub(bytes.len() as u64);
+  if read_result.is_err() {
+    return None;
+  }
   if bytes.len() as u64 > read_limit {
     budget.bytes_remaining = 0;
     return None;
   }
-  budget.bytes_remaining -= bytes.len() as u64;
   String::from_utf8(bytes).ok()
 }
 
@@ -218,14 +216,9 @@ fn parse_repeating_relationships(xml: &str) -> HashMap<String, Relationship> {
 }
 
 fn relationship_part_for(part: &str) -> String {
-  let path = Path::new(part);
-  let file_name = path
-    .file_name()
-    .and_then(|name| name.to_str())
-    .unwrap_or(part);
-  match path.parent().and_then(|parent| parent.to_str()) {
-    Some(parent) if !parent.is_empty() => format!("{parent}/_rels/{file_name}.rels"),
-    _ => format!("_rels/{file_name}.rels"),
+  match part.rsplit_once('/') {
+    Some((parent, file_name)) => format!("{parent}/_rels/{file_name}.rels"),
+    None => format!("_rels/{part}.rels"),
   }
 }
 
@@ -233,25 +226,23 @@ fn resolve_part(base: &str, target: &str) -> Option<String> {
   if target.starts_with('/') {
     return normalize_part(target);
   }
-  let base = Path::new(base).parent().unwrap_or_else(|| Path::new(""));
-  normalize_part(base.join(target).to_str()?)
+  let parent = base
+    .rsplit_once('/')
+    .map(|(parent, _)| parent)
+    .unwrap_or("");
+  normalize_part(&format!("{parent}/{target}"))
 }
 
 fn normalize_part(part: &str) -> Option<String> {
-  let mut normalized = PathBuf::new();
-  for component in Path::new(part.trim_start_matches('/')).components() {
+  let mut normalized = Vec::new();
+  for component in part.trim_start_matches('/').split('/') {
     match component {
-      Component::Normal(value) => normalized.push(value),
-      Component::CurDir => {}
-      Component::ParentDir => {
-        if !normalized.pop() {
-          return None;
-        }
-      }
-      Component::RootDir | Component::Prefix(_) => return None,
+      "" | "." => {}
+      ".." => normalized.pop().map(|_| ())?,
+      value => normalized.push(value),
     }
   }
-  normalized.to_str().map(str::to_string)
+  Some(normalized.join("/"))
 }
 
 fn extract_wordprocessing_text(xml: &str) -> Option<String> {
