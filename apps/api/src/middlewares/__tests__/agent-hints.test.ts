@@ -84,7 +84,7 @@ describe("agent hint response middleware", () => {
         success: true,
         data: { metadata: { statusCode: 401, scrapeId: "scrape-id" } },
       },
-      expected: ["POST /v2/scrape/<scrapeId>/interact"],
+      expected: ["POST /v2/scrape/scrape-id/interact"],
     },
     {
       name: "truncated PDF scrape",

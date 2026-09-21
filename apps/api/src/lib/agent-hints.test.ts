@@ -127,6 +127,23 @@ describe("deterministic agent hints", () => {
         },
       }),
     ).toEqual([]);
+
+    expect(
+      hints({
+        response: {
+          success: true,
+          data: {
+            web: [
+              { url: "https://docs.example.com/a", markdown: "a" },
+              { url: "https://docs.example.com/b", markdown: "b" },
+              { url: "https://docs.example.com/c", markdown: "c" },
+              { url: "mailto:docs@example.com", markdown: "d" },
+              { url: "not a URL", markdown: "e" },
+            ],
+          },
+        },
+      }),
+    ).toEqual([]);
   });
 
   it.each(["parse", "map"] as const)(
@@ -174,7 +191,7 @@ describe("deterministic agent hints", () => {
     ).toEqual([]);
   });
 
-  it("suggests interact only for a 401 scrape with a scrapeId", () => {
+  it("suggests interact only for a 401 scrape with a scrape ID", () => {
     const response = (statusCode: number, scrapeId?: string) => ({
       success: true,
       data: { metadata: { statusCode, scrapeId } },
@@ -183,7 +200,29 @@ describe("deterministic agent hints", () => {
       hints({ endpoint: "scrape", response: response(401, "scrape-id") }).join(
         " ",
       ),
-    ).toContain("POST /v2/scrape/<scrapeId>/interact");
+    ).toContain("POST /v2/scrape/scrape-id/interact");
+    expect(
+      hints({
+        endpoint: "scrape",
+        response: {
+          success: true,
+          scrape_id: "top-level-id",
+          data: { metadata: { statusCode: 401 } },
+        },
+      }).join(" "),
+    ).toContain("POST /v2/scrape/top-level-id/interact");
+    expect(
+      hints({
+        endpoint: "scrape",
+        response: {
+          success: true,
+          scrape_id: "top-level-id",
+          data: {
+            metadata: { statusCode: 401, scrapeId: "metadata-id" },
+          },
+        },
+      }).join(" "),
+    ).toContain("POST /v2/scrape/metadata-id/interact");
     expect(hints({ endpoint: "scrape", response: response(401) })).toEqual([]);
     expect(
       hints({ endpoint: "scrape", response: response(403, "scrape-id") }),

@@ -20,8 +20,8 @@ Raw HTTP and ordinary SDK callers receive no hints unless their adapter explicit
 
 - Search excerpts: offer Scrape when a web result has no markdown, HTML, or raw HTML. Inspect actual output per result, not the requested scrape setting.
 - Empty web search: offer another Search with a broader or alternative query only when a web result collection is explicitly present and empty.
-- Search result cluster: when at least four valid result URLs are present and at least three share one origin representing at least 75% of valid result URLs, offer Map for URL discovery or Crawl for multi-page content.
-- Source page 401: when a successful Scrape envelope includes both a page status of 401 and `metadata.scrapeId`, offer Interact using that scrape ID for authentication or page interaction.
+- Search result cluster: when at least four valid HTTP(S) result URLs are present and at least three share one origin representing at least 75% of valid result URLs, offer Map for URL discovery or Crawl for multi-page content.
+- Source page 401: when a successful Scrape envelope includes both a page status of 401 and a scrape ID in `metadata.scrapeId` or top-level `scrape_id`, offer Interact using that concrete scrape ID for authentication or page interaction.
 - Source page 404/410: offer Search for a current location or alternative. An API cache-miss 404, 429, authentication failure, or timeout does not fire this rule.
 - Truncated PDF: when Scrape reports `totalPages > numPages`, offer another Scrape with a higher PDF `maxPages` value, capped at the API maximum of 10,000.
 - Low credits: when the authoritative billing preflight reports fewer than 100 credits, ask the agent to let the user know they should add more credits. This notice is independent of endpoint success for responses that reach the hint middleware, and it does not replace a useful cross-endpoint suggestion.

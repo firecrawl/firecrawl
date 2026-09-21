@@ -23,7 +23,11 @@ function clusteredOrigin(web: unknown[]): string | undefined {
     const url = object(value).url;
     if (typeof url !== "string") continue;
     try {
-      const origin = new URL(url).origin;
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        continue;
+      }
+      const origin = parsed.origin;
       counts.set(origin, (counts.get(origin) ?? 0) + 1);
     } catch {
       // Ignore malformed result URLs rather than allowing them to fire a hint.
@@ -49,9 +53,14 @@ export function buildAgentHints(context: AgentHintContext): string[] {
     const metadata = object(data.metadata);
     const pageStatus = metadata.statusCode;
     if (context.endpoint === "scrape" && pageStatus === 401) {
-      if (typeof metadata.scrapeId === "string" && metadata.scrapeId) {
-        nextAction =
-          'The source page returned 401 and this scrape can continue interactively. If access requires login or page interaction, use POST /v2/scrape/<scrapeId>/interact with the metadata.scrapeId from this response and {"prompt":"<next browser action>"}.';
+      const scrapeId =
+        typeof metadata.scrapeId === "string" && metadata.scrapeId
+          ? metadata.scrapeId
+          : typeof response.scrape_id === "string" && response.scrape_id
+            ? response.scrape_id
+            : undefined;
+      if (scrapeId) {
+        nextAction = `The source page returned 401 and this scrape can continue interactively. If access requires login or page interaction, use POST /v2/scrape/${encodeURIComponent(scrapeId)}/interact with {"prompt":"<next browser action>"}.`;
       }
     } else if (
       context.endpoint === "scrape" &&
