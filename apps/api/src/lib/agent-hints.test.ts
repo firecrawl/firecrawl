@@ -24,6 +24,22 @@ describe("deterministic agent hints", () => {
     },
   );
 
+  it.each(["markdown", "html", "rawHtml"])(
+    "treats a present but empty %s field as fetched content",
+    contentField => {
+      expect(
+        hints({
+          response: {
+            success: true,
+            data: {
+              web: [{ url: "https://example.com", [contentField]: "" }],
+            },
+          },
+        }),
+      ).toEqual([]);
+    },
+  );
+
   it("checks missing full content per result and does not scrape everything", () => {
     expect(
       hints({

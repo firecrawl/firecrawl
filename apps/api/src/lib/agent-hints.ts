@@ -94,9 +94,9 @@ export function buildAgentHints(context: AgentHintContext): string[] {
           const item = object(value);
           return (
             typeof item.url === "string" &&
-            !item.markdown &&
-            !item.html &&
-            !item.rawHtml
+            item.markdown === undefined &&
+            item.html === undefined &&
+            item.rawHtml === undefined
           );
         });
         if (hasMissingContent) {
