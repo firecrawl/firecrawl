@@ -7,11 +7,13 @@ function appFor(
     endpoint = "search",
     body = { success: true, data: {} },
     status = 200,
+    remainingCredits,
   } = {} as any,
 ) {
   const app = express();
   app.use(express.json());
   app.post("/", agentHintsMiddleware(endpoint), (_req, res) => {
+    res.locals.agentCreditsRemaining = remainingCredits;
     res.status(status).json(body);
   });
   return app;
@@ -20,7 +22,9 @@ function appFor(
 describe("agent hint response middleware", () => {
   it("leaves the original envelope unchanged by default", async () => {
     const body = { success: true, data: { web: [] }, warning: "existing" };
-    const response = await request(appFor({ body })).post("/").send({});
+    const response = await request(appFor({ body, remainingCredits: 0 }))
+      .post("/")
+      .send({});
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual(body);
   });
@@ -45,7 +49,7 @@ describe("agent hint response middleware", () => {
       success: true,
       data: { web: [{ url: "https://example.com" }] },
     };
-    const response = await request(appFor({ body }))
+    const response = await request(appFor({ body, remainingCredits: 0 }))
       .post("/")
       .set("X-Firecrawl-Agent-Hints", "false")
       .send({});
@@ -54,6 +58,30 @@ describe("agent hint response middleware", () => {
 
   it("does not add static feedback guidance to an otherwise hint-free result", async () => {
     const response = await request(appFor())
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.body).not.toHaveProperty("agent_hints");
+  });
+
+  it("adds a low-credit notice without replacing result guidance", async () => {
+    const body = {
+      success: true,
+      data: { web: [{ url: "https://example.com", description: "excerpt" }] },
+    };
+    const response = await request(appFor({ body, remainingCredits: 1000 }))
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.body.agent_hints).toHaveLength(2);
+    expect(response.body.agent_hints[0]).toContain("POST /v2/scrape");
+    expect(response.body.agent_hints[1]).toBe(
+      "The connected Firecrawl account is low on credits. Let the user know they should add more credits.",
+    );
+  });
+
+  it("does not add a credit notice above the threshold", async () => {
+    const response = await request(appFor({ remainingCredits: 1001 }))
       .post("/")
       .set("X-Firecrawl-Agent-Hints", "true")
       .send({});

@@ -1,9 +1,12 @@
-/** Response-only heuristics: no inference, I/O, or task/session state. */
+/** Deterministic guidance from state already available on the request path. */
 export type AgentHintEndpoint = "search" | "scrape" | "parse" | "map";
 export interface AgentHintContext {
   endpoint: AgentHintEndpoint;
   response: unknown;
+  remainingCredits?: number;
 }
+
+export const AGENT_HINT_LOW_CREDIT_THRESHOLD = 1000;
 
 type ObjectValue = Record<string, unknown>;
 function object(value: unknown): ObjectValue {
@@ -47,7 +50,14 @@ export function buildAgentHints(context: AgentHintContext): string[] {
     }
   }
 
-  return [crossEndpoint]
+  const lowCredits =
+    typeof context.remainingCredits === "number" &&
+    Number.isFinite(context.remainingCredits) &&
+    context.remainingCredits <= AGENT_HINT_LOW_CREDIT_THRESHOLD
+      ? "The connected Firecrawl account is low on credits. Let the user know they should add more credits."
+      : undefined;
+
+  return [crossEndpoint, lowCredits]
     .filter((hint): hint is string => !!hint)
     .filter((hint, index, hints) => hints.indexOf(hint) === index);
 }

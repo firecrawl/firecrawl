@@ -15,6 +15,7 @@ export function agentHintsMiddleware(
       const hints = buildAgentHints({
         endpoint,
         response: body,
+        remainingCredits: res.locals.agentCreditsRemaining,
       });
       return json.call(
         this,

@@ -66,4 +66,26 @@ describe("deterministic agent hints", () => {
       [],
     );
   });
+
+  it("asks the agent to notify the user when credits are low", () => {
+    expect(hints({ remainingCredits: 1000 })).toEqual([
+      "The connected Firecrawl account is low on credits. Let the user know they should add more credits.",
+    ]);
+    expect(hints({ remainingCredits: 1001 })).toEqual([]);
+    expect(hints({ remainingCredits: Infinity })).toEqual([]);
+    expect(hints({})).toEqual([]);
+  });
+
+  it("keeps useful next-job guidance alongside the low-credit notice", () => {
+    const result = hints({
+      remainingCredits: 50,
+      response: {
+        success: true,
+        data: { web: [{ url: "https://example.com", description: "excerpt" }] },
+      },
+    });
+    expect(result).toHaveLength(2);
+    expect(result[0]).toContain("POST /v2/scrape");
+    expect(result[1]).toContain("add more credits");
+  });
 });

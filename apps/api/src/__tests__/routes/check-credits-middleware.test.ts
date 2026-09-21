@@ -65,6 +65,7 @@ function runMiddleware(
     };
 
     const res: any = {
+      locals: {},
       status: vi.fn((..._args: any[]) => {
         // 402 / 403 paths terminate via res.status(...).json(...) without next()
         setImmediate(() => settle({ res }));
@@ -95,6 +96,7 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
 
     expect(res.status).not.toHaveBeenCalled();
     expect(req.account.remainingCredits).toBe(Infinity);
+    expect(res.locals.agentCreditsRemaining).toBe(0);
     // request body limit must NOT have been clamped down to 0
     expect(req.body.limit).toBe(100);
   });
@@ -106,6 +108,7 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
     const { res } = await runMiddleware(req);
 
     expect(res.status).toHaveBeenCalledWith(402);
+    expect(res.locals.agentCreditsRemaining).toBe(0);
   });
 
   it("adjusts crawl limit down when Autumn denies but some credits remain", async () => {
