@@ -108,7 +108,7 @@ describe("agent hint response middleware", () => {
     expect(response.body).not.toHaveProperty("agent_hints");
   });
 
-  it("preserves failure status, code, and details without inventing hints", async () => {
+  it("preserves a failure envelope when no hint applies", async () => {
     const body = {
       success: false,
       error: "Bad URL",
@@ -121,5 +121,25 @@ describe("agent hint response middleware", () => {
       .send({});
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual(body);
+  });
+
+  it("adds only the low-credit notice to a failure envelope", async () => {
+    const body = {
+      success: false,
+      error: "Bad URL",
+      code: "BAD_REQUEST",
+      details: [{ field: "url" }],
+    };
+    const response = await request(
+      appFor({ body, status: 400, remainingCredits: 0 }),
+    )
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toMatchObject(body);
+    expect(response.body.agent_hints).toEqual([
+      "The connected Firecrawl account is low on credits. Let the user know they should add more credits.",
+    ]);
   });
 });
