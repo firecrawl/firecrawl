@@ -48,6 +48,87 @@ describe("deterministic agent hints", () => {
     expect(result.join(" ").toLowerCase()).toContain("if you need");
   });
 
+  it("suggests another search when the web result set is explicitly empty", () => {
+    expect(
+      hints({ response: { success: true, data: { web: [] } } }).join(" "),
+    ).toContain("POST /v2/search");
+    expect(
+      hints({
+        response: {
+          success: true,
+          data: { images: [{ imageUrl: "https://example.com/image.png" }] },
+        },
+      }),
+    ).toEqual([]);
+
+    const missingContentWins = hints({
+      response: {
+        success: true,
+        data: {
+          web: [
+            { url: "https://docs.example.com/a" },
+            { url: "https://docs.example.com/b", markdown: "b" },
+            { url: "https://docs.example.com/c", markdown: "c" },
+            { url: "https://other.example.com/d", markdown: "d" },
+          ],
+        },
+      },
+    }).join(" ");
+    expect(missingContentWins).toContain("POST /v2/scrape");
+    expect(missingContentWins).not.toContain("POST /v2/map");
+    expect(missingContentWins).not.toContain("POST /v2/crawl");
+  });
+
+  it("suggests mapping or crawling when results cluster on one origin", () => {
+    const clustered = hints({
+      response: {
+        success: true,
+        data: {
+          web: [
+            { url: "https://docs.example.com/a", markdown: "a" },
+            { url: "https://docs.example.com/b", html: "b" },
+            { url: "https://docs.example.com/c", rawHtml: "c" },
+            { url: "https://other.example.com/d", markdown: "d" },
+          ],
+        },
+      },
+    }).join(" ");
+    expect(clustered).toContain("https://docs.example.com");
+    expect(clustered).toContain("POST /v2/map");
+    expect(clustered).toContain("POST /v2/crawl");
+
+    expect(
+      hints({
+        response: {
+          success: true,
+          data: {
+            web: [
+              { url: "https://docs.example.com/a", markdown: "a" },
+              { url: "https://docs.example.com/b", markdown: "b" },
+              { url: "https://docs.example.com/c", markdown: "c" },
+            ],
+          },
+        },
+      }),
+    ).toEqual([]);
+
+    expect(
+      hints({
+        response: {
+          success: true,
+          data: {
+            web: [
+              { url: "https://docs.example.com/a", markdown: "a" },
+              { url: "https://docs.example.com/b", markdown: "b" },
+              { url: "https://other.example.com/c", markdown: "c" },
+              { url: "https://another.example.com/d", markdown: "d" },
+            ],
+          },
+        },
+      }),
+    ).toEqual([]);
+  });
+
   it.each(["parse", "map"] as const)(
     "%s emits no cross-endpoint hint and only the low-credit notice",
     endpoint => {
@@ -93,10 +174,43 @@ describe("deterministic agent hints", () => {
     ).toEqual([]);
   });
 
-  it("does not add static feedback guidance to otherwise hint-free results", () => {
-    expect(hints({ response: { success: true, data: { web: [] } } })).toEqual(
+  it("suggests interact only for a 401 scrape with a scrapeId", () => {
+    const response = (statusCode: number, scrapeId?: string) => ({
+      success: true,
+      data: { metadata: { statusCode, scrapeId } },
+    });
+    expect(
+      hints({ endpoint: "scrape", response: response(401, "scrape-id") }).join(
+        " ",
+      ),
+    ).toContain("POST /v2/scrape/<scrapeId>/interact");
+    expect(hints({ endpoint: "scrape", response: response(401) })).toEqual([]);
+    expect(
+      hints({ endpoint: "scrape", response: response(403, "scrape-id") }),
+    ).toEqual([]);
+  });
+
+  it("suggests another scrape when a PDF result is truncated", () => {
+    const response = (numPages: number, totalPages: number) => ({
+      success: true,
+      data: { metadata: { statusCode: 200, numPages, totalPages } },
+    });
+    const truncated = hints({
+      endpoint: "scrape",
+      response: response(5, 47),
+    }).join(" ");
+    expect(truncated).toContain("5 of 47 pages");
+    expect(truncated).toContain('"maxPages":47');
+    expect(
+      hints({ endpoint: "scrape", response: response(5, 12000) }).join(" "),
+    ).toContain('"maxPages":10000');
+    expect(hints({ endpoint: "scrape", response: response(47, 47) })).toEqual(
       [],
     );
+  });
+
+  it("does not add static feedback guidance to otherwise hint-free results", () => {
+    expect(hints({ response: { success: true, data: {} } })).toEqual([]);
     expect(hints({ response: { success: false, error: "failed" } })).toEqual(
       [],
     );

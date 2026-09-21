@@ -76,6 +76,61 @@ describe("agent hint response middleware", () => {
     },
   );
 
+  it.each([
+    {
+      name: "scrape 401 with a scrape ID",
+      endpoint: "scrape",
+      body: {
+        success: true,
+        data: { metadata: { statusCode: 401, scrapeId: "scrape-id" } },
+      },
+      expected: ["POST /v2/scrape/<scrapeId>/interact"],
+    },
+    {
+      name: "truncated PDF scrape",
+      endpoint: "scrape",
+      body: {
+        success: true,
+        data: { metadata: { statusCode: 200, numPages: 5, totalPages: 47 } },
+      },
+      expected: ['"maxPages":47'],
+    },
+    {
+      name: "empty web search",
+      endpoint: "search",
+      body: { success: true, data: { web: [] } },
+      expected: ["POST /v2/search"],
+    },
+    {
+      name: "search clustered on one origin",
+      endpoint: "search",
+      body: {
+        success: true,
+        data: {
+          web: [
+            { url: "https://docs.example.com/a", markdown: "a" },
+            { url: "https://docs.example.com/b", markdown: "b" },
+            { url: "https://docs.example.com/c", markdown: "c" },
+            { url: "https://other.example.com/d", markdown: "d" },
+          ],
+        },
+      },
+      expected: ["POST /v2/map", "POST /v2/crawl"],
+    },
+  ])("preserves the $name hint through the middleware", async testCase => {
+    const response = await request(
+      appFor({ endpoint: testCase.endpoint, body: testCase.body }),
+    )
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+
+    expect(response.body.agent_hints).toHaveLength(1);
+    for (const text of testCase.expected) {
+      expect(response.body.agent_hints[0]).toContain(text);
+    }
+  });
+
   it("does not add static feedback guidance to an otherwise hint-free result", async () => {
     const response = await request(appFor())
       .post("/")
