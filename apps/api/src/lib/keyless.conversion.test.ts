@@ -7,6 +7,7 @@ import { config } from "../config";
 import { logger } from "./logger";
 import {
   KEYLESS_CONVERSION_COHORT_VERSION,
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   keylessConversionCohort,
   keylessExhaustionTelemetry,
   keylessLimitBody,
@@ -51,6 +52,25 @@ describe("keyless conversion cohort telemetry", () => {
 
     expect(keylessConversionCohort("   ")).toBeUndefined();
     expect(keylessExhaustionTelemetry("   ")).toEqual({});
+  });
+
+  it("points quota recovery at API keys without asking for chat credential sharing", () => {
+    expect(KEYLESS_FREE_TIER_LIMIT_MESSAGE).toContain(
+      "https://www.firecrawl.dev/app/api-keys",
+    );
+    expect(KEYLESS_FREE_TIER_LIMIT_MESSAGE).not.toContain(
+      "https://www.firecrawl.dev/signin",
+    );
+    expect(KEYLESS_FREE_TIER_LIMIT_MESSAGE).not.toContain(
+      "Authorization: Bearer YOUR_API_KEY",
+    );
+    expect(KEYLESS_FREE_TIER_LIMIT_MESSAGE).toContain(
+      "Authorization: Bearer header",
+    );
+    expect(KEYLESS_FREE_TIER_LIMIT_MESSAGE).toContain(
+      "Do not share the API key in chat",
+    );
+    expect(KEYLESS_FREE_TIER_LIMIT_MESSAGE).toContain("put it in a URL");
   });
 
   it("adds the cohort to reservation-limit exhaustion telemetry", async () => {
