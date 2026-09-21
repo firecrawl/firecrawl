@@ -18,7 +18,7 @@ export async function exchangeRequest(input: {
   resultAuthorization?: string;
   termsIdentity?: { organizationId: string; apiKeyId: string };
 }): Promise<ExchangeResponse> {
-  if (!config.FIRE_EXCHANGE_URL) throw new Error("Exchange is not configured");
+  if (!config.FIRE_EXCHANGE_URL) throw new Error("Alexandria is not configured");
   const base = config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
   const response = await fetch(base + input.path, {
     method: input.body === undefined ? "GET" : "POST",
@@ -59,7 +59,7 @@ export async function exchangeRequest(input: {
   for await (const chunk of response.body ?? []) {
     size += chunk.length;
     if (size > 5 * 1024 * 1024)
-      throw new Error("Exchange response is too large");
+      throw new Error("Alexandria response is too large");
     chunks.push(chunk);
   }
   const text = Buffer.concat(chunks).toString();

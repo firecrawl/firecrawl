@@ -353,7 +353,7 @@ export async function retrieveProviders(input: {
       ...(termsIdentity ? { termsIdentity } : {}),
       maximumCredits,
     }).catch(error => {
-      throw new Error(`Exchange did not answer: ${error?.message ?? error}`);
+      throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);
     });
 
     const body = (response.body ?? {}) as Record<string, unknown>;
@@ -365,10 +365,10 @@ export async function retrieveProviders(input: {
       return refuse(relay(response), true);
     }
     if (response.status < 200 || response.status >= 300)
-      return fail(`Exchange answered ${response.status}`);
+      return fail(`Alexandria answered ${response.status}`);
 
     const parsed = answerSchema.safeParse(response.body);
-    if (!parsed.success) return fail("Exchange answer was malformed");
+    if (!parsed.success) return fail("Alexandria answer was malformed");
     const answer = parsed.data;
     const receiptMatches =
       answer.results.length === input.calls.length &&
@@ -383,7 +383,7 @@ export async function retrieveProviders(input: {
             input.calls[i].capability,
       );
     if (!receiptMatches)
-      return fail("Exchange receipt did not match the request");
+      return fail("Alexandria receipt did not match the request");
 
     const credits = answer.creditsCost;
     const settled = await finalize(credits);
