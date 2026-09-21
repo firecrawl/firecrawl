@@ -18,6 +18,7 @@ jobs:
   build-and-test:
     name: Build and Test
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
