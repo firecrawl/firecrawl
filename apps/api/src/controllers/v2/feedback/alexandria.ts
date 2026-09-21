@@ -76,7 +76,7 @@ export async function recordAlexandriaFeedback(
       job_status: null,
       api_version: "v2",
       overall_rating: rating,
-      comment: body.assessment ?? null,
+      comment: body.rationale,
       metadata: { schemaVersion: 1, ...metadata },
       origin,
       integration: integration ?? null,

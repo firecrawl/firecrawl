@@ -24,8 +24,12 @@ import { feedbackController } from "./controller";
 const minimal = {
   endpoint: "alexandria",
   rating: "partial",
-  requestedWebsite: "https://sam.gov",
-  requestedVertical: "government",
+  requestedWebsite: {
+    url: "https://sam.gov",
+    requestedFunctionality:
+      "Find active contracts by agency and export their attachments as CSV.",
+  },
+  rationale: "Found contract summaries but could not retrieve attachments.",
 };
 const teamId = "01933161-0000-7000-8000-000000000001";
 const jobId = "01933161-0000-7000-8000-000000000002";
@@ -73,6 +77,7 @@ it.each(["good", "partial", "bad"])(
         team_id: teamId,
         api_key_id: 42,
         overall_rating: rating,
+        comment: minimal.rationale,
         job_id: null,
         search_id: null,
         request_id: null,
@@ -84,36 +89,31 @@ it.each(["good", "partial", "bad"])(
           schemaVersion: 1,
           endpoint: "alexandria",
           requestedWebsite: minimal.requestedWebsite,
-          requestedVertical: "government",
+          rationale: minimal.rationale,
         },
       }),
     );
   },
 );
 
-it.each([
-  "web_general",
-  "social",
-  "business",
-  "research",
-  "developer",
-  "news",
-  "government",
-  "finance",
-  "other",
-])("accepts the PR 4616 vertical %s", requestedVertical => {
-  expect(
-    alexandriaFeedbackSchema.safeParse({ ...minimal, requestedVertical })
-      .success,
-  ).toBe(true);
-});
-
-it.each(["endpoint", "rating", "requestedWebsite", "requestedVertical"])(
+it.each(["endpoint", "rating", "requestedWebsite", "rationale"])(
   "requires %s",
   async field => {
     const response = await submit({ ...minimal, [field]: undefined });
     expect(response.status).toBe(400);
     expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
+    expect(mocks.values).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["url", "requestedFunctionality"])(
+  "requires requestedWebsite.%s",
+  async field => {
+    const response = await submit({
+      ...minimal,
+      requestedWebsite: { ...minimal.requestedWebsite, [field]: undefined },
+    });
+    expect(response.status).toBe(400);
     expect(mocks.values).not.toHaveBeenCalled();
   },
 );
@@ -150,38 +150,102 @@ it.each([
   { endpoint: "unknown" },
   { endpoint: null },
   { categories: ["alexandria"] },
-  { requestedWebsite: "ftp://sam.gov" },
-  { requestedWebsite: "not a website" },
-  { requestedVertical: "unknown" },
+  { requestedWebsite: "https://sam.gov" },
+  { requestedWebsite: { ...minimal.requestedWebsite, url: "ftp://sam.gov" } },
+  { requestedWebsite: { ...minimal.requestedWebsite, url: "not a website" } },
+  {
+    requestedWebsite: {
+      ...minimal.requestedWebsite,
+      requestedFunctionality: " ",
+    },
+  },
+  { requestedWebsite: { ...minimal.requestedWebsite, extra: "not allowed" } },
+  { requestedVertical: "government" },
+  { rationale: " " },
+  { rationale: "x".repeat(2001) },
   { rating: true },
   { jobId },
   { endpoint: "search", jobId },
   { extra: "not allowed" },
+  { search: [] },
+  { scrape: [] },
+  { task: "Find current contracts" },
+  { assessment: "The response was incomplete." },
   {
-    search: [
-      { kind: "useful", basis: "output", detail: "Useful official result" },
-    ],
+    providerFeedback: { name: "sam.gov", issue: "other", why: "Slow response" },
   },
   {
-    scrape: [
+    providerFeedback: [
+      { issue: "missing_provider", why: "Need contract attachments" },
+    ],
+  },
+  { providerFeedback: [{ name: "sam.gov", why: "Need contract attachments" }] },
+  { providerFeedback: [{ name: "sam.gov", issue: "missing_provider" }] },
+  {
+    providerFeedback: [
       {
-        kind: "correct",
-        basis: "source_comparison",
-        detail: "Matches the official source",
+        name: " ",
+        issue: "missing_provider",
+        why: "Need contract attachments",
       },
     ],
   },
   {
-    scrape: [
+    providerFeedback: [
+      { name: "sam.gov", issue: "execution_error", why: "Request failed" },
+    ],
+  },
+  { providerFeedback: [{ name: "sam.gov", issue: "other", why: " " }] },
+  {
+    providerFeedback: [
+      { name: "sam.gov", issue: "other", why: "Request failed", extra: true },
+    ],
+  },
+  {
+    capabilityFeedback: [
       {
-        kind: "incorrect",
-        basis: "output",
-        reason: "off_topic",
-        detail: "Incorrect returned value",
+        provider: "sam.gov",
+        issue: "execution_error",
+        why: "Request timed out",
       },
     ],
   },
-  { task: "x".repeat(2001) },
+  {
+    capabilityFeedback: [
+      { name: "contracts", issue: "execution_error", why: "Request timed out" },
+    ],
+  },
+  {
+    capabilityFeedback: [
+      { name: "contracts", provider: "sam.gov", why: "Request timed out" },
+    ],
+  },
+  {
+    capabilityFeedback: [
+      { name: "contracts", provider: "sam.gov", issue: "execution_error" },
+    ],
+  },
+  {
+    capabilityFeedback: [
+      {
+        name: "contracts",
+        provider: "sam.gov",
+        issue: "missing_provider",
+        why: "No matching tool",
+      },
+    ],
+  },
+  {
+    capabilityFeedback: [
+      {
+        name: "contracts",
+        provider: "sam.gov",
+        issue: "other",
+        why: "Request failed",
+        extra: true,
+      },
+    ],
+  },
 ])("rejects malformed feedback %j", async fields => {
   const response = await submit({ ...minimal, ...fields });
   expect(response.status).toBe(400);
@@ -190,39 +254,29 @@ it.each([
   expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
 });
 
-it("preserves Search and Scrape evidence for the overall session", async () => {
+it("preserves website requirements and provider/capability feedback for the session", async () => {
   const evidence = {
-    task: "Find current government contracts",
-    assessment: "The results were useful but incomplete.",
-    search: [
+    providerFeedback: [
       {
-        kind: "useful",
-        source: "web",
-        position: 1,
-        vertical: "government",
-        basis: "output",
-        detail: "The official site listed active solicitations.",
-      },
-      {
-        kind: "missing",
-        vertical: "government",
-        knownSources: ["https://sam.gov"],
-        basis: "expectation",
-        detail: "Expected downloadable contract attachments.",
+        name: "sam.gov",
+        issue: "insufficient_coverage",
+        why: "The provider returns summaries without attachments.",
       },
     ],
-    scrape: [
+    capabilityFeedback: [
       {
-        kind: "incomplete",
-        reason: "pagination",
-        format: "json",
-        location: "contracts",
-        basis: "source_comparison",
-        detail: "The response included only the first page.",
-        comparison: {
-          reference: "https://sam.gov",
-          detail: "The official source lists two pages of results.",
-        },
+        name: "download-attachments",
+        provider: "sam.gov",
+        issue: "new_capability_request",
+        why: "Need the source documents to compare contract requirements.",
+        requestedFunctionality:
+          "Given a contract ID, return all attachment URLs and document text.",
+      },
+      {
+        name: "contracts",
+        provider: "sam.gov",
+        issue: "execution_error",
+        why: "The second page request returned a timeout.",
       },
     ],
   };
@@ -235,14 +289,121 @@ it("preserves Search and Scrape evidence for the overall session", async () => {
   );
 });
 
+it.each([
+  "missing_provider",
+  "insufficient_coverage",
+  "provider_unavailable",
+  "other",
+])(
+  "accepts provider issue %s independently of capability feedback",
+  async issue => {
+    const providerFeedback = [
+      { name: "sam.gov", issue, why: "Need complete contract data." },
+    ];
+    expect((await submit({ ...minimal, providerFeedback })).status).toBe(200);
+    expect(mocks.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ providerFeedback }),
+      }),
+    );
+  },
+);
+
+it.each([
+  "insufficient_functionality",
+  "incorrect_result",
+  "execution_error",
+  "other",
+])(
+  "accepts capability issue %s with or without requested functionality",
+  async issue => {
+    for (const requestedFunctionality of [
+      undefined,
+      "Return the complete contract data as CSV.",
+    ]) {
+      const capabilityFeedback = [
+        {
+          name: "contracts",
+          provider: "sam.gov",
+          issue,
+          why: "The returned data did not satisfy the request.",
+          ...(requestedFunctionality ? { requestedFunctionality } : {}),
+        },
+      ];
+      expect((await submit({ ...minimal, capabilityFeedback })).status).toBe(
+        200,
+      );
+      expect(mocks.values).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ capabilityFeedback }),
+        }),
+      );
+    }
+  },
+);
+
+it.each([undefined, "", " "])(
+  "requires nonempty functionality for a new capability request: %j",
+  async requestedFunctionality => {
+    const payload = {
+      ...minimal,
+      capabilityFeedback: [
+        {
+          name: "download-attachments",
+          provider: "sam.gov",
+          issue: "new_capability_request",
+          why: "Need the source contract documents.",
+          requestedFunctionality,
+        },
+      ],
+    };
+    expect((await submit(payload)).status).toBe(400);
+    expect(mocks.values).not.toHaveBeenCalled();
+    const parsed = alexandriaFeedbackSchema.safeParse(payload);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ["capabilityFeedback", 0, "requestedFunctionality"],
+        }),
+      );
+    }
+  },
+);
+
+it("allows omitted or empty optional feedback arrays", async () => {
+  for (const fields of [
+    {},
+    { providerFeedback: [] },
+    { capabilityFeedback: [] },
+  ]) {
+    expect((await submit({ ...minimal, ...fields })).status).toBe(200);
+  }
+});
+
+it("limits website URLs to 2048 characters and accepts HTTP and HTTPS", async () => {
+  for (const protocol of ["http", "https"]) {
+    const prefix = `${protocol}://example.com/`;
+    for (const length of [2048, 2049]) {
+      const response = await submit({
+        ...minimal,
+        requestedWebsite: {
+          ...minimal.requestedWebsite,
+          url: prefix + "x".repeat(length - prefix.length),
+        },
+      });
+      expect(response.status).toBe(length === 2048 ? 200 : 400);
+    }
+  }
+});
+
 it("bounds the complete UTF-8 evidence payload", async () => {
   const response = await submit({
     ...minimal,
-    search: Array.from({ length: 4 }, () => ({
-      kind: "missing",
-      vertical: "government",
-      basis: "expectation",
-      detail: "界".repeat(1000),
+    providerFeedback: Array.from({ length: 4 }, () => ({
+      name: "sam.gov",
+      issue: "insufficient_coverage",
+      why: "界".repeat(1000),
     })),
   });
   expect(response.status).toBe(400);

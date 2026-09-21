@@ -29,8 +29,12 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
   const minimal = {
     endpoint: "alexandria",
     rating: "bad",
-    requestedWebsite: "https://sam.gov",
-    requestedVertical: "government",
+    requestedWebsite: {
+      url: "https://sam.gov",
+      requestedFunctionality:
+        "Find active contracts by agency and export their attachments as CSV.",
+    },
+    rationale: "Found contract summaries but could not retrieve attachments.",
   };
   const submit = (body: object) => request(app).post("/v2/feedback").send(body);
 
@@ -93,6 +97,7 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
         endpoint: "alexandria",
         team_id: teamId,
         overall_rating: "bad",
+        comment: minimal.rationale,
         job_id: null,
         search_id: null,
         request_id: null,
@@ -103,44 +108,75 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
         metadata: {
           schemaVersion: 1,
           endpoint: "alexandria",
-          requestedWebsite: "https://sam.gov",
-          requestedVertical: "government",
+          requestedWebsite: minimal.requestedWebsite,
+          rationale: minimal.rationale,
         },
       });
     }
   });
 
-  it("round-trips structured observations", async () => {
-    const search = [
+  it("round-trips website requirements and provider/capability feedback in existing columns", async () => {
+    const providerFeedback = [
       {
-        kind: "missing",
-        vertical: "government",
-        basis: "expectation",
-        detail: "Expected access to contract attachments.",
+        name: "sam.gov",
+        issue: "insufficient_coverage",
+        why: "The provider only returned contract summaries.",
       },
     ];
-    const scrape = [
+    const capabilityFeedback = [
       {
-        kind: "incomplete",
-        reason: "pagination",
-        basis: "output",
-        detail: "Only the first page of contracts was returned.",
+        name: "download-attachments",
+        provider: "sam.gov",
+        issue: "new_capability_request",
+        why: "Need the source documents to compare contract requirements.",
+        requestedFunctionality:
+          "Given a contract ID, return all attachment URLs and document text.",
+      },
+      {
+        name: "contracts",
+        provider: "sam.gov",
+        issue: "execution_error",
+        why: "The second page request timed out.",
       },
     ];
-    const response = await submit({ ...minimal, search, scrape });
+    const response = await submit({
+      ...minimal,
+      providerFeedback,
+      capabilityFeedback,
+    });
     expect(response.status).toBe(200);
     const { rows } = await pool.query(
-      "SELECT metadata FROM search_feedback WHERE id = $1",
+      "SELECT metadata, comment, overall_rating, job_id, credits_refunded FROM search_feedback WHERE id = $1",
       [response.body.feedbackId],
     );
-    expect(rows[0].metadata).toMatchObject({ search, scrape });
+    expect(rows[0]).toEqual({
+      overall_rating: minimal.rating,
+      comment: minimal.rationale,
+      job_id: null,
+      credits_refunded: 0,
+      metadata: {
+        schemaVersion: 1,
+        endpoint: "alexandria",
+        requestedWebsite: minimal.requestedWebsite,
+        rationale: minimal.rationale,
+        providerFeedback,
+        capabilityFeedback,
+      },
+    });
   });
 
   it("rejects invalid feedback before persistence", async () => {
     const before = await pool.query("SELECT count(*) FROM search_feedback");
     const response = await submit({
       ...minimal,
-      requestedVertical: "unrecognized",
+      capabilityFeedback: [
+        {
+          name: "download-attachments",
+          provider: "sam.gov",
+          issue: "new_capability_request",
+          why: "Need access to contract attachments.",
+        },
+      ],
     });
     expect(response.status).toBe(400);
     const after = await pool.query("SELECT count(*) FROM search_feedback");

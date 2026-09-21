@@ -10,8 +10,12 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
   const body = {
     endpoint: "alexandria",
     rating: "partial",
-    requestedWebsite: "https://sam.gov",
-    requestedVertical: "government",
+    requestedWebsite: {
+      url: "https://sam.gov",
+      requestedFunctionality:
+        "Find active contracts by agency and export their attachments as CSV.",
+    },
+    rationale: "Found contract summaries but could not retrieve attachments.",
   };
   const submit = (payload: object, apiKey = identity.apiKey) =>
     request(TEST_API_URL)
@@ -41,11 +45,12 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
         request_id: null,
         job_status: null,
         overall_rating: "partial",
+        comment: body.rationale,
         credits_refunded: 0,
         metadata: {
           endpoint: "alexandria",
           requestedWebsite: body.requestedWebsite,
-          requestedVertical: "government",
+          rationale: body.rationale,
         },
       });
     } finally {
@@ -55,7 +60,57 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
     }
   });
 
-  it.each(["rating", "requestedWebsite", "requestedVertical"])(
+  it("persists provider issues and both new and existing capability feedback", async () => {
+    const providerFeedback = [
+      {
+        name: "sam.gov",
+        issue: "insufficient_coverage",
+        why: "The provider returned summaries without attachments.",
+      },
+    ];
+    const capabilityFeedback = [
+      {
+        name: "download-attachments",
+        provider: "sam.gov",
+        issue: "new_capability_request",
+        why: "Need source documents to compare contract requirements.",
+        requestedFunctionality: "Return all attachment URLs for a contract ID.",
+      },
+      {
+        name: "contracts",
+        provider: "sam.gov",
+        issue: "execution_error",
+        why: "The second page request timed out.",
+      },
+    ];
+    const response = await submit({
+      ...body,
+      providerFeedback,
+      capabilityFeedback,
+    });
+    expect(response.statusCode).toBe(200);
+    try {
+      const [row] = await db
+        .select()
+        .from(schema.search_feedback)
+        .where(eq(schema.search_feedback.id, response.body.feedbackId));
+      expect(row.metadata).toEqual({
+        schemaVersion: 1,
+        endpoint: "alexandria",
+        requestedWebsite: body.requestedWebsite,
+        rationale: body.rationale,
+        providerFeedback,
+        capabilityFeedback,
+      });
+      expect(row.comment).toBe(body.rationale);
+    } finally {
+      await db
+        .delete(schema.search_feedback)
+        .where(eq(schema.search_feedback.id, response.body.feedbackId));
+    }
+  });
+
+  it.each(["endpoint", "rating", "requestedWebsite", "rationale"])(
     "requires %s",
     async field => {
       const response = await submit({ ...body, [field]: undefined });
@@ -63,6 +118,31 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
       expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
     },
   );
+
+  it("requires the website functionality brief", async () => {
+    const response = await submit({
+      ...body,
+      requestedWebsite: { url: body.requestedWebsite.url },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
+  });
+
+  it("requires requested functionality for a new capability request", async () => {
+    const response = await submit({
+      ...body,
+      capabilityFeedback: [
+        {
+          name: "download-attachments",
+          provider: "sam.gov",
+          issue: "new_capability_request",
+          why: "Need the source documents for each contract.",
+        },
+      ],
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
+  });
 
   it("requires authentication", async () => {
     const response = await request(TEST_API_URL)
