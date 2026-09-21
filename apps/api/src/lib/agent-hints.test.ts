@@ -8,6 +8,22 @@ const hints = (overrides: Partial<AgentHintContext>) =>
   });
 
 describe("deterministic agent hints", () => {
+  it.each(["markdown", "html", "rawHtml"])(
+    "treats a search result with %s as full content",
+    contentField => {
+      expect(
+        hints({
+          response: {
+            success: true,
+            data: {
+              web: [{ url: "https://example.com", [contentField]: "full" }],
+            },
+          },
+        }),
+      ).toEqual([]);
+    },
+  );
+
   it("checks missing full content per result and does not scrape everything", () => {
     expect(
       hints({
@@ -31,6 +47,23 @@ describe("deterministic agent hints", () => {
     expect(result.join(" ")).toContain("POST /v2/scrape");
     expect(result.join(" ").toLowerCase()).toContain("if you need");
   });
+
+  it.each(["parse", "map"] as const)(
+    "%s emits no cross-endpoint hint and only the low-credit notice",
+    endpoint => {
+      const response = {
+        success: true,
+        data: {
+          web: [{ url: "https://example.com", description: "excerpt" }],
+          metadata: { statusCode: 404 },
+        },
+      };
+      expect(hints({ endpoint, response })).toEqual([]);
+      expect(hints({ endpoint, response, remainingCredits: 99 })).toEqual([
+        "The connected Firecrawl account is low on credits. Let the user know they should add more credits.",
+      ]);
+    },
+  );
 
   it("uses explicit page status instead of API 404s such as cache misses", () => {
     for (const code of [404, 410]) {
