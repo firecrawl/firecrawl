@@ -39,7 +39,8 @@ const EXTRACTOR_SYSTEM = `You write one reusable JavaScript function:
 
     async function extract(doc, askLlm) { ... }
 
-- \`doc\` is a standard DOM Document: querySelector, querySelectorAll, document.evaluate, textContent, getAttribute, etc.
+- \`doc\` is a DOM Document read through querySelector, querySelectorAll, textContent, innerText, getAttribute, and the usual element/attribute traversal.
+- There is no XPath (\`document.evaluate\` does not exist) and no layout engine (\`getComputedStyle\` returns empty; no element sizes or positions). To match by text, select candidate elements with CSS selectors, then filter in JS.
 - \`askLlm(prompt)\` returns a string.
 - \`askLlm(prompt, jsonSchema)\` returns a value of that schema shape. It may return null, so guard its result.
 
