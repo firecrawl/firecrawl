@@ -2295,6 +2295,20 @@ describe("provisioning by route", () => {
 });
 
 describe("getKnownRateLimitMultiplier (fail-closed plan reads)", () => {
+  it("isolates cached entitlements by organization while sharing reads within an organization", async () => {
+    const svc = makeService();
+    mockEntityGet
+      .mockResolvedValueOnce({ balances: { rate_limits: { granted: 25 } } })
+      .mockResolvedValueOnce({ balances: { rate_limits: { granted: 1 } } });
+    expect(await svc.getRateLimitMultiplier("team-1", "org-a")).toBe(25);
+    expect(await svc.getKnownRateLimitMultiplier("team-1", "org-b")).toBe(1);
+    expect(await svc.getKnownRateLimitMultiplier("team-1", "org-a")).toBe(25);
+    expect(await svc.getRateLimitMultiplier("team-1", "org-b")).toBe(1);
+    expect(mockEntityGet).toHaveBeenCalledTimes(2);
+    expect(mockEntityGet).toHaveBeenNthCalledWith(1, { customerId: "org-a", entityId: "team-1" });
+    expect(mockEntityGet).toHaveBeenNthCalledWith(2, { customerId: "org-b", entityId: "team-1" });
+  });
+
   it("refuses a missing organization even after caching a paid entitlement", async () => {
     const svc = makeService();
     mockEntityGet.mockResolvedValue({ balances: { rate_limits: { granted: 25 } } });

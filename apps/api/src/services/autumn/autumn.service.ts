@@ -810,7 +810,7 @@ export class AutumnService {
   // and rate-limit gating on every scrape/crawl/browser request don't fan out
   // to Autumn each time. Both the CONCURRENCY limit and the rate-limit
   // multiplier come from a single entity.get, so one cache entry (and one
-  // Autumn round-trip per team per TTL window) serves both callers.
+  // Autumn round-trip per organization/team per TTL window) serves both callers.
   private entityLimitsCache = new BoundedMap<
     string,
     {
@@ -933,8 +933,11 @@ export class AutumnService {
       return { outcome: "unconfigured" };
     }
 
+    if (!orgId) return { outcome: "no_org" };
+
+    const cacheKey = `${orgId}:${teamId}`;
     const now = Date.now();
-    const cached = this.entityLimitsCache.get(teamId);
+    const cached = this.entityLimitsCache.get(cacheKey);
     if (cached && cached.expiresAt > now) {
       return {
         outcome: "known",
@@ -947,15 +950,13 @@ export class AutumnService {
       concurrency: number | null,
       rateLimitMultiplier: number | null,
     ) => {
-      this.entityLimitsCache.set(teamId, {
+      this.entityLimitsCache.set(cacheKey, {
         concurrency,
         rateLimitMultiplier,
         expiresAt: now + AutumnService.ENTITY_LIMITS_TTL_MS,
       });
       return { outcome: "known" as const, concurrency, rateLimitMultiplier };
     };
-
-    if (!orgId) return { outcome: "no_org" };
 
     try {
       const entity: any = await autumnClient.entities.get({
