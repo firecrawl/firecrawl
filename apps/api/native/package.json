@@ -28,6 +28,7 @@
       "x86_64-pc-windows-msvc",
       "x86_64-apple-darwin",
       "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
       "aarch64-apple-darwin"
     ]
   },
@@ -49,7 +50,7 @@
     "lint": "oxlint .",
     "prepublishOnly": "napi prepublish -t npm",
     "version": "napi version",
-    "install": "pnpm build"
+    "install": "node install.mjs"
   },
   "devDependencies": {
     "@emnapi/runtime": "^1.5.0",
