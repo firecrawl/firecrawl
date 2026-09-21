@@ -77,7 +77,9 @@ export function buildAgentHints(context: AgentHintContext): string[] {
       metadata.totalPages > metadata.numPages
     ) {
       const maxPages = Math.min(metadata.totalPages, 10000);
-      nextAction = `This document returned ${metadata.numPages} of ${metadata.totalPages} pages. If you need more pages, repeat POST /v2/scrape for the same URL with {"parsers":[{"type":"pdf","maxPages":${maxPages}}]}.`;
+      if (maxPages > metadata.numPages) {
+        nextAction = `This document returned ${metadata.numPages} of ${metadata.totalPages} pages. If you need more pages, repeat POST /v2/scrape for the same URL with {"parsers":[{"type":"pdf","maxPages":${maxPages}}]}.`;
+      }
     } else if (context.endpoint === "search") {
       const web = Array.isArray(response.data)
         ? response.data

@@ -243,6 +243,9 @@ describe("deterministic agent hints", () => {
     expect(
       hints({ endpoint: "scrape", response: response(5, 12000) }).join(" "),
     ).toContain('"maxPages":10000');
+    expect(
+      hints({ endpoint: "scrape", response: response(10000, 12000) }),
+    ).toEqual([]);
     expect(hints({ endpoint: "scrape", response: response(47, 47) })).toEqual(
       [],
     );
