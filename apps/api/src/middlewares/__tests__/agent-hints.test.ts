@@ -37,24 +37,44 @@ describe("agent hint response middleware", () => {
     };
     const response = await request(appFor({ body }))
       .post("/")
-      .set("X-Firecrawl-Agent-Hints", " TRUE ")
+      .set("X-Firecrawl-Agent-Hints", "TRUE")
       .send({});
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject(body);
     expect(response.body.agent_hints).toHaveLength(1);
   });
 
-  it("values other than true preserve the original envelope", async () => {
-    const body = {
-      success: true,
-      data: { web: [{ url: "https://example.com" }] },
-    };
-    const response = await request(appFor({ body, remainingCredits: 0 }))
-      .post("/")
-      .set("X-Firecrawl-Agent-Hints", "false")
-      .send({});
-    expect(response.body).toEqual(body);
-  });
+  it.each(["false", "1", "yes"])(
+    "header value %s preserves the original envelope",
+    async value => {
+      const body = {
+        success: true,
+        data: { web: [{ url: "https://example.com" }] },
+      };
+      const response = await request(appFor({ body, remainingCredits: 0 }))
+        .post("/")
+        .set("X-Firecrawl-Agent-Hints", value)
+        .send({});
+      expect(response.body).toEqual(body);
+    },
+  );
+
+  it.each([404, 410])(
+    "adds the scrape-to-search hint for page status %i",
+    async statusCode => {
+      const body = {
+        success: true,
+        data: { metadata: { statusCode } },
+      };
+      const response = await request(appFor({ endpoint: "scrape", body }))
+        .post("/")
+        .set("X-Firecrawl-Agent-Hints", "true")
+        .send({});
+      expect(response.body.agent_hints).toHaveLength(1);
+      expect(response.body.agent_hints[0]).toContain("POST /v2/search");
+      expect(response.body.agent_hints[0]).not.toContain("POST /v2/scrape");
+    },
+  );
 
   it("does not add static feedback guidance to an otherwise hint-free result", async () => {
     const response = await request(appFor())

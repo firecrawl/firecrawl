@@ -22,12 +22,14 @@ function httpFor(body: object) {
 }
 
 describe("agent hints survive SDK response unwrapping", () => {
-  it("preserves hints for empty searches without adding them to records", async () => {
+  it("preserves search hints without adding them to records", async () => {
+    const web = [{ url: "https://example.com" }];
     const result = await search(
-      httpFor({ success: true, data: { web: [] }, agent_hints: hints }),
+      httpFor({ success: true, data: { web }, agent_hints: hints }),
       { query: "test" },
     );
-    expect(result.web).toEqual([]);
+    expect(result.web).toEqual(web);
+    expect(result.web[0]).not.toHaveProperty("agent_hints");
     expect(result.agent_hints).toEqual(hints);
     expect(JSON.parse(JSON.stringify(result)).agent_hints).toEqual(hints);
   });

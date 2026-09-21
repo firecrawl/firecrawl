@@ -11,6 +11,42 @@ beforeAll(async () => {
 }, 20000);
 
 describeIf(TEST_PRODUCTION)("Agent hints", () => {
+  const missingPage = `${TEST_SUITE_WEBSITE}/agent-hints-not-found`;
+
+  it(
+    "adds a scrape-to-search hint for a missing source page",
+    async () => {
+      const response = await request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .set("X-Firecrawl-Agent-Hints", "true")
+        .send({ url: missingPage, timeout: scrapeTimeout });
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.metadata.statusCode).toBe(404);
+      expect(response.body.agent_hints).toEqual([
+        expect.stringContaining("POST /v2/search"),
+      ]);
+    },
+    scrapeTimeout + 10000,
+  );
+
+  it(
+    "keeps hints off when the opt-in header is false despite a hint condition",
+    async () => {
+      const response = await request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .set("X-Firecrawl-Agent-Hints", "false")
+        .send({ url: missingPage, timeout: scrapeTimeout });
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.metadata.statusCode).toBe(404);
+      expect(response.body).not.toHaveProperty("agent_hints");
+    },
+    scrapeTimeout + 10000,
+  );
+
   it(
     "does not add static feedback guidance to a completed scrape",
     async () => {

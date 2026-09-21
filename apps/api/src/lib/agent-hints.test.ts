@@ -33,11 +33,13 @@ describe("deterministic agent hints", () => {
   });
 
   it("uses explicit page status instead of API 404s such as cache misses", () => {
-    const result = hints({
-      endpoint: "scrape",
-      response: { success: true, data: { metadata: { statusCode: 404 } } },
-    });
-    expect(result.join(" ")).toContain("POST /v2/search");
+    for (const code of [404, 410]) {
+      const result = hints({
+        endpoint: "scrape",
+        response: { success: true, data: { metadata: { statusCode: code } } },
+      });
+      expect(result.join(" ")).toContain("POST /v2/search");
+    }
     for (const code of [403, 429, 500]) {
       expect(
         hints({

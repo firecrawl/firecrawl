@@ -120,6 +120,7 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
     const { res } = await runMiddleware(req);
 
     expect(res.status).not.toHaveBeenCalled();
+    expect(res.locals.agentCreditsRemaining).toBe(5);
     expect(req.body.limit).toBe(5);
     expect(checkCreditsMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
