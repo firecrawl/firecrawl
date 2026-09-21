@@ -20,7 +20,7 @@ Raw HTTP and ordinary SDK callers receive no hints unless their adapter explicit
 
 - Search excerpts: offer Scrape when a web result has no markdown, HTML, or raw HTML. Inspect actual output per result, not the requested scrape setting.
 - Source page 404/410: offer Search for a current location or alternative. An API cache-miss 404, 429, authentication failure, or timeout does not fire this rule.
-- Low credits: when the authoritative billing preflight reports 1,000 credits or fewer, ask the agent to let the user know they should add more credits. This notice does not replace a useful cross-endpoint suggestion.
+- Low credits: when the authoritative billing preflight reports fewer than 100 credits, ask the agent to let the user know they should add more credits. This notice does not replace a useful cross-endpoint suggestion.
 
 Selection reads only request/response fields and billing state already in memory. It makes no additional network/model calls, reads no additional session/database state, and does not scan page text or classify user intent. No hint appears solely to fill an available slot.
 

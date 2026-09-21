@@ -6,7 +6,7 @@ export interface AgentHintContext {
   remainingCredits?: number;
 }
 
-export const AGENT_HINT_LOW_CREDIT_THRESHOLD = 1000;
+export const AGENT_HINT_LOW_CREDIT_THRESHOLD = 100;
 
 type ObjectValue = Record<string, unknown>;
 function object(value: unknown): ObjectValue {
@@ -53,7 +53,7 @@ export function buildAgentHints(context: AgentHintContext): string[] {
   const lowCredits =
     typeof context.remainingCredits === "number" &&
     Number.isFinite(context.remainingCredits) &&
-    context.remainingCredits <= AGENT_HINT_LOW_CREDIT_THRESHOLD
+    context.remainingCredits < AGENT_HINT_LOW_CREDIT_THRESHOLD
       ? "The connected Firecrawl account is low on credits. Let the user know they should add more credits."
       : undefined;
 

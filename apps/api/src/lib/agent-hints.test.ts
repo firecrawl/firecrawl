@@ -68,10 +68,10 @@ describe("deterministic agent hints", () => {
   });
 
   it("asks the agent to notify the user when credits are low", () => {
-    expect(hints({ remainingCredits: 1000 })).toEqual([
+    expect(hints({ remainingCredits: 99 })).toEqual([
       "The connected Firecrawl account is low on credits. Let the user know they should add more credits.",
     ]);
-    expect(hints({ remainingCredits: 1001 })).toEqual([]);
+    expect(hints({ remainingCredits: 100 })).toEqual([]);
     expect(hints({ remainingCredits: Infinity })).toEqual([]);
     expect(hints({})).toEqual([]);
   });

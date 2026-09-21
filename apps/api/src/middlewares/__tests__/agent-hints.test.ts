@@ -69,7 +69,7 @@ describe("agent hint response middleware", () => {
       success: true,
       data: { web: [{ url: "https://example.com", description: "excerpt" }] },
     };
-    const response = await request(appFor({ body, remainingCredits: 1000 }))
+    const response = await request(appFor({ body, remainingCredits: 99 }))
       .post("/")
       .set("X-Firecrawl-Agent-Hints", "true")
       .send({});
@@ -80,8 +80,8 @@ describe("agent hint response middleware", () => {
     );
   });
 
-  it("does not add a credit notice above the threshold", async () => {
-    const response = await request(appFor({ remainingCredits: 1001 }))
+  it("does not add a credit notice at the threshold", async () => {
+    const response = await request(appFor({ remainingCredits: 100 }))
       .post("/")
       .set("X-Firecrawl-Agent-Hints", "true")
       .send({});
