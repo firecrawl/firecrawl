@@ -8,8 +8,6 @@ import {
   Identity,
 } from "./lib";
 import { and, eq } from "drizzle-orm";
-import { v7 as uuidv7 } from "uuid";
-import { config } from "../../../config";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 
@@ -411,50 +409,38 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
     120000,
   );
 
-  // A synthetic job exercises the PostgreSQL fallback without a newer
-  // authoritative Bigtable deadline from a real search.
+  // Back-date the searches row so we don't have to wait the full window.
   it.concurrent(
     "rejects feedback submitted outside the configured time window",
     async () => {
-      const searchId = uuidv7();
-      const aged = new Date(
-        Date.now() - (config.SEARCH_FEEDBACK_MAX_AGE_SEC + 60) * 1000,
-      ).toISOString();
-      await db.insert(schema.searches).values({
-        id: searchId,
-        request_id: searchId,
-        query: "expired feedback search",
-        team_id: identity.teamId,
-        options: {},
-        time_taken: 0,
-        created_at: aged,
-        credits_cost: 2,
-        is_successful: true,
-        num_results: 1,
-      });
+      const raw = await searchRawFull(
+        { query: "firecrawl windowed", limit: 3 },
+        identity,
+      );
+      expect(raw.statusCode).toBe(200);
+      const searchId = raw.body.id;
 
-      try {
-        const failed = await searchFeedbackWithFailure(
-          searchId,
-          {
-            rating: "good",
-            valuableSources: [{ url: "https://firecrawl.dev/" }],
-          },
-          identity,
+      await new Promise(r => setTimeout(r, 750));
+      const aged = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      await db
+        .update(schema.searches)
+        .set({ created_at: aged })
+        .where(
+          and(
+            eq(schema.searches.id, searchId),
+            eq(schema.searches.team_id, identity.teamId),
+          ),
         );
-        expect(failed).toMatchObject({
-          feedbackErrorCode: "FEEDBACK_WINDOW_EXPIRED",
-        });
-      } finally {
-        await db
-          .delete(schema.searches)
-          .where(
-            and(
-              eq(schema.searches.id, searchId),
-              eq(schema.searches.team_id, identity.teamId),
-            ),
-          );
-      }
+
+      const failed = await searchFeedbackWithFailure(
+        searchId,
+        {
+          rating: "good",
+          valuableSources: [{ url: "https://firecrawl.dev/" }],
+        },
+        identity,
+      );
+      expect((failed as any).feedbackErrorCode).toBe("FEEDBACK_WINDOW_EXPIRED");
     },
     90000,
   );

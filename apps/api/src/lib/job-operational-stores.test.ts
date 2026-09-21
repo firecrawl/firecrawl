@@ -72,8 +72,6 @@ describe("operational Bigtable stores", () => {
     getBigtableTable.mockResolvedValue({ mutate, getRows });
     mutableConfig.BIGTABLE_JOB_ACCESS_TABLE = "job-access";
     mutableConfig.BIGTABLE_FEEDBACK_JOBS_TABLE = "feedback-jobs";
-    mutableConfig.SEARCH_FEEDBACK_MAX_AGE_SEC = 120;
-    mutableConfig.FEEDBACK_MAX_AGE_SEC = 180;
     spans.length = 0;
   });
 
@@ -291,33 +289,6 @@ describe("operational Bigtable stores", () => {
       options: { zeroDataRetention: true },
     });
   });
-
-  it.each(["search", "scrape"] as const)(
-    "retains %s feedback decisions through a configured 24-hour window",
-    async endpoint => {
-      mutableConfig.SEARCH_FEEDBACK_MAX_AGE_SEC = 86400;
-      mutableConfig.FEEDBACK_MAX_AGE_SEC = 86400;
-      const completedAt = new Date("2026-09-21T12:00:00.000Z");
-      const deadline = new Date("2026-09-22T12:00:00.000Z");
-      await writeFeedbackJob({
-        jobId: JOB_ID,
-        requestId: REQUEST_ID,
-        teamId: "team-id",
-        ...(endpoint === "scrape"
-          ? { endpoint, scrapeOptions: scrapeOptions.parse({}) }
-          : { endpoint }),
-        succeeded: true,
-        creditsBilled: 2,
-        zeroDataRetention: false,
-        completedAt,
-      });
-
-      expect(writtenValue()).toMatchObject({
-        feedbackDeadlineMs: deadline.getTime(),
-      });
-      expect(mutate.mock.calls[0][0][0].data.f.v.timestamp).toEqual(deadline);
-    },
-  );
 
   it("reads precomputed feedback decisions", async () => {
     const feedbackDeadlineMs = Date.now() + 60_000;

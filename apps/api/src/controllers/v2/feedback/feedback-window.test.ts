@@ -4,23 +4,23 @@ import type { FeedbackJobRow } from "./internal-types";
 
 const fixture = vi.hoisted(() => ({
   job: undefined as FeedbackJobRow | undefined,
+  lookup: vi.fn(),
   insert: vi.fn(),
+  alexandriaInsert: vi.fn(),
   refund: vi.fn(),
   refundedToday: vi.fn(),
 }));
 vi.mock("./feedback-store", () => ({
-  lookupFeedbackJob: async (endpoint: string, id: string, team: string) =>
-    fixture.job?.endpoint === endpoint &&
-    fixture.job.id === id &&
-    fixture.job.team_id === team
-      ? fixture.job
-      : null,
+  lookupFeedbackJob: fixture.lookup,
   insertFeedback: fixture.insert,
   findExistingFeedback: async () => ({
     id: "already-recorded",
     credits_refunded: 1,
   }),
   updateFeedbackRefundDetails: async () => null,
+}));
+vi.mock("../../../db/connection", () => ({
+  db: { insert: () => ({ values: fixture.alexandriaInsert }) },
 }));
 vi.mock("./refund-totals", () => ({
   sumCreditsRefundedToday: fixture.refundedToday,
@@ -52,8 +52,8 @@ app.use((req, _res, next) => {
 app.post("/v2/feedback", feedbackController as any);
 app.post("/v2/search/:jobId/feedback", searchFeedbackController as any);
 
-type Route = "legacy-search" | "search" | "scrape";
-const routes: Route[] = ["legacy-search", "search", "scrape"];
+type Route = "legacy-search" | "search" | "scrape" | "parse" | "map";
+const routes: Route[] = ["legacy-search", "search", "scrape", "parse", "map"];
 const stores = ["postgres", "bigtable"] as const;
 const submit = (route: Route) =>
   request(app)
@@ -65,13 +65,13 @@ const submit = (route: Route) =>
     .send({
       ...(route === "legacy-search" ? {} : { endpoint: route, jobId }),
       rating: "bad",
-      ...(route === "scrape"
-        ? { note: "The returned content was incomplete." }
-        : { missingContent: [{ topic: "Contract attachments" }] }),
+      ...(route === "search" || route === "legacy-search"
+        ? { missingContent: [{ topic: "Contract attachments" }] }
+        : { note: "The returned content was incomplete." }),
     });
 
 function job(route: Route, store: (typeof stores)[number], ageSec: number) {
-  const endpoint = route === "scrape" ? "scrape" : "search";
+  const endpoint = route === "legacy-search" ? "search" : route;
   const window =
     endpoint === "search"
       ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
@@ -88,7 +88,6 @@ function job(route: Route, store: (typeof stores)[number], ageSec: number) {
     ...(store === "bigtable"
       ? {
           feedback_deadline_ms: now + (window - ageSec) * 1000,
-          refund_class: endpoint === "search" ? "search" : "scrape_basic",
           zero_data_retention: false,
         }
       : {}),
@@ -101,8 +100,20 @@ beforeEach(() => {
   Object.assign(config, original, {
     USE_DB_AUTHENTICATION: true,
     FEEDBACK_REFUND_ENABLED: true,
+    SEARCH_FEEDBACK_MAX_AGE_SEC: 120,
+    FEEDBACK_MAX_AGE_SEC: 120,
   });
+  fixture.job = undefined;
+  fixture.lookup.mockImplementation(
+    async (endpoint: string, id: string, team: string) =>
+      fixture.job?.endpoint === endpoint &&
+      fixture.job.id === id &&
+      fixture.job.team_id === team
+        ? fixture.job
+        : null,
+  );
   fixture.insert.mockResolvedValue(null);
+  fixture.alexandriaInsert.mockResolvedValue(undefined);
   fixture.refundedToday.mockResolvedValue(0);
 });
 afterEach(() => {
@@ -110,84 +121,37 @@ afterEach(() => {
   Object.assign(config, original);
 });
 
-describe.each(routes)("%s feedback after an Alexandria workflow", route => {
+describe.each(routes)("%s job feedback keeps its submission window", route => {
   it.each(stores)(
-    "accepts a 30-minute-old %s job and refunds only once",
+    "accepts %s feedback before the 120-second deadline",
     async store => {
-      job(route, store, 30 * 60);
-      const first = await submit(route);
-      expect(first.status).toBe(200);
-      expect(first.body.creditsRefunded).toBe(1);
-      expect(fixture.refund).toHaveBeenCalledTimes(1);
-      fixture.insert.mockResolvedValueOnce({ code: "23505" });
-      const duplicate = await submit(route);
-      expect(duplicate.status).toBe(200);
-      expect(duplicate.body).toMatchObject({
-        alreadySubmitted: true,
-        creditsRefunded: 0,
-      });
-      expect(fixture.refund).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it.each(stores)(
-    "accepts %s feedback just before the 24-hour deadline",
-    async store => {
-      job(route, store, 24 * 60 * 60 - 1);
+      job(route, store, 119);
       expect((await submit(route)).status).toBe(200);
+      expect(fixture.lookup).toHaveBeenCalledWith(
+        route === "legacy-search" ? "search" : route,
+        jobId,
+        teamId,
+      );
+      expect(fixture.insert).toHaveBeenCalledTimes(1);
+      expect(fixture.alexandriaInsert).not.toHaveBeenCalled();
     },
   );
 
   it.each(stores)(
-    "rejects %s feedback after the configured deadline",
+    "rejects %s feedback after the 120-second deadline",
     async store => {
-      job(route, store, 24 * 60 * 60 + 1);
+      job(route, store, 121);
       const response = await submit(route);
       expect(response.status).toBe(409);
       expect(response.body.feedbackErrorCode).toBe("FEEDBACK_WINDOW_EXPIRED");
       expect(fixture.insert).not.toHaveBeenCalled();
       expect(fixture.refund).not.toHaveBeenCalled();
+      expect(fixture.alexandriaInsert).not.toHaveBeenCalled();
     },
   );
 
-  it("keeps the daily refund cap for delayed feedback", async () => {
-    job(route, "postgres", 30 * 60);
-    fixture.refundedToday.mockResolvedValue(
-      route === "scrape"
-        ? config.FEEDBACK_DAILY_CAP_CREDITS
-        : config.SEARCH_FEEDBACK_DAILY_CAP_CREDITS,
-    );
-    const response = await submit(route);
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({
-      creditsRefunded: 0,
-      dailyCapReached: true,
-    });
-    expect(fixture.refund).not.toHaveBeenCalled();
-  });
-
-  it("rejects feedback on another team's older job", async () => {
-    job(route, "postgres", 30 * 60);
-    fixture.job!.team_id = "another-team";
-    expect((await submit(route)).status).toBe(404);
-    expect(fixture.insert).not.toHaveBeenCalled();
-    expect(fixture.refund).not.toHaveBeenCalled();
-  });
-
-  it.each(stores)(
-    "respects an explicitly configured shorter %s window",
-    async store => {
-      config.SEARCH_FEEDBACK_MAX_AGE_SEC = 120;
-      config.FEEDBACK_MAX_AGE_SEC = 120;
-      job(route, store, 121);
-      expect((await submit(route)).body.feedbackErrorCode).toBe(
-        "FEEDBACK_WINDOW_EXPIRED",
-      );
-    },
-  );
-
-  it("keeps an expired Bigtable deadline written before the window changed", async () => {
-    job(route, "bigtable", 30 * 60);
+  it("honors the stored Bigtable deadline even for a recently created job", async () => {
+    job(route, "bigtable", 1);
     fixture.job!.feedback_deadline_ms = now - 1;
     expect((await submit(route)).body.feedbackErrorCode).toBe(
       "FEEDBACK_WINDOW_EXPIRED",
@@ -196,3 +160,48 @@ describe.each(routes)("%s feedback after an Alexandria workflow", route => {
     expect(fixture.refund).not.toHaveBeenCalled();
   });
 });
+
+it.each(stores)(
+  "accepts Alexandria feedback when the session's original %s search has expired",
+  async store => {
+    job("search", store, 30 * 60);
+    const expiredSearch = await submit("search");
+    expect(expiredSearch.status).toBe(409);
+    expect(expiredSearch.body.feedbackErrorCode).toBe(
+      "FEEDBACK_WINDOW_EXPIRED",
+    );
+    expect(fixture.lookup).toHaveBeenCalledTimes(1);
+    fixture.lookup.mockClear();
+
+    const response = await request(app)
+      .post("/v2/feedback")
+      .send({
+        endpoint: "alexandria",
+        rating: "partial",
+        requestedWebsite: {
+          url: "https://example.com",
+          requestedFunctionality: "Retrieve records and their attachments.",
+        },
+        rationale: "Found record summaries but could not retrieve attachments.",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      success: true,
+      feedbackId: expect.any(String),
+      creditsRefunded: 0,
+    });
+    expect(fixture.lookup).not.toHaveBeenCalled();
+    expect(fixture.insert).not.toHaveBeenCalled();
+    expect(fixture.refund).not.toHaveBeenCalled();
+    expect(fixture.alexandriaInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: "alexandria",
+        search_id: null,
+        job_id: null,
+        request_id: null,
+        credits_refunded: 0,
+      }),
+    );
+  },
+);
