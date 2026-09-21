@@ -1,0 +1,74 @@
+repository: &repo ""
+
+commonEnv:
+  REDIS_URL: redis://firecrawl-redis:6379
+  REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
+  PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright-service:3000/scrape
+  USE_DB_AUTHENTICATION: ""
+  OPENAI_API_KEY: ""
+  OPENAI_BASE_URL: ""
+  MODEL_NAME: ""
+  MODEL_EMBEDDING_NAME: ""
+  OLLAMA_BASE_URL: ""
+  SLACK_WEBHOOK_URL: ""
+  BULL_AUTH_KEY: ""
+  TEST_API_KEY: ""
+  POSTHOG_API_KEY: ""
+  POSTHOG_HOST: ""
+  SUPABASE_ANON_TOKEN: ""
+  SUPABASE_URL: ""
+  SUPABASE_SERVICE_TOKEN: ""
+  SCRAPING_BEE_API_KEY: ""
+  SELF_HOSTED_WEBHOOK_URL: ""
+  SERPER_API_KEY: ""
+  SEARCHAPI_API_KEY: ""
+  LOGGING_LEVEL: ""
+  PROXY_SERVER: ""
+  PROXY_USERNAME: ""
+  PROXY_PASSWORD: ""
+  SEARXNG_ENDPOINT: ""
+  SEARXNG_ENGINES: ""
+  SEARXNG_CATEGORIES: ""
+
+service:
+  redis:
+    port: 6379
+    type: ClusterIP
+  api:
+    port: 3002
+    type: ClusterIP
+  playwrightService:
+    port: 3000
+    type: ClusterIP
+
+redis:
+  repo: *repo
+  image: redis:latest
+  pullPolicy: IfNotPresent
+  imagePullSecrets:
+    open: false
+    name: "docker-secret"
+  port: 6379
+worker:
+  repo: *repo
+  image: firecrawl-worker:latest
+  pullPolicy: IfNotPresent
+  imagePullSecrets:
+    open: false
+    name: "docker-secret"
+api:
+  repo: *repo
+  image: firecrawl-api:latest
+  pullPolicy: IfNotPresent
+  imagePullSecrets:
+    open: false
+    name: "docker-secret"
+  port: 3002
+playwrightService:
+  repo: *repo
+  image: firecrawl-playwright-service:latest
+  pullPolicy: IfNotPresent
+  imagePullSecrets:
+    open: false
+    name: "docker-secret"
+  port: 3000
