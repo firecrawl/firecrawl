@@ -1,0 +1,53 @@
+{
+  "name": "Noisy SPA careers extraction",
+  "url": "https://example.com/jobs",
+  "actual": {
+    "company": {
+      "name": "Example Agents"
+    },
+    "jobs": [
+      {
+        "title": "Founding AI Infrastructure Engineer",
+        "team": "Platform",
+        "location": "San Francisco or Remote",
+        "requirements": ["LLM serving", "observability", "distributed systems"]
+      },
+      {
+        "title": "Product Engineer",
+        "team": "Web",
+        "location": "New York",
+        "requirements": ["React", "TypeScript"]
+      }
+    ],
+    "markdown": "# Careers\n\n<script>window.__jobs = true</script>\n\n## Engineering\n\n- Founding AI Infrastructure Engineer\n- Product Engineer\n\nApply at [jobs@example.com](mailto:jobs@example.com)"
+  },
+  "expected": {
+    "minScore": 0.9,
+    "requiredFields": ["company.name", "jobs.0.title", "jobs.0.location", "jobs.0.requirements", "jobs.1.title"],
+    "values": [
+      {
+        "path": "jobs.0.title",
+        "value": "Founding AI Infrastructure Engineer",
+        "threshold": 0.8
+      },
+      {
+        "path": "jobs.0.requirements",
+        "value": "LLM serving observability distributed systems",
+        "threshold": 0.45
+      }
+    ],
+    "tables": [
+      {
+        "path": "jobs",
+        "minRows": 2,
+        "requiredColumns": ["title", "team", "location", "requirements"]
+      }
+    ],
+    "sections": ["Careers", "Engineering"],
+    "markdown": {
+      "headings": true,
+      "lists": true,
+      "links": true
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "summary": {
+    "cases": 4,
+    "passed": 4,
+    "failed": 0,
+    "averageScore": 1,
+    "failedByMetric": {},
+    "results": [
+      {
+        "name": "SPA careers page extraction",
+        "score": 1,
+        "passed": true
+      },
+      {
+        "name": "SaaS pricing table extraction",
+        "score": 1,
+        "passed": true
+      },
+      {
+        "name": "API docs extraction",
+        "score": 1,
+        "passed": true
+      },
+      {
+        "name": "Noisy SPA careers extraction",
+        "score": 1,
+        "passed": true
+      }
+    ]
+  }
+}

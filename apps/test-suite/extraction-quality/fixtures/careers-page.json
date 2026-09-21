@@ -1,0 +1,51 @@
+{
+  "name": "SPA careers page extraction",
+  "url": "https://example.com/careers",
+  "actual": {
+    "company": {
+      "name": "Example Robotics"
+    },
+    "jobs": [
+      {
+        "title": "Robotics Software Engineer",
+        "team": "Autonomy",
+        "location": "San Francisco"
+      },
+      {
+        "title": "Search Infrastructure Engineer",
+        "team": "Data",
+        "location": "Remote"
+      }
+    ],
+    "markdown": "# Careers\n\n## Open roles\n\n- Robotics Software Engineer\n- Search Infrastructure Engineer\n\n```json\n{\"department\":\"Autonomy\"}\n```"
+  },
+  "expected": {
+    "minScore": 0.9,
+    "requiredFields": ["company.name", "jobs.0.title", "jobs.0.location", "jobs.1.title"],
+    "values": [
+      {
+        "path": "jobs.0.title",
+        "value": "Robotics Software Engineer",
+        "threshold": 0.8
+      },
+      {
+        "path": "jobs.1.team",
+        "value": "Data",
+        "threshold": 0.8
+      }
+    ],
+    "tables": [
+      {
+        "path": "jobs",
+        "minRows": 2,
+        "requiredColumns": ["title", "team", "location"]
+      }
+    ],
+    "sections": ["Careers", "Open roles"],
+    "markdown": {
+      "headings": true,
+      "lists": true,
+      "codeBlocks": true
+    }
+  }
+}
