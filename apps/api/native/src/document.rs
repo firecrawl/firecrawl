@@ -6,6 +6,9 @@ use std::io::{Cursor, Read};
 use std::path::{Component, Path, PathBuf};
 
 const MAX_OOXML_PART_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_OOXML_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_OOXML_PARTS: usize = 256;
+const MAX_HEADER_FOOTER_REFERENCES: usize = 256;
 const WORDPROCESSINGML_NAMESPACES: [&str; 2] = [
   "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
   "http://purl.oclc.org/ooxml/wordprocessingml/main",
@@ -20,6 +23,20 @@ enum RepeatingPartKind {
 struct Relationship {
   target: String,
   kind: RepeatingPartKind,
+}
+
+struct ZipReadBudget {
+  bytes_remaining: u64,
+  parts_remaining: usize,
+}
+
+impl Default for ZipReadBudget {
+  fn default() -> Self {
+    Self {
+      bytes_remaining: MAX_OOXML_TOTAL_BYTES,
+      parts_remaining: MAX_OOXML_PARTS,
+    }
+  }
 }
 
 /// Convert a document (doc, docx, odt/ods/odp, rtf, xls/xlsx, ppt/pptx, epub,
@@ -58,15 +75,16 @@ fn extract_docx_headers_and_footers(data: &[u8]) -> (String, String) {
   let Ok(mut archive) = zip::ZipArchive::new(Cursor::new(data)) else {
     return (String::new(), String::new());
   };
+  let mut budget = ZipReadBudget::default();
 
-  let main_part = read_zip_text(&mut archive, "_rels/.rels")
+  let main_part = read_zip_text(&mut archive, "_rels/.rels", &mut budget)
     .and_then(|xml| office_document_target(&xml))
     .unwrap_or_else(|| "word/document.xml".to_string());
-  let Some(document_xml) = read_zip_text(&mut archive, &main_part) else {
+  let Some(document_xml) = read_zip_text(&mut archive, &main_part, &mut budget) else {
     return (String::new(), String::new());
   };
   let relationship_part = relationship_part_for(&main_part);
-  let Some(relationships_xml) = read_zip_text(&mut archive, &relationship_part) else {
+  let Some(relationships_xml) = read_zip_text(&mut archive, &relationship_part, &mut budget) else {
     return (String::new(), String::new());
   };
   let relationships = parse_repeating_relationships(&relationships_xml);
@@ -77,6 +95,7 @@ fn extract_docx_headers_and_footers(data: &[u8]) -> (String, String) {
   let mut seen = HashSet::new();
   let mut headers = Vec::new();
   let mut footers = Vec::new();
+  let mut reference_count = 0;
 
   for reference in document
     .descendants()
@@ -87,6 +106,10 @@ fn extract_docx_headers_and_footers(data: &[u8]) -> (String, String) {
       "footerReference" => RepeatingPartKind::Footer,
       _ => continue,
     };
+    reference_count += 1;
+    if reference_count > MAX_HEADER_FOOTER_REFERENCES {
+      break;
+    }
     let Some(id) = reference
       .attributes()
       .find(|attribute| attribute.name() == "id")
@@ -106,7 +129,7 @@ fn extract_docx_headers_and_footers(data: &[u8]) -> (String, String) {
     if !seen.insert((reference_kind, part.clone())) {
       continue;
     }
-    let Some(xml) = read_zip_text(&mut archive, &part) else {
+    let Some(xml) = read_zip_text(&mut archive, &part, &mut budget) else {
       continue;
     };
     let Some(text) = extract_wordprocessing_text(&xml) else {
@@ -125,20 +148,28 @@ fn extract_docx_headers_and_footers(data: &[u8]) -> (String, String) {
 fn read_zip_text<R: Read + std::io::Seek>(
   archive: &mut zip::ZipArchive<R>,
   name: &str,
+  budget: &mut ZipReadBudget,
 ) -> Option<String> {
-  let mut file = archive.by_name(name.trim_start_matches('/')).ok()?;
-  if file.size() > MAX_OOXML_PART_BYTES {
+  if budget.parts_remaining == 0 || budget.bytes_remaining == 0 {
     return None;
   }
+  let mut file = archive.by_name(name.trim_start_matches('/')).ok()?;
+  if file.size() > MAX_OOXML_PART_BYTES || file.size() > budget.bytes_remaining {
+    return None;
+  }
+  budget.parts_remaining -= 1;
   let mut bytes = Vec::with_capacity(file.size() as usize);
+  let read_limit = MAX_OOXML_PART_BYTES.min(budget.bytes_remaining);
   file
     .by_ref()
-    .take(MAX_OOXML_PART_BYTES + 1)
+    .take(read_limit + 1)
     .read_to_end(&mut bytes)
     .ok()?;
-  if bytes.len() as u64 > MAX_OOXML_PART_BYTES {
+  if bytes.len() as u64 > read_limit {
+    budget.bytes_remaining = 0;
     return None;
   }
+  budget.bytes_remaining -= bytes.len() as u64;
   String::from_utf8(bytes).ok()
 }
 
