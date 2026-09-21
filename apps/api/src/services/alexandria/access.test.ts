@@ -1,8 +1,11 @@
-const mocks = vi.hoisted(() => ({ request: vi.fn() }));
+const mocks = vi.hoisted(() => ({ request: vi.fn(), multiplier: vi.fn() }));
 vi.mock("../../config", () => ({
   config: { USE_DB_AUTHENTICATION: true, FIRECRAWL_DASHBOARD_URL: "https://d" },
 }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
+vi.mock("../autumn/autumn.service", () => ({
+  autumnService: { getRateLimitMultiplier: mocks.multiplier },
+}));
 import { authorizeProviders } from "./access";
 
 const calls = [
@@ -318,4 +321,93 @@ it("does not discard other acceptances when a timestamp has an unexpected shape"
         },
   );
   expect(await authorizeProviders("team", calls, {}, "org")).toBeUndefined();
+});
+
+describe("paid-plan-only capabilities", () => {
+  const enabled = {
+    organizationDataSourceAccess: {
+      benzinga: {
+        status: "enabled",
+        termsKey: "benzinga",
+        termsVersion: "C-1",
+      },
+    },
+  };
+  const wiim = [
+    { provider: "benzinga", capability: "news/wiims", options: {} },
+  ];
+  const pressReleases = [
+    { provider: "benzinga", capability: "news/press-releases", options: {} },
+  ];
+  const requirements = (paidPlanOnlyCapabilities?: string[]) => ({
+    status: 200,
+    body: {
+      providers: [
+        {
+          provider: "benzinga",
+          required: true,
+          terms: { key: "benzinga", version: "C-1" },
+          ...(paidPlanOnlyCapabilities ? { paidPlanOnlyCapabilities } : {}),
+        },
+      ],
+    },
+  });
+
+  it("refuses a free-plan team calling a paid-plan-only capability, before any quote", async () => {
+    mocks.request.mockResolvedValue(
+      requirements(["news/wiims", "news/search"]),
+    );
+    mocks.multiplier.mockResolvedValue(1);
+    const denied = await authorizeProviders("team", wiim, enabled, "org");
+    expect(denied?.status).toBe(403);
+    expect(denied?.body).toEqual(
+      expect.objectContaining({ code: "paid_plan_required" }),
+    );
+    expect(String((denied?.body as { error: string }).error)).toContain(
+      "benzinga/news/wiims",
+    );
+    expect(mocks.multiplier).toHaveBeenCalledWith("team", "org");
+  });
+
+  it("admits a paid-plan team, and does not consult the plan for an ungated capability", async () => {
+    mocks.request.mockResolvedValue(requirements(["news/wiims"]));
+    mocks.multiplier.mockResolvedValue(10);
+    expect(
+      await authorizeProviders("team", wiim, enabled, "org"),
+    ).toBeUndefined();
+    mocks.multiplier.mockClear();
+    mocks.multiplier.mockResolvedValue(1);
+    expect(
+      await authorizeProviders("team", pressReleases, enabled, "org"),
+    ).toBeUndefined();
+    expect(mocks.multiplier).not.toHaveBeenCalled();
+  });
+
+  it("lets a team that bypasses credit checks through, and treats a missing field as ungated", async () => {
+    mocks.request.mockResolvedValue(requirements(["news/wiims"]));
+    mocks.multiplier.mockResolvedValue(1);
+    expect(
+      await authorizeProviders(
+        "team",
+        wiim,
+        { ...enabled, bypassCreditChecks: true },
+        "org",
+      ),
+    ).toBeUndefined();
+    // An Exchange deployed before it published the field: nothing to gate on.
+    mocks.request.mockResolvedValue(requirements());
+    expect(
+      await authorizeProviders("team", wiim, enabled, "org"),
+    ).toBeUndefined();
+  });
+
+  it("still requires the agreement first: an unaccepted paid team is refused on terms, not plan", async () => {
+    mocks.request.mockResolvedValue(requirements(["news/wiims"]));
+    mocks.multiplier.mockResolvedValue(10);
+    const denied = await authorizeProviders("team", wiim, {}, null);
+    expect(denied?.status).toBe(403);
+    expect(denied?.body).not.toEqual(
+      expect.objectContaining({ code: "paid_plan_required" }),
+    );
+  });
 });

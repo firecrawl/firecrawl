@@ -39,7 +39,10 @@ shape relays a provider error with the Exchange's status and `code`.
 
 Inline in the request (`retrieve.ts`): authorize through the Exchange
 (`/v1/provider-terms/requirements`, which refuses unknown providers) against
-the organization's `organizationDataSourceAccess` flags, quote
+the organization's `organizationDataSourceAccess` flags, then refuse a
+free-plan team (Autumn rate-limit multiplier below the hobby floor) calling a
+capability the Exchange lists in `paidPlanOnlyCapabilities` with 403
+`paid_plan_required` (Benzinga Schedule C.4: full text, WIIM, analyst ratings), quote
 (`/v1/retrieve/quote`), reserve with Autumn (`lockCredits`, lock
 `alexandria_<chargeId>`), execute `/v1/retrieve` with the budget and deadline
 headers, settle the receipt (`finalizeCreditsLock`), enqueue the ledger write
