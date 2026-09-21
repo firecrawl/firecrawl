@@ -242,7 +242,7 @@ fn normalize_part(part: &str) -> Option<String> {
       value => normalized.push(value),
     }
   }
-  Some(normalized.join("/"))
+  (!normalized.is_empty()).then(|| normalized.join("/"))
 }
 
 fn extract_wordprocessing_text(xml: &str) -> Option<String> {
