@@ -119,7 +119,7 @@ export function buildAgentHints(context: AgentHintContext): string[] {
       ? "The connected Firecrawl account is low on credits. Let the user know they should add more credits."
       : undefined;
 
-  return [nextAction, lowCredits]
+  return [lowCredits, nextAction]
     .filter((hint): hint is string => !!hint)
     .filter((hint, index, hints) => hints.indexOf(hint) === index);
 }

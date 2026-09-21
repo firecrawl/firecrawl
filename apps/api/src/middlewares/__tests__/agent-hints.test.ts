@@ -149,10 +149,10 @@ describe("agent hint response middleware", () => {
       .set("X-Firecrawl-Agent-Hints", "true")
       .send({});
     expect(response.body.agent_hints).toHaveLength(2);
-    expect(response.body.agent_hints[0]).toContain("POST /v2/scrape");
-    expect(response.body.agent_hints[1]).toBe(
+    expect(response.body.agent_hints[0]).toBe(
       "The connected Firecrawl account is low on credits. Let the user know they should add more credits.",
     );
+    expect(response.body.agent_hints[1]).toContain("POST /v2/scrape");
   });
 
   it("does not add a credit notice at the threshold", async () => {

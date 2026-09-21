@@ -284,7 +284,7 @@ describe("deterministic agent hints", () => {
       },
     });
     expect(result).toHaveLength(2);
-    expect(result[0]).toContain("POST /v2/scrape");
-    expect(result[1]).toContain("add more credits");
+    expect(result[0]).toContain("add more credits");
+    expect(result[1]).toContain("POST /v2/scrape");
   });
 });
