@@ -42,7 +42,10 @@ Inline in the request (`retrieve.ts`): authorize through the Exchange
 the organization's `organizationDataSourceAccess` flags, then refuse a
 free-plan team (Autumn rate-limit multiplier below the hobby floor) calling a
 capability the Exchange lists in `paidPlanOnlyCapabilities` with 403
-`paid_plan_required` (Benzinga Schedule C.4: full text, WIIM, analyst ratings), quote
+`paid_plan_required`, or with 503 `plan_verification_unavailable` when the plan
+cannot be known (no org, preview team, Autumn error): this read fails closed
+where the rate limiter fails open (Benzinga Schedule C.4: full text, WIIM,
+analyst ratings), quote
 (`/v1/retrieve/quote`), reserve with Autumn (`lockCredits`, lock
 `alexandria_<chargeId>`), execute `/v1/retrieve` with the budget and deadline
 headers, settle the receipt (`finalizeCreditsLock`), enqueue the ledger write

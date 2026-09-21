@@ -4,7 +4,7 @@ vi.mock("../../config", () => ({
 }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
 vi.mock("../autumn/autumn.service", () => ({
-  autumnService: { getRateLimitMultiplier: mocks.multiplier },
+  autumnService: { getKnownRateLimitMultiplier: mocks.multiplier },
 }));
 import { authorizeProviders } from "./access";
 
@@ -367,6 +367,8 @@ describe("paid-plan-only capabilities", () => {
       "benzinga/news/wiims",
     );
     expect(mocks.multiplier).toHaveBeenCalledWith("team", "org");
+    // One requirements read, and nothing else: no quote, no execution.
+    expect(mocks.request).toHaveBeenCalledTimes(1);
   });
 
   it("admits a paid-plan team, and does not consult the plan for an ungated capability", async () => {
@@ -410,4 +412,42 @@ describe("paid-plan-only capabilities", () => {
       expect.objectContaining({ code: "paid_plan_required" }),
     );
   });
+});
+
+it("fails closed when the plan cannot be known: no org, a preview team or an Autumn error", async () => {
+  mocks.request.mockResolvedValue({
+    status: 200,
+    body: {
+      providers: [
+        {
+          provider: "benzinga",
+          required: true,
+          terms: { key: "benzinga", version: "C-1" },
+          paidPlanOnlyCapabilities: ["news/wiims"],
+        },
+      ],
+    },
+  });
+  const enabled = {
+    organizationDataSourceAccess: {
+      benzinga: {
+        status: "enabled",
+        termsKey: "benzinga",
+        termsVersion: "C-1",
+      },
+    },
+  };
+  const wiim = [
+    { provider: "benzinga", capability: "news/wiims", options: {} },
+  ];
+  // The service answers null for every "cannot know" case; the gate never
+  // treats that as paid.
+  mocks.multiplier.mockResolvedValue(null);
+  const denied = await authorizeProviders("team", wiim, enabled, null);
+  expect(denied?.status).toBe(503);
+  expect(denied?.body).toEqual(
+    expect.objectContaining({ code: "plan_verification_unavailable" }),
+  );
+  expect(mocks.multiplier).toHaveBeenCalledWith("team", null);
+  expect(mocks.request).toHaveBeenCalledTimes(1);
 });
