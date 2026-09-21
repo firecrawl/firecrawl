@@ -87,6 +87,7 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
       ...body,
       providerFeedback,
       capabilityFeedback,
+      integration: "cli",
     });
     expect(response.statusCode).toBe(200);
     try {
@@ -103,6 +104,7 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
         capabilityFeedback,
       });
       expect(row.comment).toBe(body.rationale);
+      expect(row.integration).toBe("cli");
     } finally {
       await db
         .delete(schema.search_feedback)
@@ -149,5 +151,11 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
       .post("/v2/feedback")
       .send(body);
     expect(response.statusCode).toBe(401);
+  });
+
+  it("rejects unsupported integration identifiers", async () => {
+    const response = await submit({ ...body, integration: "unsupported" });
+    expect(response.statusCode).toBe(400);
+    expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
   });
 });

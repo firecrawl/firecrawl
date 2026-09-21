@@ -1,5 +1,6 @@
 import express from "express";
 import request from "supertest";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { alexandriaFeedbackSchema } from "./alexandria-schema";
 
 const mocks = vi.hoisted(() => ({
@@ -381,6 +382,76 @@ it("allows omitted or empty optional feedback arrays", async () => {
   }
 });
 
+it.each([
+  [undefined, null],
+  [null, null],
+  ["cli", "cli"],
+  [" cli ", "cli"],
+  ["_custom", "_custom"],
+  ["_" + "x".repeat(99), "_" + "x".repeat(99)],
+])("accepts and normalizes integration %j", async (integration, expected) => {
+  expect((await submit({ ...minimal, integration })).status).toBe(200);
+  expect(mocks.values).toHaveBeenCalledWith(
+    expect.objectContaining({ integration: expected }),
+  );
+});
+
+it.each(["unsupported", " ", "_" + "x".repeat(100)])(
+  "rejects invalid integration %j before persistence",
+  async integration => {
+    const response = await submit({ ...minimal, integration });
+    expect(response.status).toBe(400);
+    expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
+    expect(mocks.values).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["providerFeedback", "capabilityFeedback"])(
+  "accepts 20 entries and rejects 21 in %s",
+  async field => {
+    const entry = {
+      name: "contracts",
+      issue: "other",
+      why: "Incomplete",
+      ...(field === "capabilityFeedback" ? { provider: "sam.gov" } : {}),
+    };
+    for (const length of [20, 21]) {
+      mocks.values.mockClear();
+      const response = await submit({
+        ...minimal,
+        [field]: Array.from({ length }, () => ({ ...entry })),
+      });
+      expect(response.status).toBe(length === 20 ? 200 : 400);
+      expect(mocks.values).toHaveBeenCalledTimes(length === 20 ? 1 : 0);
+    }
+  },
+);
+
+it.each([
+  ["providerFeedback", "name", 200],
+  ["providerFeedback", "why", 2000],
+  ["capabilityFeedback", "name", 200],
+  ["capabilityFeedback", "provider", 200],
+  ["capabilityFeedback", "why", 2000],
+  ["capabilityFeedback", "requestedFunctionality", 2000],
+] as const)("bounds %s.%s to %i characters", async (array, field, limit) => {
+  const entry = {
+    name: "contracts",
+    issue: "other",
+    why: "Incomplete",
+    ...(array === "capabilityFeedback" ? { provider: "sam.gov" } : {}),
+  };
+  for (const length of [limit, limit + 1]) {
+    mocks.values.mockClear();
+    const response = await submit({
+      ...minimal,
+      [array]: [{ ...entry, [field]: "x".repeat(length) }],
+    });
+    expect(response.status).toBe(length === limit ? 200 : 400);
+    expect(mocks.values).toHaveBeenCalledTimes(length === limit ? 1 : 0);
+  }
+});
+
 it("limits website URLs to 2048 characters and accepts HTTP and HTTPS", async () => {
   for (const protocol of ["http", "https"]) {
     const prefix = `${protocol}://example.com/`;
@@ -408,6 +479,17 @@ it("bounds the complete UTF-8 evidence payload", async () => {
   });
   expect(response.status).toBe(400);
   expect(mocks.values).not.toHaveBeenCalled();
+});
+
+it("applies the payload limit after normalizing feedback", async () => {
+  const response = await submit({
+    ...minimal,
+    rationale: " ".repeat(9 * 1024) + minimal.rationale,
+  });
+  expect(response.status).toBe(200);
+  expect(mocks.values).toHaveBeenCalledWith(
+    expect.objectContaining({ comment: minimal.rationale }),
+  );
 });
 
 it.each([
@@ -451,13 +533,33 @@ it("rejects deployments without database authentication", async () => {
   expect(mocks.values).not.toHaveBeenCalled();
 });
 
-it("returns a failure without logging the payload if persistence fails", async () => {
-  mocks.values.mockRejectedValueOnce(
-    new Error("sensitive database query payload"),
-  );
+it.each([
+  [new Error("sensitive database query payload"), null],
+  [Object.assign(new Error("sensitive detail"), { code: "23514" }), "23514"],
+  [
+    new DrizzleQueryError(
+      "INSERT INTO search_feedback VALUES ($1)",
+      ["sensitive feedback payload"],
+      Object.assign(new Error("sensitive database detail"), { code: "23514" }),
+    ),
+    "23514",
+  ],
+  [{ code: "sensitive database detail" }, null],
+  [{ code: { detail: "sensitive feedback payload" } }, null],
+  [null, null],
+])("logs only SQLSTATE on persistence failure %#", async (error, errorCode) => {
+  mocks.values.mockRejectedValueOnce(error);
   const response = await submit(minimal);
   expect(response.status).toBe(500);
-  expect(response.body.feedbackErrorCode).toBe("INTERNAL");
+  expect(response.body).toEqual({
+    success: false,
+    feedbackErrorCode: "INTERNAL",
+    error: "Failed to record feedback.",
+  });
+  expect(mocks.logError).toHaveBeenCalledExactlyOnceWith(
+    "Failed to record Alexandria feedback",
+    { feedbackId: expect.any(String), errorCode },
+  );
   expect(JSON.stringify(mocks.logError.mock.calls)).not.toContain("sensitive");
   expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
 });

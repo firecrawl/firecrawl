@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { integrationSchema } from "../../../utils/integration";
 
 const detail = z.string().trim().min(1).max(2000);
 const name = z.string().trim().min(1).max(200);
@@ -48,11 +49,19 @@ export const alexandriaFeedbackSchema = z
     providerFeedback: z.array(providerFeedback).max(20).optional(),
     capabilityFeedback: z.array(capabilityFeedback).max(20).optional(),
     origin: z.string().trim().min(1).max(100).default("api"),
-    integration: z.string().trim().min(1).max(100).nullable().optional(),
+    integration: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .pipe(integrationSchema)
+      .nullable()
+      .optional(),
   })
   .refine(
+    // Bound normalized feedback after trimming and applying defaults.
     value => new TextEncoder().encode(JSON.stringify(value)).length <= 8 * 1024,
-    "Alexandria feedback must be 8KB or smaller",
+    "Normalized feedback payload must be 8 KiB or smaller",
   );
 
 export type AlexandriaFeedbackRequest = z.infer<

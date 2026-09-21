@@ -1,4 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { config } from "../../../config";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
@@ -84,10 +85,19 @@ export async function recordAlexandriaFeedback(
       credits_refunded: 0,
       refund_policy: null,
     });
-  } catch {
+  } catch (error) {
     // Database errors may embed the submitted payload. Keep feedback content
-    // out of logs, including on failed writes.
-    logger.error("Failed to record Alexandria feedback", { feedbackId });
+    // out of logs; only retain the underlying PostgreSQL SQLSTATE.
+    const cause = error instanceof DrizzleQueryError ? error.cause : error;
+    const code =
+      cause !== null && typeof cause === "object" && "code" in cause
+        ? cause.code
+        : undefined;
+    logger.error("Failed to record Alexandria feedback", {
+      feedbackId,
+      errorCode:
+        typeof code === "string" && /^[0-9A-Z]{5}$/.test(code) ? code : null,
+    });
     return failure(500, "INTERNAL", "Failed to record feedback.");
   }
   return {
