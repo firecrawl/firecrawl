@@ -904,6 +904,7 @@ export class AutumnService {
     teamId: string,
     orgId: string | null,
   ): Promise<number | null> {
+    if (!orgId) return null;
     const read = await this.readEntityLimits(teamId, orgId);
     return read.outcome === "known" ? (read.rateLimitMultiplier ?? 1) : null;
   }

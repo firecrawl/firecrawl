@@ -2295,6 +2295,14 @@ describe("provisioning by route", () => {
 });
 
 describe("getKnownRateLimitMultiplier (fail-closed plan reads)", () => {
+  it("refuses a missing organization even after caching a paid entitlement", async () => {
+    const svc = makeService();
+    mockEntityGet.mockResolvedValue({ balances: { rate_limits: { granted: 25 } } });
+    expect(await svc.getKnownRateLimitMultiplier("team-1", "org-1")).toBe(25);
+    expect(await svc.getKnownRateLimitMultiplier("team-1", null)).toBeNull();
+    expect(mockEntityGet).toHaveBeenCalledTimes(1);
+  });
+
   it("answers the entitled multiplier, and 1 when the entity is missing or has no balance", async () => {
     const svc = makeService();
     mockEntityGet.mockResolvedValue({
