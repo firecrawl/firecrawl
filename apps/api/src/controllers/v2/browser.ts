@@ -17,6 +17,8 @@ import {
   clearBrowserSessionPromptFlag,
   upsertBrowserProfile,
   deleteBrowserProfile,
+  recordBrowserProfileDeleted,
+  getBrowserProfileDeletedAt,
 } from "../../lib/browser-sessions";
 import {
   getCombinedTeamActiveCount,
@@ -617,11 +619,19 @@ export async function browserProfileDeleteController(
     method: "browserProfileDeleteController",
   });
 
+  const storageId = browserProfileStorageId(req.auth.team_id, name);
+  let deletedAt: string;
   try {
-    await browserServiceRequest(
+    const result = await browserServiceRequest<{ deletedAt?: unknown }>(
       "DELETE",
-      `/profiles/${encodeURIComponent(browserProfileStorageId(req.auth.team_id, name))}`,
+      `/profiles/${encodeURIComponent(storageId)}`,
     );
+    // The browser service stamps profile.saved events with its own clock, so
+    // compare them against its deletion time.
+    deletedAt =
+      typeof result?.deletedAt === "string"
+        ? result.deletedAt
+        : new Date().toISOString();
   } catch (err) {
     if (err instanceof BrowserServiceError && err.status === 409) {
       return res.status(409).json({
@@ -639,6 +649,10 @@ export async function browserProfileDeleteController(
     });
   }
 
+  // Tombstone before removing the row: a late profile.saved for an earlier
+  // save that lands before this upserts a row the delete below removes, and
+  // any that lands after it is ignored.
+  await recordBrowserProfileDeleted(storageId, deletedAt);
   await deleteBrowserProfile(req.auth.team_id, name);
   logger.info("Deleted browser profile");
   return res.status(200).json({ success: true });
@@ -885,7 +899,11 @@ async function handleProfileSavedWebhook(
     return res.status(200).json({ ok: true });
   }
 
-  const resolution = resolveProfileSave(session, event);
+  const resolution = resolveProfileSave(
+    session,
+    event,
+    await getBrowserProfileDeletedAt(event.profileId),
+  );
   if (resolution.action === "ignore") {
     logger.info("Not recording saved profile", {
       browserId,

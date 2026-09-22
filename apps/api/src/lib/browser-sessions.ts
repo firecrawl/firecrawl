@@ -3,6 +3,7 @@ import { z } from "zod";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
+import { browserProfileDeletedKey } from "./browser-profiles";
 import { logger as _logger } from "./logger";
 
 const logger = _logger.child({ module: "browser-sessions" });
@@ -311,6 +312,28 @@ export async function upsertBrowserProfile(input: {
         size_bytes: sql`CASE WHEN excluded.saved_at >= ${profiles.saved_at} THEN COALESCE(excluded.size_bytes, ${profiles.size_bytes}) ELSE ${profiles.size_bytes} END`,
       },
     });
+}
+
+// Remembers when a profile was deleted, so a profile.saved event for an
+// earlier save that is delivered late cannot relist it. Outlives the browser
+// service's retries (at most ~10 minutes).
+const PROFILE_DELETED_TTL_SECONDS = 3600;
+
+export async function recordBrowserProfileDeleted(
+  storageId: string,
+  deletedAt: string,
+): Promise<void> {
+  await setValue(
+    browserProfileDeletedKey(storageId),
+    deletedAt,
+    PROFILE_DELETED_TTL_SECONDS,
+  );
+}
+
+export async function getBrowserProfileDeletedAt(
+  storageId: string,
+): Promise<string | null> {
+  return getValue(browserProfileDeletedKey(storageId));
 }
 
 // Removes a profile's listing once its saved state is deleted. Keyless callers

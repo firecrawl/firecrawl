@@ -65,20 +65,24 @@ describe("profileSavedEventSchema", () => {
 
 describe("resolveProfileSave", () => {
   const profileId = browserProfileStorageId(TEAM, "my-profile");
+  const savedAt = "2026-09-22T12:00:00.000Z";
+  const session = { team_id: TEAM, profile_name: "my-profile" };
 
   it("upserts under the session's own team and profile name", () => {
-    expect(
-      resolveProfileSave(
-        { team_id: TEAM, profile_name: "my-profile" },
-        { profileId },
-      ),
-    ).toEqual({ action: "upsert", teamId: TEAM, name: "my-profile" });
+    expect(resolveProfileSave(session, { profileId, savedAt })).toEqual({
+      action: "upsert",
+      teamId: TEAM,
+      name: "my-profile",
+    });
   });
 
   it("ignores sessions that recorded no profile name", () => {
     for (const profile_name of [null, undefined]) {
       expect(
-        resolveProfileSave({ team_id: TEAM, profile_name }, { profileId }),
+        resolveProfileSave(
+          { team_id: TEAM, profile_name },
+          { profileId, savedAt },
+        ),
       ).toEqual({ action: "ignore", reason: "no_profile_name" });
     }
   });
@@ -88,26 +92,47 @@ describe("resolveProfileSave", () => {
     expect(
       resolveProfileSave(
         { team_id: keylessTeam, profile_name: "my-profile" },
-        { profileId: browserProfileStorageId(keylessTeam, "my-profile") },
+        {
+          profileId: browserProfileStorageId(keylessTeam, "my-profile"),
+          savedAt,
+        },
       ),
     ).toEqual({ action: "ignore", reason: "not_a_team" });
   });
 
   it("rejects a storage id that belongs to another team", () => {
     expect(
-      resolveProfileSave(
-        { team_id: TEAM, profile_name: "my-profile" },
-        { profileId: browserProfileStorageId(OTHER_TEAM, "my-profile") },
-      ),
+      resolveProfileSave(session, {
+        profileId: browserProfileStorageId(OTHER_TEAM, "my-profile"),
+        savedAt,
+      }),
     ).toEqual({ action: "reject", reason: "profile_mismatch" });
   });
 
   it("rejects a storage id for a different profile name", () => {
     expect(
-      resolveProfileSave(
-        { team_id: TEAM, profile_name: "my-profile" },
-        { profileId: browserProfileStorageId(TEAM, "other-profile") },
-      ),
+      resolveProfileSave(session, {
+        profileId: browserProfileStorageId(TEAM, "other-profile"),
+        savedAt,
+      }),
     ).toEqual({ action: "reject", reason: "profile_mismatch" });
+  });
+
+  it("ignores a save from before the profile was deleted", () => {
+    for (const deletedAt of [savedAt, "2026-09-22T12:00:01.000Z"]) {
+      expect(
+        resolveProfileSave(session, { profileId, savedAt }, deletedAt),
+      ).toEqual({ action: "ignore", reason: "deleted" });
+    }
+  });
+
+  it("records a save made after the profile was deleted", () => {
+    expect(
+      resolveProfileSave(
+        session,
+        { profileId, savedAt },
+        "2026-09-22T11:59:59.000Z",
+      ),
+    ).toEqual({ action: "upsert", teamId: TEAM, name: "my-profile" });
   });
 });

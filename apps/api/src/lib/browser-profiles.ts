@@ -33,17 +33,25 @@ type ProfileSavedEvent = z.infer<typeof profileSavedEventSchema>;
 
 type ProfileSaveResolution =
   | { action: "upsert"; teamId: string; name: string }
-  | { action: "ignore"; reason: "no_profile_name" | "not_a_team" }
+  | { action: "ignore"; reason: "no_profile_name" | "not_a_team" | "deleted" }
   | { action: "reject"; reason: "profile_mismatch" };
+
+// Redis key holding when a profile was last deleted (browser-service clock),
+// kept for longer than the browser service retries a profile.saved event.
+export function browserProfileDeletedKey(storageId: string): string {
+  return `browser-profile-deleted:${storageId}`;
+}
 
 /**
  * Decides what a reported save means for the session it came from. The team
  * and profile name come from our own session row, never from the event, and
- * the event's storage id must be the one that row derives.
+ * the event's storage id must be the one that row derives. `deletedAt` is when
+ * the profile was last deleted, if recently.
  */
 export function resolveProfileSave(
   session: { team_id: string; profile_name?: string | null },
-  event: Pick<ProfileSavedEvent, "profileId">,
+  event: Pick<ProfileSavedEvent, "profileId" | "savedAt">,
+  deletedAt?: string | null,
 ): ProfileSaveResolution {
   // Sessions created before profile_name was recorded.
   if (!session.profile_name) {
@@ -58,6 +66,11 @@ export function resolveProfileSave(
     event.profileId
   ) {
     return { action: "reject", reason: "profile_mismatch" };
+  }
+  // A save that finished before the profile was deleted (its event delivered
+  // late) must not bring the listing back; a save after the delete does.
+  if (deletedAt && Date.parse(event.savedAt) <= Date.parse(deletedAt)) {
+    return { action: "ignore", reason: "deleted" };
   }
   return {
     action: "upsert",
