@@ -213,6 +213,62 @@ describe("authenticateUser", () => {
     );
   });
 
+  it.each([false, true])(
+    "only builds and consumes a limiter when enabled (skip=%s)",
+    async skipRateLimit => {
+      config.USE_DB_AUTHENTICATION = true;
+      vi.mocked(getValue).mockResolvedValue(null);
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([
+        {
+          api_key: "00000000-0000-4000-8000-000000000000",
+          api_key_id: 1,
+          team_id: "team-1",
+          org_id: "org-1",
+          flags: null,
+        },
+      ]);
+      vi.mocked(redlock.using).mockImplementation(
+        async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+      );
+      const consume = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(getAutumnRateLimiter).mockReturnValue({ consume } as never);
+      const auth = await authenticateUser(
+        {
+          headers: {
+            authorization: "Bearer 00000000-0000-4000-8000-000000000000",
+          },
+          socket: {},
+        },
+        {},
+        RateLimiterMode.Exchange,
+        { skipRateLimit },
+      );
+      expect(auth.success).toBe(true);
+      expect(getAutumnRateLimiter).toHaveBeenCalledTimes(skipRateLimit ? 0 : 1);
+      expect(autumnService.getRateLimitMultiplier).toHaveBeenCalledTimes(
+        skipRateLimit ? 0 : 1,
+      );
+      expect(consume).toHaveBeenCalledTimes(skipRateLimit ? 0 : 1);
+    },
+  );
+
+  it("does not build the preview limiter when disabled", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    config.PREVIEW_TOKEN = "preview-test-key";
+    const auth = await authenticateUser(
+      {
+        headers: { authorization: "Bearer preview-test-key" },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Exchange,
+      { skipRateLimit: true },
+    );
+    expect(auth.success).toBe(true);
+    expect(getRateLimiter).not.toHaveBeenCalled();
+    expect(getAutumnRateLimiter).not.toHaveBeenCalled();
+  });
+
   it("writes normal API-key ACUC entries to the general-purpose cache", async () => {
     config.USE_DB_AUTHENTICATION = true;
     vi.mocked(getValue).mockResolvedValue(null);

@@ -152,8 +152,7 @@ async function providerTermsAcceptController(req: Request, res: Response) {
 
 export const exchangeRouter = express.Router();
 
-// Data routes take the plan's scrape-equivalent budget (base 10/min, multiplier
-// scaled). Dashboard and publisher routes below stay on the flat Labs limit.
+// Catalog browsing is authenticated but exempt from rate limiting.
 exchangeRouter.get(
   "/discover{/*path}",
   authMiddleware(RateLimiterMode.Exchange, { skipRateLimit: true }),

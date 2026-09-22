@@ -734,7 +734,6 @@ async function supaAuthenticateUser(
     ? HOBBY_RATE_LIMIT_MULTIPLIER
     : undefined;
 
-  let rateLimiter: RateLimiterRedis;
   let subscriptionData: { team_id: string } | null = null;
   let normalizedApi: string;
 
@@ -746,13 +745,6 @@ async function supaAuthenticateUser(
     );
   }
   if (token == config.PREVIEW_TOKEN) {
-    if (mode == RateLimiterMode.CrawlStatus) {
-      rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus);
-    } else if (mode == RateLimiterMode.ExtractStatus) {
-      rateLimiter = getRateLimiter(RateLimiterMode.ExtractStatus);
-    } else {
-      rateLimiter = getRateLimiter(RateLimiterMode.Preview);
-    }
     teamId = `preview_${iptoken}`;
   } else if (token.startsWith("fcmcp_")) {
     const delegation = verifyMcpDelegatedCredential(
@@ -785,13 +777,6 @@ async function supaAuthenticateUser(
 
     teamId = chunk.team_id;
     subscriptionData = { team_id: teamId };
-    rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
-      mode,
-      chunk.flags,
-      minRateMultiplier,
-    );
   } else if (token.startsWith("fco_")) {
     // OAuth access token — resolve via introspection endpoint
     let introspection: OAuthIntrospectionResponse | null;
@@ -855,13 +840,6 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
-      mode,
-      chunk.flags,
-      minRateMultiplier,
-    );
   } else {
     normalizedApi = parseApi(token);
     if (!normalizedApiIsUuid(normalizedApi)) {
@@ -887,13 +865,6 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
-      mode,
-      chunk.flags,
-      minRateMultiplier,
-    );
   }
 
   // Banned teams are rejected here, where the mcp / OAuth / API-key paths
@@ -942,10 +913,31 @@ async function supaAuthenticateUser(
     }
   }
 
+  let rateLimiter: RateLimiterRedis | undefined;
+  if (!options?.skipRateLimit) {
+    if (token === config.PREVIEW_TOKEN) {
+      if (mode == RateLimiterMode.CrawlStatus) {
+        rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus);
+      } else if (mode == RateLimiterMode.ExtractStatus) {
+        rateLimiter = getRateLimiter(RateLimiterMode.ExtractStatus);
+      } else {
+        rateLimiter = getRateLimiter(RateLimiterMode.Preview);
+      }
+    } else if (chunk) {
+      rateLimiter = await buildAuthenticatedRateLimiter(
+        chunk.team_id,
+        chunk.org_id,
+        mode,
+        chunk.flags,
+        minRateMultiplier,
+      );
+    }
+  }
+
   const team_endpoint_token = token === config.PREVIEW_TOKEN ? iptoken : teamId;
 
   try {
-    if (!options?.skipRateLimit) await rateLimiter.consume(team_endpoint_token);
+    if (rateLimiter) await rateLimiter.consume(team_endpoint_token);
   } catch (rateLimiterRes) {
     logger.error(`Rate limit exceeded: ${rateLimiterRes}`, {
       teamId,
