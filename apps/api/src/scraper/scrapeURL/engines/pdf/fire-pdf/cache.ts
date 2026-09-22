@@ -211,7 +211,9 @@ export async function tryGetCached(
       includePageMarkdown,
       includeBlocks,
       pageMarkers,
-      refresh: getPDFRefresh(meta.options?.parsers),
+      refresh:
+        config.FIRE_PDF_CACHE_REFRESH_PER_MINUTE > 0 &&
+        getPDFRefresh(meta.options?.parsers),
       sourceKind: isRasterImagePayload(base64Content) ? "image" : "pdf",
       ownVariant: ownVariant ?? "base",
     });

@@ -9,7 +9,11 @@ import {
   provenanceFromResponse,
   tryGetCached,
 } from "../fire-pdf/cache";
-import { consumeRefresh, refreshDecisionFor } from "../fire-pdf/refresh-budget";
+import {
+  consumeRefresh,
+  recordRefreshDecision,
+  refreshDecisionFor,
+} from "../fire-pdf/refresh-budget";
 import { firePdfProvenanceSchema } from "../fire-pdf/schema";
 import {
   firePdfCacheEventsTotal,
@@ -22,6 +26,7 @@ import { robustFetch } from "../../../lib/fetch";
 vi.mock("../fire-pdf/refresh-budget", () => ({
   consumeRefresh: vi.fn(async () => "allowed"),
   refreshDecisionFor: vi.fn(() => undefined),
+  recordRefreshDecision: vi.fn(),
 }));
 
 vi.mock("../../../lib/fetch", () => ({ robustFetch: vi.fn() }));
@@ -1364,6 +1369,12 @@ describe("FirePDF cache counters", () => {
 
 describe("FirePDF cache through the lookup service", () => {
   const fetchMock = vi.mocked(robustFetch);
+  // The service's answer is parsed with the schema the client hands to the
+  // fetch, so these fixtures pin the wire contract.
+  const answerWith = (fixture: unknown) =>
+    fetchMock.mockImplementationOnce(async ({ schema }: any) =>
+      schema.parse(fixture),
+    );
   const base64 = Buffer.from("%PDF-1.7 service test").toString("base64");
   const rawKey = `raw-${crypto
     .createHash("sha256")
@@ -1402,7 +1413,7 @@ describe("FirePDF cache through the lookup service", () => {
   });
 
   it("asks the service once with both keys and the options, and serves a hit without reading the bucket", async () => {
-    fetchMock.mockResolvedValueOnce({
+    answerWith({
       outcome: "hit",
       key: rawKey,
       variant: "page-markdown-v1",
@@ -1411,7 +1422,7 @@ describe("FirePDF cache through the lookup service", () => {
         pages_processed: 2,
         pages: [{ page: 1, markdown: "p1" }],
       },
-    } as any);
+    });
     const result = await tryGetCached(
       serviceMeta(),
       base64,
@@ -1444,10 +1455,7 @@ describe("FirePDF cache through the lookup service", () => {
   });
 
   it("uses the caller's key alone for a by-reference document", async () => {
-    fetchMock.mockResolvedValueOnce({
-      outcome: "miss",
-      reason: "not_found",
-    } as any);
+    answerWith({ outcome: "miss", reason: "not_found" });
     expect(
       await tryGetCached(
         serviceMeta(),
@@ -1463,13 +1471,13 @@ describe("FirePDF cache through the lookup service", () => {
   });
 
   it("serves a stale answer, and treats a failed lookup as a miss", async () => {
-    fetchMock.mockResolvedValueOnce({
+    answerWith({
       outcome: "stale",
       key: inlineKey,
       variant: "base",
       campaign: "c1",
       result: { markdown: "# old" },
-    } as any);
+    });
     expect(
       await tryGetCached(
         serviceMeta(),
@@ -1493,10 +1501,7 @@ describe("FirePDF cache through the lookup service", () => {
   });
 
   it("passes refresh through for the service to budget", async () => {
-    fetchMock.mockResolvedValueOnce({
-      outcome: "miss",
-      reason: "refresh",
-    } as any);
+    answerWith({ outcome: "miss", reason: "refresh" });
     expect(
       await tryGetCached(
         serviceMeta([{ type: "pdf", refresh: true }]),
@@ -1510,15 +1515,77 @@ describe("FirePDF cache through the lookup service", () => {
     ).toBeNull();
     expect(fetchMock.mock.calls[0][0].body.refresh).toBe(true);
     expect(consumeRefresh).not.toHaveBeenCalled();
+    // The service's decision is remembered for a fallback engine.
+    expect(recordRefreshDecision).toHaveBeenCalledWith("svc-test", "allowed");
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "base",
+      result: { markdown: "# doc" },
+    });
+    await tryGetCached(
+      serviceMeta([{ type: "pdf", refresh: true }]),
+      base64,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      false,
+    );
+    expect(recordRefreshDecision).toHaveBeenLastCalledWith(
+      "svc-test",
+      "limited",
+    );
+  });
+
+  it("serves a marker request only an entry that carries markers", async () => {
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "markers-v1",
+      result: { markdown: "<!-- page 1 -->\n# doc" },
+    });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+        true,
+      ),
+    ).toBeNull();
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "markers-v1",
+      result: { markdown: "<!-- page 1 -->\n# doc", page_markers: true },
+    });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+        true,
+      ),
+    ).toMatchObject({ markdown: "<!-- page 1 -->\n# doc" });
+    expect(fetchMock.mock.calls[1][0].body.options).toEqual({
+      page_markers: true,
+    });
   });
 
   it("lets the scrape's own abort through instead of counting it as a lookup failure", async () => {
     fetchMock.mockRejectedValueOnce(new Error("aborted mid-lookup"));
     const meta = serviceMeta();
-    let calls = 0;
+    // The abort lands once the request has gone out.
     meta.abort.throwIfAborted.mockImplementation(() => {
-      calls += 1;
-      if (calls === 2) throw new Error("scrape aborted");
+      if (fetchMock.mock.calls.length > 0) throw new Error("scrape aborted");
     });
     await expect(
       tryGetCached(meta, base64, undefined, undefined, undefined, false, false),
@@ -1527,12 +1594,12 @@ describe("FirePDF cache through the lookup service", () => {
   });
 
   it("never serves an empty result for a raster image, and names the image to the service", async () => {
-    fetchMock.mockResolvedValueOnce({
+    answerWith({
       outcome: "hit",
       key: "k",
       variant: "base",
       result: { markdown: "   " },
-    } as any);
+    });
     expect(
       await tryGetCached(
         serviceMeta(),
@@ -1545,6 +1612,43 @@ describe("FirePDF cache through the lookup service", () => {
       ),
     ).toBeNull();
     expect(fetchMock.mock.calls[0][0].body.source_kind).toBe("image");
+  });
+
+  it("never lets a poorer entry satisfy a richer request", async () => {
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "base",
+      result: { markdown: "# doc" },
+    });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        false,
+      ),
+    ).toBeNull();
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "page-markdown-v1",
+      result: { markdown: "# doc", pages: [{ page: 1, markdown: "p1" }] },
+    });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    ).toBeNull();
   });
 
   it("does not write results itself while the service is in use", async () => {

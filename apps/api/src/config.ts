@@ -393,8 +393,9 @@ const configSchema = z.object({
   // them; without it the bucket is read and written from here.
   FIRE_PDF_CACHE_BASE_URL: z.string().optional(),
   // `parsers: [{ type: "pdf", refresh: true }]` skips the content cache and
-  // forces a fresh parse. Per team, per minute; beyond the budget the
-  // request is served normally. 0 disables the option.
+  // forces a fresh parse. Per team, per minute, budgeted here or by the
+  // cache service when one is configured; beyond the budget the request is
+  // served normally. 0 disables the option.
   FIRE_PDF_CACHE_REFRESH_PER_MINUTE: z.coerce.number().int().min(0).default(10),
   // Raster image OCR of image URLs and parse uploads through FirePDF (see
   // lib/image-ocr-gate.ts). Needs FIRE_PDF_BASE_URL.

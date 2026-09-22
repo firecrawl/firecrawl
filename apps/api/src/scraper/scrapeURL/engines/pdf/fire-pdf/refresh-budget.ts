@@ -78,6 +78,17 @@ async function decide(teamId: string | undefined): Promise<RefreshDecision> {
   }
 }
 
+/** Remember a decision taken elsewhere for this request, so a fallback engine reuses it. */
+export function recordRefreshDecision(
+  scrapeId: string | undefined,
+  decision: RefreshDecision,
+): void {
+  if (!scrapeId) return;
+  const now = Date.now();
+  prune(now);
+  decisions.set(scrapeId, { decision, at: now });
+}
+
 /**
  * Spend one refresh of the team's budget for this request, or return the
  * decision this request already got. Without a scrape id every call is a
