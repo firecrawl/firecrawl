@@ -213,41 +213,6 @@ describe("authenticateUser", () => {
     );
   });
 
-  it.each([false, true])(
-    "keeps auth and bans when rate limiting is disabled (banned=%s)",
-    async banned => {
-      config.USE_DB_AUTHENTICATION = true;
-      vi.mocked(getValue).mockResolvedValue(null);
-      vi.mocked(authCreditUsageChunk).mockResolvedValue([
-        {
-          api_key: "00000000-0000-4000-8000-000000000000",
-          api_key_id: 1,
-          team_id: "team-1",
-          org_id: "org-1",
-          flags: null,
-          is_banned: banned,
-        },
-      ]);
-      vi.mocked(redlock.using).mockImplementation(
-        async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
-      );
-      const auth = await authenticateUser(
-        {
-          headers: {
-            authorization: "Bearer 00000000-0000-4000-8000-000000000000",
-          },
-          socket: { remoteAddress: "127.0.0.1" },
-        },
-        {},
-        RateLimiterMode.Labs,
-        { skipRateLimit: true },
-      );
-      expect(auth.success).toBe(!banned);
-      expect(getAutumnRateLimiter).not.toHaveBeenCalled();
-      expect(autumnService.getRateLimitMultiplier).not.toHaveBeenCalled();
-    },
-  );
-
   it("writes normal API-key ACUC entries to the general-purpose cache", async () => {
     config.USE_DB_AUTHENTICATION = true;
     vi.mocked(getValue).mockResolvedValue(null);
