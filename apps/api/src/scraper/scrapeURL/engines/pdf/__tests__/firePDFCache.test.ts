@@ -1406,6 +1406,7 @@ describe("FirePDF cache through the lookup service", () => {
     getCached.mockReset();
     saveCached.mockReset();
     vi.mocked(consumeRefresh).mockClear();
+    vi.mocked(recordRefreshDecision).mockClear();
   });
 
   afterEach(() => {
@@ -1536,6 +1537,27 @@ describe("FirePDF cache through the lookup service", () => {
       "svc-test",
       "limited",
     );
+  });
+
+  it("sends no refresh when the option is switched off locally", async () => {
+    const perMinute = config.FIRE_PDF_CACHE_REFRESH_PER_MINUTE;
+    config.FIRE_PDF_CACHE_REFRESH_PER_MINUTE = 0;
+    try {
+      answerWith({ outcome: "miss", reason: "not_found" });
+      await tryGetCached(
+        serviceMeta([{ type: "pdf", refresh: true }]),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+      );
+      expect(fetchMock.mock.calls[0][0].body.refresh).toBe(false);
+      expect(recordRefreshDecision).not.toHaveBeenCalled();
+    } finally {
+      config.FIRE_PDF_CACHE_REFRESH_PER_MINUTE = perMinute;
+    }
   });
 
   it("serves a marker request only an entry that carries markers", async () => {

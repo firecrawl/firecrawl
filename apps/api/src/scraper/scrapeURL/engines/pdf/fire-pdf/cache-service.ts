@@ -34,10 +34,11 @@ async function cacheLookupKeys(input: PdfCacheKeyInput): Promise<string[]> {
   ];
 }
 
-// A hit carries the whole entry, sidecars included, so the bound allows for a
-// large one; past it the lookup is a miss and the document is parsed. One
-// retry covers a connection that dropped before the request was handled.
-const LOOKUP_TIMEOUT_MS = 10_000;
+// The service's own read bound, so a lookup never waits longer than the
+// service would; past it the lookup is a miss and the document is parsed. One
+// retry, within the same bound, covers a connection that dropped before the
+// request was handled.
+const LOOKUP_TIMEOUT_MS = 5_000;
 const LOOKUP_TRIES = 2;
 
 const cachedResultSchema = z.object({
