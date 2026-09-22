@@ -1071,10 +1071,14 @@ const agentExchangeSchema = z.strictObject({
     .optional(),
 });
 
+// Roomier than other prompts: an agent prompt may carry a recorded skill
+// (a <firecrawl-blueprint> block) for the run to follow.
+const AGENT_PROMPT_MAX_CHARS = 50000;
+
 export const agentRequestSchema = z
   .strictObject({
     urls: URL.array().optional(),
-    prompt: z.string().max(10000),
+    prompt: z.string().max(AGENT_PROMPT_MAX_CHARS),
     schema: z
       .any()
       .optional()
@@ -1767,7 +1771,8 @@ export type AgentSkillResponse =
         name: string;
         spec: object;
         skillMd: string;
-        workflow: string;
+        /** One runnable script per language the dashboard offers. */
+        workflows: Record<string, string>;
         schema: string;
       };
       blueprint: object;
