@@ -1,0 +1,25 @@
+apps/api/src/services/exchange/skills.test.ts
+  s_72504da98d9ee5::t_3cb2eccfeeec0c 144-147,149-152,154-175,178-186,188-196,198-199,201-203
+apps/api/src/lib/entities.ts
+  s_72504da98d9ee5::t_c9846a51dcb99e 184-185
+apps/api/src/services/exchange/skills.ts
+  s_72504da98d9ee5::t_c9846a51dcb99e 20
+  s_72504da98d9ee5::t_f761f9b4a3f84a 96,101
+  s_72504da98d9ee5::t_cdc0968c18fc2c 17-19,106-131,140-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3d19859d3882aa96092c93414fd3a1b800532e1f",
+  "prompts": {},
+  "sessions": {
+    "s_72504da98d9ee5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c2c-dc83-7412-a139-5948d4045196",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

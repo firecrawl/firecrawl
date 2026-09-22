@@ -1,0 +1,62 @@
+apps/api/src/services/alexandria/retrieve.ts
+  s_d5a66f40b1ab9a::t_daa102517560ea 4-5,11-12,22-35,38-39,42,44-45,47,49-52,67-103,108,113-121,123-124,126-128,130-137,144-179,182,187,189-190,194-195,198-202,204-214,220-244,246-256,258-265,267-276,287-324,326-367,370-376,378-385,389-422,429-433
+  s_d5a66f40b1ab9a::t_3513ea46f9a8e7 48
+  s_d5a66f40b1ab9a::t_85f7a8b0a9617d 138-142,191-193,215-218,277-284,423-428
+apps/api/src/controllers/v2/scrape-alexandria.test.ts
+  s_d5a66f40b1ab9a::t_85f7a8b0a9617d 50-51,53,71-73,110-111
+  s_d5a66f40b1ab9a::t_9b94d610c79537 3,10,21-24,40,45-49,54-66,84,91,94,104-108,112-176
+apps/api/src/routes/shared.ts
+  s_d5a66f40b1ab9a::t_b3127bf9ba70b6 34
+  s_d5a66f40b1ab9a::t_394e419a7e37de 120,122
+apps/api/src/services/alexandria/access.ts
+  s_d5a66f40b1ab9a::t_6d8a0e704d0aa3 1-6,8-12,15-19,21-22,24,27,29-33,35
+apps/api/src/services/alexandria/retrieve.test.ts
+  s_d5a66f40b1ab9a::t_85f7a8b0a9617d 272-277
+  s_d5a66f40b1ab9a::t_5415955e4f96fd 253-254
+  s_d5a66f40b1ab9a::t_8c2a627aaace46 1-23,31,34-39,47,66-84,87,91-93,96-98,102,107-110,120-121,123-126,128-133,135-137,141-153,156-164,166-170,174-180,183-188,190-196,198-217,220-221,225-228,230-252,255-271,279-280
+apps/api/src/search/alexandria.test.ts
+  s_d5a66f40b1ab9a::t_aa00d19a818b52 1-21
+apps/api/src/lib/exchange.ts
+  s_d5a66f40b1ab9a::t_036df5b2c6cb46 393-422
+  s_d5a66f40b1ab9a::t_ec9bab321231bf 633-691,696-701,709-715,717,728,734
+  s_d5a66f40b1ab9a::t_21e7fa5be8348d 152-163
+apps/api/src/search/alexandria.ts
+  s_d5a66f40b1ab9a::t_be35d77ba9e358 98
+  s_d5a66f40b1ab9a::t_3513ea46f9a8e7 11
+  s_d5a66f40b1ab9a::t_703ceade1e1d39 277
+  s_d5a66f40b1ab9a::t_a4390665c77ba6 226-227,229-233,235,237
+  s_d5a66f40b1ab9a::t_d5b4ec6fe6ae27 16-34
+  s_d5a66f40b1ab9a::t_b735c76593b69f 94-97,99-107
+apps/api/src/controllers/v2/search.ts
+  s_d5a66f40b1ab9a::t_907d5a21face64 279
+  s_d5a66f40b1ab9a::t_47939216871d1f 149-151
+  s_d5a66f40b1ab9a::t_a5e6657c241182 40
+  s_d5a66f40b1ab9a::t_be35d77ba9e358 277
+apps/api/src/services/alexandria/README.md
+  s_d5a66f40b1ab9a::t_513fe0bd372cfd 3-5,16-20,34-85,89-93
+apps/api/src/controllers/v2/scrape-alexandria.ts
+  s_d5a66f40b1ab9a::t_b0e51129c96e4e 7,9,16-19,22,40,45-49,55-70,73-74,76-81,85-122,125,141-178
+  s_d5a66f40b1ab9a::t_85f7a8b0a9617d 82-84
+apps/api/src/services/alexandria/client.ts
+  s_d5a66f40b1ab9a::t_7ac4ba58422e44 35
+apps/api/src/search/execute.ts
+  s_d5a66f40b1ab9a::t_6b59c830e2a2e1 263
+apps/api/src/services/alexandria/contracts.ts
+  s_d5a66f40b1ab9a::t_4bc2c1f7782c88 27-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9731c18fd61395a9b3c4d417d86271718c9bf232",
+  "prompts": {},
+  "sessions": {
+    "s_d5a66f40b1ab9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d98ef7f-6653-4344-b150-58a978da5f54",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,49 @@
+apps/api/src/search/alexandria-source.test.ts
+  s_72504da98d9ee5::t_89233a45692e2c 1-151
+apps/api/src/services/exchange/skills.test.ts
+  s_72504da98d9ee5::t_1ef1bdd76ba74f 167,192-193
+apps/api/src/controllers/v2/search.ts
+  s_72504da98d9ee5::t_f3c64969e566c2 1,202,216,269,475-476
+apps/api/src/services/exchange/report.test.ts
+  s_72504da98d9ee5::t_1ef1bdd76ba74f 50,92-102
+apps/api/docs/alexandria.md
+  s_72504da98d9ee5::t_89233a45692e2c 31-41,64,104-107
+  s_72504da98d9ee5::t_ec2c3cc76ab5cf 1-30,42-63,65-103
+apps/api/src/routes/shared.ts
+  s_72504da98d9ee5::t_3efb122dea8fc3 40-42
+  s_72504da98d9ee5::t_a7311a5b6384fa 120
+apps/api/src/__tests__/routes/check-credits-middleware.test.ts
+  s_72504da98d9ee5::t_ec2c3cc76ab5cf 57,82,199-205,207-210
+apps/api/src/search/execute.test.ts
+  s_72504da98d9ee5::t_eb0a63aaf0d941 6,22-25,309-318,320-324,326-333,335-339,341-345,347-352,354
+apps/api/src/routes/exchange.ts
+  s_72504da98d9ee5::t_a7311a5b6384fa 47-51,70-78,143-157,181,183
+apps/api/src/services/exchange/settle.ts
+  s_72504da98d9ee5::t_f3c64969e566c2 8-12,18,26-35,47-59,68-69,74,77,79-88,91-118,121,123,130-173,175-178,180-200,202-247,264,267,277-284,293-294,296-315,317-337,342-343,346-351,354
+  s_72504da98d9ee5::t_a7311a5b6384fa 174
+apps/api/src/search/alexandria-source.ts
+  s_72504da98d9ee5::t_89233a45692e2c 1-246
+apps/api/src/services/exchange/flow.test.ts
+  s_72504da98d9ee5::t_eb0a63aaf0d941 10-12,24-26,43-44,71-74,92,103,122,125-127,132-133,135-136,140,143-148,154-157,159-169,171-172,177-186,188-194,196,200,205-220,222,225-227,230-238,241-283,285-291,293-295,298-304,307,314,317,321-323,326-340,343-345,347-356,360,363-365,369-388
+  s_72504da98d9ee5::t_ec2c3cc76ab5cf 128-131,149-153,173-174,176
+apps/api/src/routes/v2.ts
+  s_72504da98d9ee5::t_a7311a5b6384fa 190-192,194-198,200-204,249-251
+apps/api/src/search/execute.ts
+  s_72504da98d9ee5::t_f3c64969e566c2 1,112-141,143-144,201-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2244c14f3a4fe509793aad863ff86c9843d1a277",
+  "prompts": {},
+  "sessions": {
+    "s_72504da98d9ee5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c2c-dc83-7412-a139-5948d4045196",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

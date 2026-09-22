@@ -1,0 +1,23 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/request-metadata.ts
+  s_e50e17eacdac94::t_4e583e3490474c 5,12-18,22,25-29
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsync.test.ts
+  s_e50e17eacdac94::t_4e583e3490474c 170,200,204-234,1195
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDF.test.ts
+  s_e50e17eacdac94::t_4e583e3490474c 25,108-112,116-147,149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "09f9bbcf05ec8aebd64c21d491933544284f8840",
+  "prompts": {},
+  "sessions": {
+    "s_e50e17eacdac94": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0880b-27f3-7d60-b4b6-05740e26e7e3",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

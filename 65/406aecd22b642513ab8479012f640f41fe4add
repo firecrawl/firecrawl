@@ -1,0 +1,35 @@
+apps/api/.env.example
+  s_8ea5798f71e747::t_72ab3f8cbb2ed6 162-167
+apps/api/src/scraper/scrapeURL/engines/image/index.ts
+  s_8ea5798f71e747::t_32460708dc721f 155-160
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/request-metadata.test.ts
+  s_8ea5798f71e747::t_a17e006d07154f 1-54
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/request-metadata.ts
+  s_8ea5798f71e747::t_08f8c73d0eb21f 4-10,13,24-26,30,36
+apps/api/src/scraper/scrapeURL/engines/pdf/firePDF.ts
+  s_8ea5798f71e747::t_713d8f5acab826 11-14,55,146
+apps/js-sdk/firecrawl/src/v2/types.ts
+  s_8ea5798f71e747::t_6a5aaed6d563d9 191-200,262
+apps/python-sdk/firecrawl/types.py
+  s_8ea5798f71e747::t_96479b221e03b8 84,184
+apps/python-sdk/firecrawl/v2/client.py
+  s_8ea5798f71e747::t_4a03db5053bfbb 29,170,594,756,1277,1790
+apps/python-sdk/firecrawl/v2/types.py
+  s_8ea5798f71e747::t_f21e8b136473a3 889,2180-2188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "65406aecd22b642513ab8479012f640f41fe4add",
+  "prompts": {},
+  "sessions": {
+    "s_8ea5798f71e747": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b3d73404-7f91-4014-957e-2fd173d63c45",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

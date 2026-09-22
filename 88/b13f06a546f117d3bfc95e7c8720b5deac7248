@@ -1,0 +1,40 @@
+apps/api/src/lib/exchange.test.ts
+  s_72504da98d9ee5::t_6a089065428d18 104-166
+  s_72504da98d9ee5::t_524fed0d5977ea 167
+apps/api/src/scraper/scrapeURL/engines/exchange.test.ts
+  s_72504da98d9ee5::t_593500e98f7d1d 1-5,7-34,37-39,41-50,52,54,56
+apps/api/src/controllers/v2/types.ts
+  s_72504da98d9ee5::t_e77778ee569e20 1916
+apps/api/src/routes/exchange.ts
+  s_72504da98d9ee5::t_5199848ed02a28 19-21,23
+  s_72504da98d9ee5::t_6b4ac52f8c6d0a 86,88
+apps/api/src/lib/exchange-request.ts
+  s_72504da98d9ee5::t_a898a989d3c75b 19,31
+apps/api/src/__tests__/routes/exchange-access.routes.test.ts
+  s_72504da98d9ee5::t_0d2ba9f7ccfb84 1-44,46-80,82,84,86-95,97-100
+apps/api/src/lib/exchange.ts
+  s_72504da98d9ee5::t_a898a989d3c75b 25,42,122-130,169,171,180-184,186,188-189,208,210-217,220-221,226-227,231,236,239,246-247,250,288,290,514-520,522,727-728,740,744
+apps/api/src/routes/shared.ts
+  s_72504da98d9ee5::t_a898a989d3c75b 358
+apps/api/src/scraper/scrapeURL/engines/exchange.ts
+  s_72504da98d9ee5::t_e77778ee569e20 104-105,109
+  s_72504da98d9ee5::t_6a089065428d18 106-108
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_72504da98d9ee5::t_a898a989d3c75b 673
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "88b13f06a546f117d3bfc95e7c8720b5deac7248",
+  "prompts": {},
+  "sessions": {
+    "s_72504da98d9ee5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c2c-dc83-7412-a139-5948d4045196",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+apps/api/src/scraper/scrapeURL/engines/fire-engine/__tests__/pdfjsViewer.test.ts
+  ai_agent 355,360-361,365,367-370,384-391,395,398-400,404,408-409,413,420,427-428
+apps/api/src/scraper/scrapeURL/engines/fire-engine/pdfjsViewer.ts
+  ai_agent 32-37,269-277,404-420,443-444,446
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "22edfd901188016241fa7dc474cd37d216321d43",
+  "prompts": {}
+}

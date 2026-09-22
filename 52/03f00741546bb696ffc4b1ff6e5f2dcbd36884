@@ -1,0 +1,92 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_edcf855cfeef70::t_293e26120634a7 472,476,483,502-503,514
+  s_edcf855cfeef70::t_0b9691a424344a 704-724
+  s_edcf855cfeef70::t_138053e31ced26 22
+  s_edcf855cfeef70::t_c11fd5b04a4061 65,73-75
+  s_edcf855cfeef70::t_10bbbd39d3da49 189
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/async.ts
+  s_edcf855cfeef70::t_620d4e3c230503 190-194
+  s_edcf855cfeef70::t_fe4a744bc7323f 204
+  s_edcf855cfeef70::t_ada0de0c10cd0f 41
+  s_edcf855cfeef70::t_f2d37d8a3df143 95
+  s_edcf855cfeef70::t_0153a3758d76f4 59,70
+  s_edcf855cfeef70::t_db3b468c8c4d68 215,224
+  s_edcf855cfeef70::t_7a1637753e829d 129
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_edcf855cfeef70::t_aa057b358250b2 30-34
+  s_edcf855cfeef70::t_75ba7171f182d2 145
+  s_edcf855cfeef70::t_f89b3a6f03c8c8 569-570,572
+apps/api/src/controllers/v1/types.ts
+  s_edcf855cfeef70::t_a1601af8d72384 1011-1013
+  s_edcf855cfeef70::t_485b6b162b342c 7
+apps/api/src/controllers/v2/types.ts
+  s_edcf855cfeef70::t_fa8cc0a6926970 488-490
+  s_edcf855cfeef70::t_c4135dfc7ddb37 550-559
+  s_edcf855cfeef70::t_e6e01398d4c0a1 21
+  s_edcf855cfeef70::t_1bb13ee8cdde9b 1259-1261
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/indexPageMarkdown.test.ts
+  s_edcf855cfeef70::t_ebbd8fce3cd00c 36-44
+  s_edcf855cfeef70::t_d5b6107acadb2e 79-108
+apps/api/src/scraper/scrapeURL/engines/index/index.ts
+  s_edcf855cfeef70::t_5e2147e0eecd5f 40
+  s_edcf855cfeef70::t_2d0e89e42e3274 64-66,68
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsync.test.ts
+  s_edcf855cfeef70::t_f7c246de72b368 351-469
+apps/api/src/scraper/scrapeURL/engines/pdf/firePDF.ts
+  s_edcf855cfeef70::t_7a32606a0d710d 75
+  s_edcf855cfeef70::t_ef459fb35a941d 157,159
+  s_edcf855cfeef70::t_6cd91f944d2318 10
+  s_edcf855cfeef70::t_9dd7b93914234a 144-145
+  s_edcf855cfeef70::t_4bc266cb0c5c93 126
+  s_edcf855cfeef70::t_cc18b1e7205ad1 177,187
+  s_edcf855cfeef70::t_014000dd0d212e 49
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/cache.ts
+  s_edcf855cfeef70::t_9b28388a192e70 135,142,156-157,168-170,172-174
+  s_edcf855cfeef70::t_0dc66d80ceb1dd 75,78-93,95-124
+  s_edcf855cfeef70::t_312e12141d84fc 194,197-205,211,217-222,229-233
+  s_edcf855cfeef70::t_4e3ec0ae7ded18 55-70
+  s_edcf855cfeef70::t_108e0a3e01a088 15-18
+apps/api/src/scraper/scrapeURL/engines/pdf/types.ts
+  s_edcf855cfeef70::t_a71bb5e33f82bf 7-62,67-69
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDF.test.ts
+  s_edcf855cfeef70::t_0f1d96320585e7 136-213
+apps/api/src/lib/gcs-pdf-cache.ts
+  s_edcf855cfeef70::t_e40cb16f5e4dab 19-20
+  s_edcf855cfeef70::t_cd232916c6761d 2
+  s_edcf855cfeef70::t_3e2e4317ddd0a3 21
+apps/api/src/scraper/scrapeURL/index.ts
+  s_edcf855cfeef70::t_423b62d60cee1d 988
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFCache.test.ts
+  s_edcf855cfeef70::t_307248c3a61fde 397
+  s_edcf855cfeef70::t_4e7ff54154d000 229,233
+  s_edcf855cfeef70::t_9dadcf6b57c61b 116,120-122,127-131
+  s_edcf855cfeef70::t_8bc5bce047663b 38,41-46,48,51-99
+  s_edcf855cfeef70::t_410944efd21a9f 155,159
+  s_edcf855cfeef70::t_874404247e1396 180,184
+  s_edcf855cfeef70::t_94c991cb3a99f9 253
+  s_edcf855cfeef70::t_e7022031793d0c 277,294-382
+  s_edcf855cfeef70::t_cfdb384f97b5b5 436,457-497
+  s_edcf855cfeef70::t_75ffe66fd8a31f 201
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/schema.ts
+  s_edcf855cfeef70::t_363fc24e870796 50-96,102-103
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/submit.ts
+  s_edcf855cfeef70::t_5daa3177f9defd 64
+  s_edcf855cfeef70::t_aa112c281f971c 23
+  s_edcf855cfeef70::t_08ce2f61096ec1 94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5203f00741546bb696ffc4b1ff6e5f2dcbd36884",
+  "prompts": {},
+  "sessions": {
+    "s_edcf855cfeef70": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "529fbe9e-d6da-4900-98db-8eb4691701dc",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

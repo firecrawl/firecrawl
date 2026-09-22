@@ -1,0 +1,9 @@
+apps/api/src/routes/exchange.ts
+  ai_agent 145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8bf6ff53b14c734f1bc9f292d501de14458a5269",
+  "prompts": {}
+}

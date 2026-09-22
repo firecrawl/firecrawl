@@ -1,0 +1,42 @@
+apps/api/src/routes/exchange.ts
+  s_72504da98d9ee5::t_1552b1a2c4be9c 15,72-73
+apps/api/src/lib/exchange-provider-access.test.ts
+  s_72504da98d9ee5::t_1552b1a2c4be9c 111-114,116-127,129-132
+apps/api/src/search/alexandria-source.test.ts
+  s_72504da98d9ee5::t_cbdef5ae95a943 139-146,148-156
+.github/workflows/test-server.yml
+  s_72504da98d9ee5::t_134b8f965444f4 221-239
+apps/api/src/services/exchange/settle.ts
+  s_72504da98d9ee5::t_81f383aa963ad8 91,103,125,182,207-209,314
+apps/api/src/services/exchange/reconcile.ts
+  s_72504da98d9ee5::t_81f383aa963ad8 24,99,118
+apps/api/src/lib/exchange-provider-access.ts
+  s_72504da98d9ee5::t_1552b1a2c4be9c 108-109
+apps/api/src/search/alexandria-source.ts
+  s_72504da98d9ee5::t_cbdef5ae95a943 99
+apps/api/src/services/exchange/flow.test.ts
+  s_72504da98d9ee5::t_23cf61b08c993f 508-525,531-534
+  s_72504da98d9ee5::t_81f383aa963ad8 267-297,526-530
+apps/api/src/services/exchange/report.test.ts
+  s_72504da98d9ee5::t_23cf61b08c993f 27,111-123,125-126,133
+apps/api/src/services/exchange/report.ts
+  s_72504da98d9ee5::t_1552b1a2c4be9c 46-51,54-55
+apps/api/src/controllers/v2/__tests__/search-developer-ledger.test.ts
+  s_72504da98d9ee5::t_23cf61b08c993f 153-165,167-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "23adbee68bb026e2afbfb884647a07d5ea41c1e0",
+  "prompts": {},
+  "sessions": {
+    "s_72504da98d9ee5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c2c-dc83-7412-a139-5948d4045196",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

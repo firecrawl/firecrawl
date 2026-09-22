@@ -1,0 +1,40 @@
+apps/python-sdk/firecrawl/v2/methods/aio/scrape.py
+  s_72504da98d9ee5::t_4ab5bd3b2ba990 2,8-9,11,13,61-78
+apps/rust-sdk/src/search.rs
+  s_72504da98d9ee5::t_3c4361a56b31d8 8-9,21,23,82-84,190-192
+  s_72504da98d9ee5::t_54f035cada6e40 445,452-457,459-460
+apps/rust-sdk/src/tools.rs
+  s_72504da98d9ee5::t_3c4361a56b31d8 3-67
+  s_72504da98d9ee5::t_5830d22f7c2246 1-2
+apps/python-sdk/firecrawl/v2/methods/scrape.py
+  s_72504da98d9ee5::t_4ab5bd3b2ba990 6-8,14-16,19,96-172,307
+apps/python-sdk/firecrawl/v2/utils/error_handler.py
+  s_72504da98d9ee5::t_4ab5bd3b2ba990 12,16,108
+apps/js-sdk/firecrawl/src/v2/methods/tools.ts
+  s_72504da98d9ee5::t_4ab5bd3b2ba990 1-90,96-101,104-136
+  s_72504da98d9ee5::t_f451f35213583b 91-95,102-103
+apps/go-sdk/models.go
+  s_72504da98d9ee5::t_4ab5bd3b2ba990 607-662,883-921
+apps/go-sdk/tools.go
+  s_72504da98d9ee5::t_4ab5bd3b2ba990 1-102,106,108-110,112-114,116-118,120-122
+  s_72504da98d9ee5::t_3c4361a56b31d8 103-105,107,111,115,119
+apps/go-sdk/firecrawl.go
+  s_72504da98d9ee5::t_3c4361a56b31d8 535
+  s_72504da98d9ee5::t_4ab5bd3b2ba990 557-563
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "eba218fa9951920e96b0dac446e11bfd7abd5e97",
+  "prompts": {},
+  "sessions": {
+    "s_72504da98d9ee5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c2c-dc83-7412-a139-5948d4045196",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

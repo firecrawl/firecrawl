@@ -1,0 +1,23 @@
+apps/api/src/lib/keyless.ts
+  s_a0082ad573f520::t_c07a44d73c11af 90
+apps/api/src/controllers/v2/research-proxy.ts
+  s_a0082ad573f520::t_c07a44d73c11af 98,116
+apps/api/src/lib/research-upstream.ts
+  s_a0082ad573f520::t_c07a44d73c11af 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "440b9b34742ee2aad3fcaa60f6df4e514a229b02",
+  "prompts": {},
+  "sessions": {
+    "s_a0082ad573f520": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fa54cde5-7c72-4fbe-8ef1-97100d0a7e19",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

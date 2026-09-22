@@ -1,0 +1,45 @@
+apps/api/src/lib/image-formats.test.ts
+  s_21cf538fb36a61::t_2dde1c4150b195 64-66
+  s_21cf538fb36a61::t_d8cb9a6d2da112 1-63,67-82
+apps/api/src/lib/image-formats.ts
+  s_21cf538fb36a61::t_d8cb9a6d2da112 1-92
+apps/api/src/scraper/scrapeURL/engines/image/index.ts
+  s_21cf538fb36a61::t_d8cb9a6d2da112 1-9,11-28,36-92,97-108,112-131,133-204
+  s_21cf538fb36a61::t_4962577fec2552 10,29-35,93-96
+  s_21cf538fb36a61::t_2dde1c4150b195 109-111,132
+apps/api/src/controllers/v2/types.ts
+  s_21cf538fb36a61::t_4962577fec2552 1103-1104
+  s_21cf538fb36a61::t_5fc573fff4b6c3 907
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_21cf538fb36a61::t_4b66900b486bf2 791-793
+  s_21cf538fb36a61::t_5fc573fff4b6c3 12,62,98,108,134,205,232,255,277,299,321,343,365,387,409,431,453,475,497,519-541,563,585,808-810,812,821,834-836
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_21cf538fb36a61::t_5fc573fff4b6c3 10-14,24-26,106-110,113-132,161-170,246-264
+  s_21cf538fb36a61::t_2dde1c4150b195 111-112
+apps/api/src/controllers/v2/parse.ts
+  s_21cf538fb36a61::t_5fc573fff4b6c3 44-47,52,78-85,114-117,123,132-133
+apps/api/src/scraper/scrapeURL/index.ts
+  s_21cf538fb36a61::t_5fc573fff4b6c3 94-99,219-231,324-330,380-387,445,480-500,546,793-794,1381-1384
+  s_21cf538fb36a61::t_9b62fb2a1a5041 605
+apps/api/src/scraper/scrapeURL/error.ts
+  s_21cf538fb36a61::t_5fc573fff4b6c3 68,74,80,235
+apps/api/src/__tests__/snips/v2/scrape-image-ocr.test.ts
+  s_21cf538fb36a61::t_cc43f1cee34044 1-140,145-238
+  s_21cf538fb36a61::t_b76eeefd8a1b3a 141-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ef221e379db776d4d3b6034d98e2443c6994187b",
+  "prompts": {},
+  "sessions": {
+    "s_21cf538fb36a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f58f4301-49e1-4d20-a621-6398be6cfd71",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+apps/api/src/lib/pdf-format.test.ts
+  s_3e2c2809d59e8f::t_11ff6c38087c7b 1-72
+apps/api/src/lib/pdf-format.ts
+  s_3e2c2809d59e8f::t_539a8771df2eea 1-53
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_3e2c2809d59e8f::t_cb061a9768f100 61-67,178-183,224,299-300,315-337
+apps/api/src/scraper/scrapeURL/engines/pdf/pdfUtils.test.ts
+  s_3e2c2809d59e8f::t_da7f145a44d91a 1-40
+apps/api/src/scraper/scrapeURL/engines/pdf/pdfUtils.ts
+  s_3e2c2809d59e8f::t_058e6799741af3 1-3,5-10,12-35
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.test.ts
+  s_3e2c2809d59e8f::t_59c3eb14d406e4 47-59,340-409
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_3e2c2809d59e8f::t_ef242a200a130f 15,148-152,154,177,192-204,208,210-211,218-219,224-229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b4b7f9cec0701b3845dc57429d261772ce297d2c",
+  "prompts": {},
+  "sessions": {
+    "s_3e2c2809d59e8f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aad42ff9-001a-419b-b6f3-9c1fa535dfc3",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+apps/api/src/routes/exchange.ts
+  s_e8ed6d2017e64d::t_99a2eb706504b8 3-7,122-148,177-180
+apps/api/src/services/alexandria/retrieve.ts
+  s_e8ed6d2017e64d::t_99a2eb706504b8 185
+apps/api/src/services/alexandria/terms.ts
+  s_e8ed6d2017e64d::t_99a2eb706504b8 65-67,103-106,110-119,142-145
+  ai_agent 20
+  s_e8ed6d2017e64d::t_357fd37e641fe1 1-19,21-64,68-102,107-109,120-141,146-156
+apps/api/src/services/alexandria/access.ts
+  s_e8ed6d2017e64d::t_99a2eb706504b8 7,15-19,30,61,69,71-72,74-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "cd7d8d750b0e20eb0a2ec62f0f750d10af011725",
+  "prompts": {},
+  "sessions": {
+    "s_e8ed6d2017e64d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "41c739e5-4091-48f8-acca-eddc4c8789e9",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}

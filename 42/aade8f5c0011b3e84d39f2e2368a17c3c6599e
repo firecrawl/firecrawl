@@ -1,0 +1,29 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/request-metadata.ts
+  s_e50e17eacdac94::t_2190c81810cc94 1-16,18
+  s_e50e17eacdac94::t_25c409330f9be7 17
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/submit.ts
+  s_e50e17eacdac94::t_2190c81810cc94 5,135
+apps/api/src/scraper/scrapeURL/engines/pdf/firePDF.ts
+  s_e50e17eacdac94::t_2190c81810cc94 11,142
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDF.test.ts
+  s_e50e17eacdac94::t_50e33e048243f7 39-49,100,102,111-112
+  s_e50e17eacdac94::t_25c409330f9be7 50-99,101,103-110
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsync.test.ts
+  s_e50e17eacdac94::t_50e33e048243f7 167-171,178-201,1160-1162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "42aade8f5c0011b3e84d39f2e2368a17c3c6599e",
+  "prompts": {},
+  "sessions": {
+    "s_e50e17eacdac94": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0880b-27f3-7d60-b4b6-05740e26e7e3",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

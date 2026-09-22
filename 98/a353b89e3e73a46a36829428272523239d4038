@@ -1,0 +1,21 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/fireEngineHandoff.test.ts
+  s_b61e22f4e72bb7::t_5bf65fe614a267 78-83
+  s_b61e22f4e72bb7::t_301920ab0a6b60 344-347,352,363,366,374,387,398-409
+  s_b61e22f4e72bb7::t_481e106ef00332 308-313,323-324,328-329
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "98a353b89e3e73a46a36829428272523239d4038",
+  "prompts": {},
+  "sessions": {
+    "s_b61e22f4e72bb7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e286731e-1957-4aee-a601-8970746ce2fc",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

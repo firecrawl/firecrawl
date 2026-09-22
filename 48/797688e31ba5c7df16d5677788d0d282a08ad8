@@ -1,0 +1,44 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference-flow.ts
+  s_3a865ed3798c21::t_727a6963585e52 1-13,15-272
+  s_3a865ed3798c21::t_eec0bb630a82bd 14
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/submit.ts
+  s_3a865ed3798c21::t_d24d94adbf735d 7
+  s_3a865ed3798c21::t_93be12be4ef21a 113-122
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/lookup.ts
+  s_3a865ed3798c21::t_0e1b3103ae1c5b 36-74
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsync.test.ts
+  s_3a865ed3798c21::t_25e8b5ff2d6519 1482-1538
+  s_3a865ed3798c21::t_806a3b3e6bb666 1295-1479
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/utils.ts
+  s_3a865ed3798c21::t_1a722bb51801f6 2
+  s_3a865ed3798c21::t_031475ac087b39 61
+  s_3a865ed3798c21::t_306bda3dbf80cf 56-60,62-119
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsyncRouting.test.ts
+  s_3a865ed3798c21::t_da1673f553e921 155-172
+  s_3a865ed3798c21::t_c7443254f49765 8
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/async.ts
+  s_3a865ed3798c21::t_f353fda3b1ace9 151-167,169
+  s_3a865ed3798c21::t_21b7c75c968e47 186-196,206,210,219
+  s_3a865ed3798c21::t_59e61e43046db8 38-44,59-65
+  s_3a865ed3798c21::t_cea0880ce46e2a 272
+  s_3a865ed3798c21::t_1d9dda6d5adf03 197-205
+  s_3a865ed3798c21::t_cc1a75d28eef50 71-73
+  s_3a865ed3798c21::t_34cb8899a42cb6 19
+  s_3a865ed3798c21::t_843b56c6694282 181,208-209,211-218,220-234,237,239,244-245,258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "48797688e31ba5c7df16d5677788d0d282a08ad8",
+  "prompts": {},
+  "sessions": {
+    "s_3a865ed3798c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "505fa387-89c1-4431-8ded-ab301ee7e38b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

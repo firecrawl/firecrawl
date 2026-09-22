@@ -1,0 +1,21 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/cache.ts
+  s_94caeccd0aec7d::t_6ec5b8f2551726 19-24,26-31
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFCache.test.ts
+  s_94caeccd0aec7d::t_6ec5b8f2551726 145-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6361f7fee3ac4954460912db7515cb5e6e50b530",
+  "prompts": {},
+  "sessions": {
+    "s_94caeccd0aec7d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc962-36af-7d71-80af-9f63422991a4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

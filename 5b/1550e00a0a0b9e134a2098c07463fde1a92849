@@ -1,0 +1,21 @@
+apps/api/src/scraper/scrapeURL/engines/fire-engine/__tests__/pdfjsViewer.test.ts
+  s_6469a4ca1d4598::t_427f7a2af8013a 95,113,331-430
+apps/api/src/scraper/scrapeURL/engines/fire-engine/pdfjsViewer.ts
+  s_6469a4ca1d4598::t_427f7a2af8013a 20-21,202-237,321-338,348-367,372,377-382,386,394-409,471,483
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5b1550e00a0a0b9e134a2098c07463fde1a92849",
+  "prompts": {},
+  "sessions": {
+    "s_6469a4ca1d4598": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8800e181-647c-45c3-a3d9-ee28c3db4bc3",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

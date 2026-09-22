@@ -1,0 +1,19 @@
+apps/api/src/config.ts
+  s_40a68cf4d2ff3b::t_40ed0784dcfecd 228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "71d8078ba0240c6ff167a54000dee0808eeb3d01",
+  "prompts": {},
+  "sessions": {
+    "s_40a68cf4d2ff3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfd1431c-e8ec-4a00-b942-01e6cf47afbb",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

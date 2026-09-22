@@ -1,0 +1,122 @@
+apps/php-sdk/src/Models/ScrapeOptions.php
+  s_94caeccd0aec7d::t_8e4c3902fba456 14,51,110-116,200
+apps/ruby-sdk/lib/firecrawl/models/document.rb
+  s_94caeccd0aec7d::t_e3a5295b05d203 10,14
+apps/php-sdk/tests/Unit/ModelsTest.php
+  s_94caeccd0aec7d::t_8e4c3902fba456 7,117-141
+apps/go-sdk/version.go
+  s_94caeccd0aec7d::t_247f0be31c1037 12
+apps/dot-net-sdk/Firecrawl/FirecrawlClient.cs
+  s_94caeccd0aec7d::t_5ea64b0289058b 717
+apps/js-sdk/firecrawl/src/v2/types.ts
+  s_94caeccd0aec7d::t_c325ad836dd85a 190-197,207,625-626,652-654
+apps/go-sdk/options.go
+  s_94caeccd0aec7d::t_a14e46d46789c0 41-52
+  s_94caeccd0aec7d::t_247f0be31c1037 36-40,53-54
+apps/rust-sdk/Cargo.toml
+  s_94caeccd0aec7d::t_247f0be31c1037 3
+apps/java-sdk/src/main/java/com/firecrawl/models/Document.java
+  s_94caeccd0aec7d::t_a40bcca85344de 14,36
+apps/js-sdk/firecrawl/package.json
+  s_94caeccd0aec7d::t_c325ad836dd85a 3
+apps/java-sdk/src/test/java/com/firecrawl/PdfPageMarkdownTest.java
+  s_94caeccd0aec7d::t_d25dae045c7493 4
+  s_94caeccd0aec7d::t_a40bcca85344de 1-2,5-20,22-27,33-45
+  s_94caeccd0aec7d::t_a5a63c7fccbee6 3,21,28-32
+apps/java-sdk/build.gradle.kts
+  s_94caeccd0aec7d::t_a40bcca85344de 7
+apps/dot-net-sdk/Firecrawl.Tests/ModelsTests.cs
+  s_94caeccd0aec7d::t_5ea64b0289058b 51-69,150-153,167-170
+apps/php-sdk/src/Models/PdfParser.php
+  s_94caeccd0aec7d::t_8e4c3902fba456 1-33
+apps/php-sdk/src/Version.php
+  s_94caeccd0aec7d::t_8e4c3902fba456 9
+apps/ruby-sdk/lib/firecrawl/models/pdf_parser.rb
+  s_94caeccd0aec7d::t_e3a5295b05d203 1-25
+apps/elixir-sdk/test/firecrawl_test.exs
+  s_94caeccd0aec7d::t_3d0fec09538b57 321-323,332-333
+  s_94caeccd0aec7d::t_375480701baf3f 285-320,324-331,334-335
+apps/php-sdk/src/Models/ParseOptions.php
+  s_94caeccd0aec7d::t_8e4c3902fba456 34,59,131-137,219
+apps/go-sdk/models.go
+  s_94caeccd0aec7d::t_247f0be31c1037 8,30-33
+apps/rust-sdk/src/types.rs
+  s_94caeccd0aec7d::t_247f0be31c1037 648-657,665-666,1074-1095
+apps/java-sdk/src/main/java/com/firecrawl/client/FirecrawlClient.java
+  s_94caeccd0aec7d::t_a40bcca85344de 40
+apps/rust-sdk/src/scrape.rs
+  s_94caeccd0aec7d::t_247f0be31c1037 120,122-123,525-546
+apps/go-sdk/options_test.go
+  s_94caeccd0aec7d::t_247f0be31c1037 80-111
+apps/php-sdk/src/Models/Document.php
+  s_94caeccd0aec7d::t_8e4c3902fba456 13,48-53,85-88
+  s_94caeccd0aec7d::t_3031d8030d9721 40
+apps/dot-net-sdk/Firecrawl/Models/DocumentPage.cs
+  s_94caeccd0aec7d::t_5ea64b0289058b 1-15
+apps/elixir-sdk/mix.exs
+  s_94caeccd0aec7d::t_375480701baf3f 4
+apps/python-sdk/firecrawl/__tests__/unit/v2/utils/test_pdf_pages.py
+  s_94caeccd0aec7d::t_ec8484971cc746 1-17
+apps/ruby-sdk/lib/firecrawl/models/parse_options.rb
+  s_94caeccd0aec7d::t_e3a5295b05d203 38,81-83
+apps/elixir-sdk/lib/firecrawl.ex
+  s_94caeccd0aec7d::t_375480701baf3f 44
+apps/python-sdk/firecrawl/v2/utils/validation.py
+  s_94caeccd0aec7d::t_ec8484971cc746 793-794,801-802
+apps/js-sdk/firecrawl/src/__tests__/unit/v2/scrape.unit.test.ts
+  s_94caeccd0aec7d::t_6ee420b35b0cf8 6,9-10
+  s_94caeccd0aec7d::t_c325ad836dd85a 5,13-46
+apps/ruby-sdk/lib/firecrawl/models/document_page.rb
+  s_94caeccd0aec7d::t_e3a5295b05d203 1-15
+apps/ruby-sdk/lib/firecrawl/models/scrape_options.rb
+  s_94caeccd0aec7d::t_e3a5295b05d203 34,55-57
+apps/python-sdk/firecrawl/__init__.py
+  s_94caeccd0aec7d::t_ec8484971cc746 21
+apps/dot-net-sdk/Firecrawl/Firecrawl.csproj
+  s_94caeccd0aec7d::t_5ea64b0289058b 11
+apps/python-sdk/firecrawl/types.py
+  s_94caeccd0aec7d::t_8ff6bea751495c 24,110
+  s_94caeccd0aec7d::t_ec8484971cc746 14,100
+  s_94caeccd0aec7d::t_3cf4922df05889 179
+apps/elixir-sdk/generate.exs
+  s_94caeccd0aec7d::t_375480701baf3f 148
+apps/python-sdk/firecrawl/__tests__/unit/v2/utils/test_validation.py
+  s_94caeccd0aec7d::t_ec8484971cc746 392-412,421
+apps/ruby-sdk/lib/firecrawl.rb
+  s_94caeccd0aec7d::t_e3a5295b05d203 7,10
+apps/elixir-sdk/README.md
+  s_94caeccd0aec7d::t_375480701baf3f 88-89,92-93
+apps/java-sdk/src/main/java/com/firecrawl/models/PdfParser.java
+  s_94caeccd0aec7d::t_a40bcca85344de 1-44
+apps/java-sdk/src/main/java/com/firecrawl/models/DocumentPage.java
+  s_94caeccd0aec7d::t_a40bcca85344de 1-16
+apps/dot-net-sdk/Firecrawl/Models/PdfParser.cs
+  s_94caeccd0aec7d::t_5ea64b0289058b 1-24
+apps/python-sdk/firecrawl/v2/types.py
+  s_94caeccd0aec7d::t_8ff6bea751495c 13
+  s_94caeccd0aec7d::t_ec8484971cc746 439-447,452,1603,1608
+apps/dot-net-sdk/Firecrawl/Models/Document.cs
+  s_94caeccd0aec7d::t_5ea64b0289058b 13-15
+apps/php-sdk/src/Models/DocumentPage.php
+  s_94caeccd0aec7d::t_8e4c3902fba456 1-32
+apps/ruby-sdk/lib/firecrawl/version.rb
+  s_94caeccd0aec7d::t_e3a5295b05d203 4
+apps/ruby-sdk/test/firecrawl/client_test.rb
+  s_94caeccd0aec7d::t_d02b2e15de06b4 910-934
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "cd0207442cf013ca60145c8f81cad92fde5623f0",
+  "prompts": {},
+  "sessions": {
+    "s_94caeccd0aec7d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc962-36af-7d71-80af-9f63422991a4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

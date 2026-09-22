@@ -1,0 +1,31 @@
+apps/api/src/lib/image-ocr-gate.ts
+  s_21cf538fb36a61::t_2efc8fe6ec25a9 26-29
+apps/api/src/scraper/scrapeURL/engines/image/index.ts
+  s_21cf538fb36a61::t_2efc8fe6ec25a9 20-26,73-75
+apps/api/src/scraper/scrapeURL/index.ts
+  s_21cf538fb36a61::t_2efc8fe6ec25a9 158-163,335-336,526-529
+apps/api/src/__tests__/pdf-parser-options.test.ts
+  s_21cf538fb36a61::t_2d99e23a1ac131 70-78,82,98
+apps/api/src/__tests__/snips/v2/scrape-image-ocr.test.ts
+  s_21cf538fb36a61::t_1b6be877b7c313 482-483,526,528-532,537,591-592,597
+apps/api/src/controllers/v2/types.ts
+  s_21cf538fb36a61::t_4344a22e6f5aa5 526-531,546,562-564,567,2035,2158
+apps/api/src/scraper/scrapeURL/error.ts
+  s_21cf538fb36a61::t_2efc8fe6ec25a9 235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "978c314331498b47f13e022ffb7385d13763e7f1",
+  "prompts": {},
+  "sessions": {
+    "s_21cf538fb36a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f58f4301-49e1-4d20-a621-6398be6cfd71",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

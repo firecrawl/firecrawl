@@ -1,0 +1,47 @@
+apps/api/src/lib/entities.ts
+  s_bdd8db8464e028::t_479bafa7313262 164-173,179
+apps/api/src/search/execute.ts
+  s_bdd8db8464e028::t_479bafa7313262 24,110-119,137-154,158-161
+apps/api/src/controllers/v2/scrape-exchange.test.ts
+  s_bdd8db8464e028::t_aad319ad76a71e 1-145
+apps/api/src/controllers/v2/types.ts
+  s_bdd8db8464e028::t_479bafa7313262 1473-1504,1507-1515,2104-2107,2189,2196,2330-2331
+apps/api/src/lib/exchange-proxy.test.ts
+  s_bdd8db8464e028::t_faa18f1c8da8da 48,71
+  s_bdd8db8464e028::t_aad319ad76a71e 1-47,49-70,72-125
+apps/api/src/controllers/v2/search.ts
+  s_bdd8db8464e028::t_479bafa7313262 167-182
+apps/api/src/routes/exchange.ts
+  s_bdd8db8464e028::t_479bafa7313262 64-65
+  s_bdd8db8464e028::t_ced1be0394c48a 2-7,39,51-52,54-61,66,68-69,71,73-77
+apps/api/src/controllers/v2/scrape-exchange.ts
+  s_bdd8db8464e028::t_479bafa7313262 1-137
+apps/api/src/search/exchange-source.ts
+  s_bdd8db8464e028::t_479bafa7313262 1-70
+apps/api/src/lib/exchange-proxy.ts
+  s_bdd8db8464e028::t_ced1be0394c48a 1-3,5-10,12-108
+  s_bdd8db8464e028::t_faa18f1c8da8da 4,11
+apps/api/src/controllers/v2/scrape.ts
+  s_bdd8db8464e028::t_479bafa7313262 47,66-68
+apps/api/src/search/execute.test.ts
+  s_bdd8db8464e028::t_07d748fd9d6f8e 5,18-20,103-123,164-268
+apps/api/src/search/exchange-source.test.ts
+  s_bdd8db8464e028::t_aad319ad76a71e 1-58,60-121
+  s_bdd8db8464e028::t_75e1dd3683eba2 59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "90783b755c95f2792cb88cec7ae81aa89a9ab66b",
+  "prompts": {},
+  "sessions": {
+    "s_bdd8db8464e028": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eef7899e-994d-49a5-a6fc-5669090ac376",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+apps/api/src/controllers/v1/__tests__/activity.test.ts
+  s_8faf22d852794a::t_f4b0e5b34ba8e9 239-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4763f4b9a6b6b1c39cec813d1a3f9140ee40a34d",
+  "prompts": {},
+  "sessions": {
+    "s_8faf22d852794a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a6b8-22f2-7903-9cd1-38d24672b2f2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

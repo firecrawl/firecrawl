@@ -1,0 +1,60 @@
+apps/api/src/scraper/scrapeURL/engines/fire-engine/index.ts
+  s_3a865ed3798c21::t_7fd697fec6fabc 221-224
+  s_3a865ed3798c21::t_03568b70bb59c4 208
+apps/api/src/scraper/scrapeURL/engines/utils/downloadGcsFile.ts
+  s_3a865ed3798c21::t_948a0b8a6575d6 1,3-12,14-19,21-40,43-53,55,58-60,62-65,86-87,90,92-96,100-102
+  s_3a865ed3798c21::t_107ddb7dd54aea 13
+  s_3a865ed3798c21::t_4c874c10cd2362 41
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_3a865ed3798c21::t_f3765c48975c2b 9,19-20,29-42,44-53,61-63,163,175
+  s_3a865ed3798c21::t_5ad8230124d5de 155-159
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_3a865ed3798c21::t_a39bbb457d582a 13
+  s_3a865ed3798c21::t_6b33b66abdf3ff 15
+  s_3a865ed3798c21::t_ff3193272c5fbe 30
+  s_3a865ed3798c21::t_3e31b9d7fe998e 31
+  s_3a865ed3798c21::t_2e712254eb1d20 45
+  s_3a865ed3798c21::t_de36e6e60033d2 46-47,50
+  s_3a865ed3798c21::t_5571bb996c7eac 48
+  s_3a865ed3798c21::t_e845eeb6080b9e 49
+  s_3a865ed3798c21::t_6a946c2d9306e4 100-106
+  s_3a865ed3798c21::t_bf493b2aa8c560 154-157,165-166,181-183
+  s_3a865ed3798c21::t_e1731371df436b 158-164,167-168
+  s_3a865ed3798c21::t_4d40c36a20b6a0 421-428,434-439,442-448,452-455,457-468,470-482,489-494
+  s_3a865ed3798c21::t_bfa9b750280b22 429-433,441
+  s_3a865ed3798c21::t_1df215398f6ed1 440
+  s_3a865ed3798c21::t_e0eaf4ed6e0036 449-451,456
+  s_3a865ed3798c21::t_d800cf18eae021 483-488,495-524
+  s_3a865ed3798c21::t_ec099d3c961b87 525-535
+  s_3a865ed3798c21::t_444c15c1c2d38d 543,569
+  s_3a865ed3798c21::t_bc6cf5e625cd13 579-585,572
+  s_3a865ed3798c21::t_f70144dbcdc9ff 744
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference.ts
+  s_3a865ed3798c21::t_d2daf2e9fb8d8f 1-2,4-19,135-137,167-169,171-176,180-182,184-185
+  s_3a865ed3798c21::t_b14142ee20b0aa 3
+  s_3a865ed3798c21::t_cef5a88ec48001 20,111
+  s_3a865ed3798c21::t_3a4bf43745469a 21-23,25,29-32,34-47,49-68,70-71,78-110
+  s_3a865ed3798c21::t_2409664a7028cd 72-73
+  s_3a865ed3798c21::t_1bc63d3059cb07 112-134
+  s_3a865ed3798c21::t_ec71633038bcaf 138-139,148-149,151-153
+  s_3a865ed3798c21::t_3ffd18544c222b 140-147,150,170
+  s_3a865ed3798c21::t_27b0ca2f206bb1 154-159
+  s_3a865ed3798c21::t_0fc1c654c2fb93 160-166
+  s_3a865ed3798c21::t_e96e945bcf9e76 186-188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ba5931b5d4f54e192dbd59665d30e6a1065d6a59",
+  "prompts": {},
+  "sessions": {
+    "s_3a865ed3798c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "505fa387-89c1-4431-8ded-ab301ee7e38b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

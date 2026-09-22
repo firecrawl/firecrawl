@@ -1,0 +1,32 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/firePDF.ts
+  s_94caeccd0aec7d::t_6e6d6ec50a67a0 8-9,47,65-75,122,141,143-144,152-155,176-183
+  s_94caeccd0aec7d::t_70a5ae4e42f1f7 140,151,172
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDF.test.ts
+  s_94caeccd0aec7d::t_2a219f8ca8c025 1-37,80-90,92-133
+  s_94caeccd0aec7d::t_70a5ae4e42f1f7 91
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsync.test.ts
+  s_94caeccd0aec7d::t_3f6bd012e63f15 259-280,282-348
+  s_94caeccd0aec7d::t_70a5ae4e42f1f7 281
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/async.ts
+  s_94caeccd0aec7d::t_cb5fd07fa905a4 40,51-58,67,85-92,124,181-184,211
+  s_94caeccd0aec7d::t_70a5ae4e42f1f7 180,193,203
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/schema.ts
+  s_94caeccd0aec7d::t_cb5fd07fa905a4 54,56-57
+  s_94caeccd0aec7d::t_70a5ae4e42f1f7 53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "01ed63ccb3384426c47206d3d73974e12f7d3147",
+  "prompts": {},
+  "sessions": {
+    "s_94caeccd0aec7d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc962-36af-7d71-80af-9f63422991a4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

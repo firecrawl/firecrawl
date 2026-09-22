@@ -1,0 +1,73 @@
+apps/python-sdk/firecrawl/v2/types.py
+  s_be0bac20a0e33e::t_acb9ed07f994c6 1674-1678
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/indexPageMarkdown.test.ts
+  s_be0bac20a0e33e::t_a96f94761aff00 55-63
+  s_be0bac20a0e33e::t_b0a25de9978667 128-154
+apps/js-sdk/firecrawl/src/v2/types.ts
+  s_be0bac20a0e33e::t_5a552a80ddab71 202-209
+apps/api/src/controllers/v2/types.ts
+  s_be0bac20a0e33e::t_dbf691a50ee4ed 593-602
+  s_be0bac20a0e33e::t_cb659afbbf5ab8 500-506
+apps/api/src/scraper/scrapeURL/engines/pdf/firePDF.ts
+  s_be0bac20a0e33e::t_94ea014e053aef 50
+  s_be0bac20a0e33e::t_877795d6a6ea6e 66-70
+  s_be0bac20a0e33e::t_6aa67e74cb34d3 196
+  s_be0bac20a0e33e::t_fa61bf2cb45b26 82
+  s_be0bac20a0e33e::t_2d7a7eda60d663 134
+apps/api/src/scraper/scrapeURL/engines/index/index.ts
+  s_be0bac20a0e33e::t_fa4e8c61e68e90 43
+  s_be0bac20a0e33e::t_4fee104cd20daf 68,71
+apps/python-sdk/firecrawl/v2/utils/validation.py
+  s_be0bac20a0e33e::t_993c3638f771c4 798-799,806-807
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_be0bac20a0e33e::t_b3abf6ccd6ddb4 571,574
+  s_be0bac20a0e33e::t_be65577a95bade 685-690,693-694,697
+  s_be0bac20a0e33e::t_8d1d16c697eb79 33
+apps/api/src/__tests__/pdf-parser-options.test.ts
+  s_be0bac20a0e33e::t_47f941854b681c 4
+  s_be0bac20a0e33e::t_87f02c17290de2 27-47
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/cache.ts
+  s_be0bac20a0e33e::t_2d4af9ea857bda 152,160
+  s_be0bac20a0e33e::t_142fa878c76041 133-140
+  s_be0bac20a0e33e::t_b057fcb660caa8 83
+  s_be0bac20a0e33e::t_482b7d5fad59a7 213,223,232
+  s_be0bac20a0e33e::t_1c2f6d09535dd2 21-33
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/submit.ts
+  s_be0bac20a0e33e::t_d6c9e8891b1a54 97
+  s_be0bac20a0e33e::t_bd4c84d26941ff 24
+  s_be0bac20a0e33e::t_d2b944f5bc611d 66
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDF.test.ts
+  s_be0bac20a0e33e::t_7bc9181b0b2ffa 214-289
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/async.ts
+  s_be0bac20a0e33e::t_97263b29eb10d1 61,73
+  s_be0bac20a0e33e::t_1755f25b3bc6e2 99
+  s_be0bac20a0e33e::t_cc49bdc28b23c6 230
+  s_be0bac20a0e33e::t_bff1285dbbad19 134
+  s_be0bac20a0e33e::t_c2f6564237f793 42
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFCache.test.ts
+  s_be0bac20a0e33e::t_ad890a32347318 544-612
+  s_be0bac20a0e33e::t_3ccf9421ab5932 85-121
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_be0bac20a0e33e::t_c3c742f1947e90 82-87
+  s_be0bac20a0e33e::t_1577f7e093244e 485,489
+  s_be0bac20a0e33e::t_f8babed17c55f0 23
+  s_be0bac20a0e33e::t_327bb61cb34905 198-201
+  s_be0bac20a0e33e::t_d91e0790fcb96d 68
+  s_be0bac20a0e33e::t_29b0e9d6313614 517,529
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9fbe9c8e0a2299be91558fb6999d2ced9f4c4eff",
+  "prompts": {},
+  "sessions": {
+    "s_be0bac20a0e33e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c7153fd0-cfcf-470f-9900-f5ed01f7e689",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

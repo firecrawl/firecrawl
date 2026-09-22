@@ -1,0 +1,23 @@
+apps/api/native/Cargo.toml
+  s_46f8ad4c379098::t_4717d6ed52b05c 16
+apps/api/src/routes/exchange-blocklist.ts
+  s_46f8ad4c379098::t_d52714050ba517 6
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/schema.ts
+  s_46f8ad4c379098::t_d52714050ba517 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2cfa83ff27a3a15f5034e70d9e5cfa1ec91511ea",
+  "prompts": {},
+  "sessions": {
+    "s_46f8ad4c379098": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07f11-a41e-7a31-9a1d-34456e984857",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

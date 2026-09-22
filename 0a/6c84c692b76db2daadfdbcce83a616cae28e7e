@@ -1,0 +1,21 @@
+apps/api/src/__tests__/snips/v2/scrape-image-ocr.test.ts
+  s_21cf538fb36a61::t_debb670fad3aea 504,506-507,517,523-535
+apps/api/src/scraper/scrapeURL/engines/image/index.ts
+  s_21cf538fb36a61::t_debb670fad3aea 8,18-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0a6c84c692b76db2daadfdbcce83a616cae28e7e",
+  "prompts": {},
+  "sessions": {
+    "s_21cf538fb36a61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f58f4301-49e1-4d20-a621-6398be6cfd71",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

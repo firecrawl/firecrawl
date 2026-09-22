@@ -1,0 +1,43 @@
+apps/api/src/lib/exchange-proxy.test.ts
+  s_72504da98d9ee5::t_1c471a1cb4333f 205-209,211-217,219-225,227-228,230-231,233
+apps/api/src/controllers/v2/search.ts
+  s_72504da98d9ee5::t_ba3395658eec60 253-255,257
+apps/api/src/services/exchange/flow.test.ts
+  s_72504da98d9ee5::t_5e4dee2775c7fe 13-14,17,26,60-61,74-75,100-103,109,113,127,263-268,270
+  s_72504da98d9ee5::t_cc77f38af602a1 320-329,331-345,347-362,366-375,377-378,380-388,390-392,394-402,404-407,409-418,420-422,424-441,443-444,446-451,453-456,458-459
+apps/api/src/controllers/v2/scrape-exchange.test.ts
+  s_72504da98d9ee5::t_cc77f38af602a1 21,58,63-76,78,80-98,114-120,122-126
+apps/api/src/search/exchange-source.ts
+  s_72504da98d9ee5::t_ba3395658eec60 83
+apps/api/src/controllers/v2/scrape-exchange.ts
+  s_72504da98d9ee5::t_ba3395658eec60 12,15,53-60,112,127
+apps/api/src/services/exchange/settle.ts
+  s_72504da98d9ee5::t_ba3395658eec60 13-16,27,68-73,75-77,125,139,142-147,149-152,154,156-157,160
+apps/api/src/lib/exchange-proxy.ts
+  s_72504da98d9ee5::t_ba3395658eec60 122-123,125-131,135
+apps/api/src/routes/exchange.ts
+  s_72504da98d9ee5::t_2f26b678d3d31a 14,28-29,31-37,39-43,59-61,64-71,82,85,130-134
+apps/api/src/search/exchange-source.test.ts
+  s_72504da98d9ee5::t_1c471a1cb4333f 30-33,43,55,62-65,80-81,93,137-138,140-151,153-159,161-163
+apps/api/src/controllers/v2/__tests__/search-developer-ledger.test.ts
+  s_72504da98d9ee5::t_1c471a1cb4333f 65,138-150,152-156,158-163,165-166
+apps/api/src/controllers/v2/types.ts
+  s_72504da98d9ee5::t_ba3395658eec60 1566,1576,1581,1609
+  s_72504da98d9ee5::t_af136c695ad40d 1567-1575,1577-1580,1582-1608,1610-1612
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "465b340e475d9e2907c89173e211081bbf02634d",
+  "prompts": {},
+  "sessions": {
+    "s_72504da98d9ee5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c2c-dc83-7412-a139-5948d4045196",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+apps/api/src/controllers/v2/scrape.ts
+  ai_agent 215,218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "917057a21a18a415d7c84341e8935d9990e3805e",
+  "prompts": {}
+}

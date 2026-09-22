@@ -1,0 +1,25 @@
+apps/api/src/controllers/v2/scrape.ts
+  s_d5a66f40b1ab9a::t_8e3a39543fcc59 632-644,646-657,670,672
+  s_d5a66f40b1ab9a::t_8f2a346c2f1249 3
+apps/api/src/services/alexandria/README.md
+  s_d5a66f40b1ab9a::t_aaa10df7a3b127 29-34
+apps/api/src/controllers/v2/types.ts
+  s_d5a66f40b1ab9a::t_0d3fc3751d5ad4 1542-1544
+  s_d5a66f40b1ab9a::t_9334a4e3e60177 1119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4227f3709686cfcad1782ccf01856fa21836c651",
+  "prompts": {},
+  "sessions": {
+    "s_d5a66f40b1ab9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d98ef7f-6653-4344-b150-58a978da5f54",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}

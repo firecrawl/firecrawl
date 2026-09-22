@@ -1,0 +1,73 @@
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_94caeccd0aec7d::t_44fa1205be4474 30-33,570-571
+  s_94caeccd0aec7d::t_bb74261841d3a0 144
+apps/api/src/__tests__/snips/v2/parsers-pdf-page-markdown.test.ts
+  s_94caeccd0aec7d::t_fec7b64a0919a3 1-47
+apps/api/src/__tests__/snips/v2/parsers.test.ts
+  s_94caeccd0aec7d::t_901820421a7dd5 391-398
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/schema.ts
+  s_94caeccd0aec7d::t_cb5fd07fa905a4 54,56-57
+apps/python-sdk/firecrawl/v2/types.py
+  s_94caeccd0aec7d::t_47db6790c36e07 438-440,444-446,451,1607
+  s_94caeccd0aec7d::t_4976c3c4404dc2 441-443
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDF.test.ts
+  s_94caeccd0aec7d::t_2a219f8ca8c025 1-37,80-90,92-133
+apps/api/src/scraper/scrapeURL/engines/pdf/types.ts
+  s_94caeccd0aec7d::t_bb74261841d3a0 1-6,10
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/async.ts
+  s_94caeccd0aec7d::t_cb5fd07fa905a4 40,51-58,67,85-92,124,181-184,211
+apps/api/src/__tests__/snips/v2/parse.test.ts
+  s_94caeccd0aec7d::t_fec7b64a0919a3 609-620,622-645
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFCache.test.ts
+  s_94caeccd0aec7d::t_0b48e9bb7697a4 1-135
+apps/api/src/__tests__/snips/v2/types-validation.test.ts
+  s_94caeccd0aec7d::t_901820421a7dd5 438-455
+apps/api/src/controllers/v2/types.ts
+  s_94caeccd0aec7d::t_bb74261841d3a0 485-486,536-545,1241-1242
+apps/api/src/lib/gcs-pdf-cache.ts
+  s_94caeccd0aec7d::t_bb74261841d3a0 16-17
+apps/python-sdk/firecrawl/__tests__/unit/v2/utils/test_validation.py
+  s_94caeccd0aec7d::t_4976c3c4404dc2 392-411,420
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_94caeccd0aec7d::t_174837f95e48a8 21,63-69,181-182,386-387,448-471,651-658
+apps/api/src/controllers/v1/types.ts
+  s_94caeccd0aec7d::t_bb74261841d3a0 1008-1009
+apps/api/src/scraper/scrapeURL/engines/index/index.ts
+  s_94caeccd0aec7d::t_44fa1205be4474 39-42,62-65
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/cache.ts
+  s_94caeccd0aec7d::t_446f8f410cd8e3 13-16,19,22-38,47,50-54,65-69,95,99,101-105,110-121
+  s_94caeccd0aec7d::t_c7d1c491cbc3b5 70,81,123
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsync.test.ts
+  s_94caeccd0aec7d::t_3f6bd012e63f15 259-280,282-348
+apps/api/src/scraper/scrapeURL/engines/pdf/firePDF.ts
+  s_94caeccd0aec7d::t_6e6d6ec50a67a0 8-9,47,65-75,122,141,143-144,152-155,176-183
+apps/js-sdk/firecrawl/src/v2/types.ts
+  s_94caeccd0aec7d::t_47db6790c36e07 200-206,625
+apps/python-sdk/firecrawl/__tests__/unit/v2/utils/test_pdf_pages.py
+  s_94caeccd0aec7d::t_4976c3c4404dc2 1-21
+apps/python-sdk/firecrawl/v2/utils/validation.py
+  s_94caeccd0aec7d::t_4976c3c4404dc2 793-794,801-802
+apps/api/src/scraper/scrapeURL/index.ts
+  s_94caeccd0aec7d::t_bb74261841d3a0 980
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/submit.ts
+  s_94caeccd0aec7d::t_cb5fd07fa905a4 22,62,91
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/indexPageMarkdown.test.ts
+  s_94caeccd0aec7d::t_e5c503b197ce97 1-7,11-42
+  s_94caeccd0aec7d::t_ef619eca21a721 8-10,43-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "edfc6d7a0fdc36077e513e2d187d830a7602a1ac",
+  "prompts": {},
+  "sessions": {
+    "s_94caeccd0aec7d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc962-36af-7d71-80af-9f63422991a4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

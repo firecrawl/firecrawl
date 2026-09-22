@@ -1,0 +1,9 @@
+apps/api/src/services/logging/log_job.ts
+  ai_agent 831
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "271d0604102f1f3b9f19651d1f577902828ad4cc",
+  "prompts": {}
+}

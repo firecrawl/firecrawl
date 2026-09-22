@@ -1,0 +1,19 @@
+apps/api/src/controllers/v2/scrape-alexandria.ts
+  s_8faf22d852794a::t_3764599ef940ec 149,175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "107a76d4502110b1ae3fb8fdfa7db78902d4f125",
+  "prompts": {},
+  "sessions": {
+    "s_8faf22d852794a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a6b8-22f2-7903-9cd1-38d24672b2f2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
