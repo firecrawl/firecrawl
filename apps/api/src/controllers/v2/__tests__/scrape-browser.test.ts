@@ -75,7 +75,7 @@ describe("scrapeInteractController", () => {
     config.USE_DB_AUTHENTICATION = previousUseDbAuthentication;
   });
 
-  it("rejects self-hosted scrape interact before querying Supabase", async () => {
+  it("rejects scrape interact when database authentication is disabled", async () => {
     config.USE_DB_AUTHENTICATION = false;
 
     const req = {

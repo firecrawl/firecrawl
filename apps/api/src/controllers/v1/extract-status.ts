@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { JOB_ACCESS_TTL_MS } from "../../lib/job-access-store";
 import { config } from "../../config";
 import { RequestWithAuth } from "./types";
 import {
@@ -68,10 +69,9 @@ export async function extractStatusController(
   // Not in Redis: the job finished (or never existed). Bigtable holds the
   // terminal state for 24 hours; after that the job has expired.
   if (!extract) {
-    const state = await readExtractJobState(req.params.jobId).catch(error => {
-      logger.warn("Bigtable extract state read failed", { error });
-      return null;
-    });
+    // A failed Bigtable read is an outage, not a missing job: it propagates
+    // to the error handler rather than answering 404.
+    const state = await readExtractJobState(req.params.jobId);
     if (state) {
       return res.status(200).json({
         success: state.status === "completed",
@@ -81,7 +81,9 @@ export async function extractStatusController(
             : [],
         status: state.status,
         error: state.error,
-        expiresAt: new Date(access!.expiresAtMs).toISOString(),
+        expiresAt: new Date(
+          access?.expiresAtMs ?? state.completedAtMs + JOB_ACCESS_TTL_MS,
+        ).toISOString(),
         creditsUsed: state.creditsBilled,
       });
     }

@@ -27,6 +27,7 @@ import { PubSub, type PublishOptions, type Topic } from "@google-cloud/pubsub";
 import { pubsubLogPublishTotal } from "../../lib/pubsub-log-metrics";
 import { sanitizeLogData, sanitizeText } from "./sanitize";
 import {
+  JOB_ACCESS_TTL_MS,
   isApiJobKind,
   normalizeJobAccessTeamId,
   writeApiJobAccess,
@@ -45,7 +46,7 @@ import {
 configDotenv();
 
 const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
-const DEFAULT_JOB_ACCESS_TTL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_JOB_ACCESS_TTL_MS = JOB_ACCESS_TTL_MS;
 
 async function withLogSpan<T>(
   params: {

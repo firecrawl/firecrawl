@@ -47,7 +47,10 @@ export async function readRequestCreditsFromAnalytics(
       jobs: number | string;
     }>();
     const jobs = Number(row?.jobs ?? 0);
-    if (!Number.isFinite(jobs) || jobs === 0) {
+    if (!Number.isSafeInteger(jobs)) {
+      throw new Error(`Invalid analytics job count: ${row?.jobs}`);
+    }
+    if (jobs === 0) {
       setSpanAttributes(span, { "request_credits.outcome": "no_jobs" });
       return options.emptyAsZero ? 0 : null;
     }
