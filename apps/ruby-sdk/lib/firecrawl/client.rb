@@ -129,6 +129,10 @@ module Firecrawl
 
     # Search GitHub research content.
     #
+    # @deprecated Stops responding after 2026-11-03. Use the developer index at
+    #   GET or POST /v2/search/developer, which this SDK does not wrap yet, so
+    #   call it directly. It does not carry over the score breakdown or the
+    #   web fallback results.
     # @param query_text [String] GitHub query
     # @param options [Hash] optional query parameters
     # @return [Hash]

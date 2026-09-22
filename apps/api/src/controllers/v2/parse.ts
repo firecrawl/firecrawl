@@ -41,15 +41,29 @@ import {
   DOCUMENT_EXTENSIONS,
   documentExtensionFromContentType,
 } from "../../lib/document-formats";
+import {
+  IMAGE_EXTENSIONS,
+  imageExtensionFromContentType,
+} from "../../lib/image-formats";
+import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
-export const SUPPORTED_PARSE_FILE_TYPES =
+const BASE_PARSE_FILE_TYPES =
   ".html, .htm, .xhtml, .pdf, .docx, .doc, .docm, .odt, .ods, .odp, .rtf, .xlsx, .xls, .xlsm, .xlsb, .pptx, .ppt, .pptm, .epub, .csv";
+
+/** Image uploads are OCR'd through FirePDF, so they are only advertised as
+ * supported for teams with image OCR enabled (matching
+ * detectUploadedFileKind). */
+export function getSupportedParseFileTypes(imageOcrEnabled: boolean): string {
+  if (!imageOcrEnabled) return BASE_PARSE_FILE_TYPES;
+  return `${BASE_PARSE_FILE_TYPES}, ${[...IMAGE_EXTENSIONS].sort().join(", ")}`;
+}
 
 export function detectUploadedFileKind(
   filename: string,
   contentType?: string | null,
+  imageOcrEnabled = false,
 ): UploadedParseFileKind | null {
   const extension = path.extname(filename).toLowerCase();
   const normalizedType = contentType?.toLowerCase() ?? "";
@@ -69,6 +83,17 @@ export function detectUploadedFileKind(
 
   if (isDocument) {
     return "document";
+  }
+
+  // Image uploads are OCR'd through FirePDF for teams with the imageOcr
+  // flag; for everyone else they stay unsupported.
+  const isImage =
+    imageOcrEnabled &&
+    (IMAGE_EXTENSIONS.has(extension) ||
+      imageExtensionFromContentType(normalizedType) !== null);
+
+  if (isImage) {
+    return "image";
   }
 
   const isHtml =
@@ -99,18 +124,26 @@ function getSyntheticFilename(file: UploadedParseFile): string {
     return `${file.filename}.docx`;
   }
 
+  if (file.kind === "image") {
+    return `${file.filename}${imageExtensionFromContentType(file.contentType) ?? ".png"}`;
+  }
+
   return `${file.filename}.html`;
 }
 
 function getParseForceEngine(
   kind: UploadedParseFileKind,
-): "fetch" | "pdf" | "document" {
+): "fetch" | "pdf" | "document" | "image" {
   if (kind === "pdf") {
     return "pdf";
   }
 
   if (kind === "document") {
     return "document";
+  }
+
+  if (kind === "image") {
+    return "image";
   }
 
   return "fetch";
@@ -226,12 +259,21 @@ export function parseMultipartPayloadMiddleware(
     }
   }
 
-  const kind = detectUploadedFileKind(file.originalname || "", file.mimetype);
+  // authMiddleware runs before this middleware, so the team's flags are
+  // available to decide whether image uploads are accepted.
+  const imageOcrEnabled = isImageOcrEnabled(
+    (req as unknown as RequestWithAuth).acuc?.flags,
+  );
+  const kind = detectUploadedFileKind(
+    file.originalname || "",
+    file.mimetype,
+    imageOcrEnabled,
+  );
   if (!kind) {
     res.status(400).json({
       success: false,
       code: "UNSUPPORTED_FILE_TYPE",
-      error: `Unsupported upload type. Supported file extensions: ${SUPPORTED_PARSE_FILE_TYPES}`,
+      error: `Unsupported upload type. Supported file extensions: ${getSupportedParseFileTypes(imageOcrEnabled)}`,
     });
     return;
   }

@@ -6,7 +6,27 @@ import {
   savePdfResultToCache,
   type PdfCacheKeyInput,
 } from "../../../../../lib/gcs-pdf-cache";
+import { sniffImageContentTypeFromBase64 } from "../../../../../lib/image-formats";
 import { firePdfBlockPagesSchema } from "./schema";
+
+// Raster images ride the same cache as PDFs (the image engine posts their
+// bytes to the same FirePDF endpoint), but an EMPTY result for an image is
+// not worth remembering: it is cheap to recompute, and it usually records a
+// no-text gate decision or a transient failure rather than a property of the
+// bytes. Cached empties outlived a gate change once and kept legible images
+// blank for every later scrape of the same file, so they are neither served
+// nor written for images. PDFs keep their empty results — a blank scan is a
+// real, expensive-to-redo answer there. By-reference payloads (`{ key }`)
+// are always PDFs.
+function isRasterImagePayload(input: PdfCacheKeyInput): boolean {
+  return (
+    typeof input === "string" && sniffImageContentTypeFromBase64(input) !== null
+  );
+}
+
+function isEmptyMarkdown(markdown: string): boolean {
+  return markdown.trim().length === 0;
+}
 
 // Cache layout mirrors the sync `scrapePDFWithFirePDF` so async/sync share
 // entries. `fast` mode bypasses entirely (hard cost ceiling — must fail on
@@ -179,6 +199,23 @@ export async function tryGetCached(
           // never let a malformed/old artifact satisfy a cache lookup.
           continue;
         }
+        if (
+          isEmptyMarkdown(cached.markdown) &&
+          isRasterImagePayload(base64Content)
+        ) {
+          // See isRasterImagePayload: an empty image result is a stale
+          // verdict, not an answer. Re-run OCR and let the fresh result
+          // decide (an empty one is not written back either).
+          meta.logger.info(
+            "Ignoring cached empty FirePDF result for a raster image",
+            {
+              scrapeId: meta.id,
+              requestedMode: mode,
+              cacheVariant: variant ?? "base",
+            },
+          );
+          continue;
+        }
         meta.logger.info("Using cached FirePDF result", {
           scrapeId: meta.id,
           requestedMode: mode,
@@ -233,6 +270,9 @@ export async function maybeSaveResult(args: {
     pageMarkers,
   );
   if (!cacheable) return;
+  // See isRasterImagePayload: never remember an empty result for an image.
+  if (isEmptyMarkdown(result.markdown) && isRasterImagePayload(base64Content))
+    return;
 
   try {
     await savePdfResultToCache(base64Content, result, "firepdf", ownVariant);

@@ -41,7 +41,7 @@ import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { crawlGroup, resolveNewGroupBackend } from "../worker/nuq-router";
 import { getACUCTeam } from "../../controllers/auth";
 import { processEngpickerJob } from "../../lib/engpicker";
-import { logRequest } from "../logging/log_job";
+import { logRequest, shutdownPubSubLogging } from "../logging/log_job";
 import { startSiemLoggingConsumer } from "../siem-logging/worker";
 import { closeSiemLoggingTransport } from "../../lib/siem-logging/transport";
 
@@ -686,6 +686,7 @@ const workerFun = async (
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   logger.info("All jobs finished. Worker exiting!");
+  await shutdownPubSubLogging();
   process.exit(0);
 };
 

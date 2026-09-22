@@ -1505,6 +1505,8 @@ describe("Scrape tests", () => {
           expect(response.markdown).toContain("PDF Test File");
           expect(response.metadata.title).toContain("PDF Test Page");
           expect(response.metadata.numPages).toBe(1);
+          // A complete parse must not carry the partial-scrape warning.
+          expect(response.warning).toBeUndefined();
         },
         scrapeTimeout,
       );

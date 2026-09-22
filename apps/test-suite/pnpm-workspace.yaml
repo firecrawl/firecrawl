@@ -3,6 +3,7 @@ allowBuilds:
   protobufjs: true
   unix-dgram: true
 overrides:
+  "@faker-js/faker@<=10.4.0": ">=10.5.0 <11.0.0"
   fast-xml-builder: ">=1.1.6 <2.0.0"
   fast-xml-parser: "^5.7.0"
   "minimatch@<10.2.3": ">=10.2.3"

@@ -1346,6 +1346,9 @@ export type TeamFlags = {
   >;
   // routes the team's new queue work to the FoundationDB backend
   nuqFdb?: boolean;
+  // enables OCR of raster image URLs and uploads through FirePDF (see
+  // lib/image-ocr-gate.ts); rolled out per team
+  imageOcr?: boolean;
   /**
    * Per-endpoint rate-limit overrides, in requests per minute. A value here
    * replaces the computed limit for that mode, so the Autumn multiplier is

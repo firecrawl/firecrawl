@@ -672,6 +672,11 @@ func (c *Client) RelatedPapers(ctx context.Context, paperID, intent string, opts
 }
 
 // SearchGitHub searches GitHub research content.
+//
+// Deprecated: stops responding after 2026-11-03. Use the developer index at
+// GET or POST /v2/search/developer. This SDK does not wrap it yet, so call it
+// directly. It does not carry over the score breakdown or the web fallback
+// results.
 func (c *Client) SearchGitHub(ctx context.Context, query string, opts *SearchGitHubOptions) (*GitHubSearchResponse, error) {
 	if query == "" {
 		return nil, &FirecrawlError{Message: "query is required"}

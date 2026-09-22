@@ -229,6 +229,7 @@ async function performFireEngineScrape<
         fireEngineHandoffEligible(meta)
           ? largePdfLimitBytes(meta)
           : PDF_DOWNLOAD_MAX_FILE_SIZE,
+        meta.imageOcrEnabled,
       );
     }
 

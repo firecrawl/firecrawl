@@ -29,11 +29,13 @@ covering physics, mathematics and computer science.
 
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
+import warnings
 
 from ...utils import handle_response_error
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.get_version import get_version
 from ..research_docs import (
+    GITHUB_SEARCH_DEPRECATION_MSG,
     AIO_INSPECT_PAPER_DOC,
     AIO_READ_PAPER_DOC,
     AIO_RELATED_PAPERS_DOC,
@@ -152,6 +154,9 @@ async def search_github(
     *,
     k: Optional[int] = None,
 ) -> Dict[str, Any]:
+    # FutureWarning, not DeprecationWarning: the default filters hide the latter
+    # outside __main__, and every entry point here is several SDK frames deep.
+    warnings.warn(GITHUB_SEARCH_DEPRECATION_MSG, FutureWarning, stacklevel=2)
     return await _get(
         client,
         BASE + "/github" + _query({"query": query, "k": k, "origin": ORIGIN}),

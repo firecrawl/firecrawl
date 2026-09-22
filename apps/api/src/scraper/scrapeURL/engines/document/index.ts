@@ -36,10 +36,14 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
     meta.internalOptions.forceEngine === undefined &&
     meta.documentPrefetch == null
   ) {
-    // A cross-type handoff (a .docx URL serving a PDF) lands in
-    // pdfPrefetch: the file is in hand, just not for this engine — decline
-    // so the waterfall reaches the engine that can parse it.
-    if (meta.pdfPrefetch != null || !meta.featureFlags.has("document")) {
+    // A cross-type handoff (a .docx URL serving a PDF or an image) lands in
+    // pdfPrefetch/imagePrefetch: the file is in hand, just not for this
+    // engine — decline so the waterfall reaches the engine that can parse it.
+    if (
+      meta.pdfPrefetch != null ||
+      meta.imagePrefetch != null ||
+      !meta.featureFlags.has("document")
+    ) {
       throw new EngineUnsuccessfulError("document");
     }
     throw new DocumentAntibotError();

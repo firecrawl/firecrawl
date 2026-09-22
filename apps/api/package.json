@@ -87,6 +87,7 @@
     "@clickhouse/client": "^1.8.1",
     "@dqbd/tiktoken": "^1.0.22",
     "@google-cloud/bigtable": "^7.2.0",
+    "@google-cloud/pubsub": "^6.0.1",
     "@google-cloud/storage": "^7.21.0",
     "@mendable/firecrawl-rs": "workspace:*",
     "@openrouter/ai-sdk-provider": "^2.9.1",

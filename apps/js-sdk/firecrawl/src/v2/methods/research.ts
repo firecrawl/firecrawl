@@ -159,9 +159,9 @@ export class ResearchClient {
     appendParam(params, "query", options.query);
     appendParam(params, "k", options.k);
     try {
-      const res = await this.http.get<PaperMetadataResponse | ReadPaperResponse>(
-        withQuery(`${BASE}/papers/${encodeURIComponent(id)}`, params),
-      );
+      const res = await this.http.get<
+        PaperMetadataResponse | ReadPaperResponse
+      >(withQuery(`${BASE}/papers/${encodeURIComponent(id)}`, params));
       if (res.status !== 200) throwForBadResponse(res, "get paper");
       return res.data;
     } catch (err) {
@@ -191,10 +191,7 @@ export class ResearchClient {
     appendParam(params, "anchor", options.anchor);
     try {
       const res = await this.http.get<SimilarPapersResponse>(
-        withQuery(
-          `${BASE}/papers/${encodeURIComponent(id)}/similar`,
-          params,
-        ),
+        withQuery(`${BASE}/papers/${encodeURIComponent(id)}/similar`, params),
       );
       if (res.status !== 200) throwForBadResponse(res, "find similar papers");
       return res.data;
@@ -204,7 +201,16 @@ export class ResearchClient {
   }
 
   /**
-   * Search GitHub issue/PR history and repository readmes.
+   * Search the research index GitHub slice: issue/PR history and repository
+   * readmes.
+   *
+   * @deprecated Use `developerSearch()` on the client instead. This
+   * endpoint stops responding after 2026-11-03. The developer index searches
+   * GitHub issues, pull requests and readmes plus curated documentation
+   * sources, returns matched passages, and adds filters for repo, language,
+   * license and stars. It does not carry over the `scores` breakdown or the
+   * `resultType: "web"` fallback results. See
+   * https://docs.firecrawl.dev/features/developer.
    * @param query Search query.
    * @param options Optional `k`.
    */

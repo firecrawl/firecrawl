@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@faker-js/faker@<=10.4.0': '>=10.5.0 <11.0.0'
   fast-xml-builder: '>=1.1.6 <2.0.0'
   fast-xml-parser: ^5.7.0
   minimatch@<10.2.3: '>=10.2.3'
@@ -294,8 +295,8 @@ packages:
     resolution: {integrity: sha512-QLqTtVETsa2GN/YabSnSNhCfJP/cMaQRr3mYML9L76mH6JoNWERUpXzIko6uVmvvYS+QYvbmj8gQSu/RGwZEVQ==}
     engines: {node: '>=12.0.0'}
 
-  '@faker-js/faker@10.4.0':
-    resolution: {integrity: sha512-sDBWI3yLy8EcDzgobvJTWq1MJYzAkQdpjXuPukga9wXonhpMRvd1Izuo2Qgwey2OiEoRIBr35RMU9HJRoOHzpw==}
+  '@faker-js/faker@10.6.0':
+    resolution: {integrity: sha512-3RQHgEtvL1Frl/d1cSreo7qhJ3Gk1OdNUai/CtZ8G+wYeRQnJih3s9xJ9/kgYekPQRdwgh0HXRPqMlzWGwivIQ==}
     engines: {node: ^20.19.0 || ^22.13.0 || ^23.5.0 || >=24.0.0, npm: '>=10'}
 
   '@grpc/grpc-js@1.14.4':
@@ -2544,7 +2545,7 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@faker-js/faker@10.4.0': {}
+  '@faker-js/faker@10.6.0': {}
 
   '@grpc/grpc-js@1.14.4':
     dependencies:
@@ -3093,7 +3094,7 @@ snapshots:
 
   artillery-plugin-fake-data@1.24.0:
     dependencies:
-      '@faker-js/faker': 10.4.0
+      '@faker-js/faker': 10.6.0
 
   artillery-plugin-metrics-by-endpoint@1.27.0:
     dependencies:
