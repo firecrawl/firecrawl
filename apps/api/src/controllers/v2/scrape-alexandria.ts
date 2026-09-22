@@ -30,8 +30,8 @@ const providerScrapeSchema = z.strictObject({
     .number()
     .int()
     .positive()
-    .default(50000)
-    .transform(value => Math.min(value, 50000)),
+    .default(120_000)
+    .transform(value => Math.min(value, 120_000)),
   origin: z.string().default("api"),
   integration: z.string().nullable().optional(),
   __agentInterop: z
