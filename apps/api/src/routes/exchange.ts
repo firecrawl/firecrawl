@@ -152,11 +152,12 @@ async function providerTermsAcceptController(req: Request, res: Response) {
 
 export const exchangeRouter = express.Router();
 
-// Data routes take the plan's scrape-equivalent budget (base 10/min, multiplier
-// scaled). Dashboard and publisher routes below stay on the flat Labs limit.
+// Discover is a flat 10,000/min catalogue read. Retrieve and records/fetch take
+// the plan's scrape-equivalent budget (base 10/min, multiplier scaled).
+// Dashboard and publisher routes below stay on the flat Labs limit.
 exchangeRouter.get(
   "/discover{/*path}",
-  authMiddleware(RateLimiterMode.Exchange),
+  authMiddleware(RateLimiterMode.ExchangeDiscover),
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 

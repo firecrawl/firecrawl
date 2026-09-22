@@ -408,6 +408,15 @@ describe("getAutumnRateLimiter", () => {
     );
   });
 
+  it("gives exchange discover a flat 10000 regardless of multiplier", () => {
+    expect(
+      getAutumnRateLimiter(RateLimiterMode.ExchangeDiscover, 1).points,
+    ).toBe(10000);
+    expect(
+      getAutumnRateLimiter(RateLimiterMode.ExchangeDiscover, 1000).points,
+    ).toBe(10000);
+  });
+
   it("replaces the computed limit with the override for that mode", () => {
     const limiter = getAutumnRateLimiter(
       RateLimiterMode.Scrape,

@@ -39,6 +39,8 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
   developerSearch: 100,
   labs: 1000,
   exchange: 100,
+  // Catalogue reads only; no paid tool runs behind them.
+  exchangeDiscover: 10000,
 };
 
 /**
