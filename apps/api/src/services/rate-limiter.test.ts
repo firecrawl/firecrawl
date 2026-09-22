@@ -398,6 +398,16 @@ describe("getAutumnRateLimiter", () => {
     ).toBe(50);
   });
 
+  it("scales the exchange mode like scrape", () => {
+    expect(getAutumnRateLimiter(RateLimiterMode.Exchange, 1).points).toBe(10);
+    expect(getAutumnRateLimiter(RateLimiterMode.Exchange, 50).points).toBe(
+      getAutumnRateLimiter(RateLimiterMode.Scrape, 50).points,
+    );
+    expect(getAutumnRateLimiter(RateLimiterMode.Exchange).keyPrefix).toBe(
+      "exchange",
+    );
+  });
+
   it("replaces the computed limit with the override for that mode", () => {
     const limiter = getAutumnRateLimiter(
       RateLimiterMode.Scrape,
