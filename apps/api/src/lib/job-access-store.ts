@@ -5,8 +5,10 @@ import { keylessTeamUuid } from "./keyless";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
 
 /**
- * How long a job's access row, and with it the job's results and status,
- * stay readable: the documented `expiresAt` contract.
+ * Default lifetime of a job's access row, used by writes that do not pass
+ * their own `expiresAt` and as the fallback expiry where no row exists. It is
+ * not every row's actual expiry: deep research writes a shorter TTL, and
+ * crawl and batch scrape write a per-key `crawlTtlHours`.
  */
 export const JOB_ACCESS_TTL_MS = 24 * 60 * 60 * 1000;
 
