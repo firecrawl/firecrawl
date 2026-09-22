@@ -567,6 +567,7 @@ export async function scrapeStopInteractiveBrowserController(
     req.acuc?.api_key_id ?? null,
     {
       endpoint: "interact",
+      externalRequestId: externalRequestId(req),
       jobId: session.id,
       chargeId: `${session.id}:scrape-browser`,
     },

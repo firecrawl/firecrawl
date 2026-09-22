@@ -281,9 +281,12 @@ async function searchControllerInner(
 
     const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
     const agentRequestId = req.body.__agentInterop?.requestId ?? null;
-    const billing: BillingMetadata = req.body.__agentInterop
-      ? { endpoint: "agent" as const, jobId }
-      : { endpoint: "search" as const, jobId };
+    const billing: BillingMetadata = {
+      ...(req.body.__agentInterop
+        ? { endpoint: "agent" as const, jobId }
+        : { endpoint: "search" as const, jobId }),
+      externalRequestId: externalRequestId(req),
+    };
 
     logger = logger.child({
       version: "v2",

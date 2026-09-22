@@ -127,7 +127,11 @@ async function searchHelper(
     org_id,
     basePriority: 20,
   });
-  const billing = { endpoint: "search" as const, jobId };
+  const billing = {
+    endpoint: "search" as const,
+    jobId,
+    externalRequestId: externalRequestId(req),
+  };
 
   // filter out social media links
 

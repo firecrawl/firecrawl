@@ -61,6 +61,27 @@ beforeEach(() => {
 });
 
 describe("billTeam", () => {
+  it("carries the caller's external request id on the charge, and omits it without one", async () => {
+    await billTeam("team-1", "org-1", 3, 123, {
+      endpoint: "scrape",
+      jobId: "job-9",
+      chargeId: "job-9",
+      externalRequestId: "partner-op-42",
+    });
+    expect(trackCredits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ externalRequestId: "partner-op-42" }),
+    );
+
+    await billTeam("team-1", "org-1", 3, 123, {
+      endpoint: "scrape",
+      jobId: "job-9",
+      externalRequestId: null,
+    });
+    expect(trackCredits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ externalRequestId: undefined }),
+    );
+  });
+
   it("derives firebill idempotency keys from chargeId, and omits them without one", async () => {
     await billTeam("team-1", "org-1", 3, 123, {
       endpoint: "search",

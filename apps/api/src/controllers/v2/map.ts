@@ -288,6 +288,7 @@ export async function mapController(
     req.acuc?.api_key_id ?? null,
     {
       endpoint: "map",
+      externalRequestId: externalRequestId(req),
       jobId: mapId,
       chargeId: mapId,
     },

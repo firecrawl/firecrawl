@@ -312,6 +312,7 @@ export class AutumnService {
       value,
       properties,
       idempotencyKey,
+      externalRequestId,
     }: TrackParams,
     routed: boolean,
   ): Promise<boolean> {
@@ -328,6 +329,7 @@ export class AutumnService {
         value,
         properties,
         idempotencyKey,
+        externalRequestId,
       });
     }
 
@@ -772,6 +774,7 @@ export class AutumnService {
     properties,
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
+    externalRequestId,
     orgId,
   }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
@@ -790,6 +793,7 @@ export class AutumnService {
           value,
           properties,
           idempotencyKey,
+          externalRequestId,
         },
         routed,
       );
@@ -1025,6 +1029,7 @@ export class AutumnService {
     properties,
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
+    externalRequestId,
     orgId,
   }: TrackCreditsParams): Promise<void> {
     if (!autumnClient) return;
@@ -1043,6 +1048,7 @@ export class AutumnService {
           value: -value,
           properties: { ...properties, source: "autumn_refund" },
           idempotencyKey,
+          externalRequestId,
         },
         routed,
       );

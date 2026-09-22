@@ -109,7 +109,11 @@ async function scrapeHelper(
       internalOptions,
       origin: req.body.origin ?? defaultOrigin,
       integration: req.body.integration,
-      billing: { endpoint: "scrape", jobId },
+      billing: {
+        endpoint: "scrape",
+        jobId,
+        externalRequestId: externalRequestId(req),
+      },
       startTime: Date.now(),
       zeroDataRetention: false, // not supported on v0
       apiKeyId,
