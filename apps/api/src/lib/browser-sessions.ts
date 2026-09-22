@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
@@ -29,6 +29,7 @@ interface BrowserSessionRow {
   ttl_total: number;
   ttl_without_activity: number | null;
   credits_used: number | null;
+  profile_name?: string | null; // persistent profile the session was created with
   created_at: string; // ISO timestamp
   updated_at: string; // ISO timestamp
 }
@@ -280,6 +281,35 @@ export async function updateBrowserSessionCreditsUsed(
       creditsUsed,
     });
   }
+}
+
+// Records a successful save of a persistent profile. Throws on failure so the
+// browser service's webhook outbox retries the event.
+export async function upsertBrowserProfile(input: {
+  teamId: string;
+  name: string;
+  savedAt: string;
+  sizeBytes: number | undefined;
+}): Promise<void> {
+  const profiles = schema.browser_profiles;
+  await db
+    .insert(profiles)
+    .values({
+      team_id: input.teamId,
+      name: input.name,
+      saved_at: input.savedAt,
+      size_bytes: input.sizeBytes ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [profiles.team_id, profiles.name],
+      // Retried deliveries can arrive out of order, so an older save never
+      // replaces a newer one. A save that reported no size keeps the last
+      // known size rather than erasing it.
+      set: {
+        saved_at: sql`GREATEST(${profiles.saved_at}, excluded.saved_at)`,
+        size_bytes: sql`CASE WHEN excluded.saved_at >= ${profiles.saved_at} THEN COALESCE(excluded.size_bytes, ${profiles.size_bytes}) ELSE ${profiles.size_bytes} END`,
+      },
+    });
 }
 
 // ---------------------------------------------------------------------------

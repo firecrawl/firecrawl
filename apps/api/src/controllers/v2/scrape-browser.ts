@@ -1,4 +1,3 @@
-import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
 import { Response } from "express";
 import { z } from "zod";
@@ -73,6 +72,7 @@ import { getScrapeJobAccess } from "../../lib/operational-job-access";
 import { readScrapeJobState } from "../../lib/job-state-store";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
+import { browserProfileStorageId } from "../../lib/browser-profiles";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -712,12 +712,8 @@ async function createSessionForScrape(
 
   let persistentStorage: { uniqueId: string; write: boolean } | undefined;
   if (profile) {
-    const teamHash = createHash("sha256")
-      .update(req.auth.team_id)
-      .digest("hex")
-      .slice(0, 16);
     persistentStorage = {
-      uniqueId: `${teamHash}_${profile.name}`,
+      uniqueId: browserProfileStorageId(req.auth.team_id, profile.name),
       write: profile.saveChanges !== false,
     };
   }
@@ -920,6 +916,7 @@ async function createSessionForScrape(
       ttl_total: ttl,
       ttl_without_activity: activityTtl ?? null,
       credits_used: null,
+      profile_name: profile?.name ?? null,
     });
 
     invalidateActiveBrowserSessionCount(req.auth.team_id).catch(() => {});
