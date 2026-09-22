@@ -567,7 +567,9 @@ export async function scrapeStopInteractiveBrowserController(
     req.acuc?.api_key_id ?? null,
     {
       endpoint: "interact",
-      externalRequestId: externalRequestId(req),
+      // Not set from this request: the stop request is not the one that
+      // created the session, so its header would misattribute the charge.
+      // firebill finds the creating request's id by the session id.
       jobId: session.id,
       chargeId: `${session.id}:scrape-browser`,
     },

@@ -302,7 +302,11 @@ export async function crawlController(req: Request, res: Response) {
             org_id: orgId,
             basePriority: 21,
           });
-          const billing = { endpoint: "crawl" as const, jobId: id };
+          const billing = {
+            endpoint: "crawl" as const,
+            jobId: id,
+            externalRequestId: externalRequestId(req),
+          };
           const jobs = urls.map(url => {
             const uuid = uuidv7();
             return {

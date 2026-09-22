@@ -218,6 +218,9 @@ async function billScrapeJob(
               // requeue, which re-runs the job under the same id: with this key,
               // the re-run dedupes instead of double-billing (firebill route).
               idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
+              // The caller's own operation id, carried on the charge so
+              // firebill reports it without a request lookup.
+              externalRequestId: billing.externalRequestId ?? undefined,
             })
           : false;
         // On the firebill route the ledger enqueue must be idempotent by the
@@ -321,6 +324,7 @@ async function billScrapeJob(
               // Distinct from the track key: a refund is its own charge event
               // (same key would 409 as a duplicate of the track and be dropped).
               idempotencyKey: `fc:refund:${billing.endpoint}:${job.id}`,
+              externalRequestId: billing.externalRequestId ?? undefined,
             });
           }
         }

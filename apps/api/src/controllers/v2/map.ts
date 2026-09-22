@@ -148,6 +148,7 @@ export async function mapController(
           // Suffixed so this early-return path can never collide with the main
           // map charge below, even if both ever billed the same mapId.
           chargeId: `${mapId}:avgrab`,
+          externalRequestId: externalRequestId(req),
         },
       ).catch(error => {
         logger.error(

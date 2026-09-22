@@ -95,7 +95,12 @@ async function searchHelper(
       org_id,
       searchCredits,
       api_key_id,
-      { endpoint: "search", jobId, chargeId: jobId },
+      {
+        endpoint: "search",
+        jobId,
+        chargeId: jobId,
+        externalRequestId: externalRequestId(req),
+      },
       logger,
     ).catch(error => {
       logger.error(

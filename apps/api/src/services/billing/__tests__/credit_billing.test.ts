@@ -129,10 +129,14 @@ describe("billTeam", () => {
       endpoint: "map",
       jobId: "map-1",
       chargeId: "map-1",
+      externalRequestId: "partner-op-42",
     });
 
     expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ idempotencyKey: "fc:refund:map:map-1" }),
+      expect.objectContaining({
+        idempotencyKey: "fc:refund:map:map-1",
+        externalRequestId: "partner-op-42",
+      }),
     );
   });
 
