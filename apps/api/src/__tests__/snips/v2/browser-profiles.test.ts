@@ -150,6 +150,34 @@ describeIf(TEST_PRODUCTION && !!WEBHOOK_SECRET)(
       expect(row!.size_bytes).toBe(9000);
     });
 
+    it("keeps the last known size when a newer save reports none", async () => {
+      const name = newProfileName();
+      const profileId = browserProfileStorageId(identity.teamId, name);
+      const first = await createSession(name);
+      const second = await createSession(name);
+
+      expect(
+        (
+          await send(
+            profileSaved(first, profileId, "2026-09-22T11:00:00.000Z", 1000),
+          )
+        ).statusCode,
+      ).toBe(200);
+      expect(
+        (
+          await send(
+            profileSaved(second, profileId, "2026-09-22T12:00:00.000Z"),
+          )
+        ).statusCode,
+      ).toBe(200);
+
+      const row = await profileRow(name);
+      expect(new Date(row!.saved_at).toISOString()).toBe(
+        "2026-09-22T12:00:00.000Z",
+      );
+      expect(row!.size_bytes).toBe(1000);
+    });
+
     it("rejects a save whose profile id does not match the session", async () => {
       const name = newProfileName();
       const browserId = await createSession(name);

@@ -303,10 +303,11 @@ export async function upsertBrowserProfile(input: {
     .onConflictDoUpdate({
       target: [profiles.team_id, profiles.name],
       // Retried deliveries can arrive out of order, so an older save never
-      // replaces a newer one.
+      // replaces a newer one. A save that reported no size keeps the last
+      // known size rather than erasing it.
       set: {
         saved_at: sql`GREATEST(${profiles.saved_at}, excluded.saved_at)`,
-        size_bytes: sql`CASE WHEN excluded.saved_at >= ${profiles.saved_at} THEN excluded.size_bytes ELSE ${profiles.size_bytes} END`,
+        size_bytes: sql`CASE WHEN excluded.saved_at >= ${profiles.saved_at} THEN COALESCE(excluded.size_bytes, ${profiles.size_bytes}) ELSE ${profiles.size_bytes} END`,
       },
     });
 }
