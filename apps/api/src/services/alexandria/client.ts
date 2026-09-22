@@ -4,8 +4,8 @@ import type { ExchangeResponse } from "./contracts";
 
 const dispatcher = new Agent({
   connectTimeout: 10000,
-  headersTimeout: 50000,
-  bodyTimeout: 50000,
+  headersTimeout: 120_000,
+  bodyTimeout: 120_000,
 });
 
 export async function exchangeRequest(input: {
