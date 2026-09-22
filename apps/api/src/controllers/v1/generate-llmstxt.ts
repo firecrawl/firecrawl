@@ -57,6 +57,7 @@ export async function generateLLMsTextController(
     request: req.body,
     teamId: req.auth.team_id,
     apiKeyId: req.acuc?.api_key_id ?? null,
+    externalRequestId: externalRequestId(req),
     generationId,
   };
 

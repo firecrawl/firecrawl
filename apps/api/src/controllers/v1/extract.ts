@@ -71,6 +71,7 @@ async function oldExtract(
       request,
       teamId: req.auth.team_id,
       apiKeyId: req.acuc?.api_key_id ?? null,
+      externalRequestId: externalRequestId(req),
     });
 
     if (sender) {

@@ -220,6 +220,7 @@ export async function extractController(
   await addExtractJobToQueue(extractId, {
     ...jobData,
     apiKeyId: req.acuc?.api_key_id ?? undefined,
+    externalRequestId: externalRequestId(req),
   });
 
   return res.status(200).json({
