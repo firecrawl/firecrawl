@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
 import { Request, Response } from "express";
 import { z } from "zod";
@@ -15,7 +16,6 @@ import {
   invalidateActiveBrowserSessionCount,
   didBrowserSessionUsePrompt,
   clearBrowserSessionPromptFlag,
-  upsertBrowserProfile,
 } from "../../lib/browser-sessions";
 import {
   getCombinedTeamActiveCount,
@@ -38,11 +38,6 @@ import { autumnService } from "../../services/autumn/autumn.service";
 import { orgIdForTeam } from "../../lib/team-org";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { recordRequestCredits } from "../../lib/request-credits-store";
-import {
-  browserProfileStorageId,
-  profileSavedEventSchema,
-  resolveProfileSave,
-} from "../../lib/browser-profiles";
 import {
   getSafeMode,
   SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
@@ -337,8 +332,12 @@ export async function browserCreateController(
   // Build persistentStorage from profile if provided
   let persistentStorage: { uniqueId: string; write: boolean } | undefined;
   if (profile) {
+    const teamHash = createHash("sha256")
+      .update(req.auth.team_id)
+      .digest("hex")
+      .slice(0, 16);
     persistentStorage = {
-      uniqueId: browserProfileStorageId(req.auth.team_id, profile.name),
+      uniqueId: `${teamHash}_${profile.name}`,
       write: profile.saveChanges !== false,
     };
   }
@@ -426,7 +425,6 @@ export async function browserCreateController(
       ttl_total: ttl,
       ttl_without_activity: activityTtl ?? null,
       credits_used: null,
-      profile_name: profile?.name ?? null,
     });
   } catch (err) {
     // If we can't persist, tear down the browser session
@@ -794,66 +792,6 @@ export async function browserListController(
   });
 }
 
-// Records that a session's persistent profile now has saved state, so the
-// profile can be listed. Retried by the browser service on any non-2xx.
-async function handleProfileSavedWebhook(
-  req: Request,
-  res: Response,
-  logger: typeof _logger,
-) {
-  const parsed = profileSavedEventSchema.safeParse(req.body);
-  if (!parsed.success) {
-    logger.warn("Malformed profile.saved webhook", { error: parsed.error });
-    return res.status(400).json({ error: "Invalid profile.saved event" });
-  }
-  const event = parsed.data;
-  const browserId = event.sessionId;
-
-  const session = await getBrowserSessionByBrowserId(browserId);
-  if (!session) {
-    logger.warn("No session found for profile.saved webhook", {
-      browserId,
-      eventId: event.eventId,
-    });
-    return res.status(200).json({ ok: true });
-  }
-
-  const resolution = resolveProfileSave(session, event);
-  if (resolution.action === "ignore") {
-    logger.info("Not recording saved profile", {
-      browserId,
-      sessionId: session.id,
-      reason: resolution.reason,
-    });
-    return res.status(200).json({ ok: true });
-  }
-  if (resolution.action === "reject") {
-    logger.error("profile.saved webhook does not match the session's profile", {
-      browserId,
-      sessionId: session.id,
-      teamId: session.team_id,
-      profileId: event.profileId,
-    });
-    return res
-      .status(409)
-      .json({ error: "Profile does not match the session" });
-  }
-
-  await upsertBrowserProfile({
-    teamId: resolution.teamId,
-    name: resolution.name,
-    savedAt: event.savedAt,
-    sizeBytes: event.sizeBytes,
-  });
-  logger.info("Recorded saved browser profile", {
-    browserId,
-    sessionId: session.id,
-    teamId: resolution.teamId,
-    eventId: event.eventId,
-  });
-  return res.status(200).json({ ok: true });
-}
-
 export async function browserWebhookDestroyedController(
   req: Request,
   res: Response,
@@ -871,12 +809,6 @@ export async function browserWebhookDestroyedController(
     secret !== config.BROWSER_SERVICE_WEBHOOK_SECRET
   ) {
     return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  // The browser service posts every outbox event here. session.ended (the
-  // original event, sent without a check on eventType) bills below.
-  if (req.body?.eventType === "profile.saved") {
-    return handleProfileSavedWebhook(req, res, logger);
   }
 
   const { sessionId, sessionDurationMs } = req.body as {
