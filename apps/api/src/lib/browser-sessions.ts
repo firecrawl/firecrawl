@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { deleteKey, getValue, setValue } from "../services/redis";
+import { redisRateLimitClient } from "../services/rate-limiter";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
 import { browserProfileDeletedKey } from "./browser-profiles";
@@ -319,14 +320,27 @@ export async function upsertBrowserProfile(input: {
 // service's retries (at most ~10 minutes).
 const PROFILE_DELETED_TTL_SECONDS = 3600;
 
+// Keeps the newest deletion time: responses to concurrent deletes can land
+// out of order, and an older time must not shrink the window. Timestamps are
+// normalized with toISOString, which compares in time order.
+const SET_IF_NEWER_LUA = `
+  local current = redis.call('GET', KEYS[1])
+  if (not current) or current < ARGV[1] then
+    redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+  end
+  return 1
+`;
+
 export async function recordBrowserProfileDeleted(
   storageId: string,
   deletedAt: string,
 ): Promise<void> {
-  await setValue(
+  await redisRateLimitClient.eval(
+    SET_IF_NEWER_LUA,
+    1,
     browserProfileDeletedKey(storageId),
-    deletedAt,
-    PROFILE_DELETED_TTL_SECONDS,
+    new Date(deletedAt).toISOString(),
+    String(PROFILE_DELETED_TTL_SECONDS),
   );
 }
 

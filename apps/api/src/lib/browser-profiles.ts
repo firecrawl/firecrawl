@@ -68,9 +68,13 @@ export function resolveProfileSave(
     return { action: "reject", reason: "profile_mismatch" };
   }
   // A save that finished before the profile was deleted (its event delivered
-  // late) must not bring the listing back; a save after the delete does.
-  if (deletedAt && Date.parse(event.savedAt) <= Date.parse(deletedAt)) {
-    return { action: "ignore", reason: "deleted" };
+  // late) must not bring the listing back; a save after the delete does. An
+  // unreadable deletion time fails closed.
+  if (deletedAt) {
+    const deletedMs = Date.parse(deletedAt);
+    if (Number.isNaN(deletedMs) || Date.parse(event.savedAt) <= deletedMs) {
+      return { action: "ignore", reason: "deleted" };
+    }
   }
   return {
     action: "upsert",

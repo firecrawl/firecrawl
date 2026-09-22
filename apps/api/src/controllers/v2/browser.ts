@@ -581,6 +581,7 @@ export async function browserExecuteController(
 }
 
 const profileNameSchema = z.string().min(1).max(128);
+const deletedAtSchema = z.iso.datetime({ offset: true });
 
 // DELETE /v2/browser/profiles/:name
 // Deletes a persistent profile's saved state and its listing. Deleting a
@@ -620,18 +621,12 @@ export async function browserProfileDeleteController(
   });
 
   const storageId = browserProfileStorageId(req.auth.team_id, name);
-  let deletedAt: string;
+  let result: { deletedAt?: unknown } | undefined;
   try {
-    const result = await browserServiceRequest<{ deletedAt?: unknown }>(
+    result = await browserServiceRequest<{ deletedAt?: unknown }>(
       "DELETE",
       `/profiles/${encodeURIComponent(storageId)}`,
     );
-    // The browser service stamps profile.saved events with its own clock, so
-    // compare them against its deletion time.
-    deletedAt =
-      typeof result?.deletedAt === "string"
-        ? result.deletedAt
-        : new Date().toISOString();
   } catch (err) {
     if (err instanceof BrowserServiceError && err.status === 409) {
       return res.status(409).json({
@@ -648,6 +643,21 @@ export async function browserProfileDeleteController(
       error: "Failed to delete profile.",
     });
   }
+
+  // profile.saved events carry the browser service's clock, so the tombstone
+  // must too; without its deletion time the tombstone could not be compared,
+  // so fail and let the (idempotent) delete be retried.
+  const parsedDeletedAt = deletedAtSchema.safeParse(result?.deletedAt);
+  if (!parsedDeletedAt.success) {
+    logger.error("Browser service profile delete returned no valid deletedAt", {
+      deletedAt: result?.deletedAt,
+    });
+    return res.status(502).json({
+      success: false,
+      error: "Failed to delete profile.",
+    });
+  }
+  const deletedAt = parsedDeletedAt.data;
 
   // Tombstone before removing the row: a late profile.saved for an earlier
   // save that lands before this upserts a row the delete below removes, and

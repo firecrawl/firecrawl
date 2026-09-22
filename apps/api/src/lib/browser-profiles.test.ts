@@ -126,6 +126,12 @@ describe("resolveProfileSave", () => {
     }
   });
 
+  it("fails closed on an unreadable deletion time", () => {
+    expect(
+      resolveProfileSave(session, { profileId, savedAt }, "not-a-time"),
+    ).toEqual({ action: "ignore", reason: "deleted" });
+  });
+
   it("records a save made after the profile was deleted", () => {
     expect(
       resolveProfileSave(
