@@ -15,20 +15,33 @@ import {
   firePdfCacheEventsTotal,
   firePdfCacheRefusedWritesTotal,
 } from "../fire-pdf/metrics";
+import crypto from "crypto";
+import { config } from "../../../../../config";
+import { robustFetch } from "../../../lib/fetch";
 
 vi.mock("../fire-pdf/refresh-budget", () => ({
   consumeRefresh: vi.fn(async () => "allowed"),
   refreshDecisionFor: vi.fn(() => undefined),
 }));
 
-vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
-  pdfCacheConfigured: vi.fn(() => true),
-  getPdfResultFromCache: vi.fn(),
-  savePdfResultToCache: vi.fn(),
-  resolvePdfCacheKey: vi.fn((input: string | { key: string }) =>
-    typeof input === "string" ? `key-of-${input}` : input.key,
-  ),
+vi.mock("../../../lib/fetch", () => ({ robustFetch: vi.fn() }));
+vi.mock("../markdownToHtml", () => ({
+  safeMarkdownToHtml: vi.fn(async (markdown: string) => `<p>${markdown}</p>`),
 }));
+
+vi.mock("../../../../../lib/gcs-pdf-cache", async () => {
+  const { createHash } = await import("crypto");
+  return {
+    pdfCacheConfigured: vi.fn(() => true),
+    getPdfResultFromCache: vi.fn(),
+    savePdfResultToCache: vi.fn(),
+    resolvePdfCacheKey: vi.fn((input: string | { key: string }) =>
+      typeof input === "string" ? `key-of-${input}` : input.key,
+    ),
+    createPdfCacheKey: (input: string) =>
+      createHash("sha256").update(input).digest("hex"),
+  };
+});
 
 const getCached = vi.mocked(getPdfResultFromCache);
 const saveCached = vi.mocked(savePdfResultToCache);
@@ -1346,5 +1359,164 @@ describe("FirePDF cache counters", () => {
       event: "bypass_refresh_denied",
       variant: "base",
     });
+  });
+});
+
+describe("FirePDF cache through the lookup service", () => {
+  const fetchMock = vi.mocked(robustFetch);
+  const base64 = Buffer.from("%PDF-1.7 service test").toString("base64");
+  const rawKey = `raw-${crypto
+    .createHash("sha256")
+    .update(Buffer.from(base64, "base64"))
+    .digest("hex")}`;
+  const inlineKey = crypto.createHash("sha256").update(base64).digest("hex");
+
+  function serviceMeta(parsers?: unknown[]) {
+    return {
+      id: "svc-test",
+      logger: { info: vi.fn(), warn: vi.fn() },
+      internalOptions: { zeroDataRetention: false, teamId: "team-1" },
+      mock: null,
+      abort: { asSignal: () => new AbortController().signal },
+      ...(parsers ? { options: { parsers } } : {}),
+    } as any;
+  }
+
+  beforeEach(() => {
+    config.FIRE_PDF_CACHE_BASE_URL = "http://cache";
+    fetchMock.mockReset();
+    getCached.mockReset();
+    saveCached.mockReset();
+    vi.mocked(consumeRefresh).mockClear();
+  });
+
+  afterEach(() => {
+    config.FIRE_PDF_CACHE_BASE_URL = undefined;
+  });
+
+  it("asks the service once with both keys and the options, and serves a hit without reading the bucket", async () => {
+    fetchMock.mockResolvedValueOnce({
+      outcome: "hit",
+      key: rawKey,
+      variant: "page-markdown-v1",
+      result: {
+        markdown: "# doc",
+        pages_processed: 2,
+        pages: [{ page: 1, markdown: "p1" }],
+      },
+    } as any);
+    const result = await tryGetCached(
+      serviceMeta(),
+      base64,
+      "auto",
+      undefined,
+      5,
+      true,
+      false,
+    );
+    expect(result).toEqual({
+      markdown: "# doc",
+      html: "<p># doc</p>",
+      pagesProcessed: 2,
+      pageMarkdown: [{ page: 1, markdown: "p1" }],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const call = fetchMock.mock.calls[0][0];
+    expect(call.url).toBe("http://cache/cache/lookup");
+    expect(call.method).toBe("POST");
+    expect(call.body).toEqual({
+      keys: [rawKey, inlineKey],
+      options: { mode: "auto", include_page_markdown: true },
+      team_id: "team-1",
+      kind: "scrape",
+      refresh: false,
+      source_kind: "pdf",
+      scrape_id: "svc-test",
+    });
+    expect(getCached).not.toHaveBeenCalled();
+  });
+
+  it("uses the caller's key alone for a by-reference document", async () => {
+    fetchMock.mockResolvedValueOnce({
+      outcome: "miss",
+      reason: "not_found",
+    } as any);
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        { key: "raw-abc" },
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+      ),
+    ).toBeNull();
+    expect(fetchMock.mock.calls[0][0].body.keys).toEqual(["raw-abc"]);
+  });
+
+  it("serves a stale answer, and treats a failed lookup as a miss", async () => {
+    fetchMock.mockResolvedValueOnce({
+      outcome: "stale",
+      key: inlineKey,
+      variant: "base",
+      campaign: "c1",
+      result: { markdown: "# old" },
+    } as any);
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        base64,
+        undefined,
+        undefined,
+        3,
+        false,
+        false,
+      ),
+    ).toEqual({ markdown: "# old", html: "<p># old</p>", pagesProcessed: 3 });
+    fetchMock.mockRejectedValueOnce(new Error("timed out"));
+    const meta = serviceMeta();
+    expect(
+      await tryGetCached(meta, base64, undefined, undefined, 3, false, false),
+    ).toBeNull();
+    expect(meta.logger.warn).toHaveBeenCalledWith(
+      "FirePDF cache lookup failed, proceeding",
+      expect.objectContaining({ scrapeId: "svc-test" }),
+    );
+  });
+
+  it("passes refresh through for the service to budget", async () => {
+    fetchMock.mockResolvedValueOnce({
+      outcome: "miss",
+      reason: "refresh",
+    } as any);
+    expect(
+      await tryGetCached(
+        serviceMeta([{ type: "pdf", refresh: true }]),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+      ),
+    ).toBeNull();
+    expect(fetchMock.mock.calls[0][0].body.refresh).toBe(true);
+    expect(consumeRefresh).not.toHaveBeenCalled();
+  });
+
+  it("does not write results itself while the service is in use", async () => {
+    await maybeSaveResult({
+      meta: serviceMeta(),
+      base64Content: base64,
+      mode: undefined,
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "# doc", html: "<p># doc</p>" },
+      provenance: undefined,
+      failedPages: [],
+    });
+    expect(saveCached).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,7 @@ import {
   firePdfCacheEventsTotal,
   firePdfCacheRefusedWritesTotal,
 } from "./metrics";
+import { cacheServiceConfigured, lookupCachedResult } from "./cache-service";
 import { consumeRefresh, refreshDecisionFor } from "./refresh-budget";
 import {
   firePdfBlockPagesSchema,
@@ -190,8 +191,9 @@ export async function tryGetCached(
   pageMarkers = false,
 ): Promise<PDFProcessorResult | null> {
   if (meta.internalOptions.zeroDataRetention) return null;
-  // No bucket, no cache: nothing to hash, no refresh budget to spend.
-  if (!pdfCacheConfigured()) return null;
+  const viaService = cacheServiceConfigured();
+  // No service and no bucket, no cache: nothing to hash, no refresh budget to spend.
+  if (!viaService && !pdfCacheConfigured()) return null;
   const { cacheable, lookupVariants, ownVariant } = cacheKeyShape(
     mode,
     maxPages,
@@ -200,6 +202,19 @@ export async function tryGetCached(
     pageMarkers,
   );
   if (!cacheable) return null;
+  if (viaService) {
+    // The service probes the variants, applies the read-time rules and
+    // budgets `refresh`; a failed lookup is a miss.
+    return lookupCachedResult(meta, base64Content, {
+      mode,
+      pagesProcessed,
+      includePageMarkdown,
+      includeBlocks,
+      pageMarkers,
+      refresh: getPDFRefresh(meta.options?.parsers),
+      sourceKind: isRasterImagePayload(base64Content) ? "image" : "pdf",
+    });
+  }
   const cacheKey = resolvePdfCacheKey(base64Content);
 
   // `parsers: [{ type: "pdf", refresh: true }]`: the caller wants this
@@ -394,6 +409,8 @@ export async function maybeSaveResult(args: {
     failedPages,
   } = args;
   if (meta.internalOptions.zeroDataRetention) return;
+  // With the lookup service in use, fire-pdf writes the result itself.
+  if (cacheServiceConfigured()) return;
   if (!pdfCacheConfigured()) return;
   const { cacheable, ownVariant, baseVariant } = cacheKeyShape(
     mode,

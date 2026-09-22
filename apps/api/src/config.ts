@@ -388,6 +388,10 @@ const configSchema = z.object({
   FIRE_PDF_PERCENT: z.coerce.number().min(0).max(100).default(10),
   FIRE_PDF_BASE_URL: z.string().optional(),
   FIRE_PDF_API_KEY: z.string().optional(),
+  // Cached fire-pdf results are looked up through this service when set
+  // (POST /cache/lookup, same key as FIRE_PDF_API_KEY), and fire-pdf writes
+  // them; without it the bucket is read and written from here.
+  FIRE_PDF_CACHE_BASE_URL: z.string().optional(),
   // `parsers: [{ type: "pdf", refresh: true }]` skips the content cache and
   // forces a fresh parse. Per team, per minute; beyond the budget the
   // request is served normally. 0 disables the option.
