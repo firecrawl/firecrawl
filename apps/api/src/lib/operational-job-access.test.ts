@@ -10,6 +10,7 @@ vi.mock("./logger", () => ({
 import {
   getAgentJobAccess,
   getCrawlJobAccess,
+  getExtractJobAccess,
   getScrapeJobAccess,
 } from "./operational-job-access";
 
@@ -28,6 +29,20 @@ describe("operational job access", () => {
     readApiJobAccess.mockResolvedValue(access);
 
     await expect(getAgentJobAccess(JOB_ID)).resolves.toBe(access);
+  });
+
+  it("extract access accepts extract and agent records and rejects a scrape", async () => {
+    const base = { teamId: "team-id", expiresAtMs: Date.now() + 60_000 };
+    readApiJobAccess.mockResolvedValueOnce({ ...base, kind: "extract" });
+    await expect(getExtractJobAccess(JOB_ID)).resolves.toMatchObject({
+      kind: "extract",
+    });
+    readApiJobAccess.mockResolvedValueOnce({ ...base, kind: "agent" });
+    await expect(getExtractJobAccess(JOB_ID)).resolves.toMatchObject({
+      kind: "agent",
+    });
+    readApiJobAccess.mockResolvedValueOnce({ ...base, kind: "scrape" });
+    await expect(getExtractJobAccess(JOB_ID)).resolves.toBeNull();
   });
 
   it("returns an expired record so the caller can answer 404 with its expiry", async () => {

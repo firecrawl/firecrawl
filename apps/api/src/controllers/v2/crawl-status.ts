@@ -49,6 +49,7 @@ export async function getJob(
   id: string,
   _logger = logger,
 ): Promise<PseudoJob<any> | null> {
+  let stateReadError: unknown = null;
   const [nuqJob, scrapeState, gcsJob] = await Promise.all([
     scrapeQueue.getJob(
       id,
@@ -59,12 +60,19 @@ export async function getJob(
         error,
         scrapeId: id,
       });
+      stateReadError = error;
       return null;
     }),
     (config.GCS_BUCKET_NAME ? getJobFromGCS(id) : null) as Promise<any | null>,
   ]);
 
-  if (!nuqJob && !scrapeState) return null;
+  if (!nuqJob && !scrapeState) {
+    // With no NuQ job, Bigtable is the only place a finished job's state
+    // lives. A failed read is an outage, not a missing job: surface it rather
+    // than answer 404 for a job that exists.
+    if (stateReadError) throw stateReadError;
+    return null;
+  }
 
   if (nuqJob && nuqJob.data.mode !== "single_urls") {
     return null;
@@ -199,9 +207,10 @@ export async function crawlStatusController(
   if (creditsBilled === null) {
     // Requests from before the Bigtable credit rows existed: sum the scrape
     // job log instead.
-    creditsBilled = await readRequestCreditsFromAnalytics(req.params.jobId, {
-      emptyAsZero: true,
-    }).catch(error => {
+    creditsBilled = await readRequestCreditsFromAnalytics(
+      sc?.requestId ?? req.params.jobId,
+      { emptyAsZero: true },
+    ).catch(error => {
       logger.warn("Analytics request credits read failed", { error });
       return null;
     });

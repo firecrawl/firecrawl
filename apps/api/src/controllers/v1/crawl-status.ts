@@ -43,6 +43,7 @@ export type PseudoJob<T> = {
 };
 
 export async function getJob(id: string): Promise<PseudoJob<any> | null> {
+  let stateReadError: unknown = null;
   const [nuqJob, scrapeState, gcsJob] = await Promise.all([
     scrapeQueue.getJob(id) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
     readScrapeJobState(id).catch(error => {
@@ -50,12 +51,19 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
         error,
         scrapeId: id,
       });
+      stateReadError = error;
       return null;
     }),
     (config.GCS_BUCKET_NAME ? getJobFromGCS(id) : null) as Promise<any | null>,
   ]);
 
-  if (!nuqJob && !scrapeState) return null;
+  if (!nuqJob && !scrapeState) {
+    // With no NuQ job, Bigtable is the only place a finished job's state
+    // lives. A failed read is an outage, not a missing job: surface it rather
+    // than answer 404 for a job that exists.
+    if (stateReadError) throw stateReadError;
+    return null;
+  }
 
   if (nuqJob && nuqJob.data.mode !== "single_urls") {
     return null;

@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { JOB_ACCESS_TTL_MS } from "../../lib/job-access-store";
 import { config } from "../../config";
 import { RequestWithAuth } from "./types";
 import {
@@ -68,13 +69,9 @@ export async function extractStatusController(
   // Not in Redis: finished, or still being set up. Bigtable holds the
   // terminal state for 24 hours; a request row without either is in flight.
   if (!redisExtract) {
-    const state = await readExtractJobState(req.params.jobId).catch(error => {
-      _logger.warn("Bigtable extract state read failed", {
-        error,
-        extractId: req.params.jobId,
-      });
-      return null;
-    });
+    // A failed Bigtable read is an outage, not a job in flight: it propagates
+    // to the error handler rather than answering "processing".
+    const state = await readExtractJobState(req.params.jobId);
     if (state) {
       return res.status(200).json({
         success: state.status === "completed",
@@ -84,7 +81,9 @@ export async function extractStatusController(
             : [],
         status: state.status,
         error: state.error,
-        expiresAt: new Date(access!.expiresAtMs).toISOString(),
+        expiresAt: new Date(
+          access?.expiresAtMs ?? state.completedAtMs + JOB_ACCESS_TTL_MS,
+        ).toISOString(),
         creditsUsed: state.creditsBilled,
       });
     }
@@ -94,7 +93,9 @@ export async function extractStatusController(
       success: true,
       data: [],
       status: "processing",
-      expiresAt: new Date(access!.expiresAtMs).toISOString(),
+      expiresAt: new Date(
+        access?.expiresAtMs ?? Date.now() + JOB_ACCESS_TTL_MS,
+      ).toISOString(),
     });
   }
 
