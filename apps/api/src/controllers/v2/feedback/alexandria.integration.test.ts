@@ -14,9 +14,50 @@ vi.mock("./record", () => ({
   },
 }));
 
-// Opt in with a local database containing the feedback migrations, including
-// the Alexandria endpoint constraint. Each run owns an isolated schema.
+// Opt in with a local PostgreSQL database. Each run owns an isolated schema
+// holding a copy of the Alexandria feedback tables, including constraints.
 const databaseUrl = process.env.ALEXANDRIA_FEEDBACK_TEST_DATABASE_URL;
+const ddl = `
+CREATE TABLE alexandria_feedback (
+  id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  team_id uuid NOT NULL,
+  api_key_id bigint,
+  api_version text NOT NULL DEFAULT 'v2',
+  rating text NOT NULL CHECK (rating IN ('good', 'partial', 'bad')),
+  requested_url text NOT NULL CHECK (char_length(requested_url) <= 2048),
+  requested_host text GENERATED ALWAYS AS (lower(substring(requested_url from '^[A-Za-z][A-Za-z0-9+.-]*://(?:[^@/?#]*@)?([^/?#:]+)'))) STORED,
+  requested_functionality text NOT NULL,
+  rationale text NOT NULL,
+  origin text,
+  integration text,
+  schema_version integer NOT NULL DEFAULT 2,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE alexandria_feedback_providers (
+  id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  feedback_id uuid NOT NULL REFERENCES alexandria_feedback (id) ON DELETE CASCADE,
+  team_id uuid NOT NULL,
+  position smallint NOT NULL,
+  name text NOT NULL,
+  issue text NOT NULL CHECK (issue IN ('missing_provider', 'insufficient_coverage', 'provider_unavailable', 'other')),
+  why text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (feedback_id, position)
+);
+CREATE TABLE alexandria_feedback_capabilities (
+  id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  feedback_id uuid NOT NULL REFERENCES alexandria_feedback (id) ON DELETE CASCADE,
+  team_id uuid NOT NULL,
+  position smallint NOT NULL,
+  name text NOT NULL,
+  provider text NOT NULL,
+  issue text NOT NULL CHECK (issue IN ('new_capability_request', 'missing_capability', 'insufficient_functionality', 'incorrect_result', 'execution_error', 'other')),
+  why text NOT NULL,
+  requested_functionality text CHECK (issue <> 'new_capability_request' OR requested_functionality IS NOT NULL),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (feedback_id, position)
+);
+`;
 const suite = databaseUrl ? describe : describe.skip;
 suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
   const schemaName = `alexandria_feedback_${randomUUID().replaceAll("-", "")}`;
@@ -52,9 +93,7 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
       connectionString: databaseUrl,
       options: `-c search_path=${schemaName},public`,
     });
-    await pool.query(
-      "CREATE TABLE search_feedback (LIKE public.search_feedback INCLUDING ALL)",
-    );
+    await pool.query(ddl);
     fixture.db = drizzle({ client: pool });
     config = (await import("../../../config.js")).config;
     originalAuthentication = config.USE_DB_AUTHENTICATION;
@@ -88,34 +127,33 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
     expect(second.status).toBe(200);
     expect(second.body.feedbackId).not.toBe(first.body.feedbackId);
     const { rows } = await pool.query(
-      "SELECT * FROM search_feedback WHERE team_id = $1",
+      "SELECT * FROM alexandria_feedback WHERE team_id = $1",
       [teamId],
     );
     expect(rows).toHaveLength(2);
     for (const row of rows) {
       expect(row).toMatchObject({
-        endpoint: "alexandria",
         team_id: teamId,
-        overall_rating: "bad",
-        comment: minimal.rationale,
-        job_id: null,
-        search_id: null,
-        request_id: null,
-        job_status: null,
-        credits_refunded: 0,
-        credits_billed: 0,
-        refund_policy: null,
-        metadata: {
-          schemaVersion: 1,
-          endpoint: "alexandria",
-          requestedWebsite: minimal.requestedWebsite,
-          rationale: minimal.rationale,
-        },
+        api_key_id: "42",
+        api_version: "v2",
+        rating: "bad",
+        requested_url: minimal.requestedWebsite.url,
+        requested_host: "sam.gov",
+        requested_functionality:
+          minimal.requestedWebsite.requestedFunctionality,
+        rationale: minimal.rationale,
+        origin: "api",
+        integration: null,
+        schema_version: 2,
       });
     }
+    const children = await pool.query(
+      "SELECT (SELECT count(*) FROM alexandria_feedback_providers) AS providers, (SELECT count(*) FROM alexandria_feedback_capabilities) AS capabilities",
+    );
+    expect(children.rows[0]).toEqual({ providers: "0", capabilities: "0" });
   });
 
-  it("round-trips website requirements and provider/capability feedback in existing columns", async () => {
+  it("round-trips provider and capability feedback into ordered child rows", async () => {
     const providerFeedback = [
       {
         name: "sam.gov",
@@ -135,6 +173,12 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
       {
         name: "contracts",
         provider: "sam.gov",
+        issue: "missing_capability",
+        why: "The provider has no contract attachment capability.",
+      },
+      {
+        name: "contracts",
+        provider: "sam.gov",
         issue: "execution_error",
         why: "The second page request timed out.",
       },
@@ -143,30 +187,50 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
       ...minimal,
       providerFeedback,
       capabilityFeedback,
+      integration: "cli",
     });
     expect(response.status).toBe(200);
-    const { rows } = await pool.query(
-      "SELECT metadata, comment, overall_rating, job_id, credits_refunded FROM search_feedback WHERE id = $1",
-      [response.body.feedbackId],
+    const feedbackId = response.body.feedbackId;
+    const parent = await pool.query(
+      "SELECT rating, rationale, integration FROM alexandria_feedback WHERE id = $1",
+      [feedbackId],
     );
-    expect(rows[0]).toEqual({
-      overall_rating: minimal.rating,
-      comment: minimal.rationale,
-      job_id: null,
-      credits_refunded: 0,
-      metadata: {
-        schemaVersion: 1,
-        endpoint: "alexandria",
-        requestedWebsite: minimal.requestedWebsite,
+    expect(parent.rows).toEqual([
+      {
+        rating: minimal.rating,
         rationale: minimal.rationale,
-        providerFeedback,
-        capabilityFeedback,
+        integration: "cli",
       },
-    });
+    ]);
+    const providers = await pool.query(
+      "SELECT team_id, position, name, issue, why FROM alexandria_feedback_providers WHERE feedback_id = $1 ORDER BY position",
+      [feedbackId],
+    );
+    expect(providers.rows).toEqual(
+      providerFeedback.map((entry, position) => ({
+        team_id: teamId,
+        position,
+        ...entry,
+      })),
+    );
+    const capabilities = await pool.query(
+      "SELECT team_id, position, name, provider, issue, why, requested_functionality FROM alexandria_feedback_capabilities WHERE feedback_id = $1 ORDER BY position",
+      [feedbackId],
+    );
+    expect(capabilities.rows).toEqual(
+      capabilityFeedback.map(
+        ({ requestedFunctionality, ...entry }, position) => ({
+          team_id: teamId,
+          position,
+          requested_functionality: requestedFunctionality ?? null,
+          ...entry,
+        }),
+      ),
+    );
   });
 
   it("rejects invalid feedback before persistence", async () => {
-    const before = await pool.query("SELECT count(*) FROM search_feedback");
+    const before = await pool.query("SELECT count(*) FROM alexandria_feedback");
     const response = await submit({
       ...minimal,
       capabilityFeedback: [
@@ -179,7 +243,25 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
       ],
     });
     expect(response.status).toBe(400);
-    const after = await pool.query("SELECT count(*) FROM search_feedback");
+    const after = await pool.query("SELECT count(*) FROM alexandria_feedback");
     expect(after.rows).toEqual(before.rows);
+  });
+
+  it("deletes child rows with their parent", async () => {
+    const response = await submit({
+      ...minimal,
+      providerFeedback: [
+        { name: "sam.gov", issue: "other", why: "Slow responses." },
+      ],
+    });
+    expect(response.status).toBe(200);
+    await pool.query("DELETE FROM alexandria_feedback WHERE id = $1", [
+      response.body.feedbackId,
+    ]);
+    const orphans = await pool.query(
+      "SELECT count(*) FROM alexandria_feedback_providers WHERE feedback_id = $1",
+      [response.body.feedbackId],
+    );
+    expect(orphans.rows[0].count).toBe("0");
   });
 });

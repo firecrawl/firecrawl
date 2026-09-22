@@ -245,7 +245,7 @@ export type FirePdfProvenance = z.infer<typeof firePdfProvenanceSchema>;
  * a stamp this build cannot read degrades to `malformed` (the result is
  * served, not cached) instead of failing the response.
  */
-export type ProvenanceParse =
+type ProvenanceParse =
   | { status: "absent" }
   | { status: "ok"; provenance: FirePdfProvenance }
   | { status: "malformed"; issue: string };

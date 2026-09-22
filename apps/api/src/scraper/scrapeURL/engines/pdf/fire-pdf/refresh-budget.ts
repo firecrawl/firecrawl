@@ -21,11 +21,7 @@ import { config } from "../../../../../config";
  * The rate-limit Redis client is imported lazily so importing the cache
  * module never opens a connection (tests, tooling).
  */
-export type RefreshDecision =
-  | "allowed"
-  | "limited"
-  | "disabled"
-  | "unavailable";
+type RefreshDecision = "allowed" | "limited" | "disabled" | "unavailable";
 
 let limiter: RateLimiterRedis | null = null;
 

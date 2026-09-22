@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -640,6 +640,97 @@ export const search_feedback = pgTable("search_feedback", {
   created_at: ts("created_at").notNull().defaultNow(),
   updated_at: ts("updated_at").notNull().defaultNow(),
 });
+
+export const alexandria_feedback = pgTable(
+  "alexandria_feedback",
+  {
+    id: uuid("id").notNull().defaultRandom().primaryKey(),
+    team_id: uuid("team_id").notNull(),
+    api_key_id: bigintNum("api_key_id"),
+    api_version: text("api_version").notNull().default("v2"),
+    rating: text("rating").notNull(),
+    requested_url: text("requested_url").notNull(),
+    // Stored generated column; never written by the API.
+    requested_host: text("requested_host").generatedAlwaysAs(
+      (): SQL =>
+        sql`lower(substring(${alexandria_feedback.requested_url} from '^[A-Za-z][A-Za-z0-9+.-]*://(?:[^@/?#]*@)?([^/?#:]+)'))`,
+    ),
+    requested_functionality: text("requested_functionality").notNull(),
+    rationale: text("rationale").notNull(),
+    origin: text("origin"),
+    integration: text("integration"),
+    schema_version: integer("schema_version").notNull().default(2),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  table => [
+    check(
+      "alexandria_feedback_rating_check",
+      sql`${table.rating} IN ('good', 'partial', 'bad')`,
+    ),
+    check(
+      "alexandria_feedback_requested_url_check",
+      sql`char_length(${table.requested_url}) <= 2048`,
+    ),
+  ],
+);
+
+export const alexandria_feedback_providers = pgTable(
+  "alexandria_feedback_providers",
+  {
+    id: uuid("id").notNull().defaultRandom().primaryKey(),
+    feedback_id: uuid("feedback_id")
+      .notNull()
+      .references(() => alexandria_feedback.id, { onDelete: "cascade" }),
+    team_id: uuid("team_id").notNull(),
+    position: smallint("position").notNull(),
+    name: text("name").notNull(),
+    issue: text("issue").notNull(),
+    why: text("why").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  table => [
+    unique("alexandria_feedback_providers_feedback_id_position_key").on(
+      table.feedback_id,
+      table.position,
+    ),
+    check(
+      "alexandria_feedback_providers_issue_check",
+      sql`${table.issue} IN ('missing_provider', 'insufficient_coverage', 'provider_unavailable', 'other')`,
+    ),
+  ],
+);
+
+export const alexandria_feedback_capabilities = pgTable(
+  "alexandria_feedback_capabilities",
+  {
+    id: uuid("id").notNull().defaultRandom().primaryKey(),
+    feedback_id: uuid("feedback_id")
+      .notNull()
+      .references(() => alexandria_feedback.id, { onDelete: "cascade" }),
+    team_id: uuid("team_id").notNull(),
+    position: smallint("position").notNull(),
+    name: text("name").notNull(),
+    provider: text("provider").notNull(),
+    issue: text("issue").notNull(),
+    why: text("why").notNull(),
+    requested_functionality: text("requested_functionality"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  table => [
+    unique("alexandria_feedback_capabilities_feedback_id_position_key").on(
+      table.feedback_id,
+      table.position,
+    ),
+    check(
+      "alexandria_feedback_capabilities_issue_check",
+      sql`${table.issue} IN ('new_capability_request', 'missing_capability', 'insufficient_functionality', 'incorrect_result', 'execution_error', 'other')`,
+    ),
+    check(
+      "alexandria_feedback_capabilities_requested_functionality_check",
+      sql`${table.issue} <> 'new_capability_request' OR ${table.requested_functionality} IS NOT NULL`,
+    ),
+  ],
+);
 
 export const searches = pgTable("searches", {
   id: uuid("id").notNull(),
