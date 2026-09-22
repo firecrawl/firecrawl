@@ -23,12 +23,12 @@ const HISTORICAL_AGGREGATE_TIMEOUT_MS = 15000;
 // Grouping by API key over the whole 90-day window does not finish inside that
 // timeout for teams with tens of millions of events in it, so the byApiKey
 // breakdown asks Autumn for fixed 7-day slices instead. A slice that ended
-// over a day ago no longer changes and is cached, so a warm request only asks
-// Autumn for the slice holding today (and, for a day after a slice boundary,
-// the one before it).
+// over a day ago no longer changes and is cached for as long as it can still
+// fall inside the window, so a warm request only asks Autumn for the slice
+// holding today (and, for a day after a slice boundary, the one before it).
 const BY_API_KEY_SLICE_MS = 7 * DAY_MS;
 const BY_API_KEY_SLICE_SETTLE_MS = DAY_MS;
-const BY_API_KEY_SLICE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
+const BY_API_KEY_SLICE_CACHE_TTL_SECONDS = HISTORICAL_WINDOW_MS / 1000;
 const BY_API_KEY_SLICE_CONCURRENCY = 2;
 
 // Autumn's maximum. Its default of 9 folds every further key into one "Other"

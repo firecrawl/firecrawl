@@ -1029,7 +1029,9 @@ describe("getTeamHistoricalUsageByApiKey", () => {
     for (const [key, , expire] of mockSetValue.mock.calls) {
       expect(key).toMatch(/^historical-usage-by-api-key:v1:team-1:\d+$/);
       expect(key).not.toContain(String(CURRENT_SLICE_START));
-      expect(expire).toBe(7 * 24 * 60 * 60);
+      // Settled at least a day after it ends, a slice leaves the window at
+      // most ~91 days after it ends, so a 90-day TTL outlives its use.
+      expect(expire).toBe(90 * 24 * 60 * 60);
     }
 
     mockAggregate.mockClear();
