@@ -39,7 +39,7 @@ def select_urls_with_o1(company, objective, serp_results):
                      for r in serp_results if r.get("link")]
 
         response = client.chat.completions.create(
-            model="o1-2024-12-17",
+            model="gpt-5",
             messages=[
                 {
                     "role": "developer",

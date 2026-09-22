@@ -37,7 +37,7 @@ def find_relevant_page_via_map(objective, url, app, client):
 
         print(f"{Colors.YELLOW}Analyzing objective to determine optimal search parameter...{Colors.RESET}")
         completion = client.chat.completions.create(
-            model="o3-mini",
+            model="gpt-5-mini",
             messages=[
                 {
                     "role": "user",
@@ -112,7 +112,7 @@ def find_relevant_page_via_map(objective, url, app, client):
 
         print(f"{Colors.YELLOW}Ranking URLs by relevance to objective...{Colors.RESET}")
         completion = client.chat.completions.create(
-            model="o3-mini",
+            model="gpt-5-mini",
             messages=[
                 {
                     "role": "user", 
@@ -187,7 +187,7 @@ def find_objective_in_top_pages(map_website, objective, app, client):
             """
         
             completion = client.chat.completions.create(
-                model="o3-mini",
+                model="gpt-5-mini",
                 messages=[
                     {
                         "role": "user",

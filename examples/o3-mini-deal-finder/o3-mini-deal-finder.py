@@ -192,7 +192,7 @@ def display_comparison(data):
             
             try:
                 response = client.chat.completions.create(
-                    model="o3-mini",
+                    model="gpt-5-mini",
                     messages=[{"role": "user", "content": prompt }],
                 )
                 
