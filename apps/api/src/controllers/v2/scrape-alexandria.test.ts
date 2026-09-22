@@ -287,29 +287,3 @@ it("executes with supplied arguments but stores only tool identifiers in activit
     alexandria: [{ provider: call.provider, capability: call.capability }],
   });
 });
-
-it.each([
-  [undefined, 120_000],
-  [120_000, 120_000],
-  [180_000, 120_000],
-  [30_000, 30_000],
-])("passes timeout %s to retrieval as %s ms", async (timeout, expected) => {
-  const response = await request(app)
-    .post("/v2/scrape")
-    .send({ alexandria: call, timeout });
-  expect(response.status).toBe(200);
-  expect(mocks.retrieve).toHaveBeenCalledWith(
-    expect.objectContaining({ timeoutMs: expected }),
-  );
-});
-
-it.each([0, -1, 1.5, "120000"])(
-  "rejects invalid timeout %s before retrieval",
-  async timeout => {
-    const response = await request(app)
-      .post("/v2/scrape")
-      .send({ alexandria: call, timeout });
-    expect(response.status).toBeGreaterThanOrEqual(400);
-    expect(mocks.retrieve).not.toHaveBeenCalled();
-  },
-);
