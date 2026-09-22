@@ -16,6 +16,7 @@ import {
   check,
   foreignKey,
   index,
+  primaryKey,
   unique,
 } from "drizzle-orm/pg-core";
 
@@ -143,7 +144,24 @@ export const browser_sessions = pgTable("browser_sessions", {
   credits_used: integer("credits_used"),
   cdp_interactive_path: text("cdp_interactive_path"),
   scrape_id: uuid("scrape_id"),
+  // The persistent profile the session was created with, if any.
+  profile_name: text("profile_name"),
 });
+
+// Index of saved persistent browser profiles (see browser_profiles migration).
+// Contents live in browser-service object storage; a row is upserted when the
+// browser service reports a successful save.
+export const browser_profiles = pgTable(
+  "browser_profiles",
+  {
+    team_id: uuid("team_id").notNull(),
+    name: text("name").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    saved_at: ts("saved_at").notNull(),
+    size_bytes: bigintNum("size_bytes"),
+  },
+  table => [primaryKey({ columns: [table.team_id, table.name] })],
+);
 
 export const crawls = pgTable("crawls", {
   id: uuid("id").notNull(),
