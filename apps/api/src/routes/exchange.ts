@@ -202,7 +202,7 @@ exchangeRouter.post(
 exchangeRouter.get(
   "/analytics{/*path}",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS)),
 );
 
 exchangeRouter.get(

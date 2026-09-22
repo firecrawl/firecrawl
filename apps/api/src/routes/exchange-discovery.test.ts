@@ -50,25 +50,15 @@ beforeEach(() => {
     text: async () => JSON.stringify({ results: [] }),
   } as any);
 });
-it("forwards analytics without the rollout flag using authenticated team identity", async () => {
+it("keeps analytics behind the rollout flag", async () => {
   const response = await request(app)
     .get("/exchange/analytics/providers?days=30")
-    .set("Authorization", "Bearer test-key")
-    .set("x-exchange-team-id", "spoofed-team");
-  expect(response.status).toBe(200);
-  expect(fetch).toHaveBeenCalledWith(
-    "http://exchange.internal/v1/analytics/providers?days=30",
-    expect.objectContaining({
-      headers: expect.objectContaining({
-        "x-exchange-team-id": "authenticated-team",
-      }),
-    }),
-  );
+    .set("Authorization", "Bearer test-key");
+  expect(response.status).toBe(403);
+  expect(fetch).not.toHaveBeenCalled();
 });
-it("retains authentication middleware before proxying analytics", async () => {
-  expect((await request(app).get("/exchange/analytics/summary")).status).toBe(
-    401,
-  );
+it("retains authentication middleware before proxying discovery", async () => {
+  expect((await request(app).get("/exchange/discover")).status).toBe(401);
   expect(fetch).not.toHaveBeenCalled();
 });
 it("preserves upstream failures", async () => {
@@ -80,7 +70,7 @@ it("preserves upstream failures", async () => {
   expect(
     (
       await request(app)
-        .get("/exchange/analytics/summary")
+        .get("/exchange/discover")
         .set("Authorization", "Bearer test-key")
     ).status,
   ).toBe(503);
