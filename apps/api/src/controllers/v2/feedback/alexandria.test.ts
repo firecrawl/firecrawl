@@ -1,16 +1,32 @@
 import express from "express";
 import request from "supertest";
+import { getTableName, type Table } from "drizzle-orm";
 import { DrizzleQueryError } from "drizzle-orm/errors";
 import { alexandriaFeedbackSchema } from "./alexandria-schema";
 
 const mocks = vi.hoisted(() => ({
-  values: vi.fn(),
+  transaction: vi.fn(),
+  // Receives (tableName, rows[]) for every insert issued inside the transaction.
+  insert: vi.fn(),
   recordEndpointFeedback: vi.fn(),
   logError: vi.fn(),
 }));
 vi.mock("../../../db/connection", () => ({
-  db: { insert: () => ({ values: mocks.values }) },
+  db: { transaction: mocks.transaction },
 }));
+const tx = {
+  insert: (table: Table) => ({
+    values: (rows: object | object[]) =>
+      mocks.insert(getTableName(table), Array.isArray(rows) ? rows : [rows]),
+  }),
+};
+const inserted = (table: string) =>
+  mocks.insert.mock.calls
+    .filter(([name]) => name === table)
+    .flatMap(([, rows]) => rows as Record<string, unknown>[]);
+const parentRows = () => inserted("alexandria_feedback");
+const providerRows = () => inserted("alexandria_feedback_providers");
+const capabilityRows = () => inserted("alexandria_feedback_capabilities");
 vi.mock("../../../lib/logger", () => ({ logger: { error: mocks.logError } }));
 vi.mock("./record", () => ({
   recordEndpointFeedback: mocks.recordEndpointFeedback,
@@ -54,7 +70,10 @@ beforeEach(() => {
   config.USE_DB_AUTHENTICATION = true;
   authTeam = teamId;
   flags = {};
-  mocks.values.mockResolvedValue(undefined);
+  mocks.transaction.mockImplementation(
+    async (run: (tx: unknown) => Promise<void>) => run(tx),
+  );
+  mocks.insert.mockResolvedValue(undefined);
 });
 afterAll(() => {
   config.USE_DB_AUTHENTICATION = originalDbAuthentication;
@@ -71,29 +90,25 @@ it.each(["good", "partial", "bad"])(
       creditsRefunded: 0,
     });
     expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
-    expect(mocks.values).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(parentRows()).toEqual([
+      {
         id: response.body.feedbackId,
-        endpoint: "alexandria",
         team_id: teamId,
         api_key_id: 42,
-        overall_rating: rating,
-        comment: minimal.rationale,
-        job_id: null,
-        search_id: null,
-        request_id: null,
-        job_status: null,
-        credits_billed: 0,
-        credits_refunded: 0,
-        refund_policy: null,
-        metadata: {
-          schemaVersion: 1,
-          endpoint: "alexandria",
-          requestedWebsite: minimal.requestedWebsite,
-          rationale: minimal.rationale,
-        },
-      }),
-    );
+        api_version: "v2",
+        rating,
+        requested_url: minimal.requestedWebsite.url,
+        requested_functionality:
+          minimal.requestedWebsite.requestedFunctionality,
+        rationale: minimal.rationale,
+        origin: "api",
+        integration: null,
+        schema_version: 2,
+      },
+    ]);
+    expect(providerRows()).toEqual([]);
+    expect(capabilityRows()).toEqual([]);
   },
 );
 
@@ -103,7 +118,7 @@ it.each(["endpoint", "rating", "requestedWebsite", "rationale"])(
     const response = await submit({ ...minimal, [field]: undefined });
     expect(response.status).toBe(400);
     expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
-    expect(mocks.values).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
   },
 );
 
@@ -115,7 +130,7 @@ it.each(["url", "requestedFunctionality"])(
       requestedWebsite: { ...minimal.requestedWebsite, [field]: undefined },
     });
     expect(response.status).toBe(400);
-    expect(mocks.values).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
   },
 );
 
@@ -127,7 +142,7 @@ it("rejects the unpublished categories discriminator", async () => {
   });
   expect(response.status).toBe(400);
   expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
-  expect(mocks.values).not.toHaveBeenCalled();
+  expect(mocks.transaction).not.toHaveBeenCalled();
   expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
 });
 
@@ -141,7 +156,7 @@ it.each(["search", "scrape", "parse", "map"])(
     });
     expect(response.status).toBe(400);
     expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
-    expect(mocks.values).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
     expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
   },
 );
@@ -194,6 +209,11 @@ it.each([
   {
     providerFeedback: [
       { name: "sam.gov", issue: "execution_error", why: "Request failed" },
+    ],
+  },
+  {
+    providerFeedback: [
+      { name: "sam.gov", issue: "missing_capability", why: "No such tool" },
     ],
   },
   { providerFeedback: [{ name: "sam.gov", issue: "other", why: " " }] },
@@ -251,7 +271,7 @@ it.each([
   const response = await submit({ ...minimal, ...fields });
   expect(response.status).toBe(400);
   expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
-  expect(mocks.values).not.toHaveBeenCalled();
+  expect(mocks.transaction).not.toHaveBeenCalled();
   expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
 });
 
@@ -283,11 +303,48 @@ it("preserves website requirements and provider/capability feedback for the sess
   };
   const response = await submit({ ...minimal, ...evidence });
   expect(response.status).toBe(200);
-  expect(mocks.values).toHaveBeenCalledWith(
+  const feedbackId = response.body.feedbackId;
+  expect(parentRows()).toEqual([
     expect.objectContaining({
-      metadata: expect.objectContaining(evidence),
+      id: feedbackId,
+      requested_url: minimal.requestedWebsite.url,
+      requested_functionality: minimal.requestedWebsite.requestedFunctionality,
+      rationale: minimal.rationale,
     }),
-  );
+  ]);
+  expect(providerRows()).toEqual([
+    {
+      feedback_id: feedbackId,
+      team_id: teamId,
+      position: 0,
+      name: "sam.gov",
+      issue: "insufficient_coverage",
+      why: evidence.providerFeedback[0].why,
+    },
+  ]);
+  expect(capabilityRows()).toEqual([
+    {
+      feedback_id: feedbackId,
+      team_id: teamId,
+      position: 0,
+      name: "download-attachments",
+      provider: "sam.gov",
+      issue: "new_capability_request",
+      why: evidence.capabilityFeedback[0].why,
+      requested_functionality:
+        evidence.capabilityFeedback[0].requestedFunctionality,
+    },
+    {
+      feedback_id: feedbackId,
+      team_id: teamId,
+      position: 1,
+      name: "contracts",
+      provider: "sam.gov",
+      issue: "execution_error",
+      why: evidence.capabilityFeedback[1].why,
+      requested_functionality: null,
+    },
+  ]);
 });
 
 it.each([
@@ -302,15 +359,15 @@ it.each([
       { name: "sam.gov", issue, why: "Need complete contract data." },
     ];
     expect((await submit({ ...minimal, providerFeedback })).status).toBe(200);
-    expect(mocks.values).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({ providerFeedback }),
-      }),
-    );
+    expect(providerRows()).toEqual([
+      expect.objectContaining({ position: 0, ...providerFeedback[0] }),
+    ]);
+    expect(capabilityRows()).toEqual([]);
   },
 );
 
 it.each([
+  "missing_capability",
   "insufficient_functionality",
   "incorrect_result",
   "execution_error",
@@ -331,14 +388,22 @@ it.each([
           ...(requestedFunctionality ? { requestedFunctionality } : {}),
         },
       ];
+      mocks.insert.mockClear();
       expect((await submit({ ...minimal, capabilityFeedback })).status).toBe(
         200,
       );
-      expect(mocks.values).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          metadata: expect.objectContaining({ capabilityFeedback }),
-        }),
-      );
+      expect(capabilityRows()).toEqual([
+        {
+          feedback_id: parentRows()[0].id,
+          team_id: teamId,
+          position: 0,
+          name: "contracts",
+          provider: "sam.gov",
+          issue,
+          why: capabilityFeedback[0].why,
+          requested_functionality: requestedFunctionality ?? null,
+        },
+      ]);
     }
   },
 );
@@ -359,7 +424,7 @@ it.each([undefined, "", " "])(
       ],
     };
     expect((await submit(payload)).status).toBe(400);
-    expect(mocks.values).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
     const parsed = alexandriaFeedbackSchema.safeParse(payload);
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
@@ -391,9 +456,9 @@ it.each([
   ["_" + "x".repeat(99), "_" + "x".repeat(99)],
 ])("accepts and normalizes integration %j", async (integration, expected) => {
   expect((await submit({ ...minimal, integration })).status).toBe(200);
-  expect(mocks.values).toHaveBeenCalledWith(
+  expect(parentRows()).toEqual([
     expect.objectContaining({ integration: expected }),
-  );
+  ]);
 });
 
 it.each(["unsupported", " ", "_" + "x".repeat(100)])(
@@ -402,7 +467,7 @@ it.each(["unsupported", " ", "_" + "x".repeat(100)])(
     const response = await submit({ ...minimal, integration });
     expect(response.status).toBe(400);
     expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
-    expect(mocks.values).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
   },
 );
 
@@ -416,13 +481,13 @@ it.each(["providerFeedback", "capabilityFeedback"])(
       ...(field === "capabilityFeedback" ? { provider: "sam.gov" } : {}),
     };
     for (const length of [20, 21]) {
-      mocks.values.mockClear();
+      mocks.transaction.mockClear();
       const response = await submit({
         ...minimal,
         [field]: Array.from({ length }, () => ({ ...entry })),
       });
       expect(response.status).toBe(length === 20 ? 200 : 400);
-      expect(mocks.values).toHaveBeenCalledTimes(length === 20 ? 1 : 0);
+      expect(mocks.transaction).toHaveBeenCalledTimes(length === 20 ? 1 : 0);
     }
   },
 );
@@ -442,13 +507,13 @@ it.each([
     ...(array === "capabilityFeedback" ? { provider: "sam.gov" } : {}),
   };
   for (const length of [limit, limit + 1]) {
-    mocks.values.mockClear();
+    mocks.transaction.mockClear();
     const response = await submit({
       ...minimal,
       [array]: [{ ...entry, [field]: "x".repeat(length) }],
     });
     expect(response.status).toBe(length === limit ? 200 : 400);
-    expect(mocks.values).toHaveBeenCalledTimes(length === limit ? 1 : 0);
+    expect(mocks.transaction).toHaveBeenCalledTimes(length === limit ? 1 : 0);
   }
 });
 
@@ -478,7 +543,7 @@ it("bounds the complete UTF-8 evidence payload", async () => {
     })),
   });
   expect(response.status).toBe(400);
-  expect(mocks.values).not.toHaveBeenCalled();
+  expect(mocks.transaction).not.toHaveBeenCalled();
 });
 
 it("applies the payload limit after normalizing feedback", async () => {
@@ -487,9 +552,9 @@ it("applies the payload limit after normalizing feedback", async () => {
     rationale: " ".repeat(9 * 1024) + minimal.rationale,
   });
   expect(response.status).toBe(200);
-  expect(mocks.values).toHaveBeenCalledWith(
-    expect.objectContaining({ comment: minimal.rationale }),
-  );
+  expect(parentRows()).toEqual([
+    expect.objectContaining({ rationale: minimal.rationale }),
+  ]);
 });
 
 it.each([
@@ -503,7 +568,7 @@ it.each([
   const response = await submit(minimal);
   expect(response.status).toBe(200);
   expect(response.body.feedbackId).toBe("00000000-0000-0000-0000-000000000000");
-  expect(mocks.values).not.toHaveBeenCalled();
+  expect(mocks.transaction).not.toHaveBeenCalled();
 });
 
 it("honors team opt-out", async () => {
@@ -511,7 +576,7 @@ it("honors team opt-out", async () => {
   const response = await submit(minimal);
   expect(response.status).toBe(403);
   expect(response.body.feedbackErrorCode).toBe("TEAM_OPTED_OUT");
-  expect(mocks.values).not.toHaveBeenCalled();
+  expect(mocks.transaction).not.toHaveBeenCalled();
 });
 
 it.each(["preview", "preview_example", "preview_keyless_example"])(
@@ -521,7 +586,7 @@ it.each(["preview", "preview_example", "preview_keyless_example"])(
     const response = await submit(minimal);
     expect(response.status).toBe(403);
     expect(response.body.feedbackErrorCode).toBe("PREVIEW_TEAM_NOT_ALLOWED");
-    expect(mocks.values).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
   },
 );
 
@@ -530,7 +595,7 @@ it("rejects deployments without database authentication", async () => {
   const response = await submit(minimal);
   expect(response.status).toBe(503);
   expect(response.body.feedbackErrorCode).toBe("DB_DISABLED");
-  expect(mocks.values).not.toHaveBeenCalled();
+  expect(mocks.transaction).not.toHaveBeenCalled();
 });
 
 it.each([
@@ -538,7 +603,7 @@ it.each([
   [Object.assign(new Error("sensitive detail"), { code: "23514" }), "23514"],
   [
     new DrizzleQueryError(
-      "INSERT INTO search_feedback VALUES ($1)",
+      "INSERT INTO alexandria_feedback VALUES ($1)",
       ["sensitive feedback payload"],
       Object.assign(new Error("sensitive database detail"), { code: "23514" }),
     ),
@@ -548,7 +613,7 @@ it.each([
   [{ code: { detail: "sensitive feedback payload" } }, null],
   [null, null],
 ])("logs only SQLSTATE on persistence failure %#", async (error, errorCode) => {
-  mocks.values.mockRejectedValueOnce(error);
+  mocks.insert.mockRejectedValueOnce(error);
   const response = await submit(minimal);
   expect(response.status).toBe(500);
   expect(response.body).toEqual({
@@ -584,6 +649,6 @@ it.each(["search", "scrape", "parse", "map"])(
       expect.anything(),
       expect.objectContaining({ endpoint, jobId }),
     );
-    expect(mocks.values).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
   },
 );

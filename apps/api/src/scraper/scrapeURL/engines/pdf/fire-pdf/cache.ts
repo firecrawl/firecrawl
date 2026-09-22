@@ -349,7 +349,7 @@ export function provenanceFromResponse(
  * expensive to redo, so those results are still cached; the stamp's counts
  * let a later policy refresh them first.
  */
-export function cacheRefusalReason(
+function cacheRefusalReason(
   failedPages: readonly number[] | null | undefined,
   provenance: FirePdfProvenance | null | undefined,
 ): CacheRefusedReason | null {

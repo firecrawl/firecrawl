@@ -64,26 +64,51 @@ export async function recordAlexandriaFeedback(
   }
 
   const feedbackId = uuidv7();
-  const { rating, origin, integration, ...metadata } = body;
-  try {
-    await db.insert(schema.search_feedback).values({
-      id: feedbackId,
-      endpoint: "alexandria",
+  const providerRows = (body.providerFeedback ?? []).map((entry, position) => ({
+    feedback_id: feedbackId,
+    team_id: teamId,
+    position,
+    name: entry.name,
+    issue: entry.issue,
+    why: entry.why,
+  }));
+  const capabilityRows = (body.capabilityFeedback ?? []).map(
+    (entry, position) => ({
+      feedback_id: feedbackId,
       team_id: teamId,
-      api_key_id: req.acuc?.api_key_id ?? null,
-      search_id: null,
-      job_id: null,
-      request_id: null,
-      job_status: null,
-      api_version: "v2",
-      overall_rating: rating,
-      comment: body.rationale,
-      metadata: { schemaVersion: 1, ...metadata },
-      origin,
-      integration: integration ?? null,
-      credits_billed: 0,
-      credits_refunded: 0,
-      refund_policy: null,
+      position,
+      name: entry.name,
+      provider: entry.provider,
+      issue: entry.issue,
+      why: entry.why,
+      requested_functionality: entry.requestedFunctionality ?? null,
+    }),
+  );
+  try {
+    await db.transaction(async tx => {
+      await tx.insert(schema.alexandria_feedback).values({
+        id: feedbackId,
+        team_id: teamId,
+        api_key_id: req.acuc?.api_key_id ?? null,
+        api_version: "v2",
+        rating: body.rating,
+        requested_url: body.requestedWebsite.url,
+        requested_functionality: body.requestedWebsite.requestedFunctionality,
+        rationale: body.rationale,
+        origin: body.origin,
+        integration: body.integration ?? null,
+        schema_version: 2,
+      });
+      if (providerRows.length > 0) {
+        await tx
+          .insert(schema.alexandria_feedback_providers)
+          .values(providerRows);
+      }
+      if (capabilityRows.length > 0) {
+        await tx
+          .insert(schema.alexandria_feedback_capabilities)
+          .values(capabilityRows);
+      }
     });
   } catch (error) {
     // Database errors may embed the submitted payload. Keep feedback content

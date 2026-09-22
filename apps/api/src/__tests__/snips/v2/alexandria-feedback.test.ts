@@ -1,9 +1,37 @@
 import request from "supertest";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { describeIf, TEST_API_URL, TEST_PRODUCTION } from "../lib";
 import { idmux, Identity } from "./lib";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
+
+const feedbackRows = async (feedbackId: string) => {
+  const [[parent], providers, capabilities] = await Promise.all([
+    db
+      .select()
+      .from(schema.alexandria_feedback)
+      .where(eq(schema.alexandria_feedback.id, feedbackId)),
+    db
+      .select()
+      .from(schema.alexandria_feedback_providers)
+      .where(eq(schema.alexandria_feedback_providers.feedback_id, feedbackId))
+      .orderBy(asc(schema.alexandria_feedback_providers.position)),
+    db
+      .select()
+      .from(schema.alexandria_feedback_capabilities)
+      .where(
+        eq(schema.alexandria_feedback_capabilities.feedback_id, feedbackId),
+      )
+      .orderBy(asc(schema.alexandria_feedback_capabilities.position)),
+  ]);
+  return { parent, providers, capabilities };
+};
+
+// Child rows cascade from the parent delete.
+const deleteFeedback = (feedbackId: string) =>
+  db
+    .delete(schema.alexandria_feedback)
+    .where(eq(schema.alexandria_feedback.id, feedbackId));
 
 describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
   let identity: Identity;
@@ -33,30 +61,25 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
     expect(response.body).toMatchObject({ success: true, creditsRefunded: 0 });
     expect(response.body.feedbackId).toEqual(expect.any(String));
     try {
-      const [row] = await db
-        .select()
-        .from(schema.search_feedback)
-        .where(eq(schema.search_feedback.id, response.body.feedbackId));
-      expect(row).toMatchObject({
-        endpoint: "alexandria",
+      const { parent, providers, capabilities } = await feedbackRows(
+        response.body.feedbackId,
+      );
+      expect(parent).toMatchObject({
         team_id: identity.teamId,
-        job_id: null,
-        search_id: null,
-        request_id: null,
-        job_status: null,
-        overall_rating: "partial",
-        comment: body.rationale,
-        credits_refunded: 0,
-        metadata: {
-          endpoint: "alexandria",
-          requestedWebsite: body.requestedWebsite,
-          rationale: body.rationale,
-        },
+        api_version: "v2",
+        rating: "partial",
+        requested_url: body.requestedWebsite.url,
+        requested_host: "sam.gov",
+        requested_functionality: body.requestedWebsite.requestedFunctionality,
+        rationale: body.rationale,
+        origin: "api",
+        integration: null,
+        schema_version: 2,
       });
+      expect(providers).toEqual([]);
+      expect(capabilities).toEqual([]);
     } finally {
-      await db
-        .delete(schema.search_feedback)
-        .where(eq(schema.search_feedback.id, response.body.feedbackId));
+      await deleteFeedback(response.body.feedbackId);
     }
   });
 
@@ -79,6 +102,12 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
       {
         name: "contracts",
         provider: "sam.gov",
+        issue: "missing_capability",
+        why: "The provider has no attachment download capability.",
+      },
+      {
+        name: "contracts",
+        provider: "sam.gov",
         issue: "execution_error",
         why: "The second page request timed out.",
       },
@@ -90,25 +119,38 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
       integration: "cli",
     });
     expect(response.statusCode).toBe(200);
+    const feedbackId = response.body.feedbackId;
     try {
-      const [row] = await db
-        .select()
-        .from(schema.search_feedback)
-        .where(eq(schema.search_feedback.id, response.body.feedbackId));
-      expect(row.metadata).toEqual({
-        schemaVersion: 1,
-        endpoint: "alexandria",
-        requestedWebsite: body.requestedWebsite,
+      const { parent, providers, capabilities } =
+        await feedbackRows(feedbackId);
+      expect(parent).toMatchObject({
         rationale: body.rationale,
-        providerFeedback,
-        capabilityFeedback,
+        integration: "cli",
       });
-      expect(row.comment).toBe(body.rationale);
-      expect(row.integration).toBe("cli");
+      expect(providers).toEqual(
+        providerFeedback.map((entry, position) =>
+          expect.objectContaining({
+            feedback_id: feedbackId,
+            team_id: identity.teamId,
+            position,
+            ...entry,
+          }),
+        ),
+      );
+      expect(capabilities).toEqual(
+        capabilityFeedback.map(
+          ({ requestedFunctionality, ...entry }, position) =>
+            expect.objectContaining({
+              feedback_id: feedbackId,
+              team_id: identity.teamId,
+              position,
+              requested_functionality: requestedFunctionality ?? null,
+              ...entry,
+            }),
+        ),
+      );
     } finally {
-      await db
-        .delete(schema.search_feedback)
-        .where(eq(schema.search_feedback.id, response.body.feedbackId));
+      await deleteFeedback(feedbackId);
     }
   });
 

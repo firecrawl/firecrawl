@@ -20,7 +20,10 @@ vi.mock("./feedback-store", () => ({
   updateFeedbackRefundDetails: async () => null,
 }));
 vi.mock("../../../db/connection", () => ({
-  db: { insert: () => ({ values: fixture.alexandriaInsert }) },
+  db: {
+    transaction: async (run: (tx: unknown) => Promise<void>) =>
+      run({ insert: () => ({ values: fixture.alexandriaInsert }) }),
+  },
 }));
 vi.mock("./refund-totals", () => ({
   sumCreditsRefundedToday: fixture.refundedToday,
@@ -194,13 +197,12 @@ it.each(stores)(
     expect(fixture.lookup).not.toHaveBeenCalled();
     expect(fixture.insert).not.toHaveBeenCalled();
     expect(fixture.refund).not.toHaveBeenCalled();
-    expect(fixture.alexandriaInsert).toHaveBeenCalledWith(
+    expect(fixture.alexandriaInsert).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        endpoint: "alexandria",
-        search_id: null,
-        job_id: null,
-        request_id: null,
-        credits_refunded: 0,
+        id: response.body.feedbackId,
+        team_id: teamId,
+        rating: "partial",
+        requested_url: "https://example.com",
       }),
     );
   },

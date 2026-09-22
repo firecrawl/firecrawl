@@ -19,6 +19,7 @@ const capabilityFeedback = z
     provider: name,
     issue: z.enum([
       "new_capability_request",
+      "missing_capability",
       "insufficient_functionality",
       "incorrect_result",
       "execution_error",
@@ -65,8 +66,5 @@ export const alexandriaFeedbackSchema = z
   );
 
 export type AlexandriaFeedbackRequest = z.infer<
-  typeof alexandriaFeedbackSchema
->;
-export type AlexandriaFeedbackRequestInput = z.input<
   typeof alexandriaFeedbackSchema
 >;
