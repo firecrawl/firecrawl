@@ -49,7 +49,7 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
  *
  * Endpoint → mode mapping: agent + extract share `Extract`; interact is
  * `Browser`; interactExecute is `BrowserExecute`; agentStatus is
- * `ExtractStatus`. Exchange data routes (discover, retrieve, records/fetch)
+ * `ExtractStatus`. Exchange execution routes (retrieve, records/fetch)
  * match Scrape so an Alexandria call costs the same request budget whichever
  * path it takes.
  */

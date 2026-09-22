@@ -24,7 +24,8 @@ vi.mock("../services/alexandria/terms", () => ({
   acceptTermsSchema: {},
 }));
 vi.mock("./shared", () => ({
-  authMiddleware: () => (req: any, res: any, next: any) => {
+  authMiddleware: (mode: string) => (req: any, res: any, next: any) => {
+    res.setHeader("x-test-rate-mode", mode);
     if (!req.headers.authorization) return res.sendStatus(401);
     req.auth = { team_id: "authenticated-team" };
     req.acuc = { flags: { exchangeRetrieve: false } };
@@ -77,4 +78,24 @@ it("preserves upstream failures", async () => {
         .set("Authorization", "Bearer test-key")
     ).status,
   ).toBe(503);
+});
+
+it("keeps catalog fan-out on the read budget without a rollout flag", async () => {
+  const response = await request(app)
+    .get("/exchange/discover/finance?expand=all&surface=web")
+    .set("Authorization", "Bearer test-key");
+  expect(response.status).toBe(200);
+  expect(response.headers["x-test-rate-mode"]).toBe("labs");
+  expect(fetch).toHaveBeenCalledWith(
+    "http://exchange.internal/v1/discover/finance?expand=all&surface=web",
+    expect.anything(),
+  );
+});
+it("retains the execution budget and existing record-retrieval gate", async () => {
+  const response = await request(app)
+    .post("/exchange/records/fetch")
+    .set("Authorization", "Bearer test-key");
+  expect(response.headers["x-test-rate-mode"]).toBe("exchange");
+  expect(response.status).toBe(403);
+  expect(fetch).not.toHaveBeenCalled();
 });
