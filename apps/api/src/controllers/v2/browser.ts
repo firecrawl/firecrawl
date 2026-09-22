@@ -16,6 +16,7 @@ import {
   didBrowserSessionUsePrompt,
   clearBrowserSessionPromptFlag,
   upsertBrowserProfile,
+  deleteBrowserProfile,
 } from "../../lib/browser-sessions";
 import {
   getCombinedTeamActiveCount,
@@ -575,6 +576,72 @@ export async function browserExecuteController(
     killed: execResult.killed,
     ...(hasError ? { error: execResult.stderr || "Execution failed" } : {}),
   });
+}
+
+const profileNameSchema = z.string().min(1).max(128);
+
+// DELETE /v2/browser/profiles/:name
+// Deletes a persistent profile's saved state and its listing. Deleting a
+// profile that has no saved state succeeds.
+export async function browserProfileDeleteController(
+  req: RequestWithAuth<{ name: string }, { success: boolean; error?: string }>,
+  res: Response<{ success: boolean; error?: string }>,
+) {
+  if (getSafeMode(req.acuc?.flags)) {
+    return res.status(403).json({
+      success: false,
+      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+    });
+  }
+
+  const parsed = profileNameSchema.safeParse(req.params.name);
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      error: "Profile name must be between 1 and 128 characters.",
+    });
+  }
+  const name = parsed.data;
+
+  if (!config.BROWSER_SERVICE_URL) {
+    return res.status(503).json({
+      success: false,
+      error:
+        "Browser feature is not configured (BROWSER_SERVICE_URL is missing).",
+    });
+  }
+
+  const logger = _logger.child({
+    teamId: req.auth.team_id,
+    module: "api/v2",
+    method: "browserProfileDeleteController",
+  });
+
+  try {
+    await browserServiceRequest(
+      "DELETE",
+      `/profiles/${encodeURIComponent(browserProfileStorageId(req.auth.team_id, name))}`,
+    );
+  } catch (err) {
+    if (err instanceof BrowserServiceError && err.status === 409) {
+      return res.status(409).json({
+        success: false,
+        error:
+          "A session is currently saving to this profile. Stop that session, then delete the profile.",
+      });
+    }
+    logger.error("Failed to delete profile via browser service", {
+      error: err,
+    });
+    return res.status(502).json({
+      success: false,
+      error: "Failed to delete profile.",
+    });
+  }
+
+  await deleteBrowserProfile(req.auth.team_id, name);
+  logger.info("Deleted browser profile");
+  return res.status(200).json({ success: true });
 }
 
 export async function browserDeleteController(

@@ -1,4 +1,5 @@
 import { and, desc, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
@@ -310,6 +311,19 @@ export async function upsertBrowserProfile(input: {
         size_bytes: sql`CASE WHEN excluded.saved_at >= ${profiles.saved_at} THEN COALESCE(excluded.size_bytes, ${profiles.size_bytes}) ELSE ${profiles.size_bytes} END`,
       },
     });
+}
+
+// Removes a profile's listing once its saved state is deleted. Keyless callers
+// (non-UUID team ids) are never listed, so there is nothing to remove.
+export async function deleteBrowserProfile(
+  teamId: string,
+  name: string,
+): Promise<void> {
+  if (!z.uuid().safeParse(teamId).success) return;
+  const profiles = schema.browser_profiles;
+  await db
+    .delete(profiles)
+    .where(and(eq(profiles.team_id, teamId), eq(profiles.name, name)));
 }
 
 // ---------------------------------------------------------------------------
