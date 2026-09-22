@@ -156,7 +156,7 @@ export const exchangeRouter = express.Router();
 // scaled). Dashboard and publisher routes below stay on the flat Labs limit.
 exchangeRouter.get(
   "/discover{/*path}",
-  authMiddleware(RateLimiterMode.Exchange),
+  authMiddleware(RateLimiterMode.Exchange, { skipRateLimit: true }),
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 

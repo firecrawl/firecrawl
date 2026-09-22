@@ -272,6 +272,7 @@ export function authMiddleware(
   rateLimiterMode: RateLimiterMode,
   options: {
     allowKeyless?: boolean | ((req: RequestWithMaybeAuth) => boolean);
+    skipRateLimit?: boolean;
   } = {},
 ): (req: RequestWithMaybeAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {

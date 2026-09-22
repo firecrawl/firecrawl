@@ -636,7 +636,7 @@ export async function authenticateUser(
   req,
   res,
   mode: RateLimiterMode,
-  options?: { allowKeyless?: boolean },
+  options?: { allowKeyless?: boolean; skipRateLimit?: boolean },
 ): Promise<AuthResponse> {
   const bypassChunk = mockACUC();
   bypassChunk.is_extract =
@@ -702,7 +702,7 @@ async function supaAuthenticateUser(
   req,
   res,
   mode: RateLimiterMode,
-  options?: { allowKeyless?: boolean },
+  options?: { allowKeyless?: boolean; skipRateLimit?: boolean },
 ): Promise<AuthResponse> {
   const authHeader =
     req.headers.authorization ??
@@ -945,7 +945,7 @@ async function supaAuthenticateUser(
   const team_endpoint_token = token === config.PREVIEW_TOKEN ? iptoken : teamId;
 
   try {
-    await rateLimiter.consume(team_endpoint_token);
+    if (!options?.skipRateLimit) await rateLimiter.consume(team_endpoint_token);
   } catch (rateLimiterRes) {
     logger.error(`Rate limit exceeded: ${rateLimiterRes}`, {
       teamId,
