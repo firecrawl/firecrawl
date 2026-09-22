@@ -636,7 +636,7 @@ export async function authenticateUser(
   req,
   res,
   mode: RateLimiterMode,
-  options?: { allowKeyless?: boolean },
+  options?: { allowKeyless?: boolean; skipRateLimit?: boolean },
 ): Promise<AuthResponse> {
   const bypassChunk = mockACUC();
   bypassChunk.is_extract =
@@ -702,7 +702,7 @@ async function supaAuthenticateUser(
   req,
   res,
   mode: RateLimiterMode,
-  options?: { allowKeyless?: boolean },
+  options?: { allowKeyless?: boolean; skipRateLimit?: boolean },
 ): Promise<AuthResponse> {
   const authHeader =
     req.headers.authorization ??
@@ -734,7 +734,7 @@ async function supaAuthenticateUser(
     ? HOBBY_RATE_LIMIT_MULTIPLIER
     : undefined;
 
-  let rateLimiter: RateLimiterRedis;
+  let rateLimiter: RateLimiterRedis | undefined;
   let subscriptionData: { team_id: string } | null = null;
   let normalizedApi: string;
 
@@ -785,13 +785,15 @@ async function supaAuthenticateUser(
 
     teamId = chunk.team_id;
     subscriptionData = { team_id: teamId };
-    rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
-      mode,
-      chunk.flags,
-      minRateMultiplier,
-    );
+    rateLimiter = options?.skipRateLimit
+      ? undefined
+      : await buildAuthenticatedRateLimiter(
+          teamId,
+          chunk.org_id,
+          mode,
+          chunk.flags,
+          minRateMultiplier,
+        );
   } else if (token.startsWith("fco_")) {
     // OAuth access token — resolve via introspection endpoint
     let introspection: OAuthIntrospectionResponse | null;
@@ -855,13 +857,15 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
-      mode,
-      chunk.flags,
-      minRateMultiplier,
-    );
+    rateLimiter = options?.skipRateLimit
+      ? undefined
+      : await buildAuthenticatedRateLimiter(
+          teamId,
+          chunk.org_id,
+          mode,
+          chunk.flags,
+          minRateMultiplier,
+        );
   } else {
     normalizedApi = parseApi(token);
     if (!normalizedApiIsUuid(normalizedApi)) {
@@ -887,13 +891,15 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
-      mode,
-      chunk.flags,
-      minRateMultiplier,
-    );
+    rateLimiter = options?.skipRateLimit
+      ? undefined
+      : await buildAuthenticatedRateLimiter(
+          teamId,
+          chunk.org_id,
+          mode,
+          chunk.flags,
+          minRateMultiplier,
+        );
   }
 
   // Banned teams are rejected here, where the mcp / OAuth / API-key paths
@@ -945,7 +951,7 @@ async function supaAuthenticateUser(
   const team_endpoint_token = token === config.PREVIEW_TOKEN ? iptoken : teamId;
 
   try {
-    await rateLimiter.consume(team_endpoint_token);
+    if (rateLimiter) await rateLimiter.consume(team_endpoint_token);
   } catch (rateLimiterRes) {
     logger.error(`Rate limit exceeded: ${rateLimiterRes}`, {
       teamId,

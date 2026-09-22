@@ -152,11 +152,10 @@ async function providerTermsAcceptController(req: Request, res: Response) {
 
 export const exchangeRouter = express.Router();
 
-// Catalog pages fetch one discovery request per cohort, so reads use the Labs
-// budget. Paid execution routes retain the plan-scaled Exchange limit.
+// Catalog browsing is authenticated but unmetered; page loads fan out by cohort.
 exchangeRouter.get(
   "/discover{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
+  authMiddleware(RateLimiterMode.Labs, { skipRateLimit: true }),
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
