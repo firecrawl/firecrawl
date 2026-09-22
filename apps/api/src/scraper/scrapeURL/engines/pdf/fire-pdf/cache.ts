@@ -213,6 +213,7 @@ export async function tryGetCached(
       pageMarkers,
       refresh: getPDFRefresh(meta.options?.parsers),
       sourceKind: isRasterImagePayload(base64Content) ? "image" : "pdf",
+      ownVariant: ownVariant ?? "base",
     });
   }
   const cacheKey = resolvePdfCacheKey(base64Content);

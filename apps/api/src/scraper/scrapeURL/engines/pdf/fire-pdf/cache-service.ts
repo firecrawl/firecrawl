@@ -20,13 +20,17 @@ export function cacheServiceConfigured(): boolean {
 }
 
 /** Keys the document may be cached under: the bytes' hash first, then the historical hash of the base64 payload. */
-export function cacheLookupKeys(input: PdfCacheKeyInput): string[] {
+async function cacheLookupKeys(input: PdfCacheKeyInput): Promise<string[]> {
   if (typeof input !== "string") return [input.key];
-  const bytes = crypto
-    .createHash("sha256")
-    .update(Buffer.from(input, "base64"))
-    .digest("hex");
-  return [`raw-${bytes}`, createPdfCacheKey(input)];
+  // The bytes' hash runs off the event loop; the payload hash is the one the bucket path already paid.
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    Buffer.from(input, "base64"),
+  );
+  return [
+    `raw-${Buffer.from(digest).toString("hex")}`,
+    createPdfCacheKey(input),
+  ];
 }
 
 // A lookup is one small request; past this it is a miss and the document is parsed.
@@ -72,6 +76,8 @@ export async function lookupCachedResult(
     pageMarkers: boolean;
     refresh: boolean;
     sourceKind: FirePdfSourceKind;
+    /** The variant this request would write, for the miss labels. */
+    ownVariant: string;
   },
 ): Promise<PDFProcessorResult | null> {
   const {
@@ -82,6 +88,7 @@ export async function lookupCachedResult(
     pageMarkers,
     refresh,
     sourceKind,
+    ownVariant,
   } = args;
   // An already-cancelled scrape sends nothing.
   meta.abort.throwIfAborted();
@@ -94,7 +101,7 @@ export async function lookupCachedResult(
         ? { Authorization: `Bearer ${config.FIRE_PDF_API_KEY}` }
         : undefined,
       body: {
-        keys: cacheLookupKeys(input),
+        keys: await cacheLookupKeys(input),
         options: {
           ...(mode !== undefined && { mode }),
           ...(includePageMarkdown && { include_page_markdown: true }),
@@ -118,7 +125,7 @@ export async function lookupCachedResult(
   } catch (error) {
     // The scrape's own abort is not a lookup failure.
     meta.abort.throwIfAborted();
-    firePdfCacheEventsTotal.inc({ event: "lookup_error", variant: "base" });
+    firePdfCacheEventsTotal.inc({ event: "lookup_error", variant: ownVariant });
     meta.logger.warn("FirePDF cache lookup failed, proceeding", {
       scrapeId: meta.id,
       error,
@@ -129,7 +136,7 @@ export async function lookupCachedResult(
   if (answer.outcome === "miss") {
     firePdfCacheEventsTotal.inc({
       event: answer.reason === "refresh" ? "bypass_refresh" : "miss",
-      variant: "base",
+      variant: ownVariant,
     });
     return null;
   }
