@@ -83,6 +83,8 @@ export async function lookupCachedResult(
     refresh,
     sourceKind,
   } = args;
+  // An already-cancelled scrape sends nothing.
+  meta.abort.throwIfAborted();
   let answer: z.infer<typeof lookupOutcomeSchema>;
   try {
     answer = await robustFetch({
@@ -114,6 +116,8 @@ export async function lookupCachedResult(
       ]),
     });
   } catch (error) {
+    // The scrape's own abort is not a lookup failure.
+    meta.abort.throwIfAborted();
     firePdfCacheEventsTotal.inc({ event: "lookup_error", variant: "base" });
     meta.logger.warn("FirePDF cache lookup failed, proceeding", {
       scrapeId: meta.id,
@@ -130,9 +134,13 @@ export async function lookupCachedResult(
     return null;
   }
   const { result } = answer;
+  // Never an unusable entry, whatever the service says: a sidecar the request
+  // needs must be present, and an empty result for a raster image is a stale
+  // verdict, not an answer (see isRasterImagePayload in cache.ts).
   if (
     (includePageMarkdown && result.pages === undefined) ||
-    (includeBlocks && result.blocks === undefined)
+    (includeBlocks && result.blocks === undefined) ||
+    (sourceKind === "image" && result.markdown.trim().length === 0)
   ) {
     firePdfCacheEventsTotal.inc({ event: "miss", variant: answer.variant });
     return null;

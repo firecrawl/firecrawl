@@ -1377,10 +1377,17 @@ describe("FirePDF cache through the lookup service", () => {
       logger: { info: vi.fn(), warn: vi.fn() },
       internalOptions: { zeroDataRetention: false, teamId: "team-1" },
       mock: null,
-      abort: { asSignal: () => new AbortController().signal },
+      abort: {
+        asSignal: () => new AbortController().signal,
+        throwIfAborted: vi.fn(),
+      },
       ...(parsers ? { options: { parsers } } : {}),
     } as any;
   }
+  // Base64 of a PNG signature followed by padding: sniffs as image/png.
+  const PNG_BASE64 = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0,
+  ]).toString("base64");
 
   beforeEach(() => {
     config.FIRE_PDF_CACHE_BASE_URL = "http://cache";
@@ -1503,6 +1510,41 @@ describe("FirePDF cache through the lookup service", () => {
     ).toBeNull();
     expect(fetchMock.mock.calls[0][0].body.refresh).toBe(true);
     expect(consumeRefresh).not.toHaveBeenCalled();
+  });
+
+  it("lets the scrape's own abort through instead of counting it as a lookup failure", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("aborted mid-lookup"));
+    const meta = serviceMeta();
+    let calls = 0;
+    meta.abort.throwIfAborted.mockImplementation(() => {
+      calls += 1;
+      if (calls === 2) throw new Error("scrape aborted");
+    });
+    await expect(
+      tryGetCached(meta, base64, undefined, undefined, undefined, false, false),
+    ).rejects.toThrow("scrape aborted");
+    expect(meta.logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("never serves an empty result for a raster image, and names the image to the service", async () => {
+    fetchMock.mockResolvedValueOnce({
+      outcome: "hit",
+      key: "k",
+      variant: "base",
+      result: { markdown: "   " },
+    } as any);
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        PNG_BASE64,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+      ),
+    ).toBeNull();
+    expect(fetchMock.mock.calls[0][0].body.source_kind).toBe("image");
   });
 
   it("does not write results itself while the service is in use", async () => {
