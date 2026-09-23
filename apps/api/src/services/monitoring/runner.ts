@@ -1306,8 +1306,10 @@ async function processRemovedPagesForCompletedCrawls(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
   targetResults: any[];
+  abortSignal: AbortSignal;
 }): Promise<void> {
   for (const target of params.targetResults) {
+    if (params.abortSignal.aborted) return;
     if (target?.type !== "crawl" || target.removedProcessed) continue;
 
     const group = await crawlGroup.getGroup(target.crawlId);
@@ -1332,6 +1334,7 @@ async function processRemovedPagesForCompletedCrawls(params: {
 
     const removed: MonitorCheckPageInsert[] = [];
     for (const previous of activePages) {
+      if (params.abortSignal.aborted) return;
       if (seen.has(previous.url_hash.toString("hex"))) continue;
       await upsertMonitorPage({
         monitorId: params.monitor.id,
@@ -1343,7 +1346,9 @@ async function processRemovedPagesForCompletedCrawls(params: {
         scrapeId: previous.last_scrape_id,
         status: "removed",
         metadata: previous.metadata,
+        abortSignal: params.abortSignal,
       });
+      if (params.abortSignal.aborted) return;
       removed.push({
         check_id: params.check.id,
         monitor_id: params.monitor.id,
@@ -1357,6 +1362,7 @@ async function processRemovedPagesForCompletedCrawls(params: {
       });
     }
 
+    if (params.abortSignal.aborted) return;
     await insertMonitorCheckPages(removed);
     target.removedProcessed = true;
   }
@@ -1664,7 +1670,9 @@ export async function reconcileRunningMonitorChecks(
         monitor,
         check,
         targetResults,
+        abortSignal: lease.signal,
       });
+      if (lease.signal.aborted) continue;
 
       const complete = await isMonitorCheckComplete(
         {

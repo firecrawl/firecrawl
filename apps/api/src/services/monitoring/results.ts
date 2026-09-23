@@ -1,4 +1,5 @@
 import { NuQJob } from "../worker/nuq";
+import { v7 as uuidv7 } from "uuid";
 import { ScrapeJobData } from "../../types";
 import { logger as _logger } from "../../lib/logger";
 import { createWebhookSender, WebhookEvent } from "../webhook";
@@ -15,33 +16,34 @@ import {
   updateMonitorCheckIfRunning,
   upsertMonitorPage,
 } from "./store";
-import { acquireMonitorCheckFinalizeLease } from "./finalize-lease";
+import {
+  acquireMonitorCheckFinalizeLease,
+  MonitorCheckFinalizeLeaseTimeoutError,
+} from "./finalize-lease";
 
 const logger = _logger.child({ module: "monitoring-results" });
 
 // Per-(check, url) webhook claim. checkIds are unique per run, so this only needs
 // to outlive a job redelivery; we match runner.ts's notify-claim horizon.
 const MONITOR_PAGE_WEBHOOK_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
+const MONITOR_FINALIZE_LEASE_WAIT_MS = 5 * 60 * 1000;
 
 async function heartbeatMonitorCheck(checkId: string): Promise<boolean> {
   return (await updateMonitorCheckIfRunning(checkId, {})) !== null;
 }
 
 async function waitForMonitorCheckFinalizeLease(checkId: string) {
-  while (true) {
-    const lease = await acquireMonitorCheckFinalizeLease(checkId).catch(
-      error => {
-        logger.warn("Failed to acquire monitor finalize lease", {
-          error,
-          checkId,
-        });
-        return null;
-      },
-    );
+  const deadline = Date.now() + MONITOR_FINALIZE_LEASE_WAIT_MS;
+  while (Date.now() < deadline) {
+    const lease = await acquireMonitorCheckFinalizeLease(checkId);
     if (lease) return lease;
     if (!(await isMonitorCheckRunning(checkId))) return null;
     await new Promise(resolve => setTimeout(resolve, 250));
   }
+  throw new MonitorCheckFinalizeLeaseTimeoutError(
+    checkId,
+    MONITOR_FINALIZE_LEASE_WAIT_MS,
+  );
 }
 
 async function heartbeatMonitorCheckWithLease(
@@ -82,29 +84,50 @@ async function claimMonitorPageWebhook(
   checkId: string,
   url: string,
   kind: "page" | "error",
-): Promise<boolean> {
+): Promise<{ key: string; token: string } | null> {
   try {
     if (kind === "error") {
       const pageSent = await redisEvictConnection.exists(
         monitorPageNotifyKey(checkId, url, "page"),
       );
-      if (pageSent) return false;
+      if (pageSent) return null;
     }
+    const key = monitorPageNotifyKey(checkId, url, kind);
+    const token = uuidv7();
     const result = await redisEvictConnection.set(
-      monitorPageNotifyKey(checkId, url, kind),
-      "1",
+      key,
+      token,
       "EX",
       MONITOR_PAGE_WEBHOOK_CLAIM_TTL_SECONDS,
       "NX",
     );
-    return result === "OK";
+    return result === "OK" ? { key, token } : null;
   } catch (error) {
     logger.warn("Failed to claim monitor page webhook", {
       error,
       checkId,
       url,
     });
-    return false;
+    return null;
+  }
+}
+
+async function rollbackMonitorPageWebhookClaim(claim: {
+  key: string;
+  token: string;
+}): Promise<void> {
+  try {
+    await redisEvictConnection.eval(
+      `if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+      end
+      return 0`,
+      1,
+      claim.key,
+      claim.token,
+    );
+  } catch (error) {
+    logger.warn("Failed to roll back monitor page webhook claim", { error });
   }
 }
 
@@ -156,15 +179,17 @@ async function persistMonitorCheckError(params: {
     ]);
     if (lease.signal.aborted) return;
 
-    if (
-      await claimMonitorPageWebhook(
-        params.monitoring.checkId,
-        params.url,
-        "error",
-      )
-    ) {
-      if (lease.signal.aborted) return;
-      await sendMonitorPageWebhook({
+    const webhookClaim = await claimMonitorPageWebhook(
+      params.monitoring.checkId,
+      params.url,
+      "error",
+    );
+    if (webhookClaim) {
+      if (lease.signal.aborted) {
+        await rollbackMonitorPageWebhookClaim(webhookClaim);
+        return;
+      }
+      const dispatchOwned = await sendMonitorPageWebhook({
         teamId: params.teamId,
         monitorId: params.monitoring.monitorId,
         checkId: params.monitoring.checkId,
@@ -172,7 +197,11 @@ async function persistMonitorCheckError(params: {
         status: "error",
         currentScrapeId: params.scrapeId,
         error: params.error,
+        abortSignal: lease.signal,
       });
+      if (!dispatchOwned) {
+        await rollbackMonitorPageWebhookClaim(webhookClaim);
+      }
     }
   } finally {
     await lease.release();
@@ -213,10 +242,13 @@ export async function sendMonitorPageWebhook(params: {
   judgment?: PageJudgment | null;
   diffText?: string | null;
   diffJson?: Record<string, { previous: unknown; current: unknown }> | null;
-}) {
+  abortSignal?: AbortSignal;
+}): Promise<boolean> {
+  let dispatchStarted = false;
   try {
     const monitor = await getMonitorForUpdate(params.teamId, params.monitorId);
-    if (!monitor?.webhook) return;
+    if (!monitor?.webhook) return false;
+    if (params.abortSignal?.aborted) return false;
 
     const sender = await createWebhookSender({
       teamId: params.teamId,
@@ -254,9 +286,11 @@ export async function sendMonitorPageWebhook(params: {
       ],
       error: params.error ?? undefined,
     };
-    if (sender) {
-      await sender.send(WebhookEvent.MONITOR_PAGE, payload);
-    }
+    if (!sender) return false;
+    if (params.abortSignal?.aborted) return false;
+    dispatchStarted = true;
+    await sender.send(WebhookEvent.MONITOR_PAGE, payload);
+    return true;
   } catch (error) {
     logger.warn("Failed to send monitor page webhook", {
       error,
@@ -265,6 +299,7 @@ export async function sendMonitorPageWebhook(params: {
       url: params.url,
       status: params.status,
     });
+    return dispatchStarted;
   }
 }
 
@@ -432,9 +467,17 @@ export async function recordMonitorScrapeSuccess(
       judgmentMeaningful: judgment?.meaningful,
     });
 
-    if (await claimMonitorPageWebhook(monitoring.checkId, url, "page")) {
-      if (lease.signal.aborted) return;
-      await sendMonitorPageWebhook({
+    const webhookClaim = await claimMonitorPageWebhook(
+      monitoring.checkId,
+      url,
+      "page",
+    );
+    if (webhookClaim) {
+      if (lease.signal.aborted) {
+        await rollbackMonitorPageWebhookClaim(webhookClaim);
+        return;
+      }
+      const dispatchOwned = await sendMonitorPageWebhook({
         teamId: job.data.team_id,
         monitorId: monitoring.monitorId,
         checkId: monitoring.checkId,
@@ -445,7 +488,11 @@ export async function recordMonitorScrapeSuccess(
         judgment: judgment ?? null,
         diffText: diffText ?? null,
         diffJson: diffJson ?? null,
+        abortSignal: lease.signal,
       });
+      if (!dispatchOwned) {
+        await rollbackMonitorPageWebhookClaim(webhookClaim);
+      }
     }
   } finally {
     await lease.release();

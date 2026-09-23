@@ -5,6 +5,16 @@ import { redisEvictConnection } from "../redis";
 const logger = rootLogger.child({ module: "monitoring-finalize-lease" });
 const LEASE_TTL_SECONDS = 60;
 const LEASE_RENEW_INTERVAL_MS = 20_000;
+const LEASE_RENEW_TIMEOUT_MS = 10_000;
+
+export class MonitorCheckFinalizeLeaseTimeoutError extends Error {
+  constructor(checkId: string, timeoutMs: number) {
+    super(
+      `Timed out waiting ${timeoutMs}ms for monitor check ${checkId} finalization lease`,
+    );
+    this.name = "MonitorCheckFinalizeLeaseTimeoutError";
+  }
+}
 
 type MonitorCheckFinalizeLease = {
   signal: AbortSignal;
@@ -28,20 +38,28 @@ export async function acquireMonitorCheckFinalizeLease(
 
   const ownership = new AbortController();
   let renewing = false;
+  let renewalTimeout: NodeJS.Timeout | undefined;
   const renew = setInterval(() => {
     if (renewing || ownership.signal.aborted) return;
     renewing = true;
-    redisEvictConnection
-      .eval(
-        `if redis.call("get", KEYS[1]) == ARGV[1] then
-          return redis.call("expire", KEYS[1], ARGV[2])
-        end
-        return 0`,
-        1,
-        key,
-        token,
-        LEASE_TTL_SECONDS,
-      )
+    const renewal = redisEvictConnection.eval(
+      `if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("expire", KEYS[1], ARGV[2])
+      end
+      return 0`,
+      1,
+      key,
+      token,
+      LEASE_TTL_SECONDS,
+    );
+    const deadline = new Promise<never>((_, reject) => {
+      renewalTimeout = setTimeout(
+        () => reject(new Error("Monitor finalize lease renewal timed out")),
+        LEASE_RENEW_TIMEOUT_MS,
+      );
+      renewalTimeout.unref();
+    });
+    Promise.race([renewal, deadline])
       .then(result => {
         if (result !== 1) ownership.abort();
       })
@@ -53,6 +71,8 @@ export async function acquireMonitorCheckFinalizeLease(
         });
       })
       .finally(() => {
+        if (renewalTimeout) clearTimeout(renewalTimeout);
+        renewalTimeout = undefined;
         renewing = false;
       });
   }, LEASE_RENEW_INTERVAL_MS);
@@ -62,6 +82,8 @@ export async function acquireMonitorCheckFinalizeLease(
     signal: ownership.signal,
     async release() {
       clearInterval(renew);
+      if (renewalTimeout) clearTimeout(renewalTimeout);
+      renewalTimeout = undefined;
       ownership.abort();
       try {
         await redisEvictConnection.eval(

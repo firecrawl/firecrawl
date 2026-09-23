@@ -10,10 +10,16 @@ const store = vi.hoisted(() => ({
 }));
 const computeAndPersistPageDiff = vi.hoisted(() => vi.fn());
 const send = vi.hoisted(() => vi.fn());
+const redis = vi.hoisted(() => ({
+  exists: vi.fn(),
+  set: vi.fn(),
+  eval: vi.fn(),
+}));
 const lease = vi.hoisted(() => ({
   acquire: vi.fn(),
   release: vi.fn(),
   signal: { aborted: false },
+  TimeoutError: class MonitorCheckFinalizeLeaseTimeoutError extends Error {},
 }));
 
 vi.mock("../../lib/logger", () => {
@@ -26,13 +32,14 @@ vi.mock("../webhook", () => ({
   WebhookEvent: { MONITOR_PAGE: "monitor.page" },
 }));
 vi.mock("../redis", () => ({
-  redisEvictConnection: { exists: vi.fn(), set: vi.fn() },
+  redisEvictConnection: redis,
 }));
 vi.mock("./diff-orchestrator", () => ({ computeAndPersistPageDiff }));
 vi.mock("./page-events", () => ({ derivePageIsMeaningful: vi.fn() }));
 vi.mock("./store", () => store);
 vi.mock("./finalize-lease", () => ({
   acquireMonitorCheckFinalizeLease: lease.acquire,
+  MonitorCheckFinalizeLeaseTimeoutError: lease.TimeoutError,
 }));
 
 import {
@@ -67,6 +74,8 @@ describe("monitor result lifecycle guard", () => {
     });
     store.isMonitorCheckRunning.mockResolvedValue(true);
   });
+
+  afterEach(() => vi.useRealTimers());
 
   it.each([
     {
@@ -119,6 +128,34 @@ describe("monitor result lifecycle guard", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("fails with a typed error when lease contention exceeds the deadline", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValue(300_001);
+    lease.acquire.mockResolvedValue(null);
+    store.isMonitorCheckRunning.mockResolvedValue(true);
+
+    const recording = recordMonitorScrapeFailure(
+      monitorJob(),
+      new Error("failed"),
+    );
+    await vi.advanceTimersByTimeAsync(250);
+
+    await expect(recording).rejects.toBeInstanceOf(lease.TimeoutError);
+  });
+
+  it("propagates lease acquisition infrastructure errors", async () => {
+    const failure = new Error("Redis unavailable");
+    lease.acquire.mockRejectedValue(failure);
+
+    await expect(
+      recordMonitorScrapeFailure(monitorJob(), new Error("failed")),
+    ).rejects.toBe(failure);
+    expect(store.isMonitorCheckRunning).not.toHaveBeenCalled();
+  });
+
   it("replaces the check page before advancing the baseline under the lease", async () => {
     store.updateMonitorCheckIfRunning.mockResolvedValue({ status: "running" });
     store.getMonitorPage.mockResolvedValue(null);
@@ -142,6 +179,53 @@ describe("monitor result lifecycle guard", () => {
       store.insertMonitorCheckPages.mock.invocationCallOrder[0],
     ).toBeLessThan(store.upsertMonitorPage.mock.invocationCallOrder[0]);
     expect(lease.release).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the webhook claim after dispatch", async () => {
+    store.updateMonitorCheckIfRunning.mockResolvedValue({ status: "running" });
+    store.getMonitorPage.mockResolvedValue(null);
+    store.getMonitorForUpdate.mockResolvedValue({
+      targets: [],
+      webhook: { url: "https://example.com/webhook" },
+    });
+    computeAndPersistPageDiff.mockResolvedValue({
+      status: "new",
+      diffGcsKey: null,
+      diffTextBytes: null,
+      diffJsonBytes: null,
+    });
+    redis.set.mockResolvedValue("OK");
+
+    await recordMonitorScrapeSuccess(monitorJob(), {});
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(redis.eval).not.toHaveBeenCalled();
+  });
+
+  it("rolls back its webhook claim when ownership is lost before dispatch", async () => {
+    store.updateMonitorCheckIfRunning.mockResolvedValue({ status: "running" });
+    store.getMonitorPage.mockResolvedValue(null);
+    store.getMonitorForUpdate
+      .mockResolvedValueOnce({ targets: [] })
+      .mockImplementationOnce(async () => {
+        lease.signal.aborted = true;
+        return {
+          targets: [],
+          webhook: { url: "https://example.com/webhook" },
+        };
+      });
+    computeAndPersistPageDiff.mockResolvedValue({
+      status: "new",
+      diffGcsKey: null,
+      diffTextBytes: null,
+      diffJsonBytes: null,
+    });
+    redis.set.mockResolvedValue("OK");
+
+    await recordMonitorScrapeSuccess(monitorJob(), {});
+
+    expect(send).not.toHaveBeenCalled();
+    expect(redis.eval).toHaveBeenCalledTimes(1);
   });
 
   it("stops before baseline advancement after losing lease ownership", async () => {

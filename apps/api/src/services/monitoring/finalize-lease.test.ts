@@ -34,7 +34,19 @@ describe("monitor check finalize lease", () => {
     await lease?.release();
   });
 
-  it("does not let release failure replace the primary result", async () => {
+  it("aborts when lease renewal never settles", async () => {
+    redis.eval
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValueOnce(1);
+    const lease = await acquireMonitorCheckFinalizeLease("check-1");
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(lease?.signal.aborted).toBe(true);
+    await lease?.release();
+  });
+
+  it("swallows and logs lease release failures", async () => {
     const lease = await acquireMonitorCheckFinalizeLease("check-1");
     redis.eval.mockRejectedValueOnce(new Error("Redis unavailable"));
 
