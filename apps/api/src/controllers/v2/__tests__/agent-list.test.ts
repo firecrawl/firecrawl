@@ -108,12 +108,28 @@ describe("agentListController options", () => {
   });
 
   it("reads a quoted threadTurn as a number", async () => {
-    mockAgentRow({ prompt: "p", threadId: "thread-1", threadTurn: "3" });
+    mockAgentRow(
+      JSON.stringify({ prompt: "p", threadId: "thread-1", threadTurn: "3" }),
+    );
 
     expect(await listOptions()).toMatchObject({
       threadId: "thread-1",
       threadTurn: 3,
     });
+  });
+
+  it("drops a quoted threadTurn that a number cannot hold exactly", async () => {
+    mockAgentRow(
+      JSON.stringify({
+        prompt: "p",
+        threadId: "thread-1",
+        threadTurn: "9223372036854775807",
+      }),
+    );
+
+    const options = await listOptions();
+    expect(options).toMatchObject({ threadId: "thread-1" });
+    expect(options).not.toHaveProperty("threadTurn");
   });
 
   it("falls back to defaults when options do not parse", async () => {

@@ -34,7 +34,8 @@ function parseAgentOptions(options: unknown): Record<string, any> {
   return parsed !== null && typeof parsed === "object" ? parsed : {};
 }
 
-// JSONEachRow can quote 64-bit integers, so a turn can arrive as "2".
+// JSONEachRow can quote 64-bit integers, so a turn can arrive as "2". A turn
+// that a number cannot hold exactly is dropped, not rounded.
 function threadTurnOf(value: unknown): number | undefined {
   const turn =
     typeof value === "number"
@@ -42,7 +43,7 @@ function threadTurnOf(value: unknown): number | undefined {
       : typeof value === "string" && value.trim() !== ""
         ? Number(value)
         : NaN;
-  return Number.isInteger(turn) ? turn : undefined;
+  return Number.isSafeInteger(turn) ? turn : undefined;
 }
 
 // Each turn of a thread is its own run, so clients need the thread to list
