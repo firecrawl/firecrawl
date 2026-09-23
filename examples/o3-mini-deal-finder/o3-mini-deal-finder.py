@@ -39,7 +39,7 @@ def search_product(product_name):
     )
 
 def get_product_urls(amazon_results, walmart_results):
-    """Get the product URL from each platform and make sure it is the actual product instead of any accesories and also make sure it is from the original reseller, if not available return error.Make sure it's the same product not accesorries but the actual product."""
+    """Get the product URL from each platform and make sure it is the actual product instead of any accessories and also make sure it is from the original reseller, if not available return error.Make sure it's the same product not accessories but the actual product."""
     amazon_url = next((r['link'] for r in amazon_results if '/dp/' in r['link']), None)
     walmart_url = next((r['link'] for r in walmart_results if '/ip/' in r['link']), None)
     
