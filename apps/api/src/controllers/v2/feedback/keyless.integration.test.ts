@@ -1059,6 +1059,14 @@ suite("keyless feedback HTTP and persistence", () => {
     );
     expect(await fixture.db!.select().from(table)).toHaveLength(0);
   });
+  it("accepts a job timestamp slightly ahead of this host's clock", async () => {
+    const { jobId } = await job("scrape");
+    await fixture.pool!.query(
+      "UPDATE scrapes SET created_at = now() + interval '2 seconds' WHERE id = $1",
+      [jobId],
+    );
+    expect((await submit(body("scrape", jobId))).status).toBe(200);
+  });
   it.each(["search", "scrape", "parse"] as const)(
     "excludes zero-retention %s jobs",
     async endpoint => {
