@@ -71,6 +71,7 @@ import {
   monitorCheckStaleTimeoutMs,
 } from "./stale";
 import { cancelCrawl } from "../../lib/crawl-cancel";
+import { acquireMonitorCheckFinalizeLease } from "./finalize-lease";
 import { trackMonitorCheckStartedInterest } from "./interest";
 import { runSearchTarget, type ScrapeSearchResult } from "./search/run";
 import { verdictJsonSchema } from "./search/judge";
@@ -1394,7 +1395,7 @@ async function isMonitorCheckComplete(
       if (recorded < expected) return false;
     } else if (target?.type === "crawl") {
       const group = await crawlGroup.getGroup(target.crawlId);
-      if (!group || group.status === "active") return false;
+      if (group?.status !== "completed") return false;
 
       const stats = await scrapeQueue.getGroupNumericStats(
         target.crawlId,
@@ -1437,7 +1438,7 @@ async function failStaleMonitorCheck(params: {
   ];
   const cancellations = await Promise.allSettled(
     crawlIds.map(crawlId =>
-      cancelCrawl(crawlId, undefined, params.monitor.team_id),
+      cancelMonitorCrawlWithRetries(crawlId, params.monitor.team_id),
     ),
   );
   cancellations.forEach((result, index) => {
@@ -1546,21 +1547,31 @@ async function failStaleMonitorCheck(params: {
   return true;
 }
 
+async function cancelMonitorCrawlWithRetries(
+  crawlId: string,
+  teamId: string,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      if (await cancelCrawl(crawlId, undefined, teamId)) return true;
+    } catch (error) {
+      logger.warn("Monitor crawl cancellation attempt failed", {
+        error,
+        crawlId,
+        attempt,
+      });
+    }
+  }
+  return false;
+}
+
 export async function reconcileRunningMonitorChecks(
   limit: number = 50,
 ): Promise<void> {
   const checks = await listRunningMonitorChecks(limit);
   for (const candidate of checks) {
-    const lockKey = `monitor-check-finalize:${candidate.id}`;
-    const lockToken = uuidv7();
-    const lock = await redisEvictConnection.set(
-      lockKey,
-      lockToken,
-      "EX",
-      60,
-      "NX",
-    );
-    if (lock !== "OK") continue;
+    const lease = await acquireMonitorCheckFinalizeLease(candidate.id);
+    if (!lease) continue;
 
     try {
       // The batch can outlive another finalizer. Read from the primary after
@@ -1844,16 +1855,7 @@ export async function reconcileRunningMonitorChecks(
         checkId: candidate.id,
       });
     } finally {
-      // An expired lease may already belong to another worker.
-      await redisEvictConnection.eval(
-        `if redis.call("get", KEYS[1]) == ARGV[1] then
-          return redis.call("del", KEYS[1])
-        end
-        return 0`,
-        1,
-        lockKey,
-        lockToken,
-      );
+      await lease.release();
     }
   }
 }

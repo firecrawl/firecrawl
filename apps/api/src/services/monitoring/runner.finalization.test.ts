@@ -287,6 +287,78 @@ describe("monitor check finalization ownership", () => {
     expect(cancelCrawl).toHaveBeenCalledWith("crawl-2", undefined, "team-1");
   });
 
+  it("does not finalize a cancelled crawl as completed", async () => {
+    markCurrentCheckStale();
+    current.target_results = [
+      { type: "crawl", targetId: "target-1", crawlId: "crawl-1" },
+    ];
+    monitor.targets = [
+      {
+        id: "target-1",
+        type: "crawl",
+        url: "https://example.com",
+        crawlOptions: {},
+        scrapeOptions: {},
+      },
+    ];
+    getCrawlGroup.mockResolvedValue({ status: "cancelled" });
+
+    await reconcileRunningMonitorChecks();
+
+    expect(current.status).toBe("failed");
+    expect(cancelCrawl).toHaveBeenCalledWith("crawl-1", undefined, "team-1");
+    expect(bill).not.toHaveBeenCalled();
+  });
+
+  it("retries monitor crawl cancellation until it succeeds", async () => {
+    markCurrentCheckStale();
+    current.target_results = [
+      { type: "crawl", targetId: "target-1", crawlId: "crawl-1" },
+    ];
+    monitor.targets = [
+      {
+        id: "target-1",
+        type: "crawl",
+        url: "https://example.com",
+        crawlOptions: {},
+        scrapeOptions: {},
+      },
+    ];
+    getCrawlGroup.mockResolvedValue({ status: "active" });
+    cancelCrawl
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    await reconcileRunningMonitorChecks();
+
+    expect(cancelCrawl).toHaveBeenCalledTimes(3);
+    expect(current.status).toBe("failed");
+  });
+
+  it("bounds exhausted monitor crawl cancellation retries", async () => {
+    markCurrentCheckStale();
+    current.target_results = [
+      { type: "crawl", targetId: "target-1", crawlId: "crawl-1" },
+    ];
+    monitor.targets = [
+      {
+        id: "target-1",
+        type: "crawl",
+        url: "https://example.com",
+        crawlOptions: {},
+        scrapeOptions: {},
+      },
+    ];
+    getCrawlGroup.mockResolvedValue({ status: "active" });
+    cancelCrawl.mockResolvedValue(false);
+
+    await reconcileRunningMonitorChecks();
+
+    expect(cancelCrawl).toHaveBeenCalledTimes(3);
+    expect(current.status).toBe("failed");
+  });
+
   it.each(["completed", "partial", "failed"] as const)(
     "leaves an already %s check untouched",
     async status => {

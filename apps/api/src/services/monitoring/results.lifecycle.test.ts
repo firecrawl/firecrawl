@@ -10,6 +10,10 @@ const store = vi.hoisted(() => ({
 }));
 const computeAndPersistPageDiff = vi.hoisted(() => vi.fn());
 const send = vi.hoisted(() => vi.fn());
+const lease = vi.hoisted(() => ({
+  acquire: vi.fn(),
+  release: vi.fn(),
+}));
 
 vi.mock("../../lib/logger", () => {
   const logger = { info: vi.fn(), warn: vi.fn(), child: vi.fn() };
@@ -26,6 +30,9 @@ vi.mock("../redis", () => ({
 vi.mock("./diff-orchestrator", () => ({ computeAndPersistPageDiff }));
 vi.mock("./page-events", () => ({ derivePageIsMeaningful: vi.fn() }));
 vi.mock("./store", () => store);
+vi.mock("./finalize-lease", () => ({
+  acquireMonitorCheckFinalizeLease: lease.acquire,
+}));
 
 import {
   recordMonitorScrapeFailure,
@@ -50,7 +57,11 @@ function monitorJob() {
 }
 
 describe("monitor result lifecycle guard", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.resetAllMocks();
+    lease.acquire.mockResolvedValue({ release: lease.release });
+    store.isMonitorCheckRunning.mockResolvedValue(true);
+  });
 
   it.each([
     {
@@ -79,11 +90,11 @@ describe("monitor result lifecycle guard", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("does not advance the baseline when finalization wins after the page tally", async () => {
+  it("does not mutate page state when finalization owns the lease", async () => {
     store.updateMonitorCheckIfRunning.mockResolvedValue({ status: "running" });
-    store.isMonitorCheckRunning
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false);
+    lease.acquire
+      .mockResolvedValueOnce({ release: lease.release })
+      .mockResolvedValueOnce(null);
     store.getMonitorPage.mockResolvedValue(null);
     store.getMonitorForUpdate.mockResolvedValue({ targets: [] });
     computeAndPersistPageDiff.mockResolvedValue({
@@ -96,8 +107,30 @@ describe("monitor result lifecycle guard", () => {
     await recordMonitorScrapeSuccess(monitorJob(), {});
 
     expect(store.updateMonitorCheckIfRunning).toHaveBeenCalledTimes(1);
-    expect(store.insertMonitorCheckPages).toHaveBeenCalledTimes(1);
+    expect(store.deleteMonitorCheckPages).not.toHaveBeenCalled();
+    expect(store.insertMonitorCheckPages).not.toHaveBeenCalled();
     expect(store.upsertMonitorPage).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("rechecks terminal status after acquiring the finalization lease", async () => {
+    store.updateMonitorCheckIfRunning.mockResolvedValue({ status: "running" });
+    store.isMonitorCheckRunning.mockResolvedValue(false);
+    store.getMonitorPage.mockResolvedValue(null);
+    store.getMonitorForUpdate.mockResolvedValue({ targets: [] });
+    computeAndPersistPageDiff.mockResolvedValue({
+      status: "new",
+      diffGcsKey: null,
+      diffTextBytes: null,
+      diffJsonBytes: null,
+    });
+
+    await recordMonitorScrapeSuccess(monitorJob(), {});
+
+    expect(store.deleteMonitorCheckPages).not.toHaveBeenCalled();
+    expect(store.insertMonitorCheckPages).not.toHaveBeenCalled();
+    expect(store.upsertMonitorPage).not.toHaveBeenCalled();
+    expect(lease.release).toHaveBeenCalledTimes(2);
     expect(send).not.toHaveBeenCalled();
   });
 });

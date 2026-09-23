@@ -68,7 +68,9 @@ export async function crawlCancelController(req: Request, res: Response) {
       return res.status(409).json({ error: "Crawl is already completed" });
     }
 
-    await cancelCrawl(jobId, sc);
+    if (!(await cancelCrawl(jobId, sc))) {
+      throw new Error("Failed to cancel crawl");
+    }
 
     res.json({
       status: "cancelled",

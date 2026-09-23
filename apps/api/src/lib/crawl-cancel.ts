@@ -1,7 +1,7 @@
 import {
   getCrawl,
   getCrawlJobs,
-  saveCrawl,
+  markCrawlCancelled,
   type StoredCrawl,
 } from "./crawl-redis";
 import { removeConcurrencyLimitedJobs } from "./concurrency-limit";
@@ -14,28 +14,50 @@ export async function cancelCrawl(
   fallbackTeamId?: string,
 ): Promise<boolean> {
   const crawl = existingCrawl ?? (await getCrawl(crawlId));
-  if (!crawl) {
-    if (await crawlGroup.cancelGroup(crawlId)) return true;
-    if (!fallbackTeamId) return false;
-
-    const jobIds = await getCrawlJobs(crawlId);
-    await removeConcurrencyLimitedJobs(fallbackTeamId, jobIds);
-    return true;
-  }
-
+  let marked = true;
   try {
-    crawl.cancelled = true;
-    await saveCrawl(crawlId, crawl);
+    await markCrawlCancelled(crawlId);
   } catch (error) {
+    marked = false;
     logger.error("Failed to mark crawl cancelled", { error, crawlId });
   }
 
-  if (crawl.queueBackend === "fdb") {
-    await crawlGroup.cancelGroup(crawlId);
+  let cleaned = false;
+  if (crawl?.queueBackend === "pg") {
+    try {
+      const jobIds = await getCrawlJobs(crawlId);
+      await removeConcurrencyLimitedJobs(crawl.team_id, jobIds);
+      cleaned = true;
+    } catch (error) {
+      logger.error("Failed to clean up cancelled crawl jobs", {
+        error,
+        crawlId,
+      });
+    }
   } else {
-    const jobIds = await getCrawlJobs(crawlId);
-    await removeConcurrencyLimitedJobs(crawl.team_id, jobIds);
+    try {
+      cleaned = await crawlGroup.cancelGroup(crawlId);
+    } catch (error) {
+      logger.error("Failed to clean up cancelled crawl jobs", {
+        error,
+        crawlId,
+      });
+    }
+
+    const teamId = crawl?.team_id ?? fallbackTeamId;
+    if (!cleaned && crawl?.queueBackend !== "fdb" && teamId) {
+      try {
+        const jobIds = await getCrawlJobs(crawlId);
+        await removeConcurrencyLimitedJobs(teamId, jobIds);
+        cleaned = true;
+      } catch (error) {
+        logger.error("Failed to clean up cancelled crawl jobs", {
+          error,
+          crawlId,
+        });
+      }
+    }
   }
 
-  return true;
+  return marked && cleaned;
 }

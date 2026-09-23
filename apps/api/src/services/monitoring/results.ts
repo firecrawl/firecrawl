@@ -15,6 +15,7 @@ import {
   updateMonitorCheckIfRunning,
   upsertMonitorPage,
 } from "./store";
+import { acquireMonitorCheckFinalizeLease } from "./finalize-lease";
 
 const logger = _logger.child({ module: "monitoring-results" });
 
@@ -24,6 +25,21 @@ const MONITOR_PAGE_WEBHOOK_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 async function heartbeatMonitorCheck(checkId: string): Promise<boolean> {
   return (await updateMonitorCheckIfRunning(checkId, {})) !== null;
+}
+
+async function heartbeatMonitorCheckWithLease(
+  checkId: string,
+): Promise<boolean> {
+  const lease = await acquireMonitorCheckFinalizeLease(checkId, {
+    attempts: 600,
+    retryDelayMs: 100,
+  });
+  if (!lease) return false;
+  try {
+    return await heartbeatMonitorCheck(checkId);
+  } finally {
+    await lease.release();
+  }
 }
 
 // Mirror runner.ts's claimMonitorNotification: a redelivered scrape job must not
@@ -90,49 +106,58 @@ async function persistMonitorCheckError(params: {
   metadata?: Record<string, unknown>;
   heartbeatRecorded?: boolean;
 }): Promise<void> {
-  if (params.heartbeatRecorded) {
-    if (!(await isMonitorCheckRunning(params.monitoring.checkId))) return;
-  } else if (!(await heartbeatMonitorCheck(params.monitoring.checkId))) {
-    return;
-  }
+  const lease = await acquireMonitorCheckFinalizeLease(
+    params.monitoring.checkId,
+    { attempts: 600, retryDelayMs: 100 },
+  );
+  if (!lease) return;
 
-  await deleteMonitorCheckPages({
-    checkId: params.monitoring.checkId,
-    targetId: params.monitoring.targetId,
-    url: params.url,
-  });
-  await insertMonitorCheckPages([
-    {
-      check_id: params.monitoring.checkId,
-      monitor_id: params.monitoring.monitorId,
-      team_id: params.teamId,
-      target_id: params.monitoring.targetId,
-      url: params.url,
-      status: "error",
-      current_scrape_id: params.scrapeId,
-      error: params.error,
-      status_code: params.statusCode ?? null,
-      metadata: params.metadata ?? null,
-    },
-  ]);
+  try {
+    if (params.heartbeatRecorded) {
+      if (!(await isMonitorCheckRunning(params.monitoring.checkId))) return;
+    } else if (!(await heartbeatMonitorCheck(params.monitoring.checkId))) {
+      return;
+    }
 
-  if (
-    (await isMonitorCheckRunning(params.monitoring.checkId)) &&
-    (await claimMonitorPageWebhook(
-      params.monitoring.checkId,
-      params.url,
-      "error",
-    ))
-  ) {
-    await sendMonitorPageWebhook({
-      teamId: params.teamId,
-      monitorId: params.monitoring.monitorId,
+    await deleteMonitorCheckPages({
       checkId: params.monitoring.checkId,
+      targetId: params.monitoring.targetId,
       url: params.url,
-      status: "error",
-      currentScrapeId: params.scrapeId,
-      error: params.error,
     });
+    await insertMonitorCheckPages([
+      {
+        check_id: params.monitoring.checkId,
+        monitor_id: params.monitoring.monitorId,
+        team_id: params.teamId,
+        target_id: params.monitoring.targetId,
+        url: params.url,
+        status: "error",
+        current_scrape_id: params.scrapeId,
+        error: params.error,
+        status_code: params.statusCode ?? null,
+        metadata: params.metadata ?? null,
+      },
+    ]);
+
+    if (
+      await claimMonitorPageWebhook(
+        params.monitoring.checkId,
+        params.url,
+        "error",
+      )
+    ) {
+      await sendMonitorPageWebhook({
+        teamId: params.teamId,
+        monitorId: params.monitoring.monitorId,
+        checkId: params.monitoring.checkId,
+        url: params.url,
+        status: "error",
+        currentScrapeId: params.scrapeId,
+        error: params.error,
+      });
+    }
+  } finally {
+    await lease.release();
   }
 }
 
@@ -231,7 +256,7 @@ export async function recordMonitorScrapeSuccess(
 ): Promise<void> {
   const monitoring = job.data.monitoring;
   if (!monitoring || job.data.mode !== "single_urls") return;
-  if (!(await heartbeatMonitorCheck(monitoring.checkId))) return;
+  if (!(await heartbeatMonitorCheckWithLease(monitoring.checkId))) return;
 
   const url = getDocumentUrl(doc, job.data.url);
   const previous = await getMonitorPage({
@@ -311,95 +336,98 @@ export async function recordMonitorScrapeSuccess(
     error,
   } = diff;
 
-  if (!(await isMonitorCheckRunning(monitoring.checkId))) return;
-
-  // Tally first (the reconciler's fan-in gate), durable baseline last: a crash
-  // between the two completes the check rather than poisoning the cross-run dedup
-  // baseline against an unrecorded page. The delete makes redelivery a replace,
-  // not a duplicate.
-  await deleteMonitorCheckPages({
-    checkId: monitoring.checkId,
-    targetId: monitoring.targetId,
-    url,
+  const lease = await acquireMonitorCheckFinalizeLease(monitoring.checkId, {
+    attempts: 600,
+    retryDelayMs: 100,
   });
-  await insertMonitorCheckPages([
-    {
-      check_id: monitoring.checkId,
-      monitor_id: monitoring.monitorId,
-      team_id: job.data.team_id,
-      target_id: monitoring.targetId,
+  if (!lease) return;
+
+  try {
+    if (!(await isMonitorCheckRunning(monitoring.checkId))) return;
+
+    // Tally first (the reconciler's fan-in gate), durable baseline last. The
+    // finalize lease keeps completion from interleaving between these writes.
+    await deleteMonitorCheckPages({
+      checkId: monitoring.checkId,
+      targetId: monitoring.targetId,
       url,
-      url_hash: hashMonitorUrl(url),
+    });
+    await insertMonitorCheckPages([
+      {
+        check_id: monitoring.checkId,
+        monitor_id: monitoring.monitorId,
+        team_id: job.data.team_id,
+        target_id: monitoring.targetId,
+        url,
+        url_hash: hashMonitorUrl(url),
+        status,
+        previous_scrape_id: previous?.last_scrape_id ?? null,
+        current_scrape_id: job.id,
+        diff_gcs_key: diffGcsKey,
+        diff_text_bytes: diffTextBytes,
+        diff_json_bytes: diffJsonBytes,
+        status_code: getDocumentStatusCode(doc),
+        ...(error ? { error } : {}),
+        metadata: {
+          title: doc?.metadata?.title ?? null,
+          contentType: doc?.metadata?.contentType ?? null,
+          numPages: doc?.metadata?.numPages ?? null,
+          proxyUsed: doc?.metadata?.proxyUsed ?? null,
+          postprocessorsUsed: doc?.metadata?.postprocessorsUsed ?? null,
+          creditsUsed: doc?.metadata?.creditsUsed ?? null,
+        },
+        judgment: judgment ?? null,
+      },
+    ]);
+
+    await upsertMonitorPage({
+      monitorId: monitoring.monitorId,
+      teamId: job.data.team_id,
+      targetId: monitoring.targetId,
+      url,
+      source: monitoring.source,
+      checkId: monitoring.checkId,
+      scrapeId: job.id,
       status,
-      previous_scrape_id: previous?.last_scrape_id ?? null,
-      current_scrape_id: job.id,
-      diff_gcs_key: diffGcsKey,
-      diff_text_bytes: diffTextBytes,
-      diff_json_bytes: diffJsonBytes,
-      status_code: getDocumentStatusCode(doc),
-      ...(error ? { error } : {}),
       metadata: {
         title: doc?.metadata?.title ?? null,
+        statusCode: getDocumentStatusCode(doc),
         contentType: doc?.metadata?.contentType ?? null,
         numPages: doc?.metadata?.numPages ?? null,
         proxyUsed: doc?.metadata?.proxyUsed ?? null,
         postprocessorsUsed: doc?.metadata?.postprocessorsUsed ?? null,
         creditsUsed: doc?.metadata?.creditsUsed ?? null,
       },
-      judgment: judgment ?? null,
-    },
-  ]);
+    });
 
-  if (!(await isMonitorCheckRunning(monitoring.checkId))) return;
-
-  await upsertMonitorPage({
-    monitorId: monitoring.monitorId,
-    teamId: job.data.team_id,
-    targetId: monitoring.targetId,
-    url,
-    source: monitoring.source,
-    checkId: monitoring.checkId,
-    scrapeId: job.id,
-    status,
-    metadata: {
-      title: doc?.metadata?.title ?? null,
-      statusCode: getDocumentStatusCode(doc),
-      contentType: doc?.metadata?.contentType ?? null,
-      numPages: doc?.metadata?.numPages ?? null,
-      proxyUsed: doc?.metadata?.proxyUsed ?? null,
-      postprocessorsUsed: doc?.metadata?.postprocessorsUsed ?? null,
-      creditsUsed: doc?.metadata?.creditsUsed ?? null,
-    },
-  });
-
-  logger.info("Recorded monitor scrape result", {
-    monitorId: monitoring.monitorId,
-    checkId: monitoring.checkId,
-    targetId: monitoring.targetId,
-    scrapeId: job.id,
-    url,
-    status,
-    previousScrapeId: previous?.last_scrape_id ?? null,
-    diffGcsKey,
-    judgmentMeaningful: judgment?.meaningful,
-  });
-
-  if (
-    (await isMonitorCheckRunning(monitoring.checkId)) &&
-    (await claimMonitorPageWebhook(monitoring.checkId, url, "page"))
-  ) {
-    await sendMonitorPageWebhook({
-      teamId: job.data.team_id,
+    logger.info("Recorded monitor scrape result", {
       monitorId: monitoring.monitorId,
       checkId: monitoring.checkId,
+      targetId: monitoring.targetId,
+      scrapeId: job.id,
       url,
       status,
       previousScrapeId: previous?.last_scrape_id ?? null,
-      currentScrapeId: job.id,
-      judgment: judgment ?? null,
-      diffText: diffText ?? null,
-      diffJson: diffJson ?? null,
+      diffGcsKey,
+      judgmentMeaningful: judgment?.meaningful,
     });
+
+    if (await claimMonitorPageWebhook(monitoring.checkId, url, "page")) {
+      await sendMonitorPageWebhook({
+        teamId: job.data.team_id,
+        monitorId: monitoring.monitorId,
+        checkId: monitoring.checkId,
+        url,
+        status,
+        previousScrapeId: previous?.last_scrape_id ?? null,
+        currentScrapeId: job.id,
+        judgment: judgment ?? null,
+        diffText: diffText ?? null,
+        diffJson: diffJson ?? null,
+      });
+    }
+  } finally {
+    await lease.release();
   }
 }
 
