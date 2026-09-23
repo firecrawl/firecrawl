@@ -33,6 +33,7 @@ import {
   ActionError,
   AddFeatureError,
   AgentIndexOnlyError,
+  DataSourceRateLimitedError,
   EngineError,
   NoEnginesLeftError,
   PDFAntibotError,
@@ -1017,6 +1018,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof ProxySelectionError ||
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
+              error.error instanceof DataSourceRateLimitedError ||
               error.error instanceof XTwitterConfigurationError
             ) {
               throw error.error;
@@ -1879,6 +1881,11 @@ export async function scrapeURL(
         } else if (error instanceof DNSResolutionError) {
           errorType = "DNSResolutionError";
           meta.logger.warn("scrapeURL: DNS resolution error", { error });
+        } else if (error instanceof DataSourceRateLimitedError) {
+          errorType = "DataSourceRateLimitedError";
+          meta.logger.warn("scrapeURL: Data source is rate-limiting requests", {
+            error,
+          });
         } else if (error instanceof ScrapeRetryLimitError) {
           errorType = "ScrapeRetryLimitError";
           meta.logger.warn("scrapeURL: Retry limit reached", {

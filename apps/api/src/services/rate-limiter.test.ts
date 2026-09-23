@@ -11,7 +11,7 @@ vi.mock("ioredis", () => ({
   },
 }));
 
-import { getAutumnRateLimiter } from "./rate-limiter";
+import { getAutumnRateLimiter, planTierFromMultiplier } from "./rate-limiter";
 
 // import {
 //   getRateLimiter,
@@ -476,5 +476,25 @@ describe("getAutumnRateLimiter", () => {
       getAutumnRateLimiter(RateLimiterMode.Scrape, 5, flagsWith("scrape=42"))
         .points,
     ).toBe(50);
+  });
+});
+
+describe("planTierFromMultiplier", () => {
+  it.each([
+    [0, "free"],
+    [1, "free"],
+    [9, "free"],
+    [10, "hobby"],
+    [49, "hobby"],
+    [50, "standard"],
+    [499, "standard"],
+    [500, "growth"],
+    [999, "growth"],
+    [1000, "scale"],
+    [2499, "scale"],
+    [2500, "enterprise"],
+    [10_000, "enterprise"],
+  ])("maps multiplier %s to %s", (multiplier, tier) => {
+    expect(planTierFromMultiplier(multiplier)).toBe(tier);
   });
 });

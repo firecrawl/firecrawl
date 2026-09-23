@@ -51,6 +51,7 @@ import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { DataSourceRateLimitedError } from "../../scraper/scrapeURL/error";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -524,6 +525,23 @@ export async function scrapeController(
               error: e.message,
               sponsor_status: "pending",
               login_url: "https://firecrawl.dev/signin",
+            });
+          }
+
+          if (e.code === "SCRAPE_DATA_SOURCE_RATE_LIMITED") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 429,
+            });
+            if (
+              e instanceof DataSourceRateLimitedError &&
+              e.retryAfterSeconds !== undefined
+            ) {
+              res.setHeader("Retry-After", String(e.retryAfterSeconds));
+            }
+            return res.status(429).json({
+              success: false,
+              code: e.code,
+              error: e.message,
             });
           }
 

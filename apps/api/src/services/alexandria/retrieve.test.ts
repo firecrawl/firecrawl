@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
       del: vi.fn(async (key: string) => (store.delete(key) ? 1 : 0)),
     },
     request: vi.fn(),
+    plan: vi.fn(),
     authorize: vi.fn(),
     lock: vi.fn(),
     finalize: vi.fn(),
@@ -23,7 +24,10 @@ const mocks = vi.hoisted(() => {
 });
 vi.mock("../../config", () => ({ config: mocks.config }));
 vi.mock("../rate-limiter", () => ({ redisRateLimitClient: mocks.redis }));
-vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
+vi.mock("./client", () => ({
+  exchangeRequest: mocks.request,
+  exchangePlanTier: mocks.plan,
+}));
 vi.mock("./access", () => ({ authorizeProviders: mocks.authorize }));
 vi.mock("../queue-service", () => ({
   getBillingQueue: () => ({ add: mocks.billAdd }),
@@ -85,6 +89,7 @@ beforeEach(() => {
   mocks.refund.mockResolvedValue(undefined);
   mocks.billAdd.mockResolvedValue({});
   mocks.report.mockResolvedValue(true);
+  mocks.plan.mockResolvedValue(undefined);
   exchangeAnswers(answer);
 });
 
@@ -238,6 +243,80 @@ it("releases the hold on a definitive refusal and relays it without caching", as
     expect.objectContaining({ lockId: "held", action: "release" }),
   );
   expect(mocks.store.size).toBe(0);
+});
+
+it("sends the caller's plan on execution only when it is known", async () => {
+  mocks.plan.mockResolvedValue("growth");
+  await run();
+  expect(mocks.plan).toHaveBeenCalledWith("team", "org");
+  expect(executions()[0][0].plan).toBe("growth");
+
+  mocks.store.clear();
+  mocks.plan.mockResolvedValue(undefined);
+  await run();
+  expect(executions()[1][0]).not.toHaveProperty("plan");
+});
+
+it("relays a data source rate limit with its code and retry interval", async () => {
+  mocks.request.mockImplementation(async arg =>
+    arg.path.endsWith("/quote")
+      ? { status: 200, body: { maximumCredits: 5 } }
+      : {
+          status: 429,
+          retryAfter: "7",
+          body: {
+            code: "provider_rate_limited",
+            error: "Slow down.",
+            retryAfterSeconds: 7,
+          },
+        },
+  );
+  expect(await run()).toEqual({
+    status: 429,
+    retryAfter: "7",
+    body: {
+      success: false,
+      code: "provider_rate_limited",
+      error: "Slow down.",
+      retryAfterSeconds: 7,
+    },
+    executed: true,
+    scrapeId: "scrape-1",
+  });
+  expect(mocks.finalize).toHaveBeenCalledWith(
+    expect.objectContaining({ action: "release" }),
+  );
+  expect(mocks.store.size).toBe(0);
+});
+
+it("lets the same x-request-id run again after an uncharged rate-limited batch", async () => {
+  const limited = {
+    success: true,
+    creditsCost: 0,
+    results: [
+      {
+        ...call,
+        creditsCost: 0,
+        error: {
+          code: "provider_rate_limited",
+          message: "Slow down.",
+          status: 429,
+          retryAfterSeconds: 12,
+        },
+      },
+    ],
+  };
+  exchangeAnswers(limited);
+  const first = await run();
+  expect(first).toEqual(
+    expect.objectContaining({ status: 200, body: limited, executed: true }),
+  );
+  expect(mocks.store.size).toBe(0);
+  exchangeAnswers(answer);
+  expect(await run()).toEqual(
+    expect.objectContaining({ status: 200, body: answer, executed: true }),
+  );
+  expect(executions()).toHaveLength(2);
 });
 
 it("does not settle a receipt over budget", async () => {

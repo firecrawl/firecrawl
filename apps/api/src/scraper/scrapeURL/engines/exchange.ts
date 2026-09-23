@@ -9,7 +9,7 @@ import {
 } from "../../../lib/exchange";
 import { setSpanAttributes, withSpan } from "../../../lib/otel-tracer";
 import { robustFetch } from "../lib/fetch";
-import { EngineError } from "../error";
+import { DataSourceRateLimitedError, EngineError } from "../error";
 
 const exchangeScrapeResponseSchema = z.union([
   z
@@ -37,19 +37,46 @@ const exchangeScrapeResponseSchema = z.union([
         .passthrough(),
     })
     .passthrough(),
+  // Scrape errors nest `{ code, message }` under `error`; retrieve-style errors
+  // put `code` and `retryAfterSeconds` at the top level beside a string `error`.
   z
     .object({
-      success: z.literal(false),
+      success: z.literal(false).optional(),
+      code: z.string().optional(),
+      retryAfterSeconds: z.unknown().optional(),
       error: z
-        .object({
-          code: z.string().optional(),
-          message: z.string().optional(),
-        })
-        .passthrough()
+        .union([
+          z
+            .object({
+              code: z.string().optional(),
+              message: z.string().optional(),
+              retryAfterSeconds: z.unknown().optional(),
+            })
+            .passthrough(),
+          z.string(),
+        ])
         .optional(),
     })
     .passthrough(),
 ]);
+
+const RATE_LIMITED_CODES = new Set(["provider_rate_limited", "rate_limited"]);
+
+function rateLimitRetryAfter(
+  response: Extract<
+    z.infer<typeof exchangeScrapeResponseSchema>,
+    { success?: false }
+  >,
+): { retryAfterSeconds?: number } | null {
+  const nested =
+    typeof response.error === "object" ? response.error : undefined;
+  const code = nested?.code ?? response.code;
+  if (code === undefined || !RATE_LIMITED_CODES.has(code)) return null;
+  const seconds = nested?.retryAfterSeconds ?? response.retryAfterSeconds;
+  return typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0
+    ? { retryAfterSeconds: Math.ceil(seconds) }
+    : {};
+}
 
 export function exchangeMaxReasonableTime(meta: Meta): number {
   return meta.options.timeout ?? 60_000;
@@ -66,7 +93,8 @@ function escapeHtml(value: string): string {
 // Exchange responses carry no page HTML; synthesize a minimal head so the
 // metadata transformer can populate the document's title and description.
 function buildMetadataHtml(title?: string, description?: string): string {
-  const titleTag = title === undefined ? "" : `<title>${escapeHtml(title)}</title>`;
+  const titleTag =
+    title === undefined ? "" : `<title>${escapeHtml(title)}</title>`;
   const descriptionTag =
     description === undefined
       ? ""
@@ -119,13 +147,20 @@ export async function scrapeURLWithExchange(
       });
 
       if (!response.success) {
+        const rateLimit = rateLimitRetryAfter(response);
         logger.warn("Exchange scrape failed", {
           ...requestLogContext,
           scrapeId: meta.id,
           teamId: meta.internalOptions.teamId,
-          errorCode: response.error?.code,
+          errorCode:
+            typeof response.error === "object"
+              ? response.error.code
+              : response.code,
+          ...(rateLimit ?? {}),
           durationMs: Date.now() - startTime,
         });
+        if (rateLimit)
+          throw new DataSourceRateLimitedError(rateLimit.retryAfterSeconds);
         throw new EngineError("Exchange request failed");
       }
 
