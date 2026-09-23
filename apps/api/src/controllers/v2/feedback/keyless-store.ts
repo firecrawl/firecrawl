@@ -17,6 +17,8 @@ export async function insertKeylessFeedback(
   const { answers } = metadata;
   // The unique (team_id, endpoint, job_id) index keeps one record per job. A
   // concurrent retry waits for the first insert, then reads its record below.
+  // Search rows also fill the unique search_id, so every unique index must
+  // resolve a conflict; naming only one would let a racing retry fail.
   const [inserted] = await db
     .insert(search_feedback)
     .values({
@@ -33,13 +35,7 @@ export async function insertKeylessFeedback(
       job_status: job.is_successful === false ? "failed" : "completed",
       metadata,
     })
-    .onConflictDoNothing({
-      target: [
-        search_feedback.team_id,
-        search_feedback.endpoint,
-        search_feedback.job_id,
-      ],
-    })
+    .onConflictDoNothing()
     .returning({ id: search_feedback.id });
   if (inserted) return { success: true, feedbackId: inserted.id };
 
