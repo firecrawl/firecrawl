@@ -85,6 +85,7 @@ def _prepare_crawl_request(request: CrawlRequest) -> dict:
         "sitemap": "sitemap",
         "ignore_query_parameters": "ignoreQueryParameters",
         "deduplicate_similar_urls": "deduplicateSimilarURLs",
+        "stop_on_content": "stopOnContent",
         "crawl_entire_domain": "crawlEntireDomain",
         "allow_external_links": "allowExternalLinks",
         "allow_subdomains": "allowSubdomains",
