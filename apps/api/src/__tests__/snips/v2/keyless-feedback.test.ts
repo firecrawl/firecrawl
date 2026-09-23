@@ -81,8 +81,21 @@ describeIf(enabled)("keyless feedback", () => {
       expect(duplicate.body.feedbackId).toBe(accepted.body.feedbackId);
       expect(duplicate.body.alreadySubmitted).toBe(true);
       expect(accepted.body.creditsRefunded).toBe(0);
+
+      const next = await call("/v2/scrape", {
+        url: TEST_SUITE_WEBSITE,
+        formats: ["markdown"],
+        timeout: scrapeTimeout,
+      });
+      expect(next.status).toBe(200);
+      const another = await call("/v2/feedback", {
+        ...payload,
+        jobId: next.body.data.metadata.jobId,
+      });
+      expect(another.status).toBe(200);
+      expect(another.body.feedbackId).not.toBe(accepted.body.feedbackId);
     },
-    scrapeTimeout,
+    scrapeTimeout * 2,
   );
 
   it(

@@ -40,7 +40,6 @@ export function keylessFeedbackMetadata(
           : null,
     });
   });
-  const limit = config.KEYLESS_FEEDBACK_DAILY_LIMIT;
   return {
     ...reference,
     feedback: {
@@ -52,7 +51,8 @@ export function keylessFeedbackMetadata(
       expiresAt: new Date(
         Date.now() + KEYLESS_FEEDBACK_MAX_AGE_SEC * 1000,
       ).toISOString(),
-      message: `Optional: submit your task, rating, assessment, and specific observations. Use only evidence already available; distinguish output, source comparisons, and expectations. No additional investigation is required. Limit: ${limit} accepted submission${limit === 1 ? "" : "s"} per caller IP per UTC day, shared across Search, Scrape, Parse, and all clients.`,
+      message:
+        "Optional, after your task: report specific evidence you already observed in this result. Do not delay your task or investigate further to give feedback.",
     },
   };
 }

@@ -8,14 +8,31 @@ import { feedbackMetadataSchema, type RequestWithAuth } from "../types";
 import { keylessFeedbackSchema } from "./keyless-schema";
 import { KEYLESS_FEEDBACK_MAX_AGE_SEC } from "./keyless-limits";
 import { insertKeylessFeedback } from "./keyless-store";
+import { logKeylessFeedbackOutcome } from "./keyless-outcome";
 import { logger } from "../../../lib/logger";
 
 export async function keylessFeedbackController(
   req: RequestWithAuth<any, any, any>,
   res: Response,
 ) {
-  const fail = (status: number, feedbackErrorCode: string, error: string) =>
-    res.status(status).json({ success: false, feedbackErrorCode, error });
+  const identity = keylessTeamUuid(req.auth.team_id)!;
+  const fail = (
+    status: number,
+    feedbackErrorCode: string,
+    error: string,
+    extra: Record<string, unknown> = {},
+  ) => {
+    logKeylessFeedbackOutcome({
+      identity,
+      outcome: "rejected",
+      status,
+      body: req.body,
+      feedbackErrorCode,
+    });
+    return res
+      .status(status)
+      .json({ success: false, feedbackErrorCode, error, ...extra });
+  };
   if (!config.KEYLESS_FEEDBACK_ENABLED || !config.USE_DB_AUTHENTICATION)
     return fail(
       503,
@@ -26,20 +43,19 @@ export async function keylessFeedbackController(
     return fail(403, "TEAM_OPTED_OUT", "Feedback is disabled for this caller.");
   const parsed = keylessFeedbackSchema.safeParse(req.body);
   if (!parsed.success)
-    return res.status(400).json({
-      success: false,
-      feedbackErrorCode: "INVALID_BODY",
-      error:
-        "Provide a task, assessment, and category-appropriate observations.",
-      details: parsed.error.issues,
-    });
+    return fail(
+      400,
+      "INVALID_BODY",
+      "Provide a task, assessment, and category-appropriate observations.",
+      { details: parsed.error.issues },
+    );
   const answers = parsed.data;
-  const identity = keylessTeamUuid(req.auth.team_id)!;
   try {
     const job = await lookupJobWithRetry(answers, identity, logger, {
       requireOptions: true,
     });
-    if ("status" in job) return res.status(job.status).json(job.body);
+    if ("status" in job)
+      return fail(job.status, job.body.feedbackErrorCode, job.body.error);
     if (
       isKeylessFeedbackRestricted(
         answers.endpoint,
@@ -187,19 +203,15 @@ export async function keylessFeedbackController(
         "Feedback must be 8 KiB (8192 bytes) or smaller. Shorten the task, assessment, or observations.",
       );
     const result = await insertKeylessFeedback(identity, metadata, job);
-    if (!result.success)
-      return fail(
-        429,
-        "DAILY_LIMIT_REACHED",
-        `The daily limit of ${config.KEYLESS_FEEDBACK_DAILY_LIMIT} accepted submissions per caller IP was reached. It is shared across Search, Scrape, and Parse. Try another UTC day.`,
-      );
+    logKeylessFeedbackOutcome({
+      identity,
+      outcome: result.alreadySubmitted ? "duplicate" : "accepted",
+      status: 200,
+      body: req.body,
+      feedbackId: result.feedbackId,
+    });
     return res.status(200).json({ ...result, creditsRefunded: 0 });
   } catch {
-    logger.warn("Keyless feedback submission failed", {
-      canonicalLog: "keyless/feedback_submission_error",
-      endpoint: answers.endpoint,
-      jobId: answers.jobId,
-    });
     return fail(
       503,
       "FEEDBACK_UNAVAILABLE",

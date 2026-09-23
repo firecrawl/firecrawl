@@ -1,4 +1,5 @@
 import { consumeKeylessFeedbackAttempt } from "./v2/feedback/keyless-limits";
+import { logKeylessFeedbackOutcome } from "./v2/feedback/keyless-outcome";
 import { RateLimiterRedis } from "rate-limiter-flexible";
 import { isValidUuid } from "../lib/owner-id";
 import { config } from "../config";
@@ -561,27 +562,46 @@ async function handleKeylessAuth(
 
   const teamId = keylessTeamId(ip);
   if (keylessFeedback) {
-    if (!config.KEYLESS_FEEDBACK_ENABLED)
+    const identity = keylessTeamUuid(teamId)!;
+    const reject = (
+      status: number,
+      reason: "disabled" | "attempt_limit" | "limiter_unavailable",
+      error: string,
+    ): AuthResponse => {
+      logKeylessFeedbackOutcome({
+        identity,
+        outcome: "rejected",
+        status,
+        body: req.body,
+        reason,
+      });
       return {
         success: false,
-        status: 503,
-        error: "Feedback is unavailable on this deployment.",
+        status,
+        error,
+        ...(reason === "attempt_limit" ? { retryAfterSeconds: 60 } : {}),
       };
+    };
+    if (!config.KEYLESS_FEEDBACK_ENABLED)
+      return reject(
+        503,
+        "disabled",
+        "Feedback is unavailable on this deployment.",
+      );
     try {
-      if (!(await consumeKeylessFeedbackAttempt(keylessTeamUuid(teamId)!))) {
-        return {
-          success: false,
-          status: 429,
-          error: "Too many feedback attempts. Retry in one minute.",
-          retryAfterSeconds: 60,
-        };
+      if (!(await consumeKeylessFeedbackAttempt(identity))) {
+        return reject(
+          429,
+          "attempt_limit",
+          "Too many feedback attempts. Retry in one minute.",
+        );
       }
     } catch {
-      return {
-        success: false,
-        status: 503,
-        error: "Feedback is temporarily unavailable.",
-      };
+      return reject(
+        503,
+        "limiter_unavailable",
+        "Feedback is temporarily unavailable.",
+      );
     }
     return {
       success: true,
