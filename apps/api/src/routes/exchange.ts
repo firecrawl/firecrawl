@@ -219,6 +219,18 @@ exchangeRouter.post(
   wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
+exchangeRouter.put(
+  "/platform/capacity/{*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.delete(
+  "/platform/capacity/buckets/{*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
 exchangeRouter.post(
   "/rates/lookup",
   authMiddleware(RateLimiterMode.Labs),
