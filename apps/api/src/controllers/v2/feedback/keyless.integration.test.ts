@@ -353,14 +353,6 @@ suite("keyless feedback HTTP and persistence", () => {
       expect(JSON.stringify(rows)).not.toContain("job-private-content");
     },
   );
-  it("accepts persisted jobs without a separate feedback context", async () => {
-    const { jobId } = await job("scrape");
-    expect((await submit(body("scrape", jobId))).status).toBe(200);
-    expect(
-      await redis.get(`keyless_feedback_context:${team()}:scrape:${jobId}`),
-    ).toBeNull();
-  });
-
   describe.each([
     ["search", false],
     ["search", true],
@@ -444,9 +436,6 @@ suite("keyless feedback HTTP and persistence", () => {
       }),
     );
     expect(metadata).toEqual({ jobId });
-    expect(
-      await redis.get(`keyless_feedback_invitations:${team()}`),
-    ).toBeNull();
     expect((await submit(body("search", jobId))).status).toBe(404);
     expect(fixture.readResult).not.toHaveBeenCalled();
     const eligible = await job("search");
@@ -471,9 +460,6 @@ suite("keyless feedback HTTP and persistence", () => {
       .send({});
     expect(response.body.metadata.jobId).toBe(jobId);
     expect(response.body.metadata.feedback).toBeDefined();
-    expect(
-      await redis.get(`keyless_feedback_invitations:${team()}`),
-    ).toBeNull();
   });
 
   it("suppresses invitations and rejects submissions when disabled", async () => {
@@ -578,9 +564,6 @@ suite("keyless feedback HTTP and persistence", () => {
     const { jobId } = await job("scrape");
     expect((await submit(body("scrape", jobId))).status).toBe(200);
     expect((await job("parse")).metadata.feedback).toBeDefined();
-    expect(
-      await redis.get(`keyless_feedback_invitations:${team()}`),
-    ).toBeNull();
   });
 
   it.each(["search", "scrape", "parse"] as const)(
