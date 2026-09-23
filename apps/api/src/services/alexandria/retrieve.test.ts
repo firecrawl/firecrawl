@@ -88,6 +88,66 @@ beforeEach(() => {
   exchangeAnswers(answer);
 });
 
+it("delivers but never stores no-retention responses and prevents duplicate charges", async () => {
+  mocks.authorize.mockImplementation(
+    async (_team, _calls, _flags, _org, policy) => {
+      policy("none");
+    },
+  );
+  const response = {
+    ...answer,
+    results: [{ ...answer.results[0], data: { product: "never-store-this" } }],
+  };
+  exchangeAnswers(response);
+  expect((await run()).body).toEqual(response);
+  expect([...mocks.store.values()].join("")).not.toContain("never-store-this");
+  const saved = JSON.parse([...mocks.store.values()][0]);
+  expect(saved).toMatchObject({
+    phase: "done",
+    responseRetention: "none",
+    creditsCost: 3,
+  });
+  expect(saved).not.toHaveProperty("response");
+  expect(await run()).toMatchObject({
+    status: 410,
+    executed: false,
+    body: { code: "provider_response_not_retained" },
+  });
+  expect(executions()).toHaveLength(1);
+  expect(mocks.lock).toHaveBeenCalledTimes(1);
+  expect(mocks.finalize).toHaveBeenCalledTimes(1);
+});
+
+it("removes an older saved response when retention policy changes", async () => {
+  await run();
+  mocks.authorize.mockImplementation(
+    async (_team, _calls, _flags, _org, policy) => {
+      policy("none");
+    },
+  );
+  expect((await run()).status).toBe(410);
+  expect(JSON.parse([...mocks.store.values()][0])).not.toHaveProperty(
+    "response",
+  );
+  expect(executions()).toHaveLength(1);
+});
+
+it("keeps refusing replay when a completion marker forbids retention", async () => {
+  mocks.authorize.mockImplementation(
+    async (_team, _calls, _flags, _org, policy) => {
+      policy("none");
+    },
+  );
+  await run();
+  mocks.authorize.mockImplementation(
+    async (_team, _calls, _flags, _org, policy) => {
+      policy("standard");
+    },
+  );
+  expect((await run()).status).toBe(410);
+  expect(executions()).toHaveLength(1);
+});
+
 it("quotes, reserves, executes within budget, settles actual usage, records once, and replays", async () => {
   expect(await run()).toEqual({
     status: 200,

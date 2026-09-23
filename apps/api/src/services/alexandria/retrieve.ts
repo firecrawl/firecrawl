@@ -36,6 +36,8 @@ type Retrieval = {
   lockId?: string;
   maximumCredits?: number;
   response?: ExchangeResponse;
+  responseRetention?: "none";
+  creditsCost?: number;
   failure?: string;
 };
 
@@ -132,6 +134,18 @@ export async function retrieveProviders(input: {
     termsOnly && input.orgId && input.apiKeyIdText
       ? { organizationId: input.orgId, apiKeyId: input.apiKeyIdText }
       : undefined;
+  const deadline = Date.now() + input.timeoutMs;
+  let retainResponse = true;
+  const denied = await authorizeProviders(
+    input.teamId,
+    input.calls,
+    input.flags,
+    input.orgId,
+    policy => {
+      retainResponse = policy !== "none";
+    },
+  );
+  if (denied) return notExecuted(denied);
   const billable = !input.bypassBilling;
   const id = hash([input.teamId, input.requestId]);
   const key = `alexandria:retrieve:${id}`;
@@ -143,7 +157,7 @@ export async function retrieveProviders(input: {
   const record: Retrieval = {
     fingerprint,
     phase: "executing",
-    deadline: Date.now() + input.timeoutMs,
+    deadline,
     scrapeId: input.scrapeId,
   };
   const write = (next: Retrieval) =>
@@ -164,12 +178,32 @@ export async function retrieveProviders(input: {
   if (claimed !== "OK") {
     const raw = await redisRateLimitClient.get(key);
     const existing: Retrieval | null = raw ? JSON.parse(raw) : null;
-    if (existing?.phase === "done" && existing.fingerprint === fingerprint)
+    if (existing?.phase === "done" && existing.fingerprint === fingerprint) {
+      if (!retainResponse || existing.responseRetention === "none") {
+        // Keep the completion marker to prevent a retry from charging or executing again.
+        if (existing.response) {
+          const { response: _response, ...metadata } = existing;
+          await write({ ...metadata, responseRetention: "none" });
+        }
+        return {
+          ...refusal(
+            410,
+            "This request completed, but this provider does not allow its response to be retained or replayed.",
+            {
+              code: "provider_response_not_retained",
+              chargeId: id,
+            },
+          ),
+          executed: false,
+          scrapeId: existing.scrapeId ?? input.scrapeId,
+        };
+      }
       return {
         ...existing.response!,
         executed: false,
         scrapeId: existing.scrapeId ?? input.scrapeId,
       };
+    }
     if (existing && existing.fingerprint !== fingerprint)
       return notExecuted(
         refusal(
@@ -210,14 +244,6 @@ export async function retrieveProviders(input: {
   let maximumCredits: number;
   let refundable = false;
   try {
-    const denied = await authorizeProviders(
-      input.teamId,
-      input.calls,
-      input.flags,
-      input.orgId,
-    );
-    if (denied) return refuse(denied);
-
     const quote = await exchangeRequest({
       teamId: input.teamId,
       path: "/v1/retrieve/quote",
@@ -406,7 +432,16 @@ export async function retrieveProviders(input: {
       });
 
     const done: ExchangeResponse = { status: 200, body: answer };
-    await write({ ...record, phase: "done", response: done });
+    await write({
+      ...record,
+      phase: "done",
+      ...(retainResponse
+        ? { response: done }
+        : {
+            responseRetention: "none" as const,
+            creditsCost: answer.creditsCost,
+          }),
+    });
     return { ...done, executed: true, scrapeId: input.scrapeId };
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));

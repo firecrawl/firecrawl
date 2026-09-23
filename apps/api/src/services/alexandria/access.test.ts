@@ -26,6 +26,49 @@ const requirement = (required: boolean) => ({
 
 beforeEach(() => vi.clearAllMocks());
 
+it("reports retention policy from registry metadata independently of provider names", async () => {
+  const response = requirement(false);
+  Object.assign(response.body.providers[0], { responseRetention: "none" });
+  mocks.request.mockResolvedValue(response);
+  const policy = vi.fn();
+  expect(
+    await authorizeProviders("team", calls, {}, null, policy),
+  ).toBeUndefined();
+  expect(policy).toHaveBeenCalledWith("none");
+});
+
+it("rejects unknown retention policies before authorizing a call", async () => {
+  const response = requirement(false);
+  Object.assign(response.body.providers[0], { responseRetention: "sometimes" });
+  mocks.request.mockResolvedValue(response);
+  expect((await authorizeProviders("team", calls, {}))?.status).toBe(503);
+});
+
+it("applies the strictest retention policy to a mixed batch", async () => {
+  const response = requirement(false);
+  response.body.providers.push({
+    provider: "other",
+    required: false,
+    terms: { key: "other", version: "1" },
+  });
+  Object.assign(response.body.providers[1], { responseRetention: "none" });
+  mocks.request.mockResolvedValue(response);
+  const policy = vi.fn();
+  expect(
+    await authorizeProviders(
+      "team",
+      [
+        ...calls,
+        { provider: "other", capability: "catalog/search", options: {} },
+      ],
+      {},
+      null,
+      policy,
+    ),
+  ).toBeUndefined();
+  expect(policy).toHaveBeenCalledWith("none");
+});
+
 it("refuses a provider the Exchange does not know before any quote or execution", async () => {
   mocks.request.mockResolvedValue({ status: 404, body: { code: "not_found" } });
   const denied = await authorizeProviders("team", calls, {});

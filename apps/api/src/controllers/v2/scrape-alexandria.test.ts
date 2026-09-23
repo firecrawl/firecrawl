@@ -67,12 +67,34 @@ beforeEach(() => {
   );
 });
 
+it("delivers product data without passing it to scrape or request persistence", async () => {
+  const product = {
+    id: "synthetic-product",
+    description: "never-persist-product-content",
+  };
+  mocks.retrieve.mockResolvedValue(
+    result([{ ...call, data: { product }, creditsCost: 0 }]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(response.body.data.alexandria[0].data.product).toEqual(product);
+  expect(JSON.stringify(mocks.log.mock.calls)).not.toContain(
+    "never-persist-product-content",
+  );
+  expect(JSON.stringify(mocks.scrapeLog.mock.calls)).not.toContain(
+    "never-persist-product-content",
+  );
+  expect(mocks.scrapeLog).toHaveBeenCalledTimes(1);
+});
+
 it("returns the Scrape contract, shares identity with the legacy route, and logs once per execution", async () => {
   const response = await request(app)
     .post("/v2/scrape")
     .set("x-request-id", "same-request")
     .send({ alexandria: call });
   expect(response.status).toBe(200);
+  expect(response.headers["cache-control"]).toBe("no-store");
   expect(response.body).toEqual({
     success: true,
     scrape_id: "scrape-1",

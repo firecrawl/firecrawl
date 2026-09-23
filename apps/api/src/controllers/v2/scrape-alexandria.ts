@@ -49,6 +49,7 @@ export async function providerScrapeController(
   res: Response,
   legacy = false,
 ) {
+  res.setHeader("Cache-Control", "no-store");
   const legacyBody = legacy
     ? z
         .union([callSchema, z.strictObject({ requests: callsSchema })])

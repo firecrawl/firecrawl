@@ -13,6 +13,7 @@ const requirementsSchema = z.object({
     z.object({
       provider: z.string(),
       required: z.boolean(),
+      responseRetention: z.enum(["none", "standard"]).optional(),
       terms: z
         .object({
           key: z.string(),
@@ -52,6 +53,7 @@ export async function authorizeProviders(
   calls: ProviderCall[],
   flags: TeamFlags | null | undefined,
   orgId: string | null = null,
+  onRetentionPolicy?: (policy: "none" | "standard") => void,
 ): Promise<ExchangeResponse | undefined> {
   const providers = [...new Set(calls.map(call => call.provider))];
   const response = await exchangeRequest({
@@ -80,6 +82,11 @@ export async function authorizeProviders(
       503,
       "Provider agreements are unavailable. No provider was executed.",
     );
+  onRetentionPolicy?.(
+    parsed.data.providers.some(item => item.responseRetention === "none")
+      ? "none"
+      : "standard",
+  );
   if (config.USE_DB_AUTHENTICATION !== true) return undefined;
 
   let ledger: Map<string, LedgerAcceptance> | undefined;
