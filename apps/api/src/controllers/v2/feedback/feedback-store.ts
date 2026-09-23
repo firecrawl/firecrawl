@@ -48,45 +48,43 @@ export async function lookupFeedbackJob(
   { requireOptions = false }: { requireOptions?: boolean } = {},
 ): Promise<FeedbackJobRow | null> {
   let bigtableFailed = false;
-  // Compact feedback records omit the options required by keyless validation.
-  if (!requireOptions) {
-    try {
-      const job = await readFeedbackJob(jobId);
-      if (job) {
-        const storedEndpoint = endpointForRefundClass(job.refundClass);
-        if (job.teamId !== dbTeamId || storedEndpoint !== endpoint) return null;
+  try {
+    // Compact feedback records omit the options keyless validation requires.
+    const job = requireOptions ? null : await readFeedbackJob(jobId);
+    if (job) {
+      const storedEndpoint = endpointForRefundClass(job.refundClass);
+      if (job.teamId !== dbTeamId || storedEndpoint !== endpoint) return null;
 
-        const feedbackWindowSec =
-          endpoint === "search"
-            ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
-            : config.FEEDBACK_MAX_AGE_SEC;
-        return {
-          endpoint,
-          id: jobId,
-          request_id: job.requestId,
-          team_id: job.teamId,
-          credits_cost: job.creditsBilled,
-          created_at: new Date(
-            job.feedbackDeadlineMs - feedbackWindowSec * 1000,
-          ).toISOString(),
-          is_successful: job.succeeded,
-          options: null,
-          feedback_deadline_ms: job.feedbackDeadlineMs,
-          refund_class: job.refundClass,
-          zero_data_retention: job.zeroDataRetention,
-        };
-      }
-    } catch (error) {
-      bigtableFailed = true;
-      logger.warn(
-        "Bigtable feedback job read failed; falling back to PostgreSQL",
-        {
-          error,
-          jobId,
-          endpoint,
-        },
-      );
+      const feedbackWindowSec =
+        endpoint === "search"
+          ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
+          : config.FEEDBACK_MAX_AGE_SEC;
+      return {
+        endpoint,
+        id: jobId,
+        request_id: job.requestId,
+        team_id: job.teamId,
+        credits_cost: job.creditsBilled,
+        created_at: new Date(
+          job.feedbackDeadlineMs - feedbackWindowSec * 1000,
+        ).toISOString(),
+        is_successful: job.succeeded,
+        options: null,
+        feedback_deadline_ms: job.feedbackDeadlineMs,
+        refund_class: job.refundClass,
+        zero_data_retention: job.zeroDataRetention,
+      };
     }
+  } catch (error) {
+    bigtableFailed = true;
+    logger.warn(
+      "Bigtable feedback job read failed; falling back to PostgreSQL",
+      {
+        error,
+        jobId,
+        endpoint,
+      },
+    );
   }
 
   const table = JOB_TABLES[endpoint] as any;
