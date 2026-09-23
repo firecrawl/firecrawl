@@ -82,6 +82,7 @@ describeIf(enabled)("keyless feedback", () => {
       const accepted = await call("/v2/feedback", payload);
       expect(accepted.status).toBe(200);
       const duplicate = await call("/v2/feedback", payload);
+      expect(duplicate.status).toBe(200);
       expect(duplicate.body.feedbackId).toBe(accepted.body.feedbackId);
       expect(duplicate.body.alreadySubmitted).toBe(true);
       expect(accepted.body.creditsRefunded).toBe(0);

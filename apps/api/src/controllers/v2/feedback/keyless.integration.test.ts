@@ -1082,11 +1082,21 @@ suite("keyless feedback HTTP and persistence", () => {
     },
   );
   it("retries a job that becomes visible after the first lookup", async () => {
+    const store = await import("./feedback-store.js");
     const jobId = randomUUID();
-    const pending = submit(body("scrape", jobId)).then(response => response);
-    await new Promise(resolve => setTimeout(resolve, 100));
-    await persistJob("scrape", jobId);
-    expect((await pending).status).toBe(200);
+    const lookup = vi.spyOn(store, "lookupFeedbackJob");
+    // The first lookup persists the job but reports it missing, so only the
+    // retry can find the row.
+    lookup.mockImplementationOnce(async () => {
+      await persistJob("scrape", jobId);
+      return null;
+    });
+    try {
+      expect((await submit(body("scrape", jobId))).status).toBe(200);
+      expect(lookup).toHaveBeenCalledTimes(2);
+    } finally {
+      lookup.mockRestore();
+    }
   });
   it("does not record feedback for a missing job", async () => {
     expect((await submit(body("scrape", randomUUID()))).status).toBe(404);
