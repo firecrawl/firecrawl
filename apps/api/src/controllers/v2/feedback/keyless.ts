@@ -79,14 +79,16 @@ export async function keylessFeedbackController(
         "FEEDBACK_WINDOW_EXPIRED",
         "Feedback must be submitted within 24 hours of the job.",
       );
+    const failedJob = job.is_successful === false;
     if (
-      job.is_successful !== false &&
-      answers.observations.some(item => item.kind === "failure")
+      answers.observations.some(item => (item.kind === "failure") !== failedJob)
     )
       return fail(
         400,
         "INVALID_BODY",
-        "Failure observations require a failed job.",
+        failedJob
+          ? "Failed jobs accept only failure observations."
+          : "Failure observations require a failed job.",
       );
     let unverified = false;
     const options = job.options as {

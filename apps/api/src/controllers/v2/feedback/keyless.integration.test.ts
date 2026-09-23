@@ -595,7 +595,7 @@ suite("keyless feedback HTTP and persistence", () => {
   });
 
   it.each(["search", "scrape", "parse"] as const)(
-    "accepts failure observations only for failed %s jobs",
+    "accepts failure observations only for failed %s jobs, and only failure observations for them",
     async endpoint => {
       const observation = {
         kind: "failure",
@@ -614,6 +614,15 @@ suite("keyless feedback HTTP and persistence", () => {
       ).toBe(400);
       const { jobId, metadata } = await job(endpoint, false);
       expect(metadata.feedback).toBeDefined();
+      const mixed = await submit({
+        ...body(endpoint, jobId),
+        observations: [observation, body(endpoint, jobId).observations[0]],
+      });
+      expect(mixed.status).toBe(400);
+      expect(mixed.body.error).toBe(
+        "Failed jobs accept only failure observations.",
+      );
+      expect(await fixture.db!.select().from(table)).toHaveLength(0);
       expect(
         (
           await submit({
