@@ -285,8 +285,10 @@ export interface ScrapeOptions {
   };
   integration?: string;
   origin?: string;
-  /** Include domain-matched Alexandria contracts for this URL in `tools`. Default off. */
+  /** Include domain-matched Alexandria tools for this URL in `tools`. Default off. */
   domainTools?: boolean;
+  /** Summary by default; compact returns identity and description, full includes contracts. */
+  toolDetail?: "compact" | "summary" | "full";
 }
 
 export type RedactPIIEntity =
@@ -358,6 +360,7 @@ export type ParseOptions = Omit<
   | "lockdown"
   | "proxy"
   | "threatProtection"
+  | "toolDetail"
 > & {
   formats?: ParseFormatOption[];
   proxy?: "basic" | "auto";
@@ -826,14 +829,15 @@ export interface SearchData {
 
 /** A complete tool contract returned by semantic or contextual discovery. */
 export interface DiscoveredTool {
+  next?: AlexandriaCall;
   id?: string;
   provider: string;
   capability: string;
-  name: string;
+  name?: string;
   description: string;
-  creditsCost: number;
-  perRecord: boolean;
-  options: Array<{
+  creditsCost?: number;
+  perRecord?: boolean;
+  options?: Array<{
     name: string;
     type: string;
     required?: boolean;
@@ -970,8 +974,10 @@ export interface CategoryOption {
 
 export interface SearchRequest {
   query: string;
-  /** Include domain-matched contracts in tools alongside semantic matches. */
+  /** Include domain-matched tools in tools alongside semantic matches. */
   domainTools?: boolean;
+  /** Compact by default; summary adds metadata, full includes contracts. */
+  toolDetail?: "compact" | "summary" | "full";
   sources?: Array<
     "web" | "news" | "images" | "alexandria"
     | { type: "web" | "news" | "images" | "alexandria" }
@@ -998,7 +1004,7 @@ export interface SearchRequest {
   timeout?: number; // ms
   /** Generate query-relevant highlights for search results. Defaults to true. */
   highlights?: boolean;
-  scrapeOptions?: ScrapeOptions;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail">;
   /**
    * Enterprise search options. Use `["zdr"]` for end-to-end Zero Data
    * Retention or `["anon"]` for anonymized search. Must be enabled for
@@ -1027,7 +1033,7 @@ export interface CrawlOptions {
   delay?: number | null;
   maxConcurrency?: number | null;
   webhook?: string | WebhookConfig | null;
-  scrapeOptions?: ScrapeOptions | null;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail"> | null;
   regexOnFullURL?: boolean;
   zeroDataRetention?: boolean;
   integration?: string;
@@ -1051,7 +1057,7 @@ export interface CrawlJob {
 }
 
 export interface BatchScrapeOptions {
-  options?: ScrapeOptions;
+  options?: Omit<ScrapeOptions, "toolDetail">;
   webhook?: string | WebhookConfig;
   appendToId?: string;
   ignoreInvalidURLs?: boolean;
@@ -1201,7 +1207,7 @@ export interface MonitorScrapeTarget {
   id?: string;
   type: "scrape";
   urls: string[];
-  scrapeOptions?: ScrapeOptions;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail">;
 }
 
 export interface MonitorCrawlTarget {
@@ -1209,7 +1215,7 @@ export interface MonitorCrawlTarget {
   type: "crawl";
   url: string;
   crawlOptions?: CrawlOptions;
-  scrapeOptions?: ScrapeOptions;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail">;
 }
 
 export interface MonitorSearchTarget {

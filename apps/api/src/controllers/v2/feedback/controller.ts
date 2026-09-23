@@ -11,16 +11,30 @@ import {
 import { recordEndpointFeedback } from "./record";
 import { endpointFeedbackRecordOptions } from "./record-options";
 import { toFeedbackInput } from "./request-input";
+import {
+  alexandriaFeedbackSchema,
+  AlexandriaFeedbackRequest,
+} from "./alexandria-schema";
+import { recordAlexandriaFeedback } from "./alexandria";
+
+const feedbackSchema = z.union([
+  alexandriaFeedbackSchema,
+  endpointFeedbackSchema,
+]);
 
 export async function feedbackController(
-  req: RequestWithAuth<{}, EndpointFeedbackResponse, EndpointFeedbackRequest>,
+  req: RequestWithAuth<
+    {},
+    EndpointFeedbackResponse,
+    EndpointFeedbackRequest | AlexandriaFeedbackRequest
+  >,
   res: Response<EndpointFeedbackResponse>,
 ) {
   if (keylessTeamUuid(req.auth.team_id))
     return keylessFeedbackController(req, res);
-  let parsedBody: EndpointFeedbackRequest;
+  let parsedBody: EndpointFeedbackRequest | AlexandriaFeedbackRequest;
   try {
-    parsedBody = endpointFeedbackSchema.parse(req.body);
+    parsedBody = feedbackSchema.parse(req.body);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
@@ -31,6 +45,11 @@ export async function feedbackController(
       });
     }
     throw error;
+  }
+
+  if (parsedBody.endpoint === "alexandria") {
+    const result = await recordAlexandriaFeedback(req, parsedBody);
+    return res.status(result.status).json(result.body);
   }
 
   const result = await recordEndpointFeedback(

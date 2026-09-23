@@ -42,6 +42,7 @@ import { processEngpickerJob } from "../../lib/engpicker";
 import { logRequest, shutdownPubSubLogging } from "../logging/log_job";
 import { startSiemLoggingConsumer } from "../siem-logging/worker";
 import { closeSiemLoggingTransport } from "../../lib/siem-logging/transport";
+import { requestCreditsShards } from "../../lib/request-credits-store";
 
 const workerLockDuration = config.WORKER_LOCK_DURATION;
 const workerStalledCheckInterval = config.WORKER_STALLED_CHECK_INTERVAL;
@@ -485,6 +486,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               target_hint: url,
               zeroDataRetention: false,
               api_key_id: null,
+              creditsShards: requestCreditsShards(limit),
             });
 
             const crawlerOptions = {

@@ -71,6 +71,7 @@ async function oldExtract(
       request,
       teamId: req.auth.team_id,
       apiKeyId: req.acuc?.api_key_id ?? null,
+      externalRequestId: externalRequestId(req),
     });
 
     if (sender) {
@@ -196,6 +197,7 @@ export async function extractController(
         req.acuc?.api_key_id ?? null,
         {
           endpoint: "extract",
+          externalRequestId: externalRequestId(req),
           // Suffixed: the extract's MAIN charge (fire-0) uses the bare
           // extractId — a shared key would collapse the two into one charge.
           chargeId: `${extractId}:threat`,
@@ -281,6 +283,7 @@ export async function extractController(
     extractId,
     agent: req.body.agent,
     apiKeyId: req.acuc?.api_key_id ?? null,
+    externalRequestId: externalRequestId(req),
     createdAt,
   };
 

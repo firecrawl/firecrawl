@@ -67,6 +67,7 @@ import {
   browserExecuteController,
   browserDeleteController,
   browserListController,
+  browserProfileDeleteController,
   browserWebhookDestroyedController,
 } from "../controllers/v2/browser";
 import {
@@ -655,6 +656,12 @@ v2Router.get(
   ["/browser/:sessionId/replay/:pageId", "/interact/:sessionId/replay/:pageId"],
   authMiddleware(RateLimiterMode.BrowserReplay),
   wrap(browserReplayPageController),
+);
+
+v2Router.delete(
+  ["/browser/profiles/:name", "/interact/profiles/:name"],
+  authMiddleware(RateLimiterMode.BrowserExecute),
+  wrap(browserProfileDeleteController),
 );
 
 v2Router.delete(

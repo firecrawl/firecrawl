@@ -95,7 +95,12 @@ async function searchHelper(
       org_id,
       searchCredits,
       api_key_id,
-      { endpoint: "search", jobId, chargeId: jobId },
+      {
+        endpoint: "search",
+        jobId,
+        chargeId: jobId,
+        externalRequestId: externalRequestId(req),
+      },
       logger,
     ).catch(error => {
       logger.error(
@@ -127,7 +132,11 @@ async function searchHelper(
     org_id,
     basePriority: 20,
   });
-  const billing = { endpoint: "search" as const, jobId };
+  const billing = {
+    endpoint: "search" as const,
+    jobId,
+    externalRequestId: externalRequestId(req),
+  };
 
   // filter out social media links
 

@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, jest, test } from "@jest/globals";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test,
+} from "@jest/globals";
 import { createServer, type Server } from "node:http";
 import { FirecrawlClient } from "../../../v2/client";
 
@@ -52,6 +60,13 @@ const next = {
   capability: "find-tools",
   options: { providers: ["particle"], level: "tools" },
 };
+const compactTools = [tool, productionTool].map(
+  ({ provider, capability, description }) => ({
+    provider,
+    capability,
+    description,
+  }),
+);
 let server: Server;
 let client: FirecrawlClient;
 const sent: Array<{ body: any; id: string | undefined }> = [];
@@ -76,8 +91,18 @@ beforeAll(async () => {
           warning: "Example warning",
           data: {
             web: [{ url: "https://podcasts.apple.com" }],
-            tools: [tool, productionTool],
+            tools:
+              body.toolDetail === "compact"
+                ? compactTools
+                : [tool, productionTool],
           },
+        }),
+      );
+    if (req.url === "/v2/scrape" && body.url)
+      return res.end(
+        JSON.stringify({
+          success: true,
+          data: { markdown: "Example", tools: compactTools },
         }),
       );
     if (body.alexandria[0].provider === "retry" && attempts++ === 0) {
@@ -150,6 +175,26 @@ afterAll(async () => {
 });
 
 describe("Alexandria contracts and execution", () => {
+  test.each(["compact", "summary", "full"] as const)(
+    "forwards %s discovery detail",
+    async (toolDetail) => {
+      const result = await client.search("records", { toolDetail });
+      if (toolDetail === "compact") expect(result.tools).toEqual(compactTools);
+      expect(sent.at(-1)?.body).toMatchObject({ toolDetail });
+    },
+  );
+  test("URL scrape forwards compact detail and preserves tools", async () => {
+    const result = await client.scrape("https://example.com", {
+      domainTools: true,
+      toolDetail: "compact",
+    });
+    expect(sent.at(-1)?.body).toMatchObject({
+      url: "https://example.com",
+      domainTools: true,
+      toolDetail: "compact",
+    });
+    expect(result.tools).toEqual(compactTools);
+  });
   test("returns complete unified tools and warning beside web results", async () => {
     const result = await client.search("podcasts", {
       sources: ["web", { type: "alexandria" }],
@@ -226,15 +271,27 @@ describe("Alexandria contracts and execution", () => {
   });
 });
 
-
-test.each([[undefined, 80000], [1000, 31000], [100000, 80000]])(
+test.each([
+  [undefined, 80000],
+  [1000, 31000],
+  [100000, 80000],
+])(
   "Alexandria timeout %s allows response delivery (%s ms)",
   async (timeout, timeoutMs) => {
-    const http = { post: jest.fn(async () => ({ status: 200, data: {
-      success: true, data: { alexandria: [], creditsCost: 0 },
-    } })) };
+    const http = {
+      post: jest.fn(async () => ({
+        status: 200,
+        data: {
+          success: true,
+          data: { alexandria: [], creditsCost: 0 },
+        },
+      })),
+    };
     await scrapeAlexandria(http as any, [next], { timeout });
-    expect(http.post).toHaveBeenCalledWith("/v2/scrape", expect.anything(),
-      expect.objectContaining({ timeoutMs }));
+    expect(http.post).toHaveBeenCalledWith(
+      "/v2/scrape",
+      expect.anything(),
+      expect.objectContaining({ timeoutMs }),
+    );
   },
 );

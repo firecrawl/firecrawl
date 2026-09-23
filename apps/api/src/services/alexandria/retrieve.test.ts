@@ -278,3 +278,219 @@ it("treats a team with no org as a skipped hold and executes nothing", async () 
   expect(executions()).toHaveLength(0);
   expect(mocks.store.size).toBe(0);
 });
+
+it.each([false, true])(
+  "rejects mixed Bash source loading before side effects (Bash first: %s)",
+  async bashFirst => {
+    const bash = {
+      provider: "firecrawl",
+      capability: "bash",
+      options: { requestId: "source", command: "ls" },
+    };
+    const result = await run({
+      calls: bashFirst ? [bash, call] : [call, bash],
+      resultAuthorization: "Bearer caller",
+    });
+    expect(result).toMatchObject({ status: 400, executed: false });
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.authorize).not.toHaveBeenCalled();
+    expect(mocks.lock).not.toHaveBeenCalled();
+    expect(mocks.store.size).toBe(0);
+  },
+);
+
+it("allows standalone Bash source loading and forwards credentials only to execution", async () => {
+  const bash = {
+    provider: "firecrawl",
+    capability: "bash",
+    options: { requestId: "source", command: "ls" },
+  };
+  exchangeAnswers({
+    success: true,
+    creditsCost: 0,
+    results: [{ ...bash, creditsCost: 0, data: { workspaceId: "workspace" } }],
+  });
+  const result = await run({
+    calls: [bash],
+    resultAuthorization: "Bearer caller",
+  });
+  expect(result).toMatchObject({ status: 200, executed: true });
+  expect(executions()).toHaveLength(1);
+  expect(executions()[0][0].resultAuthorization).toBe("Bearer caller");
+  expect(
+    mocks.request.mock.calls
+      .filter(([arg]) => arg.path !== "/v1/retrieve")
+      .every(([arg]) => arg.resultAuthorization === undefined),
+  ).toBe(true);
+  expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
+});
+
+it.each([
+  {
+    provider: "firecrawl",
+    capability: "bash",
+    options: { workspaceId: "workspace", command: "ls" },
+  },
+  {
+    provider: "firecrawl",
+    capability: "find-tools",
+    options: { requestId: "source" },
+  },
+  { provider: "other", capability: "bash", options: { requestId: "source" } },
+])("does not forward credentials for other calls: %j", async other => {
+  exchangeAnswers({
+    success: true,
+    creditsCost: 0,
+    results: [call, other].map(entry => ({
+      ...entry,
+      creditsCost: 0,
+      data: {},
+    })),
+  });
+  expect(
+    await run({ calls: [call, other], resultAuthorization: "Bearer caller" }),
+  ).toMatchObject({ status: 200, executed: true });
+  expect(executions()[0][0].resultAuthorization).toBeUndefined();
+});
+
+it.each([123, null, false, {}, []])(
+  "never forwards credentials for a non-string Bash requestId: %j",
+  async requestId => {
+    const bash = {
+      provider: "firecrawl",
+      capability: "bash",
+      options: { requestId, command: "ls" },
+    };
+    exchangeAnswers(
+      { success: false, error: "invalid option", code: "invalid_option" },
+      400,
+    );
+    expect(
+      await run({ calls: [call, bash], resultAuthorization: "Bearer caller" }),
+    ).toMatchObject({ status: 400 });
+    expect(executions()).toHaveLength(1);
+    expect(executions()[0][0].resultAuthorization).toBeUndefined();
+  },
+);
+
+it("forwards an optional version to quote and execution", async () => {
+  const pinned = { ...call, version: "1.2.3" };
+  await run({ calls: [pinned] });
+  const forwarded = mocks.request.mock.calls.filter(
+    ([r]) => r.path.endsWith("/quote") || r.path === "/v1/retrieve",
+  );
+  expect(forwarded).toHaveLength(2);
+  for (const [request] of forwarded) {
+    expect(request.body.requests).toEqual([pinned]);
+  }
+});
+
+it("forwards verified terms identity only for terms-only executions", async () => {
+  for (const capability of ["terms/show", "terms/accept"]) {
+    mocks.store.clear();
+    mocks.request.mockClear();
+    const termsCall = {
+      provider: "firecrawl",
+      capability,
+      options: { provider: "benzinga" },
+    };
+    exchangeAnswers({
+      success: true,
+      creditsCost: 0,
+      results: [{ ...termsCall, creditsCost: 0, data: {} }],
+    });
+    await run({ calls: [termsCall], apiKeyIdText: "verified-key" });
+    expect(executions()[0][0].termsIdentity).toEqual({
+      organizationId: "org",
+      apiKeyId: "verified-key",
+    });
+    expect(
+      mocks.request.mock.calls
+        .filter(([arg]) => arg.path !== "/v1/retrieve")
+        .every(([arg]) => arg.termsIdentity === undefined),
+    ).toBe(true);
+  }
+  for (const overrides of [
+    {},
+    { calls: [{ provider: "firecrawl", capability: "terms/show" }, call] },
+    {
+      calls: [{ provider: "firecrawl", capability: "terms/accept" }],
+      orgId: null,
+    },
+    {
+      calls: [{ provider: "firecrawl", capability: "terms/accept" }],
+      apiKeyId: null,
+    },
+  ]) {
+    mocks.store.clear();
+    mocks.request.mockClear();
+    exchangeAnswers(answer, 200, { status: 200, body: { maximumCredits: 0 } });
+    await run(overrides);
+    expect(executions()[0][0].termsIdentity).toBeUndefined();
+  }
+});
+
+it("binds terms replay to exact organization and credential identity", async () => {
+  const termsCall = {
+    provider: "firecrawl",
+    capability: "terms/accept",
+    options: { provider: "benzinga" },
+  };
+  exchangeAnswers(
+    {
+      success: true,
+      creditsCost: 0,
+      results: [{ ...termsCall, creditsCost: 0, data: {} }],
+    },
+    200,
+    { status: 200, body: { maximumCredits: 0 } },
+  );
+  const input = { calls: [termsCall], apiKeyIdText: "9007199254740993" };
+  expect((await run(input)).executed).toBe(true);
+  expect(executions()[0][0].termsIdentity.apiKeyId).toBe("9007199254740993");
+  expect((await run(input)).executed).toBe(false);
+  for (const change of [
+    { apiKeyIdText: "9007199254740994" },
+    { orgId: "other-org" },
+    { apiKeyIdText: undefined },
+  ]) {
+    expect(await run({ ...input, ...change })).toMatchObject({
+      status: 409,
+      executed: false,
+    });
+  }
+  expect(executions()).toHaveLength(1);
+  expect(
+    (
+      await run({
+        ...input,
+        apiKeyIdText: "9007199254740994",
+        requestId: "another-request",
+      })
+    ).executed,
+  ).toBe(true);
+});
+
+it("does not derive terms credential identity from numeric API-key IDs", async () => {
+  const termsCall = { provider: "firecrawl", capability: "terms/show" };
+  exchangeAnswers(
+    {
+      success: true,
+      creditsCost: 0,
+      results: [{ ...termsCall, creditsCost: 0, data: {} }],
+    },
+    200,
+    { status: 200, body: { maximumCredits: 0 } },
+  );
+  for (const apiKeyId of [12, Number("9007199254740993")]) {
+    mocks.store.clear();
+    const previousCount = executions().length;
+    expect(await run({ calls: [termsCall], apiKeyId })).toMatchObject({
+      executed: true,
+    });
+    expect(executions()).toHaveLength(previousCount + 1);
+    const execution = executions().at(-1);
+    if (!execution) throw new Error("Expected a provider execution");
+    expect(execution[0].termsIdentity).toBeUndefined();
+  }
+});

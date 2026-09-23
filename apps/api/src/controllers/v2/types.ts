@@ -508,6 +508,11 @@ const pdfParserWithOptions = z
      * cross-page stitching — callers that need every physical page should
      * use `pages: true` instead. No new response field. */
     pageMarkers: z.boolean().optional(),
+    /** Skip the cached conversion for this document and parse it again with
+     * the current pipeline; the fresh result overwrites the cache entry for
+     * everyone. Billed like a fresh parse. Use it when a cached result is
+     * wrong or outdated. */
+    refresh: z.boolean().optional(),
     // Experimental: route this request through the fire-pdf async pipeline
     // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
     // to sync on any async-path failure, so user-visible behavior is unchanged
@@ -634,6 +639,17 @@ export function getPDFPageMarkers(parsers?: Parsers): boolean {
   for (const parser of parsers) {
     if (typeof parser === "object" && parser.type === "pdf") {
       return parser.pageMarkers === true;
+    }
+  }
+  return false;
+}
+
+/** `parsers: [{ type: "pdf", refresh: true }]`: bypass the content cache for this request. */
+export function getPDFRefresh(parsers?: Parsers): boolean {
+  if (!parsers) return false;
+  for (const parser of parsers) {
+    if (typeof parser === "object" && parser.type === "pdf") {
+      return parser.refresh === true;
     }
   }
   return false;
@@ -1115,6 +1131,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions.extend({
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
   domainTools: z.boolean().optional(),
+  toolDetail: z.enum(["compact", "summary", "full"]).optional(),
   __agentInterop: z
     .object({
       auth: z.string(),
@@ -1605,6 +1622,8 @@ export type AgentListResponse =
           // type release.
           model: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
           effort?: "low" | "medium" | "high";
+          threadId?: string;
+          threadTurn?: number;
         };
       }[];
       next?: string;
@@ -2395,6 +2414,7 @@ export const searchRequestSchema = z
     // whether generated highlights are returned or only run in shadow mode.
     highlights: z.boolean().optional(),
     domainTools: z.boolean().optional(),
+    toolDetail: z.enum(["compact", "summary", "full"]).prefault("compact"),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions

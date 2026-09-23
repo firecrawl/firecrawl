@@ -1,4 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
+import { AGENT_REQUEST_CREDITS_SHARDS } from "../../lib/request-credits-store";
 import { Response } from "express";
 import {
   AgentRequest,
@@ -46,20 +47,6 @@ export async function agentController(
       success: false,
       error:
         "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature.",
-    });
-  }
-
-  // The agent service would reject every call from an unentitled team anyway;
-  // failing here keeps the run — and its request row — from being created.
-  if (
-    req.body.exchange !== undefined &&
-    req.body.exchange.enabled !== false &&
-    !req.acuc?.flags?.exchangeRetrieve
-  ) {
-    return res.status(403).json({
-      success: false,
-      code: "exchange_not_enabled",
-      error: "This option is not enabled for this team.",
     });
   }
 
@@ -219,7 +206,7 @@ export async function agentController(
     target_hint: req.body.urls?.[0] ?? req.body.prompt ?? "",
     zeroDataRetention: false, // not supported for agent
     api_key_id: req.acuc?.api_key_id ?? null,
-    creditsShards: 8,
+    creditsShards: AGENT_REQUEST_CREDITS_SHARDS,
   });
 
   const passthrough = await fetch(

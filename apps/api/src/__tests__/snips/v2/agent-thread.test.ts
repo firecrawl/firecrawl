@@ -67,14 +67,21 @@ const cancel = (jobId: string) =>
     .delete(`/v2/agent/${jobId}`)
     .set("Authorization", `Bearer ${identity.apiKey}`);
 
-const listAgentIds = async () => {
+type ListedAgent = {
+  id: string;
+  options?: { threadId?: string; threadTurn?: number };
+};
+
+const listAgents = async () => {
   const response = await request(TEST_API_URL)
     .get("/v2/agent")
     .set("Authorization", `Bearer ${identity.apiKey}`);
 
   expect(response.statusCode).toBe(200);
-  return ((response.body.agents ?? []) as { id: string }[]).map(a => a.id);
+  return (response.body.agents ?? []) as ListedAgent[];
 };
+
+const listAgentIds = async () => (await listAgents()).map(a => a.id);
 
 async function waitForTerminal(jobId: string) {
   const deadline = Date.now() + TURN_TIMEOUT - scrapeTimeout;
@@ -234,6 +241,56 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
         ).toEqual([1, 2]);
       },
       TURN_TIMEOUT * 2,
+    );
+
+    it(
+      "lists each turn with its thread so clients can group them",
+      async () => {
+        const first = await startTurn({
+          urls: [TEST_SUITE_WEBSITE],
+          prompt: "Extract the page title.",
+          effort: "low",
+        });
+
+        await cancel(first.id);
+        await waitForTerminal(first.id);
+
+        const second = await startTurn({
+          threadId: first.threadId,
+          prompt: "And the heading?",
+          effort: "low",
+        });
+
+        await cancel(second.id);
+        await waitForTerminal(second.id);
+
+        // A plain run starts its own thread and must not join the one above.
+        const other = await startTurn({
+          urls: [TEST_SUITE_WEBSITE],
+          prompt: "What does this page offer?",
+          effort: "low",
+        });
+
+        await cancel(other.id);
+        await waitForTerminal(other.id);
+
+        const agents = await listAgents();
+        const byId = new Map(agents.map(agent => [agent.id, agent]));
+
+        expect(byId.get(first.id)?.options?.threadId).toBe(first.threadId);
+        expect(byId.get(first.id)?.options?.threadTurn).toBe(1);
+        expect(byId.get(second.id)?.options?.threadId).toBe(first.threadId);
+        expect(byId.get(second.id)?.options?.threadTurn).toBe(2);
+
+        expect(byId.get(other.id)?.options?.threadId).toBe(other.threadId);
+        expect(byId.get(other.id)?.options?.threadId).not.toBe(first.threadId);
+        expect(byId.get(other.id)?.options?.threadTurn).toBe(1);
+
+        expect(
+          agents.filter(agent => agent.options?.threadId === first.threadId),
+        ).toHaveLength(2);
+      },
+      TURN_TIMEOUT * 3,
     );
 
     it(

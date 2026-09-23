@@ -82,12 +82,14 @@ export async function retrieveProviders(input: {
    *  can be named, which is a skipped hold, the same as an unresolvable org. */
   orgId: string | null;
   apiKeyId: number | null;
+  apiKeyIdText?: string | null;
   flags: TeamFlags | null | undefined;
   calls: ProviderCall[];
   requestId: string;
   scrapeId: string;
   timeoutMs: number;
   bypassBilling?: boolean;
+  resultAuthorization?: string;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -104,10 +106,40 @@ export async function retrieveProviders(input: {
   if (Buffer.byteLength(JSON.stringify(input.calls)) > 256 * 1024)
     return notExecuted(refusal(400, "Provider options exceed 256 KB."));
 
+  const loadsSavedResult = input.calls.some(
+    call =>
+      call.provider === "firecrawl" &&
+      (call.capability === "bash" || call.capability === "jev") &&
+      typeof call.options?.requestId === "string",
+  );
+  if (loadsSavedResult && input.calls.length !== 1)
+    return notExecuted(
+      refusal(
+        400,
+        "Saved-result loading must be sent as a separate request; do not batch it with other calls.",
+      ),
+    );
+
+  const termsOnly =
+    input.calls.length > 0 &&
+    input.calls.every(
+      call =>
+        call.provider === "firecrawl" &&
+        (call.capability === "terms/show" ||
+          call.capability === "terms/accept"),
+    );
+  const termsIdentity =
+    termsOnly && input.orgId && input.apiKeyIdText
+      ? { organizationId: input.orgId, apiKeyId: input.apiKeyIdText }
+      : undefined;
   const billable = !input.bypassBilling;
   const id = hash([input.teamId, input.requestId]);
   const key = `alexandria:retrieve:${id}`;
-  const fingerprint = hash([input.calls, billable]);
+  const fingerprint = hash(
+    termsOnly
+      ? [input.calls, billable, termsIdentity ?? null]
+      : [input.calls, billable],
+  );
   const record: Retrieval = {
     fingerprint,
     phase: "executing",
@@ -315,9 +347,13 @@ export async function retrieveProviders(input: {
       body: { requests: input.calls },
       timeoutMs: remaining(),
       requestId: id,
+      ...(loadsSavedResult && input.resultAuthorization
+        ? { resultAuthorization: input.resultAuthorization }
+        : {}),
+      ...(termsIdentity ? { termsIdentity } : {}),
       maximumCredits,
     }).catch(error => {
-      throw new Error(`Exchange did not answer: ${error?.message ?? error}`);
+      throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);
     });
 
     const body = (response.body ?? {}) as Record<string, unknown>;
@@ -329,10 +365,10 @@ export async function retrieveProviders(input: {
       return refuse(relay(response), true);
     }
     if (response.status < 200 || response.status >= 300)
-      return fail(`Exchange answered ${response.status}`);
+      return fail(`Alexandria answered ${response.status}`);
 
     const parsed = answerSchema.safeParse(response.body);
-    if (!parsed.success) return fail("Exchange answer was malformed");
+    if (!parsed.success) return fail("Alexandria answer was malformed");
     const answer = parsed.data;
     const receiptMatches =
       answer.results.length === input.calls.length &&
@@ -347,7 +383,7 @@ export async function retrieveProviders(input: {
             input.calls[i].capability,
       );
     if (!receiptMatches)
-      return fail("Exchange receipt did not match the request");
+      return fail("Alexandria receipt did not match the request");
 
     const credits = answer.creditsCost;
     const settled = await finalize(credits);

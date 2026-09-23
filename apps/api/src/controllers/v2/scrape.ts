@@ -219,9 +219,12 @@ export async function scrapeController(
           success: false,
           error: "Provider discovery does not support zero data retention.",
         });
-      const billing: BillingMetadata = req.body.__agentInterop
-        ? { endpoint: "agent" as const, jobId }
-        : { endpoint: "scrape" as const, jobId };
+      const billing: BillingMetadata = {
+        ...(req.body.__agentInterop
+          ? { endpoint: "agent" as const, jobId }
+          : { endpoint: "scrape" as const, jobId }),
+        externalRequestId: externalRequestId(req),
+      };
 
       if (
         req.body.__agentInterop &&
@@ -780,6 +783,7 @@ export async function scrapeController(
           ? await discoverTools(
               {
                 teamId: req.auth.team_id,
+                toolDetail: req.body.toolDetail,
                 urls: [
                   ...new Set(
                     [

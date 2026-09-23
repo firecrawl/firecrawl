@@ -45,12 +45,17 @@ const statusSchema = z.object({
         version: z.string().nullable(),
         textHash: z.string().nullable(),
         revoked: z.boolean(),
+        acceptedAt: z.unknown().optional(),
       })
       .passthrough(),
   ),
 });
 
-export type LedgerAcceptance = { version: string; textHash: string | null };
+export type LedgerAcceptance = {
+  version: string;
+  textHash: string | null;
+  acceptedAt?: string | null;
+};
 
 export async function acceptedProviders(
   teamId: string,
@@ -72,6 +77,8 @@ export async function acceptedProviders(
       accepted.set(item.provider, {
         version: item.version,
         textHash: item.textHash,
+        acceptedAt:
+          typeof item.acceptedAt === "string" ? item.acceptedAt : null,
       });
   }
   return accepted;

@@ -1,74 +1,35 @@
 import { vi } from "vitest";
 
-const {
-  tables,
-  select,
-  update,
-  set,
-  where,
-  getZdrCleanupBatch,
-  removeJobFromGCS,
-  spans,
-  withSpan,
-  setSpanAttributes,
-} = vi.hoisted(() => {
-  const makeTable = (name: string) => ({
-    name,
-    id: `${name}.id`,
-    request_id: `${name}.request_id`,
+const { query, spans, withSpan, setSpanAttributes, removeJobFromGCS, client } =
+  vi.hoisted(() => {
+    const query = vi.fn();
+    const spans: Array<{ name: string; attributes: Record<string, unknown> }> =
+      [];
+    const withSpan = vi.fn(async (name: string, fn: (span: any) => any) => {
+      const span = { attributes: {} };
+      spans.push({ name, attributes: span.attributes });
+      return fn(span);
+    });
+    const setSpanAttributes = vi.fn(
+      (span: { attributes: Record<string, unknown> }, attributes: object) => {
+        Object.assign(span.attributes, attributes);
+      },
+    );
+    return {
+      query,
+      spans,
+      withSpan,
+      setSpanAttributes,
+      removeJobFromGCS: vi.fn<(id: string) => Promise<void>>(async () => {}),
+      client: { current: { query } as { query: typeof query } | null },
+    };
   });
-  const tables = {
-    requests: makeTable("requests"),
-    scrapes: makeTable("scrapes"),
-    searches: makeTable("searches"),
-    extracts: makeTable("extracts"),
-    maps: makeTable("maps"),
-    llmstxts: makeTable("llmstxts"),
-    deep_researches: makeTable("deep_researches"),
-  };
-  const where = vi.fn(async () => {});
-  const set = vi.fn(() => ({ where }));
-  const update = vi.fn(() => ({ set }));
-  const select = vi.fn(() => ({
-    from: (table: { name: string }) => ({
-      where: vi.fn(async () => [{ id: `${table.name}-blob` }]),
-    }),
-  }));
-  const spans: Array<{ name: string; attributes: Record<string, unknown> }> =
-    [];
-  const withSpan = vi.fn(async (name: string, fn: (span: any) => any) => {
-    const span = { attributes: {} };
-    spans.push({ name, attributes: span.attributes });
-    return fn(span);
-  });
-  const setSpanAttributes = vi.fn(
-    (span: { attributes: Record<string, unknown> }, attributes: object) => {
-      Object.assign(span.attributes, attributes);
-    },
-  );
-  return {
-    tables,
-    select,
-    update,
-    set,
-    where,
-    getZdrCleanupBatch: vi.fn<
-      (limit: number) => Promise<Array<{ request_id: string; ids: string[] }>>
-    >(async () => []),
-    removeJobFromGCS: vi.fn<(id: string) => Promise<void>>(async () => {}),
-    spans,
-    withSpan,
-    setSpanAttributes,
-  };
-});
 
-vi.mock("drizzle-orm", () => ({
-  eq: vi.fn(() => "eq"),
-  inArray: vi.fn(() => "inArray"),
+vi.mock("./clickhouse-client", () => ({
+  get clickhouseClient() {
+    return client.current;
+  },
 }));
-vi.mock("../db/connection", () => ({ db: { select, update } }));
-vi.mock("../db/schema", () => tables);
-vi.mock("../db/rpc", () => ({ getZdrCleanupBatch }));
 vi.mock("./gcs-jobs", () => ({ removeJobFromGCS }));
 vi.mock("../config", () => ({ config: {} }));
 vi.mock("./logger", () => {
@@ -82,27 +43,39 @@ vi.mock("./logger", () => {
 });
 vi.mock("./otel-tracer", () => ({ withSpan, setSpanAttributes }));
 
-import { cleanZdrRequest, zdrcleaner } from "./zdrcleaner";
+import { cleanZdrRequest } from "./zdrcleaner";
+import { logger } from "./logger";
+
+function mockChildren(ids: string[]) {
+  query.mockResolvedValueOnce({
+    json: vi.fn(async () => ids.map(id => ({ id }))),
+  });
+}
 
 describe("ZDR cleaner", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getZdrCleanupBatch.mockResolvedValue([]);
+    client.current = { query };
     removeJobFromGCS.mockResolvedValue(undefined);
     spans.length = 0;
   });
 
-  it("loads and removes every blob type for a queued request", async () => {
+  it("removes every indexed blob for a queued request", async () => {
+    mockChildren(["scrape-blob", "search-blob", "map-blob"]);
+
     await cleanZdrRequest("request-1");
 
-    expect(select).toHaveBeenCalledTimes(6);
+    expect(query).toHaveBeenCalledOnce();
+    expect(query.mock.calls[0][0]).toMatchObject({
+      query:
+        "SELECT DISTINCT id FROM request_children WHERE request_id = {requestId: UUID}",
+      query_params: { requestId: "request-1" },
+      format: "JSONEachRow",
+    });
     expect(removeJobFromGCS.mock.calls.map(([id]) => id)).toEqual([
-      "scrapes-blob",
-      "searches-blob",
-      "extracts-blob",
-      "maps-blob",
-      "llmstxts-blob",
-      "deep_researches-blob",
+      "scrape-blob",
+      "search-blob",
+      "map-blob",
     ]);
     expect(spans).toEqual(
       expect.arrayContaining([
@@ -110,42 +83,62 @@ describe("ZDR cleaner", () => {
           name: "zdr.cleanup.request",
           attributes: expect.objectContaining({
             "zdr.request_id": "request-1",
-            "zdr.blob_count": 6,
+            "zdr.blob_count": 3,
             "zdr.cleanup.outcome": "completed",
           }),
         },
         {
-          name: "zdr.postgres.read_blobs",
+          name: "zdr.clickhouse.read_blobs",
           attributes: expect.objectContaining({
-            "db.system": "postgresql",
-            "db.operation.name": "select",
-            "db.response.returned_rows": 6,
+            "db.system": "clickhouse",
+            "db.collection.name": "request_children",
+            "db.response.returned_rows": 3,
           }),
         },
       ]),
     );
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("completes quietly when a request has no indexed blobs", async () => {
+    mockChildren([]);
+
+    await cleanZdrRequest("request-empty");
+
+    expect(removeJobFromGCS).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      "ZDR request has no indexed result blobs",
+      expect.objectContaining({ requestId: "request-empty" }),
+    );
   });
 
   it("fails a queued request if any blob could not be removed", async () => {
-    removeJobFromGCS.mockRejectedValueOnce(new Error("GCS unavailable"));
+    mockChildren(["blob-1", "blob-2"]);
+    removeJobFromGCS.mockImplementation(async id => {
+      if (id === "blob-2") throw new Error("GCS unavailable");
+    });
 
     await expect(cleanZdrRequest("request-2")).rejects.toThrow(
       "Failed to remove 1 blobs for ZDR request request-2",
     );
   });
 
-  it("keeps draining and clearing legacy PostgreSQL schedules", async () => {
-    getZdrCleanupBatch.mockResolvedValueOnce([
-      { request_id: "legacy-1", ids: ["blob-1"] },
-      { request_id: "legacy-2", ids: ["blob-2"] },
-    ]);
-    removeJobFromGCS.mockImplementation(async id => {
-      if (id === "blob-2") throw new Error("GCS unavailable");
-    });
+  it("fails a queued request when ClickHouse is not configured", async () => {
+    client.current = null;
 
-    await zdrcleaner();
+    await expect(cleanZdrRequest("request-3")).rejects.toThrow(
+      "ClickHouse is not configured",
+    );
+    expect(removeJobFromGCS).not.toHaveBeenCalled();
+  });
 
-    expect(set).toHaveBeenCalledWith({ dr_clean_by: null });
-    expect(where).toHaveBeenCalledOnce();
+  it("propagates ClickHouse read failures so the job is retried", async () => {
+    query.mockRejectedValueOnce(new Error("ClickHouse unavailable"));
+
+    await expect(cleanZdrRequest("request-4")).rejects.toThrow(
+      "ClickHouse unavailable",
+    );
+    expect(removeJobFromGCS).not.toHaveBeenCalled();
   });
 });

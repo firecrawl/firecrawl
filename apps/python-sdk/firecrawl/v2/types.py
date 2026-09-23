@@ -929,6 +929,7 @@ class ScrapeOptions(BaseModel):
     # Enables Alexandria domain-tool discovery/execution for this scrape.
     # Omitted from the serialized request entirely when unset or False.
     domain_tools: Optional[bool] = Field(default=None, alias="domainTools")
+    tool_detail: Optional[Literal["compact", "summary", "full"]] = Field(default=None, alias="toolDetail")
 
     model_config = {"populate_by_name": True}
 
@@ -1068,11 +1069,12 @@ class ExchangeSearchResult(BaseModel):
 
 
 class DiscoveredTool(ExchangeSearchResult):
-    credits_cost: int = Field(alias="creditsCost")
+    next: Optional[Dict[str, Any]] = None
+    credits_cost: Optional[int] = Field(default=None, alias="creditsCost")
     id: Optional[str] = None
-    name: str
+    name: Optional[str] = None
     description: str
-    per_record: bool = Field(alias="perRecord")
+    per_record: Optional[bool] = Field(default=None, alias="perRecord")
     options: List[Dict[str, Any]] = Field(default_factory=list)
     requires_one_of: Optional[List[List[str]]] = Field(default=None, alias="requiresOneOf")
     response: Dict[str, Any] = Field(default_factory=dict)
@@ -2268,6 +2270,7 @@ class SearchRequest(BaseModel):
 
     query: str
     domain_tools: Optional[bool] = Field(default=None, alias="domainTools")
+    tool_detail: Optional[Literal["compact", "summary", "full"]] = Field(default=None, alias="toolDetail")
     sources: Optional[List[SourceOption]] = None
     categories: Optional[List[CategoryOption]] = None
     include_domains: Optional[List[str]] = None

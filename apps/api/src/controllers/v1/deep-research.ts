@@ -114,6 +114,7 @@ export async function deepResearchController(
     request: req.body,
     teamId: req.auth.team_id,
     apiKeyId: req.acuc?.api_key_id ?? null,
+    externalRequestId: externalRequestId(req),
     researchId,
   };
 

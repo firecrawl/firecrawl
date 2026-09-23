@@ -106,6 +106,9 @@ pub struct ScrapeOptions {
 
     /// Enable Alexandria domain-tool discovery for this scrape.
     pub domain_tools: Option<bool>,
+
+    /// Discovery response detail; defaults to summary.
+    pub tool_detail: Option<crate::types::ToolDetail>,
 }
 
 /// Parser configuration for document parsing.

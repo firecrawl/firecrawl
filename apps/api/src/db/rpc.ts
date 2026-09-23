@@ -113,15 +113,6 @@ export function diffGetLastScrape(
   );
 }
 
-export function getZdrCleanupBatch(
-  p_limit: number,
-): Promise<{ request_id: string; ids: string[] }[]> {
-  return execRows(
-    db,
-    sql`select * from get_zdr_cleanup_batch_2(p_limit => ${p_limit})`,
-  );
-}
-
 export function monitoringClaimDueMonitors<T = Record<string, any>>(params: {
   workerId: string;
   limit: number;

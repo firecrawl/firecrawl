@@ -312,6 +312,7 @@ export class AutumnService {
       value,
       properties,
       idempotencyKey,
+      externalRequestId,
     }: TrackParams,
     routed: boolean,
   ): Promise<boolean> {
@@ -328,6 +329,7 @@ export class AutumnService {
         value,
         properties,
         idempotencyKey,
+        externalRequestId,
       });
     }
 
@@ -772,6 +774,7 @@ export class AutumnService {
     properties,
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
+    externalRequestId,
     orgId,
   }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
@@ -790,6 +793,7 @@ export class AutumnService {
           value,
           properties,
           idempotencyKey,
+          externalRequestId,
         },
         routed,
       );
@@ -810,7 +814,7 @@ export class AutumnService {
   // and rate-limit gating on every scrape/crawl/browser request don't fan out
   // to Autumn each time. Both the CONCURRENCY limit and the rate-limit
   // multiplier come from a single entity.get, so one cache entry (and one
-  // Autumn round-trip per team per TTL window) serves both callers.
+  // Autumn round-trip per organization/team per TTL window) serves both callers.
   private entityLimitsCache = new BoundedMap<
     string,
     {
@@ -851,14 +855,96 @@ export class AutumnService {
     concurrency: number | null;
     rateLimitMultiplier: number | null;
   }> {
+    const read = await this.readEntityLimits(teamId, orgId);
+    switch (read.outcome) {
+      case "unconfigured":
+        return { concurrency: null, rateLimitMultiplier: null };
+      case "known":
+        return {
+          concurrency: read.concurrency,
+          rateLimitMultiplier: read.rateLimitMultiplier,
+        };
+      case "no_org":
+        // No org means no Autumn entity to ask about. Fail OPEN on the high
+        // limits, the same answer this method already gives when it cannot
+        // reach Autumn — and the same one the service's own org lookup
+        // produced by throwing into the catch below. Not cached, for the same
+        // reason.
+        logger.error(
+          "Autumn getEntityLimits has no org for the team, falling back to high limits",
+          { teamId },
+        );
+        return {
+          concurrency: AutumnService.ERROR_FALLBACK_CONCURRENCY,
+          rateLimitMultiplier: AutumnService.ERROR_FALLBACK_RATE_MULTIPLIER,
+        };
+      case "error":
+        // Any other failure means we couldn't reach Autumn / it errored. Fail
+        // OPEN with high limits rather than throttling the team to the low
+        // defaults. Deliberately not cached, so we retry Autumn on the next
+        // request instead of pinning the team to the fallback for the TTL
+        // window.
+        logger.error(
+          "Autumn getEntityLimits failed — billing API may be unavailable, falling back to high limits",
+          { teamId, error: read.error },
+        );
+        return {
+          concurrency: AutumnService.ERROR_FALLBACK_CONCURRENCY,
+          rateLimitMultiplier: AutumnService.ERROR_FALLBACK_RATE_MULTIPLIER,
+        };
+    }
+  }
+
+  /**
+   * The team's entitled rate-limit multiplier when Autumn can actually answer,
+   * or null when it cannot: no Autumn client, a preview team, a team with no
+   * org to bill against, or an Autumn error. For a gate that must fail closed,
+   * such as a licence that permits a payload only in response to a paid
+   * request; getRateLimitMultiplier fails open because throttling a real team
+   * during a billing outage is the worse mistake there. A missing entity or an
+   * absent balance is a real answer, 1: the free plan.
+   */
+  async getKnownRateLimitMultiplier(
+    teamId: string,
+    orgId: string | null,
+  ): Promise<number | null> {
+    if (!orgId) return null;
+    const read = await this.readEntityLimits(teamId, orgId);
+    return read.outcome === "known" ? (read.rateLimitMultiplier ?? 1) : null;
+  }
+
+  /**
+   * One entity read behind both getEntityLimits and
+   * getKnownRateLimitMultiplier. It reports what happened rather than picking
+   * a fallback, so each caller can fail in its own direction. Only "known" is
+   * an answer (an entity, or a 404 meaning no elevated entitlement) and only
+   * "known" is cached; the other outcomes are retried on the next request.
+   */
+  private async readEntityLimits(
+    teamId: string,
+    orgId: string | null,
+  ): Promise<
+    | { outcome: "unconfigured" }
+    | { outcome: "no_org" }
+    | { outcome: "error"; error: unknown }
+    | {
+        outcome: "known";
+        concurrency: number | null;
+        rateLimitMultiplier: number | null;
+      }
+  > {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
-      return { concurrency: null, rateLimitMultiplier: null };
+      return { outcome: "unconfigured" };
     }
 
+    if (!orgId) return { outcome: "no_org" };
+
+    const cacheKey = `${orgId}:${teamId}`;
     const now = Date.now();
-    const cached = this.entityLimitsCache.get(teamId);
+    const cached = this.entityLimitsCache.get(cacheKey);
     if (cached && cached.expiresAt > now) {
       return {
+        outcome: "known",
         concurrency: cached.concurrency,
         rateLimitMultiplier: cached.rateLimitMultiplier,
       };
@@ -868,28 +954,13 @@ export class AutumnService {
       concurrency: number | null,
       rateLimitMultiplier: number | null,
     ) => {
-      this.entityLimitsCache.set(teamId, {
+      this.entityLimitsCache.set(cacheKey, {
         concurrency,
         rateLimitMultiplier,
         expiresAt: now + AutumnService.ENTITY_LIMITS_TTL_MS,
       });
-      return { concurrency, rateLimitMultiplier };
+      return { outcome: "known" as const, concurrency, rateLimitMultiplier };
     };
-
-    // No org means no Autumn entity to ask about. Fail OPEN on the high
-    // limits, the same answer this method already gives when it cannot reach
-    // Autumn — and the same one the service's own org lookup produced by
-    // throwing into the catch below. Not cached, for the same reason.
-    if (!orgId) {
-      logger.error(
-        "Autumn getEntityLimits has no org for the team, falling back to high limits",
-        { teamId },
-      );
-      return {
-        concurrency: AutumnService.ERROR_FALLBACK_CONCURRENCY,
-        rateLimitMultiplier: AutumnService.ERROR_FALLBACK_RATE_MULTIPLIER,
-      };
-    }
 
     try {
       const entity: any = await autumnClient.entities.get({
@@ -912,23 +983,11 @@ export class AutumnService {
 
       return store(concurrency, rateLimitMultiplier);
     } catch (error) {
-      const status = this.getErrorStatus(error);
       // 404 = the entity genuinely doesn't exist in Autumn (not an error):
       // fall back low, and cache it so we don't re-query for a team we know is
       // absent.
-      if (status === 404) return store(null, null);
-      // Any other failure means we couldn't reach Autumn / it errored. Fail
-      // OPEN with high limits rather than throttling the team to the low
-      // defaults. Deliberately not cached, so we retry Autumn on the next
-      // request instead of pinning the team to the fallback for the TTL window.
-      logger.error(
-        "Autumn getEntityLimits failed — billing API may be unavailable, falling back to high limits",
-        { teamId, error },
-      );
-      return {
-        concurrency: AutumnService.ERROR_FALLBACK_CONCURRENCY,
-        rateLimitMultiplier: AutumnService.ERROR_FALLBACK_RATE_MULTIPLIER,
-      };
+      if (this.getErrorStatus(error) === 404) return store(null, null);
+      return { outcome: "error", error };
     }
   }
 
@@ -970,6 +1029,7 @@ export class AutumnService {
     properties,
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
+    externalRequestId,
     orgId,
   }: TrackCreditsParams): Promise<void> {
     if (!autumnClient) return;
@@ -988,6 +1048,7 @@ export class AutumnService {
           value: -value,
           properties: { ...properties, source: "autumn_refund" },
           idempotencyKey,
+          externalRequestId,
         },
         routed,
       );

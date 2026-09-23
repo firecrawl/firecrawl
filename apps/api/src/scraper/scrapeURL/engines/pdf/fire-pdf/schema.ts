@@ -195,6 +195,77 @@ export const firePdfBlockPagesSchema = z.array(
 
 export const firePdfBlocksSchema = firePdfBlockPagesSchema.optional();
 
+/**
+ * fire-pdf's provenance stamp: who produced a result and how complete it is.
+ * Stored verbatim with every cache entry so a later cache policy can judge
+ * the entry without reading its content (fire-pdf docs/cache-policy.md).
+ * `passthrough` keeps fields a newer fire-pdf adds.
+ */
+export const firePdfProvenanceSchema = z
+  .object({
+    generation: z.string(),
+    build_sha: z.string(),
+    built_at: z.string().nullable(),
+    produced_at: z.string(),
+    stages: z.array(z.string()).optional(),
+    // Page counts: the write rule reads them, so a malformed stamp must
+    // fail validation rather than pass as a healthy result. parseProvenance
+    // turns that failure into a refused cache write, never a failed scrape.
+    quality: z
+      .object({
+        total_pages: z.int().nonnegative(),
+        failed_pages: z.int().nonnegative(),
+        partial_pages: z.int().nonnegative(),
+        degraded_pages: z.int().nonnegative(),
+        ocr_pages: z.int().nonnegative(),
+      })
+      .passthrough()
+      .optional(),
+    // `passthrough` on each item too: a newer fire-pdf may add per-build
+    // fields, and the entry stores the stamp verbatim.
+    contributing_builds: z
+      .array(
+        z
+          .object({
+            generation: z.string(),
+            build_sha: z.string(),
+            built_at: z.string().nullable(),
+          })
+          .passthrough(),
+      )
+      .optional(),
+  })
+  .passthrough();
+
+export type FirePdfProvenance = z.infer<typeof firePdfProvenanceSchema>;
+
+/**
+ * The stamp is parsed apart from the document. The document is what the
+ * caller asked for; the stamp only decides what the cache may remember, so
+ * a stamp this build cannot read degrades to `malformed` (the result is
+ * served, not cached) instead of failing the response.
+ */
+type ProvenanceParse =
+  | { status: "absent" }
+  | { status: "ok"; provenance: FirePdfProvenance }
+  | { status: "malformed"; issue: string };
+
+export function parseProvenance(raw: unknown): ProvenanceParse {
+  // Only a missing field is "no stamp" (a build from before the stamp
+  // existed). fire-pdf never sends an explicit null; one is unreadable.
+  if (raw === undefined) return { status: "absent" };
+  if (raw === null) return { status: "malformed", issue: "provenance: null" };
+  const parsed = firePdfProvenanceSchema.safeParse(raw);
+  if (parsed.success) return { status: "ok", provenance: parsed.data };
+  return {
+    status: "malformed",
+    issue: parsed.error.issues
+      .slice(0, 3)
+      .map(i => `${i.path.join(".") || "<root>"}: ${i.message}`)
+      .join("; "),
+  };
+}
+
 export const resultResponseSchema = z.object({
   schema_version: z
     .union([z.literal(1), z.literal(2), z.literal(3)])
@@ -210,6 +281,9 @@ export const resultResponseSchema = z.object({
   // is the only proof the fire-pdf worker build understood the option —
   // older workers ignore unknown option keys and omit it.
   page_markers: z.literal(true).optional(),
+  // Raw on purpose: parsed separately by parseProvenance so a stamp this
+  // build does not understand never fails the scrape.
+  provenance: z.unknown().optional(),
 });
 
 export type PollResponse = z.infer<typeof pollResponseSchema>;

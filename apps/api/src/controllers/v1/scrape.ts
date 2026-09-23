@@ -306,7 +306,11 @@ async function scrapeControllerInner(
             skipNuq: true,
             origin,
             integration: req.body.integration,
-            billing: { endpoint: "scrape", jobId },
+            billing: {
+              endpoint: "scrape",
+              jobId,
+              externalRequestId: externalRequestId(req),
+            },
             startTime: controllerStartTime,
             zeroDataRetention: zeroDataRetention ?? false,
             apiKeyId: req.acuc?.api_key_id ?? null,

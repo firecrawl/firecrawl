@@ -151,17 +151,20 @@ let pubSubShutdown: Promise<void> | undefined;
 // A retry can deliver a batch twice when the first attempt was persisted but
 // its response was lost; the ClickHouse tables dedupe on row id, not message
 // id, so those copies collapse.
+//
+// The log call waits for the publish, so the budget is what a caller can be
+// held for while Pub/Sub is unreachable before the log call fails.
 const PUBSUB_PUBLISH_OPTIONS: PublishOptions = {
   gaxOpts: {
     retry: {
       backoffSettings: {
         initialRetryDelayMillis: 250,
         retryDelayMultiplier: 2,
-        maxRetryDelayMillis: 15_000,
-        initialRpcTimeoutMillis: 15_000,
+        maxRetryDelayMillis: 5_000,
+        initialRpcTimeoutMillis: 10_000,
         rpcTimeoutMultiplier: 1,
-        maxRpcTimeoutMillis: 15_000,
-        totalTimeoutMillis: 300_000,
+        maxRpcTimeoutMillis: 10_000,
+        totalTimeoutMillis: 30_000,
       },
     },
   },
@@ -212,6 +215,20 @@ function getTopic(client: PubSub, table: string): Topic {
   return topic;
 }
 
+/** The publisher already holds as many unacknowledged rows as it may. */
+class PubSubBacklogFullError extends Error {
+  constructor() {
+    super("Pub/Sub log publisher backlog is full");
+    this.name = "PubSubBacklogFullError";
+  }
+}
+
+/**
+ * Publishes one job-log row to its Pub/Sub topic and waits for the
+ * acknowledgement. Pub/Sub is the log's store of record, so a publish that
+ * fails, is refused by a full backlog, or arrives during shutdown throws to
+ * the caller; nothing else is written for that row.
+ */
 async function publishLog(table: string, data: any, logger: Logger) {
   const startedAt = Date.now();
   try {
@@ -252,7 +269,7 @@ async function publishLog(table: string, data: any, logger: Logger) {
         const now = Date.now();
         if (now - lastDropWarningAt >= 60_000) {
           lastDropWarningAt = now;
-          logger.warn("Dropping Pub/Sub log: publisher backlog is full", {
+          logger.warn("Refusing Pub/Sub log: publisher backlog is full", {
             table,
             logId: data.id,
             payloadBytes: payload.length,
@@ -261,7 +278,7 @@ async function publishLog(table: string, data: any, logger: Logger) {
             droppedTotal,
           });
         }
-        return;
+        throw new PubSubBacklogFullError();
       }
 
       const publication = getTopic(client, table).publishMessage({
@@ -284,14 +301,18 @@ async function publishLog(table: string, data: any, logger: Logger) {
       }
     });
   } catch (error) {
-    pubsubLogPublishTotal.inc({ table, outcome: "failed" });
-
-    logger.error("Failed to publish log to Pub/Sub", {
-      error,
-      table,
-      logId: data.id,
-      durationMs: Date.now() - startedAt,
-    });
+    // A backlog refusal counted itself as "dropped" and warned, rate-limited,
+    // above; only a genuine publish failure is an error here.
+    if (!(error instanceof PubSubBacklogFullError)) {
+      pubsubLogPublishTotal.inc({ table, outcome: "failed" });
+      logger.error("Failed to publish log to Pub/Sub", {
+        error,
+        table,
+        logId: data.id,
+        durationMs: Date.now() - startedAt,
+      });
+    }
+    throw error;
   }
 }
 
@@ -388,37 +409,36 @@ async function robustInsert(
     canonicalLog: "log_job/robustInsert",
   });
 
+  if (config.USE_DB_AUTHENTICATION !== true) {
+    logger.info(
+      "Skipping database insertion due to USE_DB_AUTHENTICATION being off",
+    );
+    return;
+  }
+
+  // The single point where a row leaves for both stores: clean it once so
+  // PostgreSQL and ClickHouse receive identical, accepted values.
+  data = sanitizeLogData({
+    ...data,
+    created_at: data.created_at ?? new Date(),
+  });
+
+  // Pub/Sub is the store of record: publish first and wait for it. A failed
+  // publish fails the log call, and the PostgreSQL copy is not attempted.
+  await publishLog(table, data, logger);
+
+  // The PostgreSQL copy is on its way out; its failure is logged, not thrown.
   const attempts: { error: any; timeMs: number; backoffMs: number }[] = [];
   try {
-    const inserted = await withSpan("log_job.postgres.insert", async span => {
+    await withSpan("log_job.postgres.insert", async span => {
       setSpanAttributes(span, {
         "db.system": "postgresql",
         "log_job.table": table,
         "log_job.id": data.id,
         "log_job.force": force,
+        "log_job.postgres.enabled": true,
       });
-
-      if (config.USE_DB_AUTHENTICATION !== true) {
-        logger.info(
-          "Skipping database insertion due to USE_DB_AUTHENTICATION being off",
-        );
-        setSpanAttributes(span, {
-          "log_job.postgres.enabled": false,
-          "log_job.postgres.outcome": "skipped",
-        });
-        return false;
-      }
-
-      setSpanAttributes(span, { "log_job.postgres.enabled": true });
       const target = tableMap[table];
-      // The single point where a row leaves for both stores: clean it once so
-      // PostgreSQL and ClickHouse receive identical, accepted values.
-      data = sanitizeLogData({
-        ...data,
-        created_at: data.created_at ?? new Date(),
-      });
-      // Publish in the background. Customer responses must not wait for Pub/Sub.
-      void publishLog(table, data, logger);
 
       const maxAttempts = force ? 10 : 1;
       for (let i = 0; i < maxAttempts; i++) {
@@ -456,10 +476,8 @@ async function robustInsert(
           lastAttempt?.error ?? new Error("Database insert was not attempted")
         );
       }
-      return true;
     });
 
-    if (!inserted) return;
     if (attempts.length === 1) {
       logger.debug("Inserted into database successfully", { attempts });
     } else {
@@ -475,6 +493,7 @@ async function robustInsert(
 type LoggedRequest = {
   id: string;
   kind:
+    | "alexandria"
     | "scrape"
     | "crawl"
     | "batch_scrape"
@@ -663,9 +682,32 @@ export type LoggedScrape = {
   is_parse?: boolean;
   monitor_id?: string | null;
   monitor_check_id?: string | null;
+  /** False for jobs that must not be fetchable by id (defaults to true). */
+  jobAccess?: boolean;
 };
 
-export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
+export type ScrapeStateOutcome =
+  /** The terminal state is readable from Bigtable. */
+  | "written"
+  /** Nothing to write: a parse job, or no state table configured. */
+  | "skipped"
+  /** The Bigtable write threw; the error is logged here. */
+  | "failed";
+
+type LogScrapeHooks = {
+  /**
+   * Called once the terminal state write has settled, before anything else
+   * is logged. The sync scrape path waits on this before answering, so an
+   * interact call that follows the response finds its replay context.
+   */
+  onStateWritten?: (outcome: ScrapeStateOutcome) => void;
+};
+
+export async function logScrape(
+  scrape: LoggedScrape,
+  force: boolean = false,
+  hooks?: LogScrapeHooks,
+) {
   return withLogSpan(
     {
       operation: scrape.is_parse ? "parse" : "scrape",
@@ -675,11 +717,15 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
       force,
       zeroDataRetention: scrape.zeroDataRetention,
     },
-    () => logScrapeInternal(scrape, force),
+    () => logScrapeInternal(scrape, force, hooks),
   );
 }
 
-async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
+async function logScrapeInternal(
+  scrape: LoggedScrape,
+  force: boolean = false,
+  hooks?: LogScrapeHooks,
+) {
   const logger = _logger.child({
     module: "log_job",
     method: "logScrape",
@@ -695,6 +741,47 @@ async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
     (scrape.team_id === "preview" || scrape.team_id?.startsWith("preview_")
       ? previewTeamId
       : scrape.team_id);
+
+  // Terminal state for every scrape job, standalone or child, so status reads
+  // never need the PostgreSQL row. It goes first: the sync scrape response
+  // waits for it, and nothing else here has to be readable that early.
+  let stateOutcome: ScrapeStateOutcome = "skipped";
+  try {
+    if (!scrape.is_parse) {
+      const replay = scrape.zeroDataRetention
+        ? undefined
+        : buildReplayContextFromScrape({
+            id: scrape.id,
+            team_id: storedTeamId,
+            url: scrape.url,
+            options: scrape.options,
+          }).context;
+      const written = await writeScrapeJobState(scrape.id, {
+        status: scrape.is_successful ? "completed" : "failed",
+        requestId: scrape.request_id,
+        completedAtMs: Date.now(),
+        creditsBilled: scrape.credits_cost,
+        ...(scrape.zeroDataRetention
+          ? {}
+          : {
+              ...(scrape.error ? { error: scrape.error } : {}),
+              ...(replay ? { replay } : {}),
+              ...(scrape.options.profile
+                ? { profile: scrape.options.profile }
+                : {}),
+              ...(typeof (scrape.options as any).origin === "string"
+                ? { origin: (scrape.options as any).origin }
+                : {}),
+            }),
+      });
+      stateOutcome = written ? "written" : "skipped";
+    }
+  } catch (error) {
+    stateOutcome = "failed";
+    logger.error("Failed to write scrape state to Bigtable", { error });
+  } finally {
+    hooks?.onStateWritten?.(stateOutcome);
+  }
 
   const feedbackJob = {
     jobId: scrape.id,
@@ -752,38 +839,24 @@ async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
       },
       logger,
     );
-  }
 
-  if (!scrape.is_parse && scrape.id === scrape.request_id) {
-    try {
-      const replay = scrape.zeroDataRetention
-        ? undefined
-        : buildReplayContextFromScrape({
-            id: scrape.id,
-            team_id: storedTeamId,
-            url: scrape.url,
-            options: scrape.options,
-          }).context;
-      await writeScrapeJobState(scrape.id, {
-        status: scrape.is_successful ? "completed" : "failed",
-        requestId: scrape.request_id,
-        completedAtMs: Date.now(),
-        creditsBilled: scrape.credits_cost,
-        ...(scrape.zeroDataRetention
-          ? {}
-          : {
-              ...(scrape.error ? { error: scrape.error } : {}),
-              ...(replay ? { replay } : {}),
-              ...(scrape.options.profile
-                ? { profile: scrape.options.profile }
-                : {}),
-              ...(typeof (scrape.options as any).origin === "string"
-                ? { origin: (scrape.options as any).origin }
-                : {}),
-            }),
-      });
-    } catch (error) {
-      logger.error("Failed to write scrape state to Bigtable", { error });
+    // A crawl or batch child is fetched by its own id (`GET /scrape/{id}`,
+    // typically off the crawl `page` webhook), so it needs its own access row.
+    // Standalone scrapes get theirs from logRequest.
+    if (!scrape.is_parse && scrape.jobAccess !== false) {
+      try {
+        await writeApiJobAccess({
+          id: scrape.id,
+          teamId: normalizeJobAccessTeamId(scrape.team_id),
+          kind: "scrape",
+          expiresAt: new Date(Date.now() + DEFAULT_JOB_ACCESS_TTL_MS),
+          zeroDataRetention: scrape.zeroDataRetention,
+        });
+      } catch (error) {
+        logger.error("Failed to write child scrape job access to Bigtable", {
+          error,
+        });
+      }
     }
   }
 
@@ -828,6 +901,68 @@ async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
       }
     }
   }
+}
+
+type LoggedProviderScrape = {
+  id: string;
+  request_id: string;
+  target: string;
+  team_id: string;
+  options: unknown;
+  time_taken: number;
+  credits_cost: number;
+  is_successful: boolean;
+  error?: string;
+};
+
+export async function logProviderScrape(scrape: LoggedProviderScrape) {
+  return withLogSpan(
+    {
+      operation: "provider_scrape",
+      table: "scrapes",
+      id: scrape.id,
+      requestId: scrape.request_id,
+      zeroDataRetention: false,
+    },
+    () => logProviderScrapeInternal(scrape),
+  );
+}
+
+async function logProviderScrapeInternal(scrape: LoggedProviderScrape) {
+  const logger = _logger.child({
+    module: "log_job",
+    method: "logProviderScrape",
+    scrapeId: scrape.id,
+    requestId: scrape.request_id,
+    teamId: scrape.team_id,
+  });
+  const storedTeamId =
+    keylessTeamUuid(scrape.team_id) ??
+    (scrape.team_id === "preview" || scrape.team_id?.startsWith("preview_")
+      ? previewTeamId
+      : scrape.team_id);
+
+  await robustInsert(
+    "scrapes",
+    {
+      id: scrape.id,
+      request_id: scrape.request_id,
+      url: scrape.target,
+      is_successful: scrape.is_successful,
+      error: scrape.error ?? null,
+      time_taken: scrape.time_taken,
+      team_id: storedTeamId,
+      options: scrape.options,
+      cost_tracking: null,
+      pdf_num_pages: null,
+      credits_cost: scrape.credits_cost,
+      monitor_id: null,
+      monitor_check_id: null,
+      content_type: null,
+    },
+    false,
+    logger,
+  );
 }
 
 type LoggedCrawl = {

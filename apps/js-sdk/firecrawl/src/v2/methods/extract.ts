@@ -40,7 +40,8 @@ function prepareExtractPayload(args: {
     body.threatProtection = args.threatProtection;
   if (args.scrapeOptions) {
     ensureValidScrapeOptions(args.scrapeOptions);
-    body.scrapeOptions = args.scrapeOptions;
+    const { toolDetail, domainTools, ...scrapeOptions } = args.scrapeOptions;
+    body.scrapeOptions = scrapeOptions;
   }
   return body;
 }

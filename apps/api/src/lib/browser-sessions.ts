@@ -1,7 +1,10 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 import { deleteKey, getValue, setValue } from "../services/redis";
+import { redisRateLimitClient } from "../services/rate-limiter";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
+import { browserProfileDeletedKey } from "./browser-profiles";
 import { logger as _logger } from "./logger";
 
 const logger = _logger.child({ module: "browser-sessions" });
@@ -29,6 +32,7 @@ interface BrowserSessionRow {
   ttl_total: number;
   ttl_without_activity: number | null;
   credits_used: number | null;
+  profile_name?: string | null; // persistent profile the session was created with
   created_at: string; // ISO timestamp
   updated_at: string; // ISO timestamp
 }
@@ -280,6 +284,83 @@ export async function updateBrowserSessionCreditsUsed(
       creditsUsed,
     });
   }
+}
+
+// Records a successful save of a persistent profile. Throws on failure so the
+// browser service's webhook outbox retries the event.
+export async function upsertBrowserProfile(input: {
+  teamId: string;
+  name: string;
+  savedAt: string;
+  sizeBytes: number | undefined;
+}): Promise<void> {
+  const profiles = schema.browser_profiles;
+  await db
+    .insert(profiles)
+    .values({
+      team_id: input.teamId,
+      name: input.name,
+      saved_at: input.savedAt,
+      size_bytes: input.sizeBytes ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [profiles.team_id, profiles.name],
+      // Retried deliveries can arrive out of order, so an older save never
+      // replaces a newer one. A save that reported no size keeps the last
+      // known size rather than erasing it.
+      set: {
+        saved_at: sql`GREATEST(${profiles.saved_at}, excluded.saved_at)`,
+        size_bytes: sql`CASE WHEN excluded.saved_at >= ${profiles.saved_at} THEN COALESCE(excluded.size_bytes, ${profiles.size_bytes}) ELSE ${profiles.size_bytes} END`,
+      },
+    });
+}
+
+// Remembers when a profile was deleted, so a profile.saved event for an
+// earlier save that is delivered late cannot relist it. Outlives the browser
+// service's retries (at most ~10 minutes).
+const PROFILE_DELETED_TTL_SECONDS = 3600;
+
+// Keeps the newest deletion time: responses to concurrent deletes can land
+// out of order, and an older time must not shrink the window. Timestamps are
+// normalized with toISOString, which compares in time order.
+const SET_IF_NEWER_LUA = `
+  local current = redis.call('GET', KEYS[1])
+  if (not current) or current < ARGV[1] then
+    redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+  end
+  return 1
+`;
+
+export async function recordBrowserProfileDeleted(
+  storageId: string,
+  deletedAt: string,
+): Promise<void> {
+  await redisRateLimitClient.eval(
+    SET_IF_NEWER_LUA,
+    1,
+    browserProfileDeletedKey(storageId),
+    new Date(deletedAt).toISOString(),
+    String(PROFILE_DELETED_TTL_SECONDS),
+  );
+}
+
+export async function getBrowserProfileDeletedAt(
+  storageId: string,
+): Promise<string | null> {
+  return getValue(browserProfileDeletedKey(storageId));
+}
+
+// Removes a profile's listing once its saved state is deleted. Keyless callers
+// (non-UUID team ids) are never listed, so there is nothing to remove.
+export async function deleteBrowserProfile(
+  teamId: string,
+  name: string,
+): Promise<void> {
+  if (!z.uuid().safeParse(teamId).success) return;
+  const profiles = schema.browser_profiles;
+  await db
+    .delete(profiles)
+    .where(and(eq(profiles.team_id, teamId), eq(profiles.name, name)));
 }
 
 // ---------------------------------------------------------------------------

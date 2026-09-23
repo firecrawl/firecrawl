@@ -38,6 +38,9 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
   research: 100,
   developerSearch: 100,
   labs: 1000,
+  exchange: 100,
+  // Catalogue reads only; no paid tool runs behind them.
+  exchangeDiscover: 10000,
 };
 
 /**
@@ -48,10 +51,13 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
  *
  * Endpoint → mode mapping: agent + extract share `Extract`; interact is
  * `Browser`; interactExecute is `BrowserExecute`; agentStatus is
- * `ExtractStatus`.
+ * `ExtractStatus`. Exchange data routes (discover, retrieve, records/fetch)
+ * match Scrape so an Alexandria call costs the same request budget whichever
+ * path it takes.
  */
 const BASE_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
   [RateLimiterMode.Scrape]: 10,
+  [RateLimiterMode.Exchange]: 10,
   [RateLimiterMode.Map]: 10,
   [RateLimiterMode.Crawl]: 2,
   [RateLimiterMode.Search]: 10,

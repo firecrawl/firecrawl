@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { externalRequestId } from "../../lib/external-request-id";
 import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getACUCTeam } from "../auth";
@@ -81,7 +82,7 @@ export async function fireclawController(
       // No chargeId: fireclaw has no per-charge identity to key on — a
       // server-minted UUID here would be equivalent to firebill's own
       // per-request key, so this stays keyless until fireclaw carries one.
-      { endpoint: "fireclaw" },
+      { endpoint: "fireclaw", externalRequestId: externalRequestId(req) },
     );
   } catch (error) {
     logger.error(`Fireclaw billing failed for team ${req.auth.team_id}`, {

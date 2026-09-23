@@ -25,8 +25,7 @@ type JobStoreFallback =
   | "scrape_state"
   | "extract_state"
   | "feedback_job"
-  | "request_credits"
-  | "change_tracking";
+  | "request_credits";
 
 /**
  * The Bigtable table behind each store. When it is not configured the
@@ -39,7 +38,6 @@ const STORE_TABLE: Record<JobStoreFallback, () => string | undefined> = {
   extract_state: () => config.BIGTABLE_EXTRACT_STATE_TABLE,
   feedback_job: () => config.BIGTABLE_FEEDBACK_JOBS_TABLE,
   request_credits: () => config.BIGTABLE_REQUEST_CREDITS_TABLE,
-  change_tracking: () => config.BIGTABLE_CHANGE_TRACKING_TABLE,
 };
 
 /**

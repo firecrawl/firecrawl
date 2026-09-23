@@ -160,6 +160,8 @@ export enum RateLimiterMode {
   Research = "research",
   DeveloperSearch = "developerSearch",
   Labs = "labs",
+  Exchange = "exchange",
+  ExchangeDiscover = "exchangeDiscover",
 }
 
 export type AuthResponse =

@@ -6,9 +6,13 @@ import { z } from "zod";
 import path from "node:path";
 import {
   getPdfResultFromCache,
+  pdfCacheConfigured,
+  resolvePdfCacheKey,
   savePdfResultToCache,
 } from "../../../../lib/gcs-pdf-cache";
 import type { PDFProcessorResult } from "./types";
+import { getPDFRefresh } from "../../../../controllers/v2/types";
+import { consumeRefresh } from "./fire-pdf/refresh-budget";
 
 export async function scrapePDFWithRunPodMU(
   meta: Meta,
@@ -21,20 +25,66 @@ export async function scrapePDFWithRunPodMU(
     tempFilePath,
   });
 
-  if (!maxPages) {
-    try {
-      const cachedResult = await getPdfResultFromCache(base64Content);
-      if (cachedResult) {
-        meta.logger.info("Using cached RunPod MU result for PDF", {
+  // The cache key (sha256 of the payload, a full pass over the document) is
+  // computed at most once per request and reused for the read, the write
+  // and the log lines. This cache lives under the legacy `pdf-cache-v2/`
+  // prefix; the key is logged so a report can name the entry.
+  let cacheKeyMemo: string | undefined;
+  const cacheKeyOf = (): string =>
+    (cacheKeyMemo ??= resolvePdfCacheKey(base64Content));
+
+  // Without a bucket there is no cache: nothing is hashed and no refresh
+  // budget is spent. Zero-data-retention requests never read the shared
+  // cache, as on the fire-pdf path. `parsers: [{ type: "pdf", refresh: true }]`
+  // skips it too, under the same per-team budget: a MinerU-diverted request
+  // never reaches the fire-pdf path, so the budget has to be applied here as
+  // well, and the decision is taken once per request, so a fire-pdf → MU
+  // fallback keeps the decision the first engine got instead of spending a
+  // second token. Over budget, or with the limiter unavailable, the entry is
+  // served.
+  const cacheOn = pdfCacheConfigured();
+  if (cacheOn && !maxPages && !meta.internalOptions.zeroDataRetention) {
+    const cacheKey = cacheKeyOf();
+    let bypass = false;
+    if (getPDFRefresh(meta.options?.parsers)) {
+      const decision = await consumeRefresh(
+        meta.internalOptions.teamId,
+        meta.id,
+      );
+      bypass = decision === "allowed";
+      if (bypass) {
+        meta.logger.info("RunPod MU cache bypassed by refresh", {
           tempFilePath,
+          cacheKey,
+          cacheProvider: "runpod",
         });
-        return cachedResult;
+      } else {
+        meta.logger.warn("RunPod MU cache refresh not applied", {
+          tempFilePath,
+          cacheKey,
+          cacheProvider: "runpod",
+          decision,
+          perMinute: config.FIRE_PDF_CACHE_REFRESH_PER_MINUTE,
+        });
       }
-    } catch (error) {
-      meta.logger.warn("Error checking PDF cache, proceeding with RunPod MU", {
-        error,
-        tempFilePath,
-      });
+    }
+    if (!bypass) {
+      try {
+        const cachedResult = await getPdfResultFromCache({ key: cacheKey });
+        if (cachedResult) {
+          meta.logger.info("Using cached RunPod MU result for PDF", {
+            tempFilePath,
+            cacheKey,
+            cacheProvider: "runpod",
+          });
+          return cachedResult;
+        }
+      } catch (error) {
+        meta.logger.warn(
+          "Error checking PDF cache, proceeding with RunPod MU",
+          { error, tempFilePath, cacheKey, cacheProvider: "runpod" },
+        );
+      }
     }
   }
 
@@ -191,9 +241,9 @@ export async function scrapePDFWithRunPodMU(
     html: await safeMarkdownToHtml(result.markdown, meta.logger, meta.id),
   };
 
-  if (!meta.internalOptions.zeroDataRetention) {
+  if (cacheOn && !meta.internalOptions.zeroDataRetention) {
     try {
-      await savePdfResultToCache(base64Content, processorResult);
+      await savePdfResultToCache({ key: cacheKeyOf() }, processorResult);
     } catch (error) {
       meta.logger.warn("Error saving PDF to cache", {
         error,
