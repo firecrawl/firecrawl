@@ -36,6 +36,10 @@ export function logKeylessFeedbackOutcome(event: {
     feedbackErrorCode: event.feedbackErrorCode ?? null,
     reason: event.reason ?? null,
   };
-  if (event.status >= 500) logger.warn("Keyless feedback submission", fields);
-  else logger.info("Keyless feedback submission", fields);
+  // The console transport prints metadata only for warn and error lines, so the
+  // message repeats the key fields; the structured fields remain the contract
+  // for log queries.
+  const message = `Keyless feedback submission outcome=${fields.outcome} status=${fields.status} endpoint=${fields.endpoint} job=${fields.jobId}`;
+  if (event.status >= 500) logger.warn(message, fields);
+  else logger.info(message, fields);
 }
