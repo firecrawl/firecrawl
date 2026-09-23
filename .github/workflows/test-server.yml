@@ -276,7 +276,7 @@ jobs:
             sleep 1
           done
           docker exec postgres pg_isready -U postgres
-          pnpm exec vitest run src/controllers/v2/feedback/keyless.integration.test.ts src/controllers/v2/feedback/keyless-schema.test.ts src/controllers/v2/feedback/keyless-invitation.test.ts src/controllers/v2/feedback/keyless-jobs.test.ts src/controllers/v2/feedback/record-options.test.ts src/controllers/v2/feedback/zdr-persistence.test.ts
+          pnpm exec vitest run src/controllers/v2/feedback/keyless.integration.test.ts src/controllers/v2/feedback/keyless-schema.test.ts src/controllers/v2/feedback/keyless-invitation.test.ts src/controllers/v2/feedback/keyless-jobs.test.ts src/controllers/v2/feedback/record-options.test.ts src/controllers/v2/feedback/zdr-persistence.test.ts src/controllers/v2/feedback/alexandria.test.ts src/controllers/v2/feedback/feedback-window.test.ts
 
       - name: Start FoundationDB
         if: matrix.nuq == 'fdb'

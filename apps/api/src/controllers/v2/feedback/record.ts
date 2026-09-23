@@ -124,21 +124,21 @@ export async function lookupJobWithRetry(
   logger: FeedbackLogger,
   lookupOptions?: { requireOptions: boolean },
 ): Promise<FeedbackJobRow | FeedbackRecordResult> {
+  // Authenticated lookups keep their existing call; only keyless lookups pass options.
+  const lookup = () =>
+    lookupOptions
+      ? lookupFeedbackJob(
+          options.endpoint,
+          options.jobId,
+          dbTeamId,
+          lookupOptions,
+        )
+      : lookupFeedbackJob(options.endpoint, options.jobId, dbTeamId);
   try {
-    let job = await lookupFeedbackJob(
-      options.endpoint,
-      options.jobId,
-      dbTeamId,
-      lookupOptions,
-    );
+    let job = await lookup();
     if (!job) {
       await new Promise(resolve => setTimeout(resolve, LOOKUP_RACE_RETRY_MS));
-      job = await lookupFeedbackJob(
-        options.endpoint,
-        options.jobId,
-        dbTeamId,
-        lookupOptions,
-      );
+      job = await lookup();
     }
 
     if (!job) {
