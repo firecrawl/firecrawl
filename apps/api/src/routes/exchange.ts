@@ -222,13 +222,13 @@ exchangeRouter.post(
 exchangeRouter.put(
   "/platform/capacity/{*path}",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: true })),
 );
 
 exchangeRouter.delete(
   "/platform/capacity/buckets/{*path}",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: true })),
 );
 
 exchangeRouter.post(
