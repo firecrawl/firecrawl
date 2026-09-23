@@ -6,7 +6,10 @@ import {
   generateSchemaFromPrompt,
 } from "../transformers/llmExtract";
 import { smartScrape } from "./smartScrape";
-import { checkForPromptInjection } from "./promptInjectionGuard";
+import {
+  checkForPromptInjection,
+  createPromptInjectionGuardLimiter,
+} from "./promptInjectionGuard";
 import { parseMarkdown } from "../../../lib/html-to-markdown";
 import { getModel } from "../../../lib/generic-ai";
 import { TokenUsage } from "../../../controllers/v1/types";
@@ -501,6 +504,9 @@ export async function extractData({
         ),
       );
       // console.log("markdowns", markdowns);
+      // Shared so the per-page scans below stay within one guard's
+      // concurrency limit instead of each bursting its own.
+      const guardLimiter = createPromptInjectionGuardLimiter();
       extractedData = await Promise.all(
         markdowns.map(async markdown => {
           if (extractOptions.options.checkPromptInjection) {
@@ -510,6 +516,7 @@ export async function extractData({
               costTracking: extractOptions.costTrackingOptions.costTracking,
               metadata,
               zeroDataRetention: !!extractOptions.zeroDataRetention,
+              limiter: guardLimiter,
             });
             if (!scannedFully) {
               promptInjectionScanIncomplete = true;

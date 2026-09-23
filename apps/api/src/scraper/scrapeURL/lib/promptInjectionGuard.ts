@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { Logger } from "winston";
 import { z } from "zod";
 import { generateObject, NoObjectGeneratedError } from "ai";
+import { Semaphore } from "async-mutex";
 import { getModel } from "../../../lib/generic-ai";
 import {
   CostLimitExceededError,
@@ -162,6 +163,13 @@ async function classifyChunk(
   }
 }
 
+// Caps in-flight classifier calls across several concurrent scans, e.g. one
+// per page of a smart-scrape result, which would otherwise each burst up to
+// GUARD_CONCURRENCY_LIMIT calls at once.
+export function createPromptInjectionGuardLimiter(): Semaphore {
+  return new Semaphore(GUARD_CONCURRENCY_LIMIT);
+}
+
 // Throws PromptInjectionDetectedError on a detection. Otherwise resolves to
 // false when the guard failed open on at least one chunk, i.e. part of the
 // content reached extraction unscanned.
@@ -171,12 +179,14 @@ export async function checkForPromptInjection({
   costTracking,
   metadata,
   zeroDataRetention,
+  limiter = createPromptInjectionGuardLimiter(),
 }: {
   markdown: string | undefined;
   logger: Logger;
   costTracking: CostTracking;
   metadata: { teamId: string; functionId?: string };
   zeroDataRetention: boolean;
+  limiter?: Semaphore;
 }): Promise<boolean> {
   if (!markdown || markdown.trim().length === 0) {
     return true;
@@ -198,14 +208,16 @@ export async function checkForPromptInjection({
     const batch = chunks.slice(i, i + GUARD_CONCURRENCY_LIMIT);
     const scanned = await Promise.all(
       batch.map(chunk =>
-        classifyChunk(
-          chunk,
-          model,
-          modelId,
-          logger,
-          costTracking,
-          metadata,
-          zeroDataRetention,
+        limiter.runExclusive(() =>
+          classifyChunk(
+            chunk,
+            model,
+            modelId,
+            logger,
+            costTracking,
+            metadata,
+            zeroDataRetention,
+          ),
         ),
       ),
     );

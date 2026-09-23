@@ -1,5 +1,9 @@
 import { generateObject, LoadAPIKeyError } from "ai";
-import { chunkByChars, checkForPromptInjection } from "./promptInjectionGuard";
+import {
+  chunkByChars,
+  checkForPromptInjection,
+  createPromptInjectionGuardLimiter,
+} from "./promptInjectionGuard";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { PromptInjectionDetectedError } from "../error";
 
@@ -149,6 +153,38 @@ describe("checkForPromptInjection", () => {
       PromptInjectionDetectedError,
     );
     expect(guardVerdicts(costTracking)).toEqual(["injection"]);
+  });
+
+  it("keeps concurrent scans sharing a limiter within one guard's concurrency limit", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    vi.mocked(generateObject).mockImplementation((async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      inFlight--;
+      return verdict(false);
+    }) as any);
+    const costTracking = new CostTracking();
+    const limiter = createPromptInjectionGuardLimiter();
+
+    // Four pages of three chunks each: 12 calls, 5 at most in flight.
+    const results = await Promise.all(
+      [0, 1, 2, 3].map(() =>
+        checkForPromptInjection({
+          markdown: threeChunkMarkdown,
+          logger: noopLogger,
+          costTracking,
+          metadata: { teamId: "test-team" },
+          zeroDataRetention: false,
+          limiter,
+        }),
+      ),
+    );
+
+    expect(results).toEqual([true, true, true, true]);
+    expect(generateObject).toHaveBeenCalledTimes(12);
+    expect(maxInFlight).toBe(5);
   });
 
   it("resolves true without calling the classifier for empty content", async () => {
