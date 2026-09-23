@@ -212,16 +212,19 @@ describe("matchesStopOnContent", () => {
     ).toBe(true);
   });
 
-  it("ignores dormant blocks in markdown", () => {
+  it("ignores raw and escaped dormant blocks in markdown", () => {
     for (const tag of ["script", "style", "template", "noscript"]) {
-      expect(
-        matchesStopOnContent(
-          {
-            markdown: `Visible release notes\n\n&lt;${tag}&gt;No release notes found&lt;/${tag}&gt;`,
-          },
-          ["No release notes found"],
-        ),
-      ).toBe(false);
+      for (const block of [
+        `<${tag}>No release notes found</${tag}>`,
+        `&lt;${tag}&gt;No release notes found&lt;/${tag}&gt;`,
+      ]) {
+        expect(
+          matchesStopOnContent(
+            { markdown: `Visible release notes\n\n${block}` },
+            ["No release notes found"],
+          ),
+        ).toBe(false);
+      }
     }
   });
 
