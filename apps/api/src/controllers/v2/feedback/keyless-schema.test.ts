@@ -338,6 +338,7 @@ it.each(["missing", "irrelevant"])(
     const knownSources = [
       "https://example.com/official",
       "http://example.com/docs",
+      `https://example.com/${"a".repeat(2028)}`,
     ];
     const parsed = keylessFeedbackSchema.parse(
       payload("search", { ...item, knownSources }),
@@ -345,6 +346,7 @@ it.each(["missing", "irrelevant"])(
     expect(parsed.observations[0]).toMatchObject({ knownSources });
     for (const sources of [
       ["file:///private"],
+      [`https://example.com/${"a".repeat(2029)}`],
       Array(21).fill("https://example.com"),
     ])
       expect(
