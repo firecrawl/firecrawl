@@ -60,12 +60,10 @@ export async function keylessFeedbackController(
         "JOB_NOT_FOUND",
         "No eligible job found for this caller and category.",
       );
+    // created_at comes from the logging host's clock, so a slightly future
+    // timestamp is skew, not expiry; only the upper bound is enforced.
     const age = Date.now() - new Date(job.created_at).getTime();
-    if (
-      !Number.isFinite(age) ||
-      age < 0 ||
-      age > KEYLESS_FEEDBACK_MAX_AGE_SEC * 1000
-    )
+    if (!Number.isFinite(age) || age > KEYLESS_FEEDBACK_MAX_AGE_SEC * 1000)
       return fail(
         409,
         "FEEDBACK_WINDOW_EXPIRED",
