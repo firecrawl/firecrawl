@@ -14,7 +14,6 @@ vi.mock("../../../config", () => ({
   config: {
     KEYLESS_FEEDBACK_ENABLED: true,
     USE_DB_AUTHENTICATION: true,
-    KEYLESS_FEEDBACK_DAILY_LIMIT: 1,
   },
 }));
 import { config } from "../../../config";
@@ -25,7 +24,6 @@ describe("keyless feedback invitations", () => {
     vi.resetAllMocks();
     config.KEYLESS_FEEDBACK_ENABLED = true;
     config.USE_DB_AUTHENTICATION = true;
-    config.KEYLESS_FEEDBACK_DAILY_LIMIT = 1;
   });
   afterEach(() => vi.useRealTimers());
   const prepare = (res = new EventEmitter(), overrides = {}) =>
@@ -106,7 +104,6 @@ describe("keyless feedback invitations", () => {
   });
 
   it("includes the contract on every eligible response across endpoints and clients", async () => {
-    config.KEYLESS_FEEDBACK_DAILY_LIMIT = 3;
     const endpoints = ["search", "scrape", "parse"] as const;
     for (let index = 0; index < 6; index++) {
       const metadata = keylessFeedbackMetadata(
@@ -121,9 +118,12 @@ describe("keyless feedback invitations", () => {
         jobId: `job-${index}`,
         feedback: {
           docs: "https://docs.firecrawl.dev/api-reference/endpoint/feedback",
-          message: expect.stringContaining("3 accepted submissions"),
+          message: expect.stringContaining("already observed"),
         },
       });
+      expect((metadata.feedback as { message: string }).message).not.toMatch(
+        /limit|per day|UTC/i,
+      );
     }
   });
 
