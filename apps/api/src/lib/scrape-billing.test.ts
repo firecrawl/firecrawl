@@ -226,19 +226,27 @@ describe("calculateCreditsToBeBilled", () => {
   // lockdown + json surcharge stacking
   // =========================================
 
-  const promptInjectionGuardCall = {
+  const promptInjectionGuardCall = (
+    verdict: "clean" | "injection" | "none" = "clean",
+  ) => ({
     type: "other",
     model: "vertex/gemini",
     cost: 0,
-    metadata: { module: "scrapeURL", method: "checkForPromptInjection" },
-  };
+    metadata: {
+      module: "scrapeURL",
+      method: "checkForPromptInjection",
+      verdict,
+    },
+  });
 
   // `guard` means the caller asked for the prompt injection check and the
   // guard actually ran. Both conditions must hold for the +4 guard fee.
+  // `guardVerdicts` overrides the per-chunk verdicts the guard recorded.
   const billScrape = (args: {
     lockdown?: boolean;
     json?: boolean;
     guard?: boolean;
+    guardVerdicts?: ("clean" | "injection" | "none")[];
   }) =>
     calculateCreditsToBeBilled(
       {
@@ -259,7 +267,9 @@ describe("calculateCreditsToBeBilled", () => {
       } as any,
       {
         totalCost: 0,
-        calls: args.guard ? [promptInjectionGuardCall] : [],
+        calls: args.guard
+          ? (args.guardVerdicts ?? ["clean"]).map(promptInjectionGuardCall)
+          : [],
       } as any,
       {} as any,
     );
@@ -285,6 +295,57 @@ describe("calculateCreditsToBeBilled", () => {
 
   it("bills json plus the prompt injection guard at 9 credits", async () => {
     expect(await billScrape({ json: true, guard: true })).toBe(9);
+  });
+
+  it("drops the guard fee when any chunk got no verdict", async () => {
+    expect(
+      await billScrape({
+        json: true,
+        guard: true,
+        guardVerdicts: ["clean", "none", "clean"],
+      }),
+    ).toBe(5);
+  });
+
+  it("drops the guard fee when no chunk got a verdict", async () => {
+    expect(
+      await billScrape({ json: true, guard: true, guardVerdicts: ["none"] }),
+    ).toBe(5);
+  });
+
+  // =========================================
+  // prompt injection guard on failed scrapes
+  // =========================================
+
+  const billFailedGuardedScrape = (
+    verdicts: ("clean" | "injection" | "none")[],
+  ) =>
+    calculateCreditsToBeBilled(
+      {
+        formats: [{ type: "json", schema: {}, checkPromptInjection: true }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      null,
+      {
+        totalCost: 0,
+        calls: verdicts.map(promptInjectionGuardCall),
+      } as any,
+      {} as any,
+    );
+
+  it("bills 5 credits for a failed scrape whose guard scanned every chunk", async () => {
+    expect(await billFailedGuardedScrape(["clean", "clean"])).toBe(5);
+  });
+
+  it("bills 5 credits for a scrape the guard blocked, even if a concurrent chunk failed", async () => {
+    expect(await billFailedGuardedScrape(["injection", "none"])).toBe(5);
+  });
+
+  it("bills nothing for a failed scrape whose guard left a chunk unscanned", async () => {
+    expect(await billFailedGuardedScrape(["clean", "none"])).toBe(0);
   });
 });
 

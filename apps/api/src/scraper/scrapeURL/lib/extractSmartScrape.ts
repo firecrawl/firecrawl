@@ -266,6 +266,8 @@ export async function extractData({
   const logger = extractOptions.logger;
   const isSingleUrl = urls.length === 1;
   let costLimitExceededTokenUsage: number | null = null;
+  // Set when the prompt injection guard failed open on part of the content.
+  let promptInjectionScanIncomplete = false;
 
   if (
     extractOptions.markdown &&
@@ -375,7 +377,7 @@ export async function extractData({
           metadata,
           zeroDataRetention: !!extractOptions.zeroDataRetention,
         })
-      : Promise.resolve(),
+      : Promise.resolve(true),
     generateCompletions({
       ...extractOptionsNewSchema,
       costTrackingOptions: {
@@ -391,6 +393,9 @@ export async function extractData({
 
   if (guardSettled.status === "rejected") {
     throw guardSettled.reason;
+  }
+  if (!guardSettled.value) {
+    promptInjectionScanIncomplete = true;
   }
 
   if (generateSettled.status === "fulfilled") {
@@ -499,13 +504,16 @@ export async function extractData({
       extractedData = await Promise.all(
         markdowns.map(async markdown => {
           if (extractOptions.options.checkPromptInjection) {
-            await checkForPromptInjection({
+            const scannedFully = await checkForPromptInjection({
               markdown,
               logger,
               costTracking: extractOptions.costTrackingOptions.costTracking,
               metadata,
               zeroDataRetention: !!extractOptions.zeroDataRetention,
             });
+            if (!scannedFully) {
+              promptInjectionScanIncomplete = true;
+            }
           }
 
           const newExtractOptions = {
@@ -541,6 +549,13 @@ export async function extractData({
     } else {
       throw error;
     }
+  }
+
+  if (promptInjectionScanIncomplete) {
+    // The guard fee does not bill in this case (see scrape-billing.ts).
+    warning =
+      "The prompt injection check could not scan all of the page content, so part of it went to JSON extraction unchecked. The prompt injection check was not billed." +
+      (warning ? " " + warning : "");
   }
 
   return {
