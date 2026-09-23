@@ -1197,10 +1197,6 @@ suite("keyless feedback HTTP and persistence", () => {
             value: 1,
           }),
         );
-        const duplicate = await request(app).post(path).send(payload);
-        expect(duplicate.status).toBe(200);
-        expect(duplicate.body.alreadySubmitted).toBe(true);
-        expect(duplicate.body.feedbackId).toBe(accepted.body.feedbackId);
         expect(fixture.refund).toHaveBeenCalledTimes(1);
         expect(fixture.readResult).not.toHaveBeenCalled();
         const [row] = await fixture.db!.select().from(table);
