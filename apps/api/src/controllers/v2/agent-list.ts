@@ -19,6 +19,22 @@ type RecentAgent = {
     | "credit_limit_reached";
 };
 
+// Each turn of a thread is its own run, so clients need the thread to list
+// a conversation once.
+function threadOptions(options: any): {
+  threadId?: string;
+  threadTurn?: number;
+} {
+  return {
+    ...(typeof options?.threadId === "string" && {
+      threadId: options.threadId,
+    }),
+    ...(typeof options?.threadTurn === "number" && {
+      threadTurn: options.threadTurn,
+    }),
+  };
+}
+
 export async function agentListController(
   req: RequestWithAuth<{}, AgentListResponse>,
   res: Response<AgentListResponse>,
@@ -271,6 +287,7 @@ export async function agentListController(
             effort:
               db.agent.options.effort ??
               (db.agent.options.model === "spark-2" ? "medium" : undefined),
+            ...threadOptions(db.agent.options),
           }
         : recent?.options
           ? {
@@ -283,6 +300,7 @@ export async function agentListController(
                 (recent.options.modelPreset === "spark-2"
                   ? "medium"
                   : undefined),
+              ...threadOptions(recent.options),
             }
           : undefined,
     });

@@ -1621,6 +1621,8 @@ export type AgentListResponse =
           // type release.
           model: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
           effort?: "low" | "medium" | "high";
+          threadId?: string;
+          threadTurn?: number;
         };
       }[];
       next?: string;
