@@ -113,6 +113,28 @@ describe("monitor result lifecycle guard", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("replaces the check page before advancing the baseline under the lease", async () => {
+    store.updateMonitorCheckIfRunning.mockResolvedValue({ status: "running" });
+    store.getMonitorPage.mockResolvedValue(null);
+    store.getMonitorForUpdate.mockResolvedValue({ targets: [] });
+    computeAndPersistPageDiff.mockResolvedValue({
+      status: "new",
+      diffGcsKey: null,
+      diffTextBytes: null,
+      diffJsonBytes: null,
+    });
+
+    await recordMonitorScrapeSuccess(monitorJob(), {});
+
+    expect(store.deleteMonitorCheckPages).toHaveBeenCalledTimes(1);
+    expect(store.insertMonitorCheckPages).toHaveBeenCalledTimes(1);
+    expect(
+      store.deleteMonitorCheckPages.mock.invocationCallOrder[0],
+    ).toBeLessThan(store.insertMonitorCheckPages.mock.invocationCallOrder[0]);
+    expect(store.upsertMonitorPage).toHaveBeenCalledTimes(1);
+    expect(lease.release).toHaveBeenCalledTimes(2);
+  });
+
   it("rechecks terminal status after acquiring the finalization lease", async () => {
     store.updateMonitorCheckIfRunning.mockResolvedValue({ status: "running" });
     store.isMonitorCheckRunning.mockResolvedValue(false);
