@@ -1118,6 +1118,18 @@ suite("keyless feedback HTTP and persistence", () => {
       expect(await fixture.db!.select().from(table)).toHaveLength(1);
     },
   );
+  it("verifies Search positions when the saved response appears after the first read", async () => {
+    const { jobId } = await job("search");
+    fixture.readResult.mockResolvedValueOnce(null);
+    const invalid = body("search", jobId);
+    (invalid.observations[0] as any).position = 2;
+    expect((await submit(invalid)).status).toBe(400);
+    fixture.readResult.mockResolvedValueOnce(null);
+    expect((await submit(body("search", jobId))).status).toBe(200);
+    expect(fixture.readResult).toHaveBeenCalledTimes(4);
+    const [row] = await fixture.db!.select().from(table);
+    expect(row.metadata).not.toHaveProperty("unverified");
+  });
   it("does not load Search results for missing-content observations", async () => {
     const { jobId } = await job("search");
     fixture.results.delete(jobId);

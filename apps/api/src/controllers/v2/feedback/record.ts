@@ -39,7 +39,7 @@ import {
 
 const PREVIEW_TEAM_ID = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
 const POSTGRES_UNIQUE_VIOLATION = "23505";
-const LOOKUP_RACE_RETRY_MS = 250;
+export const LOOKUP_RACE_RETRY_MS = 250;
 const ZDR_FEEDBACK_ID = "00000000-0000-0000-0000-000000000000";
 
 function isPreviewTeam(teamId: string): boolean {
