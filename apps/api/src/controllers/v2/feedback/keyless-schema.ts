@@ -31,7 +31,7 @@ const common = {
   rating: z.enum(["good", "partial", "bad"]),
   task: detail,
   assessment: detail,
-  origin: z.string().trim().max(100).optional().default("api"),
+  origin: z.string().trim().min(1).max(100).optional().default("api"),
   integration: z
     .string()
     .trim()

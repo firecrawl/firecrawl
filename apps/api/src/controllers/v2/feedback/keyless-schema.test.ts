@@ -378,3 +378,16 @@ it("validates integration with the shared integration allowlist", () => {
   for (const integration of ["unlisted-client", "", `_${"x".repeat(100)}`])
     expect(submit(integration)).toBe(false);
 });
+it.each([
+  { jobId: "not-a-uuid" },
+  { rating: "excellent" },
+  { origin: "   " },
+  { origin: "x".repeat(101) },
+  { unexpected: true },
+])("rejects invalid submission fields %j", fields => {
+  const valid = payload("scrape", { kind: "correct" });
+  expect(keylessFeedbackSchema.safeParse(valid).success).toBe(true);
+  expect(keylessFeedbackSchema.safeParse({ ...valid, ...fields }).success).toBe(
+    false,
+  );
+});
