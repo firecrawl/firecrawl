@@ -1,5 +1,5 @@
 import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
-import type { RequestWithAuth, TeamFlags } from "../types";
+import type { RequestWithAuth } from "../types";
 import type { FeedbackJobRow, FeedbackRecordOptions } from "./internal-types";
 
 type SearchOptions = {
@@ -54,10 +54,11 @@ export function shouldSkipPersistenceForJobZdr(
   return false;
 }
 
+// Keyless callers carry no team flags, so the job's own options decide whether
+// its data may be retained with feedback.
 export function isKeylessFeedbackRestricted(
   endpoint: "search" | "scrape" | "parse",
   options: unknown,
-  flags?: TeamFlags,
 ): boolean {
   if (!options || typeof options !== "object") return true;
   const saved = options as {
@@ -65,14 +66,10 @@ export function isKeylessFeedbackRestricted(
     lockdown?: boolean;
     scrapeOptions?: { lockdown?: boolean };
   };
-  const searchZdr = getSearchZDR(flags);
   return (
     saved.zeroDataRetention === true ||
     saved.lockdown === true ||
     (endpoint === "search" && saved.scrapeOptions?.lockdown === true) ||
-    searchOptionsUseZdr(options) ||
-    getScrapeZDR(flags) === "forced" ||
-    searchZdr === "forced-zdr" ||
-    searchZdr === "forced-anon"
+    searchOptionsUseZdr(options)
   );
 }

@@ -80,9 +80,6 @@ describe("keyless feedback invitations", () => {
     { body: { lockdown: true } },
     { body: { enterprise: ["zdr"] } },
     { body: { enterprise: ["anon"] } },
-    { acuc: { flags: { searchZDR: "forced-anon" } } },
-    { acuc: { flags: { scrapeZDR: "forced" } } },
-    { acuc: { flags: { searchFeedbackOptOut: true } } },
   ])(
     "preserves the reference without inviting restricted jobs: %j",
     async overrides => {

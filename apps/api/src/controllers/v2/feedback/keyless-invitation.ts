@@ -17,8 +17,7 @@ export function keylessFeedbackMetadata(
   if (
     !config.KEYLESS_FEEDBACK_ENABLED ||
     !config.USE_DB_AUTHENTICATION ||
-    req.acuc?.flags?.searchFeedbackOptOut ||
-    isKeylessFeedbackRestricted(endpoint, req.body, req.acuc?.flags)
+    isKeylessFeedbackRestricted(endpoint, req.body)
   )
     return reference;
 
