@@ -21,12 +21,15 @@ import {
   ExtractRequestInput,
   CrawlRequest,
   CrawlRequestInput,
+  MAX_STOP_ON_CONTENT_MARKERS,
+  MAX_STOP_ON_CONTENT_MARKER_LENGTH,
   MapRequest,
   MapRequestInput,
   BatchScrapeRequest,
   BatchScrapeRequestInput,
   SearchRequest,
   SearchRequestInput,
+  toV0CrawlerOptions,
   toV2CrawlerOptions,
 } from "../../../controllers/v2/types";
 import {
@@ -915,6 +918,46 @@ describe("V2 Types Validation", () => {
       });
 
       expect(result.sitemap).toBe("only");
+    });
+
+    it("accepts and normalizes bounded stopOnContent markers", () => {
+      const result = crawlRequestSchema.parse({
+        url: "https://example.com",
+        stopOnContent: ["  No release notes found  "],
+      });
+
+      expect(result.stopOnContent).toEqual(["No release notes found"]);
+      expect(toV0CrawlerOptions(result).stopOnContent).toEqual(
+        result.stopOnContent,
+      );
+      expect(
+        toV2CrawlerOptions({ stopOnContent: result.stopOnContent })
+          .stopOnContent,
+      ).toEqual(result.stopOnContent);
+    });
+
+    it("rejects invalid stopOnContent marker bounds", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          stopOnContent: [],
+        }),
+      ).toThrow();
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          stopOnContent: Array.from(
+            { length: MAX_STOP_ON_CONTENT_MARKERS + 1 },
+            () => "marker",
+          ),
+        }),
+      ).toThrow();
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          stopOnContent: ["x".repeat(MAX_STOP_ON_CONTENT_MARKER_LENGTH + 1)],
+        }),
+      ).toThrow();
     });
 
     it("should accept anchored and substring path patterns", () => {

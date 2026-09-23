@@ -61,7 +61,10 @@ import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
-import { WebCrawler } from "../../scraper/WebScraper/crawler";
+import {
+  matchesStopOnContent,
+  WebCrawler,
+} from "../../scraper/WebScraper/crawler";
 import {
   calculateCreditsToBeBilled,
   calculateThreatScanCredits,
@@ -428,6 +431,19 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     }
 
     let timeoutHandle: NodeJS.Timeout | null = null;
+    const originalScrapeOptions = job.data.scrapeOptions;
+    const captureMarkdownForStopOnContent =
+      (job.data.crawlerOptions?.stopOnContent?.length ?? 0) > 0 &&
+      !hasFormatOfType(originalScrapeOptions.formats, "markdown");
+    if (captureMarkdownForStopOnContent) {
+      job.data.scrapeOptions = {
+        ...originalScrapeOptions,
+        formats: [
+          ...originalScrapeOptions.formats,
+          { type: "markdown" as const },
+        ],
+      };
+    }
     try {
       pipeline = await Promise.race([
         startWebScraperPipeline({
@@ -447,6 +463,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           : []),
       ]);
     } finally {
+      job.data.scrapeOptions = originalScrapeOptions;
       if (timeoutHandle) {
         clearTimeout(timeoutHandle);
       }
@@ -466,6 +483,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     const timeTakenInSeconds = (end - start) / 1000;
 
     const doc = pipeline.document;
+    const discoveryDocument = {
+      markdown: doc.markdown,
+      html: doc.html,
+    };
+    if (captureMarkdownForStopOnContent) {
+      delete doc.markdown;
+    }
 
     if (
       pipeline.exchange === undefined &&
@@ -622,7 +646,15 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             doc.metadata.url ?? doc.metadata.sourceURL ?? sc.originUrl!,
           );
 
-          if (!sc.crawlerOptions?.sitemapOnly) {
+          const stopDiscovery = matchesStopOnContent(
+            discoveryDocument,
+            sc.crawlerOptions?.stopOnContent,
+          );
+          if (stopDiscovery) {
+            logger.debug("Content marker matched; skipping link discovery");
+          }
+
+          if (!sc.crawlerOptions?.sitemapOnly && !stopDiscovery) {
             const links = await crawler.filterLinks(
               await crawler.extractLinksFromContent(
                 rawHtml ?? "",

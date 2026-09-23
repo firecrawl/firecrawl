@@ -56,6 +56,30 @@ interface FilterLinksResult {
   denialReasons: Map<string, string>;
 }
 
+function normalizeContentMarker(value: string): string {
+  return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+export function matchesStopOnContent(
+  document: { markdown?: string; html?: string },
+  markers: string[] | undefined,
+): boolean {
+  if (!markers?.length) return false;
+
+  let content = document.markdown;
+  if (content === undefined && document.html !== undefined) {
+    const $ = load(document.html);
+    $("script, style, template, noscript").remove();
+    content = $.root().text();
+  }
+  if (content === undefined) return false;
+
+  const normalizedContent = normalizeContentMarker(content);
+  return markers.some(marker =>
+    normalizedContent.includes(normalizeContentMarker(marker)),
+  );
+}
+
 export class WebCrawler {
   private jobId: string;
   private initialUrl: string;

@@ -1267,9 +1267,17 @@ export type BatchScrapeRequestInput = Omit<
   zeroDataRetention?: boolean;
 };
 
+export const MAX_STOP_ON_CONTENT_MARKERS = 20;
+export const MAX_STOP_ON_CONTENT_MARKER_LENGTH = 500;
+
 export const crawlerOptions = z.strictObject({
   includePaths: pathPatternsSchema.prefault([]),
   excludePaths: pathPatternsSchema.prefault([]),
+  stopOnContent: z
+    .array(z.string().trim().min(1).max(MAX_STOP_ON_CONTENT_MARKER_LENGTH))
+    .min(1)
+    .max(MAX_STOP_ON_CONTENT_MARKERS)
+    .optional(),
   maxDiscoveryDepth: z.number().optional(),
   limit: z.number().prefault(10000), // default?
   crawlEntireDomain: z.boolean().optional(),
@@ -1347,7 +1355,7 @@ export type CrawlRequestInput = z.input<typeof crawlRequestSchema>;
 export const MAX_MAP_LIMIT = 100000;
 
 const mapRequestSchemaBase = crawlerOptions
-  .omit({ sitemap: true, ignoreQueryParameters: true })
+  .omit({ sitemap: true, ignoreQueryParameters: true, stopOnContent: true })
   .extend({
     url: URL,
     origin: z.string().optional().prefault("api"),
@@ -1984,6 +1992,7 @@ export function toV0CrawlerOptions(x: CrawlerOptions) {
     deduplicateSimilarURLs: x.deduplicateSimilarURLs,
     ignoreQueryParameters: x.ignoreQueryParameters,
     regexOnFullURL: x.regexOnFullURL,
+    stopOnContent: x.stopOnContent,
     maxDiscoveryDepth: x.maxDiscoveryDepth,
     currentDiscoveryDepth: 0,
     delay: x.delay,
@@ -2004,6 +2013,7 @@ export function toV2CrawlerOptions(x: any): CrawlerOptions {
     deduplicateSimilarURLs: x.deduplicateSimilarURLs,
     ignoreQueryParameters: x.ignoreQueryParameters,
     regexOnFullURL: x.regexOnFullURL,
+    stopOnContent: x.stopOnContent,
     maxDiscoveryDepth: x.maxDiscoveryDepth,
     delay: x.delay,
   };
@@ -2029,6 +2039,7 @@ function fromV0CrawlerOptions(
       deduplicateSimilarURLs: x.deduplicateSimilarURLs,
       ignoreQueryParameters: x.ignoreQueryParameters,
       regexOnFullURL: x.regexOnFullURL,
+      stopOnContent: x.stopOnContent,
       maxDiscoveryDepth: x.maxDiscoveryDepth,
       delay: x.delay,
     }),

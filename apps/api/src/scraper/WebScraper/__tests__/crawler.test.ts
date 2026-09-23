@@ -1,6 +1,6 @@
 import type { Mocked, MockedFunction } from "vitest";
 // crawler.test.ts
-import { WebCrawler } from "../crawler";
+import { matchesStopOnContent, WebCrawler } from "../crawler";
 import axios from "axios";
 import robotsParser from "robots-parser";
 
@@ -10,9 +10,7 @@ vi.mock("robots-parser");
 describe("WebCrawler", () => {
   let crawler: WebCrawler;
   const mockAxios = axios as Mocked<typeof axios>;
-  const mockRobotsParser = robotsParser as MockedFunction<
-    typeof robotsParser
-  >;
+  const mockRobotsParser = robotsParser as MockedFunction<typeof robotsParser>;
 
   let maxCrawledDepth: number;
 
@@ -180,5 +178,53 @@ describe("WebCrawler", () => {
       true,
     );
     expect(sourceValidationResult.links).toEqual([initialUrl]);
+  });
+});
+
+describe("matchesStopOnContent", () => {
+  it("matches literal markers with normalized case and whitespace", () => {
+    expect(
+      matchesStopOnContent(
+        {
+          markdown:
+            "# Releases\n\nNo release notes found for the selected categories.",
+        },
+        ["  NO RELEASE notes\nfound for the selected categories.  "],
+      ),
+    ).toBe(true);
+  });
+
+  it("does not match absent markers", () => {
+    expect(
+      matchesStopOnContent(
+        { markdown: "Release notes are available for this page." },
+        ["No release notes found"],
+      ),
+    ).toBe(false);
+  });
+
+  it("uses cleaned HTML when markdown is unavailable", () => {
+    expect(
+      matchesStopOnContent(
+        {
+          html: "<main>No results found</main><script>No release notes found</script>",
+        },
+        ["No release notes found"],
+      ),
+    ).toBe(false);
+    expect(
+      matchesStopOnContent(
+        {
+          html: "<main>No results found</main><script>No release notes found</script>",
+        },
+        ["No results found"],
+      ),
+    ).toBe(true);
+  });
+
+  it("is disabled when markers are omitted", () => {
+    expect(
+      matchesStopOnContent({ markdown: "No release notes found" }, undefined),
+    ).toBe(false);
   });
 });
