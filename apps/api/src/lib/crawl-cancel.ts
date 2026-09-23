@@ -26,8 +26,7 @@ export async function cancelCrawl(
   if (crawl?.queueBackend === "pg") {
     try {
       const jobIds = await getCrawlJobs(crawlId);
-      await removeConcurrencyLimitedJobs(crawl.team_id, jobIds);
-      cleaned = true;
+      cleaned = await removeConcurrencyLimitedJobs(crawl.team_id, jobIds);
     } catch (error) {
       logger.error("Failed to clean up cancelled crawl jobs", {
         error,
@@ -48,8 +47,7 @@ export async function cancelCrawl(
     if (!cleaned && crawl?.queueBackend !== "fdb" && teamId) {
       try {
         const jobIds = await getCrawlJobs(crawlId);
-        await removeConcurrencyLimitedJobs(teamId, jobIds);
-        cleaned = true;
+        cleaned = await removeConcurrencyLimitedJobs(teamId, jobIds);
       } catch (error) {
         logger.error("Failed to clean up cancelled crawl jobs", {
           error,

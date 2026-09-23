@@ -13,6 +13,7 @@ const send = vi.hoisted(() => vi.fn());
 const lease = vi.hoisted(() => ({
   acquire: vi.fn(),
   release: vi.fn(),
+  signal: { aborted: false },
 }));
 
 vi.mock("../../lib/logger", () => {
@@ -59,7 +60,11 @@ function monitorJob() {
 describe("monitor result lifecycle guard", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    lease.acquire.mockResolvedValue({ release: lease.release });
+    lease.signal.aborted = false;
+    lease.acquire.mockResolvedValue({
+      release: lease.release,
+      signal: lease.signal,
+    });
     store.isMonitorCheckRunning.mockResolvedValue(true);
   });
 
@@ -93,8 +98,9 @@ describe("monitor result lifecycle guard", () => {
   it("does not mutate page state when finalization owns the lease", async () => {
     store.updateMonitorCheckIfRunning.mockResolvedValue({ status: "running" });
     lease.acquire
-      .mockResolvedValueOnce({ release: lease.release })
+      .mockResolvedValueOnce({ release: lease.release, signal: lease.signal })
       .mockResolvedValueOnce(null);
+    store.isMonitorCheckRunning.mockResolvedValue(false);
     store.getMonitorPage.mockResolvedValue(null);
     store.getMonitorForUpdate.mockResolvedValue({ targets: [] });
     computeAndPersistPageDiff.mockResolvedValue({
@@ -132,6 +138,32 @@ describe("monitor result lifecycle guard", () => {
       store.deleteMonitorCheckPages.mock.invocationCallOrder[0],
     ).toBeLessThan(store.insertMonitorCheckPages.mock.invocationCallOrder[0]);
     expect(store.upsertMonitorPage).toHaveBeenCalledTimes(1);
+    expect(
+      store.insertMonitorCheckPages.mock.invocationCallOrder[0],
+    ).toBeLessThan(store.upsertMonitorPage.mock.invocationCallOrder[0]);
+    expect(lease.release).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops before baseline advancement after losing lease ownership", async () => {
+    store.updateMonitorCheckIfRunning.mockResolvedValue({ status: "running" });
+    store.getMonitorPage.mockResolvedValue(null);
+    store.getMonitorForUpdate.mockResolvedValue({ targets: [] });
+    store.insertMonitorCheckPages.mockImplementation(async () => {
+      lease.signal.aborted = true;
+    });
+    computeAndPersistPageDiff.mockResolvedValue({
+      status: "new",
+      diffGcsKey: null,
+      diffTextBytes: null,
+      diffJsonBytes: null,
+    });
+
+    await recordMonitorScrapeSuccess(monitorJob(), {});
+
+    expect(store.deleteMonitorCheckPages).toHaveBeenCalledTimes(1);
+    expect(store.insertMonitorCheckPages).toHaveBeenCalledTimes(1);
+    expect(store.upsertMonitorPage).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
     expect(lease.release).toHaveBeenCalledTimes(2);
   });
 

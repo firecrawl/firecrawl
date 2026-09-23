@@ -1414,11 +1414,13 @@ async function failStaleMonitorCheck(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
   targetResults: any[];
+  leaseSignal: AbortSignal;
   /** See billMonitorCheck's orgId. */
   orgId: string | null;
 }): Promise<boolean> {
   if (!isMonitorCheckStale(params.check, new Date(), params.monitor.targets))
     return false;
+  if (params.leaseSignal.aborted) return true;
 
   const error = MONITOR_CHECK_STALE_ERROR;
   const claimed = await updateMonitorCheckIfRunning(params.check.id, {
@@ -1582,6 +1584,7 @@ export async function reconcileRunningMonitorChecks(
         candidate.id,
       );
       if (!check || check.status !== "running") continue;
+      if (lease.signal.aborted) continue;
 
       // One org lookup per check — the billing service no longer makes it, so
       // the release, the stale-fail and the settle below all share this one.
@@ -1592,6 +1595,7 @@ export async function reconcileRunningMonitorChecks(
         check.monitor_id,
       );
       if (!monitor) {
+        if (lease.signal.aborted) continue;
         const failed = await updateMonitorCheckIfRunning(check.id, {
           status: "failed",
           finished_at: new Date().toISOString(),
@@ -1675,6 +1679,7 @@ export async function reconcileRunningMonitorChecks(
             monitor,
             check,
             targetResults,
+            leaseSignal: lease.signal,
             orgId,
           })
         )
@@ -1708,6 +1713,7 @@ export async function reconcileRunningMonitorChecks(
         // Flat search credits come from target_results, not page metadata.
         targetResults,
       });
+      if (lease.signal.aborted) continue;
 
       // This conditional write is the durable claim. Even if the Redis lease
       // expires during preparation, only one worker may settle this check.

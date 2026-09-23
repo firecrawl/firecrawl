@@ -29,7 +29,7 @@ describe("cancelCrawl", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     markCrawlCancelled.mockResolvedValue(undefined);
-    removeConcurrencyLimitedJobs.mockResolvedValue(undefined);
+    removeConcurrencyLimitedJobs.mockResolvedValue(true);
   });
 
   it("marks a PG crawl cancelled and removes all queued jobs", async () => {
@@ -92,6 +92,14 @@ describe("cancelCrawl", () => {
     await expect(cancelCrawl("crawl-1", crawl)).resolves.toBe(false);
 
     expect(removeConcurrencyLimitedJobs).not.toHaveBeenCalled();
+  });
+
+  it("propagates failed PG queue cleanup", async () => {
+    const crawl = { team_id: "team-1", queueBackend: "pg" } as any;
+    getCrawlJobs.mockResolvedValue(["job-1"]);
+    removeConcurrencyLimitedJobs.mockResolvedValue(false);
+
+    await expect(cancelCrawl("crawl-1", crawl)).resolves.toBe(false);
   });
 
   it("routes missing backend metadata through FDB before PG cleanup", async () => {

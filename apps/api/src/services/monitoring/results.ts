@@ -27,15 +27,30 @@ async function heartbeatMonitorCheck(checkId: string): Promise<boolean> {
   return (await updateMonitorCheckIfRunning(checkId, {})) !== null;
 }
 
+async function waitForMonitorCheckFinalizeLease(checkId: string) {
+  while (true) {
+    const lease = await acquireMonitorCheckFinalizeLease(checkId).catch(
+      error => {
+        logger.warn("Failed to acquire monitor finalize lease", {
+          error,
+          checkId,
+        });
+        return null;
+      },
+    );
+    if (lease) return lease;
+    if (!(await isMonitorCheckRunning(checkId))) return null;
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+}
+
 async function heartbeatMonitorCheckWithLease(
   checkId: string,
 ): Promise<boolean> {
-  const lease = await acquireMonitorCheckFinalizeLease(checkId, {
-    attempts: 600,
-    retryDelayMs: 100,
-  });
+  const lease = await waitForMonitorCheckFinalizeLease(checkId);
   if (!lease) return false;
   try {
+    if (lease.signal.aborted) return false;
     return await heartbeatMonitorCheck(checkId);
   } finally {
     await lease.release();
@@ -106,18 +121,19 @@ async function persistMonitorCheckError(params: {
   metadata?: Record<string, unknown>;
   heartbeatRecorded?: boolean;
 }): Promise<void> {
-  const lease = await acquireMonitorCheckFinalizeLease(
+  const lease = await waitForMonitorCheckFinalizeLease(
     params.monitoring.checkId,
-    { attempts: 600, retryDelayMs: 100 },
   );
   if (!lease) return;
 
   try {
+    if (lease.signal.aborted) return;
     if (params.heartbeatRecorded) {
       if (!(await isMonitorCheckRunning(params.monitoring.checkId))) return;
     } else if (!(await heartbeatMonitorCheck(params.monitoring.checkId))) {
       return;
     }
+    if (lease.signal.aborted) return;
 
     await deleteMonitorCheckPages({
       checkId: params.monitoring.checkId,
@@ -138,6 +154,7 @@ async function persistMonitorCheckError(params: {
         metadata: params.metadata ?? null,
       },
     ]);
+    if (lease.signal.aborted) return;
 
     if (
       await claimMonitorPageWebhook(
@@ -146,6 +163,7 @@ async function persistMonitorCheckError(params: {
         "error",
       )
     ) {
+      if (lease.signal.aborted) return;
       await sendMonitorPageWebhook({
         teamId: params.teamId,
         monitorId: params.monitoring.monitorId,
@@ -336,14 +354,13 @@ export async function recordMonitorScrapeSuccess(
     error,
   } = diff;
 
-  const lease = await acquireMonitorCheckFinalizeLease(monitoring.checkId, {
-    attempts: 600,
-    retryDelayMs: 100,
-  });
+  const lease = await waitForMonitorCheckFinalizeLease(monitoring.checkId);
   if (!lease) return;
 
   try {
+    if (lease.signal.aborted) return;
     if (!(await isMonitorCheckRunning(monitoring.checkId))) return;
+    if (lease.signal.aborted) return;
 
     // Tally first (the reconciler's fan-in gate), durable baseline last. The
     // finalize lease keeps completion from interleaving between these writes.
@@ -379,6 +396,7 @@ export async function recordMonitorScrapeSuccess(
         judgment: judgment ?? null,
       },
     ]);
+    if (lease.signal.aborted) return;
 
     await upsertMonitorPage({
       monitorId: monitoring.monitorId,
@@ -389,6 +407,7 @@ export async function recordMonitorScrapeSuccess(
       checkId: monitoring.checkId,
       scrapeId: job.id,
       status,
+      abortSignal: lease.signal,
       metadata: {
         title: doc?.metadata?.title ?? null,
         statusCode: getDocumentStatusCode(doc),
@@ -399,6 +418,7 @@ export async function recordMonitorScrapeSuccess(
         creditsUsed: doc?.metadata?.creditsUsed ?? null,
       },
     });
+    if (lease.signal.aborted) return;
 
     logger.info("Recorded monitor scrape result", {
       monitorId: monitoring.monitorId,
@@ -413,6 +433,7 @@ export async function recordMonitorScrapeSuccess(
     });
 
     if (await claimMonitorPageWebhook(monitoring.checkId, url, "page")) {
+      if (lease.signal.aborted) return;
       await sendMonitorPageWebhook({
         teamId: job.data.team_id,
         monitorId: monitoring.monitorId,
