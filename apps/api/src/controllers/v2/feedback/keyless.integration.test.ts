@@ -562,17 +562,22 @@ suite("keyless feedback HTTP and persistence", () => {
     expect(result.status).toBe(404);
     expect(await fixture.db!.select().from(table)).toHaveLength(0);
   });
-  it("returns the same record for concurrent retries", async () => {
-    const { jobId } = await job("parse");
-    const responses = await Promise.all(
-      Array.from({ length: 6 }, () => submit(body("parse", jobId))),
-    );
-    expect(responses.every(response => response.status === 200)).toBe(true);
-    expect(
-      new Set(responses.map(response => response.body.feedbackId)).size,
-    ).toBe(1);
-    expect(await fixture.db!.select().from(table)).toHaveLength(1);
-  });
+  it.each(["search", "scrape", "parse"] as const)(
+    "returns the same record for concurrent %s retries",
+    async endpoint => {
+      const { jobId } = await job(endpoint);
+      const responses = await Promise.all(
+        Array.from({ length: 6 }, () => submit(body(endpoint, jobId))),
+      );
+      expect(responses.map(response => response.status)).toEqual(
+        Array(6).fill(200),
+      );
+      expect(
+        new Set(responses.map(response => response.body.feedbackId)).size,
+      ).toBe(1);
+      expect(await fixture.db!.select().from(table)).toHaveLength(1);
+    },
+  );
   it("invites every eligible job after earlier submissions", async () => {
     for (const endpoint of ["search", "scrape", "parse"] as const) {
       const { metadata } = await job(endpoint);
