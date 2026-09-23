@@ -30,7 +30,9 @@ export async function feedbackController(
   >,
   res: Response<EndpointFeedbackResponse>,
 ) {
-  if (keylessTeamUuid(req.auth.team_id))
+  // Session feedback stays authenticated, so keyless Alexandria payloads reach
+  // its preview-team rejection below.
+  if (keylessTeamUuid(req.auth.team_id) && req.body?.endpoint !== "alexandria")
     return keylessFeedbackController(req, res);
   let parsedBody: EndpointFeedbackRequest | AlexandriaFeedbackRequest;
   try {
