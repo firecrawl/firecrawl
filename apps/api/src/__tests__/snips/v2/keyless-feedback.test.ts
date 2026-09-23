@@ -22,14 +22,18 @@ const enabled =
   config.KEYLESS_CREDITS_PER_DAY !== undefined;
 
 describeIf(enabled)("keyless feedback", () => {
-  const identity = keylessTeamUuid(keylessTeamId("203.0.113.173"))!;
+  // Unique-per-run forwarded IP inside TEST-NET-3 (RFC 5737): keyless request
+  // and credit counters last a day per IP, so a fixed address would inherit
+  // counts from earlier or concurrent runs.
+  const ip = `203.0.113.${1 + Math.floor(Math.random() * 254)}`;
+  const identity = keylessTeamUuid(keylessTeamId(ip))!;
   const cleanup = async () => {
     await db
       .delete(search_feedback)
       .where(eq(search_feedback.team_id, identity));
     await redisRateLimitClient.del(
-      "keyless_requests:203.0.113.173",
-      "keyless_credits:203.0.113.173",
+      `keyless_requests:${ip}`,
+      `keyless_credits:${ip}`,
       `keyless_feedback_attempts:${identity}`,
     );
   };
@@ -40,7 +44,7 @@ describeIf(enabled)("keyless feedback", () => {
     request(TEST_API_URL)
       .post(path)
       .set("x-firecrawl-keyless-secret", config.KEYLESS_PROXY_SECRET!)
-      .set("x-firecrawl-keyless-ip", "203.0.113.173")
+      .set("x-firecrawl-keyless-ip", ip)
       .send(body);
 
   it(
@@ -104,7 +108,7 @@ describeIf(enabled)("keyless feedback", () => {
       const parsed = await request(TEST_API_URL)
         .post("/v2/parse")
         .set("x-firecrawl-keyless-secret", config.KEYLESS_PROXY_SECRET!)
-        .set("x-firecrawl-keyless-ip", "203.0.113.173")
+        .set("x-firecrawl-keyless-ip", ip)
         .field(
           "options",
           JSON.stringify({ formats: ["markdown"], timeout: scrapeTimeout }),
