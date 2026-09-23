@@ -2,7 +2,7 @@ import type { Response } from "express";
 import { config } from "../../../config";
 import { keylessTeamUuid } from "../../../lib/keyless";
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
-import { lookupJobWithRetry } from "./record";
+import { LOOKUP_RACE_RETRY_MS, lookupJobWithRetry } from "./record";
 import { isKeylessFeedbackRestricted } from "./zdr-persistence";
 import { feedbackMetadataSchema, type RequestWithAuth } from "../types";
 import { keylessFeedbackSchema } from "./keyless-schema";
@@ -114,12 +114,7 @@ export async function keylessFeedbackController(
           );
       }
       if (positions.length) {
-        let results: unknown;
-        try {
-          results = await getJobFromGCS(job.id);
-        } catch {
-          // Ownership was verified in Postgres. Preserve observations if the artifact is unavailable.
-        }
+        const results = await readSavedSearchResults(job.id);
         if (!results || typeof results !== "object" || Array.isArray(results)) {
           unverified = true;
         } else {
@@ -229,4 +224,22 @@ function requestedTypes(value: unknown, defaultType: string): string[] {
         .filter((type): type is string => typeof type === "string"),
     ),
   ];
+}
+
+// Search saves its response after the job row, so feedback can arrive first.
+// Read it again once, matching the job lookup retry, before accepting the
+// observations as unverified.
+async function readSavedSearchResults(jobId: string): Promise<unknown> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0)
+      await new Promise(resolve => setTimeout(resolve, LOOKUP_RACE_RETRY_MS));
+    try {
+      const results = await getJobFromGCS(jobId);
+      if (results) return results;
+    } catch {
+      // Ownership was verified in PostgreSQL; an unavailable artifact leaves
+      // the observations unverified.
+    }
+  }
+  return null;
 }
