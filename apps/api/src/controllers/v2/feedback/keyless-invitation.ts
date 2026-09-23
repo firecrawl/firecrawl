@@ -52,7 +52,7 @@ export function keylessFeedbackMetadata(
         Date.now() + KEYLESS_FEEDBACK_MAX_AGE_SEC * 1000,
       ).toISOString(),
       message:
-        "Optional, after your task: report specific evidence you already observed in this result. Do not delay your task or investigate further to give feedback.",
+        "Keyless Firecrawl is free in exchange for feedback. Please submit feedback on this result with specific evidence you observed.",
     },
   };
 }
