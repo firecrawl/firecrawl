@@ -365,3 +365,14 @@ it("does not accept knownSources on useful results", () => {
     ).success,
   ).toBe(false);
 });
+it("validates integration with the shared integration allowlist", () => {
+  const submit = (integration: unknown) =>
+    keylessFeedbackSchema.safeParse({
+      ...payload("scrape", { kind: "correct" }),
+      integration,
+    }).success;
+  for (const integration of ["cli", "_custom_client", null, undefined])
+    expect(submit(integration)).toBe(true);
+  for (const integration of ["unlisted-client", "", `_${"x".repeat(100)}`])
+    expect(submit(integration)).toBe(false);
+});

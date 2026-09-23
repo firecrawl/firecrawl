@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { integrationSchema } from "../../../utils/integration";
 
 const detail = z.string().trim().min(10).max(2000);
 const comparison = z.strictObject({
@@ -31,7 +32,14 @@ const common = {
   task: detail,
   assessment: detail,
   origin: z.string().trim().max(100).optional().default("api"),
-  integration: z.string().trim().max(100).nullable().optional(),
+  integration: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .pipe(integrationSchema)
+    .nullable()
+    .optional(),
 };
 const vertical = z.enum([
   "web_general",
