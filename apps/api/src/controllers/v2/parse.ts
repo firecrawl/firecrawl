@@ -591,6 +591,7 @@ export async function parseController(
           },
         );
       } catch (e) {
+        let jobLogged = true;
         if (!workerStarted && keylessTeamUuid(req.auth.team_id)) {
           try {
             await logRequestPromise;
@@ -616,17 +617,17 @@ export async function parseController(
               true,
             );
           } catch (error) {
+            jobLogged = false;
             logger.warn("Failed to log job before worker execution", {
               error,
               jobId,
             });
           }
         }
-        const feedbackMetadata = await keylessFeedbackMetadata(
-          req,
-          "parse",
-          jobId,
-        );
+        // Invite feedback only for a job that feedback can find.
+        const feedbackMetadata = jobLogged
+          ? keylessFeedbackMetadata(req, "parse", jobId)
+          : {};
         if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
           reconciledKeylessCredits = true;
           adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(

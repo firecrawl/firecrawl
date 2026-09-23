@@ -137,6 +137,23 @@ it.each(["scrape", "parse"] as const)(
 );
 
 it.each(["scrape", "parse"] as const)(
+  "does not invite %s feedback when the failed job could not be recorded",
+  async endpoint => {
+    config.KEYLESS_FEEDBACK_ENABLED = true;
+    config.USE_DB_AUTHENTICATION = true;
+    mocks.semaphore.mockRejectedValueOnce(
+      new TransportableError("CONCURRENCY_QUEUE_TIMEOUT"),
+    );
+    mocks.scrapeLog.mockRejectedValueOnce(new Error("Publish failed"));
+    const { res, promise } = start(endpoint);
+    await promise;
+    expect(res.status).toHaveBeenCalledWith(408);
+    expect(mocks.scrapeLog).toHaveBeenCalledTimes(1);
+    expect(res.json.mock.calls[0][0].metadata).toBeUndefined();
+  },
+);
+
+it.each(["scrape", "parse"] as const)(
   "leaves %s worker failure logging with the worker",
   async endpoint => {
     mocks.worker.mockRejectedValueOnce(
