@@ -39,8 +39,6 @@ export async function keylessFeedbackController(
       "FEEDBACK_UNAVAILABLE",
       "Feedback is unavailable on this deployment.",
     );
-  if (req.acuc?.flags?.searchFeedbackOptOut)
-    return fail(403, "TEAM_OPTED_OUT", "Feedback is disabled for this caller.");
   const parsed = keylessFeedbackSchema.safeParse(req.body);
   if (!parsed.success)
     return fail(
@@ -56,13 +54,7 @@ export async function keylessFeedbackController(
     });
     if ("status" in job)
       return fail(job.status, job.body.feedbackErrorCode, job.body.error);
-    if (
-      isKeylessFeedbackRestricted(
-        answers.endpoint,
-        job.options,
-        req.acuc?.flags,
-      )
-    )
+    if (isKeylessFeedbackRestricted(answers.endpoint, job.options))
       return fail(
         404,
         "JOB_NOT_FOUND",
