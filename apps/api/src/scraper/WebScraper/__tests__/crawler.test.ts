@@ -203,6 +203,28 @@ describe("matchesStopOnContent", () => {
     ).toBe(false);
   });
 
+  it("matches when any marker is present", () => {
+    expect(
+      matchesStopOnContent({ markdown: "No release notes found" }, [
+        "No changelog found",
+        "No release notes found",
+      ]),
+    ).toBe(true);
+  });
+
+  it("ignores dormant blocks in markdown", () => {
+    for (const tag of ["script", "style", "template", "noscript"]) {
+      expect(
+        matchesStopOnContent(
+          {
+            markdown: `Visible release notes\n\n&lt;${tag}&gt;No release notes found&lt;/${tag}&gt;`,
+          },
+          ["No release notes found"],
+        ),
+      ).toBe(false);
+    }
+  });
+
   it("uses cleaned HTML when markdown is unavailable", () => {
     expect(
       matchesStopOnContent(
@@ -222,9 +244,24 @@ describe("matchesStopOnContent", () => {
     ).toBe(true);
   });
 
-  it("is disabled when markers are omitted", () => {
+  it("prefers markdown when markdown and HTML are both available", () => {
+    expect(
+      matchesStopOnContent(
+        {
+          markdown: "Release notes are available",
+          html: "<main>No release notes found</main>",
+        },
+        ["No release notes found"],
+      ),
+    ).toBe(false);
+  });
+
+  it("is disabled when markers are omitted or empty", () => {
     expect(
       matchesStopOnContent({ markdown: "No release notes found" }, undefined),
+    ).toBe(false);
+    expect(
+      matchesStopOnContent({ markdown: "No release notes found" }, []),
     ).toBe(false);
   });
 });
