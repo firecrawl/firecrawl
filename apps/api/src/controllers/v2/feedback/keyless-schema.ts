@@ -58,7 +58,7 @@ const searchResult = {
   vertical: vertical.optional(),
 };
 const knownSources = z
-  .array(z.url({ protocol: /^https?$/ }))
+  .array(z.url({ protocol: /^https?$/ }).max(2048))
   .max(20)
   .optional();
 const searchObservation = z.union([
