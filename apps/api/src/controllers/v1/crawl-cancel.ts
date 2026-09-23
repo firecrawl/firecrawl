@@ -1,10 +1,10 @@
 import { Response } from "express";
 import { logger } from "../../lib/logger";
-import { getCrawl, getCrawlJobs, saveCrawl } from "../../lib/crawl-redis";
+import { getCrawl } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
 import { RequestWithAuth } from "./types";
 import { crawlGroup } from "../../services/worker/nuq-router";
-import { removeConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
+import { cancelCrawl } from "../../lib/crawl-cancel";
 configDotenv();
 
 export async function crawlCancelController(
@@ -30,19 +30,7 @@ export async function crawlCancelController(
       return res.status(409).json({ error: "Crawl is already completed" });
     }
 
-    try {
-      sc.cancelled = true;
-      await saveCrawl(req.params.jobId, sc);
-    } catch (error) {
-      logger.error(error);
-    }
-
-    if (sc.queueBackend === "fdb") {
-      await crawlGroup.cancelGroup(req.params.jobId);
-    } else {
-      const jobIds = await getCrawlJobs(req.params.jobId);
-      await removeConcurrencyLimitedJobs(sc.team_id, jobIds);
-    }
+    await cancelCrawl(req.params.jobId, sc);
 
     res.json({
       status: "cancelled",

@@ -63,11 +63,14 @@ import { withMarkdownFormat } from "./types";
 import { redisEvictConnection } from "../redis";
 import type { MonitorCheckJobData } from "./queue";
 import {
+  MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS,
+  MONITOR_CHECK_CREDIT_HOLD_BUFFER_MS,
   MONITOR_CHECK_STALE_ERROR,
   isMonitorCheckStale,
   MONITOR_CHECK_STALE_TIMEOUT_MS,
   monitorCheckStaleTimeoutMs,
 } from "./stale";
+import { cancelCrawl } from "../../lib/crawl-cancel";
 import { trackMonitorCheckStartedInterest } from "./interest";
 import { runSearchTarget, type ScrapeSearchResult } from "./search/run";
 import { verdictJsonSchema } from "./search/judge";
@@ -82,7 +85,12 @@ import {
 } from "./search/persist";
 
 const logger = _logger.child({ module: "monitoring-runner" });
-export { isMonitorCheckStale, MONITOR_CHECK_STALE_TIMEOUT_MS };
+export {
+  isMonitorCheckStale,
+  MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS,
+  MONITOR_CHECK_CREDIT_HOLD_BUFFER_MS,
+  MONITOR_CHECK_STALE_TIMEOUT_MS,
+};
 
 const MONITOR_NOTIFY_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MONITOR_CHECK_PAGE_SCAN_LIMIT = 100_000;
@@ -1046,7 +1054,10 @@ export async function processMonitorCheckJob(
           orgId,
           value: check.estimated_credits ?? 1,
           lockId: `monitor_${check.id}`,
-          expiresAt: Date.now() + 60 * 60 * 1000,
+          expiresAt:
+            Date.now() +
+            MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS +
+            MONITOR_CHECK_CREDIT_HOLD_BUFFER_MS,
           properties: {
             source: "monitorCheck",
             endpoint: "monitor",
@@ -1401,6 +1412,7 @@ async function isMonitorCheckComplete(
 async function failStaleMonitorCheck(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
+  targetResults: any[];
   /** See billMonitorCheck's orgId. */
   orgId: string | null;
 }): Promise<boolean> {
@@ -1415,6 +1427,29 @@ async function failStaleMonitorCheck(params: {
     error,
   });
   if (!claimed) return true;
+
+  const crawlIds = [
+    ...new Set(
+      params.targetResults
+        .filter(target => target?.type === "crawl" && target.crawlId)
+        .map(target => target.crawlId as string),
+    ),
+  ];
+  const cancellations = await Promise.allSettled(
+    crawlIds.map(crawlId =>
+      cancelCrawl(crawlId, undefined, params.monitor.team_id),
+    ),
+  );
+  cancellations.forEach((result, index) => {
+    if (result.status === "rejected" || !result.value) {
+      logger.warn("Failed to cancel stale monitor crawl target", {
+        error: result.status === "rejected" ? result.reason : undefined,
+        monitorId: params.monitor.id,
+        checkId: params.check.id,
+        crawlId: crawlIds[index],
+      });
+    }
+  });
 
   let released = true;
   if (claimed.autumn_lock_id) {
@@ -1595,8 +1630,6 @@ export async function reconcileRunningMonitorChecks(
         continue;
       }
 
-      if (await failStaleMonitorCheck({ monitor, check, orgId })) continue;
-
       // The inline handler may still write target results after our primary read.
       let targetResults = Array.isArray(check.target_results)
         ? ([...check.target_results] as any[])
@@ -1618,15 +1651,24 @@ export async function reconcileRunningMonitorChecks(
         targetResults,
       });
 
-      if (
-        !(await isMonitorCheckComplete(
-          {
-            ...check,
-            target_results: targetResults,
-          },
-          monitor,
-        ))
-      ) {
+      const complete = await isMonitorCheckComplete(
+        {
+          ...check,
+          target_results: targetResults,
+        },
+        monitor,
+      );
+      if (!complete) {
+        if (
+          await failStaleMonitorCheck({
+            monitor,
+            check,
+            targetResults,
+            orgId,
+          })
+        )
+          continue;
+
         // Only persist target_results we recovered from an empty snapshot. Writing
         // back a non-empty stale snapshot here can DOWNGRADE a searchCompleted=true
         // that the inline handler persisted after this reconciler loaded its

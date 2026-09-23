@@ -192,6 +192,13 @@ async function clearFinishedOrStaleCurrentCheck(
   if (!current) return "active";
 
   if (current.status === "running" || current.status === "queued") {
+    // Running checks are reconciled against their underlying targets before
+    // timeout, so a crawl that completed at the boundary is finalized normally.
+    if (
+      current.status === "running" &&
+      monitor.targets.some(target => target.type === "crawl")
+    )
+      return "active";
     if (!isMonitorCheckStale(current, new Date(), monitor.targets))
       return "active";
 

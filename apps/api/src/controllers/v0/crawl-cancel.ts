@@ -2,12 +2,13 @@ import { Request, Response } from "express";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
 import { logger } from "../../../src/lib/logger";
-import { getCrawl, saveCrawl } from "../../../src/lib/crawl-redis";
+import { getCrawl } from "../../../src/lib/crawl-redis";
 import { configDotenv } from "dotenv";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { crawlGroup } from "../../services/worker/nuq-router";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { cancelCrawl } from "../../lib/crawl-cancel";
 configDotenv();
 
 export async function crawlCancelController(req: Request, res: Response) {
@@ -67,16 +68,7 @@ export async function crawlCancelController(req: Request, res: Response) {
       return res.status(409).json({ error: "Crawl is already completed" });
     }
 
-    try {
-      sc.cancelled = true;
-      await saveCrawl(jobId, sc);
-    } catch (error) {
-      logger.error(error);
-    }
-
-    if (sc.queueBackend === "fdb") {
-      await crawlGroup.cancelGroup(jobId);
-    }
+    await cancelCrawl(jobId, sc);
 
     res.json({
       status: "cancelled",

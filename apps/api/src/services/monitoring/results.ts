@@ -11,6 +11,8 @@ import {
   getMonitorPage,
   hashMonitorUrl,
   insertMonitorCheckPages,
+  isMonitorCheckRunning,
+  updateMonitorCheckIfRunning,
   upsertMonitorPage,
 } from "./store";
 
@@ -19,6 +21,10 @@ const logger = _logger.child({ module: "monitoring-results" });
 // Per-(check, url) webhook claim. checkIds are unique per run, so this only needs
 // to outlive a job redelivery; we match runner.ts's notify-claim horizon.
 const MONITOR_PAGE_WEBHOOK_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+async function heartbeatMonitorCheck(checkId: string): Promise<boolean> {
+  return (await updateMonitorCheckIfRunning(checkId, {})) !== null;
+}
 
 // Mirror runner.ts's claimMonitorNotification: a redelivered scrape job must not
 // re-send the MONITOR_PAGE webhook. Returns true only for the first claimant; a
@@ -82,7 +88,14 @@ async function persistMonitorCheckError(params: {
   error: string;
   statusCode?: number | null;
   metadata?: Record<string, unknown>;
+  heartbeatRecorded?: boolean;
 }): Promise<void> {
+  if (params.heartbeatRecorded) {
+    if (!(await isMonitorCheckRunning(params.monitoring.checkId))) return;
+  } else if (!(await heartbeatMonitorCheck(params.monitoring.checkId))) {
+    return;
+  }
+
   await deleteMonitorCheckPages({
     checkId: params.monitoring.checkId,
     targetId: params.monitoring.targetId,
@@ -104,11 +117,12 @@ async function persistMonitorCheckError(params: {
   ]);
 
   if (
-    await claimMonitorPageWebhook(
+    (await isMonitorCheckRunning(params.monitoring.checkId)) &&
+    (await claimMonitorPageWebhook(
       params.monitoring.checkId,
       params.url,
       "error",
-    )
+    ))
   ) {
     await sendMonitorPageWebhook({
       teamId: params.teamId,
@@ -217,6 +231,7 @@ export async function recordMonitorScrapeSuccess(
 ): Promise<void> {
   const monitoring = job.data.monitoring;
   if (!monitoring || job.data.mode !== "single_urls") return;
+  if (!(await heartbeatMonitorCheck(monitoring.checkId))) return;
 
   const url = getDocumentUrl(doc, job.data.url);
   const previous = await getMonitorPage({
@@ -280,6 +295,7 @@ export async function recordMonitorScrapeSuccess(
       error: error instanceof Error ? error.message : String(error),
       statusCode: getDocumentStatusCode(doc),
       metadata: { creditsUsed: doc?.metadata?.creditsUsed ?? null },
+      heartbeatRecorded: true,
     });
     return;
   }
@@ -294,6 +310,8 @@ export async function recordMonitorScrapeSuccess(
     diffJson,
     error,
   } = diff;
+
+  if (!(await isMonitorCheckRunning(monitoring.checkId))) return;
 
   // Tally first (the reconciler's fan-in gate), durable baseline last: a crash
   // between the two completes the check rather than poisoning the cross-run dedup
@@ -332,6 +350,8 @@ export async function recordMonitorScrapeSuccess(
     },
   ]);
 
+  if (!(await isMonitorCheckRunning(monitoring.checkId))) return;
+
   await upsertMonitorPage({
     monitorId: monitoring.monitorId,
     teamId: job.data.team_id,
@@ -364,7 +384,10 @@ export async function recordMonitorScrapeSuccess(
     judgmentMeaningful: judgment?.meaningful,
   });
 
-  if (await claimMonitorPageWebhook(monitoring.checkId, url, "page")) {
+  if (
+    (await isMonitorCheckRunning(monitoring.checkId)) &&
+    (await claimMonitorPageWebhook(monitoring.checkId, url, "page"))
+  ) {
     await sendMonitorPageWebhook({
       teamId: job.data.team_id,
       monitorId: monitoring.monitorId,

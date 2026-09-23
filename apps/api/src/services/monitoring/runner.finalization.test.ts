@@ -1,5 +1,11 @@
 import type { MonitorCheckRow, MonitorRow } from "./types";
 
+const { getCrawlGroup, getCrawlGroupStats, cancelCrawl } = vi.hoisted(() => ({
+  getCrawlGroup: vi.fn(),
+  getCrawlGroupStats: vi.fn(),
+  cancelCrawl: vi.fn(),
+}));
+
 vi.mock("../../config", () => ({ config: { USE_DB_AUTHENTICATION: true } }));
 vi.mock("../../lib/logger", () => {
   const logger = {
@@ -14,9 +20,13 @@ vi.mock("../../lib/logger", () => {
 vi.mock("../logging/log_job", () => ({}));
 vi.mock("../../lib/gcs-monitoring", () => ({}));
 vi.mock("../worker/scrape-worker", () => ({}));
-vi.mock("../worker/nuq-router", () => ({}));
+vi.mock("../worker/nuq-router", () => ({
+  crawlGroup: { getGroup: getCrawlGroup },
+  scrapeQueue: { getGroupNumericStats: getCrawlGroupStats },
+}));
 vi.mock("./diff", () => ({}));
 vi.mock("../../lib/crawl-redis", () => ({}));
+vi.mock("../../lib/crawl-cancel", () => ({ cancelCrawl }));
 vi.mock("../queue-jobs", () => ({}));
 vi.mock("../../controllers/v2/types", () => ({}));
 vi.mock("../webhook", () => ({}));
@@ -42,6 +52,10 @@ vi.mock("./store", () => ({
   updateMonitorCheckIfStatus: vi.fn(),
   markMonitorRunning: vi.fn(),
   countMonitorCheckPages: vi.fn(),
+  listMonitorCheckPages: vi.fn(),
+  listActiveMonitorPages: vi.fn(),
+  insertMonitorCheckPages: vi.fn(),
+  upsertMonitorPage: vi.fn(),
   calculateMonitorCheckActualCredits: vi.fn(),
   updateMonitorScheduleAfterRun: vi.fn(),
 }));
@@ -54,6 +68,8 @@ vi.mock("../redis", () => ({
 }));
 
 import {
+  MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS,
+  MONITOR_CHECK_CREDIT_HOLD_BUFFER_MS,
   processMonitorCheckJob,
   reconcileRunningMonitorChecks,
 } from "./runner";
@@ -79,6 +95,13 @@ describe("monitor check finalization ownership", () => {
   const locks = new Map<string, string>();
   const bill = vi.fn();
   const lockKey = "monitor-check-finalize:check-1";
+
+  function markCurrentCheckStale() {
+    const staleAt = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    current.started_at = staleAt;
+    current.updated_at = staleAt;
+    vi.mocked(store.countMonitorCheckPages).mockResolvedValue(0);
+  }
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -138,6 +161,9 @@ describe("monitor check finalization ownership", () => {
       async ({ status }) => (!status || status === "same" ? 1 : 0),
     );
     vi.mocked(store.calculateMonitorCheckActualCredits).mockResolvedValue(1);
+    vi.mocked(store.listMonitorCheckPages).mockResolvedValue([]);
+    vi.mocked(store.listActiveMonitorPages).mockResolvedValue([]);
+    cancelCrawl.mockResolvedValue(true);
     (config as { USE_DB_AUTHENTICATION?: boolean }).USE_DB_AUTHENTICATION =
       true;
     vi.mocked(getACUCTeam).mockResolvedValue({ org_id: "org-1" } as any);
@@ -202,6 +228,65 @@ describe("monitor check finalization ownership", () => {
     expect(autumnService.finalizeCreditsLock).not.toHaveBeenCalled();
   });
 
+  it("finalizes a completed crawl before applying the idle timeout", async () => {
+    const staleAt = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    current.started_at = staleAt;
+    current.updated_at = staleAt;
+    current.target_results = [
+      { type: "crawl", targetId: "target-1", crawlId: "crawl-1" },
+    ];
+    monitor.targets = [
+      {
+        id: "target-1",
+        type: "crawl",
+        url: "https://example.com",
+        crawlOptions: {},
+        scrapeOptions: {},
+      },
+    ];
+    getCrawlGroup.mockResolvedValue({ status: "completed" });
+    getCrawlGroupStats.mockResolvedValue({ active: 0, queued: 0, backlog: 0 });
+
+    await reconcileRunningMonitorChecks();
+
+    expect(current.status).toBe("completed");
+    expect(cancelCrawl).not.toHaveBeenCalled();
+  });
+
+  it("cancels every crawl target after winning the timeout transition", async () => {
+    const staleAt = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    current.started_at = staleAt;
+    current.updated_at = staleAt;
+    current.target_results = [
+      { type: "crawl", targetId: "target-1", crawlId: "crawl-1" },
+      { type: "crawl", targetId: "target-2", crawlId: "crawl-2" },
+    ];
+    monitor.targets = [
+      {
+        id: "target-1",
+        type: "crawl",
+        url: "https://example.com/one",
+        crawlOptions: {},
+        scrapeOptions: {},
+      },
+      {
+        id: "target-2",
+        type: "crawl",
+        url: "https://example.com/two",
+        crawlOptions: {},
+        scrapeOptions: {},
+      },
+    ];
+    getCrawlGroup.mockResolvedValue({ status: "active" });
+
+    await reconcileRunningMonitorChecks();
+
+    expect(current.status).toBe("failed");
+    expect(cancelCrawl).toHaveBeenCalledTimes(2);
+    expect(cancelCrawl).toHaveBeenCalledWith("crawl-1", undefined, "team-1");
+    expect(cancelCrawl).toHaveBeenCalledWith("crawl-2", undefined, "team-1");
+  });
+
   it.each(["completed", "partial", "failed"] as const)(
     "leaves an already %s check untouched",
     async status => {
@@ -258,9 +343,7 @@ describe("monitor check finalization ownership", () => {
     "does not release a %s check whose terminal claim was won by another worker",
     async kind => {
       if (kind === "stale") {
-        current.started_at = new Date(
-          Date.now() - 2 * 60 * 60 * 1000,
-        ).toISOString();
+        markCurrentCheckStale();
         snapshot = structuredClone(current);
       } else {
         vi.mocked(store.getMonitorForUpdate).mockResolvedValue(null);
@@ -299,9 +382,7 @@ describe("monitor check finalization ownership", () => {
     "releases a %s hold after winning the failure transition",
     async kind => {
       if (kind === "stale") {
-        current.started_at = new Date(
-          Date.now() - 2 * 60 * 60 * 1000,
-        ).toISOString();
+        markCurrentCheckStale();
       } else {
         vi.mocked(store.getMonitorForUpdate).mockResolvedValue(null);
       }
@@ -341,9 +422,7 @@ describe("monitor check finalization ownership", () => {
     "releases a stale hold with no team when the ACUC $name",
     async ({ acuc }) => {
       vi.mocked(getACUCTeam).mockImplementation(acuc);
-      current.started_at = new Date(
-        Date.now() - 2 * 60 * 60 * 1000,
-      ).toISOString();
+      markCurrentCheckStale();
 
       await reconcileRunningMonitorChecks();
 
@@ -371,9 +450,7 @@ describe("monitor check finalization ownership", () => {
       team_id: "bypass",
       org_id: "bypass",
     } as any);
-    current.started_at = new Date(
-      Date.now() - 2 * 60 * 60 * 1000,
-    ).toISOString();
+    markCurrentCheckStale();
 
     await reconcileRunningMonitorChecks();
 
@@ -425,9 +502,7 @@ describe("monitor check finalization ownership", () => {
         ).rejects.toThrow(failure);
       } else {
         if (kind === "stale") {
-          current.started_at = new Date(
-            Date.now() - 2 * 60 * 60 * 1000,
-          ).toISOString();
+          markCurrentCheckStale();
         } else {
           vi.mocked(store.getMonitorForUpdate).mockResolvedValue(null);
         }
@@ -453,9 +528,7 @@ describe("monitor check finalization ownership", () => {
       current.autumn_lock_id = null;
       current.billing_status = "not_applicable";
       if (kind === "stale") {
-        current.started_at = new Date(
-          Date.now() - 2 * 60 * 60 * 1000,
-        ).toISOString();
+        markCurrentCheckStale();
       } else if (kind === "orphan") {
         vi.mocked(store.getMonitorForUpdate).mockResolvedValue(null);
       }
@@ -509,6 +582,32 @@ describe("monitor check finalization ownership", () => {
     });
     expect(store.markMonitorRunning).not.toHaveBeenCalled();
     expect(autumnService.lockCredits).not.toHaveBeenCalled();
+  });
+
+  it("holds Autumn credits through the absolute check deadline", async () => {
+    monitor.targets = [];
+    vi.mocked(autumnService.lockCredits).mockResolvedValue({
+      status: "skipped",
+    });
+    const before = Date.now();
+
+    await processMonitorCheckJob({
+      checkId: current.id,
+      monitorId: monitor.id,
+      teamId: monitor.team_id,
+    });
+
+    expect(autumnService.lockCredits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expiresAt: expect.any(Number),
+      }),
+    );
+    const [{ expiresAt }] = vi.mocked(autumnService.lockCredits).mock.calls[0];
+    expect(expiresAt).toBeGreaterThanOrEqual(
+      before +
+        MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS +
+        MONITOR_CHECK_CREDIT_HOLD_BUFFER_MS,
+    );
   });
 
   it.each([
