@@ -314,10 +314,79 @@ function feedbackMetadata(
   };
 }
 
+/**
+ * Fills in the search columns the Bigtable feedback record does not carry.
+ *
+ * The Bigtable row holds what the refund and window checks need — team,
+ * endpoint, deadline, credits — and nothing about the results themselves.
+ * Position feedback needs three more columns to bound and attribute each
+ * `{source, position}`, so they are read separately, and only for a caller
+ * that actually sent positions.
+ *
+ * A miss here leaves the job as the fast path returned it, which keeps the
+ * established "unknown bound" behaviour rather than discarding the labels:
+ * `logSearch` writes the Bigtable record before the `searches` row, so a
+ * caller fast enough to beat that insert would otherwise lose real feedback.
+ */
+async function withSearchResultColumns(
+  job: FeedbackJobRow,
+  jobId: string,
+  dbTeamId: string,
+): Promise<FeedbackJobRow> {
+  try {
+    const [row] = await dbRr
+      .select({
+        options: schema.searches.options,
+        num_results: schema.searches.num_results,
+        num_results_by_source: schema.searches.num_results_by_source,
+        result_categories: schema.searches.result_categories,
+      })
+      .from(schema.searches)
+      .where(
+        and(
+          eq(schema.searches.id, jobId),
+          eq(schema.searches.team_id, dbTeamId),
+        ),
+      )
+      .limit(1);
+
+    if (!row) {
+      logger.warn("No searches row to bound search feedback positions", {
+        jobId,
+        module: "feedback-store",
+        method: "withSearchResultColumns",
+      });
+      return job;
+    }
+
+    return {
+      ...job,
+      options: row.options ?? null,
+      num_results: row.num_results ?? null,
+      num_results_by_source: row.num_results_by_source ?? null,
+      result_categories: row.result_categories ?? null,
+    };
+  } catch (error) {
+    logger.warn("Could not read search columns for feedback positions", {
+      error,
+      jobId,
+      module: "feedback-store",
+      method: "withSearchResultColumns",
+    });
+    return job;
+  }
+}
+
 export async function lookupFeedbackJob(
   endpoint: EndpointFeedbackEndpoint,
   jobId: string,
   dbTeamId: string,
+  /**
+   * Whether the caller sent `valuableResults`. Only then does the Bigtable
+   * fast path need the supplementary read above; a rating-only submission —
+   * the common case — is served entirely from Bigtable as before.
+   */
+  needsSearchResults = false,
 ): Promise<FeedbackJobRow | null> {
   let bigtableFailed = false;
   try {
@@ -330,7 +399,7 @@ export async function lookupFeedbackJob(
         endpoint === "search"
           ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
           : config.FEEDBACK_MAX_AGE_SEC;
-      return {
+      const row: FeedbackJobRow = {
         endpoint,
         id: jobId,
         request_id: job.requestId,
@@ -345,6 +414,10 @@ export async function lookupFeedbackJob(
         refund_class: job.refundClass,
         zero_data_retention: job.zeroDataRetention,
       };
+
+      return endpoint === "search" && needsSearchResults
+        ? withSearchResultColumns(row, jobId, dbTeamId)
+        : row;
     }
   } catch (error) {
     bigtableFailed = true;
