@@ -60,7 +60,7 @@ const isInternalHost = async (hostname: string): Promise<boolean> => {
   }
   return (
     addresses.length === 0 ||
-    addresses.some((a) => IPAddr.parse(a).range() !== 'unicast')
+    addresses.some((a) => IPAddr.process(a).range() !== 'unicast')
   );
 };
 
