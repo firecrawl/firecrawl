@@ -7,14 +7,14 @@ import {
   Document,
 } from "./types";
 import {
+  buildCrawlStatusNext,
+  parseCrawlStatusPagination,
+} from "./crawl-status-pagination";
+import {
   getCrawl,
   getCrawlError,
   getCrawlExpiry,
-  getCrawlQualifiedJobCount,
-  getDoneJobsOrderedLength,
-  getDoneJobsOrderedUntil,
   getLastDoneJobTimestamp,
-  isCrawlKickoffFinished,
 } from "../../lib/crawl-redis";
 import { supabaseGetScrapeById } from "../../lib/supabase-jobs";
 import { configDotenv } from "dotenv";
@@ -195,64 +195,14 @@ export async function crawlStatusController(
     });
   }
 
-  // Validate skip parameter: must be a single string that parses completely as a non-negative integer
-  const rawSkip = req.query.skip;
-  if (Array.isArray(rawSkip)) {
+  const pagination = parseCrawlStatusPagination(req.query);
+  if ("error" in pagination) {
     return res.status(400).json({
       success: false,
-      error: "Invalid pagination: skip must be a single value, not an array",
+      error: pagination.error,
     });
   }
-  if (typeof rawSkip !== "string") {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid pagination: skip must be a string",
-    });
-  }
-  if (!/^\d+$/.test(rawSkip)) {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid pagination: skip must be a non-negative integer without trailing characters",
-    });
-  }
-  const start = parseInt(rawSkip, 10);
-  if (start < 0 || !Number.isFinite(start)) {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid pagination: skip must be a non-negative integer",
-    });
-  }
-
-  let end: number | undefined = undefined;
-  const rawLimit = req.query.limit;
-  if (rawLimit !== undefined) {
-    if (Array.isArray(rawLimit)) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid pagination: limit must be a single value, not an array",
-      });
-    }
-    if (typeof rawLimit !== "string") {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid pagination: limit must be a string",
-      });
-    }
-    if (!/^\d+$/.test(rawLimit)) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid pagination: limit must be a positive integer without trailing characters",
-      });
-    }
-    const parsedLimit = parseInt(rawLimit, 10);
-    if (parsedLimit < 1 || parsedLimit > 1000 || !Number.isFinite(parsedLimit)) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid pagination: limit must be an integer between 1 and 1000",
-      });
-    }
-    end = start + parsedLimit - 1;
-  }
+  const { start, limit } = pagination;
 
   const group = await crawlGroup.getGroup(req.params.jobId);
   const groupAnyJob = await scrapeQueue.getGroupAnyJob(
@@ -354,13 +304,13 @@ export async function crawlStatusController(
 
   let outputBulkB: {
     data: Document[];
-    next: string | undefined;
+    next?: string;
   };
 
   const doneJobs = await scrapeQueue.getGroupJobs(
     req.params.jobId,
     "completed",
-    end !== undefined ? end - start + 1 : 100,
+    limit ?? 100,
     start,
     logger.child({ zeroDataRetention }),
   );
@@ -403,11 +353,17 @@ export async function crawlStatusController(
 
   outputBulkB = {
     data: scrapes,
-    next:
-      (outputBulkA.total ?? 0) > start + iteratedOver ||
-      outputBulkA.status !== "completed"
-        ? `${req.protocol}://${req.host}/v2/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
-        : undefined,
+    next: buildCrawlStatusNext({
+      protocol: req.protocol,
+      host: req.host,
+      jobId: req.params.jobId,
+      isBatch,
+      nextSkip: start + iteratedOver,
+      hasMore:
+        (outputBulkA.total ?? 0) > start + iteratedOver ||
+        outputBulkA.status !== "completed",
+      limit,
+    }),
   };
 
   // Check for robots.txt blocked URLs and add warning if found
