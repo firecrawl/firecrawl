@@ -1762,6 +1762,7 @@ export interface BrowserCreateResponse {
   cdpUrl?: string;
   liveViewUrl?: string;
   interactiveLiveViewUrl?: string;
+  playlistUrl?: string;
   expiresAt?: string;
   error?: string;
 }
@@ -1771,17 +1772,21 @@ export interface BrowserExecuteResponse {
   cdpUrl?: string;
   liveViewUrl?: string;
   interactiveLiveViewUrl?: string;
+  playlistUrl?: string;
   output?: string;
   stdout?: string;
   result?: string;
   stderr?: string;
   exitCode?: number;
   killed?: boolean;
+  truncated?: boolean;
   error?: string;
 }
 
 export interface BrowserDeleteResponse {
   success: boolean;
+  status?: string;
+  cleanupQueued?: boolean;
   sessionDurationMs?: number;
   creditsBilled?: number;
   error?: string;
@@ -1802,8 +1807,9 @@ export interface BrowserSession {
   id: string;
   status: string;
   cdpUrl: string;
-  liveViewUrl: string;
+  liveViewUrl?: string;
   interactiveLiveViewUrl?: string;
+  playlistUrl?: string;
   streamWebView: boolean;
   createdAt: string;
   lastActivity: string;

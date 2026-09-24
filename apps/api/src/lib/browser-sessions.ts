@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt, like } from "drizzle-orm";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
@@ -12,7 +12,7 @@ function activeBrowserCountKey(teamId: string): string {
 
 type BrowserSessionStatus = "active" | "destroyed" | "error";
 
-interface BrowserSessionRow {
+export interface BrowserSessionRow {
   id: string;
   team_id: string;
   request_id: string | null;
@@ -20,10 +20,10 @@ interface BrowserSessionRow {
   scrape_id?: string | null; // linked scrape job id for /scrape/:jobId/interact sessions
   browser_id: string; // browser service sessionId
   workspace_id: string; // unused (legacy), stored as ""
-  context_id: string; // unused (legacy), stored as ""
+  context_id: string; // Hangar playlist URL; empty when recording is disabled
   cdp_url: string; // full CDP WebSocket URL from browser service
-  cdp_path: string; // repurposed: stores the view WebSocket URL
-  cdp_interactive_path: string; // repurposed: stores the interactive view WebSocket URL
+  cdp_path: string; // Hangar view URL
+  cdp_interactive_path: string; // Hangar control URL
   stream_web_view: boolean;
   status: BrowserSessionStatus;
   ttl_total: number;
@@ -31,6 +31,52 @@ interface BrowserSessionRow {
   credits_used: number | null;
   created_at: string; // ISO timestamp
   updated_at: string; // ISO timestamp
+}
+
+export async function listUnsettledHangarSessions(
+  after?: string,
+): Promise<BrowserSessionRow[]> {
+  return (await db
+    .select()
+    .from(schema.browser_sessions)
+    .where(
+      and(
+        eq(schema.browser_sessions.status, "active"),
+        like(schema.browser_sessions.browser_id, "br\\_%"),
+        after ? gt(schema.browser_sessions.id, after) : undefined,
+      ),
+    )
+    .orderBy(asc(schema.browser_sessions.id))
+    .limit(20)) as BrowserSessionRow[];
+}
+
+/** Serialize billing across API and worker replicas, and commit its receipt with status. */
+export async function settleBrowserSessionOnce(
+  id: string,
+  bill: (session: BrowserSessionRow) => Promise<number>,
+): Promise<{ creditsBilled: number; newlySettled: boolean }> {
+  return db.transaction(async tx => {
+    const [row] = await tx
+      .select()
+      .from(schema.browser_sessions)
+      .where(eq(schema.browser_sessions.id, id))
+      .for("update");
+    if (!row) throw new Error("Browser session not found.");
+    if (row.status === "destroyed")
+      return { creditsBilled: row.credits_used ?? 0, newlySettled: false };
+    const creditsBilled = await bill(row as BrowserSessionRow);
+    const now = new Date().toISOString();
+    await tx
+      .update(schema.browser_sessions)
+      .set({
+        status: "destroyed",
+        credits_used: creditsBilled,
+        updated_at: now,
+        deleted_at: now,
+      })
+      .where(eq(schema.browser_sessions.id, id));
+    return { creditsBilled, newlySettled: true };
+  });
 }
 
 // ---------------------------------------------------------------------------

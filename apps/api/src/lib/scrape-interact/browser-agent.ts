@@ -5,9 +5,9 @@ import { tool, stepCountIs } from "ai";
 import { logger as _logger } from "../logger";
 import { getModel } from "../generic-ai";
 import {
-  browserServiceRequest,
-  BrowserServiceExecResponse,
-} from "./browser-service-client";
+  executeHangarBrowser,
+  BrowserExecutionResult,
+} from "../hangar";
 import { config } from "../../config";
 import {
   generateText,
@@ -143,7 +143,7 @@ Your final text response is what the user sees. It MUST be a clean, human-readab
 // Helpers
 // ---------------------------------------------------------------------------
 
-export interface AgentResult extends BrowserServiceExecResponse {
+export interface AgentResult extends BrowserExecutionResult {
   output: string;
 }
 
@@ -152,10 +152,9 @@ async function execInBrowser(
   code: string,
   timeout: number,
   origin: string,
-): Promise<BrowserServiceExecResponse> {
-  return browserServiceRequest<BrowserServiceExecResponse>(
-    "POST",
-    `/browsers/${browserId}/exec`,
+): Promise<BrowserExecutionResult> {
+  return executeHangarBrowser(
+    browserId,
     { code, language: "bash", timeout, origin },
   );
 }
@@ -194,7 +193,7 @@ async function takeSnapshot(browserId: string): Promise<string> {
  */
 async function syncTabs(browserId: string): Promise<void> {
   try {
-    await browserServiceRequest("POST", `/browsers/${browserId}/exec`, {
+    await executeHangarBrowser(browserId, {
       code: [
         `const ctx = page.context();`,
         `const pages = ctx.pages();`,
@@ -448,14 +447,13 @@ export async function executeCodeViaBrowserSession(
     origin?: string;
   },
   trace?: BrowserAgentTraceContext,
-): Promise<BrowserServiceExecResponse> {
+): Promise<BrowserExecutionResult> {
   // Arg must be named so langsmith's traceable sees the exec params as the
   // run's `inputs`; a zero-arg closure would record `{}` and strip the code,
   // language, timeout, and origin from every trace.
   const run = async (execParams: typeof params) =>
-    browserServiceRequest<BrowserServiceExecResponse>(
-      "POST",
-      `/browsers/${browserId}/exec`,
+    executeHangarBrowser(
+      browserId,
       execParams,
     );
 

@@ -15,8 +15,8 @@ Authorization: Bearer {{$dotenv TEST_API_KEY}}
 content-type: application/json
 
 {
-  "ttlTotal": 600,
-  "ttlWithoutActivity": 120,
+  "ttl": 600,
+  "activityTtl": 120,
   "streamWebView": false
 }
 
@@ -26,7 +26,7 @@ Authorization: Bearer {{$dotenv TEST_API_KEY}}
 content-type: application/json
 
 {
-  "ttlTotal": 300,
+  "ttl": 300,
   "streamWebView": true
 }
 
@@ -58,7 +58,7 @@ content-type: application/json
 
 {
   "code": "await page.goto('https://example.com');\nconst title = await page.title();\nconsole.log(title);",
-  "language": "js"
+  "language": "node"
 }
 
 ### Execute Code — screenshot to base64
@@ -85,8 +85,9 @@ content-type: application/json
 GET {{baseUrl}}/v2/interact/{{sessionId}}/replay HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
 
-### Get Session Replay HLS playlist for tab 0
-GET {{baseUrl}}/v2/interact/{{sessionId}}/replay/0 HTTP/1.1
+### Replay returns playlistUrl: open it directly in an HLS player, without an API key.
+### Get Hangar lifecycle status (stop is asynchronous)
+GET {{baseUrl}}/v2/browser/{{sessionId}} HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
 
 ### Create Browser Session without recording
@@ -104,5 +105,4 @@ Authorization: Bearer {{$dotenv TEST_API_KEY}}
 content-type: application/json
 
 
-### WebSocket — webview stream (use a WS client, e.g. wscat)
-# wscat -c "ws://localhost:3002/v2/browser/{{sessionId}}" -H "Authorization: Bearer YOUR_API_KEY"
+# Open liveViewUrl or interactiveLiveViewUrl returned by creation in a browser.

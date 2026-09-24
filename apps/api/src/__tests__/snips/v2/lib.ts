@@ -349,6 +349,8 @@ export async function browserCreateRaw(
     ttl?: number;
     activityTtl?: number;
     recordSession?: boolean;
+    streamWebView?: boolean;
+    profile?: { name: string; saveChanges?: boolean };
   },
   identity: Identity,
 ) {
@@ -385,22 +387,6 @@ export async function browserDeleteRaw(sessionId: string, identity: Identity) {
 export async function browserReplayRaw(sessionId: string, identity: Identity) {
   return await request(TEST_API_URL)
     .get("/v2/interact/" + encodeURIComponent(sessionId) + "/replay")
-    .set("Authorization", `Bearer ${identity.apiKey}`)
-    .send();
-}
-
-export async function browserReplayPageRaw(
-  sessionId: string,
-  pageId: string,
-  identity: Identity,
-) {
-  return await request(TEST_API_URL)
-    .get(
-      "/v2/interact/" +
-        encodeURIComponent(sessionId) +
-        "/replay/" +
-        encodeURIComponent(pageId),
-    )
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .send();
 }

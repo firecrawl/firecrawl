@@ -1859,6 +1859,7 @@ class BrowserCreateResponse(BaseModel):
     cdp_url: Optional[str] = None
     live_view_url: Optional[str] = None
     interactive_live_view_url: Optional[str] = None
+    playlist_url: Optional[str] = None
     expires_at: Optional[str] = None
     error: Optional[str] = None
 
@@ -1870,12 +1871,14 @@ class BrowserExecuteResponse(BaseModel):
     cdp_url: Optional[str] = None
     live_view_url: Optional[str] = None
     interactive_live_view_url: Optional[str] = None
+    playlist_url: Optional[str] = None
     output: Optional[str] = None
     stdout: Optional[str] = None
     result: Optional[str] = None
     stderr: Optional[str] = None
     exit_code: Optional[int] = None
     killed: Optional[bool] = None
+    truncated: Optional[bool] = None
     error: Optional[str] = None
 
 
@@ -1883,6 +1886,8 @@ class BrowserDeleteResponse(BaseModel):
     """Response from deleting a browser session."""
 
     success: bool
+    status: Optional[str] = None
+    cleanup_queued: Optional[bool] = None
     session_duration_ms: Optional[int] = None
     credits_billed: Optional[int] = None
     error: Optional[str] = None
@@ -1894,8 +1899,9 @@ class BrowserSession(BaseModel):
     id: str
     status: str
     cdp_url: str
-    live_view_url: str
+    live_view_url: Optional[str] = None
     interactive_live_view_url: Optional[str] = None
+    playlist_url: Optional[str] = None
     stream_web_view: bool
     created_at: str
     last_activity: str

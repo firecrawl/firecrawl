@@ -64,12 +64,9 @@ import {
   browserExecuteController,
   browserDeleteController,
   browserListController,
-  browserWebhookDestroyedController,
-} from "../controllers/v2/browser";
-import {
   browserReplayController,
-  browserReplayPageController,
-} from "../controllers/v2/browser-replay";
+  browserStatusController,
+} from "../controllers/v2/browser";
 import { activityController } from "../controllers/v1/activity";
 import {
   getTeamThreatProtectionController,
@@ -644,21 +641,16 @@ v2Router.get(
   wrap(browserReplayController),
 );
 
-v2Router.get(
-  ["/browser/:sessionId/replay/:pageId", "/interact/:sessionId/replay/:pageId"],
-  authMiddleware(RateLimiterMode.BrowserReplay),
-  wrap(browserReplayPageController),
-);
-
 v2Router.delete(
   ["/browser/:sessionId", "/interact/:sessionId"],
   authMiddleware(RateLimiterMode.BrowserExecute),
   wrap(browserDeleteController),
 );
 
-v2Router.post(
-  "/browser/webhook/destroyed",
-  wrap(browserWebhookDestroyedController),
+v2Router.get(
+  ["/browser/:sessionId", "/interact/:sessionId"],
+  authMiddleware(RateLimiterMode.BrowserExecute),
+  wrap(browserStatusController),
 );
 
 // Support agent proxy — forwards to the support-agent service.
