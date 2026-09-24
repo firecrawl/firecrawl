@@ -1,3 +1,5 @@
+import { consumeKeylessFeedbackAttempt } from "./v2/feedback/keyless-limits";
+import { logKeylessFeedbackOutcome } from "./v2/feedback/keyless-outcome";
 import { RateLimiterRedis } from "rate-limiter-flexible";
 import { isValidUuid } from "../lib/owner-id";
 import { config } from "../config";
@@ -19,6 +21,7 @@ import {
   keylessExhaustionTelemetry,
   isKeylessIpEligible,
   keylessTeamId,
+  keylessTeamUuid,
   normalizeKeylessIpv4,
 } from "../lib/keyless";
 import { isKeylessIpSuspicious } from "../lib/spur";
@@ -481,6 +484,7 @@ async function handleKeylessAuth(
   req,
   mode: RateLimiterMode,
   allowKeyless: boolean | undefined,
+  keylessFeedback = false,
 ): Promise<AuthResponse> {
   const unauthorized: AuthResponse = {
     success: false,
@@ -557,6 +561,56 @@ async function handleKeylessAuth(
   }
 
   const teamId = keylessTeamId(ip);
+  if (keylessFeedback) {
+    const identity = keylessTeamUuid(teamId)!;
+    const reject = (
+      status: number,
+      reason: "disabled" | "attempt_limit" | "limiter_unavailable",
+      error: string,
+    ): AuthResponse => {
+      logKeylessFeedbackOutcome({
+        identity,
+        outcome: "rejected",
+        status,
+        body: req.body,
+        reason,
+      });
+      return {
+        success: false,
+        status,
+        error,
+        ...(reason === "attempt_limit" ? { retryAfterSeconds: 60 } : {}),
+      };
+    };
+    if (!config.KEYLESS_FEEDBACK_ENABLED)
+      return reject(
+        503,
+        "disabled",
+        "Feedback is unavailable on this deployment.",
+      );
+    try {
+      if (!(await consumeKeylessFeedbackAttempt(identity))) {
+        return reject(
+          429,
+          "attempt_limit",
+          "Too many feedback attempts. Retry in one minute.",
+        );
+      }
+    } catch {
+      return reject(
+        503,
+        "limiter_unavailable",
+        "Feedback is temporarily unavailable.",
+      );
+    }
+    return {
+      success: true,
+      team_id: teamId,
+      org_id: null,
+      chunk: mockPreviewACUC(teamId, false),
+    };
+  }
+
   const modeLabel =
     mode === RateLimiterMode.Search
       ? "search"
@@ -636,7 +690,7 @@ export async function authenticateUser(
   req,
   res,
   mode: RateLimiterMode,
-  options?: { allowKeyless?: boolean },
+  options?: { allowKeyless?: boolean; keylessFeedback?: boolean },
 ): Promise<AuthResponse> {
   const bypassChunk = mockACUC();
   bypassChunk.is_extract =
@@ -702,7 +756,7 @@ async function supaAuthenticateUser(
   req,
   res,
   mode: RateLimiterMode,
-  options?: { allowKeyless?: boolean },
+  options?: { allowKeyless?: boolean; keylessFeedback?: boolean },
 ): Promise<AuthResponse> {
   const authHeader =
     req.headers.authorization ??
@@ -710,7 +764,12 @@ async function supaAuthenticateUser(
       ? `Bearer ${req.headers["sec-websocket-protocol"]}`
       : null);
   if (!authHeader) {
-    return handleKeylessAuth(req, mode, options?.allowKeyless);
+    return handleKeylessAuth(
+      req,
+      mode,
+      options?.allowKeyless,
+      options?.keylessFeedback,
+    );
   }
   const token = authHeader.split(" ")[1]; // Extract the token from "Bearer <token>"
   if (!token) {

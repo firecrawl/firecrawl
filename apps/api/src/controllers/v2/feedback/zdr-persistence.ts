@@ -53,3 +53,23 @@ export function shouldSkipPersistenceForJobZdr(
 
   return false;
 }
+
+// Keyless callers carry no team flags, so the job's own options decide whether
+// its data may be retained with feedback.
+export function isKeylessFeedbackRestricted(
+  endpoint: "search" | "scrape" | "parse",
+  options: unknown,
+): boolean {
+  if (!options || typeof options !== "object") return true;
+  const saved = options as {
+    zeroDataRetention?: boolean;
+    lockdown?: boolean;
+    scrapeOptions?: { lockdown?: boolean };
+  };
+  return (
+    saved.zeroDataRetention === true ||
+    saved.lockdown === true ||
+    (endpoint === "search" && saved.scrapeOptions?.lockdown === true) ||
+    searchOptionsUseZdr(options)
+  );
+}

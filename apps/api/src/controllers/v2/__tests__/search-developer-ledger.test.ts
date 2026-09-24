@@ -1,5 +1,10 @@
 import { vi } from "vitest";
 
+const mockFeedbackMetadata = vi.fn();
+vi.mock("../feedback/keyless-invitation", () => ({
+  keylessFeedbackMetadata: (...args: any[]) => mockFeedbackMetadata(...args),
+}));
+
 const mockLogRequest = vi.fn();
 const mockLogSearch = vi.fn();
 const mockLogResearchEndpoint = vi.fn();
@@ -28,6 +33,8 @@ vi.mock("../../../services/billing/credit_billing", () => ({
 }));
 
 vi.mock("../../../lib/keyless", () => ({
+  keylessTeamUuid: (team: string) =>
+    team.startsWith("preview_keyless_") ? TEAM_ID : null,
   KEYLESS_FREE_TIER_LIMIT_MESSAGE: "keyless limit reached",
   adjustKeylessCredits: vi.fn().mockResolvedValue(undefined),
   keylessLimitBody: (...args: any[]) => mockKeylessLimitBody(...args),
@@ -120,6 +127,7 @@ async function flushAsync() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockFeedbackMetadata.mockReturnValue({});
   mockLogRequest.mockResolvedValue(undefined);
   mockLogSearch.mockResolvedValue(undefined);
   mockLogResearchEndpoint.mockResolvedValue(undefined);
@@ -320,4 +328,88 @@ describe("developer category code_searches ledger", () => {
     ]);
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
+});
+
+it("returns both provider warnings and feedback metadata", async () => {
+  const metadata = {
+    jobId: "feedback-job",
+    feedback: { message: "Optional feedback." },
+  };
+  mockFeedbackMetadata.mockReturnValue(metadata);
+  mockExecuteSearch.mockResolvedValue(
+    executeResult({ toolsWarning: "Provider discovery is unavailable." }),
+  );
+  const res = makeRes();
+  await searchController(makeReq({ query: "http client" }), res);
+  expect(res.status).toHaveBeenCalledWith(200);
+  expect(res.json).toHaveBeenCalledWith(
+    expect.objectContaining({
+      success: true,
+      metadata,
+      warning: "Provider discovery is unavailable.",
+      data: { web: developerResults },
+    }),
+  );
+});
+
+describe("keyless Search failure feedback", () => {
+  it("logs a failed job after its parent request before returning its feedback pointer", async () => {
+    let release!: () => void;
+    mockLogRequest.mockReturnValue(
+      new Promise<void>(resolve => {
+        release = resolve;
+      }),
+    );
+    mockExecuteSearch.mockRejectedValue(new Error("Search transport failed"));
+    mockFeedbackMetadata.mockReturnValue({
+      jobId: "fixture-job",
+      feedback: { endpoint: "search" },
+    });
+    const req = makeReq({ query: "retry documentation" });
+    req.auth.team_id = "preview_keyless_fixture";
+    const res = makeRes();
+    const pending = searchController(req, res);
+    await flushAsync();
+    expect(mockLogSearch).not.toHaveBeenCalled();
+    release();
+    await pending;
+    expect(mockLogSearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        is_successful: false,
+        results: null,
+        credits_cost: 0,
+        request_id: mockLogRequest.mock.calls[0][0].id,
+      }),
+      true,
+    );
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: { jobId: "fixture-job", feedback: { endpoint: "search" } },
+      }),
+    );
+  });
+
+  it.each(["authenticated", "invalid", "quota", "logging"])(
+    "does not invite feedback for %s failures",
+    async scenario => {
+      const req = makeReq(
+        scenario === "invalid" ? {} : { query: "retry documentation" },
+      );
+      if (scenario !== "authenticated")
+        req.auth.team_id = "preview_keyless_fixture";
+      mockExecuteSearch.mockRejectedValue(new Error("Search unavailable"));
+      if (scenario === "quota") {
+        mockProjectSearchTotalCredits.mockReturnValue(2);
+        mockReserveKeylessCredits.mockResolvedValue({ ok: false });
+      }
+      if (scenario === "logging")
+        mockLogSearch.mockRejectedValue(new Error("Database unavailable"));
+      const res = makeRes();
+      await searchController(req, res);
+      expect(mockFeedbackMetadata).not.toHaveBeenCalled();
+      expect(res.json.mock.calls[0][0]).not.toHaveProperty("metadata");
+      if (scenario !== "logging") expect(mockLogSearch).not.toHaveBeenCalled();
+    },
+  );
 });

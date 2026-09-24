@@ -45,10 +45,12 @@ export async function lookupFeedbackJob(
   endpoint: EndpointFeedbackEndpoint,
   jobId: string,
   dbTeamId: string,
+  { requireOptions = false }: { requireOptions?: boolean } = {},
 ): Promise<FeedbackJobRow | null> {
   let bigtableFailed = false;
   try {
-    const job = await readFeedbackJob(jobId);
+    // Compact feedback records omit the options keyless validation requires.
+    const job = requireOptions ? null : await readFeedbackJob(jobId);
     if (job) {
       const storedEndpoint = endpointForRefundClass(job.refundClass);
       if (job.teamId !== dbTeamId || storedEndpoint !== endpoint) return null;
@@ -101,7 +103,7 @@ export async function lookupFeedbackJob(
     .limit(1);
 
   if (!row) return null;
-  if (!bigtableFailed) {
+  if (!requireOptions && !bigtableFailed) {
     recordJobStorePostgresFallback("feedback_job", jobId, { endpoint });
   }
 

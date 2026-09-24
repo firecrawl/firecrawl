@@ -1,3 +1,4 @@
+import { keylessFeedbackMetadata } from "./feedback/keyless-invitation";
 import { Response } from "express";
 import { providerScrapeController } from "./scrape-alexandria";
 import { discoverTools } from "../../search/alexandria";
@@ -34,13 +35,14 @@ import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { getJobPriority } from "../../lib/job-priority";
-import { logRequest } from "../../services/logging/log_job";
+import { logRequest, logScrape } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   adjustKeylessCredits,
+  keylessTeamUuid,
   keylessLimitBody,
   logKeylessCreditUsage,
   reserveKeylessCredits,
@@ -338,6 +340,7 @@ export async function scrapeController(
 
       let timeoutHandle: NodeJS.Timeout | null = null;
       let doc: Document | null = null;
+      let workerStarted = false;
 
       try {
         const lockStart = Date.now();
@@ -441,6 +444,7 @@ export async function scrapeController(
                   },
                 };
 
+                workerStarted = true;
                 const result = await processJobInternal(job);
 
                 setSpanAttributes(waitSpan, {
@@ -455,6 +459,41 @@ export async function scrapeController(
           },
         );
       } catch (e) {
+        let jobLogged = true;
+        if (!workerStarted && keylessTeamUuid(req.auth.team_id)) {
+          try {
+            await logRequestPromise;
+            await logScrape(
+              {
+                id: jobId,
+                request_id: agentRequestId ?? jobId,
+                team_id: req.auth.team_id,
+                url: req.body.url,
+                options: req.body,
+                is_successful: false,
+                error:
+                  e instanceof TransportableError
+                    ? e.message
+                    : "Request failed",
+                time_taken: (Date.now() - controllerStartTime) / 1000,
+                credits_cost: 0,
+                skipNuq: true,
+                zeroDataRetention,
+              },
+              true,
+            );
+          } catch (error) {
+            jobLogged = false;
+            logger.warn("Failed to log job before worker execution", {
+              error,
+              jobId,
+            });
+          }
+        }
+        // A job this controller failed to log has no row for feedback to find.
+        const feedbackMetadata = jobLogged
+          ? keylessFeedbackMetadata(req, "scrape", jobId)
+          : {};
         if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
           reconciledKeylessCredits = true;
           adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
@@ -487,6 +526,9 @@ export async function scrapeController(
             });
             return res.status(200).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -498,6 +540,9 @@ export async function scrapeController(
             });
             return res.status(404).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -509,6 +554,9 @@ export async function scrapeController(
             });
             return res.status(404).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -520,6 +568,9 @@ export async function scrapeController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
               sponsor_status: "pending",
@@ -533,6 +584,9 @@ export async function scrapeController(
             });
             return res.status(400).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -544,6 +598,9 @@ export async function scrapeController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -555,6 +612,9 @@ export async function scrapeController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -566,6 +626,9 @@ export async function scrapeController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -577,6 +640,9 @@ export async function scrapeController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -588,6 +654,9 @@ export async function scrapeController(
             });
             return res.status(400).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -608,6 +677,9 @@ export async function scrapeController(
           }
           return res.status(statusCode).json({
             success: false,
+            ...(Object.keys(feedbackMetadata).length
+              ? { metadata: feedbackMetadata }
+              : {}),
             code: e.code,
             error: e.message,
             ...(processing && { details: processing }),
@@ -627,6 +699,9 @@ export async function scrapeController(
           });
           return res.status(500).json({
             success: false,
+            ...(Object.keys(feedbackMetadata).length
+              ? { metadata: feedbackMetadata }
+              : {}),
             code: "UNKNOWN_ERROR",
             error: getErrorContactMessage(id),
           });
@@ -735,6 +810,7 @@ export async function scrapeController(
           ...doc!,
           metadata: {
             ...doc!.metadata,
+            ...(await keylessFeedbackMetadata(req, "scrape", jobId)),
             concurrencyLimited,
             concurrencyQueueDurationMs: concurrencyLimited
               ? lockTime || 0
