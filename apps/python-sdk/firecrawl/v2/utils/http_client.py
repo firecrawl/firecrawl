@@ -47,7 +47,9 @@ class HttpClient:
             ep2 = urlparse(f"https:{endpoint}")
             path = ep2.path or "/"
             return urlunparse((base.scheme or "https", base.netloc, path, "", ep2.query, ""))
-        return urljoin(base_str, endpoint)
+        # Drop the leading slash so a base path is kept: urljoin treats "/v2/x" as
+        # root-absolute and would discard a self-hosted prefix like /firecrawl
+        return urljoin(base_str, endpoint.lstrip("/"))
     
     def _prepare_headers(
         self,
