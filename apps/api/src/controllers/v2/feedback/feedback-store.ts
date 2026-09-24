@@ -139,11 +139,38 @@ function resultCategoriesBySource(
  * Source types the search requested, normalised from the stored request body.
  * Returns null when the shape is unrecognised, so callers fall back to a looser
  * bound instead of guessing.
+ *
+ * "Unrecognised" includes rows whose request body was never persisted at all:
+ * zero-data-retention searches log only `{enterprise}`, and rows served from
+ * the Bigtable fast path carry no options. Those say nothing about which
+ * sources were asked for, and assuming web-only would bound every news and
+ * images group to 0 — silently discarding every legitimate label from those
+ * groups. Unknown is the safe answer; the looser count/limit bound still
+ * applies.
  */
-function requestedSourceTypes(options: unknown): Set<string> | null {
-  const sources = (options as { sources?: unknown } | null)?.sources;
-  // `sources` prefaults to ["web"], so an absent value means web-only.
-  if (sources === undefined || sources === null) return new Set(["web"]);
+function requestedSourceTypes(job: FeedbackJobRow): Set<string> | null {
+  if (job.zero_data_retention) return null;
+
+  const options = job.options as
+    | { sources?: unknown; enterprise?: unknown }
+    | null
+    | undefined;
+  if (options === null || options === undefined) return null;
+
+  const sources = options.sources;
+  if (sources === undefined || sources === null) {
+    // ZDR rows reaching this through PostgreSQL keep only `enterprise`, so the
+    // absent `sources` is redaction rather than the ["web"] prefault.
+    const enterprise = options.enterprise;
+    if (
+      Array.isArray(enterprise) &&
+      enterprise.some(kind => kind === "zdr" || kind === "anon")
+    ) {
+      return null;
+    }
+    // `sources` prefaults to ["web"], so an absent value means web-only.
+    return new Set(["web"]);
+  }
   if (!Array.isArray(sources)) return null;
 
   const types = sources.map(entry =>
@@ -172,7 +199,7 @@ function requestedSourceTypes(options: unknown): Set<string> | null {
  * returned nothing still gets a positive bound, so a hallucinated position in
  * an empty group can slip through. Reconstructing the real count is impossible
  * for those rows (the response bodies live in GCS, not Postgres). The exposure
- * is bounded by FEEDBACK_MAX_AGE_SEC — feedback is only accepted within ~2
+ * is bounded by SEARCH_FEEDBACK_MAX_AGE_SEC — feedback is only accepted within ~2
  * minutes of the search — so this path only covers searches run in the couple
  * of minutes spanning the migration deploy, and closes on its own after that.
  */
@@ -185,7 +212,7 @@ function maxResultPosition(
 
   // Without per-source counts, the requested source list is the only thing
   // separating "this group was empty" from "this group is unbounded".
-  const requested = requestedSourceTypes(job.options);
+  const requested = requestedSourceTypes(job);
   if (requested !== null && !requested.has(source)) return 0;
 
   const numResults =
