@@ -166,6 +166,7 @@ const configSchema = z.object({
   ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
+  ATLASCLOUD_API_KEY: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
