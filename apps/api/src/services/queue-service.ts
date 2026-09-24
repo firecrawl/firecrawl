@@ -4,12 +4,13 @@ import { logger } from "../lib/logger";
 import IORedis from "ioredis";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
 import { addExtractJob, ExtractJobData } from "./extract-queue";
+import type { BillTeamJobData } from "./billing/types";
 
 let loggingQueue: Queue;
 let indexQueue: Queue;
 let deepResearchQueue: Queue;
 let generateLlmsTxtQueue: Queue;
-let billingQueue: Queue;
+let billingQueue: Queue<BillTeamJobData>;
 let precrawlQueue: Queue;
 let redisConnection: IORedis;
 
@@ -76,7 +77,7 @@ export function getDeepResearchQueue() {
 
 export function getBillingQueue() {
   if (!billingQueue) {
-    billingQueue = new Queue(billingQueueName, {
+    billingQueue = new Queue<BillTeamJobData>(billingQueueName, {
       connection: getRedisConnection(),
       defaultJobOptions: {
         removeOnComplete: {

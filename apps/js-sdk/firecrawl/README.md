@@ -386,3 +386,49 @@ The Firecrawl Node SDK is licensed under the MIT License. This means you are fre
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Please note that while this SDK is MIT licensed, it is part of a larger project which may be under different licensing terms. Always refer to the license information in the root directory of the main project for overall licensing details.
+
+### Alexandria
+
+With a matching API deployment, Search returns complete tool contracts in `tools`.
+`domainTools: true` adds domain matches to that same array. Find Tools walks the catalogue
+without executing the tools it returns.
+
+```ts
+const results = await firecrawl.search("podcast conversations about AI agents", {
+  sources: ["web", "alexandria"],
+  domainTools: true,
+  limit: 2,
+});
+console.log(results.tools?.[0].options);
+
+const catalogue = await firecrawl.findTools({ providers: ["particle"], limit: 2 });
+const next = catalogue.items[0]?.next;
+if (next) console.log(await firecrawl.scrape({ alexandria: next }));
+```
+
+Execute a selected contract with `scrape({ alexandria, requestId })`, where `alexandria`
+is one `{ provider, capability, options }` call or an array of up to ten calls:
+
+```ts
+const requestId = crypto.randomUUID();
+const result = await firecrawl.scrape({
+  alexandria: {
+    provider: "particle",
+    capability: "podcasts/episodes/search",
+    options: { semantic_search: "AI agents" },
+  },
+  requestId,
+});
+for (const item of result.alexandria) {
+  if (item.error) console.error(item.error.code, item.error.message);
+  else console.log(item.data);
+}
+```
+
+Check each returned `alexandria` item's `error` before using its `data`. The result and
+execution errors expose `requestId`; reuse it with the identical payload for a retry.
+Automatic retries retain the same ID. Find Tools costs zero credits; provider execution
+uses its published price. A provider whose data terms have not been accepted rejects the
+call with a 403 whose `SdkError` carries `code: "THIRD_PARTY_DATA_TERMS_REQUIRED"` and a
+`requiresAction: { type: "accept_terms", terms, version, url }` pointing at the page where
+an organization admin can accept them.

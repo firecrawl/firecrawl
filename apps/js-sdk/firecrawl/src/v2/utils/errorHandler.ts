@@ -1,11 +1,19 @@
 import { type AxiosError, type AxiosResponse } from "axios";
-import { SdkError, JobTimeoutError } from "../types";
+import { SdkError, JobTimeoutError, parseRequiresAction } from "../types";
 
 export function throwForBadResponse(resp: AxiosResponse, action: string): never {
   const status = resp.status;
   const body = resp.data || {};
   const msg = body?.error || body?.message || `Request failed (${status}) while trying to ${action}`;
-  throw new SdkError(msg, status, undefined, body?.details);
+  throw new SdkError(
+    msg,
+    status,
+    body?.code,
+    body?.details,
+    undefined,
+    body?.chargeId,
+    parseRequiresAction(body?.requiresAction),
+  );
 }
 
 export function normalizeAxiosError(err: AxiosError, action: string): never {
@@ -13,7 +21,15 @@ export function normalizeAxiosError(err: AxiosError, action: string): never {
   const body: any = err.response?.data;
   const message = body?.error || err.message || `Request failed${status ? ` (${status})` : ""} while trying to ${action}`;
   const code = (body?.code as string) || err.code;
-  throw new SdkError(message, status, code, body?.details ?? body);
+  throw new SdkError(
+    message,
+    status,
+    code,
+    body?.details ?? body,
+    undefined,
+    body?.chargeId,
+    parseRequiresAction(body?.requiresAction),
+  );
 }
 
 export function isRetryableError(err: any): boolean {

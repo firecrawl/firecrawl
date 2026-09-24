@@ -542,12 +542,19 @@ const baseScrapeOptions = z.strictObject({
   fastMode: z.boolean().prefault(false),
   useMock: z.string().optional(),
   blockAds: z.boolean().prefault(true),
-  proxy: z.enum(["basic", "stealth", "enhanced", "auto"]).prefault("basic"),
+  // No prefault here: the default is conditional on location (see extractTransform).
+  // Requests without a non-default country default to "auto"; requests with one
+  // default to "basic".
+  proxy: z.enum(["basic", "stealth", "enhanced", "auto"]).optional(),
   maxAge: z
     .int()
     .gte(0)
     .prefault(1 * 24 * 60 * 60 * 1000),
   storeInCache: z.boolean().prefault(true),
+  // Enterprise: per-request Safe Mode opt-out/affirmation. Tri-state, so NOT
+  // prefaulted — an absent value must stay undefined (a default of false would
+  // read as an explicit bypass attempt). Honored only if the org allows it.
+  safeMode: z.boolean().optional(),
   // Enterprise: per-request field-level override of the org's threat
   // protection policy. Gated on the team flag + org config (checkPermissions).
   threatProtection: threatProtectionOverrideSchema.optional(),
@@ -580,6 +587,23 @@ const extractTransformRequired = <T extends ScrapeOptions>(obj: T): T => {
 };
 
 const extractTransform = (obj: ScrapeOptions) => {
+  // Proxy default: "auto" when no non-default country is specified, so
+  // requests can upgrade to stealth on proxy failures. When a country is
+  // specified, keep the historical "basic" default.
+  if (obj.proxy === undefined) {
+    // Check both location fields: a non-default country in either one counts
+    // as specified, even if the other omitted its country (its schema fills
+    // in the "us-generic" default, which must not shadow the other field).
+    const hasNonDefaultCountry = [
+      obj.location?.country,
+      obj.geolocation?.country,
+    ].some(
+      country =>
+        country !== undefined && country.toLowerCase() !== "us-generic",
+    );
+    obj = { ...obj, proxy: hasNonDefaultCountry ? "basic" : "auto" };
+  }
+
   // Handle timeout
   if (
     (includesFormat(obj.formats, "extract") ||
@@ -924,8 +948,7 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
 export const crawlRequestSchema = crawlRequestSchemaBase
   .strict()
   .superRefine((x, ctx) => {
-    addPathRegexIssues(x.includePaths, "includePaths", ctx);
-    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+    addPathRegexIssues(x, ctx);
   })
   .refine(
     x => (x.scrapeOptions ? extractRefine(x.scrapeOptions) : true),
@@ -1008,8 +1031,7 @@ const mapRequestSchemaBase = crawlerOptions
 export const mapRequestSchema = mapRequestSchemaBase
   .strict()
   .superRefine((x, ctx) => {
-    addPathRegexIssues(x.includePaths, "includePaths", ctx);
-    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+    addPathRegexIssues(x, ctx);
   });
 
 // export type MapRequest = {
@@ -1316,6 +1338,22 @@ export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
+  safeMode?: boolean;
+  safeModeConfig?: {
+    allowBypassSafeMode?: boolean;
+    lockdown?: boolean;
+    domainControls?: boolean;
+    enforceRobots?: boolean;
+    disableStealthProxy?: boolean;
+    disableAuthentication?: boolean;
+    disableSiteHandling?: boolean;
+    exposeWebdriver?: boolean;
+    useHeadlessUserAgent?: boolean;
+    disablePlatformSelection?: boolean;
+    disableCountrySelection?: boolean;
+    disableAutomaticReferrer?: boolean;
+    allowlist?: string[];
+  };
   siemLogging?: boolean;
   unblockedDomains?: string[];
   forceZDR?: boolean;
@@ -1342,6 +1380,9 @@ export type TeamFlags = {
   labsSearch?: boolean;
   exchangeRetrieve?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
+  // The org's DPA (or partner amendment) restricts how its data may be
+  // handled. Informational only: the API does not change behavior on it.
+  dpaRestricted?: boolean;
   organizationDataSourceAccess?: Record<
     string,
     {
@@ -1356,9 +1397,6 @@ export type TeamFlags = {
   >;
   // routes the team's new queue work to the FoundationDB backend
   nuqFdb?: boolean;
-  // enables OCR of raster image URLs and uploads through FirePDF (see
-  // lib/image-ocr-gate.ts); rolled out per team
-  imageOcr?: boolean;
   /**
    * Per-endpoint rate-limit overrides, in requests per minute. A value here
    * replaces the computed limit for that mode, so the Autumn multiplier is

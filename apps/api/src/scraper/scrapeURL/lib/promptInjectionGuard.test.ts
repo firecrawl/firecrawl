@@ -1,4 +1,19 @@
-import { chunkByChars } from "./promptInjectionGuard";
+import { generateObject, LoadAPIKeyError } from "ai";
+import {
+  chunkByChars,
+  checkForPromptInjection,
+  createPromptInjectionGuardLimiter,
+} from "./promptInjectionGuard";
+import { CostTracking } from "../../../lib/cost-tracking";
+import { PromptInjectionDetectedError } from "../error";
+
+vi.mock("ai", async importOriginal => ({
+  ...(await importOriginal<typeof import("ai")>()),
+  generateObject: vi.fn(),
+}));
+vi.mock("../../../lib/generic-ai", () => ({
+  getModel: vi.fn().mockReturnValue({ modelId: "gpt-4o-mini" }),
+}));
 
 describe("chunkByChars", () => {
   it("returns the whole text as a single chunk if within the limit", () => {
@@ -43,8 +58,7 @@ describe("chunkByChars", () => {
     const overlap = 20;
     const marker = "INJECT-THIS-PHRASE";
     // Placed to straddle the boundary between the first and second chunk.
-    const text =
-      "x".repeat(maxCharsPerChunk - 5) + marker + "y".repeat(500);
+    const text = "x".repeat(maxCharsPerChunk - 5) + marker + "y".repeat(500);
 
     const chunks = chunkByChars(text, maxCharsPerChunk, overlap);
 
@@ -60,5 +74,123 @@ describe("chunkByChars", () => {
       expect(chunk.length).toBeLessThanOrEqual(300);
     }
     expect(chunks.join("").length).toBeGreaterThanOrEqual(text.length);
+  });
+});
+
+describe("checkForPromptInjection", () => {
+  const noopLogger = {
+    warn: () => {},
+    info: () => {},
+    error: () => {},
+    debug: () => {},
+  } as any;
+
+  const verdict = (isInjection: boolean) => ({
+    object: { isInjection, reason: "test" },
+    usage: { inputTokens: 100, outputTokens: 10 },
+  });
+
+  // Three chunks at the guard's 32k chunk size with 2k overlap.
+  const threeChunkMarkdown = "x".repeat(80_000);
+
+  const run = (costTracking: CostTracking, markdown = threeChunkMarkdown) =>
+    checkForPromptInjection({
+      markdown,
+      logger: noopLogger,
+      costTracking,
+      metadata: { teamId: "test-team" },
+      zeroDataRetention: false,
+    });
+
+  const guardVerdicts = (costTracking: CostTracking) =>
+    costTracking.calls
+      .filter(call => call.metadata.method === "checkForPromptInjection")
+      .map(call => call.metadata.verdict);
+
+  beforeEach(() => {
+    vi.mocked(generateObject).mockReset();
+  });
+
+  it("resolves true and records a clean verdict per chunk when every chunk scans", async () => {
+    vi.mocked(generateObject).mockResolvedValue(verdict(false) as any);
+    const costTracking = new CostTracking();
+
+    await expect(run(costTracking)).resolves.toBe(true);
+    expect(guardVerdicts(costTracking)).toEqual(["clean", "clean", "clean"]);
+  });
+
+  it("fails open and resolves false when one chunk's classifier call errors", async () => {
+    vi.mocked(generateObject)
+      .mockResolvedValueOnce(verdict(false) as any)
+      .mockRejectedValueOnce(new Error("timeout"))
+      .mockResolvedValueOnce(verdict(false) as any);
+    const costTracking = new CostTracking();
+
+    await expect(run(costTracking)).resolves.toBe(false);
+    expect(guardVerdicts(costTracking).sort()).toEqual([
+      "clean",
+      "clean",
+      "none",
+    ]);
+  });
+
+  it("records a no-verdict call when the request was never dispatched", async () => {
+    vi.mocked(generateObject).mockRejectedValue(
+      new LoadAPIKeyError({ message: "missing key" }),
+    );
+    const costTracking = new CostTracking();
+
+    await expect(run(costTracking, "short page")).resolves.toBe(false);
+    expect(guardVerdicts(costTracking)).toEqual(["none"]);
+    expect(costTracking.toJSON().totalCost).toBe(0);
+  });
+
+  it("throws and records an injection verdict on a detection", async () => {
+    vi.mocked(generateObject).mockResolvedValue(verdict(true) as any);
+    const costTracking = new CostTracking();
+
+    await expect(run(costTracking, "short page")).rejects.toBeInstanceOf(
+      PromptInjectionDetectedError,
+    );
+    expect(guardVerdicts(costTracking)).toEqual(["injection"]);
+  });
+
+  it("keeps concurrent scans sharing a limiter within one guard's concurrency limit", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    vi.mocked(generateObject).mockImplementation((async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      inFlight--;
+      return verdict(false);
+    }) as any);
+    const costTracking = new CostTracking();
+    const limiter = createPromptInjectionGuardLimiter();
+
+    // Four pages of three chunks each: 12 calls, 5 at most in flight.
+    const results = await Promise.all(
+      [0, 1, 2, 3].map(() =>
+        checkForPromptInjection({
+          markdown: threeChunkMarkdown,
+          logger: noopLogger,
+          costTracking,
+          metadata: { teamId: "test-team" },
+          zeroDataRetention: false,
+          limiter,
+        }),
+      ),
+    );
+
+    expect(results).toEqual([true, true, true, true]);
+    expect(generateObject).toHaveBeenCalledTimes(12);
+    expect(maxInFlight).toBe(5);
+  });
+
+  it("resolves true without calling the classifier for empty content", async () => {
+    const costTracking = new CostTracking();
+
+    await expect(run(costTracking, "   ")).resolves.toBe(true);
+    expect(generateObject).not.toHaveBeenCalled();
   });
 });

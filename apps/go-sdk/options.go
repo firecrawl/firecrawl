@@ -94,6 +94,7 @@ type ScrapeOptions struct {
 	AuditMetadata       *AuditMetadata           `json:"auditMetadata,omitempty"`
 	Integration         *string                  `json:"integration,omitempty"`
 	JsonOptions         *JsonOptions             `json:"jsonOptions,omitempty"`
+	DomainTools         *bool                    `json:"domainTools,omitempty"`
 }
 
 // MarshalJSON preserves string formats while allowing object formats such as QuestionFormat.
@@ -164,6 +165,7 @@ type MapOptions struct {
 
 // SearchOptions configures a search request.
 type SearchOptions struct {
+	DomainTools       *bool          `json:"domainTools,omitempty"`
 	Sources           []interface{}  `json:"sources,omitempty"`
 	Categories        []interface{}  `json:"categories,omitempty"`
 	IncludeDomains    []string       `json:"includeDomains,omitempty"`

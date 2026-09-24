@@ -1,4 +1,3 @@
-import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
 import { Request, Response } from "express";
 import { z } from "zod";
@@ -16,6 +15,10 @@ import {
   invalidateActiveBrowserSessionCount,
   didBrowserSessionUsePrompt,
   clearBrowserSessionPromptFlag,
+  upsertBrowserProfile,
+  deleteBrowserProfile,
+  recordBrowserProfileDeleted,
+  getBrowserProfileDeletedAt,
 } from "../../lib/browser-sessions";
 import {
   getCombinedTeamActiveCount,
@@ -35,7 +38,18 @@ import {
   calculateBrowserSessionCredits,
 } from "../../lib/browser-billing";
 import { autumnService } from "../../services/autumn/autumn.service";
+import { orgIdForTeam } from "../../lib/team-org";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { recordRequestCredits } from "../../lib/request-credits-store";
+import {
+  browserProfileStorageId,
+  profileSavedEventSchema,
+  resolveProfileSave,
+} from "../../lib/browser-profiles";
+import {
+  getSafeMode,
+  SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+} from "../../lib/safe-mode";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -225,6 +239,13 @@ export async function browserCreateController(
 
   req.body = browserCreateRequestSchema.parse(req.body);
 
+  if (getSafeMode(req.acuc?.flags)) {
+    return res.status(403).json({
+      success: false,
+      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+    });
+  }
+
   if (
     req.body.__agentInterop &&
     config.AGENT_INTEROP_SECRET &&
@@ -266,15 +287,21 @@ export async function browserCreateController(
   // 0a. Check if team has enough credits for the full TTL
   if (shouldBill) {
     const estimatedCredits = calculateBrowserSessionCredits(ttl * 1000);
-    const autumnResult = await autumnService.checkCredits({
-      teamId: req.auth.team_id,
-      value: estimatedCredits,
-      properties: {
-        source: "browserCreate",
-        path: req.path,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-      },
-    });
+    // No org, no Autumn customer to gate against: fail open, exactly as
+    // checkCredits answered for an identity it could not name.
+    const orgId = req.acuc?.org_id ?? null;
+    const autumnResult = orgId
+      ? await autumnService.checkCredits({
+          teamId: req.auth.team_id,
+          orgId,
+          value: estimatedCredits,
+          properties: {
+            source: "browserCreate",
+            path: req.path,
+            apiKeyId: req.acuc?.api_key_id ?? null,
+          },
+        })
+      : null;
 
     if (autumnResult !== null && !autumnResult.allowed) {
       logger.warn("Insufficient credits for browser session TTL", {
@@ -291,7 +318,7 @@ export async function browserCreateController(
   // 0b. Enforce concurrency limit (shared pool with scrape/crawl/interact)
   const concurrencyLimit = await getEffectiveConcurrencyLimit(
     req.auth.team_id,
-    req.acuc?.org_id,
+    req.acuc?.org_id ?? null,
   );
   const activeCount = await getCombinedTeamActiveCount(req.auth.team_id);
   if (activeCount >= concurrencyLimit) {
@@ -313,12 +340,8 @@ export async function browserCreateController(
   // Build persistentStorage from profile if provided
   let persistentStorage: { uniqueId: string; write: boolean } | undefined;
   if (profile) {
-    const teamHash = createHash("sha256")
-      .update(req.auth.team_id)
-      .digest("hex")
-      .slice(0, 16);
     persistentStorage = {
-      uniqueId: `${teamHash}_${profile.name}`,
+      uniqueId: browserProfileStorageId(req.auth.team_id, profile.name),
       write: profile.saveChanges !== false,
     };
   }
@@ -406,6 +429,7 @@ export async function browserCreateController(
       ttl_total: ttl,
       ttl_without_activity: activityTtl ?? null,
       credits_used: null,
+      profile_name: profile?.name ?? null,
     });
   } catch (err) {
     // If we can't persist, tear down the browser session
@@ -463,6 +487,13 @@ export async function browserExecuteController(
   // }
 
   req.body = browserExecuteRequestSchema.parse(req.body);
+
+  if (getSafeMode(req.acuc?.flags)) {
+    return res.status(403).json({
+      success: false,
+      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+    });
+  }
 
   const id = req.params.sessionId;
   const { code, language, timeout, origin } = req.body;
@@ -549,6 +580,94 @@ export async function browserExecuteController(
   });
 }
 
+const profileNameSchema = z.string().min(1).max(128);
+const deletedAtSchema = z.iso.datetime({ offset: true });
+
+// DELETE /v2/browser/profiles/:name
+// Deletes a persistent profile's saved state and its listing. Deleting a
+// profile that has no saved state succeeds.
+export async function browserProfileDeleteController(
+  req: RequestWithAuth<{ name: string }, { success: boolean; error?: string }>,
+  res: Response<{ success: boolean; error?: string }>,
+) {
+  if (getSafeMode(req.acuc?.flags)) {
+    return res.status(403).json({
+      success: false,
+      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+    });
+  }
+
+  const parsed = profileNameSchema.safeParse(req.params.name);
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      error: "Profile name must be between 1 and 128 characters.",
+    });
+  }
+  const name = parsed.data;
+
+  if (!config.BROWSER_SERVICE_URL) {
+    return res.status(503).json({
+      success: false,
+      error:
+        "Browser feature is not configured (BROWSER_SERVICE_URL is missing).",
+    });
+  }
+
+  const logger = _logger.child({
+    teamId: req.auth.team_id,
+    module: "api/v2",
+    method: "browserProfileDeleteController",
+  });
+
+  const storageId = browserProfileStorageId(req.auth.team_id, name);
+  let result: { deletedAt?: unknown } | undefined;
+  try {
+    result = await browserServiceRequest<{ deletedAt?: unknown }>(
+      "DELETE",
+      `/profiles/${encodeURIComponent(storageId)}`,
+    );
+  } catch (err) {
+    if (err instanceof BrowserServiceError && err.status === 409) {
+      return res.status(409).json({
+        success: false,
+        error:
+          "A session is currently saving to this profile. Stop that session, then delete the profile.",
+      });
+    }
+    logger.error("Failed to delete profile via browser service", {
+      error: err,
+    });
+    return res.status(502).json({
+      success: false,
+      error: "Failed to delete profile.",
+    });
+  }
+
+  // profile.saved events carry the browser service's clock, so the tombstone
+  // must too; without its deletion time the tombstone could not be compared,
+  // so fail and let the (idempotent) delete be retried.
+  const parsedDeletedAt = deletedAtSchema.safeParse(result?.deletedAt);
+  if (!parsedDeletedAt.success) {
+    logger.error("Browser service profile delete returned no valid deletedAt", {
+      deletedAt: result?.deletedAt,
+    });
+    return res.status(502).json({
+      success: false,
+      error: "Failed to delete profile.",
+    });
+  }
+  const deletedAt = parsedDeletedAt.data;
+
+  // Tombstone before removing the row: a late profile.saved for an earlier
+  // save that lands before this upserts a row the delete below removes, and
+  // any that lands after it is ignored.
+  await recordBrowserProfileDeleted(storageId, deletedAt);
+  await deleteBrowserProfile(req.auth.team_id, name);
+  logger.info("Deleted browser profile");
+  return res.status(200).json({ success: true });
+}
+
 export async function browserDeleteController(
   req: RequestWithAuth<{ sessionId: string }, BrowserDeleteResponse>,
   res: Response<BrowserDeleteResponse>,
@@ -583,6 +702,18 @@ export async function browserDeleteController(
     return res.status(403).json({
       success: false,
       error: "Forbidden.",
+    });
+  }
+
+  // A destroyed session was already released and billed (by an earlier
+  // DELETE or by the browser service's session.ended webhook). The browser
+  // service no longer knows it, so asking it again can only fail. Report
+  // success so that DELETE stays idempotent.
+  if (session.status === "destroyed") {
+    logger.info("Browser session already destroyed, nothing to release");
+    return res.status(200).json({
+      success: true,
+      cleanupQueued: true,
     });
   }
 
@@ -661,25 +792,50 @@ export async function browserDeleteController(
 
   await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
 
+  const agentRequestId =
+    session.request_id && session.request_id !== session.id
+      ? session.request_id
+      : null;
   if (session.should_bill) {
-    const agentRequestId =
-      session.request_id && session.request_id !== session.id
-        ? session.request_id
-        : null;
-    billTeam(req.auth.team_id, creditsBilled, req.acuc?.api_key_id ?? null, {
-      endpoint: agentRequestId ? "agent" : usedPrompt ? "interact" : "browser",
-      jobId: agentRequestId ?? session.id,
-      // Keyed on the session rather than on jobId, deliberately: one agent
-      // request can drive several sessions, and each is its own charge — a key
-      // built from the shared agent id would collapse them into one. The
-      // per-path suffix guards the other direction: the webhook teardown below
-      // bills the same session through a different path.
-      chargeId: `${session.id}:destroy`,
-    }).catch(error => {
+    billTeam(
+      req.auth.team_id,
+      req.acuc?.org_id ?? null,
+      creditsBilled,
+      req.acuc?.api_key_id ?? null,
+      {
+        endpoint: agentRequestId
+          ? "agent"
+          : usedPrompt
+            ? "interact"
+            : "browser",
+        jobId: agentRequestId ?? session.id,
+        // Keyed on the session rather than on jobId, deliberately: one agent
+        // request can drive several sessions, and each is its own charge — a key
+        // built from the shared agent id would collapse them into one. The
+        // per-path suffix guards the other direction: the webhook teardown below
+        // bills the same session through a different path.
+        chargeId: `${session.id}:destroy`,
+      },
+    ).catch(error => {
       logger.error("Failed to bill team for browser session", {
         error,
         creditsBilled,
         durationMs,
+      });
+    });
+  }
+
+  if (agentRequestId) {
+    await recordRequestCredits({
+      requestId: agentRequestId,
+      jobId: session.id,
+      credits: creditsBilled,
+    }).catch(error => {
+      logger.error("Failed to record browser request credits in Bigtable", {
+        error,
+        requestId: agentRequestId,
+        sessionId: session.id,
+        creditsBilled,
       });
     });
   }
@@ -741,6 +897,70 @@ export async function browserListController(
   });
 }
 
+// Records that a session's persistent profile now has saved state, so the
+// profile can be listed. Retried by the browser service on any non-2xx.
+async function handleProfileSavedWebhook(
+  req: Request,
+  res: Response,
+  logger: typeof _logger,
+) {
+  const parsed = profileSavedEventSchema.safeParse(req.body);
+  if (!parsed.success) {
+    logger.warn("Malformed profile.saved webhook", { error: parsed.error });
+    return res.status(400).json({ error: "Invalid profile.saved event" });
+  }
+  const event = parsed.data;
+  const browserId = event.sessionId;
+
+  const session = await getBrowserSessionByBrowserId(browserId);
+  if (!session) {
+    logger.warn("No session found for profile.saved webhook", {
+      browserId,
+      eventId: event.eventId,
+    });
+    return res.status(200).json({ ok: true });
+  }
+
+  const resolution = resolveProfileSave(
+    session,
+    event,
+    await getBrowserProfileDeletedAt(event.profileId),
+  );
+  if (resolution.action === "ignore") {
+    logger.info("Not recording saved profile", {
+      browserId,
+      sessionId: session.id,
+      reason: resolution.reason,
+    });
+    return res.status(200).json({ ok: true });
+  }
+  if (resolution.action === "reject") {
+    logger.error("profile.saved webhook does not match the session's profile", {
+      browserId,
+      sessionId: session.id,
+      teamId: session.team_id,
+      profileId: event.profileId,
+    });
+    return res
+      .status(409)
+      .json({ error: "Profile does not match the session" });
+  }
+
+  await upsertBrowserProfile({
+    teamId: resolution.teamId,
+    name: resolution.name,
+    savedAt: event.savedAt,
+    sizeBytes: event.sizeBytes,
+  });
+  logger.info("Recorded saved browser profile", {
+    browserId,
+    sessionId: session.id,
+    teamId: resolution.teamId,
+    eventId: event.eventId,
+  });
+  return res.status(200).json({ ok: true });
+}
+
 export async function browserWebhookDestroyedController(
   req: Request,
   res: Response,
@@ -758,6 +978,12 @@ export async function browserWebhookDestroyedController(
     secret !== config.BROWSER_SERVICE_WEBHOOK_SECRET
   ) {
     return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  // The browser service posts every outbox event here. session.ended (the
+  // original event, sent without a check on eventType) bills below.
+  if (req.body?.eventType === "profile.saved") {
+    return handleProfileSavedWebhook(req, res, logger);
   }
 
   const { sessionId, sessionDurationMs } = req.body as {
@@ -819,25 +1045,52 @@ export async function browserWebhookDestroyedController(
 
   await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
 
+  const agentRequestId =
+    session.request_id && session.request_id !== session.id
+      ? session.request_id
+      : null;
   if (session.should_bill) {
-    const agentRequestId =
-      session.request_id && session.request_id !== session.id
-        ? session.request_id
-        : null;
-    billTeam(session.team_id, creditsBilled, null, {
-      endpoint: agentRequestId ? "agent" : usedPrompt ? "interact" : "browser",
-      jobId: agentRequestId ?? session.id,
-      // Same reasoning as the destroy path above: keyed on the session, not on
-      // jobId, and suffixed per path so the two teardown routes cannot dedupe
-      // each other's charge away.
-      chargeId: `${session.id}:webhook`,
-    }).catch(error => {
+    // The webhook carries no request context, so the team's ACUC answers for
+    // the org — the same lookup the biller used to make for itself.
+    billTeam(
+      session.team_id,
+      await orgIdForTeam(session.team_id),
+      creditsBilled,
+      null,
+      {
+        endpoint: agentRequestId
+          ? "agent"
+          : usedPrompt
+            ? "interact"
+            : "browser",
+        jobId: agentRequestId ?? session.id,
+        // Same reasoning as the destroy path above: keyed on the session, not on
+        // jobId, and suffixed per path so the two teardown routes cannot dedupe
+        // each other's charge away.
+        chargeId: `${session.id}:webhook`,
+      },
+    ).catch(error => {
       logger.error("Failed to bill team for browser session via webhook", {
         error,
         teamId: session.team_id,
         sessionId: session.id,
         creditsBilled,
         durationMs,
+      });
+    });
+  }
+
+  if (agentRequestId) {
+    await recordRequestCredits({
+      requestId: agentRequestId,
+      jobId: session.id,
+      credits: creditsBilled,
+    }).catch(error => {
+      logger.error("Failed to record browser request credits in Bigtable", {
+        error,
+        requestId: agentRequestId,
+        sessionId: session.id,
+        creditsBilled,
       });
     });
   }

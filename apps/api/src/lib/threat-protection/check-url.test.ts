@@ -138,6 +138,37 @@ describe("checkUrl", () => {
     expect(counters.hashesSearchRequests).toBe(before);
   });
 
+  it("manual-only: enforces the lists and default-allows the rest with no provider call", async () => {
+    const before = counters.hashesSearchRequests;
+    const manual = policy({
+      mode: "manual-only",
+      blacklist: ["blocked.com"],
+      blockedTlds: ["zip"],
+    });
+
+    const blocked = await checkUrl("https://cdn.blocked.com/x", manual, {});
+    expect(blocked).toMatchObject({
+      allowed: false,
+      rule: "blacklist",
+      providerConsulted: false,
+      mode: "manual-only",
+    });
+
+    const tld = await checkUrl("https://archive.zip/", manual, {});
+    expect(tld).toMatchObject({ allowed: false, rule: "blocked-tld" });
+
+    // A domain the provider would flag is allowed: no lookup, no billing.
+    const risky = await checkUrl(`https://${RISKY_DOMAIN}/`, manual, {});
+    expect(risky).toMatchObject({
+      allowed: true,
+      rule: "default-allow",
+      providerConsulted: false,
+      verdict: null,
+      mode: "manual-only",
+    });
+    expect(counters.hashesSearchRequests).toBe(before);
+  });
+
   it("consults the provider and blocks a flagged domain (fresh scan)", async () => {
     const before = riskyHits();
     const decision = await checkUrl(RISKY_DOMAIN.toUpperCase(), policy(), {

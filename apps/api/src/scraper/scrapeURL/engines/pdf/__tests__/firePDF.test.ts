@@ -22,6 +22,7 @@ function makeMeta() {
     id: "sync-page-markdown-test",
     url: "https://example.com/file.pdf",
     rewrittenUrl: undefined,
+    options: {},
     logger,
     mock: null,
     abort: {
@@ -35,6 +36,118 @@ function makeMeta() {
     },
   } as any;
 }
+
+describe("scrapePDFWithFirePDF request metadata", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "Document",
+      failed_pages: null,
+      pages_processed: 1,
+    } as any);
+  });
+
+  it.each([
+    [
+      "original URL",
+      {},
+      {},
+      { source_endpoint: "scrape", url: "https://example.com/file.pdf" },
+    ],
+    [
+      "rewritten URL",
+      { rewrittenUrl: "https://example.com/download/file.pdf" },
+      {},
+      {
+        source_endpoint: "scrape",
+        url: "https://example.com/download/file.pdf",
+      },
+    ],
+    ["empty URL", { url: "" }, {}, { source_endpoint: "scrape", url: "" }],
+    [
+      "non-HTTP URL",
+      { url: "file:///document.pdf" },
+      {},
+      { source_endpoint: "scrape", url: "file:///document.pdf" },
+    ],
+    [
+      "unmodified source value",
+      { url: "  document source  " },
+      {},
+      { source_endpoint: "scrape", url: "  document source  " },
+    ],
+    ["ZDR", {}, { zeroDataRetention: true }, { source_endpoint: "scrape" }],
+    ["parse", {}, { isParse: true }, { source_endpoint: "parse" }],
+    [
+      "uploaded file",
+      {},
+      {
+        uploadedFile: {
+          buffer: Buffer.from("document"),
+          filename: "document.pdf",
+        },
+      },
+      { source_endpoint: "parse" },
+    ],
+  ] as const)(
+    "sends source metadata for %s",
+    async (_name, overrides, internalOptions, expected) => {
+      const meta = { ...makeMeta(), ...overrides };
+      meta.internalOptions = {
+        ...meta.internalOptions,
+        zeroDataRetention: false,
+        ...internalOptions,
+      };
+
+      await scrapePDFWithFirePDF(meta, "BASE64", 1);
+
+      const body = mockedRobustFetch.mock.calls[0][0].body as Record<
+        string,
+        unknown
+      >;
+      expect(body).toMatchObject({
+        source: "firecrawl",
+        source_request_context: "default",
+        ...expected,
+      });
+      expect(Object.hasOwn(body, "url")).toBe(Object.hasOwn(expected, "url"));
+    },
+  );
+
+  it.each([
+    ["empty options", {}, "default"],
+    ["empty headers and actions", { headers: {}, actions: [] }, "default"],
+    ["header", { headers: { "X-Example": "example-value" } }, "custom"],
+    ["empty header value", { headers: { "X-Example": "" } }, "custom"],
+    ["cookie header", { headers: { Cookie: "example=value" } }, "custom"],
+    ["action", { actions: [{ type: "wait", milliseconds: 1 }] }, "custom"],
+    ["profile", { profile: { name: "example-profile" } }, "custom"],
+    [
+      "profile without saving changes",
+      { profile: { name: "example-profile", saveChanges: false } },
+      "custom",
+    ],
+  ] as const)(
+    "describes %s without forwarding option values",
+    async (_name, options, expected) => {
+      const meta = { ...makeMeta(), options };
+
+      await scrapePDFWithFirePDF(meta, "BASE64", 1);
+
+      const body = mockedRobustFetch.mock.calls[0][0].body as Record<
+        string,
+        unknown
+      >;
+      expect(body.source_request_context).toBe(expected);
+      expect(body).not.toHaveProperty("headers");
+      expect(body).not.toHaveProperty("actions");
+      expect(body).not.toHaveProperty("profile");
+      expect(JSON.stringify(body)).not.toContain("example-value");
+      expect(JSON.stringify(body)).not.toContain("example=value");
+      expect(JSON.stringify(body)).not.toContain("example-profile");
+    },
+  );
+});
 
 describe("reconcilePageCountWithFirePdf", () => {
   it("uses fire-pdf's count when the upstream pass left it at 0", () => {

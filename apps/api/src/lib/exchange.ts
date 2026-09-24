@@ -70,8 +70,6 @@ type ExchangeProvider = {
 const SUPPORTED_FORMATS = new Set(["markdown", "json"]);
 const EXCHANGE_BETA_FLAG = "professionalProfileCompanyDataBeta";
 const THIRD_PARTY_DATA_TERMS_REQUIRED_CODE = "THIRD_PARTY_DATA_TERMS_REQUIRED";
-const THIRD_PARTY_DATA_TERMS_REQUIRED_MESSAGE =
-  "An organization admin must accept this data source's terms before this URL can be processed.";
 
 const EXCHANGE_PROVIDERS_PATH = "/v1/providers";
 const EXCHANGE_PROVIDERS_TIMEOUT_MS = 2_000;
@@ -515,20 +513,22 @@ export async function canUseExchangeForRequest(
   return (await getExchangeAccessForRequest(input)).allowed;
 }
 
-function getThirdPartyDataTermsSettingsUrl(): string {
-  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/settings?tab=data-sources`;
+// Terms are keyed by provider id, so the key doubles as the provider page to accept them on.
+function getThirdPartyDataTermsUrl(terms: ExchangeTerms): string {
+  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria/${encodeURIComponent(terms.key)}`;
 }
 
 export function getThirdPartyDataTermsRequiredResponse(terms: ExchangeTerms) {
+  const url = getThirdPartyDataTermsUrl(terms);
   return {
     success: false as const,
     code: THIRD_PARTY_DATA_TERMS_REQUIRED_CODE as "THIRD_PARTY_DATA_TERMS_REQUIRED",
-    error: THIRD_PARTY_DATA_TERMS_REQUIRED_MESSAGE,
+    error: `An organization admin must accept the ${terms.key} provider's terms (version ${terms.version}) before this request can run. Accept them at ${url}`,
     requiresAction: {
       type: "accept_terms",
       terms: terms.key,
       version: terms.version,
-      url: getThirdPartyDataTermsSettingsUrl(),
+      url,
     },
   };
 }
@@ -599,24 +599,72 @@ export async function reportExchangeBilling(input: {
     return false;
   }
 
+  return deliverBillingReport({
+    url: `${baseUrl}/v1/access-events/${encodeURIComponent(input.accessEventId)}/billing`,
+    headers: { "Content-Type": "application/json" },
+    body: {
+      status: input.status,
+      ...(input.billingReference === undefined
+        ? {}
+        : { billingReference: input.billingReference }),
+    },
+    retryNotFound: false,
+    context: { accessEventId: input.accessEventId, status: input.status },
+  });
+}
+
+/**
+ * Report the billing outcome of a tool execution's usage rows, keyed by the
+ * `x-request-id` sent with `/v1/retrieve`. Internal-secret route; usage is
+ * recorded asynchronously on the Exchange, so a 404 is retried like a 5xx.
+ */
+export async function reportExchangeUsageBilling(input: {
+  requestId: string;
+  status: "confirmed" | "void";
+  billingReference?: string;
+}): Promise<boolean> {
+  const baseUrl = getExchangeBaseUrl();
+  if (!baseUrl || !config.EXCHANGE_INTERNAL_SECRET) {
+    return false;
+  }
+
+  return deliverBillingReport({
+    url: `${baseUrl}/v1/usage-events/billing`,
+    headers: {
+      "Content-Type": "application/json",
+      "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET,
+    },
+    body: [
+      {
+        requestId: input.requestId,
+        status: input.status,
+        ...(input.billingReference === undefined
+          ? {}
+          : { billingReference: input.billingReference }),
+      },
+    ],
+    retryNotFound: true,
+    context: { requestId: input.requestId, status: input.status },
+  });
+}
+
+async function deliverBillingReport(input: {
+  url: string;
+  headers: Record<string, string>;
+  body: unknown;
+  retryNotFound: boolean;
+  context: Record<string, unknown>;
+}): Promise<boolean> {
   for (let attempt = 1; attempt <= EXCHANGE_BILLING_ATTEMPTS; attempt++) {
     let retryAfterMs: number | undefined;
 
     try {
-      const response = await fetch(
-        `${baseUrl}/v1/access-events/${encodeURIComponent(input.accessEventId)}/billing`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status: input.status,
-            ...(input.billingReference === undefined
-              ? {}
-              : { billingReference: input.billingReference }),
-          }),
-          signal: AbortSignal.timeout(EXCHANGE_BILLING_TIMEOUT_MS),
-        },
-      );
+      const response = await fetch(input.url, {
+        method: "POST",
+        headers: input.headers,
+        body: JSON.stringify(input.body),
+        signal: AbortSignal.timeout(EXCHANGE_BILLING_TIMEOUT_MS),
+      });
 
       if (response.ok) {
         return true;
@@ -624,11 +672,15 @@ export async function reportExchangeBilling(input: {
 
       // 4xx responses other than 429 are definitive (conflict, unknown
       // event) - the Exchange has spoken and a retry cannot change the
-      // answer. 429 is transient rate limiting and retries.
-      if (response.status < 500 && response.status !== 429) {
+      // answer. 429 is transient rate limiting and retries, as does a 404
+      // where the caller knows the rows are written asynchronously.
+      if (
+        response.status < 500 &&
+        response.status !== 429 &&
+        !(input.retryNotFound && response.status === 404)
+      ) {
         rootLogger.warn("Exchange billing report rejected", {
-          accessEventId: input.accessEventId,
-          status: input.status,
+          ...input.context,
           statusCode: response.status,
         });
         return false;
@@ -639,15 +691,13 @@ export async function reportExchangeBilling(input: {
       }
 
       rootLogger.warn("Exchange billing report failed", {
-        accessEventId: input.accessEventId,
-        status: input.status,
+        ...input.context,
         statusCode: response.status,
         attempt,
       });
     } catch (error) {
       rootLogger.warn("Exchange billing report errored", {
-        accessEventId: input.accessEventId,
-        status: input.status,
+        ...input.context,
         attempt,
         error,
       });

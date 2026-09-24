@@ -203,6 +203,30 @@ export class ProxySelectionError extends TransportableError {
   }
 }
 
+export class SiteRestrictionError extends TransportableError {
+  constructor() {
+    super(
+      "SCRAPE_SITE_RESTRICTION_BLOCKED",
+      "This site restricts automated access to the requested content. Safe Mode is enabled for your organization, so the site's restriction is returned instead of being worked around.",
+    );
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+    };
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new SiteRestrictionError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class ActionError extends TransportableError {
   constructor(public errorCode: string) {
     super(

@@ -81,6 +81,7 @@ from .v2.types import (
     ExecuteJavascriptAction,
     PDFAction,
     PDFParser,
+    ImageParser,
     
     # Usage types
     QueueStatusResponse,
@@ -180,6 +181,7 @@ __all__ = [
     'ExecuteJavascriptAction',
     'PDFAction',
     'PDFParser',
+    'ImageParser',
 
     # Usage types
     'QueueStatusResponse',

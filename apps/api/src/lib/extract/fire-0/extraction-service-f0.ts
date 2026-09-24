@@ -39,6 +39,7 @@ import {
 } from "./usage/llm-cost-f0";
 import { SourceTracker_F0 } from "./helpers/source-tracker-f0";
 import { getACUCTeam } from "../../../controllers/auth";
+import { orgIdFromAcuc } from "../../team-org";
 import { resolveThreatProtection } from "../../threat-protection/request";
 
 interface ExtractServiceOptions {
@@ -48,6 +49,8 @@ interface ExtractServiceOptions {
   cacheKey?: string;
   apiKeyId: number | null;
   createdAt?: number;
+  /** The caller's External-Request-Id, carried on the charge for firebill. */
+  externalRequestId?: string | null;
 }
 
 interface ExtractResult {
@@ -871,9 +874,15 @@ export async function performExtraction_F0(
   // Bill team for usage
   billTeam(
     teamId,
+    orgIdFromAcuc(acuc),
     creditsToBill,
     apiKeyId,
-    { endpoint: "extract", jobId: extractId, chargeId: extractId },
+    {
+      endpoint: "extract",
+      jobId: extractId,
+      chargeId: extractId,
+      externalRequestId: options.externalRequestId ?? null,
+    },
     logger,
   ).catch(error => {
     logger.error(

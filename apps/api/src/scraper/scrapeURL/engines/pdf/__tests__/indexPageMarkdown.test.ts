@@ -7,6 +7,46 @@ import { config } from "../../../../../config";
 import { shouldUseIndex } from "../../index";
 import { sendDocumentToIndex } from "../../index/index";
 
+describe("URL index request context", () => {
+  it.each([
+    ["default options", {}, true],
+    ["empty headers and actions", { headers: {}, actions: [] }, true],
+    ["custom header", { headers: { "X-Example": "example-value" } }, false],
+    ["empty header value", { headers: { "X-Example": "" } }, false],
+    ["action", { actions: [{ type: "wait", milliseconds: 1 }] }, false],
+    ["profile", { profile: { name: "example-profile" } }, false],
+  ])("preserves index eligibility for %s", async (_name, options, expected) => {
+    const originalWriteOnly = config.FIRECRAWL_INDEX_WRITE_ONLY;
+    (
+      config as { FIRECRAWL_INDEX_WRITE_ONLY?: boolean }
+    ).FIRECRAWL_INDEX_WRITE_ONLY = false;
+    try {
+      const meta = {
+        internalOptions: {},
+        winnerEngine: "fire-engine;chrome-cdp",
+        featureFlags: new Set(),
+        options: {
+          formats: ["markdown"],
+          maxAge: 60_000,
+          storeInCache: true,
+          ...options,
+        },
+      } as any;
+      expect(shouldUseIndex(meta)).toBe(expected);
+      if (!expected) {
+        const document = { markdown: "Example", metadata: {} } as any;
+        const result = await sendDocumentToIndex(meta, document);
+        expect(result).toBe(document);
+        expect(result.metadata.indexId).toBeUndefined();
+      }
+    } finally {
+      (
+        config as { FIRECRAWL_INDEX_WRITE_ONLY?: boolean }
+      ).FIRECRAWL_INDEX_WRITE_ONLY = originalWriteOnly;
+    }
+  });
+});
+
 describe("PDF page-markdown URL index policy", () => {
   it("bypasses URL-index reads for page-aware requests", () => {
     const originalWriteOnly = config.FIRECRAWL_INDEX_WRITE_ONLY;

@@ -87,3 +87,11 @@ export function getCustomRobotsAgent(
   if (flags?.customRobotsAgent === "allowed") return "allowed";
   return "disabled";
 }
+
+/**
+ * Whether the org's DPA (or partner amendment) restricts how its data may be
+ * handled. Absent or any non-`true` value reads as unrestricted.
+ */
+export function isDpaRestricted(flags: TeamFlags | undefined): boolean {
+  return flags?.dpaRestricted === true;
+}

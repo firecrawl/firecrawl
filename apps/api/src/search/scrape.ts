@@ -43,6 +43,7 @@ interface ScrapeSearchOptions {
   agentIndexOnly?: boolean;
   keylessReserved?: boolean;
   threatProtectionPolicy?: ThreatProtectionPolicy | null;
+  safeModeBypassed?: boolean;
 }
 
 async function scrapeSearchResultDirect(
@@ -86,6 +87,7 @@ async function scrapeSearchResultDirect(
           teamFlags: flags,
           agentIndexOnly: options.agentIndexOnly ?? false,
           threatProtection: options.threatProtectionPolicy ?? undefined,
+          safeModeBypassed: options.safeModeBypassed === true,
         },
         skipNuq: true,
         origin: options.origin,
@@ -220,6 +222,7 @@ export async function scrapeSearchResults(
 
   const jobPriority = await getJobPriority({
     team_id: options.teamId,
+    org_id: options.orgId ?? null,
     basePriority: 10,
   });
 

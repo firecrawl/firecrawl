@@ -2,6 +2,7 @@ import type { Meta } from "../../..";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
+import { buildFirePdfRequestMetadata } from "./request-metadata";
 import {
   firePdfAsyncSubmitRetriesTotal,
   firePdfAsyncSubmittedTotal,
@@ -131,6 +132,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
       : { input_gcs_uri: input.gcsUri, input_sha256: input.sha256 }),
     scrape_id: scrapeId,
     source: "firecrawl" as const,
+    ...buildFirePdfRequestMetadata(meta),
     zdr: false as const,
     deadline_at: deadlineAt,
     ...(meta.internalOptions.teamId && {

@@ -1,15 +1,8 @@
 import crypto from "crypto";
 import { Logger } from "winston";
 import { z } from "zod";
-import {
-  generateObject,
-  InvalidPromptError,
-  LoadAPIKeyError,
-  LoadSettingError,
-  NoObjectGeneratedError,
-  NoSuchModelError,
-  UnsupportedFunctionalityError,
-} from "ai";
+import { generateObject, NoObjectGeneratedError } from "ai";
+import { Semaphore } from "async-mutex";
 import { getModel } from "../../../lib/generic-ai";
 import {
   CostLimitExceededError,
@@ -65,17 +58,23 @@ function buildGuardSystemPrompt(tagName: string): string {
   ].join(" ");
 }
 
+// "none" marks a chunk the guard failed open on. Billing reads it: the guard
+// fee is charged only when every chunk got a verdict (see scrape-billing.ts).
+type GuardVerdict = "clean" | "injection" | "none";
+
 function recordGuardCall(
   costTracking: CostTracking,
   modelId: string,
   inputTokens: number,
   outputTokens: number,
+  verdict: GuardVerdict,
 ) {
   costTracking.addCall({
     type: "other",
     metadata: {
       module: "scrapeURL",
       method: "checkForPromptInjection",
+      verdict,
     },
     tokens: { input: inputTokens, output: outputTokens },
     model: modelId,
@@ -91,7 +90,7 @@ async function classifyChunk(
   costTracking: CostTracking,
   metadata: { teamId: string; functionId?: string },
   zeroDataRetention: boolean,
-): Promise<void> {
+): Promise<boolean> {
   const tagName = `untrusted_page_content_${crypto.randomUUID()}`;
 
   try {
@@ -123,6 +122,7 @@ async function classifyChunk(
       modelId,
       result.usage?.inputTokens ?? 0,
       result.usage?.outputTokens ?? 0,
+      result.object.isInjection ? "injection" : "clean",
     );
 
     if (result.object.isInjection) {
@@ -134,6 +134,7 @@ async function classifyChunk(
         `The scraped page content appears to contain a prompt injection attempt, so JSON extraction was aborted for safety. Guard verdict: ${result.object.reason.slice(0, 300)}`,
       );
     }
+    return true;
   } catch (error) {
     if (
       error instanceof PromptInjectionDetectedError ||
@@ -142,49 +143,53 @@ async function classifyChunk(
       throw error;
     }
 
-    // Denylist, not allowlist: unknown future SDK error types default to "billed".
-    const neverDispatched = [
-      InvalidPromptError,
-      NoSuchModelError,
-      UnsupportedFunctionalityError,
-      LoadAPIKeyError,
-      LoadSettingError,
-    ].some(ErrorClass => ErrorClass.isInstance(error));
-    if (!neverDispatched) {
-      const usage = NoObjectGeneratedError.isInstance(error)
-        ? error.usage
-        : undefined;
-      recordGuardCall(
-        costTracking,
-        modelId,
-        usage?.inputTokens ?? 0,
-        usage?.outputTokens ?? 0,
-      );
-    }
+    const usage = NoObjectGeneratedError.isInstance(error)
+      ? error.usage
+      : undefined;
+    recordGuardCall(
+      costTracking,
+      modelId,
+      usage?.inputTokens ?? 0,
+      usage?.outputTokens ?? 0,
+      "none",
+    );
 
     // Deliberately fail-open so a guard outage doesn't take down the whole scrape.
     logger.warn(
       "Prompt injection guard call failed; proceeding without a guard verdict (fail-open)",
       { error },
     );
+    return false;
   }
 }
 
+// Caps in-flight classifier calls across several concurrent scans, e.g. one
+// per page of a smart-scrape result, which would otherwise each burst up to
+// GUARD_CONCURRENCY_LIMIT calls at once.
+export function createPromptInjectionGuardLimiter(): Semaphore {
+  return new Semaphore(GUARD_CONCURRENCY_LIMIT);
+}
+
+// Throws PromptInjectionDetectedError on a detection. Otherwise resolves to
+// false when the guard failed open on at least one chunk, i.e. part of the
+// content reached extraction unscanned.
 export async function checkForPromptInjection({
   markdown,
   logger,
   costTracking,
   metadata,
   zeroDataRetention,
+  limiter = createPromptInjectionGuardLimiter(),
 }: {
   markdown: string | undefined;
   logger: Logger;
   costTracking: CostTracking;
   metadata: { teamId: string; functionId?: string };
   zeroDataRetention: boolean;
-}): Promise<void> {
+  limiter?: Semaphore;
+}): Promise<boolean> {
   if (!markdown || markdown.trim().length === 0) {
-    return;
+    return true;
   }
 
   // Chunked and overlapping: a single trim window is bypassable, and a non-overlapping split could hide an injection at a boundary.
@@ -198,20 +203,25 @@ export async function checkForPromptInjection({
   const modelId = typeof model === "string" ? model : model.modelId;
 
   // Batched so a detection stops later batches from ever being scheduled, and so a huge page can't burst past rate limits.
+  let everyChunkScanned = true;
   for (let i = 0; i < chunks.length; i += GUARD_CONCURRENCY_LIMIT) {
     const batch = chunks.slice(i, i + GUARD_CONCURRENCY_LIMIT);
-    await Promise.all(
+    const scanned = await Promise.all(
       batch.map(chunk =>
-        classifyChunk(
-          chunk,
-          model,
-          modelId,
-          logger,
-          costTracking,
-          metadata,
-          zeroDataRetention,
+        limiter.runExclusive(() =>
+          classifyChunk(
+            chunk,
+            model,
+            modelId,
+            logger,
+            costTracking,
+            metadata,
+            zeroDataRetention,
+          ),
         ),
       ),
     );
+    if (scanned.includes(false)) everyChunkScanned = false;
   }
+  return everyChunkScanned;
 }

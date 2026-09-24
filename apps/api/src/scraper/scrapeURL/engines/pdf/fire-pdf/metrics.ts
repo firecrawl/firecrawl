@@ -1,5 +1,23 @@
 import { Counter, Histogram } from "prom-client";
 
+export const firePdfCacheEventsTotal = new Counter({
+  name: "firecrawl_fire_pdf_cache_events_total",
+  help: "fire-pdf content-cache events by outcome: hit, stale, miss, bypass_refresh, bypass_refresh_denied, lookup_error, write, write_failed, refused_write",
+  labelNames: ["event", "variant"],
+});
+
+export const firePdfCacheRefusedWritesTotal = new Counter({
+  name: "firecrawl_fire_pdf_cache_refused_writes_total",
+  help: "fire-pdf results not written to the content cache, by reason; reasons: failed_pages, degraded_pages, missing_quality, malformed_provenance",
+  labelNames: ["reason"],
+});
+
+export type CacheRefusedReason =
+  | "failed_pages"
+  | "degraded_pages"
+  | "missing_quality"
+  | "malformed_provenance";
+
 export const firePdfAsyncSubmittedTotal = new Counter({
   name: "firecrawl_fire_pdf_async_submitted_total",
   help: "Count of POST /jobs requests successfully submitted to fire-pdf async",

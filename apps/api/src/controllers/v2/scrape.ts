@@ -1,4 +1,6 @@
 import { Response } from "express";
+import { providerScrapeController } from "./scrape-alexandria";
+import { discoverTools } from "../../search/alexandria";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import {
@@ -17,6 +19,11 @@ import {
 } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
+import {
+  applySafeMode,
+  resolveSafeMode,
+  isLockdownZeroDataRetention,
+} from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -41,6 +48,7 @@ import {
 import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
@@ -50,12 +58,17 @@ export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
 ) {
+  if (req.body && "alexandria" in req.body)
+    return providerScrapeController(req, res);
   // Resolved before the root span starts so the whole request trace stays
-  // unrecorded for zero-data-retention requests (see otel-tracer).
+  // unrecorded for zero-data-retention requests (see otel-tracer). Safe Mode
+  // lockdown implies ZDR, so fold it in here too — otherwise the rejection
+  // paths below would export the target URL on the root span.
   const zeroDataRetentionTrace =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
     req.body?.zeroDataRetention === true ||
-    req.body?.lockdown === true;
+    req.body?.lockdown === true ||
+    isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
 
   return withSpan(
     "api.scrape.request",
@@ -85,6 +98,43 @@ export async function scrapeController(
         });
       });
 
+      const emitSafeModeRejection = (message: string) =>
+        emitRejectedScrapeActivityEvent({
+          scrapeId: jobId,
+          requestId: jobId,
+          endpoint: "scrape",
+          teamId: req.auth.team_id,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+          url: req.body.url,
+          error: new TransportableError("SAFE_MODE_BLOCKED", message),
+          origin: req.body.origin ?? "api",
+          integration: req.body.integration,
+          zeroDataRetention: req.body.zeroDataRetention ?? false,
+        });
+
+      const safeMode = resolveSafeMode(
+        req.acuc?.flags,
+        req.body.safeMode,
+        req.body.url,
+      );
+      if (safeMode.error) {
+        setSpanAttributes(span, {
+          "scrape.error": safeMode.error,
+          "scrape.status_code": 403,
+        });
+        emitSafeModeRejection(safeMode.error);
+        return res.status(403).json({
+          success: false,
+          code: safeMode.code,
+          error: safeMode.error,
+        });
+      }
+      setSpanAttributes(span, {
+        "scrape.safe_mode": safeMode.safeMode !== undefined,
+        "scrape.safe_mode_bypassed": safeMode.bypassed === true,
+        "scrape.safe_mode_allowlisted": safeMode.allowlisted === true,
+      });
+
       // Threat protection: resolve the effective policy (org config +
       // per-request override). No-ops (null policy, zero I/O) for teams
       // without the flag.
@@ -93,24 +143,28 @@ export async function scrapeController(
         orgId: req.acuc?.org_id ?? null,
         flags: req.acuc?.flags ?? null,
         override: req.body.threatProtection,
+        force: safeMode.safeMode?.domainControls === true,
       });
       if (threatProtection.error) {
         setSpanAttributes(span, {
           "scrape.error": threatProtection.error,
           "scrape.status_code": 403,
         });
+        if (safeMode.safeMode?.domainControls) {
+          emitSafeModeRejection(threatProtection.error);
+        }
         return res.status(403).json({
           success: false,
           error: threatProtection.error,
         });
       }
-
       // Permission check span
       const permissions = await withSpan(
         "api.scrape.check_permissions",
         async permSpan => {
           const perms = checkPermissions(req.body, req.acuc?.flags, {
             threatProtectionOrgConfig: threatProtection.orgConfig,
+            safeMode: safeMode.safeMode ?? null,
           });
           setSpanAttributes(permSpan, {
             "permissions.success": !perms.error,
@@ -125,8 +179,12 @@ export async function scrapeController(
           "scrape.error": permissions.error,
           "scrape.status_code": 403,
         });
+        if (permissions.code === "SAFE_MODE_BLOCKED") {
+          emitSafeModeRejection(permissions.error);
+        }
         return res.status(403).json({
           success: false,
+          code: permissions.code,
           error: permissions.error,
         });
       }
@@ -148,13 +206,23 @@ export async function scrapeController(
         });
       }
 
+      applySafeMode(safeMode.safeMode, req.body);
+
       const zeroDataRetention =
         getScrapeZDR(req.acuc?.flags) === "forced" ||
         (req.body.zeroDataRetention ?? false) ||
         (req.body.lockdown ?? false);
-      const billing: BillingMetadata = req.body.__agentInterop
-        ? { endpoint: "agent" as const, jobId }
-        : { endpoint: "scrape" as const, jobId };
+      if (req.body.domainTools && zeroDataRetention)
+        return res.status(403).json({
+          success: false,
+          error: "Provider discovery does not support zero data retention.",
+        });
+      const billing: BillingMetadata = {
+        ...(req.body.__agentInterop
+          ? { endpoint: "agent" as const, jobId }
+          : { endpoint: "scrape" as const, jobId }),
+        externalRequestId: externalRequestId(req),
+      };
 
       if (
         req.body.__agentInterop &&
@@ -215,6 +283,12 @@ export async function scrapeController(
       });
 
       const middlewareTime = controllerStartTime - middlewareStartTime;
+
+      if (safeMode.bypassed) {
+        logger.info("Safe Mode bypassed by request", {
+          apiKeyId: req.acuc?.api_key_id,
+        });
+      }
 
       logger.debug("Scrape " + jobId + " starting", {
         version: "v2",
@@ -278,7 +352,7 @@ export async function scrapeController(
 
         const baseConcurrency = await getEffectiveConcurrencyLimit(
           req.auth.team_id,
-          req.acuc?.org_id,
+          req.acuc?.org_id ?? null,
         );
         const concurrency = boostConcurrency
           ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
@@ -293,6 +367,7 @@ export async function scrapeController(
           async limited => {
             const jobPriority = await getJobPriority({
               team_id: req.auth.team_id,
+              org_id: req.acuc?.org_id ?? null,
               basePriority: 10,
             });
 
@@ -347,6 +422,10 @@ export async function scrapeController(
                       teamConcurrency: baseConcurrency,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
                       threatProtection: threatProtection.policy ?? undefined,
+                      safeMode: safeMode.allowlisted
+                        ? undefined
+                        : safeMode.safeMode,
+                      safeModeBypassed: safeMode.bypassed === true,
                     },
                     skipNuq: true,
                     origin,
@@ -625,6 +704,30 @@ export async function scrapeController(
         concurrencyLimited,
         concurrencyQueueDurationMs: lockTime || undefined,
       });
+      const tools =
+        req.body.domainTools && config.FIRE_EXCHANGE_URL
+          ? await discoverTools(
+              {
+                teamId: req.auth.team_id,
+                toolDetail: req.body.toolDetail,
+                urls: [
+                  ...new Set(
+                    [
+                      req.body.url,
+                      doc!.metadata?.sourceURL,
+                      doc!.metadata?.url,
+                    ].filter((u): u is string => typeof u === "string"),
+                  ),
+                ],
+                limit: 24,
+                timeoutMs: 10000,
+              },
+              logger,
+            ).catch(error => {
+              logger.warn("Domain tool discovery failed", { error });
+              return undefined;
+            })
+          : undefined;
 
       return res.status(200).json({
         success: true,
@@ -637,7 +740,9 @@ export async function scrapeController(
               ? lockTime || 0
               : undefined,
           },
+          ...(tools ? { tools: tools.items } : {}),
         },
+        ...(tools?.warning ? { warning: tools.warning } : {}),
         scrape_id: origin?.includes("website") ? jobId : undefined,
       });
     },

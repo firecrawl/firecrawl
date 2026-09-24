@@ -26,6 +26,7 @@ import { logger as _logger } from "../../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { checkPermissions } from "../../lib/permissions";
+import { resolveSafeMode } from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
@@ -49,6 +50,11 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
+import {
+  AGENT_REQUEST_CREDITS_SHARDS,
+  initializeRequestCredits,
+  requestCreditsShards,
+} from "../../lib/request-credits-store";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -61,11 +67,23 @@ export async function batchScrapeController(
     req.body = batchScrapeRequestSchema.parse(req.body);
   }
 
+  // Batch has many URLs; per-URL allowlist is applied at the scrapeURL backstop.
+  // Resolve org-level here only for the bypass/enablement decision.
+  const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
+  if (safeMode.error) {
+    return res.status(403).json({
+      success: false,
+      code: safeMode.code,
+      error: safeMode.error,
+    });
+  }
+
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
     override: req.body.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
     return res.status(403).json({
@@ -76,10 +94,12 @@ export async function batchScrapeController(
 
   const permissions = checkPermissions(req.body, req.acuc?.flags, {
     threatProtectionOrgConfig: threatProtection.orgConfig,
+    safeMode: safeMode.safeMode ?? null,
   });
   if (permissions.error) {
     return res.status(403).json({
       success: false,
+      code: permissions.code,
       error: permissions.error,
     });
   }
@@ -97,9 +117,11 @@ export async function batchScrapeController(
     });
   }
 
+  // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
-    (req.body.zeroDataRetention ?? false);
+    (req.body.zeroDataRetention ?? false) ||
+    (safeMode.safeMode?.lockdown ?? false);
 
   if (
     req.body.__agentInterop &&
@@ -242,6 +264,7 @@ export async function batchScrapeController(
       ) {
         billTeam(
           req.auth.team_id,
+          req.acuc?.org_id ?? null,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
           {
@@ -327,6 +350,39 @@ export async function batchScrapeController(
       target_hint: urls[0] ?? "",
       zeroDataRetention: zeroDataRetention || false,
       api_key_id: req.acuc?.api_key_id ?? null,
+      jobAccessExpiresAt: new Date(
+        Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      ),
+      creditsShards: requestCreditsShards(urls.length),
+    });
+  } else if (!req.body.appendToId) {
+    // An agent-started batch is recorded under the agent's request rather
+    // than as a request of its own, so logRequest never created a credit
+    // row for it. Its status is still polled: v2 reads credits under the
+    // saved agent request id, v1 under the batch id, and its children record
+    // credits under the agent request id. Make sure both rows exist. The
+    // agent row is created once with the agent controller's shard count;
+    // for an agent that came through that controller this is a no-op, for
+    // one that reaches the API first through interop it is the only writer.
+    const agentRequestId = req.body.__agentInterop?.requestId;
+    if (agentRequestId) {
+      await initializeRequestCredits(
+        agentRequestId,
+        AGENT_REQUEST_CREDITS_SHARDS,
+      ).catch(error => {
+        logger.warn("Failed to initialize Bigtable request credits", {
+          error,
+          requestId: agentRequestId,
+          shards: AGENT_REQUEST_CREDITS_SHARDS,
+        });
+      });
+    }
+    const creditsShards = requestCreditsShards(urls.length);
+    await initializeRequestCredits(id, creditsShards).catch(error => {
+      logger.warn("Failed to initialize Bigtable request credits", {
+        error,
+        shards: creditsShards,
+      });
     });
   }
 
@@ -346,6 +402,10 @@ export async function batchScrapeController(
           bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
           threatProtection: threatProtection.policy ?? undefined,
+          // Safe Mode rides the batch payload so each URL resolves it per-URL
+          // at the scrapeURL backstop.
+          teamFlags: req.acuc?.flags ?? undefined,
+          safeModeBypassed: safeMode.bypassed === true,
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,
         createdAt: Date.now(),
@@ -363,6 +423,12 @@ export async function batchScrapeController(
         error: "Job not found",
       });
     }
+    // Refresh Safe Mode + threat-protection context so appended jobs enforce
+    // the team's current policy, not whatever was stored when the batch was
+    // first created.
+    sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
+    sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
+    sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
   }
 
   if (!req.body.appendToId) {
@@ -389,6 +455,7 @@ export async function batchScrapeController(
     // set base to 21
     jobPriority = await getJobPriority({
       team_id: req.auth.team_id,
+      org_id: req.acuc?.org_id ?? null,
       basePriority: 21,
     });
   }

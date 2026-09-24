@@ -1,7 +1,8 @@
-import type { Bigtable, Table } from "@google-cloud/bigtable";
 import crypto from "crypto";
 import { config } from "../config";
 import { diffGetLastScrape } from "../db/rpc";
+import { getBigtableTable } from "./bigtable-client";
+import { setSpanAttributes, withSpan } from "./otel-tracer";
 
 // Change tracking bookkeeping. Final architecture (#4484 was the
 // transition): Bigtable is the store. Writes go to Bigtable only --
@@ -58,48 +59,6 @@ function changeTrackingRowKey(
   ]);
 }
 
-let bigtableClient: Bigtable | null = null;
-let table: Table | null = null;
-
-// The Bigtable package is loaded lazily so a broken or slow package load
-// surfaces as a caught error in the callers, not an import-time crash.
-async function getChangeTrackingTable(): Promise<Table> {
-  if (!bigtableClient) {
-    const { Bigtable } = await import("@google-cloud/bigtable");
-    bigtableClient = new Bigtable({
-      projectId: config.BIGTABLE_PROJECT_ID,
-      ...(config.BIGTABLE_APP_PROFILE_ID
-        ? { appProfileId: config.BIGTABLE_APP_PROFILE_ID }
-        : {}),
-      // Mirrors GCS_CREDENTIALS: base64-encoded service-account JSON.
-      // Parsed here (not at module load) so a malformed value fails as a
-      // caught error, never an import-time crash. Unset falls back to
-      // Application Default Credentials.
-      ...(config.BIGTABLE_CREDENTIALS
-        ? {
-            credentials: JSON.parse(atob(config.BIGTABLE_CREDENTIALS)),
-          }
-        : {}),
-      // The client's Cloud Monitoring metrics handler requires the
-      // OTel 1.x line, which GHSA-8988-4f7v-96qf only patches on 2.x;
-      // we don't consume client-side metrics, so disable the handler
-      // and let the dependency overrides move the tree to 2.x.
-      metricsEnabled: false,
-    });
-  }
-  if (!table) {
-    if (!config.BIGTABLE_INSTANCE_ID) {
-      throw new Error(
-        "BIGTABLE_INSTANCE_ID is not configured; change tracking requires the Bigtable store",
-      );
-    }
-    table = bigtableClient
-      .instance(config.BIGTABLE_INSTANCE_ID)
-      .table(TABLE_ID);
-  }
-  return table;
-}
-
 export async function changeTrackingInsertScrape(params: {
   team_id: string;
   url: string;
@@ -108,29 +67,36 @@ export async function changeTrackingInsertScrape(params: {
   /** When the scrape was logged; becomes the cell timestamp. */
   date_added: Date;
 }): Promise<void> {
-  const table = await getChangeTrackingTable();
-  // Runtime accepts Buffer keys (converted verbatim); the .d.ts only
-  // declares string.
-  await table.mutate([
-    {
-      key: changeTrackingRowKey(
-        params.team_id,
-        params.url,
-        params.tag,
-      ) as unknown as string,
-      // Required by Mutation.parse -- without it the entry carries no
-      // setCell mutations.
-      method: "insert" as const,
-      data: {
-        [FAMILY]: {
-          [QUALIFIER]: {
-            value: params.job_id,
-            timestamp: params.date_added,
+  await withSpan("bigtable.change_tracking.write", async span => {
+    setSpanAttributes(span, {
+      "db.system": "bigtable",
+      "bigtable.table": TABLE_ID,
+      "bigtable.operation": "mutate",
+    });
+    const table = await getBigtableTable(TABLE_ID);
+    // Runtime accepts Buffer keys (converted verbatim); the .d.ts only
+    // declares string.
+    await table.mutate([
+      {
+        key: changeTrackingRowKey(
+          params.team_id,
+          params.url,
+          params.tag,
+        ) as unknown as string,
+        // Required by Mutation.parse -- without it the entry carries no
+        // setCell mutations.
+        method: "insert" as const,
+        data: {
+          [FAMILY]: {
+            [QUALIFIER]: {
+              value: params.job_id,
+              timestamp: params.date_added,
+            },
           },
         },
       },
-    },
-  ]);
+    ]);
+  });
 }
 
 /**
@@ -144,13 +110,24 @@ export async function changeTrackingGetLastScrape(params: {
   url: string;
   tag: string | null;
 }): Promise<{ job_id: string; date_added: string } | null> {
-  const table = await getChangeTrackingTable();
+  const table = await getBigtableTable(TABLE_ID);
   const key = changeTrackingRowKey(params.team_id, params.url, params.tag);
-  const [rows] = await table.getRows({
-    keys: [key as unknown as string],
-    // Qualifier regex + latest-version-only, expressed via the column
-    // filter's cellLimit (there is no standalone `versions` filter key).
-    filter: [{ column: { name: QUALIFIER, cellLimit: 1 } }],
+  const rows = await withSpan("bigtable.change_tracking.read", async span => {
+    setSpanAttributes(span, {
+      "db.system": "bigtable",
+      "bigtable.table": TABLE_ID,
+      "bigtable.operation": "getRows",
+    });
+    const [result] = await table.getRows({
+      keys: [key as unknown as string],
+      // Qualifier regex + latest-version-only, expressed via the column
+      // filter's cellLimit (there is no standalone `versions` filter key).
+      filter: [{ column: { name: QUALIFIER, cellLimit: 1 } }],
+    });
+    setSpanAttributes(span, {
+      "bigtable.rows_returned": result.length,
+    });
+    return result;
   });
   const row = rows[0];
   if (row) {

@@ -17,30 +17,6 @@ import {
   scrapeTimeout,
 } from "./lib";
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-async function interactWithReplicaRetry(
-  jobId: string,
-  body: {
-    code: string;
-    language?: "python" | "node" | "bash";
-    timeout?: number;
-  },
-  identity: Identity,
-  attempts: number = 5,
-) {
-  let lastResponse: Awaited<ReturnType<typeof scrapeInteractRaw>> | null = null;
-
-  for (let i = 0; i < attempts; i += 1) {
-    const response = await scrapeInteractRaw(jobId, body, identity);
-    lastResponse = response;
-    if (response.statusCode !== 404) return response;
-    await sleep(500);
-  }
-
-  return lastResponse!;
-}
-
 describe("Scrape browser interact replay", () => {
   let identity: Identity;
   let otherIdentity: Identity;
@@ -91,7 +67,7 @@ describe("Scrape browser interact replay", () => {
         expect(typeof scrapeResponse.body.scrape_id).toBe("string");
         scrapeId = scrapeResponse.body.scrape_id as string;
 
-        const executeResponse = await interactWithReplicaRetry(
+        const executeResponse = await scrapeInteractRaw(
           scrapeId,
           {
             language: "node",
@@ -144,7 +120,7 @@ describe("Scrape browser interact replay", () => {
         expect(typeof scrapeResponse.body.scrape_id).toBe("string");
         scrapeId = scrapeResponse.body.scrape_id as string;
 
-        const executeResponse = await interactWithReplicaRetry(
+        const executeResponse = await scrapeInteractRaw(
           scrapeId,
           {
             language: "node",
@@ -213,7 +189,7 @@ describe("Scrape browser interact replay", () => {
 
         // Session creation primes agent-browser and consolidates tabs, so
         // user code must see exactly one tab: the content page.
-        const executeResponse = await interactWithReplicaRetry(
+        const executeResponse = await scrapeInteractRaw(
           scrapeId,
           {
             language: "node",
@@ -306,7 +282,7 @@ describe("Scrape browser interact replay", () => {
       expect(typeof scrapeResponse.body.scrape_id).toBe("string");
 
       const scrapeId = scrapeResponse.body.scrape_id as string;
-      const executeResponse = await interactWithReplicaRetry(
+      const executeResponse = await scrapeInteractRaw(
         scrapeId,
         {
           code: "console.log('should fail')",
@@ -339,7 +315,7 @@ describe("Scrape browser interact replay", () => {
       expect(typeof scrapeResponse.body.scrape_id).toBe("string");
 
       const scrapeId = scrapeResponse.body.scrape_id as string;
-      const executeResponse = await interactWithReplicaRetry(
+      const executeResponse = await scrapeInteractRaw(
         scrapeId,
         {
           code: "console.log('should not run')",

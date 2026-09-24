@@ -49,6 +49,12 @@ function makeRow(mode: string, config: unknown) {
 }
 
 describe("rowToConfig", () => {
+  it('maps a "manual-only" mode column', () => {
+    expect(rowToConfig(makeRow("manual-only", {})).policy.mode).toBe(
+      "manual-only",
+    );
+  });
+
   it("maps a full stored document", () => {
     const config = rowToConfig(
       makeRow("normal", {

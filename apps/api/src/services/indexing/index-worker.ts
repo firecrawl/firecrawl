@@ -42,6 +42,7 @@ import { processEngpickerJob } from "../../lib/engpicker";
 import { logRequest, shutdownPubSubLogging } from "../logging/log_job";
 import { startSiemLoggingConsumer } from "../siem-logging/worker";
 import { closeSiemLoggingTransport } from "../../lib/siem-logging/transport";
+import { requestCreditsShards } from "../../lib/request-credits-store";
 
 const workerLockDuration = config.WORKER_LOCK_DURATION;
 const workerStalledCheckInterval = config.WORKER_STALLED_CHECK_INTERVAL;
@@ -82,6 +83,9 @@ const processBillingJobInternal = async (token: string, job: Job) => {
       // This is an individual billing operation that should be queued for batch processing
       const {
         team_id,
+        // Undefined on a job enqueued before the producer carried the org;
+        // passed through as such so the batch resolves it once instead.
+        org_id,
         credits,
         billing,
         endpoint,
@@ -100,6 +104,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
       // Add to the REDIS batch queue
       await queueBillingOperation(
         team_id,
+        org_id,
         credits,
         api_key_id ?? null,
         resolveBillingMetadata({
@@ -481,6 +486,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               target_hint: url,
               zeroDataRetention: false,
               api_key_id: null,
+              creditsShards: requestCreditsShards(limit),
             });
 
             const crawlerOptions = {

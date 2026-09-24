@@ -44,6 +44,7 @@ import {
   shouldParsePDF,
 } from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
+import { hasCustomRequestContext } from "../../lib/request-context";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
   // Skip caching if screenshot format has custom viewport or quality settings
@@ -51,6 +52,15 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
   const hasCustomScreenshotSettings =
     screenshotFormat?.viewport !== undefined ||
     screenshotFormat?.quality !== undefined;
+
+  // A PDF capped by maxPages is truncated, but one whose true page count
+  // fits under the cap is identical to an unlimited scrape and safe to cache.
+  const pdfMaxPages = getPDFMaxPages(meta.options.parsers);
+  const isTruncatedPdf =
+    pdfMaxPages !== undefined &&
+    document.metadata.contentType === "application/pdf" &&
+    (document.metadata.totalPages === undefined ||
+      document.metadata.totalPages > pdfMaxPages);
 
   const shouldCache =
     meta.options.storeInCache &&
@@ -69,25 +79,14 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     !getPDFPageMarkdown(meta.options.parsers) &&
     !getPDFBlocks(meta.options.parsers) &&
     !getPDFPageMarkers(meta.options.parsers) &&
-    !meta.options.parsers?.some(parser => {
-      if (
-        typeof parser === "object" &&
-        parser !== null &&
-        "maxPages" in parser
-      ) {
-        return true;
-      }
-      return false;
-    }) &&
+    !isTruncatedPdf &&
     (meta.internalOptions.teamId === "sitemap" ||
       (meta.winnerEngine !== "fire-engine;tlsclient" &&
         meta.winnerEngine !== "fire-engine;tlsclient;stealth" &&
         meta.winnerEngine !== "fetch")) &&
     !meta.featureFlags.has("actions") &&
     !hasCustomScreenshotSettings &&
-    (meta.options.headers === undefined ||
-      Object.keys(meta.options.headers).length === 0) &&
-    meta.options.profile === undefined;
+    !hasCustomRequestContext(meta.options);
 
   if (!shouldCache) {
     return document;

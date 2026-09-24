@@ -7,6 +7,10 @@ import * as schema from "../db/schema";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { isKeylessIpSuspicious } from "./spur";
 import { logger } from "./logger";
+import {
+  keylessCreditBlocksTotal,
+  keylessCreditsTotal,
+} from "./keyless-metrics";
 
 // Keyless free tier: scrape, search, and interact can be used without an API key
 // from the official MCP server, CLI, or SDKs. It's gated per-IP/day by TWO
@@ -270,6 +274,7 @@ return {1, total}
     DAY_SECONDS,
   )) as [number, number];
 
+  if (result[0] !== 1) keylessCreditBlocksTotal.inc();
   return {
     ok: result[0] === 1,
     creditsUsed: Number(result[1] ?? 0),
@@ -408,6 +413,7 @@ export async function logKeylessCreditUsage(
   // record: self-hosted deployments without DB auth track nothing.
   if (config.USE_DB_AUTHENTICATION !== true) return;
 
+  keylessCreditsTotal.inc(creditsUsed);
   if (creditsUsed <= 0) {
     // TODO(firecrawl-db): switch to a `keyless_credit_usage` row once the
     // zero-credit usage migration is merged. The IP is repeated in the

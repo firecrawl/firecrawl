@@ -6,6 +6,7 @@ import {
   EndpointFeedbackResponse,
   SearchFeedbackErrorCode,
 } from "../types";
+import type { RefundClass } from "../../../lib/feedback-job-store";
 
 export type FeedbackRating = "good" | "partial" | "bad";
 
@@ -55,6 +56,9 @@ export type FeedbackJobRow = {
    * logged by v0/v1, and on zero-data-retention searches.
    */
   result_categories?: unknown;
+  feedback_deadline_ms?: number;
+  refund_class?: RefundClass;
+  zero_data_retention?: boolean;
 };
 
 export type FeedbackRecordOptions = {

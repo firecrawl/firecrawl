@@ -16,29 +16,22 @@ import {
 } from "./lib";
 
 let identity: Identity;
-let ungatedIdentity: Identity;
 
 beforeAll(async () => {
-  // Image OCR is rolled out per team through the imageOcr team flag.
   identity = await idmux({
     name: "scrape-image-ocr",
-    concurrency: 100,
-    credits: 1000000,
-    flags: { imageOcr: true },
-  });
-  ungatedIdentity = await idmux({
-    name: "scrape-image-ocr-ungated",
     concurrency: 100,
     credits: 1000000,
   });
 }, 10000 + scrapeTimeout);
 
-// Image OCR rides on fire-engine (the browser hands the image bytes to the
-// API) and FirePDF (which opens the bytes as a one-page scanned document).
-// The flagged identity only exists where idmux is reachable: the self-hosted
-// fallback identity carries no team flags.
-const IMAGE_OCR_AVAILABLE = !!config.FIRE_PDF_BASE_URL && !!config.IDMUX_URL;
-const SHOULD_RUN = !process.env.TEST_SUITE_SELF_HOSTED && IMAGE_OCR_AVAILABLE;
+// Image OCR rides on FirePDF (which opens the bytes as a one-page scanned
+// document) behind the IMAGE_OCR_ENABLED switch; image URLs additionally
+// need fire-engine (the browser hands the image bytes to the API). The
+// harness shares its environment with the API under test, so these mirror
+// the server's decision.
+const IMAGE_OCR_ON = !!config.FIRE_PDF_BASE_URL && config.IMAGE_OCR_ENABLED;
+const SHOULD_RUN = !process.env.TEST_SUITE_SELF_HOSTED && IMAGE_OCR_ON;
 
 // 760x220 four-colour PNG rendered from three lines of text:
 //   "Firecrawl OCR fixture"
@@ -992,7 +985,7 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
   );
 });
 
-describeIf(SHOULD_RUN)("Image OCR parse upload (fire-pdf dependent)", () => {
+describeIf(IMAGE_OCR_ON)("Image OCR parse upload (fire-pdf dependent)", () => {
   it(
     "OCRs an uploaded PNG",
     async () => {
@@ -1141,7 +1134,9 @@ describeIf(SHOULD_RUN)("Image OCR parse upload (fire-pdf dependent)", () => {
   );
 });
 
-describe("Image OCR for a team without the imageOcr flag", () => {
+// With the switch off, images keep the historical unsupported-file rejection
+// even when the request asks for the image parser.
+describeIf(!IMAGE_OCR_ON)("Image OCR switched off", () => {
   it(
     "rejects image uploads as unsupported",
     async () => {
@@ -1156,7 +1151,7 @@ describe("Image OCR for a team without the imageOcr flag", () => {
             contentType: "image/png",
           },
         },
-        ungatedIdentity,
+        identity,
       );
 
       expect(failure.code).toBe("UNSUPPORTED_FILE_TYPE");
@@ -1176,7 +1171,7 @@ describe("Image OCR for a team without the imageOcr flag", () => {
               formats: ["markdown"],
               parsers: ["pdf", "image"],
             },
-            ungatedIdentity,
+            identity,
           );
 
           expect(response.error).toContain("cannot process");

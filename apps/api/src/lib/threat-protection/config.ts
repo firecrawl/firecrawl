@@ -99,7 +99,7 @@ type ZscalerConfigInput = z.infer<typeof zscalerConfigSchema>;
  * except `mode` defaults to {@link THREAT_PROTECTION_POLICY_DEFAULTS}.
  */
 export const threatProtectionPolicySchema = z.strictObject({
-  mode: z.enum(["off", "normal", "zscaler"]),
+  mode: z.enum(["off", "manual-only", "normal", "zscaler"]),
   riskScoreThreshold: z
     .number()
     .int()
@@ -137,7 +137,7 @@ void _policyContractCheck;
  * provides replace the org policy's values (see `resolveEffectivePolicy`).
  */
 export const threatProtectionOverrideSchema = z.strictObject({
-  mode: z.enum(["off", "normal", "zscaler"]).optional(),
+  mode: z.enum(["off", "manual-only", "normal", "zscaler"]).optional(),
   riskScoreThreshold: z.number().int().min(0).max(100).optional(),
   blacklist: z.array(domainGlobSchema).max(1000).optional(),
   whitelist: z.array(domainGlobSchema).max(1000).optional(),

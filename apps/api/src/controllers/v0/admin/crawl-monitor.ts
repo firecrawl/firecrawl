@@ -20,6 +20,7 @@ import {
   resolveNewGroupBackend,
 } from "../../../services/worker/nuq-router";
 import { _addScrapeJobToBullMQ } from "../../../services/queue-jobs";
+import { requestCreditsShards } from "../../../lib/request-credits-store";
 
 type ResponseType = {
   ok: boolean;
@@ -52,6 +53,7 @@ export async function crawlMonitorController(
     target_hint: "https://firecrawl.dev",
     zeroDataRetention: false,
     api_key_id: req.acuc?.api_key_id ?? null,
+    creditsShards: requestCreditsShards(2),
   });
 
   const sc: StoredCrawl = {

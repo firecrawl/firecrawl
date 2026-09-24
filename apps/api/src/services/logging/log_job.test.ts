@@ -13,6 +13,15 @@ const {
   flush,
   close,
   metricInc,
+  writeApiJobAccess,
+  writeFeedbackJob,
+  writeScrapeJobState,
+  writeExtractJobState,
+  withSpan,
+  setSpanAttributes,
+  spans,
+  enqueueZdrCleanupJob,
+  saveExtractResult,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -27,6 +36,13 @@ const {
   const flush = vi.fn(async () => {});
   const close = vi.fn(async () => {});
   const publishes: { name: string; options: any }[] = [];
+  const spans: { name: string; options: any }[] = [];
+  const withSpan = vi.fn(
+    async (name: string, fn: (span: any) => any, options?: any) => {
+      spans.push({ name, options });
+      return fn({});
+    },
+  );
   const topic = vi.fn((name: string, options: any) => {
     return {
       publishMessage: (message: any) => {
@@ -46,6 +62,15 @@ const {
     flush,
     close,
     metricInc: vi.fn(),
+    writeApiJobAccess: vi.fn(async () => true),
+    writeFeedbackJob: vi.fn(async () => true),
+    writeScrapeJobState: vi.fn(async () => true),
+    writeExtractJobState: vi.fn(async () => true),
+    withSpan,
+    setSpanAttributes: vi.fn(),
+    spans,
+    enqueueZdrCleanupJob: vi.fn(async () => {}),
+    saveExtractResult: vi.fn(async () => {}),
   };
 });
 
@@ -65,6 +90,7 @@ vi.mock("../../config", () => ({
     USE_DB_AUTHENTICATION: true,
     PUBSUB_MAX_OUTSTANDING_MESSAGES: 10_000,
     PUBSUB_MAX_OUTSTANDING_BYTES: 64 * 1024 * 1024,
+    PUBSUB_TOPIC_PREFIX: "",
   },
 }));
 
@@ -80,6 +106,22 @@ vi.mock("../../lib/change-tracking-store", () => ({
   changeTrackingInsertScrape: vi.fn(),
 }));
 
+vi.mock("../../lib/job-access-store", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../lib/job-access-store")
+  >("../../lib/job-access-store");
+  return { ...actual, writeApiJobAccess };
+});
+
+vi.mock("../../lib/feedback-job-store", () => ({
+  writeFeedbackJob,
+}));
+
+vi.mock("../../lib/job-state-store", () => ({
+  writeScrapeJobState,
+  writeExtractJobState,
+}));
+
 vi.mock("../../lib/keyless", () => ({
   keylessTeamUuid: vi.fn(() => null),
 }));
@@ -93,8 +135,12 @@ vi.mock("../../lib/gcs-jobs", () => ({
   saveSearchToGCS: vi.fn(),
 }));
 
+vi.mock("../../lib/zdr-queue", () => ({
+  enqueueZdrCleanupJob,
+}));
+
 vi.mock("../../lib/extract/extract-redis", () => ({
-  saveExtractResult: vi.fn(),
+  saveExtractResult,
 }));
 
 vi.mock("../posthog", () => ({
@@ -105,8 +151,15 @@ vi.mock("../../lib/pubsub-log-metrics", () => ({
   pubsubLogPublishTotal: { inc: metricInc },
 }));
 
+vi.mock("../../lib/otel-tracer", () => ({
+  withSpan,
+  setSpanAttributes,
+}));
+
 import {
   logRequest,
+  logScrape,
+  logExtract,
   logSearch,
   shutdownPubSubLogging,
   type LoggedSearch,
@@ -150,6 +203,7 @@ describe("logSearch", () => {
     values.mockResolvedValue(undefined);
     publishMessage.mockResolvedValue("message-id");
     publishes.length = 0;
+    spans.length = 0;
   });
 
   it("removes null bytes from search query log fields", async () => {
@@ -169,14 +223,22 @@ describe("logSearch", () => {
     expect(inserted.options.query).toBe("nestedquery");
     expect(inserted.options.sources[0].location).toBe("NewYork");
     expect(search.options.query).toBe("nested\u0000query");
+    expect(writeFeedbackJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: search.id,
+        endpoint: "search",
+        succeeded: true,
+        creditsBilled: 1,
+      }),
+    );
   });
 
-  it("reports serialization failures without losing the PostgreSQL attempt", async () => {
+  it("fails the log call on a serialization failure before touching PostgreSQL", async () => {
     const search = makeSearch({ options: { unsupported: 1n } });
 
-    await expect(logSearch(search)).resolves.toBeUndefined();
+    await expect(logSearch(search)).rejects.toThrow();
 
-    expect(values).toHaveBeenCalledOnce();
+    expect(values).not.toHaveBeenCalled();
     expect(publishMessage).not.toHaveBeenCalled();
     expect(metricInc).toHaveBeenCalledWith({
       table: "searches",
@@ -185,6 +247,273 @@ describe("logSearch", () => {
     expect(logger.error).toHaveBeenCalledWith(
       "Failed to publish log to Pub/Sub",
       expect.objectContaining({ logId: search.id, error: expect.any(Error) }),
+    );
+  });
+
+  it("keeps logging when the feedback Bigtable shadow write fails", async () => {
+    writeFeedbackJob.mockRejectedValueOnce(new Error("Bigtable unavailable"));
+
+    await expect(logSearch(makeSearch())).resolves.toBeUndefined();
+
+    expect(values).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledWith(
+      "Failed to write feedback job to Bigtable",
+      expect.objectContaining({
+        error: expect.any(Error),
+        endpoint: "search",
+      }),
+    );
+  });
+
+  it("profiles the log, PostgreSQL insert, and Pub/Sub publish", async () => {
+    await logSearch(makeSearch());
+
+    expect(spans).toEqual(
+      expect.arrayContaining([
+        { name: "log_job.search", options: { zeroDataRetention: false } },
+        { name: "log_job.postgres.insert", options: undefined },
+        { name: "log_job.pubsub.publish", options: undefined },
+      ]),
+    );
+  });
+
+  it("forwards zeroDataRetention to the root log span", async () => {
+    await logSearch(makeSearch({ zeroDataRetention: true }));
+
+    expect(spans).toContainEqual({
+      name: "log_job.search",
+      options: { zeroDataRetention: true },
+    });
+  });
+});
+
+describe("operational job state logging", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    values.mockResolvedValue(undefined);
+    publishMessage.mockResolvedValue("message-id");
+  });
+
+  it("writes terminal standalone scrape state", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+    await logScrape({
+      id,
+      request_id: id,
+      url: "https://example.com",
+      is_successful: true,
+      time_taken: 1,
+      team_id: "team-id",
+      options: { formats: ["markdown"] } as any,
+      credits_cost: 2,
+      skipNuq: false,
+      zeroDataRetention: false,
+    });
+
+    expect(writeScrapeJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({
+        status: "completed",
+        requestId: id,
+        creditsBilled: 2,
+      }),
+    );
+  });
+
+  it("reports the state written before the PostgreSQL insert starts", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b8";
+    const stateWrite = deferred<boolean>();
+    writeScrapeJobState.mockReturnValueOnce(stateWrite.promise);
+    let insertsWhenStateWritten = -1;
+    const onStateWritten = vi.fn(() => {
+      insertsWhenStateWritten = values.mock.calls.length;
+    });
+
+    const logging = logScrape(
+      {
+        id,
+        request_id: id,
+        url: "https://example.com",
+        is_successful: true,
+        time_taken: 1,
+        team_id: "team-id",
+        options: { formats: ["markdown"] } as any,
+        credits_cost: 1,
+        skipNuq: true,
+        zeroDataRetention: false,
+      },
+      false,
+      { onStateWritten },
+    );
+    await Promise.resolve();
+
+    expect(writeScrapeJobState).toHaveBeenCalledTimes(1);
+    expect(onStateWritten).not.toHaveBeenCalled();
+    expect(values).not.toHaveBeenCalled();
+
+    stateWrite.resolve(true);
+    await logging;
+
+    expect(onStateWritten).toHaveBeenCalledWith("written");
+    expect(insertsWhenStateWritten).toBe(0);
+    expect(values).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a failed state write and keeps logging", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b9";
+    writeScrapeJobState.mockRejectedValueOnce(new Error("bigtable down"));
+    const onStateWritten = vi.fn();
+
+    await logScrape(
+      {
+        id,
+        request_id: id,
+        url: "https://example.com",
+        is_successful: true,
+        time_taken: 1,
+        team_id: "team-id",
+        options: { formats: ["markdown"] } as any,
+        credits_cost: 1,
+        skipNuq: true,
+        zeroDataRetention: false,
+      },
+      false,
+      { onStateWritten },
+    );
+
+    expect(onStateWritten).toHaveBeenCalledWith("failed");
+    expect(values).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a skipped state write for a parse, which stores none", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062ba";
+    const onStateWritten = vi.fn();
+
+    await logScrape(
+      {
+        id,
+        request_id: id,
+        url: "https://example.com/file.pdf",
+        is_successful: true,
+        time_taken: 1,
+        team_id: "team-id",
+        options: { formats: ["markdown"] } as any,
+        credits_cost: 1,
+        skipNuq: true,
+        zeroDataRetention: false,
+        is_parse: true,
+      },
+      false,
+      { onStateWritten },
+    );
+
+    expect(writeScrapeJobState).not.toHaveBeenCalled();
+    expect(onStateWritten).toHaveBeenCalledWith("skipped");
+  });
+
+  it("reports a skipped state write when no state table is configured", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062bb";
+    writeScrapeJobState.mockResolvedValueOnce(false);
+    const onStateWritten = vi.fn();
+
+    await logScrape(
+      {
+        id,
+        request_id: id,
+        url: "https://example.com",
+        is_successful: true,
+        time_taken: 1,
+        team_id: "team-id",
+        options: { formats: ["markdown"] } as any,
+        credits_cost: 1,
+        skipNuq: true,
+        zeroDataRetention: false,
+      },
+      false,
+      { onStateWritten },
+    );
+
+    expect(onStateWritten).toHaveBeenCalledWith("skipped");
+  });
+
+  it("writes job access and terminal state for a crawl child", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b7";
+    const crawlId = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+    await logScrape({
+      id,
+      request_id: crawlId,
+      url: "https://example.com/page",
+      is_successful: false,
+      error: "boom",
+      time_taken: 1,
+      team_id: "team-id",
+      options: { formats: ["markdown"] } as any,
+      credits_cost: 1,
+      skipNuq: false,
+      zeroDataRetention: false,
+    });
+
+    expect(writeApiJobAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ id, teamId: "team-id", kind: "scrape" }),
+    );
+    expect(writeScrapeJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({
+        status: "failed",
+        requestId: crawlId,
+        creditsBilled: 1,
+        error: "boom",
+      }),
+    );
+  });
+
+  it("writes terminal extract state", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+    await logExtract({
+      id,
+      request_id: id,
+      urls: ["https://example.com"],
+      team_id: "team-id",
+      options: {},
+      model_kind: "fire-1",
+      credits_cost: 3,
+      is_successful: false,
+      error: "failed",
+    });
+
+    expect(writeExtractJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({
+        status: "failed",
+        creditsBilled: 3,
+        error: "failed",
+      }),
+    );
+  });
+
+  it("writes extract state before result storage fails", async () => {
+    const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
+    saveExtractResult.mockRejectedValueOnce(new Error("Redis unavailable"));
+
+    await expect(
+      logExtract({
+        id,
+        request_id: id,
+        urls: ["https://example.com"],
+        team_id: "team-id",
+        options: {},
+        model_kind: "fire-1",
+        credits_cost: 3,
+        is_successful: true,
+        result: { ok: true },
+      }),
+    ).rejects.toThrow("Redis unavailable");
+
+    expect(writeExtractJobState).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({ status: "completed" }),
+    );
+    expect(writeExtractJobState.mock.invocationCallOrder[0]).toBeLessThan(
+      saveExtractResult.mock.invocationCallOrder[0],
     );
   });
 });
@@ -220,6 +549,27 @@ describe("logRequest", () => {
     );
   });
 
+  it("prefixes the Pub/Sub topic name with PUBSUB_TOPIC_PREFIX", async () => {
+    config.PUBSUB_TOPIC_PREFIX = "staging-";
+    try {
+      await logRequest(makeRequest("op_integration_42"));
+    } finally {
+      config.PUBSUB_TOPIC_PREFIX = "";
+    }
+
+    expect(publishes[0].name).toBe("staging-requests");
+    // The metric and span keep the bare table name.
+    await new Promise(resolve => setImmediate(resolve));
+    expect(metricInc).toHaveBeenCalledWith({
+      table: "requests",
+      outcome: "published",
+    });
+    expect(setSpanAttributes).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ "log_job.table": "requests" }),
+    );
+  });
+
   it("writes the request to the database and its Pub/Sub topic", async () => {
     await logRequest(makeRequest("op_integration_42"));
 
@@ -228,10 +578,11 @@ describe("logRequest", () => {
     const gaxOpts = publishes[0].options.gaxOpts;
     // A bare `timeout` would collapse the retry budget to one attempt.
     expect(gaxOpts.timeout).toBeUndefined();
+    // The caller waits on the publish, so the whole budget is 30 s.
     expect(gaxOpts.retry.backoffSettings).toMatchObject({
-      initialRpcTimeoutMillis: 15_000,
-      maxRpcTimeoutMillis: 15_000,
-      totalTimeoutMillis: 300_000,
+      initialRpcTimeoutMillis: 10_000,
+      maxRpcTimeoutMillis: 10_000,
+      totalTimeoutMillis: 30_000,
     });
     expect(gaxOpts.retry.retryCodes).toBeUndefined();
 
@@ -246,30 +597,106 @@ describe("logRequest", () => {
     expect(values.mock.calls[0][0].created_at.toISOString()).toBe(
       published.created_at,
     );
+    expect(writeApiJobAccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "019e6f45-7778-727d-adf0-0abe9d5062b6",
+        teamId: "team-id",
+        kind: "scrape",
+        clientOrigin: "api",
+        expiresAt: expect.any(Date),
+      }),
+    );
   });
 
-  it("keeps the database write when Pub/Sub fails", async () => {
+  it("durably queues ZDR cleanup before writing the request", async () => {
+    await logRequest({
+      ...makeRequest("op_integration_42"),
+      zeroDataRetention: true,
+    });
+
+    expect(enqueueZdrCleanupJob).toHaveBeenCalledWith(
+      "019e6f45-7778-727d-adf0-0abe9d5062b6",
+    );
+    expect(enqueueZdrCleanupJob.mock.invocationCallOrder[0]).toBeLessThan(
+      values.mock.invocationCallOrder[0],
+    );
+    expect(values.mock.calls[0][0]).not.toHaveProperty("dr_clean_by");
+  });
+
+  it("does not write a ZDR request unless its cleanup job was confirmed", async () => {
+    enqueueZdrCleanupJob.mockRejectedValueOnce(
+      new Error("RabbitMQ unavailable"),
+    );
+
+    await expect(
+      logRequest({ ...makeRequest(null), zeroDataRetention: true }),
+    ).rejects.toThrow("RabbitMQ unavailable");
+    expect(values).not.toHaveBeenCalled();
+  });
+
+  it("fails the log call and skips PostgreSQL when Pub/Sub fails", async () => {
     publishMessage.mockRejectedValueOnce(new Error("Pub/Sub unavailable"));
 
-    await expect(logRequest(makeRequest(null))).resolves.toBeUndefined();
+    await expect(logRequest(makeRequest(null))).rejects.toThrow(
+      "Pub/Sub unavailable",
+    );
 
-    expect(values).toHaveBeenCalled();
+    expect(values).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith(
       "Failed to publish log to Pub/Sub",
       expect.objectContaining({ error: expect.any(Error) }),
     );
   });
 
-  it("does not hold the caller on a slow publish", async () => {
-    const publication = deferred<string>();
-    publishMessage.mockReturnValueOnce(publication.promise);
+  it("keeps logging when the job access Bigtable shadow write fails", async () => {
+    writeApiJobAccess.mockRejectedValueOnce(new Error("Bigtable unavailable"));
 
     await expect(logRequest(makeRequest(null))).resolves.toBeUndefined();
+
     expect(values).toHaveBeenCalled();
-    expect(metricInc).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      "Failed to write API job access to Bigtable",
+      expect.objectContaining({ error: expect.any(Error), kind: "scrape" }),
+    );
+  });
+
+  it("does not write access metadata for a non-operational request id", async () => {
+    await logRequest({ ...makeRequest(null), jobAccess: false });
+
+    expect(writeApiJobAccess).not.toHaveBeenCalled();
+    expect(values).toHaveBeenCalledOnce();
+  });
+
+  it("uses a job's explicit operational expiry", async () => {
+    const expiresAt = new Date("2026-09-15T18:00:00.000Z");
+
+    await logRequest({
+      ...makeRequest(null),
+      kind: "deep_research",
+      jobAccessExpiresAt: expiresAt,
+    });
+
+    expect(writeApiJobAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "deep_research", expiresAt }),
+    );
+  });
+
+  it("holds the caller until the publish is acknowledged", async () => {
+    const publication = deferred<string>();
+    publishMessage.mockReturnValueOnce(publication.promise);
+    let finished = false;
+    const logging = logRequest(makeRequest(null)).then(() => {
+      finished = true;
+    });
+
+    await new Promise(resolve => setImmediate(resolve));
+    expect(publishMessage).toHaveBeenCalledOnce();
+    expect(values).not.toHaveBeenCalled();
+    expect(finished).toBe(false);
 
     publication.resolve("message-id");
-    await publication.promise;
+    await logging;
+    expect(values).toHaveBeenCalled();
     expect(metricInc).toHaveBeenCalledWith({
       table: "requests",
       outcome: "published",
@@ -341,31 +768,42 @@ describe("logRequest", () => {
     expect(published.origin).toBe("api");
   });
 
-  it("drops publishes beyond the outstanding cap instead of queueing them", async () => {
+  it("refuses a publish beyond the outstanding cap and fails that log call", async () => {
     vi.resetModules();
     const fresh = await import("./log_job.js");
     const publication = deferred<string>();
     publishMessage.mockImplementation(async () => publication.promise);
     config.PUBSUB_MAX_OUTSTANDING_MESSAGES = 2;
     try {
-      await fresh.logRequest(makeRequest(null));
-      await fresh.logRequest(makeRequest(null));
-      await fresh.logRequest(makeRequest(null));
+      const first = fresh.logRequest(makeRequest(null));
+      const second = fresh.logRequest(makeRequest(null));
+      await new Promise(resolve => setImmediate(resolve));
+      await expect(fresh.logRequest(makeRequest(null))).rejects.toThrow(
+        "backlog is full",
+      );
+      publication.resolve("message-id");
+      await Promise.all([first, second]);
     } finally {
       config.PUBSUB_MAX_OUTSTANDING_MESSAGES = 10_000;
       publication.resolve("message-id");
       await fresh.shutdownPubSubLogging();
     }
 
-    // The database write is never held back by the publisher.
-    expect(values).toHaveBeenCalledTimes(3);
+    // The refused row never reaches PostgreSQL either.
+    expect(values).toHaveBeenCalledTimes(2);
     expect(publishMessage).toHaveBeenCalledTimes(2);
     expect(metricInc).toHaveBeenCalledWith({
       table: "requests",
       outcome: "dropped",
     });
+    // A refusal is the rate-limited warning, not a per-row error.
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(metricInc).not.toHaveBeenCalledWith({
+      table: "requests",
+      outcome: "failed",
+    });
     expect(logger.warn).toHaveBeenCalledWith(
-      "Dropping Pub/Sub log: publisher backlog is full",
+      "Refusing Pub/Sub log: publisher backlog is full",
       expect.objectContaining({
         table: "requests",
         logId: makeRequest(null).id,
@@ -384,8 +822,9 @@ describe("logRequest", () => {
     });
 
     publishMessage.mockRejectedValueOnce(new Error("Pub/Sub unavailable"));
-    await logRequest(makeRequest(null));
-    await new Promise(resolve => setImmediate(resolve));
+    await expect(logRequest(makeRequest(null))).rejects.toThrow(
+      "Pub/Sub unavailable",
+    );
     expect(metricInc).toHaveBeenCalledWith({
       table: "requests",
       outcome: "failed",
@@ -397,7 +836,9 @@ describe("logRequest", () => {
     config.PUBSUB_MAX_OUTSTANDING_MESSAGES = 1;
     try {
       publishMessage.mockRejectedValueOnce(new Error("Pub/Sub unavailable"));
-      await logRequest(makeRequest(null));
+      await expect(logRequest(makeRequest(null))).rejects.toThrow(
+        "Pub/Sub unavailable",
+      );
       await logRequest(makeRequest(null));
       expect(publishMessage).toHaveBeenCalledTimes(2);
       expect(metricInc).not.toHaveBeenCalledWith({
@@ -436,7 +877,8 @@ describe("shutdownPubSubLogging deadline", () => {
     const fresh = await import("./log_job.js");
     const publication = deferred<string>();
     publishMessage.mockReturnValueOnce(publication.promise);
-    await fresh.logSearch(makeSearch());
+    const logging = fresh.logSearch(makeSearch());
+    await new Promise(resolve => setImmediate(resolve));
 
     const shutdown = fresh.shutdownPubSubLogging();
     await new Promise(resolve => setImmediate(resolve));
@@ -445,6 +887,7 @@ describe("shutdownPubSubLogging deadline", () => {
 
     publication.resolve("message-id");
     await shutdown;
+    await logging;
     expect(close).toHaveBeenCalledOnce();
   });
 
@@ -453,7 +896,8 @@ describe("shutdownPubSubLogging deadline", () => {
     const fresh = await import("./log_job.js");
     const publication = deferred<string>();
     publishMessage.mockReturnValueOnce(publication.promise);
-    await fresh.logSearch(makeSearch());
+    const logging = fresh.logSearch(makeSearch());
+    await new Promise(resolve => setImmediate(resolve));
 
     vi.useFakeTimers();
     const shutdown = fresh.shutdownPubSubLogging();
@@ -477,7 +921,7 @@ describe("shutdownPubSubLogging deadline", () => {
     );
 
     publication.resolve("message-id");
-    await publication.promise;
+    await logging;
   });
 
   it("reports publication failures during shutdown and still closes", async () => {
@@ -485,11 +929,13 @@ describe("shutdownPubSubLogging deadline", () => {
     const fresh = await import("./log_job.js");
     const publication = deferred<string>();
     publishMessage.mockReturnValueOnce(publication.promise);
-    await fresh.logSearch(makeSearch());
+    const logging = fresh.logSearch(makeSearch());
+    await new Promise(resolve => setImmediate(resolve));
     const shutdown = fresh.shutdownPubSubLogging();
 
     publication.reject(new Error("Pub/Sub unavailable"));
     await shutdown;
+    await expect(logging).rejects.toThrow("Pub/Sub unavailable");
     expect(close).toHaveBeenCalledOnce();
     expect(metricInc).toHaveBeenCalledWith({
       table: "searches",
@@ -520,9 +966,11 @@ describe("shutdownPubSubLogging deadline", () => {
     flush.mockReturnValueOnce(flushing.promise);
     const shutdown = fresh.shutdownPubSubLogging();
 
-    await fresh.logSearch(makeSearch());
+    await expect(fresh.logSearch(makeSearch())).rejects.toThrow(
+      "shutting down",
+    );
     expect(publishMessage).toHaveBeenCalledOnce();
-    expect(values).toHaveBeenCalledTimes(2);
+    expect(values).toHaveBeenCalledTimes(1);
     expect(metricInc).toHaveBeenCalledWith({
       table: "searches",
       outcome: "failed",

@@ -1,4 +1,13 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true
+    "low": true,
+    "allowlist": [
+        // GHSA-8cw4-87c7-c6xx (csv-parse):
+        // artillery 2.x still depends on csv-parse 4.x; the non-affected
+        // line is csv-parse 7.x, a multi-major jump outside the upstream range.
+        // Do not override across majors without compatibility approval.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2026-09-23.
+        "GHSA-8cw4-87c7-c6xx"
+    ]
 }

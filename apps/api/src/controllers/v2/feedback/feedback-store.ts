@@ -1,6 +1,12 @@
 import { and, eq } from "drizzle-orm";
+import { config } from "../../../config";
 import { db, dbRr } from "../../../db/connection";
 import * as schema from "../../../db/schema";
+import {
+  readFeedbackJob,
+  type RefundClass,
+} from "../../../lib/feedback-job-store";
+import { logger } from "../../../lib/logger";
 import { EndpointFeedbackEndpoint } from "../types";
 import type { SearchResultType } from "../../../lib/entities";
 import {
@@ -9,6 +15,7 @@ import {
   RefundPolicySnapshot,
   ValuableResultInput,
 } from "./internal-types";
+import { recordJobStorePostgresFallback } from "../../../lib/job-store-fallback";
 
 type DbError = { code?: string } & Record<string, unknown>;
 
@@ -285,6 +292,45 @@ export async function lookupFeedbackJob(
   jobId: string,
   dbTeamId: string,
 ): Promise<FeedbackJobRow | null> {
+  let bigtableFailed = false;
+  try {
+    const job = await readFeedbackJob(jobId);
+    if (job) {
+      const storedEndpoint = endpointForRefundClass(job.refundClass);
+      if (job.teamId !== dbTeamId || storedEndpoint !== endpoint) return null;
+
+      const feedbackWindowSec =
+        endpoint === "search"
+          ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
+          : config.FEEDBACK_MAX_AGE_SEC;
+      return {
+        endpoint,
+        id: jobId,
+        request_id: job.requestId,
+        team_id: job.teamId,
+        credits_cost: job.creditsBilled,
+        created_at: new Date(
+          job.feedbackDeadlineMs - feedbackWindowSec * 1000,
+        ).toISOString(),
+        is_successful: job.succeeded,
+        options: null,
+        feedback_deadline_ms: job.feedbackDeadlineMs,
+        refund_class: job.refundClass,
+        zero_data_retention: job.zeroDataRetention,
+      };
+    }
+  } catch (error) {
+    bigtableFailed = true;
+    logger.warn(
+      "Bigtable feedback job read failed; falling back to PostgreSQL",
+      {
+        error,
+        jobId,
+        endpoint,
+      },
+    );
+  }
+
   const table = JOB_TABLES[endpoint] as any;
   const [row] = await dbRr
     .select({
@@ -308,6 +354,9 @@ export async function lookupFeedbackJob(
     .limit(1);
 
   if (!row) return null;
+  if (!bigtableFailed) {
+    recordJobStorePostgresFallback("feedback_job", jobId, { endpoint });
+  }
 
   return {
     endpoint,
@@ -324,6 +373,19 @@ export async function lookupFeedbackJob(
     result_categories:
       endpoint === "search" ? (row.result_categories ?? null) : null,
   };
+}
+
+function endpointForRefundClass(
+  refundClass: RefundClass,
+): EndpointFeedbackEndpoint {
+  switch (refundClass) {
+    case "search":
+    case "map":
+    case "parse":
+      return refundClass;
+    default:
+      return "scrape";
+  }
 }
 
 export async function insertFeedback(params: {

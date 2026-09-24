@@ -7,7 +7,9 @@ import {
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
   FireEngineScrapeRequestTLSClient,
+  safeModeParams,
 } from "./scrape";
+import { stripCredentialHeaders } from "../../../../lib/safe-mode";
 import { EngineScrapeResult } from "..";
 import {
   fireEngineCheckStatus,
@@ -20,6 +22,7 @@ import {
   EngineError,
   DNSResolutionError,
   SiteError,
+  SiteRestrictionError,
   SSLError,
   UnsupportedFileError,
   FEPageLoadFailed,
@@ -55,7 +58,7 @@ import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { getBrandingScript } from "./brandingScript";
 import { abTestFireEngine } from "../../../../services/ab-test";
 import { scheduleABComparison } from "../../../../services/ab-test-comparison";
-import { createHash } from "node:crypto";
+import { browserProfileStorageId } from "../../../../lib/browser-profiles";
 
 /** Default wait (ms) before running the branding script when user did not set waitFor. Lets the page settle so DOM/images are ready and reduces JS errors. */
 const BRANDING_DEFAULT_WAIT_MS = 2000;
@@ -152,6 +155,7 @@ async function performFireEngineScrape<
           } else if (
             error instanceof EngineError ||
             error instanceof SiteError ||
+            error instanceof SiteRestrictionError ||
             error instanceof SSLError ||
             error instanceof DNSResolutionError ||
             error instanceof ActionError ||
@@ -487,10 +491,25 @@ export async function scrapeURLWithFireEngineChromeCDP(
       ...(forceNonRender ? { forceNonRender: true } : {}),
       persistentStorage: meta.options.profile
         ? {
-            uniqueId: `${createHash("sha256").update(meta.internalOptions.teamId).digest("hex").slice(0, 16)}_${meta.options.profile.name}`,
+            uniqueId: browserProfileStorageId(
+              meta.internalOptions.teamId,
+              meta.options.profile.name,
+            ),
           }
         : undefined,
+      ...safeModeParams(meta.internalOptions.safeMode),
     };
+
+    // Safe Mode worker-side hardening: neutralize anything that request-time
+    // enforcement would reject but that inherited scrape options can still carry.
+    const sm = meta.internalOptions.safeMode;
+    if (sm?.disableStealthProxy) {
+      request.mobileProxy = false;
+    }
+    if (sm?.disableAuthentication) {
+      request.persistentStorage = undefined;
+      request.headers = stripCredentialHeaders(request.headers);
+    }
 
     let response = await performFireEngineScrape(
       meta,
@@ -642,7 +661,16 @@ export async function scrapeURLWithFireEngineTLSClient(
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      ...safeModeParams(meta.internalOptions.safeMode),
     };
+
+    const sm = meta.internalOptions.safeMode;
+    if (sm?.disableStealthProxy) {
+      request.mobileProxy = false;
+    }
+    if (sm?.disableAuthentication) {
+      request.headers = stripCredentialHeaders(request.headers);
+    }
 
     let response = await performFireEngineScrape(
       meta,

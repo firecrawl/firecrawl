@@ -5,7 +5,10 @@ import { RateLimiterMode } from "../types";
 import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
-import { searchController } from "../controllers/v2/search";
+import {
+  researchCategoryNoticeMiddleware,
+  searchController,
+} from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
@@ -64,6 +67,7 @@ import {
   browserExecuteController,
   browserDeleteController,
   browserListController,
+  browserProfileDeleteController,
   browserWebhookDestroyedController,
 } from "../controllers/v2/browser";
 import {
@@ -185,6 +189,7 @@ registerMcpActionLogReadRoute(
 
 v2Router.post(
   "/search",
+  researchCategoryNoticeMiddleware,
   authMiddleware(RateLimiterMode.Search, { allowKeyless: true }),
   countryCheck,
   checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
@@ -648,6 +653,12 @@ v2Router.get(
   ["/browser/:sessionId/replay/:pageId", "/interact/:sessionId/replay/:pageId"],
   authMiddleware(RateLimiterMode.BrowserReplay),
   wrap(browserReplayPageController),
+);
+
+v2Router.delete(
+  ["/browser/profiles/:name", "/interact/profiles/:name"],
+  authMiddleware(RateLimiterMode.BrowserExecute),
+  wrap(browserProfileDeleteController),
 );
 
 v2Router.delete(

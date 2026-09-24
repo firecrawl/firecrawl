@@ -152,10 +152,10 @@ export async function putTeamThreatProtectionController(
   const input = threatProtectionConfigSchema.parse(req.body);
 
   // "forced" guarantees enforcement: the org config may be tightened, but its
-  // mode may never be turned off through the API.
+  // mode may never be turned off — or dropped to lists-only — through the API.
   if (
     getThreatProtection(req.acuc?.flags) === "forced" &&
-    input.mode === "off"
+    (input.mode === "off" || input.mode === "manual-only")
   ) {
     res.status(403).json({
       success: false,

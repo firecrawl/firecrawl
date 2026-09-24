@@ -1,16 +1,12 @@
 import type { Logger } from "winston";
 import type { WebSearchResult } from "../lib/entities";
 import { fetchResearchUpstream } from "../lib/research-upstream";
-import type { CategoryOption } from "../lib/search-query-builder";
+import { hasCategory, type CategoryOption } from "../lib/search-query-builder";
 
 const DEVELOPER_QUERY_KEYS = ["query", "k"];
 
 export function wantsDeveloperCategory(categories?: CategoryOption[]): boolean {
-  return (categories ?? []).some(category =>
-    typeof category === "string"
-      ? category === "developer"
-      : category.type === "developer",
-  );
+  return hasCategory(categories, "developer");
 }
 
 export async function searchDeveloperCategory(

@@ -30,6 +30,10 @@ import {
   isThreatProtectionForced,
   THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/threat-protection/request";
+import {
+  getSafeMode,
+  SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
+} from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
 async function scrapeHelper(
@@ -105,13 +109,17 @@ async function scrapeHelper(
       internalOptions,
       origin: req.body.origin ?? defaultOrigin,
       integration: req.body.integration,
-      billing: { endpoint: "scrape", jobId },
+      billing: {
+        endpoint: "scrape",
+        jobId,
+        externalRequestId: externalRequestId(req),
+      },
       startTime: Date.now(),
       zeroDataRetention: false, // not supported on v0
       apiKeyId,
     },
     jobId,
-    await getJobPriority({ team_id, basePriority: 10 }),
+    await getJobPriority({ team_id, org_id, basePriority: 10 }),
     false,
     true,
   );
@@ -213,6 +221,12 @@ export async function scrapeController(req: Request, res: Response) {
       });
     }
 
+    if (getSafeMode(chunk?.flags)) {
+      return res.status(403).json({
+        error: SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
+      });
+    }
+
     const jobId = uuidv7();
 
     await logRequest({
@@ -270,14 +284,20 @@ export async function scrapeController(req: Request, res: Response) {
 
     // checkCredits — Autumn is the source of truth for credits.
     try {
-      const autumnResult = await autumnService.checkCredits({
-        teamId: team_id,
-        value: 1,
-        properties: {
-          source: "v0/scrape",
-          apiKeyId: chunk?.api_key_id ?? null,
-        },
-      });
+      // No org, no Autumn customer to gate against: fail open, exactly as
+      // checkCredits answered for an identity it could not name.
+      const orgId = chunk?.org_id ?? null;
+      const autumnResult = orgId
+        ? await autumnService.checkCredits({
+            teamId: team_id,
+            orgId,
+            value: 1,
+            properties: {
+              source: "v0/scrape",
+              apiKeyId: chunk?.api_key_id ?? null,
+            },
+          })
+        : null;
       // null = Autumn unavailable / self-hosted -> fail open, matching v1/v2.
       if (autumnResult !== null && !autumnResult.allowed) {
         earlyReturn = true;

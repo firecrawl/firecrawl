@@ -1,17 +1,19 @@
 import { Response } from "express";
 import { config } from "../../config";
-import { supabaseGetAgentRequestByIdDirect } from "../../lib/supabase-jobs";
+import { getAgentJobAccess } from "../../lib/operational-job-access";
 import { AgentSkillResponse, RequestWithAuth } from "./types";
 
 export async function agentSkillController(
   req: RequestWithAuth<{ jobId: string }, AgentSkillResponse, any>,
   res: Response<AgentSkillResponse>,
 ) {
-  const agentRequest = await supabaseGetAgentRequestByIdDirect(
-    req.params.jobId,
-  );
+  const access = await getAgentJobAccess(req.params.jobId);
 
-  if (!agentRequest || agentRequest.team_id !== req.auth.team_id) {
+  if (
+    !access ||
+    access.expiresAtMs <= Date.now() ||
+    access.teamId !== req.auth.team_id
+  ) {
     return res.status(404).json({
       success: false,
       error: "Agent job not found",

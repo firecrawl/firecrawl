@@ -151,6 +151,8 @@ describe.each([
     // Ordinary team billing runs for the real (non-keyless) team id.
     expect(billTeam).toHaveBeenCalledWith(
       TEAM_ID,
+      // This fixture's ACUC carries no org.
+      null,
       expect.any(Number),
       expect.anything(),
       expect.anything(),

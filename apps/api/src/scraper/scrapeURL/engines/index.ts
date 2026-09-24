@@ -42,6 +42,7 @@ import {
   NoCachedDataError,
 } from "../error";
 import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
+import { hasCustomRequestContext } from "../lib/request-context";
 import {
   canUseExchangeForRequest,
   type ExchangeScrapeMetadata,
@@ -96,8 +97,8 @@ const engines: Engine[] = [
   "pdf",
   "document",
   // Image OCR needs FirePDF; without it the engine would only be a wasted
-  // tail download on every failed scrape. Per-team enablement is decided
-  // where images are routed (the imageOcr team flag), not here.
+  // tail download on every failed scrape. Whether images are actually OCR'd
+  // is decided where they are routed (lib/image-ocr-gate.ts), not here.
   ...(config.FIRE_PDF_BASE_URL ? ["image" as const] : []),
 ];
 
@@ -629,10 +630,7 @@ export function shouldUseIndex(meta: Meta) {
     !getPDFPageMarkers(meta.options.parsers) &&
     !hasCustomScreenshotSettings &&
     meta.options.maxAge !== 0 &&
-    (meta.options.headers === undefined ||
-      Object.keys(meta.options.headers).length === 0) &&
-    (meta.options.actions === undefined || meta.options.actions.length === 0) &&
-    meta.options.profile === undefined
+    !hasCustomRequestContext(meta.options)
   );
 }
 
