@@ -328,53 +328,72 @@ function feedbackMetadata(
  * `logSearch` writes the Bigtable record before the `searches` row, so a
  * caller fast enough to beat that insert would otherwise lose real feedback.
  */
+type SearchResultColumns = {
+  options: unknown;
+  num_results: number | null;
+  num_results_by_source: unknown;
+  result_categories: unknown;
+};
+
+function selectSearchResultColumns(
+  conn: typeof db | typeof dbRr,
+  jobId: string,
+  dbTeamId: string,
+): Promise<SearchResultColumns[]> {
+  return conn
+    .select({
+      options: schema.searches.options,
+      num_results: schema.searches.num_results,
+      num_results_by_source: schema.searches.num_results_by_source,
+      result_categories: schema.searches.result_categories,
+    })
+    .from(schema.searches)
+    .where(
+      and(eq(schema.searches.id, jobId), eq(schema.searches.team_id, dbTeamId)),
+    )
+    .limit(1) as unknown as Promise<SearchResultColumns[]>;
+}
+
 async function withSearchResultColumns(
   job: FeedbackJobRow,
   jobId: string,
   dbTeamId: string,
 ): Promise<FeedbackJobRow> {
-  try {
-    const [row] = await dbRr
-      .select({
-        options: schema.searches.options,
-        num_results: schema.searches.num_results,
-        num_results_by_source: schema.searches.num_results_by_source,
-        result_categories: schema.searches.result_categories,
-      })
-      .from(schema.searches)
-      .where(
-        and(
-          eq(schema.searches.id, jobId),
-          eq(schema.searches.team_id, dbTeamId),
-        ),
-      )
-      .limit(1);
+  let row: SearchResultColumns | null = null;
 
-    if (!row) {
-      logger.warn("No searches row to bound search feedback positions", {
+  try {
+    [row] = await selectSearchResultColumns(dbRr, jobId, dbTeamId);
+  } catch (error) {
+    // A replica error says nothing about whether the row exists, and dropping
+    // the bounds on it would accept any position. Ask the primary before
+    // giving them up.
+    try {
+      [row] = await selectSearchResultColumns(db, jobId, dbTeamId);
+    } catch (retryError) {
+      logger.warn("Could not read search columns for feedback positions", {
+        error,
+        retryError,
         jobId,
         module: "feedback-store",
         method: "withSearchResultColumns",
       });
       return job;
     }
-
-    return {
-      ...job,
-      options: row.options ?? null,
-      num_results: row.num_results ?? null,
-      num_results_by_source: row.num_results_by_source ?? null,
-      result_categories: row.result_categories ?? null,
-    };
-  } catch (error) {
-    logger.warn("Could not read search columns for feedback positions", {
-      error,
-      jobId,
-      module: "feedback-store",
-      method: "withSearchResultColumns",
-    });
-    return job;
   }
+
+  // No row is the expected Bigtable-before-PostgreSQL race — `logSearch`
+  // writes the feedback record first, so a prompt caller can arrive between
+  // the two. Not an anomaly, so not logged; the positions stay unbounded
+  // rather than being discarded.
+  if (!row) return job;
+
+  return {
+    ...job,
+    options: row.options ?? null,
+    num_results: row.num_results ?? null,
+    num_results_by_source: row.num_results_by_source ?? null,
+    result_categories: row.result_categories ?? null,
+  };
 }
 
 export async function lookupFeedbackJob(

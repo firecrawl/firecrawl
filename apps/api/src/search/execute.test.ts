@@ -182,6 +182,42 @@ describe("executeSearch developer category", () => {
     });
   });
 
+  it("returns an empty group and no categories when every result is blocked", async () => {
+    mocks.searchDeveloperCategory.mockResolvedValue([
+      {
+        url: "https://blocked.example/a",
+        title: "A",
+        description: "",
+        position: 1,
+        category: "developer",
+      },
+      {
+        url: "https://blocked.example/b",
+        title: "B",
+        description: "",
+        position: 2,
+        category: "developer",
+      },
+    ]);
+    mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
+      decisionsByUrl: new Map([
+        ["https://blocked.example/a", { allowed: false }],
+        ["https://blocked.example/b", { allowed: false }],
+      ]),
+    });
+
+    const result = await executeSearch(
+      options([{ type: "developer" }]),
+      { ...context, threatProtectionPolicy: { mode: "block" } } as any,
+      logger,
+    );
+
+    expect(result.response.web ?? []).toEqual([]);
+    // An empty map, not absent: the search ran and tagged nothing, which
+    // feedback must tell apart from a row that predates the column.
+    expect(result.resultCategories).toEqual({});
+  });
+
   it("rejects developer combined with other categories at the schema", () => {
     const mixed = searchRequestSchema.safeParse({
       query: "retries",

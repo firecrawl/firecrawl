@@ -2,22 +2,35 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   readFeedbackJob: vi.fn(),
-  select: vi.fn(),
-  limit: vi.fn(),
+  replicaSelect: vi.fn(),
+  replicaLimit: vi.fn(),
+  primarySelect: vi.fn(),
+  primaryLimit: vi.fn(),
 }));
 
-const query = {
-  from: vi.fn(() => query),
-  where: vi.fn(() => query),
-  limit: mocks.limit,
+const replicaQuery = {
+  from: vi.fn(() => replicaQuery),
+  where: vi.fn(() => replicaQuery),
+  limit: mocks.replicaLimit,
+};
+
+const primaryQuery = {
+  from: vi.fn(() => primaryQuery),
+  where: vi.fn(() => primaryQuery),
+  limit: mocks.primaryLimit,
 };
 
 vi.mock("../../../db/connection", () => ({
-  db: { select: mocks.select },
+  db: {
+    select: (...args: unknown[]) => {
+      mocks.primarySelect(...args);
+      return primaryQuery;
+    },
+  },
   dbRr: {
     select: (...args: unknown[]) => {
-      mocks.select(...args);
-      return query;
+      mocks.replicaSelect(...args);
+      return replicaQuery;
     },
   },
 }));
@@ -59,12 +72,13 @@ describe("lookupFeedbackJob on the Bigtable fast path", () => {
     expect(job).toBeTruthy();
     // The fast path is the whole point: no supplementary read when the caller
     // sent no positions to bound.
-    expect(mocks.select).not.toHaveBeenCalled();
+    expect(mocks.replicaSelect).not.toHaveBeenCalled();
+    expect(mocks.primarySelect).not.toHaveBeenCalled();
     expect(job?.num_results_by_source).toBeUndefined();
   });
 
   it("reads the search columns when the caller sent positions", async () => {
-    mocks.limit.mockResolvedValue([
+    mocks.replicaLimit.mockResolvedValue([
       {
         options: { limit: 5, sources: [{ type: "web" }, { type: "news" }] },
         num_results: 8,
@@ -75,7 +89,8 @@ describe("lookupFeedbackJob on the Bigtable fast path", () => {
 
     const job = await lookupFeedbackJob("search", jobId, teamId, true);
 
-    expect(mocks.select).toHaveBeenCalledTimes(1);
+    expect(mocks.replicaSelect).toHaveBeenCalledTimes(1);
+    expect(mocks.primarySelect).not.toHaveBeenCalled();
     expect(job?.num_results).toBe(8);
     expect(job?.num_results_by_source).toEqual({ web: 5, images: 0, news: 3 });
     expect(job?.result_categories).toEqual({ web: { "1": "developer" } });
@@ -91,7 +106,7 @@ describe("lookupFeedbackJob on the Bigtable fast path", () => {
   it("keeps the labels when the searches row is not there yet", async () => {
     // logSearch writes the Bigtable record before the `searches` row, so a
     // fast caller can arrive in between. Unknown bound, not dropped feedback.
-    mocks.limit.mockResolvedValue([]);
+    mocks.replicaLimit.mockResolvedValue([]);
 
     const job = await lookupFeedbackJob("search", jobId, teamId, true);
 
@@ -100,12 +115,33 @@ describe("lookupFeedbackJob on the Bigtable fast path", () => {
     expect(job?.credits_cost).toBe(2);
   });
 
-  it("keeps the labels when the supplementary read fails", async () => {
-    mocks.limit.mockRejectedValue(new Error("read replica unavailable"));
+  it("falls back to the primary when the replica read fails", async () => {
+    mocks.replicaLimit.mockRejectedValue(new Error("read replica unavailable"));
+    mocks.primaryLimit.mockResolvedValue([
+      {
+        options: { limit: 5 },
+        num_results: 4,
+        num_results_by_source: { web: 4, images: 0, news: 0 },
+        result_categories: null,
+      },
+    ]);
+
+    const job = await lookupFeedbackJob("search", jobId, teamId, true);
+
+    // A replica error says nothing about whether the row exists, so the bounds
+    // are recovered rather than given up.
+    expect(mocks.primarySelect).toHaveBeenCalledTimes(1);
+    expect(job?.num_results_by_source).toEqual({ web: 4, images: 0, news: 0 });
+  });
+
+  it("keeps the labels when both connections fail", async () => {
+    mocks.replicaLimit.mockRejectedValue(new Error("read replica unavailable"));
+    mocks.primaryLimit.mockRejectedValue(new Error("primary unavailable"));
 
     const job = await lookupFeedbackJob("search", jobId, teamId, true);
 
     expect(job).toBeTruthy();
+    expect(job?.num_results_by_source).toBeUndefined();
     expect(job?.credits_cost).toBe(2);
   });
 
@@ -118,6 +154,21 @@ describe("lookupFeedbackJob on the Bigtable fast path", () => {
     const job = await lookupFeedbackJob("scrape", jobId, teamId, true);
 
     expect(job).toBeTruthy();
-    expect(mocks.select).not.toHaveBeenCalled();
+    expect(mocks.replicaSelect).not.toHaveBeenCalled();
+  });
+
+  it("does not read search columns for a zero-data-retention job", async () => {
+    mocks.readFeedbackJob.mockResolvedValue({
+      ...bigtableJob,
+      zeroDataRetention: true,
+    });
+
+    const job = await lookupFeedbackJob("search", jobId, teamId, true);
+
+    // Its feedback is dropped before the bounds are consulted, and both
+    // columns are redacted for it, so there is nothing to fetch.
+    expect(job?.zero_data_retention).toBe(true);
+    expect(mocks.replicaSelect).not.toHaveBeenCalled();
+    expect(mocks.primarySelect).not.toHaveBeenCalled();
   });
 });
