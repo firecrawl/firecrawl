@@ -64,7 +64,6 @@ import {
 import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
-import { urlSpecificParams } from "./lib/urlSpecificParams";
 import { shouldCheckRobots } from "./shouldCheckRobots";
 import { loadMock, MockState } from "./lib/mock";
 import { CostTracking } from "../../lib/cost-tracking";
@@ -422,16 +421,6 @@ async function buildMetaObject(
   internalOptions: InternalOptions,
   costTracking: CostTracking,
 ): Promise<Meta> {
-  const specParams =
-    urlSpecificParams[new URL(url).hostname.replace(/^www\./, "")];
-  if (specParams !== undefined) {
-    options = Object.assign(options, specParams.scrapeOptions);
-    internalOptions = Object.assign(
-      internalOptions,
-      specParams.internalOptions,
-    );
-  }
-
   if (internalOptions.forceEngine === undefined) {
     const forcedEngine = getEngineForUrl(url);
     if (forcedEngine !== undefined) {
