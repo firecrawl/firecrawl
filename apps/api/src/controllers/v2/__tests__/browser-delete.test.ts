@@ -7,7 +7,24 @@ const mocks = vi.hoisted(() => ({
   claimBrowserSessionDestroyed: vi.fn(),
   mirrorExternalSlotRelease: vi.fn(),
   billTeam: vi.fn(),
+  dbRows: [] as unknown[],
 }));
+
+// Only the real getBrowserSessionFromScrape reaches this: it selects every
+// row for a scrape, newest first.
+vi.mock("../../../db/connection", () => {
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    orderBy: () => Promise.resolve(mocks.dbRows),
+  };
+  return {
+    db: { select: () => chain },
+    dbRr: { select: () => chain },
+    dbIndex: { select: () => chain },
+    getDbPoolMetrics: () => "",
+  };
+});
 
 vi.mock("../../../lib/logger", () => {
   const log = {
@@ -57,13 +74,17 @@ import { scrapeStopInteractiveBrowserController } from "../scrape-browser";
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 const SESSION_ID = "01a0d2f6-eea7-7520-ad2a-201d1aa3e9a0";
 
-function makeSession(status: "active" | "destroyed") {
+function makeSession(
+  status: "active" | "destroyed",
+  id = SESSION_ID,
+  browserId = "b07ecb961ba4c547",
+) {
   return {
-    id: SESSION_ID,
+    id,
     team_id: TEAM_ID,
-    request_id: SESSION_ID,
+    request_id: id,
     should_bill: true,
-    browser_id: "b07ecb961ba4c547",
+    browser_id: browserId,
     status,
     created_at: "2026-09-24T10:30:00.980Z",
     updated_at: "2026-09-24T10:30:40.075Z",
@@ -85,6 +106,7 @@ describe("browser session DELETE on an already destroyed session", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.dbRows = [];
     fetchMock.mockReset();
     vi.stubGlobal("fetch", fetchMock);
   });
@@ -155,5 +177,53 @@ describe("browser session DELETE on an already destroyed session", () => {
       error: "Browser session release was not confirmed.",
     });
     expect(mocks.claimBrowserSessionDestroyed).not.toHaveBeenCalled();
+  });
+
+  it("DELETE /v2/scrape/:jobId/interact releases the active row when the scrape also has a destroyed row", async () => {
+    const actual = await vi.importActual<
+      typeof import("../../../lib/browser-sessions")
+    >("../../../lib/browser-sessions");
+    mocks.getBrowserSessionFromScrape.mockImplementation(
+      actual.getBrowserSessionFromScrape,
+    );
+    const activeId = "01a0d2f6-eea7-7520-ad2a-201d1aa3e9a1";
+    mocks.dbRows = [
+      makeSession("destroyed"),
+      makeSession("active", activeId, "active-browser-id"),
+    ];
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          ok: true,
+          sessionDurationMs: 1000,
+          cleanupQueued: true,
+        }),
+    });
+    // Another path already billed the session, so the controller stops
+    // after the release and does not bill.
+    mocks.claimBrowserSessionDestroyed.mockResolvedValue(false);
+    mocks.mirrorExternalSlotRelease.mockResolvedValue(undefined);
+    const req = {
+      params: { jobId: "22222222-2222-2222-2222-222222222222" },
+      auth: { team_id: TEAM_ID },
+    } as unknown as RequestWithAuth<{ jobId: string }>;
+    const res = makeRes();
+
+    await scrapeStopInteractiveBrowserController(req as any, res as any);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toMatch(
+      /\/browsers\/active-browser-id$/,
+    );
+    expect(fetchMock.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(mocks.claimBrowserSessionDestroyed).toHaveBeenCalledWith(activeId);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true, sessionDurationMs: 1000 }),
+    );
   });
 });

@@ -104,12 +104,17 @@ export async function getBrowserSessionFromScrape(
   id: string,
 ): Promise<BrowserSessionRow | null> {
   try {
-    const [data] = await db
+    // scrape_id is not unique: two concurrent interact calls on one scrape can
+    // each insert a row. Prefer the newest row that is not destroyed, so that
+    // callers act on a live session. Fall back to the newest destroyed row.
+    const rows = (await db
       .select()
       .from(schema.browser_sessions)
       .where(eq(schema.browser_sessions.scrape_id, id))
-      .limit(1);
-    return (data ?? null) as BrowserSessionRow | null;
+      .orderBy(
+        desc(schema.browser_sessions.created_at),
+      )) as BrowserSessionRow[];
+    return rows.find(row => row.status !== "destroyed") ?? rows[0] ?? null;
   } catch (error) {
     logger.error("Failed to get browser session from scrape", { error, id });
     throw new Error(
