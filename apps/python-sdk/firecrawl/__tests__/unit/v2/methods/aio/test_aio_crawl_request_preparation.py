@@ -34,6 +34,12 @@ class TestAsyncCrawlRequestPreparation:
         assert payload["maxConcurrency"] == 5
         assert payload["zeroDataRetention"] is True
 
+    def test_stop_on_content_mapping(self):
+        req = CrawlRequest(url="https://example.com", stop_on_content=["No results found"])
+        payload = _prepare_crawl_request(req)
+        assert payload["stopOnContent"] == ["No results found"]
+        assert "stop_on_content" not in payload
+
     def test_webhook_preparation(self):
         # string webhook
         req = CrawlRequest(url="https://example.com", webhook="https://example.com/hook")

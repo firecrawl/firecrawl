@@ -985,6 +985,7 @@ class CrawlRequest(BaseModel):
     ignore_query_parameters: bool = False
     deduplicate_similar_urls: bool = True
     limit: Optional[int] = None
+    stop_on_content: Optional[List[str]] = None
     crawl_entire_domain: bool = False
     allow_external_links: bool = False
     allow_subdomains: bool = False
