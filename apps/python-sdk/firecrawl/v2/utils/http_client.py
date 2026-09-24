@@ -41,13 +41,15 @@ class HttpClient:
             return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
 
         # Relative (including leading slash or not)
-        base_str = self.api_url if self.api_url.endswith("/") else f"{self.api_url}/"
         # Guard protocol-relative like //host/path slipping through as “relative”
         if endpoint.startswith("//"):
             ep2 = urlparse(f"https:{endpoint}")
             path = ep2.path or "/"
             return urlunparse((base.scheme or "https", base.netloc, path, "", ep2.query, ""))
-        return urljoin(base_str, endpoint)
+        base_path = base.path.rstrip("/")
+        ep_path = ep.path.lstrip("/")
+        combined_path = f"{base_path}/{ep_path}" if base_path else f"/{ep_path}"
+        return urlunparse((base.scheme or "https", base.netloc, combined_path, "", ep.query, ""))
     
     def _prepare_headers(
         self,
