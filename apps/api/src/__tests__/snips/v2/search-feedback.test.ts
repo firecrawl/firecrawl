@@ -401,67 +401,6 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
     90000,
   );
 
-  // A zero-data-retention row logs only `{enterprise}` — the request body,
-  // including `sources`, is redacted. Treating that absent `sources` as the
-  // ["web"] prefault would bound news to 0 and silently discard every news
-  // label the caller sent, so redacted rows fall back to the looser bound.
-  it.concurrent(
-    "keeps news feedback on a row whose sources were redacted",
-    async () => {
-      const raw = await searchRawFull(
-        { query: "firecrawl redacted sources", limit: 3 },
-        identity,
-      );
-      expect(raw.statusCode).toBe(200);
-      const searchId = raw.body.id;
-
-      // Stand in for a pre-migration zero-data-retention row.
-      await db
-        .update(schema.searches)
-        .set({
-          num_results: 6,
-          num_results_by_source: null,
-          result_categories: null,
-          options: { enterprise: ["zdr"], limit: 3 },
-        })
-        .where(
-          and(
-            eq(schema.searches.id, searchId),
-            eq(schema.searches.team_id, identity.teamId),
-          ),
-        );
-
-      const result = await searchFeedback(
-        searchId,
-        {
-          rating: "good",
-          valuableResults: [
-            { source: "news", position: 1 },
-            // Still bounded by min(limit, num_results); 5 is out of range.
-            { source: "news", position: 5 },
-          ],
-        },
-        identity,
-      );
-      expect(result.success).toBe(true);
-
-      const [feedbackRow] = await db
-        .select({ metadata: schema.search_feedback.metadata })
-        .from(schema.search_feedback)
-        .where(eq(schema.search_feedback.id, result.feedbackId))
-        .limit(1);
-
-      expect(feedbackRow).toBeTruthy();
-      expect(feedbackRow.metadata).toEqual(
-        expect.objectContaining({
-          valuableResults: [{ source: "news", position: 1 }],
-          valuableResultDocumentIds: [`search:${searchId}:news:0`],
-        }),
-      );
-    },
-    90000,
-  );
-
   it.concurrent(
     "is idempotent — second submission returns 0 refund",
     async () => {

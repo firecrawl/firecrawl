@@ -415,7 +415,12 @@ export async function lookupFeedbackJob(
         zero_data_retention: job.zeroDataRetention,
       };
 
-      return endpoint === "search" && needsSearchResults
+      // Not for a zero-data-retention job: its feedback is dropped before it
+      // reaches the result bounds, and those columns are redacted for it
+      // anyway, so there is nothing to read and no reason to go looking.
+      return endpoint === "search" &&
+        needsSearchResults &&
+        !job.zeroDataRetention
         ? withSearchResultColumns(row, jobId, dbTeamId)
         : row;
     }

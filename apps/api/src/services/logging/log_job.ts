@@ -1169,9 +1169,15 @@ async function logSearchInternal(search: LoggedSearch, force: boolean = false) {
       is_successful: search.is_successful,
       error: search.zeroDataRetention ? null : (search.error ?? null),
       num_results: search.num_results,
-      num_results_by_source: search.num_results_by_source ?? null,
-      // Redacted with everything else under zero data retention: the map says
-      // which vertical served each position, which is response data.
+      // Both are response-derived and both are redacted under zero data
+      // retention: the per-source split says how the result set was composed
+      // ({"web":3,"news":10} characterises the query's coverage in a way the
+      // combined total does not), and the category map says which vertical
+      // served each position. Feedback on a ZDR search is not persisted
+      // anyway, so neither column has a reader for those rows.
+      num_results_by_source: search.zeroDataRetention
+        ? null
+        : (search.num_results_by_source ?? null),
       result_categories: search.zeroDataRetention
         ? null
         : (search.result_categories ?? null),
