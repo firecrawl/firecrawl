@@ -2,6 +2,7 @@ import { ErrorCodes, TransportableError } from "../../lib/error";
 import { Meta } from ".";
 import { Engine, FeatureFlag } from "./engines";
 import { isSelfHosted } from "../../lib/deployment";
+import { dataSourceRateLimitedMessage } from "../../lib/strings";
 
 export class EngineError extends Error {
   constructor(message?: string, options?: ErrorOptions) {
@@ -581,6 +582,31 @@ export class AgentIndexOnlyError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new AgentIndexOnlyError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class DataSourceRateLimitedError extends TransportableError {
+  constructor(public retryAfterSeconds?: number) {
+    super(
+      "SCRAPE_DATA_SOURCE_RATE_LIMITED",
+      dataSourceRateLimitedMessage(retryAfterSeconds),
+    );
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+      retryAfterSeconds: this.retryAfterSeconds,
+    };
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new DataSourceRateLimitedError(data.retryAfterSeconds);
     x.stack = data.stack;
     return x;
   }

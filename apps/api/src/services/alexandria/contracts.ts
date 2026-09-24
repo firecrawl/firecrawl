@@ -86,7 +86,12 @@ export type DetailedDiscoveredTool = (
   matchedUrls: string[];
 };
 
-export type ExchangeResponse = { status: number; body: unknown };
+export type ExchangeResponse = {
+  status: number;
+  body: unknown;
+  /** The upstream `Retry-After` header, as sent. */
+  retryAfter?: string;
+};
 export const refusal = (
   status: number,
   error: string,

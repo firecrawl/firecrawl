@@ -29,6 +29,7 @@ import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { AbortManagerThrownError } from "../../scraper/scrapeURL/lib/abortManager";
+import { DataSourceRateLimitedError } from "../../scraper/scrapeURL/error";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
@@ -359,6 +360,20 @@ async function scrapeControllerInner(
           error: e.message,
           sponsor_status: "pending",
           login_url: "https://firecrawl.dev/signin",
+        });
+      }
+
+      if (e.code === "SCRAPE_DATA_SOURCE_RATE_LIMITED") {
+        if (
+          e instanceof DataSourceRateLimitedError &&
+          e.retryAfterSeconds !== undefined
+        ) {
+          res.setHeader("Retry-After", String(e.retryAfterSeconds));
+        }
+        return res.status(429).json({
+          success: false,
+          code: e.code,
+          error: e.message,
         });
       }
 

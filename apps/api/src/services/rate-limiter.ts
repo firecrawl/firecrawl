@@ -150,21 +150,44 @@ export const HOBBY_RATE_LIMIT_MULTIPLIER = 10;
  * multiplier is safe: a wrong guess shifts queue ordering, not correctness.
  */
 const PLAN_PRIORITY_TIERS: {
+  tier: PlanTier;
   minMultiplier: number;
   bucketLimit: number;
   planModifier: number;
 }[] = [
-  { minMultiplier: 1, bucketLimit: 25, planModifier: 0.5 }, // free
+  { tier: "free", minMultiplier: 1, bucketLimit: 25, planModifier: 0.5 },
   {
+    tier: "hobby",
     minMultiplier: HOBBY_RATE_LIMIT_MULTIPLIER,
     bucketLimit: 100,
     planModifier: 0.3,
-  }, // hobby
-  { minMultiplier: 50, bucketLimit: 200, planModifier: 0.2 }, // standard
-  { minMultiplier: 500, bucketLimit: 400, planModifier: 0.1 }, // growth
-  { minMultiplier: 1000, bucketLimit: 400, planModifier: 0.1 }, // scale
-  { minMultiplier: 2500, bucketLimit: 1000, planModifier: 0.05 }, // enterprise
+  },
+  { tier: "standard", minMultiplier: 50, bucketLimit: 200, planModifier: 0.2 },
+  { tier: "growth", minMultiplier: 500, bucketLimit: 400, planModifier: 0.1 },
+  { tier: "scale", minMultiplier: 1000, bucketLimit: 400, planModifier: 0.1 },
+  {
+    tier: "enterprise",
+    minMultiplier: 2500,
+    bucketLimit: 1000,
+    planModifier: 0.05,
+  },
 ];
+
+export type PlanTier =
+  | "free"
+  | "hobby"
+  | "standard"
+  | "growth"
+  | "scale"
+  | "enterprise";
+
+function planPriorityTierFor(multiplier: number) {
+  let chosen = PLAN_PRIORITY_TIERS[0];
+  for (const tier of PLAN_PRIORITY_TIERS) {
+    if (multiplier >= tier.minMultiplier) chosen = tier;
+  }
+  return chosen;
+}
 
 /**
  * Infers safe `bucketLimit` / `planModifier` values from a rate-limit
@@ -175,9 +198,11 @@ export function inferPlanPriorityFromMultiplier(multiplier: number): {
   bucketLimit: number;
   planModifier: number;
 } {
-  let chosen = PLAN_PRIORITY_TIERS[0];
-  for (const tier of PLAN_PRIORITY_TIERS) {
-    if (multiplier >= tier.minMultiplier) chosen = tier;
-  }
+  const chosen = planPriorityTierFor(multiplier);
   return { bucketLimit: chosen.bucketLimit, planModifier: chosen.planModifier };
+}
+
+/** The plan a rate-limit multiplier corresponds to, rounding down between tiers. */
+export function planTierFromMultiplier(multiplier: number): PlanTier {
+  return planPriorityTierFor(multiplier).tier;
 }

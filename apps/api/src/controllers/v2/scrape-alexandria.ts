@@ -19,7 +19,21 @@ import {
   REQUEST_ID_PATTERN,
   retrieveProviders,
 } from "../../services/alexandria/retrieve";
+import { dataSourceRateLimitedMessage } from "../../lib/strings";
 import type { RequestWithAuth } from "./types";
+
+function maxRetryAfterSeconds(
+  errors: Record<string, unknown>[],
+): number | undefined {
+  const seconds = errors.flatMap(error =>
+    typeof error.retryAfterSeconds === "number" &&
+    Number.isFinite(error.retryAfterSeconds) &&
+    error.retryAfterSeconds >= 0
+      ? [Math.ceil(error.retryAfterSeconds)]
+      : [],
+  );
+  return seconds.length > 0 ? Math.max(...seconds) : undefined;
+}
 
 const providerScrapeSchema = z.strictObject({
   alexandria: z.preprocess(
@@ -212,8 +226,15 @@ export async function providerScrapeController(
     );
   }
 
+  if (result.retryAfter) res.setHeader("Retry-After", result.retryAfter);
   if (result.status !== 200) return res.status(result.status).json(result.body);
   const answer = answerSchema.parse(result.body);
+  const rateLimited = answer.results.flatMap(item =>
+    item.error?.status === 429 ? [item.error] : [],
+  );
+  const retryAfterSeconds = maxRetryAfterSeconds(rateLimited);
+  if (retryAfterSeconds !== undefined)
+    res.setHeader("Retry-After", String(retryAfterSeconds));
   if (legacy) {
     if (legacyBody && "requests" in legacyBody) return res.json(answer);
     const first = answer.results[0];
@@ -227,6 +248,14 @@ export async function providerScrapeController(
     }
     return res.json({ success: true, ...first });
   }
+  // Only an answer with nothing to show becomes a 429; partial results stay 200.
+  if (rateLimited.length > 0 && answer.results.every(item => item.error))
+    return res.status(429).json({
+      success: false,
+      code: rateLimited[0].code,
+      error: dataSourceRateLimitedMessage(retryAfterSeconds),
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+    });
   return res.json({
     success: true,
     scrape_id: result.scrapeId,

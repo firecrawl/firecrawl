@@ -12,7 +12,7 @@ import type { LockCreditsResult } from "../autumn/types";
 import { getBillingQueue } from "../queue-service";
 import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
-import { exchangeRequest } from "./client";
+import { exchangePlanTier, exchangeRequest } from "./client";
 import {
   answerSchema,
   refusal,
@@ -67,13 +67,28 @@ const unresolved = (chargeId: string) =>
   );
 const relay = (response: ExchangeResponse): ExchangeResponse => {
   const body = (response.body ?? {}) as Record<string, unknown>;
-  return refusal(
-    response.status,
-    typeof body.error === "string"
-      ? body.error
-      : "The provider request was refused.",
-    typeof body.code === "string" ? { code: body.code } : {},
-  );
+  const retryAfterSeconds =
+    typeof body.retryAfterSeconds === "number" &&
+    Number.isSafeInteger(body.retryAfterSeconds) &&
+    body.retryAfterSeconds >= 0
+      ? body.retryAfterSeconds
+      : undefined;
+  const retryAfter =
+    response.retryAfter ??
+    (retryAfterSeconds === undefined ? undefined : String(retryAfterSeconds));
+  return {
+    ...refusal(
+      response.status,
+      typeof body.error === "string"
+        ? body.error
+        : "The provider request was refused.",
+      {
+        ...(typeof body.code === "string" ? { code: body.code } : {}),
+        ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+      },
+    ),
+    ...(retryAfter === undefined ? {} : { retryAfter }),
+  };
 };
 
 export async function retrieveProviders(input: {
@@ -341,6 +356,7 @@ export async function retrieveProviders(input: {
 
   try {
     await write(record);
+    const plan = await exchangePlanTier(input.teamId, input.orgId);
     const response = await exchangeRequest({
       teamId: input.teamId,
       path: "/v1/retrieve",
@@ -351,6 +367,7 @@ export async function retrieveProviders(input: {
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
       ...(termsIdentity ? { termsIdentity } : {}),
+      ...(plan ? { plan } : {}),
       maximumCredits,
     }).catch(error => {
       throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);
@@ -406,6 +423,13 @@ export async function retrieveProviders(input: {
       });
 
     const done: ExchangeResponse = { status: 200, body: answer };
+    // Nothing ran and nothing was charged, so the same x-request-id may run again after Retry-After.
+    if (
+      credits === 0 &&
+      answer.results.every(item => item.error) &&
+      answer.results.some(item => item.error?.status === 429)
+    )
+      return refuse(done, true);
     await write({ ...record, phase: "done", response: done });
     return { ...done, executed: true, scrapeId: input.scrapeId };
   } catch (error) {

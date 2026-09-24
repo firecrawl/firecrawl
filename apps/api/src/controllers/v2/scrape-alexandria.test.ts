@@ -246,6 +246,102 @@ it("logs per-tool errors even when the response is HTTP 200", async () => {
   );
 });
 
+const rateLimitedItem = (retryAfterSeconds?: number) => ({
+  ...call,
+  creditsCost: 0,
+  error: {
+    code: "provider_rate_limited",
+    message: "Slow down.",
+    status: 429,
+    ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+  },
+});
+
+it("answers 429 with the longest Retry-After when every call is rate limited", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([rateLimitedItem(3.2), rateLimitedItem(12), rateLimitedItem()]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: [call, call, call] });
+  expect(response.status).toBe(429);
+  expect(response.headers["retry-after"]).toBe("12");
+  expect(response.body).toEqual({
+    success: false,
+    code: "provider_rate_limited",
+    error: "The data source is rate-limiting requests. Retry after 12 seconds.",
+    retryAfterSeconds: 12,
+  });
+});
+
+it("keeps partial results at 200 but still advertises Retry-After", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([{ ...call, creditsCost: 0, data: {} }, rateLimitedItem(5)]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: [call, call] });
+  expect(response.status).toBe(200);
+  expect(response.headers["retry-after"]).toBe("5");
+  expect(response.body.success).toBe(true);
+  expect(response.body.data.alexandria).toHaveLength(2);
+});
+
+it("keeps an all-failed answer with no rate limit at 200 without Retry-After", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      {
+        ...call,
+        creditsCost: 0,
+        error: { code: "provider_unavailable", message: "Down.", status: 503 },
+      },
+    ]),
+  );
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(response.status).toBe(200);
+  expect(response.headers["retry-after"]).toBeUndefined();
+});
+
+it("forwards Retry-After on a relayed refusal", async () => {
+  mocks.retrieve.mockResolvedValue({
+    executed: true,
+    scrapeId: "failed-1",
+    status: 429,
+    retryAfter: "9",
+    body: {
+      success: false,
+      code: "provider_rate_limited",
+      error: "Slow down.",
+      retryAfterSeconds: 9,
+    },
+  });
+  const response = await request(app)
+    .post("/v2/scrape")
+    .send({ alexandria: call });
+  expect(response.status).toBe(429);
+  expect(response.headers["retry-after"]).toBe("9");
+  expect(response.body).toEqual({
+    success: false,
+    code: "provider_rate_limited",
+    error: "Slow down.",
+    retryAfterSeconds: 9,
+  });
+});
+
+it("sets Retry-After on a rate-limited single legacy call", async () => {
+  mocks.retrieve.mockResolvedValue(result([rateLimitedItem(4)]));
+  const response = await request(app).post("/exchange/retrieve").send(call);
+  expect(response.status).toBe(429);
+  expect(response.headers["retry-after"]).toBe("4");
+  expect(response.body).toEqual({
+    success: false,
+    code: "provider_rate_limited",
+    error: "Slow down.",
+  });
+});
+
 it("uses a failure fallback when no error message is available", async () => {
   mocks.retrieve.mockResolvedValue({
     executed: true,
