@@ -1816,6 +1816,7 @@ class FirecrawlClient:
         idempotency_key: Optional[str] = None,
         poll_interval: int = 2,
         wait_timeout: Optional[int] = None,
+        pagination_config: Optional[PaginationConfig] = None,
     ):
         """
         Start a batch scrape job and wait until completion.
@@ -1860,5 +1861,6 @@ class FirecrawlClient:
             idempotency_key=idempotency_key,
             poll_interval=poll_interval,
             timeout=wait_timeout,
+            pagination_config=pagination_config,
         )
     
