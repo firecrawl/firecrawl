@@ -705,6 +705,18 @@ export async function browserDeleteController(
     });
   }
 
+  // A destroyed session was already released and billed (by an earlier
+  // DELETE or by the browser service's session.ended webhook). The browser
+  // service no longer knows it, so asking it again can only fail. Report
+  // success so that DELETE stays idempotent.
+  if (session.status === "destroyed") {
+    logger.info("Browser session already destroyed, nothing to release");
+    return res.status(200).json({
+      success: true,
+      cleanupQueued: true,
+    });
+  }
+
   logger.info("Deleting browser session");
 
   let deleteResult: BrowserServiceDeleteResponse;
