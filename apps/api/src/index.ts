@@ -39,6 +39,7 @@ import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 import { isKeylessConfigured } from "./lib/keyless";
 import { shutdownPubSubLogging } from "./services/logging/log_job";
+import { requestIdMiddleware } from "./lib/request-id";
 import { notFoundHandler } from "./lib/not-found";
 
 const { createBullBoard } = require("@bull-board/api");
@@ -82,12 +83,14 @@ const captureRawBody = (
   }
 };
 
+app.use(requestIdMiddleware);
+
 registerMcpActionLogIngestRoute(app);
 
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
 
-app.use(cors()); // Add this line to enable CORS
+app.use(cors({ exposedHeaders: ["X-Request-ID"] }));
 
 app.use(responseTime());
 
@@ -296,6 +299,7 @@ app.use(
       {
         error: err,
         errorId: id,
+        requestId: (req as Request & { requestId?: string }).requestId,
         path: req.path,
         teamId: req.acuc?.team_id,
         team_id: req.acuc?.team_id,
