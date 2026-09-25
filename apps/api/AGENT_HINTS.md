@@ -18,11 +18,11 @@ Raw HTTP and ordinary SDK callers receive no hints unless their adapter explicit
 
 ## Initial rules
 
-- Search excerpts: offer Scrape when a web result has no markdown, HTML, or raw HTML. Inspect actual output per result, not the requested scrape setting.
+- Search excerpts: offer Scrape when a web result has no markdown, HTML, or raw HTML. Inspect actual output per result, not the requested scrape setting. The hint names the excerpt-only results by 1-based position and URL (at most three, then a count of the rest), so the agent can choose which to scrape.
 - Empty web search: offer another Search with a broader or alternative query only when a web result collection is explicitly present and empty.
 - Search result cluster: for authenticated callers only, when at least four valid HTTP(S) result URLs are present and at least three share one origin representing at least 75% of valid result URLs, offer Map for URL discovery or Crawl for multi-page content. Keyless Search callers cannot use Map or Crawl, so they receive no cluster suggestion.
 - Source page 401: when database authentication is enabled and a successful Scrape envelope includes both a page status of 401 and a scrape ID in `metadata.scrapeId` or top-level `scrape_id`, offer Interact using that concrete scrape ID for authentication or page interaction. Self-hosted deployments without database authentication do not receive this suggestion because Interact returns 501 there.
-- Source page 404/410: offer Search for a current location or alternative. An API cache-miss 404, 429, authentication failure, or timeout does not fire this rule.
+- Source page 404/410: offer Search for a current location or alternative. The suggested query is prefilled as `site:<host>` plus words from the last two path segments of the final URL (file extensions, numeric and opaque IDs dropped), with a placeholder when no usable URL is present. When `metadata.sourceURL` and `metadata.url` differ, the hint names the redirect that led to the dead page. An API cache-miss 404, 429, authentication failure, or timeout does not fire this rule.
 - Truncated PDF: when Scrape reports `totalPages > numPages`, offer another Scrape only when its PDF `maxPages` can be raised, capped at the API maximum of 10,000.
 - Low credits: when the authoritative billing preflight reports fewer than 100 credits, ask the agent to let the user know they should add more credits. This notice is independent of endpoint success for responses that reach the hint middleware, appears before any cross-endpoint suggestion, and does not replace that suggestion.
 

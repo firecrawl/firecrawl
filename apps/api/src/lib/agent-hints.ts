@@ -47,6 +47,90 @@ function clusteredOrigin(web: unknown[]): string | undefined {
     ? dominant[0]
     : undefined;
 }
+const EXCERPT_URLS_SHOWN = 3;
+const QUERY_PATH_SEGMENTS = 2;
+
+function httpUrl(value: unknown): URL | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? parsed
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Names the excerpt-only results by 1-based position so the agent can pick. */
+function excerptOnlyHint(web: unknown[]): string | undefined {
+  const excerpts: { position: number; url: string }[] = [];
+  web.forEach((value, index) => {
+    const item = object(value);
+    if (
+      typeof item.url === "string" &&
+      item.markdown === undefined &&
+      item.html === undefined &&
+      item.rawHtml === undefined
+    ) {
+      excerpts.push({ position: index + 1, url: item.url });
+    }
+  });
+  if (excerpts.length === 0) return undefined;
+  const shown = excerpts.slice(0, EXCERPT_URLS_SHOWN);
+  const listed = shown.map(e => `#${e.position} ${e.url}`).join(", ");
+  const more =
+    excerpts.length > shown.length
+      ? ` and ${excerpts.length - shown.length} more`
+      : "";
+  const subject =
+    excerpts.length === web.length
+      ? `All ${web.length} web results are excerpts only`
+      : `${excerpts.length} of ${web.length} web results are excerpts only`;
+  return `${subject} (${listed}${more}). If you need more than an excerpt, use POST /v2/scrape with {"url":"<one of these URLs>","formats":["markdown"]}. Retrieve only needed pages; do not re-scrape results that already contain the required content.`;
+}
+
+/** Words from the last path segments, e.g. /payments/checkout/migration-from-legacy -> "checkout migration from legacy". */
+function pathWords(url: URL): string {
+  const segments = url.pathname
+    .split("/")
+    .map(segment => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+    })
+    .map(segment => segment.replace(/\.[a-z0-9]{1,5}$/i, ""))
+    .filter(
+      segment =>
+        segment && !/^\d+$/.test(segment) && !/^[0-9a-f-]{16,}$/i.test(segment),
+    );
+  return segments
+    .slice(-QUERY_PATH_SEGMENTS)
+    .join(" ")
+    .replace(/[-_+.]+/g, " ")
+    .replace(/[^\p{L}\p{N} ]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+/** 404/410 guidance built from the requested and final URLs only. */
+function goneHint(metadata: ObjectValue, status: number): string {
+  const source = httpUrl(metadata.sourceURL);
+  const final = httpUrl(metadata.url);
+  const page = final ?? source;
+  const redirected =
+    source && final && source.href !== final.href
+      ? ` after redirecting from ${source.href} to ${final.href}`
+      : "";
+  const words = page ? pathWords(page) : "";
+  const query =
+    page && words ? `site:${page.hostname} ${words}` : "<page name or subject>";
+  return `The source page returned ${status}${redirected}. If you need its current location or an alternative, use POST /v2/search with ${JSON.stringify({ query, sources: ["web"] })}. Adjust the query to the page identity from your task; this is not a transient-error retry.`;
+}
+
 export function buildAgentHints(context: AgentHintContext): string[] {
   const response = object(context.response);
   const data = object(response.data);
@@ -72,8 +156,7 @@ export function buildAgentHints(context: AgentHintContext): string[] {
       context.endpoint === "scrape" &&
       (pageStatus === 404 || pageStatus === 410)
     ) {
-      nextAction =
-        'The source page returned 404 or 410. If you need its current location or an alternative, use POST /v2/search with {"query":"<page name or subject>","sources":["web"]}. Use the page identity from your task; this is not a transient-error retry.';
+      nextAction = goneHint(metadata, pageStatus);
     } else if (
       context.endpoint === "scrape" &&
       typeof metadata.numPages === "number" &&
@@ -96,18 +179,9 @@ export function buildAgentHints(context: AgentHintContext): string[] {
         nextAction =
           'No web results were returned. If the task is still unresolved, use POST /v2/search again with {"query":"<broader or alternative query>","sources":["web"]}.';
       } else if (web) {
-        const hasMissingContent = web.some(value => {
-          const item = object(value);
-          return (
-            typeof item.url === "string" &&
-            item.markdown === undefined &&
-            item.html === undefined &&
-            item.rawHtml === undefined
-          );
-        });
-        if (hasMissingContent) {
-          nextAction =
-            'Some web results have no full page content. If you need more than an excerpt, use POST /v2/scrape with {"url":"<selected result URL>","formats":["markdown"]}. Retrieve only needed pages; do not re-scrape results that already contain the required content.';
+        const excerptHint = excerptOnlyHint(web);
+        if (excerptHint) {
+          nextAction = excerptHint;
         } else {
           const origin = context.canUseMapAndCrawl
             ? clusteredOrigin(web)
