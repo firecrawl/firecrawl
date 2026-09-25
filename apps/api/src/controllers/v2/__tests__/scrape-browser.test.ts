@@ -107,7 +107,12 @@ vi.mock("../../../lib/hangar", () => ({
   stopHangarBrowser: vi.fn(),
   getHangarRecording: vi.fn(),
   HangarError: class HangarError extends Error {
-    status = 500;
+    constructor(
+      public status: number,
+      message: string,
+    ) {
+      super(message);
+    }
   },
 }));
 

@@ -99,7 +99,10 @@ function makeSession(
 function makeRes() {
   return {
     statusCode: 200,
-    status: vi.fn().mockReturnThis(),
+    status: vi.fn(function (this: { statusCode: number }, code: number) {
+      this.statusCode = code;
+      return this;
+    }),
     json: vi.fn(),
   } as unknown as Response & {
     status: ReturnType<typeof vi.fn>;

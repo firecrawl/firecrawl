@@ -149,8 +149,8 @@ export async function browserExecuteController(
       .status(410)
       .json({ success: false, error: "Browser session has been destroyed." });
   try {
-    const result = await executeHangarBrowser(session.browser_id, body);
     updateBrowserSessionActivity(session.id).catch(() => {});
+    const result = await executeHangarBrowser(session.browser_id, body);
     enqueueBrowserSessionActivity({
       team_id: req.auth.team_id,
       session_id: session.id,

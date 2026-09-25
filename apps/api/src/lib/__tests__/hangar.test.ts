@@ -94,6 +94,39 @@ it("does not retry profile conflicts", async () => {
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
+it("stops a created browser when its response is missing the CDP URL", async () => {
+  vi.mocked(fetch)
+    .mockResolvedValueOnce(respond({ ...browser, cdp_url: undefined }))
+    .mockResolvedValueOnce(respond({ ...browser, status: "stopping" }));
+  await expect(
+    createHangarBrowser("request", "team", {
+      ttl: 600,
+      activityTtl: 300,
+      streamWebView: true,
+      recordSession: true,
+    }),
+  ).rejects.toMatchObject({ status: 502 });
+  expect(fetch).toHaveBeenLastCalledWith(
+    "http://hangar.internal/v1/browsers/br_test/stop",
+    expect.objectContaining({ method: "POST" }),
+  );
+});
+
+it.each([404, 500])("cancels unread error bodies (%s)", async status => {
+  const response = new Response("upstream error", { status });
+  const cancel = vi.spyOn(response.body!, "cancel");
+  vi.mocked(fetch).mockResolvedValueOnce(response);
+  await expect(stopHangarBrowser("br_test")).rejects.toMatchObject({ status });
+  expect(cancel).toHaveBeenCalledOnce();
+  const recording = new Response("upstream error", { status });
+  const cancelRecording = vi.spyOn(recording.body!, "cancel");
+  vi.mocked(fetch).mockResolvedValueOnce(recording);
+  await expect(getHangarRecording(browser.playlist_url)).rejects.toBeInstanceOf(
+    HangarError,
+  );
+  expect(cancelRecording).toHaveBeenCalledOnce();
+});
+
 it("maps execution output and never retries a command", async () => {
   vi.mocked(fetch).mockResolvedValueOnce(
     respond({
@@ -110,7 +143,6 @@ it("maps execution output and never retries a command", async () => {
       code: "throw Error()",
       language: "node",
       timeout: 30,
-      origin: "api",
     }),
   ).toMatchObject({ exitCode: 1, truncated: true });
   expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string)).toEqual(

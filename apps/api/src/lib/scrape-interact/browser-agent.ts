@@ -148,13 +148,11 @@ async function execInBrowser(
   browserId: string,
   code: string,
   timeout: number,
-  origin: string,
 ): Promise<BrowserExecutionResult> {
   return executeHangarBrowser(browserId, {
     code,
     language: "bash",
     timeout,
-    origin,
   });
 }
 
@@ -164,7 +162,6 @@ async function getCurrentUrl(browserId: string): Promise<string> {
       browserId,
       "agent-browser get url",
       SNAPSHOT_TIMEOUT,
-      "agent_get_url",
     );
     return (result.stdout || result.result || "").trim();
   } catch {
@@ -178,7 +175,6 @@ async function takeSnapshot(browserId: string): Promise<string> {
       browserId,
       "agent-browser snapshot -i",
       SNAPSHOT_TIMEOUT,
-      "agent_snapshot",
     );
     return (result.stdout || result.result || "").slice(0, SNAPSHOT_MAX_CHARS);
   } catch {
@@ -205,7 +201,6 @@ async function syncTabs(browserId: string): Promise<void> {
       ].join("\n"),
       language: "node",
       timeout: 5,
-      origin: "tab_sync",
     });
   } catch {}
 }
@@ -282,12 +277,7 @@ export async function executePromptViaBrowserAgent(
       }
 
       try {
-        const result = await execInBrowser(
-          browserId,
-          code,
-          stepTimeout,
-          "agent_action",
-        );
+        const result = await execInBrowser(browserId, code, stepTimeout);
         const output = (result.stdout || result.result || "").trim();
 
         // Ensure only one tab exists and it's in the foreground for live view
@@ -451,7 +441,11 @@ export async function executeCodeViaBrowserSession(
   // run's `inputs`; a zero-arg closure would record `{}` and strip the code,
   // language, timeout, and origin from every trace.
   const run = async (execParams: typeof params) =>
-    executeHangarBrowser(browserId, execParams);
+    executeHangarBrowser(browserId, {
+      code: execParams.code,
+      language: execParams.language,
+      timeout: execParams.timeout,
+    });
 
   if (!trace) return run(params);
 

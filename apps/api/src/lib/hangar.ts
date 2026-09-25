@@ -77,13 +77,15 @@ async function request<T>(
     throw new HangarError(502, "Hangar is unavailable.");
   }
   // Do not expose upstream bodies: creation failures can contain capability URLs.
-  if (!response.ok)
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
     throw new HangarError(
       response.status,
       response.status === 409
         ? "Browser operation conflicts with the current session or profile state."
         : "Hangar request failed.",
     );
+  }
   try {
     return (await response.json()) as T;
   } catch {
@@ -145,9 +147,11 @@ export async function createHangarBrowser(
         throw error;
     }
   }
-  if (!created?.id || !created.cdp_url)
+  if (!created?.id)
     throw new HangarError(502, "Invalid Hangar creation response.");
   try {
+    if (!created.cdp_url)
+      throw new HangarError(502, "Invalid Hangar creation response.");
     let browser: HangarBrowser = created;
     const deadline = Date.now() + 300_000;
     while (browser.status === "starting" && Date.now() < deadline)
@@ -167,7 +171,6 @@ export async function executeHangarBrowser(
     code: string;
     language: string;
     timeout: number;
-    origin?: string;
   },
 ): Promise<BrowserExecutionResult> {
   const { code, language, timeout } = params;
@@ -209,6 +212,7 @@ export async function getHangarRecording(playlistUrl: string) {
   } catch {
     throw unavailable();
   }
+  if (!response.ok) await response.body?.cancel().catch(() => {});
   if ([401, 404, 409, 410].includes(response.status))
     throw new HangarError(404, "Replay not found.");
   if (!response.ok || !response.body) throw unavailable();
