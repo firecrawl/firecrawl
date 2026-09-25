@@ -13,10 +13,9 @@ import {
 import { bumpTeamActive, newTxContext, releaseSlotsAndPromote } from "./ops";
 
 // External slots: capacity consumed by things that are not queue jobs (sync
-// scrapes via the team semaphore, browser sessions). They unconditionally bump
-// the team active counter -- possibly past the limit, matching the old Redis
-// behavior where sync holders were mirrored into the same ZSET -- and hand
-// their slot through the normal promotion chain on release.
+// scrapes via the team semaphore, browser sessions). Admission can enforce a
+// limit or mirror a holder admitted elsewhere. Released slots go through the
+// normal promotion chain.
 
 type ExternalSlotRecord = {
   e: number; // expiry ms
@@ -44,9 +43,8 @@ export class NuqFdbExternalSlots {
     };
   }
 
-  // Acquires (or renews) an external slot. Unconditional: never blocks on the
-  // team limit; the caller's own gate (Lua semaphore, session limits) decides
-  // admission. Re-acquiring an existing holder just extends its expiry.
+  // With a limit, reject new holders when the team is full. Without one, the
+  // caller controls admission. Existing holders only renew their expiry.
   public async acquire(
     teamId: string,
     holderId: string,

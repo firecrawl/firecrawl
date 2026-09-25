@@ -276,6 +276,8 @@ export async function reserveBrowserPromptCredits(
   req: RequestWithAuth<any, any, any>,
   session: BrowserSessionRow,
 ) {
+  // This flag determines the billing rate. A failed read or write must not
+  // silently execute a prompt at the cheaper browser rate.
   if (await didBrowserSessionUsePrompt(session.id)) return;
   if (session.should_bill) {
     const credits = calculateBrowserSessionCredits(
