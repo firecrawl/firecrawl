@@ -419,7 +419,26 @@ app.post('/scrape', async (req: Request, res: Response) => {
     await initializeBrowser();
   }
 
+  // acquire() never times out, so under backlog the queue fills with requests
+  // whose caller already gave up (the api aborts its fetch at the scrape
+  // timeout). Each one would still get a full page load, ahead of live
+  // requests. Skip them once they reach the front.
+  let clientGone = false;
+  res.on('close', () => {
+    if (!res.writableFinished) clientGone = true;
+  });
+  const queuedAt = Date.now();
+
   await pageSemaphore.acquire();
+
+  const waitedMs = Date.now() - queuedAt;
+  if (clientGone || waitedMs > timeout) {
+    pageSemaphore.release();
+    if (!clientGone) {
+      res.status(503).json({ error: 'Queued longer than the request timeout' });
+    }
+    return;
+  }
 
   let requestContext: BrowserContext | null = null;
   let securityState: ContextSecurityState | null = null;
