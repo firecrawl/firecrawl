@@ -1,4 +1,3 @@
-import { logger as _logger } from "../../lib/logger";
 import {
   getSafeMode,
   SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
@@ -170,7 +169,6 @@ export async function browserExecuteController(
 }
 
 const profileNameSchema = z.string().min(1).max(128);
-const deletedAtSchema = z.iso.datetime({ offset: true });
 
 // DELETE /v2/browser/profiles/:name
 // Deletes a persistent profile's saved state and its listing. Deleting a
@@ -180,70 +178,34 @@ export async function browserProfileDeleteController(
   res: Response<{ success: boolean; error?: string }>,
 ) {
   if (getSafeMode(req.acuc?.flags)) {
-    return res.status(403).json({
-      success: false,
-      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
-    });
+    return res
+      .status(403)
+      .json({ success: false, error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE });
   }
-
-  const parsed = profileNameSchema.safeParse(req.params.name);
-  if (!parsed.success) {
+  const name = profileNameSchema.safeParse(req.params.name);
+  if (!name.success) {
     return res.status(400).json({
       success: false,
       error: "Profile name must be between 1 and 128 characters.",
     });
   }
-  const name = parsed.data;
-
-  if (!config.HANGAR_URL) {
-    return res.status(503).json({
-      success: false,
-      error: "Browser feature is not configured (HANGAR_URL is missing).",
-    });
-  }
-
-  const logger = _logger.child({
-    teamId: req.auth.team_id,
-    module: "api/v2",
-    method: "browserProfileDeleteController",
-  });
-
-  let result: { deletedAt?: unknown } | undefined;
   try {
-    result = await deleteHangarProfile(req.auth.team_id, name);
-  } catch (err) {
-    if (err instanceof HangarError && err.status === 409) {
+    const { deletedAt } = await deleteHangarProfile(
+      req.auth.team_id,
+      name.data,
+    );
+    await deleteBrowserProfile(req.auth.team_id, name.data, deletedAt);
+    return res.json({ success: true });
+  } catch (error) {
+    if (error instanceof HangarError && error.status === 409) {
       return res.status(409).json({
         success: false,
         error:
           "A session is currently saving to this profile. Stop that session, then delete the profile.",
       });
     }
-    logger.error("Failed to delete profile via Hangar", {
-      error: err,
-    });
-    return res.status(502).json({
-      success: false,
-      error: "Failed to delete profile.",
-    });
+    return browserError(res, error);
   }
-
-  // Compare deletion against Hangar save timestamps during reconciliation.
-  const parsedDeletedAt = deletedAtSchema.safeParse(result?.deletedAt);
-  if (!parsedDeletedAt.success) {
-    logger.error("Hangar profile delete returned no valid deletedAt", {
-      deletedAt: result?.deletedAt,
-    });
-    return res.status(502).json({
-      success: false,
-      error: "Failed to delete profile.",
-    });
-  }
-  const deletedAt = parsedDeletedAt.data;
-
-  await deleteBrowserProfile(req.auth.team_id, name, deletedAt);
-  logger.info("Deleted browser profile");
-  return res.status(200).json({ success: true });
 }
 
 export async function browserDeleteController(

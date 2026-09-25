@@ -32,8 +32,8 @@ export type TrackParams = {
    */
   externalRequestId?: string | null;
   /**
-   * Stable per-charge identity, honored on the firebill route. Direct Autumn
-   * tracking also honors it when the caller opts into idempotent tracking. When set,
+   * Stable per-charge identity, honored on the firebill route only (the
+   * direct Autumn SDK does not expose its Idempotency-Key header). When set,
    * a caller retry — or a requeued job re-billing the same work — dedupes
    * instead of double-billing. Must be unique per CHARGE, never a shared id
    * like a crawl id (every page shares it: collision = underbilling).

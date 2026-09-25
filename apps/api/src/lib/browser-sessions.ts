@@ -1,18 +1,11 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gt, like, lte, ne, sql } from "drizzle-orm";
-import { deleteKey, getValue, setValue } from "../services/redis";
+import { getValue, setValue } from "../services/redis";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
 import { browserProfileDeletedKey } from "./browser-profiles";
-import { logger as _logger } from "./logger";
-
-const logger = _logger.child({ module: "browser-sessions" });
-
-function activeBrowserCountKey(teamId: string): string {
-  return `browser_sessions:active_count:${teamId}`;
-}
 
 type BrowserSessionStatus = "active" | "destroyed" | "error";
 
@@ -22,10 +15,10 @@ export interface BrowserSessionRow {
   request_id: string | null;
   should_bill: boolean;
   scrape_id?: string | null; // linked scrape job id for /scrape/:jobId/interact sessions
-  browser_id: string; // browser service sessionId
+  browser_id: string; // Hangar browser id
   workspace_id: string; // unused (legacy), stored as ""
   context_id: string; // Hangar playlist URL; empty when recording is disabled
-  cdp_url: string; // full CDP WebSocket URL from browser service
+  cdp_url: string; // Hangar CDP WebSocket URL
   cdp_path: string; // Hangar view URL
   cdp_interactive_path: string; // Hangar control URL
   stream_web_view: boolean;
@@ -78,7 +71,7 @@ export async function withLockedBrowserSession<T>(
   id: string,
   run: (
     session: BrowserSessionRow,
-    tx: Pick<typeof db, "execute" | "update">,
+    tx: Pick<typeof db, "update">,
   ) => Promise<T>,
 ): Promise<T> {
   return db.transaction(async tx => {
@@ -92,24 +85,20 @@ export async function withLockedBrowserSession<T>(
   });
 }
 
-/** Commit the browser debit and its receipt together, before cleanup. */
+/** Record the billed amount once; a failed bill leaves the row unsettled for retry. */
 export async function settleBrowserSessionOnce(
   id: string,
-  bill: (
-    session: BrowserSessionRow,
-    tx: Pick<typeof db, "execute">,
-  ) => Promise<number>,
+  bill: (session: BrowserSessionRow) => Promise<number>,
 ): Promise<{ creditsBilled: number; newlySettled: boolean }> {
   return withLockedBrowserSession(id, async (row, tx) => {
     if (row.status === "destroyed" || row.credits_used !== null)
       return { creditsBilled: row.credits_used ?? 0, newlySettled: false };
-    const creditsBilled = await bill(row, tx);
-    const now = new Date().toISOString();
+    const creditsBilled = await bill(row);
     await tx
       .update(schema.browser_sessions)
       .set({
         credits_used: creditsBilled,
-        updated_at: now,
+        updated_at: new Date().toISOString(),
       })
       .where(eq(schema.browser_sessions.id, id));
     return { creditsBilled, newlySettled: true };
@@ -135,188 +124,92 @@ export async function completeBrowserSessionSettlement(id: string) {
   return completed.length > 0;
 }
 
-export async function activateBrowserSession(id: string, shouldBill: boolean) {
-  const [row] = await db
-    .update(schema.browser_sessions)
-    .set({ should_bill: shouldBill })
-    .where(
-      and(
-        eq(schema.browser_sessions.id, id),
-        eq(schema.browser_sessions.status, "active"),
-        sql`${schema.browser_sessions.credits_used} IS NULL`,
-      ),
-    )
-    .returning();
-  if (!row) throw new Error("Browser session stopped during initialization.");
-  return row as BrowserSessionRow;
-}
-
-// ---------------------------------------------------------------------------
-// CRUD helpers
-// ---------------------------------------------------------------------------
-
 export async function insertBrowserSession(
   row: Omit<BrowserSessionRow, "created_at" | "updated_at">,
 ): Promise<BrowserSessionRow> {
   const now = new Date().toISOString();
-  const full: BrowserSessionRow = {
-    ...row,
-    created_at: now,
-    updated_at: now,
-  };
-
-  const MAX_ATTEMPTS = 10;
-  let lastError: any = null;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const [data] = await db
-        .insert(schema.browser_sessions)
-        .values(full)
-        .returning();
-
-      return data as BrowserSessionRow;
-    } catch (error) {
-      lastError = error;
-      logger.error("Error inserting browser session, trying again", {
-        error,
-        id: row.id,
-        attempt,
-      });
-      await new Promise(resolve => setTimeout(resolve, 75));
-    }
-  }
-
-  logger.error("Failed to insert browser session after all retries", {
-    error: lastError,
-    id: row.id,
-    attempts: MAX_ATTEMPTS,
-  });
-  throw new Error(
-    `Failed to insert browser session: ${lastError?.message ?? "unknown error"}`,
-  );
+  const [data] = await db
+    .insert(schema.browser_sessions)
+    .values({ ...row, created_at: now, updated_at: now })
+    .returning();
+  return data as BrowserSessionRow;
 }
 
 export async function getBrowserSession(
   id: string,
 ): Promise<BrowserSessionRow | null> {
-  try {
-    const [data] = await db
-      .select()
-      .from(schema.browser_sessions)
-      .where(eq(schema.browser_sessions.id, id))
-      .limit(1);
-    return (data ?? null) as BrowserSessionRow | null;
-  } catch (error) {
-    logger.error("Failed to get browser session", { error, id });
-    throw new Error(
-      `Failed to get browser session: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
-    );
-  }
+  const [data] = await db
+    .select()
+    .from(schema.browser_sessions)
+    .where(eq(schema.browser_sessions.id, id))
+    .limit(1);
+  return (data ?? null) as BrowserSessionRow | null;
 }
 
 export async function getBrowserSessionFromScrape(
   id: string,
 ): Promise<BrowserSessionRow | null> {
-  try {
-    // scrape_id is not unique: two concurrent interact calls on one scrape can
-    // each insert a row. Prefer the newest row that is not destroyed, so that
-    // callers act on a live session. Fall back to the newest destroyed row.
-    const rows = (await db
-      .select()
-      .from(schema.browser_sessions)
-      .where(eq(schema.browser_sessions.scrape_id, id))
-      .orderBy(
-        desc(schema.browser_sessions.created_at),
-      )) as BrowserSessionRow[];
-    return rows.find(row => row.status !== "destroyed") ?? rows[0] ?? null;
-  } catch (error) {
-    logger.error("Failed to get browser session from scrape", { error, id });
-    throw new Error(
-      `Failed to get browser session from scrape: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
-    );
-  }
+  // scrape_id is not unique: two concurrent interact calls on one scrape can
+  // each insert a row. Prefer the newest row that is not destroyed, so that
+  // callers act on a live session. Fall back to the newest destroyed row.
+  const rows = (await db
+    .select()
+    .from(schema.browser_sessions)
+    .where(eq(schema.browser_sessions.scrape_id, id))
+    .orderBy(desc(schema.browser_sessions.created_at))) as BrowserSessionRow[];
+  return rows.find(row => row.status !== "destroyed") ?? rows[0] ?? null;
 }
 
 export async function listBrowserSessions(
   teamId: string,
   opts?: { status?: BrowserSessionStatus },
 ): Promise<BrowserSessionRow[]> {
-  const conditions = [eq(schema.browser_sessions.team_id, teamId)];
-  if (opts?.status) {
-    conditions.push(eq(schema.browser_sessions.status, opts.status));
-  }
-
-  try {
-    const data = await db
-      .select()
-      .from(schema.browser_sessions)
-      .where(and(...conditions))
-      .orderBy(desc(schema.browser_sessions.created_at));
-    return data as BrowserSessionRow[];
-  } catch (error) {
-    logger.error("Failed to list browser sessions", { error, teamId });
-    throw new Error(
-      `Failed to list browser sessions: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
-    );
-  }
+  return (await db
+    .select()
+    .from(schema.browser_sessions)
+    .where(
+      and(
+        eq(schema.browser_sessions.team_id, teamId),
+        opts?.status
+          ? eq(schema.browser_sessions.status, opts.status)
+          : undefined,
+      ),
+    )
+    .orderBy(desc(schema.browser_sessions.created_at))) as BrowserSessionRow[];
 }
 
 export async function listActiveBrowserSessionsForRequest(
   teamId: string,
   requestId: string,
 ): Promise<BrowserSessionRow[]> {
-  try {
-    const data = await db
-      .select()
-      .from(schema.browser_sessions)
-      .where(
-        and(
-          eq(schema.browser_sessions.team_id, teamId),
-          eq(schema.browser_sessions.request_id, requestId),
-          eq(schema.browser_sessions.status, "active"),
-        ),
-      )
-      .orderBy(desc(schema.browser_sessions.created_at));
-    return data as BrowserSessionRow[];
-  } catch (error) {
-    logger.error("Failed to list active browser sessions for request", {
-      error,
-      teamId,
-      requestId,
-    });
-    throw new Error(
-      `Failed to list active browser sessions for request: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
-    );
-  }
+  return (await db
+    .select()
+    .from(schema.browser_sessions)
+    .where(
+      and(
+        eq(schema.browser_sessions.team_id, teamId),
+        eq(schema.browser_sessions.request_id, requestId),
+        eq(schema.browser_sessions.status, "active"),
+      ),
+    )
+    .orderBy(desc(schema.browser_sessions.created_at))) as BrowserSessionRow[];
 }
 
 export async function updateBrowserSessionActivity(id: string): Promise<void> {
-  try {
-    await db
-      .update(schema.browser_sessions)
-      .set({ updated_at: new Date().toISOString() })
-      .where(eq(schema.browser_sessions.id, id));
-  } catch (error) {
-    logger.warn("Failed to update browser session activity", { error, id });
-  }
+  await db
+    .update(schema.browser_sessions)
+    .set({ updated_at: new Date().toISOString() })
+    .where(eq(schema.browser_sessions.id, id));
 }
 
 export async function updateBrowserSessionScrapeId(
   id: string,
   scrapeId: string,
 ): Promise<void> {
-  try {
-    await db
-      .update(schema.browser_sessions)
-      .set({ scrape_id: scrapeId, updated_at: new Date().toISOString() })
-      .where(eq(schema.browser_sessions.id, id));
-  } catch (error) {
-    logger.warn("Failed to update browser session scrape_id", {
-      error,
-      id,
-      scrapeId,
-    });
-  }
+  await db
+    .update(schema.browser_sessions)
+    .set({ scrape_id: scrapeId, updated_at: new Date().toISOString() })
+    .where(eq(schema.browser_sessions.id, id));
 }
 
 // Records a successful save of a persistent profile. Throws on failure so the
@@ -457,32 +350,4 @@ export async function didBrowserSessionUsePrompt(
   sessionId: string,
 ): Promise<boolean> {
   return (await getValue(promptFlagKey(sessionId))) === "1";
-}
-
-export async function clearBrowserSessionPromptFlag(
-  sessionId: string,
-): Promise<void> {
-  try {
-    await deleteKey(promptFlagKey(sessionId));
-  } catch {
-    // non-fatal
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Active session count (cached)
-// ---------------------------------------------------------------------------
-
-/**
- * Invalidate the cached active session count for a team.
- * Call after creating or destroying a session.
- */
-export async function invalidateActiveBrowserSessionCount(
-  teamId: string,
-): Promise<void> {
-  try {
-    await deleteKey(activeBrowserCountKey(teamId));
-  } catch {
-    // Redis down — non-fatal
-  }
 }

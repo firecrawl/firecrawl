@@ -13,12 +13,10 @@ import {
 } from "./hangar";
 import {
   insertBrowserSession,
-  activateBrowserSession,
   completeBrowserSessionSettlement,
   markBrowserSessionUsedPrompt,
   settleBrowserSessionOnce,
   withLockedBrowserSession,
-  invalidateActiveBrowserSessionCount,
   didBrowserSessionUsePrompt,
   listUnsettledHangarSessions,
   BrowserSessionRow,
@@ -34,7 +32,8 @@ import {
   mirrorExternalSlotRelease,
 } from "../services/worker/nuq-router";
 import { autumnService } from "../services/autumn/autumn.service";
-import { billBrowserSession } from "./browser-session-billing";
+import { billTeam } from "../services/billing/credit_billing";
+import { orgIdForTeam } from "./team-org";
 import { logRequest } from "../services/logging/log_job";
 import { externalRequestId } from "./external-request-id";
 import {
@@ -124,6 +123,7 @@ export async function createBrowserSession(
       throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
     const browser = await createHangarBrowser(id, req.auth.team_id, options);
     browserId = browser.id;
+    if (options.initialize) await options.initialize(browser.id);
     if (!options.requestId)
       await logRequest({
         id,
@@ -137,11 +137,11 @@ export async function createBrowserSession(
         zeroDataRetention: false,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
-    await insertBrowserSession({
+    const session = await insertBrowserSession({
       id,
       team_id: req.auth.team_id,
       request_id: options.requestId ?? id,
-      should_bill: false,
+      should_bill: shouldBill,
       scrape_id: options.scrapeId,
       browser_id: browser.id,
       workspace_id: "",
@@ -156,11 +156,6 @@ export async function createBrowserSession(
       credits_used: null,
       profile_name: options.profile?.name ?? null,
     });
-    if (options.initialize) {
-      await options.initialize(browser.id);
-    }
-    const session = await activateBrowserSession(id, shouldBill);
-    await invalidateActiveBrowserSessionCount(req.auth.team_id);
     return {
       session,
       expiresAt:
@@ -217,7 +212,7 @@ export async function settleBrowserSession(
   const sessionDurationMs = (browser.ended_at! - browser.created_at) * 1000;
   const { creditsBilled } = await settleBrowserSessionOnce(
     session.id,
-    async (current, tx) => {
+    async current => {
       const usedPrompt =
         current.should_bill && (await didBrowserSessionUsePrompt(current.id));
       const credits = current.should_bill
@@ -231,9 +226,11 @@ export async function settleBrowserSession(
           ? current.request_id
           : undefined;
       if (current.should_bill) {
-        await billBrowserSession(
-          current,
+        await billTeam(
+          current.team_id,
+          await orgIdForTeam(current.team_id),
           credits,
+          null,
           {
             endpoint: agentRequestId
               ? "agent"
@@ -241,8 +238,9 @@ export async function settleBrowserSession(
                 ? "interact"
                 : "browser",
             jobId: agentRequestId ?? current.id,
+            // Keyed on the session so DELETE and reconciliation dedupe.
+            chargeId: `${current.id}:destroy`,
           },
-          tx,
         );
       }
       if (agentRequestId) {
@@ -267,7 +265,6 @@ async function finalizeBrowserSession(
   await mirrorExternalSlotRelease(session.team_id, session.id);
   if (await completeBrowserSessionSettlement(session.id))
     await logKeylessCreditUsage(session.team_id, credits);
-  await invalidateActiveBrowserSessionCount(session.team_id);
 }
 
 export async function reserveBrowserPromptCredits(

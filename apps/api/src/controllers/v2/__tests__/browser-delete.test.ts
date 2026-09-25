@@ -47,7 +47,6 @@ vi.mock("../../../lib/logger", () => {
 
 vi.mock("../../../lib/browser-sessions", () => ({
   insertBrowserSession: vi.fn(),
-  activateBrowserSession: vi.fn(),
   completeBrowserSessionSettlement: vi.fn(async () => {}),
   getBrowserSession: mocks.getBrowserSession,
   getBrowserSessionFromScrape: mocks.getBrowserSessionFromScrape,
@@ -55,15 +54,10 @@ vi.mock("../../../lib/browser-sessions", () => ({
   updateBrowserSessionActivity: vi.fn(),
   updateBrowserSessionScrapeId: vi.fn(),
   settleBrowserSessionOnce: mocks.settleBrowserSessionOnce,
-
-  invalidateActiveBrowserSessionCount: vi.fn(() => Promise.resolve()),
   didBrowserSessionUsePrompt: vi.fn(),
-  clearBrowserSessionPromptFlag: vi.fn(() => Promise.resolve()),
   markBrowserSessionUsedPrompt: vi.fn(),
   upsertBrowserProfile: vi.fn(),
   deleteBrowserProfile: vi.fn(),
-  recordBrowserProfileDeleted: vi.fn(),
-  getBrowserProfileDeletedAt: vi.fn(),
 }));
 
 vi.mock("../../../services/worker/nuq-router", () => ({

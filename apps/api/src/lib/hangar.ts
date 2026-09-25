@@ -187,12 +187,18 @@ export async function executeHangarBrowser(
 }
 
 export async function deleteHangarProfile(owner: string, name: string) {
-  const result = await request<{ deleted_at: number }>(
+  const result = await request<{ deleted_at?: unknown }>(
     "DELETE",
     `/${encodeURIComponent(name)}?owner=${encodeURIComponent(owner)}`,
     undefined,
     { resource: "profiles" },
   );
+  // Compared against Hangar save timestamps during reconciliation.
+  if (
+    typeof result.deleted_at !== "number" ||
+    !Number.isFinite(result.deleted_at)
+  )
+    throw new HangarError(502, "Invalid Hangar profile deletion response.");
   return { deletedAt: new Date(result.deleted_at * 1000).toISOString() };
 }
 

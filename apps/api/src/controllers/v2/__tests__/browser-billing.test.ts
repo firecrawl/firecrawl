@@ -7,13 +7,10 @@ import { vi } from "vitest";
 const mockGetValue = vi.fn<(key: string) => Promise<string | null>>();
 const mockSetValue =
   vi.fn<(key: string, value: string, ttl: number) => Promise<void>>();
-const mockDeleteKey = vi.fn<(key: string) => Promise<void>>();
-
 vi.mock("../../../services/redis", () => ({
   getValue: (key: string) => mockGetValue(key),
   setValue: (key: string, value: string, ttl: number) =>
     mockSetValue(key, value, ttl),
-  deleteKey: (key: string) => mockDeleteKey(key),
 }));
 
 vi.mock("../../../lib/logger", () => ({
@@ -34,7 +31,6 @@ import {
 import {
   markBrowserSessionUsedPrompt,
   didBrowserSessionUsePrompt,
-  clearBrowserSessionPromptFlag,
 } from "../../../lib/browser-sessions";
 
 // ---------------------------------------------------------------------------
@@ -45,7 +41,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetValue.mockResolvedValue(null);
   mockSetValue.mockResolvedValue(undefined);
-  mockDeleteKey.mockResolvedValue(undefined);
 });
 
 // ---------------------------------------------------------------------------
@@ -97,13 +92,13 @@ describe("calculateBrowserSessionCredits", () => {
   });
 
   describe("with interact rate (420/hr)", () => {
-    it("returns minimum 2 credits for very short sessions", () => {
+    it("returns minimum 7 credits (one minute) for very short sessions", () => {
       expect(calculateBrowserSessionCredits(0, INTERACT_CREDITS_PER_HOUR)).toBe(
-        2,
+        7,
       );
       expect(
         calculateBrowserSessionCredits(1000, INTERACT_CREDITS_PER_HOUR),
-      ).toBe(2);
+      ).toBe(7);
     });
 
     it("calculates 7 credits per minute", () => {
@@ -131,10 +126,10 @@ describe("calculateBrowserSessionCredits", () => {
     });
 
     it("rounds up to next integer", () => {
-      // 31s / 3600s * 420 = 3.616... → ceil = 4
+      // 91s / 3600s * 420 = 10.616... → ceil = 11
       expect(
-        calculateBrowserSessionCredits(31_000, INTERACT_CREDITS_PER_HOUR),
-      ).toBe(4);
+        calculateBrowserSessionCredits(91_000, INTERACT_CREDITS_PER_HOUR),
+      ).toBe(11);
     });
   });
 
@@ -174,22 +169,22 @@ describe("calculateBrowserSessionCredits", () => {
 
 describe("prompt usage tracking", () => {
   describe("markBrowserSessionUsedPrompt", () => {
-    it("sets Redis flag with 2-hour TTL", async () => {
+    it("sets Redis flag with a 2-day TTL", async () => {
       await markBrowserSessionUsedPrompt("session-123");
 
       expect(mockSetValue).toHaveBeenCalledWith(
         "browser_session:used_prompt:session-123",
         "1",
-        7200,
+        2 * 86400,
       );
     });
 
-    it("does not throw on Redis failure", async () => {
+    it("propagates Redis failure so the prompt is not admitted", async () => {
       mockSetValue.mockRejectedValueOnce(new Error("Redis down"));
 
-      await expect(
-        markBrowserSessionUsedPrompt("session-123"),
-      ).resolves.not.toThrow();
+      await expect(markBrowserSessionUsedPrompt("session-123")).rejects.toThrow(
+        "Redis down",
+      );
     });
   });
 
@@ -211,29 +206,12 @@ describe("prompt usage tracking", () => {
       expect(result).toBe(false);
     });
 
-    it("returns false on Redis failure (graceful fallback to browser rate)", async () => {
+    it("propagates Redis failure so settlement retries instead of billing the cheaper rate", async () => {
       mockGetValue.mockRejectedValueOnce(new Error("Redis down"));
 
-      const result = await didBrowserSessionUsePrompt("session-123");
-      expect(result).toBe(false);
-    });
-  });
-
-  describe("clearBrowserSessionPromptFlag", () => {
-    it("deletes the Redis key", async () => {
-      await clearBrowserSessionPromptFlag("session-123");
-
-      expect(mockDeleteKey).toHaveBeenCalledWith(
-        "browser_session:used_prompt:session-123",
+      await expect(didBrowserSessionUsePrompt("session-123")).rejects.toThrow(
+        "Redis down",
       );
-    });
-
-    it("does not throw on Redis failure", async () => {
-      mockDeleteKey.mockRejectedValueOnce(new Error("Redis down"));
-
-      await expect(
-        clearBrowserSessionPromptFlag("session-123"),
-      ).resolves.not.toThrow();
     });
   });
 });
@@ -271,21 +249,7 @@ describe("billing rate selection", () => {
     expect(credits).toBe(10);
   });
 
-  it("falls back to 120/hr when Redis is down", async () => {
-    mockGetValue.mockRejectedValueOnce(new Error("Redis down"));
-
-    const usedPrompt = await didBrowserSessionUsePrompt("session-123");
-    const rate = usedPrompt
-      ? INTERACT_CREDITS_PER_HOUR
-      : BROWSER_CREDITS_PER_HOUR;
-    const credits = calculateBrowserSessionCredits(5 * 60_000, rate);
-
-    expect(usedPrompt).toBe(false);
-    expect(rate).toBe(120);
-    expect(credits).toBe(10);
-  });
-
-  it("full flow: mark → check → bill → clear", async () => {
+  it("full flow: mark → check → bill", async () => {
     await markBrowserSessionUsedPrompt("session-456");
     expect(mockSetValue).toHaveBeenCalledTimes(1);
 
@@ -298,8 +262,5 @@ describe("billing rate selection", () => {
       INTERACT_CREDITS_PER_HOUR,
     );
     expect(credits).toBe(21); // 3 min * 7 credits/min
-
-    await clearBrowserSessionPromptFlag("session-456");
-    expect(mockDeleteKey).toHaveBeenCalledTimes(1);
   });
 });

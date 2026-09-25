@@ -1,5 +1,4 @@
 import { randomUUID } from "crypto";
-import { AutumnError } from "autumn-js";
 import { logger } from "../../lib/logger";
 import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
@@ -316,12 +315,11 @@ export class AutumnService {
       externalRequestId,
     }: TrackParams,
     routed: boolean,
-    idempotent = false,
   ): Promise<boolean> {
     // Gradual rollout: allowlisted orgs, partner-provisioned orgs, and those in
     // sticky FIREBILL_ROLLOUT_PERCENT bucket bill through firebill. No fallback
     // to Autumn on failure — firebill may already own the event, and the SDK
-    // does not deduplicate by default, so the pair could not be deduped.
+    // sends no idempotency key, so the pair could not be deduped.
     if (routed) {
       billingRouteTotal.labels("firebill").inc();
       return await firebillTrack({
@@ -340,22 +338,14 @@ export class AutumnService {
     if (!autumnClient) return false;
 
     try {
-      if (idempotent && !idempotencyKey) {
-        throw new Error("Idempotent tracking requires a charge key.");
-      }
-      await autumnClient.track(
-        {
-          customerId,
-          entityId,
-          featureId,
-          value,
-          properties,
-          overageBehavior: "overflow",
-        },
-        ...(idempotent && idempotencyKey
-          ? [{ headers: { "Idempotency-Key": idempotencyKey } }]
-          : []),
-      );
+      await autumnClient.track({
+        customerId,
+        entityId,
+        featureId,
+        value,
+        properties,
+        overageBehavior: "overflow",
+      });
       logger.info("Autumn track succeeded", {
         customerId,
         entityId,
@@ -364,18 +354,6 @@ export class AutumnService {
       });
       return true;
     } catch (error) {
-      if (
-        idempotent &&
-        error instanceof AutumnError &&
-        error.statusCode === 409
-      ) {
-        try {
-          if (JSON.parse(error.body).code === "duplicate_idempotency_key")
-            return true;
-        } catch {
-          // An unrecognized response is still a billing failure.
-        }
-      }
       logger.error("Autumn track failed — billing API may be unavailable", {
         customerId,
         entityId,
@@ -789,21 +767,16 @@ export class AutumnService {
 
   /**
    * Records a credit usage event directly in Autumn. Returns true on success.
-   * Browser settlement opts into direct deduplication; legacy billers retain
-   * their existing tracking and compensating-refund behavior.
    */
-  async trackCredits(
-    {
-      teamId,
-      value,
-      properties,
-      featureId = CREDITS_FEATURE_ID,
-      idempotencyKey,
-      externalRequestId,
-      orgId,
-    }: TrackCreditsParams,
-    options: { idempotent?: boolean } = {},
-  ): Promise<boolean> {
+  async trackCredits({
+    teamId,
+    value,
+    properties,
+    featureId = CREDITS_FEATURE_ID,
+    idempotencyKey,
+    externalRequestId,
+    orgId,
+  }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
 
@@ -823,7 +796,6 @@ export class AutumnService {
           externalRequestId,
         },
         routed,
-        options.idempotent,
       );
     } catch (error) {
       logger.error(

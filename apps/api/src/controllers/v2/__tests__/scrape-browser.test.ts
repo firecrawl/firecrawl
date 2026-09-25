@@ -4,7 +4,6 @@ import { config } from "../../../config";
 import { supabaseGetScrapeByIdDirect } from "../../../lib/supabase-jobs";
 import {
   insertBrowserSession,
-  activateBrowserSession,
   getBrowserSession,
 } from "../../../lib/browser-sessions";
 import {
@@ -81,20 +80,15 @@ vi.mock("../../../lib/supabase-jobs", () => ({
 
 vi.mock("../../../lib/browser-sessions", () => ({
   insertBrowserSession: vi.fn(),
-  activateBrowserSession: vi.fn(),
   completeBrowserSessionSettlement: vi.fn(async () => {}),
   getBrowserSession: vi.fn(),
   listUnsettledHangarSessions: vi.fn(async () => []),
   updateBrowserSessionActivity: vi.fn(() => Promise.resolve()),
-  updateBrowserSessionCreditsUsed: vi.fn(() => Promise.resolve()),
   updateBrowserSessionScrapeId: vi.fn(() => Promise.resolve()),
-  claimBrowserSessionDestroyed: vi.fn(),
   settleBrowserSessionOnce: vi.fn(),
-  invalidateActiveBrowserSessionCount: vi.fn(() => Promise.resolve()),
   getBrowserSessionFromScrape: vi.fn(),
   markBrowserSessionUsedPrompt: vi.fn(() => Promise.resolve()),
   didBrowserSessionUsePrompt: vi.fn(),
-  clearBrowserSessionPromptFlag: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../../../lib/concurrency-limit", () => ({
@@ -215,13 +209,6 @@ describe("scrapeInteractController", () => {
     vi.mocked(createHangarBrowser).mockResolvedValue(created as any);
     vi.mocked(executeHangarBrowser).mockResolvedValue(executed);
     vi.mocked(insertBrowserSession).mockImplementation(async row => row as any);
-    vi.mocked(activateBrowserSession).mockImplementation(
-      async () =>
-        ({
-          ...vi.mocked(insertBrowserSession).mock.calls.at(-1)![0],
-          should_bill: true,
-        }) as any,
-    );
     vi.mocked(executeCodeViaBrowserSession).mockResolvedValue(executed);
     const res = buildRes();
     await scrapeInteractController(
