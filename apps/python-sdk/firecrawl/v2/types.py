@@ -1558,6 +1558,10 @@ class AgentExchangeOptions(BaseModel):
     # "terms" approval, callIds names the providers the user accepted
     # (requiresAction.providers[].id); omitted means all of them.
     approve: Optional[Dict[str, Any]] = None
+    # Refuses a pending_approval. For a "terms" approval, callIds names the
+    # providers the user declined (excluded for the rest of the thread);
+    # omitted declines the whole offer. E.g.
+    # {"approvalId": "...", "callIds": ["apollo"]}.
     decline: Optional[Dict[str, Any]] = None
     # What to do when a provider the agent would use needs data terms the team
     # has not accepted. Gated providers are never called in any mode:

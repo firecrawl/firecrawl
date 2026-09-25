@@ -1459,7 +1459,12 @@ export interface AgentExchangeOptions {
    * (`requiresAction.providers[].id`); omitted means all of them.
    */
   approve?: { approvalId: string; callIds?: string[]; always?: boolean };
-  decline?: { approvalId: string };
+  /**
+   * Refuses a pendingApproval. For a `terms` approval, `callIds` names the
+   * providers the user declined (excluded for the rest of the thread);
+   * omitted declines the whole offer.
+   */
+  decline?: { approvalId: string; callIds?: string[] };
   /**
    * What to do when a provider the agent would use needs data terms the team
    * has not accepted. Gated providers are never called in any mode:

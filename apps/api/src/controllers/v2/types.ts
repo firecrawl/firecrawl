@@ -1067,6 +1067,9 @@ const agentExchangeSchema = z.strictObject({
   decline: z
     .strictObject({
       approvalId: z.string().uuid(),
+      // Terms offers only: the provider ids (`terms[].id`) the user declined.
+      // Omitted declines the whole offer.
+      callIds: z.array(z.string()).optional(),
     })
     .optional(),
   // What to do when a provider the agent would use needs data terms the team

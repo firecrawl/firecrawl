@@ -77,6 +77,19 @@ class TestAgentThreadRequestPreparation:
             },
         }
 
+    def test_exchange_terms_decline_with_call_ids_serialized(self):
+        decline = {
+            "approvalId": "0199aaaa-0000-7000-8000-000000000000",
+            "callIds": ["apollo"],
+        }
+        data = _prepare_agent_request(
+            None,
+            prompt="Use other providers",
+            exchange=AgentExchangeOptions(decline=decline),
+        )
+
+        assert data["exchange"] == {"decline": decline}
+
     def test_exchange_on_terms_required_rejects_unknown_mode(self):
         import pytest
         from pydantic import ValidationError

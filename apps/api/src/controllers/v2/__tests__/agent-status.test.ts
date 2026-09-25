@@ -322,6 +322,36 @@ describe("agentRequestSchema exchange.onTermsRequired", () => {
     expect(parsed.exchange).toEqual({ onTermsRequired: "ask", approve });
   });
 
+  it("accepts decline.callIds naming the providers a terms offer declines", () => {
+    const decline = {
+      approvalId: "0199aaaa-0000-7000-8000-000000000000",
+      callIds: ["apollo"],
+    };
+    const parsed = agentRequestSchema.parse({ ...base, exchange: { decline } });
+
+    expect(parsed.exchange).toEqual({ decline });
+    expect(
+      agentRequestSchema.parse({
+        ...base,
+        exchange: { decline: { approvalId: decline.approvalId } },
+      }).exchange?.decline?.callIds,
+    ).toBeUndefined();
+  });
+
+  it("rejects decline.callIds that is not a string array", () => {
+    expect(
+      agentRequestSchema.safeParse({
+        ...base,
+        exchange: {
+          decline: {
+            approvalId: "0199aaaa-0000-7000-8000-000000000000",
+            callIds: "apollo",
+          },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it.each(["accept", "auto", "", true])(
     "rejects onTermsRequired %s",
     onTermsRequired => {
