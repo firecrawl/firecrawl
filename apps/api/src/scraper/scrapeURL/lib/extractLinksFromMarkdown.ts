@@ -17,13 +17,14 @@ export function isMarkdownContentType(contentType?: string): boolean {
 const IMAGE = /!\[[^\]]*\]\([^)]*\)/g;
 // Destinations may contain balanced parentheses, e.g. Wikipedia's
 // /wiki/Mercury_(planet), so a "(" group is taken whole instead of ending the
-// URL at its ")".
+// URL at its ")". JS regexes cannot recurse, so groups nest up to two levels
+// deep, e.g. foo(and(bar)); deeper nesting is not seen in real URLs.
 const INLINE_LINK =
-  /\[[^\]]*\]\(\s*(<[^>\n]*>|(?:[^()\s]|\([^()\s]*\))+)(?:\s+["'][^"']*["'])?\s*\)/g;
+  /\[[^\]]*\]\(\s*(<[^>\n]*>|(?:[^()\s]|\((?:[^()\s]|\([^()\s]*\))*\))+)(?:\s+["'][^"']*["'])?\s*\)/g;
 const REFERENCE_DEFINITION = /^[ \t]{0,3}\[[^\]]+\]:[ \t]*(<[^>]+>|\S+)/gm;
 const AUTOLINK = /<((?:https?:\/\/|mailto:)[^>\s]+)>/g;
 const BARE_URL =
-  /(?:^|[\s(<])(https?:\/\/(?:[^\s<>"'`()\]]|\([^\s<>"'`()\]]*\))+)/g;
+  /(?:^|[\s(<])(https?:\/\/(?:[^\s<>"'`()\]]|\((?:[^\s<>"'`()\]]|\([^\s<>"'`()\]]*\))*\))+)/g;
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 
 /** Blanks out fenced blocks and inline code spans. */

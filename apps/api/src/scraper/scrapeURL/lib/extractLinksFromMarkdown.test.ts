@@ -57,4 +57,19 @@ describe("extractLinksFromMarkdown", () => {
 
     expect(links).toEqual(["https://example.com/page"]);
   });
+
+  it("keeps nested balanced parentheses in inline and bare URLs", () => {
+    const links = extractLinksFromMarkdown(
+      [
+        "[link](https://example.com/foo(and(bar)))",
+        "see https://example.com/x(y(z)w) here",
+      ].join("\n"),
+      base,
+    );
+
+    expect(links).toEqual([
+      "https://example.com/foo(and(bar))",
+      "https://example.com/x(y(z)w)",
+    ]);
+  });
 });
