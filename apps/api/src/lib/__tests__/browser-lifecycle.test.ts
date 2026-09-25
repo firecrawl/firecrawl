@@ -7,6 +7,7 @@ import { mirrorExternalSlotRelease } from "../../services/worker/nuq-router";
 import {
   upsertBrowserProfile,
   settleBrowserSessionOnce,
+  didBrowserSessionUsePrompt,
   type BrowserSessionRow,
 } from "../browser-sessions";
 
@@ -48,7 +49,12 @@ vi.mock("../browser-sessions", () => ({
   clearBrowserSessionPromptFlag: vi.fn(),
   listUnsettledHangarSessions: vi.fn(),
 }));
-vi.mock("../team-org", () => ({ orgIdForTeam: vi.fn(async () => "org") }));
+vi.mock("../../controllers/auth", () => ({
+  getACUCTeam: vi.fn(async () => ({ org_id: "org" })),
+}));
+vi.mock("../../services/rate-limiter", () => ({
+  redisRateLimitClient: {},
+}));
 vi.mock("../request-credits-store", () => ({
   recordRequestCredits: vi.fn(async () => {}),
 }));
@@ -144,6 +150,7 @@ it("does not return a successful partial response or bill when cleanup never fin
 
 it("bills the upstream duration with the same idempotency key on retry", async () => {
   await settleBrowserSession(session, stopped);
+  currentSession = { ...session, scrape_id: "scrape" };
   await settleBrowserSession(session, stopped);
   expect(autumnService.trackCredits).toHaveBeenNthCalledWith(
     1,
@@ -157,13 +164,14 @@ it("bills the upstream duration with the same idempotency key on retry", async (
         jobId: "session",
         apiKeyId: null,
       },
-      idempotencyKey: "fc:track:browser:session:destroy",
+      idempotencyKey: "fc:track:browser-session:session:destroy",
     },
     { idempotent: true },
   );
-  expect(vi.mocked(autumnService.trackCredits).mock.calls[1]).toEqual(
-    vi.mocked(autumnService.trackCredits).mock.calls[0],
-  );
+  expect(vi.mocked(autumnService.trackCredits).mock.calls[1][0]).toMatchObject({
+    properties: { endpoint: "interact" },
+    idempotencyKey: "fc:track:browser-session:session:destroy",
+  });
   expect(billTeam7).toHaveBeenCalledWith(
     {
       team_id: "team",
@@ -197,6 +205,7 @@ it("preserves the agent billing exemption", async () => {
   expect(
     await settleBrowserSession({ ...session, should_bill: false }, stopped),
   ).toEqual({ sessionDurationMs: 60_000, creditsBilled: 0 });
+  expect(didBrowserSessionUsePrompt).not.toHaveBeenCalled();
   expect(autumnService.trackCredits).not.toHaveBeenCalled();
   expect(billTeam7).not.toHaveBeenCalled();
   expect(mirrorExternalSlotRelease).toHaveBeenCalledWith("team", "session");

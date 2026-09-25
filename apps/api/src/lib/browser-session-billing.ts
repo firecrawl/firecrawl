@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { getACUCTeam } from "../controllers/auth";
 import type { db } from "../db/connection";
 import { billTeam7 } from "../db/rpc";
 import { autumnService } from "../services/autumn/autumn.service";
@@ -7,7 +8,6 @@ import {
   type BillingMetadata,
 } from "../services/billing/types";
 import type { BrowserSessionRow } from "./browser-sessions";
-import { orgIdForTeam } from "./team-org";
 
 // Session creation precedes any charge. Stop well before Autumn's default
 // 24-hour key expiry, even if a previous charge's response/commit was lost.
@@ -27,33 +27,44 @@ export async function billBrowserSession(
     return;
 
   if (config.AUTUMN_SECRET_KEY) {
-    const createdAt = Date.parse(session.created_at);
+    // Unlike orgIdForTeam, this preserves lookup failures so an outage cannot
+    // turn an unconfirmed external charge into a completed ledger-only debit.
+    const acuc = await getACUCTeam(session.team_id);
+    const orgId = acuc?.org_id;
     if (
-      !Number.isFinite(createdAt) ||
-      Date.now() >= createdAt + BILLING_RETRY_WINDOW_MS
-    ) {
-      throw new Error(
-        `Browser billing retry window expired for ${session.id}; manual reconciliation required.`,
-      );
-    }
-    const orgId = await orgIdForTeam(session.team_id);
-    if (!orgId)
+      !acuc ||
+      (orgId !== null &&
+        (typeof orgId !== "string" || orgId.trim().length === 0))
+    )
       throw new Error("Browser billing could not resolve the team's org.");
-    const tracked = await autumnService.trackCredits(
-      {
-        teamId: session.team_id,
-        orgId,
-        value: credits,
-        properties: {
-          source: "billTeam",
-          ...toAutumnBillingProperties(billing),
-          apiKeyId: null,
+
+    // A confirmed null org follows the existing ledger-only billing contract.
+    if (orgId !== null) {
+      const createdAt = Date.parse(session.created_at);
+      if (
+        !Number.isFinite(createdAt) ||
+        Date.now() >= createdAt + BILLING_RETRY_WINDOW_MS
+      ) {
+        throw new Error(
+          `Browser billing retry window expired for ${session.id}; manual reconciliation required.`,
+        );
+      }
+      const tracked = await autumnService.trackCredits(
+        {
+          teamId: session.team_id,
+          orgId,
+          value: credits,
+          properties: {
+            source: "billTeam",
+            ...toAutumnBillingProperties(billing),
+            apiKeyId: null,
+          },
+          idempotencyKey: `fc:track:browser-session:${session.id}:destroy`,
         },
-        idempotencyKey: `fc:track:${billing.endpoint}:${session.id}:destroy`,
-      },
-      { idempotent: true },
-    );
-    if (!tracked) throw new Error("Browser billing was not confirmed.");
+        { idempotent: true },
+      );
+      if (!tracked) throw new Error("Browser billing was not confirmed.");
+    }
   }
 
   // No queue or compensating refund: a failed session transaction rolls back

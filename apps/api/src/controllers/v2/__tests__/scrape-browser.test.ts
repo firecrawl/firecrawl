@@ -60,8 +60,8 @@ vi.mock("../../../lib/job-state-store", () => ({
 vi.mock("../../../lib/job-store-fallback", () => ({
   recordJobStorePostgresFallback: vi.fn(),
 }));
-vi.mock("../../../lib/team-org", () => ({
-  orgIdForTeam: vi.fn(async () => null),
+vi.mock("../../auth", () => ({
+  getACUCTeam: vi.fn(async () => ({ org_id: null })),
 }));
 vi.mock("../../../lib/request-credits-store", () => ({
   recordRequestCredits: vi.fn(),

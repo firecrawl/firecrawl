@@ -217,7 +217,8 @@ export async function settleBrowserSession(
   const { creditsBilled } = await settleBrowserSessionOnce(
     session.id,
     async (current, tx) => {
-      const usedPrompt = await didBrowserSessionUsePrompt(current.id);
+      const usedPrompt =
+        current.should_bill && (await didBrowserSessionUsePrompt(current.id));
       const credits = current.should_bill
         ? calculateBrowserSessionCredits(
             sessionDurationMs,
