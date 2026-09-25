@@ -691,8 +691,8 @@ describe("V2 Types Validation", () => {
         expect(result.maxAge).toBeUndefined();
       });
 
-      // lockdown takes precedence silently at the engine layer; other options are ignored, not rejected
-      it("should accept lockdown: true alongside any other options", () => {
+      // Profiles require browser state, which a cache-only request cannot supply.
+      it("should reject profile state with lockdown", () => {
         const input: ScrapeRequestInput = {
           url: "https://example.com",
           lockdown: true,
@@ -703,8 +703,9 @@ describe("V2 Types Validation", () => {
           formats: [{ type: "markdown" }, { type: "changeTracking" }],
         };
 
-        const result = scrapeRequestSchema.parse(input);
-        expect(result.lockdown).toBe(true);
+        expect(() => scrapeRequestSchema.parse(input)).toThrow(
+          "Profiles require live browsing and cannot be used with lockdown.",
+        );
       });
     });
   });
