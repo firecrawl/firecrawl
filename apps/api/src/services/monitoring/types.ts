@@ -17,12 +17,24 @@ const scrapeOptionsSchema = z
   .optional()
   .default({});
 
-const scrapeTargetSchema = z.strictObject({
-  id: z.string().uuid().optional(),
-  type: z.literal("scrape"),
-  urls: z.array(urlSchema).min(1),
-  scrapeOptions: scrapeOptionsSchema,
-});
+const scrapeTargetSchema = z.preprocess(
+  value => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const target = value as Record<string, unknown>;
+      if (target.type === "scrape" && !("urls" in target) && "url" in target) {
+        const { url, ...rest } = target;
+        return { ...rest, urls: [url] };
+      }
+    }
+    return value;
+  },
+  z.strictObject({
+    id: z.string().uuid().optional(),
+    type: z.literal("scrape"),
+    urls: z.array(urlSchema).min(1),
+    scrapeOptions: scrapeOptionsSchema,
+  }),
+);
 
 const crawlTargetSchema = z.strictObject({
   id: z.string().uuid().optional(),

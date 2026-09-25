@@ -71,6 +71,36 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     expect(del.body.success).toBe(true);
   });
 
+  it("creates a monitor from Dify-style singular scrape URLs", async () => {
+    const urls = [createTestIdUrl(), createTestIdUrl()];
+    const create = await monitorCreateRaw(
+      {
+        name: "dify monitor",
+        schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+        targets: urls.map(url => ({ type: "scrape", url })) as any,
+      },
+      identity,
+    );
+
+    expect(create.statusCode).toBe(200);
+    expect(create.body.success).toBe(true);
+    expect(
+      create.body.data.targets.map((target: any) => ({
+        type: target.type,
+        urls: target.urls,
+        url: target.url,
+      })),
+    ).toEqual(
+      urls.map(url => ({
+        type: "scrape",
+        urls: [url],
+        url: undefined,
+      })),
+    );
+
+    await monitorDeleteRaw(create.body.data.id, identity);
+  });
+
   it("accepts an origin field in the create body", async () => {
     const create = await monitorCreateRaw(
       {
