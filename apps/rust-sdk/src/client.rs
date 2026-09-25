@@ -4,7 +4,7 @@ use reqwest::Response;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::error::FirecrawlError;
+use crate::error::{FirecrawlAPIError, FirecrawlError};
 
 pub(crate) const API_VERSION: &str = "/v2";
 const CLOUD_API_URL: &str = "https://api.firecrawl.dev";
@@ -155,14 +155,21 @@ impl Client {
                     .map_err(FirecrawlError::ResponseParseError)
             })
             .and_then(|response_value| {
-                // Check for success field, or allow responses without it for status checks
                 if action.as_ref().contains("status")
                     || action.as_ref().contains("cancel")
                     || response_value["success"].as_bool().unwrap_or(false)
                     || response_value.get("success").is_none()
                 {
-                    serde_json::from_value::<T>(response_value)
-                        .map_err(FirecrawlError::ResponseParseError)
+                    match serde_json::from_value::<T>(response_value.clone()) {
+                        Ok(parsed) => Ok(parsed),
+                        Err(parse_error) => match api_error_from_body(&response_value) {
+                            Some(api_error) => Err(FirecrawlError::APIError(
+                                action.as_ref().to_string(),
+                                api_error,
+                            )),
+                            None => Err(FirecrawlError::ResponseParseError(parse_error)),
+                        },
+                    }
                 } else {
                     Err(FirecrawlError::APIError(
                         action.as_ref().to_string(),
@@ -194,6 +201,27 @@ impl Client {
     pub(crate) fn url(&self, path: &str) -> String {
         format!("{}{}{}", self.api_url, API_VERSION, path)
     }
+}
+
+fn api_error_from_body(value: &Value) -> Option<FirecrawlAPIError> {
+    if let Ok(err) = serde_json::from_value::<FirecrawlAPIError>(value.clone()) {
+        return (!err.success).then_some(err);
+    }
+    if value.get("success").is_some() {
+        return None;
+    }
+    let error = value
+        .get("error")
+        .and_then(Value::as_str)
+        .filter(|message| !message.is_empty())?;
+    Some(FirecrawlAPIError {
+        success: false,
+        error: error.to_string(),
+        code: None,
+        charge_id: None,
+        requires_action: None,
+        details: None,
+    })
 }
 
 #[cfg(test)]
