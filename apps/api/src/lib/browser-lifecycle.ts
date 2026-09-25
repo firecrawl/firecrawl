@@ -215,7 +215,7 @@ export async function settleBrowserSession(
     });
   }
   const sessionDurationMs = (browser.ended_at! - browser.created_at) * 1000;
-  const { creditsBilled, newlySettled } = await settleBrowserSessionOnce(
+  const { creditsBilled } = await settleBrowserSessionOnce(
     session.id,
     async current => {
       const usedPrompt = await didBrowserSessionUsePrompt(current.id);
@@ -258,7 +258,6 @@ export async function settleBrowserSession(
     },
   );
   await finalizeBrowserSession(session, creditsBilled);
-  if (newlySettled) await logKeylessCreditUsage(session.team_id, creditsBilled);
   return { sessionDurationMs, creditsBilled };
 }
 
@@ -268,7 +267,8 @@ async function finalizeBrowserSession(
 ) {
   await updateKeylessBrowserCredits(session.team_id, session.id, credits, true);
   await mirrorExternalSlotRelease(session.team_id, session.id);
-  await completeBrowserSessionSettlement(session.id);
+  if (await completeBrowserSessionSettlement(session.id))
+    await logKeylessCreditUsage(session.team_id, credits);
   await invalidateActiveBrowserSessionCount(session.team_id);
 }
 

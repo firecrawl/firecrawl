@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, gt, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, like, ne, sql } from "drizzle-orm";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { db } from "../db/connection";
@@ -84,7 +84,7 @@ export async function settleBrowserSessionOnce(
 
 /** Keep the row discoverable until its keyless refund and slot release succeed. */
 export async function completeBrowserSessionSettlement(id: string) {
-  await db
+  const completed = await db
     .update(schema.browser_sessions)
     .set({
       status: "destroyed",
@@ -93,9 +93,12 @@ export async function completeBrowserSessionSettlement(id: string) {
     .where(
       and(
         eq(schema.browser_sessions.id, id),
+        ne(schema.browser_sessions.status, "destroyed"),
         sql`${schema.browser_sessions.credits_used} IS NOT NULL`,
       ),
-    );
+    )
+    .returning({ id: schema.browser_sessions.id });
+  return completed.length > 0;
 }
 
 export async function activateBrowserSession(id: string, shouldBill: boolean) {
