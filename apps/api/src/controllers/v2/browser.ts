@@ -3,10 +3,7 @@ import {
   getSafeMode,
   SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
-import {
-  deleteBrowserProfile,
-  recordBrowserProfileDeleted,
-} from "../../lib/browser-sessions";
+import { deleteBrowserProfile } from "../../lib/browser-sessions";
 import { deleteHangarProfile } from "../../lib/hangar";
 import { Response } from "express";
 import { z } from "zod";
@@ -244,11 +241,7 @@ export async function browserProfileDeleteController(
   }
   const deletedAt = parsedDeletedAt.data;
 
-  // Tombstone before removing the row: late reconciliation of an earlier
-  // save that lands before this upserts a row the delete below removes, and
-  // any that lands after it is ignored.
-  await recordBrowserProfileDeleted(req.auth.team_id, name, deletedAt);
-  await deleteBrowserProfile(req.auth.team_id, name);
+  await deleteBrowserProfile(req.auth.team_id, name, deletedAt);
   logger.info("Deleted browser profile");
   return res.status(200).json({ success: true });
 }

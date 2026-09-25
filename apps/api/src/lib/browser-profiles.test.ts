@@ -14,3 +14,12 @@ describe("browserProfileDeletedKey", () => {
     );
   });
 });
+
+it("keeps the serialized identity stable, including JSON escaping", () => {
+  expect(browserProfileDeletedKey("team", "login")).toBe(
+    'browser-profile-deleted:["team","login"]',
+  );
+  expect(browserProfileDeletedKey("team", 'a/b \"\\\n')).toBe(
+    'browser-profile-deleted:["team","a/b \\"\\\\\\n"]',
+  );
+});

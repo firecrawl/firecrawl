@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gt, like, sql } from "drizzle-orm";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redisRateLimitClient } from "../services/rate-limiter";
@@ -259,25 +260,36 @@ export async function upsertBrowserProfile(input: {
   savedAt: string;
   sizeBytes: number | undefined;
 }): Promise<void> {
-  const profiles = schema.browser_profiles;
-  await db
-    .insert(profiles)
-    .values({
-      team_id: input.teamId,
-      name: input.name,
-      saved_at: input.savedAt,
-      size_bytes: input.sizeBytes ?? null,
-    })
-    .onConflictDoUpdate({
-      target: [profiles.team_id, profiles.name],
-      // Retried deliveries can arrive out of order, so an older save never
-      // replaces a newer one. A save that reported no size keeps the last
-      // known size rather than erasing it.
-      set: {
-        saved_at: sql`GREATEST(${profiles.saved_at}, excluded.saved_at)`,
-        size_bytes: sql`CASE WHEN excluded.saved_at >= ${profiles.saved_at} THEN COALESCE(excluded.size_bytes, ${profiles.size_bytes}) ELSE ${profiles.size_bytes} END`,
-      },
-    });
+  await db.transaction(async tx => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${browserProfileDeletedKey(input.teamId, input.name)}, 0))`,
+    );
+    const deletedAt = await getBrowserProfileDeletedAt(
+      input.teamId,
+      input.name,
+    );
+    if (deletedAt && !(Date.parse(input.savedAt) > Date.parse(deletedAt)))
+      return;
+    const profiles = schema.browser_profiles;
+    await tx
+      .insert(profiles)
+      .values({
+        team_id: input.teamId,
+        name: input.name,
+        saved_at: input.savedAt,
+        size_bytes: input.sizeBytes ?? null,
+      })
+      .onConflictDoUpdate({
+        target: [profiles.team_id, profiles.name],
+        // Retried deliveries can arrive out of order, so an older save never
+        // replaces a newer one. A save that reported no size keeps the last
+        // known size rather than erasing it.
+        set: {
+          saved_at: sql`GREATEST(${profiles.saved_at}, excluded.saved_at)`,
+          size_bytes: sql`CASE WHEN excluded.saved_at >= ${profiles.saved_at} THEN COALESCE(excluded.size_bytes, ${profiles.size_bytes}) ELSE ${profiles.size_bytes} END`,
+        },
+      });
+  });
 }
 
 // Prevents late reconciliation of an earlier save from relisting a deleted
@@ -296,7 +308,7 @@ const SET_IF_NEWER_LUA = `
   return 1
 `;
 
-export async function recordBrowserProfileDeleted(
+async function recordBrowserProfileDeleted(
   teamId: string,
   name: string,
   deletedAt: string,
@@ -310,11 +322,25 @@ export async function recordBrowserProfileDeleted(
   );
 }
 
-export async function getBrowserProfileDeletedAt(
+async function getBrowserProfileDeletedAt(
   teamId: string,
   name: string,
 ): Promise<string | null> {
-  return getValue(browserProfileDeletedKey(teamId, name));
+  // Keep honoring tombstones written by the previous deployment (one-hour TTL).
+  const teamHash = createHash("sha256")
+    .update(teamId)
+    .digest("hex")
+    .slice(0, 16);
+  const values = await Promise.all([
+    getValue(browserProfileDeletedKey(teamId, name)),
+    getValue(`browser-profile-deleted:${teamHash}_${name}`),
+  ]);
+  return (
+    values
+      .filter((value): value is string => value !== null)
+      .sort()
+      .at(-1) ?? null
+  );
 }
 
 // Removes a profile's listing once its saved state is deleted. Keyless callers
@@ -322,12 +348,28 @@ export async function getBrowserProfileDeletedAt(
 export async function deleteBrowserProfile(
   teamId: string,
   name: string,
+  deletedAt: string,
 ): Promise<void> {
-  if (!z.uuid().safeParse(teamId).success) return;
-  const profiles = schema.browser_profiles;
-  await db
-    .delete(profiles)
-    .where(and(eq(profiles.team_id, teamId), eq(profiles.name, name)));
+  if (!z.uuid().safeParse(teamId).success) {
+    await recordBrowserProfileDeleted(teamId, name, deletedAt);
+    return;
+  }
+  await db.transaction(async tx => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${browserProfileDeletedKey(teamId, name)}, 0))`,
+    );
+    await recordBrowserProfileDeleted(teamId, name, deletedAt);
+    const profiles = schema.browser_profiles;
+    await tx
+      .delete(profiles)
+      .where(
+        and(
+          eq(profiles.team_id, teamId),
+          eq(profiles.name, name),
+          sql`${profiles.saved_at} <= ${deletedAt}`,
+        ),
+      );
+  });
 }
 
 // ---------------------------------------------------------------------------

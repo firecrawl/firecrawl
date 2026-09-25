@@ -17,7 +17,6 @@ import {
 } from "../../services/worker/nuq-router";
 import {
   upsertBrowserProfile,
-  getBrowserProfileDeletedAt,
   settleBrowserSessionOnce,
   type BrowserSessionRow,
 } from "../browser-sessions";
@@ -184,20 +183,6 @@ it("registers a profile only after Hangar confirms a save", async () => {
     savedAt: new Date(160_000).toISOString(),
     sizeBytes: undefined,
   });
-});
-it("does not relist a profile deleted after its save", async () => {
-  vi.mocked(getBrowserProfileDeletedAt).mockResolvedValueOnce(
-    new Date(170_000).toISOString(),
-  );
-  await settleBrowserSession(
-    {
-      ...session,
-      team_id: "00000000-0000-4000-8000-000000000001",
-      profile_name: "login",
-    },
-    { ...stopped, profile_saved_at: 160 },
-  );
-  expect(upsertBrowserProfile).not.toHaveBeenCalled();
 });
 it("does not register a failed or discarded profile save", async () => {
   await settleBrowserSession(

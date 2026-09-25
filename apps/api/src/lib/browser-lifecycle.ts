@@ -1,10 +1,7 @@
 import { z } from "zod";
 import { orgIdForTeam } from "./team-org";
 import { recordRequestCredits } from "./request-credits-store";
-import {
-  upsertBrowserProfile,
-  getBrowserProfileDeletedAt,
-} from "./browser-sessions";
+import { upsertBrowserProfile } from "./browser-sessions";
 import { v7 as uuidv7 } from "uuid";
 import { config } from "../config";
 import { RequestWithAuth } from "../controllers/v2/types";
@@ -198,18 +195,12 @@ export async function settleBrowserSession(
     z.uuid().safeParse(session.team_id).success
   ) {
     const savedAt = new Date(browser.profile_saved_at * 1000).toISOString();
-    const deletedAt = await getBrowserProfileDeletedAt(
-      session.team_id,
-      session.profile_name,
-    );
-    if (!deletedAt || Date.parse(savedAt) > Date.parse(deletedAt)) {
-      await upsertBrowserProfile({
-        teamId: session.team_id,
-        name: session.profile_name,
-        savedAt,
-        sizeBytes: undefined,
-      });
-    }
+    await upsertBrowserProfile({
+      teamId: session.team_id,
+      name: session.profile_name,
+      savedAt,
+      sizeBytes: undefined,
+    });
   }
   const sessionDurationMs = (browser.ended_at! - browser.created_at) * 1000;
   const { creditsBilled, newlySettled } = await settleBrowserSessionOnce(
