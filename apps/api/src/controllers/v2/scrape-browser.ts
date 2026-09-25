@@ -29,6 +29,7 @@ import {
 import {
   executePromptViaBrowserAgent,
   executeCodeViaBrowserSession,
+  selectBrowserAgentTab,
   AgentResult,
 } from "../../lib/scrape-interact/browser-agent";
 import { sanitizeUrlForTrace } from "../../lib/scrape-interact/langsmith";
@@ -466,6 +467,7 @@ async function createSessionForScrape(
             409,
             "Failed to initialize browser session from the original scrape context. Please rerun the scrape and try again.",
           );
+        await selectBrowserAgentTab(browserId);
       },
     });
     return { session };
