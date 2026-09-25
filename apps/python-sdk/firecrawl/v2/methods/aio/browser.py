@@ -99,8 +99,6 @@ def _normalize_browser_execute_response(payload: Dict[str, Any]) -> Dict[str, An
 
 def _normalize_browser_delete_response(payload: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(payload)
-    if "cleanupQueued" in out:
-        out["cleanup_queued"] = out["cleanupQueued"]
     if "sessionDurationMs" in out and "session_duration_ms" not in out:
         out["session_duration_ms"] = out["sessionDurationMs"]
     if "creditsBilled" in out and "credits_billed" not in out:

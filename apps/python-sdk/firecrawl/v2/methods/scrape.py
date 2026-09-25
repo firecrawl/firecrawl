@@ -266,8 +266,6 @@ def stop_interaction(
     if "creditsBilled" in normalized and "credits_billed" not in normalized:
         normalized["credits_billed"] = normalized["creditsBilled"]
 
-    if "cleanupQueued" in normalized:
-        normalized["cleanup_queued"] = normalized["cleanupQueued"]
     return BrowserDeleteResponse(**normalized)
 
 

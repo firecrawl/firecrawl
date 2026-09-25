@@ -340,7 +340,6 @@ export async function stopBrowserSession(session: BrowserSessionRow) {
     return {
       success: true,
       status: "stopped",
-      cleanupQueued: true,
       creditsBilled: session.credits_used ?? 0,
     };
   }
@@ -371,7 +370,6 @@ export async function stopBrowserSession(session: BrowserSessionRow) {
   return {
     success: true,
     status: browser.status,
-    cleanupQueued: true,
     ...settled,
   };
 }

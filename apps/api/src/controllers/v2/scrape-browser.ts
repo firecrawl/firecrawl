@@ -96,7 +96,6 @@ interface BrowserDeleteResponse {
   success: boolean;
   sessionDurationMs?: number;
   creditsBilled?: number;
-  cleanupQueued?: boolean;
   error?: string;
 }
 

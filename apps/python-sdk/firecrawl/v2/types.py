@@ -1977,7 +1977,6 @@ class BrowserDeleteResponse(BaseModel):
 
     success: bool
     status: Optional[str] = None
-    cleanup_queued: Optional[bool] = None
     session_duration_ms: Optional[int] = None
     credits_billed: Optional[int] = None
     error: Optional[str] = None

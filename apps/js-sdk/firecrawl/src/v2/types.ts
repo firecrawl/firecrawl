@@ -1963,7 +1963,6 @@ export interface BrowserExecuteResponse {
 export interface BrowserDeleteResponse {
   success: boolean;
   status?: string;
-  cleanupQueued?: boolean;
   sessionDurationMs?: number;
   creditsBilled?: number;
   error?: string;
