@@ -1,17 +1,11 @@
 import { logger } from "../../lib/logger";
 import { getRedisConnection } from "../queue-service";
-import { billTeam7 } from "../../db/rpc";
-import { withAuth } from "../../lib/withAuth";
-import {
-  autumnService,
-  featureIdForBillingEndpoint,
-} from "../autumn/autumn.service";
 import {
   resolveBillingMetadata,
-  toAutumnBillingProperties,
   type BillingEndpoint,
   type BillingMetadata,
 } from "./types";
+import { billingUnrecordedUsageTotal } from "./metrics";
 import { reportExchangeBilling } from "../../lib/exchange";
 import { getACUCTeam } from "../../controllers/auth";
 import { orgIdFromAcuc } from "../../lib/team-org";
@@ -41,8 +35,8 @@ async function withExchangeConfirmSlot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// Confirm the Exchange accesses behind a set of committed billing
-// operations. Runs after the batch lock is released so an Exchange outage
+// Confirm the Exchange accesses behind a set of billing operations whose
+// usage was tracked at request time. Runs after the batch lock is released so an Exchange outage
 // can never stall the billing loop past its lease. reportExchangeBilling
 // retries internally and never throws; a sustained failure leaves the
 // event pending on the Exchange, which flags unresolved events for
@@ -88,9 +82,9 @@ const LOCK_TIMEOUT = 30000; // 30 seconds lock timeout
 interface BillingOperation {
   team_id: string;
   /**
-   * The team's org — the Autumn customer a refund would go back to. Absent
-   * (not null) on operations enqueued before this field existed; `null` is a
-   * team that genuinely has no org. See the transitional lookup below.
+   * The team's org, which is its Autumn customer. Absent (not null) on
+   * operations enqueued before this field existed; `null` is a team that
+   * genuinely has no org. See the transitional lookup below.
    */
   org_id?: string | null;
   credits: number;
@@ -99,10 +93,12 @@ interface BillingOperation {
   is_extract: boolean;
   timestamp: string;
   api_key_id: number | null;
+  // True when the request already tracked this usage to Autumn (or firebill).
+  // That track is the charge: the batch records nothing else.
   autumnTrackInRequest: boolean;
-  // Exchange access backing this operation, if any: its ledger event is
-  // confirmed once the debit commits. Failed or ambiguous commits leave
-  // the event pending for reconciliation rather than voiding it.
+  // Exchange access backing this operation, if any: its event is confirmed
+  // when the usage was tracked at request time. An untracked operation
+  // leaves the event pending for reconciliation rather than voiding it.
   exchange_access_event_id?: string;
   billing_reference?: string;
 }
@@ -138,69 +134,16 @@ async function releaseLock() {
 }
 
 /** A memoized org lookup: unresolved is an ACUC call that threw, not a team
- *  confirmed to have no org. `retried` records that the one refund-time retry
- *  for this team has been spent. */
+ *  confirmed to have no org. */
 type TeamOrgLookup =
   | { resolved: true; orgId: string | null }
-  | { resolved: false; retried: boolean };
-
-async function refundRequestTrackedCredits(
-  group: GroupedBillingOperation,
-  resolveOrgIdForTeam: (
-    teamId: string,
-    retryFailed?: boolean,
-  ) => Promise<TeamOrgLookup>,
-) {
-  const requestTrackedCredits = group.operations
-    .filter(op => op.autumnTrackInRequest)
-    .reduce((sum, op) => sum + op.credits, 0);
-
-  if (requestTrackedCredits <= 0) return;
-
-  // The refund compensates an Autumn charge that already happened, so a null
-  // recorded by a lookup that failed earlier gets one more look here — past a
-  // memoized failure too, which is not an answer, but only once per team.
-  let orgId = group.org_id;
-  if (orgId === null) {
-    const lookup = await resolveOrgIdForTeam(group.team_id, true);
-    orgId = lookup.resolved ? lookup.orgId : null;
-  }
-
-  if (orgId === null) {
-    // No org, no Autumn customer to refund against — the same nothing the
-    // refund did when it could not name one.
-    logger.warn("Skipping Autumn refund: no org for the team", {
-      team_id: group.team_id,
-      credits: requestTrackedCredits,
-    });
-    return;
-  }
-
-  try {
-    await autumnService.refundCredits({
-      teamId: group.team_id,
-      orgId,
-      value: requestTrackedCredits,
-      properties: {
-        source: "processBillingBatch",
-        ...toAutumnBillingProperties(group.billing),
-        apiKeyId: group.api_key_id,
-      },
-      featureId: featureIdForBillingEndpoint(group.billing.endpoint),
-    });
-  } catch (error) {
-    logger.warn("Failed to refund Autumn request-tracked credits", {
-      error,
-      team_id: group.team_id,
-      credits: requestTrackedCredits,
-      billing: group.billing,
-    });
-  }
-}
+  | { resolved: false };
 
 /**
- * Dequeues pending billing operations from Redis, groups them by team, and
- * commits each group to Supabase via the `bill_team_7` RPC.
+ * Dequeues pending billing operations from Redis and groups them by team.
+ * The usage was already charged at request time, so the batch confirms the
+ * Exchange accesses of tracked operations and counts the untracked ones,
+ * whose usage no system records.
  */
 export async function processBillingBatch() {
   const redis = getRedisConnection();
@@ -210,9 +153,9 @@ export async function processBillingBatch() {
     return;
   }
 
-  // Exchange operations whose debit committed this run; their ledger
+  // Exchange operations whose usage was tracked at request time; their
   // confirmations are delivered after the lock is released.
-  const committedExchangeOps: BillingOperation[] = [];
+  const trackedExchangeOps: BillingOperation[] = [];
 
   try {
     // Get all operations from Redis list
@@ -235,17 +178,11 @@ export async function processBillingBatch() {
     // An answer of null is a team that genuinely has no org and is memoized as
     // such; a lookup that throws leaves the org unknown and is memoized too, so
     // a failing lookup costs one call per team per batch rather than one per
-    // operation. Read by the transitional legacy branch below and by the
-    // refund path, which re-checks a recorded null and passes retryFailed to
-    // take one fresh look past a memoized failure — once per team, so an
-    // outage costs one extra call rather than one per null-org group.
+    // operation. Read by the transitional legacy branch below.
     const orgIds = new Map<string, TeamOrgLookup>();
-    const resolveOrgIdForTeam = async (teamId: string, retryFailed = false) => {
+    const resolveOrgIdForTeam = async (teamId: string) => {
       const cached = orgIds.get(teamId);
-      if (
-        cached !== undefined &&
-        (cached.resolved || !retryFailed || cached.retried)
-      ) {
+      if (cached !== undefined) {
         return cached;
       }
       try {
@@ -258,7 +195,7 @@ export async function processBillingBatch() {
           team_id: teamId,
           error,
         });
-        orgIds.set(teamId, { resolved: false, retried: retryFailed });
+        orgIds.set(teamId, { resolved: false });
       }
       return orgIds.get(teamId)!;
     };
@@ -276,8 +213,8 @@ export async function processBillingBatch() {
       let orgId: string | null;
       if (op.org_id === undefined) {
         // transitional: operations enqueued before org_id was carried; remove
-        // after one deploy. Billing an unknown org as org-less would silently
-        // skip its refund, so those are requeued untouched instead.
+        // after one deploy. Counting an unknown org as org-less would give it
+        // the wrong reason, so those are requeued untouched instead.
         const lookup = await resolveOrgIdForTeam(op.team_id);
         if (!lookup.resolved) {
           unresolvedOperations.push(op);
@@ -308,8 +245,8 @@ export async function processBillingBatch() {
 
     if (unresolvedOperations.length > 0) {
       // Back onto the same list in the same shape — still without org_id — so
-      // the next batch retries the lookup. Nothing is billed or refunded for
-      // them here.
+      // the next batch retries the lookup. Nothing is confirmed or counted
+      // for them here.
       logger.warn(
         "Requeueing legacy billing operations whose org could not be resolved",
         { count: unresolvedOperations.length },
@@ -323,7 +260,7 @@ export async function processBillingBatch() {
     // Process each group of operations
     for (const [, group] of groupedOperations.entries()) {
       logger.info(
-        `🔄 Billing team ${group.team_id} for ${group.total_credits} credits`,
+        `🔄 Processing billing operations for team ${group.team_id} (${group.total_credits} credits)`,
         {
           team_id: group.team_id,
           total_credits: group.total_credits,
@@ -339,57 +276,29 @@ export async function processBillingBatch() {
         continue;
       }
 
-      try {
-        // Execute the actual billing
-        const billingResult = await withAuth(supaBillTeam, {
-          success: true,
-          message: "No DB, bypassed.",
-        })(
-          group.team_id,
-          group.total_credits,
-          group.api_key_id,
-          logger,
-          group.is_extract,
-        );
-
-        if (!billingResult.success) {
-          await refundRequestTrackedCredits(group, resolveOrgIdForTeam);
-          // Deliberately no Exchange outcome here: supaBillTeam maps thrown
-          // errors to success: false, and a transport error can occur after
-          // the debit committed, so voiding could erase a real debit. The
-          // events stay pending on the Exchange, which flags unresolved
-          // events for reconciliation.
-          logger.warn(
-            `⚠️ Billing returned success: false for team ${group.team_id}`,
-            {
-              billingResult,
-              team_id: group.team_id,
-              credits: group.total_credits,
-            },
-          );
+      for (const op of group.operations) {
+        if (op.autumnTrackInRequest === true) {
+          // The request-time track is the charge: confirm the Exchange
+          // access it covered once the batch lock is released.
+          if (op.exchange_access_event_id !== undefined) {
+            trackedExchangeOps.push(op);
+          }
           continue;
         }
 
-        logger.info(
-          `✅ Successfully billed team ${group.team_id} for ${group.total_credits} credits`,
-        );
-
-        // Ledger commit only — usage is tracked to Autumn at request time, not here.
-
-        // The debit is committed: confirm the Exchange accesses it covered
-        // once the batch lock is released.
-        committedExchangeOps.push(
-          ...group.operations.filter(
-            op => op.exchange_access_event_id !== undefined,
-          ),
-        );
-      } catch (error) {
-        await refundRequestTrackedCredits(group, resolveOrgIdForTeam);
-        // No Exchange outcome here either — same ambiguity as the
-        // success: false branch above; the events stay pending.
-        logger.error(`❌ Failed to bill team ${group.team_id}`, {
-          error,
-          group,
+        // Nothing charged this usage at request time, and the batch records
+        // nothing either. Its Exchange access, if any, stays pending for
+        // reconciliation.
+        const reason = group.org_id === null ? "no_org" : "track_failed";
+        billingUnrecordedUsageTotal.labels(reason).inc();
+        logger.error("Billing operation usage is not recorded", {
+          reason,
+          team_id: op.team_id,
+          org_id: group.org_id,
+          credits: op.credits,
+          billing: group.billing,
+          api_key_id: op.api_key_id,
+          exchange_access_event_id: op.exchange_access_event_id,
         });
       }
     }
@@ -401,7 +310,7 @@ export async function processBillingBatch() {
     await releaseLock();
   }
 
-  await confirmExchangeOutcomes(committedExchangeOps);
+  await confirmExchangeOutcomes(trackedExchangeOps);
 }
 
 // Start periodic batch processing
@@ -424,7 +333,7 @@ export function startBillingBatchProcessing() {
 /**
  * Enqueues a billing operation for async batch processing.
  *
- * Internal billing operations are batched and committed to Supabase.
+ * Internal billing operations are batched and processed together.
  */
 export async function queueBillingOperation(
   team_id: string,
@@ -500,45 +409,6 @@ export async function queueBillingOperation(
     logger.error("Error queueing billing operation", { error, team_id });
     return { success: false, error };
   }
-}
-
-// Modified version of the billing function for batch operations
-async function supaBillTeam(
-  team_id: string,
-  credits: number,
-  api_key_id: number | null,
-  __logger?: any,
-  is_extract: boolean = false,
-) {
-  const _logger = (__logger ?? logger).child({
-    module: "credit_billing",
-    method: "supaBillTeam",
-    teamId: team_id,
-    credits,
-  });
-
-  if (team_id === "preview" || team_id.startsWith("preview_")) {
-    return { success: true, message: "Preview team, no credits used" };
-  }
-
-  _logger.info(`Batch billing team ${team_id} for ${credits} credits`);
-
-  // Perform the actual database operation
-  let data: { api_key: string }[];
-  try {
-    data = await billTeam7({
-      team_id,
-      subscription_id: null,
-      credits,
-      api_key_id: api_key_id ?? null,
-      is_extract,
-    });
-  } catch (error) {
-    _logger.error("Failed to bill team.", { error });
-    return { success: false, error };
-  }
-
-  return { success: true, data };
 }
 
 // Cleanup on exit
