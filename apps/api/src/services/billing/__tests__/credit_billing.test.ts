@@ -101,43 +101,22 @@ describe("billTeam", () => {
     );
   });
 
-  it("skips the compensating refund on the firebill route — the charge stands", async () => {
-    isRoutedThroughFirebill.mockResolvedValue(true);
+  it("never refunds the tracked charge when queueing fails", async () => {
     queueBillingOperation.mockResolvedValueOnce({
       success: false,
       message: "enqueue failed",
     });
     trackCredits.mockResolvedValueOnce(true);
 
-    await billTeam("team-1", "org-1", 3, 123, {
+    const result = await billTeam("team-1", "org-1", 3, 123, {
       endpoint: "map",
       jobId: "map-1",
       chargeId: "map-1",
     });
 
+    expect(result).toEqual({ success: false, message: "enqueue failed" });
     expect(refundCredits).not.toHaveBeenCalled();
-  });
-
-  it("gives the compensating refund its own fc:refund key", async () => {
-    queueBillingOperation.mockResolvedValueOnce({
-      success: false,
-      message: "enqueue failed",
-    });
-    trackCredits.mockResolvedValueOnce(true);
-
-    await billTeam("team-1", "org-1", 3, 123, {
-      endpoint: "map",
-      jobId: "map-1",
-      chargeId: "map-1",
-      externalRequestId: "partner-op-42",
-    });
-
-    expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({
-        idempotencyKey: "fc:refund:map:map-1",
-        externalRequestId: "partner-op-42",
-      }),
-    );
+    expect(isRoutedThroughFirebill).not.toHaveBeenCalled();
   });
 
   it("marks billing as already tracked when request tracking succeeds", async () => {
@@ -169,30 +148,9 @@ describe("billTeam", () => {
     });
   });
 
-  it("refunds Autumn when queueing fails after request tracking", async () => {
-    queueBillingOperation.mockResolvedValueOnce({ success: false });
-
-    await billTeam("team-1", "org-1", 3, 123, {
-      endpoint: "search",
-      jobId: "job-1",
-    });
-
-    expect(refundCredits).toHaveBeenCalledWith({
-      teamId: "team-1",
-      orgId: "org-1",
-      value: 3,
-      properties: {
-        source: "billTeam",
-        endpoint: "search",
-        jobId: "job-1",
-        apiKeyId: 123,
-      },
-      featureId: "SEARCH_CREDITS",
-    });
-  });
-
   // preview/keyless teams have no org, and this is the one boundary that
-  // accepts that: the ledger is still enqueued, Autumn is simply not told.
+  // accepts that: the billing operation is still enqueued, Autumn is simply
+  // not told.
   it("skips Autumn entirely when the team has no org", async () => {
     await billTeam("preview_abc", null, 3, null, {
       endpoint: "search",

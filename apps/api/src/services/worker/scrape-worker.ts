@@ -241,17 +241,16 @@ async function billScrapeJob(
         );
 
         // Add directly to the billing queue - the billing worker will handle
-        // the rest, including confirming the Exchange access event once the
-        // debit actually commits. A failed commit leaves the event pending
-        // for reconciliation - it is never voided on an ambiguous outcome.
+        // the rest, including confirming the Exchange access event when the
+        // usage was tracked above. An untracked operation leaves the event
+        // pending for reconciliation - it is never voided there.
         //
         // On the firebill route the enqueue is retried a few times before
         // giving up: the Autumn charge is durable and will not be refunded
         // (see the catch below), so a dropped enqueue would leave the ledger
         // permanently un-debited. Retries are safe there BECAUSE the job id
         // is deterministic — a duplicate add dedupes in BullMQ. Off the
-        // route the id is random, so it keeps today's single attempt (the
-        // compensating refund covers it).
+        // route the id is random, so it keeps today's single attempt.
         const enqueueAttempts = routedToFirebill ? 3 : 1;
         for (let attempt = 1; ; attempt++) {
           try {
@@ -314,18 +313,6 @@ async function billScrapeJob(
                 billing,
               },
             );
-          } else if (orgId) {
-            await autumnService.refundCredits({
-              teamId: job.data.team_id,
-              orgId,
-              value: creditsToBeBilled,
-              properties: autumnProperties,
-              featureId,
-              // Distinct from the track key: a refund is its own charge event
-              // (same key would 409 as a duplicate of the track and be dropped).
-              idempotencyKey: `fc:refund:${billing.endpoint}:${job.id}`,
-              externalRequestId: billing.externalRequestId ?? undefined,
-            });
           }
         }
         // The billing operation never reached the queue, so no debit will
