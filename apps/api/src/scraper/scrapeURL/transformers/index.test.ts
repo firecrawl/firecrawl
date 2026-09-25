@@ -101,4 +101,43 @@ describe("executeTransformers", () => {
     expect(document.extract).toEqual(nativeJson);
     expect(document.json).toEqual(nativeJson);
   });
+
+  // Bodies served as text/markdown (e.g. /docs/page.md) reach this transformer
+  // without a markdown field when the engine does not set one (the fetch
+  // engine never does). They are already markdown, like text/plain.
+  it.each(["text/markdown; charset=utf-8", "text/x-markdown", "Text/Markdown"])(
+    "passes a %s body through as markdown",
+    async contentType => {
+      const body = [
+        "# Access policies",
+        "",
+        "- [access_policies](https://example.com/docs/access_policies)",
+        "- Use `snake_case` keys",
+        "",
+      ].join("\n");
+
+      const document = await executeTransformers(
+        {
+          url: "https://example.com/docs/access.md",
+          options: {
+            formats: [{ type: "markdown" }],
+            onlyMainContent: true,
+          },
+          internalOptions: {},
+          logger: logger(),
+        } as any,
+        {
+          rawHtml: body,
+          metadata: {
+            sourceURL: "https://example.com/docs/access.md",
+            url: "https://example.com/docs/access.md",
+            statusCode: 200,
+            contentType,
+          },
+        } as any,
+      );
+
+      expect(document.markdown).toBe(body);
+    },
+  );
 });
