@@ -145,10 +145,11 @@ async function deriveMarkdownFromHTML(
     return document;
   }
 
-  // text/plain (e.g. llms.txt) and text/markdown responses are already plain
-  // text/markdown. Running them through the HTML-to-markdown converter escapes
-  // markdown punctuation like "_", which corrupts underscores inside link URLs,
-  // and collapses their line breaks. Pass the raw body through untouched.
+  // text/plain (e.g. llms.txt), text/markdown, and text/x-markdown responses
+  // are already plain text/markdown. Running them through the HTML-to-markdown
+  // converter escapes markdown punctuation like "_", which corrupts underscores
+  // inside link URLs, and collapses their line breaks. Pass the raw body through
+  // untouched.
   if (isMarkdownContentType(contentType)) {
     document.markdown = requireRawHtml(document);
     return document;
