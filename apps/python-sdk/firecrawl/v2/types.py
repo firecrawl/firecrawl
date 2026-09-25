@@ -1555,7 +1555,8 @@ class AgentExchangeOptions(BaseModel):
     max_calls: Optional[int] = Field(default=None, alias="maxCalls")
     require_approval: Optional[bool] = Field(default=None, alias="requireApproval")
     # Answers a pending_approval from the previous turn of the thread. A
-    # "terms" approval is accepted or declined as a whole.
+    # "terms" approval is accepted or declined as a whole: callIds and always
+    # are ignored on it.
     approve: Optional[Dict[str, Any]] = None
     decline: Optional[Dict[str, Any]] = None
     # What to do when a provider the agent would use needs data terms the team
@@ -1605,8 +1606,6 @@ class AgentTermsActionProvider(BaseModel):
 
     model_config = {"populate_by_name": True, "extra": "allow"}
 
-    # Stable id of this provider within the offer.
-    id: Optional[str] = None
     provider: Optional[str] = None
     name: Optional[str] = None
     capability: Optional[str] = None
@@ -1697,8 +1696,6 @@ class PendingApprovalTerms(BaseModel):
 
     model_config = {"populate_by_name": True, "extra": "allow"}
 
-    # Stable id of this provider within the offer.
-    id: Optional[str] = None
     provider: Optional[str] = None
     name: Optional[str] = None
     logo: Optional[str] = None
@@ -1707,7 +1704,6 @@ class PendingApprovalTerms(BaseModel):
     version: Optional[str] = None
     # None when the catalog published no digest; terms/show returns it.
     digest: Optional[str] = None
-    publisher: Optional[str] = None
     url: Optional[str] = None
 
 

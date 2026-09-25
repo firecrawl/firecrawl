@@ -388,7 +388,6 @@ describe("agentStatusController terms-required passthrough", () => {
         approvalId,
         providers: [
           {
-            id: "apollo",
             provider: "apollo",
             name: "Apollo",
             capability: "people/search",
@@ -421,7 +420,6 @@ describe("agentStatusController terms-required passthrough", () => {
       calls: [],
       terms: [
         {
-          id: "apollo",
           provider: "apollo",
           name: "Apollo",
           version: "F-1.0.0",

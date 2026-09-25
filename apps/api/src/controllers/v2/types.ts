@@ -1652,8 +1652,6 @@ export type AgentSuggestion = {
 // A provider the agent would have used but could not, because the team has
 // not accepted its data terms.
 type AgentTermsGate = {
-  // Stable id of this provider within the offer.
-  id: string;
   provider: string;
   name: string;
   logo?: string;
@@ -1664,7 +1662,6 @@ type AgentTermsGate = {
   // digest is null when the catalog published none; terms/show returns it.
   version: string;
   digest: string | null;
-  publisher?: string;
   // Where a person accepts the terms in the dashboard.
   url: string;
 };
@@ -1674,7 +1671,7 @@ type AgentPendingApprovalBase = {
   reason: string;
   resolution: null | {
     approved: boolean;
-    // Calls approved, or for a terms item the provider ids the answer covered.
+    // Calls approved. Ignored on terms offers.
     callIds: string[];
     always: boolean;
     byRunId: string;
@@ -1729,8 +1726,6 @@ type AgentTermsRequiredAction = {
   // continue the thread with `exchange.approve: { approvalId }` (or decline).
   approvalId: string;
   providers: {
-    // Stable id of this provider within the offer.
-    id: string;
     provider: string;
     name: string;
     capability?: string;
@@ -1765,6 +1760,8 @@ export type AgentExchangeSummary = {
   onTermsRequired?: AgentOnTermsRequired;
   paidCalls: number;
   creditsUsed: number | null;
+  // The terms fields below (and onTermsRequired) appear only when the agent
+  // service's terms gate is on for the thread; it is rolling out.
   // Gated providers that would have helped and were not used. Any mode.
   skippedProviders?: AgentSkippedProvider[];
   // "ask" mode, when a terms offer ended the turn.

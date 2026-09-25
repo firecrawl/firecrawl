@@ -199,7 +199,6 @@ class TestAgentThreadStatusParsing:
                         "approvalId": approval_id,
                         "providers": [
                             {
-                                "id": "apollo",
                                 "provider": "apollo",
                                 "name": "Apollo",
                                 "version": "F-1.0.0",
@@ -230,7 +229,6 @@ class TestAgentThreadStatusParsing:
                     "calls": [],
                     "terms": [
                         {
-                            "id": "apollo",
                             "provider": "apollo",
                             "name": "Apollo",
                             "version": "F-1.0.0",
@@ -252,7 +250,7 @@ class TestAgentThreadStatusParsing:
         assert response.pending_approval.kind == "terms"
         assert response.pending_approval.is_terms
         assert response.pending_approval.calls == []
-        assert response.pending_approval.terms[0].id == "apollo"
+        assert response.pending_approval.terms[0].provider == "apollo"
 
     def test_calls_approval_is_not_terms(self):
         legacy = AgentResponse(

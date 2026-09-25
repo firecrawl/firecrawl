@@ -226,7 +226,6 @@ describe("v2.agent threads unit", () => {
             approvalId,
             providers: [
               {
-                id: "apollo",
                 provider: "apollo",
                 name: "Apollo",
                 version: "F-1.0.0",
@@ -258,7 +257,6 @@ describe("v2.agent threads unit", () => {
           calls: [],
           terms: [
             {
-              id: "apollo",
               provider: "apollo",
               name: "Apollo",
               version: "F-1.0.0",
@@ -283,6 +281,6 @@ describe("v2.agent threads unit", () => {
     expect(pending.kind).toBe("terms");
     if (pending.kind !== "terms") throw new Error("expected a terms approval");
     expect(pending.calls).toEqual([]);
-    expect(pending.terms[0].id).toBe("apollo");
+    expect(pending.terms[0].provider).toBe("apollo");
   });
 });

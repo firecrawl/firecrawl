@@ -1455,7 +1455,8 @@ export interface AgentExchangeOptions {
   requireApproval?: boolean;
   /**
    * Answers a pendingApproval from the previous turn of the thread. A `terms`
-   * approval is accepted or declined as a whole.
+   * approval is accepted or declined as a whole: `callIds` and `always` are
+   * ignored on it.
    */
   approve?: { approvalId: string; callIds?: string[]; always?: boolean };
   decline?: { approvalId: string };
@@ -1467,7 +1468,8 @@ export interface AgentExchangeOptions {
    * - "ask": the same, plus `exchange.requiresAction` and a `terms`
    *   pendingApproval. Get your user's explicit consent, call terms/accept,
    *   then continue the thread with `approve: { approvalId }`.
-   * There is no auto-accept mode. Omitted on a follow-up turn inherits the
+   * Terms gating is rolling out: until it is on for a thread, none of the
+   * terms fields appear. There is no auto-accept mode. Omitted on a follow-up turn inherits the
    * previous turn's value.
    */
   onTermsRequired?: AgentOnTermsRequired;
@@ -1503,8 +1505,6 @@ export interface AgentTermsRequiredAction {
    */
   approvalId: string;
   providers: {
-    /** Stable id of this provider within the offer. */
-    id: string;
     provider: string;
     name: string;
     capability?: string;
@@ -1549,8 +1549,6 @@ export interface AgentExchangeSummary {
 
 /** A provider in a `terms` pendingApproval. */
 export interface AgentTermsGate {
-  /** Stable id of this provider within the offer. */
-  id: string;
   provider: string;
   name: string;
   logo?: string;
@@ -1559,7 +1557,6 @@ export interface AgentTermsGate {
   version: string;
   /** null when the catalog published no digest; terms/show returns it. */
   digest: string | null;
-  publisher?: string;
   url: string;
 }
 
@@ -1584,7 +1581,7 @@ interface PendingApprovalBase {
   reason: string;
   resolution: null | {
     approved: boolean;
-    /** Calls approved, or for a terms item the provider ids the answer covered. */
+    /** Calls approved. Ignored on terms offers. */
     callIds: string[];
     always: boolean;
     byRunId: string;
