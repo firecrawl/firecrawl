@@ -297,6 +297,8 @@ export async function reserveBrowserPromptCredits(
   // response does not pin a database connection.
   const browser = await getHangarBrowser(session.browser_id, 0, 5000);
   if (["stopping", "stopped", "failed"].includes(browser.status)) throw closed;
+  // The interact rate is reserved once per session; later prompts add nothing.
+  if (await didBrowserSessionUsePrompt(session.id)) return;
   const credits = calculateBrowserSessionCredits(
     session.ttl_total * 1000,
     INTERACT_CREDITS_PER_HOUR,
