@@ -32,6 +32,10 @@ import {
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import {
+  resolveSearchCostPerTenResults,
+  searchCreditsForResults,
+} from "../../lib/search-credits";
 
 async function searchHelper(
   jobId: string,
@@ -89,7 +93,11 @@ async function searchHelper(
   internalOptions.orgId = org_id;
 
   if (justSearch) {
-    const searchCredits = Math.ceil(res.length / 10) * 2;
+    // v0 has no ZDR branch, so it stays on the non-ZDR rate.
+    const searchCredits = searchCreditsForResults(
+      res.length,
+      resolveSearchCostPerTenResults(flags, false),
+    );
     billTeam(
       team_id,
       org_id,
@@ -318,9 +326,16 @@ export async function searchController(req: Request, res: Response) {
       time_taken: timeTakenInSeconds,
       team_id: team_id,
       options: searchOptions,
+      // Whole-number record of the charge in searchHelper: the column is
+      // integer, and the charge in Autumn keeps the exact decimal.
       credits_cost: pageOptions.fetchPageContent
         ? 0
-        : Math.ceil((result.data?.length ?? 0) / 10) * 2,
+        : Math.round(
+            searchCreditsForResults(
+              result.data?.length ?? 0,
+              resolveSearchCostPerTenResults(chunk?.flags ?? null, false),
+            ),
+          ),
       zeroDataRetention: false, // not supported
     });
     return res.status(result.returnCode).json(result);

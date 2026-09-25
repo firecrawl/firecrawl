@@ -116,6 +116,64 @@ it("mixed search bills only normal web results", async () => {
   expect(result.response.tools).toHaveLength(1);
 });
 
+it("bills a fractional per-org rate at the exact decimal", async () => {
+  mocks.search.mockResolvedValue({ web: Array(10).fill(developerResult) });
+  const result = await executeSearch(
+    options([]),
+    { ...context, flags: { searchCostPerTenResults: 2.5 } },
+    logger,
+  );
+  // 1 block of ten * 2.5 = 2.5, not rounded.
+  expect(result.searchCredits).toBe(2.5);
+  expect(result.totalCredits).toBe(2.5);
+});
+
+it.each([
+  [25, 7.5],
+  [30, 7.5],
+])(
+  "bills %i results at a fractional rate as %d",
+  async (resultCount, expected) => {
+    mocks.search.mockResolvedValue({
+      web: Array(resultCount).fill(developerResult),
+    });
+    const result = await executeSearch(
+      { ...options([]), limit: resultCount },
+      { ...context, flags: { searchCostPerTenResults: 2.5 } },
+      logger,
+    );
+    // 3 blocks of ten * 2.5 = 7.5, not rounded.
+    expect(result.searchCredits).toBe(expected);
+  },
+);
+
+it.each([["2.5"], [-2.5], [NaN]])(
+  "falls back to list price for a garbage per-org rate (%s)",
+  async value => {
+    mocks.search.mockResolvedValue({ web: Array(10).fill(developerResult) });
+    const result = await executeSearch(
+      options([]),
+      { ...context, flags: { searchCostPerTenResults: value } as any },
+      logger,
+    );
+    expect(result.searchCredits).toBe(2);
+  },
+);
+
+it("keeps the default rates when the flag is absent", async () => {
+  mocks.search.mockResolvedValue({ web: Array(10).fill(developerResult) });
+  const normal = await executeSearch(options([]), context, logger);
+  expect(normal.searchCredits).toBe(2);
+
+  mocks.search.mockResolvedValue({ web: Array(10).fill(developerResult) });
+  const zdr = await executeSearch(
+    { ...options([]), enterprise: ["zdr"] },
+    context,
+    logger,
+  );
+  expect(zdr.searchCredits).toBe(10);
+});
+
 describe("executeSearch developer category", () => {
   it("returns sole developer-category results in web without running SERP", async () => {
     const result = await executeSearch(
@@ -130,12 +188,29 @@ describe("executeSearch developer category", () => {
     expect(result.developerResultsCount).toBe(1);
   });
 
-
   it("filters blocked developer results via threat protection and renumbers", async () => {
     mocks.searchDeveloperCategory.mockResolvedValue([
-      { url: "https://ok.example/a", title: "A", description: "", position: 1, category: "developer" },
-      { url: "https://blocked.example/b", title: "B", description: "", position: 2, category: "developer" },
-      { url: "https://ok.example/c", title: "C", description: "", position: 3, category: "developer" },
+      {
+        url: "https://ok.example/a",
+        title: "A",
+        description: "",
+        position: 1,
+        category: "developer",
+      },
+      {
+        url: "https://blocked.example/b",
+        title: "B",
+        description: "",
+        position: 2,
+        category: "developer",
+      },
+      {
+        url: "https://ok.example/c",
+        title: "C",
+        description: "",
+        position: 3,
+        category: "developer",
+      },
     ]);
     mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
       decisionsByUrl: new Map([

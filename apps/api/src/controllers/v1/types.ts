@@ -1361,6 +1361,8 @@ export type TeamFlags = {
   scrapeZDR?: "disabled" | "allowed" | "forced";
   searchZDR?: "disabled" | "allowed" | "forced" | "forced-zdr" | "forced-anon";
   zdrCost?: number;
+  // Credits per 10 returned results; may be fractional, and the charge keeps the exact decimal.
+  searchCostPerTenResults?: number;
   checkRobotsOnScrape?: boolean;
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
