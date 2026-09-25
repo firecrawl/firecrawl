@@ -593,6 +593,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_crawl_status_missing_job_returns_server_message() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/crawl/00000000-0000-0000-0000-000000000000")
+            .with_status(404)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": false,
+                    "error": "Job not found"
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), None::<&str>).unwrap();
+        let err = client
+            .get_crawl_status("00000000-0000-0000-0000-000000000000")
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "crawl status 00000000-0000-0000-0000-000000000000 failed: Job not found"
+        );
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_cancel_crawl_missing_job_returns_server_message() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("DELETE", "/v2/crawl/00000000-0000-0000-0000-000000000000")
+            .with_status(404)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "error": "Job not found" }).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), None::<&str>).unwrap();
+        let err = client
+            .cancel_crawl("00000000-0000-0000-0000-000000000000")
+            .await
+            .unwrap_err();
+
+        assert_eq!(err.to_string(), "cancel crawl failed: Job not found");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_get_crawl_status_kickoff_failure_is_a_failed_job() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/crawl/crawl-kickoff")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": false,
+                    "error": "DNS resolution failed",
+                    "status": "failed",
+                    "completed": 0,
+                    "total": 0,
+                    "creditsUsed": 0,
+                    "expiresAt": "2024-12-31T23:59:59Z",
+                    "data": []
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), None::<&str>).unwrap();
+        let status = client.get_crawl_status("crawl-kickoff").await.unwrap();
+
+        assert_eq!(status.status, JobStatus::Failed);
+        assert_eq!(status.total, 0);
+        assert_eq!(status.completed, 0);
+        assert_eq!(status.data.len(), 0);
+        mock.assert();
+    }
+
+    #[tokio::test]
     async fn test_get_crawl_errors_with_mock() {
         let mut server = mockito::Server::new_async().await;
 
