@@ -8,7 +8,7 @@ Hints are disabled by default. Trusted agent adapters such as the Firecrawl MCP 
 X-Firecrawl-Agent-Hints: true
 ```
 
-The value `mcp` also opts in and renders search and scrape suggestions with the Firecrawl MCP tool names (`firecrawl_search`, `firecrawl_scrape`) instead of `POST /v2/search` and `POST /v2/scrape`, so an MCP agent is pointed at the tool it actually has. Map, Crawl and Interact suggestions keep their REST paths. `true` keeps REST wording for the CLI and other adapters.
+Search and scrape suggestions name the Firecrawl tools (`firecrawl_search`, `firecrawl_scrape`) rather than REST paths, since hints are only requested by the Firecrawl MCP server and CLI. Map, Crawl and Interact suggestions keep their REST paths. Result and redirect URLs inside hints are rendered as JSON-quoted, percent-encoded http(s) hrefs, capped at 200 characters, and labelled by the result's `position` when present.
 
 The header applies to the business request. No request-body schema changes are required. SDKs and other adapters should retain the top-level field when unwrapping `data` and should preserve it on error results. The strings recommend conditional next steps; receiving one does not execute another request or indicate user authorization.
 
