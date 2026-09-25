@@ -599,6 +599,11 @@ jobs:
   nuq-fdb-core:
     name: NuQ FoundationDB core tests
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
     env:
       FDB_VERSION: 7.3.63
     steps:
