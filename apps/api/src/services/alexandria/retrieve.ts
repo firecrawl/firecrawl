@@ -106,6 +106,17 @@ export async function retrieveProviders(input: {
   if (Buffer.byteLength(JSON.stringify(input.calls)) > 256 * 1024)
     return notExecuted(refusal(400, "Provider options exceed 256 KB."));
 
+  const usesSql = input.calls.some(
+    call => call.provider === "firecrawl" && call.capability === "sql",
+  );
+  if (usesSql && input.calls.length !== 1)
+    return notExecuted(
+      refusal(
+        400,
+        "SQL must be sent as a separate request; do not batch it with other calls.",
+      ),
+    );
+
   const loadsSavedResult = input.calls.some(
     call =>
       call.provider === "firecrawl" &&
@@ -347,7 +358,7 @@ export async function retrieveProviders(input: {
       body: { requests: input.calls },
       timeoutMs: remaining(),
       requestId: id,
-      ...(loadsSavedResult && input.resultAuthorization
+      ...((loadsSavedResult || usesSql) && input.resultAuthorization
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
       ...(termsIdentity ? { termsIdentity } : {}),

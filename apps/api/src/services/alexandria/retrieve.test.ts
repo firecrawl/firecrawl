@@ -494,3 +494,54 @@ it("does not derive terms credential identity from numeric API-key IDs", async (
     expect(execution[0].termsIdentity).toBeUndefined();
   }
 });
+
+const sqlCall = {
+  provider: "firecrawl",
+  capability: "sql",
+  options: { query: "SHOW TABLES IN apollo LIMIT 10" },
+};
+it("forwards standalone SQL credentials only to execution without retaining them", async () => {
+  exchangeAnswers({
+    success: true,
+    creditsCost: 0,
+    results: [
+      { ...sqlCall, creditsCost: 0, data: { kind: "tables", items: [] } },
+    ],
+  });
+  expect(
+    await run({ calls: [sqlCall], resultAuthorization: "Bearer caller" }),
+  ).toMatchObject({ status: 200, executed: true });
+  expect(executions()).toHaveLength(1);
+  expect(executions()[0][0].resultAuthorization).toBe("Bearer caller");
+  expect(
+    mocks.request.mock.calls
+      .filter(([arg]) => arg.path !== "/v1/retrieve")
+      .every(([arg]) => arg.resultAuthorization === undefined),
+  ).toBe(true);
+  expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
+});
+it.each([
+  { name: "SQL first", calls: [sqlCall, call] },
+  { name: "SQL last", calls: [call, sqlCall] },
+  { name: "two SQL calls", calls: [sqlCall, sqlCall] },
+])("rejects batched SQL before side effects: $name", async ({ calls }) => {
+  expect(
+    await run({ calls, resultAuthorization: "Bearer caller" }),
+  ).toMatchObject({ status: 400, executed: false });
+  expect(mocks.request).not.toHaveBeenCalled();
+  expect(mocks.authorize).not.toHaveBeenCalled();
+  expect(mocks.lock).not.toHaveBeenCalled();
+  expect(mocks.store.size).toBe(0);
+});
+it("does not forward credentials to another provider's sql capability", async () => {
+  const other = { ...sqlCall, provider: "other" };
+  exchangeAnswers({
+    success: true,
+    creditsCost: 0,
+    results: [{ ...other, creditsCost: 0, data: {} }],
+  });
+  expect(
+    await run({ calls: [other], resultAuthorization: "Bearer caller" }),
+  ).toMatchObject({ status: 200, executed: true });
+  expect(executions()[0][0].resultAuthorization).toBeUndefined();
+});
