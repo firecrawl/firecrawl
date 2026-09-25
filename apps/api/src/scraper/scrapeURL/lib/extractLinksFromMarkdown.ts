@@ -15,11 +15,15 @@ export function isMarkdownContentType(contentType?: string): boolean {
 }
 
 const IMAGE = /!\[[^\]]*\]\([^)]*\)/g;
+// Destinations may contain balanced parentheses, e.g. Wikipedia's
+// /wiki/Mercury_(planet), so a "(" group is taken whole instead of ending the
+// URL at its ")".
 const INLINE_LINK =
-  /\[[^\]]*\]\(\s*(<[^>\n]*>|[^)\s]+)(?:\s+["'][^"']*["'])?\s*\)/g;
+  /\[[^\]]*\]\(\s*(<[^>\n]*>|(?:[^()\s]|\([^()\s]*\))+)(?:\s+["'][^"']*["'])?\s*\)/g;
 const REFERENCE_DEFINITION = /^[ \t]{0,3}\[[^\]]+\]:[ \t]*(<[^>]+>|\S+)/gm;
 const AUTOLINK = /<((?:https?:\/\/|mailto:)[^>\s]+)>/g;
-const BARE_URL = /(?:^|[\s(<])(https?:\/\/[^\s<>"'`)\]]+)/g;
+const BARE_URL =
+  /(?:^|[\s(<])(https?:\/\/(?:[^\s<>"'`()\]]|\([^\s<>"'`()\]]*\))+)/g;
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 
 /** Blanks out fenced blocks and inline code spans. */
