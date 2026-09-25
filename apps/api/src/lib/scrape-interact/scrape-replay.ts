@@ -346,7 +346,7 @@ for (let i = 0; i < replay.actions.length; i += 1) {
         break;
       case "executeJavascript": {
         const wrapped = \`(async () => { \${action.script} })()\`;
-        await page.evaluate(script => (0, eval)(script), wrapped);
+        await page.evaluate(script => (0, eval)(script), wrapped, undefined, false);
         break;
       }
       case "screenshot":

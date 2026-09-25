@@ -1,5 +1,5 @@
-import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { and, asc, desc, eq, gt, like, sql } from "drizzle-orm";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { db } from "../db/connection";
@@ -15,7 +15,7 @@ function activeBrowserCountKey(teamId: string): string {
 
 type BrowserSessionStatus = "active" | "destroyed" | "error";
 
-interface BrowserSessionRow {
+export interface BrowserSessionRow {
   id: string;
   team_id: string;
   request_id: string | null;
@@ -23,10 +23,10 @@ interface BrowserSessionRow {
   scrape_id?: string | null; // linked scrape job id for /scrape/:jobId/interact sessions
   browser_id: string; // browser service sessionId
   workspace_id: string; // unused (legacy), stored as ""
-  context_id: string; // unused (legacy), stored as ""
+  context_id: string; // Hangar playlist URL; empty when recording is disabled
   cdp_url: string; // full CDP WebSocket URL from browser service
-  cdp_path: string; // repurposed: stores the view WebSocket URL
-  cdp_interactive_path: string; // repurposed: stores the interactive view WebSocket URL
+  cdp_path: string; // Hangar view URL
+  cdp_interactive_path: string; // Hangar control URL
   stream_web_view: boolean;
   status: BrowserSessionStatus;
   ttl_total: number;
@@ -35,6 +35,52 @@ interface BrowserSessionRow {
   profile_name?: string | null; // persistent profile the session was created with
   created_at: string; // ISO timestamp
   updated_at: string; // ISO timestamp
+}
+
+export async function listUnsettledHangarSessions(
+  after?: string,
+): Promise<BrowserSessionRow[]> {
+  return (await db
+    .select()
+    .from(schema.browser_sessions)
+    .where(
+      and(
+        eq(schema.browser_sessions.status, "active"),
+        like(schema.browser_sessions.browser_id, "br\\_%"),
+        after ? gt(schema.browser_sessions.id, after) : undefined,
+      ),
+    )
+    .orderBy(asc(schema.browser_sessions.id))
+    .limit(20)) as BrowserSessionRow[];
+}
+
+/** Serialize billing across API and worker replicas, and commit its receipt with status. */
+export async function settleBrowserSessionOnce(
+  id: string,
+  bill: (session: BrowserSessionRow) => Promise<number>,
+): Promise<{ creditsBilled: number; newlySettled: boolean }> {
+  return db.transaction(async tx => {
+    const [row] = await tx
+      .select()
+      .from(schema.browser_sessions)
+      .where(eq(schema.browser_sessions.id, id))
+      .for("update");
+    if (!row) throw new Error("Browser session not found.");
+    if (row.status === "destroyed")
+      return { creditsBilled: row.credits_used ?? 0, newlySettled: false };
+    const creditsBilled = await bill(row as BrowserSessionRow);
+    const now = new Date().toISOString();
+    await tx
+      .update(schema.browser_sessions)
+      .set({
+        status: "destroyed",
+        credits_used: creditsBilled,
+        updated_at: now,
+        deleted_at: now,
+      })
+      .where(eq(schema.browser_sessions.id, id));
+    return { creditsBilled, newlySettled: true };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -187,71 +233,6 @@ export async function updateBrowserSessionActivity(id: string): Promise<void> {
   }
 }
 
-export async function getBrowserSessionByBrowserId(
-  browserId: string,
-): Promise<BrowserSessionRow | null> {
-  try {
-    const [data] = await db
-      .select()
-      .from(schema.browser_sessions)
-      .where(eq(schema.browser_sessions.browser_id, browserId))
-      .limit(1);
-    return (data ?? null) as BrowserSessionRow | null;
-  } catch (error) {
-    logger.error("Failed to get browser session by browser_id", {
-      error,
-      browserId,
-    });
-    throw new Error(
-      `Failed to get browser session by browser_id: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
-    );
-  }
-}
-
-export async function updateBrowserSessionStatus(
-  id: string,
-  status: BrowserSessionStatus,
-): Promise<void> {
-  try {
-    await db
-      .update(schema.browser_sessions)
-      .set({
-        status,
-        updated_at: new Date().toISOString(),
-        deleted_at: status === "destroyed" ? new Date().toISOString() : null,
-      })
-      .where(eq(schema.browser_sessions.id, id));
-  } catch (error) {
-    logger.warn("Failed to update browser session status", { error, id });
-  }
-}
-
-export async function claimBrowserSessionDestroyed(
-  id: string,
-): Promise<boolean> {
-  const now = new Date().toISOString();
-  try {
-    const data = await db
-      .update(schema.browser_sessions)
-      .set({
-        status: "destroyed" as BrowserSessionStatus,
-        updated_at: now,
-        deleted_at: now,
-      })
-      .where(
-        and(
-          eq(schema.browser_sessions.id, id),
-          eq(schema.browser_sessions.status, "active"),
-        ),
-      )
-      .returning({ id: schema.browser_sessions.id });
-    return data.length > 0;
-  } catch (error) {
-    logger.warn("Failed to claim browser session destroyed", { error, id });
-    return false;
-  }
-}
-
 export async function updateBrowserSessionScrapeId(
   id: string,
   scrapeId: string,
@@ -270,29 +251,8 @@ export async function updateBrowserSessionScrapeId(
   }
 }
 
-export async function updateBrowserSessionCreditsUsed(
-  id: string,
-  creditsUsed: number,
-): Promise<void> {
-  try {
-    await db
-      .update(schema.browser_sessions)
-      .set({
-        credits_used: creditsUsed,
-        updated_at: new Date().toISOString(),
-      })
-      .where(eq(schema.browser_sessions.id, id));
-  } catch (error) {
-    logger.warn("Failed to update browser session credits_used", {
-      error,
-      id,
-      creditsUsed,
-    });
-  }
-}
-
 // Records a successful save of a persistent profile. Throws on failure so the
-// browser service's webhook outbox retries the event.
+// Hangar reconciliation retries the update.
 export async function upsertBrowserProfile(input: {
   teamId: string;
   name: string;
@@ -320,10 +280,10 @@ export async function upsertBrowserProfile(input: {
     });
 }
 
-// Remembers when a profile was deleted, so a profile.saved event for an
-// earlier save that is delivered late cannot relist it. Outlives the browser
-// service's retries (at most ~10 minutes).
-const PROFILE_DELETED_TTL_SECONDS = 3600;
+// Prevents late reconciliation of an earlier save from relisting a deleted
+// profile. Outlives the browser
+// metadata retention and background reconciliation window.
+const PROFILE_DELETED_TTL_SECONDS = 2 * 86400;
 
 // Keeps the newest deletion time: responses to concurrent deletes can land
 // out of order, and an older time must not shrink the window. Timestamps are
@@ -337,22 +297,24 @@ const SET_IF_NEWER_LUA = `
 `;
 
 export async function recordBrowserProfileDeleted(
-  storageId: string,
+  teamId: string,
+  name: string,
   deletedAt: string,
 ): Promise<void> {
   await redisRateLimitClient.eval(
     SET_IF_NEWER_LUA,
     1,
-    browserProfileDeletedKey(storageId),
+    browserProfileDeletedKey(teamId, name),
     new Date(deletedAt).toISOString(),
     String(PROFILE_DELETED_TTL_SECONDS),
   );
 }
 
 export async function getBrowserProfileDeletedAt(
-  storageId: string,
+  teamId: string,
+  name: string,
 ): Promise<string | null> {
-  return getValue(browserProfileDeletedKey(storageId));
+  return getValue(browserProfileDeletedKey(teamId, name));
 }
 
 // Removes a profile's listing once its saved state is deleted. Keyless callers

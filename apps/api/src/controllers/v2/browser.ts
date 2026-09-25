@@ -1,66 +1,44 @@
-import { v7 as uuidv7 } from "uuid";
-import { Request, Response } from "express";
-import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
-import { config } from "../../config";
-import {
-  insertBrowserSession,
-  getBrowserSession,
-  getBrowserSessionByBrowserId,
-  listBrowserSessions,
-  updateBrowserSessionActivity,
-  updateBrowserSessionStatus,
-  updateBrowserSessionCreditsUsed,
-  claimBrowserSessionDestroyed,
-  invalidateActiveBrowserSessionCount,
-  didBrowserSessionUsePrompt,
-  clearBrowserSessionPromptFlag,
-  upsertBrowserProfile,
-  deleteBrowserProfile,
-  recordBrowserProfileDeleted,
-  getBrowserProfileDeletedAt,
-} from "../../lib/browser-sessions";
-import {
-  getCombinedTeamActiveCount,
-  mirrorExternalSlotAcquire,
-  mirrorExternalSlotRelease,
-} from "../../services/worker/nuq-router";
-import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
-import { RequestWithAuth } from "./types";
-import { billTeam } from "../../services/billing/credit_billing";
-import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
-import { logRequest } from "../../services/logging/log_job";
-import { externalRequestId } from "../../lib/external-request-id";
-import { integrationSchema } from "../../utils/integration";
-import {
-  BROWSER_CREDITS_PER_HOUR,
-  INTERACT_CREDITS_PER_HOUR,
-  calculateBrowserSessionCredits,
-} from "../../lib/browser-billing";
-import { autumnService } from "../../services/autumn/autumn.service";
-import { orgIdForTeam } from "../../lib/team-org";
-import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { recordRequestCredits } from "../../lib/request-credits-store";
-import {
-  browserProfileStorageId,
-  profileSavedEventSchema,
-  resolveProfileSave,
-} from "../../lib/browser-profiles";
 import {
   getSafeMode,
   SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
+import {
+  deleteBrowserProfile,
+  recordBrowserProfileDeleted,
+} from "../../lib/browser-sessions";
+import { deleteHangarProfile } from "../../lib/hangar";
+import { Response } from "express";
+import { z } from "zod";
+import { config } from "../../config";
+import { RequestWithAuth } from "./types";
+import { integrationSchema } from "../../utils/integration";
+import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import {
+  getBrowserSession,
+  listBrowserSessions,
+  updateBrowserSessionActivity,
+} from "../../lib/browser-sessions";
+import {
+  createBrowserSession,
+  browserSessionLinks,
+  stopBrowserSession,
+  settleBrowserSession,
+} from "../../lib/browser-lifecycle";
+import {
+  executeHangarBrowser,
+  getHangarBrowser,
+  getHangarRecording,
+  HangarError,
+} from "../../lib/hangar";
+import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 
-// ---------------------------------------------------------------------------
-// Zod schemas
-// ---------------------------------------------------------------------------
-
-const browserCreateRequestSchema = z.object({
-  ttl: z.number().min(30).max(3600).default(600),
-  activityTtl: z.number().min(10).max(3600).default(300),
+export const browserCreateRequestSchema = z.object({
+  ttl: z.number().int().min(30).max(3600).default(600),
+  activityTtl: z.number().int().min(10).max(3600).default(300),
   streamWebView: z.boolean().default(true),
   recordSession: z.boolean().default(true),
-  integration: integrationSchema.optional().transform(val => val || null),
+  integration: integrationSchema.optional().transform(value => value || null),
   profile: z
     .object({
       name: z.string().min(1).max(128),
@@ -76,508 +54,122 @@ const browserCreateRequestSchema = z.object({
     .optional(),
 });
 
-type BrowserCreateRequest = z.infer<typeof browserCreateRequestSchema>;
-
-interface BrowserCreateResponse {
-  success: boolean;
-  id?: string;
-  cdpUrl?: string;
-  liveViewUrl?: string;
-  interactiveLiveViewUrl?: string;
-  expiresAt?: string;
-  error?: string;
-}
-
 const browserExecuteRequestSchema = z.object({
-  code: z.string().min(1).max(100_000),
+  code: z
+    .string()
+    .min(1)
+    .refine(
+      value => Buffer.byteLength(value, "utf8") <= 100_000,
+      "Code must not exceed 100,000 UTF-8 bytes.",
+    ),
   language: z.enum(["python", "node", "bash"]).default("node"),
-  timeout: z.number().min(1).max(300).default(30),
+  timeout: z.number().int().min(1).max(300).default(30),
   origin: z.string().optional(),
 });
 
-type BrowserExecuteRequest = z.infer<typeof browserExecuteRequestSchema>;
-
-interface BrowserExecuteResponse {
-  success: boolean;
-  stdout?: string;
-  result?: string;
-  stderr?: string;
-  exitCode?: number;
-  killed?: boolean;
-  error?: string;
-}
-
-interface BrowserDeleteResponse {
-  success: boolean;
-  sessionDurationMs?: number;
-  creditsBilled?: number;
-  cleanupQueued?: boolean;
-  error?: string;
-}
-
-interface BrowserListResponse {
-  success: boolean;
-  sessions?: Array<{
-    id: string;
-    status: string;
-    cdpUrl: string;
-    liveViewUrl: string;
-    interactiveLiveViewUrl: string;
-    streamWebView: boolean;
-    createdAt: string;
-    lastActivity: string;
-  }>;
-  error?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Build headers for authenticating against the browser service.
- */
-function browserServiceHeaders(
-  extra?: Record<string, string>,
-): Record<string, string> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(extra ?? {}),
-  };
-  if (config.BROWSER_SERVICE_API_KEY) {
-    headers["Authorization"] = `Bearer ${config.BROWSER_SERVICE_API_KEY}`;
-  }
-  return headers;
-}
-
-class BrowserServiceError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-/**
- * Call the browser service and return parsed JSON.
- * Throws on non-2xx responses.
- */
-async function browserServiceRequest<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const url = `${config.BROWSER_SERVICE_URL}${path}`;
-  const res = await fetch(url, {
-    method,
-    headers: browserServiceHeaders(),
-    body: body ? JSON.stringify(body) : undefined,
+export function browserError(res: Response, error: unknown) {
+  return res.status(error instanceof HangarError ? error.status : 502).json({
+    success: false,
+    error:
+      error instanceof HangarError
+        ? error.message
+        : "Browser operation failed.",
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new BrowserServiceError(
-      res.status,
-      `Browser service ${method} ${path} failed (${res.status}): ${text}`,
-    );
-  }
-
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
 }
-
-// ---------------------------------------------------------------------------
-// Browser service response types
-// ---------------------------------------------------------------------------
-
-interface BrowserServiceCreateResponse {
-  sessionId: string;
-  cdpUrl: string;
-  viewUrl: string;
-  iframeUrl: string;
-  interactiveIframeUrl: string;
-  expiresAt: string;
-}
-
-interface BrowserServiceExecResponse {
-  stdout: string;
-  result: string;
-  stderr: string;
-  exitCode: number;
-  killed: boolean;
-}
-
-interface BrowserServiceDeleteResponse {
-  ok: boolean;
-  sessionDurationMs: number;
-  cleanupQueued: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Controllers
-// ---------------------------------------------------------------------------
 
 export async function browserCreateController(
-  req: RequestWithAuth<{}, BrowserCreateResponse, BrowserCreateRequest>,
-  res: Response<BrowserCreateResponse>,
+  req: RequestWithAuth<{}, any, any>,
+  res: Response,
 ) {
-  // if (!req.acuc?.flags?.browserBeta) {
-  //   return res.status(403).json({
-  //     success: false,
-  //     error:
-  //       "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
-  //   });
-  // }
-
-  const sessionId = uuidv7();
-  const logger = _logger.child({
-    sessionId,
-    teamId: req.auth.team_id,
-    module: "api/v2",
-    method: "browserCreateController",
-  });
-
-  req.body = browserCreateRequestSchema.parse(req.body);
-
+  const body = browserCreateRequestSchema.parse(req.body);
   if (getSafeMode(req.acuc?.flags)) {
-    return res.status(403).json({
-      success: false,
-      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
-    });
+    return res
+      .status(403)
+      .json({ success: false, error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE });
   }
-
+  req.body = body;
   if (
-    req.body.__agentInterop &&
-    config.AGENT_INTEROP_SECRET &&
-    !isAgentInteropSecretValid(req.body.__agentInterop.auth)
+    body.__agentInterop &&
+    (!config.AGENT_INTEROP_SECRET ||
+      !isAgentInteropSecretValid(body.__agentInterop.auth))
   ) {
-    return res.status(403).json({
-      success: false,
-      error: "Invalid agent interop.",
-    });
-  } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
-    return res.status(403).json({
-      success: false,
-      error: "Agent interop is not enabled.",
-    });
+    return res
+      .status(403)
+      .json({ success: false, error: "Invalid agent interop." });
   }
-
-  const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
-  const agentRequestId = req.body.__agentInterop?.requestId ?? null;
-
-  const {
-    ttl,
-    activityTtl,
-    streamWebView,
-    recordSession,
-    profile,
-    integration,
-  } = req.body;
-
-  if (!config.BROWSER_SERVICE_URL) {
-    return res.status(503).json({
-      success: false,
-      error:
-        "Browser feature is not configured (BROWSER_SERVICE_URL is missing).",
-    });
-  }
-
-  logger.info("Creating browser session", { ttl, activityTtl });
-
-  // 0a. Check if team has enough credits for the full TTL
-  if (shouldBill) {
-    const estimatedCredits = calculateBrowserSessionCredits(ttl * 1000);
-    // No org, no Autumn customer to gate against: fail open, exactly as
-    // checkCredits answered for an identity it could not name.
-    const orgId = req.acuc?.org_id ?? null;
-    const autumnResult = orgId
-      ? await autumnService.checkCredits({
-          teamId: req.auth.team_id,
-          orgId,
-          value: estimatedCredits,
-          properties: {
-            source: "browserCreate",
-            path: req.path,
-            apiKeyId: req.acuc?.api_key_id ?? null,
-          },
-        })
-      : null;
-
-    if (autumnResult !== null && !autumnResult.allowed) {
-      logger.warn("Insufficient credits for browser session TTL", {
-        estimatedCredits,
-        ttl,
-      });
-      return res.status(402).json({
-        success: false,
-        error: `Insufficient credits for a ${ttl}s browser session (requires ~${estimatedCredits} credits). For more credits, you can upgrade your plan at https://firecrawl.dev/pricing.`,
-      });
-    }
-  }
-
-  // 0b. Enforce concurrency limit (shared pool with scrape/crawl/interact)
-  const concurrencyLimit = await getEffectiveConcurrencyLimit(
-    req.auth.team_id,
-    req.acuc?.org_id ?? null,
-  );
-  const activeCount = await getCombinedTeamActiveCount(req.auth.team_id);
-  if (activeCount >= concurrencyLimit) {
-    logger.warn("Concurrency limit reached for browser session", {
-      activeCount,
-      limit: concurrencyLimit,
-    });
-    return res.status(429).json({
-      success: false,
-      error: `You have reached the maximum number of concurrent jobs (${concurrencyLimit}). Please wait for existing jobs to complete or destroy browser sessions before creating new ones.`,
-    });
-  }
-
-  // 1. Create a browser session via the browser service (retry up to 3 times)
-  const MAX_CREATE_RETRIES = 3;
-  let svcResponse: BrowserServiceCreateResponse | undefined;
-  let lastCreateError: unknown;
-
-  // Build persistentStorage from profile if provided
-  let persistentStorage: { uniqueId: string; write: boolean } | undefined;
-  if (profile) {
-    persistentStorage = {
-      uniqueId: browserProfileStorageId(req.auth.team_id, profile.name),
-      write: profile.saveChanges !== false,
-    };
-  }
-
-  for (let attempt = 1; attempt <= MAX_CREATE_RETRIES; attempt++) {
-    try {
-      svcResponse = await browserServiceRequest<BrowserServiceCreateResponse>(
-        "POST",
-        "/browsers",
-        {
-          ttl,
-          record: recordSession,
-          customerId: req.auth.team_id,
-          ...(activityTtl !== undefined ? { activityTtl } : {}),
-          ...(persistentStorage !== undefined ? { persistentStorage } : {}),
-        },
-      );
-      break;
-    } catch (err) {
-      // 409 means the profile is locked by another writer — don't retry
-      if (err instanceof BrowserServiceError && err.status === 409) {
-        logger.warn("Profile is locked", {
-          profileName: profile?.name,
-          error: err,
-        });
-        return res.status(409).json({
-          success: false,
-          error:
-            "Another session is currently writing to this profile. Only one writer is allowed at a time. You can still access it with saveChanges: false, or try again later.",
-        });
-      }
-
-      lastCreateError = err;
-      logger.warn("Browser session creation attempt failed", {
-        attempt,
-        maxRetries: MAX_CREATE_RETRIES,
-        error: err,
-      });
-      if (attempt < MAX_CREATE_RETRIES) {
-        await new Promise(resolve => setTimeout(resolve, 200 * attempt));
-      }
-    }
-  }
-
-  if (!svcResponse) {
-    logger.error("Failed to create browser session after all retries", {
-      error: lastCreateError,
-      attempts: MAX_CREATE_RETRIES,
-    });
-    return res.status(502).json({
-      success: false,
-      error: "Failed to create browser session.",
-    });
-  }
-
-  // 2. Persist session in Supabase
   try {
-    if (!agentRequestId) {
-      await logRequest({
-        id: sessionId,
-        kind: "browser",
-        api_version: "v2",
-        external_request_id: externalRequestId(req),
-        team_id: req.auth.team_id,
-        target_hint: "Browser session",
-        origin: "api",
-        integration: integration ?? null,
-        zeroDataRetention: false,
-        api_key_id: req.acuc!.api_key_id,
-      });
-    }
-    await insertBrowserSession({
-      id: sessionId,
-      team_id: req.auth.team_id,
-      request_id: agentRequestId ?? sessionId,
-      should_bill: shouldBill,
-      browser_id: svcResponse.sessionId,
-      workspace_id: "",
-      context_id: "",
-      cdp_url: svcResponse.cdpUrl,
-      cdp_path: svcResponse.iframeUrl, // repurposed: stores view URL
-      cdp_interactive_path: svcResponse.interactiveIframeUrl, // repurposed: stores interactive view URL
-      stream_web_view: streamWebView,
-      status: "active",
-      ttl_total: ttl,
-      ttl_without_activity: activityTtl ?? null,
-      credits_used: null,
-      profile_name: profile?.name ?? null,
+    const { session, expiresAt } = await createBrowserSession(req, {
+      ...body,
+      shouldBill: body.__agentInterop?.shouldBill,
+      requestId: body.__agentInterop?.requestId,
     });
-  } catch (err) {
-    // If we can't persist, tear down the browser session
-    logger.error("Failed to persist browser session, cleaning up", {
-      error: err,
+    return res.json({
+      success: true,
+      id: session.id,
+      ...browserSessionLinks(session),
+      expiresAt,
     });
-    await browserServiceRequest(
-      "DELETE",
-      `/browsers/${svcResponse.sessionId}`,
-    ).catch(() => {});
-    return res.status(500).json({
-      success: false,
-      error: "Failed to persist browser session.",
-    });
+  } catch (error) {
+    return browserError(res, error);
   }
+}
 
-  // Invalidate cached count so next check reflects the new session
-  invalidateActiveBrowserSessionCount(req.auth.team_id).catch(() => {});
-
-  // Register in the shared concurrency limiter so this session counts
-  // against the team's concurrent job limit while it's active.
-  mirrorExternalSlotAcquire(req.auth.team_id, sessionId, ttl * 1000).catch(
-    () => {},
-  );
-
-  logger.info("Browser session created", {
-    sessionId,
-    browserId: svcResponse.sessionId,
-  });
-
-  return res.status(200).json({
-    success: true,
-    id: sessionId,
-    cdpUrl: svcResponse.cdpUrl,
-    liveViewUrl: svcResponse.iframeUrl,
-    interactiveLiveViewUrl: svcResponse.interactiveIframeUrl,
-    expiresAt: svcResponse.expiresAt,
-  });
+async function resolveBrowserSession(
+  req: RequestWithAuth<{ sessionId: string }, any, any>,
+  res: Response,
+) {
+  const session = await getBrowserSession(req.params.sessionId);
+  if (!session) {
+    res
+      .status(404)
+      .json({ success: false, error: "Browser session not found." });
+    return;
+  }
+  if (session.team_id !== req.auth.team_id) {
+    res.status(403).json({ success: false, error: "Forbidden." });
+    return;
+  }
+  return session;
 }
 
 export async function browserExecuteController(
-  req: RequestWithAuth<
-    { sessionId: string },
-    BrowserExecuteResponse,
-    BrowserExecuteRequest
-  >,
-  res: Response<BrowserExecuteResponse>,
+  req: RequestWithAuth<{ sessionId: string }, any, any>,
+  res: Response,
 ) {
-  // if (!req.acuc?.flags?.browserBeta) {
-  //   return res.status(403).json({
-  //     success: false,
-  //     error:
-  //       "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
-  //   });
-  // }
-
-  req.body = browserExecuteRequestSchema.parse(req.body);
-
+  const body = browserExecuteRequestSchema.parse(req.body);
   if (getSafeMode(req.acuc?.flags)) {
-    return res.status(403).json({
-      success: false,
-      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
-    });
+    return res
+      .status(403)
+      .json({ success: false, error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE });
   }
-
-  const id = req.params.sessionId;
-  const { code, language, timeout, origin } = req.body;
-
-  const logger = _logger.child({
-    sessionId: id,
-    teamId: req.auth.team_id,
-    module: "api/v2",
-    method: "browserExecuteController",
-  });
-
-  // Look up session from Supabase
-  const session = await getBrowserSession(id);
-
-  if (!session) {
-    return res.status(404).json({
-      success: false,
-      error: "Browser session not found.",
-    });
-  }
-
-  if (session.team_id !== req.auth.team_id) {
-    return res.status(403).json({
-      success: false,
-      error: "Forbidden.",
-    });
-  }
-
-  if (session.status === "destroyed") {
-    return res.status(410).json({
-      success: false,
-      error: "Browser session has been destroyed.",
-    });
-  }
-
-  // Update activity timestamp (fire-and-forget)
-  updateBrowserSessionActivity(id).catch(() => {});
-
-  logger.info("Executing code in browser session", { language, timeout });
-
-  // Execute code via the browser service
-  let execResult: BrowserServiceExecResponse;
+  const session = await resolveBrowserSession(req, res);
+  if (!session) return;
+  if (session.status === "destroyed")
+    return res
+      .status(410)
+      .json({ success: false, error: "Browser session has been destroyed." });
   try {
-    execResult = await browserServiceRequest<BrowserServiceExecResponse>(
-      "POST",
-      `/browsers/${session.browser_id}/exec`,
-      { code, language, timeout, origin },
-    );
-  } catch (err) {
-    logger.error("Failed to execute code via browser service", { error: err });
-    return res.status(502).json({
-      success: false,
-      error: "Failed to execute code in browser session.",
+    const result = await executeHangarBrowser(session.browser_id, body);
+    updateBrowserSessionActivity(session.id).catch(() => {});
+    enqueueBrowserSessionActivity({
+      team_id: req.auth.team_id,
+      session_id: session.id,
+      source: "browser",
+      language: body.language,
+      timeout: body.timeout,
+      exit_code: result.exitCode,
+      killed: result.killed,
     });
+    return res.json({
+      success: true,
+      ...result,
+      ...(result.exitCode !== 0 || result.killed
+        ? { error: result.stderr || "Execution failed" }
+        : {}),
+    });
+  } catch (error) {
+    return browserError(res, error);
   }
-
-  logger.debug("Execution result", {
-    exitCode: execResult.exitCode,
-    killed: execResult.killed,
-    stdoutLength: execResult.stdout?.length,
-    stderrLength: execResult.stderr?.length,
-  });
-
-  enqueueBrowserSessionActivity({
-    team_id: req.auth.team_id,
-    session_id: id,
-    source: "browser",
-    language,
-    timeout,
-    exit_code: execResult.exitCode ?? null,
-    killed: execResult.killed ?? false,
-  });
-
-  const hasError = execResult.exitCode !== 0 || execResult.killed;
-
-  return res.status(200).json({
-    success: true,
-    stdout: execResult.stdout,
-    result: execResult.result,
-    stderr: execResult.stderr,
-    exitCode: execResult.exitCode,
-    killed: execResult.killed,
-    ...(hasError ? { error: execResult.stderr || "Execution failed" } : {}),
-  });
 }
 
 const profileNameSchema = z.string().min(1).max(128);
@@ -606,11 +198,10 @@ export async function browserProfileDeleteController(
   }
   const name = parsed.data;
 
-  if (!config.BROWSER_SERVICE_URL) {
+  if (!config.HANGAR_URL) {
     return res.status(503).json({
       success: false,
-      error:
-        "Browser feature is not configured (BROWSER_SERVICE_URL is missing).",
+      error: "Browser feature is not configured (HANGAR_URL is missing).",
     });
   }
 
@@ -620,22 +211,18 @@ export async function browserProfileDeleteController(
     method: "browserProfileDeleteController",
   });
 
-  const storageId = browserProfileStorageId(req.auth.team_id, name);
   let result: { deletedAt?: unknown } | undefined;
   try {
-    result = await browserServiceRequest<{ deletedAt?: unknown }>(
-      "DELETE",
-      `/profiles/${encodeURIComponent(storageId)}`,
-    );
+    result = await deleteHangarProfile(req.auth.team_id, name);
   } catch (err) {
-    if (err instanceof BrowserServiceError && err.status === 409) {
+    if (err instanceof HangarError && err.status === 409) {
       return res.status(409).json({
         success: false,
         error:
           "A session is currently saving to this profile. Stop that session, then delete the profile.",
       });
     }
-    logger.error("Failed to delete profile via browser service", {
+    logger.error("Failed to delete profile via Hangar", {
       error: err,
     });
     return res.status(502).json({
@@ -644,12 +231,10 @@ export async function browserProfileDeleteController(
     });
   }
 
-  // profile.saved events carry the browser service's clock, so the tombstone
-  // must too; without its deletion time the tombstone could not be compared,
-  // so fail and let the (idempotent) delete be retried.
+  // Compare deletion against Hangar save timestamps during reconciliation.
   const parsedDeletedAt = deletedAtSchema.safeParse(result?.deletedAt);
   if (!parsedDeletedAt.success) {
-    logger.error("Browser service profile delete returned no valid deletedAt", {
+    logger.error("Hangar profile delete returned no valid deletedAt", {
       deletedAt: result?.deletedAt,
     });
     return res.status(502).json({
@@ -659,450 +244,119 @@ export async function browserProfileDeleteController(
   }
   const deletedAt = parsedDeletedAt.data;
 
-  // Tombstone before removing the row: a late profile.saved for an earlier
+  // Tombstone before removing the row: late reconciliation of an earlier
   // save that lands before this upserts a row the delete below removes, and
   // any that lands after it is ignored.
-  await recordBrowserProfileDeleted(storageId, deletedAt);
+  await recordBrowserProfileDeleted(req.auth.team_id, name, deletedAt);
   await deleteBrowserProfile(req.auth.team_id, name);
   logger.info("Deleted browser profile");
   return res.status(200).json({ success: true });
 }
 
 export async function browserDeleteController(
-  req: RequestWithAuth<{ sessionId: string }, BrowserDeleteResponse>,
-  res: Response<BrowserDeleteResponse>,
+  req: RequestWithAuth<{ sessionId: string }, any, any>,
+  res: Response,
 ) {
-  // if (!req.acuc?.flags?.browserBeta) {
-  //   return res.status(403).json({
-  //     success: false,
-  //     error:
-  //       "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
-  //   });
-  // }
-
-  const id = req.params.sessionId;
-
-  const logger = _logger.child({
-    sessionId: id,
-    teamId: req.auth.team_id,
-    module: "api/v2",
-    method: "browserDeleteController",
-  });
-
-  const session = await getBrowserSession(id);
-
-  if (!session) {
-    return res.status(404).json({
-      success: false,
-      error: "Browser session not found.",
-    });
-  }
-
-  if (session.team_id !== req.auth.team_id) {
-    return res.status(403).json({
-      success: false,
-      error: "Forbidden.",
-    });
-  }
-
-  // A destroyed session was already released and billed (by an earlier
-  // DELETE or by the browser service's session.ended webhook). The browser
-  // service no longer knows it, so asking it again can only fail. Report
-  // success so that DELETE stays idempotent.
-  if (session.status === "destroyed") {
-    logger.info("Browser session already destroyed, nothing to release");
-    return res.status(200).json({
-      success: true,
-      cleanupQueued: true,
-    });
-  }
-
-  logger.info("Deleting browser session");
-
-  let deleteResult: BrowserServiceDeleteResponse;
+  const session = await resolveBrowserSession(req, res);
+  if (!session) return;
   try {
-    deleteResult = await browserServiceRequest<BrowserServiceDeleteResponse>(
-      "DELETE",
-      `/browsers/${session.browser_id}`,
-    );
-  } catch (err) {
-    logger.error("Browser service did not confirm session release", {
-      error: err,
-    });
-    return res.status(502).json({
-      success: false,
-      error: "Browser session release was not confirmed.",
-    });
+    return res.json(await stopBrowserSession(session));
+  } catch (error) {
+    return browserError(res, error);
   }
+}
 
-  if (
-    !deleteResult ||
-    !deleteResult.ok ||
-    !deleteResult.cleanupQueued ||
-    !Number.isFinite(deleteResult.sessionDurationMs) ||
-    deleteResult.sessionDurationMs < 0
-  ) {
-    logger.error("Browser service returned an invalid release confirmation", {
-      deleteResult,
-    });
-    return res.status(502).json({
-      success: false,
-      error: "Browser session release was not confirmed.",
-    });
-  }
-
-  const durationMs = deleteResult.sessionDurationMs;
-
-  const claimed = await claimBrowserSessionDestroyed(session.id);
-
-  // Invalidate cached count so next check reflects the destroyed session
-  invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
-  mirrorExternalSlotRelease(session.team_id, session.id).catch(error => {
-    logger.error(
-      "Failed to remove concurrency limiter entry for browser session",
-      {
-        error,
-        sessionId: session.id,
-        teamId: session.team_id,
-      },
-    );
-  });
-
-  if (!claimed) {
-    // The webhook (or another DELETE call) already transitioned and billed.
-    logger.info("Session already destroyed by another path, skipping billing", {
-      sessionId: session.id,
-    });
-    return res.status(200).json({
+export async function browserStatusController(
+  req: RequestWithAuth<{ sessionId: string }, any, any>,
+  res: Response,
+) {
+  const session = await resolveBrowserSession(req, res);
+  if (!session) return;
+  try {
+    const browser = await getHangarBrowser(session.browser_id);
+    const billing = await settleBrowserSession(session, browser);
+    return res.json({
       success: true,
-      sessionDurationMs: durationMs,
-      cleanupQueued: true,
+      id: session.id,
+      status: browser.status,
+      ...browserSessionLinks(session),
+      ...billing,
+      error: browser.error ?? undefined,
     });
+  } catch (error) {
+    return browserError(res, error);
   }
-
-  const usedPrompt = await didBrowserSessionUsePrompt(session.id);
-  const rate = usedPrompt
-    ? INTERACT_CREDITS_PER_HOUR
-    : BROWSER_CREDITS_PER_HOUR;
-  const creditsBilled = session.should_bill
-    ? calculateBrowserSessionCredits(durationMs, rate)
-    : 0;
-
-  clearBrowserSessionPromptFlag(session.id).catch(() => {});
-
-  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
-
-  const agentRequestId =
-    session.request_id && session.request_id !== session.id
-      ? session.request_id
-      : null;
-  if (session.should_bill) {
-    billTeam(
-      req.auth.team_id,
-      req.acuc?.org_id ?? null,
-      creditsBilled,
-      req.acuc?.api_key_id ?? null,
-      {
-        endpoint: agentRequestId
-          ? "agent"
-          : usedPrompt
-            ? "interact"
-            : "browser",
-        jobId: agentRequestId ?? session.id,
-        // Keyed on the session rather than on jobId, deliberately: one agent
-        // request can drive several sessions, and each is its own charge — a key
-        // built from the shared agent id would collapse them into one. The
-        // per-path suffix guards the other direction: the webhook teardown below
-        // bills the same session through a different path.
-        chargeId: `${session.id}:destroy`,
-      },
-    ).catch(error => {
-      logger.error("Failed to bill team for browser session", {
-        error,
-        creditsBilled,
-        durationMs,
-      });
-    });
-  }
-
-  if (agentRequestId) {
-    await recordRequestCredits({
-      requestId: agentRequestId,
-      jobId: session.id,
-      credits: creditsBilled,
-    }).catch(error => {
-      logger.error("Failed to record browser request credits in Bigtable", {
-        error,
-        requestId: agentRequestId,
-        sessionId: session.id,
-        creditsBilled,
-      });
-    });
-  }
-
-  logger.info("Browser session destroyed", {
-    sessionDurationMs: durationMs,
-    creditsBilled,
-  });
-
-  return res.status(200).json({
-    success: true,
-    sessionDurationMs: durationMs,
-    creditsBilled,
-    cleanupQueued: true,
-  });
 }
 
 export async function browserListController(
-  req: RequestWithAuth<{}, BrowserListResponse>,
-  res: Response<BrowserListResponse>,
+  req: RequestWithAuth<{}, any, any>,
+  res: Response,
 ) {
-  // if (!req.acuc?.flags?.browserBeta) {
-  //   return res.status(403).json({
-  //     success: false,
-  //     error:
-  //       "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
-  //   });
-  // }
-
-  const logger = _logger.child({
-    teamId: req.auth.team_id,
-    module: "api/v2",
-    method: "browserListController",
-  });
-
-  logger.info("Listing browser sessions");
-
-  const statusFilter = (req.query as Record<string, string>).status as
-    | "active"
-    | "destroyed"
-    | undefined;
-
-  const rows = await listBrowserSessions(req.auth.team_id, {
-    status: statusFilter,
-  });
-
-  return res.status(200).json({
+  const status = z
+    .enum(["active", "destroyed", "error"])
+    .optional()
+    .parse(req.query.status);
+  const sessions = await listBrowserSessions(req.auth.team_id, { status });
+  return res.json({
     success: true,
-    sessions: rows.map(r => ({
-      id: r.id,
-      status: r.status,
-      cdpUrl: r.cdp_url,
-      liveViewUrl: r.cdp_path,
-      interactiveLiveViewUrl: r.cdp_interactive_path,
-      streamWebView: r.stream_web_view,
-      createdAt: r.created_at,
-      lastActivity: r.updated_at,
+    sessions: sessions.map(session => ({
+      id: session.id,
+      status: session.status,
+      ...browserSessionLinks(session),
+      streamWebView: session.stream_web_view,
+      createdAt: session.created_at,
+      lastActivity: session.updated_at,
     })),
   });
 }
 
-// Records that a session's persistent profile now has saved state, so the
-// profile can be listed. Retried by the browser service on any non-2xx.
-async function handleProfileSavedWebhook(
-  req: Request,
+export async function browserReplayController(
+  req: RequestWithAuth<{ sessionId: string }, any, any>,
   res: Response,
-  logger: typeof _logger,
 ) {
-  const parsed = profileSavedEventSchema.safeParse(req.body);
-  if (!parsed.success) {
-    logger.warn("Malformed profile.saved webhook", { error: parsed.error });
-    return res.status(400).json({ error: "Invalid profile.saved event" });
-  }
-  const event = parsed.data;
-  const browserId = event.sessionId;
-
-  const session = await getBrowserSessionByBrowserId(browserId);
-  if (!session) {
-    logger.warn("No session found for profile.saved webhook", {
-      browserId,
-      eventId: event.eventId,
+  const session = await resolveBrowserSession(req, res);
+  if (!session) return;
+  if (!session.context_id)
+    return res.status(404).json({ success: false, error: "Replay not found." });
+  try {
+    const recording = await getHangarRecording(session.context_id);
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({
+      success: true,
+      pages: [
+        {
+          pageId: "0",
+          url: `/v2/interact/${encodeURIComponent(session.id)}/replay/0`,
+          // The desktop stream spans tabs and has no single page URL.
+          pageUrl: "",
+          startTimeMs: 0,
+          endTimeMs: recording.durationMs,
+        },
+      ],
+      pageCount: 1,
+      playlistUrl: session.context_id,
     });
-    return res.status(200).json({ ok: true });
+  } catch (error) {
+    return browserError(res, error);
   }
-
-  const resolution = resolveProfileSave(
-    session,
-    event,
-    await getBrowserProfileDeletedAt(event.profileId),
-  );
-  if (resolution.action === "ignore") {
-    logger.info("Not recording saved profile", {
-      browserId,
-      sessionId: session.id,
-      reason: resolution.reason,
-    });
-    return res.status(200).json({ ok: true });
-  }
-  if (resolution.action === "reject") {
-    logger.error("profile.saved webhook does not match the session's profile", {
-      browserId,
-      sessionId: session.id,
-      teamId: session.team_id,
-      profileId: event.profileId,
-    });
-    return res
-      .status(409)
-      .json({ error: "Profile does not match the session" });
-  }
-
-  await upsertBrowserProfile({
-    teamId: resolution.teamId,
-    name: resolution.name,
-    savedAt: event.savedAt,
-    sizeBytes: event.sizeBytes,
-  });
-  logger.info("Recorded saved browser profile", {
-    browserId,
-    sessionId: session.id,
-    teamId: resolution.teamId,
-    eventId: event.eventId,
-  });
-  return res.status(200).json({ ok: true });
 }
 
-export async function browserWebhookDestroyedController(
-  req: Request,
+export async function browserReplayPageController(
+  req: RequestWithAuth<{ sessionId: string; pageId: string }, any, any>,
   res: Response,
 ) {
-  const logger = _logger.child({
-    module: "api/v2",
-    method: "browserWebhookDestroyedController",
-  });
-
-  // Validate browser service secret
-  const secret = req.headers["x-browser-service-secret"];
-  if (
-    !config.BROWSER_SERVICE_WEBHOOK_SECRET ||
-    !secret ||
-    secret !== config.BROWSER_SERVICE_WEBHOOK_SECRET
-  ) {
-    return res.status(401).json({ error: "Unauthorized" });
+  if (!/^\d{1,3}$/.test(req.params.pageId))
+    return res.status(400).json({ success: false, error: "Invalid pageId." });
+  const session = await resolveBrowserSession(req, res);
+  if (!session) return;
+  if (req.params.pageId !== "0" || !session.context_id)
+    return res.status(404).json({ success: false, error: "Replay not found." });
+  try {
+    const recording = await getHangarRecording(session.context_id);
+    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).send(recording.playlist);
+  } catch (error) {
+    return browserError(res, error);
   }
-
-  // The browser service posts every outbox event here. session.ended (the
-  // original event, sent without a check on eventType) bills below.
-  if (req.body?.eventType === "profile.saved") {
-    return handleProfileSavedWebhook(req, res, logger);
-  }
-
-  const { sessionId, sessionDurationMs } = req.body as {
-    sessionId?: string;
-    sessionDurationMs?: number;
-  };
-  if (!sessionId) {
-    return res.status(400).json({ error: "Missing browserId" });
-  }
-  if (
-    !Number.isFinite(sessionDurationMs) ||
-    (sessionDurationMs as number) < 0
-  ) {
-    return res.status(400).json({ error: "Missing sessionDurationMs" });
-  }
-  let browserId = sessionId;
-
-  logger.info("Received destroyed webhook from browser service", { browserId });
-
-  const session = await getBrowserSessionByBrowserId(browserId);
-  if (!session) {
-    logger.warn("No session found for destroyed webhook", { browserId });
-    return res.status(200).json({ ok: true });
-  }
-
-  const claimed = await claimBrowserSessionDestroyed(session.id);
-
-  invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
-  mirrorExternalSlotRelease(session.team_id, session.id).catch(error => {
-    logger.error(
-      "Failed to remove concurrency limiter entry for browser session via webhook",
-      {
-        error,
-        sessionId: session.id,
-        teamId: session.team_id,
-      },
-    );
-  });
-
-  if (!claimed) {
-    logger.info("Session already destroyed by another path, skipping billing", {
-      sessionId: session.id,
-      browserId,
-    });
-    return res.status(200).json({ ok: true });
-  }
-
-  const durationMs = sessionDurationMs as number;
-
-  const usedPrompt = await didBrowserSessionUsePrompt(session.id);
-  const rate = usedPrompt
-    ? INTERACT_CREDITS_PER_HOUR
-    : BROWSER_CREDITS_PER_HOUR;
-  const creditsBilled = session.should_bill
-    ? calculateBrowserSessionCredits(durationMs, rate)
-    : 0;
-
-  clearBrowserSessionPromptFlag(session.id).catch(() => {});
-
-  await updateBrowserSessionCreditsUsed(session.id, creditsBilled);
-
-  const agentRequestId =
-    session.request_id && session.request_id !== session.id
-      ? session.request_id
-      : null;
-  if (session.should_bill) {
-    // The webhook carries no request context, so the team's ACUC answers for
-    // the org — the same lookup the biller used to make for itself.
-    billTeam(
-      session.team_id,
-      await orgIdForTeam(session.team_id),
-      creditsBilled,
-      null,
-      {
-        endpoint: agentRequestId
-          ? "agent"
-          : usedPrompt
-            ? "interact"
-            : "browser",
-        jobId: agentRequestId ?? session.id,
-        // Same reasoning as the destroy path above: keyed on the session, not on
-        // jobId, and suffixed per path so the two teardown routes cannot dedupe
-        // each other's charge away.
-        chargeId: `${session.id}:webhook`,
-      },
-    ).catch(error => {
-      logger.error("Failed to bill team for browser session via webhook", {
-        error,
-        teamId: session.team_id,
-        sessionId: session.id,
-        creditsBilled,
-        durationMs,
-      });
-    });
-  }
-
-  if (agentRequestId) {
-    await recordRequestCredits({
-      requestId: agentRequestId,
-      jobId: session.id,
-      credits: creditsBilled,
-    }).catch(error => {
-      logger.error("Failed to record browser request credits in Bigtable", {
-        error,
-        requestId: agentRequestId,
-        sessionId: session.id,
-        creditsBilled,
-      });
-    });
-  }
-
-  logger.info("Session marked as destroyed via webhook", {
-    sessionId: session.id,
-    browserId,
-    durationMs,
-    creditsBilled,
-    usedPrompt,
-    rate,
-  });
-
-  return res.status(200).json({ ok: true });
 }

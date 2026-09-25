@@ -932,7 +932,11 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
-  if (isXTwitterUrl(meta.url) && _engines.includes("x-twitter")) {
+  if (
+    !meta.options.profile &&
+    isXTwitterUrl(meta.url) &&
+    _engines.includes("x-twitter")
+  ) {
     _engines.length = 0;
     _engines.push("x-twitter");
   } else if (!isXTwitterUrl(meta.url)) {
@@ -961,6 +965,17 @@ export async function buildFallbackList(meta: Meta): Promise<
       : _engines;
 
   for (const engine of currentEngines) {
+    // A profile must never fall back to fetching anonymous content. File parsers
+    // may consume bytes already fetched by the authenticated browser.
+    if (
+      meta.options.profile &&
+      !engine.includes("chrome-cdp") &&
+      !(engine === "pdf" && meta.pdfPrefetch) &&
+      !(engine === "document" && meta.documentPrefetch) &&
+      !(engine === "image" && meta.imagePrefetch)
+    )
+      continue;
+
     const supportedFlags = new Set([
       ...Object.entries(engineOptions[engine].features)
         .filter(

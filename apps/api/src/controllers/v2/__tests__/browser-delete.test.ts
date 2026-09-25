@@ -4,11 +4,19 @@ import type { RequestWithAuth } from "../types";
 const mocks = vi.hoisted(() => ({
   getBrowserSession: vi.fn(),
   getBrowserSessionFromScrape: vi.fn(),
-  claimBrowserSessionDestroyed: vi.fn(),
+  settleBrowserSessionOnce: vi.fn(),
   mirrorExternalSlotRelease: vi.fn(),
   billTeam: vi.fn(),
   dbRows: [] as unknown[],
 }));
+
+vi.mock("../../../config", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../../config")>();
+  return {
+    ...actual,
+    config: { ...actual.config, HANGAR_URL: "http://hangar.test" },
+  };
+});
 
 // Only the real getBrowserSessionFromScrape reaches this: it selects every
 // row for a scrape, newest first.
@@ -41,13 +49,10 @@ vi.mock("../../../lib/browser-sessions", () => ({
   insertBrowserSession: vi.fn(),
   getBrowserSession: mocks.getBrowserSession,
   getBrowserSessionFromScrape: mocks.getBrowserSessionFromScrape,
-  getBrowserSessionByBrowserId: vi.fn(),
   listBrowserSessions: vi.fn(),
   updateBrowserSessionActivity: vi.fn(),
-  updateBrowserSessionStatus: vi.fn(),
-  updateBrowserSessionCreditsUsed: vi.fn(),
   updateBrowserSessionScrapeId: vi.fn(),
-  claimBrowserSessionDestroyed: mocks.claimBrowserSessionDestroyed,
+  settleBrowserSessionOnce: mocks.settleBrowserSessionOnce,
   invalidateActiveBrowserSessionCount: vi.fn(() => Promise.resolve()),
   didBrowserSessionUsePrompt: vi.fn(),
   clearBrowserSessionPromptFlag: vi.fn(() => Promise.resolve()),
@@ -93,6 +98,7 @@ function makeSession(
 
 function makeRes() {
   return {
+    statusCode: 200,
     status: vi.fn().mockReturnThis(),
     json: vi.fn(),
   } as unknown as Response & {
@@ -125,12 +131,13 @@ describe("browser session DELETE on an already destroyed session", () => {
 
     await browserDeleteController(req as any, res as any);
 
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ success: true }),
     );
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(mocks.claimBrowserSessionDestroyed).not.toHaveBeenCalled();
+    expect(mocks.settleBrowserSessionOnce).not.toHaveBeenCalled();
     expect(mocks.billTeam).not.toHaveBeenCalled();
   });
 
@@ -146,16 +153,17 @@ describe("browser session DELETE on an already destroyed session", () => {
 
     await scrapeStopInteractiveBrowserController(req as any, res as any);
 
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ success: true }),
     );
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(mocks.claimBrowserSessionDestroyed).not.toHaveBeenCalled();
+    expect(mocks.settleBrowserSessionOnce).not.toHaveBeenCalled();
     expect(mocks.billTeam).not.toHaveBeenCalled();
   });
 
-  it("still returns 502 for an active session when the browser service fails", async () => {
+  it("returns an upstream failure without settling an active session", async () => {
     mocks.getBrowserSession.mockResolvedValue(makeSession("active"));
     fetchMock.mockResolvedValue({
       ok: false,
@@ -171,12 +179,12 @@ describe("browser session DELETE on an already destroyed session", () => {
     await browserDeleteController(req as any, res as any);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(res.status).toHaveBeenCalledWith(502);
+    expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
-      error: "Browser session release was not confirmed.",
+      error: "Hangar request failed.",
     });
-    expect(mocks.claimBrowserSessionDestroyed).not.toHaveBeenCalled();
+    expect(mocks.settleBrowserSessionOnce).not.toHaveBeenCalled();
   });
 
   it("DELETE /v2/scrape/:jobId/interact releases the active row when the scrape also has a destroyed row", async () => {
@@ -196,14 +204,18 @@ describe("browser session DELETE on an already destroyed session", () => {
       status: 200,
       json: () =>
         Promise.resolve({
-          ok: true,
-          sessionDurationMs: 1000,
-          cleanupQueued: true,
+          id: "active-browser-id",
+          status: "stopped",
+          created_at: 100,
+          ended_at: 101,
         }),
     });
     // Another path already billed the session, so the controller stops
     // after the release and does not bill.
-    mocks.claimBrowserSessionDestroyed.mockResolvedValue(false);
+    mocks.settleBrowserSessionOnce.mockResolvedValue({
+      creditsBilled: 0,
+      newlySettled: false,
+    });
     mocks.mirrorExternalSlotRelease.mockResolvedValue(undefined);
     const req = {
       params: { jobId: "22222222-2222-2222-2222-222222222222" },
@@ -215,13 +227,17 @@ describe("browser session DELETE on an already destroyed session", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toMatch(
-      /\/browsers\/active-browser-id$/,
+      /\/browsers\/active-browser-id\/stop$/,
     );
     expect(fetchMock.mock.calls[0][1]).toEqual(
-      expect.objectContaining({ method: "DELETE" }),
+      expect.objectContaining({ method: "POST" }),
     );
-    expect(mocks.claimBrowserSessionDestroyed).toHaveBeenCalledWith(activeId);
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mocks.settleBrowserSessionOnce).toHaveBeenCalledWith(
+      activeId,
+      expect.any(Function),
+    );
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ success: true, sessionDurationMs: 1000 }),
     );

@@ -15,8 +15,8 @@ Authorization: Bearer {{$dotenv TEST_API_KEY}}
 content-type: application/json
 
 {
-  "ttlTotal": 600,
-  "ttlWithoutActivity": 120,
+  "ttl": 600,
+  "activityTtl": 120,
   "streamWebView": false
 }
 
@@ -26,7 +26,7 @@ Authorization: Bearer {{$dotenv TEST_API_KEY}}
 content-type: application/json
 
 {
-  "ttlTotal": 300,
+  "ttl": 300,
   "streamWebView": true
 }
 
@@ -58,7 +58,7 @@ content-type: application/json
 
 {
   "code": "await page.goto('https://example.com');\nconst title = await page.title();\nconsole.log(title);",
-  "language": "js"
+  "language": "node"
 }
 
 ### Execute Code — screenshot to base64
@@ -85,8 +85,15 @@ content-type: application/json
 GET {{baseUrl}}/v2/interact/{{sessionId}}/replay HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
 
-### Get Session Replay HLS playlist for tab 0
+### Replay keeps pages/pageCount; Hangar's desktop recording is page "0".
+### pageUrl is empty because the stream spans tabs; timestamps describe the video.
+### Get the single HLS playlist (segments load directly from Hangar)
 GET {{baseUrl}}/v2/interact/{{sessionId}}/replay/0 HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+
+### The additive playlistUrl field can also be opened directly without an API key.
+### Get Hangar lifecycle status
+GET {{baseUrl}}/v2/browser/{{sessionId}} HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
 
 ### Create Browser Session without recording
@@ -99,10 +106,10 @@ content-type: application/json
 }
 
 ### Delete Browser Session — replace sessionId with actual id
+### Waits for final duration and billing; retry if cleanup exceeds the wait deadline.
 DELETE {{baseUrl}}/v2/browser/{{sessionId}} HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
 content-type: application/json
 
 
-### WebSocket — webview stream (use a WS client, e.g. wscat)
-# wscat -c "ws://localhost:3002/v2/browser/{{sessionId}}" -H "Authorization: Bearer YOUR_API_KEY"
+# Open liveViewUrl or interactiveLiveViewUrl returned by creation in a browser.

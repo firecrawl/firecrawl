@@ -18,6 +18,10 @@ from ..utils.error_handler import handle_response_error
 
 def _normalize_browser_create_response(payload: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(payload)
+    if "playlistUrl" in out:
+        out["playlist_url"] = out["playlistUrl"]
+    if "cleanupQueued" in out:
+        out["cleanup_queued"] = out["cleanupQueued"]
     if "cdpUrl" in out and "cdp_url" not in out:
         out["cdp_url"] = out["cdpUrl"]
     if "liveViewUrl" in out and "live_view_url" not in out:
@@ -31,10 +35,16 @@ def _normalize_browser_create_response(payload: Dict[str, Any]) -> Dict[str, Any
 
 def _normalize_browser_list_response(payload: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(payload)
+    if "playlistUrl" in out:
+        out["playlist_url"] = out["playlistUrl"]
+    if "cleanupQueued" in out:
+        out["cleanup_queued"] = out["cleanupQueued"]
     if "sessions" in out and isinstance(out["sessions"], list):
         normalized_sessions = []
         for s in out["sessions"]:
             ns = dict(s)
+            if "playlistUrl" in ns:
+                ns["playlist_url"] = ns["playlistUrl"]
             if "cdpUrl" in ns and "cdp_url" not in ns:
                 ns["cdp_url"] = ns["cdpUrl"]
             if "liveViewUrl" in ns and "live_view_url" not in ns:
@@ -95,6 +105,10 @@ def browser(
 
 def _normalize_browser_execute_response(payload: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(payload)
+    if "playlistUrl" in out:
+        out["playlist_url"] = out["playlistUrl"]
+    if "cleanupQueued" in out:
+        out["cleanup_queued"] = out["cleanupQueued"]
     if "exitCode" in out and "exit_code" not in out:
         out["exit_code"] = out["exitCode"]
     return out
@@ -136,6 +150,10 @@ def browser_execute(
 
 def _normalize_browser_delete_response(payload: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(payload)
+    if "playlistUrl" in out:
+        out["playlist_url"] = out["playlistUrl"]
+    if "cleanupQueued" in out:
+        out["cleanup_queued"] = out["cleanupQueued"]
     if "sessionDurationMs" in out and "session_duration_ms" not in out:
         out["session_duration_ms"] = out["sessionDurationMs"]
     if "creditsBilled" in out and "credits_billed" not in out:

@@ -655,7 +655,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     scrapeTimeout,
   );
 
-  itIf(!!config.BROWSER_SERVICE_URL)(
+  itIf(!!config.HANGAR_URL)(
     "rejects projected keyless interact session creation before browser work (429)",
     async () => {
       const scrapeResponse = await request(TEST_API_URL)

@@ -149,8 +149,7 @@ export const browser_sessions = pgTable("browser_sessions", {
 });
 
 // Index of saved persistent browser profiles (see browser_profiles migration).
-// Contents live in browser-service object storage; a row is upserted when the
-// browser service reports a successful save.
+// Contents live in Hangar; reconciliation upserts a row after a confirmed save.
 export const browser_profiles = pgTable(
   "browser_profiles",
   {

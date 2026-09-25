@@ -600,9 +600,7 @@ const configSchema = z.object({
   WIKIPEDIA_ENTERPRISE_PASSWORD: z.string().optional(),
 
   // Browser Service
-  BROWSER_SERVICE_URL: z.string().optional(),
-  BROWSER_SERVICE_API_KEY: z.string().optional(),
-  BROWSER_SERVICE_WEBHOOK_SECRET: z.string().optional(),
+  HANGAR_URL: z.url().optional(),
 
   // Audio (avgrab)
   AVGRAB_SERVICE_URL: z.string().optional(),

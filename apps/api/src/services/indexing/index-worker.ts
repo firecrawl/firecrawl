@@ -27,6 +27,7 @@ import { getSearchIndexClient } from "../../lib/search-index-client";
 // Search indexing is now handled by the separate search service
 // import { processSearchIndexJobs } from "../../lib/search-index/queue";
 import { processWebhookInsertJobs } from "../webhook";
+import { reconcileBrowserSessions } from "../../lib/browser-lifecycle";
 import { processBrowserSessionActivityJobs } from "../../lib/browser-session-activity";
 import {
   scrapeOptions as scrapeOptionsSchema,
@@ -740,6 +741,10 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
     await processWebhookInsertJobs();
   }, WEBHOOK_INSERT_INTERVAL);
 
+  const browserReconcileInterval = setInterval(() => {
+    if (!isShuttingDown) void reconcileBrowserSessions();
+  }, 15_000);
+
   const browserActivityInterval = setInterval(async () => {
     if (isShuttingDown) return;
     await processBrowserSessionActivityJobs();
@@ -805,6 +810,7 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
   clearInterval(indexInserterInterval);
   clearInterval(webhookInserterInterval);
   clearInterval(browserActivityInterval);
+  clearInterval(browserReconcileInterval);
   clearInterval(omceInserterInterval);
   logger.info("All workers shut down, exiting process");
 })();

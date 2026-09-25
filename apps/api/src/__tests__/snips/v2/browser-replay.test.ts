@@ -1,11 +1,11 @@
 import crypto from "crypto";
+import request from "supertest";
 import { config } from "../../../config";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
-  HAS_FIRE_ENGINE,
-  TEST_PRODUCTION,
   TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
+  TEST_API_URL,
   itIf,
 } from "../lib";
 import {
@@ -39,9 +39,7 @@ describe("Interact session replay", () => {
   }, 10000 + scrapeTimeout);
 
   const canRunReplayHappyPath =
-    ALLOW_TEST_SUITE_WEBSITE &&
-    !!config.BROWSER_SERVICE_URL &&
-    (TEST_PRODUCTION || HAS_FIRE_ENGINE);
+    !TEST_SELF_HOST && ALLOW_TEST_SUITE_WEBSITE && !!config.HANGAR_URL;
 
   itIf(canRunReplayHappyPath)(
     "records a session and serves replay metadata + HLS playlist after destroy",
@@ -56,6 +54,20 @@ describe("Interact session replay", () => {
         expect(createResponse.statusCode).toBe(200);
         expect(createResponse.body.success).toBe(true);
         sessionId = createResponse.body.id as string;
+        expect(createResponse.body.playlistUrl).toMatch(/^https:\/\//);
+
+        expect(createResponse.body.cdpUrl).toMatch(/^wss?:\/\//);
+        const readonlyView = new URL(createResponse.body.liveViewUrl);
+        const interactiveView = new URL(
+          createResponse.body.interactiveLiveViewUrl,
+        );
+        expect(readonlyView.pathname).toBe("/live");
+        expect(interactiveView.origin + interactiveView.pathname).toBe(
+          readonlyView.origin + readonlyView.pathname,
+        );
+        expect(readonlyView.hash).not.toBe("");
+        expect(interactiveView.hash).not.toBe("");
+        expect(interactiveView.hash).not.toBe(readonlyView.hash);
 
         // Generate on-screen activity so the screencast has frames to record.
         const executeResponse = await browserExecuteRaw(
@@ -77,7 +89,10 @@ describe("Interact session replay", () => {
         await sleep(15_000);
       } finally {
         if (sessionId) {
-          await browserDeleteRaw(sessionId, identity);
+          const deleted = await browserDeleteRaw(sessionId, identity);
+          expect(deleted.statusCode).toBe(200);
+          expect(deleted.body.sessionDurationMs).toEqual(expect.any(Number));
+          expect(deleted.body.creditsBilled).toEqual(expect.any(Number));
         }
       }
 
@@ -90,37 +105,68 @@ describe("Interact session replay", () => {
 
       expect(replayResponse.statusCode).toBe(200);
       expect(replayResponse.body.success).toBe(true);
-      expect(replayResponse.body.pageCount).toBeGreaterThan(0);
-      expect(Array.isArray(replayResponse.body.pages)).toBe(true);
-
-      const page = replayResponse.body.pages[0];
-      expect(typeof page.pageId).toBe("string");
-      expect(page.url).toBe(
-        `/v2/interact/${sessionId}/replay/${page.pageId}`,
-      );
-      // pageUrl is the recorded page URL — should reflect where we navigated.
-      expect(typeof page.pageUrl).toBe("string");
-      expect(page.pageUrl).toContain(TEST_SUITE_WEBSITE);
-      expect(page.endTimeMs).toBeGreaterThan(page.startTimeMs);
-
-      const playlistResponse = await browserReplayPageRaw(
+      expect(replayResponse.body.pageCount).toBe(1);
+      expect(replayResponse.body.pages).toEqual([
+        {
+          pageId: "0",
+          url: `/v2/interact/${sessionId}/replay/0`,
+          pageUrl: "",
+          startTimeMs: 0,
+          endTimeMs: expect.any(Number),
+        },
+      ]);
+      expect(replayResponse.body.pages[0].endTimeMs).toBeGreaterThan(0);
+      const legacyPlaylist = await browserReplayPageRaw(
         sessionId!,
-        page.pageId,
+        "0",
         identity,
       );
-      expect(playlistResponse.statusCode).toBe(200);
-      expect(playlistResponse.headers["content-type"]).toContain(
+      expect(legacyPlaylist.statusCode).toBe(200);
+      expect(legacyPlaylist.headers["content-type"]).toContain(
         "application/vnd.apple.mpegurl",
       );
-      const playlist = playlistResponse.text as string;
+      expect(legacyPlaylist.text).toContain("#EXTM3U");
+      const segmentUrl = legacyPlaylist.text
+        .split(/\r?\n/)
+        .find((line: string) => line && !line.startsWith("#"));
+      if (!segmentUrl) throw new Error("Recording has no video segments");
+      expect(new URL(segmentUrl).origin).toBe(
+        new URL(replayResponse.body.playlistUrl).origin,
+      );
+      expect((await fetch(segmentUrl)).status).toBe(200);
+      expect(
+        (await browserReplayPageRaw(sessionId!, "1", identity)).statusCode,
+      ).toBe(404);
+      expect(
+        (await browserReplayPageRaw(sessionId!, "invalid", identity))
+          .statusCode,
+      ).toBe(400);
+      const browserAlias = await request(TEST_API_URL)
+        .get(`/v2/browser/${sessionId}/replay/0`)
+        .set("Authorization", `Bearer ${identity.apiKey}`);
+      expect(browserAlias.statusCode).toBe(200);
+      const playlistUrl = replayResponse.body.playlistUrl;
+      expect(playlistUrl).toMatch(/^https:\/\//);
+      expect(new URL(playlistUrl).pathname).toMatch(
+        /^\/recordings\/[^/]+\/index\.m3u8$/,
+      );
+      // The public Hangar capability works without a Firecrawl API key.
+      let playlistResponse = await fetch(playlistUrl);
+      for (let i = 0; i < 20 && playlistResponse.status === 409; i++) {
+        await sleep(2000);
+        playlistResponse = await fetch(playlistUrl);
+      }
+      expect(playlistResponse.status).toBe(200);
+      expect(playlistResponse.headers.get("content-type")).toContain(
+        "application/vnd.apple.mpegurl",
+      );
+      const playlist = await playlistResponse.text();
       expect(playlist).toContain("#EXTM3U");
-      expect(playlist).toContain("#EXT-X-ENDLIST");
-      expect(playlist).toContain("https://");
     },
     scrapeTimeout + 60_000,
   );
 
-  itIf(!TEST_SELF_HOST)(
+  itIf(!TEST_SELF_HOST && !!config.HANGAR_URL)(
     "returns 404 when the session does not exist",
     async () => {
       const response = await browserReplayRaw(crypto.randomUUID(), identity);
@@ -128,21 +174,6 @@ describe("Interact session replay", () => {
       expect(response.statusCode).toBe(404);
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBe("Browser session not found.");
-    },
-  );
-
-  itIf(!TEST_SELF_HOST)(
-    "returns 400 for an invalid pageId",
-    async () => {
-      const response = await browserReplayPageRaw(
-        crypto.randomUUID(),
-        "not-a-page",
-        identity,
-      );
-
-      expect(response.statusCode).toBe(400);
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toBe("Invalid pageId.");
     },
   );
 
@@ -166,6 +197,10 @@ describe("Interact session replay", () => {
         expect(response.statusCode).toBe(403);
         expect(response.body.success).toBe(false);
         expect(response.body.error).toBe("Forbidden.");
+        expect(
+          (await browserReplayPageRaw(sessionId, "0", otherIdentity))
+            .statusCode,
+        ).toBe(403);
       } finally {
         if (sessionId) {
           await browserDeleteRaw(sessionId, identity);
@@ -173,5 +208,122 @@ describe("Interact session replay", () => {
       }
     },
     scrapeTimeout,
+  );
+  itIf(canRunReplayHappyPath)(
+    "keeps viewer fields as strings when disabled and reports no replay",
+    async () => {
+      let sessionId: string | undefined;
+      try {
+        const created = await browserCreateRaw(
+          {
+            ttl: 120,
+            activityTtl: 120,
+            streamWebView: false,
+            recordSession: false,
+          },
+          identity,
+        );
+        expect(created.statusCode).toBe(200);
+        sessionId = created.body.id;
+        expect(created.body.cdpUrl).toMatch(/^wss?:\/\//);
+        expect(created.body.liveViewUrl).toBe("");
+        expect(created.body.interactiveLiveViewUrl).toBe("");
+        expect(created.body.playlistUrl).toBeUndefined();
+        expect((await browserReplayRaw(sessionId!, identity)).statusCode).toBe(
+          404,
+        );
+        expect(
+          (await browserReplayPageRaw(sessionId!, "0", identity)).statusCode,
+        ).toBe(404);
+      } finally {
+        if (sessionId) await browserDeleteRaw(sessionId, identity);
+      }
+    },
+    scrapeTimeout,
+  );
+
+  itIf(!TEST_SELF_HOST && !!config.HANGAR_URL)(
+    "persists profiles, excludes concurrent writers, and discards reader changes",
+    async () => {
+      const profile = {
+        name: `snips-${crypto.randomUUID()}`,
+        saveChanges: true,
+      };
+      const active = new Set<string>();
+      const create = async (saveChanges: boolean) => {
+        const response = await browserCreateRaw(
+          {
+            ttl: 300,
+            activityTtl: 300,
+            recordSession: false,
+            streamWebView: false,
+            profile: { ...profile, saveChanges },
+          },
+          identity,
+        );
+        expect(response.statusCode).toBe(200);
+        active.add(response.body.id);
+        return response.body.id as string;
+      };
+      const stop = async (id: string) => {
+        expect((await browserDeleteRaw(id, identity)).statusCode).toBe(200);
+        for (let attempt = 0; attempt < 90; attempt++) {
+          const response = await request(TEST_API_URL)
+            .get(`/v2/browser/${id}`)
+            .set("Authorization", `Bearer ${identity.apiKey}`);
+          expect(response.statusCode).toBe(200);
+          if (response.body.status === "stopped") {
+            expect(response.body.error).toBeUndefined();
+            active.delete(id);
+            return;
+          }
+          await sleep(1000);
+        }
+        throw new Error("Hangar did not stop the profile session");
+      };
+      try {
+        const writer = await create(true);
+        const conflict = await browserCreateRaw(
+          { profile, recordSession: false },
+          identity,
+        );
+        expect(conflict.statusCode).toBe(409);
+        const readerDuringWrite = await create(false);
+        await stop(readerDuringWrite);
+        const written = await browserExecuteRaw(
+          writer,
+          {
+            language: "node",
+            code: `await context.addCookies([{name:'hangar-profile', value:'saved', domain:'example.com', path:'/', expires:Math.floor(Date.now()/1000)+3600}]);`,
+          },
+          identity,
+        );
+        expect(written.body.exitCode).toBe(0);
+        await stop(writer);
+        const reader = await create(false);
+        const read = await browserExecuteRaw(
+          reader,
+          {
+            code: `console.log((await context.cookies()).find(c => c.name === 'hangar-profile')?.value); await context.clearCookies();`,
+          },
+          identity,
+        );
+        expect(read.body.stdout).toContain("saved");
+        await stop(reader);
+        const next = await create(false);
+        const unchanged = await browserExecuteRaw(
+          next,
+          {
+            code: `console.log((await context.cookies()).find(c => c.name === 'hangar-profile')?.value);`,
+          },
+          identity,
+        );
+        expect(unchanged.body.stdout).toContain("saved");
+        await stop(next);
+      } finally {
+        for (const id of active) await browserDeleteRaw(id, identity);
+      }
+    },
+    scrapeTimeout + 300_000,
   );
 });
