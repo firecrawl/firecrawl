@@ -4,6 +4,7 @@ import { config } from "../../../config";
 import { supabaseGetScrapeByIdDirect } from "../../../lib/supabase-jobs";
 import {
   insertBrowserSession,
+  activateBrowserSession,
   getBrowserSession,
 } from "../../../lib/browser-sessions";
 import {
@@ -67,7 +68,7 @@ vi.mock("../../../lib/request-credits-store", () => ({
 }));
 vi.mock("../../../lib/keyless", () => ({
   keylessTeamUuid: vi.fn(() => null),
-  reserveKeylessCredits: vi.fn(async () => ({ ok: true })),
+  updateKeylessBrowserCredits: vi.fn(async () => true),
   adjustKeylessCredits: vi.fn(async () => {}),
 }));
 vi.mock("../../../lib/scrape-interact/langsmith", () => ({
@@ -80,6 +81,8 @@ vi.mock("../../../lib/supabase-jobs", () => ({
 
 vi.mock("../../../lib/browser-sessions", () => ({
   insertBrowserSession: vi.fn(),
+  activateBrowserSession: vi.fn(),
+  completeBrowserSessionSettlement: vi.fn(async () => {}),
   getBrowserSession: vi.fn(),
   listUnsettledHangarSessions: vi.fn(async () => []),
   updateBrowserSessionActivity: vi.fn(() => Promise.resolve()),
@@ -211,6 +214,13 @@ describe("scrapeInteractController", () => {
     vi.mocked(createHangarBrowser).mockResolvedValue(created as any);
     vi.mocked(executeHangarBrowser).mockResolvedValue(executed);
     vi.mocked(insertBrowserSession).mockImplementation(async row => row as any);
+    vi.mocked(activateBrowserSession).mockImplementation(
+      async () =>
+        ({
+          ...vi.mocked(insertBrowserSession).mock.calls.at(-1)![0],
+          should_bill: true,
+        }) as any,
+    );
     vi.mocked(executeCodeViaBrowserSession).mockResolvedValue(executed);
     const res = buildRes();
     await scrapeInteractController(
@@ -342,3 +352,5 @@ describe("scrapeInteractController", () => {
     expect(getHangarRecording).not.toHaveBeenCalled();
   });
 });
+
+vi.mock("../../../services/redlock", () => ({ redlock: { using: vi.fn() } }));

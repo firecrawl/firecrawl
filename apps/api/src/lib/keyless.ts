@@ -319,6 +319,56 @@ return next
   return Number(total);
 }
 
+/** Absolute browser reservations, including prompt upgrades, with atomic receipts. */
+export async function updateKeylessBrowserCredits(
+  teamId: string,
+  sessionId: string,
+  credits: number,
+  finalize = false,
+): Promise<boolean> {
+  const ip = keylessIpFromTeamId(teamId);
+  if (!ip) return true;
+  const result = await redisRateLimitClient.eval(
+    `
+    local now = tonumber(ARGV[1])
+    local target = tonumber(ARGV[2])
+    local final = ARGV[3] == '1'
+    local reserved = tonumber(redis.call('HGET', KEYS[2], 'credits') or '0')
+    local deadline = tonumber(redis.call('HGET', KEYS[2], 'deadline') or '0')
+    if redis.call('HGET', KEYS[2], 'final') == '1' then
+      if final then return 1 else return 0 end
+    end
+    -- An expired budget cannot be refunded into a different day's allowance.
+    if deadline > 0 and deadline <= now then
+      if final then return 1 end
+      reserved = 0
+      deadline = 0
+    end
+    if final and deadline == 0 then return 1 end
+    local delta = target - reserved
+    if not final and delta <= 0 then return 1 end
+    local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+    if not final and current + delta > tonumber(ARGV[4]) then return 0 end
+    local ttl = redis.call('PTTL', KEYS[1])
+    if ttl <= 0 then ttl = 86400000 end
+    if deadline == 0 then deadline = now + ttl end
+    redis.call('SET', KEYS[1], math.max(0, current + delta), 'PX', ttl)
+    redis.call('HSET', KEYS[2], 'credits', target, 'deadline', deadline, 'final', ARGV[3])
+    redis.call('EXPIRE', KEYS[2], 172800)
+    return 1
+  `,
+    2,
+    creditsKey(ip),
+    `keyless_browser:${sessionId}`,
+    Date.now(),
+    Math.ceil(credits),
+    finalize ? "1" : "0",
+    KEYLESS_CREDITS_PER_DAY ?? 0,
+  );
+  if (result !== 1 && !finalize) keylessCreditBlocksTotal.inc();
+  return result === 1;
+}
+
 /**
  * Read-only check of whether an IP could currently use the keyless tier (no
  * consumption). Used by the hosted MCP before a keyless tool call so an

@@ -18,6 +18,8 @@ vi.mock("../hangar", async importOriginal => ({
 }));
 vi.mock("../browser-sessions", () => ({
   insertBrowserSession: vi.fn(),
+  activateBrowserSession: vi.fn(),
+  completeBrowserSessionSettlement: vi.fn(async () => {}),
   upsertBrowserProfile: vi.fn(async () => {}),
   getBrowserProfileDeletedAt: vi.fn(async () => null),
   settleBrowserSessionOnce: vi.fn(
@@ -52,7 +54,7 @@ vi.mock("../../services/billing/credit_billing", () => ({
 }));
 vi.mock("../../services/logging/log_job", () => ({ logRequest: vi.fn() }));
 vi.mock("../keyless", () => ({
-  reserveKeylessCredits: vi.fn(),
+  updateKeylessBrowserCredits: vi.fn(async () => true),
   adjustKeylessCredits: vi.fn(async () => {}),
   logKeylessCreditUsage: vi.fn(async () => {}),
   KEYLESS_FREE_TIER_LIMIT_MESSAGE: "limit",
@@ -193,3 +195,5 @@ it("does not call Hangar again for an already destroyed session", async () => {
   ).toMatchObject({ success: true, creditsBilled: 2 });
   expect(stopHangarBrowser).not.toHaveBeenCalled();
 });
+
+vi.mock("../../services/redlock", () => ({ redlock: { using: vi.fn() } }));

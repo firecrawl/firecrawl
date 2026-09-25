@@ -55,7 +55,7 @@ export async function listUnsettledHangarSessions(
     .limit(20)) as BrowserSessionRow[];
 }
 
-/** Serialize billing across API and worker replicas, and commit its receipt with status. */
+/** Serialize billing across replicas and persist its receipt before cleanup. */
 export async function settleBrowserSessionOnce(
   id: string,
   bill: (session: BrowserSessionRow) => Promise<number>,
@@ -67,21 +67,51 @@ export async function settleBrowserSessionOnce(
       .where(eq(schema.browser_sessions.id, id))
       .for("update");
     if (!row) throw new Error("Browser session not found.");
-    if (row.status === "destroyed")
+    if (row.status === "destroyed" || row.credits_used !== null)
       return { creditsBilled: row.credits_used ?? 0, newlySettled: false };
     const creditsBilled = await bill(row as BrowserSessionRow);
     const now = new Date().toISOString();
     await tx
       .update(schema.browser_sessions)
       .set({
-        status: "destroyed",
         credits_used: creditsBilled,
         updated_at: now,
-        deleted_at: now,
       })
       .where(eq(schema.browser_sessions.id, id));
     return { creditsBilled, newlySettled: true };
   });
+}
+
+/** Keep the row discoverable until its keyless refund and slot release succeed. */
+export async function completeBrowserSessionSettlement(id: string) {
+  await db
+    .update(schema.browser_sessions)
+    .set({
+      status: "destroyed",
+      deleted_at: new Date().toISOString(),
+    })
+    .where(
+      and(
+        eq(schema.browser_sessions.id, id),
+        sql`${schema.browser_sessions.credits_used} IS NOT NULL`,
+      ),
+    );
+}
+
+export async function activateBrowserSession(id: string, shouldBill: boolean) {
+  const [row] = await db
+    .update(schema.browser_sessions)
+    .set({ should_bill: shouldBill })
+    .where(
+      and(
+        eq(schema.browser_sessions.id, id),
+        eq(schema.browser_sessions.status, "active"),
+        sql`${schema.browser_sessions.credits_used} IS NULL`,
+      ),
+    )
+    .returning();
+  if (!row) throw new Error("Browser session stopped during initialization.");
+  return row as BrowserSessionRow;
 }
 
 // ---------------------------------------------------------------------------
@@ -376,8 +406,6 @@ export async function deleteBrowserProfile(
 // Prompt usage tracking (Redis)
 // ---------------------------------------------------------------------------
 
-const PROMPT_FLAG_TTL_SECONDS = 7200; // 2 hours, well beyond max session TTL
-
 function promptFlagKey(sessionId: string): string {
   return `browser_session:used_prompt:${sessionId}`;
 }
@@ -385,22 +413,13 @@ function promptFlagKey(sessionId: string): string {
 export async function markBrowserSessionUsedPrompt(
   sessionId: string,
 ): Promise<void> {
-  try {
-    await setValue(promptFlagKey(sessionId), "1", PROMPT_FLAG_TTL_SECONDS);
-  } catch {
-    // Redis down — non-fatal, will fall back to standard rate at billing time
-  }
+  await setValue(promptFlagKey(sessionId), "1", PROFILE_DELETED_TTL_SECONDS);
 }
 
 export async function didBrowserSessionUsePrompt(
   sessionId: string,
 ): Promise<boolean> {
-  try {
-    const val = await getValue(promptFlagKey(sessionId));
-    return val === "1";
-  } catch {
-    return false;
-  }
+  return (await getValue(promptFlagKey(sessionId))) === "1";
 }
 
 export async function clearBrowserSessionPromptFlag(

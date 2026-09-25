@@ -14,6 +14,9 @@ import {
 } from "./hangar";
 import {
   insertBrowserSession,
+  activateBrowserSession,
+  completeBrowserSessionSettlement,
+  markBrowserSessionUsedPrompt,
   settleBrowserSessionOnce,
   invalidateActiveBrowserSessionCount,
   didBrowserSessionUsePrompt,
@@ -35,8 +38,7 @@ import { billTeam } from "../services/billing/credit_billing";
 import { logRequest } from "../services/logging/log_job";
 import { externalRequestId } from "./external-request-id";
 import {
-  reserveKeylessCredits,
-  adjustKeylessCredits,
+  updateKeylessBrowserCredits,
   logKeylessCreditUsage,
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
 } from "./keyless";
@@ -62,6 +64,7 @@ export async function createBrowserSession(
     scrapeId?: string;
     shouldBill?: boolean;
     requestId?: string;
+    initialize?: (browserId: string) => Promise<void>;
   },
 ) {
   if (!config.HANGAR_URL)
@@ -96,7 +99,7 @@ export async function createBrowserSession(
   }
   const id = uuidv7();
   let browserId: string | undefined;
-  let reservedCredits = false;
+  let session: BrowserSessionRow | undefined;
   try {
     if (
       !(await reserveExternalSlot(
@@ -110,13 +113,14 @@ export async function createBrowserSession(
         429,
         `You have reached the maximum number of concurrent jobs (${limit}).`,
       );
-    const reservation = await reserveKeylessCredits(
-      req.auth.team_id,
-      estimatedCredits,
-    );
-    if (!reservation.ok)
+    if (
+      !(await updateKeylessBrowserCredits(
+        req.auth.team_id,
+        id,
+        estimatedCredits,
+      ))
+    )
       throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
-    reservedCredits = true;
     const browser = await createHangarBrowser(id, req.auth.team_id, options);
     browserId = browser.id;
     if (!options.requestId)
@@ -132,11 +136,11 @@ export async function createBrowserSession(
         zeroDataRetention: false,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
-    const session = await insertBrowserSession({
+    session = await insertBrowserSession({
       id,
       team_id: req.auth.team_id,
       request_id: options.requestId ?? id,
-      should_bill: shouldBill,
+      should_bill: false,
       scrape_id: options.scrapeId,
       browser_id: browser.id,
       workspace_id: "",
@@ -151,6 +155,10 @@ export async function createBrowserSession(
       credits_used: null,
       profile_name: options.profile?.name ?? null,
     });
+    if (options.initialize) {
+      await options.initialize(browser.id);
+    }
+    session = await activateBrowserSession(id, shouldBill);
     await invalidateActiveBrowserSessionCount(req.auth.team_id);
     return {
       session,
@@ -167,10 +175,13 @@ export async function createBrowserSession(
         error,
       }),
     );
-    if (reservedCredits)
-      await adjustKeylessCredits(req.auth.team_id, -estimatedCredits).catch(
-        () => {},
-      );
+    await updateKeylessBrowserCredits(req.auth.team_id, id, 0, true).catch(
+      error =>
+        logger.error("Failed to refund browser reservation", {
+          sessionId: id,
+          error,
+        }),
+    );
     throw error;
   }
 }
@@ -245,20 +256,54 @@ export async function settleBrowserSession(
       return credits;
     },
   );
-  if (newlySettled) {
-    await adjustKeylessCredits(
-      session.team_id,
-      creditsBilled -
-        (session.should_bill
-          ? calculateBrowserSessionCredits(session.ttl_total * 1000)
-          : 0),
-    );
-    await logKeylessCreditUsage(session.team_id, creditsBilled);
-    // Keep the expiring prompt marker for concurrent or retried billing attempts.
-  }
-  await mirrorExternalSlotRelease(session.team_id, session.id);
-  await invalidateActiveBrowserSessionCount(session.team_id);
+  await finalizeBrowserSession(session, creditsBilled);
+  if (newlySettled) await logKeylessCreditUsage(session.team_id, creditsBilled);
   return { sessionDurationMs, creditsBilled };
+}
+
+async function finalizeBrowserSession(
+  session: BrowserSessionRow,
+  credits: number,
+) {
+  await updateKeylessBrowserCredits(session.team_id, session.id, credits, true);
+  await mirrorExternalSlotRelease(session.team_id, session.id);
+  await completeBrowserSessionSettlement(session.id);
+  await invalidateActiveBrowserSessionCount(session.team_id);
+}
+
+export async function reserveBrowserPromptCredits(
+  req: RequestWithAuth<any, any, any>,
+  session: BrowserSessionRow,
+) {
+  if (await didBrowserSessionUsePrompt(session.id)) return;
+  if (session.should_bill) {
+    const credits = calculateBrowserSessionCredits(
+      session.ttl_total * 1000,
+      INTERACT_CREDITS_PER_HOUR,
+    );
+    if (req.acuc?.org_id) {
+      const credit = await autumnService.checkCredits({
+        teamId: session.team_id,
+        orgId: req.acuc.org_id,
+        value: credits,
+        properties: {
+          source: "browserPrompt",
+          path: req.path,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+        },
+      });
+      if (credit !== null && !credit.allowed)
+        throw new HangarError(
+          402,
+          "Insufficient credits for a browser prompt session.",
+        );
+    }
+    if (
+      !(await updateKeylessBrowserCredits(session.team_id, session.id, credits))
+    )
+      throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
+  }
+  await markBrowserSessionUsedPrompt(session.id);
 }
 
 export async function stopBrowserSession(session: BrowserSessionRow) {
@@ -314,6 +359,10 @@ export async function reconcileBrowserSessions() {
       await Promise.allSettled(
         sessions.map(async session => {
           try {
+            if (session.credits_used !== null) {
+              await finalizeBrowserSession(session, session.credits_used);
+              return;
+            }
             await settleBrowserSession(
               session,
               await getHangarBrowser(session.browser_id),

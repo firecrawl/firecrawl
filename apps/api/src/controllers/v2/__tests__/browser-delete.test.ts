@@ -47,12 +47,15 @@ vi.mock("../../../lib/logger", () => {
 
 vi.mock("../../../lib/browser-sessions", () => ({
   insertBrowserSession: vi.fn(),
+  activateBrowserSession: vi.fn(),
+  completeBrowserSessionSettlement: vi.fn(async () => {}),
   getBrowserSession: mocks.getBrowserSession,
   getBrowserSessionFromScrape: mocks.getBrowserSessionFromScrape,
   listBrowserSessions: vi.fn(),
   updateBrowserSessionActivity: vi.fn(),
   updateBrowserSessionScrapeId: vi.fn(),
   settleBrowserSessionOnce: mocks.settleBrowserSessionOnce,
+
   invalidateActiveBrowserSessionCount: vi.fn(() => Promise.resolve()),
   didBrowserSessionUsePrompt: vi.fn(),
   clearBrowserSessionPromptFlag: vi.fn(() => Promise.resolve()),
@@ -246,3 +249,5 @@ describe("browser session DELETE on an already destroyed session", () => {
     );
   });
 });
+
+vi.mock("../../../services/redlock", () => ({ redlock: { using: vi.fn() } }));

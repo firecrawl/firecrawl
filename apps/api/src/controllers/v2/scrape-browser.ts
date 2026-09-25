@@ -7,7 +7,6 @@ import {
   getBrowserSessionFromScrape,
   updateBrowserSessionActivity,
   updateBrowserSessionScrapeId,
-  markBrowserSessionUsedPrompt,
 } from "../../lib/browser-sessions";
 import {
   BrowserExecutionResult,
@@ -16,6 +15,7 @@ import {
 } from "../../lib/hangar";
 import {
   createBrowserSession,
+  reserveBrowserPromptCredits,
   stopBrowserSession,
   browserSessionLinks,
 } from "../../lib/browser-lifecycle";
@@ -320,7 +320,11 @@ export async function scrapeInteractController(
   if (prompt && !rawCode) {
     logger.info("Starting agent loop from prompt", { prompt, timeout });
 
-    markBrowserSessionUsedPrompt(session.id).catch(() => {});
+    try {
+      await reserveBrowserPromptCredits(req, session);
+    } catch (error) {
+      return browserError(res, error);
+    }
 
     try {
       execResult = await executePromptViaBrowserAgent(
@@ -446,29 +450,27 @@ async function createSessionForScrape(
   logger: typeof _logger,
   profile: { name: string; saveChanges: boolean } | undefined,
 ) {
-  let session:
-    | Awaited<ReturnType<typeof createBrowserSession>>["session"]
-    | undefined;
   try {
-    ({ session } = await createBrowserSession(req, {
+    const { session } = await createBrowserSession(req, {
       ...browserCreateRequestSchema.parse({}),
       scrapeId,
       profile,
-    }));
-    const replay = await executeHangarBrowser(session.browser_id, {
-      code: buildReplayScript(replayContext),
-      language: "node",
-      timeout: estimateReplayTimeoutSeconds(replayContext),
+      initialize: async browserId => {
+        const replay = await executeHangarBrowser(browserId, {
+          code: buildReplayScript(replayContext),
+          language: "node",
+          timeout: estimateReplayTimeoutSeconds(replayContext),
+        });
+        if (replay.exitCode !== 0 || replay.killed)
+          throw new HangarError(
+            409,
+            "Failed to initialize browser session from the original scrape context. Please rerun the scrape and try again.",
+          );
+      },
     });
-    if (replay.exitCode !== 0 || replay.killed)
-      throw new HangarError(
-        409,
-        "Failed to initialize browser session from the original scrape context. Please rerun the scrape and try again.",
-      );
     return { session };
   } catch (error) {
     logger.error("Failed to initialize scrape browser session", { error });
-    if (session) await stopBrowserSession(session).catch(() => {});
     const status = error instanceof HangarError ? error.status : 502;
     const message =
       error instanceof HangarError
