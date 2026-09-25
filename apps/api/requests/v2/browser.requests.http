@@ -95,13 +95,13 @@ Authorization: Bearer {{$dotenv TEST_API_KEY}}
 GET {{baseUrl}}/v2/browser/{{sessionId}} HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
 
-### Create Browser Session without recording
+### Create Browser Session with recording (opt-in; disabled by default)
 POST {{baseUrl}}/v2/browser HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
 content-type: application/json
 
 {
-  "recordSession": false
+  "recordSession": true
 }
 
 ### Delete Browser Session — replace sessionId with actual id

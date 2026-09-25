@@ -34,7 +34,7 @@ export const browserCreateRequestSchema = z.object({
   ttl: z.number().int().min(30).max(3600).default(600),
   activityTtl: z.number().int().min(10).max(3600).default(300),
   streamWebView: z.boolean().default(true),
-  recordSession: z.boolean().default(true),
+  recordSession: z.boolean().default(false),
   integration: integrationSchema.optional().transform(value => value || null),
   profile: z
     .object({

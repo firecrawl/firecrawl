@@ -48,7 +48,7 @@ describe("Interact session replay", () => {
 
       try {
         const createResponse = await browserCreateRaw(
-          { ttl: 120, activityTtl: 120 },
+          { ttl: 120, activityTtl: 120, recordSession: true },
           identity,
         );
         expect(createResponse.statusCode).toBe(200);
