@@ -12,6 +12,7 @@ import type { LockCreditsResult } from "../autumn/types";
 import { getBillingQueue } from "../queue-service";
 import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
+import { mirrorLedgerAcceptance } from "./access-record";
 import { exchangeRequest } from "./client";
 import {
   answerSchema,
@@ -407,9 +408,54 @@ export async function retrieveProviders(input: {
 
     const done: ExchangeResponse = { status: 200, body: answer };
     await write({ ...record, phase: "done", response: done });
+    if (termsIdentity)
+      await mirrorTermsAcceptances(
+        input.teamId,
+        termsIdentity,
+        input.calls,
+        answer.results,
+      );
     return { ...done, executed: true, scrapeId: input.scrapeId };
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
+const acceptedTermsSchema = z.object({
+  provider: z.string().min(1),
+  version: z.string().min(1),
+  digest: z.string().min(1),
+  acceptedAt: z.string().min(1),
+});
+
+/**
+ * `firecrawl/terms/accept` runs in the Exchange, which writes only its ledger.
+ * Mirror each acceptance it confirmed into the org's access record, as the
+ * dashboard's accept does. Never fails the request (see access-record).
+ */
+async function mirrorTermsAcceptances(
+  teamId: string,
+  identity: { organizationId: string; apiKeyId: string },
+  calls: ProviderCall[],
+  results: { error?: unknown; data?: unknown }[],
+) {
+  for (const [i, call] of calls.entries()) {
+    if (call.capability !== "terms/accept" || results[i]?.error) continue;
+    const accepted = acceptedTermsSchema.safeParse(results[i]?.data);
+    if (!accepted.success) continue;
+    const agent = call.options?.agent;
+    await mirrorLedgerAcceptance({
+      teamId,
+      orgId: identity.organizationId,
+      acceptance: {
+        ...accepted.data,
+        eventId: null,
+        apiKeyId: identity.apiKeyId,
+        actorType: "agent",
+        surface: "api",
+        agent: agent && typeof agent === "object" ? agent : undefined,
+      },
+    });
   }
 }
 

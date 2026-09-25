@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mirrorLedgerAcceptance } from "./access-record";
 import { exchangeRequest } from "./client";
 import { refusal, type ExchangeResponse } from "./contracts";
 
@@ -150,6 +151,24 @@ export async function acceptProviderTerms(input: {
       503,
       "Provider terms acceptance is unavailable. Nothing was accepted.",
     );
+  // The ledger holds the acceptance now; mirror it into the org's access
+  // record so flag readers see it. Never fails the accept (see access-record).
+  await mirrorLedgerAcceptance({
+    teamId: input.teamId,
+    orgId: input.orgId,
+    termsKey: item.terms.key,
+    acceptance: {
+      provider,
+      version,
+      digest,
+      acceptedAt: recorded.data.occurred_at,
+      eventId: recorded.data.id,
+      apiKeyId: input.apiKeyId,
+      actorType: "agent",
+      surface: "api",
+      agent: agent ?? undefined,
+    },
+  });
   return {
     status: 200,
     body: {

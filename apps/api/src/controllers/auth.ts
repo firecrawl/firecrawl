@@ -28,6 +28,8 @@ import { checkKeyEndpointRestriction } from "../lib/key-restriction";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
 import { db, dbRr } from "../db/connection";
+import { eq } from "drizzle-orm";
+import * as schema from "../db/schema";
 import {
   authCreditUsageChunk,
   authCreditUsageChunkFromTeam,
@@ -449,7 +451,7 @@ export async function clearACUC(api_key: string): Promise<void> {
   await deleteKey(`acuc_${api_key}`);
 }
 
-export async function clearACUCTeam(team_id: string): Promise<void> {
+async function clearACUCTeam(team_id: string): Promise<void> {
   // Delete cache for all rate limiter modes
   const modes = [true, false];
   await Promise.all(
@@ -461,6 +463,20 @@ export async function clearACUCTeam(team_id: string): Promise<void> {
 
   // Also clear the base cache key
   await deleteKey(`acuc_team_${team_id}`);
+}
+
+/**
+ * Every cached auth chunk a team can be served from: each of its API keys'
+ * and the team's own. Anything that changes what the chunk projects (org
+ * flags, data source access) calls this for each team of the org.
+ */
+export async function clearACUCForTeam(team_id: string): Promise<void> {
+  const keys = await db
+    .select({ key: schema.api_keys.key })
+    .from(schema.api_keys)
+    .where(eq(schema.api_keys.team_id, team_id));
+  await Promise.all(keys.flatMap(x => (x.key ? [clearACUC(x.key)] : [])));
+  await clearACUCTeam(team_id);
 }
 
 const KEYLESS_ENDPOINT_NOT_AVAILABLE_MESSAGE = `This endpoint is not supported by the keyless free tier. Sign up for a free API key at https://www.firecrawl.dev/signin for more endpoints, more usage, and higher rate limits.

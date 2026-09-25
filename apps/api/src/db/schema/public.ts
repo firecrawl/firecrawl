@@ -849,6 +849,37 @@ export const user_notifications = pgTable("user_notifications", {
   metadata: jsonb("metadata"),
 });
 
+// One row per organization and Exchange/Alexandria data source: the accepted
+// provider terms and whether the source is enabled. The auth chunk projects it
+// into flags.organizationDataSourceAccess. The dashboard (firecrawl-web
+// lib/exchange/provider-access-server.ts) owns most writes; this API writes it
+// only to mirror a terms acceptance recorded through terms/accept
+// (services/alexandria/access-record.ts). DDL lives in firecrawl-db.
+export const organization_data_source_access = pgTable(
+  "organization_data_source_access",
+  {
+    org_id: uuid("org_id").notNull(),
+    data_source_id: text("data_source_id").notNull(),
+    status: text("status").notNull().default("enabled"),
+    terms_key: text("terms_key").notNull(),
+    terms_version: text("terms_version").notNull(),
+    terms_accepted_at: ts("terms_accepted_at").notNull().defaultNow(),
+    terms_accepted_by: uuid("terms_accepted_by"),
+    terms_acceptance_history: jsonb("terms_acceptance_history")
+      .notNull()
+      .default([]),
+    enabled_at: ts("enabled_at").notNull().defaultNow(),
+    enabled_by: uuid("enabled_by"),
+    disabled_at: ts("disabled_at"),
+    disabled_by: uuid("disabled_by"),
+    disabled_reason: text("disabled_reason"),
+    settings: jsonb("settings").notNull().default({}),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  table => [primaryKey({ columns: [table.org_id, table.data_source_id] })],
+);
+
 export const user_teams = pgTable("user_teams", {
   user_id: uuid("user_id").notNull(),
   team_id: uuid("team_id").notNull(),

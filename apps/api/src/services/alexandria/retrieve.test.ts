@@ -19,12 +19,14 @@ const mocks = vi.hoisted(() => {
     refund: vi.fn(),
     billAdd: vi.fn(),
     report: vi.fn(),
+    mirror: vi.fn(),
   };
 });
 vi.mock("../../config", () => ({ config: mocks.config }));
 vi.mock("../rate-limiter", () => ({ redisRateLimitClient: mocks.redis }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
 vi.mock("./access", () => ({ authorizeProviders: mocks.authorize }));
+vi.mock("./access-record", () => ({ mirrorLedgerAcceptance: mocks.mirror }));
 vi.mock("../queue-service", () => ({
   getBillingQueue: () => ({ add: mocks.billAdd }),
 }));
@@ -85,6 +87,7 @@ beforeEach(() => {
   mocks.refund.mockResolvedValue(undefined);
   mocks.billAdd.mockResolvedValue({});
   mocks.report.mockResolvedValue(true);
+  mocks.mirror.mockResolvedValue({ outcome: "written", action: "insert" });
   exchangeAnswers(answer);
 });
 
@@ -428,6 +431,139 @@ it("forwards verified terms identity only for terms-only executions", async () =
     await run(overrides);
     expect(executions()[0][0].termsIdentity).toBeUndefined();
   }
+});
+
+it("mirrors each terms/accept the Exchange confirmed into the access record, and nothing else", async () => {
+  const accept = (provider: string) => ({
+    provider: "firecrawl",
+    capability: "terms/accept",
+    options: {
+      provider,
+      version: "v1",
+      digest: "d".repeat(64),
+      confirmed: true,
+      agent: { name: "claude" },
+    },
+  });
+  const accepted = (provider: string) => ({
+    provider: "firecrawl",
+    capability: "terms/accept",
+    creditsCost: 0,
+    data: {
+      provider,
+      version: "v1",
+      digest: "d".repeat(64),
+      acceptedAt: "2026-09-25T12:00:00.000Z",
+    },
+  });
+  exchangeAnswers(
+    {
+      success: true,
+      creditsCost: 0,
+      results: [
+        accepted("benzinga"),
+        {
+          provider: "firecrawl",
+          capability: "terms/accept",
+          error: { code: "terms_changed", message: "Terms changed." },
+        },
+      ],
+    },
+    200,
+    { status: 200, body: { maximumCredits: 0 } },
+  );
+  const result = await run({
+    calls: [accept("benzinga"), accept("shopify")],
+    apiKeyIdText: "42",
+  });
+  expect(result.status).toBe(200);
+  expect(mocks.mirror).toHaveBeenCalledTimes(1);
+  expect(mocks.mirror).toHaveBeenCalledWith({
+    teamId: "team",
+    orgId: "org",
+    acceptance: {
+      provider: "benzinga",
+      version: "v1",
+      digest: "d".repeat(64),
+      acceptedAt: "2026-09-25T12:00:00.000Z",
+      eventId: null,
+      apiKeyId: "42",
+      actorType: "agent",
+      surface: "api",
+      agent: { name: "claude" },
+    },
+  });
+
+  // terms/show, a replay, and a request without verified identity mirror nothing.
+  mocks.mirror.mockClear();
+  expect(
+    (
+      await run({
+        calls: [accept("benzinga"), accept("shopify")],
+        apiKeyIdText: "42",
+      })
+    ).executed,
+  ).toBe(false);
+  mocks.store.clear();
+  exchangeAnswers(
+    {
+      success: true,
+      creditsCost: 0,
+      results: [{ ...accepted("benzinga"), capability: "terms/show" }],
+    },
+    200,
+    { status: 200, body: { maximumCredits: 0 } },
+  );
+  await run({
+    calls: [
+      {
+        provider: "firecrawl",
+        capability: "terms/show",
+        options: { provider: "benzinga" },
+      },
+    ],
+    apiKeyIdText: "42",
+  });
+  mocks.store.clear();
+  await run({ calls: [accept("benzinga")], apiKeyIdText: undefined });
+  expect(mocks.mirror).not.toHaveBeenCalled();
+});
+
+it("answers the accept even when mirroring it fails", async () => {
+  mocks.mirror.mockResolvedValue({ outcome: "failed", reason: "db down" });
+  exchangeAnswers(
+    {
+      success: true,
+      creditsCost: 0,
+      results: [
+        {
+          provider: "firecrawl",
+          capability: "terms/accept",
+          creditsCost: 0,
+          data: {
+            provider: "benzinga",
+            version: "v1",
+            digest: "d",
+            acceptedAt: "2026-09-25T12:00:00.000Z",
+          },
+        },
+      ],
+    },
+    200,
+    { status: 200, body: { maximumCredits: 0 } },
+  );
+  const result = await run({
+    calls: [
+      {
+        provider: "firecrawl",
+        capability: "terms/accept",
+        options: { provider: "benzinga" },
+      },
+    ],
+    apiKeyIdText: "42",
+  });
+  expect(result).toMatchObject({ status: 200, executed: true });
+  expect(mocks.mirror).toHaveBeenCalledTimes(1);
 });
 
 it("binds terms replay to exact organization and credential identity", async () => {
