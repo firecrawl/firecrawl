@@ -75,6 +75,19 @@ export function agentConsumeFreeRequestIfLeft(
   );
 }
 
+export function billTeamIdempotent(params: {
+  team_id: string;
+  endpoint: string;
+  charges: { charge_id: string; credits: number }[];
+  api_key_id: number | null;
+  is_extract: boolean;
+}): Promise<{ api_key: string }[]> {
+  return execRows(
+    db,
+    sql`select * from bill_team_idempotent(_team_id => ${params.team_id}, endpoint => ${params.endpoint}, charges => ${JSON.stringify(params.charges)}::jsonb, i_api_key_id => ${params.api_key_id}, is_extract_param => ${params.is_extract})`,
+  );
+}
+
 export function billTeam7(params: {
   team_id: string;
   subscription_id: string | null;

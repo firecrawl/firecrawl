@@ -494,8 +494,7 @@ async function firebillAttempt(
     return { ok: true };
   } catch (error) {
     // DO NOT fall back to Autumn directly: firebill may have accepted the event
-    // before this failed, and the Autumn SDK sends no idempotency key, so the
-    // pair could not be deduped and the customer would be billed twice.
+    // before this failed, including any partner billing that must go through it.
     const failure = classifyTransportError(error);
     // **Not "firebill may be unavailable".** The request never completed, which
     // says nothing about firebill: these are almost all our own 5s deadline

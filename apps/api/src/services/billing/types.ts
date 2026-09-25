@@ -19,9 +19,9 @@ export type BillingMetadata = {
   jobId?: string;
   /**
    * Unique-per-CHARGE identity, set by the call site that knows what "one
-   * charge" is. billTeam derives the firebill idempotency key from it
+   * charge" is. billTeam derives the Autumn/Firebill idempotency key from it
    * (`fc:track:{endpoint}:{chargeId}`), so a retried call — or a re-run job —
-   * dedupes instead of double-billing on the firebill route.
+   * dedupes both the external charge and the internal ledger debit.
    *
    * Rules: it must never be shared by two charges that should BOTH bill
    * (collision = silent underbilling). A jobId shared with another charge on

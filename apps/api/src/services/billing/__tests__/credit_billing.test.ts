@@ -118,7 +118,7 @@ describe("billTeam", () => {
     expect(refundCredits).not.toHaveBeenCalled();
   });
 
-  it("gives the compensating refund its own fc:refund key", async () => {
+  it("keeps a keyed direct Autumn charge when enqueue fails", async () => {
     queueBillingOperation.mockResolvedValueOnce({
       success: false,
       message: "enqueue failed",
@@ -132,12 +132,7 @@ describe("billTeam", () => {
       externalRequestId: "partner-op-42",
     });
 
-    expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({
-        idempotencyKey: "fc:refund:map:map-1",
-        externalRequestId: "partner-op-42",
-      }),
-    );
+    expect(refundCredits).not.toHaveBeenCalled();
   });
 
   it("marks billing as already tracked when request tracking succeeds", async () => {

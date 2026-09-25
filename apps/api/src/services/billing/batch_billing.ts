@@ -1,6 +1,6 @@
 import { logger } from "../../lib/logger";
 import { getRedisConnection } from "../queue-service";
-import { billTeam7 } from "../../db/rpc";
+import { billTeam7, billTeamIdempotent } from "../../db/rpc";
 import { withAuth } from "../../lib/withAuth";
 import {
   autumnService,
@@ -144,13 +144,23 @@ type TeamOrgLookup =
   | { resolved: true; orgId: string | null }
   | { resolved: false; retried: boolean };
 
-async function refundRequestTrackedCredits(
+async function retryOrRefundFailedBilling(
   group: GroupedBillingOperation,
   resolveOrgIdForTeam: (
     teamId: string,
     retryFailed?: boolean,
   ) => Promise<TeamOrgLookup>,
 ) {
+  if (group.billing.chargeId) {
+    // The debit may have committed before the connection failed. Replaying
+    // these charge IDs is safe; refunding would erase a real Autumn charge.
+    await getRedisConnection().rpush(
+      BATCH_KEY,
+      ...group.operations.map(op => JSON.stringify(op)),
+    );
+    return;
+  }
+
   const requestTrackedCredits = group.operations
     .filter(op => op.autumnTrackInRequest)
     .reduce((sum, op) => sum + op.credits, 0);
@@ -200,7 +210,7 @@ async function refundRequestTrackedCredits(
 
 /**
  * Dequeues pending billing operations from Redis, groups them by team, and
- * commits each group to Supabase via the `bill_team_7` RPC.
+ * commits each group to Supabase, deduplicating charges that carry an ID.
  */
 export async function processBillingBatch() {
   const redis = getRedisConnection();
@@ -287,7 +297,8 @@ export async function processBillingBatch() {
       } else {
         orgId = op.org_id;
       }
-      const key = `${op.team_id}:${orgId}:${billing.endpoint}:${op.is_extract}:${op.api_key_id}`;
+      // Keep keyed charges separate so only replay-safe groups are retried.
+      const key = `${op.team_id}:${orgId}:${billing.endpoint}:${op.is_extract}:${op.api_key_id}:${Boolean(billing.chargeId)}`;
 
       if (!groupedOperations.has(key)) {
         groupedOperations.set(key, {
@@ -344,16 +355,10 @@ export async function processBillingBatch() {
         const billingResult = await withAuth(supaBillTeam, {
           success: true,
           message: "No DB, bypassed.",
-        })(
-          group.team_id,
-          group.total_credits,
-          group.api_key_id,
-          logger,
-          group.is_extract,
-        );
+        })(group);
 
         if (!billingResult.success) {
-          await refundRequestTrackedCredits(group, resolveOrgIdForTeam);
+          await retryOrRefundFailedBilling(group, resolveOrgIdForTeam);
           // Deliberately no Exchange outcome here: supaBillTeam maps thrown
           // errors to success: false, and a transport error can occur after
           // the debit committed, so voiding could erase a real debit. The
@@ -384,7 +389,7 @@ export async function processBillingBatch() {
           ),
         );
       } catch (error) {
-        await refundRequestTrackedCredits(group, resolveOrgIdForTeam);
+        await retryOrRefundFailedBilling(group, resolveOrgIdForTeam);
         // No Exchange outcome here either — same ambiguity as the
         // success: false branch above; the events stay pending.
         logger.error(`❌ Failed to bill team ${group.team_id}`, {
@@ -503,14 +508,9 @@ export async function queueBillingOperation(
 }
 
 // Modified version of the billing function for batch operations
-async function supaBillTeam(
-  team_id: string,
-  credits: number,
-  api_key_id: number | null,
-  __logger?: any,
-  is_extract: boolean = false,
-) {
-  const _logger = (__logger ?? logger).child({
+async function supaBillTeam(group: GroupedBillingOperation) {
+  const { team_id, total_credits: credits, api_key_id, is_extract } = group;
+  const _logger = logger.child({
     module: "credit_billing",
     method: "supaBillTeam",
     teamId: team_id,
@@ -526,13 +526,24 @@ async function supaBillTeam(
   // Perform the actual database operation
   let data: { api_key: string }[];
   try {
-    data = await billTeam7({
-      team_id,
-      subscription_id: null,
-      credits,
-      api_key_id: api_key_id ?? null,
-      is_extract,
-    });
+    data = group.billing.chargeId
+      ? await billTeamIdempotent({
+          team_id,
+          endpoint: group.billing.endpoint,
+          charges: group.operations.map(op => ({
+            charge_id: op.billing!.chargeId!,
+            credits: op.credits,
+          })),
+          api_key_id: api_key_id ?? null,
+          is_extract,
+        })
+      : await billTeam7({
+          team_id,
+          subscription_id: null,
+          credits,
+          api_key_id: api_key_id ?? null,
+          is_extract,
+        });
   } catch (error) {
     _logger.error("Failed to bill team.", { error });
     return { success: false, error };

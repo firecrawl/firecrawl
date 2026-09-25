@@ -41,7 +41,7 @@ export async function billTeam(
 
       let trackedInRequest = false;
       if (org_id !== null) {
-        // Stable per-charge key (firebill route only): a caller retry or re-run
+        // Stable per-charge key on both routes: a caller retry or re-run
         // job with the same chargeId dedupes instead of double-billing.
         trackedInRequest = await autumnService.trackCredits({
           teamId: team_id,
@@ -75,14 +75,14 @@ export async function billTeam(
 
       // A track only happens with an org in hand; named again so the type says so.
       if (!result.success && trackedInRequest && org_id !== null) {
-        if (await autumnService.isRoutedThroughFirebill(team_id, org_id)) {
-          // No compensating refund on the firebill route: the tracked charge
-          // is durable and correct, and a refund here poisons a retried
-          // request — its track would be deduped by Autumn against the same
-          // idempotency key (no new charge) while the ledger enqueue succeeds,
-          // leaving Autumn net-zero for billed work.
+        if (
+          billing.chargeId ||
+          (await autumnService.isRoutedThroughFirebill(team_id, org_id))
+        ) {
+          // A retry reuses this charge's key. Refunding it would leave the
+          // retry with a deduplicated charge and no payment for the work.
           logger?.warn(
-            "billing enqueue failed on the firebill route; charge stands",
+            "billing enqueue failed for an idempotent charge; charge stands",
             { team_id, credits, billing },
           );
         } else {

@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { AutumnError } from "autumn-js";
 import { logger } from "../../lib/logger";
 import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
@@ -318,8 +319,8 @@ export class AutumnService {
   ): Promise<boolean> {
     // Gradual rollout: allowlisted orgs, partner-provisioned orgs, and those in
     // sticky FIREBILL_ROLLOUT_PERCENT bucket bill through firebill. No fallback
-    // to Autumn on failure — firebill may already own the event, and the SDK
-    // sends no idempotency key, so the pair could not be deduped.
+    // to Autumn on failure — firebill may already own the event, including
+    // any partner billing that must go through it.
     if (routed) {
       billingRouteTotal.labels("firebill").inc();
       return await firebillTrack({
@@ -338,14 +339,19 @@ export class AutumnService {
     if (!autumnClient) return false;
 
     try {
-      await autumnClient.track({
-        customerId,
-        entityId,
-        featureId,
-        value,
-        properties,
-        overageBehavior: "overflow",
-      });
+      await autumnClient.track(
+        {
+          customerId,
+          entityId,
+          featureId,
+          value,
+          properties,
+          overageBehavior: "overflow",
+        },
+        ...(idempotencyKey
+          ? [{ headers: { "Idempotency-Key": idempotencyKey } }]
+          : []),
+      );
       logger.info("Autumn track succeeded", {
         customerId,
         entityId,
@@ -354,6 +360,19 @@ export class AutumnService {
       });
       return true;
     } catch (error) {
+      if (
+        idempotencyKey &&
+        error instanceof AutumnError &&
+        error.statusCode === 409
+      ) {
+        try {
+          if (JSON.parse(error.body).code === "duplicate_idempotency_key") {
+            return true;
+          }
+        } catch {
+          // An unrecognized response is still a billing failure.
+        }
+      }
       logger.error("Autumn track failed — billing API may be unavailable", {
         customerId,
         entityId,
