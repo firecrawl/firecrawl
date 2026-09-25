@@ -25,7 +25,7 @@ describeIf(TEST_PRODUCTION)("Agent hints", () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data.metadata.statusCode).toBe(404);
       expect(response.body.agent_hints).toEqual([
-        expect.stringContaining("POST /v2/search"),
+        expect.stringContaining("firecrawl_search"),
       ]);
     },
     scrapeTimeout + 10000,
