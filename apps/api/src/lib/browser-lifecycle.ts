@@ -370,10 +370,11 @@ export async function reconcileBrowserSessions() {
           "EX",
           60,
         );
-        const after = await redisRateLimitClient.get(
-          "browser:reconcile:cursor",
-        );
-        const sessions = await listUnsettledHangarSessions(after ?? undefined);
+        // Fix the end of each sweep so new sessions cannot indefinitely
+        // postpone retrying older sessions. Failed rows retain their backoff.
+        const scanKey = "browser:reconcile:scan";
+        const cursor = await redisRateLimitClient.hgetall(scanKey);
+        const { sessions, through } = await listUnsettledHangarSessions(cursor);
         const results = await Promise.allSettled(
           sessions.map(async session => {
             const key = `browser:reconcile:${session.id}`;
@@ -408,12 +409,12 @@ export async function reconcileBrowserSessions() {
         const failure = results.find(result => result.status === "rejected");
         if (failure?.status === "rejected") throw failure.reason;
         if (signal.aborted) throw signal.error;
-        if (sessions.length)
-          await redisRateLimitClient.set(
-            "browser:reconcile:cursor",
-            sessions[sessions.length - 1].id,
-          );
-        else await redisRateLimitClient.del("browser:reconcile:cursor");
+        const lastId = sessions.at(-1)?.id;
+        if (lastId && through && lastId !== through) {
+          await redisRateLimitClient.hset(scanKey, { after: lastId, through });
+        } else {
+          await redisRateLimitClient.del(scanKey);
+        }
       },
     );
   } catch (error) {

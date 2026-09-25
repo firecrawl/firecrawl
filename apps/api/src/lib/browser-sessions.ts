@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, gt, like, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, like, lte, ne, sql } from "drizzle-orm";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { db } from "../db/connection";
@@ -38,21 +38,39 @@ export interface BrowserSessionRow {
   updated_at: string; // ISO timestamp
 }
 
-export async function listUnsettledHangarSessions(
-  after?: string,
-): Promise<BrowserSessionRow[]> {
-  return (await db
+export async function listUnsettledHangarSessions(cursor: {
+  after?: string;
+  through?: string;
+}): Promise<{ sessions: BrowserSessionRow[]; through: string | null }> {
+  const unsettled = and(
+    eq(schema.browser_sessions.status, "active"),
+    like(schema.browser_sessions.browser_id, "br\\_%"),
+  );
+  let through = cursor.through;
+  const after = through ? cursor.after : undefined;
+  if (!through) {
+    const [last] = await db
+      .select({ id: schema.browser_sessions.id })
+      .from(schema.browser_sessions)
+      .where(unsettled)
+      .orderBy(desc(schema.browser_sessions.id))
+      .limit(1);
+    through = last?.id;
+  }
+  if (!through) return { sessions: [], through: null };
+  const sessions = (await db
     .select()
     .from(schema.browser_sessions)
     .where(
       and(
-        eq(schema.browser_sessions.status, "active"),
-        like(schema.browser_sessions.browser_id, "br\\_%"),
+        unsettled,
+        lte(schema.browser_sessions.id, through),
         after ? gt(schema.browser_sessions.id, after) : undefined,
       ),
     )
     .orderBy(asc(schema.browser_sessions.id))
     .limit(20)) as BrowserSessionRow[];
+  return { sessions, through };
 }
 
 /** Serialize billing across replicas and persist its receipt before cleanup. */
