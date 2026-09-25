@@ -4,6 +4,8 @@ export interface AgentHintContext {
   endpoint: AgentHintEndpoint;
   response: unknown;
   remainingCredits?: number;
+  canUseMapAndCrawl?: boolean;
+  canUseInteract?: boolean;
 }
 
 export const AGENT_HINT_LOW_CREDIT_THRESHOLD = 100;
@@ -52,7 +54,11 @@ export function buildAgentHints(context: AgentHintContext): string[] {
   if (response.success === true) {
     const metadata = object(data.metadata);
     const pageStatus = metadata.statusCode;
-    if (context.endpoint === "scrape" && pageStatus === 401) {
+    if (
+      context.endpoint === "scrape" &&
+      pageStatus === 401 &&
+      context.canUseInteract
+    ) {
       const scrapeId =
         typeof metadata.scrapeId === "string" && metadata.scrapeId
           ? metadata.scrapeId
@@ -103,7 +109,9 @@ export function buildAgentHints(context: AgentHintContext): string[] {
           nextAction =
             'Some web results have no full page content. If you need more than an excerpt, use POST /v2/scrape with {"url":"<selected result URL>","formats":["markdown"]}. Retrieve only needed pages; do not re-scrape results that already contain the required content.';
         } else {
-          const origin = clusteredOrigin(web);
+          const origin = context.canUseMapAndCrawl
+            ? clusteredOrigin(web)
+            : undefined;
           if (origin) {
             nextAction = `Most web results come from ${origin}. If you need broader coverage of that site, use POST /v2/map with {"url":"${origin}"} to discover URLs, or POST /v2/crawl with {"url":"${origin}"} to retrieve content across pages.`;
           }

@@ -97,6 +97,7 @@ describe("deterministic agent hints", () => {
 
   it("suggests mapping or crawling when results cluster on one origin", () => {
     const clustered = hints({
+      canUseMapAndCrawl: true,
       response: {
         success: true,
         data: {
@@ -112,6 +113,23 @@ describe("deterministic agent hints", () => {
     expect(clustered).toContain("https://docs.example.com");
     expect(clustered).toContain("POST /v2/map");
     expect(clustered).toContain("POST /v2/crawl");
+
+    expect(
+      hints({
+        canUseMapAndCrawl: false,
+        response: {
+          success: true,
+          data: {
+            web: [
+              { url: "https://docs.example.com/a", markdown: "a" },
+              { url: "https://docs.example.com/b", markdown: "b" },
+              { url: "https://docs.example.com/c", markdown: "c" },
+              { url: "https://other.example.com/d", markdown: "d" },
+            ],
+          },
+        },
+      }),
+    ).toEqual([]);
 
     expect(
       hints({
@@ -213,13 +231,16 @@ describe("deterministic agent hints", () => {
       data: { metadata: { statusCode, scrapeId } },
     });
     expect(
-      hints({ endpoint: "scrape", response: response(401, "scrape-id") }).join(
-        " ",
-      ),
+      hints({
+        endpoint: "scrape",
+        canUseInteract: true,
+        response: response(401, "scrape-id"),
+      }).join(" "),
     ).toContain("POST /v2/scrape/scrape-id/interact");
     expect(
       hints({
         endpoint: "scrape",
+        canUseInteract: true,
         response: {
           success: true,
           scrape_id: "top-level-id",
@@ -230,6 +251,7 @@ describe("deterministic agent hints", () => {
     expect(
       hints({
         endpoint: "scrape",
+        canUseInteract: true,
         response: {
           success: true,
           scrape_id: "top-level-id",
@@ -239,6 +261,13 @@ describe("deterministic agent hints", () => {
         },
       }).join(" "),
     ).toContain("POST /v2/scrape/metadata-id/interact");
+    expect(
+      hints({
+        endpoint: "scrape",
+        canUseInteract: false,
+        response: response(401, "scrape-id"),
+      }),
+    ).toEqual([]);
     expect(hints({ endpoint: "scrape", response: response(401) })).toEqual([]);
     expect(
       hints({ endpoint: "scrape", response: response(403, "scrape-id") }),

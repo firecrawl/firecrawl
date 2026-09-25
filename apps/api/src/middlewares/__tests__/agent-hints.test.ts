@@ -1,5 +1,6 @@
 import express from "express";
 import request from "supertest";
+import { config } from "../../config";
 import { agentHintsMiddleware } from "../agent-hints";
 
 function appFor(
@@ -8,11 +9,13 @@ function appFor(
     body = { success: true, data: {} },
     status = 200,
     remainingCredits,
+    teamId = "account-team",
   } = {} as any,
 ) {
   const app = express();
   app.use(express.json());
-  app.post("/", agentHintsMiddleware(endpoint), (_req, res) => {
+  app.post("/", agentHintsMiddleware(endpoint), (req, res) => {
+    (req as any).auth = { team_id: teamId };
     res.locals.agentCreditsRemaining = remainingCredits;
     res.status(status).json(body);
   });
@@ -20,6 +23,16 @@ function appFor(
 }
 
 describe("agent hint response middleware", () => {
+  const originalDbAuthentication = config.USE_DB_AUTHENTICATION;
+
+  beforeEach(() => {
+    config.USE_DB_AUTHENTICATION = true;
+  });
+
+  afterAll(() => {
+    config.USE_DB_AUTHENTICATION = originalDbAuthentication;
+  });
+
   it("leaves the original envelope unchanged by default", async () => {
     const body = { success: true, data: { web: [] }, warning: "existing" };
     const response = await request(appFor({ body, remainingCredits: 0 }))
@@ -129,6 +142,42 @@ describe("agent hint response middleware", () => {
     for (const text of testCase.expected) {
       expect(response.body.agent_hints[0]).toContain(text);
     }
+  });
+
+  it("does not suggest Map or Crawl to a keyless Search caller", async () => {
+    const body = {
+      success: true,
+      data: {
+        web: [
+          { url: "https://docs.example.com/a", markdown: "a" },
+          { url: "https://docs.example.com/b", markdown: "b" },
+          { url: "https://docs.example.com/c", markdown: "c" },
+          { url: "https://other.example.com/d", markdown: "d" },
+        ],
+      },
+    };
+    const response = await request(
+      appFor({ body, teamId: "preview_keyless_203.0.113.8" }),
+    )
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual(body);
+  });
+
+  it("does not suggest unavailable Interact on a self-hosted 401 scrape", async () => {
+    config.USE_DB_AUTHENTICATION = false;
+    const body = {
+      success: true,
+      data: { metadata: { statusCode: 401, scrapeId: "scrape-id" } },
+    };
+    const response = await request(appFor({ endpoint: "scrape", body }))
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual(body);
   });
 
   it("does not add static feedback guidance to an otherwise hint-free result", async () => {
