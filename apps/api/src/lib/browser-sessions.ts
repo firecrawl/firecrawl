@@ -73,10 +73,13 @@ export async function listUnsettledHangarSessions(cursor: {
   return { sessions, through };
 }
 
-/** Serialize billing across replicas and persist its receipt before cleanup. */
+/** Commit the browser debit and its receipt together, before cleanup. */
 export async function settleBrowserSessionOnce(
   id: string,
-  bill: (session: BrowserSessionRow) => Promise<number>,
+  bill: (
+    session: BrowserSessionRow,
+    tx: Pick<typeof db, "execute">,
+  ) => Promise<number>,
 ): Promise<{ creditsBilled: number; newlySettled: boolean }> {
   return db.transaction(async tx => {
     const [row] = await tx
@@ -87,7 +90,7 @@ export async function settleBrowserSessionOnce(
     if (!row) throw new Error("Browser session not found.");
     if (row.status === "destroyed" || row.credits_used !== null)
       return { creditsBilled: row.credits_used ?? 0, newlySettled: false };
-    const creditsBilled = await bill(row as BrowserSessionRow);
+    const creditsBilled = await bill(row as BrowserSessionRow, tx);
     const now = new Date().toISOString();
     await tx
       .update(schema.browser_sessions)

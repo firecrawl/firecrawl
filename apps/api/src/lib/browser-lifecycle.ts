@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { orgIdForTeam } from "./team-org";
 import { recordRequestCredits } from "./request-credits-store";
 import { upsertBrowserProfile } from "./browser-sessions";
 import { v7 as uuidv7 } from "uuid";
@@ -34,7 +33,7 @@ import {
   mirrorExternalSlotRelease,
 } from "../services/worker/nuq-router";
 import { autumnService } from "../services/autumn/autumn.service";
-import { billTeam } from "../services/billing/credit_billing";
+import { billBrowserSession } from "./browser-session-billing";
 import { logRequest } from "../services/logging/log_job";
 import { externalRequestId } from "./external-request-id";
 import {
@@ -217,7 +216,7 @@ export async function settleBrowserSession(
   const sessionDurationMs = (browser.ended_at! - browser.created_at) * 1000;
   const { creditsBilled } = await settleBrowserSessionOnce(
     session.id,
-    async current => {
+    async (current, tx) => {
       const usedPrompt = await didBrowserSessionUsePrompt(current.id);
       const credits = current.should_bill
         ? calculateBrowserSessionCredits(
@@ -230,11 +229,9 @@ export async function settleBrowserSession(
           ? current.request_id
           : undefined;
       if (current.should_bill) {
-        const result = await billTeam(
-          current.team_id,
-          await orgIdForTeam(current.team_id),
+        await billBrowserSession(
+          current,
           credits,
-          null,
           {
             endpoint: agentRequestId
               ? "agent"
@@ -242,10 +239,9 @@ export async function settleBrowserSession(
                 ? "interact"
                 : "browser",
             jobId: agentRequestId ?? current.id,
-            chargeId: `${current.id}:destroy`,
           },
+          tx,
         );
-        if (!result.success) throw new Error("Browser billing was not queued.");
       }
       if (agentRequestId) {
         await recordRequestCredits({

@@ -1,7 +1,8 @@
 import { vi } from "vitest";
 import { settleBrowserSession, stopBrowserSession } from "../browser-lifecycle";
 import { stopHangarBrowser, getHangarBrowser } from "../hangar";
-import { billTeam } from "../../services/billing/credit_billing";
+import { billTeam7 } from "../../db/rpc";
+import { autumnService } from "../../services/autumn/autumn.service";
 import { mirrorExternalSlotRelease } from "../../services/worker/nuq-router";
 import {
   upsertBrowserProfile,
@@ -9,7 +10,14 @@ import {
   type BrowserSessionRow,
 } from "../browser-sessions";
 
-vi.mock("../../config", () => ({ config: { HANGAR_URL: "http://hangar" } }));
+const billingTransaction = vi.hoisted(() => ({ execute: vi.fn() }));
+vi.mock("../../config", () => ({
+  config: {
+    HANGAR_URL: "http://hangar",
+    USE_DB_AUTHENTICATION: true,
+    AUTUMN_SECRET_KEY: "test",
+  },
+}));
 vi.mock("../hangar", async importOriginal => ({
   ...(await importOriginal<typeof import("../hangar")>()),
   createHangarBrowser: vi.fn(),
@@ -23,8 +31,14 @@ vi.mock("../browser-sessions", () => ({
   upsertBrowserProfile: vi.fn(async () => {}),
   getBrowserProfileDeletedAt: vi.fn(async () => null),
   settleBrowserSessionOnce: vi.fn(
-    async (_id: string, bill: (row: BrowserSessionRow) => Promise<number>) => ({
-      creditsBilled: await bill(currentSession),
+    async (
+      _id: string,
+      bill: (
+        row: BrowserSessionRow,
+        tx: typeof billingTransaction,
+      ) => Promise<number>,
+    ) => ({
+      creditsBilled: await bill(currentSession, billingTransaction),
       newlySettled: true,
     }),
   ),
@@ -47,10 +61,13 @@ vi.mock("../../services/worker/nuq-router", () => ({
   mirrorExternalSlotRelease: vi.fn(async () => {}),
 }));
 vi.mock("../../services/autumn/autumn.service", () => ({
-  autumnService: { checkCredits: vi.fn() },
+  autumnService: {
+    checkCredits: vi.fn(),
+    trackCredits: vi.fn(async () => true),
+  },
 }));
-vi.mock("../../services/billing/credit_billing", () => ({
-  billTeam: vi.fn(async () => ({ success: true })),
+vi.mock("../../db/rpc", () => ({
+  billTeam7: vi.fn(async () => []),
 }));
 vi.mock("../../services/logging/log_job", () => ({ logRequest: vi.fn() }));
 vi.mock("../keyless", () => ({
@@ -69,6 +86,7 @@ const session = {
   should_bill: true,
   ttl_total: 600,
   request_id: "session",
+  created_at: new Date().toISOString(),
 } as BrowserSessionRow;
 const stopped = {
   id: "br_test",
@@ -119,7 +137,7 @@ it("does not return a successful partial response or bill when cleanup never fin
   } finally {
     vi.useRealTimers();
   }
-  expect(billTeam).not.toHaveBeenCalled();
+  expect(autumnService.trackCredits).not.toHaveBeenCalled();
   expect(settleBrowserSessionOnce).not.toHaveBeenCalled();
   expect(mirrorExternalSlotRelease).not.toHaveBeenCalled();
 });
@@ -127,21 +145,43 @@ it("does not return a successful partial response or bill when cleanup never fin
 it("bills the upstream duration with the same idempotency key on retry", async () => {
   await settleBrowserSession(session, stopped);
   await settleBrowserSession(session, stopped);
-  expect(billTeam).toHaveBeenNthCalledWith(1, "team", "org", 2, null, {
-    endpoint: "browser",
-    jobId: "session",
-    chargeId: "session:destroy",
-  });
-  expect(vi.mocked(billTeam).mock.calls[1]).toEqual(
-    vi.mocked(billTeam).mock.calls[0],
+  expect(autumnService.trackCredits).toHaveBeenNthCalledWith(
+    1,
+    {
+      teamId: "team",
+      orgId: "org",
+      value: 2,
+      properties: {
+        source: "billTeam",
+        endpoint: "browser",
+        jobId: "session",
+        apiKeyId: null,
+      },
+      idempotencyKey: "fc:track:browser:session:destroy",
+    },
+    { idempotent: true },
+  );
+  expect(vi.mocked(autumnService.trackCredits).mock.calls[1]).toEqual(
+    vi.mocked(autumnService.trackCredits).mock.calls[0],
+  );
+  expect(billTeam7).toHaveBeenCalledWith(
+    {
+      team_id: "team",
+      subscription_id: null,
+      credits: 2,
+      api_key_id: null,
+      is_extract: false,
+    },
+    billingTransaction,
   );
 });
 
 it("keeps settlement retryable when billing fails", async () => {
-  vi.mocked(billTeam).mockRejectedValueOnce(new Error("billing unavailable"));
+  vi.mocked(autumnService.trackCredits).mockResolvedValueOnce(false);
   await expect(settleBrowserSession(session, stopped)).rejects.toThrow(
-    "billing unavailable",
+    "Browser billing was not confirmed.",
   );
+  expect(billTeam7).not.toHaveBeenCalled();
   expect(mirrorExternalSlotRelease).not.toHaveBeenCalled();
 });
 
@@ -149,7 +189,7 @@ it("rejects missing durations instead of guessing a bill", async () => {
   await expect(
     settleBrowserSession(session, { ...stopped, ended_at: null }),
   ).rejects.toMatchObject({ status: 502 });
-  expect(billTeam).not.toHaveBeenCalled();
+  expect(autumnService.trackCredits).not.toHaveBeenCalled();
 });
 
 it("preserves the agent billing exemption", async () => {
@@ -157,7 +197,8 @@ it("preserves the agent billing exemption", async () => {
   expect(
     await settleBrowserSession({ ...session, should_bill: false }, stopped),
   ).toEqual({ sessionDurationMs: 60_000, creditsBilled: 0 });
-  expect(billTeam).not.toHaveBeenCalled();
+  expect(autumnService.trackCredits).not.toHaveBeenCalled();
+  expect(billTeam7).not.toHaveBeenCalled();
   expect(mirrorExternalSlotRelease).toHaveBeenCalledWith("team", "session");
 });
 
