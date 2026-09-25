@@ -30,8 +30,7 @@ import {
 } from "./browser-billing";
 import { getEffectiveConcurrencyLimit } from "./concurrency-limit";
 import {
-  getCombinedTeamActiveCount,
-  mirrorExternalSlotAcquire,
+  reserveExternalSlot,
   mirrorExternalSlotRelease,
 } from "../services/worker/nuq-router";
 import { autumnService } from "../services/autumn/autumn.service";
@@ -81,11 +80,6 @@ export async function createBrowserSession(
     req.auth.team_id,
     req.acuc?.org_id ?? null,
   );
-  if ((await getCombinedTeamActiveCount(req.auth.team_id)) >= limit)
-    throw new HangarError(
-      429,
-      `You have reached the maximum number of concurrent jobs (${limit}).`,
-    );
   if (shouldBill && req.acuc?.org_id) {
     const credit = await autumnService.checkCredits({
       teamId: req.auth.team_id,
@@ -103,15 +97,29 @@ export async function createBrowserSession(
         `Insufficient credits for a ${options.ttl}s browser session (requires ~${estimatedCredits} credits).`,
       );
   }
-  const reservation = await reserveKeylessCredits(
-    req.auth.team_id,
-    estimatedCredits,
-  );
-  if (!reservation.ok)
-    throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
   const id = uuidv7();
   let browserId: string | undefined;
+  let reservedCredits = false;
   try {
+    if (
+      !(await reserveExternalSlot(
+        req.auth.team_id,
+        id,
+        (options.ttl + 300) * 1000,
+        limit,
+      ))
+    )
+      throw new HangarError(
+        429,
+        `You have reached the maximum number of concurrent jobs (${limit}).`,
+      );
+    const reservation = await reserveKeylessCredits(
+      req.auth.team_id,
+      estimatedCredits,
+    );
+    if (!reservation.ok)
+      throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
+    reservedCredits = true;
     const browser = await createHangarBrowser(id, req.auth.team_id, options);
     browserId = browser.id;
     if (!options.requestId)
@@ -146,16 +154,6 @@ export async function createBrowserSession(
       credits_used: null,
       profile_name: options.profile?.name ?? null,
     });
-    await mirrorExternalSlotAcquire(
-      req.auth.team_id,
-      id,
-      options.ttl * 1000,
-    ).catch(error =>
-      logger.error("Failed to register browser concurrency slot", {
-        sessionId: id,
-        error,
-      }),
-    );
     await invalidateActiveBrowserSessionCount(req.auth.team_id);
     return {
       session,
@@ -166,9 +164,16 @@ export async function createBrowserSession(
     };
   } catch (error) {
     if (browserId) await stopHangarBrowser(browserId).catch(() => {});
-    await adjustKeylessCredits(req.auth.team_id, -estimatedCredits).catch(
-      () => {},
+    await mirrorExternalSlotRelease(req.auth.team_id, id).catch(error =>
+      logger.error("Failed to release browser reservation", {
+        sessionId: id,
+        error,
+      }),
     );
+    if (reservedCredits)
+      await adjustKeylessCredits(req.auth.team_id, -estimatedCredits).catch(
+        () => {},
+      );
     throw error;
   }
 }

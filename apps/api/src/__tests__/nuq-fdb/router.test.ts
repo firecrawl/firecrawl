@@ -11,7 +11,7 @@ import {
   scrapeQueue,
   crawlGroup,
   crawlFinishedQueue,
-  mirrorExternalSlotAcquire,
+  reserveExternalSlot,
   mirrorExternalSlotRelease,
 } from "../../services/worker/nuq-router";
 import { scrapeQueueFdb } from "../../services/worker/nuq-fdb";
@@ -308,15 +308,33 @@ describeIf("NuQ router (forced FDB mode)", () => {
   test("external slot mirror consumes and releases FDB capacity", async () => {
     const teamId = randomUUID();
     const holder = randomUUID();
-    await mirrorExternalSlotAcquire(teamId, holder, 30_000);
+    await reserveExternalSlot(teamId, holder, 30_000, 10);
     expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(1);
     // re-acquire (heartbeat) must not double-count
-    await mirrorExternalSlotAcquire(teamId, holder, 30_000);
+    await reserveExternalSlot(teamId, holder, 30_000, 10);
     expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(1);
     await mirrorExternalSlotRelease(teamId, holder);
     expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
     // double release is a no-op
     await mirrorExternalSlotRelease(teamId, holder);
     expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
+  });
+
+  test("simultaneous browser reservations cannot overbook the FDB ledger", async () => {
+    const teamId = randomUUID();
+    const holders = Array.from({ length: 12 }, () => randomUUID());
+    try {
+      const admitted = await Promise.all(
+        holders.map(id => reserveExternalSlot(teamId, id, 30_000, 2)),
+      );
+      expect(admitted.filter(Boolean)).toHaveLength(2);
+      expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(2);
+    } finally {
+      await Promise.all(
+        holders.map(id => mirrorExternalSlotRelease(teamId, id)),
+      );
+    }
+    expect(await reserveExternalSlot(teamId, holders[0], 30_000, 2)).toBe(true);
+    await mirrorExternalSlotRelease(teamId, holders[0]);
   });
 });

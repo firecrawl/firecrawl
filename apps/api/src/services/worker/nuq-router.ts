@@ -11,8 +11,8 @@ import { getApiKeyConcurrencyLimit } from "../../lib/api-key-concurrency";
 import {
   getTeamQueueLimit,
   getConcurrencyLimitActiveJobsCount,
-  pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
+  reserveConcurrencyLimitSlot,
 } from "../../lib/concurrency-redis";
 import {
   NuQJob,
@@ -193,23 +193,21 @@ function tagFdbJob<T extends object>(job: T): T & { backend: "fdb" } {
 // mid-hold) self-heal: Redis entries expire by score, FDB external slots are
 // reaped by the sweeper.
 
-export async function mirrorExternalSlotAcquire(
+export async function reserveExternalSlot(
   teamId: string,
   holderId: string,
   ttlMs: number,
-): Promise<void> {
+  limit: number,
+): Promise<boolean> {
   if (await isFdbTeam(teamId)) {
-    try {
-      await optionalFdb(() =>
-        externalSlotsFdb.acquire(teamId, holderId, ttlMs),
-      );
-      return;
-    } catch (error) {
-      if (fdbForced()) throw error;
-      logFdbFallback(_logger, "mirrorExternalSlotAcquire", error);
-    }
+    const legacyActive = await getConcurrencyLimitActiveJobsCount(teamId);
+    // A timed-out write may have committed. Fail closed; the caller releases
+    // this holder from both ledgers instead of admitting it a second time.
+    return optionalFdb(() =>
+      externalSlotsFdb.acquire(teamId, holderId, ttlMs, limit - legacyActive),
+    );
   }
-  await pushConcurrencyLimitActiveJob(teamId, holderId, ttlMs);
+  return reserveConcurrencyLimitSlot(teamId, holderId, ttlMs, limit);
 }
 
 export async function mirrorExternalSlotRelease(

@@ -44,7 +44,7 @@ vi.mock("../../../lib/logger", () => ({
 vi.mock("../../../services/worker/nuq-router", () => ({
   scrapeQueue: { getJob: vi.fn(async () => null) },
   getCombinedTeamActiveCount: vi.fn(async () => 0),
-  mirrorExternalSlotAcquire: vi.fn(async () => {}),
+  reserveExternalSlot: vi.fn(async () => true),
   mirrorExternalSlotRelease: vi.fn(async () => {}),
 }));
 vi.mock("../../../lib/operational-job-access", () => ({

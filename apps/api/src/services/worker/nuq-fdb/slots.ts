@@ -8,6 +8,7 @@ import {
   timeBucket,
   F_GATED,
   normalizeOwnerId,
+  decodeI64,
 } from "./keyspace";
 import { bumpTeamActive, newTxContext, releaseSlotsAndPromote } from "./ops";
 
@@ -50,18 +51,24 @@ export class NuqFdbExternalSlots {
     teamId: string,
     holderId: string,
     ttlMs: number,
-  ): Promise<void> {
+    limit?: number,
+  ): Promise<boolean> {
     const owner = normalizeOwnerId(teamId);
-    if (owner === null) return;
+    if (owner === null) return false;
     const now = Date.now();
     const exp = now + ttlMs;
-    await this.db.doTn(async tn => {
+    return this.db.doTn(async tn => {
       const existing = decodeJson<ExternalSlotRecord>(
         await tn.get(this.key(owner, holderId)),
       );
       if (existing) {
         tn.clear(this.expiryKey(timeBucket(holderId), existing.e, holderId));
       } else {
+        if (
+          limit !== undefined &&
+          decodeI64(await tn.get(this.ks.teamActive(owner))) >= limit
+        )
+          return false;
         bumpTeamActive(tn, this.ks, owner, 1);
       }
       tn.set(
@@ -72,6 +79,7 @@ export class NuqFdbExternalSlots {
         this.expiryKey(timeBucket(holderId), exp, holderId),
         encodeJson({ t: owner }),
       );
+      return true;
     });
   }
 

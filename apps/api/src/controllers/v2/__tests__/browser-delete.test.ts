@@ -65,7 +65,7 @@ vi.mock("../../../lib/browser-sessions", () => ({
 
 vi.mock("../../../services/worker/nuq-router", () => ({
   getCombinedTeamActiveCount: vi.fn(),
-  mirrorExternalSlotAcquire: vi.fn(),
+  reserveExternalSlot: vi.fn(async () => true),
   mirrorExternalSlotRelease: mocks.mirrorExternalSlotRelease,
 }));
 

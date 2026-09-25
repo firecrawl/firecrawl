@@ -1,8 +1,20 @@
 import { vi } from "vitest";
-import { settleBrowserSession, stopBrowserSession } from "../browser-lifecycle";
-import { stopHangarBrowser, getHangarBrowser } from "../hangar";
+import { reserveKeylessCredits } from "../keyless";
+import {
+  createBrowserSession,
+  settleBrowserSession,
+  stopBrowserSession,
+} from "../browser-lifecycle";
+import {
+  createHangarBrowser,
+  stopHangarBrowser,
+  getHangarBrowser,
+} from "../hangar";
 import { billTeam } from "../../services/billing/credit_billing";
-import { mirrorExternalSlotRelease } from "../../services/worker/nuq-router";
+import {
+  reserveExternalSlot,
+  mirrorExternalSlotRelease,
+} from "../../services/worker/nuq-router";
 import {
   upsertBrowserProfile,
   getBrowserProfileDeletedAt,
@@ -10,9 +22,10 @@ import {
   type BrowserSessionRow,
 } from "../browser-sessions";
 
-vi.mock("../../config", () => ({ config: {} }));
+vi.mock("../../config", () => ({ config: { HANGAR_URL: "http://hangar" } }));
 vi.mock("../hangar", async importOriginal => ({
   ...(await importOriginal<typeof import("../hangar")>()),
+  createHangarBrowser: vi.fn(),
   stopHangarBrowser: vi.fn(),
   getHangarBrowser: vi.fn(),
 }));
@@ -41,7 +54,7 @@ vi.mock("../concurrency-limit", () => ({
 }));
 vi.mock("../../services/worker/nuq-router", () => ({
   getCombinedTeamActiveCount: vi.fn(),
-  mirrorExternalSlotAcquire: vi.fn(),
+  reserveExternalSlot: vi.fn(async () => true),
   mirrorExternalSlotRelease: vi.fn(async () => {}),
 }));
 vi.mock("../../services/autumn/autumn.service", () => ({
@@ -206,4 +219,39 @@ it("does not call Hangar again for an already destroyed session", async () => {
     }),
   ).toMatchObject({ success: true, creditsBilled: 2 });
   expect(stopHangarBrowser).not.toHaveBeenCalled();
+});
+
+it("does not create a VM when capacity reservation is refused", async () => {
+  vi.mocked(reserveExternalSlot).mockResolvedValueOnce(false);
+  await expect(
+    createBrowserSession({ auth: { team_id: "team" } } as any, {
+      ttl: 600,
+      activityTtl: 300,
+      streamWebView: false,
+      recordSession: false,
+    }),
+  ).rejects.toMatchObject({ status: 429 });
+  expect(createHangarBrowser).not.toHaveBeenCalled();
+});
+
+it("releases capacity if Hangar creation fails", async () => {
+  vi.mocked(reserveKeylessCredits).mockResolvedValueOnce({ ok: true } as any);
+  vi.mocked(createHangarBrowser).mockRejectedValueOnce(
+    new Error("unavailable"),
+  );
+  await expect(
+    createBrowserSession({ auth: { team_id: "team" } } as any, {
+      ttl: 600,
+      activityTtl: 300,
+      streamWebView: false,
+      recordSession: false,
+    }),
+  ).rejects.toThrow("unavailable");
+  expect(
+    vi.mocked(reserveExternalSlot).mock.invocationCallOrder[0],
+  ).toBeLessThan(vi.mocked(createHangarBrowser).mock.invocationCallOrder[0]);
+  expect(mirrorExternalSlotRelease).toHaveBeenCalledWith(
+    "team",
+    expect.any(String),
+  );
 });
