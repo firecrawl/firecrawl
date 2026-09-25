@@ -235,8 +235,6 @@ def interact(
         normalized["live_view_url"] = normalized["liveViewUrl"]
     if "interactiveLiveViewUrl" in normalized and "interactive_live_view_url" not in normalized:
         normalized["interactive_live_view_url"] = normalized["interactiveLiveViewUrl"]
-    if "playlistUrl" in normalized:
-        normalized["playlist_url"] = normalized["playlistUrl"]
     return BrowserExecuteResponse(**normalized)
 
 

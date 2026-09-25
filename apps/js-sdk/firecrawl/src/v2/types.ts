@@ -1941,7 +1941,6 @@ export interface BrowserCreateResponse {
   cdpUrl?: string;
   liveViewUrl?: string;
   interactiveLiveViewUrl?: string;
-  playlistUrl?: string;
   expiresAt?: string;
   error?: string;
 }
@@ -1951,7 +1950,6 @@ export interface BrowserExecuteResponse {
   cdpUrl?: string;
   liveViewUrl?: string;
   interactiveLiveViewUrl?: string;
-  playlistUrl?: string;
   output?: string;
   stdout?: string;
   result?: string;
@@ -1988,7 +1986,6 @@ export interface BrowserSession {
   cdpUrl: string;
   liveViewUrl: string;
   interactiveLiveViewUrl?: string;
-  playlistUrl?: string;
   streamWebView: boolean;
   createdAt: string;
   lastActivity: string;

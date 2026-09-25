@@ -1951,7 +1951,6 @@ class BrowserCreateResponse(BaseModel):
     cdp_url: Optional[str] = None
     live_view_url: Optional[str] = None
     interactive_live_view_url: Optional[str] = None
-    playlist_url: Optional[str] = None
     expires_at: Optional[str] = None
     error: Optional[str] = None
 
@@ -1963,7 +1962,6 @@ class BrowserExecuteResponse(BaseModel):
     cdp_url: Optional[str] = None
     live_view_url: Optional[str] = None
     interactive_live_view_url: Optional[str] = None
-    playlist_url: Optional[str] = None
     output: Optional[str] = None
     stdout: Optional[str] = None
     result: Optional[str] = None
@@ -1993,7 +1991,6 @@ class BrowserSession(BaseModel):
     cdp_url: str
     live_view_url: str
     interactive_live_view_url: Optional[str] = None
-    playlist_url: Optional[str] = None
     stream_web_view: bool
     created_at: str
     last_activity: str

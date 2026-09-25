@@ -50,7 +50,6 @@ export function browserSessionLinks(session: BrowserSessionRow) {
     cdpUrl: session.cdp_url,
     liveViewUrl: session.cdp_path ?? "",
     interactiveLiveViewUrl: session.cdp_interactive_path ?? "",
-    ...(session.context_id ? { playlistUrl: session.context_id } : {}),
   };
 }
 

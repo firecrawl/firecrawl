@@ -288,7 +288,6 @@ export async function browserReplayController(
         },
       ],
       pageCount: 1,
-      playlistUrl: session.context_id,
     });
   } catch (error) {
     return browserError(res, error);

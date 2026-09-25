@@ -91,7 +91,6 @@ Authorization: Bearer {{$dotenv TEST_API_KEY}}
 GET {{baseUrl}}/v2/interact/{{sessionId}}/replay/0 HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
 
-### The additive playlistUrl field can also be opened directly without an API key.
 ### Get Hangar lifecycle status
 GET {{baseUrl}}/v2/browser/{{sessionId}} HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}

@@ -228,7 +228,6 @@ describe("scrapeInteractController", () => {
         cdpUrl: created.cdp_url,
         liveViewUrl: created.view_url,
         interactiveLiveViewUrl: created.control_url,
-        playlistUrl: created.playlist_url,
       }),
     );
   });
@@ -299,7 +298,6 @@ describe("scrapeInteractController", () => {
         },
       ],
       pageCount: 1,
-      playlistUrl: url,
     });
     const pageRes = buildRes();
     await browserReplayPageController(

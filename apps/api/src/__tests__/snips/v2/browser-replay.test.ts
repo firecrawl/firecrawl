@@ -54,7 +54,7 @@ describe("Interact session replay", () => {
         expect(createResponse.statusCode).toBe(200);
         expect(createResponse.body.success).toBe(true);
         sessionId = createResponse.body.id as string;
-        expect(createResponse.body.playlistUrl).toMatch(/^https:\/\//);
+        expect(createResponse.body.playlistUrl).toBeUndefined();
 
         expect(createResponse.body.cdpUrl).toMatch(/^wss?:\/\//);
         const readonlyView = new URL(createResponse.body.liveViewUrl);
@@ -130,9 +130,7 @@ describe("Interact session replay", () => {
         .split(/\r?\n/)
         .find((line: string) => line && !line.startsWith("#"));
       if (!segmentUrl) throw new Error("Recording has no video segments");
-      expect(new URL(segmentUrl).origin).toBe(
-        new URL(replayResponse.body.playlistUrl).origin,
-      );
+      expect(replayResponse.body.playlistUrl).toBeUndefined();
       expect((await fetch(segmentUrl)).status).toBe(200);
       expect(
         (await browserReplayPageRaw(sessionId!, "1", identity)).statusCode,
@@ -145,23 +143,6 @@ describe("Interact session replay", () => {
         .get(`/v2/browser/${sessionId}/replay/0`)
         .set("Authorization", `Bearer ${identity.apiKey}`);
       expect(browserAlias.statusCode).toBe(200);
-      const playlistUrl = replayResponse.body.playlistUrl;
-      expect(playlistUrl).toMatch(/^https:\/\//);
-      expect(new URL(playlistUrl).pathname).toMatch(
-        /^\/recordings\/[^/]+\/index\.m3u8$/,
-      );
-      // The public Hangar capability works without a Firecrawl API key.
-      let playlistResponse = await fetch(playlistUrl);
-      for (let i = 0; i < 20 && playlistResponse.status === 409; i++) {
-        await sleep(2000);
-        playlistResponse = await fetch(playlistUrl);
-      }
-      expect(playlistResponse.status).toBe(200);
-      expect(playlistResponse.headers.get("content-type")).toContain(
-        "application/vnd.apple.mpegurl",
-      );
-      const playlist = await playlistResponse.text();
-      expect(playlist).toContain("#EXTM3U");
     },
     scrapeTimeout + 60_000,
   );

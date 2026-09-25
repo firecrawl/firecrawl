@@ -79,7 +79,6 @@ type BrowserExecuteRequest = z.infer<typeof browserExecuteRequestSchema>;
 interface BrowserExecuteResponse {
   success: boolean;
   sessionId?: string;
-  playlistUrl?: string;
   truncated?: boolean;
   cdpUrl?: string;
   liveViewUrl?: string;
