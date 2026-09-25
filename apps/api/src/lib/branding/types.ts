@@ -192,6 +192,16 @@ export interface BrandingScriptReturn {
       h2: string;
       body: string;
     };
+    /**
+     * Optional because the branding script ships inside fire-engine, which is
+     * deployed separately: an API running this code may still receive payloads
+     * from a fire-engine built before weights were collected.
+     */
+    weights?: {
+      h1: number;
+      h2: number;
+      body: number;
+    };
   };
   frameworkHints: string[];
   colorScheme: "light" | "dark";
