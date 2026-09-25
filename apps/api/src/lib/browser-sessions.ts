@@ -365,11 +365,11 @@ async function getBrowserProfileDeletedAt(
     getValue(browserProfileDeletedKey(teamId, name)),
     getValue(`browser-profile-deleted:${teamHash}_${name}`),
   ]);
+  const tombstones = values.filter((value): value is string => value !== null);
+  if (tombstones.some(value => !Number.isFinite(Date.parse(value))))
+    throw new Error("Invalid browser profile deletion timestamp.");
   return (
-    values
-      .filter((value): value is string => value !== null)
-      .sort()
-      .at(-1) ?? null
+    tombstones.sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1) ?? null
   );
 }
 
