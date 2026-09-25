@@ -15,6 +15,7 @@ import {
   nuqMetricsController,
 } from "../controllers/v0/admin/metrics";
 import { triggerPrecrawl } from "../controllers/v0/admin/precrawl";
+import { providerAccessBackfillController } from "../controllers/v0/admin/provider-access-backfill";
 import { redisHealthController } from "../controllers/v0/admin/redis-health";
 import { realtimeSearchController } from "../controllers/v2/f-search";
 import {
@@ -68,6 +69,13 @@ if (config.BULL_AUTH_KEY) {
   adminRouter.post(
     `/admin/${config.BULL_AUTH_KEY}/concurrency-queue-backfill`,
     wrap(concurrencyQueueBackfillController),
+  );
+
+  // One-off: derive provider access records from Exchange ledger acceptances.
+  // Dry run unless the body sets dryRun: false.
+  adminRouter.post(
+    `/admin/${config.BULL_AUTH_KEY}/provider-access-backfill`,
+    wrap(providerAccessBackfillController),
   );
 
   adminRouter.post(

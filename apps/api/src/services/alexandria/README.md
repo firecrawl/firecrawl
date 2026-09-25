@@ -55,6 +55,23 @@ on the billing queue with job id `alexandria-bill-<chargeId>`, and report to
 quote, reservation, or `USE_DB_AUTHENTICATION` is unavailable. No worker,
 queue, or migration is needed.
 
+## Terms acceptance
+
+`firecrawl/terms/accept` (run by the Exchange through `/v1/retrieve`) and
+`POST /exchange/provider-terms/accept` write the Exchange ledger. Once the
+ledger confirms, `access-record.ts` mirrors the acceptance into
+`organization_data_source_access`, the row the dashboard writes, so
+`flags.organizationDataSourceAccess` shows it, and clears the auth chunk of
+every team of the org. It follows the dashboard's rules: only the current
+terms; never re-enables a suspended row or one disabled for any reason but the
+org admin's own revocation, which a later acceptance lifts (as
+`authorizeProviders` already does); only for an admin's own key, or any key of
+the org while it allows agent acceptance. A failed mirror is logged and never
+fails the accept, since authorization still honours the ledger.
+`POST /admin/$BULL_AUTH_KEY/provider-access-backfill` with
+`{ orgIds, dryRun }` (dry run by default) derives rows for acceptances made
+before the mirror, or that it failed to write.
+
 ## Idempotency
 
 The charge id is `sha256(teamId, x-request-id)`; send `x-request-id` on every
