@@ -30,6 +30,26 @@ const MAX_CONCURRENT_PAGES = Math.max(
 const ALLOW_LOCAL_WEBHOOKS =
   (process.env.ALLOW_LOCAL_WEBHOOKS || 'False').toUpperCase() === 'TRUE';
 
+// Upper bound on how long a page/context close is allowed to take before we
+// give up on it. A wedged Chromium renderer can make close() hang forever, and
+// the scrape handler must still be able to release its semaphore permit.
+const CLOSE_TIMEOUT_MS = Math.max(
+  1000,
+  Number.parseInt(process.env.CLOSE_TIMEOUT_MS ?? '10000', 10) || 10000,
+);
+
+// Having zero available permits is normal: callers routinely have more scrapes
+// in flight than MAX_CONCURRENT_PAGES, and requests queue. What is not normal
+// is zero permits with no permit changing hands for longer than any single
+// scrape could legitimately take. /scrape defaults to a 15s timeout and callers
+// pass larger values plus wait_after_load, so the default here is deliberately
+// generous -- saturation alone must never be reported as unhealthy.
+const HEALTH_STALL_THRESHOLD_MS = Math.max(
+  1000,
+  Number.parseInt(process.env.HEALTH_STALL_THRESHOLD_MS ?? '180000', 10) ||
+    180000,
+);
+
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
 const PROXY_PASSWORD = process.env.PROXY_PASSWORD || null;
@@ -122,16 +142,25 @@ type ContextSecurityState = {
 class Semaphore {
   private permits: number;
   private queue: (() => void)[] = [];
+  private lastPermitChangeAt: number;
 
   constructor(permits: number) {
     this.permits = permits;
+    // Seed at construction so a freshly started, idle service is never
+    // mistaken for a stalled one.
+    this.lastPermitChangeAt = Date.now();
   }
 
   async acquire(): Promise<void> {
     if (this.permits > 0) {
+      this.lastPermitChangeAt = Date.now();
       this.permits--;
       return Promise.resolve();
     }
+
+    // Deliberately not stamped when the caller parks in the queue: during a
+    // permit leak acquires keep arriving, they just never succeed. Only a
+    // permit actually changing hands counts as progress.
 
     return new Promise<void>((resolve) => {
       this.queue.push(resolve);
@@ -139,6 +168,7 @@ class Semaphore {
   }
 
   release(): void {
+    this.lastPermitChangeAt = Date.now();
     this.permits++;
     if (this.queue.length > 0) {
       const nextResolve = this.queue.shift();
@@ -155,6 +185,10 @@ class Semaphore {
 
   getQueueLength(): number {
     return this.queue.length;
+  }
+
+  getLastPermitChangeAt(): number {
+    return this.lastPermitChangeAt;
   }
 }
 const pageSemaphore = new Semaphore(MAX_CONCURRENT_PAGES);
@@ -273,6 +307,31 @@ const shutdownBrowser = async () => {
   }
 };
 
+// Close a page or context without ever propagating a failure or blocking
+// indefinitely. Both are cleanup-only operations, and a rejection or a hang
+// here must not stop the caller from releasing its semaphore permit.
+const closeQuietly = async (
+  what: string,
+  closable: { close: () => Promise<void> } | null,
+): Promise<void> => {
+  if (!closable) return;
+
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<void>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`Timed out after ${CLOSE_TIMEOUT_MS}ms`));
+    }, CLOSE_TIMEOUT_MS);
+  });
+
+  try {
+    await Promise.race([closable.close(), timedOut]);
+  } catch (error) {
+    console.warn(`Failed to close ${what}:`, error);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const isValidUrl = (urlString: string): boolean => {
   try {
     new URL(urlString);
@@ -345,6 +404,14 @@ const scrapePage = async (
 };
 
 app.get('/health', async (req: Request, res: Response) => {
+  const availablePermits = pageSemaphore.getAvailablePermits();
+  const msSinceLastPermitChange =
+    Date.now() - pageSemaphore.getLastPermitChangeAt();
+  // Saturation is healthy; saturation with no progress is not.
+  const stalled =
+    availablePermits <= 0 &&
+    msSinceLastPermitChange > HEALTH_STALL_THRESHOLD_MS;
+
   try {
     if (!browser) {
       await initializeBrowser();
@@ -355,10 +422,13 @@ app.get('/health', async (req: Request, res: Response) => {
     await testPage.close();
     await testContext.close();
 
-    res.status(200).json({
-      status: 'healthy',
+    res.status(stalled ? 503 : 200).json({
+      status: stalled ? 'stalled' : 'healthy',
       maxConcurrentPages: MAX_CONCURRENT_PAGES,
-      activePages: MAX_CONCURRENT_PAGES - pageSemaphore.getAvailablePermits(),
+      activePages: MAX_CONCURRENT_PAGES - availablePermits,
+      availablePermits,
+      queuedRequests: pageSemaphore.getQueueLength(),
+      msSinceLastPermitChange,
     });
   } catch (error) {
     console.error('Health check failed:', error);
@@ -552,8 +622,8 @@ app.post('/scrape', async (req: Request, res: Response) => {
       .status(500)
       .json({ error: 'An error occurred while fetching the page.' });
   } finally {
-    if (page) await page.close();
-    if (requestContext) await requestContext.close();
+    await closeQuietly('page', page);
+    await closeQuietly('browser context', requestContext);
     pageSemaphore.release();
   }
 });
