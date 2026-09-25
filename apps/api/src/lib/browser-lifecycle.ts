@@ -408,8 +408,13 @@ export async function reconcileBrowserSessions() {
             await redisRateLimitClient.expire(key, 2 * 86400);
           }),
         );
-        const failure = results.find(result => result.status === "rejected");
-        if (failure?.status === "rejected") throw failure.reason;
+        results.forEach((result, index) => {
+          if (result.status === "rejected")
+            logger.error("Failed to update browser reconciliation state", {
+              sessionId: sessions[index].id,
+              error: result.reason,
+            });
+        });
         if (signal.aborted) throw signal.error;
         const lastId = sessions.at(-1)?.id;
         if (lastId && through && lastId !== through) {
