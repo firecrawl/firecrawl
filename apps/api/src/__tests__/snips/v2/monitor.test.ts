@@ -114,6 +114,83 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     expect(create.body.success).toBe(false);
   });
 
+  // Issue #4054: every zod code other than a top-level unrecognized key or a
+  // leading custom refinement used to collapse to the bare string "Bad Request",
+  // so a third-party client had nothing to act on. These pin the message, not
+  // just the status.
+  it("names the offending target field rather than returning a bare Bad Request", async () => {
+    const create = await monitorCreateRaw(
+      {
+        name: "wrong target shape",
+        schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+        targets: [
+          {
+            type: "scrape",
+            // `url` where the scrape target wants `urls`
+            url: createTestIdUrl(),
+          },
+        ],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      identity,
+    );
+
+    expect(create.statusCode).toBe(400);
+    expect(create.body.success).toBe(false);
+    expect(create.body.error).not.toBe("Bad Request");
+    expect(create.body.error).toContain("targets.0.urls");
+    // The crawl branch only failed on its discriminator; surfacing it would send
+    // the caller after a field they never meant to set.
+    expect(create.body.error).not.toContain('expected "crawl"');
+  });
+
+  it("names the offending field for a top-level type mismatch", async () => {
+    const create = await monitorCreateRaw(
+      {
+        name: "wrong retention type",
+        schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+        targets: [
+          {
+            type: "scrape",
+            urls: [createTestIdUrl()],
+          },
+        ],
+        retentionDays: "30",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      identity,
+    );
+
+    expect(create.statusCode).toBe(400);
+    expect(create.body.success).toBe(false);
+    expect(create.body.error).not.toBe("Bad Request");
+    expect(create.body.error).toContain("retentionDays");
+  });
+
+  it("names the offending field inside a search target", async () => {
+    const create = await monitorCreateRaw(
+      {
+        name: "bad search window",
+        schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+        goal: "track launches",
+        targets: [
+          {
+            type: "search",
+            queries: ["firecrawl"],
+            searchWindow: "3d",
+          },
+        ],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      identity,
+    );
+
+    expect(create.statusCode).toBe(400);
+    expect(create.body.success).toBe(false);
+    expect(create.body.error).not.toBe("Bad Request");
+    expect(create.body.error).toContain("searchWindow");
+  });
+
   it("rejects cron schedules under 15 minutes", async () => {
     const response = await monitorCreateRaw(
       {
