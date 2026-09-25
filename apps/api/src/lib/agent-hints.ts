@@ -6,7 +6,10 @@ export interface AgentHintContext {
   remainingCredits?: number;
   canUseMapAndCrawl?: boolean;
   canUseInteract?: boolean;
+  /** "mcp" names the Firecrawl MCP tools instead of REST paths for search and scrape. */
+  surface?: AgentHintSurface;
 }
+export type AgentHintSurface = "http" | "mcp";
 
 export const AGENT_HINT_LOW_CREDIT_THRESHOLD = 100;
 const SEARCH_CLUSTER_MIN_RESULTS = 4;
@@ -48,6 +51,14 @@ function clusteredOrigin(web: unknown[]): string | undefined {
     : undefined;
 }
 const EXCERPT_URLS_SHOWN = 3;
+
+function callFor(
+  endpoint: "search" | "scrape",
+  surface: AgentHintSurface | undefined,
+): string {
+  if (surface === "mcp") return `firecrawl_${endpoint}`;
+  return `POST /v2/${endpoint}`;
+}
 const QUERY_PATH_SEGMENTS = 2;
 
 function httpUrl(value: unknown): URL | undefined {
@@ -63,7 +74,10 @@ function httpUrl(value: unknown): URL | undefined {
 }
 
 /** Names the excerpt-only results by 1-based position so the agent can pick. */
-function excerptOnlyHint(web: unknown[]): string | undefined {
+function excerptOnlyHint(
+  web: unknown[],
+  surface: AgentHintSurface | undefined,
+): string | undefined {
   const excerpts: { position: number; url: string }[] = [];
   web.forEach((value, index) => {
     const item = object(value);
@@ -87,7 +101,7 @@ function excerptOnlyHint(web: unknown[]): string | undefined {
     excerpts.length === web.length
       ? `All ${web.length} web results are excerpts only`
       : `${excerpts.length} of ${web.length} web results are excerpts only`;
-  return `${subject} (${listed}${more}). If you need more than an excerpt, use POST /v2/scrape with {"url":"<one of these URLs>","formats":["markdown"]}. Retrieve only needed pages; do not re-scrape results that already contain the required content.`;
+  return `${subject} (${listed}${more}). If you need more than an excerpt, use ${callFor("scrape", surface)} with {"url":"<one of these URLs>","formats":["markdown"]}. Retrieve only needed pages; do not re-scrape results that already contain the required content.`;
 }
 
 /** Words from the last path segments, e.g. /payments/checkout/migration-from-legacy -> "checkout migration from legacy". */
@@ -117,7 +131,11 @@ function pathWords(url: URL): string {
 }
 
 /** 404/410 guidance built from the requested and final URLs only. */
-function goneHint(metadata: ObjectValue, status: number): string {
+function goneHint(
+  metadata: ObjectValue,
+  status: number,
+  surface: AgentHintSurface | undefined,
+): string {
   const source = httpUrl(metadata.sourceURL);
   const final = httpUrl(metadata.url);
   const page = final ?? source;
@@ -128,7 +146,7 @@ function goneHint(metadata: ObjectValue, status: number): string {
   const words = page ? pathWords(page) : "";
   const query =
     page && words ? `site:${page.hostname} ${words}` : "<page name or subject>";
-  return `The source page returned ${status}${redirected}. If you need its current location or an alternative, use POST /v2/search with ${JSON.stringify({ query, sources: ["web"] })}. Adjust the query to the page identity from your task; this is not a transient-error retry.`;
+  return `The source page returned ${status}${redirected}. If you need its current location or an alternative, use ${callFor("search", surface)} with ${JSON.stringify({ query, sources: ["web"] })}. Adjust the query to the page identity from your task; this is not a transient-error retry.`;
 }
 
 export function buildAgentHints(context: AgentHintContext): string[] {
@@ -156,7 +174,7 @@ export function buildAgentHints(context: AgentHintContext): string[] {
       context.endpoint === "scrape" &&
       (pageStatus === 404 || pageStatus === 410)
     ) {
-      nextAction = goneHint(metadata, pageStatus);
+      nextAction = goneHint(metadata, pageStatus, context.surface);
     } else if (
       context.endpoint === "scrape" &&
       typeof metadata.numPages === "number" &&
@@ -167,7 +185,7 @@ export function buildAgentHints(context: AgentHintContext): string[] {
     ) {
       const maxPages = Math.min(metadata.totalPages, 10000);
       if (maxPages > metadata.numPages) {
-        nextAction = `This document returned ${metadata.numPages} of ${metadata.totalPages} pages. If you need more pages, repeat POST /v2/scrape for the same URL with {"parsers":[{"type":"pdf","maxPages":${maxPages}}]}.`;
+        nextAction = `This document returned ${metadata.numPages} of ${metadata.totalPages} pages. If you need more pages, repeat ${callFor("scrape", context.surface)} for the same URL with {"parsers":[{"type":"pdf","maxPages":${maxPages}}]}.`;
       }
     } else if (context.endpoint === "search") {
       const web = Array.isArray(response.data)
@@ -176,10 +194,9 @@ export function buildAgentHints(context: AgentHintContext): string[] {
           ? data.web
           : undefined;
       if (web?.length === 0) {
-        nextAction =
-          'No web results were returned. If the task is still unresolved, use POST /v2/search again with {"query":"<broader or alternative query>","sources":["web"]}.';
+        nextAction = `No web results were returned. If the task is still unresolved, use ${callFor("search", context.surface)} again with {"query":"<broader or alternative query>","sources":["web"]}.`;
       } else if (web) {
-        const excerptHint = excerptOnlyHint(web);
+        const excerptHint = excerptOnlyHint(web, context.surface);
         if (excerptHint) {
           nextAction = excerptHint;
         } else {

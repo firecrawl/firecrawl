@@ -308,6 +308,46 @@ describe("deterministic agent hints", () => {
     expect(hint).toContain('"query":"<page name or subject>"');
   });
 
+  it("names the MCP tools instead of REST paths for the mcp surface", () => {
+    const search = hints({
+      surface: "mcp",
+      response: {
+        success: true,
+        data: { web: [{ url: "https://b.example/one" }] },
+      },
+    }).join(" ");
+    expect(search).toContain("use firecrawl_scrape with");
+    expect(search).not.toContain("POST /v2/");
+    const gone = hints({
+      surface: "mcp",
+      endpoint: "scrape",
+      response: { success: true, data: { metadata: { statusCode: 404 } } },
+    }).join(" ");
+    expect(gone).toContain("use firecrawl_search with");
+    const empty = hints({
+      surface: "mcp",
+      response: { success: true, data: { web: [] } },
+    }).join(" ");
+    expect(empty).toContain("use firecrawl_search again");
+    const pdf = hints({
+      surface: "mcp",
+      endpoint: "scrape",
+      response: {
+        success: true,
+        data: { metadata: { numPages: 5, totalPages: 47 } },
+      },
+    }).join(" ");
+    expect(pdf).toContain("repeat firecrawl_scrape for the same URL");
+    expect(
+      hints({
+        response: {
+          success: true,
+          data: { web: [{ url: "https://b.example" }] },
+        },
+      }).join(" "),
+    ).toContain("use POST /v2/scrape with");
+  });
+
   it("uses explicit page status instead of API 404s such as cache misses", () => {
     for (const code of [404, 410]) {
       const result = hints({

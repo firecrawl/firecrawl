@@ -72,6 +72,25 @@ describe("agent hint response middleware", () => {
     },
   );
 
+  it.each(["mcp", " MCP "])(
+    "header value %s names the MCP tools",
+    async value => {
+      const body = {
+        success: true,
+        data: { web: [{ url: "https://example.com" }] },
+      };
+      const response = await request(appFor({ body }))
+        .post("/")
+        .set("X-Firecrawl-Agent-Hints", value)
+        .send({});
+      expect(response.body.agent_hints).toHaveLength(1);
+      expect(response.body.agent_hints[0]).toContain(
+        "use firecrawl_scrape with",
+      );
+      expect(response.body.agent_hints[0]).not.toContain("POST /v2/");
+    },
+  );
+
   it.each([404, 410])(
     "adds the scrape-to-search hint for page status %i",
     async statusCode => {
