@@ -161,4 +161,112 @@ describe("v2.agent threads unit", () => {
       "/v2/agent/threads/thread-1?includeData=true",
     );
   });
+  test("startAgent forwards exchange.onTermsRequired and a terms approve", async () => {
+    const post = okPost();
+    const exchange = {
+      onTermsRequired: "ask" as const,
+      approve: {
+        approvalId: "0199aaaa-0000-7000-8000-000000000000",
+        callIds: ["apollo"],
+      },
+    };
+
+    await startAgent({ post } as any, {
+      prompt: "Continue",
+      threadId: "thread-1",
+      exchange,
+    });
+
+    expect(post).toHaveBeenCalledWith("/v2/agent", {
+      prompt: "Continue",
+      threadId: "thread-1",
+      exchange,
+    });
+  });
+
+  test("getAgentStatus parses skippedProviders, requiresAction and a terms approval", async () => {
+    const approvalId = "0199aaaa-0000-7000-8000-000000000000";
+    const get = jest.fn().mockResolvedValue({
+      status: 200,
+      data: {
+        success: true,
+        status: "completed",
+        data: null,
+        model: "spark-2",
+        expiresAt: "2026-09-02T00:00:00.000Z",
+        exchange: {
+          enabled: true,
+          onTermsRequired: "ask",
+          paidCalls: 0,
+          creditsUsed: null,
+          skippedProviders: [
+            {
+              provider: "apollo",
+              name: "Apollo",
+              capability: "people/search",
+              adds: "verified work emails",
+              reason: "terms_required",
+              version: "F-1.0.0",
+              termsUrl: "https://www.firecrawl.dev/app/alexandria/apollo",
+            },
+          ],
+          requiresAction: {
+            type: "accept_terms",
+            approvalId,
+            providers: [
+              {
+                id: "apollo",
+                provider: "apollo",
+                name: "Apollo",
+                version: "F-1.0.0",
+                url: "https://www.firecrawl.dev/app/alexandria/apollo",
+                show: {
+                  provider: "firecrawl",
+                  capability: "terms/show",
+                  options: { provider: "apollo" },
+                },
+                accept: {
+                  provider: "firecrawl",
+                  capability: "terms/accept",
+                  options: {
+                    provider: "apollo",
+                    version: "F-1.0.0",
+                    digest: null,
+                    confirmed: true,
+                  },
+                },
+              },
+            ],
+          },
+        },
+        pendingApproval: {
+          id: approvalId,
+          kind: "terms",
+          reason: "Apollo could add verified work emails.",
+          calls: [],
+          terms: [
+            {
+              id: "apollo",
+              provider: "apollo",
+              name: "Apollo",
+              version: "F-1.0.0",
+              url: "https://www.firecrawl.dev/app/alexandria/apollo",
+            },
+          ],
+          resolution: null,
+        },
+      },
+    });
+
+    const status = await getAgentStatus({ get } as any, "agent-job");
+
+    expect(status.exchange!.onTermsRequired).toBe("ask");
+    expect(status.exchange!.skippedProviders![0].reason).toBe("terms_required");
+    const action = status.exchange!.requiresAction!;
+    expect(action.approvalId).toBe(approvalId);
+    expect(action.providers[0].accept.capability).toBe("terms/accept");
+    expect(action.providers[0].accept.options.digest).toBeNull();
+    expect(status.pendingApproval!.kind).toBe("terms");
+    expect(status.pendingApproval!.terms![0].id).toBe("apollo");
+  });
 });

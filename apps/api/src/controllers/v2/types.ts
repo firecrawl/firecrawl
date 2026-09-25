@@ -1069,6 +1069,13 @@ const agentExchangeSchema = z.strictObject({
       approvalId: z.string().uuid(),
     })
     .optional(),
+  // What to do when a provider the agent would use needs data terms the team
+  // has not accepted: "skip" (the agent service's default), "ask" or "fail".
+  // Gated providers are never called in any mode, and there is deliberately
+  // no auto-accept: terms are only accepted by a human-authorized
+  // terms/accept or in the dashboard. Omitted on a follow-up turn means the
+  // previous turn's value.
+  onTermsRequired: z.enum(["skip", "ask", "fail"]).optional(),
 });
 
 export const agentRequestSchema = z
@@ -1637,9 +1644,35 @@ export type AgentSuggestion = {
   prompt: string;
 };
 
+type AgentOnTermsRequired = "skip" | "ask" | "fail";
+
+// A provider the agent would have used but could not, because the team has
+// not accepted its data terms.
+type AgentTermsGate = {
+  // What `exchange.approve.callIds` names to mark this provider accepted.
+  id: string;
+  provider: string;
+  name: string;
+  logo?: string;
+  capability?: string;
+  // What it would have added, in the agent's words.
+  adds?: string;
+  // The gating agreement version and document digest terms/accept needs.
+  version: string;
+  digest?: string;
+  publisher?: string;
+  // Where a person accepts the terms in the dashboard.
+  url: string;
+};
+
 export type AgentPendingApproval = {
   id: string;
+  // "calls" (the default when absent): paid calls waiting for approval.
+  // "terms": providers that need their data terms accepted. Approving means
+  // the user accepted them; declining excludes them for the thread.
+  kind?: "calls" | "terms";
   reason: string;
+  terms?: AgentTermsGate[];
   calls: {
     id: string;
     provider: string;
@@ -1659,12 +1692,65 @@ export type AgentPendingApproval = {
 // What a run did with Exchange, as the agent service reports it. `toolkits` and
 // `requireApproval` are what the run resolved to after thread inheritance, so
 // they describe the run rather than echoing the request.
+type AgentSkippedProvider = {
+  provider: string;
+  name: string;
+  capability?: string;
+  adds?: string;
+  reason: "terms_required";
+  version: string;
+  termsUrl: string;
+};
+
+// The Exchange calls a calling agent makes to accept a provider's terms once
+// its user has explicitly agreed. The agent service never executes them.
+type AgentTermsRequiredAction = {
+  type: "accept_terms";
+  // Set when the run ended with a `terms` pending approval ("ask" mode):
+  // continue the thread with `exchange.approve: { approvalId }`.
+  approvalId?: string;
+  providers: {
+    // The `approve.callIds` entry that marks this provider accepted.
+    id: string;
+    provider: string;
+    name: string;
+    capability?: string;
+    adds?: string;
+    version: string;
+    digest?: string;
+    url: string;
+    show: {
+      provider: "firecrawl";
+      capability: "terms/show";
+      options: { provider: string };
+    };
+    accept: {
+      provider: "firecrawl";
+      capability: "terms/accept";
+      options: {
+        provider: string;
+        version: string;
+        // null when the catalog published no digest; terms/show returns it.
+        digest: string | null;
+        confirmed: true;
+      };
+    };
+  }[];
+};
+
 export type AgentExchangeSummary = {
   enabled: boolean;
   toolkits?: string[];
   requireApproval?: boolean;
+  onTermsRequired?: AgentOnTermsRequired;
   paidCalls: number;
   creditsUsed: number | null;
+  // Gated providers that would have helped and were not used. Any mode.
+  skippedProviders?: AgentSkippedProvider[];
+  // "ask" and "fail" modes, when skippedProviders is not empty.
+  requiresAction?: AgentTermsRequiredAction;
+  // "fail" mode: the turn stopped because a gated provider was needed.
+  error?: { code: "THIRD_PARTY_DATA_TERMS_REQUIRED"; message: string };
 };
 
 export type AgentResponse =

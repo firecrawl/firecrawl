@@ -8,7 +8,7 @@ export interface AgentHintContext {
   canUseInteract?: boolean;
 }
 
-export const AGENT_HINT_LOW_CREDIT_THRESHOLD = 100;
+const AGENT_HINT_LOW_CREDIT_THRESHOLD = 100;
 const SEARCH_CLUSTER_MIN_RESULTS = 4;
 const SEARCH_CLUSTER_MIN_ORIGIN_RESULTS = 3;
 const SEARCH_CLUSTER_MIN_SHARE = 0.75;

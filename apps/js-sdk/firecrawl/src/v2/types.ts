@@ -1453,9 +1453,81 @@ export interface AgentExchangeOptions {
   toolkits?: string[];
   maxCalls?: number;
   requireApproval?: boolean;
-  /** Answers a pendingApproval from the previous turn of the thread. */
+  /**
+   * Answers a pendingApproval from the previous turn of the thread. For a
+   * `terms` approval, `callIds` names the providers the user accepted
+   * (`requiresAction.providers[].id`); omitted means all of them.
+   */
   approve?: { approvalId: string; callIds?: string[]; always?: boolean };
   decline?: { approvalId: string };
+  /**
+   * What to do when a provider the agent would use needs data terms the team
+   * has not accepted. Gated providers are never called in any mode:
+   * - "skip" (server default): answer with accepted providers only and list
+   *   the gated ones in `exchange.skippedProviders`.
+   * - "ask": the same, plus `exchange.requiresAction` and a `terms`
+   *   pendingApproval. Get your user's explicit consent, call terms/accept,
+   *   then continue the thread with `approve: { approvalId }`.
+   * - "fail": stop making calls once a gated provider is needed and set
+   *   `exchange.error` (THIRD_PARTY_DATA_TERMS_REQUIRED).
+   * There is no auto-accept mode. Omitted on a follow-up turn inherits the
+   * previous turn's value.
+   */
+  onTermsRequired?: AgentOnTermsRequired;
+}
+
+export type AgentOnTermsRequired = "skip" | "ask" | "fail";
+
+/** A gated provider the run would have used but did not. */
+export interface AgentSkippedProvider {
+  provider: string;
+  name: string;
+  capability?: string;
+  /** What it would have added, in the agent's words. */
+  adds?: string;
+  reason: "terms_required";
+  /** The gating terms version. */
+  version: string;
+  /** Where a person accepts the terms in the dashboard. */
+  termsUrl: string;
+}
+
+/**
+ * The exact Exchange calls to view and accept a provider's terms. Nothing here
+ * is executed for you, and terms/accept must only be called after the user
+ * has explicitly agreed to that provider's terms.
+ */
+export interface AgentTermsRequiredAction {
+  type: "accept_terms";
+  /** Set in "ask" mode: continue the thread with `exchange.approve: { approvalId }`. */
+  approvalId?: string;
+  providers: {
+    /** The `approve.callIds` entry that marks this provider accepted. */
+    id: string;
+    provider: string;
+    name: string;
+    capability?: string;
+    adds?: string;
+    version: string;
+    digest?: string;
+    url: string;
+    show: {
+      provider: "firecrawl";
+      capability: "terms/show";
+      options: { provider: string };
+    };
+    accept: {
+      provider: "firecrawl";
+      capability: "terms/accept";
+      options: {
+        provider: string;
+        version: string;
+        /** null when the catalog published no digest; terms/show returns it. */
+        digest: string | null;
+        confirmed: true;
+      };
+    };
+  }[];
 }
 
 /** Per-run summary reported on a status response. */
@@ -1464,8 +1536,30 @@ export interface AgentExchangeSummary {
   /** What the run resolved to after thread inheritance, not what it requested. */
   toolkits?: string[];
   requireApproval?: boolean;
+  onTermsRequired?: AgentOnTermsRequired;
   paidCalls: number;
   creditsUsed: number | null;
+  /** Gated providers that would have helped and were not used. Any mode. */
+  skippedProviders?: AgentSkippedProvider[];
+  /** "ask" and "fail" modes, when a gated provider was skipped. */
+  requiresAction?: AgentTermsRequiredAction;
+  /** "fail" mode: the turn stopped because a gated provider was needed. */
+  error?: { code: "THIRD_PARTY_DATA_TERMS_REQUIRED"; message: string };
+}
+
+/** A provider in a `terms` pendingApproval. */
+export interface AgentTermsGate {
+  /** What `approve.callIds` names to mark this provider accepted. */
+  id: string;
+  provider: string;
+  name: string;
+  logo?: string;
+  capability?: string;
+  adds?: string;
+  version: string;
+  digest?: string;
+  publisher?: string;
+  url: string;
 }
 
 /** A follow-up the agent offers for the next turn of the thread. */
@@ -1474,10 +1568,16 @@ export interface AgentSuggestion {
   prompt: string;
 }
 
-/** A turn that ended waiting for the caller to allow or refuse paid calls. */
+/**
+ * A turn that ended waiting for the caller: to allow or refuse paid calls
+ * (`kind` "calls" or absent), or to accept a provider's data terms
+ * (`kind` "terms", `calls` empty, `terms` set).
+ */
 export interface PendingApproval {
   id: string;
+  kind?: "calls" | "terms";
   reason: string;
+  terms?: AgentTermsGate[];
   calls: {
     id: string;
     provider: string;

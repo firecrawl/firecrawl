@@ -283,3 +283,192 @@ describe("agentRequestSchema model and effort resolution", () => {
     ).toThrow();
   });
 });
+
+describe("agentRequestSchema exchange.onTermsRequired", () => {
+  const base = { prompt: "Find the key business contact at exa.ai" };
+
+  it.each(["skip", "ask", "fail"] as const)(
+    "forwards onTermsRequired %s unchanged",
+    onTermsRequired => {
+      const parsed = agentRequestSchema.parse({
+        ...base,
+        exchange: { onTermsRequired },
+      });
+
+      expect(parsed.exchange).toEqual({ onTermsRequired });
+    },
+  );
+
+  it("leaves onTermsRequired unset when omitted so the thread inherits it", () => {
+    const parsed = agentRequestSchema.parse({
+      ...base,
+      exchange: { requireApproval: true },
+    });
+
+    expect(parsed.exchange).toEqual({ requireApproval: true });
+    expect(parsed.exchange?.onTermsRequired).toBeUndefined();
+  });
+
+  it("accepts onTermsRequired alongside an approve continuation", () => {
+    const approve = {
+      approvalId: "0199aaaa-0000-7000-8000-000000000000",
+      callIds: ["apollo"],
+    };
+    const parsed = agentRequestSchema.parse({
+      ...base,
+      exchange: { onTermsRequired: "ask", approve },
+    });
+
+    expect(parsed.exchange).toEqual({ onTermsRequired: "ask", approve });
+  });
+
+  it.each(["accept", "auto", "", true])(
+    "rejects onTermsRequired %s",
+    onTermsRequired => {
+      expect(
+        agentRequestSchema.safeParse({
+          ...base,
+          exchange: { onTermsRequired },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it("still rejects unknown exchange fields", () => {
+    expect(
+      agentRequestSchema.safeParse({
+        ...base,
+        exchange: { onTermsRequired: "ask", autoAcceptTerms: true },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("agentStatusController terms-required passthrough", () => {
+  const req = {
+    params: { jobId: "job-123" },
+    auth: { team_id: "team-123" },
+  } as RequestWithAuth<{ jobId: string }, any, any>;
+
+  it("returns skippedProviders, requiresAction and a terms pending approval unchanged", async () => {
+    const approvalId = "0199aaaa-0000-7000-8000-000000000000";
+    const exchange = {
+      enabled: true,
+      requireApproval: false,
+      onTermsRequired: "ask",
+      paidCalls: 0,
+      creditsUsed: null,
+      skippedProviders: [
+        {
+          provider: "apollo",
+          name: "Apollo",
+          capability: "people/search",
+          adds: "verified work emails and direct phone numbers",
+          reason: "terms_required",
+          version: "F-1.0.0",
+          termsUrl: "https://www.firecrawl.dev/app/alexandria/apollo",
+        },
+      ],
+      requiresAction: {
+        type: "accept_terms",
+        approvalId,
+        providers: [
+          {
+            id: "apollo",
+            provider: "apollo",
+            name: "Apollo",
+            capability: "people/search",
+            version: "F-1.0.0",
+            url: "https://www.firecrawl.dev/app/alexandria/apollo",
+            show: {
+              provider: "firecrawl",
+              capability: "terms/show",
+              options: { provider: "apollo" },
+            },
+            accept: {
+              provider: "firecrawl",
+              capability: "terms/accept",
+              options: {
+                provider: "apollo",
+                version: "F-1.0.0",
+                digest: null,
+                confirmed: true,
+              },
+            },
+          },
+        ],
+      },
+    };
+    const pendingApproval = {
+      id: approvalId,
+      kind: "terms",
+      reason: "Apollo could add verified work emails.",
+      calls: [],
+      terms: [
+        {
+          id: "apollo",
+          provider: "apollo",
+          name: "Apollo",
+          version: "F-1.0.0",
+          url: "https://www.firecrawl.dev/app/alexandria/apollo",
+        },
+      ],
+      resolution: null,
+    };
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+    });
+    (getExtractV3AgentStatus as Mock).mockResolvedValue({
+      id: "job-123",
+      success: true,
+      status: "success",
+      model: "spark-2",
+      exchange,
+      pendingApproval,
+    });
+
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+    await agentStatusController(req, res);
+
+    const body = (res.json as Mock).mock.calls[0][0];
+    expect(body.exchange).toEqual(exchange);
+    expect(body.pendingApproval).toEqual(pendingApproval);
+  });
+
+  it("returns the fail-mode error unchanged", async () => {
+    const exchange = {
+      enabled: true,
+      onTermsRequired: "fail",
+      paidCalls: 0,
+      creditsUsed: null,
+      skippedProviders: [],
+      error: {
+        code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
+        message: "Apollo needs its data terms accepted before this can run.",
+      },
+    };
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+    });
+    (getExtractV3AgentStatus as Mock).mockResolvedValue({
+      id: "job-123",
+      success: true,
+      status: "success",
+      model: "spark-2",
+      exchange,
+    });
+
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+    await agentStatusController(req, res);
+
+    expect((res.json as Mock).mock.calls[0][0].exchange).toEqual(exchange);
+  });
+});

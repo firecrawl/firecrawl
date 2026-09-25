@@ -1554,9 +1554,96 @@ class AgentExchangeOptions(BaseModel):
     toolkits: Optional[List[str]] = None
     max_calls: Optional[int] = Field(default=None, alias="maxCalls")
     require_approval: Optional[bool] = Field(default=None, alias="requireApproval")
-    # Answers a pending_approval from the previous turn of the thread.
+    # Answers a pending_approval from the previous turn of the thread. For a
+    # "terms" approval, callIds names the providers the user accepted
+    # (requiresAction.providers[].id); omitted means all of them.
     approve: Optional[Dict[str, Any]] = None
     decline: Optional[Dict[str, Any]] = None
+    # What to do when a provider the agent would use needs data terms the team
+    # has not accepted. Gated providers are never called in any mode:
+    # - "skip" (server default): answer with accepted providers only and list
+    #   the gated ones in exchange.skipped_providers.
+    # - "ask": the same, plus exchange.requires_action and a "terms"
+    #   pending_approval. Get your user's explicit consent, call terms/accept,
+    #   then continue the thread with approve={"approvalId": ...}.
+    # - "fail": stop making calls once a gated provider is needed and set
+    #   exchange.error (THIRD_PARTY_DATA_TERMS_REQUIRED).
+    # There is no auto-accept mode. Omitted on a follow-up turn inherits the
+    # previous turn's value.
+    on_terms_required: Optional[Literal["skip", "ask", "fail"]] = Field(
+        default=None, alias="onTermsRequired"
+    )
+
+
+class AgentSkippedProvider(BaseModel):
+    """A gated provider the run would have used but did not."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    provider: Optional[str] = None
+    name: Optional[str] = None
+    capability: Optional[str] = None
+    # What it would have added, in the agent's words.
+    adds: Optional[str] = None
+    # "terms_required".
+    reason: Optional[str] = None
+    # The gating terms version.
+    version: Optional[str] = None
+    # Where a person accepts the terms in the dashboard.
+    terms_url: Optional[str] = Field(default=None, alias="termsUrl")
+
+
+class AgentExchangeCall(BaseModel):
+    """An Exchange call spelled out for the caller to make (terms/show, terms/accept)."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    provider: Optional[str] = None
+    capability: Optional[str] = None
+    options: Optional[Dict[str, Any]] = None
+
+
+class AgentTermsActionProvider(BaseModel):
+    """One provider whose terms the caller can view and accept."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    # The approve callIds entry that marks this provider accepted.
+    id: Optional[str] = None
+    provider: Optional[str] = None
+    name: Optional[str] = None
+    capability: Optional[str] = None
+    adds: Optional[str] = None
+    version: Optional[str] = None
+    digest: Optional[str] = None
+    url: Optional[str] = None
+    show: Optional[AgentExchangeCall] = None
+    # Only call this after the user has explicitly agreed to the terms. Its
+    # options.digest is None when the catalog published none; terms/show
+    # returns it.
+    accept: Optional[AgentExchangeCall] = None
+
+
+class AgentTermsRequiredAction(BaseModel):
+    """The exact calls to view and accept gated providers' terms. Never run for you."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    # "accept_terms".
+    type: Optional[str] = None
+    # Set in "ask" mode: continue the thread with approve={"approvalId": ...}.
+    approval_id: Optional[str] = Field(default=None, alias="approvalId")
+    providers: Optional[List[AgentTermsActionProvider]] = None
+
+
+class AgentExchangeError(BaseModel):
+    """Set in "fail" mode when the turn stopped for a gated provider."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    # "THIRD_PARTY_DATA_TERMS_REQUIRED".
+    code: Optional[str] = None
+    message: Optional[str] = None
 
 
 class AgentExchangeSummary(BaseModel):
@@ -1568,8 +1655,19 @@ class AgentExchangeSummary(BaseModel):
     # What the run resolved to after thread inheritance, not what it requested.
     toolkits: Optional[List[str]] = None
     require_approval: Optional[bool] = Field(default=None, alias="requireApproval")
+    on_terms_required: Optional[str] = Field(default=None, alias="onTermsRequired")
     paid_calls: Optional[int] = Field(default=None, alias="paidCalls")
     credits_used: Optional[int] = Field(default=None, alias="creditsUsed")
+    # Gated providers that would have helped and were not used. Any mode.
+    skipped_providers: Optional[List[AgentSkippedProvider]] = Field(
+        default=None, alias="skippedProviders"
+    )
+    # "ask" and "fail" modes, when a gated provider was skipped.
+    requires_action: Optional[AgentTermsRequiredAction] = Field(
+        default=None, alias="requiresAction"
+    )
+    # "fail" mode only.
+    error: Optional[AgentExchangeError] = None
 
 
 class AgentSuggestion(BaseModel):
@@ -1605,14 +1703,38 @@ class PendingApprovalResolution(BaseModel):
     by_run_id: Optional[str] = Field(default=None, alias="byRunId")
 
 
+class PendingApprovalTerms(BaseModel):
+    """A provider in a "terms" pending approval."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    # What approve callIds names to mark this provider accepted.
+    id: Optional[str] = None
+    provider: Optional[str] = None
+    name: Optional[str] = None
+    logo: Optional[str] = None
+    capability: Optional[str] = None
+    adds: Optional[str] = None
+    version: Optional[str] = None
+    digest: Optional[str] = None
+    publisher: Optional[str] = None
+    url: Optional[str] = None
+
+
 class PendingApproval(BaseModel):
-    """A turn that ended waiting for the caller to allow or refuse paid calls."""
+    """A turn that ended waiting for the caller.
+
+    kind "calls" (or None): allow or refuse paid calls. kind "terms": accept
+    the listed providers' data terms; calls is empty and terms is set.
+    """
 
     model_config = {"populate_by_name": True, "extra": "allow"}
 
     id: Optional[str] = None
+    kind: Optional[str] = None
     reason: Optional[str] = None
     calls: Optional[List[PendingApprovalCall]] = None
+    terms: Optional[List[PendingApprovalTerms]] = None
     resolution: Optional[PendingApprovalResolution] = None
 
 

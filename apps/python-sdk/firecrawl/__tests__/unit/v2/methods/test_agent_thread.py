@@ -55,6 +55,35 @@ class TestAgentThreadRequestPreparation:
 
         assert data["exchange"] == {"enabled": True, "maxCalls": 4}
 
+    def test_exchange_on_terms_required_serialized_by_alias(self):
+        data = _prepare_agent_request(
+            None,
+            prompt="Continue",
+            thread_id="thread-1",
+            exchange=AgentExchangeOptions(
+                on_terms_required="ask",
+                approve={
+                    "approvalId": "0199aaaa-0000-7000-8000-000000000000",
+                    "callIds": ["apollo"],
+                },
+            ),
+        )
+
+        assert data["exchange"] == {
+            "onTermsRequired": "ask",
+            "approve": {
+                "approvalId": "0199aaaa-0000-7000-8000-000000000000",
+                "callIds": ["apollo"],
+            },
+        }
+
+    def test_exchange_on_terms_required_rejects_unknown_mode(self):
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            AgentExchangeOptions(on_terms_required="accept")
+
     def test_start_agent_forwards_thread_id(self):
         client = Mock()
         response = Mock()
@@ -135,6 +164,110 @@ class TestAgentThreadStatusParsing:
         assert response.suggestions[0].label == "Seat caps?"
         assert response.pending_approval.calls[0].credits_estimate == 5
         assert response.exchange.paid_calls == 0
+
+    def test_terms_required_status_payload(self):
+        approval_id = "0199aaaa-0000-7000-8000-000000000000"
+        response = AgentResponse(
+            **{
+                "success": True,
+                "id": "job-3",
+                "status": "completed",
+                "model": "spark-2",
+                "exchange": {
+                    "enabled": True,
+                    "onTermsRequired": "ask",
+                    "paidCalls": 0,
+                    "creditsUsed": None,
+                    "skippedProviders": [
+                        {
+                            "provider": "apollo",
+                            "name": "Apollo",
+                            "capability": "people/search",
+                            "adds": "verified work emails",
+                            "reason": "terms_required",
+                            "version": "F-1.0.0",
+                            "termsUrl": "https://www.firecrawl.dev/app/alexandria/apollo",
+                        }
+                    ],
+                    "requiresAction": {
+                        "type": "accept_terms",
+                        "approvalId": approval_id,
+                        "providers": [
+                            {
+                                "id": "apollo",
+                                "provider": "apollo",
+                                "name": "Apollo",
+                                "version": "F-1.0.0",
+                                "url": "https://www.firecrawl.dev/app/alexandria/apollo",
+                                "show": {
+                                    "provider": "firecrawl",
+                                    "capability": "terms/show",
+                                    "options": {"provider": "apollo"},
+                                },
+                                "accept": {
+                                    "provider": "firecrawl",
+                                    "capability": "terms/accept",
+                                    "options": {
+                                        "provider": "apollo",
+                                        "version": "F-1.0.0",
+                                        "digest": None,
+                                        "confirmed": True,
+                                    },
+                                },
+                            }
+                        ],
+                    },
+                },
+                "pendingApproval": {
+                    "id": approval_id,
+                    "kind": "terms",
+                    "reason": "Apollo could add verified work emails.",
+                    "calls": [],
+                    "terms": [
+                        {
+                            "id": "apollo",
+                            "provider": "apollo",
+                            "name": "Apollo",
+                            "version": "F-1.0.0",
+                            "url": "https://www.firecrawl.dev/app/alexandria/apollo",
+                        }
+                    ],
+                    "resolution": None,
+                },
+            }
+        )
+
+        exchange = response.exchange
+        assert exchange.on_terms_required == "ask"
+        assert exchange.skipped_providers[0].terms_url.endswith("/apollo")
+        assert exchange.requires_action.approval_id == approval_id
+        accept = exchange.requires_action.providers[0].accept
+        assert accept.capability == "terms/accept"
+        assert accept.options["digest"] is None
+        assert exchange.error is None
+        assert response.pending_approval.kind == "terms"
+        assert response.pending_approval.terms[0].id == "apollo"
+
+    def test_terms_required_fail_status_payload(self):
+        response = AgentResponse(
+            **{
+                "success": True,
+                "id": "job-4",
+                "status": "completed",
+                "exchange": {
+                    "enabled": True,
+                    "onTermsRequired": "fail",
+                    "paidCalls": 0,
+                    "creditsUsed": None,
+                    "error": {
+                        "code": "THIRD_PARTY_DATA_TERMS_REQUIRED",
+                        "message": "Apollo needs its data terms accepted.",
+                    },
+                },
+            }
+        )
+
+        assert response.exchange.error.code == "THIRD_PARTY_DATA_TERMS_REQUIRED"
 
     def test_status_payload_ignores_unknown_fields(self):
         """Old SDKs must survive server-side additions; new ones must too."""

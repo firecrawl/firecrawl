@@ -133,6 +133,21 @@ describe("Agent thread parameter validation", () => {
   );
 
   it(
+    "rejects an unknown exchange.onTermsRequired",
+    async () => {
+      const response = await agentRaw({
+        urls: [TEST_SUITE_WEBSITE],
+        prompt: "What does this page offer?",
+        exchange: { onTermsRequired: "accept" },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+    },
+    scrapeTimeout,
+  );
+
+  it(
     "rejects an unknown mode",
     async () => {
       const response = await agentRaw({
