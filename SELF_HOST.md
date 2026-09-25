@@ -14,6 +14,7 @@ the services and configuration match the revision you checked out.
 | Decide whether self-hosting fits and run the first scrape | [Public self-hosting guide](https://docs.firecrawl.dev/contributing/self-host) |
 | Check which variables and services exist at this revision | [Root Compose configuration](./docker-compose.yaml) |
 | Adapt a Kubernetes deployment | [Kubernetes manifests](./examples/kubernetes/cluster-install/) or [Helm chart](./examples/kubernetes/firecrawl-helm/) |
+| Deploy on a self-hosted PaaS with one click | [Easypanel](https://easypanel.io) template: https://easypanel.io/templates/firecrawl |
 | Change Firecrawl product code | [Running Locally](https://docs.firecrawl.dev/contributing/guide), then the [contribution guide](./CONTRIBUTING.md) |
 | Connect an agent or terminal client | [Local MCP](https://docs.firecrawl.dev/mcp-server/local) or [Firecrawl CLI](https://docs.firecrawl.dev/sdks/cli#connect-the-cli-to-self-hosted-firecrawl) |
 
