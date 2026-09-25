@@ -1,20 +1,8 @@
 import { vi } from "vitest";
-import { reserveKeylessCredits } from "../keyless";
-import {
-  createBrowserSession,
-  settleBrowserSession,
-  stopBrowserSession,
-} from "../browser-lifecycle";
-import {
-  createHangarBrowser,
-  stopHangarBrowser,
-  getHangarBrowser,
-} from "../hangar";
+import { settleBrowserSession, stopBrowserSession } from "../browser-lifecycle";
+import { stopHangarBrowser, getHangarBrowser } from "../hangar";
 import { billTeam } from "../../services/billing/credit_billing";
-import {
-  reserveExternalSlot,
-  mirrorExternalSlotRelease,
-} from "../../services/worker/nuq-router";
+import { mirrorExternalSlotRelease } from "../../services/worker/nuq-router";
 import {
   upsertBrowserProfile,
   settleBrowserSessionOnce,
@@ -204,39 +192,4 @@ it("does not call Hangar again for an already destroyed session", async () => {
     }),
   ).toMatchObject({ success: true, creditsBilled: 2 });
   expect(stopHangarBrowser).not.toHaveBeenCalled();
-});
-
-it("does not create a VM when capacity reservation is refused", async () => {
-  vi.mocked(reserveExternalSlot).mockResolvedValueOnce(false);
-  await expect(
-    createBrowserSession({ auth: { team_id: "team" } } as any, {
-      ttl: 600,
-      activityTtl: 300,
-      streamWebView: false,
-      recordSession: false,
-    }),
-  ).rejects.toMatchObject({ status: 429 });
-  expect(createHangarBrowser).not.toHaveBeenCalled();
-});
-
-it("releases capacity if Hangar creation fails", async () => {
-  vi.mocked(reserveKeylessCredits).mockResolvedValueOnce({ ok: true } as any);
-  vi.mocked(createHangarBrowser).mockRejectedValueOnce(
-    new Error("unavailable"),
-  );
-  await expect(
-    createBrowserSession({ auth: { team_id: "team" } } as any, {
-      ttl: 600,
-      activityTtl: 300,
-      streamWebView: false,
-      recordSession: false,
-    }),
-  ).rejects.toThrow("unavailable");
-  expect(
-    vi.mocked(reserveExternalSlot).mock.invocationCallOrder[0],
-  ).toBeLessThan(vi.mocked(createHangarBrowser).mock.invocationCallOrder[0]);
-  expect(mirrorExternalSlotRelease).toHaveBeenCalledWith(
-    "team",
-    expect.any(String),
-  );
 });

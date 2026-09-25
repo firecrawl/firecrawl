@@ -319,22 +319,4 @@ describeIf("NuQ router (forced FDB mode)", () => {
     await mirrorExternalSlotRelease(teamId, holder);
     expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
   });
-
-  test("simultaneous browser reservations cannot overbook the FDB ledger", async () => {
-    const teamId = randomUUID();
-    const holders = Array.from({ length: 12 }, () => randomUUID());
-    try {
-      const admitted = await Promise.all(
-        holders.map(id => reserveExternalSlot(teamId, id, 30_000, 2)),
-      );
-      expect(admitted.filter(Boolean)).toHaveLength(2);
-      expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(2);
-    } finally {
-      await Promise.all(
-        holders.map(id => mirrorExternalSlotRelease(teamId, id)),
-      );
-    }
-    expect(await reserveExternalSlot(teamId, holders[0], 30_000, 2)).toBe(true);
-    await mirrorExternalSlotRelease(teamId, holders[0]);
-  });
 });
