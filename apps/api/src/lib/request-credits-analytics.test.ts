@@ -33,9 +33,9 @@ describe("readRequestCreditsFromAnalytics", () => {
 
   it("sums the request's scrape rows", async () => {
     rows([{ credits: "17", jobs: "4" }]);
-    await expect(readRequestCreditsFromAnalytics("request-1")).resolves.toBe(
-      17,
-    );
+    await expect(
+      readRequestCreditsFromAnalytics("request-1", { emptyAsZero: true }),
+    ).resolves.toBe(17);
     expect(query.mock.calls[0][0]).toMatchObject({
       query: expect.stringContaining(
         "FROM scrapes_by_request FINAL WHERE request_id = {requestId: UUID}",
@@ -44,25 +44,32 @@ describe("readRequestCreditsFromAnalytics", () => {
     });
   });
 
-  it("is null when the request has no scrape rows", async () => {
+  it("reads no scrape rows as zero for a status answer", async () => {
     rows([{ credits: 0, jobs: 0 }]);
     await expect(
-      readRequestCreditsFromAnalytics("request-1"),
+      readRequestCreditsFromAnalytics("request-1", { emptyAsZero: true }),
+    ).resolves.toBe(0);
+  });
+
+  it("reads no scrape rows as unknown for finalization", async () => {
+    rows([{ credits: 0, jobs: 0 }]);
+    await expect(
+      readRequestCreditsFromAnalytics("request-1", { emptyAsZero: false }),
     ).resolves.toBeNull();
   });
 
   it("is null when ClickHouse is not configured", async () => {
     client.current = null;
     await expect(
-      readRequestCreditsFromAnalytics("request-1"),
+      readRequestCreditsFromAnalytics("request-1", { emptyAsZero: true }),
     ).resolves.toBeNull();
     expect(query).not.toHaveBeenCalled();
   });
 
   it("propagates ClickHouse errors", async () => {
     query.mockRejectedValueOnce(new Error("ClickHouse unavailable"));
-    await expect(readRequestCreditsFromAnalytics("request-1")).rejects.toThrow(
-      "ClickHouse unavailable",
-    );
+    await expect(
+      readRequestCreditsFromAnalytics("request-1", { emptyAsZero: true }),
+    ).rejects.toThrow("ClickHouse unavailable");
   });
 });

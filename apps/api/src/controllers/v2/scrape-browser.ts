@@ -30,7 +30,6 @@ import {
   BrowserServiceDeleteResponse,
 } from "../../lib/scrape-interact/browser-service-client";
 import {
-  ScrapeContextRow,
   buildReplayContextFromScrape,
   estimateReplayTimeoutSeconds,
   buildReplayScript,
@@ -60,7 +59,6 @@ import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activit
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { integrationSchema } from "../../utils/integration";
-import { supabaseGetScrapeByIdDirect } from "../../lib/supabase-jobs";
 import {
   BROWSER_CREDITS_PER_HOUR,
   INTERACT_CREDITS_PER_HOUR,
@@ -71,7 +69,6 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { getScrapeJobAccess } from "../../lib/operational-job-access";
 import { readScrapeJobState } from "../../lib/job-state-store";
 import { scrapeQueue } from "../../services/worker/nuq-router";
-import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
 import { browserProfileStorageId } from "../../lib/browser-profiles";
 
 // ---------------------------------------------------------------------------
@@ -171,14 +168,10 @@ export async function scrapeInteractController(
     });
   }
 
-  let stateReadFailed = false;
   const [nuqJob, state] = await Promise.all([
     scrapeQueue.getJob(scrapeId, logger),
     readScrapeJobState(scrapeId).catch(error => {
-      logger.warn("Bigtable scrape state read failed; using legacy lookup", {
-        error,
-      });
-      stateReadFailed = true;
+      logger.warn("Bigtable scrape state read failed", { error });
       return null;
     }),
   ]);
@@ -205,7 +198,6 @@ export async function scrapeInteractController(
 
   let replayContext = state?.replay;
   let replayError: string | undefined;
-  let legacyScrape: ScrapeContextRow | null = null;
   if (!replayContext && nuqJob?.data.mode === "single_urls") {
     const replay = buildReplayContextFromScrape({
       id: scrapeId,
@@ -213,21 +205,6 @@ export async function scrapeInteractController(
       url: nuqJob.data.url,
       options: nuqJob.data.scrapeOptions,
     });
-    replayContext = replay.context;
-    replayError = replay.error;
-  }
-  if (!replayContext) {
-    legacyScrape = (await supabaseGetScrapeByIdDirect(
-      scrapeId,
-    )) as ScrapeContextRow | null;
-    if (legacyScrape && !stateReadFailed) {
-      recordJobStorePostgresFallback("scrape_state", scrapeId, {
-        reason: "replay_context",
-      });
-    }
-    const replay = legacyScrape
-      ? buildReplayContextFromScrape(legacyScrape)
-      : { error: "Replay context is unavailable for this scrape job." };
     replayContext = replay.context;
     replayError = replay.error;
   }
@@ -272,10 +249,7 @@ export async function scrapeInteractController(
       state?.profile ??
       (nuqJob?.data.mode === "single_urls"
         ? nuqJob.data.scrapeOptions.profile
-        : undefined) ??
-      ((legacyScrape?.options as ScrapeOptions | undefined)?.profile as
-        | { name: string; saveChanges: boolean }
-        | undefined);
+        : undefined);
     const created = await createSessionForScrape(
       req,
       scrapeId,
@@ -327,20 +301,14 @@ export async function scrapeInteractController(
   // every run carries the URL / wait / actions / origin that set the stage
   // for what the agent does on top of it. URLs are stripped of query
   // strings to avoid leaking PII into LangSmith.
-  const scrapeOptions = (legacyScrape?.options ?? {}) as {
-    origin?: string;
-  };
   const traceScrapeContext = {
-    scrapeUrl: sanitizeUrlForTrace(
-      legacyScrape?.url ?? replayContext.targetUrl,
-    ),
+    scrapeUrl: sanitizeUrlForTrace(replayContext.targetUrl),
     targetUrl: sanitizeUrlForTrace(replayContext.targetUrl),
     scrapeWaitForMs: replayContext.waitForMs,
     scrapeActions: replayContext.actions.length,
     scrapeOrigin:
       state?.origin ??
-      (nuqJob?.data.mode === "single_urls" ? nuqJob.data.origin : undefined) ??
-      scrapeOptions.origin,
+      (nuqJob?.data.mode === "single_urls" ? nuqJob.data.origin : undefined),
   };
 
   // Identity fields below team_id — optional, normalized from null → undefined

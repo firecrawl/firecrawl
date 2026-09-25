@@ -6,6 +6,9 @@ import { saltedUuidV7RowKey } from "./bigtable-row-key";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
 
 const FAMILY = "f";
+const FEEDBACK_ROW_RETENTION_MS = 24 * 60 * 60 * 1000;
+/** Headroom past a configured feedback window longer than the default retention. */
+const FEEDBACK_ROW_RETENTION_MARGIN_MS = 60 * 60 * 1000;
 const QUALIFIER = "v";
 
 type FeedbackEndpoint = "search" | "scrape" | "parse" | "map";
@@ -160,6 +163,17 @@ export async function writeFeedbackJob(
       const feedbackDeadline = new Date(
         completedAt.getTime() + feedbackWindowSec * 1000,
       );
+      // The row outlives the feedback window so late feedback can be told
+      // "window expired" rather than "job not found"; the deadline inside the
+      // value is what enforces the window. A window configured longer than
+      // the default retention still gets a row that outlives it.
+      const retainUntil = new Date(
+        completedAt.getTime() +
+          Math.max(
+            FEEDBACK_ROW_RETENTION_MS,
+            feedbackWindowSec * 1000 + FEEDBACK_ROW_RETENTION_MARGIN_MS,
+          ),
+      );
       const value = Buffer.from(
         JSON.stringify({
           version: 1,
@@ -184,7 +198,7 @@ export async function writeFeedbackJob(
             [FAMILY]: {
               [QUALIFIER]: {
                 value,
-                timestamp: feedbackDeadline,
+                timestamp: retainUntil,
               },
             },
           },
