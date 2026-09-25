@@ -338,6 +338,22 @@ describe("agentRequestSchema exchange.onTermsRequired", () => {
     ).toBeUndefined();
   });
 
+  it("forwards empty approve and decline callIds lists unchanged", () => {
+    const approvalId = "0199aaaa-0000-7000-8000-000000000000";
+    expect(
+      agentRequestSchema.parse({
+        ...base,
+        exchange: { approve: { approvalId, callIds: [] } },
+      }).exchange?.approve?.callIds,
+    ).toEqual([]);
+    expect(
+      agentRequestSchema.parse({
+        ...base,
+        exchange: { decline: { approvalId, callIds: [] } },
+      }).exchange?.decline?.callIds,
+    ).toEqual([]);
+  });
+
   it("rejects decline.callIds that is not a string array", () => {
     expect(
       agentRequestSchema.safeParse({
@@ -469,17 +485,70 @@ describe("agentStatusController terms-required passthrough", () => {
     expect(body.pendingApproval).toEqual(pendingApproval);
   });
 
-  it("returns the fail-mode error unchanged", async () => {
+  it("returns the fail-mode error, its answerable requiresAction and terms approval unchanged", async () => {
+    const approvalId = "0199aaaa-0000-7000-8000-000000000001";
     const exchange = {
       enabled: true,
       onTermsRequired: "fail",
       paidCalls: 0,
       creditsUsed: null,
-      skippedProviders: [],
+      skippedProviders: [
+        {
+          provider: "apollo",
+          name: "Apollo",
+          reason: "terms_required",
+          version: "F-1.0.0",
+          termsUrl: "https://www.firecrawl.dev/app/alexandria/apollo",
+        },
+      ],
+      requiresAction: {
+        type: "accept_terms",
+        approvalId,
+        providers: [
+          {
+            id: "apollo",
+            provider: "apollo",
+            name: "Apollo",
+            version: "F-1.0.0",
+            url: "https://www.firecrawl.dev/app/alexandria/apollo",
+            show: {
+              provider: "firecrawl",
+              capability: "terms/show",
+              options: { provider: "apollo" },
+            },
+            accept: {
+              provider: "firecrawl",
+              capability: "terms/accept",
+              options: {
+                provider: "apollo",
+                version: "F-1.0.0",
+                digest: null,
+                confirmed: true,
+              },
+            },
+          },
+        ],
+      },
       error: {
         code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
         message: "Apollo needs its data terms accepted before this can run.",
       },
+    };
+    const pendingApproval = {
+      id: approvalId,
+      kind: "terms",
+      reason: "Apollo is needed for this.",
+      calls: [],
+      terms: [
+        {
+          id: "apollo",
+          provider: "apollo",
+          name: "Apollo",
+          version: "F-1.0.0",
+          url: "https://www.firecrawl.dev/app/alexandria/apollo",
+        },
+      ],
+      resolution: null,
     };
     (getAgentJobAccess as Mock).mockResolvedValue({
       teamId: "team-123",
@@ -491,6 +560,7 @@ describe("agentStatusController terms-required passthrough", () => {
       status: "success",
       model: "spark-2",
       exchange,
+      pendingApproval,
     });
 
     const res = {
@@ -499,6 +569,64 @@ describe("agentStatusController terms-required passthrough", () => {
     } as unknown as Response;
     await agentStatusController(req, res);
 
-    expect((res.json as Mock).mock.calls[0][0].exchange).toEqual(exchange);
+    const body = (res.json as Mock).mock.calls[0][0];
+    expect(body.exchange).toEqual(exchange);
+    expect(body.pendingApproval).toEqual(pendingApproval);
+  });
+
+  it("returns skippedProviders without requiresAction when the terms offer was deferred behind a paid-call approval", async () => {
+    const exchange = {
+      enabled: true,
+      requireApproval: true,
+      onTermsRequired: "ask",
+      paidCalls: 0,
+      creditsUsed: null,
+      skippedProviders: [
+        {
+          provider: "apollo",
+          name: "Apollo",
+          reason: "terms_required",
+          version: "F-1.0.0",
+          termsUrl: "https://www.firecrawl.dev/app/alexandria/apollo",
+        },
+      ],
+    };
+    const pendingApproval = {
+      id: "0199aaaa-0000-7000-8000-000000000002",
+      reason: "One paid call answers this.",
+      calls: [
+        {
+          id: "call-1",
+          provider: "provider-1",
+          capability: "capability-1",
+          input: { query: "sso" },
+          creditsEstimate: 5,
+        },
+      ],
+      resolution: null,
+    };
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+    });
+    (getExtractV3AgentStatus as Mock).mockResolvedValue({
+      id: "job-123",
+      success: true,
+      status: "success",
+      model: "spark-2",
+      exchange,
+      pendingApproval,
+    });
+
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+    await agentStatusController(req, res);
+
+    const body = (res.json as Mock).mock.calls[0][0];
+    expect(body.exchange).toEqual(exchange);
+    expect(body.exchange.requiresAction).toBeUndefined();
+    expect(body.pendingApproval).toEqual(pendingApproval);
   });
 });

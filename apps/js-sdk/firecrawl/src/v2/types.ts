@@ -1456,13 +1456,14 @@ export interface AgentExchangeOptions {
   /**
    * Answers a pendingApproval from the previous turn of the thread. For a
    * `terms` approval, `callIds` names the providers the user accepted
-   * (`requiresAction.providers[].id`); omitted means all of them.
+   * (`requiresAction.providers[].id`). Only the ids listed count: `[]` names
+   * nobody, and omitted means every one offered.
    */
   approve?: { approvalId: string; callIds?: string[]; always?: boolean };
   /**
    * Refuses a pendingApproval. For a `terms` approval, `callIds` names the
-   * providers the user declined (excluded for the rest of the thread);
-   * omitted declines the whole offer.
+   * providers the user declined (excluded for the rest of the thread). Only
+   * the ids listed count: `[]` declines nobody, and omitted declines all.
    */
   decline?: { approvalId: string; callIds?: string[] };
   /**
@@ -1474,7 +1475,8 @@ export interface AgentExchangeOptions {
    *   pendingApproval. Get your user's explicit consent, call terms/accept,
    *   then continue the thread with `approve: { approvalId }`.
    * - "fail": stop making calls once a gated provider is needed and set
-   *   `exchange.error` (THIRD_PARTY_DATA_TERMS_REQUIRED).
+   *   `exchange.error` (THIRD_PARTY_DATA_TERMS_REQUIRED). It also ends on a
+   *   `terms` pendingApproval with `requiresAction`, answered the same way.
    * There is no auto-accept mode. Omitted on a follow-up turn inherits the
    * previous turn's value.
    */
@@ -1504,8 +1506,12 @@ export interface AgentSkippedProvider {
  */
 export interface AgentTermsRequiredAction {
   type: "accept_terms";
-  /** Set in "ask" mode: continue the thread with `exchange.approve: { approvalId }`. */
-  approvalId?: string;
+  /**
+   * The `terms` pendingApproval that answers this. After the user agrees and
+   * terms/accept succeeds, continue the thread with
+   * `exchange.approve: { approvalId }` (or `decline`).
+   */
+  approvalId: string;
   providers: {
     /** The `approve.callIds` entry that marks this provider accepted. */
     id: string;
@@ -1546,7 +1552,11 @@ export interface AgentExchangeSummary {
   creditsUsed: number | null;
   /** Gated providers that would have helped and were not used. Any mode. */
   skippedProviders?: AgentSkippedProvider[];
-  /** "ask" and "fail" modes, when a gated provider was skipped. */
+  /**
+   * "ask" and "fail" modes, when a terms offer ended the turn. Left out when
+   * the offer was deferred behind a paid-call approval: it comes, with its
+   * approvalId, on the next turn.
+   */
   requiresAction?: AgentTermsRequiredAction;
   /** "fail" mode: the turn stopped because a gated provider was needed. */
   error?: { code: "THIRD_PARTY_DATA_TERMS_REQUIRED"; message: string };
@@ -1573,31 +1583,51 @@ export interface AgentSuggestion {
   prompt: string;
 }
 
-/**
- * A turn that ended waiting for the caller: to allow or refuse paid calls
- * (`kind` "calls" or absent), or to accept a provider's data terms
- * (`kind` "terms", `calls` empty, `terms` set).
- */
-export interface PendingApproval {
+/** A paid call a `calls` pendingApproval is holding back. */
+export interface PendingApprovalCall {
   id: string;
-  kind?: "calls" | "terms";
+  provider: string;
+  capability: string;
+  input: Record<string, unknown>;
+  more?: Record<string, unknown>[];
+  creditsEstimate: number | null;
+}
+
+interface PendingApprovalBase {
+  id: string;
   reason: string;
-  terms?: AgentTermsGate[];
-  calls: {
-    id: string;
-    provider: string;
-    capability: string;
-    input: Record<string, unknown>;
-    more?: Record<string, unknown>[];
-    creditsEstimate: number | null;
-  }[];
   resolution: null | {
     approved: boolean;
+    /** Calls approved, or for a terms item the provider ids accepted/declined. */
     callIds: string[];
     always: boolean;
     byRunId: string;
   };
 }
+
+/**
+ * A turn that ended waiting for the caller to allow or refuse paid calls.
+ * `kind` is absent on items written before terms offers existed.
+ */
+export interface PendingCallsApproval extends PendingApprovalBase {
+  kind?: "calls";
+  calls: PendingApprovalCall[];
+  terms?: never;
+}
+
+/**
+ * A turn that ended waiting for the caller to accept providers' data terms
+ * ("ask" and "fail" modes). `calls` is always empty (typed `never[]` rather
+ * than `[]` so existing `pendingApproval.calls[0]` code still compiles).
+ */
+export interface PendingTermsApproval extends PendingApprovalBase {
+  kind: "terms";
+  calls: never[];
+  terms: AgentTermsGate[];
+}
+
+/** Narrow on `kind === "terms"`. */
+export type PendingApproval = PendingCallsApproval | PendingTermsApproval;
 
 export interface AgentResponse {
   success: boolean;

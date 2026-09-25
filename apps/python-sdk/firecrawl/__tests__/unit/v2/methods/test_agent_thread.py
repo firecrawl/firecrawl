@@ -259,6 +259,8 @@ class TestAgentThreadStatusParsing:
         assert accept.options["digest"] is None
         assert exchange.error is None
         assert response.pending_approval.kind == "terms"
+        assert response.pending_approval.is_terms
+        assert response.pending_approval.calls == []
         assert response.pending_approval.terms[0].id == "apollo"
 
     def test_terms_required_fail_status_payload(self):
@@ -281,6 +283,13 @@ class TestAgentThreadStatusParsing:
         )
 
         assert response.exchange.error.code == "THIRD_PARTY_DATA_TERMS_REQUIRED"
+
+    def test_calls_approval_is_not_terms(self):
+        legacy = AgentResponse(
+            **{"pendingApproval": {"id": "a", "reason": "r", "calls": [], "resolution": None}}
+        )
+        assert legacy.pending_approval.kind is None
+        assert not legacy.pending_approval.is_terms
 
     def test_status_payload_ignores_unknown_fields(self):
         """Old SDKs must survive server-side additions; new ones must too."""

@@ -1556,11 +1556,12 @@ class AgentExchangeOptions(BaseModel):
     require_approval: Optional[bool] = Field(default=None, alias="requireApproval")
     # Answers a pending_approval from the previous turn of the thread. For a
     # "terms" approval, callIds names the providers the user accepted
-    # (requiresAction.providers[].id); omitted means all of them.
+    # (requiresAction.providers[].id). Only the ids listed count: [] names
+    # nobody, omitted means every one offered.
     approve: Optional[Dict[str, Any]] = None
     # Refuses a pending_approval. For a "terms" approval, callIds names the
-    # providers the user declined (excluded for the rest of the thread);
-    # omitted declines the whole offer. E.g.
+    # providers the user declined (excluded for the rest of the thread). Only
+    # the ids listed count: [] declines nobody, omitted declines all. E.g.
     # {"approvalId": "...", "callIds": ["apollo"]}.
     decline: Optional[Dict[str, Any]] = None
     # What to do when a provider the agent would use needs data terms the team
@@ -1571,7 +1572,8 @@ class AgentExchangeOptions(BaseModel):
     #   pending_approval. Get your user's explicit consent, call terms/accept,
     #   then continue the thread with approve={"approvalId": ...}.
     # - "fail": stop making calls once a gated provider is needed and set
-    #   exchange.error (THIRD_PARTY_DATA_TERMS_REQUIRED).
+    #   exchange.error (THIRD_PARTY_DATA_TERMS_REQUIRED). It also ends on a
+    #   "terms" pending_approval with requires_action, answered the same way.
     # There is no auto-accept mode. Omitted on a follow-up turn inherits the
     # previous turn's value.
     on_terms_required: Optional[Literal["skip", "ask", "fail"]] = Field(
@@ -1635,7 +1637,10 @@ class AgentTermsRequiredAction(BaseModel):
 
     # "accept_terms".
     type: Optional[str] = None
-    # Set in "ask" mode: continue the thread with approve={"approvalId": ...}.
+    # Always set by the server: the "terms" pending_approval that answers this.
+    # After the user agrees and terms/accept succeeds, continue the thread with
+    # approve={"approvalId": ...} (or decline). Optional here only so a
+    # malformed payload cannot break status polling.
     approval_id: Optional[str] = Field(default=None, alias="approvalId")
     providers: Optional[List[AgentTermsActionProvider]] = None
 
@@ -1666,7 +1671,8 @@ class AgentExchangeSummary(BaseModel):
     skipped_providers: Optional[List[AgentSkippedProvider]] = Field(
         default=None, alias="skippedProviders"
     )
-    # "ask" and "fail" modes, when a gated provider was skipped.
+    # "ask" and "fail" modes, when a terms offer ended the turn. None when the
+    # offer was deferred behind a paid-call approval; it comes next turn.
     requires_action: Optional[AgentTermsRequiredAction] = Field(
         default=None, alias="requiresAction"
     )
@@ -1728,8 +1734,15 @@ class PendingApprovalTerms(BaseModel):
 class PendingApproval(BaseModel):
     """A turn that ended waiting for the caller.
 
-    kind "calls" (or None): allow or refuse paid calls. kind "terms": accept
-    the listed providers' data terms; calls is empty and terms is set.
+    Two shapes, told apart by ``kind``:
+
+    - calls (``kind`` "calls", or None on items written before terms offers):
+      allow or refuse the paid ``calls``.
+    - terms (``kind`` "terms"): accept the listed providers' data ``terms``;
+      ``calls`` is always empty. Use ``is_terms`` to branch.
+
+    One model rather than a pydantic discriminated union, so an item with an
+    unknown ``kind`` still parses and status polling keeps working.
     """
 
     model_config = {"populate_by_name": True, "extra": "allow"}
@@ -1741,6 +1754,9 @@ class PendingApproval(BaseModel):
     terms: Optional[List[PendingApprovalTerms]] = None
     resolution: Optional[PendingApprovalResolution] = None
 
+    @property
+    def is_terms(self) -> bool:
+        return self.kind == "terms"
 
 class AgentResponse(BaseModel):
     """Response for agent operations (start/status/final)."""

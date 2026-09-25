@@ -288,7 +288,10 @@ describe("v2.agent threads unit", () => {
     expect(action.approvalId).toBe(approvalId);
     expect(action.providers[0].accept.capability).toBe("terms/accept");
     expect(action.providers[0].accept.options.digest).toBeNull();
-    expect(status.pendingApproval!.kind).toBe("terms");
-    expect(status.pendingApproval!.terms![0].id).toBe("apollo");
+    const pending = status.pendingApproval!;
+    expect(pending.kind).toBe("terms");
+    if (pending.kind !== "terms") throw new Error("expected a terms approval");
+    expect(pending.calls).toEqual([]);
+    expect(pending.terms[0].id).toBe("apollo");
   });
 });

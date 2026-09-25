@@ -1060,6 +1060,7 @@ const agentExchangeSchema = z.strictObject({
   approve: z
     .strictObject({
       approvalId: z.string().uuid(),
+      // Only the ids listed count: [] names nobody, omitted means all offered.
       callIds: z.array(z.string()).optional(),
       always: z.boolean().optional(),
     })
@@ -1068,7 +1069,7 @@ const agentExchangeSchema = z.strictObject({
     .strictObject({
       approvalId: z.string().uuid(),
       // Terms offers only: the provider ids (`terms[].id`) the user declined.
-      // Omitted declines the whole offer.
+      // Only the ids listed count: [] declines nobody, omitted declines all.
       callIds: z.array(z.string()).optional(),
     })
     .optional(),
@@ -1668,14 +1669,22 @@ type AgentTermsGate = {
   url: string;
 };
 
-export type AgentPendingApproval = {
+type AgentPendingApprovalBase = {
   id: string;
-  // "calls" (the default when absent): paid calls waiting for approval.
-  // "terms": providers that need their data terms accepted. Approving means
-  // the user accepted them; declining excludes them for the thread.
-  kind?: "calls" | "terms";
   reason: string;
-  terms?: AgentTermsGate[];
+  resolution: null | {
+    approved: boolean;
+    // Calls approved, or for a terms item the provider ids accepted/declined.
+    callIds: string[];
+    always: boolean;
+    byRunId: string;
+  };
+};
+
+// Paid calls waiting for approval. `kind` is absent on items written before
+// terms offers existed.
+type AgentPendingCallsApproval = AgentPendingApprovalBase & {
+  kind?: "calls";
   calls: {
     id: string;
     provider: string;
@@ -1684,13 +1693,20 @@ export type AgentPendingApproval = {
     more?: Record<string, unknown>[];
     creditsEstimate: number | null;
   }[];
-  resolution: null | {
-    approved: boolean;
-    callIds: string[];
-    always: boolean;
-    byRunId: string;
-  };
+  terms?: never;
 };
+
+// Providers whose data terms need accepting ("ask" and "fail" modes). `calls`
+// stays empty so clients reading only the calls shape see nothing to run.
+type AgentPendingTermsApproval = AgentPendingApprovalBase & {
+  kind: "terms";
+  calls: [];
+  terms: AgentTermsGate[];
+};
+
+export type AgentPendingApproval =
+  | AgentPendingCallsApproval
+  | AgentPendingTermsApproval;
 
 // What a run did with Exchange, as the agent service reports it. `toolkits` and
 // `requireApproval` are what the run resolved to after thread inheritance, so
@@ -1709,9 +1725,9 @@ type AgentSkippedProvider = {
 // its user has explicitly agreed. The agent service never executes them.
 type AgentTermsRequiredAction = {
   type: "accept_terms";
-  // Set when the run ended with a `terms` pending approval ("ask" mode):
-  // continue the thread with `exchange.approve: { approvalId }`.
-  approvalId?: string;
+  // The `terms` pending approval that answers this: accept the terms, then
+  // continue the thread with `exchange.approve: { approvalId }` (or decline).
+  approvalId: string;
   providers: {
     // The `approve.callIds` entry that marks this provider accepted.
     id: string;
@@ -1750,7 +1766,8 @@ export type AgentExchangeSummary = {
   creditsUsed: number | null;
   // Gated providers that would have helped and were not used. Any mode.
   skippedProviders?: AgentSkippedProvider[];
-  // "ask" and "fail" modes, when skippedProviders is not empty.
+  // "ask" and "fail" modes, when a terms offer ended the turn. Left out when
+  // the offer was deferred behind a paid-call approval; it comes next turn.
   requiresAction?: AgentTermsRequiredAction;
   // "fail" mode: the turn stopped because a gated provider was needed.
   error?: { code: "THIRD_PARTY_DATA_TERMS_REQUIRED"; message: string };
