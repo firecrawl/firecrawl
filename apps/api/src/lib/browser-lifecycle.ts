@@ -210,49 +210,65 @@ export async function settleBrowserSession(
     });
   }
   const sessionDurationMs = (browser.ended_at! - browser.created_at) * 1000;
-  const { creditsBilled } = await settleBrowserSessionOnce(
+  // The prompt flag is read under the row lock so a concurrent prompt cannot
+  // change the rate after it is recorded.
+  let usedPrompt = false;
+  const { creditsBilled, newlySettled } = await settleBrowserSessionOnce(
     session.id,
     async current => {
-      const usedPrompt =
+      usedPrompt =
         current.should_bill && (await didBrowserSessionUsePrompt(current.id));
-      const credits = current.should_bill
+      return current.should_bill
         ? calculateBrowserSessionCredits(
             sessionDurationMs,
             usedPrompt ? INTERACT_CREDITS_PER_HOUR : BROWSER_CREDITS_PER_HOUR,
           )
         : 0;
-      const agentRequestId =
-        current.request_id && current.request_id !== current.id
-          ? current.request_id
-          : undefined;
-      if (current.should_bill) {
-        await billTeam(
-          current.team_id,
-          await orgIdForTeam(current.team_id),
-          credits,
-          null,
-          {
-            endpoint: agentRequestId
-              ? "agent"
-              : usedPrompt || current.scrape_id
-                ? "interact"
-                : "browser",
-            jobId: agentRequestId ?? current.id,
-            // Keyed on the session so DELETE and reconciliation dedupe.
-            chargeId: `${current.id}:destroy`,
-          },
-        );
-      }
-      if (agentRequestId) {
-        await recordRequestCredits({
-          requestId: agentRequestId,
-          jobId: current.id,
-          credits,
-        });
-      }
-      return credits;
     },
   );
+  // Billing follows the receipt commit, like every other endpoint: a retried
+  // settlement never re-queues the debit, and a failed charge is logged.
+  if (newlySettled) {
+    const agentRequestId =
+      session.request_id && session.request_id !== session.id
+        ? session.request_id
+        : undefined;
+    if (session.should_bill) {
+      billTeam(
+        session.team_id,
+        await orgIdForTeam(session.team_id),
+        creditsBilled,
+        null,
+        {
+          endpoint: agentRequestId
+            ? "agent"
+            : usedPrompt || session.scrape_id
+              ? "interact"
+              : "browser",
+          jobId: agentRequestId ?? session.id,
+          chargeId: `${session.id}:destroy`,
+        },
+      ).catch(error =>
+        logger.error("Failed to bill browser session", {
+          sessionId: session.id,
+          creditsBilled,
+          error,
+        }),
+      );
+    }
+    if (agentRequestId) {
+      await recordRequestCredits({
+        requestId: agentRequestId,
+        jobId: session.id,
+        credits: creditsBilled,
+      }).catch(error =>
+        logger.error("Failed to record browser request credits", {
+          sessionId: session.id,
+          error,
+        }),
+      );
+    }
+  }
   await finalizeBrowserSession(session, creditsBilled);
   return { sessionDurationMs, creditsBilled };
 }
@@ -271,56 +287,49 @@ export async function reserveBrowserPromptCredits(
   req: RequestWithAuth<any, any, any>,
   session: BrowserSessionRow,
 ) {
+  const closed = new HangarError(
+    410,
+    "Browser session is no longer accepting prompts.",
+  );
+  if (session.status !== "active" || session.credits_used !== null)
+    throw closed;
+  // Upstream checks stay outside the row lock so a slow Hangar or Autumn
+  // response does not pin a database connection.
+  const browser = await getHangarBrowser(session.browser_id, 0, 5000);
+  if (["stopping", "stopped", "failed"].includes(browser.status)) throw closed;
+  const credits = calculateBrowserSessionCredits(
+    session.ttl_total * 1000,
+    INTERACT_CREDITS_PER_HOUR,
+  );
+  if (session.should_bill && req.acuc?.org_id) {
+    const credit = await autumnService.checkCredits({
+      teamId: session.team_id,
+      orgId: req.acuc.org_id,
+      value: credits,
+      properties: {
+        source: "browserPrompt",
+        path: req.path,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+      },
+    });
+    if (credit !== null && !credit.allowed)
+      throw new HangarError(
+        402,
+        "Insufficient credits for a browser prompt session.",
+      );
+  }
+  // The same row lock guards settlement: a prompt admitted before stop
+  // records its rate before billing reads it, and a later prompt cannot
+  // change it. A failed flag read/write must not run at the cheaper rate.
   await withLockedBrowserSession(session.id, async current => {
     if (current.status !== "active" || current.credits_used !== null)
-      throw new HangarError(
-        410,
-        "Browser session is no longer accepting prompts.",
-      );
-
-    // The same row lock guards settlement. A prompt admitted before stop must
-    // finish recording its rate before billing; a later prompt cannot change it,
-    // even if a failed settlement left the database row active and unbilled.
-    const browser = await getHangarBrowser(current.browser_id, 0, 5000);
-    if (["stopping", "stopped", "failed"].includes(browser.status))
-      throw new HangarError(
-        410,
-        "Browser session is no longer accepting prompts.",
-      );
-
-    // A failed flag read/write must not execute a prompt at the cheaper rate.
+      throw closed;
     if (await didBrowserSessionUsePrompt(current.id)) return;
-    if (current.should_bill) {
-      const credits = calculateBrowserSessionCredits(
-        current.ttl_total * 1000,
-        INTERACT_CREDITS_PER_HOUR,
-      );
-      if (req.acuc?.org_id) {
-        const credit = await autumnService.checkCredits({
-          teamId: current.team_id,
-          orgId: req.acuc.org_id,
-          value: credits,
-          properties: {
-            source: "browserPrompt",
-            path: req.path,
-            apiKeyId: req.acuc?.api_key_id ?? null,
-          },
-        });
-        if (credit !== null && !credit.allowed)
-          throw new HangarError(
-            402,
-            "Insufficient credits for a browser prompt session.",
-          );
-      }
-      if (
-        !(await updateKeylessBrowserCredits(
-          current.team_id,
-          current.id,
-          credits,
-        ))
-      )
-        throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
-    }
+    if (
+      current.should_bill &&
+      !(await updateKeylessBrowserCredits(current.team_id, current.id, credits))
+    )
+      throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
     await markBrowserSessionUsedPrompt(current.id);
   });
 }
@@ -412,10 +421,15 @@ export async function reconcileBrowserSessions() {
               }
             } catch (error) {
               failures = Math.min(Number(state.failures ?? 0) + 1, 5);
-              logger.error("Failed to reconcile Hangar session", {
-                sessionId: session.id,
-                error,
-              });
+              // Repeat failures during an outage are expected; only the
+              // first one per session is an error.
+              logger[failures > 1 ? "warn" : "error"](
+                "Failed to reconcile Hangar session",
+                {
+                  sessionId: session.id,
+                  error,
+                },
+              );
             }
             await redisRateLimitClient.hset(key, {
               failures,

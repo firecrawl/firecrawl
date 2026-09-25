@@ -194,12 +194,13 @@ export async function deleteHangarProfile(owner: string, name: string) {
     { resource: "profiles" },
   );
   // Compared against Hangar save timestamps during reconciliation.
-  if (
-    typeof result.deleted_at !== "number" ||
-    !Number.isFinite(result.deleted_at)
-  )
+  const deletedAt =
+    typeof result.deleted_at === "number"
+      ? new Date(result.deleted_at * 1000)
+      : new Date(NaN);
+  if (Number.isNaN(deletedAt.getTime()))
     throw new HangarError(502, "Invalid Hangar profile deletion response.");
-  return { deletedAt: new Date(result.deleted_at * 1000).toISOString() };
+  return { deletedAt: deletedAt.toISOString() };
 }
 
 /** Keep the replay API's HLS response while letting players fetch segments from Hangar. */

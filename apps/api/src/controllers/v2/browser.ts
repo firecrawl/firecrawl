@@ -28,6 +28,7 @@ import {
   HangarError,
 } from "../../lib/hangar";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
+import { browserProfileNameSchema } from "../../lib/browser-profiles";
 
 export const browserCreateRequestSchema = z.object({
   ttl: z.number().int().min(30).max(3600).default(600),
@@ -37,7 +38,7 @@ export const browserCreateRequestSchema = z.object({
   integration: integrationSchema.optional().transform(value => value || null),
   profile: z
     .object({
-      name: z.string().min(1).max(128),
+      name: browserProfileNameSchema,
       saveChanges: z.boolean().default(true),
     })
     .optional(),
@@ -168,8 +169,6 @@ export async function browserExecuteController(
   }
 }
 
-const profileNameSchema = z.string().min(1).max(128);
-
 // DELETE /v2/browser/profiles/:name
 // Deletes a persistent profile's saved state and its listing. Deleting a
 // profile that has no saved state succeeds.
@@ -182,11 +181,11 @@ export async function browserProfileDeleteController(
       .status(403)
       .json({ success: false, error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE });
   }
-  const name = profileNameSchema.safeParse(req.params.name);
+  const name = browserProfileNameSchema.safeParse(req.params.name);
   if (!name.success) {
     return res.status(400).json({
       success: false,
-      error: "Profile name must be between 1 and 128 characters.",
+      error: "Profile name must be between 1 and 128 UTF-8 bytes.",
     });
   }
   try {

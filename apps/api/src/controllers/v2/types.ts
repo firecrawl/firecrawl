@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
 import { z } from "zod";
+import { browserProfileNameSchema } from "../../lib/browser-profiles";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
@@ -838,7 +839,7 @@ const scrapeOptionFields = z.strictObject({
 
   profile: z
     .object({
-      name: z.string().min(1).max(128),
+      name: browserProfileNameSchema,
       saveChanges: z.boolean().default(true),
     })
     .optional(),
