@@ -154,7 +154,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      # RabbitMQ commonly takes ~20s to boot, longer on slower hosts. Failed
+      # checks during start_period don't count, and the first passing check
+      # still marks it healthy, so this only delays startup on a real failure.
+      start_period: 60s
     logging:
       driver: "json-file"
       options:
