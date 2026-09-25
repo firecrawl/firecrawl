@@ -62,33 +62,23 @@ class TestAgentThreadRequestPreparation:
             thread_id="thread-1",
             exchange=AgentExchangeOptions(
                 on_terms_required="ask",
-                approve={
-                    "approvalId": "0199aaaa-0000-7000-8000-000000000000",
-                    "callIds": ["apollo"],
-                },
+                approve={"approvalId": "0199aaaa-0000-7000-8000-000000000000"},
             ),
         )
 
         assert data["exchange"] == {
             "onTermsRequired": "ask",
-            "approve": {
-                "approvalId": "0199aaaa-0000-7000-8000-000000000000",
-                "callIds": ["apollo"],
-            },
+            "approve": {"approvalId": "0199aaaa-0000-7000-8000-000000000000"},
         }
 
-    def test_exchange_terms_decline_with_call_ids_serialized(self):
-        decline = {
-            "approvalId": "0199aaaa-0000-7000-8000-000000000000",
-            "callIds": ["apollo"],
-        }
+    def test_exchange_on_terms_required_skip_serialized(self):
         data = _prepare_agent_request(
             None,
-            prompt="Use other providers",
-            exchange=AgentExchangeOptions(decline=decline),
+            prompt="Find the key business contact at exa.ai",
+            exchange=AgentExchangeOptions(on_terms_required="skip"),
         )
 
-        assert data["exchange"] == {"decline": decline}
+        assert data["exchange"] == {"onTermsRequired": "skip"}
 
     def test_exchange_on_terms_required_rejects_unknown_mode(self):
         import pytest
@@ -96,6 +86,8 @@ class TestAgentThreadRequestPreparation:
 
         with pytest.raises(ValidationError):
             AgentExchangeOptions(on_terms_required="accept")
+        with pytest.raises(ValidationError):
+            AgentExchangeOptions(on_terms_required="fail")
 
     def test_start_agent_forwards_thread_id(self):
         client = Mock()
@@ -257,32 +249,10 @@ class TestAgentThreadStatusParsing:
         accept = exchange.requires_action.providers[0].accept
         assert accept.capability == "terms/accept"
         assert accept.options["digest"] is None
-        assert exchange.error is None
         assert response.pending_approval.kind == "terms"
         assert response.pending_approval.is_terms
         assert response.pending_approval.calls == []
         assert response.pending_approval.terms[0].id == "apollo"
-
-    def test_terms_required_fail_status_payload(self):
-        response = AgentResponse(
-            **{
-                "success": True,
-                "id": "job-4",
-                "status": "completed",
-                "exchange": {
-                    "enabled": True,
-                    "onTermsRequired": "fail",
-                    "paidCalls": 0,
-                    "creditsUsed": None,
-                    "error": {
-                        "code": "THIRD_PARTY_DATA_TERMS_REQUIRED",
-                        "message": "Apollo needs its data terms accepted.",
-                    },
-                },
-            }
-        )
-
-        assert response.exchange.error.code == "THIRD_PARTY_DATA_TERMS_REQUIRED"
 
     def test_calls_approval_is_not_terms(self):
         legacy = AgentResponse(

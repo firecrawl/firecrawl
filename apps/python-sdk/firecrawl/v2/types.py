@@ -1554,15 +1554,9 @@ class AgentExchangeOptions(BaseModel):
     toolkits: Optional[List[str]] = None
     max_calls: Optional[int] = Field(default=None, alias="maxCalls")
     require_approval: Optional[bool] = Field(default=None, alias="requireApproval")
-    # Answers a pending_approval from the previous turn of the thread. For a
-    # "terms" approval, callIds names the providers the user accepted
-    # (requiresAction.providers[].id). Only the ids listed count: [] names
-    # nobody, omitted means every one offered.
+    # Answers a pending_approval from the previous turn of the thread. A
+    # "terms" approval is accepted or declined as a whole.
     approve: Optional[Dict[str, Any]] = None
-    # Refuses a pending_approval. For a "terms" approval, callIds names the
-    # providers the user declined (excluded for the rest of the thread). Only
-    # the ids listed count: [] declines nobody, omitted declines all. E.g.
-    # {"approvalId": "...", "callIds": ["apollo"]}.
     decline: Optional[Dict[str, Any]] = None
     # What to do when a provider the agent would use needs data terms the team
     # has not accepted. Gated providers are never called in any mode:
@@ -1571,12 +1565,9 @@ class AgentExchangeOptions(BaseModel):
     # - "ask": the same, plus exchange.requires_action and a "terms"
     #   pending_approval. Get your user's explicit consent, call terms/accept,
     #   then continue the thread with approve={"approvalId": ...}.
-    # - "fail": stop making calls once a gated provider is needed and set
-    #   exchange.error (THIRD_PARTY_DATA_TERMS_REQUIRED). It also ends on a
-    #   "terms" pending_approval with requires_action, answered the same way.
     # There is no auto-accept mode. Omitted on a follow-up turn inherits the
     # previous turn's value.
-    on_terms_required: Optional[Literal["skip", "ask", "fail"]] = Field(
+    on_terms_required: Optional[Literal["skip", "ask"]] = Field(
         default=None, alias="onTermsRequired"
     )
 
@@ -1614,13 +1605,14 @@ class AgentTermsActionProvider(BaseModel):
 
     model_config = {"populate_by_name": True, "extra": "allow"}
 
-    # The approve callIds entry that marks this provider accepted.
+    # Stable id of this provider within the offer.
     id: Optional[str] = None
     provider: Optional[str] = None
     name: Optional[str] = None
     capability: Optional[str] = None
     adds: Optional[str] = None
     version: Optional[str] = None
+    # None when the catalog published no digest; terms/show returns it.
     digest: Optional[str] = None
     url: Optional[str] = None
     show: Optional[AgentExchangeCall] = None
@@ -1639,20 +1631,10 @@ class AgentTermsRequiredAction(BaseModel):
     type: Optional[str] = None
     # Always set by the server: the "terms" pending_approval that answers this.
     # After the user agrees and terms/accept succeeds, continue the thread with
-    # approve={"approvalId": ...} (or decline). Optional here only so a
+    # approve={"approvalId": ...}, or refuse with decline. Optional here only so a
     # malformed payload cannot break status polling.
     approval_id: Optional[str] = Field(default=None, alias="approvalId")
     providers: Optional[List[AgentTermsActionProvider]] = None
-
-
-class AgentExchangeError(BaseModel):
-    """Set in "fail" mode when the turn stopped for a gated provider."""
-
-    model_config = {"populate_by_name": True, "extra": "allow"}
-
-    # "THIRD_PARTY_DATA_TERMS_REQUIRED".
-    code: Optional[str] = None
-    message: Optional[str] = None
 
 
 class AgentExchangeSummary(BaseModel):
@@ -1671,13 +1653,10 @@ class AgentExchangeSummary(BaseModel):
     skipped_providers: Optional[List[AgentSkippedProvider]] = Field(
         default=None, alias="skippedProviders"
     )
-    # "ask" and "fail" modes, when a terms offer ended the turn. None when the
-    # offer was deferred behind a paid-call approval; it comes next turn.
+    # "ask" mode, when a terms offer ended the turn.
     requires_action: Optional[AgentTermsRequiredAction] = Field(
         default=None, alias="requiresAction"
     )
-    # "fail" mode only.
-    error: Optional[AgentExchangeError] = None
 
 
 class AgentSuggestion(BaseModel):
@@ -1718,7 +1697,7 @@ class PendingApprovalTerms(BaseModel):
 
     model_config = {"populate_by_name": True, "extra": "allow"}
 
-    # What approve callIds names to mark this provider accepted.
+    # Stable id of this provider within the offer.
     id: Optional[str] = None
     provider: Optional[str] = None
     name: Optional[str] = None
@@ -1726,6 +1705,7 @@ class PendingApprovalTerms(BaseModel):
     capability: Optional[str] = None
     adds: Optional[str] = None
     version: Optional[str] = None
+    # None when the catalog published no digest; terms/show returns it.
     digest: Optional[str] = None
     publisher: Optional[str] = None
     url: Optional[str] = None

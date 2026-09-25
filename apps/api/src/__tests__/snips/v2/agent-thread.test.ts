@@ -138,7 +138,7 @@ describe("Agent thread parameter validation", () => {
       const response = await agentRaw({
         urls: [TEST_SUITE_WEBSITE],
         prompt: "What does this page offer?",
-        exchange: { onTermsRequired: "accept" },
+        exchange: { onTermsRequired: "fail" },
       });
 
       expect(response.statusCode).toBe(400);

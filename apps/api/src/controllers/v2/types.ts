@@ -1052,6 +1052,11 @@ const agentWebhookSchema = createWebhookSchema([
 
 // Forwarded verbatim to the agent service, which owns every default and the
 // per-thread inheritance rules; the gateway only validates the shape.
+// The one list of onTermsRequired modes: the request schema and the response
+// summary type both derive from it.
+const AGENT_ON_TERMS_REQUIRED = ["skip", "ask"] as const;
+type AgentOnTermsRequired = (typeof AGENT_ON_TERMS_REQUIRED)[number];
+
 const agentExchangeSchema = z.strictObject({
   enabled: z.boolean().optional(),
   toolkits: z.array(z.string()).optional(),
@@ -1060,7 +1065,6 @@ const agentExchangeSchema = z.strictObject({
   approve: z
     .strictObject({
       approvalId: z.string().uuid(),
-      // Only the ids listed count: [] names nobody, omitted means all offered.
       callIds: z.array(z.string()).optional(),
       always: z.boolean().optional(),
     })
@@ -1068,18 +1072,15 @@ const agentExchangeSchema = z.strictObject({
   decline: z
     .strictObject({
       approvalId: z.string().uuid(),
-      // Terms offers only: the provider ids (`terms[].id`) the user declined.
-      // Only the ids listed count: [] declines nobody, omitted declines all.
-      callIds: z.array(z.string()).optional(),
     })
     .optional(),
   // What to do when a provider the agent would use needs data terms the team
-  // has not accepted: "skip" (the agent service's default), "ask" or "fail".
+  // has not accepted: "skip" (the agent service's default) or "ask".
   // Gated providers are never called in any mode, and there is deliberately
   // no auto-accept: terms are only accepted by a human-authorized
   // terms/accept or in the dashboard. Omitted on a follow-up turn means the
   // previous turn's value.
-  onTermsRequired: z.enum(["skip", "ask", "fail"]).optional(),
+  onTermsRequired: z.enum(AGENT_ON_TERMS_REQUIRED).optional(),
 });
 
 export const agentRequestSchema = z
@@ -1648,12 +1649,10 @@ export type AgentSuggestion = {
   prompt: string;
 };
 
-type AgentOnTermsRequired = "skip" | "ask" | "fail";
-
 // A provider the agent would have used but could not, because the team has
 // not accepted its data terms.
 type AgentTermsGate = {
-  // What `exchange.approve.callIds` names to mark this provider accepted.
+  // Stable id of this provider within the offer.
   id: string;
   provider: string;
   name: string;
@@ -1662,8 +1661,9 @@ type AgentTermsGate = {
   // What it would have added, in the agent's words.
   adds?: string;
   // The gating agreement version and document digest terms/accept needs.
+  // digest is null when the catalog published none; terms/show returns it.
   version: string;
-  digest?: string;
+  digest: string | null;
   publisher?: string;
   // Where a person accepts the terms in the dashboard.
   url: string;
@@ -1674,7 +1674,7 @@ type AgentPendingApprovalBase = {
   reason: string;
   resolution: null | {
     approved: boolean;
-    // Calls approved, or for a terms item the provider ids accepted/declined.
+    // Calls approved, or for a terms item the provider ids the answer covered.
     callIds: string[];
     always: boolean;
     byRunId: string;
@@ -1696,7 +1696,7 @@ type AgentPendingCallsApproval = AgentPendingApprovalBase & {
   terms?: never;
 };
 
-// Providers whose data terms need accepting ("ask" and "fail" modes). `calls`
+// Providers whose data terms need accepting ("ask" mode). `calls`
 // stays empty so clients reading only the calls shape see nothing to run.
 type AgentPendingTermsApproval = AgentPendingApprovalBase & {
   kind: "terms";
@@ -1729,14 +1729,15 @@ type AgentTermsRequiredAction = {
   // continue the thread with `exchange.approve: { approvalId }` (or decline).
   approvalId: string;
   providers: {
-    // The `approve.callIds` entry that marks this provider accepted.
+    // Stable id of this provider within the offer.
     id: string;
     provider: string;
     name: string;
     capability?: string;
     adds?: string;
     version: string;
-    digest?: string;
+    // null when the catalog published no digest; terms/show returns it.
+    digest: string | null;
     url: string;
     show: {
       provider: "firecrawl";
@@ -1766,11 +1767,8 @@ export type AgentExchangeSummary = {
   creditsUsed: number | null;
   // Gated providers that would have helped and were not used. Any mode.
   skippedProviders?: AgentSkippedProvider[];
-  // "ask" and "fail" modes, when a terms offer ended the turn. Left out when
-  // the offer was deferred behind a paid-call approval; it comes next turn.
+  // "ask" mode, when a terms offer ended the turn.
   requiresAction?: AgentTermsRequiredAction;
-  // "fail" mode: the turn stopped because a gated provider was needed.
-  error?: { code: "THIRD_PARTY_DATA_TERMS_REQUIRED"; message: string };
 };
 
 export type AgentResponse =

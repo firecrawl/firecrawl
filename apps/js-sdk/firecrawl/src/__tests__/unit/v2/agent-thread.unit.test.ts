@@ -165,10 +165,7 @@ describe("v2.agent threads unit", () => {
     const post = okPost();
     const exchange = {
       onTermsRequired: "ask" as const,
-      approve: {
-        approvalId: "0199aaaa-0000-7000-8000-000000000000",
-        callIds: ["apollo"],
-      },
+      approve: { approvalId: "0199aaaa-0000-7000-8000-000000000000" },
     };
 
     await startAgent({ post } as any, {
@@ -184,25 +181,17 @@ describe("v2.agent threads unit", () => {
     });
   });
 
-  test("startAgent forwards a terms decline with callIds", async () => {
+  test("startAgent forwards exchange.onTermsRequired skip", async () => {
     const post = okPost();
-    const exchange = {
-      decline: {
-        approvalId: "0199aaaa-0000-7000-8000-000000000000",
-        callIds: ["apollo"],
-      },
-    };
 
     await startAgent({ post } as any, {
-      prompt: "Use other providers",
-      threadId: "thread-1",
-      exchange,
+      prompt: "Find the key business contact at exa.ai",
+      exchange: { onTermsRequired: "skip" },
     });
 
     expect(post).toHaveBeenCalledWith("/v2/agent", {
-      prompt: "Use other providers",
-      threadId: "thread-1",
-      exchange,
+      prompt: "Find the key business contact at exa.ai",
+      exchange: { onTermsRequired: "skip" },
     });
   });
 
@@ -241,6 +230,7 @@ describe("v2.agent threads unit", () => {
                 provider: "apollo",
                 name: "Apollo",
                 version: "F-1.0.0",
+                digest: null,
                 url: "https://www.firecrawl.dev/app/alexandria/apollo",
                 show: {
                   provider: "firecrawl",
@@ -272,6 +262,7 @@ describe("v2.agent threads unit", () => {
               provider: "apollo",
               name: "Apollo",
               version: "F-1.0.0",
+              digest: null,
               url: "https://www.firecrawl.dev/app/alexandria/apollo",
             },
           ],
