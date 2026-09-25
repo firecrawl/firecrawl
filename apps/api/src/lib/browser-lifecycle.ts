@@ -101,7 +101,6 @@ export async function createBrowserSession(
   }
   const id = uuidv7();
   let browserId: string | undefined;
-  let session: BrowserSessionRow | undefined;
   try {
     if (
       !(await reserveExternalSlot(
@@ -138,7 +137,7 @@ export async function createBrowserSession(
         zeroDataRetention: false,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
-    session = await insertBrowserSession({
+    await insertBrowserSession({
       id,
       team_id: req.auth.team_id,
       request_id: options.requestId ?? id,
@@ -160,7 +159,7 @@ export async function createBrowserSession(
     if (options.initialize) {
       await options.initialize(browser.id);
     }
-    session = await activateBrowserSession(id, shouldBill);
+    const session = await activateBrowserSession(id, shouldBill);
     await invalidateActiveBrowserSessionCount(req.auth.team_id);
     return {
       session,
@@ -375,7 +374,7 @@ export async function reconcileBrowserSessions() {
           "browser:reconcile:cursor",
         );
         const sessions = await listUnsettledHangarSessions(after ?? undefined);
-        await Promise.all(
+        const results = await Promise.allSettled(
           sessions.map(async session => {
             const key = `browser:reconcile:${session.id}`;
             const state = await redisRateLimitClient.hgetall(key);
@@ -406,6 +405,8 @@ export async function reconcileBrowserSessions() {
             await redisRateLimitClient.expire(key, 2 * 86400);
           }),
         );
+        const failure = results.find(result => result.status === "rejected");
+        if (failure?.status === "rejected") throw failure.reason;
         if (signal.aborted) throw signal.error;
         if (sessions.length)
           await redisRateLimitClient.set(
