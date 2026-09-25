@@ -1,5 +1,9 @@
 import { vi } from "vitest";
-import { settleBrowserSession, stopBrowserSession } from "../browser-lifecycle";
+import {
+  reserveBrowserPromptCredits,
+  settleBrowserSession,
+  stopBrowserSession,
+} from "../browser-lifecycle";
 import { stopHangarBrowser, getHangarBrowser } from "../hangar";
 import { billTeam7 } from "../../db/rpc";
 import { autumnService } from "../../services/autumn/autumn.service";
@@ -8,6 +12,8 @@ import {
   upsertBrowserProfile,
   settleBrowserSessionOnce,
   didBrowserSessionUsePrompt,
+  markBrowserSessionUsedPrompt,
+  withLockedBrowserSession,
   type BrowserSessionRow,
 } from "../browser-sessions";
 
@@ -31,6 +37,10 @@ vi.mock("../browser-sessions", () => ({
   completeBrowserSessionSettlement: vi.fn(async () => {}),
   upsertBrowserProfile: vi.fn(async () => {}),
   getBrowserProfileDeletedAt: vi.fn(async () => null),
+  withLockedBrowserSession: vi.fn(
+    async (_id: string, run: (row: BrowserSessionRow) => Promise<unknown>) =>
+      run(currentSession),
+  ),
   settleBrowserSessionOnce: vi.fn(
     async (
       _id: string,
@@ -46,6 +56,7 @@ vi.mock("../browser-sessions", () => ({
   updateBrowserSessionCreditsUsed: vi.fn(async () => {}),
   invalidateActiveBrowserSessionCount: vi.fn(async () => {}),
   didBrowserSessionUsePrompt: vi.fn(async () => false),
+  markBrowserSessionUsedPrompt: vi.fn(async () => {}),
   clearBrowserSessionPromptFlag: vi.fn(),
   listUnsettledHangarSessions: vi.fn(),
 }));
@@ -93,6 +104,7 @@ const session = {
   ttl_total: 600,
   request_id: "session",
   created_at: new Date().toISOString(),
+  credits_used: null,
 } as BrowserSessionRow;
 const stopped = {
   id: "br_test",
@@ -148,9 +160,28 @@ it("does not return a successful partial response or bill when cleanup never fin
   expect(mirrorExternalSlotRelease).not.toHaveBeenCalled();
 });
 
-it("bills the upstream duration with the same idempotency key on retry", async () => {
-  await settleBrowserSession(session, stopped);
+it("preserves the amount and key after Autumn succeeds but the debit fails", async () => {
+  vi.mocked(billTeam7).mockRejectedValueOnce(new Error("debit failed"));
+  await expect(settleBrowserSession(session, stopped)).rejects.toThrow(
+    "debit failed",
+  );
+  expect(autumnService.trackCredits).toHaveBeenCalledTimes(1);
+  expect(mirrorExternalSlotRelease).not.toHaveBeenCalled();
+
   currentSession = { ...session, scrape_id: "scrape" };
+  vi.mocked(getHangarBrowser).mockResolvedValueOnce(stopped);
+  await expect(
+    reserveBrowserPromptCredits(
+      {} as Parameters<typeof reserveBrowserPromptCredits>[0],
+      currentSession,
+    ),
+  ).rejects.toMatchObject({ status: 410 });
+  expect(withLockedBrowserSession).toHaveBeenCalledWith(
+    session.id,
+    expect.any(Function),
+  );
+  expect(markBrowserSessionUsedPrompt).not.toHaveBeenCalled();
+
   await settleBrowserSession(session, stopped);
   expect(autumnService.trackCredits).toHaveBeenNthCalledWith(
     1,
@@ -169,6 +200,7 @@ it("bills the upstream duration with the same idempotency key on retry", async (
     { idempotent: true },
   );
   expect(vi.mocked(autumnService.trackCredits).mock.calls[1][0]).toMatchObject({
+    value: 2,
     properties: { endpoint: "interact" },
     idempotencyKey: "fc:track:browser-session:session:destroy",
   });

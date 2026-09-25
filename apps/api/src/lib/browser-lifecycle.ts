@@ -17,6 +17,7 @@ import {
   completeBrowserSessionSettlement,
   markBrowserSessionUsedPrompt,
   settleBrowserSessionOnce,
+  withLockedBrowserSession,
   invalidateActiveBrowserSessionCount,
   didBrowserSessionUsePrompt,
   listUnsettledHangarSessions,
@@ -273,37 +274,58 @@ export async function reserveBrowserPromptCredits(
   req: RequestWithAuth<any, any, any>,
   session: BrowserSessionRow,
 ) {
-  // This flag determines the billing rate. A failed read or write must not
-  // silently execute a prompt at the cheaper browser rate.
-  if (await didBrowserSessionUsePrompt(session.id)) return;
-  if (session.should_bill) {
-    const credits = calculateBrowserSessionCredits(
-      session.ttl_total * 1000,
-      INTERACT_CREDITS_PER_HOUR,
-    );
-    if (req.acuc?.org_id) {
-      const credit = await autumnService.checkCredits({
-        teamId: session.team_id,
-        orgId: req.acuc.org_id,
-        value: credits,
-        properties: {
-          source: "browserPrompt",
-          path: req.path,
-          apiKeyId: req.acuc?.api_key_id ?? null,
-        },
-      });
-      if (credit !== null && !credit.allowed)
-        throw new HangarError(
-          402,
-          "Insufficient credits for a browser prompt session.",
-        );
+  await withLockedBrowserSession(session.id, async current => {
+    if (current.status !== "active" || current.credits_used !== null)
+      throw new HangarError(
+        410,
+        "Browser session is no longer accepting prompts.",
+      );
+
+    // The same row lock guards settlement. A prompt admitted before stop must
+    // finish recording its rate before billing; a later prompt cannot change it,
+    // even if a failed settlement left the database row active and unbilled.
+    const browser = await getHangarBrowser(current.browser_id, 0, 5000);
+    if (["stopping", "stopped", "failed"].includes(browser.status))
+      throw new HangarError(
+        410,
+        "Browser session is no longer accepting prompts.",
+      );
+
+    // A failed flag read/write must not execute a prompt at the cheaper rate.
+    if (await didBrowserSessionUsePrompt(current.id)) return;
+    if (current.should_bill) {
+      const credits = calculateBrowserSessionCredits(
+        current.ttl_total * 1000,
+        INTERACT_CREDITS_PER_HOUR,
+      );
+      if (req.acuc?.org_id) {
+        const credit = await autumnService.checkCredits({
+          teamId: current.team_id,
+          orgId: req.acuc.org_id,
+          value: credits,
+          properties: {
+            source: "browserPrompt",
+            path: req.path,
+            apiKeyId: req.acuc?.api_key_id ?? null,
+          },
+        });
+        if (credit !== null && !credit.allowed)
+          throw new HangarError(
+            402,
+            "Insufficient credits for a browser prompt session.",
+          );
+      }
+      if (
+        !(await updateKeylessBrowserCredits(
+          current.team_id,
+          current.id,
+          credits,
+        ))
+      )
+        throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
     }
-    if (
-      !(await updateKeylessBrowserCredits(session.team_id, session.id, credits))
-    )
-      throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
-  }
-  await markBrowserSessionUsedPrompt(session.id);
+    await markBrowserSessionUsedPrompt(current.id);
+  });
 }
 
 export async function stopBrowserSession(session: BrowserSessionRow) {

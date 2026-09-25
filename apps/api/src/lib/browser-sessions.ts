@@ -73,6 +73,25 @@ export async function listUnsettledHangarSessions(cursor: {
   return { sessions, through };
 }
 
+/** Serialize prompt-rate changes and settlement across replicas. */
+export async function withLockedBrowserSession<T>(
+  id: string,
+  run: (
+    session: BrowserSessionRow,
+    tx: Pick<typeof db, "execute" | "update">,
+  ) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async tx => {
+    const [row] = await tx
+      .select()
+      .from(schema.browser_sessions)
+      .where(eq(schema.browser_sessions.id, id))
+      .for("update");
+    if (!row) throw new Error("Browser session not found.");
+    return run(row as BrowserSessionRow, tx);
+  });
+}
+
 /** Commit the browser debit and its receipt together, before cleanup. */
 export async function settleBrowserSessionOnce(
   id: string,
@@ -81,16 +100,10 @@ export async function settleBrowserSessionOnce(
     tx: Pick<typeof db, "execute">,
   ) => Promise<number>,
 ): Promise<{ creditsBilled: number; newlySettled: boolean }> {
-  return db.transaction(async tx => {
-    const [row] = await tx
-      .select()
-      .from(schema.browser_sessions)
-      .where(eq(schema.browser_sessions.id, id))
-      .for("update");
-    if (!row) throw new Error("Browser session not found.");
+  return withLockedBrowserSession(id, async (row, tx) => {
     if (row.status === "destroyed" || row.credits_used !== null)
       return { creditsBilled: row.credits_used ?? 0, newlySettled: false };
-    const creditsBilled = await bill(row as BrowserSessionRow, tx);
+    const creditsBilled = await bill(row, tx);
     const now = new Date().toISOString();
     await tx
       .update(schema.browser_sessions)
