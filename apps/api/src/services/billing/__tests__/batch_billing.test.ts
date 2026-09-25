@@ -397,4 +397,53 @@ describe("processBillingBatch", () => {
     expect(billTeam7).toHaveBeenCalled();
     expect(queue).toHaveLength(0);
   });
+
+  it("writes the group total to the ledger as one rounded whole number", async () => {
+    // Rounding each op would give 3 + 3 + 3 = 9. The group total rounds once.
+    queue = [
+      makeOp({ credits: 2.5, billing: { endpoint: "search" } }),
+      makeOp({ credits: 2.5, billing: { endpoint: "search" } }),
+      makeOp({ credits: 2.5, billing: { endpoint: "search" } }),
+    ];
+
+    await processBillingBatch();
+
+    expect(billTeam7).toHaveBeenCalledTimes(1);
+    expect(billTeam7).toHaveBeenCalledWith(
+      expect.objectContaining({ team_id: "team-1", credits: 8 }),
+    );
+  });
+
+  it("refunds Autumn the exact fractional total when the ledger write fails", async () => {
+    queue = [
+      makeOp({
+        credits: 2.5,
+        billing: { endpoint: "search" },
+        autumnTrackInRequest: true,
+      }),
+      makeOp({
+        credits: 5,
+        billing: { endpoint: "search" },
+        autumnTrackInRequest: true,
+      }),
+    ];
+    billTeam7.mockRejectedValueOnce(new Error("db failed"));
+
+    await processBillingBatch();
+
+    expect(billTeam7).toHaveBeenCalledWith(
+      expect.objectContaining({ credits: 8 }),
+    );
+    expect(refundCredits).toHaveBeenCalledWith({
+      teamId: "team-1",
+      orgId: "org-1",
+      value: 7.5,
+      properties: {
+        source: "processBillingBatch",
+        endpoint: "search",
+        apiKeyId: 123,
+      },
+      featureId: "SEARCH_CREDITS",
+    });
+  });
 });
