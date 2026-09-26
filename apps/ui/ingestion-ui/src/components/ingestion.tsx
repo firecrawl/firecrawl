@@ -1,4 +1,4 @@
-import { useState, ChangeEvent, FormEvent, useEffect } from "react";
+import { useState, ChangeEvent, FormEvent, useEffect, KeyboardEvent } from "react";
 import {
   Card,
   CardHeader,
@@ -323,6 +323,29 @@ export default function FirecrawlComponent() {
     setCurrentPage(newPage);
   };
 
+  const handleNumberInputPageKeyDown = (
+    e: KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (e.key !== "PageUp" && e.key !== "PageDown") {
+      return;
+    }
+
+    const { name, value } = e.currentTarget;
+    const currentValue = value === "" ? 0 : Number(value);
+    if (Number.isNaN(currentValue)) {
+      return;
+    }
+
+    const nextValue =
+      e.key === "PageUp" ? currentValue + 10 : Math.max(0, currentValue - 10);
+    e.preventDefault();
+
+    setFormData((prevData) => ({
+      ...prevData,
+      [name]: String(nextValue),
+    }));
+  };
+
   const paginatedUrls = crawledUrls.slice(
     (currentPage - 1) * urlsPerPage,
     currentPage * urlsPerPage
@@ -432,11 +455,15 @@ export default function FirecrawlComponent() {
                       Limit *
                     </Label>
                     <Input
+                      type="number"
                       id="limit"
                       name="limit"
+                      min="0"
+                      step="1"
                       placeholder="10"
                       value={formData.limit}
                       onChange={handleChange}
+                      onKeyDown={handleNumberInputPageKeyDown}
                     />
                   </div>
                   <div>
@@ -447,11 +474,15 @@ export default function FirecrawlComponent() {
                       Max depth
                     </Label>
                     <Input
+                      type="number"
                       id="maxDepth"
                       name="maxDepth"
+                      min="0"
+                      step="1"
                       placeholder="5"
                       value={formData.maxDepth}
                       onChange={handleChange}
+                      onKeyDown={handleNumberInputPageKeyDown}
                     />
                   </div>
                 </div>
