@@ -10,6 +10,32 @@ import {
   isMarkdownContentType,
 } from "./extractLinksFromMarkdown";
 
+/**
+ * Checks whether a resolved URL is valid for crawling.
+ * Filters out:
+ * - Non-HTTP(S) protocols (mailto:, tel:, ftp:, etc.)
+ * - URLs containing userinfo / basic auth credentials (user:pass@host)
+ */
+function isValidCrawlUrl(url: string): boolean {
+  // Only allow http and https protocols
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    // Reject URLs with userinfo (basic auth credentials or email-like patterns)
+    // e.g. https://user:pass@example.com or https://user@example.com
+    if (parsed.username || parsed.password) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  return true;
+}
+
 function resolveUrlWithBaseHref(
   href: string,
   baseUrl: string,
@@ -33,8 +59,8 @@ function resolveUrlWithBaseHref(
   try {
     if (href.startsWith("http://") || href.startsWith("https://")) {
       return href;
-    } else if (href.startsWith("mailto:")) {
-      return href;
+    } else if (href.startsWith("mailto:") || href.startsWith("tel:")) {
+      return "";
     } else if (href.startsWith("#")) {
       return "";
     } else {
@@ -60,7 +86,7 @@ async function extractLinksRust(
   hrefs.forEach(href => {
     href = href.trim();
     const resolvedUrl = resolveUrlWithBaseHref(href, baseUrl, baseHref);
-    if (resolvedUrl) {
+    if (resolvedUrl && isValidCrawlUrl(resolvedUrl)) {
       links.push(resolvedUrl);
     }
   });
@@ -96,7 +122,7 @@ export async function extractLinks(
     if (href) {
       href = href.trim();
       const resolvedUrl = resolveUrlWithBaseHref(href, baseUrl, baseHref);
-      if (resolvedUrl) {
+      if (resolvedUrl && isValidCrawlUrl(resolvedUrl)) {
         links.push(resolvedUrl);
       }
     }
