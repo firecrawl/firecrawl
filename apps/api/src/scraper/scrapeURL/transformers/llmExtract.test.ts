@@ -417,8 +417,80 @@ describe("generateCompletions markdown trimming for local/self-hosted models", (
     // proof it was trimmed from the end, keeping the head (instructions/schema
     // context comes first in the prompt, followed by the markdown).
     expect(sentPrompt.length).toBeLessThan(hugeMarkdown.length);
-    expect(sentPrompt.endsWith(hugeMarkdown.trim())).toBe(false);
+    expect(sentPrompt.endsWith(hugeMarkdown)).toBe(false);
     expect(result.warning).toContain("automatically trimmed");
+  });
+
+  it("reserves overhead based on the actual schema size, not a fixed guess", async () => {
+    // A schema large enough that, together with the prompt prefix, it eats well
+    // over the old fixed 1,000-token overhead reserve.
+    const modelId = "some-local-model-not-in-price-table";
+    const bigSchema = {
+      type: "object",
+      properties: Object.fromEntries(
+        Array.from({ length: 60 }, (_, i) => [
+          `field_${i}`,
+          {
+            type: "string",
+            description: "a moderately long description ".repeat(10),
+          },
+        ]),
+      ),
+    };
+    // Sized so that, under a fixed 1,000-token overhead reserve, this markdown
+    // would fit within the (8192 - 1000) budget and never get trimmed -- even
+    // though the schema above alone is already ~3,100 tokens, pushing the real
+    // total (schema + prompt + markdown) past the model's 8192-token limit.
+    const markdown = "hello world ".repeat(3250);
+
+    await generateCompletions({
+      logger: { debug: vi.fn(), error: vi.fn() } as any,
+      model: { modelId } as any,
+      options: { schema: bigSchema },
+      markdown,
+      costTrackingOptions: fakeCostTracking(),
+      metadata: { teamId: "test-team" },
+    });
+
+    const sentPrompt: string = generateObjectMock.mock.calls[0][0].prompt;
+    const encoder = realEncodingForModel("gpt-4o-mini");
+    const totalTokens =
+      encoder.encode(sentPrompt).length +
+      encoder.encode(JSON.stringify(bigSchema)).length;
+    encoder.free();
+
+    // Unknown-model default budget from config.ts's MODEL_MAX_INPUT_TOKENS fallback.
+    expect(totalTokens).toBeLessThanOrEqual(8192);
+  });
+
+  it("does not duplicate a previous warning when trimming also occurs", async () => {
+    const modelId = "some-local-model-not-in-price-table";
+    const hugeMarkdown = "hello world ".repeat(20000);
+
+    const result = await generateCompletions({
+      logger: { debug: vi.fn(), error: vi.fn() } as any,
+      model: { modelId } as any,
+      options: {
+        schema: {
+          type: "object",
+          properties: { ok: { type: "boolean" } },
+          required: ["ok"],
+        },
+      },
+      markdown: hugeMarkdown,
+      previousWarning: "a pre-existing warning from an earlier step",
+      costTrackingOptions: fakeCostTracking(),
+      metadata: { teamId: "test-team" },
+    });
+
+    expect(result.warning).toContain("automatically trimmed");
+    // generateCompletions must not embed the caller-supplied previousWarning
+    // into its own warning -- callers (performLLMExtract et al.) already merge
+    // the returned warning with any prior one, so doing it here too would
+    // duplicate it.
+    expect(result.warning).not.toContain(
+      "a pre-existing warning from an earlier step",
+    );
   });
 
   it("does not trim markdown that already fits comfortably in the budget", async () => {
