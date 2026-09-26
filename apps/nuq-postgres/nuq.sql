@@ -1,5 +1,4 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- Checkpoint tuning: spread I/O to reduce stalls during heavy WAL activity
 -- These settings help prevent prefetch queries from returning 0 jobs during checkpoints
