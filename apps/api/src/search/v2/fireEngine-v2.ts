@@ -65,6 +65,7 @@ export async function fire_engine_search_v2(
     country: options.country,
     location: options.location,
     tbs: options.tbs,
+    filter: options.filter,
     numResults: options.numResults,
     page: options.page ?? 1,
     type: options.type || "web",

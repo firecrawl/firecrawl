@@ -1331,11 +1331,6 @@ describe("V2 Types Validation", () => {
       expect(result.sources).toEqual([
         {
           type: "web",
-          tbs: undefined,
-          filter: undefined,
-          lang: "en",
-          country: "us",
-          location: undefined,
         },
       ]);
     });
@@ -1348,15 +1343,9 @@ describe("V2 Types Validation", () => {
 
       const result = searchRequestSchema.parse(input);
       // Sources are transformed from string array to object array
-      // lang defaults to "en" and is applied to web source
       expect(result.sources).toEqual([
         {
           type: "web",
-          tbs: undefined,
-          filter: undefined,
-          lang: "en", // Default lang is applied
-          country: "us",
-          location: undefined,
         },
         {
           type: "images",
@@ -1370,21 +1359,22 @@ describe("V2 Types Validation", () => {
         sources: [
           {
             type: "web",
-            tbs: "qdr:d",
-            filter: "active",
-            lang: "en",
-            country: "us",
-            location: "New York",
           },
           {
             type: "images",
+          },
+          {
+            type: "news",
           },
         ],
       };
 
       const result = searchRequestSchema.parse(input);
-      expect(result.sources).toBeDefined();
-      expect(Array.isArray(result.sources)).toBe(true);
+      expect(result.sources).toEqual([
+        { type: "web" },
+        { type: "images" },
+        { type: "news" },
+      ]);
     });
 
     it("should accept search request with simple categories array", () => {
