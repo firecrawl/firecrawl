@@ -19,6 +19,10 @@ import {
 import { hasFormatOfType } from "../../lib/format-utils";
 import { keylessTeamUuid } from "../../lib/keyless";
 import type { Document, ScrapeOptions } from "../../controllers/v2/types";
+import type {
+  SearchResultCountsBySource,
+  SearchResultCategoriesBySource,
+} from "../../lib/entities";
 import type { CostTracking } from "../../lib/cost-tracking";
 import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
@@ -1097,6 +1101,8 @@ export type LoggedSearch = {
   is_successful: boolean;
   error?: string;
   num_results: number;
+  num_results_by_source?: SearchResultCountsBySource;
+  result_categories?: SearchResultCategoriesBySource;
   results: any;
   zeroDataRetention: boolean;
 };
@@ -1163,6 +1169,18 @@ async function logSearchInternal(search: LoggedSearch, force: boolean = false) {
       is_successful: search.is_successful,
       error: search.zeroDataRetention ? null : (search.error ?? null),
       num_results: search.num_results,
+      // Both are response-derived and both are redacted under zero data
+      // retention: the per-source split says how the result set was composed
+      // ({"web":3,"news":10} characterises the query's coverage in a way the
+      // combined total does not), and the category map says which vertical
+      // served each position. Feedback on a ZDR search is not persisted
+      // anyway, so neither column has a reader for those rows.
+      num_results_by_source: search.zeroDataRetention
+        ? null
+        : (search.num_results_by_source ?? null),
+      result_categories: search.zeroDataRetention
+        ? null
+        : (search.result_categories ?? null),
       time_taken: search.time_taken,
     },
     force,

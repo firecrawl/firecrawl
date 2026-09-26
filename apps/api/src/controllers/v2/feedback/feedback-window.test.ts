@@ -130,10 +130,14 @@ describe.each(routes)("%s job feedback keeps its submission window", route => {
     async store => {
       job(route, store, 119);
       expect((await submit(route)).status).toBe(200);
+      // These submissions carry no `valuableResults`, so the lookup is told it
+      // does not need the search result columns and keeps the Bigtable fast
+      // path.
       expect(fixture.lookup).toHaveBeenCalledWith(
         route === "legacy-search" ? "search" : route,
         jobId,
         teamId,
+        false,
       );
       expect(fixture.insert).toHaveBeenCalledTimes(1);
       expect(fixture.alexandriaInsert).not.toHaveBeenCalled();

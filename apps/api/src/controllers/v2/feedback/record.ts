@@ -123,15 +123,26 @@ async function lookupJobWithRetry(
   dbTeamId: string,
   logger: FeedbackLogger,
 ): Promise<FeedbackJobRow | FeedbackRecordResult> {
+  // Only a submission carrying positions needs the per-source counts and
+  // result categories, which live outside the Bigtable feedback record.
+  const needsSearchResults =
+    (options.feedback.valuableResults?.length ?? 0) > 0;
+
   try {
     let job = await lookupFeedbackJob(
       options.endpoint,
       options.jobId,
       dbTeamId,
+      needsSearchResults,
     );
     if (!job) {
       await new Promise(resolve => setTimeout(resolve, LOOKUP_RACE_RETRY_MS));
-      job = await lookupFeedbackJob(options.endpoint, options.jobId, dbTeamId);
+      job = await lookupFeedbackJob(
+        options.endpoint,
+        options.jobId,
+        dbTeamId,
+        needsSearchResults,
+      );
     }
 
     if (!job) {
