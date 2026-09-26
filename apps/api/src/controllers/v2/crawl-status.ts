@@ -7,14 +7,14 @@ import {
   Document,
 } from "./types";
 import {
+  buildCrawlStatusNext,
+  parseCrawlStatusPagination,
+} from "./crawl-status-pagination";
+import {
   getCrawl,
   getCrawlError,
   getCrawlExpiry,
-  getCrawlQualifiedJobCount,
-  getDoneJobsOrderedLength,
-  getDoneJobsOrderedUntil,
   getLastDoneJobTimestamp,
-  isCrawlKickoffFinished,
 } from "../../lib/crawl-redis";
 import { supabaseGetScrapeById } from "../../lib/supabase-jobs";
 import { configDotenv } from "dotenv";
@@ -195,12 +195,14 @@ export async function crawlStatusController(
     });
   }
 
-  const start =
-    typeof req.query.skip === "string" ? parseInt(req.query.skip, 10) : 0;
-  const end =
-    typeof req.query.limit === "string"
-      ? start + parseInt(req.query.limit, 10) - 1
-      : undefined;
+  const pagination = parseCrawlStatusPagination(req.query);
+  if ("error" in pagination) {
+    return res.status(400).json({
+      success: false,
+      error: pagination.error,
+    });
+  }
+  const { start, limit } = pagination;
 
   const group = await crawlGroup.getGroup(req.params.jobId);
   const groupAnyJob = await scrapeQueue.getGroupAnyJob(
@@ -302,13 +304,13 @@ export async function crawlStatusController(
 
   let outputBulkB: {
     data: Document[];
-    next: string | undefined;
+    next?: string;
   };
 
   const doneJobs = await scrapeQueue.getGroupJobs(
     req.params.jobId,
     "completed",
-    end !== undefined ? end - start + 1 : 100,
+    limit ?? 100,
     start,
     logger.child({ zeroDataRetention }),
   );
@@ -351,11 +353,17 @@ export async function crawlStatusController(
 
   outputBulkB = {
     data: scrapes,
-    next:
-      (outputBulkA.total ?? 0) > start + iteratedOver ||
-      outputBulkA.status !== "completed"
-        ? `${req.protocol}://${req.host}/v2/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
-        : undefined,
+    next: buildCrawlStatusNext({
+      protocol: req.protocol,
+      host: req.host,
+      jobId: req.params.jobId,
+      isBatch,
+      nextSkip: start + iteratedOver,
+      hasMore:
+        (outputBulkA.total ?? 0) > start + iteratedOver ||
+        outputBulkA.status !== "completed",
+      limit,
+    }),
   };
 
   // Check for robots.txt blocked URLs and add warning if found
