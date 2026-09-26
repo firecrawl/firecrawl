@@ -76,11 +76,12 @@ export async function getConcurrencyLimitActiveJobs(
 export async function removeConcurrencyLimitedJobs(
   team_id: string,
   job_ids: string[],
-) {
-  if (job_ids.length === 0) return;
+): Promise<boolean> {
+  if (job_ids.length === 0) return true;
   const redis = getRedisConnection();
   const queueKey = constructQueueKey(team_id);
   const chunkSize = 1000;
+  let success = true;
   for (let i = 0; i < job_ids.length; i += chunkSize) {
     const chunk = job_ids.slice(i, i + chunkSize);
     const pipeline = redis.pipeline();
@@ -91,13 +92,15 @@ export async function removeConcurrencyLimitedJobs(
     // Do not throw on command errors: cancel has already been recorded on
     // the crawl, and the stale entries self-expire via their PX timeout.
     // But never let the failure pass silently.
-    reportPipelineError(await pipeline.exec(), logger, {
+    const error = reportPipelineError(await pipeline.exec(), logger, {
       module: "concurrency-limit",
       method: "removeConcurrencyLimitedJobs",
       teamId: team_id,
       jobCount: chunk.length,
     });
+    if (error) success = false;
   }
+  return success;
 }
 
 type ConcurrencyLimitedJob = {

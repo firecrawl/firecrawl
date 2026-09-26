@@ -39,6 +39,7 @@ vi.mock("../../db/rpc", () => ({ monitoringClaimDueMonitors: vi.fn() }));
 
 import {
   getMonitorCheckForUpdate,
+  isMonitorCheckRunning,
   updateMonitorCheckIfRunning,
   updateMonitorCheckIfStatus,
 } from "./store";
@@ -88,6 +89,17 @@ describe("monitor check finalization storage", () => {
     ).toBeNull();
     expect(primarySelect).toHaveBeenCalledTimes(1);
     expect(replicaSelect).not.toHaveBeenCalled();
+  });
+
+  it("reads running status from primary without updating the check", async () => {
+    limit.mockResolvedValue([{ id: checkId }]);
+
+    await expect(isMonitorCheckRunning(checkId)).resolves.toBe(true);
+
+    expect(primarySelect).toHaveBeenCalledTimes(1);
+    expect(replicaSelect).not.toHaveBeenCalled();
+    expect(primaryUpdate).not.toHaveBeenCalled();
+    expect(queryPredicate().params).toEqual([checkId, "running"]);
   });
 
   it("claims finalization with one conditional update while the check is running", async () => {

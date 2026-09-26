@@ -39,6 +39,8 @@ export type StoredCrawl = {
   requestId?: string;
 };
 
+const CRAWL_CANCEL_MARKER_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 export async function saveCrawl(id: string, crawl: StoredCrawl) {
   return await withSpan(
     "firecrawl-redis-save-crawl",
@@ -119,6 +121,15 @@ export async function markCrawlActive(id: string) {
   await redisEvictConnection.sadd("active_crawls", id);
 }
 
+export async function markCrawlCancelled(id: string): Promise<void> {
+  await redisEvictConnection.set(
+    "crawl:" + id + ":cancelled",
+    "1",
+    "EX",
+    CRAWL_CANCEL_MARKER_TTL_SECONDS,
+  );
+}
+
 export async function getCrawl(id: string): Promise<StoredCrawl | null> {
   return await withSpan("firecrawl-redis-get-crawl", async span => {
     setSpanAttributes(span, {
@@ -126,7 +137,10 @@ export async function getCrawl(id: string): Promise<StoredCrawl | null> {
       operation: "get_crawl",
     });
 
-    const x = await redisEvictConnection.get("crawl:" + id);
+    const [x, cancelled] = await Promise.all([
+      redisEvictConnection.get("crawl:" + id),
+      redisEvictConnection.get("crawl:" + id + ":cancelled"),
+    ]);
 
     if (x === null) {
       setSpanAttributes(span, { "crawl.found": false });
@@ -134,7 +148,14 @@ export async function getCrawl(id: string): Promise<StoredCrawl | null> {
     }
 
     await redisEvictConnection.expire("crawl:" + id, 24 * 60 * 60);
+    if (cancelled !== null) {
+      await redisEvictConnection.expire(
+        "crawl:" + id + ":cancelled",
+        CRAWL_CANCEL_MARKER_TTL_SECONDS,
+      );
+    }
     const crawl = JSON.parse(x);
+    if (cancelled !== null) crawl.cancelled = true;
 
     setSpanAttributes(span, {
       "crawl.found": true,

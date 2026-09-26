@@ -801,6 +801,24 @@ export async function getMonitorCheckForUpdate(
   return (data ?? null) as MonitorCheckRow | null;
 }
 
+export async function isMonitorCheckRunning(checkId: string): Promise<boolean> {
+  const [data] = await run(
+    () =>
+      db
+        .select({ id: schema.monitor_checks.id })
+        .from(schema.monitor_checks)
+        .where(
+          and(
+            eq(schema.monitor_checks.id, checkId),
+            eq(schema.monitor_checks.status, "running"),
+          ),
+        )
+        .limit(1),
+    "Failed to check monitor check status",
+  );
+  return data !== undefined;
+}
+
 export async function listRunningMonitorChecks(
   limit: number = 100,
 ): Promise<MonitorCheckRow[]> {

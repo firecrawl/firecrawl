@@ -1,4 +1,5 @@
 import { NuQJob } from "../worker/nuq";
+import { v7 as uuidv7 } from "uuid";
 import { ScrapeJobData } from "../../types";
 import { logger as _logger } from "../../lib/logger";
 import { createWebhookSender, WebhookEvent } from "../webhook";
@@ -11,14 +12,52 @@ import {
   getMonitorPage,
   hashMonitorUrl,
   insertMonitorCheckPages,
+  isMonitorCheckRunning,
+  updateMonitorCheckIfRunning,
   upsertMonitorPage,
 } from "./store";
+import {
+  acquireMonitorCheckFinalizeLease,
+  MonitorCheckFinalizeLeaseTimeoutError,
+} from "./finalize-lease";
 
 const logger = _logger.child({ module: "monitoring-results" });
 
 // Per-(check, url) webhook claim. checkIds are unique per run, so this only needs
 // to outlive a job redelivery; we match runner.ts's notify-claim horizon.
 const MONITOR_PAGE_WEBHOOK_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
+const MONITOR_FINALIZE_LEASE_WAIT_MS = 5 * 60 * 1000;
+
+async function heartbeatMonitorCheck(checkId: string): Promise<boolean> {
+  return (await updateMonitorCheckIfRunning(checkId, {})) !== null;
+}
+
+async function waitForMonitorCheckFinalizeLease(checkId: string) {
+  const deadline = Date.now() + MONITOR_FINALIZE_LEASE_WAIT_MS;
+  while (Date.now() < deadline) {
+    const lease = await acquireMonitorCheckFinalizeLease(checkId);
+    if (lease) return lease;
+    if (!(await isMonitorCheckRunning(checkId))) return null;
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  throw new MonitorCheckFinalizeLeaseTimeoutError(
+    checkId,
+    MONITOR_FINALIZE_LEASE_WAIT_MS,
+  );
+}
+
+async function heartbeatMonitorCheckWithLease(
+  checkId: string,
+): Promise<boolean> {
+  const lease = await waitForMonitorCheckFinalizeLease(checkId);
+  if (!lease) return false;
+  try {
+    if (lease.signal.aborted) return false;
+    return await heartbeatMonitorCheck(checkId);
+  } finally {
+    await lease.release();
+  }
+}
 
 // Mirror runner.ts's claimMonitorNotification: a redelivered scrape job must not
 // re-send the MONITOR_PAGE webhook. Returns true only for the first claimant; a
@@ -45,29 +84,50 @@ async function claimMonitorPageWebhook(
   checkId: string,
   url: string,
   kind: "page" | "error",
-): Promise<boolean> {
+): Promise<{ key: string; token: string } | null> {
   try {
     if (kind === "error") {
       const pageSent = await redisEvictConnection.exists(
         monitorPageNotifyKey(checkId, url, "page"),
       );
-      if (pageSent) return false;
+      if (pageSent) return null;
     }
+    const key = monitorPageNotifyKey(checkId, url, kind);
+    const token = uuidv7();
     const result = await redisEvictConnection.set(
-      monitorPageNotifyKey(checkId, url, kind),
-      "1",
+      key,
+      token,
       "EX",
       MONITOR_PAGE_WEBHOOK_CLAIM_TTL_SECONDS,
       "NX",
     );
-    return result === "OK";
+    return result === "OK" ? { key, token } : null;
   } catch (error) {
     logger.warn("Failed to claim monitor page webhook", {
       error,
       checkId,
       url,
     });
-    return false;
+    return null;
+  }
+}
+
+async function rollbackMonitorPageWebhookClaim(claim: {
+  key: string;
+  token: string;
+}): Promise<void> {
+  try {
+    await redisEvictConnection.eval(
+      `if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+      end
+      return 0`,
+      1,
+      claim.key,
+      claim.token,
+    );
+  } catch (error) {
+    logger.warn("Failed to roll back monitor page webhook claim", { error });
   }
 }
 
@@ -82,43 +142,69 @@ async function persistMonitorCheckError(params: {
   error: string;
   statusCode?: number | null;
   metadata?: Record<string, unknown>;
+  heartbeatRecorded?: boolean;
 }): Promise<void> {
-  await deleteMonitorCheckPages({
-    checkId: params.monitoring.checkId,
-    targetId: params.monitoring.targetId,
-    url: params.url,
-  });
-  await insertMonitorCheckPages([
-    {
-      check_id: params.monitoring.checkId,
-      monitor_id: params.monitoring.monitorId,
-      team_id: params.teamId,
-      target_id: params.monitoring.targetId,
-      url: params.url,
-      status: "error",
-      current_scrape_id: params.scrapeId,
-      error: params.error,
-      status_code: params.statusCode ?? null,
-      metadata: params.metadata ?? null,
-    },
-  ]);
+  const lease = await waitForMonitorCheckFinalizeLease(
+    params.monitoring.checkId,
+  );
+  if (!lease) return;
 
-  if (
-    await claimMonitorPageWebhook(
+  try {
+    if (lease.signal.aborted) return;
+    if (params.heartbeatRecorded) {
+      if (!(await isMonitorCheckRunning(params.monitoring.checkId))) return;
+    } else if (!(await heartbeatMonitorCheck(params.monitoring.checkId))) {
+      return;
+    }
+    if (lease.signal.aborted) return;
+
+    await deleteMonitorCheckPages({
+      checkId: params.monitoring.checkId,
+      targetId: params.monitoring.targetId,
+      url: params.url,
+    });
+    await insertMonitorCheckPages([
+      {
+        check_id: params.monitoring.checkId,
+        monitor_id: params.monitoring.monitorId,
+        team_id: params.teamId,
+        target_id: params.monitoring.targetId,
+        url: params.url,
+        status: "error",
+        current_scrape_id: params.scrapeId,
+        error: params.error,
+        status_code: params.statusCode ?? null,
+        metadata: params.metadata ?? null,
+      },
+    ]);
+    if (lease.signal.aborted) return;
+
+    const webhookClaim = await claimMonitorPageWebhook(
       params.monitoring.checkId,
       params.url,
       "error",
-    )
-  ) {
-    await sendMonitorPageWebhook({
-      teamId: params.teamId,
-      monitorId: params.monitoring.monitorId,
-      checkId: params.monitoring.checkId,
-      url: params.url,
-      status: "error",
-      currentScrapeId: params.scrapeId,
-      error: params.error,
-    });
+    );
+    if (webhookClaim) {
+      if (lease.signal.aborted) {
+        await rollbackMonitorPageWebhookClaim(webhookClaim);
+        return;
+      }
+      const dispatchOwned = await sendMonitorPageWebhook({
+        teamId: params.teamId,
+        monitorId: params.monitoring.monitorId,
+        checkId: params.monitoring.checkId,
+        url: params.url,
+        status: "error",
+        currentScrapeId: params.scrapeId,
+        error: params.error,
+        abortSignal: lease.signal,
+      });
+      if (!dispatchOwned) {
+        await rollbackMonitorPageWebhookClaim(webhookClaim);
+      }
+    }
+  } finally {
+    await lease.release();
   }
 }
 
@@ -156,10 +242,13 @@ export async function sendMonitorPageWebhook(params: {
   judgment?: PageJudgment | null;
   diffText?: string | null;
   diffJson?: Record<string, { previous: unknown; current: unknown }> | null;
-}) {
+  abortSignal?: AbortSignal;
+}): Promise<boolean> {
+  let dispatchStarted = false;
   try {
     const monitor = await getMonitorForUpdate(params.teamId, params.monitorId);
-    if (!monitor?.webhook) return;
+    if (!monitor?.webhook) return false;
+    if (params.abortSignal?.aborted) return false;
 
     const sender = await createWebhookSender({
       teamId: params.teamId,
@@ -197,9 +286,11 @@ export async function sendMonitorPageWebhook(params: {
       ],
       error: params.error ?? undefined,
     };
-    if (sender) {
-      await sender.send(WebhookEvent.MONITOR_PAGE, payload);
-    }
+    if (!sender) return false;
+    if (params.abortSignal?.aborted) return false;
+    dispatchStarted = true;
+    await sender.send(WebhookEvent.MONITOR_PAGE, payload);
+    return true;
   } catch (error) {
     logger.warn("Failed to send monitor page webhook", {
       error,
@@ -208,6 +299,7 @@ export async function sendMonitorPageWebhook(params: {
       url: params.url,
       status: params.status,
     });
+    return dispatchStarted;
   }
 }
 
@@ -217,6 +309,7 @@ export async function recordMonitorScrapeSuccess(
 ): Promise<void> {
   const monitoring = job.data.monitoring;
   if (!monitoring || job.data.mode !== "single_urls") return;
+  if (!(await heartbeatMonitorCheckWithLease(monitoring.checkId))) return;
 
   const url = getDocumentUrl(doc, job.data.url);
   const previous = await getMonitorPage({
@@ -280,6 +373,7 @@ export async function recordMonitorScrapeSuccess(
       error: error instanceof Error ? error.message : String(error),
       statusCode: getDocumentStatusCode(doc),
       metadata: { creditsUsed: doc?.metadata?.creditsUsed ?? null },
+      heartbeatRecorded: true,
     });
     return;
   }
@@ -295,88 +389,113 @@ export async function recordMonitorScrapeSuccess(
     error,
   } = diff;
 
-  // Tally first (the reconciler's fan-in gate), durable baseline last: a crash
-  // between the two completes the check rather than poisoning the cross-run dedup
-  // baseline against an unrecorded page. The delete makes redelivery a replace,
-  // not a duplicate.
-  await deleteMonitorCheckPages({
-    checkId: monitoring.checkId,
-    targetId: monitoring.targetId,
-    url,
-  });
-  await insertMonitorCheckPages([
-    {
-      check_id: monitoring.checkId,
-      monitor_id: monitoring.monitorId,
-      team_id: job.data.team_id,
-      target_id: monitoring.targetId,
+  const lease = await waitForMonitorCheckFinalizeLease(monitoring.checkId);
+  if (!lease) return;
+
+  try {
+    if (lease.signal.aborted) return;
+    if (!(await isMonitorCheckRunning(monitoring.checkId))) return;
+    if (lease.signal.aborted) return;
+
+    // Tally first (the reconciler's fan-in gate), durable baseline last. The
+    // finalize lease keeps completion from interleaving between these writes.
+    await deleteMonitorCheckPages({
+      checkId: monitoring.checkId,
+      targetId: monitoring.targetId,
       url,
-      url_hash: hashMonitorUrl(url),
+    });
+    await insertMonitorCheckPages([
+      {
+        check_id: monitoring.checkId,
+        monitor_id: monitoring.monitorId,
+        team_id: job.data.team_id,
+        target_id: monitoring.targetId,
+        url,
+        url_hash: hashMonitorUrl(url),
+        status,
+        previous_scrape_id: previous?.last_scrape_id ?? null,
+        current_scrape_id: job.id,
+        diff_gcs_key: diffGcsKey,
+        diff_text_bytes: diffTextBytes,
+        diff_json_bytes: diffJsonBytes,
+        status_code: getDocumentStatusCode(doc),
+        ...(error ? { error } : {}),
+        metadata: {
+          title: doc?.metadata?.title ?? null,
+          contentType: doc?.metadata?.contentType ?? null,
+          numPages: doc?.metadata?.numPages ?? null,
+          proxyUsed: doc?.metadata?.proxyUsed ?? null,
+          postprocessorsUsed: doc?.metadata?.postprocessorsUsed ?? null,
+          creditsUsed: doc?.metadata?.creditsUsed ?? null,
+        },
+        judgment: judgment ?? null,
+      },
+    ]);
+    if (lease.signal.aborted) return;
+
+    await upsertMonitorPage({
+      monitorId: monitoring.monitorId,
+      teamId: job.data.team_id,
+      targetId: monitoring.targetId,
+      url,
+      source: monitoring.source,
+      checkId: monitoring.checkId,
+      scrapeId: job.id,
       status,
-      previous_scrape_id: previous?.last_scrape_id ?? null,
-      current_scrape_id: job.id,
-      diff_gcs_key: diffGcsKey,
-      diff_text_bytes: diffTextBytes,
-      diff_json_bytes: diffJsonBytes,
-      status_code: getDocumentStatusCode(doc),
-      ...(error ? { error } : {}),
+      abortSignal: lease.signal,
       metadata: {
         title: doc?.metadata?.title ?? null,
+        statusCode: getDocumentStatusCode(doc),
         contentType: doc?.metadata?.contentType ?? null,
         numPages: doc?.metadata?.numPages ?? null,
         proxyUsed: doc?.metadata?.proxyUsed ?? null,
         postprocessorsUsed: doc?.metadata?.postprocessorsUsed ?? null,
         creditsUsed: doc?.metadata?.creditsUsed ?? null,
       },
-      judgment: judgment ?? null,
-    },
-  ]);
+    });
+    if (lease.signal.aborted) return;
 
-  await upsertMonitorPage({
-    monitorId: monitoring.monitorId,
-    teamId: job.data.team_id,
-    targetId: monitoring.targetId,
-    url,
-    source: monitoring.source,
-    checkId: monitoring.checkId,
-    scrapeId: job.id,
-    status,
-    metadata: {
-      title: doc?.metadata?.title ?? null,
-      statusCode: getDocumentStatusCode(doc),
-      contentType: doc?.metadata?.contentType ?? null,
-      numPages: doc?.metadata?.numPages ?? null,
-      proxyUsed: doc?.metadata?.proxyUsed ?? null,
-      postprocessorsUsed: doc?.metadata?.postprocessorsUsed ?? null,
-      creditsUsed: doc?.metadata?.creditsUsed ?? null,
-    },
-  });
-
-  logger.info("Recorded monitor scrape result", {
-    monitorId: monitoring.monitorId,
-    checkId: monitoring.checkId,
-    targetId: monitoring.targetId,
-    scrapeId: job.id,
-    url,
-    status,
-    previousScrapeId: previous?.last_scrape_id ?? null,
-    diffGcsKey,
-    judgmentMeaningful: judgment?.meaningful,
-  });
-
-  if (await claimMonitorPageWebhook(monitoring.checkId, url, "page")) {
-    await sendMonitorPageWebhook({
-      teamId: job.data.team_id,
+    logger.info("Recorded monitor scrape result", {
       monitorId: monitoring.monitorId,
       checkId: monitoring.checkId,
+      targetId: monitoring.targetId,
+      scrapeId: job.id,
       url,
       status,
       previousScrapeId: previous?.last_scrape_id ?? null,
-      currentScrapeId: job.id,
-      judgment: judgment ?? null,
-      diffText: diffText ?? null,
-      diffJson: diffJson ?? null,
+      diffGcsKey,
+      judgmentMeaningful: judgment?.meaningful,
     });
+
+    const webhookClaim = await claimMonitorPageWebhook(
+      monitoring.checkId,
+      url,
+      "page",
+    );
+    if (webhookClaim) {
+      if (lease.signal.aborted) {
+        await rollbackMonitorPageWebhookClaim(webhookClaim);
+        return;
+      }
+      const dispatchOwned = await sendMonitorPageWebhook({
+        teamId: job.data.team_id,
+        monitorId: monitoring.monitorId,
+        checkId: monitoring.checkId,
+        url,
+        status,
+        previousScrapeId: previous?.last_scrape_id ?? null,
+        currentScrapeId: job.id,
+        judgment: judgment ?? null,
+        diffText: diffText ?? null,
+        diffJson: diffJson ?? null,
+        abortSignal: lease.signal,
+      });
+      if (!dispatchOwned) {
+        await rollbackMonitorPageWebhookClaim(webhookClaim);
+      }
+    }
+  } finally {
+    await lease.release();
   }
 }
 

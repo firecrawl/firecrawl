@@ -6,6 +6,7 @@ import {
   estimateActualCredits,
   findCompletedSearchTargetRun,
   isMonitorCheckStale,
+  MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS,
   MONITOR_CHECK_STALE_TIMEOUT_MS,
   withFinalizeTimeout,
 } from "./runner";
@@ -24,14 +25,16 @@ describe("monitoring runner", () => {
   describe("isMonitorCheckStale", () => {
     const now = new Date("2026-05-06T12:00:00.000Z");
 
-    it("returns true when a running check is at least 1 hour old", () => {
+    it("returns true after 1 hour without progress", () => {
       expect(
         isMonitorCheckStale(
           {
             started_at: new Date(
+              now.getTime() - 2 * 60 * 60 * 1000,
+            ).toISOString(),
+            updated_at: new Date(
               now.getTime() - MONITOR_CHECK_STALE_TIMEOUT_MS,
             ).toISOString(),
-            updated_at: now.toISOString(),
             created_at: now.toISOString(),
           },
           now,
@@ -39,19 +42,36 @@ describe("monitoring runner", () => {
       ).toBe(true);
     });
 
-    it("returns false when a running check is not yet stale", () => {
+    it("keeps an old check alive while it is making progress", () => {
       expect(
         isMonitorCheckStale(
           {
             started_at: new Date(
+              now.getTime() - 2 * MONITOR_CHECK_STALE_TIMEOUT_MS,
+            ).toISOString(),
+            updated_at: new Date(
               now.getTime() - MONITOR_CHECK_STALE_TIMEOUT_MS + 1,
+            ).toISOString(),
+            created_at: now.toISOString(),
+          },
+          now,
+        ),
+      ).toBe(false);
+    });
+
+    it("enforces the 24 hour absolute cap despite recent progress", () => {
+      expect(
+        isMonitorCheckStale(
+          {
+            started_at: new Date(
+              now.getTime() - MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS,
             ).toISOString(),
             updated_at: now.toISOString(),
             created_at: now.toISOString(),
           },
           now,
         ),
-      ).toBe(false);
+      ).toBe(true);
     });
 
     it("falls back to updated_at for malformed started_at values", () => {
