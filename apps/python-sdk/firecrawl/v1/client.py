@@ -318,18 +318,6 @@ class V1MapResponse(pydantic.BaseModel):
     links: Optional[List[str]] = None
     error: Optional[str] = None
 
-class V1ExtractParams(pydantic.BaseModel):
-    """Parameters for extracting information from URLs."""
-    prompt: Optional[str] = None
-    schema_field: Optional[Any] = pydantic.Field(None, alias='schema')
-    systemPrompt: Optional[str] = None
-    allowExternalLinks: Optional[bool] = None
-    enableWebSearch: Optional[bool] = None
-    includeSubdomains: Optional[bool] = None
-    origin: Optional[str] = None
-    showSources: Optional[bool] = None
-    scrapeOptions: Optional[V1ScrapeOptions] = None
-
 class V1ExtractResponse(pydantic.BaseModel, Generic[T]):
     """Response from extract operations."""
     id: Optional[str] = None
@@ -355,13 +343,6 @@ class V1SearchParams(pydantic.BaseModel):
     origin: Optional[str] = "api"
     timeout: Optional[int] = 60000
     scrapeOptions: Optional[V1ScrapeOptions] = None
-
-class V1SearchResponse(pydantic.BaseModel):
-    """Response from search operations."""
-    success: bool = True
-    data: List[V1FirecrawlDocument]
-    warning: Optional[str] = None
-    error: Optional[str] = None
 
 class V1CreditUsageData(pydantic.BaseModel):
     remaining_credits: int
