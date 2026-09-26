@@ -4,7 +4,7 @@ HTTP client utilities for v2 API.
 
 import time
 from typing import Dict, Any, Optional
-from urllib.parse import urlparse, urlunparse, urljoin
+from urllib.parse import urlparse, urlunparse
 import requests
 from .get_version import get_version
 
@@ -31,6 +31,10 @@ class HttpClient:
         base = urlparse(self.api_url)
         ep = urlparse(endpoint)
 
+        # Validate api_url is fully qualified (has scheme and netloc)
+        if not base.scheme or not base.netloc:
+            raise ValueError("api_url must be a fully qualified URL (scheme://host)")
+
         # Absolute or protocol-relative (has netloc)
         if ep.netloc:
             # Different host: keep path/query but force base host/scheme (no token leakage)
@@ -41,13 +45,32 @@ class HttpClient:
             return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
 
         # Relative (including leading slash or not)
-        base_str = self.api_url if self.api_url.endswith("/") else f"{self.api_url}/"
-        # Guard protocol-relative like //host/path slipping through as “relative”
-        if endpoint.startswith("//"):
-            ep2 = urlparse(f"https:{endpoint}")
-            path = ep2.path or "/"
-            return urlunparse((base.scheme or "https", base.netloc, path, "", ep2.query, ""))
-        return urljoin(base_str, endpoint)
+        base = urlparse(self.api_url)
+        # Append endpoint path to the parsed base path so query/fragment
+        # components are preserved and every endpoint reaches its intended
+        # path (e.g. http://host/firecrawl + /v2/search →
+        # http://host/firecrawl/v2/search). Merge queries/fragments from
+        # both base and endpoint without producing duplicate `?` delimiters.
+        base_path = base.path.rstrip("/")
+        ep_path = ep.path.lstrip("/")
+        # Preserve base trailing slash when endpoint is "/" or empty
+        if ep_path == "":
+            # Endpoint is "/" or empty: preserve base path exactly, ensure trailing slash
+            combined_path = base_path + "/" if base_path else "/"
+        else:
+            combined_path = f"{base_path}/{ep_path}" if base_path else f"/{ep_path}"
+        # Merge queries: join with & if both present
+        if base.query and ep.query:
+            combined_query = f"{base.query}&{ep.query}"
+        elif ep.query:
+            combined_query = ep.query
+        else:
+            combined_query = base.query
+        # Merge fragments: prefer endpoint fragment
+        combined_fragment = ep.fragment if ep.fragment else base.fragment
+        # Merge params: prefer endpoint params
+        combined_params = ep.params if ep.params else base.params
+        return urlunparse((base.scheme or "https", base.netloc, combined_path, combined_params, combined_query, combined_fragment))
     
     def _prepare_headers(
         self,
