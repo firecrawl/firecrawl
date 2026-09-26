@@ -235,6 +235,41 @@ fn _extract_metadata(
   insert_meta_name!(out, document, "dc.date.created", "dcDateCreated");
   insert_meta_name!(out, document, "dcterms.created", "dcTermsCreated");
 
+  // Extract <link rel="alternate"> tags (RSS, Atom, hreflang, etc.)
+  {
+    let mut alternate_links: Vec<Value> = Vec::new();
+
+    let link_alternates = document
+      .select("link[rel=\"alternate\"]")
+      .map_err(|_| "Failed to select link alternate")?;
+
+    for link in link_alternates {
+      let attrs = link.attributes.borrow();
+      let mut link_obj = serde_json::Map::new();
+
+      if let Some(href) = attrs.get("href") {
+        link_obj.insert("href".to_string(), Value::String(href.to_string()));
+      }
+      if let Some(link_type) = attrs.get("type") {
+        link_obj.insert("type".to_string(), Value::String(link_type.to_string()));
+      }
+      if let Some(title) = attrs.get("title") {
+        link_obj.insert("title".to_string(), Value::String(title.to_string()));
+      }
+      if let Some(hreflang) = attrs.get("hreflang") {
+        link_obj.insert("hreflang".to_string(), Value::String(hreflang.to_string()));
+      }
+
+      if !link_obj.is_empty() {
+        alternate_links.push(Value::Object(link_obj));
+      }
+    }
+
+    if !alternate_links.is_empty() {
+      out.insert("alternateLinks".to_string(), Value::Array(alternate_links));
+    }
+  }
+
   for meta in document
     .select("meta")
     .map_err(|_| "Failed to select meta")?

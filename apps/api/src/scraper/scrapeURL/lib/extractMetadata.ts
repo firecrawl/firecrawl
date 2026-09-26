@@ -76,6 +76,9 @@ export async function extractMetadata(
   let publishedTime: string | undefined = undefined;
   let articleTag: string | undefined = undefined;
   let articleSection: string | undefined = undefined;
+  let alternateLinks:
+    | { href?: string; type?: string; title?: string; hreflang?: string }[]
+    | undefined = undefined;
   const customMetadata: Record<string, string | string[]> = {};
 
   const soup = load(html);
@@ -142,6 +145,32 @@ export async function extractMetadata(
       soup('meta[name="dc.date.created"]').attr("content") || undefined;
     dcTermsCreated =
       soup('meta[name="dcterms.created"]').attr("content") || undefined;
+
+    // Extract <link rel="alternate"> tags (RSS, Atom, hreflang, etc.)
+    const altLinks: {
+      href?: string;
+      type?: string;
+      title?: string;
+      hreflang?: string;
+    }[] = [];
+    soup('link[rel="alternate"]').each((_, elem) => {
+      const link: {
+        href?: string;
+        type?: string;
+        title?: string;
+        hreflang?: string;
+      } = {};
+      const href = soup(elem).attr("href");
+      const type_ = soup(elem).attr("type");
+      const title_ = soup(elem).attr("title");
+      const hreflang = soup(elem).attr("hreflang");
+      if (href) link.href = href;
+      if (type_) link.type = type_;
+      if (title_) link.title = title_;
+      if (hreflang) link.hreflang = hreflang;
+      if (Object.keys(link).length > 0) altLinks.push(link);
+    });
+    if (altLinks.length > 0) alternateLinks = altLinks;
 
     try {
       // Extract all meta tags for custom metadata
@@ -217,6 +246,7 @@ export async function extractMetadata(
     publishedTime,
     articleTag,
     articleSection,
+    alternateLinks,
     scrapeId: meta.id,
     ...customMetadata,
   };
