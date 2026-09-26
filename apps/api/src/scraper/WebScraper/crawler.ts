@@ -56,6 +56,46 @@ interface FilterLinksResult {
   denialReasons: Map<string, string>;
 }
 
+function normalizeContentMarker(value: string): string {
+  return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function stripDormantMarkdownBlocks(markdown: string): string {
+  return markdown
+    .replace(
+      /<(script|style|template|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,
+      " ",
+    )
+    .replace(
+      /&lt;(script|style|template|noscript)\b(?:(?!&gt;)[\s\S])*?&gt;[\s\S]*?&lt;\/\1\s*&gt;/gi,
+      " ",
+    );
+}
+
+export function matchesStopOnContent(
+  document: { markdown?: string; html?: string },
+  markers: string[] | undefined,
+): boolean {
+  if (!markers?.length) return false;
+
+  let content =
+    document.markdown === undefined
+      ? undefined
+      : stripDormantMarkdownBlocks(document.markdown);
+  if (content === undefined && document.html !== undefined) {
+    const $ = load(document.html);
+    $("script, style, template, noscript").remove();
+    content = $.root().text();
+  }
+  if (content === undefined) return false;
+
+  const normalizedContent = normalizeContentMarker(content);
+  const normalizedMarkers = markers
+    .map(normalizeContentMarker)
+    .filter(marker => marker.length > 0);
+  return normalizedMarkers.some(marker => normalizedContent.includes(marker));
+}
+
 export class WebCrawler {
   private jobId: string;
   private initialUrl: string;
