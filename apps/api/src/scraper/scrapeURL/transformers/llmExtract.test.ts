@@ -391,8 +391,9 @@ describe("generateCompletions markdown trimming for local/self-hosted models", (
     // A local model name absent from our hosted pricing table (e.g. an Ollama
     // model) -- falls back to the conservative 8192-token default.
     const modelId = "some-local-model-not-in-price-table";
-    // Repeated words tokenize predictably and comfortably exceed the ~7192
-    // token budget (8192 default minus the 1000-token prompt overhead reserve).
+    // Repeated words tokenize predictably and comfortably exceed the ~8130
+    // token budget (8192 default minus the measured prompt overhead for this
+    // small schema/instructions).
     const hugeMarkdown = "hello world ".repeat(20000);
 
     const result = await generateCompletions({
