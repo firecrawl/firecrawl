@@ -468,7 +468,7 @@ The relationship between `Product` and `PriceHistory` is bidirectional, allowing
 
 These models provide the structure for storing and querying our price tracking data in a PostgreSQL database using SQLAlchemy's ORM capabilities.
 
-Now, we define a `Database` class with a singe `add_product` method:
+Now, we define a `Database` class with a single `add_product` method:
 
 ```python
 class Database:
