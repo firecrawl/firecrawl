@@ -1,5 +1,9 @@
 import { describe, test, expect } from "@jest/globals";
-import { ensureValidFormats, ensureValidScrapeOptions } from "../../../v2/utils/validation";
+import {
+  ensureValidFormats,
+  ensureValidParseOptions,
+  ensureValidScrapeOptions,
+} from "../../../v2/utils/validation";
 import type { FormatOption } from "../../../v2/types";
 import { z } from "zod";
 
@@ -46,11 +50,50 @@ describe("v2 utils: validation", () => {
     expect(() => ensureValidFormats(formats)).toThrow(/non-negative number/i);
   });
 
+  test("ensureValidFormats: screenshot quality must be finite", () => {
+    expect(() =>
+      ensureValidFormats([{ type: "screenshot", quality: Number.NaN } as any]),
+    ).toThrow(/non-negative number/i);
+    expect(() =>
+      ensureValidFormats([
+        { type: "screenshot", quality: Number.POSITIVE_INFINITY } as any,
+      ]),
+    ).toThrow(/non-negative number/i);
+  });
+
   test("ensureValidScrapeOptions: validates timeout and waitFor bounds", () => {
-    expect(() => ensureValidScrapeOptions({ timeout: 0 })).toThrow(/timeout must be positive/i);
-    expect(() => ensureValidScrapeOptions({ waitFor: -1 })).toThrow(/waitFor must be non-negative/i);
+    expect(() => ensureValidScrapeOptions({ timeout: 0 })).toThrow(
+      /timeout must be positive/i,
+    );
+    expect(() => ensureValidScrapeOptions({ waitFor: -1 })).toThrow(
+      /waitFor must be non-negative/i,
+    );
     // valid
     expect(() => ensureValidScrapeOptions({ timeout: 1000, waitFor: 0 })).not.toThrow();
+  });
+
+  test("ensureValidScrapeOptions: rejects non-finite numeric options", () => {
+    expect(() => ensureValidScrapeOptions({ timeout: Number.NaN })).toThrow(
+      /timeout must be positive/i,
+    );
+    expect(() => ensureValidScrapeOptions({ timeout: Number.POSITIVE_INFINITY })).toThrow(
+      /timeout must be positive/i,
+    );
+    expect(() => ensureValidScrapeOptions({ waitFor: Number.NaN })).toThrow(
+      /waitFor must be non-negative/i,
+    );
+    expect(() => ensureValidScrapeOptions({ waitFor: Number.POSITIVE_INFINITY })).toThrow(
+      /waitFor must be non-negative/i,
+    );
+  });
+
+  test("ensureValidParseOptions: rejects non-finite timeout", () => {
+    expect(() => ensureValidParseOptions({ timeout: Number.NaN })).toThrow(
+      /timeout must be positive/i,
+    );
+    expect(() => ensureValidParseOptions({ timeout: Number.POSITIVE_INFINITY })).toThrow(
+      /timeout must be positive/i,
+    );
   });
 
   test("ensureValidFormats: accepts screenshot viewport width/height", () => {
