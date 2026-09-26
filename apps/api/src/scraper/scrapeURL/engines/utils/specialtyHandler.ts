@@ -12,6 +12,10 @@ import {
   sniffImageContentTypeFromBase64,
 } from "../../../../lib/image-formats";
 import type { ImageOcrGate } from "../../../../lib/image-ocr-gate";
+import {
+  pdfHeaderLineOffset,
+  PDF_HEADER_PROBE_BYTES,
+} from "../../../../lib/pdf-format";
 
 async function feResToFilePrefetch(
   logger: Logger,
@@ -144,12 +148,15 @@ async function sniffImageHandoff(
  */
 type HandoffFileKind = "pdf" | "zip" | "ole";
 
+/**
+ * Container signatures, matched at byte 0. PDFs are not listed here: their
+ * header may sit behind leading bytes, so they are recognized by the shared
+ * PDF sniff (see sniffHead).
+ */
 const HANDOFF_FILE_SIGNATURES: Array<{
-  kind: HandoffFileKind;
+  kind: Exclude<HandoffFileKind, "pdf">;
   bytes: number[];
 }> = [
-  // "%PDF-"
-  { kind: "pdf", bytes: [0x25, 0x50, 0x44, 0x46, 0x2d] },
   // "PK\x03\x04": the local file header every OOXML/ODF container (.docx,
   // .xlsx, .pptx, .odt, ...) starts with. All four bytes, so a text body that
   // merely begins with "PK" is not mistaken for an archive.
@@ -157,10 +164,6 @@ const HANDOFF_FILE_SIGNATURES: Array<{
   // OLE2/CFB header shared by legacy Office files (.doc, .xls, .ppt).
   { kind: "ole", bytes: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] },
 ];
-
-const HANDOFF_SNIFF_BYTES = Math.max(
-  ...HANDOFF_FILE_SIGNATURES.map(s => s.bytes.length),
-);
 
 // Headers that already declare a ZIP archive. A ZIP signature under one of
 // these confirms a real archive rather than exposing a mislabeled Office
@@ -174,7 +177,7 @@ const ZIP_ARCHIVE_MEDIA_TYPES = new Set([
 
 function matchHandoffSignature(
   head: ArrayLike<number>,
-): HandoffFileKind | null {
+): Exclude<HandoffFileKind, "pdf"> | null {
   for (const { kind, bytes } of HANDOFF_FILE_SIGNATURES) {
     if (head.length < bytes.length) continue;
     let matches = true;
@@ -190,26 +193,51 @@ function matchHandoffSignature(
 }
 
 /**
+ * Sniffs the leading bytes of a body: a container signature at byte 0, or
+ * else a PDF header line (`%PDF-1.x` starting a line) anywhere in the first
+ * 1KB — the same window the pdf engine accepts. Some servers wrap a PDF in
+ * leading bytes (a multipart boundary and part headers echoed from an
+ * upload) that every PDF reader skips; a byte-0 check would miss the file
+ * and let it render as a page of garbage. The header must start a line so a
+ * page that merely mentions the magic is not diverted — stricter than the
+ * pdf engine's own acceptance gate on purpose: a false positive here turns
+ * a page into a failed scrape, while that gate only sees bytes the URL,
+ * header or this sniff already vouched for. Containers go first: an
+ * archive may store a PDF entry uncompressed, with that file's header
+ * inside the window.
+ */
+function sniffHead(head: Buffer): HandoffFileKind | null {
+  return (
+    matchHandoffSignature(head) ??
+    (pdfHeaderLineOffset(head) !== -1 ? "pdf" : null)
+  );
+}
+
+/**
  * Identifies a handoff's file type from its leading bytes. A captured
  * download arrives base64-encoded in `file.content` (4 characters encode 3
- * bytes, so a short prefix covers the longest signature without decoding the
+ * bytes, so a short prefix covers the sniff window without decoding the
  * file); a body fire-engine returned as text sits in `content` and is
- * compared character by character.
+ * compared character by character (a character outside the byte range can
+ * never match a signature, so it is mapped to a byte that matches nothing).
  */
 function sniffHandoffFileKind(
   feRes: FireEngineCheckStatusSuccess | undefined,
 ): HandoffFileKind | null {
   if (!feRes) return null;
   if (feRes.file?.content !== undefined) {
-    const chars = Math.ceil(HANDOFF_SNIFF_BYTES / 3) * 4;
-    const kind = matchHandoffSignature(
+    const chars = Math.ceil(PDF_HEADER_PROBE_BYTES / 3) * 4;
+    const kind = sniffHead(
       Buffer.from(feRes.file.content.slice(0, chars), "base64"),
     );
     if (kind !== null) return kind;
   }
-  return matchHandoffSignature(
-    Array.from(feRes.content.slice(0, HANDOFF_SNIFF_BYTES), c =>
-      c.charCodeAt(0),
+  return sniffHead(
+    Buffer.from(
+      Array.from(feRes.content.slice(0, PDF_HEADER_PROBE_BYTES), c => {
+        const code = c.charCodeAt(0);
+        return code > 0xff ? 0 : code;
+      }),
     ),
   );
 }
