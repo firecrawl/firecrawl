@@ -41,7 +41,8 @@
     "mongo-docker": "docker run -d -p 2717:27017 -v ./mongo-data:/data/db --name mongodb mongo:latest",
     "mongo-docker-console": "docker exec -it mongodb mongosh",
     "prepare": "cd ../.. && husky ./apps/api/.husky",
-    "knip": "knip"
+    "knip": "knip",
+    "openapi:v2": "tsx src/openapi/generate-v2.ts"
   },
   "author": "",
   "license": "ISC",
