@@ -27,7 +27,6 @@ describe("E2E Tests for Extract API Routes", () => {
           },
         });
 
-      console.log(response.body);
       expect(response.statusCode).toBe(200);
       expect(response.body).toHaveProperty("data");
       expect(response.body.data).toHaveProperty("authors");
@@ -69,7 +68,6 @@ describe("E2E Tests for Extract API Routes", () => {
       expect(response.body).toHaveProperty("data");
       expect(response.body.data).toHaveProperty("founders");
 
-      console.log(response.body.data?.founders);
       let gotItRight = 0;
       for (const founder of response.body.data?.founders) {
         if (founder.includes("Caleb")) gotItRight++;
@@ -106,7 +104,6 @@ describe("E2E Tests for Extract API Routes", () => {
         });
       expect(response.statusCode).toBe(200);
       expect(response.body).toHaveProperty("data");
-      console.log(response.body.data);
 
       let gotItRight = 0;
       for (const hiring of response.body.data?.items) {
@@ -170,7 +167,6 @@ describe("E2E Tests for Extract API Routes", () => {
           },
         });
 
-      console.log(response.body);
       // expect(response.statusCode).toBe(200);
       // expect(response.body).toHaveProperty("data");
       // expect(response.body.data?.pciDssCompliance).toBe(true);
@@ -200,7 +196,6 @@ describe("E2E Tests for Extract API Routes", () => {
           allowExternalLinks: true,
         });
 
-      console.log(response.body);
       expect(response.statusCode).toBe(200);
       expect(response.body).toHaveProperty("data");
       expect(response.body.data?.isGreenhouseATS).toBe(true);
@@ -231,7 +226,6 @@ describe("E2E Tests for Extract API Routes", () => {
           allowExternalLinks: true,
         });
 
-      console.log(response.body.data?.items);
       expect(response.statusCode).toBe(200);
       expect(response.body).toHaveProperty("data");
       expect(response.body.data?.items.length).toBe(4);
@@ -275,7 +269,6 @@ describe("E2E Tests for Extract API Routes", () => {
           allowExternalLinks: true,
         });
 
-      console.log(response.body.data);
       expect(response.statusCode).toBe(200);
       expect(response.body).toHaveProperty("data");
       expect(response.body.data?.name).toBe("Eric Ciarla");
@@ -297,7 +290,6 @@ describe("E2E Tests for Extract API Routes", () => {
           prompt: "What is the title and description of the page?",
         });
 
-      console.log(response.body.data);
       expect(response.statusCode).toBe(200);
       expect(response.body).toHaveProperty("data");
       expect(typeof response.body.data).toBe("object");
