@@ -1,3 +1,4 @@
+{{- if .Values.redis.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,3 +34,4 @@ spec:
               secretKeyRef:
                 name: {{ include "firecrawl.fullname" . }}-secret
                 key: REDIS_PASSWORD
+{{- end }}
