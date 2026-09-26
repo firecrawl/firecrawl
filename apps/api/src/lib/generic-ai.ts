@@ -58,10 +58,17 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
     name = "gemini-2.5-pro";
   }
   const modelName = config.MODEL_NAME || name;
-  // o3-mini returns empty text via the Responses API — force Chat Completions
-  if (provider === "openai" && modelName.startsWith("o3-mini")) {
+
+  // The Responses API (/v1/responses) is proprietary to OpenAI and unsupported by local backends (e.g. Ollama).
+  // We force the standard Chat Completions path (/v1/chat/completions) for o3-mini (known bug)
+  // or when explicitly running in OpenAI Compatible Mode.
+  if (
+    provider === "openai" &&
+    (modelName.startsWith("o3-mini") || config.OPENAI_COMPATIBLE_MODE)
+  ) {
     return providerList.openai.chat(modelName);
   }
+
   return providerList[provider](modelName);
 }
 
