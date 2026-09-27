@@ -62,7 +62,7 @@ Source: [Flowapp](https://www.flowmapp.com/features/generate-sitemap-online)
 
 XML sitemaps are shown to the public much less frequently because they contain structured XML code that can look intimidating to non-technical users. But an XML sitemap is just an organized file containing all the URLs of a website that is readable to search engines. It includes important metadata about each URL like when it was last modified, how often it changes, and its relative importance. Search engines like Google use this information to crawl websites more intelligently and ensure all important pages are indexed. While XML sitemaps aren't meant for human consumption, they play a vital role in SEO and are often required for large websites to achieve optimal search engine visibility.
 
-![Example of an XML sitemap showing structured URL data with lastmod, changefreq and priority tags for search engine optimization](notebook_files/image.png)
+*Example of an XML sitemap showing structured URL data with lastmod, changefreq and priority tags for search engine optimization*
 
 Source: [DataCamp](https://www.datacamp.com/sitemap/es/tutorial/category.xml)
 
@@ -273,7 +273,7 @@ CPU times: user 4.91 ms, sys: 3.58 ms, total: 8.49 ms
 Wall time: 2.04 s
 ```
 
-![Comparison chart showing significant performance difference between map and crawl endpoints of Firecrawl with map being much faster](notebook_files/notebook_42_0.png)
+*Comparison chart showing significant performance difference between map and crawl endpoints of Firecrawl with map being much faster*
 
 This is because `/crawl` needs to fully load and parse each page's HTML content, even when we only want the links. In contrast, `/map` is optimized specifically for URL discovery, making it much faster for generating sitemaps and link analysis.
 
@@ -439,7 +439,7 @@ with open("sitemap.xml", "w", encoding="utf-8") as f:
 
 Here is what the file looks like after saving:
 
-![XML sitemap example showing structured website data with URLs, last modified dates, change frequencies and priorities, generated using Firecrawl](notebook_files/image.png)
+*XML sitemap example showing structured website data with URLs, last modified dates, change frequencies and priorities, generated using Firecrawl*
 
 Such `sitemap.xml` file provides a standardized way for search engines to discover and crawl all pages on your website.
 
@@ -449,7 +449,7 @@ If you want a visual sitemap of a website, you don't have to sign up for expensi
 
 The resulting graph would like the following:
 
-![Interactive Sankey diagram visualization showing hierarchical structure of Stripe documentation with color-coded sections and flow widths representing page counts, generated using Firecrawl's /map endpoint](images/stripe_docs.png)
+*Interactive Sankey diagram visualization showing hierarchical structure of Stripe documentation with color-coded sections and flow widths representing page counts, generated using Firecrawl's /map endpoint*
 
 The Sankey diagram above visualizes the hierarchical structure of [the Stripe documentation](docs.stripe.org) (which is quite large) by showing how pages are organized and connected across different sections. The width of each flow represents the number of pages in that section, making it easy to identify which parts of the website contain the most content. The colors help distinguish between different sections and their subsections.
 
@@ -467,7 +467,7 @@ The script automatically handles things like grouping smaller sections together,
 
 Here is another plot generated for the [PyData.org](https://pydata.org) website:
 
-![Interactive Sankey diagram showing hierarchical website structure of PyData.org with color-coded sections, flow visualization and navigation paths for improved site architecture understanding, generated using Firecrawl's map endpoint and Plotly](images/pydata.png)
+*Interactive Sankey diagram showing hierarchical website structure of PyData.org with color-coded sections, flow visualization and navigation paths for improved site architecture understanding, generated using Firecrawl's map endpoint and Plotly*
 
 ## Conclusion
 
