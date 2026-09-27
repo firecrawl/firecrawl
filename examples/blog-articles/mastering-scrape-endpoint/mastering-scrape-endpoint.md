@@ -182,7 +182,7 @@ from IPython.display import Image
 Image(data['screenshot'])
 ```
 
-*Screenshot of arXiv.org homepage that was taken with Firecrawl's screenshot feature showing research paper categories like Computer Science, Mathematics, Physics and other scientific disciplines*
+![Screenshot of arXiv.org homepage that was taken with Firecrawl's screenshot feature showing research paper categories like Computer Science, Mathematics, Physics and other scientific disciplines](notebook_files/notebook_20_0.png)
 
 Notice how the screenshot is cropped to fit a certain viewport. For most pages, it is better to capture the entire screen by using the `screenshot@fullPage` format:
 
@@ -199,7 +199,7 @@ data = app.scrape_url(
 Image(data['screenshot'])
 ```
 
-*Full page screenshot of arXiv.org homepage taken with Firecrawl's full-page screenshot capture feature showing research paper categories, search functionality, and recent submissions in an academic layout*
+![Full page screenshot of arXiv.org homepage taken with Firecrawl's full-page screenshot capture feature showing research paper categories, search functionality, and recent submissions in an academic layout](notebook_files/notebook_22_0.png)
 
 As a bonus, the `/scrape` endpoint can handle PDF links as well:
 
@@ -744,7 +744,7 @@ Firecrawl supports dynamic scraping by default. In the parameters of `scrape_url
 
 These details are displayed for every city you search through the website:
 
-*Weather.com interface showing detailed weather forecast for London including temperature, humidity, wind speed and other meteorological data in an interactive dashboard layout*
+![Weather.com interface showing detailed weather forecast for London including temperature, humidity, wind speed and other meteorological data in an interactive dashboard layout](notebook_files/image.png)
 
 Unlike websites such as Amazon where you can simply modify the URL's search parameter (e.g. `?search=your-query`), weather.com presents a unique challenge. The site generates dynamic and unique IDs for each city, making traditional URL manipulation techniques ineffective. To scrape weather data for any given city, you must simulate the actual user journey: visiting the homepage, interacting with the search bar, entering the city name, and selecting the appropriate result from the dropdown list. This multi-step interaction process is necessary because of how weather.com structures its dynamic content delivery (at this point, I urge to visit the website and visit a few city pages).
 
@@ -861,7 +861,7 @@ from IPython.display import Image
 Image(data['actions']['screenshots'][0])
 ```
 
-*Screenshot of weather.com search interface showing search bar with typed city name, demonstrating automated web scraping process with Firecrawl*
+![Screenshot of weather.com search interface showing search bar with typed city name, demonstrating automated web scraping process with Firecrawl](notebook_files/notebook_96_0.png)
 
 The image shows the stage where the scraper just typed the search query.
 
