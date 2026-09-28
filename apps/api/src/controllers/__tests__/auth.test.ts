@@ -1021,7 +1021,7 @@ describe("authenticateUser", () => {
         expect.objectContaining({ success: true, team_id: "team-mcp" }),
       );
       expect(req.body).toBe(body);
-      expect(req.body.__agentInterop).toEqual({
+      expect(body.__agentInterop).toEqual({
         auth: "agent-secret",
         requestId: "req-1",
         shouldBill: false,
@@ -1037,7 +1037,7 @@ describe("authenticateUser", () => {
             : [],
       );
 
-      const results = [];
+      const results: Awaited<ReturnType<typeof authenticateUser>>[] = [];
       for (const shouldBill of [true, false]) {
         results.push(
           await authenticateUser(
