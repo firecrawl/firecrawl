@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -63,6 +64,21 @@ func (h *httpClient) get(ctx context.Context, path string) (json.RawMessage, err
 
 // getAbsolute sends a GET request to an absolute URL (for pagination cursors).
 func (h *httpClient) getAbsolute(ctx context.Context, absoluteURL string) (json.RawMessage, error) {
+	pageURL, err := url.Parse(absoluteURL)
+	if err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("invalid pagination URL: %v", err)}
+	}
+	apiURL, err := url.Parse(h.baseURL)
+	if err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("invalid API URL: %v", err)}
+	}
+	// Pagination links come from API responses. Never attach the configured
+	// bearer credential to a link outside the configured API origin.
+	if !pageURL.IsAbs() || pageURL.User != nil ||
+		!strings.EqualFold(pageURL.Scheme, apiURL.Scheme) ||
+		!strings.EqualFold(pageURL.Host, apiURL.Host) {
+		return nil, &FirecrawlError{Message: "pagination URL must use the configured API origin"}
+	}
 	return h.doJSON(ctx, "GET", absoluteURL, nil, nil)
 }
 
