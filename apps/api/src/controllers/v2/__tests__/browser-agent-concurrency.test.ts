@@ -87,6 +87,7 @@ vi.mock("../../../services/logging/log_job", () => ({
 
 import { browserCreateController } from "../browser";
 import { HOBBY_CONCURRENCY_LIMIT } from "../../../lib/concurrency-limit";
+import { agentInteropStatus } from "../../../lib/agent-interop";
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 const FREE_LIMIT = 2;
@@ -125,7 +126,11 @@ function makeReq(interop: Interop) {
     body,
     headers,
     path: "/v2/browser",
-    auth: { team_id: TEAM_ID },
+    // As authMiddleware sets it, from the raw request.
+    auth: {
+      team_id: TEAM_ID,
+      agentInterop: agentInteropStatus({ body, headers }),
+    },
     acuc: { org_id: "org-1", api_key_id: null, flags: null },
   };
 }
@@ -174,9 +179,12 @@ describe("browser create concurrency for trusted agent requests", () => {
     expect(error).toContain(`(${FREE_LIMIT})`);
   });
 
-  it("gives no floor to a wrong header secret", async () => {
-    const { admitted } = await admittedUntilRefused("wrong-header");
-    expect(admitted).toBe(FREE_LIMIT);
+  it("rejects a wrong header secret before any slot is reserved", async () => {
+    const res = makeRes();
+    await browserCreateController(makeReq("wrong-header") as any, res as any);
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe("Invalid agent interop.");
+    expect(mocks.reserveExternalSlot).not.toHaveBeenCalled();
   });
 
   it("rejects a wrong body secret before any slot is reserved", async () => {

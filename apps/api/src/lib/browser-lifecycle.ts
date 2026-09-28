@@ -30,7 +30,6 @@ import {
   getEffectiveConcurrencyLimit,
   HOBBY_CONCURRENCY_LIMIT,
 } from "./concurrency-limit";
-import { isTrustedAgentInteropRequest } from "./agent-interop";
 import {
   reserveExternalSlot,
   mirrorExternalSlotRelease,
@@ -76,6 +75,10 @@ export async function createBrowserSession(
       503,
       "Browser feature is not configured (HANGAR_URL is missing).",
     );
+  // Same answer for every browser caller, including interact, whose body
+  // parse drops `__agentInterop`.
+  if (req.auth.agentInterop === "invalid")
+    throw new HangarError(403, "Invalid agent interop.");
   const shouldBill = options.shouldBill ?? true;
   const estimatedCredits = shouldBill
     ? calculateBrowserSessionCredits(options.ttl * 1000)
@@ -87,9 +90,10 @@ export async function createBrowserSession(
   // An agent run opens browsers against the team's own slots, so a free team
   // (2) is throttled by its own agent. Floor trusted agent traffic at hobby,
   // as the rate limiter does; plans at or above hobby are unchanged.
-  const limit = isTrustedAgentInteropRequest(req)
-    ? Math.max(teamLimit, HOBBY_CONCURRENCY_LIMIT)
-    : teamLimit;
+  const limit =
+    req.auth.agentInterop === "trusted"
+      ? Math.max(teamLimit, HOBBY_CONCURRENCY_LIMIT)
+      : teamLimit;
   if (shouldBill && req.acuc?.org_id) {
     const credit = await autumnService.checkCredits({
       teamId: req.auth.team_id,

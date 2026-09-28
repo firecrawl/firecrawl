@@ -33,7 +33,10 @@ import { getThirdPartyDataTermsRequiredResponse } from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { isToolsOnlySearch } from "../search/alexandria";
 import { getScrapeZDR } from "../lib/zdr-helpers";
-import { isAgentInteropSecretValid } from "../lib/agent-interop";
+import {
+  agentInteropStatus,
+  isAgentInteropSecretValid,
+} from "../lib/agent-interop";
 
 export function checkCreditsMiddleware(
   _minimum?: number,
@@ -324,7 +327,7 @@ export function authMiddleware(
 
       const { team_id, org_id, chunk } = auth;
 
-      req.auth = { team_id, org_id };
+      req.auth = { team_id, org_id, agentInterop: agentInteropStatus(req) };
       req.acuc = chunk ?? undefined;
       next();
     })().catch(err => next(err));

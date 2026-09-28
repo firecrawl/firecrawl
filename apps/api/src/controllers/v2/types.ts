@@ -1,3 +1,4 @@
+import type { AgentInteropStatus } from "../../lib/agent-interop";
 import { Request, Response } from "express";
 import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
@@ -2015,6 +2016,9 @@ export type CrawlErrorsResponse =
 type AuthObject = {
   team_id: string;
   org_id?: string | null;
+  // Set only by authMiddleware from the raw request; controllers may re-parse
+  // the body and drop `__agentInterop`, so read this instead.
+  agentInterop?: AgentInteropStatus;
 };
 
 type Account = {

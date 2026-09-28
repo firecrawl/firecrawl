@@ -22,18 +22,33 @@ export function isAgentInteropSecretValid(provided: unknown): boolean {
   );
 }
 
+export type AgentInteropStatus = "trusted" | "none" | "invalid";
+
 /**
- * Whether the request carries a valid agent-interop secret, i.e. comes from
- * the trusted internal agent service. Read from the raw body (auth runs before
- * the controller's zod parse) or, for bodiless calls, from AGENT_INTEROP_HEADER.
- * Presence of the block or header alone is never trusted; only the secret.
+ * Agent-interop standing of the raw request (auth runs before any controller
+ * re-parses the body). `trusted` needs the valid secret in `__agentInterop.auth`
+ * or AGENT_INTEROP_HEADER; `invalid` means either was sent without it.
  */
+export function agentInteropStatus(req: {
+  body?: any;
+  headers?: Record<string, unknown>;
+}): AgentInteropStatus {
+  const bodyAuth = req.body?.__agentInterop?.auth;
+  const headerAuth = req.headers?.[AGENT_INTEROP_HEADER];
+  if (
+    isAgentInteropSecretValid(bodyAuth) ||
+    isAgentInteropSecretValid(headerAuth)
+  )
+    return "trusted";
+  return req.body?.__agentInterop != null || headerAuth !== undefined
+    ? "invalid"
+    : "none";
+}
+
+/** Presence of the block or header alone is never trusted; only the secret. */
 export function isTrustedAgentInteropRequest(req: {
   body?: any;
   headers?: Record<string, unknown>;
 }): boolean {
-  return (
-    isAgentInteropSecretValid(req.body?.__agentInterop?.auth) ||
-    isAgentInteropSecretValid(req.headers?.[AGENT_INTEROP_HEADER])
-  );
+  return agentInteropStatus(req) === "trusted";
 }
