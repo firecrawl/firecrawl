@@ -6,6 +6,68 @@ import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
 import { getModel } from "../generic-ai";
 
+const JSON_SCHEMA_TYPES = new Set([
+  "string",
+  "number",
+  "integer",
+  "boolean",
+  "object",
+  "array",
+  "null",
+]);
+
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+
+// A node of an echoed schema, e.g. {"type": "number", "example": 2}.
+function isSchemaNode(x: unknown): x is Record<string, unknown> {
+  return (
+    isRecord(x) &&
+    typeof x.type === "string" &&
+    JSON_SCHEMA_TYPES.has(x.type) &&
+    ("example" in x || isRecord(x.properties))
+  );
+}
+
+function valueFromSchemaShape(node: unknown): unknown {
+  if (!isSchemaNode(node)) return node;
+  if ("example" in node) return node.example;
+  return propertiesToValue(node.properties as Record<string, unknown>);
+}
+
+function propertiesToValue(properties: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(properties)
+      .map(([key, value]) => [key, valueFromSchemaShape(value)])
+      .filter(([, value]) => value !== undefined),
+  );
+}
+
+/**
+ * gpt-4o in non-strict mode sometimes answers in the shape of a JSON schema
+ * instead of an instance of it: the answer wrapped as
+ * {"type": "response", "properties": {...}}, or the schema echoed back with
+ * each answer in an "example" field. Both carry the whole answer, so unwrap
+ * them instead of failing the call. Returns null for anything else.
+ */
+export function unwrapSchemaShapedAnswer(text: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (
+    !isRecord(parsed) ||
+    typeof parsed.type !== "string" ||
+    !isRecord(parsed.properties)
+  ) {
+    return null;
+  }
+  return JSON.stringify(propertiesToValue(parsed.properties));
+}
+
 function isDebugBrandingEnabled(input: BrandingLLMInput): boolean {
   return (
     config.DEBUG_BRANDING === true || input.teamFlags?.debugBranding === true
@@ -118,6 +180,9 @@ export async function enhanceBrandingWithLLM(
         },
       ],
       temperature: 0.1,
+      // Only called once the response failed to parse or validate.
+      experimental_repairText: async ({ text }) =>
+        unwrapSchemaShapedAnswer(text),
       experimental_telemetry: {
         isEnabled: true,
         // The input carries the page screenshot / raw page content; too large
