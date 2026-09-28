@@ -316,10 +316,12 @@ public class FirecrawlClient
         var body = BuildBody(options);
         body["url"] = url;
 
-        var response = await _http.PostAsync<ApiResponse<MapData>>(
+        var response = await _http.PostAsync<MapData>(
             "/v2/map", body, cancellationToken: cancellationToken);
 
-        return response.Data ?? throw new FirecrawlException("Map response contained no data");
+        if (!response.Success)
+            throw new FirecrawlException("Map response was not successful");
+        return response;
     }
 
     // ================================================================
