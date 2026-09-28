@@ -54,6 +54,60 @@ describe("watcher WebSocket transport failure", () => {
       }));
     } finally {
       (globalThis as any).WebSocket = originalWebSocket;
+      // Watcher caches the discovered constructor at module scope.
+      jest.resetModules();
+    }
+  });
+
+  test("keeps the original timeout deadline when switching to polling", async () => {
+    class TestWebSocket {
+      static instance: TestWebSocket;
+      onerror?: () => void;
+      onclose?: () => void;
+
+      constructor() {
+        TestWebSocket.instance = this;
+      }
+
+      close() {
+        this.onclose?.();
+      }
+    }
+
+    const originalWebSocket = (globalThis as any).WebSocket;
+    (globalThis as any).WebSocket = TestWebSocket;
+    const now = jest.spyOn(Date, "now").mockReturnValue(0);
+    jest.resetModules();
+    const { Watcher: IsolatedWatcher } = await import("../../../v2/watcher");
+    const http = {
+      getApiUrl: () => "https://api.firecrawl.dev",
+      getApiKey: () => "test-key",
+      get: jest.fn(async () => ({
+        status: 200,
+        data: { success: true, status: "processing", data: [] },
+      })),
+    };
+    const watcher = new IsolatedWatcher(http as any, "crawl-2", { timeout: 0.5 });
+    const errors = jest.fn();
+    watcher.on("error", errors);
+    try {
+      const running = watcher.start();
+      await new Promise((resolve) => setImmediate(resolve));
+      now.mockReturnValue(1000);
+      TestWebSocket.instance.onerror?.();
+
+      const result = await Promise.race([
+        running.then(() => "stopped"),
+        new Promise<string>((resolve) => setTimeout(() => resolve("still-running"), 100)),
+      ]);
+      expect(result).toBe("stopped");
+      expect(errors).toHaveBeenCalledWith(expect.objectContaining({ error: "Watcher timeout" }));
+      expect(http.get).not.toHaveBeenCalled();
+    } finally {
+      watcher.close();
+      now.mockRestore();
+      (globalThis as any).WebSocket = originalWebSocket;
+      jest.resetModules();
     }
   });
 });
