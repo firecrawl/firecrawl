@@ -67,6 +67,24 @@ describe("v2 HTTP retries", () => {
     expect(request).toHaveBeenCalledTimes(1);
   });
 
+  test("retries a POST only when its caller explicitly opts in", async () => {
+    const { client, request } = makeClient();
+    request
+      .mockRejectedValueOnce(badGateway)
+      .mockResolvedValueOnce({ status: 200, data: { success: true } });
+
+    await expect(
+      client.post(
+        "/test/replay-protected",
+        { value: 1 },
+        {
+          retryOnBadGateway: true,
+        },
+      ),
+    ).resolves.toMatchObject({ status: 200 });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   test("forwards an explicit retry opt-in for PATCH", async () => {
     const { client, request } = makeClient();
     request
