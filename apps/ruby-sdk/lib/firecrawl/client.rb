@@ -210,6 +210,7 @@ module Firecrawl
       body = { "url" => url }
       body.merge!(options.to_h) if options
       raw = @http.post("/v2/crawl", body)
+      validate_job_start!(raw, "Crawl")
       Models::CrawlResponse.new(raw)
     end
 
@@ -284,6 +285,7 @@ module Firecrawl
         body.merge!(nested) if nested
       end
       raw = @http.post("/v2/batch/scrape", body, extra_headers: extra_headers)
+      validate_job_start!(raw, "Batch scrape")
       Models::BatchScrapeResponse.new(raw)
     end
 
@@ -558,6 +560,15 @@ module Firecrawl
     end
 
     private
+
+    def validate_job_start!(raw, label)
+      if raw["success"] == false
+        raise FirecrawlError, "#{label} start failed: #{raw["error"] || "response was unsuccessful"}"
+      end
+      if !raw["id"].is_a?(String) || raw["id"].strip.empty?
+        raise FirecrawlError, "#{label} start did not return a job ID"
+      end
+    end
 
     def query(params = nil, **kwargs)
       params = (params || {}).merge(kwargs)

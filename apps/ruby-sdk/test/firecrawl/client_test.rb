@@ -408,6 +408,24 @@ class ClientTest < Minitest::Test
     assert_equal "crawl-123", response.id
   end
 
+  def test_crawl_and_batch_reject_unsuccessful_or_missing_job_ids
+    { "/v2/crawl" => -> { @client.start_crawl("https://example.com") },
+      "/v2/batch/scrape" => -> { @client.start_batch_scrape(["https://example.com"]) } }.each do |path, start|
+      [
+        [{ success: false, id: "phantom", error: "quota exhausted" }, "quota exhausted"],
+        [{ success: false, id: "phantom" }, "unsuccessful"],
+        [{ success: true }, "job ID"],
+        [{ success: true, id: "  " }, "job ID"],
+      ].each do |body, expected|
+        stub_request(:post, "#{BASE_URL}#{path}")
+          .to_return(status: 200, body: JSON.generate(body), headers: { "Content-Type" => "application/json" })
+        error = assert_raises(Firecrawl::FirecrawlError) { start.call }
+        assert_includes error.message, expected
+        WebMock.reset!
+      end
+    end
+  end
+
   def test_get_crawl_status
     stub_request(:get, "#{BASE_URL}/v2/crawl/crawl-123")
       .to_return(
