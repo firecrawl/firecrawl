@@ -214,7 +214,7 @@ export async function enhanceBrandingWithLLM(
       experimental_repairText: async ({ text }) =>
         unwrapSchemaShapedAnswer(text),
       experimental_telemetry: {
-        isEnabled: true,
+        isEnabled: !input.zeroDataRetention,
         // The input carries the page screenshot / raw page content; too large
         // for span attributes. Outputs stay recorded.
         recordInputs: false,

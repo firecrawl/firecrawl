@@ -25,7 +25,11 @@ import { enhanceBrandingWithLLM } from "../../../lib/branding/llm";
 import { logger } from "../../../lib/logger";
 import { CostTracking } from "../../../lib/cost-tracking";
 
-function run(ids: { teamId?: string; scrapeId?: string }) {
+function run(ids: {
+  teamId?: string;
+  scrapeId?: string;
+  zeroDataRetention?: boolean;
+}) {
   return enhanceBrandingWithLLM({
     jsAnalysis: {},
     buttons: [],
@@ -66,5 +70,15 @@ describe("branding LLM telemetry", () => {
       teamId: "unknown",
       feature: "branding",
     });
+  });
+
+  it("disables telemetry for zero data retention scrapes", async () => {
+    await run({
+      teamId: "test-team",
+      scrapeId: "test-scrape",
+      zeroDataRetention: true,
+    });
+
+    expect(telemetry().isEnabled).toBe(false);
   });
 });
