@@ -12,9 +12,11 @@ vi.mock("ai", async importOriginal => {
 });
 
 import { generateObject } from "ai";
+import { encoding_for_model } from "@dqbd/tiktoken";
 import type { Mock } from "vitest";
 import { generateCompletions } from "./llmExtract";
 import { CostTracking } from "../../../lib/cost-tracking";
+import { modelPrices } from "../../../lib/extract/usage/model-prices";
 
 const noopLogger = {
   warn: () => {},
@@ -38,12 +40,30 @@ function run(markdown: string, modelId: string, schema?: any) {
 
 function lastCall() {
   const calls = (generateObject as Mock).mock.calls;
-  return calls[calls.length - 1][0];
+  expect(calls).toHaveLength(1);
+  return calls[0][0];
 }
 
+function countTokens(text: string): number {
+  const encoder = encoding_for_model("gpt-4o-mini");
+  try {
+    return encoder.encode(text).length;
+  } finally {
+    encoder.free();
+  }
+}
+
+beforeEach(() => {
+  (generateObject as Mock).mockClear();
+});
+
 describe("generateCompletions content trimming", () => {
-  // Roughly one token per word: ~250k tokens, twice gpt-4o-mini's window.
-  const hugeMarkdown = "lorem ipsum dolor sit amet ".repeat(50_000);
+  // ~3.3 characters per token like real pages: ~400k tokens, three times
+  // gpt-4o-mini's window.
+  const hugeMarkdown =
+    "The quick brown fox jumps over the lazy dog. [link](https://example.com/a/b?c=1) 12345 ".repeat(
+      15_000,
+    );
 
   it("trims content that would overflow the model's context window", async () => {
     const result = await run(hugeMarkdown, "gpt-4o-mini");
@@ -51,7 +71,14 @@ describe("generateCompletions content trimming", () => {
     expect(result.warning).toContain(
       "the input has been automatically trimmed",
     );
-    expect(lastCall().prompt.length).toBeLessThan(hugeMarkdown.length / 2);
+    // The content is trimmed to exactly 80% of the window; the rest of the
+    // prompt is a short instruction.
+    const budget = Math.floor(
+      modelPrices["gpt-4o-mini"].max_input_tokens * 0.8,
+    );
+    const promptTokens = countTokens(lastCall().prompt);
+    expect(promptTokens).toBeGreaterThan(budget);
+    expect(promptTokens).toBeLessThanOrEqual(budget + 100);
   });
 
   it("leaves content that fits untouched", async () => {
@@ -97,6 +124,22 @@ describe("generateCompletions schema normalization", () => {
         },
       },
       required: ["judgments"],
+      additionalProperties: false,
+    });
+  });
+
+  it("wraps nullable root arrays in an object", async () => {
+    await run("page", "gpt-4o-mini", {
+      type: ["array", "null"],
+      items: { type: "string" },
+    });
+
+    expect(lastCall().schema.jsonSchema).toEqual({
+      type: "object",
+      properties: {
+        items: { type: ["array", "null"], items: { type: "string" } },
+      },
+      required: ["items"],
       additionalProperties: false,
     });
   });

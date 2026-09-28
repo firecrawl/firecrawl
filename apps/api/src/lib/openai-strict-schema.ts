@@ -27,21 +27,6 @@ const UNSUPPORTED_KEYWORDS = [
   "dependentSchemas",
 ];
 
-// Keys that mark a typeless root as a schema rather than a map of property
-// names to schemas (which generateCompletions also accepts at the root).
-const SCHEMA_KEYWORDS = new Set([
-  "$schema",
-  "$id",
-  "$comment",
-  "$defs",
-  "definitions",
-  "title",
-  "description",
-  "properties",
-  "required",
-  "additionalProperties",
-]);
-
 type Schema = Record<string, any>;
 
 function isPlainObject(x: unknown): x is Schema {
@@ -62,6 +47,47 @@ function lowercaseType(type: unknown): unknown {
 
 export function typeIncludes(type: unknown, name: string): boolean {
   return type === name || (Array.isArray(type) && type.includes(name));
+}
+
+// Whether a typeless root is a schema rather than a bare map of property names
+// to schemas (which JSON extraction also accepts at the root): every key is a
+// schema keyword holding the kind of value that keyword takes, and
+// "properties" maps names to schemas instead of being a schema itself (a
+// field that happens to be called "properties").
+function isTypelessRootSchema(node: Schema): boolean {
+  if (!isPlainObject(node.properties)) return false;
+  if (typeof node.properties.type === "string") return false;
+  return Object.entries(node).every(([key, value]) => {
+    switch (key) {
+      case "$schema":
+      case "$id":
+      case "$comment":
+      case "title":
+      case "description":
+        return typeof value === "string";
+      case "required":
+        return Array.isArray(value);
+      case "additionalProperties":
+        return typeof value === "boolean";
+      case "properties":
+      case "$defs":
+      case "definitions":
+        return isPlainObject(value);
+      default:
+        return false;
+    }
+  });
+}
+
+function isBareRootMap(node: unknown): node is Schema {
+  return (
+    isPlainObject(node) &&
+    node.type === undefined &&
+    node.anyOf === undefined &&
+    node.oneOf === undefined &&
+    node.$ref === undefined &&
+    !isTypelessRootSchema(node)
+  );
 }
 
 /**
@@ -87,9 +113,7 @@ function normalizeNode(node: any, isRoot: boolean): any {
   }
 
   if (out.type === undefined) {
-    const looksLikeSchema =
-      !isRoot || Object.keys(out).every(k => SCHEMA_KEYWORDS.has(k));
-    if (looksLikeSchema && isPlainObject(out.properties)) {
+    if (isRoot ? isTypelessRootSchema(out) : isPlainObject(out.properties)) {
       out.type = "object";
     } else if (!isRoot && isPlainObject(out.items)) {
       out.type = "array";
@@ -117,6 +141,24 @@ function normalizeNode(node: any, isRoot: boolean): any {
   return out;
 }
 
+/**
+ * normalizeSchemaKeywords, plus turning a bare map of property names to
+ * schemas into an object schema. "$"-prefixed keys of a bare map ("$schema")
+ * are annotations, not properties.
+ */
+export function toRootSchema(schema: any): any {
+  if (!isBareRootMap(schema)) return normalizeSchemaKeywords(schema);
+  const entries = Object.entries(schema).filter(
+    ([key]) => !key.startsWith("$"),
+  );
+  return normalizeSchemaKeywords({
+    type: "object",
+    properties: Object.fromEntries(entries),
+    required: entries.map(([key]) => key),
+    additionalProperties: false,
+  });
+}
+
 function describe(value: unknown): string {
   const json = JSON.stringify(value) ?? String(value);
   return json.length > 60 ? json.slice(0, 57) + "..." : json;
@@ -130,26 +172,26 @@ function describe(value: unknown): string {
  */
 export function findStrictSchemaViolation(schema: any): string | null {
   if (schema === undefined || schema === null) return null;
-  const normalized = normalizeSchemaKeywords(schema);
-  if (!isPlainObject(normalized)) {
-    return `Invalid JSON schema: expected an object, got ${describe(normalized)}.`;
+  const root = toRootSchema(schema);
+  if (!isPlainObject(root)) {
+    return `Invalid JSON schema: expected an object, got ${describe(root)}.`;
   }
 
-  // A typeless root is a map of property names to schemas.
-  if (
-    normalized.type === undefined &&
-    normalized.anyOf === undefined &&
-    normalized.$ref === undefined
-  ) {
-    for (const [key, value] of Object.entries(normalized)) {
-      if (key.startsWith("$")) continue;
-      const violation = checkNode(value, key);
-      if (violation) return violation;
+  // Structured outputs need an object at the root; JSON extraction wraps a
+  // root array in one, but nothing else.
+  if (root.$ref === undefined) {
+    if (root.anyOf !== undefined) {
+      return 'Invalid JSON schema: the root must be an object or array schema, not "anyOf".';
     }
-    return null;
+    if (
+      !typeIncludes(root.type, "object") &&
+      !typeIncludes(root.type, "array")
+    ) {
+      return `Invalid JSON schema: the root must be an object or array schema, got type ${describe(root.type)}.`;
+    }
   }
 
-  return checkNode(normalized, "");
+  return checkNode(root, "");
 }
 
 function checkNode(node: any, path: string): string | null {
@@ -160,17 +202,18 @@ function checkNode(node: any, path: string): string | null {
     return `Invalid JSON schema${at}: expected a schema object, got ${describe(node)}.`;
   }
 
-  // Recursive schemas are supported; the referenced definition is checked
-  // where it is declared.
-  if (node.$ref !== undefined) return null;
-
   for (const keyword of UNSUPPORTED_KEYWORDS) {
     if (node[keyword] !== undefined) {
       return `Invalid JSON schema${at}: "${keyword}" is not supported for JSON extraction.`;
     }
   }
 
+  // A reference takes its type from the definition it points to, which is
+  // checked where it is declared.
+  const isReference = node.$ref !== undefined;
+
   if (
+    !isReference &&
     node.type === undefined &&
     node.anyOf === undefined &&
     node.enum === undefined &&
@@ -189,7 +232,11 @@ function checkNode(node: any, path: string): string | null {
     }
   }
 
-  if (typeIncludes(node.type, "array") && !isPlainObject(node.items)) {
+  if (
+    !isReference &&
+    typeIncludes(node.type, "array") &&
+    !isPlainObject(node.items)
+  ) {
     return node.items === undefined
       ? `Invalid JSON schema${at}: arrays must define "items".`
       : `Invalid JSON schema${at}: "items" must be a single schema object, got ${describe(node.items)}.`;

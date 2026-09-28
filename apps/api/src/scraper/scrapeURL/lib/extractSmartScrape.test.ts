@@ -126,5 +126,21 @@ describe("extractData", () => {
       expect(sentSchema().required).toContain("extractedData");
       expect(result.extractedDataArray).toEqual([{ title: "t" }]);
     });
+
+    it("turns a bare property map into an object schema before wrapping", async () => {
+      mockExtract({
+        extractedData: { title: "t" },
+        shouldUseSmartscrape: false,
+      });
+
+      await run({ title: { type: "string" } }, true);
+
+      expect(sentSchema().properties.extractedData).toEqual({
+        type: "object",
+        properties: { title: { type: "string" } },
+        required: ["title"],
+        additionalProperties: false,
+      });
+    });
   });
 });

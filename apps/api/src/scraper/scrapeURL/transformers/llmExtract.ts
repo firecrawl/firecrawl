@@ -24,7 +24,7 @@ import Ajv from "ajv";
 import { extractData } from "../lib/extractSmartScrape";
 import {
   findStrictSchemaViolation,
-  normalizeSchemaKeywords,
+  toRootSchema,
   typeIncludes,
 } from "../../../lib/openai-strict-schema";
 import { CostTracking } from "../../../lib/cost-tracking";
@@ -584,10 +584,11 @@ export async function generateCompletions({
     if (schema && !(schema instanceof z.ZodType)) {
       // let schema = options.schema;
       if (schema) {
-        schema = normalizeSchemaKeywords(removeDefaultProperty(schema));
+        schema = toRootSchema(removeDefaultProperty(schema));
       }
 
-      if (schema && schema.type === "array") {
+      // Structured outputs need a (non-nullable) object at the root.
+      if (schema && typeIncludes(schema.type, "array")) {
         schema = {
           type: "object",
           properties: {
@@ -596,18 +597,8 @@ export async function generateCompletions({
           required: ["items"],
           additionalProperties: false,
         };
-      } else if (schema && typeof schema === "object" && !schema.type) {
-        // A bare map of property names to schemas; "$schema" and friends are
-        // annotations, not properties.
-        const entries = Object.entries(schema).filter(
-          ([key]) => !key.startsWith("$"),
-        );
-        schema = normalizeSchemaKeywords({
-          type: "object",
-          properties: Object.fromEntries(entries),
-          required: entries.map(([key]) => key),
-          additionalProperties: false,
-        });
+      } else if (schema && typeIncludes(schema.type, "object")) {
+        schema = { ...schema, type: "object" };
       }
 
       schema = normalizeSchema(schema);

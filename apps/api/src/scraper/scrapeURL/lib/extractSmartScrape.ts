@@ -19,10 +19,7 @@ import {
   CostTracking,
 } from "../../../lib/cost-tracking";
 import { JsonExtractionContentTooLargeError } from "../error";
-import {
-  normalizeSchemaKeywords,
-  typeIncludes,
-} from "../../../lib/openai-strict-schema";
+import { toRootSchema, typeIncludes } from "../../../lib/openai-strict-schema";
 
 // ~2MB of markdown, well past typical page sizes -- caps worst-case JSON extraction cost/latency.
 const MAX_JSON_EXTRACTION_MARKDOWN_CHARS = 2_000_000;
@@ -253,7 +250,7 @@ const resolveRefs = (
 // as the SmartScrape wrapper's extractedData property always did.
 function unwrapRootArray(schema: any, extract: any): any {
   if (
-    typeIncludes(normalizeSchemaKeywords(schema)?.type, "array") &&
+    typeIncludes(toRootSchema(schema)?.type, "array") &&
     extract &&
     typeof extract === "object" &&
     !Array.isArray(extract) &&
@@ -376,13 +373,14 @@ export async function extractData({
   }
 
   // The SmartScrape fields only matter when the agent can act on them.
-  // Without it, wrapping just nests the user's schema below the top level,
-  // where generateCompletions' normalization of bare property maps and root
-  // arrays can't reach it (and with no schema at all, the wrapper requires an
-  // extractedData property it doesn't have).
+  // Without it, the user's schema goes to generateCompletions as-is (with no
+  // schema at all, the wrapper would require an extractedData property it
+  // doesn't have). Nested under the wrapper, a bare property map is turned
+  // into an object schema first, as generateCompletions does at the root.
   const wrapForSmartScrape = useAgent && !!schema;
   const schemaToUse = wrapForSmartScrape
-    ? prepareSmartScrapeSchema(schema, logger, isSingleUrl).schemaToUse
+    ? prepareSmartScrapeSchema(toRootSchema(schema), logger, isSingleUrl)
+        .schemaToUse
     : schema;
   const extractOptionsNewSchema = {
     ...extractOptions,

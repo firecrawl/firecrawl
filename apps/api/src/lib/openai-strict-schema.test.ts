@@ -3,6 +3,7 @@ import {
   addStrictSchemaIssue,
   findStrictSchemaViolation,
   normalizeSchemaKeywords,
+  toRootSchema,
 } from "./openai-strict-schema";
 
 describe("normalizeSchemaKeywords", () => {
@@ -78,6 +79,51 @@ describe("normalizeSchemaKeywords", () => {
   });
 });
 
+describe("toRootSchema", () => {
+  it("turns a bare map into an object schema, skipping $schema", () => {
+    expect(
+      toRootSchema({
+        $schema: "http://json-schema.org/draft-07/schema#",
+        name: { type: "String" },
+      }),
+    ).toEqual({
+      type: "object",
+      properties: { name: { type: "string" } },
+      required: ["name"],
+      additionalProperties: false,
+    });
+  });
+
+  it("treats a field named 'properties' as a field, not as a schema keyword", () => {
+    const result = toRootSchema({
+      title: { type: "string" },
+      properties: {
+        type: "array",
+        items: { type: "object", properties: { price: { type: "number" } } },
+      },
+    });
+
+    expect(result.type).toBe("object");
+    expect(Object.keys(result.properties)).toEqual(["title", "properties"]);
+    expect(result.properties.properties.type).toBe("array");
+  });
+
+  it("keeps a typeless root schema a schema", () => {
+    const result = toRootSchema({
+      title: "Listing",
+      properties: { price: { type: "number" } },
+      required: ["price"],
+    });
+
+    expect(result).toEqual({
+      title: "Listing",
+      type: "object",
+      properties: { price: { type: "number" } },
+      required: ["price"],
+    });
+  });
+});
+
 describe("findStrictSchemaViolation", () => {
   it("accepts a plain object schema", () => {
     expect(
@@ -124,6 +170,65 @@ describe("findStrictSchemaViolation", () => {
         },
       }),
     ).toBeNull();
+  });
+
+  it("accepts a bare map with a field named 'properties'", () => {
+    expect(
+      findStrictSchemaViolation({
+        title: { type: "string" },
+        properties: { type: "array", items: { type: "string" } },
+      }),
+    ).toBeNull();
+  });
+
+  it("accepts nullable root arrays", () => {
+    expect(
+      findStrictSchemaViolation({
+        type: ["array", "null"],
+        items: { type: "string" },
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects roots that are neither objects nor arrays", () => {
+    expect(findStrictSchemaViolation({ type: "string" })).toBe(
+      'Invalid JSON schema: the root must be an object or array schema, got type "string".',
+    );
+    expect(
+      findStrictSchemaViolation({
+        anyOf: [{ type: "object", properties: {} }, { type: "null" }],
+      }),
+    ).toBe(
+      'Invalid JSON schema: the root must be an object or array schema, not "anyOf".',
+    );
+  });
+
+  it("checks definitions behind a root $ref", () => {
+    expect(
+      findStrictSchemaViolation({
+        $ref: "#/$defs/listing",
+        $defs: {
+          listing: {
+            type: "object",
+            properties: { photos: { type: "array" } },
+          },
+        },
+      }),
+    ).toBe(
+      'Invalid JSON schema at "$defs.listing.properties.photos": arrays must define "items".',
+    );
+  });
+
+  it("checks keywords next to a $ref", () => {
+    expect(
+      findStrictSchemaViolation({
+        type: "object",
+        properties: { node: { $ref: "#/$defs/node", allOf: [] } },
+        $defs: { node: { type: "object", properties: {} } },
+      }),
+    ).toBe(
+      'Invalid JSON schema at "properties.node": "allOf" is not supported for JSON extraction.',
+    );
   });
 
   it("accepts recursive schemas using $ref", () => {
@@ -176,7 +281,15 @@ describe("findStrictSchemaViolation", () => {
     ).toContain('"items" must be a single schema object');
   });
 
-  it.each(["allOf", "if", "not"])("rejects %s", keyword => {
+  it.each([
+    "allOf",
+    "not",
+    "if",
+    "then",
+    "else",
+    "dependentRequired",
+    "dependentSchemas",
+  ])("rejects %s", keyword => {
     expect(
       findStrictSchemaViolation({
         type: "object",
@@ -186,6 +299,41 @@ describe("findStrictSchemaViolation", () => {
       }),
     ).toBe(
       `Invalid JSON schema at "properties.data": "${keyword}" is not supported for JSON extraction.`,
+    );
+  });
+
+  it("rejects oneOf when anyOf is also present", () => {
+    expect(
+      findStrictSchemaViolation({
+        type: "object",
+        properties: {
+          slot: {
+            anyOf: [{ type: "string" }],
+            oneOf: [{ type: "number" }],
+          },
+        },
+      }),
+    ).toBe(
+      'Invalid JSON schema at "properties.slot": "oneOf" is not supported for JSON extraction.',
+    );
+  });
+
+  it("rejects non-object properties and non-array anyOf", () => {
+    expect(
+      findStrictSchemaViolation({
+        type: "object",
+        properties: { data: { type: "object", properties: ["a", "b"] } },
+      }),
+    ).toBe(
+      'Invalid JSON schema at "properties.data": "properties" must be an object, got ["a","b"].',
+    );
+    expect(
+      findStrictSchemaViolation({
+        type: "object",
+        properties: { slot: { anyOf: { type: "string" } } },
+      }),
+    ).toBe(
+      'Invalid JSON schema at "properties.slot": "anyOf" must be an array, got {"type":"string"}.',
     );
   });
 
@@ -208,7 +356,7 @@ describe("findStrictSchemaViolation", () => {
     expect(
       findStrictSchemaViolation({ status: "string", price: "string" }),
     ).toBe(
-      'Invalid JSON schema at "status": expected a schema object, got "string".',
+      'Invalid JSON schema at "properties.status": expected a schema object, got "string".',
     );
   });
 
