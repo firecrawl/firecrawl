@@ -685,6 +685,22 @@ class ClientTest < Minitest::Test
     assert_not_requested :get, "#{BASE_URL}/v2/agent/phantom"
   end
 
+  def test_start_agent_rejects_failed_and_missing_ids_directly
+    options = Firecrawl::Models::AgentOptions.new(prompt: "Find pricing")
+    [
+      [{ success: false, id: "phantom", error: "quota exceeded" }, "quota exceeded"],
+      [{ success: false, id: "phantom" }, "unsuccessful"],
+      [{ success: true }, "job ID"],
+      [{ success: true, id: "  " }, "job ID"],
+    ].each do |body, expected|
+      stub_request(:post, "#{BASE_URL}/v2/agent")
+        .to_return(status: 200, body: JSON.generate(body), headers: { "Content-Type" => "application/json" })
+      error = assert_raises(Firecrawl::FirecrawlError) { @client.start_agent(options) }
+      assert_includes error.message, expected
+      WebMock.reset!
+    end
+  end
+
   def test_agent_options_require_prompt
     assert_raises(ArgumentError) { Firecrawl::Models::AgentOptions.new(prompt: "") }
     assert_raises(ArgumentError) { Firecrawl::Models::AgentOptions.new }
