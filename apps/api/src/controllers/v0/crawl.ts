@@ -4,7 +4,10 @@ import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
 import { addScrapeJob } from "../../../src/services/queue-jobs";
 import { isUrlBlocked } from "../../../src/scraper/WebScraper/utils/blocklist";
-import { claimIdempotencyKey } from "../../../src/services/idempotency/claim";
+import {
+  claimIdempotencyKey,
+  InvalidIdempotencyKeyError,
+} from "../../../src/services/idempotency/claim";
 import {
   defaultCrawlPageOptions,
   defaultCrawlerOptions,
@@ -78,13 +81,6 @@ export async function crawlController(req: Request, res: Response) {
       });
     }
 
-    if (req.headers["x-idempotency-key"]) {
-      const claimed = await claimIdempotencyKey(req);
-      if (!claimed) {
-        return res.status(409).json({ error: "Idempotency key already used" });
-      }
-    }
-
     const id = uuidv7();
 
     await logRequest({
@@ -105,6 +101,13 @@ export async function crawlController(req: Request, res: Response) {
         req.body?.crawlerOptions?.limit ?? defaultCrawlerOptions.limit,
       ),
     });
+
+    if (req.headers["x-idempotency-key"]) {
+      const claimed = await claimIdempotencyKey(req);
+      if (!claimed) {
+        return res.status(409).json({ error: "Idempotency key already used" });
+      }
+    }
 
     redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
       logger.error("Failed to add team to teams_using_v0", {
@@ -373,6 +376,9 @@ export async function crawlController(req: Request, res: Response) {
 
     res.json({ jobId: id });
   } catch (error) {
+    if (error instanceof InvalidIdempotencyKeyError) {
+      return res.status(400).json({ error: error.message });
+    }
     logger.error(error);
     return res.status(500).json({
       error: error instanceof ZodError ? "Invalid URL" : error.message,

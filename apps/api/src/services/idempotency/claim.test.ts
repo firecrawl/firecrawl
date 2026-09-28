@@ -6,7 +6,15 @@ vi.mock("../../db/connection", () => ({
 }));
 
 import { db } from "../../db/connection";
-import { claimIdempotencyKey } from "./claim";
+import { claimIdempotencyKey, InvalidIdempotencyKeyError } from "./claim";
+
+function containsKey(chunk: any, key: string): boolean {
+  if (chunk === key || chunk?.value === key) return true;
+  if (Array.isArray(chunk)) return chunk.some(part => containsKey(part, key));
+  return (
+    chunk?.queryChunks?.some((part: any) => containsKey(part, key)) ?? false
+  );
+}
 
 describe("claimIdempotencyKey", () => {
   const transaction = vi.mocked(db.transaction);
@@ -19,7 +27,9 @@ describe("claimIdempotencyKey", () => {
     const req = {
       headers: { "x-idempotency-key": "not-a-uuid" },
     } as unknown as Request;
-    expect(await claimIdempotencyKey(req)).toBe(false);
+    await expect(claimIdempotencyKey(req)).rejects.toBeInstanceOf(
+      InvalidIdempotencyKeyError,
+    );
     expect(transaction).not.toHaveBeenCalled();
   });
 
@@ -33,12 +43,14 @@ describe("claimIdempotencyKey", () => {
             String(chunk.value ?? "").includes("pg_advisory_xact_lock"),
           ),
         ).toBe(true);
+        expect(containsKey(query, key)).toBe(true);
         calls.push("lock");
       }),
       select: vi.fn(() => ({
         from: () => ({
-          where: () => ({
+          where: (condition: any) => ({
             limit: async () => {
+              expect(containsKey(condition, key)).toBe(true);
               calls.push("read");
               return [];
             },
@@ -46,7 +58,8 @@ describe("claimIdempotencyKey", () => {
         }),
       })),
       insert: vi.fn(() => ({
-        values: async () => {
+        values: async (row: any) => {
+          expect(row.key).toBe(key);
           calls.push("insert");
         },
       })),
@@ -63,7 +76,14 @@ describe("claimIdempotencyKey", () => {
     const tx: any = {
       execute: vi.fn(async () => {}),
       select: () => ({
-        from: () => ({ where: () => ({ limit: async () => [{ key }] }) }),
+        from: () => ({
+          where: (condition: any) => ({
+            limit: async () => {
+              expect(containsKey(condition, key)).toBe(true);
+              return [{ key }];
+            },
+          }),
+        }),
       }),
       insert: vi.fn(),
     };
@@ -120,5 +140,38 @@ describe("claimIdempotencyKey", () => {
     ]);
     expect(outcomes.sort()).toEqual([false, true]);
     expect(claimedKeys.size).toBe(1);
+  });
+
+  it("uses the same lock and database key for case variants of a UUID", async () => {
+    const key = "abcdef12-3456-4789-abcd-abcdef123456";
+    const observed: string[] = [];
+    const tx: any = {
+      execute: vi.fn(async (query: any) => {
+        expect(containsKey(query, key)).toBe(true);
+        observed.push(key);
+      }),
+      select: vi.fn(() => ({
+        from: () => ({
+          where: (condition: any) => ({
+            limit: async () => {
+              expect(containsKey(condition, key)).toBe(true);
+              return [];
+            },
+          }),
+        }),
+      })),
+      insert: vi.fn(() => ({
+        values: async (row: any) => expect(row.key).toBe(key),
+      })),
+    };
+    transaction.mockImplementation(async (callback: any) => callback(tx));
+
+    for (const spelling of [key.toUpperCase(), key]) {
+      const req = {
+        headers: { "x-idempotency-key": spelling },
+      } as unknown as Request;
+      expect(await claimIdempotencyKey(req)).toBe(true);
+    }
+    expect(observed).toEqual([key, key]);
   });
 });

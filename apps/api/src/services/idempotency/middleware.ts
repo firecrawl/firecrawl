@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import { claimIdempotencyKey } from "./claim";
+import { claimIdempotencyKey, InvalidIdempotencyKeyError } from "./claim";
 
 export function idempotencyMiddleware(
   req: Request,
@@ -19,5 +19,10 @@ export function idempotencyMiddleware(
       }
     }
     next();
-  })().catch(err => next(err));
+  })().catch(err => {
+    if (err instanceof InvalidIdempotencyKeyError && !res.headersSent) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    next(err);
+  });
 }
