@@ -2,8 +2,10 @@
 export function allowPrivateScraping(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
+  const enabled = (value: string | undefined) =>
+    /^(true|1|yes|on|y|enabled)$/i.test(value ?? '');
   return (
-    env.ALLOW_PRIVATE_IP_SCRAPING?.toUpperCase() === 'TRUE' ||
-    env.ALLOW_LOCAL_WEBHOOKS?.toUpperCase() === 'TRUE'
+    enabled(env.ALLOW_PRIVATE_IP_SCRAPING) ||
+    enabled(env.ALLOW_LOCAL_WEBHOOKS)
   );
 }

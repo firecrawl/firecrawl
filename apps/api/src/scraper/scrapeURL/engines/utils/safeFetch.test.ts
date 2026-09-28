@@ -1,7 +1,11 @@
 import { createServer, type Server } from "node:http";
 import { config } from "../../../../config";
 import undici from "undici";
-import { getSecureDispatcher, getSecureDispatcherNoCookies } from "./safeFetch";
+import {
+  InsecureConnectionError,
+  getSecureDispatcher,
+  getSecureDispatcherNoCookies,
+} from "./safeFetch";
 
 describe("private target permissions", () => {
   let server: Server;
@@ -33,19 +37,35 @@ describe("private target permissions", () => {
   it("blocks private scrape targets by default", async () => {
     await expect(
       undici.fetch(localUrl, { dispatcher: getSecureDispatcher() }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        message: new InsecureConnectionError().message,
+      }),
+    });
   });
 
   it("allows private scraping without allowing private webhook destinations", async () => {
     config.ALLOW_PRIVATE_IP_SCRAPING = true;
     const scrape = await undici.fetch(localUrl, {
-      dispatcher: getSecureDispatcher(),
+      dispatcher: getSecureDispatcher(false, true),
     });
     expect(scrape.status).toBe(200);
 
     await expect(
       undici.fetch(localUrl, { dispatcher: getSecureDispatcherNoCookies() }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        message: new InsecureConnectionError().message,
+      }),
+    });
+
+    await expect(
+      undici.fetch(localUrl, { dispatcher: getSecureDispatcher() }),
+    ).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        message: new InsecureConnectionError().message,
+      }),
+    });
   });
 
   it("preserves the legacy local webhook permission", async () => {

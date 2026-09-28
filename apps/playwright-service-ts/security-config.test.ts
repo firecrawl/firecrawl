@@ -15,14 +15,9 @@ test('private scrape targets remain blocked by default, including with a proxy',
 });
 
 test('the explicit private scraping flag enables private targets', () => {
-  assert.equal(
-    allowPrivateScraping({ ALLOW_PRIVATE_IP_SCRAPING: 'true' }),
-    true,
-  );
-  assert.equal(
-    allowPrivateScraping({ ALLOW_PRIVATE_IP_SCRAPING: 'TRUE' }),
-    true,
-  );
+  for (const value of ['true', 'TRUE', '1', 'yes', 'on', 'y', 'enabled']) {
+    assert.equal(allowPrivateScraping({ ALLOW_PRIVATE_IP_SCRAPING: value }), true);
+  }
 });
 
 test('existing self-hosted webhook settings keep allowing private scraping', () => {

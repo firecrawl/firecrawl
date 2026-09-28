@@ -63,12 +63,16 @@ function attachSecurityCheck(
   });
 }
 
-function makeSecureDispatcher(skipTlsVerification: boolean) {
+function makeSecureDispatcher(
+  skipTlsVerification: boolean,
+  allowPrivateScrapingTargets: boolean,
+) {
   const agent = createBaseAgent(skipTlsVerification);
   attachSecurityCheck(
     agent,
     () =>
-      config.ALLOW_PRIVATE_IP_SCRAPING === true ||
+      (allowPrivateScrapingTargets &&
+        config.ALLOW_PRIVATE_IP_SCRAPING === true) ||
       config.ALLOW_LOCAL_WEBHOOKS === true,
   );
   return agent;
@@ -81,16 +85,28 @@ function makeSecureDispatcherNoCookies(skipTlsVerification: boolean) {
   return agent;
 }
 
-const secureDispatcher = makeSecureDispatcher(false);
-const secureDispatcherSkipTlsVerification = makeSecureDispatcher(true);
+const secureDispatcher = makeSecureDispatcher(false, false);
+const secureDispatcherSkipTlsVerification = makeSecureDispatcher(true, false);
+const secureScrapingDispatcher = makeSecureDispatcher(false, true);
+const secureScrapingDispatcherSkipTlsVerification = makeSecureDispatcher(
+  true,
+  true,
+);
 const secureDispatcherNoCookies = makeSecureDispatcherNoCookies(false);
 const secureDispatcherNoCookiesSkipTlsVerification =
   makeSecureDispatcherNoCookies(true);
 
-export const getSecureDispatcher = (skipTlsVerification: boolean = false) => {
-  const dispatcher = skipTlsVerification
-    ? secureDispatcherSkipTlsVerification
-    : secureDispatcher;
+export const getSecureDispatcher = (
+  skipTlsVerification: boolean = false,
+  allowPrivateScrapingTargets: boolean = false,
+) => {
+  const dispatcher = allowPrivateScrapingTargets
+    ? skipTlsVerification
+      ? secureScrapingDispatcherSkipTlsVerification
+      : secureScrapingDispatcher
+    : skipTlsVerification
+      ? secureDispatcherSkipTlsVerification
+      : secureDispatcher;
 
   return dispatcher.compose(cookie({ jar: new CookieJar() }));
 };
