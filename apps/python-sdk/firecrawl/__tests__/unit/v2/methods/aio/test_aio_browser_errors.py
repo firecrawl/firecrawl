@@ -47,16 +47,55 @@ async def test_async_browser_methods_raise_api_errors(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("operation,method", [
-    ("create", "post"),
-    ("execute", "post"),
-    ("delete", "delete"),
-    ("list", "get"),
-])
-async def test_async_browser_methods_still_return_successful_responses(operation, method):
-    payload = {"success": True}
-    if operation == "list":
-        payload["sessions"] = []
+@pytest.mark.parametrize(
+    "operation, method, payload",
+    [
+        (
+            "create",
+            "post",
+            {
+                "success": True,
+                "id": "session-id",
+                "cdpUrl": "wss://browser.example/cdp",
+                "liveViewUrl": "https://browser.example/live",
+                "interactiveLiveViewUrl": "https://browser.example/interactive",
+                "expiresAt": "2026-09-28T15:00:00Z",
+            },
+        ),
+        (
+            "execute",
+            "post",
+            {"success": True, "stdout": "1", "exitCode": 0},
+        ),
+        (
+            "delete",
+            "delete",
+            {"success": True, "status": "destroyed", "sessionDurationMs": 1500, "creditsBilled": 1},
+        ),
+        (
+            "list",
+            "get",
+            {
+                "success": True,
+                "sessions": [
+                    {
+                        "id": "session-id",
+                        "status": "active",
+                        "cdpUrl": "wss://browser.example/cdp",
+                        "liveViewUrl": "https://browser.example/live",
+                        "interactiveLiveViewUrl": "https://browser.example/interactive",
+                        "streamWebView": True,
+                        "createdAt": "2026-09-28T14:00:00Z",
+                        "lastActivity": "2026-09-28T14:05:00Z",
+                    }
+                ],
+            },
+        ),
+    ],
+)
+async def test_async_browser_methods_still_return_successful_responses(
+    operation, method, payload
+):
     response = httpx.Response(
         200,
         json=payload,
@@ -75,3 +114,23 @@ async def test_async_browser_methods_still_return_successful_responses(operation
         result = await aio_browser.list_browsers(client)
 
     assert result.success is True
+    if operation == "create":
+        assert result.cdp_url == "wss://browser.example/cdp"
+        assert result.live_view_url == "https://browser.example/live"
+        assert result.interactive_live_view_url == "https://browser.example/interactive"
+        assert result.expires_at == "2026-09-28T15:00:00Z"
+    elif operation == "execute":
+        assert result.stdout == "1"
+        assert result.exit_code == 0
+    elif operation == "delete":
+        assert result.session_duration_ms == 1500
+        assert result.credits_billed == 1
+    else:
+        assert len(result.sessions) == 1
+        session = result.sessions[0]
+        assert session.cdp_url == "wss://browser.example/cdp"
+        assert session.live_view_url == "https://browser.example/live"
+        assert session.interactive_live_view_url == "https://browser.example/interactive"
+        assert session.stream_web_view is True
+        assert session.created_at == "2026-09-28T14:00:00Z"
+        assert session.last_activity == "2026-09-28T14:05:00Z"
