@@ -19,6 +19,10 @@ import {
   CostTracking,
 } from "../../../lib/cost-tracking";
 import { JsonExtractionContentTooLargeError } from "../error";
+import {
+  normalizeSchemaKeywords,
+  typeIncludes,
+} from "../../../lib/openai-strict-schema";
 
 // ~2MB of markdown, well past typical page sizes -- caps worst-case JSON extraction cost/latency.
 const MAX_JSON_EXTRACTION_MARKDOWN_CHARS = 2_000_000;
@@ -244,6 +248,22 @@ const resolveRefs = (
   return resolved;
 };
 
+// generateCompletions nests a root array schema under an "items" property
+// (structured outputs need an object at the root); hand back the array itself,
+// as the SmartScrape wrapper's extractedData property always did.
+function unwrapRootArray(schema: any, extract: any): any {
+  if (
+    typeIncludes(normalizeSchemaKeywords(schema)?.type, "array") &&
+    extract &&
+    typeof extract === "object" &&
+    !Array.isArray(extract) &&
+    "items" in extract
+  ) {
+    return extract.items;
+  }
+  return extract;
+}
+
 export async function extractData({
   extractOptions,
   urls,
@@ -355,7 +375,15 @@ export async function extractData({
     }
   }
 
-  const { schemaToUse } = prepareSmartScrapeSchema(schema, logger, isSingleUrl);
+  // The SmartScrape fields only matter when the agent can act on them.
+  // Without it, wrapping just nests the user's schema below the top level,
+  // where generateCompletions' normalization of bare property maps and root
+  // arrays can't reach it (and with no schema at all, the wrapper requires an
+  // extractedData property it doesn't have).
+  const wrapForSmartScrape = useAgent && !!schema;
+  const schemaToUse = wrapForSmartScrape
+    ? prepareSmartScrapeSchema(schema, logger, isSingleUrl).schemaToUse
+    : schema;
   const extractOptionsNewSchema = {
     ...extractOptions,
     options: { ...extractOptions.options, schema: schemaToUse },
@@ -424,7 +452,9 @@ export async function extractData({
     warning = `JSON extraction failed: ${reason.slice(0, 300)}`;
   }
 
-  let extractedData = extract?.extractedData;
+  let extractedData = wrapForSmartScrape
+    ? extract?.extractedData
+    : unwrapRootArray(schema, extract);
 
   // console.log("shouldUseSmartscrape", extract?.shouldUseSmartscrape);
   // console.log("smartscrape_reasoning", extract?.smartscrape_reasoning);
@@ -438,7 +468,7 @@ export async function extractData({
       providedExtractId: extractId,
     });
 
-    if (useAgent && extract?.shouldUseSmartscrape) {
+    if (wrapForSmartScrape && extract?.shouldUseSmartscrape) {
       // technically this should be checked upstream but might as well add another guard - Mogery
       if (extractOptions.zeroDataRetention) {
         throw new Error(

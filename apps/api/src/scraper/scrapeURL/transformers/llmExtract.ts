@@ -22,6 +22,11 @@ import { z } from "zod";
 import fs from "fs/promises";
 import Ajv from "ajv";
 import { extractData } from "../lib/extractSmartScrape";
+import {
+  findStrictSchemaViolation,
+  normalizeSchemaKeywords,
+  typeIncludes,
+} from "../../../lib/openai-strict-schema";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
@@ -131,7 +136,7 @@ function normalizeSchema(x: any): any {
     x.not = normalizeSchema(x.not);
   }
 
-  if (x && x.type === "object") {
+  if (x && typeIncludes(x.type, "object")) {
     return {
       ...x,
       properties: Object.fromEntries(
@@ -143,7 +148,7 @@ function normalizeSchema(x: any): any {
       required: Object.keys(x.properties || {}),
       additionalProperties: false,
     };
-  } else if (x && x.type === "array") {
+  } else if (x && typeIncludes(x.type, "array")) {
     return {
       ...x,
       items: normalizeSchema(x.items),
@@ -340,6 +345,20 @@ export async function generateCompletions({
 
   if (markdown === undefined) {
     throw new Error("document.markdown is undefined -- this is unexpected");
+  }
+
+  // Keep the content inside the model's context window, leaving the rest for
+  // the prompt, schema and output. Models without known limits are sent the
+  // content as-is. A BPE token is at least one byte, so content that fits in
+  // bytes skips the (synchronous) tokenizer entirely.
+  const maxInputTokens = modelPrices[modelId]?.max_input_tokens;
+  if (markdown && maxInputTokens) {
+    const maxContentTokens = Math.floor(maxInputTokens * 0.8);
+    if (Buffer.byteLength(markdown, "utf8") > maxContentTokens) {
+      const trimmed = trimToTokenLimit(markdown, maxContentTokens, modelId);
+      markdown = trimmed.text;
+      warning = trimmed.warning;
+    }
   }
 
   try {
@@ -565,29 +584,30 @@ export async function generateCompletions({
     if (schema && !(schema instanceof z.ZodType)) {
       // let schema = options.schema;
       if (schema) {
-        schema = removeDefaultProperty(schema);
+        schema = normalizeSchemaKeywords(removeDefaultProperty(schema));
       }
 
       if (schema && schema.type === "array") {
         schema = {
           type: "object",
           properties: {
-            items: options.schema,
+            items: schema,
           },
           required: ["items"],
           additionalProperties: false,
         };
       } else if (schema && typeof schema === "object" && !schema.type) {
-        schema = {
+        // A bare map of property names to schemas; "$schema" and friends are
+        // annotations, not properties.
+        const entries = Object.entries(schema).filter(
+          ([key]) => !key.startsWith("$"),
+        );
+        schema = normalizeSchemaKeywords({
           type: "object",
-          properties: Object.fromEntries(
-            Object.entries(schema).map(([key, value]) => {
-              return [key, removeDefaultProperty(value)];
-            }),
-          ),
-          required: Object.keys(schema),
+          properties: Object.fromEntries(entries),
+          required: entries.map(([key]) => key),
           additionalProperties: false,
-        };
+        });
       }
 
       schema = normalizeSchema(schema);
@@ -1469,6 +1489,9 @@ export async function generateSchemaFromPrompt(
   const retryModel = getModel("gpt-4.1-mini", "openai");
   const temperatures = [0, 0.1, 0.3]; // Different temperatures to try
   let lastError: Error | null = null;
+  // The last schema strict mode would reject, used only if no attempt
+  // produces a supported one (extraction then fails with a warning as before).
+  let lastUnsupportedSchema: any = undefined;
 
   for (const temp of temperatures) {
     try {
@@ -1489,16 +1512,18 @@ Consider:
 
 Valid JSON schema, has to be simple. No crazy properties. OpenAI has to support it.
 Supported types
-The following types are supported for Structured Outputs:
+The following values of "type" are supported for Structured Outputs, written exactly like this (lowercase):
 
-String
-Number
-Boolean
-Integer
-Object
-Array
-Enum
-anyOf
+string
+number
+boolean
+integer
+object
+array
+
+Use "enum" as a keyword next to "type": "string" to restrict values; it is not a type. Use "anyOf" for alternatives.
+Every array must define "items" as a single schema object. Every property must be a schema object with a "type".
+allOf, oneOf, not, and if/then/else are not supported.
 
 Formats are not supported. Min/max are not supported. Anything beyond the above is not supported. Keep it simple with types and descriptions.
 Optionals are not supported.
@@ -1524,12 +1549,24 @@ Return a valid JSON schema object with properties that would capture the informa
         zeroDataRetention,
       });
 
-      return { extract };
+      const violation = findStrictSchemaViolation(extract);
+      if (violation === null) {
+        return { extract };
+      }
+      logger.warn("Generated schema is not supported by structured outputs", {
+        violation,
+        temperature: temp,
+      });
+      lastUnsupportedSchema = extract;
     } catch (error) {
       lastError = error as Error;
       logger.warn(`Failed attempt with temperature ${temp}: ${error.message}`);
       continue;
     }
+  }
+
+  if (lastUnsupportedSchema !== undefined) {
+    return { extract: lastUnsupportedSchema };
   }
 
   // If we get here, all attempts failed

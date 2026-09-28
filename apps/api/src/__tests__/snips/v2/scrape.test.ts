@@ -1685,6 +1685,34 @@ describe("Scrape tests", () => {
     );
   });
 
+  it.concurrent(
+    "rejects JSON schemas that structured outputs cannot express",
+    async () => {
+      const raw = await scrapeRaw(
+        {
+          url: base,
+          formats: [
+            {
+              type: "json",
+              schema: {
+                type: "object",
+                properties: { events: { type: "array" } },
+              },
+            },
+          ],
+        },
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(400);
+      expect(raw.body.success).toBe(false);
+      expect(raw.body.error).toBe(
+        'Invalid JSON schema at "properties.events": arrays must define "items".',
+      );
+    },
+    scrapeTimeout,
+  );
+
   describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
     "JSON format",
     () => {
@@ -1733,6 +1761,54 @@ describe("Scrape tests", () => {
           expect(response.json).toHaveProperty("is_open_source");
           expect(response.json.is_open_source).toBe(true);
           expect(typeof response.json.is_open_source).toBe("boolean");
+        },
+        scrapeTimeout,
+      );
+
+      it.concurrent(
+        "works with a bare map of property names to schemas",
+        async () => {
+          const response = await scrape(
+            {
+              url: base,
+              formats: [
+                {
+                  type: "json",
+                  schema: {
+                    company_name: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                  },
+                },
+              ],
+            },
+            identity,
+          );
+
+          expect(response.warning ?? "").not.toContain(
+            "JSON extraction failed",
+          );
+          expect(typeof response.json.company_name).toBe("string");
+          expect(typeof response.json.is_open_source).toBe("boolean");
+        },
+        scrapeTimeout,
+      );
+
+      it.concurrent(
+        "works without a schema or prompt",
+        async () => {
+          const response = await scrape(
+            {
+              url: base,
+              formats: [{ type: "json" }],
+            },
+            identity,
+          );
+
+          expect(response.warning ?? "").not.toContain(
+            "JSON extraction failed",
+          );
+          expect(response.json).not.toBeNull();
+          expect(typeof response.json).toBe("object");
         },
         scrapeTimeout,
       );
