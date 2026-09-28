@@ -1,0 +1,25 @@
+apps/api/src/lib/extract/fire-0/extraction-service-f0.ts
+  s_5135685e79793f::t_722444612062bd 292
+apps/api/src/lib/extract/fire-0/completions/analyzeSchemaAndPrompt-f0.test.ts
+  s_5135685e79793f::t_7c08326ecf7c41 1-142
+apps/api/src/lib/extract/fire-0/llmExtract-f0.ts
+  s_5135685e79793f::t_722444612062bd 196-197
+apps/api/src/lib/extract/fire-0/completions/analyzeSchemaAndPrompt-f0.ts
+  s_5135685e79793f::t_722444612062bd 18,57-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "67e3ff8c19a05e9ba2a61e1fab149ff43343b726",
+  "prompts": {},
+  "sessions": {
+    "s_5135685e79793f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7cb52b5f-cf6d-4107-b69e-f3e741632f35",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
