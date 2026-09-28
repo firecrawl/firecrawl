@@ -1,0 +1,19 @@
+apps/api/src/lib/ai-usage-telemetry.test.ts
+  s_e3cba8d3486419::t_5adf0ca28a5ad1 117,146-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c0a37aa49d95d3e7d75eb1f70771d73b643f6891",
+  "prompts": {},
+  "sessions": {
+    "s_e3cba8d3486419": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7af3ed4d-b84f-44c5-9d08-89ee82e8d574",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
