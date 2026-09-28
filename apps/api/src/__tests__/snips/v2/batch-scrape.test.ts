@@ -27,6 +27,35 @@ beforeAll(async () => {
 
 describe("Batch scrape tests", () => {
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "honors an idempotency key on concurrent v2 batch starts",
+    async () => {
+      const key = crypto.randomUUID();
+      const start = () =>
+        request(TEST_API_URL)
+          .post("/v2/batch/scrape")
+          .set("Authorization", `Bearer ${identity.apiKey}`)
+          .set("Content-Type", "application/json")
+          .set("x-idempotency-key", key)
+          .send({ urls: [TEST_SUITE_WEBSITE] });
+
+      const responses = await Promise.all([start(), start()]);
+      expect(responses.map(response => response.statusCode).sort()).toEqual([
+        200, 409,
+      ]);
+      expect(
+        responses.find(response => response.statusCode === 200)?.body.id,
+      ).toEqual(expect.any(String));
+      expect(
+        responses.find(response => response.statusCode === 409)?.body,
+      ).toMatchObject({
+        success: false,
+        error: "Idempotency key already used",
+      });
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works",
     async () => {
       const response = await batchScrape(
