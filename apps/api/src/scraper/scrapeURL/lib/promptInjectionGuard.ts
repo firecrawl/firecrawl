@@ -58,6 +58,13 @@ function buildGuardSystemPrompt(tagName: string): string {
   ].join(" ");
 }
 
+type GuardTelemetryMetadata = {
+  teamId: string;
+  functionId?: string;
+  scrapeId?: string;
+  extractId?: string;
+};
+
 // "none" marks a chunk the guard failed open on. Billing reads it: the guard
 // fee is charged only when every chunk got a verdict (see scrape-billing.ts).
 type GuardVerdict = "clean" | "injection" | "none";
@@ -88,7 +95,7 @@ async function classifyChunk(
   modelId: string,
   logger: Logger,
   costTracking: CostTracking,
-  metadata: { teamId: string; functionId?: string },
+  metadata: GuardTelemetryMetadata,
   zeroDataRetention: boolean,
 ): Promise<boolean> {
   const tagName = `untrusted_page_content_${crypto.randomUUID()}`;
@@ -113,7 +120,11 @@ async function classifyChunk(
         functionId: metadata.functionId
           ? metadata.functionId + "/promptInjectionGuard"
           : "promptInjectionGuard",
-        metadata: { teamId: metadata.teamId },
+        metadata: {
+          teamId: metadata.teamId,
+          ...(metadata.scrapeId ? { scrapeId: metadata.scrapeId } : {}),
+          ...(metadata.extractId ? { extractId: metadata.extractId } : {}),
+        },
       },
     });
 
@@ -184,7 +195,7 @@ export async function checkForPromptInjection({
   markdown: string | undefined;
   logger: Logger;
   costTracking: CostTracking;
-  metadata: { teamId: string; functionId?: string };
+  metadata: GuardTelemetryMetadata;
   zeroDataRetention: boolean;
   limiter?: Semaphore;
 }): Promise<boolean> {

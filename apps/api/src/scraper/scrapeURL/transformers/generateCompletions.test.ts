@@ -14,7 +14,10 @@ vi.mock("ai", async importOriginal => {
 import { generateObject } from "ai";
 import { encoding_for_model } from "@dqbd/tiktoken";
 import type { Mock } from "vitest";
-import { generateCompletions } from "./llmExtract";
+import {
+  generateCompletions,
+  generateCrawlerOptionsFromPrompt,
+} from "./llmExtract";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { modelPrices } from "../../../lib/extract/usage/model-prices";
 
@@ -160,6 +163,52 @@ describe("generateCompletions schema normalization", () => {
       properties: { city: { type: "string" } },
       required: ["city"],
       additionalProperties: false,
+    });
+  });
+});
+
+describe("generateCompletions telemetry metadata", () => {
+  it("tags crawl-prompt spans with the crawl id", async () => {
+    await generateCrawlerOptionsFromPrompt(
+      "only the blog",
+      noopLogger,
+      new CostTracking(),
+      { teamId: "test-team", crawlId: "test-crawl" },
+    );
+
+    const telemetry = lastCall().experimental_telemetry;
+    expect(telemetry.functionId).toBe("generateCrawlerOptionsFromPrompt");
+    expect(telemetry.metadata).toMatchObject({
+      teamId: "test-team",
+      crawlId: "test-crawl",
+    });
+  });
+
+  it("leaves crawlId out when previewing params without a crawl", async () => {
+    await generateCrawlerOptionsFromPrompt(
+      "only the blog",
+      noopLogger,
+      new CostTracking(),
+      { teamId: "test-team" },
+    );
+
+    expect(lastCall().experimental_telemetry.metadata).toEqual({
+      teamId: "test-team",
+    });
+  });
+
+  it("keeps tagging scrape spans with the scrape id", async () => {
+    await generateCompletions({
+      logger: noopLogger,
+      options: {},
+      markdown: "page",
+      costTrackingOptions: { costTracking: new CostTracking(), metadata: {} },
+      metadata: { teamId: "test-team", scrapeId: "test-scrape" },
+    });
+
+    expect(lastCall().experimental_telemetry.metadata).toMatchObject({
+      teamId: "test-team",
+      scrapeId: "test-scrape",
     });
   });
 });

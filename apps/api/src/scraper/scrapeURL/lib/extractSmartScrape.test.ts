@@ -5,9 +5,15 @@ vi.mock("../transformers/llmExtract", () => ({
   generateSchemaFromPrompt: vi.fn(),
 }));
 
+vi.mock("./promptInjectionGuard", () => ({
+  checkForPromptInjection: vi.fn(async () => true),
+  createPromptInjectionGuardLimiter: vi.fn(),
+}));
+
 import type { Mock } from "vitest";
 import { extractData } from "./extractSmartScrape";
 import { generateCompletions } from "../transformers/llmExtract";
+import { checkForPromptInjection } from "./promptInjectionGuard";
 import { JsonExtractionContentTooLargeError } from "../error";
 import { CostTracking } from "../../../lib/cost-tracking";
 
@@ -39,6 +45,61 @@ describe("extractData", () => {
         metadata: { teamId: "test-team" },
       }),
     ).rejects.toBeInstanceOf(JsonExtractionContentTooLargeError);
+  });
+
+  describe("prompt injection guard", () => {
+    function run(ids: { scrapeId?: string; extractId?: string }) {
+      (generateCompletions as Mock).mockResolvedValueOnce({
+        extract: { ok: true },
+        warning: undefined,
+        totalUsage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      });
+      return extractData({
+        extractOptions: {
+          logger: noopLogger,
+          options: {
+            schema: { type: "object", properties: {} },
+            checkPromptInjection: true,
+          },
+          markdown: "page",
+          costTrackingOptions: {
+            costTracking: new CostTracking(),
+            metadata: {},
+          },
+          metadata: { teamId: "test-team" },
+        } as any,
+        urls: ["https://example.com"],
+        useAgent: false,
+        ...ids,
+        metadata: { teamId: "test-team", functionId: "performLLMExtract" },
+      });
+    }
+
+    beforeEach(() => {
+      (checkForPromptInjection as Mock).mockClear();
+    });
+
+    it("passes the scrape id to the guard for its span metadata", async () => {
+      await run({ scrapeId: "test-scrape" });
+
+      expect(checkForPromptInjection).toHaveBeenCalledTimes(1);
+      expect(
+        (checkForPromptInjection as Mock).mock.calls[0][0].metadata,
+      ).toEqual({
+        teamId: "test-team",
+        functionId: "performLLMExtract",
+        scrapeId: "test-scrape",
+        extractId: undefined,
+      });
+    });
+
+    it("passes the extract id to the guard for its span metadata", async () => {
+      await run({ extractId: "test-extract" });
+
+      expect(
+        (checkForPromptInjection as Mock).mock.calls[0][0].metadata,
+      ).toMatchObject({ teamId: "test-team", extractId: "test-extract" });
+    });
   });
 
   describe("SmartScrape schema wrapping", () => {

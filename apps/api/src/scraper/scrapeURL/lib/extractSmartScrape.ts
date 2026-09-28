@@ -403,7 +403,7 @@ export async function extractData({
           markdown: extractOptions.markdown,
           logger,
           costTracking: extractOptions.costTrackingOptions.costTracking,
-          metadata,
+          metadata: { ...metadata, scrapeId, extractId },
           zeroDataRetention: !!extractOptions.zeroDataRetention,
         })
       : Promise.resolve(true),
@@ -542,7 +542,7 @@ export async function extractData({
               markdown,
               logger,
               costTracking: extractOptions.costTrackingOptions.costTracking,
-              metadata,
+              metadata: { ...metadata, scrapeId, extractId },
               zeroDataRetention: !!extractOptions.zeroDataRetention,
               limiter: guardLimiter,
             });

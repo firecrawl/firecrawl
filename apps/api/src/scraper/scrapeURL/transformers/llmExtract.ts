@@ -344,9 +344,48 @@ export type GenerateCompletionsOptions = {
     scrapeId?: string;
     deepResearchId?: string;
     llmsTxtId?: string;
+    crawlId?: string;
   };
   zeroDataRetention?: boolean;
 };
+
+// Span metadata that ties each call to the job that made it.
+function telemetryMetadata(metadata: GenerateCompletionsOptions["metadata"]) {
+  return {
+    teamId: metadata.teamId,
+    ...(metadata.extractId
+      ? {
+          langfuseTraceId: "extract:" + metadata.extractId,
+          extractId: metadata.extractId,
+        }
+      : {}),
+    ...(metadata.scrapeId
+      ? {
+          langfuseTraceId: "scrape:" + metadata.scrapeId,
+          scrapeId: metadata.scrapeId,
+        }
+      : {}),
+    ...(metadata.deepResearchId
+      ? {
+          langfuseTraceId: "deepResearch:" + metadata.deepResearchId,
+          deepResearchId: metadata.deepResearchId,
+        }
+      : {}),
+    ...(metadata.llmsTxtId
+      ? {
+          langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId,
+          llmsTxtId: metadata.llmsTxtId,
+        }
+      : {}),
+    ...(metadata.crawlId
+      ? {
+          langfuseTraceId: "crawl:" + metadata.crawlId,
+          crawlId: metadata.crawlId,
+        }
+      : {}),
+  };
+}
+
 export async function generateCompletions({
   logger,
   options,
@@ -428,33 +467,7 @@ export async function generateCompletions({
             functionId: metadata.functionId
               ? metadata.functionId + "/generateText"
               : "generateText",
-            metadata: {
-              teamId: metadata.teamId,
-              ...(metadata.extractId
-                ? {
-                    langfuseTraceId: "extract:" + metadata.extractId,
-                    extractId: metadata.extractId,
-                  }
-                : {}),
-              ...(metadata.scrapeId
-                ? {
-                    langfuseTraceId: "scrape:" + metadata.scrapeId,
-                    scrapeId: metadata.scrapeId,
-                  }
-                : {}),
-              ...(metadata.deepResearchId
-                ? {
-                    langfuseTraceId: "deepResearch:" + metadata.deepResearchId,
-                    deepResearchId: metadata.deepResearchId,
-                  }
-                : {}),
-              ...(metadata.llmsTxtId
-                ? {
-                    langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId,
-                    llmsTxtId: metadata.llmsTxtId,
-                  }
-                : {}),
-            },
+            metadata: telemetryMetadata(metadata),
           },
         });
 
@@ -534,34 +547,7 @@ export async function generateCompletions({
                 functionId: metadata.functionId
                   ? metadata.functionId + "/generateText"
                   : "generateText",
-                metadata: {
-                  teamId: metadata.teamId,
-                  ...(metadata.extractId
-                    ? {
-                        langfuseTraceId: "extract:" + metadata.extractId,
-                        extractId: metadata.extractId,
-                      }
-                    : {}),
-                  ...(metadata.scrapeId
-                    ? {
-                        langfuseTraceId: "scrape:" + metadata.scrapeId,
-                        scrapeId: metadata.scrapeId,
-                      }
-                    : {}),
-                  ...(metadata.deepResearchId
-                    ? {
-                        langfuseTraceId:
-                          "deepResearch:" + metadata.deepResearchId,
-                        deepResearchId: metadata.deepResearchId,
-                      }
-                    : {}),
-                  ...(metadata.llmsTxtId
-                    ? {
-                        langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId,
-                        llmsTxtId: metadata.llmsTxtId,
-                      }
-                    : {}),
-                },
+                metadata: telemetryMetadata(metadata),
               },
             });
 
@@ -702,34 +688,7 @@ export async function generateCompletions({
               functionId: metadata.functionId
                 ? metadata.functionId + "/repairText"
                 : "repairText",
-              metadata: {
-                teamId: metadata.teamId,
-                ...(metadata.extractId
-                  ? {
-                      langfuseTraceId: "extract:" + metadata.extractId,
-                      extractId: metadata.extractId,
-                    }
-                  : {}),
-                ...(metadata.scrapeId
-                  ? {
-                      langfuseTraceId: "scrape:" + metadata.scrapeId,
-                      scrapeId: metadata.scrapeId,
-                    }
-                  : {}),
-                ...(metadata.deepResearchId
-                  ? {
-                      langfuseTraceId:
-                        "deepResearch:" + metadata.deepResearchId,
-                      deepResearchId: metadata.deepResearchId,
-                    }
-                  : {}),
-                ...(metadata.llmsTxtId
-                  ? {
-                      langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId,
-                      llmsTxtId: metadata.llmsTxtId,
-                    }
-                  : {}),
-              },
+              metadata: telemetryMetadata(metadata),
             },
           });
 
@@ -796,33 +755,7 @@ export async function generateCompletions({
       experimental_telemetry: {
         isEnabled: !zeroDataRetention,
         functionId: metadata.functionId,
-        metadata: {
-          teamId: metadata.teamId,
-          ...(metadata.extractId
-            ? {
-                langfuseTraceId: "extract:" + metadata.extractId,
-                extractId: metadata.extractId,
-              }
-            : {}),
-          ...(metadata.scrapeId
-            ? {
-                langfuseTraceId: "scrape:" + metadata.scrapeId,
-                scrapeId: metadata.scrapeId,
-              }
-            : {}),
-          ...(metadata.deepResearchId
-            ? {
-                langfuseTraceId: "deepResearch:" + metadata.deepResearchId,
-                deepResearchId: metadata.deepResearchId,
-              }
-            : {}),
-          ...(metadata.llmsTxtId
-            ? {
-                langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId,
-                llmsTxtId: metadata.llmsTxtId,
-              }
-            : {}),
-        },
+        metadata: telemetryMetadata(metadata),
       },
       ...(modelId.startsWith("gpt-5")
         ? {
