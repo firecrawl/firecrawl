@@ -1,10 +1,12 @@
 import amqp from "amqplib";
+import { randomUUID } from "node:crypto";
 import { config } from "../config";
 import { logger as _logger } from "../lib/logger";
 
 const EXTRACT_QUEUE = "extract.jobs";
 const EXTRACT_DLX = "extract.dlx";
 const EXTRACT_DLQ = "extract.dlq";
+const PUBLISH_CONFIRM_TIMEOUT_MS = 10_000;
 
 export type ExtractJobData = {
   extractId: string;
@@ -18,53 +20,102 @@ export type ExtractJobData = {
 };
 
 let connection: amqp.ChannelModel | null = null;
-let channel: amqp.Channel | null = null;
+let channel: amqp.ConfirmChannel | null = null;
+let channelPromise: Promise<amqp.ConfirmChannel> | null = null;
+const pendingPublishes = new Map<
+  string,
+  { returned: boolean; reject: (error: Error) => void }
+>();
 
-async function getChannel(): Promise<amqp.Channel> {
+function rejectPendingPublishes(error: Error): void {
+  for (const pending of pendingPublishes.values()) pending.reject(error);
+  pendingPublishes.clear();
+}
+
+async function getChannel(): Promise<amqp.ConfirmChannel> {
   if (channel) return channel;
+  if (channelPromise) return channelPromise;
 
+  channelPromise = openChannel();
+  try {
+    return await channelPromise;
+  } finally {
+    channelPromise = null;
+  }
+}
+
+async function openChannel(): Promise<amqp.ConfirmChannel> {
   const url = config.NUQ_RABBITMQ_URL;
   if (!url) {
     throw new Error("NUQ_RABBITMQ_URL is not configured");
   }
 
-  connection = await amqp.connect(url);
-  channel = await connection.createChannel();
+  const conn = await amqp.connect(url);
+  let ch: amqp.ConfirmChannel;
+  try {
+    ch = await conn.createConfirmChannel();
 
-  // Set up the dead letter exchange
-  await channel.assertExchange(EXTRACT_DLX, "direct", { durable: true });
+    // Set up the dead letter exchange
+    await ch.assertExchange(EXTRACT_DLX, "direct", { durable: true });
 
-  // Set up the dead letter queue
-  await channel.assertQueue(EXTRACT_DLQ, {
-    durable: true,
-    arguments: {
-      "x-queue-type": "quorum",
-    },
+    // Set up the dead letter queue
+    await ch.assertQueue(EXTRACT_DLQ, {
+      durable: true,
+      arguments: {
+        "x-queue-type": "quorum",
+      },
+    });
+    await ch.bindQueue(EXTRACT_DLQ, EXTRACT_DLX, EXTRACT_QUEUE);
+
+    // Set up the main queue with DLX - no retries (messages go straight to DLQ on reject/crash)
+    await ch.assertQueue(EXTRACT_QUEUE, {
+      durable: true,
+      arguments: {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": EXTRACT_DLX,
+        "x-dead-letter-routing-key": EXTRACT_QUEUE,
+        "x-delivery-limit": 1,
+      },
+    });
+  } catch (error) {
+    await conn.close().catch(() => {});
+    throw error;
+  }
+
+  ch.on("return", msg => {
+    const correlationId = msg.properties.correlationId;
+    const pending = pendingPublishes.get(correlationId);
+    if (pending) pending.returned = true;
   });
-  await channel.bindQueue(EXTRACT_DLQ, EXTRACT_DLX, EXTRACT_QUEUE);
 
-  // Set up the main queue with DLX - no retries (messages go straight to DLQ on reject/crash)
-  await channel.assertQueue(EXTRACT_QUEUE, {
-    durable: true,
-    arguments: {
-      "x-queue-type": "quorum",
-      "x-dead-letter-exchange": EXTRACT_DLX,
-      "x-dead-letter-routing-key": EXTRACT_QUEUE,
-      "x-delivery-limit": 1,
-    },
-  });
-
-  connection.on("close", () => {
+  conn.on("close", () => {
     _logger.warn("Extract queue connection closed");
-    connection = null;
-    channel = null;
+    if (connection === conn) {
+      connection = null;
+      channel = null;
+      rejectPendingPublishes(new Error("Extract queue connection closed"));
+    }
   });
 
-  connection.on("error", err => {
+  conn.on("error", err => {
     _logger.error("Extract queue connection error", { error: err });
   });
 
-  return channel;
+  ch.on("close", () => {
+    if (channel === ch) {
+      channel = null;
+      connection = null;
+      rejectPendingPublishes(new Error("Extract queue channel closed"));
+      void conn.close().catch(() => {});
+    }
+  });
+  ch.on("error", err => {
+    _logger.error("Extract queue channel error", { error: err });
+  });
+
+  connection = conn;
+  channel = ch;
+  return ch;
 }
 
 export async function addExtractJob(
@@ -72,9 +123,54 @@ export async function addExtractJob(
   data: ExtractJobData,
 ): Promise<void> {
   const ch = await getChannel();
-  ch.sendToQueue(EXTRACT_QUEUE, Buffer.from(JSON.stringify(data)), {
-    persistent: true,
-    messageId: extractId,
+  const correlationId = randomUUID();
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingPublishes
+        .get(correlationId)
+        ?.reject(new Error("Extract job publish confirmation timed out"));
+    }, PUBLISH_CONFIRM_TIMEOUT_MS);
+    pendingPublishes.set(correlationId, {
+      returned: false,
+      reject: error => {
+        clearTimeout(timeout);
+        pendingPublishes.delete(correlationId);
+        reject(error);
+      },
+    });
+
+    try {
+      const writable = ch.sendToQueue(
+        EXTRACT_QUEUE,
+        Buffer.from(JSON.stringify(data)),
+        {
+          persistent: true,
+          messageId: extractId,
+          correlationId,
+          mandatory: true,
+        },
+        error => {
+          // RabbitMQ emits basic.return before the publisher confirmation.
+          setImmediate(() => {
+            const pending = pendingPublishes.get(correlationId);
+            if (!pending) return;
+            clearTimeout(timeout);
+            pendingPublishes.delete(correlationId);
+            if (error) reject(error);
+            else if (pending.returned)
+              reject(new Error("RabbitMQ returned unroutable extract job"));
+            else resolve();
+          });
+        },
+      );
+      if (!writable) {
+        // A full client write buffer is backpressure, not an enqueue failure.
+        // The publisher confirmation remains the authoritative result.
+        _logger.warn("Extract job publish buffer full", { extractId });
+      }
+    } catch (error) {
+      pendingPublishes.get(correlationId)?.reject(error as Error);
+    }
   });
   _logger.info("Extract job added to queue", { extractId });
 }
