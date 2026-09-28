@@ -668,6 +668,7 @@ class ClientTest < Minitest::Test
 
       options = Firecrawl::Models::AgentOptions.new(prompt: "Find pricing")
       error = assert_raises(Firecrawl::AgentFailedError) { @client.agent(options, poll_interval: 0, timeout: 10) }
+      assert_equal "agent-1", error.job_id
       assert_equal status, error.response.status
       assert_equal({ "partial" => true }, error.response.data)
       assert_includes error.message, "task stopped"

@@ -15,10 +15,11 @@ module Firecrawl
 
   # Raised when a polled agent task fails or is cancelled.
   class AgentFailedError < FirecrawlError
-    attr_reader :response
+    attr_reader :response, :job_id
 
     def initialize(response, job_id)
       @response = response
+      @job_id = job_id
       reason = response.error.is_a?(String) && !response.error.empty? ? ": #{response.error}" : ""
       super("Agent #{job_id} #{response.status}#{reason}")
     end
