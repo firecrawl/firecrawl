@@ -1,4 +1,4 @@
-import { allowsBarePrivateHost } from "./private-host-url";
+import { allowsBarePrivateHost, isKnownLocalUrl } from "./private-host-url";
 
 const denied = {
   privateScraping: false,
@@ -7,6 +7,11 @@ const denied = {
 };
 
 describe("bare private host URL allowance", () => {
+  it("recognizes the local URLs used by self-hosted snippets", () => {
+    expect(isKnownLocalUrl("http://localhost:8080/path")).toBe(true);
+    expect(isKnownLocalUrl("http://192.168.1.20/path")).toBe(true);
+    expect(isKnownLocalUrl("http://example.com/path")).toBe(false);
+  });
   it("lets explicit self-hosted scraping reach localhost and service names", () => {
     for (const host of ["localhost", "service"]) {
       expect(
