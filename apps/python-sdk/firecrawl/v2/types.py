@@ -1258,6 +1258,8 @@ class MapData(BaseModel):
     """Map results data."""
 
     agent_hints: Optional[List[str]] = None
+    id: Optional[str] = None
+    warning: Optional[str] = None
     links: List["SearchResult"]
 
 

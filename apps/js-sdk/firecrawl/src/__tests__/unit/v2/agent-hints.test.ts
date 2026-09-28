@@ -75,6 +75,22 @@ describe("agent hints survive SDK response unwrapping", () => {
     });
   });
 
+  it("preserves the map warning so callers can broaden a narrow query", async () => {
+    const result = await map(
+      httpFor({
+        success: true,
+        id: "map-id",
+        links: [],
+        warning: "Try mapping the base domain for broader coverage.",
+      }),
+      "https://example.com/path",
+    );
+    expect(result.id).toBe("map-id");
+    expect(result.warning).toBe(
+      "Try mapping the base domain for broader coverage.",
+    );
+  });
+
   it.each([null, "unexpected", [123]])(
     "ignores malformed optional hints: %j",
     async (value) => {
