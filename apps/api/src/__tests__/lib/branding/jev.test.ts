@@ -260,8 +260,8 @@ describe("branding with Jev", () => {
       secondaryColor: "",
       backgroundColor: "#FFFFFF",
       textPrimary: "#111111",
-      confidence: 0.88,
     });
+    expect(result.colorRoles.confidence).toBeCloseTo((0.88 + 0.94 + 0.92) / 3);
     expect(result.cleanedFonts).toEqual([{ family: "Inter", role: "body" }]);
     expect(result.personality).toEqual({
       tone: "modern",
@@ -320,6 +320,46 @@ describe("branding with Jev", () => {
     expect(result.colorRoles.textPrimary).toBe("#111111");
     expect(result.buttonClassification.primaryButtonIndex).toBe(0);
     expect(result.buttonClassification.secondaryButtonIndex).toBe(1);
+  });
+
+  it("keeps the heuristic value for a color role Jev is unsure of", async () => {
+    respondWith(
+      jevResponse({
+        accent_color: {
+          type: "choice",
+          choice: "color_2",
+          probabilities: { color_0: 0.3, color_1: 0.3, color_2: 0.4 },
+          confidence: 0.1,
+        },
+      }),
+    );
+
+    const result = await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+
+    expect(result.colorRoles.accentColor).toBe("");
+    expect(result.colorRoles.primaryColor).toBe("#6D28D9");
+  });
+
+  it("takes font roles from the page's typography when it has them", async () => {
+    const input = baseInput(new CostTracking());
+    input.jsAnalysis.typography = {
+      fontFamilies: { primary: "__Inter_d65c78", heading: "Söhne" },
+    };
+    input.jsAnalysis.fonts = [
+      { family: "__Inter_d65c78", count: 40 },
+      { family: "Söhne", count: 10 },
+    ];
+
+    const request = buildJevRequest(input);
+    expect(request.questions.font_0_role).toBeUndefined();
+    expect(request.questions.font_1_role).toBeUndefined();
+
+    respondWith(jevResponse({ font_1_is_brand: { type: "noul", noul: 0.9 } }));
+    const result = await enhanceBrandingWithLLM(input);
+    expect(result.cleanedFonts).toEqual([
+      { family: "Inter", role: "body" },
+      { family: "Söhne", role: "heading" },
+    ]);
   });
 
   it("falls back to the LLM when the TypeSafe API errors", async () => {

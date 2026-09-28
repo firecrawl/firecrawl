@@ -23,6 +23,8 @@ const MAX_COLORS = 24;
 const MAX_FONTS = 8;
 
 const NONE = "none";
+// Below this a color role keeps the heuristic value.
+const ROLE_MIN_CONFIDENCE = 0.35;
 
 type ChoiceQuestion = {
   type: "choice";
@@ -195,7 +197,35 @@ export function cleanFontFamily(raw: string): string | undefined {
   return name;
 }
 
-type FontCandidate = { family: string; count: number };
+type FontRole = BrandingEnhancement["cleanedFonts"][number]["role"];
+type FontCandidate = { family: string; count: number; role?: FontRole };
+
+/** Role from the page's own typography: the heading and body stacks it measured. */
+function typographyRole(
+  family: string,
+  input: BrandingLLMInput,
+): FontRole | undefined {
+  const t = input.jsAnalysis.typography;
+  const first = (value?: string | string[]) => {
+    const raw = Array.isArray(value) ? value[0] : value;
+    return raw ? cleanFontFamily(raw)?.toLowerCase() : undefined;
+  };
+  const name = family.toLowerCase();
+  if (/\b(mono|code)\b|consolas|menlo/i.test(family)) return "monospace";
+  const body = [
+    first(t?.fontFamilies?.primary),
+    first(t?.fontStacks?.body),
+    first(t?.fontStacks?.paragraph),
+  ];
+  const heading = [
+    first(t?.fontFamilies?.heading),
+    first(t?.fontStacks?.heading),
+  ];
+  // A family used for both is reported as body, the page's primary font.
+  if (body.includes(name)) return "body";
+  if (heading.includes(name)) return "heading";
+  return undefined;
+}
 
 function collectFonts(input: BrandingLLMInput): FontCandidate[] {
   const byFamily = new Map<string, FontCandidate>();
@@ -213,7 +243,8 @@ function collectFonts(input: BrandingLLMInput): FontCandidate[] {
   }
   return [...byFamily.values()]
     .sort((a, b) => b.count - a.count)
-    .slice(0, MAX_FONTS);
+    .slice(0, MAX_FONTS)
+    .map(font => ({ ...font, role: typographyRole(font.family, input) }));
 }
 
 // ---------------------------------------------------------------------------
@@ -334,7 +365,11 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     state.fonts = Object.fromEntries(
       fonts.map((font, i) => [
         `font_${i}`,
-        { family: font.family, times_used: font.count },
+        {
+          family: font.family,
+          times_used: font.count,
+          ...(font.role ? { used_for: `${font.role} text` } : {}),
+        },
       ]),
     );
   }
@@ -423,11 +458,13 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     };
   }
 
-  fonts.forEach((_, i) => {
+  fonts.forEach((font, i) => {
     questions[`font_${i}_is_brand`] = {
       type: "noul",
       instructions: `Is \`fonts.font_${i}\` a real typeface this site uses for visible text, rather than an icon font, a fallback, or a generic family?`,
     };
+    // The page's typography already says what the font is for.
+    if (font.role) return;
     questions[`font_${i}_role`] = {
       type: "choice",
       instructions: `What is \`fonts.font_${i}\` mainly used for on this site?`,
@@ -582,6 +619,11 @@ function mapJevAnswers(
       new Set([primaryColor!.choice]),
     );
   }
+  // A role Jev is unsure of is left empty so the heuristic value stays.
+  const roleHex = (answer: ChoiceAnswer | undefined, option?: string) =>
+    answer && answer.confidence >= ROLE_MIN_CONFIDENCE
+      ? colorHex(option)
+      : undefined;
   const colorConfidences = [primaryColor, background, text]
     .filter((a): a is ChoiceAnswer => !!a)
     .map(a => a.confidence);
@@ -593,8 +635,7 @@ function mapJevAnswers(
       const role = choiceOf(answers, `font_${i}_role`);
       return {
         family: font.family,
-        role: (role?.choice ??
-          "unknown") as BrandingEnhancement["cleanedFonts"][number]["role"],
+        role: font.role ?? ((role?.choice ?? "unknown") as FontRole),
         keep: isBrand?.type === "noul" ? isBrand.noul >= 0.5 : true,
       };
     })
@@ -617,13 +658,18 @@ function mapJevAnswers(
       confidence: primaryButton?.confidence ?? 0,
     },
     colorRoles: {
-      primaryColor: colorHex(primaryColor?.choice) ?? "",
-      secondaryColor: colorHex(secondaryColorOption) ?? "",
-      accentColor: colorHex(accent?.choice) ?? "",
-      backgroundColor: colorHex(background?.choice) ?? "",
-      textPrimary: colorHex(textOption) ?? "",
+      primaryColor: roleHex(primaryColor, primaryColor?.choice) ?? "",
+      secondaryColor: roleHex(secondaryColor, secondaryColorOption) ?? "",
+      accentColor: roleHex(accent, accent?.choice) ?? "",
+      backgroundColor: roleHex(background, background?.choice) ?? "",
+      textPrimary: roleHex(text, textOption) ?? "",
+      // Merge applies the roles at >= 0.5. Jev's confidences are calibrated,
+      // so average them instead of letting the least certain role veto all.
       confidence:
-        colorConfidences.length > 0 ? Math.min(...colorConfidences) : 0,
+        colorConfidences.length > 0
+          ? colorConfidences.reduce((a, b) => a + b, 0) /
+            colorConfidences.length
+          : 0,
     },
     cleanedFonts,
     ...(tone && energy
