@@ -1,0 +1,36 @@
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_b87c7786d57a30::t_dbf8a235fc52a9 347,351-387,470,550,691,758
+  s_b87c7786d57a30::t_43ff2228c33021 388
+apps/api/src/lib/branding/llm.ts
+  s_b87c7786d57a30::t_98321bcbf570be 203-204
+apps/api/src/scraper/scrapeURL/transformers/generateCompletions.test.ts
+  s_b87c7786d57a30::t_c58358fef5156e 17-20,169-213
+  s_b87c7786d57a30::t_5a71010b7af93b 214
+apps/api/src/scraper/scrapeURL/lib/promptInjectionGuard.test.ts
+  s_b87c7786d57a30::t_c58358fef5156e 190-229
+apps/api/src/scraper/scrapeURL/lib/promptInjectionGuard.ts
+  s_b87c7786d57a30::t_906a94ce2daeda 61-67,98,123-127,198
+apps/api/src/scraper/scrapeURL/lib/extractSmartScrape.test.ts
+  s_b87c7786d57a30::t_c58358fef5156e 8-12,16,50-102
+  s_b87c7786d57a30::t_4273d6cddd7d75 103-104
+apps/api/src/__tests__/lib/branding/llm-telemetry.test.ts
+  s_b87c7786d57a30::t_c58358fef5156e 1-67
+apps/api/src/scraper/scrapeURL/lib/extractSmartScrape.ts
+  s_b87c7786d57a30::t_906a94ce2daeda 406,545
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "117fdfa1c3afa1abc24cb0dcec69ff4f6899bf8b",
+  "prompts": {},
+  "sessions": {
+    "s_b87c7786d57a30": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7d1e33dc-e56a-4abd-a0b1-0257e2374b21",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
