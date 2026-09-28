@@ -157,7 +157,9 @@ export const exchangeRouter = express.Router();
 // Dashboard and publisher routes below stay on the flat Labs limit.
 exchangeRouter.get(
   "/discover{/*path}",
-  authMiddleware(RateLimiterMode.ExchangeDiscover),
+  authMiddleware(RateLimiterMode.ExchangeDiscover, {
+    allowAgentManagedKey: true,
+  }),
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
@@ -195,7 +197,7 @@ exchangeRouter.post(
 
 exchangeRouter.post(
   "/retrieve",
-  authMiddleware(RateLimiterMode.Exchange),
+  authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
   wrap((req, res) =>
     providerScrapeController(req as RequestWithAuth<any, any, any>, res, true),
   ),
@@ -257,7 +259,7 @@ exchangeRouter.get(
 
 exchangeRouter.post(
   "/publisher/bounties",
-  authMiddleware(RateLimiterMode.Labs),
+  authMiddleware(RateLimiterMode.Labs, { allowAgentManagedKey: true }),
   bountyBlocklistMiddleware,
   wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
