@@ -23,6 +23,7 @@ vi.mock("../../../lib/generic-ai", () => ({
 import { generateObject } from "ai";
 import { enhanceBrandingWithLLM } from "../../../lib/branding/llm";
 import { logger } from "../../../lib/logger";
+import { CostTracking } from "../../../lib/cost-tracking";
 
 function run(ids: { teamId?: string; scrapeId?: string }) {
   return enhanceBrandingWithLLM({
@@ -30,6 +31,7 @@ function run(ids: { teamId?: string; scrapeId?: string }) {
     buttons: [],
     url: "https://example.com",
     logger,
+    costTracking: new CostTracking(),
     ...ids,
   });
 }
