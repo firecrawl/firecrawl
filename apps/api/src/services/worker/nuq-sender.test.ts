@@ -1,6 +1,9 @@
 const { connect, channel, connection, logger } = vi.hoisted(() => {
   const channel = {
-    assertQueue: vi.fn(async () => {}),
+    assertQueue: vi.fn(async () => ({ queue: "test-listen-queue" })),
+    prefetch: vi.fn(async () => {}),
+    consume: vi.fn(async () => {}),
+    cancel: vi.fn(async () => {}),
     sendToQueue: vi.fn(() => true),
     on: vi.fn(),
     close: vi.fn(async () => {}),
@@ -117,5 +120,42 @@ describe("NuQ RabbitMQ sender startup", () => {
     await publishing;
     expect(connection.close).toHaveBeenCalledOnce();
     expect(channel.sendToQueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("NuQ listener recovery scan", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    connect.mockResolvedValue(connection);
+  });
+
+  it("handles a failed recovery query without an unhandled rejection", async () => {
+    const queue = await sender();
+    const failure = new Error("database unavailable");
+    queue.getJobs = vi.fn().mockRejectedValue(failure);
+
+    await queue.startListener();
+
+    await vi.waitFor(() =>
+      expect(logger.warn).toHaveBeenCalledWith(
+        "NuQ listener recovery scan failed",
+        { error: failure, module: "nuq" },
+      ),
+    );
+  });
+
+  it("ignores a listener removed while the recovery query was pending", async () => {
+    const queue = await sender();
+    queue.listens["job-a"] = [vi.fn()];
+    queue.getJobs = vi.fn(async () => {
+      delete queue.listens["job-a"];
+      return [{ id: "job-a", status: "completed" }];
+    });
+
+    await queue.startListener();
+    await vi.waitFor(() => expect(queue.getJobs).toHaveBeenCalledOnce());
+    await Promise.resolve();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });

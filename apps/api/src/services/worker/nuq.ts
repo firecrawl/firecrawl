@@ -286,12 +286,19 @@ class NuQ<JobData = any, JobReturnValue = any> {
         await this.getJobs(Object.keys(this.listens))
       ).filter(job => ["completed", "failed"].includes(job.status));
       for (const job of backedUpJobs) {
-        this.listens[job.id].forEach(listener =>
+        const listeners = this.listens[job.id];
+        if (!listeners) continue;
+        listeners.forEach(listener =>
           listener(job.status as "completed" | "failed"),
         );
         delete this.listens[job.id];
       }
-    })();
+    })().catch(error => {
+      logger.warn("NuQ listener recovery scan failed", {
+        error,
+        module: "nuq",
+      });
+    });
   }
 
   private async addListener(
