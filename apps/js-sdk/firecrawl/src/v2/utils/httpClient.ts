@@ -152,13 +152,16 @@ export class HttpClient {
     formData: FormData,
     options?: RequestOptions,
   ) {
-    return this.request<T>({
-      method: "post",
-      url: endpoint,
-      data: formData,
-      headers: options?.headers,
-      timeout: options?.timeoutMs,
-    });
+    return this.request<T>(
+      {
+        method: "post",
+        url: endpoint,
+        data: formData,
+        headers: options?.headers,
+        timeout: options?.timeoutMs,
+      },
+      options?.retryOnBadGateway,
+    );
   }
 
   get<T = any>(endpoint: string, headers?: Record<string, string>) {
@@ -174,13 +177,16 @@ export class HttpClient {
     body: Record<string, unknown>,
     options?: RequestOptions,
   ) {
-    return this.request<T>({
-      method: "patch",
-      url: endpoint,
-      data: body,
-      headers: options?.headers,
-      timeout: options?.timeoutMs,
-    });
+    return this.request<T>(
+      {
+        method: "patch",
+        url: endpoint,
+        data: body,
+        headers: options?.headers,
+        timeout: options?.timeoutMs,
+      },
+      options?.retryOnBadGateway,
+    );
   }
 
   prepareHeaders(idempotencyKey?: string): Record<string, string> {

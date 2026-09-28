@@ -66,4 +66,36 @@ describe("v2 HTTP retries", () => {
     ).rejects.toBe(badGateway);
     expect(request).toHaveBeenCalledTimes(1);
   });
+
+  test("forwards an explicit retry opt-in for PATCH", async () => {
+    const { client, request } = makeClient();
+    request
+      .mockRejectedValueOnce(badGateway)
+      .mockResolvedValueOnce({ status: 200, data: { success: true } });
+
+    await expect(
+      client.patch(
+        "/test/replay-protected",
+        { status: "paused" },
+        {
+          retryOnBadGateway: true,
+        },
+      ),
+    ).resolves.toMatchObject({ status: 200 });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  test("forwards an explicit retry opt-in for multipart POST", async () => {
+    const { client, request } = makeClient();
+    request
+      .mockRejectedValueOnce(badGateway)
+      .mockResolvedValueOnce({ status: 200, data: { success: true } });
+
+    await expect(
+      client.postMultipart("/test/replay-protected", new FormData(), {
+        retryOnBadGateway: true,
+      }),
+    ).resolves.toMatchObject({ status: 200 });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
 });
