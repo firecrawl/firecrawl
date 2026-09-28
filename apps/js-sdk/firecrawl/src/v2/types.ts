@@ -1055,6 +1055,11 @@ export interface CrawlJob {
   completed: number;
   creditsUsed?: number;
   expiresAt?: string;
+  createdAt?: string;
+  completedAt?: string;
+  /** Elapsed crawl time in seconds, as reported by the API. */
+  duration?: number;
+  warning?: string;
   next?: string | null;
   data: Document[];
 }

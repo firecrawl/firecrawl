@@ -68,7 +68,20 @@ export async function getCrawlStatus(
   pagination?: PaginationConfig
 ): Promise<CrawlJob> {
   try {
-    const res = await http.get<{ success: boolean; status: CrawlJob["status"]; completed?: number; total?: number; creditsUsed?: number; expiresAt?: string; next?: string | null; data?: Document[] }>(`/v2/crawl/${jobId}`);
+    const res = await http.get<{
+      success: boolean;
+      status: CrawlJob["status"];
+      completed?: number;
+      total?: number;
+      creditsUsed?: number;
+      expiresAt?: string;
+      createdAt?: string;
+      completedAt?: string;
+      duration?: number;
+      warning?: string;
+      next?: string | null;
+      data?: Document[];
+    }>(`/v2/crawl/${jobId}`);
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "get crawl status");
     }
@@ -84,6 +97,10 @@ export async function getCrawlStatus(
         total: body.total ?? 0,
         creditsUsed: body.creditsUsed,
         expiresAt: body.expiresAt,
+        createdAt: body.createdAt,
+        completedAt: body.completedAt,
+        duration: body.duration,
+        warning: body.warning,
         next: body.next ?? null,
         data: initialDocs,
       };
@@ -98,6 +115,10 @@ export async function getCrawlStatus(
       total: body.total ?? 0,
       creditsUsed: body.creditsUsed,
       expiresAt: body.expiresAt,
+      createdAt: body.createdAt,
+      completedAt: body.completedAt,
+      duration: body.duration,
+      warning: body.warning,
       next: null,
       data: aggregated,
     };

@@ -128,6 +128,10 @@ def _parse_crawl_status_response(response_data: Dict[str, Any]) -> Dict[str, Any
         "total": response_data.get("total", 0),
         "credits_used": response_data.get("creditsUsed", 0),
         "expires_at": response_data.get("expiresAt"),
+        "created_at": response_data.get("createdAt"),
+        "completed_at": response_data.get("completedAt"),
+        "duration": response_data.get("duration"),
+        "warning": response_data.get("warning"),
         "next": response_data.get("next"),
         "data": _parse_crawl_documents(response_data.get("data", [])),
     }
@@ -228,6 +232,10 @@ def get_crawl_status(
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
+        created_at=payload["created_at"],
+        completed_at=payload["completed_at"],
+        duration=payload["duration"],
+        warning=payload["warning"],
         next=payload["next"] if not auto_paginate else None,
         data=documents,
     )
@@ -267,6 +275,10 @@ def get_crawl_status_page(
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
+        created_at=payload["created_at"],
+        completed_at=payload["completed_at"],
+        duration=payload["duration"],
+        warning=payload["warning"],
         next=payload["next"],
         data=payload["data"],
     )
