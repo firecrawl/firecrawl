@@ -320,7 +320,7 @@ public class FirecrawlClient
             "/v2/map", body, cancellationToken: cancellationToken);
 
         if (!response.Success)
-            throw new FirecrawlException("Map response was not successful");
+            throw new FirecrawlException(response.Error ?? "Map response was not successful");
         return response;
     }
 

@@ -23,6 +23,8 @@ public class MapResponseTests
         Assert.NotNull(response);
         Assert.Equal(new[] { "https://example.com/a", "https://example.com/b" }, response.Links);
         Assert.Equal("Page B", response.LinkDetails![1].Title);
+        response.Links!.Add("https://example.com/c");
+        Assert.Equal(3, response.Links.Count);
     }
 
     [Fact]
@@ -46,7 +48,8 @@ public class MapResponseTests
         using var http = new HttpClient(new StubHandler("""{"success":false,"error":"bad request"}"""));
         var client = new FirecrawlClient(apiKey: "test-key", apiUrl: "https://api.example.com", httpClient: http);
 
-        await Assert.ThrowsAsync<FirecrawlException>(() => client.MapAsync("https://example.com"));
+        var error = await Assert.ThrowsAsync<FirecrawlException>(() => client.MapAsync("https://example.com"));
+        Assert.Contains("bad request", error.Message);
     }
 
     private sealed class StubHandler : HttpMessageHandler
