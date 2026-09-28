@@ -18,6 +18,7 @@ import {
   reserveBrowserPromptCredits,
   stopBrowserSession,
   browserSessionLinks,
+  invalidAgentInteropError,
 } from "../../lib/browser-lifecycle";
 import { browserCreateRequestSchema, browserError } from "./browser";
 import {
@@ -107,6 +108,14 @@ export async function scrapeInteractController(
   >,
   res: Response<BrowserExecuteResponse>,
 ) {
+  // Before the reuse-or-create branch, so a reused session is guarded too.
+  const invalidInterop = invalidAgentInteropError(req);
+  if (invalidInterop) {
+    return res
+      .status(invalidInterop.status)
+      .json({ success: false, error: invalidInterop.message });
+  }
+
   req.body = browserExecuteRequestSchema.parse(req.body);
 
   if (getSafeMode(req.acuc?.flags)) {

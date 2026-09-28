@@ -153,6 +153,8 @@ import { authMiddleware } from "../../routes/shared";
 import { RateLimiterMode } from "../../types";
 import { scrapeInteractController } from "../../controllers/v2/scrape-browser";
 import { HOBBY_CONCURRENCY_LIMIT } from "../../lib/concurrency-limit";
+import { getBrowserSessionFromScrape } from "../../lib/browser-sessions";
+import { executeCodeViaBrowserSession } from "../../lib/scrape-interact/browser-agent";
 
 const API_KEY = "33333333-3333-4333-8333-333333333333";
 const SECRET = "agent-secret";
@@ -219,6 +221,7 @@ describe("interact browser concurrency for trusted agent requests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.reserveExternalSlot.mockResolvedValue(true);
+    vi.mocked(getBrowserSessionFromScrape).mockResolvedValue(null);
     mocks.authChunk.mockResolvedValue([
       {
         api_key: API_KEY,
@@ -261,4 +264,54 @@ describe("interact browser concurrency for trusted agent requests", () => {
   it("ignores a forged trustedAgentInterop field in the body", async () => {
     expect(await reservedLimit("forged")).toBe(FREE_LIMIT);
   });
+});
+
+describe("interact on an existing browser session", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.authChunk.mockResolvedValue([
+      {
+        api_key: API_KEY,
+        api_key_id: 9,
+        api_key_id_text: "9",
+        team_id: "team-free",
+        org_id: "org-free",
+        is_banned: false,
+        flags: null,
+        credential_purpose: "general",
+      },
+    ]);
+    vi.mocked(getBrowserSessionFromScrape).mockResolvedValue({
+      id: "session-1",
+      team_id: "team-free",
+      browser_id: "br_1",
+      status: "active",
+      cdp_url: "wss://cdp.test",
+      cdp_path: "",
+      cdp_interactive_path: "",
+    } as any);
+  });
+
+  it.each(["wrong-body", "wrong-header"] as const)(
+    "rejects a %s secret with 403 and executes nothing",
+    async interop => {
+      const res = await interact(interop);
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({
+        success: false,
+        error: "Invalid agent interop.",
+      });
+      expect(executeCodeViaBrowserSession).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["body", "header", "none"] as const)(
+    "executes on the reused session with %s interop",
+    async interop => {
+      const res = await interact(interop);
+      expect(res.status).toBe(200);
+      expect(executeCodeViaBrowserSession).toHaveBeenCalledTimes(1);
+      expect(mocks.reserveExternalSlot).not.toHaveBeenCalled();
+    },
+  );
 });

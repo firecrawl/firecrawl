@@ -56,6 +56,19 @@ export function browserSessionLinks(session: BrowserSessionRow) {
   };
 }
 
+/**
+ * The 403 every browser entry point returns when the request sent an interop
+ * secret that is wrong, or null. Reads the flag authMiddleware set from the
+ * raw request, since interact's body parse drops `__agentInterop`.
+ */
+export function invalidAgentInteropError(
+  req: RequestWithAuth<any, any, any>,
+): HangarError | null {
+  return req.auth.agentInterop === "invalid"
+    ? new HangarError(403, "Invalid agent interop.")
+    : null;
+}
+
 export async function createBrowserSession(
   req: RequestWithAuth<any, any, any>,
   options: {
@@ -75,10 +88,8 @@ export async function createBrowserSession(
       503,
       "Browser feature is not configured (HANGAR_URL is missing).",
     );
-  // Same answer for every browser caller, including interact, whose body
-  // parse drops `__agentInterop`.
-  if (req.auth.agentInterop === "invalid")
-    throw new HangarError(403, "Invalid agent interop.");
+  const invalidInterop = invalidAgentInteropError(req);
+  if (invalidInterop) throw invalidInterop;
   const shouldBill = options.shouldBill ?? true;
   const estimatedCredits = shouldBill
     ? calculateBrowserSessionCredits(options.ttl * 1000)
