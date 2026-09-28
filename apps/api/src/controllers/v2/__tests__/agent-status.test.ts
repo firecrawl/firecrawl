@@ -154,6 +154,63 @@ describe("agentStatusController", () => {
     );
   });
 
+  it("forwards a credit-limited partial without treating it as completed data", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+    });
+    (getExtractV3AgentStatus as Mock).mockResolvedValue({
+      id: "job-123",
+      success: true,
+      status: "failed",
+      error: "Agent reached max credits",
+      data: { shouldNotAppear: true },
+      stopReason: "credit_limit_reached",
+      partial: { companies: [{ name: "Acme" }] },
+      partialSchemaValid: false,
+      model: "spark-2",
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        data: undefined,
+        stopReason: "credit_limit_reached",
+        partial: { companies: [{ name: "Acme" }] },
+        partialSchemaValid: false,
+      }),
+    );
+  });
+
+  it("preserves an unstructured processing partial without schema metadata", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+    });
+    (getExtractV3AgentStatus as Mock).mockResolvedValue({
+      id: "job-123",
+      success: true,
+      status: "processing",
+      partial: { companies: [{ name: "Acme" }] },
+      model: "spark-2",
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "processing",
+        partial: { companies: [{ name: "Acme" }] },
+        partialSchemaValid: undefined,
+      }),
+    );
+  });
+
   it.each([
     // python-sdk < 4.37.1 cannot parse "spark-2" and is lied to
     ["python-sdk@4.37.0", "spark-1-pro"],

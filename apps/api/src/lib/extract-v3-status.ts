@@ -5,6 +5,10 @@ type ExtractV3AgentStatus = {
   id: string;
   status: "processing" | "success" | "failed";
   data?: unknown;
+  /** Incomplete JSON from an interrupted run; never a completed `data` value. */
+  partial?: unknown;
+  partialSchemaValid?: boolean;
+  stopReason?: "credit_limit_reached";
   error?: string;
   model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
   effort?: "low" | "medium" | "high";
