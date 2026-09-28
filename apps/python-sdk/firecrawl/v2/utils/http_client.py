@@ -226,7 +226,7 @@ class HttpClient:
         retries: Optional[int] = None,
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
-        """Make a DELETE request with retry logic."""
+        """Make a DELETE request. Retry only when explicitly requested by the caller."""
         if headers is None:
             headers = self._prepare_headers()
         if timeout is None:
@@ -274,7 +274,7 @@ class HttpClient:
         retries: Optional[int] = None,
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
-        """Make a PATCH request with retry logic."""
+        """Make a PATCH request. Retry only when explicitly requested by the caller."""
         if headers is None:
             headers = self._prepare_headers()
         if timeout is None:
