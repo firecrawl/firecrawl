@@ -1087,12 +1087,7 @@ func (c *Client) paginateCrawl(ctx context.Context, job *CrawlJob) (*CrawlJob, e
 		job.Data = []Document{}
 	}
 	current := job
-	seen := make(map[string]struct{})
 	for current.Next != "" {
-		if _, ok := seen[current.Next]; ok {
-			return nil, &FirecrawlError{Message: "crawl pagination cursor repeated"}
-		}
-		seen[current.Next] = struct{}{}
 		raw, err := c.http.getAbsolute(ctx, current.Next)
 		if err != nil {
 			return nil, err
@@ -1112,12 +1107,7 @@ func (c *Client) paginateBatchScrape(ctx context.Context, job *BatchScrapeJob) (
 		job.Data = []Document{}
 	}
 	current := job
-	seen := make(map[string]struct{})
 	for current.Next != "" {
-		if _, ok := seen[current.Next]; ok {
-			return nil, &FirecrawlError{Message: "batch scrape pagination cursor repeated"}
-		}
-		seen[current.Next] = struct{}{}
 		raw, err := c.http.getAbsolute(ctx, current.Next)
 		if err != nil {
 			return nil, err
