@@ -34,6 +34,7 @@ import {
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { checkUrl } from "../../lib/threat-protection";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
@@ -225,27 +226,36 @@ export async function crawlController(
 
   let promptGeneratedOptions = {};
   if (req.body.prompt) {
+    const basePrompt = req.body.prompt;
     try {
-      // Enhance prompt with discovered site URLs (up to 120) to improve option generation
-      const { prompt: enhancedPrompt } = await buildPromptWithWebsiteStructure({
-        basePrompt: req.body.prompt,
-        url: req.body.url,
-        teamId: req.auth.team_id,
-        orgId: req.acuc?.org_id ?? null,
-        flags: req.acuc?.flags ?? null,
-        logger,
-        limit: 50,
-        includeSubdomains: false,
-        allowExternalLinks: false,
-        useIndex: true,
-        maxFireEngineResults: 500,
-      });
-      const costTracking = new CostTracking();
-      const { extract } = await generateCrawlerOptionsFromPrompt(
-        enhancedPrompt,
-        logger,
-        costTracking,
-        { teamId: req.auth.team_id, crawlId: id },
+      // The prompt and the discovered URLs end up in LLM telemetry, so keep
+      // this whole step out of traces for zero data retention crawls.
+      const { extract } = await withZeroDataRetention(
+        zeroDataRetention,
+        async () => {
+          // Enhance prompt with discovered site URLs (up to 120) to improve option generation
+          const { prompt: enhancedPrompt } =
+            await buildPromptWithWebsiteStructure({
+              basePrompt,
+              url: req.body.url,
+              teamId: req.auth.team_id,
+              orgId: req.acuc?.org_id ?? null,
+              flags: req.acuc?.flags ?? null,
+              logger,
+              limit: 50,
+              includeSubdomains: false,
+              allowExternalLinks: false,
+              useIndex: true,
+              maxFireEngineResults: 500,
+            });
+          return generateCrawlerOptionsFromPrompt(
+            enhancedPrompt,
+            logger,
+            new CostTracking(),
+            { teamId: req.auth.team_id, crawlId: id },
+            zeroDataRetention,
+          );
+        },
       );
       promptGeneratedOptions = extract || {};
       logger.debug("Generated crawler options from prompt", {

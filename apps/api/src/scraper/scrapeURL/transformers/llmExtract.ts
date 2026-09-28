@@ -28,6 +28,7 @@ import {
   typeIncludes,
 } from "../../../lib/openai-strict-schema";
 import { CostTracking } from "../../../lib/cost-tracking";
+import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
 
@@ -272,32 +273,63 @@ export function trimToTokenLimit(
   }
 }
 
-export function calculateCost(
-  model: string,
-  inputTokens: number,
-  outputTokens: number,
-) {
-  const modelCosts = {
-    "openai/o3-mini": { input_cost: 1.1, output_cost: 4.4 },
+// USD per million tokens. Takes precedence over modelPrices, which covers
+// everything else.
+const modelCosts: Record<string, { input_cost: number; output_cost: number }> =
+  {
     "gpt-4o-mini": { input_cost: 0.15, output_cost: 0.6 },
-    "openai/gpt-4o-mini": { input_cost: 0.15, output_cost: 0.6 },
-    "openai/gpt-4o": { input_cost: 2.5, output_cost: 10 },
+    "gpt-4o": { input_cost: 2.5, output_cost: 10 },
+    "gpt-4.1": { input_cost: 2, output_cost: 8 },
+    "gpt-4.1-mini": { input_cost: 0.4, output_cost: 1.6 },
+    "o3-mini": { input_cost: 1.1, output_cost: 4.4 },
     "gpt-5": { input_cost: 1.25, output_cost: 10 },
-    "openai/gpt-5": { input_cost: 1.25, output_cost: 10 },
     "gpt-5-mini": { input_cost: 0.25, output_cost: 2 },
-    "openai/gpt-5-mini": { input_cost: 0.25, output_cost: 2 },
     "gpt-5-nano": { input_cost: 0.05, output_cost: 0.4 },
-    "openai/gpt-5-nano": { input_cost: 0.05, output_cost: 0.4 },
     "google/gemini-2.0-flash-001": { input_cost: 0.15, output_cost: 0.6 },
     "gemini-2.0-flash": { input_cost: 0.15, output_cost: 0.6 },
+    "gemini-2.5-flash-lite": { input_cost: 0.1, output_cost: 0.4 },
     "deepseek/deepseek-r1": { input_cost: 0.55, output_cost: 2.19 },
     "google/gemini-2.0-flash-thinking-exp:free": {
       input_cost: 0.55,
       output_cost: 2.19,
     },
-    "google/gemini-2.5-flash-lite": { input_cost: 0.1, output_cost: 0.4 },
   };
-  let modelCost = modelCosts[model] || { input_cost: 0, output_cost: 0 };
+
+const warnedUnpricedModels = new Set<string>();
+
+function lookupModelCost(
+  model: string,
+): { input_cost: number; output_cost: number } | undefined {
+  // Callers pass both bare ids ("gpt-4o") and provider-prefixed ones
+  // ("openai/gpt-4o", "google/gemini-2.5-flash-lite").
+  const candidates = [model];
+  const slash = model.indexOf("/");
+  if (slash !== -1) candidates.push(model.slice(slash + 1));
+
+  for (const id of candidates) {
+    if (modelCosts[id]) return modelCosts[id];
+  }
+  for (const id of candidates) {
+    const price = modelPrices[id];
+    if (
+      typeof price?.input_cost_per_token === "number" &&
+      typeof price?.output_cost_per_token === "number"
+    ) {
+      return {
+        input_cost: price.input_cost_per_token * 1_000_000,
+        output_cost: price.output_cost_per_token * 1_000_000,
+      };
+    }
+  }
+  return undefined;
+}
+
+export function calculateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+) {
+  let modelCost = lookupModelCost(model);
   //gemini-2.5-pro-exp-03-25 pricing
   if (model.includes("gemini-2.5-pro")) {
     let inputCost = 0;
@@ -311,6 +343,21 @@ export function calculateCost(
     }
     modelCost = { input_cost: inputCost, output_cost: outputCost };
   }
+
+  if (!modelCost) {
+    // Once per model per process: an unpriced model is a table gap, and every
+    // call to it records $0.
+    if (!warnedUnpricedModels.has(model)) {
+      warnedUnpricedModels.add(model);
+      logger.warn("No price for model, recording LLM call cost as $0", {
+        module: "llmExtract",
+        method: "calculateCost",
+        model,
+      });
+    }
+    return 0;
+  }
+
   const totalCost =
     (inputTokens * modelCost.input_cost +
       outputTokens * modelCost.output_cost) /
@@ -346,6 +393,11 @@ export type GenerateCompletionsOptions = {
     llmsTxtId?: string;
     crawlId?: string;
   };
+  /**
+   * Turns off AI SDK telemetry for the call. Also on whenever the caller runs
+   * in a zero data retention context, so a caller that forgets to pass it
+   * cannot export prompts.
+   */
   zeroDataRetention?: boolean;
 };
 
@@ -398,7 +450,7 @@ export async function generateCompletions({
   retryModel = getModel("gpt-4.1-mini", "openai"),
   costTrackingOptions,
   metadata,
-  zeroDataRetention = false,
+  zeroDataRetention: zeroDataRetentionOption,
 }: GenerateCompletionsOptions): Promise<{
   extract: any;
   numTokens: number;
@@ -406,6 +458,8 @@ export async function generateCompletions({
   totalUsage: TokenUsage;
   model: string;
 }> {
+  const zeroDataRetention =
+    zeroDataRetentionOption === true || isZeroDataRetentionActive();
   let extract: any;
   let warning: string | undefined;
   let currentModel = model;
@@ -499,8 +553,8 @@ export async function generateCompletions({
             promptTokens: result.usage?.inputTokens ?? 0,
             completionTokens: result.usage?.outputTokens ?? 0,
             totalTokens:
-              result.usage?.inputTokens ??
-              0 + (result.usage?.outputTokens ?? 0),
+              (result.usage?.inputTokens ?? 0) +
+              (result.usage?.outputTokens ?? 0),
           },
           model: modelId,
         };
@@ -579,8 +633,8 @@ export async function generateCompletions({
                 promptTokens: result.usage?.inputTokens ?? 0,
                 completionTokens: result.usage?.outputTokens ?? 0,
                 totalTokens:
-                  result.usage?.inputTokens ??
-                  0 + (result.usage?.outputTokens ?? 0),
+                  (result.usage?.inputTokens ?? 0) +
+                  (result.usage?.outputTokens ?? 0),
               },
               model: modelId,
             };
@@ -1544,6 +1598,7 @@ export async function generateCrawlerOptionsFromPrompt(
   logger: Logger,
   costTracking: CostTracking,
   metadata: { teamId: string; crawlId?: string },
+  zeroDataRetention = false,
 ): Promise<{ extract: any }> {
   const model = getModel("gpt-4o-mini", "openai");
   const retryModel = getModel("gpt-4.1-mini", "openai");
@@ -1590,6 +1645,7 @@ Return a JSON object with only the relevant options for the user's request. Don'
           ...metadata,
           functionId: "generateCrawlerOptionsFromPrompt",
         },
+        zeroDataRetention,
       });
 
       return { extract };

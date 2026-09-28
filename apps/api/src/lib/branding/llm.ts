@@ -1,6 +1,8 @@
-import { generateObject } from "ai";
+import { generateObject, LanguageModelUsage, NoObjectGeneratedError } from "ai";
 
 import { config } from "../../config";
+import { calculateCost } from "../../scraper/scrapeURL/transformers/llmExtract";
+import { CostLimitExceededError } from "../cost-tracking";
 import { BrandingEnhancement, getBrandingEnhancementSchema } from "./schema";
 import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
@@ -77,6 +79,22 @@ export function unwrapSchemaShapedAnswer(text: string): string | null {
   return value === UNRESOLVED ? null : JSON.stringify(value);
 }
 
+function recordBrandingCall(
+  input: BrandingLLMInput,
+  modelName: string,
+  usage: LanguageModelUsage | undefined,
+) {
+  const inputTokens = usage?.inputTokens ?? 0;
+  const outputTokens = usage?.outputTokens ?? 0;
+  input.costTracking.addCall({
+    type: "other",
+    metadata: { module: "branding", method: "enhanceBrandingWithLLM" },
+    model: modelName,
+    cost: calculateCost(modelName, inputTokens, outputTokens),
+    tokens: { input: inputTokens, output: outputTokens },
+  });
+}
+
 function isDebugBrandingEnabled(input: BrandingLLMInput): boolean {
   return (
     config.DEBUG_BRANDING === true || input.teamFlags?.debugBranding === true
@@ -108,6 +126,9 @@ export async function enhanceBrandingWithLLM(
 
   const modelName = isComplexCase ? "gpt-4o" : "gpt-4o-mini";
   const model = getModel(modelName);
+  // getModel honors a MODEL_NAME override; record the model that actually ran.
+  const modelId =
+    (typeof model === "string" ? model : model.modelId) || modelName;
 
   if (isDebugBrandingEnabled(input)) {
     const logoCandidates = input.logoCandidates || [];
@@ -206,6 +227,8 @@ export async function enhanceBrandingWithLLM(
       },
     });
 
+    recordBrandingCall(input, modelId, result.usage);
+
     if (isDebugBrandingEnabled(input)) {
       const reasoningPreview = result.reasoning
         ? result.reasoning.length > 1000
@@ -250,6 +273,16 @@ export async function enhanceBrandingWithLLM(
     }
     return resultObject;
   } catch (error) {
+    if (error instanceof CostLimitExceededError) {
+      throw error;
+    }
+
+    // The model still ran (and billed) when its output failed to parse or
+    // validate.
+    if (NoObjectGeneratedError.isInstance(error)) {
+      recordBrandingCall(input, modelId, error.usage);
+    }
+
     // Refusal: API returned content type "refusal" (e.g. "I can't assist with that") but the SDK
     // expects "output_text", so it throws before we get a result. Treat as soft failure, not a bug.
     const message = error instanceof Error ? error.message : String(error);
