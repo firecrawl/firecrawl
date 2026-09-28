@@ -138,6 +138,8 @@ describe("usage telemetry middleware", () => {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
+      // Drop the generic-ai/config instances bound to the test env above.
+      vi.resetModules();
     }
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
