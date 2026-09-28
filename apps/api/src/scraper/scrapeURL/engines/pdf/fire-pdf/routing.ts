@@ -117,6 +117,9 @@ type FirePdfRoute = {
   path: "sync" | "async";
   reason: FirePdfRouteReason;
   features: string;
+  /** Caller time left when the transport was chosen. Pass it when the
+   * decision is recorded after the attempt ran; defaults to now. */
+  remainingMs?: number;
 };
 
 /** Stable label for the page-aware options a request asked for, e.g.
@@ -153,7 +156,8 @@ export function recordFirePdfRoute(meta: Meta, route: FirePdfRoute): void {
     )
     .inc();
 
-  const remainingMs = meta.abort.scrapeTimeout();
+  const remainingMs =
+    "remainingMs" in route ? route.remainingMs : meta.abort.scrapeTimeout();
   if (remainingMs !== undefined) {
     firePdfRouteRemainingSeconds
       .labels(route.sourceKind, route.path)

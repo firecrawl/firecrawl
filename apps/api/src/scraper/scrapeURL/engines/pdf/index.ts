@@ -542,28 +542,42 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           // A null return means the input never made it into the fire-pdf
           // bucket: fall through to the legacy chain, whose oversized-skip
           // warning below still fires (pre-by-reference behavior).
-          recordFirePdfRoute(meta, {
-            sourceKind: "pdf",
-            path: "async",
-            reason: "by_reference",
+          // Counted only once the attempt used the async transport (a
+          // result, or a throw after placement): a null return falls
+          // through to the inline chain, which records its own decision,
+          // so counting here too would double-count the request.
+          const byRefRoute = {
+            sourceKind: "pdf" as const,
+            path: "async" as const,
+            reason: "by_reference" as const,
             features: firePdfFeaturesLabel({
               pageMarkdown: includePageMarkdown,
               blocks: includeBlocks,
               pageMarkers: pageMarkers,
             }),
-          });
-          const byRefResult = await runFirePdfByReferenceAttempt({
-            meta,
-            tempFilePath,
-            fileSizeBytes,
-            pagesEstimate: effectivePageCount,
-            mode,
-            maxPages,
-            includePageMarkdown,
-            includeBlocks,
-            pageMarkers,
-          });
+            remainingMs: meta.abort.scrapeTimeout(),
+          };
+          let byRefResult: Awaited<
+            ReturnType<typeof runFirePdfByReferenceAttempt>
+          >;
+          try {
+            byRefResult = await runFirePdfByReferenceAttempt({
+              meta,
+              tempFilePath,
+              fileSizeBytes,
+              pagesEstimate: effectivePageCount,
+              mode,
+              maxPages,
+              includePageMarkdown,
+              includeBlocks,
+              pageMarkers,
+            });
+          } catch (error) {
+            recordFirePdfRoute(meta, byRefRoute);
+            throw error;
+          }
           if (byRefResult) {
+            recordFirePdfRoute(meta, byRefRoute);
             result = byRefResult;
             effectivePageCount = reconcilePageCountWithFirePdf(
               effectivePageCount,

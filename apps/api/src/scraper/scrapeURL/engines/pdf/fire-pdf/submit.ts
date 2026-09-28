@@ -230,7 +230,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     const parsed503 = firePdfSubmit503BodySchema.safeParse(json);
     const code = parsed503.success ? parsed503.data.error : "unattributed";
     firePdfAsyncSubmit503Total.labels(code).inc();
-    failAsync(meta, "http_503", { code, body: json });
+    failAsync(meta, "http_503", { code });
   }
 
   if (status === 409) {

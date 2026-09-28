@@ -232,14 +232,23 @@ describe("FirePDF route decision telemetry", () => {
       zdr: "true",
     };
     const before = await counterValue(firePdfRouteDecisionsTotal, labels);
-    const { values: histBefore } = await firePdfRouteRemainingSeconds.get();
-    const countBefore =
-      histBefore.find(
+    const syncPdf = (
+      vals: Awaited<
+        ReturnType<typeof firePdfRouteRemainingSeconds.get>
+      >["values"],
+      metricName: string,
+      le?: number,
+    ) =>
+      vals.find(
         v =>
-          v.metricName === "firecrawl_fire_pdf_route_remaining_seconds_count" &&
+          v.metricName === metricName &&
           v.labels.path === "sync" &&
-          v.labels.source_kind === "pdf",
+          v.labels.source_kind === "pdf" &&
+          (le === undefined || (v.labels as Record<string, unknown>).le === le),
       )?.value ?? 0;
+    const BUCKET = "firecrawl_fire_pdf_route_remaining_seconds_bucket";
+    const COUNT = "firecrawl_fire_pdf_route_remaining_seconds_count";
+    const { values: histBefore } = await firePdfRouteRemainingSeconds.get();
 
     const meta = makeMeta({
       internalOptions: { zeroDataRetention: true, teamId: "team-x" },
@@ -256,21 +265,14 @@ describe("FirePDF route decision telemetry", () => {
       before + 1,
     );
     const { values: histAfter } = await firePdfRouteRemainingSeconds.get();
-    const le15 = histAfter.find(
-      v =>
-        v.metricName === "firecrawl_fire_pdf_route_remaining_seconds_bucket" &&
-        v.labels.path === "sync" &&
-        (v.labels as Record<string, unknown>).le === 15,
+    // 15 s lands in the le=15 bucket, not the one below it.
+    expect(syncPdf(histAfter, BUCKET, 15)).toBe(
+      syncPdf(histBefore, BUCKET, 15) + 1,
     );
-    expect(le15?.value).toBeGreaterThanOrEqual(1);
-    expect(
-      histAfter.find(
-        v =>
-          v.metricName === "firecrawl_fire_pdf_route_remaining_seconds_count" &&
-          v.labels.path === "sync" &&
-          v.labels.source_kind === "pdf",
-      )?.value,
-    ).toBe(countBefore + 1);
+    expect(syncPdf(histAfter, BUCKET, 10)).toBe(
+      syncPdf(histBefore, BUCKET, 10),
+    );
+    expect(syncPdf(histAfter, COUNT)).toBe(syncPdf(histBefore, COUNT) + 1);
     expect(meta.logger.info).toHaveBeenCalledWith(
       "Routing FirePDF request to sync /ocr",
       expect.objectContaining({
@@ -279,6 +281,22 @@ describe("FirePDF route decision telemetry", () => {
         source_kind: "pdf",
         remaining_ms: 15_000,
       }),
+    );
+  });
+
+  it("uses the remaining time captured before the attempt when one is passed", async () => {
+    const meta = makeMeta();
+    meta.abort.scrapeTimeout.mockReturnValue(2_000);
+    recordFirePdfRoute(meta, {
+      sourceKind: "pdf",
+      path: "sync",
+      reason: "outside_percentage",
+      features: "none",
+      remainingMs: 45_000,
+    });
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "Routing FirePDF request to sync /ocr",
+      expect.objectContaining({ remaining_ms: 45_000 }),
     );
   });
 
