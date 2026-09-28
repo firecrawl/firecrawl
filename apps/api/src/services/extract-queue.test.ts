@@ -240,6 +240,24 @@ describe("extract job publishing", () => {
     expect(channelMock.sendToQueue).not.toHaveBeenCalled();
   });
 
+  it("bounds shutdown when a connection attempt never settles", async () => {
+    (connectMock as Mock).mockImplementationOnce(() => new Promise(() => {}));
+    const { addExtractJob, shutdownExtractQueue } = await import(
+      "./extract-queue.js"
+    );
+    vi.useFakeTimers();
+    void addExtractJob(job.extractId, job).catch(() => {});
+    await Promise.resolve();
+    expect(connectMock).toHaveBeenCalledOnce();
+
+    const shutdown = shutdownExtractQueue();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await shutdown;
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      "Timed out waiting for extract queue to open",
+    );
+  });
+
   it("preserves both channel and connection close failures", async () => {
     const { addExtractJob, shutdownExtractQueue } = await import(
       "./extract-queue.js"

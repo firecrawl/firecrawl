@@ -264,9 +264,26 @@ export function shutdownExtractQueue(): Promise<void> {
 }
 
 async function closeExtractQueue(): Promise<void> {
-  // A connect already in progress either finishes before this capture or sees
-  // shuttingDown and closes its new connection before we continue.
-  await channelPromise?.catch(() => {});
+  // A connection still opening closes itself when it sees shuttingDown. Do not
+  // let a blackholed TCP connect prevent the worker from exiting indefinitely.
+  if (channelPromise) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    try {
+      await Promise.race([
+        channelPromise.catch(() => {}),
+        new Promise<void>(resolve => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, PUBLISH_CONFIRM_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (timedOut) _logger.warn("Timed out waiting for extract queue to open");
+  }
   const ch = channel;
   const conn = connection;
   channel = null;
