@@ -289,6 +289,7 @@ export async function performExtraction_F0(
   } = await analyzeSchemaAndPrompt_F0(links, reqSchema, request.prompt ?? "", {
     teamId,
     extractId,
+    functionId: "performExtraction_F0",
   });
 
   logger.debug("Analyzed schema.", {
