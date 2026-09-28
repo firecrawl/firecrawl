@@ -48,5 +48,4 @@ module Firecrawl
       super("#{label} #{job_id} timed out after #{timeout_seconds} seconds")
     end
   end
-
 end
