@@ -1031,6 +1031,16 @@ func (c *Client) pollCrawl(ctx context.Context, jobID string, pollIntervalSec, t
 			return nil, err
 		}
 		if job.IsDone() {
+			if job.Status != "completed" {
+				message := job.Error
+				if message == "" {
+					message = "crawl did not complete"
+				}
+				return nil, &JobFailedError{
+					FirecrawlError: FirecrawlError{Message: message},
+					JobID:          jobID, Status: job.Status, Job: job,
+				}
+			}
 			return c.paginateCrawl(ctx, job)
 		}
 		select {
@@ -1061,6 +1071,16 @@ func (c *Client) pollBatchScrape(ctx context.Context, jobID string, pollInterval
 			return nil, err
 		}
 		if job.IsDone() {
+			if job.Status != "completed" {
+				message := job.Error
+				if message == "" {
+					message = "batch scrape did not complete"
+				}
+				return nil, &JobFailedError{
+					FirecrawlError: FirecrawlError{Message: message},
+					JobID:          jobID, Status: job.Status, Job: job,
+				}
+			}
 			return c.paginateBatchScrape(ctx, job)
 		}
 		select {
