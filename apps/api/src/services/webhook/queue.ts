@@ -163,10 +163,21 @@ class WebhookQueue {
       });
     }
 
-    await Promise.all([
-      confirmed,
-      canSendMore ? Promise.resolve() : this.waitForDrain(channel),
-    ]);
+    const drainAbort = new AbortController();
+    const drain = canSendMore
+      ? Promise.resolve()
+      : this.waitForDrain(channel, drainAbort.signal);
+    try {
+      await Promise.all([
+        confirmed.catch(error => {
+          drainAbort.abort();
+          throw error;
+        }),
+        drain,
+      ]);
+    } finally {
+      drainAbort.abort();
+    }
 
     _logger.info("Webhook message published", {
       module: "webhook-queue",
@@ -176,7 +187,10 @@ class WebhookQueue {
     });
   }
 
-  private async waitForDrain(channel: amqp.ConfirmChannel): Promise<void> {
+  private async waitForDrain(
+    channel: amqp.ConfirmChannel,
+    signal: AbortSignal,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const listeners: Record<string, any> = {};
 
@@ -184,7 +198,13 @@ class WebhookQueue {
         channel.removeListener("drain", listeners.drain);
         channel.removeListener("error", listeners.error);
         channel.removeListener("close", listeners.close);
+        signal.removeEventListener("abort", listeners.abort);
         clearTimeout(listeners.timeout);
+      };
+
+      listeners.abort = () => {
+        cleanup();
+        reject(new Error("Drain wait cancelled"));
       };
 
       listeners.drain = () => {
@@ -208,6 +228,8 @@ class WebhookQueue {
       channel.on("drain", listeners.drain);
       channel.on("error", listeners.error);
       channel.on("close", listeners.close);
+      signal.addEventListener("abort", listeners.abort, { once: true });
+      if (signal.aborted) listeners.abort();
     });
   }
 

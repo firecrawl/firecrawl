@@ -152,4 +152,20 @@ describe("webhook RabbitMQ publisher", () => {
     listeners.get("drain")?.();
     await expect(result).resolves.toBeUndefined();
   });
+
+  it("removes drain listeners promptly when a backed-up publish is nacked", async () => {
+    channel.sendToQueue.mockImplementationOnce(
+      (_queue, _body, options, confirm) => {
+        sends.push({ options, confirm });
+        return false;
+      },
+    );
+    const { result } = await startPublish();
+    sends[0].confirm(new Error("broker nack"));
+    await expect(result).rejects.toThrow("broker nack");
+    expect(channel.removeListener).toHaveBeenCalledWith(
+      "drain",
+      expect.any(Function),
+    );
+  });
 });
