@@ -4,9 +4,9 @@ import { feedback, searchFeedback } from "../../../v2/methods/feedback";
 
 describe("v2 request contracts", () => {
   test.each([
-    Buffer.from([0, 1, 2, 3]).subarray(1, 3),
-    new Uint8Array([0, 1, 2, 3]).subarray(1, 3),
-  ])("uploads only the selected binary bytes", async (data) => {
+    { name: "Buffer", data: Buffer.from([0, 1, 2, 3]).subarray(1, 3) },
+    { name: "Uint8Array", data: new Uint8Array([0, 1, 2, 3]).subarray(1, 3) },
+  ])("uploads only the selected binary bytes from $name", async ({ data }) => {
     const postMultipart = jest.fn(async () => ({
       status: 200,
       data: { success: true, data: {} },
