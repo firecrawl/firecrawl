@@ -139,3 +139,48 @@ func TestFailedJobRetainsPaginatedPartialResults(t *testing.T) {
 		})
 	}
 }
+
+func TestFailedJobExposesPaginationFailureWithoutLosingJob(t *testing.T) {
+	for _, kind := range []string{"crawl", "batch"} {
+		t.Run(kind, func(t *testing.T) {
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.Method == http.MethodPost {
+					_, _ = w.Write([]byte(`{"id":"job-1"}`))
+					return
+				}
+				if r.URL.Path == "/next" {
+					_, _ = fmt.Fprintf(w, `{"next":%q,"data":[{"markdown":"second"}]}`, server.URL+"/next")
+					return
+				}
+				_, _ = fmt.Fprintf(w, `{"status":"failed","next":%q,"data":[{"markdown":"first"}]}`, server.URL+"/next")
+			}))
+			defer server.Close()
+
+			client, err := NewClient(option.WithAPIKey("fc-test"), option.WithAPIURL(server.URL))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind == "crawl" {
+				_, err = client.CrawlWithPolling(context.Background(), "https://example.com", nil, 0, 5)
+			} else {
+				_, err = client.BatchScrapeWithPolling(context.Background(), []string{"https://example.com"}, nil, 0, 5)
+			}
+			var failed *JobFailedError
+			if !errors.As(err, &failed) || failed.PaginationError == nil || !errors.Is(err, failed.PaginationError) {
+				t.Fatalf("pagination failure not reachable from job error: %v", err)
+			}
+			if !strings.Contains(failed.Error(), "partial results could not be fully fetched") {
+				t.Fatalf("pagination failure missing from message: %v", failed)
+			}
+			if kind == "crawl" {
+				if len(failed.Job.(*CrawlJob).Data) != 2 {
+					t.Fatalf("lost partial crawl pages: %#v", failed.Job)
+				}
+			} else if len(failed.Job.(*BatchScrapeJob).Data) != 2 {
+				t.Fatalf("lost partial batch pages: %#v", failed.Job)
+			}
+		})
+	}
+}

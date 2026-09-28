@@ -76,6 +76,9 @@ func (e *JobFailedError) Error() string {
 	return fmt.Sprintf("firecrawl: job %s %s: %s", e.JobID, e.Status, e.Message)
 }
 
-func (e *JobFailedError) Unwrap() error {
-	return &e.FirecrawlError
+func (e *JobFailedError) Unwrap() []error {
+	if e.PaginationError != nil {
+		return []error{&e.FirecrawlError, e.PaginationError}
+	}
+	return []error{&e.FirecrawlError}
 }
