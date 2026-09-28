@@ -1,0 +1,27 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsyncRouting.test.ts
+  s_28f2768f245c7c::t_9ccdbe8eea53ff 235,239-242,244,246-247,249-251,268-270,272-275,287-300
+  s_28f2768f245c7c::t_dc58236e855f24 236-238
+  s_28f2768f245c7c::t_43770e27673c77 301-302
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/routing.ts
+  s_28f2768f245c7c::t_9ccdbe8eea53ff 120-122,159-160
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_28f2768f245c7c::t_9ccdbe8eea53ff 545-552,558-578,580
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/submit.ts
+  s_28f2768f245c7c::t_9ccdbe8eea53ff 233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e26f86274927b7d55d678a5fb4a65b7d988a62ce",
+  "prompts": {},
+  "sessions": {
+    "s_28f2768f245c7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "056dce34-98a7-4d60-815b-3ca2e5da75b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
