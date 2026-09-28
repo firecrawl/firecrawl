@@ -73,8 +73,18 @@ function sentLines(prompt: string): string[] {
   return prompt.split("<lines")[1].split("\n").slice(1, -1);
 }
 
+let realEncodingForModel: typeof encoding_for_model;
+
+beforeAll(async () => {
+  ({ encoding_for_model: realEncodingForModel } =
+    await vi.importActual<typeof import("@dqbd/tiktoken")>("@dqbd/tiktoken"));
+});
+
 beforeEach(() => {
   (generateText as Mock).mockReset();
+  (encoding_for_model as Mock)
+    .mockReset()
+    .mockImplementation(realEncodingForModel);
 });
 
 describe("keepWholeLines", () => {
@@ -158,9 +168,10 @@ describe("performQuery highlights", () => {
     lines.forEach((line, i) =>
       expect(line).toBe(`${i}: Line number ${i} says something short.`),
     );
-    expect(Buffer.byteLength(lines.join("\n"))).toBeLessThanOrEqual(
-      131_072 - 16_384,
-    );
+    // The byte cut keeps everything up to the last whole line.
+    const bytes = Buffer.byteLength(lines.join("\n"));
+    expect(bytes).toBeLessThanOrEqual(131_072 - 16_384);
+    expect(bytes).toBeGreaterThan(131_072 - 16_384 - 100);
     expect(document.highlights).toContain("Line number 0");
   });
 
