@@ -533,6 +533,20 @@ class ClientTest < Minitest::Test
     assert_equal "https://example.com/a", result.links.first["url"]
   end
 
+  def test_map_preserves_top_level_id_and_warning
+    stub_request(:post, "#{BASE_URL}/v2/map")
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "map-123", links: ["https://example.com/a"], warning: "Map may be incomplete"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    result = @client.map("https://example.com")
+    assert_equal "map-123", result.id
+    assert_equal "Map may be incomplete", result.warning
+    assert_equal "https://example.com/a", result.links.first["url"]
+  end
+
   def test_map_with_object_links
     stub_request(:post, "#{BASE_URL}/v2/map")
       .to_return(
