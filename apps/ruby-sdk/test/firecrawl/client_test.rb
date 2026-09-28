@@ -876,18 +876,47 @@ class ClientTest < Minitest::Test
     assert_equal "Bad request", error.message
   end
 
-  def test_retryable_server_error
-    # Client is configured with max_retries=3, but let's use a client with 1 retry for speed
-    client = Firecrawl::Client.new(api_key: API_KEY, max_retries: 1, backoff_factor: 0.0)
+  def test_get_retries_transient_server_error
+    client = Firecrawl::HttpClient.new(api_key: API_KEY, base_url: BASE_URL, timeout: 10, max_retries: 1, backoff_factor: 0.0)
 
-    stub_request(:post, "#{BASE_URL}/v2/scrape")
+    stub_request(:get, "#{BASE_URL}/v2/crawl/job-1")
       .to_return(
         { status: 502, body: JSON.generate(error: "Bad gateway"), headers: { "Content-Type" => "application/json" } },
-        { status: 200, body: JSON.generate(data: { markdown: "# Recovered" }), headers: { "Content-Type" => "application/json" } }
+        { status: 200, body: JSON.generate(status: "completed"), headers: { "Content-Type" => "application/json" } }
       )
 
-    doc = client.scrape("https://example.com")
-    assert_equal "# Recovered", doc.markdown
+    assert_equal "completed", client.get("/v2/crawl/job-1")["status"]
+    assert_requested :get, "#{BASE_URL}/v2/crawl/job-1", times: 2
+  end
+
+  def test_ambiguous_write_failure_is_not_replayed
+    client = Firecrawl::HttpClient.new(api_key: API_KEY, base_url: BASE_URL, timeout: 10, max_retries: 3, backoff_factor: 0.0)
+    cases = [
+      [:post, "#{BASE_URL}/v2/crawl", -> { client.post("/v2/crawl", { url: "https://example.com" }) }],
+      [:patch, "#{BASE_URL}/v2/monitor/id", -> { client.patch("/v2/monitor/id", { name: "updated" }) }],
+      [:delete, "#{BASE_URL}/v2/crawl/id", -> { client.delete("/v2/crawl/id") }],
+      [:post, "#{BASE_URL}/v2/parse", -> { client.post_multipart("/v2/parse", fields: {}, file_field: "file", filename: "report.pdf", content: "pdf") }]
+    ]
+
+    cases.each do |verb, url, run|
+      WebMock.reset!
+      stub_request(verb, url).to_return(
+        { status: 502, body: JSON.generate(error: "ambiguous gateway failure") },
+        { status: 200, body: JSON.generate(success: true) }
+      )
+
+      error = assert_raises(Firecrawl::FirecrawlError, "#{verb} #{url} should not retry") { run.call }
+      assert_equal 502, error.status_code
+      assert_requested verb, url, times: 1
+    end
+  end
+
+  def test_transport_failure_does_not_replay_post
+    client = Firecrawl::HttpClient.new(api_key: API_KEY, base_url: BASE_URL, timeout: 10, max_retries: 3, backoff_factor: 0.0)
+    stub_request(:post, "#{BASE_URL}/v2/crawl").to_raise(Net::ReadTimeout)
+
+    assert_raises(Firecrawl::FirecrawlError) { client.post("/v2/crawl", { url: "https://example.com" }) }
+    assert_requested :post, "#{BASE_URL}/v2/crawl", times: 1
   end
 
   # ================================================================
