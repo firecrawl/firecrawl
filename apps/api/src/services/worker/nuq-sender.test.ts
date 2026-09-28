@@ -134,6 +134,7 @@ describe("NuQ RabbitMQ sender startup", () => {
       "NuQ sender unavailable, falling back to postgres",
       { module: "nuq/rabbitmq", err: failure },
     );
+    expect(logger.warn).toHaveBeenCalledOnce();
   });
 
   it("ignores late close events from a replaced sender", async () => {

@@ -1366,10 +1366,6 @@ class NuQ<JobData = any, JobReturnValue = any> {
             // Reset sender so it can be re-established on next call
             this.sender = null;
           }
-        } else {
-          logger.warn("NuQ sender not started, falling back to postgres", {
-            module: "nuq/rabbitmq",
-          });
         }
       }
 
