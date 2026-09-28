@@ -74,6 +74,9 @@ describe("isTruncatedJson", () => {
     ['```json\n{"items": ["a"]}\n```', false],
     ['{"brace": "}", "bracket": "["}', false],
     ["not json at all", false],
+    ['{"items": [1, 2}', false],
+    ['[{"a": 1]', false],
+    ['{"a": 1}}', false],
   ])("%s -> %s", (text, expected) => {
     expect(isTruncatedJson(text)).toBe(expected);
   });

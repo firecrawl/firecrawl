@@ -156,10 +156,12 @@ function normalizeSchema(x: any): any {
 /**
  * Whether text is JSON cut off before its end: an unclosed string, object or
  * array. That only happens when the model ran out of output tokens, and no
- * repair can recover the part that was never generated.
+ * repair can recover the part that was never generated. A closing bracket that
+ * doesn't match the open one is malformed rather than cut off, so the repair
+ * still gets a chance at it.
  */
 export function isTruncatedJson(text: string): boolean {
-  let depth = 0;
+  const open: string[] = [];
   let inString = false;
   let escaped = false;
   for (const char of text) {
@@ -170,12 +172,12 @@ export function isTruncatedJson(text: string): boolean {
     } else if (char === '"') {
       inString = true;
     } else if (char === "{" || char === "[") {
-      depth++;
+      open.push(char);
     } else if (char === "}" || char === "]") {
-      depth--;
+      if (open.pop() !== (char === "}" ? "{" : "[")) return false;
     }
   }
-  return inString || depth > 0;
+  return inString || open.length > 0;
 }
 
 // Thrown when structured output hit the model's output token limit. The
