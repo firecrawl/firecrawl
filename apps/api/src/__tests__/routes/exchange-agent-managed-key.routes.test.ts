@@ -214,6 +214,8 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
         route.body,
       );
       expect(response.status).toBe(401);
+      expect(mocks.upstreamFetch).not.toHaveBeenCalled();
+      expect(mocks.exchangeRequest).not.toHaveBeenCalled();
     });
 
     // The legacy /exchange/retrieve body is strict and cannot carry the block.
