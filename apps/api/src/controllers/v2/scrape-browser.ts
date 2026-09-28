@@ -53,6 +53,7 @@ import { getScrapeJobAccess } from "../../lib/operational-job-access";
 import { readScrapeJobState } from "../../lib/job-state-store";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
+import { redlock } from "../../services/redlock";
 
 const browserExecuteRequestSchema = z
   .object({
@@ -224,59 +225,113 @@ export async function scrapeInteractController(
 
   let session = await getBrowserSessionFromScrape(scrapeId);
 
-  if (!session && req.body.existingSessionId) {
-    const existing = await getBrowserSession(req.body.existingSessionId);
-    if (
-      existing &&
-      existing.team_id === req.auth.team_id &&
-      existing.status === "active"
-    ) {
-      await updateBrowserSessionScrapeId(existing.id, scrapeId);
-      session = { ...existing, scrape_id: scrapeId };
-      logger.info("Adopted pre-created browser session for scrape", {
+  if (!session) {
+    let creationFailure:
+      | Awaited<ReturnType<typeof createSessionForScrape>>
+      | undefined;
+    try {
+      // The first lookup is only a fast path. Two requests can both miss it,
+      // so check again under a lock shared by every API instance before
+      // adopting or creating the billable browser.
+      await redlock.using(
+        [`browser:scrape:${scrapeId}:create`],
+        60_000,
+        { retryCount: 200 },
+        async signal => {
+          session = await getBrowserSessionFromScrape(scrapeId);
+          if (session) return;
+
+          if (req.body.existingSessionId) {
+            const existing = await getBrowserSession(
+              req.body.existingSessionId,
+            );
+            if (
+              existing &&
+              existing.team_id === req.auth.team_id &&
+              existing.status === "active"
+            ) {
+              await updateBrowserSessionScrapeId(existing.id, scrapeId);
+              session = { ...existing, scrape_id: scrapeId };
+              logger.info("Adopted pre-created browser session for scrape", {
+                scrapeId,
+                sessionId: session.id,
+                browserId: session.browser_id,
+              });
+            }
+          }
+
+          if (session) return;
+          if (signal.aborted) throw signal.error;
+
+          const profile =
+            state?.profile ??
+            (nuqJob?.data.mode === "single_urls"
+              ? nuqJob.data.scrapeOptions.profile
+              : undefined) ??
+            ((legacyScrape?.options as ScrapeOptions | undefined)?.profile as
+              | { name: string; saveChanges: boolean }
+              | undefined);
+          const created = await createSessionForScrape(
+            req,
+            scrapeId,
+            replayContext,
+            logger,
+            profile,
+          );
+          if (created.error === true) {
+            creationFailure = created;
+            return;
+          }
+          if (signal.aborted) {
+            // The lock may have expired while Hangar initialized. Do not leave
+            // this newly created browser billable and unaddressable by scrape ID.
+            await stopBrowserSession(created.session).catch(error =>
+              logger.error("Failed to stop browser after scrape lock loss", {
+                scrapeId,
+                sessionId: created.session.id,
+                error,
+              }),
+            );
+            throw signal.error;
+          }
+          session = created.session;
+
+          logger = logger.child({
+            sessionId: session.id,
+            browserId: session.browser_id,
+          });
+          logger.info("Browser session created for scrape", {
+            scrapeId,
+            sessionId: session.id,
+            browserId: session.browser_id,
+          });
+        },
+      );
+    } catch (error) {
+      logger.error("Failed to acquire scrape browser session lock", {
         scrapeId,
-        sessionId: session.id,
-        browserId: session.browser_id,
+        error,
+      });
+      return res.status(503).json({
+        success: false,
+        error: "Browser session is unavailable. Please retry the interaction.",
       });
     }
-  }
-
-  if (!session) {
-    const profile =
-      state?.profile ??
-      (nuqJob?.data.mode === "single_urls"
-        ? nuqJob.data.scrapeOptions.profile
-        : undefined) ??
-      ((legacyScrape?.options as ScrapeOptions | undefined)?.profile as
-        | { name: string; saveChanges: boolean }
-        | undefined);
-    const created = await createSessionForScrape(
-      req,
-      scrapeId,
-      replayContext,
-      logger,
-      profile,
-    );
-    if (created.error === true) {
+    if (creationFailure?.error === true) {
       if (
-        created.status === 429 &&
-        created.body.error === KEYLESS_FREE_TIER_LIMIT_MESSAGE
+        creationFailure.status === 429 &&
+        creationFailure.body.error === KEYLESS_FREE_TIER_LIMIT_MESSAGE
       ) {
         applyAgentAuthDiscoveryHeader(res);
       }
-      return res.status(created.status).json(created.body);
+      return res.status(creationFailure.status).json(creationFailure.body);
     }
-    session = created.session;
-
-    logger = logger.child({
-      sessionId: session.id,
-      browserId: session.browser_id,
-    });
-    logger.info("Browser session created for scrape", {
-      scrapeId,
-      sessionId: session.id,
-      browserId: session.browser_id,
-    });
+    if (!session) {
+      return res.status(503).json({
+        success: false,
+        error: "Browser session is unavailable. Please retry the interaction.",
+      });
+    }
   }
 
   if (session.team_id !== req.auth.team_id) {

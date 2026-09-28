@@ -5,6 +5,7 @@ import { supabaseGetScrapeByIdDirect } from "../../../lib/supabase-jobs";
 import {
   insertBrowserSession,
   getBrowserSession,
+  getBrowserSessionFromScrape,
 } from "../../../lib/browser-sessions";
 import {
   createHangarBrowser,
@@ -20,6 +21,7 @@ import {
 } from "../browser";
 import { executeCodeViaBrowserSession } from "../../../lib/scrape-interact/browser-agent";
 import { scrapeInteractController } from "../scrape-browser";
+import { redlock } from "../../../services/redlock";
 import type { RequestWithAuth } from "../types";
 
 vi.mock("uuid", () => ({
@@ -122,6 +124,28 @@ vi.mock("../../../lib/scrape-interact/browser-agent", () => ({
 vi.mock("../../../lib/browser-session-activity", () => ({
   enqueueBrowserSessionActivity: vi.fn(),
 }));
+
+// Serialize critical sections like the real distributed lock, without Redis.
+vi.mock("../../../services/redlock", () => {
+  let previous: Promise<void> = Promise.resolve();
+  return {
+    redlock: {
+      using: vi.fn(async (_keys, _ttl, _settings, callback) => {
+        const waitForPrevious = previous;
+        let release!: () => void;
+        previous = new Promise<void>(resolve => {
+          release = resolve;
+        });
+        await waitForPrevious;
+        try {
+          return await callback(new AbortController().signal);
+        } finally {
+          release();
+        }
+      }),
+    },
+  };
+});
 
 vi.mock("../../../services/billing/credit_billing", () => ({
   billTeam: vi.fn(() => Promise.resolve()),
@@ -232,6 +256,93 @@ describe("scrapeInteractController", () => {
     );
   });
 
+  it("creates one browser for concurrent first interactions with the same scrape", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(supabaseGetScrapeByIdDirect).mockResolvedValue({
+      id: "scrape-123",
+      team_id: "team-123",
+      url: "https://example.com",
+      options: {},
+    } as any);
+    let storedSession: any = null;
+    vi.mocked(getBrowserSessionFromScrape).mockImplementation(
+      async () => storedSession,
+    );
+    const executed = {
+      stdout: "ok",
+      result: "",
+      stderr: "",
+      exitCode: 0,
+      killed: false,
+    };
+    vi.mocked(createHangarBrowser).mockResolvedValue({
+      id: "browser-123",
+      status: "running",
+      created_at: 100,
+      ended_at: null,
+      max_expires_at: 700,
+      cdp_url: "wss://hangar.example/cdp",
+      recording: false,
+    } as any);
+    vi.mocked(executeHangarBrowser).mockResolvedValue(executed);
+    vi.mocked(insertBrowserSession).mockImplementation(async row => {
+      storedSession = row;
+      return row as any;
+    });
+    vi.mocked(executeCodeViaBrowserSession).mockResolvedValue(executed);
+
+    const request = () =>
+      ({
+        params: { jobId: "scrape-123" },
+        body: { code: "console.log('ok')" },
+        headers: {},
+        auth: { team_id: "team-123" },
+        acuc: {},
+      }) as any;
+    const responses = [buildRes(), buildRes()];
+    await Promise.all(
+      responses.map(res => scrapeInteractController(request(), res)),
+    );
+
+    expect(createHangarBrowser).toHaveBeenCalledTimes(1);
+    expect(insertBrowserSession).toHaveBeenCalledTimes(1);
+    for (const res of responses) {
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true, sessionId: storedSession.id }),
+      );
+    }
+  });
+
+  it("does not create a browser when the scrape creation lock is unavailable", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(getBrowserSessionFromScrape).mockResolvedValue(null);
+    vi.mocked(supabaseGetScrapeByIdDirect).mockResolvedValue({
+      id: "scrape-123",
+      team_id: "team-123",
+      url: "https://example.com",
+      options: {},
+    } as any);
+    vi.mocked(redlock.using).mockRejectedValueOnce(
+      new Error("Redis unavailable"),
+    );
+    const res = buildRes();
+
+    await scrapeInteractController(
+      {
+        params: { jobId: "scrape-123" },
+        body: { code: "console.log('ok')" },
+        headers: {},
+        auth: { team_id: "team-123" },
+        acuc: {},
+      } as any,
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(createHangarBrowser).not.toHaveBeenCalled();
+  });
+
   it.each([
     browserExecuteController,
     browserDeleteController,
@@ -338,5 +449,3 @@ describe("scrapeInteractController", () => {
     expect(getHangarRecording).not.toHaveBeenCalled();
   });
 });
-
-vi.mock("../../../services/redlock", () => ({ redlock: { using: vi.fn() } }));
