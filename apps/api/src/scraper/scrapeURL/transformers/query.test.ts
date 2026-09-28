@@ -4,6 +4,13 @@ vi.mock("ai", async importOriginal => {
   const actual = await importOriginal<typeof import("ai")>();
   return { ...actual, generateText: vi.fn() };
 });
+vi.mock("@dqbd/tiktoken", async importOriginal => {
+  const actual = await importOriginal<typeof import("@dqbd/tiktoken")>();
+  return {
+    ...actual,
+    encoding_for_model: vi.fn(actual.encoding_for_model),
+  };
+});
 vi.mock("../../../lib/generic-ai", () => ({
   getModel: vi.fn((name: string) => ({ modelId: name })),
 }));
@@ -133,6 +140,28 @@ describe("performQuery highlights", () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/^0: word word/);
     expect(countTokens(lines[0])).toBeLessThanOrEqual(131_072 - 16_384);
+  });
+
+  it("trims by bytes when the tokenizer fails", async () => {
+    (encoding_for_model as Mock).mockImplementationOnce(() => {
+      throw new Error("tokenizer unavailable");
+    });
+    respond("[0]");
+    const document: any = { markdown: page(40_000), metadata: {} };
+
+    await performQuery(
+      makeMeta([{ type: "highlights", query: "what does line 0 say?" }]),
+      document,
+    );
+
+    const lines = sentLines(calls()[0].prompt);
+    lines.forEach((line, i) =>
+      expect(line).toBe(`${i}: Line number ${i} says something short.`),
+    );
+    expect(Buffer.byteLength(lines.join("\n"))).toBeLessThanOrEqual(
+      131_072 - 16_384,
+    );
+    expect(document.highlights).toContain("Line number 0");
   });
 
   it("sends small pages untouched", async () => {
