@@ -184,3 +184,38 @@ func TestFailedJobExposesPaginationFailureWithoutLosingJob(t *testing.T) {
 		})
 	}
 }
+
+func TestCompletedJobPaginationRejectsRepeatedCursorAndKeepsFetchedPages(t *testing.T) {
+	for _, kind := range []string{"crawl", "batch"} {
+		t.Run(kind, func(t *testing.T) {
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"status":"completed","next":%q,"data":[{"markdown":"second"}]}`, server.URL+"/next")
+			}))
+			defer server.Close()
+
+			client, err := NewClient(option.WithAPIKey("fc-test"), option.WithAPIURL(server.URL))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind == "crawl" {
+				job := &CrawlJob{Next: server.URL + "/next", Data: []Document{{Markdown: "first"}}}
+				_, err = client.paginateCrawl(context.Background(), job)
+				if len(job.Data) != 2 || job.Data[1].Markdown != "second" {
+					t.Fatalf("lost fetched crawl pages: %#v", job.Data)
+				}
+			} else {
+				job := &BatchScrapeJob{Next: server.URL + "/next", Data: []Document{{Markdown: "first"}}}
+				_, err = client.paginateBatchScrape(context.Background(), job)
+				if len(job.Data) != 2 || job.Data[1].Markdown != "second" {
+					t.Fatalf("lost fetched batch pages: %#v", job.Data)
+				}
+			}
+			var apiErr *FirecrawlError
+			if !errors.As(err, &apiErr) || !strings.Contains(apiErr.Message, "pagination cursor repeated") {
+				t.Fatalf("expected repeated cursor error, got %v", err)
+			}
+		})
+	}
+}
