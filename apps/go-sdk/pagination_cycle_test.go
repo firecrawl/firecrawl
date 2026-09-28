@@ -64,3 +64,31 @@ func TestDistinctMonitorPaginationCursorsStillComplete(t *testing.T) {
 		t.Fatalf("distinct cursors should paginate: %#v, %v", detail, err)
 	}
 }
+
+func TestMonitorPaginationRejectsTwoPageCycle(t *testing.T) {
+	var calls atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		next := server.URL + "/first"
+		if r.URL.Path == "/first" {
+			next = server.URL + "/second"
+		}
+		_, _ = fmt.Fprintf(w, `{"data":{"pages":[]},"next":%q}`, next)
+	}))
+	defer server.Close()
+
+	client, err := NewClient(option.WithAPIKey("fc-test"), option.WithAPIURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.GetMonitorCheck(context.Background(), "monitor-1", "check-1", nil)
+	var apiErr *FirecrawlError
+	if !errors.As(err, &apiErr) || !strings.Contains(apiErr.Message, "pagination cursor repeated") {
+		t.Fatalf("expected cycle error, got %v", err)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Fatalf("fetched %d pages, want initial page and two distinct cursor pages", got)
+	}
+}
