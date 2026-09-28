@@ -251,12 +251,14 @@ export async function consumeExtractDLQ(
 }
 
 export async function shutdownExtractQueue(): Promise<void> {
-  if (channel) {
-    await channel.close();
-    channel = null;
-  }
-  if (connection) {
-    await connection.close();
-    connection = null;
+  const ch = channel;
+  const conn = connection;
+  channel = null;
+  connection = null;
+  rejectPendingPublishes(new Error("Extract queue shutting down"));
+  try {
+    await ch?.close();
+  } finally {
+    await conn?.close();
   }
 }

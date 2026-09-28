@@ -8,6 +8,7 @@ const { connectMock, channelMock, connectionMock, loggerMock } = vi.hoisted(
       bindQueue: vi.fn(),
       sendToQueue: vi.fn(() => true),
       on: vi.fn(),
+      close: vi.fn(async () => {}),
       prefetch: vi.fn(),
       consume: vi.fn(),
     };
@@ -56,6 +57,8 @@ describe("extract job publishing", () => {
     vi.resetModules();
     vi.clearAllMocks();
     channelMock.sendToQueue.mockReturnValue(true);
+    channelMock.close.mockImplementation(async () => {});
+    connectionMock.close.mockImplementation(async () => {});
   });
 
   afterEach(() => vi.useRealTimers());
@@ -168,5 +171,37 @@ describe("extract job publishing", () => {
     for (const call of (channelMock.sendToQueue as Mock).mock.calls)
       call[3](null);
     await Promise.all([first, second]);
+  });
+
+  it("awaits the connection close during orderly shutdown", async () => {
+    const { addExtractJob, shutdownExtractQueue } = await import(
+      "./extract-queue.js"
+    );
+    const publish = addExtractJob(job.extractId, job);
+    await vi.waitFor(() => expect(channelMock.sendToQueue).toHaveBeenCalled());
+    callback()(null);
+    await publish;
+
+    channelMock.close.mockImplementation(async () => {
+      channelEvent("close")();
+    });
+    let finishConnectionClose!: () => void;
+    connectionMock.close.mockImplementation(
+      () =>
+        new Promise<void>(resolve => {
+          finishConnectionClose = resolve;
+        }),
+    );
+    let settled = false;
+    const shutdown = shutdownExtractQueue().then(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(connectionMock.close).toHaveBeenCalled());
+    expect(settled).toBe(false);
+    finishConnectionClose();
+    await shutdown;
+    expect(settled).toBe(true);
+    expect(channelMock.close).toHaveBeenCalledOnce();
+    expect(connectionMock.close).toHaveBeenCalledOnce();
   });
 });
