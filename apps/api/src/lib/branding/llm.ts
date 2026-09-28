@@ -126,6 +126,9 @@ export async function enhanceBrandingWithLLM(
 
   const modelName = isComplexCase ? "gpt-4o" : "gpt-4o-mini";
   const model = getModel(modelName);
+  // getModel honors a MODEL_NAME override; record the model that actually ran.
+  const modelId =
+    (typeof model === "string" ? model : model.modelId) || modelName;
 
   if (isDebugBrandingEnabled(input)) {
     const logoCandidates = input.logoCandidates || [];
@@ -222,7 +225,7 @@ export async function enhanceBrandingWithLLM(
       },
     });
 
-    recordBrandingCall(input, modelName, result.usage);
+    recordBrandingCall(input, modelId, result.usage);
 
     if (isDebugBrandingEnabled(input)) {
       const reasoningPreview = result.reasoning
@@ -275,7 +278,7 @@ export async function enhanceBrandingWithLLM(
     // The model still ran (and billed) when its output failed to parse or
     // validate.
     if (NoObjectGeneratedError.isInstance(error)) {
-      recordBrandingCall(input, modelName, error.usage);
+      recordBrandingCall(input, modelId, error.usage);
     }
 
     // Refusal: API returned content type "refusal" (e.g. "I can't assist with that") but the SDK

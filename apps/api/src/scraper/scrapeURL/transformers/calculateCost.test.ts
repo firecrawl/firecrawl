@@ -29,8 +29,21 @@ describe("calculateCost", () => {
   });
 
   it("keeps tiered pricing for gemini-2.5-pro", () => {
-    expect(calculateCost("gemini-2.5-pro", 1_000_000, 0)).toBeCloseTo(2.5, 10);
-    expect(calculateCost("gemini-2.5-pro", 100_000, 0)).toBeCloseTo(0.125, 10);
+    // Up to 200k input tokens: $1.25 in / $10 out per 1M.
+    expect(calculateCost("gemini-2.5-pro", 200_000, 0)).toBeCloseTo(0.25, 10);
+    expect(calculateCost("gemini-2.5-pro", 200_000, 1_000_000)).toBeCloseTo(
+      10.25,
+      10,
+    );
+    // Above 200k input tokens: $2.50 in / $15 out per 1M.
+    expect(calculateCost("gemini-2.5-pro", 200_001, 0)).toBeCloseTo(
+      0.5000025,
+      10,
+    );
+    expect(calculateCost("gemini-2.5-pro", 200_001, 1_000_000)).toBeCloseTo(
+      15.5000025,
+      10,
+    );
   });
 
   it("warns once and returns 0 for an unknown model", () => {
