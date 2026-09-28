@@ -12,6 +12,7 @@ import {
 import { APICallError } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import type { Meta } from "../..";
+import { CostTracking } from "../../../../lib/cost-tracking";
 import { createTracerProvider } from "../../../../lib/otel-tracer";
 import { scrapeURLWithXTwitter } from "./index";
 
@@ -40,11 +41,33 @@ const usage = {
   outputTokens: { total: 400, text: 400, reasoning: 0 },
 };
 
-function grokReturns(output: unknown) {
+// Raw xAI Responses body; only the usage block is read from it.
+function responseBody(xSearch?: { posts?: number; users?: number }) {
+  return {
+    object: "response",
+    usage: {
+      input_tokens: 3000,
+      output_tokens: 400,
+      ...(xSearch && {
+        server_side_tool_usage_details: {
+          x_search_calls: 2,
+          x_posts_fetched: xSearch.posts,
+          x_users_fetched: xSearch.users,
+        },
+      }),
+    },
+  };
+}
+
+function grokReturns(
+  output: unknown,
+  body: unknown = responseBody({ posts: 0, users: 0 }),
+) {
   grok.doGenerate = async () => ({
     content: [{ type: "text", text: JSON.stringify(output) }],
     finishReason: { unified: "stop", raw: "completed" },
     usage,
+    response: { body },
     warnings: [],
   });
 }
@@ -57,8 +80,12 @@ function makeMeta(url: string, zeroDataRetention = false): Meta {
     logger,
     abort: { asSignal: () => undefined },
     internalOptions: { teamId: "team-test", zeroDataRetention },
+    costTracking: new CostTracking(),
   } as unknown as Meta;
 }
+
+// grok-4-1-fast-non-reasoning at $0.20 / $0.50 per 1M input / output tokens.
+const tokenCost = (3000 * 0.2 + 400 * 0.5) / 1_000_000;
 
 describe("x-twitter engine LLM telemetry", () => {
   const exporter = new InMemorySpanExporter();
@@ -80,7 +107,9 @@ describe("x-twitter engine LLM telemetry", () => {
     propagation.disable();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // Drop spans a previous test left unflushed.
+    await provider.forceFlush();
     exporter.reset();
   });
 
@@ -117,8 +146,81 @@ describe("x-twitter engine LLM telemetry", () => {
       "ai.usage.promptTokens": 3000,
       "ai.usage.completionTokens": 400,
       "ai.usage.cachedInputTokens": 2000,
+      "firecrawl.llm.tool.x_search_posts": 0,
+      "firecrawl.llm.tool.x_search_profiles": 0,
     });
     expect(span.attributes["ai.prompt.messages"]).toContain("@firecrawl");
+  });
+
+  it("records X Search items on the span and their fee in cost tracking for a profile lookup", async () => {
+    grokReturns(
+      { username: "firecrawl", latestPosts: [] },
+      responseBody({ posts: 44, users: 3 }),
+    );
+    const meta = makeMeta("https://x.com/firecrawl");
+
+    await scrapeURLWithXTwitter(meta);
+
+    const span = await doGenerateSpan();
+    expect(span.attributes).toMatchObject({
+      "firecrawl.llm.tool.x_search_posts": 44,
+      "firecrawl.llm.tool.x_search_profiles": 3,
+    });
+    const { calls, totalCost } = meta.costTracking.toJSON();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      type: "other",
+      model: "grok-4-1-fast-non-reasoning",
+      tokens: { input: 3000, output: 400 },
+      metadata: {
+        module: "scrapeURL",
+        method: "xTwitter/profile",
+        xSearchPosts: 44,
+        xSearchProfiles: 3,
+      },
+    });
+    // 44 posts x $0.005 + 3 profiles x $0.01 = $0.25, plus tokens.
+    expect(calls[0].cost).toBeCloseTo(0.25 + tokenCost, 10);
+    expect(totalCost).toBeCloseTo(0.25 + tokenCost, 10);
+  });
+
+  it("records the X Search fee in cost tracking for a post lookup", async () => {
+    grokReturns(
+      { authorUsername: "firecrawl", text: "Hello from a post." },
+      responseBody({ posts: 18, users: 0 }),
+    );
+    const meta = makeMeta("https://x.com/firecrawl/status/1234567890123");
+
+    await scrapeURLWithXTwitter(meta);
+
+    const { calls } = meta.costTracking.toJSON();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].metadata).toMatchObject({
+      method: "xTwitter/post",
+      xSearchPosts: 18,
+      xSearchProfiles: 0,
+    });
+    expect(calls[0].cost).toBeCloseTo(18 * 0.005 + tokenCost, 10);
+  });
+
+  it("prices tokens only when xAI reports no X Search item counts", async () => {
+    grokReturns({ username: "firecrawl", latestPosts: [] }, responseBody());
+    const meta = makeMeta("https://x.com/firecrawl");
+
+    await scrapeURLWithXTwitter(meta);
+
+    const span = await doGenerateSpan();
+    expect(
+      Object.keys(span.attributes).filter(key =>
+        key.startsWith("firecrawl.llm.tool."),
+      ),
+    ).toEqual([]);
+    const { calls } = meta.costTracking.toJSON();
+    expect(calls[0].metadata).toMatchObject({
+      xSearchPosts: 0,
+      xSearchProfiles: 0,
+    });
+    expect(calls[0].cost).toBeCloseTo(tokenCost, 10);
   });
 
   it("records a usage span for a post lookup", async () => {
@@ -154,12 +256,15 @@ describe("x-twitter engine LLM telemetry", () => {
   it("records no AI SDK spans for zero-data-retention scrapes", async () => {
     grokReturns({ username: "firecrawl", latestPosts: [] });
 
-    await scrapeURLWithXTwitter(makeMeta("https://x.com/firecrawl", true));
+    const meta = makeMeta("https://x.com/firecrawl", true);
+    await scrapeURLWithXTwitter(meta);
 
     await provider.forceFlush();
     expect(
       exporter.getFinishedSpans().filter(s => s.name.startsWith("ai.")),
     ).toEqual([]);
+    // Billing-side cost is recorded regardless of telemetry.
+    expect(meta.costTracking.toJSON().calls).toHaveLength(1);
   });
 
   it("records the span with an error status when the Grok call is rejected", async () => {
@@ -179,6 +284,11 @@ describe("x-twitter engine LLM telemetry", () => {
 
     const span = await doGenerateSpan();
     expect(span.status.code).toBe(SpanStatusCode.ERROR);
+    expect(
+      Object.keys(span.attributes).filter(key =>
+        key.startsWith("firecrawl.llm.tool."),
+      ),
+    ).toEqual([]);
     expect(span.attributes["ai.telemetry.functionId"]).toBe("xTwitter/profile");
   });
 });
