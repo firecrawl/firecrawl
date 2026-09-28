@@ -238,6 +238,18 @@ jobs:
         run: pnpm exec vitest run src/controllers/v2/__tests__/browser-delete.test.ts --reporter=default
         working-directory: apps/api
 
+      - name: Run agent interop auth and concurrency regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/lib/agent-interop.test.ts
+          src/controllers/__tests__/auth.test.ts
+          src/__tests__/routes/exchange-agent-managed-key.routes.test.ts
+          src/controllers/v2/__tests__/browser-agent-concurrency.test.ts
+          src/__tests__/routes/interact-agent-concurrency.routes.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Install test site dependencies
         run: pnpm install --frozen-lockfile
         working-directory: apps/test-site
