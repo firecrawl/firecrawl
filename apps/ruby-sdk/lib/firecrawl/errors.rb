@@ -37,4 +37,15 @@ module Firecrawl
       super("#{label} #{job_id} timed out after #{timeout_seconds} seconds")
     end
   end
+
+  # Raised when a polled agent task fails or is cancelled.
+  class AgentFailedError < FirecrawlError
+    attr_reader :response
+
+    def initialize(response, job_id)
+      @response = response
+      reason = response.error.is_a?(String) && !response.error.empty? ? ": #{response.error}" : ""
+      super("Agent #{job_id} #{response.status}#{reason}")
+    end
+  end
 end

@@ -489,12 +489,20 @@ module Firecrawl
     # @return [Models::AgentStatusResponse]
     def agent(options, poll_interval: DEFAULT_POLL_INTERVAL, timeout: DEFAULT_JOB_TIMEOUT)
       start = start_agent(options)
-      raise FirecrawlError, "Agent start did not return a job ID" if start.id.nil?
+      if start.success == false
+        raise FirecrawlError, "Agent start failed: #{start.error || "response was unsuccessful"}"
+      end
+      if !start.id.is_a?(String) || start.id.strip.empty?
+        raise FirecrawlError, "Agent start did not return a job ID"
+      end
 
       deadline = Time.now + timeout
       while Time.now < deadline
         status = get_agent_status(start.id)
-        return status if status.done?
+        if status.done?
+          raise AgentFailedError.new(status, start.id) unless status.status == "completed"
+          return status
+        end
 
         sleep(poll_interval)
       end
