@@ -238,22 +238,30 @@ describe("crawl prompt telemetry under zero data retention", () => {
     },
   );
 
-  it("records nothing from a params preview for a ZDR team", async () => {
-    const res = makeRes();
-    await crawlParamsPreviewController(
-      makeReq(
-        { url: "https://example.com", prompt: PROMPT },
-        { scrapeZDR: "forced" },
-      ),
-      res,
-    );
+  it.each([
+    [
+      "team-scoped",
+      { url: "https://example.com", prompt: PROMPT },
+      { scrapeZDR: "forced" },
+    ],
+    [
+      "request-scoped",
+      { url: "https://example.com", prompt: PROMPT, zeroDataRetention: true },
+      {},
+    ],
+  ])(
+    "records nothing from a %s ZDR params preview",
+    async (_scope, body, flags) => {
+      const res = makeRes();
+      await crawlParamsPreviewController(makeReq(body, flags), res);
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(telemetryOfCalls()).toEqual([
-      expect.objectContaining({ isEnabled: false }),
-    ]);
-    expect(await exportedSpans()).toEqual([]);
-  });
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(telemetryOfCalls()).toEqual([
+        expect.objectContaining({ isEnabled: false }),
+      ]);
+      expect(await exportedSpans()).toEqual([]);
+    },
+  );
 
   it("exports a params preview for a regular team", async () => {
     const res = makeRes();

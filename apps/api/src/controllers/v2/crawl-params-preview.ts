@@ -14,6 +14,9 @@ import { withZeroDataRetention } from "../../lib/otel-tracer";
 const crawlParamsPreviewRequestSchema = z.object({
   url: z.url(),
   prompt: z.string().max(10000),
+  // Only keeps the preview's own LLM call out of traces, so unlike a crawl it
+  // needs no ZDR permission check.
+  zeroDataRetention: z.boolean().optional(),
 });
 
 type CrawlParamsPreviewRequest = z.infer<
@@ -49,9 +52,11 @@ export async function crawlParamsPreviewController(
   >,
   res: Response<CrawlParamsPreviewResponse>,
 ) {
-  // Same rule as a crawl: forced ZDR or Safe Mode lockdown.
+  // Same rule as a crawl: forced ZDR, the request's own flag, or Safe Mode
+  // lockdown. Read before parsing so a rejected body is still covered.
   const zeroDataRetention =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body?.zeroDataRetention === true ||
     isLockdownZeroDataRetention(req.acuc?.flags, undefined);
   const logger = _logger.child({
     module: "api/v2",
