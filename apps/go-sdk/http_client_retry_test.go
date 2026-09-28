@@ -10,28 +10,29 @@ import (
 	"testing"
 )
 
+var writeRetryCases = []struct {
+	name string
+	run  func(*httpClient) error
+}{
+	{"POST", func(c *httpClient) error {
+		_, err := c.post(context.Background(), "/v2/crawl", map[string]string{"url": "https://example.com"}, nil)
+		return err
+	}},
+	{"PATCH", func(c *httpClient) error {
+		_, err := c.patch(context.Background(), "/v2/monitor/id", map[string]string{"name": "updated"})
+		return err
+	}},
+	{"DELETE", func(c *httpClient) error { _, err := c.delete(context.Background(), "/v2/crawl/id"); return err }},
+	{"multipart POST", func(c *httpClient) error {
+		_, err := c.postMultipart(context.Background(), "/v2/parse", nil, "file", "report.pdf", "application/pdf", []byte("pdf"))
+		return err
+	}},
+}
+
 func TestAmbiguousWriteFailureIsNotRetried(t *testing.T) {
-	tests := []struct {
-		name string
-		run  func(*httpClient) error
-	}{
-		{"POST", func(c *httpClient) error {
-			_, err := c.post(context.Background(), "/v2/crawl", map[string]string{"url": "https://example.com"}, nil)
-			return err
-		}},
-		{"PATCH", func(c *httpClient) error {
-			_, err := c.patch(context.Background(), "/v2/monitor/id", map[string]string{"name": "updated"})
-			return err
-		}},
-		{"DELETE", func(c *httpClient) error { _, err := c.delete(context.Background(), "/v2/crawl/id"); return err }},
-		{"multipart POST", func(c *httpClient) error {
-			_, err := c.postMultipart(context.Background(), "/v2/parse", nil, "file", "report.pdf", "application/pdf", []byte("pdf"))
-			return err
-		}},
-	}
 
 	for _, status := range []int{408, 409, 502, 503} {
-		for _, test := range tests {
+		for _, test := range writeRetryCases {
 			t.Run(fmt.Sprintf("%s/%d", test.name, status), func(t *testing.T) {
 				var calls atomic.Int32
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,8 +43,10 @@ func TestAmbiguousWriteFailureIsNotRetried(t *testing.T) {
 				defer server.Close()
 
 				client := newHTTPClient("fc-test", server.URL, server.Client(), 3, 0, nil)
-				if err := test.run(client); err == nil {
-					t.Fatal("expected gateway error")
+				err := test.run(client)
+				var apiErr *FirecrawlError
+				if !errors.As(err, &apiErr) || apiErr.StatusCode != status || apiErr.Message != "gateway failed after accepting request" {
+					t.Fatalf("lost HTTP %d error detail: %v", status, err)
 				}
 				if got := calls.Load(); got != 1 {
 					t.Fatalf("sent write %d times; want exactly one", got)
@@ -61,24 +64,7 @@ func (f *failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 func TestTransportFailureDoesNotReplayWrite(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		run  func(*httpClient) error
-	}{
-		{"POST", func(c *httpClient) error {
-			_, err := c.post(context.Background(), "/v2/crawl", map[string]string{"url": "https://example.com"}, nil)
-			return err
-		}},
-		{"PATCH", func(c *httpClient) error {
-			_, err := c.patch(context.Background(), "/v2/monitor/id", map[string]string{"name": "updated"})
-			return err
-		}},
-		{"DELETE", func(c *httpClient) error { _, err := c.delete(context.Background(), "/v2/crawl/id"); return err }},
-		{"multipart POST", func(c *httpClient) error {
-			_, err := c.postMultipart(context.Background(), "/v2/parse", nil, "file", "report.pdf", "application/pdf", []byte("pdf"))
-			return err
-		}},
-	} {
+	for _, test := range writeRetryCases {
 		t.Run(test.name, func(t *testing.T) {
 			transport := &failingTransport{}
 			client := newHTTPClient("fc-test", "https://api.firecrawl.dev", &http.Client{Transport: transport}, 3, 0, nil)
