@@ -11,10 +11,7 @@ import {
   getRateLimitOverride,
   HOBBY_RATE_LIMIT_MULTIPLIER,
 } from "../services/rate-limiter";
-import {
-  AGENT_INTEROP_HEADER,
-  isAgentInteropSecretValid,
-} from "../lib/agent-interop";
+import { isTrustedAgentInteropRequest } from "../lib/agent-interop";
 import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   consumeKeylessRequest,
@@ -697,19 +694,6 @@ export type AuthenticateOptions = {
   // hosted_mcp_oauth key, which agent runs started from the hosted MCP carry.
   allowAgentManagedKey?: boolean;
 };
-
-/**
- * Whether the request carries a valid agent-interop secret, i.e. comes from
- * the trusted internal agent service. Read from the raw body (auth runs before
- * the controller's zod parse) or, for bodiless calls, from AGENT_INTEROP_HEADER.
- * Presence of the block or header alone is never trusted; only the secret.
- */
-function isTrustedAgentInteropRequest(req): boolean {
-  return (
-    isAgentInteropSecretValid(req.body?.__agentInterop?.auth) ||
-    isAgentInteropSecretValid(req.headers?.[AGENT_INTEROP_HEADER])
-  );
-}
 
 async function supaAuthenticateUser(
   req,

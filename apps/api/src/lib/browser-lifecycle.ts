@@ -26,7 +26,11 @@ import {
   BROWSER_CREDITS_PER_HOUR,
   INTERACT_CREDITS_PER_HOUR,
 } from "./browser-billing";
-import { getEffectiveConcurrencyLimit } from "./concurrency-limit";
+import {
+  getEffectiveConcurrencyLimit,
+  HOBBY_CONCURRENCY_LIMIT,
+} from "./concurrency-limit";
+import { isTrustedAgentInteropRequest } from "./agent-interop";
 import {
   reserveExternalSlot,
   mirrorExternalSlotRelease,
@@ -76,10 +80,16 @@ export async function createBrowserSession(
   const estimatedCredits = shouldBill
     ? calculateBrowserSessionCredits(options.ttl * 1000)
     : 0;
-  const limit = await getEffectiveConcurrencyLimit(
+  const teamLimit = await getEffectiveConcurrencyLimit(
     req.auth.team_id,
     req.acuc?.org_id ?? null,
   );
+  // An agent run opens browsers against the team's own slots, so a free team
+  // (2) is throttled by its own agent. Floor trusted agent traffic at hobby,
+  // as the rate limiter does; plans at or above hobby are unchanged.
+  const limit = isTrustedAgentInteropRequest(req)
+    ? Math.max(teamLimit, HOBBY_CONCURRENCY_LIMIT)
+    : teamLimit;
   if (shouldBill && req.acuc?.org_id) {
     const credit = await autumnService.checkCredits({
       teamId: req.auth.team_id,

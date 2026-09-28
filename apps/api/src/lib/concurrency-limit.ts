@@ -26,6 +26,13 @@ import { reportPipelineError } from "./redis-pipeline";
 const DEFAULT_CONCURRENCY_LIMIT = 2;
 
 /**
+ * CONCURRENCY granted by the Autumn `hobby` plan. Autumn holds the plan, so
+ * this mirrors it the way HOBBY_RATE_LIMIT_MULTIPLIER mirrors its rate limit;
+ * change both if the plan changes.
+ */
+export const HOBBY_CONCURRENCY_LIMIT = 5;
+
+/**
  * Returns the team's effective concurrency limit from Autumn's CONCURRENCY
  * balance. Autumn is authoritative; when the entity is missing we fall back to
  * the low default of 2. When Autumn errors, getConcurrencyLimit already returns
