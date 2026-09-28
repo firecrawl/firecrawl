@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { config } from "../config";
 
+// Header form of `__agentInterop.auth`, for calls with no JSON body (DELETE, GET).
+export const AGENT_INTEROP_HEADER = "x-firecrawl-agent-interop";
+
 export function isAgentInteropSecretValid(provided: unknown): boolean {
   const expected = config.AGENT_INTEROP_SECRET;
   if (

@@ -277,6 +277,7 @@ export function authMiddleware(
   rateLimiterMode: RateLimiterMode,
   options: {
     allowKeyless?: boolean | ((req: RequestWithMaybeAuth) => boolean);
+    allowAgentManagedKey?: boolean;
   } = {},
 ): (req: RequestWithMaybeAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
