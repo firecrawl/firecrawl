@@ -27,7 +27,9 @@ function parseExtractJob(content: Buffer): ExtractJobData {
     typeof (value as ExtractJobData).extractId !== "string" ||
     typeof (value as ExtractJobData).teamId !== "string" ||
     typeof (value as ExtractJobData).createdAt !== "number" ||
-    !(value as ExtractJobData).request
+    !(value as ExtractJobData).request ||
+    typeof (value as ExtractJobData).request !== "object" ||
+    Array.isArray((value as ExtractJobData).request)
   ) {
     throw new Error("Invalid extract job payload");
   }

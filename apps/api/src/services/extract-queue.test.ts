@@ -301,7 +301,12 @@ describe("extract job consumption", () => {
       expect(call).toBeDefined();
       const onMessage = call![1];
 
-      for (const content of ["{bad json", JSON.stringify({ extractId: "x" })]) {
+      for (const content of [
+        "{bad json",
+        JSON.stringify({ extractId: "x" }),
+        JSON.stringify({ ...job, request: "truthy but invalid" }),
+        JSON.stringify({ ...job, request: ["invalid"] }),
+      ]) {
         const msg = { content: Buffer.from(content) };
         await expect(onMessage(msg)).resolves.toBeUndefined();
         expect(channelMock.nack).toHaveBeenCalledWith(msg, false, false);
