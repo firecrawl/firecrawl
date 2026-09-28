@@ -76,10 +76,25 @@ func (h *httpClient) getAbsolute(ctx context.Context, absoluteURL string) (json.
 	// bearer credential to a link outside the configured API origin.
 	if !pageURL.IsAbs() || pageURL.User != nil ||
 		!strings.EqualFold(pageURL.Scheme, apiURL.Scheme) ||
-		!strings.EqualFold(pageURL.Host, apiURL.Host) {
+		!strings.EqualFold(pageURL.Hostname(), apiURL.Hostname()) ||
+		originPort(pageURL) != originPort(apiURL) {
 		return nil, &FirecrawlError{Message: "pagination URL must use the configured API origin"}
 	}
 	return h.doJSON(ctx, "GET", absoluteURL, nil, nil)
+}
+
+func originPort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
 
 // delete sends a DELETE request.
