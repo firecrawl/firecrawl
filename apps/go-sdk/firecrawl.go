@@ -190,6 +190,13 @@ func (c *Client) StartCrawl(ctx context.Context, url string, opts *CrawlOptions)
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
 	}
+	if resp.ID == "" || (resp.Success != nil && !*resp.Success) {
+		message := resp.Error
+		if message == "" {
+			message = "crawl start response contained no job ID"
+		}
+		return nil, &FirecrawlError{Message: message}
+	}
 	return &resp, nil
 }
 
@@ -305,6 +312,13 @@ func (c *Client) StartBatchScrape(ctx context.Context, urls []string, opts *Batc
 	var resp BatchScrapeResponse
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	if resp.ID == "" || (resp.Success != nil && !*resp.Success) {
+		message := resp.Error
+		if message == "" {
+			message = "batch scrape start response contained no job ID"
+		}
+		return nil, &FirecrawlError{Message: message}
 	}
 	return &resp, nil
 }
