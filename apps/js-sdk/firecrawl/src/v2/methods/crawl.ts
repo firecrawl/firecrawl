@@ -56,8 +56,8 @@ export async function startCrawl(http: HttpClient, request: CrawlRequest): Promi
       id: string;
       url: string;
       error?: string;
-      promptGeneratedOptions?: Record<string, unknown>;
-      finalCrawlerOptions?: Record<string, unknown>;
+      promptGeneratedOptions?: CrawlResponse["promptGeneratedOptions"];
+      finalCrawlerOptions?: CrawlResponse["finalCrawlerOptions"];
     }>("/v2/crawl", payload);
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "start crawl");

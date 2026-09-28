@@ -1047,9 +1047,9 @@ export interface CrawlResponse {
   id: string;
   url: string;
   /** Options inferred from the natural-language crawl prompt, when provided. */
-  promptGeneratedOptions?: Record<string, unknown>;
+  promptGeneratedOptions?: CrawlOptions & Record<string, unknown>;
   /** Effective options after merging generated and explicitly supplied values. */
-  finalCrawlerOptions?: Record<string, unknown>;
+  finalCrawlerOptions?: CrawlOptions & Record<string, unknown>;
 }
 
 export interface CrawlJob {

@@ -24,5 +24,9 @@ describe("crawl start options", () => {
       response.data.promptGeneratedOptions,
     );
     expect(result.finalCrawlerOptions).toEqual(response.data.finalCrawlerOptions);
+    expect(http.post).toHaveBeenCalledWith("/v2/crawl", {
+      url: "https://example.com",
+      prompt: "Find docs",
+    });
   });
 });
