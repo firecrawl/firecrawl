@@ -145,6 +145,18 @@ export class Watcher extends EventEmitter {
   private attachWsHandlers(ws: WebSocket) {
     let startTs = Date.now();
     const timeoutMs = this.timeout ? this.timeout * 1000 : undefined;
+    let fallingBack = false;
+    const fallBackToPolling = () => {
+      if (this.closed || fallingBack) return;
+      fallingBack = true;
+      // Closing the socket can also fire onclose; start only one poll loop.
+      try {
+        ws.close();
+      } catch {
+        // The HTTP fallback still works if the socket cannot be closed.
+      }
+      void this.pollLoop();
+    };
     ws.onmessage = (ev: MessageEvent) => {
       try {
         const raw = ensureUtf8String(ev.data);
@@ -185,11 +197,10 @@ export class Watcher extends EventEmitter {
       }
     };
     ws.onerror = () => {
-      this.emit("error", { status: "failed", data: [], error: "WebSocket error", id: this.jobId });
-      this.close();
+      fallBackToPolling();
     };
     ws.onclose = () => {
-      if (!this.closed) this.pollLoop();
+      fallBackToPolling();
     };
   }
 
@@ -280,4 +291,3 @@ export class Watcher extends EventEmitter {
     if (this.ws && (this.ws as any).close) (this.ws as any).close();
   }
 }
-
