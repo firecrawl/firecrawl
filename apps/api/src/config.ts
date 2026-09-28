@@ -491,6 +491,7 @@ const configSchema = z.object({
   // If unset, tokens are stored with a `plain:` prefix (self-hosted only).
   SLACK_TOKEN_ENCRYPTION_KEY: z.string().optional(),
   ALLOW_LOCAL_WEBHOOKS: z.stringbool().optional(),
+  ALLOW_PRIVATE_IP_SCRAPING: z.stringbool().optional(),
   WEBHOOK_USE_RABBITMQ: z.stringbool().optional(),
 
   // Firecrawl Features

@@ -42,7 +42,10 @@ function createBaseAgent(skipTlsVerification: boolean) {
   return baseAgent.compose(interceptors.redirect({ maxRedirections: 5000 }));
 }
 
-function attachSecurityCheck(agent: undici.Dispatcher) {
+function attachSecurityCheck(
+  agent: undici.Dispatcher,
+  allowPrivateTarget: () => boolean,
+) {
   agent.on("connect", (_, targets) => {
     const client: undici.Client = targets.slice(-1)[0] as undici.Client;
     const socketSymbol = Object.getOwnPropertySymbols(client).find(
@@ -53,7 +56,7 @@ function attachSecurityCheck(agent: undici.Dispatcher) {
     if (
       socket.remoteAddress &&
       isIPPrivate(socket.remoteAddress) &&
-      config.ALLOW_LOCAL_WEBHOOKS !== true
+      !allowPrivateTarget()
     ) {
       socket.destroy(new InsecureConnectionError());
     }
@@ -62,14 +65,19 @@ function attachSecurityCheck(agent: undici.Dispatcher) {
 
 function makeSecureDispatcher(skipTlsVerification: boolean) {
   const agent = createBaseAgent(skipTlsVerification);
-  attachSecurityCheck(agent);
+  attachSecurityCheck(
+    agent,
+    () =>
+      config.ALLOW_PRIVATE_IP_SCRAPING === true ||
+      config.ALLOW_LOCAL_WEBHOOKS === true,
+  );
   return agent;
 }
 
 // Dispatcher WITHOUT cookie handling (for webhooks - avoids empty cookie header bug)
 function makeSecureDispatcherNoCookies(skipTlsVerification: boolean) {
   const agent = createBaseAgent(skipTlsVerification);
-  attachSecurityCheck(agent);
+  attachSecurityCheck(agent, () => config.ALLOW_LOCAL_WEBHOOKS === true);
   return agent;
 }
 
