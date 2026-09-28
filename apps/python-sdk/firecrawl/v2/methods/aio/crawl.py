@@ -112,7 +112,12 @@ async def start_crawl(client: AsyncHttpClient, request: CrawlRequest) -> CrawlRe
         handle_response_error(response, "start crawl")
     body = response.json()
     if body.get("success"):
-        return CrawlResponse(id=body.get("id"), url=body.get("url"))
+        return CrawlResponse(
+            id=body.get("id"),
+            url=body.get("url"),
+            prompt_generated_options=body.get("promptGeneratedOptions"),
+            final_crawler_options=body.get("finalCrawlerOptions"),
+        )
     raise Exception(body.get("error", "Unknown error occurred"))
 
 

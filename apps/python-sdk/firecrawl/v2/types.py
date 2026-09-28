@@ -1006,6 +1006,8 @@ class CrawlResponse(BaseModel):
 
     id: str
     url: str
+    prompt_generated_options: Optional[Dict[str, Any]] = None
+    final_crawler_options: Optional[Dict[str, Any]] = None
 
 
 class CrawlJob(BaseModel):

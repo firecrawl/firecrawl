@@ -160,7 +160,9 @@ def start_crawl(client: HttpClient, request: CrawlRequest) -> CrawlResponse:
     if response_data.get("success"):
         job_data = {
             "id": response_data.get("id"),
-            "url": response_data.get("url")
+            "url": response_data.get("url"),
+            "prompt_generated_options": response_data.get("promptGeneratedOptions"),
+            "final_crawler_options": response_data.get("finalCrawlerOptions"),
         }
 
         return CrawlResponse(**job_data)
