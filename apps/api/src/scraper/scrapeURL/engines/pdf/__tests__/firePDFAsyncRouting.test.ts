@@ -1,9 +1,16 @@
 import { config } from "../../../../../config";
 import {
+  firePdfRouteDecisionsTotal,
+  firePdfRouteRemainingSeconds,
+} from "../fire-pdf/metrics";
+import {
   decideFirePdfAsyncRoute,
   deterministicPercentage,
   FIRE_PDF_ASYNC_MIN_REMAINING_MS,
+  firePdfFeaturesLabel,
+  recordFirePdfRoute,
 } from "../fire-pdf/routing";
+import { counterValue, makeMeta } from "./firePDFAsyncFixtures";
 import {
   computeByReferenceDeadlineMs,
   computeDeadlineMs,
@@ -196,5 +203,116 @@ describe("FirePDF async transport helpers", () => {
     } finally {
       mutableConfig.FIRE_PDF_API_KEY = original;
     }
+  });
+});
+
+describe("FirePDF route decision telemetry", () => {
+  it("labels page-aware features in a fixed order", () => {
+    const none = { pageMarkdown: false, blocks: false, pageMarkers: false };
+    expect(firePdfFeaturesLabel(none)).toBe("none");
+    expect(firePdfFeaturesLabel({ ...none, pageMarkdown: true })).toBe("pages");
+    expect(
+      firePdfFeaturesLabel({
+        pageMarkdown: true,
+        blocks: true,
+        pageMarkers: true,
+      }),
+    ).toBe("pages+blocks+markers");
+    expect(
+      firePdfFeaturesLabel({ ...none, pageMarkers: true, blocks: true }),
+    ).toBe("blocks+markers");
+  });
+
+  it("counts a sync decision with its reason, logs it, and records the time left", async () => {
+    const labels = {
+      source_kind: "pdf",
+      path: "sync",
+      reason: "zdr",
+      features: "pages",
+      zdr: "true",
+    };
+    const before = await counterValue(firePdfRouteDecisionsTotal, labels);
+    const { values: histBefore } = await firePdfRouteRemainingSeconds.get();
+    const countBefore =
+      histBefore.find(
+        v =>
+          v.metricName === "firecrawl_fire_pdf_route_remaining_seconds_count" &&
+          v.labels.path === "sync" &&
+          v.labels.source_kind === "pdf",
+      )?.value ?? 0;
+
+    const meta = makeMeta({
+      internalOptions: { zeroDataRetention: true, teamId: "team-x" },
+    });
+    meta.abort.scrapeTimeout.mockReturnValue(15_000);
+    recordFirePdfRoute(meta, {
+      sourceKind: "pdf",
+      path: "sync",
+      reason: "zdr",
+      features: "pages",
+    });
+
+    expect(await counterValue(firePdfRouteDecisionsTotal, labels)).toBe(
+      before + 1,
+    );
+    const { values: histAfter } = await firePdfRouteRemainingSeconds.get();
+    const le15 = histAfter.find(
+      v =>
+        v.metricName === "firecrawl_fire_pdf_route_remaining_seconds_bucket" &&
+        v.labels.path === "sync" &&
+        (v.labels as Record<string, unknown>).le === 15,
+    );
+    expect(le15?.value).toBeGreaterThanOrEqual(1);
+    expect(
+      histAfter.find(
+        v =>
+          v.metricName === "firecrawl_fire_pdf_route_remaining_seconds_count" &&
+          v.labels.path === "sync" &&
+          v.labels.source_kind === "pdf",
+      )?.value,
+    ).toBe(countBefore + 1);
+    expect(meta.logger.info).toHaveBeenCalledWith(
+      "Routing FirePDF request to sync /ocr",
+      expect.objectContaining({
+        event: "fire_pdf_sync_routed",
+        reason: "zdr",
+        source_kind: "pdf",
+        remaining_ms: 15_000,
+      }),
+    );
+  });
+
+  it("counts async decisions without a second log line and skips the histogram when there is no deadline", async () => {
+    const labels = {
+      source_kind: "pdf",
+      path: "async",
+      reason: "by_reference",
+      features: "none",
+      zdr: "false",
+    };
+    const before = await counterValue(firePdfRouteDecisionsTotal, labels);
+    const { values: histBefore } = await firePdfRouteRemainingSeconds.get();
+    const countOf = (vals: typeof histBefore) =>
+      vals.find(
+        v =>
+          v.metricName === "firecrawl_fire_pdf_route_remaining_seconds_count" &&
+          v.labels.path === "async",
+      )?.value ?? 0;
+
+    const meta = makeMeta();
+    meta.abort.scrapeTimeout.mockReturnValue(undefined);
+    recordFirePdfRoute(meta, {
+      sourceKind: "pdf",
+      path: "async",
+      reason: "by_reference",
+      features: "none",
+    });
+
+    expect(await counterValue(firePdfRouteDecisionsTotal, labels)).toBe(
+      before + 1,
+    );
+    const { values: histAfter } = await firePdfRouteRemainingSeconds.get();
+    expect(countOf(histAfter)).toBe(countOf(histBefore));
+    expect(meta.logger.info).not.toHaveBeenCalled();
   });
 });

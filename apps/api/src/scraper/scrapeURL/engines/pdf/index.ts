@@ -55,7 +55,11 @@ import {
   mineruDiverted,
 } from "./fire-pdf/by-reference";
 import { runFirePdfByReferenceAttempt } from "./fire-pdf/by-reference-flow";
-import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
+import {
+  decideFirePdfAsyncRoute,
+  firePdfFeaturesLabel,
+  recordFirePdfRoute,
+} from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { toPublicBlocks } from "./blocks";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
@@ -538,6 +542,16 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           // A null return means the input never made it into the fire-pdf
           // bucket: fall through to the legacy chain, whose oversized-skip
           // warning below still fires (pre-by-reference behavior).
+          recordFirePdfRoute(meta, {
+            sourceKind: "pdf",
+            path: "async",
+            reason: "by_reference",
+            features: firePdfFeaturesLabel({
+              pageMarkdown: includePageMarkdown,
+              blocks: includeBlocks,
+              pageMarkers: pageMarkers,
+            }),
+          });
           const byRefResult = await runFirePdfByReferenceAttempt({
             meta,
             tempFilePath,
@@ -648,6 +662,16 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           bulkOriginPercentage: config.FIRE_PDF_ASYNC_BULK_ORIGIN_PERCENT,
         });
         const useAsync = asyncDecision.enabled;
+        recordFirePdfRoute(meta, {
+          sourceKind: "pdf",
+          path: useAsync ? "async" : "sync",
+          reason: asyncDecision.reason,
+          features: firePdfFeaturesLabel({
+            pageMarkdown: includePageMarkdown,
+            blocks: includeBlocks,
+            pageMarkers: pageMarkers,
+          }),
+        });
         if (useAsync) {
           meta.logger.info("Routing FirePDF request to async jobs", {
             method: "scrapePDF",

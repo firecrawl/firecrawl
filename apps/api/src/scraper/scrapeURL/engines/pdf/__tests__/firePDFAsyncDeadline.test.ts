@@ -15,6 +15,7 @@ import {
 } from "../fire-pdf/async";
 import {
   firePdfAsyncAbandonedTotal,
+  firePdfAsyncSubmit503Total,
   firePdfAsyncSubmitRetriesTotal,
 } from "../fire-pdf/metrics";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
@@ -208,6 +209,9 @@ describe("scrapePDFWithFirePDFAsync — deadline and submit lifecycle", () => {
   });
 
   it("does not retry fire-pdf's own 503 codes", async () => {
+    const before = await counterValue(firePdfAsyncSubmit503Total, {
+      code: "admission_rejected",
+    });
     const { fetchImpl, calls } = makeFetchFromSequence([
       {
         matchUrl: /\/jobs$/,
@@ -233,7 +237,45 @@ describe("scrapePDFWithFirePDFAsync — deadline and submit lifecycle", () => {
 
     expect(error).toBeInstanceOf(FirePdfAsyncFailure);
     expect(error.reason).toBe("http_503");
+    expect(error.extra.code).toBe("admission_rejected");
     expect(calls).toHaveLength(1);
+    expect(
+      await counterValue(firePdfAsyncSubmit503Total, {
+        code: "admission_rejected",
+      }),
+    ).toBe(before + 1);
+  });
+
+  it("labels a 503 without a fire-pdf code as unattributed once the retry also fails", async () => {
+    const before = await counterValue(firePdfAsyncSubmit503Total, {
+      code: "unattributed",
+    });
+    const unattributed = {
+      matchUrl: /\/jobs$/,
+      matchMethod: "POST" as const,
+      response: { status: 503, body: { detail: "upstream overloaded" } },
+    };
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      unattributed,
+      unattributed,
+    ]);
+
+    const error = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      undefined,
+      { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+    ).catch(e => e);
+
+    expect(error).toBeInstanceOf(FirePdfAsyncFailure);
+    expect(error.reason).toBe("http_503");
+    expect(error.extra.code).toBe("unattributed");
+    expect(calls.filter(c => c.method === "POST")).toHaveLength(2);
+    expect(
+      await counterValue(firePdfAsyncSubmit503Total, { code: "unattributed" }),
+    ).toBe(before + 1);
   });
 
   it("retries the submit once on a transport failure, then proceeds", async () => {
