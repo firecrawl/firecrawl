@@ -114,7 +114,7 @@ describe("usage telemetry middleware", () => {
     process.env.OPENAI_API_KEY = "test-key";
     process.env.MODEL_NAME = "";
     const fetchMock = vi.fn(
-      async () =>
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
         new Response(JSON.stringify(openAIResponsesBody), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -143,6 +143,9 @@ describe("usage telemetry middleware", () => {
     }
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [input, init] = fetchMock.mock.calls[0];
+    expect(String(input)).toMatch(/\/responses$/);
+    expect(init?.method).toBe("POST");
     const span = await spanNamed("ai.generateObject.doGenerate");
     expect(span.attributes).toMatchObject({
       "ai.usage.promptTokens": 1200,
