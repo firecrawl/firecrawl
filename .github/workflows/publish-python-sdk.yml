@@ -15,7 +15,8 @@ jobs:
     name: Build distributions
     runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
-      version_incremented: ${{ steps.version_check_script.outputs.version_incremented }}
+      publish_firecrawl_py: ${{ steps.version_check.outputs.publish_firecrawl_py }}
+      publish_firecrawl: ${{ steps.version_check.outputs.publish_firecrawl }}
 
     steps:
       - name: Checkout repository
@@ -33,14 +34,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install build==1.6.1 requests==2.34.2 packaging==26.3
 
+      # Check each PyPI project separately, so a release that reached only one of
+      # them is completed on the next run instead of being skipped.
       - name: Run version check script
-        id: version_check_script
+        id: version_check
         run: |
-          VERSION_INCREMENTED=$(python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl-py)
-          echo "version_incremented=$VERSION_INCREMENTED" >> "$GITHUB_OUTPUT"
+          echo "publish_firecrawl_py=$(python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl-py | tail -n 1)" >> "$GITHUB_OUTPUT"
+          echo "publish_firecrawl=$(python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl | tail -n 1)" >> "$GITHUB_OUTPUT"
 
       - name: Build firecrawl-py and firecrawl
-        if: ${{ steps.version_check_script.outputs.version_incremented == 'true' }}
+        if: ${{ steps.version_check.outputs.publish_firecrawl_py == 'true' || steps.version_check.outputs.publish_firecrawl == 'true' }}
         working-directory: ./apps/python-sdk
         run: |
           python -m build --outdir dist-firecrawl-py
@@ -49,7 +52,7 @@ jobs:
           python -m build --outdir dist-firecrawl
 
       - name: Upload distributions
-        if: ${{ steps.version_check_script.outputs.version_incremented == 'true' }}
+        if: ${{ steps.version_check.outputs.publish_firecrawl_py == 'true' || steps.version_check.outputs.publish_firecrawl == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-sdk-dists
@@ -58,10 +61,11 @@ jobs:
             apps/python-sdk/dist-firecrawl/
           if-no-files-found: error
 
-  publish:
-    name: Publish to PyPI (Trusted Publishing)
+  # One pypi-publish invocation per job, as recommended by pypa/gh-action-pypi-publish.
+  publish-firecrawl-py:
+    name: Publish firecrawl-py to PyPI
     needs: build
-    if: ${{ needs.build.outputs.version_incremented == 'true' }}
+    if: ${{ needs.build.outputs.publish_firecrawl_py == 'true' }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -80,6 +84,24 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dists/dist-firecrawl-py/
+
+  publish-firecrawl:
+    name: Publish firecrawl to PyPI
+    needs: build
+    if: ${{ needs.build.outputs.publish_firecrawl == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-sdk-dists
+          path: dists
 
       - name: Publish firecrawl
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
