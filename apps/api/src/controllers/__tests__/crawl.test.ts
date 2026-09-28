@@ -3,8 +3,7 @@ import { crawlController } from "../v0/crawl";
 import { config } from "../../config";
 import { Request, Response } from "express";
 import { authenticateUser } from "../auth"; // Ensure this import is correct
-import { createIdempotencyKey } from "../../services/idempotency/create";
-import { validateIdempotencyKey } from "../../services/idempotency/validate";
+import { claimIdempotencyKey } from "../../services/idempotency/claim";
 import { v7 as uuidv7 } from "uuid";
 
 vi.mock("../auth", () => ({
@@ -16,7 +15,7 @@ vi.mock("../auth", () => ({
   }),
   reduce: vi.fn(),
 }));
-vi.mock("../../services/idempotency/validate");
+vi.mock("../../services/idempotency/claim");
 
 describe("crawlController", () => {
   it("should prevent duplicate requests using the same idempotency key", async () => {
@@ -34,8 +33,8 @@ describe("crawlController", () => {
       json: vi.fn(),
     } as unknown as Response;
 
-    // Mock the idempotency key validation to return false for the second call
-    (validateIdempotencyKey as Mock)
+    // The first request claims the key; the second is a duplicate.
+    (claimIdempotencyKey as Mock)
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
 

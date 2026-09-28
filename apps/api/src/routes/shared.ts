@@ -9,8 +9,7 @@ import {
 import { RateLimiterMode } from "../types";
 import { authenticateUser } from "../controllers/auth";
 import { applyAgentAuthDiscoveryHeader } from "../lib/agent-auth-discovery";
-import { createIdempotencyKey } from "../services/idempotency/create";
-import { validateIdempotencyKey } from "../services/idempotency/validate";
+export { idempotencyMiddleware } from "../services/idempotency/middleware";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { logger } from "../lib/logger";
 import {
@@ -330,26 +329,6 @@ export function authMiddleware(
   };
 }
 
-export function idempotencyMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  (async () => {
-    if (req.headers["x-idempotency-key"]) {
-      const isIdempotencyValid = await validateIdempotencyKey(req);
-      if (!isIdempotencyValid) {
-        if (!res.headersSent) {
-          return res
-            .status(409)
-            .json({ success: false, error: "Idempotency key already used" });
-        }
-      }
-      createIdempotencyKey(req);
-    }
-    next();
-  })().catch(err => next(err));
-}
 export function blocklistMiddleware(
   req: RequestWithMaybeACUC<any, any, any>,
   res: Response,
