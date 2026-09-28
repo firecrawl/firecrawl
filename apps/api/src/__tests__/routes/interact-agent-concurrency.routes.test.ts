@@ -170,26 +170,29 @@ app.post(
   },
 );
 
-type Interop =
-  | "none"
-  | "body"
-  | "header"
-  | "wrong-body"
-  | "wrong-header"
-  | "forged";
+const WRONG = "not-the-secret";
+
+// [body secret, header secret] for each case; undefined means not sent.
+const INTEROP = {
+  none: [undefined, undefined],
+  body: [SECRET, undefined],
+  header: [undefined, SECRET],
+  both: [SECRET, SECRET],
+  "wrong-body": [WRONG, undefined],
+  "wrong-header": [undefined, WRONG],
+  "valid-header-wrong-body": [WRONG, SECRET],
+  "wrong-header-valid-body": [SECRET, WRONG],
+} as const;
+
+type Interop = keyof typeof INTEROP | "forged";
 
 function interact(interop: Interop) {
+  const [bodySecret, headerSecret] =
+    interop === "forged" ? [undefined, undefined] : INTEROP[interop];
   let body: Record<string, unknown> = { code: "console.log(1)" };
-  if (interop === "body") {
+  if (bodySecret !== undefined) {
     body.__agentInterop = {
-      auth: SECRET,
-      requestId: "11111111-1111-4111-8111-111111111111",
-      shouldBill: true,
-    };
-  }
-  if (interop === "wrong-body") {
-    body.__agentInterop = {
-      auth: "not-the-secret",
+      auth: bodySecret,
       requestId: "11111111-1111-4111-8111-111111111111",
       shouldBill: true,
     };
@@ -204,9 +207,8 @@ function interact(interop: Interop) {
   let req = request(app)
     .post("/v2/scrape/scrape-1/interact")
     .set("authorization", `Bearer ${API_KEY}`);
-  if (interop === "header") req = req.set("x-firecrawl-agent-interop", SECRET);
-  if (interop === "wrong-header")
-    req = req.set("x-firecrawl-agent-interop", "not-the-secret");
+  if (headerSecret !== undefined)
+    req = req.set("x-firecrawl-agent-interop", headerSecret);
   return req.send(body);
 }
 
@@ -244,18 +246,24 @@ describe("interact browser concurrency for trusted agent requests", () => {
     expect(await reservedLimit("header")).toBe(HOBBY_CONCURRENCY_LIMIT);
   });
 
-  it.each(["wrong-body", "wrong-header"] as const)(
-    "rejects a %s secret with the same 403 as /v2/browser",
-    async interop => {
-      const res = await interact(interop);
-      expect(res.status).toBe(403);
-      expect(res.body).toEqual({
-        success: false,
-        error: "Invalid agent interop.",
-      });
-      expect(mocks.reserveExternalSlot).not.toHaveBeenCalled();
-    },
-  );
+  it("floors a free team at hobby when both secrets are valid", async () => {
+    expect(await reservedLimit("both")).toBe(HOBBY_CONCURRENCY_LIMIT);
+  });
+
+  it.each([
+    "wrong-body",
+    "wrong-header",
+    "valid-header-wrong-body",
+    "wrong-header-valid-body",
+  ] as const)("rejects %s with the same 403 as /v2/browser", async interop => {
+    const res = await interact(interop);
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({
+      success: false,
+      error: "Invalid agent interop.",
+    });
+    expect(mocks.reserveExternalSlot).not.toHaveBeenCalled();
+  });
 
   it("serves a request without interop at the free limit", async () => {
     expect(await reservedLimit("none")).toBe(FREE_LIMIT);
@@ -292,20 +300,22 @@ describe("interact on an existing browser session", () => {
     } as any);
   });
 
-  it.each(["wrong-body", "wrong-header"] as const)(
-    "rejects a %s secret with 403 and executes nothing",
-    async interop => {
-      const res = await interact(interop);
-      expect(res.status).toBe(403);
-      expect(res.body).toEqual({
-        success: false,
-        error: "Invalid agent interop.",
-      });
-      expect(executeCodeViaBrowserSession).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    "wrong-body",
+    "wrong-header",
+    "valid-header-wrong-body",
+    "wrong-header-valid-body",
+  ] as const)("rejects %s with 403 and executes nothing", async interop => {
+    const res = await interact(interop);
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({
+      success: false,
+      error: "Invalid agent interop.",
+    });
+    expect(executeCodeViaBrowserSession).not.toHaveBeenCalled();
+  });
 
-  it.each(["body", "header", "none"] as const)(
+  it.each(["body", "header", "both", "none"] as const)(
     "executes on the reused session with %s interop",
     async interop => {
       const res = await interact(interop);

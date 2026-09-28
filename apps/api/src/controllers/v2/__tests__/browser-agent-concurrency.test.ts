@@ -107,21 +107,35 @@ function makeRes() {
   };
 }
 
-type Interop = "none" | "body" | "header" | "wrong-header" | "wrong-body";
+const WRONG = "not-the-secret";
+
+// [body secret, header secret] for each case; undefined means not sent.
+const INTEROP = {
+  none: [undefined, undefined],
+  body: [SECRET, undefined],
+  header: [undefined, SECRET],
+  both: [SECRET, SECRET],
+  "wrong-body": [WRONG, undefined],
+  "wrong-header": [undefined, WRONG],
+  "valid-header-wrong-body": [WRONG, SECRET],
+  "wrong-header-valid-body": [SECRET, WRONG],
+} as const;
+
+type Interop = keyof typeof INTEROP;
 
 function makeReq(interop: Interop) {
+  const [bodySecret, headerSecret] = INTEROP[interop];
   const body: Record<string, unknown> = {};
   const headers: Record<string, string> = {};
-  if (interop === "body" || interop === "wrong-body") {
+  if (bodySecret !== undefined) {
     body.__agentInterop = {
-      auth: interop === "body" ? SECRET : "not-the-secret",
+      auth: bodySecret,
       requestId: uuidv4(),
       shouldBill: false,
     };
   }
-  if (interop === "header") headers["x-firecrawl-agent-interop"] = SECRET;
-  if (interop === "wrong-header")
-    headers["x-firecrawl-agent-interop"] = "not-the-secret";
+  if (headerSecret !== undefined)
+    headers["x-firecrawl-agent-interop"] = headerSecret;
   return {
     body,
     headers,
@@ -223,5 +237,22 @@ describe("browser create concurrency for trusted agent requests", () => {
     await browserCreateController(makeReq("none") as any, makeRes() as any);
     const limits = mocks.reserveExternalSlot.mock.calls.map(c => c[3]);
     expect(limits).toEqual([HOBBY_CONCURRENCY_LIMIT, FREE_LIMIT]);
+  });
+
+  it.each(["valid-header-wrong-body", "wrong-header-valid-body"] as const)(
+    "rejects %s with 403 before any slot is reserved",
+    async interop => {
+      const res = makeRes();
+      await browserCreateController(makeReq(interop) as any, res as any);
+      expect(res.statusCode).toBe(403);
+      expect(res.body.error).toBe("Invalid agent interop.");
+      expect(mocks.reserveExternalSlot).not.toHaveBeenCalled();
+    },
+  );
+
+  it("floors a free team at hobby when both secrets are valid", async () => {
+    expect((await admittedUntilRefused("both")).admitted).toBe(
+      HOBBY_CONCURRENCY_LIMIT,
+    );
   });
 });
