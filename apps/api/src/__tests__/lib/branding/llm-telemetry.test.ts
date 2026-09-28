@@ -48,6 +48,7 @@ describe("branding LLM telemetry", () => {
   it("tags the span with the scrape id and the branding feature", async () => {
     await run({ teamId: "test-team", scrapeId: "test-scrape" });
 
+    expect(telemetry().isEnabled).toBe(true);
     expect(telemetry().recordInputs).toBe(false);
     expect(telemetry().metadata).toEqual({
       teamId: "test-team",
