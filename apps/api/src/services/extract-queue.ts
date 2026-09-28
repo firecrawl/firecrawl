@@ -22,6 +22,8 @@ export type ExtractJobData = {
 let connection: amqp.ChannelModel | null = null;
 let channel: amqp.ConfirmChannel | null = null;
 let channelPromise: Promise<amqp.ConfirmChannel> | null = null;
+let shuttingDown = false;
+let shutdownPromise: Promise<void> | null = null;
 const pendingPublishes = new Map<
   string,
   { returned: boolean; reject: (error: Error) => void }
@@ -33,6 +35,7 @@ function rejectPendingPublishes(error: Error): void {
 }
 
 async function getChannel(): Promise<amqp.ConfirmChannel> {
+  if (shuttingDown) throw new Error("Extract queue is shutting down");
   if (channel) return channel;
   if (channelPromise) return channelPromise;
 
@@ -53,6 +56,7 @@ async function openChannel(): Promise<amqp.ConfirmChannel> {
   const conn = await amqp.connect(url);
   let ch: amqp.ConfirmChannel;
   try {
+    if (shuttingDown) throw new Error("Extract queue is shutting down");
     ch = await conn.createConfirmChannel();
 
     // Set up the dead letter exchange
@@ -77,6 +81,7 @@ async function openChannel(): Promise<amqp.ConfirmChannel> {
         "x-delivery-limit": 1,
       },
     });
+    if (shuttingDown) throw new Error("Extract queue is shutting down");
   } catch (error) {
     await conn.close().catch(() => {});
     throw error;
@@ -250,15 +255,39 @@ export async function consumeExtractDLQ(
   _logger.info("Started consuming extract DLQ");
 }
 
-export async function shutdownExtractQueue(): Promise<void> {
+export function shutdownExtractQueue(): Promise<void> {
+  if (!shutdownPromise) {
+    shuttingDown = true;
+    shutdownPromise = closeExtractQueue();
+  }
+  return shutdownPromise;
+}
+
+async function closeExtractQueue(): Promise<void> {
+  // A connect already in progress either finishes before this capture or sees
+  // shuttingDown and closes its new connection before we continue.
+  await channelPromise?.catch(() => {});
   const ch = channel;
   const conn = connection;
   channel = null;
   connection = null;
   rejectPendingPublishes(new Error("Extract queue shutting down"));
-  try {
-    await ch?.close();
-  } finally {
-    await conn?.close();
+  const errors: unknown[] = [];
+  if (ch) {
+    try {
+      await ch.close();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (conn) {
+    try {
+      await conn.close();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, "Failed to close extract queue");
   }
 }

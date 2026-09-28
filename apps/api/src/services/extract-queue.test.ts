@@ -56,6 +56,7 @@ describe("extract job publishing", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    connectMock.mockReturnValue(connectionMock);
     channelMock.sendToQueue.mockReturnValue(true);
     channelMock.close.mockImplementation(async () => {});
     connectionMock.close.mockImplementation(async () => {});
@@ -193,7 +194,9 @@ describe("extract job publishing", () => {
         }),
     );
     let settled = false;
-    const shutdown = shutdownExtractQueue().then(() => {
+    const firstShutdown = shutdownExtractQueue();
+    expect(shutdownExtractQueue()).toBe(firstShutdown);
+    const shutdown = firstShutdown.then(() => {
       settled = true;
     });
     await vi.waitFor(() => expect(connectionMock.close).toHaveBeenCalled());
@@ -203,5 +206,55 @@ describe("extract job publishing", () => {
     expect(settled).toBe(true);
     expect(channelMock.close).toHaveBeenCalledOnce();
     expect(connectionMock.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not reopen a channel after shutdown starts", async () => {
+    const { addExtractJob, shutdownExtractQueue } = await import(
+      "./extract-queue.js"
+    );
+    await shutdownExtractQueue();
+    await expect(addExtractJob(job.extractId, job)).rejects.toThrow(
+      "shutting down",
+    );
+    expect(connectMock).not.toHaveBeenCalled();
+  });
+
+  it("closes an in-flight connection before shutdown resolves", async () => {
+    let finishConnect!: (value: typeof connectionMock) => void;
+    (connectMock as Mock).mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finishConnect = resolve;
+        }),
+    );
+    const { addExtractJob, shutdownExtractQueue } = await import(
+      "./extract-queue.js"
+    );
+    const publish = addExtractJob(job.extractId, job);
+    const failure = expect(publish).rejects.toThrow("shutting down");
+    await vi.waitFor(() => expect(connectMock).toHaveBeenCalledOnce());
+    const shutdown = shutdownExtractQueue();
+    finishConnect(connectionMock);
+    await Promise.all([failure, shutdown]);
+    expect(connectionMock.close).toHaveBeenCalledOnce();
+    expect(channelMock.sendToQueue).not.toHaveBeenCalled();
+  });
+
+  it("preserves both channel and connection close failures", async () => {
+    const { addExtractJob, shutdownExtractQueue } = await import(
+      "./extract-queue.js"
+    );
+    const publish = addExtractJob(job.extractId, job);
+    await vi.waitFor(() => expect(channelMock.sendToQueue).toHaveBeenCalled());
+    callback()(null);
+    await publish;
+
+    const channelError = new Error("channel close failed");
+    const connectionError = new Error("connection close failed");
+    channelMock.close.mockRejectedValueOnce(channelError);
+    connectionMock.close.mockRejectedValueOnce(connectionError);
+    await expect(shutdownExtractQueue()).rejects.toMatchObject({
+      errors: [channelError, connectionError],
+    });
   });
 });
