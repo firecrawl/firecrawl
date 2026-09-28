@@ -1337,7 +1337,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
     const start = Date.now();
     try {
       if (config.NUQ_RABBITMQ_URL) {
-        await this.startSender();
+        try {
+          await this.startSender();
+        } catch (err) {
+          logger.warn("NuQ sender unavailable, falling back to postgres", {
+            module: "nuq/rabbitmq",
+            err,
+          });
+        }
 
         if (this.sender) {
           try {

@@ -1,4 +1,4 @@
-const { connect, channel, connection, logger } = vi.hoisted(() => {
+const { connect, channel, connection, logger, poolQuery } = vi.hoisted(() => {
   const channel = {
     assertQueue: vi.fn(async () => ({ queue: "test-listen-queue" })),
     prefetch: vi.fn(async () => {}),
@@ -17,6 +17,7 @@ const { connect, channel, connection, logger } = vi.hoisted(() => {
     connect: vi.fn(),
     channel,
     connection,
+    poolQuery: vi.fn(),
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   };
 });
@@ -26,6 +27,9 @@ vi.mock("pg", () => ({
   Client: class {},
   Pool: class {
     on() {}
+    query(...args: any[]) {
+      return poolQuery(...args);
+    }
   },
 }));
 vi.mock("../../config", () => ({
@@ -53,6 +57,7 @@ describe("NuQ RabbitMQ sender startup", () => {
     vi.resetModules();
     vi.clearAllMocks();
     connect.mockResolvedValue(connection);
+    poolQuery.mockResolvedValue({ rows: [] });
   });
 
   it("waits for one shared connection before publishing concurrent completions", async () => {
@@ -78,6 +83,29 @@ describe("NuQ RabbitMQ sender startup", () => {
     ).toEqual(["completed", "failed"]);
   });
 
+  it("waits for one shared connection before sending concurrent prefetch hints", async () => {
+    let finishConnect!: (value: typeof connection) => void;
+    connect.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finishConnect = resolve;
+        }),
+    );
+    const queue = await sender();
+    const first = queue.sendJobPrefetch({ id: "job-a" }, logger);
+    const second = queue.sendJobPrefetch({ id: "job-b" }, logger);
+    expect(channel.sendToQueue).not.toHaveBeenCalled();
+
+    finishConnect(connection);
+    await Promise.all([first, second]);
+    expect(connect).toHaveBeenCalledOnce();
+    expect(channel.sendToQueue).toHaveBeenCalledTimes(2);
+    expect(channel.sendToQueue.mock.calls.map(call => call[0])).toEqual([
+      "nuq.queue_scrape.prefetch",
+      "nuq.queue_scrape.prefetch",
+    ]);
+  });
+
   it("allows a new attempt after a failed connection", async () => {
     connect.mockRejectedValueOnce(new Error("broker unavailable"));
     const queue = await sender();
@@ -88,6 +116,55 @@ describe("NuQ RabbitMQ sender startup", () => {
     await queue.sendJobEnd("job-b", "completed", "listener-b");
     expect(connect).toHaveBeenCalledTimes(2);
     expect(channel.sendToQueue).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to Postgres when the sender connection fails", async () => {
+    const failure = new Error("broker unavailable");
+    connect.mockRejectedValueOnce(failure);
+    const queue = await sender();
+
+    await expect(queue.getJobToProcess()).resolves.toBeNull();
+    expect(poolQuery).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "NuQ sender unavailable, falling back to postgres",
+      { module: "nuq/rabbitmq", err: failure },
+    );
+  });
+
+  it("ignores late close events from a replaced sender", async () => {
+    const makePair = () => {
+      const ch = {
+        ...channel,
+        on: vi.fn(),
+        sendToQueue: vi.fn(() => true),
+      };
+      const conn = {
+        ...connection,
+        on: vi.fn(),
+        createChannel: vi.fn(async () => ch),
+      };
+      return { ch, conn };
+    };
+    const old = makePair();
+    const current = makePair();
+    connect.mockResolvedValueOnce(old.conn).mockResolvedValueOnce(current.conn);
+    const queue = await sender();
+    await queue.sendJobEnd("job-a", "completed", "listener-a");
+
+    const oldChannelClose = old.ch.on.mock.calls.find(
+      call => call[0] === "close",
+    )![1];
+    const oldConnectionClose = old.conn.on.mock.calls.find(
+      call => call[0] === "close",
+    )![1];
+    oldChannelClose();
+    await queue.sendJobEnd("job-b", "completed", "listener-b");
+    oldChannelClose();
+    oldConnectionClose();
+    await queue.sendJobEnd("job-c", "completed", "listener-c");
+
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(current.ch.sendToQueue).toHaveBeenCalledTimes(2);
   });
 
   it("closes a failed channel setup and lets the next publish retry", async () => {
