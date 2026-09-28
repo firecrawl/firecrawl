@@ -429,12 +429,7 @@ function telemetryMetadata(metadata: GenerateCompletionsOptions["metadata"]) {
           llmsTxtId: metadata.llmsTxtId,
         }
       : {}),
-    ...(metadata.crawlId
-      ? {
-          langfuseTraceId: "crawl:" + metadata.crawlId,
-          crawlId: metadata.crawlId,
-        }
-      : {}),
+    ...(metadata.crawlId ? { crawlId: metadata.crawlId } : {}),
   };
 }
 

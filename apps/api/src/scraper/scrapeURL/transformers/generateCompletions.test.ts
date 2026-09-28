@@ -181,7 +181,6 @@ describe("generateCompletions telemetry metadata", () => {
     expect(telemetry.metadata).toMatchObject({
       teamId: "test-team",
       crawlId: "test-crawl",
-      langfuseTraceId: "crawl:test-crawl",
     });
   });
 
@@ -210,7 +209,6 @@ describe("generateCompletions telemetry metadata", () => {
     expect(lastCall().experimental_telemetry.metadata).toMatchObject({
       teamId: "test-team",
       scrapeId: "test-scrape",
-      langfuseTraceId: "scrape:test-scrape",
     });
   });
 });
