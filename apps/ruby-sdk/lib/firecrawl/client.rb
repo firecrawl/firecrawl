@@ -601,8 +601,9 @@ module Firecrawl
     def paginate_crawl(job)
       job.data ||= []
       current = job
+      seen = {}
       while current.next_url && !current.next_url.empty?
-        raw = @http.get_absolute(current.next_url)
+        raw = fetch_pagination_page!(current.next_url, seen)
         next_page = Models::CrawlJob.new(raw)
         job.data.concat(next_page.data) unless next_page.data.empty?
         current = next_page
@@ -613,8 +614,9 @@ module Firecrawl
     def paginate_batch_scrape(job)
       job.data ||= []
       current = job
+      seen = {}
       while current.next_url && !current.next_url.empty?
-        raw = @http.get_absolute(current.next_url)
+        raw = fetch_pagination_page!(current.next_url, seen)
         next_page = Models::BatchScrapeJob.new(raw)
         job.data.concat(next_page.data) unless next_page.data.empty?
         current = next_page
@@ -625,8 +627,9 @@ module Firecrawl
     def paginate_monitor_check(check)
       check.pages ||= []
       current = check
+      seen = {}
       while current.next_url && !current.next_url.empty?
-        raw = @http.get_absolute(current.next_url)
+        raw = fetch_pagination_page!(current.next_url, seen)
         data = raw["data"] || raw
         data["next"] = raw["next"] if raw["next"]
         next_page = Models::MonitorCheckDetail.new(data)
@@ -635,6 +638,13 @@ module Firecrawl
       end
       check.next_url = nil
       check
+    end
+
+    def fetch_pagination_page!(url, seen)
+      raise FirecrawlError, "Pagination cursor repeated: #{url}" if seen[url]
+
+      seen[url] = true
+      @http.get_absolute(url)
     end
   end
 end
