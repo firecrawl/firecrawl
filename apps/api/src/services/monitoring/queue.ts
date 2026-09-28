@@ -11,7 +11,10 @@ const MONITOR_CHECK_DLQ = "monitor.checks.dlq";
 const MONITOR_SEARCH_CHECK_QUEUE = "monitor.checks.search";
 const MONITOR_SEARCH_CHECK_DLX = "monitor.checks.search.dlx";
 const MONITOR_SEARCH_CHECK_DLQ = "monitor.checks.search.dlq";
-const PUBLISH_CONFIRM_TIMEOUT_MS = 30000;
+// A scheduler claims up to 10 monitors for 60 seconds by default. Keep the
+// worst-case serial broker stall well below that lease so another worker
+// cannot reclaim the same checks while this batch is still publishing.
+const PUBLISH_CONFIRM_TIMEOUT_MS = 3000;
 
 const logger = _logger.child({ module: "monitoring-queue" });
 
