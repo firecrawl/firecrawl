@@ -151,10 +151,10 @@ func TestFailedJobExposesPaginationFailureWithoutLosingJob(t *testing.T) {
 					return
 				}
 				if r.URL.Path == "/next" {
-					_, _ = fmt.Fprintf(w, `{"next":%q,"data":[{"markdown":"second"}]}`, server.URL+"/next")
+					_, _ = fmt.Fprintf(w, `{"next":%q,"data":[{"markdown":"second"}]}`, "http://"+r.Host+"/next")
 					return
 				}
-				_, _ = fmt.Fprintf(w, `{"status":"failed","next":%q,"data":[{"markdown":"first"}]}`, server.URL+"/next")
+				_, _ = fmt.Fprintf(w, `{"status":"failed","next":%q,"data":[{"markdown":"first"}]}`, "http://"+r.Host+"/next")
 			}))
 			defer server.Close()
 
@@ -191,7 +191,7 @@ func TestCompletedJobPaginationRejectsRepeatedCursorAndKeepsFetchedPages(t *test
 			var server *httptest.Server
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = fmt.Fprintf(w, `{"status":"completed","next":%q,"data":[{"markdown":"second"}]}`, server.URL+"/next")
+				_, _ = fmt.Fprintf(w, `{"status":"completed","next":%q,"data":[{"markdown":"second"}]}`, "http://"+r.Host+"/next")
 			}))
 			defer server.Close()
 
