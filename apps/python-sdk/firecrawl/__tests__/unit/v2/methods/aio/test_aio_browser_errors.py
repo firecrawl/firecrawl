@@ -115,6 +115,7 @@ async def test_async_browser_methods_still_return_successful_responses(
 
     assert result.success is True
     if operation == "create":
+        assert result.id == "session-id"
         assert result.cdp_url == "wss://browser.example/cdp"
         assert result.live_view_url == "https://browser.example/live"
         assert result.interactive_live_view_url == "https://browser.example/interactive"
@@ -123,11 +124,14 @@ async def test_async_browser_methods_still_return_successful_responses(
         assert result.stdout == "1"
         assert result.exit_code == 0
     elif operation == "delete":
+        assert result.status == "destroyed"
         assert result.session_duration_ms == 1500
         assert result.credits_billed == 1
     else:
         assert len(result.sessions) == 1
         session = result.sessions[0]
+        assert session.id == "session-id"
+        assert session.status == "active"
         assert session.cdp_url == "wss://browser.example/cdp"
         assert session.live_view_url == "https://browser.example/live"
         assert session.interactive_live_view_url == "https://browser.example/interactive"
