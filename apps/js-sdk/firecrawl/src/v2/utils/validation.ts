@@ -102,20 +102,23 @@ export function ensureValidParseFormats(formats?: ParseFormatOption[]): void {
 
   for (const fmt of formats) {
     if (typeof fmt === "string") {
-      if (fmt === "json") {
+      // Runtime callers can still pass formats excluded by the TypeScript
+      // union, so keep validating their string values.
+      const format: string = fmt;
+      if (format === "json") {
         throw new Error("json format must be an object with { type: 'json', prompt, schema }");
       }
-      if (fmt === "screenshot") {
+      if (format === "screenshot") {
         throw new Error("parse does not support screenshot format");
       }
-      if (fmt === "changeTracking") {
+      if (format === "changeTracking") {
         throw new Error("parse does not support changeTracking format");
       }
-      if (fmt === "branding") {
+      if (format === "branding") {
         throw new Error("parse does not support branding format");
       }
-      if (fmt === "audio" || fmt === "video") {
-        throw new Error(`parse does not support ${fmt} format`);
+      if (format === "audio" || format === "video") {
+        throw new Error(`parse does not support ${format} format`);
       }
       continue;
     }
@@ -211,4 +214,3 @@ export function ensureValidParseOptions(options?: ParseOptions): void {
 
   ensureValidParseFormats(options.formats);
 }
-
