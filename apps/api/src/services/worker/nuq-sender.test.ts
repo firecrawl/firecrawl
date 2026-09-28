@@ -56,7 +56,12 @@ describe("NuQ RabbitMQ sender startup", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    connect.mockReset();
+    connection.createChannel.mockReset();
+    channel.assertQueue.mockReset();
     connect.mockResolvedValue(connection);
+    connection.createChannel.mockResolvedValue(channel);
+    channel.assertQueue.mockResolvedValue({ queue: "test-listen-queue" });
     poolQuery.mockResolvedValue({ rows: [] });
   });
 
@@ -198,13 +203,41 @@ describe("NuQ RabbitMQ sender startup", () => {
     expect(connection.close).toHaveBeenCalledOnce();
     expect(channel.sendToQueue).not.toHaveBeenCalled();
   });
+
+  it("skips queue setup when shutdown finishes during channel creation", async () => {
+    let finishChannel!: (value: typeof channel) => void;
+    connection.createChannel.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finishChannel = resolve;
+        }),
+    );
+    const queue = await sender();
+    const publishing = queue.sendJobEnd("job-a", "completed", "listener-a");
+    await vi.waitFor(() =>
+      expect(connection.createChannel).toHaveBeenCalledOnce(),
+    );
+    await queue.shutdown();
+
+    finishChannel(channel);
+    await publishing;
+    expect(channel.assertQueue).not.toHaveBeenCalled();
+    expect(channel.close).toHaveBeenCalledOnce();
+    expect(connection.close).toHaveBeenCalledOnce();
+    expect(channel.sendToQueue).not.toHaveBeenCalled();
+  });
 });
 
 describe("NuQ listener recovery scan", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    connect.mockReset();
+    connection.createChannel.mockReset();
+    channel.assertQueue.mockReset();
     connect.mockResolvedValue(connection);
+    connection.createChannel.mockResolvedValue(channel);
+    channel.assertQueue.mockResolvedValue({ queue: "test-listen-queue" });
   });
 
   it("handles a failed recovery query without an unhandled rejection", async () => {

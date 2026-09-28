@@ -351,6 +351,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     try {
       if (this.shuttingDown) return;
       channel = await connection.createChannel();
+      if (this.shuttingDown) return;
       await channel.assertQueue(this.queueName + ".prefetch", {
         durable: true,
         arguments: {
