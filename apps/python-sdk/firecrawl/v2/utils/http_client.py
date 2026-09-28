@@ -77,13 +77,13 @@ class HttpClient:
         retries: Optional[int] = None,
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
-        """Make a POST request with retry logic."""
+        """Make a POST request. Retry only when explicitly requested by the caller."""
         if headers is None:
             headers = self._prepare_headers()
         if timeout is None:
             timeout = self.timeout
         if retries is None:
-            retries = self.max_retries
+            retries = 1
         if backoff_factor is None:
             backoff_factor = self.backoff_factor
 
@@ -130,7 +130,7 @@ class HttpClient:
         retries: Optional[int] = None,
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
-        """Make a multipart/form-data POST request with retry logic."""
+        """Make a multipart/form-data POST request without implicit retries."""
         multipart_headers = self._prepare_headers(include_json_content_type=False)
         if headers:
             multipart_headers.update(headers)
@@ -139,7 +139,7 @@ class HttpClient:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
-            retries = self.max_retries
+            retries = 1
         if backoff_factor is None:
             backoff_factor = self.backoff_factor
 
@@ -232,7 +232,7 @@ class HttpClient:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
-            retries = self.max_retries
+            retries = 1
         if backoff_factor is None:
             backoff_factor = self.backoff_factor
 
@@ -280,7 +280,7 @@ class HttpClient:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
-            retries = self.max_retries
+            retries = 1
         if backoff_factor is None:
             backoff_factor = self.backoff_factor
 

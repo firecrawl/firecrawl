@@ -65,7 +65,7 @@ async def scrape_alexandria(client: AsyncHttpClient, calls, *, timeout: Optional
     request_id = _alexandria_request_id(request_id)
     headers = {"x-request-id": request_id}
     try:
-        response = await client.post("/v2/scrape", payload, headers=headers,
+        response = await client.post("/v2/scrape", payload, headers=headers, retries=client.max_retries,
                                     timeout=(min(timeout if timeout is not None else 50000, 50000) + 30000) / 1000)
         if response.status_code != 200 or not response.json().get("success"):
             handle_response_error(response, "scrape alexandria")

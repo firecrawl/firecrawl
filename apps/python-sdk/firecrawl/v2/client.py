@@ -125,7 +125,7 @@ class FirecrawlClient:
             api_key: Firecrawl API key (or set FIRECRAWL_API_KEY env var)
             api_url: Base URL for the Firecrawl API
             timeout: Request timeout in seconds
-            max_retries: Maximum number of retries for failed requests
+            max_retries: Number of attempts for GET requests and Alexandria requests
             backoff_factor: Exponential backoff factor for retries (e.g. 0.5 means wait 0.5s, then 1s, then 2s between retries)
         """
         if api_key is None:
