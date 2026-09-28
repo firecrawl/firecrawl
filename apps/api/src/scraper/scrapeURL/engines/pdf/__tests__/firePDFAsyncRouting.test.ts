@@ -285,6 +285,18 @@ describe("FirePDF route decision telemetry", () => {
   });
 
   it("uses the remaining time captured before the attempt when one is passed", async () => {
+    const bucket = async (le: number) =>
+      (await firePdfRouteRemainingSeconds.get()).values.find(
+        v =>
+          v.metricName ===
+            "firecrawl_fire_pdf_route_remaining_seconds_bucket" &&
+          v.labels.path === "sync" &&
+          v.labels.source_kind === "pdf" &&
+          (v.labels as Record<string, unknown>).le === le,
+      )?.value ?? 0;
+    const le30Before = await bucket(30);
+    const le45Before = await bucket(45);
+
     const meta = makeMeta();
     meta.abort.scrapeTimeout.mockReturnValue(2_000);
     recordFirePdfRoute(meta, {
@@ -298,6 +310,9 @@ describe("FirePDF route decision telemetry", () => {
       "Routing FirePDF request to sync /ocr",
       expect.objectContaining({ remaining_ms: 45_000 }),
     );
+    // 45 s, not the 2 s the scrape has left now: le=45 moves, le=30 doesn't.
+    expect(await bucket(45)).toBe(le45Before + 1);
+    expect(await bucket(30)).toBe(le30Before);
   });
 
   it("counts async decisions without a second log line and skips the histogram when there is no deadline", async () => {
