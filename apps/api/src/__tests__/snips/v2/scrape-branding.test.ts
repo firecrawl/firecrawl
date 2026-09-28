@@ -115,6 +115,76 @@ describe("Branding cost tracking", () => {
   );
 });
 
+// Needs the API server started with TYPESAFE_API_KEY; the team flag routes
+// only this identity's branding decisions to Jev.
+const HAS_TYPESAFE = !!process.env.TYPESAFE_API_KEY;
+
+describe("Branding with Jev", () => {
+  let jevIdentity: Identity;
+
+  beforeAll(async () => {
+    jevIdentity = await idmux({
+      name: "scrape-branding-jev",
+      concurrency: 10,
+      credits: 100000,
+      flags: { brandingJev: true },
+    });
+  }, 10000 + scrapeTimeout);
+
+  concurrentIf(TEST_PRODUCTION && HAS_TYPESAFE)(
+    "answers branding with Jev and records its cost, not an LLM call",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/",
+          formats: ["branding"],
+          timeout: scrapeTimeout,
+        },
+        jevIdentity,
+      );
+
+      expect(response.branding).toBeDefined();
+      expect(response.branding?.logo).toContain("firecrawl");
+      expect(response.branding?.colors?.primary).toMatch(/^#[0-9A-F]{6}$/);
+
+      const calls = await getCostTrackingCalls(response.metadata.scrapeId!);
+      const jevCalls = calls.filter(
+        call =>
+          call.metadata?.module === "branding" &&
+          call.metadata?.method === "enhanceBrandingWithJev",
+      );
+      expect(jevCalls).toHaveLength(1);
+      expect(jevCalls[0].model).toMatch(/^jev/);
+      expect(jevCalls[0].cost).toBeGreaterThan(0);
+      expect(calls.filter(isBrandingCall)).toHaveLength(0);
+    },
+    scrapeTimeout + 15000,
+  );
+
+  concurrentIf(TEST_PRODUCTION && HAS_TYPESAFE)(
+    "keeps teams without the flag on the LLM",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/",
+          formats: ["branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      const calls = await getCostTrackingCalls(response.metadata.scrapeId!);
+      expect(
+        calls.filter(
+          call => call.metadata?.method === "enhanceBrandingWithJev",
+        ),
+      ).toHaveLength(0);
+      expect(calls.filter(isBrandingCall)).toHaveLength(1);
+    },
+    scrapeTimeout + 15000,
+  );
+});
+
 // TODO: fix this test
 // Need to run on fire-engine
 describe.skip("Branding extraction", () => {

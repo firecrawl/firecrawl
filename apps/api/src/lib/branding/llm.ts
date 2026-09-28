@@ -4,6 +4,7 @@ import { config } from "../../config";
 import { calculateCost } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostLimitExceededError } from "../cost-tracking";
 import { BrandingEnhancement, getBrandingEnhancementSchema } from "./schema";
+import { enhanceBrandingWithJev, isJevBrandingEnabled } from "./jev";
 import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
 import { getModel } from "../generic-ai";
@@ -105,6 +106,23 @@ export async function enhanceBrandingWithLLM(
   input: BrandingLLMInput,
 ): Promise<BrandingEnhancement> {
   const logger = input.logger;
+
+  if (isJevBrandingEnabled(input)) {
+    const jev = await enhanceBrandingWithJev(input);
+    const escalateBelow = config.BRANDING_JEV_ESCALATE_BELOW;
+    const unsureOfLogo =
+      escalateBelow !== undefined &&
+      jev?.logoConfidence !== undefined &&
+      jev.logoConfidence < escalateBelow;
+    if (jev && !unsureOfLogo) return jev.enhancement;
+    if (jev) {
+      logger.info("Jev unsure of the logo, escalating branding to the LLM", {
+        logoConfidence: jev.logoConfidence,
+        escalateBelow,
+      });
+    }
+  }
+
   const prompt = buildBrandingPrompt(input);
 
   // Smart model selection: use more powerful model for complex cases

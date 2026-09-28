@@ -521,6 +521,14 @@ const configSchema = z.object({
   DISABLE_BLOCKLIST: z.stringbool().optional(),
   FORCED_ENGINE_DOMAINS: z.string().optional(),
   DEBUG_BRANDING: z.stringbool().optional(),
+  // TypeSafe Jev for branding decisions (lib/branding/jev.ts). BRANDING_JEV
+  // turns it on for every team; the brandingJev team flag turns it on per team.
+  TYPESAFE_API_KEY: z.string().optional(),
+  TYPESAFE_BASE_URL: z.string().optional(),
+  BRANDING_JEV: z.stringbool().optional(),
+  BRANDING_JEV_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  // Rerun branding on the LLM when Jev's logo confidence is below this (0-1).
+  BRANDING_JEV_ESCALATE_BELOW: z.coerce.number().min(0).max(1).optional(),
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
