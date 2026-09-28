@@ -1,4 +1,4 @@
-name: Publish Python SDK 
+name: Publish Python SDK
 
 on:
   push:
@@ -7,45 +7,81 @@ on:
     paths:
       - 'apps/python-sdk/**'
 
-env:
-  PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
-  PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+permissions:
+  contents: read
 
 jobs:
-  build-and-publish:
+  build:
+    name: Build distributions
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    outputs:
+      version_incremented: ${{ steps.version_check_script.outputs.version_incremented }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.x'
 
-      - name: Install dependencies
+      - name: Install build tooling
         run: |
           python -m pip install --upgrade pip
-          pip install setuptools wheel twine build requests packaging
+          pip install build==1.6.1 requests==2.34.2 packaging==26.3
 
       - name: Run version check script
         id: version_check_script
         run: |
           VERSION_INCREMENTED=$(python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl-py)
-          echo "VERSION_INCREMENTED=$VERSION_INCREMENTED" >> $GITHUB_ENV
+          echo "version_incremented=$VERSION_INCREMENTED" >> "$GITHUB_OUTPUT"
 
-      - name: Build and publish to PyPI
-        if: ${{ env.VERSION_INCREMENTED == 'true' }}
-        env:
-          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+      - name: Build firecrawl-py and firecrawl
+        if: ${{ steps.version_check_script.outputs.version_incremented == 'true' }}
+        working-directory: ./apps/python-sdk
         run: |
-          python -m build
-          twine upload dist/*
+          python -m build --outdir dist-firecrawl-py
           sed -i 's/name = "firecrawl-py"/name = "firecrawl"/g' pyproject.toml
           sed -i 's/name="firecrawl-py"/name="firecrawl"/g' setup.py
-          python -m build
-          twine upload dist/*
-        working-directory: ./apps/python-sdk
+          python -m build --outdir dist-firecrawl
 
+      - name: Upload distributions
+        if: ${{ steps.version_check_script.outputs.version_incremented == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-sdk-dists
+          path: |
+            apps/python-sdk/dist-firecrawl-py/
+            apps/python-sdk/dist-firecrawl/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI (Trusted Publishing)
+    needs: build
+    if: ${{ needs.build.outputs.version_incremented == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-sdk-dists
+          path: dists
+
+      - name: Publish firecrawl-py
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dists/dist-firecrawl-py/
+
+      - name: Publish firecrawl
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dists/dist-firecrawl/
