@@ -46,30 +46,36 @@ func newHTTPClient(apiKey, baseURL string, client *http.Client, maxRetries int, 
 // post sends a POST request with a JSON body.
 func (h *httpClient) post(ctx context.Context, path string, body interface{}, extraHeaders map[string]string) (json.RawMessage, error) {
 	url := h.baseURL + path
-	return h.doJSON(ctx, "POST", url, body, extraHeaders)
+	return h.doJSON(ctx, "POST", url, body, extraHeaders, false)
+}
+
+// postWithRetries is reserved for requests the server deduplicates by a stable request ID.
+func (h *httpClient) postWithRetries(ctx context.Context, path string, body interface{}, extraHeaders map[string]string) (json.RawMessage, error) {
+	url := h.baseURL + path
+	return h.doJSON(ctx, "POST", url, body, extraHeaders, true)
 }
 
 // patch sends a PATCH request.
 func (h *httpClient) patch(ctx context.Context, path string, body interface{}) (json.RawMessage, error) {
 	url := h.baseURL + path
-	return h.doJSON(ctx, "PATCH", url, body, nil)
+	return h.doJSON(ctx, "PATCH", url, body, nil, false)
 }
 
 // get sends a GET request.
 func (h *httpClient) get(ctx context.Context, path string) (json.RawMessage, error) {
 	url := h.baseURL + path
-	return h.doJSON(ctx, "GET", url, nil, nil)
+	return h.doJSON(ctx, "GET", url, nil, nil, true)
 }
 
 // getAbsolute sends a GET request to an absolute URL (for pagination cursors).
 func (h *httpClient) getAbsolute(ctx context.Context, absoluteURL string) (json.RawMessage, error) {
-	return h.doJSON(ctx, "GET", absoluteURL, nil, nil)
+	return h.doJSON(ctx, "GET", absoluteURL, nil, nil, true)
 }
 
 // delete sends a DELETE request.
 func (h *httpClient) delete(ctx context.Context, path string) (json.RawMessage, error) {
 	url := h.baseURL + path
-	return h.doJSON(ctx, "DELETE", url, nil, nil)
+	return h.doJSON(ctx, "DELETE", url, nil, nil, false)
 }
 
 // postMultipart sends a POST request with a multipart/form-data body. The extra
@@ -119,82 +125,51 @@ func (h *httpClient) postMultipart(
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to build multipart body: %v", err)}
 	}
 
-	var lastErr error
-	for attempt := 0; attempt <= h.maxRetries; attempt++ {
-		if attempt > 0 {
-			if err := h.sleepBackoff(ctx, attempt); err != nil {
-				return nil, err
-			}
-			body, contentType, err = buildBody()
-			if err != nil {
-				return nil, &FirecrawlError{Message: fmt.Sprintf("failed to rebuild multipart body: %v", err)}
-			}
-		}
-
-		req, err := http.NewRequestWithContext(ctx, "POST", url, body)
-		if err != nil {
-			return nil, &FirecrawlError{Message: fmt.Sprintf("failed to create request: %v", err)}
-		}
-
-		if h.apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+h.apiKey)
-		}
-		req.Header.Set("Content-Type", contentType)
-		req.Header.Set("User-Agent", "firecrawl-go/"+Version)
-		for k, v := range h.extraHeaders {
-			req.Header.Set(k, v)
-		}
-
-		resp, err := h.client.Do(req)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			lastErr = err
-			continue
-		}
-
-		respBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return json.RawMessage(respBody), nil
-		}
-
-		errMsg, errCode, requiresAction := extractError(respBody, resp.StatusCode)
-
-		switch resp.StatusCode {
-		case 401:
-			return nil, &AuthenticationError{
-				FirecrawlError: FirecrawlError{StatusCode: 401, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction},
-			}
-		case 429:
-			return nil, &RateLimitError{
-				FirecrawlError: FirecrawlError{StatusCode: 429, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction},
-			}
-		}
-
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 408 && resp.StatusCode != 409 {
-			return nil, &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}
-		}
-
-		lastErr = &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}
+	// An ambiguous failure may arrive after the server accepted the upload.
+	// Without a replay-safe request ID, repeating it could charge twice.
+	req, err := http.NewRequestWithContext(ctx, "POST", url, body)
+	if err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to create request: %v", err)}
 	}
 
-	if lastErr != nil {
-		if fe, ok := lastErr.(*FirecrawlError); ok {
-			return nil, fe
-		}
-		return nil, &FirecrawlError{Message: fmt.Sprintf("request failed after %d retries: %v", h.maxRetries, lastErr)}
+	if h.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+h.apiKey)
 	}
-	return nil, &FirecrawlError{Message: "request failed"}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("User-Agent", "firecrawl-go/"+Version)
+	for k, v := range h.extraHeaders {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, &FirecrawlError{Message: fmt.Sprintf("request failed: %v", err)}
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to read response: %v", err)}
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return json.RawMessage(respBody), nil
+	}
+
+	errMsg, errCode, requiresAction := extractError(respBody, resp.StatusCode)
+	switch resp.StatusCode {
+	case 401:
+		return nil, &AuthenticationError{FirecrawlError: FirecrawlError{StatusCode: 401, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}}
+	case 429:
+		return nil, &RateLimitError{FirecrawlError: FirecrawlError{StatusCode: 429, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}}
+	default:
+		return nil, &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}
+	}
 }
 
-func (h *httpClient) doJSON(ctx context.Context, method, url string, body interface{}, extraHeaders map[string]string) (json.RawMessage, error) {
+func (h *httpClient) doJSON(ctx context.Context, method, url string, body interface{}, extraHeaders map[string]string, retry bool) (json.RawMessage, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -205,7 +180,11 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 	}
 
 	var lastErr error
-	for attempt := 0; attempt <= h.maxRetries; attempt++ {
+	maxRetries := 0
+	if retry {
+		maxRetries = h.maxRetries
+	}
+	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
 			if err := h.sleepBackoff(ctx, attempt); err != nil {
 				return nil, err
@@ -285,7 +264,7 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 		if fe, ok := lastErr.(*FirecrawlError); ok {
 			return nil, fe
 		}
-		return nil, &FirecrawlError{Message: fmt.Sprintf("request failed after %d retries: %v", h.maxRetries, lastErr)}
+		return nil, &FirecrawlError{Message: fmt.Sprintf("request failed after %d retries: %v", maxRetries, lastErr)}
 	}
 	return nil, &FirecrawlError{Message: "request failed"}
 }

@@ -352,9 +352,13 @@ if err != nil {
 
 ### Retry Logic
 
-The SDK automatically retries transient failures:
-- **Retried:** 408, 409, 5xx errors, and connection failures
-- **Not retried:** 401, 429, and other 4xx errors
+The SDK automatically retries transient failures on GET requests and Alexandria
+requests, which carry a stable server-deduplicated request ID:
+- **Retried for those requests:** 408, 409, 5xx errors, and connection failures
+- **Not retried:** Other POST/PATCH/DELETE requests, including multipart uploads.
+  An ambiguous gateway or connection failure can arrive after the server accepted
+  a write; replaying it could create duplicate work and charges.
+- **Also not retried:** 401, 429, and other 4xx errors
 - **Backoff:** Exponential backoff with configurable factor
 
 ## Context Support
