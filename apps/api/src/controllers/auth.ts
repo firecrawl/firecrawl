@@ -691,7 +691,7 @@ async function buildAuthenticatedRateLimiter(
   return getAutumnRateLimiter(mode, multiplier, flags);
 }
 
-export type AuthenticateOptions = {
+type AuthenticateOptions = {
   allowKeyless?: boolean;
   // Route opt-in: a trusted agent-interop request may authenticate with a
   // hosted_mcp_oauth key, which agent runs started from the hosted MCP carry.

@@ -153,6 +153,36 @@ function normalizeSchema(x: any): any {
   }
 }
 
+/**
+ * Whether text is JSON cut off before its end: an unclosed string, object or
+ * array. That only happens when the model ran out of output tokens, and no
+ * repair can recover the part that was never generated.
+ */
+export function isTruncatedJson(text: string): boolean {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (const char of text) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+    } else if (char === '"') {
+      inString = true;
+    } else if (char === "{" || char === "[") {
+      depth++;
+    } else if (char === "}" || char === "]") {
+      depth--;
+    }
+  }
+  return inString || depth > 0;
+}
+
+// Thrown when structured output hit the model's output token limit. The
+// partial JSON is not returned.
+const OUTPUT_LIMIT_MESSAGE =
+  "the extracted data exceeded the model's maximum output length, so nothing was returned. Try a schema or prompt that asks for fewer items.";
+
 interface TrimResult {
   text: string;
   numTokens: number;
@@ -595,6 +625,11 @@ export async function generateCompletions({
 
     const repairConfig = {
       experimental_repairText: async ({ text, error }) => {
+        // Output cut off at the token limit; see OUTPUT_LIMIT_MESSAGE.
+        if (typeof text === "string" && isTruncatedJson(text)) {
+          return null;
+        }
+
         // AI may output a markdown JSON code block. Remove it - mogery
         logger.debug("Repairing text", {
           textType: typeof text,
@@ -878,6 +913,9 @@ export async function generateCompletions({
         }
       } else if (NoObjectGeneratedError.isInstance(error)) {
         logger.warn("No object generated", { error });
+        if (error.finishReason === "length") {
+          throw new Error(OUTPUT_LIMIT_MESSAGE);
+        }
         if (
           error.text &&
           error.text.startsWith("```json") &&
