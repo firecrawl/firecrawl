@@ -77,11 +77,20 @@ def main() -> int:
     parser.add_argument("--sha", default=os.environ.get("GITHUB_SHA", "HEAD"))
     parser.add_argument("--image-name", default="firecrawl")
     parser.add_argument(
+        "--staging-run-number",
+        type=int,
+        help="Advance the staging patch version for each workflow run.",
+    )
+    parser.add_argument(
         "--include-current-commit-tags",
         action="store_true",
         help="Use the highest SemVer tag even when it already points at --sha.",
     )
     args = parser.parse_args()
+    if args.staging_run_number is not None and args.staging_run_number < 1:
+        parser.error("--staging-run-number must be positive")
+    if args.staging_run_number is not None and args.bump != "patch":
+        parser.error("--staging-run-number requires --bump patch")
 
     current_sha = git("rev-parse", args.sha)
     short_sha = git("rev-parse", "--short=12", current_sha)
@@ -98,6 +107,8 @@ def main() -> int:
 
     base = base_tags[-1].version if base_tags else None
     version = bump_version(base, args.bump)
+    if args.staging_run_number is not None:
+        version = (version[0], version[1], version[2] + args.staging_run_number)
     tag_name = f"v{version[0]}.{version[1]}.{version[2]}"
 
     existing_target = next((tag for tag in semver_tags if tag.name == tag_name), None)

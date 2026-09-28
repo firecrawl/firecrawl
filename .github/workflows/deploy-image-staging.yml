@@ -30,7 +30,8 @@ jobs:
 
       - name: Resolve staging image version
         id: version
-        run: python .github/scripts/resolve_api_image_version.py --bump patch --sha "${GITHUB_SHA}" --include-current-commit-tags
+        # A new version tag lets the staging image updater roll out every dispatch.
+        run: python .github/scripts/resolve_api_image_version.py --bump patch --sha "${GITHUB_SHA}" --include-current-commit-tags --staging-run-number "${GITHUB_RUN_NUMBER}"
 
       - name: Resolve staging image repository
         id: staging_image
