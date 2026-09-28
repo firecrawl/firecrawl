@@ -26,9 +26,9 @@ import { reportPipelineError } from "./redis-pipeline";
 const DEFAULT_CONCURRENCY_LIMIT = 2;
 
 /**
- * CONCURRENCY granted by the Autumn `hobby` plan. Autumn holds the plan, so
- * this mirrors it the way HOBBY_RATE_LIMIT_MULTIPLIER mirrors its rate limit;
- * change both if the plan changes.
+ * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
+ * autumn.config.ts). Pairs with HOBBY_RATE_LIMIT_MULTIPLIER in
+ * services/rate-limiter.ts; change both if the hobby plan changes.
  */
 export const HOBBY_CONCURRENCY_LIMIT = 5;
 
