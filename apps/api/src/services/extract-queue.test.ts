@@ -11,6 +11,8 @@ const { connectMock, channelMock, connectionMock, loggerMock } = vi.hoisted(
       close: vi.fn(async () => {}),
       prefetch: vi.fn(),
       consume: vi.fn(),
+      nack: vi.fn(),
+      ack: vi.fn(),
     };
     const connectionMock = {
       createConfirmChannel: vi.fn(() => channelMock),
@@ -275,4 +277,36 @@ describe("extract job publishing", () => {
       errors: [channelError, connectionError],
     });
   });
+});
+
+describe("extract job consumption", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    connectMock.mockReturnValue(connectionMock);
+  });
+
+  it.each([
+    ["main", "consumeExtractJobs", "extract.jobs"],
+    ["dead letter", "consumeExtractDLQ", "extract.dlq"],
+  ])(
+    "rejects a malformed %s payload without throwing",
+    async (_, method, queue) => {
+      const transport = await import("./extract-queue.js");
+      const handler = vi.fn();
+      await (transport as any)[method](handler);
+      const call = (channelMock.consume as Mock).mock.calls.find(
+        c => c[0] === queue,
+      );
+      expect(call).toBeDefined();
+      const onMessage = call![1];
+
+      for (const content of ["{bad json", JSON.stringify({ extractId: "x" })]) {
+        const msg = { content: Buffer.from(content) };
+        await expect(onMessage(msg)).resolves.toBeUndefined();
+        expect(channelMock.nack).toHaveBeenCalledWith(msg, false, false);
+      }
+      expect(handler).not.toHaveBeenCalled();
+    },
+  );
 });

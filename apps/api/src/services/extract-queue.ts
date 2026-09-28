@@ -19,6 +19,21 @@ export type ExtractJobData = {
   externalRequestId?: string | null;
 };
 
+function parseExtractJob(content: Buffer): ExtractJobData {
+  const value: unknown = JSON.parse(content.toString());
+  if (
+    !value ||
+    typeof value !== "object" ||
+    typeof (value as ExtractJobData).extractId !== "string" ||
+    typeof (value as ExtractJobData).teamId !== "string" ||
+    typeof (value as ExtractJobData).createdAt !== "number" ||
+    !(value as ExtractJobData).request
+  ) {
+    throw new Error("Invalid extract job payload");
+  }
+  return value as ExtractJobData;
+}
+
 let connection: amqp.ChannelModel | null = null;
 let channel: amqp.ConfirmChannel | null = null;
 let channelPromise: Promise<amqp.ConfirmChannel> | null = null;
@@ -195,7 +210,14 @@ export async function consumeExtractJobs(
     async msg => {
       if (!msg) return;
 
-      const data = JSON.parse(msg.content.toString()) as ExtractJobData;
+      let data: ExtractJobData;
+      try {
+        data = parseExtractJob(msg.content);
+      } catch (error) {
+        _logger.error("Discarding malformed extract job to DLQ", { error });
+        ch.nack(msg, false, false);
+        return;
+      }
       const logger = _logger.child({
         module: "extract-queue",
         extractId: data.extractId,
@@ -232,7 +254,15 @@ export async function consumeExtractDLQ(
     async msg => {
       if (!msg) return;
 
-      const data = JSON.parse(msg.content.toString()) as ExtractJobData;
+      let data: ExtractJobData;
+      try {
+        data = parseExtractJob(msg.content);
+      } catch (error) {
+        _logger.error("Discarding malformed extract DLQ job", { error });
+        // Requeueing cannot repair a malformed payload.
+        ch.nack(msg, false, false);
+        return;
+      }
       const logger = _logger.child({
         module: "extract-dlq",
         extractId: data.extractId,
