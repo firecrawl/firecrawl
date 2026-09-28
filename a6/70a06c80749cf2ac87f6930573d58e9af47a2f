@@ -1,0 +1,19 @@
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_b87c7786d57a30::t_47151192abde02 432
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a670a06c80749cf2ac87f6930573d58e9af47a2f",
+  "prompts": {},
+  "sessions": {
+    "s_b87c7786d57a30": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7d1e33dc-e56a-4abd-a0b1-0257e2374b21",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
