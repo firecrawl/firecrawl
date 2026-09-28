@@ -453,7 +453,8 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(256 * 1024 * 1024),
-  // Comma-separated team ids granted the privileged cap.
+  // Comma-separated team ids granted the privileged cap. Prefer the
+  // `largePdfs` team flag, which grants the same cap without a deploy.
   PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),
 
   // RunPod

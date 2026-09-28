@@ -2069,6 +2069,8 @@ export type TeamFlags = {
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
   maxBrowserSessions?: number;
+  // grants the privileged large-PDF size cap (PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED)
+  largePdfs?: boolean;
   researchBeta?: boolean;
   menuBeta?: boolean;
   enrichBeta?: boolean;
