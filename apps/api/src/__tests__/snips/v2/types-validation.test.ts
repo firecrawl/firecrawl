@@ -871,6 +871,21 @@ describe("V2 Types Validation", () => {
       expect(result.urls).toHaveLength(10);
     });
 
+    it("should reject JSON schemas structured outputs cannot express", () => {
+      const result = extractRequestSchema.safeParse({
+        urls: ["https://example.com"],
+        schema: {
+          type: "object",
+          properties: { events: { type: "array" } },
+        },
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.map(issue => issue.message)).toContain(
+        'Invalid JSON schema at "properties.events": arrays must define "items".',
+      );
+    });
+
     it("should reject invalid JSON schema", () => {
       const input: ExtractRequestInput = {
         urls: ["https://example.com"],

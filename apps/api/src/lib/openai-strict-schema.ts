@@ -129,8 +129,14 @@ function normalizeNode(node: any, isRoot: boolean): any {
   if (Array.isArray(out.anyOf)) {
     out.anyOf = out.anyOf.map(v => normalizeNode(v, false));
   }
+  // Strict mode closes every object (additionalProperties: false), so keys
+  // beyond "properties" never come back; a schema for them is dropped here
+  // rather than validated. Without "properties", it's a typed dictionary,
+  // which findStrictSchemaViolation reports.
   if (isPlainObject(out.additionalProperties)) {
-    out.additionalProperties = normalizeNode(out.additionalProperties, false);
+    out.additionalProperties = isPlainObject(out.properties)
+      ? false
+      : normalizeNode(out.additionalProperties, false);
   }
   for (const defsKey of ["$defs", "definitions"]) {
     if (isPlainObject(out[defsKey])) {
@@ -141,21 +147,29 @@ function normalizeNode(node: any, isRoot: boolean): any {
   return out;
 }
 
+// Annotations that can sit next to the fields of a bare map. Any other key,
+// "$"-prefixed or not, is a property name.
+const ROOT_ANNOTATIONS = new Set(["$schema", "$id", "$comment"]);
+
 /**
  * normalizeSchemaKeywords, plus turning a bare map of property names to
- * schemas into an object schema. "$"-prefixed keys of a bare map ("$schema")
- * are annotations, not properties.
+ * schemas into an object schema. Its "$defs" (a map of definitions, not a
+ * schema) moves to the root of that object schema.
  */
 export function toRootSchema(schema: any): any {
   if (!isBareRootMap(schema)) return normalizeSchemaKeywords(schema);
-  const entries = Object.entries(schema).filter(
-    ([key]) => !key.startsWith("$"),
+  const { $defs, ...rest } = schema;
+  const hasDefs = isPlainObject($defs) && typeof $defs.type !== "string";
+  const fields = hasDefs ? rest : schema;
+  const entries = Object.entries(fields).filter(
+    ([key]) => !ROOT_ANNOTATIONS.has(key),
   );
   return normalizeSchemaKeywords({
     type: "object",
     properties: Object.fromEntries(entries),
     required: entries.map(([key]) => key),
     additionalProperties: false,
+    ...(hasDefs ? { $defs } : {}),
   });
 }
 
@@ -240,6 +254,14 @@ function checkNode(node: any, path: string): string | null {
     return node.items === undefined
       ? `Invalid JSON schema${at}: arrays must define "items".`
       : `Invalid JSON schema${at}: "items" must be a single schema object, got ${describe(node.items)}.`;
+  }
+
+  if (
+    typeIncludes(node.type, "object") &&
+    node.properties === undefined &&
+    isPlainObject(node.additionalProperties)
+  ) {
+    return `Invalid JSON schema${at}: objects must list their "properties"; a dictionary described only by "additionalProperties" is not supported for JSON extraction.`;
   }
 
   if (node.properties !== undefined) {

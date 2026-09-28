@@ -1007,7 +1007,8 @@ const extractOptions = z
       .transform(val => normalizeSchemaForOpenAI(val))
       .refine(val => validateSchemaForOpenAI(val), {
         message: OPENAI_SCHEMA_ERROR_MESSAGE,
-      }),
+      })
+      .superRefine(addStrictSchemaIssue),
     limit: z.int().positive().finite().optional(),
     ignoreSitemap: z.boolean().prefault(false),
     includeSubdomains: z.boolean().prefault(true),

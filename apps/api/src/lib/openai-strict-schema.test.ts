@@ -72,6 +72,16 @@ describe("normalizeSchemaKeywords", () => {
     expect(result.type).toBe("object");
   });
 
+  it("drops additionalProperties schemas next to properties", () => {
+    const result = normalizeSchemaKeywords({
+      type: "object",
+      properties: { name: { type: "string" } },
+      additionalProperties: { type: "array" },
+    });
+
+    expect(result.additionalProperties).toBe(false);
+  });
+
   it("does not modify its input", () => {
     const schema = { type: "String" };
     normalizeSchemaKeywords(schema);
@@ -91,6 +101,26 @@ describe("toRootSchema", () => {
       properties: { name: { type: "string" } },
       required: ["name"],
       additionalProperties: false,
+    });
+  });
+
+  it("keeps $-named fields other than annotations, and moves $defs to the root", () => {
+    expect(
+      toRootSchema({
+        $schema: "http://json-schema.org/draft-07/schema#",
+        $metadata: { type: "string" },
+        item: { $ref: "#/$defs/item" },
+        $defs: { item: { type: "object", properties: {} } },
+      }),
+    ).toEqual({
+      type: "object",
+      properties: {
+        $metadata: { type: "string" },
+        item: { $ref: "#/$defs/item" },
+      },
+      required: ["$metadata", "item"],
+      additionalProperties: false,
+      $defs: { item: { type: "object", properties: {} } },
     });
   });
 
@@ -334,6 +364,29 @@ describe("findStrictSchemaViolation", () => {
       }),
     ).toBe(
       'Invalid JSON schema at "properties.slot": "anyOf" must be an array, got {"type":"string"}.',
+    );
+  });
+
+  it("ignores additionalProperties schemas next to properties", () => {
+    expect(
+      findStrictSchemaViolation({
+        type: "object",
+        properties: { name: { type: "string" } },
+        additionalProperties: { type: "array" },
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects typed dictionaries", () => {
+    expect(
+      findStrictSchemaViolation({
+        type: "object",
+        properties: {
+          prices: { type: "object", additionalProperties: { type: "number" } },
+        },
+      }),
+    ).toBe(
+      'Invalid JSON schema at "properties.prices": objects must list their "properties"; a dictionary described only by "additionalProperties" is not supported for JSON extraction.',
     );
   });
 
