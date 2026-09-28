@@ -20,28 +20,34 @@ function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x);
 }
 
-// A node of an echoed schema, e.g. {"type": "number", "example": 2}.
+// A node of an echoed schema, e.g. {"type": "number", "example": 2}. None of
+// the branding answer's own objects has a "type" key.
 function isSchemaNode(x: unknown): x is Record<string, unknown> {
   return (
-    isRecord(x) &&
-    typeof x.type === "string" &&
-    JSON_SCHEMA_TYPES.has(x.type) &&
-    ("example" in x || isRecord(x.properties))
+    isRecord(x) && typeof x.type === "string" && JSON_SCHEMA_TYPES.has(x.type)
   );
 }
+
+// Marks a schema node that carries no answer (no "example", no properties).
+const UNRESOLVED = Symbol("unresolved");
 
 function valueFromSchemaShape(node: unknown): unknown {
   if (!isSchemaNode(node)) return node;
   if ("example" in node) return node.example;
-  return propertiesToValue(node.properties as Record<string, unknown>);
+  if (isRecord(node.properties)) return propertiesToValue(node.properties);
+  return UNRESOLVED;
 }
 
-function propertiesToValue(properties: Record<string, unknown>) {
-  return Object.fromEntries(
-    Object.entries(properties)
-      .map(([key, value]) => [key, valueFromSchemaShape(value)])
-      .filter(([, value]) => value !== undefined),
-  );
+function propertiesToValue(
+  properties: Record<string, unknown>,
+): Record<string, unknown> | typeof UNRESOLVED {
+  const value: Record<string, unknown> = {};
+  for (const [key, node] of Object.entries(properties)) {
+    const resolved = valueFromSchemaShape(node);
+    if (resolved === UNRESOLVED) return UNRESOLVED;
+    value[key] = resolved;
+  }
+  return value;
 }
 
 /**
@@ -49,7 +55,9 @@ function propertiesToValue(properties: Record<string, unknown>) {
  * instead of an instance of it: the answer wrapped as
  * {"type": "response", "properties": {...}}, or the schema echoed back with
  * each answer in an "example" field. Both carry the whole answer, so unwrap
- * them instead of failing the call. Returns null for anything else.
+ * them instead of failing the call. Returns null for anything else, including
+ * an echo with any field left without an answer, so the SDK reports the
+ * original error rather than one about half-repaired text.
  */
 export function unwrapSchemaShapedAnswer(text: string): string | null {
   let parsed: unknown;
@@ -65,7 +73,8 @@ export function unwrapSchemaShapedAnswer(text: string): string | null {
   ) {
     return null;
   }
-  return JSON.stringify(propertiesToValue(parsed.properties));
+  const value = propertiesToValue(parsed.properties);
+  return value === UNRESOLVED ? null : JSON.stringify(value);
 }
 
 function isDebugBrandingEnabled(input: BrandingLLMInput): boolean {

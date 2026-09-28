@@ -101,6 +101,27 @@ describe("unwrapSchemaShapedAnswer", () => {
     );
   });
 
+  it("returns null when an echoed field carries no answer", () => {
+    const text = JSON.stringify({
+      type: "object",
+      properties: {
+        colorRoles: {
+          type: "object",
+          properties: {
+            primaryColor: { type: "string", example: "#5551FF" },
+            confidence: { type: "number" },
+          },
+        },
+        cleanedFonts: {
+          type: "array",
+          items: { type: "object", properties: {} },
+        },
+      },
+    });
+
+    expect(unwrapSchemaShapedAnswer(text)).toBeNull();
+  });
+
   it("returns null for text that is not a schema-shaped answer", () => {
     expect(unwrapSchemaShapedAnswer("not json")).toBeNull();
     expect(unwrapSchemaShapedAnswer(JSON.stringify(answer))).toBeNull();
