@@ -52,6 +52,16 @@ public class MapResponseTests
         Assert.Contains("bad request", error.Message);
     }
 
+    [Fact]
+    public async Task MapAsync_UsesFallbackForEmptyError()
+    {
+        using var http = new HttpClient(new StubHandler("""{"success":false,"error":"  "}"""));
+        var client = new FirecrawlClient(apiKey: "test-key", apiUrl: "https://api.example.com", httpClient: http);
+
+        var error = await Assert.ThrowsAsync<FirecrawlException>(() => client.MapAsync("https://example.com"));
+        Assert.Contains("not successful", error.Message);
+    }
+
     private sealed class StubHandler : HttpMessageHandler
     {
         private readonly string _responseBody;
