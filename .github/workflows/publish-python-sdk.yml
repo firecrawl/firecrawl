@@ -39,8 +39,10 @@ jobs:
       - name: Run version check script
         id: version_check
         run: |
-          echo "publish_firecrawl_py=$(python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl-py | tail -n 1)" >> "$GITHUB_OUTPUT"
-          echo "publish_firecrawl=$(python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl | tail -n 1)" >> "$GITHUB_OUTPUT"
+          PUBLISH_FIRECRAWL_PY=$(python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl-py | tail -n 1)
+          PUBLISH_FIRECRAWL=$(python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl | tail -n 1)
+          echo "publish_firecrawl_py=$PUBLISH_FIRECRAWL_PY" >> "$GITHUB_OUTPUT"
+          echo "publish_firecrawl=$PUBLISH_FIRECRAWL" >> "$GITHUB_OUTPUT"
 
       - name: Build firecrawl-py and firecrawl
         if: ${{ steps.version_check.outputs.publish_firecrawl_py == 'true' || steps.version_check.outputs.publish_firecrawl == 'true' }}
