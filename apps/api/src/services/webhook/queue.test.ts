@@ -22,7 +22,11 @@ const { connect, connection, channel, listeners, sends } = vi.hoisted(() => {
     on: vi.fn((event: string, handler: (...args: any[]) => void) => {
       listeners.set(event, handler);
     }),
-    removeListener: vi.fn(),
+    removeListener: vi.fn(
+      (event: string, handler: (...args: any[]) => void) => {
+        if (listeners.get(event) === handler) listeners.delete(event);
+      },
+    ),
     close: vi.fn(async () => {}),
   };
   const connection = {
@@ -161,11 +165,11 @@ describe("webhook RabbitMQ publisher", () => {
       },
     );
     const { result } = await startPublish();
+    const drainListener = listeners.get("drain");
+    expect(drainListener).toBeTypeOf("function");
     sends[0].confirm(new Error("broker nack"));
     await expect(result).rejects.toThrow("broker nack");
-    expect(channel.removeListener).toHaveBeenCalledWith(
-      "drain",
-      expect.any(Function),
-    );
+    expect(channel.removeListener).toHaveBeenCalledWith("drain", drainListener);
+    expect(listeners.has("drain")).toBe(false);
   });
 });
