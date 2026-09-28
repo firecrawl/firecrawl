@@ -21,6 +21,7 @@ func TestJobStartRejectsUnsuccessfulEnvelope(t *testing.T) {
 		}{
 			{"explicit failure", `{"success":false,"error":"insufficient credits"}`, "insufficient credits"},
 			{"failure with ID", `{"success":false,"id":"job-1","error":"job was rejected"}`, "job was rejected"},
+			{"failure without explanation", `{"success":false,"id":"job-1"}`, "start response was unsuccessful"},
 			{"missing ID", `{}`, "contained no job ID"},
 		} {
 			t.Run(kind+"/"+test.name, func(t *testing.T) {

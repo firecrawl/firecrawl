@@ -193,7 +193,11 @@ func (c *Client) StartCrawl(ctx context.Context, url string, opts *CrawlOptions)
 	if resp.ID == "" || (resp.Success != nil && !*resp.Success) {
 		message := resp.Error
 		if message == "" {
-			message = "crawl start response contained no job ID"
+			if resp.Success != nil && !*resp.Success {
+				message = "crawl start response was unsuccessful"
+			} else {
+				message = "crawl start response contained no job ID"
+			}
 		}
 		return nil, &FirecrawlError{Message: message}
 	}
@@ -316,7 +320,11 @@ func (c *Client) StartBatchScrape(ctx context.Context, urls []string, opts *Batc
 	if resp.ID == "" || (resp.Success != nil && !*resp.Success) {
 		message := resp.Error
 		if message == "" {
-			message = "batch scrape start response contained no job ID"
+			if resp.Success != nil && !*resp.Success {
+				message = "batch scrape start response was unsuccessful"
+			} else {
+				message = "batch scrape start response contained no job ID"
+			}
 		}
 		return nil, &FirecrawlError{Message: message}
 	}
