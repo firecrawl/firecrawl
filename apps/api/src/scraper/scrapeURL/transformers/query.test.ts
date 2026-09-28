@@ -9,9 +9,11 @@ vi.mock("../../../lib/generic-ai", () => ({
 }));
 
 import { generateText } from "ai";
+import { encoding_for_model } from "@dqbd/tiktoken";
 import type { Mock } from "vitest";
-import { performQuery } from "./query";
+import { keepWholeLines, performQuery } from "./query";
 import { CostTracking } from "../../../lib/cost-tracking";
+import { modelPrices } from "../../../lib/extract/usage/model-prices";
 
 const noopLogger = {
   info: () => {},
@@ -50,8 +52,43 @@ function page(lines: number): string {
   ).join("\n\n");
 }
 
+function countTokens(text: string): number {
+  const encoder = encoding_for_model("gpt-4o");
+  try {
+    return encoder.encode(text).length;
+  } finally {
+    encoder.free();
+  }
+}
+
+// The numbered lines sent to the directQuote model.
+function sentLines(prompt: string): string[] {
+  return prompt.split("<lines")[1].split("\n").slice(1, -1);
+}
+
 beforeEach(() => {
   (generateText as Mock).mockReset();
+});
+
+describe("keepWholeLines", () => {
+  const text = "0: first\n1: second\n2: third";
+
+  it("drops a partial last line", () => {
+    expect(keepWholeLines(text, "0: first\n1: sec")).toBe("0: first");
+  });
+
+  it("keeps a last line the cut ends exactly at", () => {
+    expect(keepWholeLines(text, "0: first\n1: second")).toBe(
+      "0: first\n1: second",
+    );
+    expect(keepWholeLines(text, "0: first\n")).toBe("0: first");
+  });
+
+  it("keeps a single line longer than the budget, cut short", () => {
+    expect(keepWholeLines("0: one very long line", "0: one very")).toBe(
+      "0: one very",
+    );
+  });
 });
 
 describe("performQuery highlights", () => {
@@ -68,16 +105,34 @@ describe("performQuery highlights", () => {
     expect(args.experimental_telemetry.functionId).toBe(
       "performQuery/highlights",
     );
-    const lines = args.prompt
-      .split("<lines")[1]
-      .split("\n")
-      .slice(1, -1) as string[];
+    const lines = sentLines(args.prompt);
     expect(lines.length).toBeLessThan(40_000);
-    lines.forEach((line, i) => expect(line).toMatch(new RegExp(`^${i}: `)));
+    lines.forEach((line, i) =>
+      expect(line).toBe(`${i}: Line number ${i} says something short.`),
+    );
+    const tokens = countTokens(lines.join("\n"));
+    expect(tokens).toBeLessThanOrEqual(131_072 - 16_384);
+    expect(tokens).toBeGreaterThan(131_072 - 16_384 - 100);
     expect(document.highlights).toContain("Line number 0");
     expect(document.warning).toContain(
       "highlights were generated from the first part of it",
     );
+  });
+
+  it("keeps part of a single sentence longer than the window", async () => {
+    respond("[0]");
+    // One sentence (no punctuation), ~300k tokens.
+    const document: any = { markdown: "word ".repeat(300_000), metadata: {} };
+
+    await performQuery(
+      makeMeta([{ type: "highlights", query: "anything about words?" }]),
+      document,
+    );
+
+    const lines = sentLines(calls()[0].prompt);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^0: word word/);
+    expect(countTokens(lines[0])).toBeLessThanOrEqual(131_072 - 16_384);
   });
 
   it("sends small pages untouched", async () => {
@@ -117,7 +172,14 @@ describe("performQuery freeform", () => {
     expect(gemini.model.modelId).toBe("gemini-2.5-flash-lite");
     expect(gemini.prompt).toContain(markdown);
     expect(mini.model.modelId).toBe("gpt-4o-mini");
-    expect(mini.prompt.length).toBeLessThan(markdown.length);
+    // The page is trimmed to exactly 80% of gpt-4o-mini's window; the rest of
+    // the prompt is a few tags.
+    const budget = Math.floor(
+      modelPrices["gpt-4o-mini"].max_input_tokens * 0.8,
+    );
+    const miniTokens = countTokens(mini.prompt);
+    expect(miniTokens).toBeLessThanOrEqual(budget + 100);
+    expect(miniTokens).toBeGreaterThan(budget - 100);
     expect(mini.experimental_telemetry.functionId).toBe(
       "performQuery/freeform",
     );
