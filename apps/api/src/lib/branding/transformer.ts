@@ -210,6 +210,7 @@ export async function brandingTransformer(
       scrapeId: meta.id,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       teamFlags: meta.internalOptions.teamFlags,
+      costTracking: meta.costTracking,
       logger: meta.logger,
     });
 

@@ -1,6 +1,8 @@
-import { generateObject } from "ai";
+import { generateObject, LanguageModelUsage, NoObjectGeneratedError } from "ai";
 
 import { config } from "../../config";
+import { calculateCost } from "../../scraper/scrapeURL/transformers/llmExtract";
+import { CostLimitExceededError } from "../cost-tracking";
 import { BrandingEnhancement, getBrandingEnhancementSchema } from "./schema";
 import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
@@ -75,6 +77,22 @@ export function unwrapSchemaShapedAnswer(text: string): string | null {
   }
   const value = propertiesToValue(parsed.properties);
   return value === UNRESOLVED ? null : JSON.stringify(value);
+}
+
+function recordBrandingCall(
+  input: BrandingLLMInput,
+  modelName: string,
+  usage: LanguageModelUsage | undefined,
+) {
+  const inputTokens = usage?.inputTokens ?? 0;
+  const outputTokens = usage?.outputTokens ?? 0;
+  input.costTracking.addCall({
+    type: "other",
+    metadata: { module: "branding", method: "enhanceBrandingWithLLM" },
+    model: modelName,
+    cost: calculateCost(modelName, inputTokens, outputTokens),
+    tokens: { input: inputTokens, output: outputTokens },
+  });
 }
 
 function isDebugBrandingEnabled(input: BrandingLLMInput): boolean {
@@ -204,6 +222,8 @@ export async function enhanceBrandingWithLLM(
       },
     });
 
+    recordBrandingCall(input, modelName, result.usage);
+
     if (isDebugBrandingEnabled(input)) {
       const reasoningPreview = result.reasoning
         ? result.reasoning.length > 1000
@@ -248,6 +268,16 @@ export async function enhanceBrandingWithLLM(
     }
     return resultObject;
   } catch (error) {
+    if (error instanceof CostLimitExceededError) {
+      throw error;
+    }
+
+    // The model still ran (and billed) when its output failed to parse or
+    // validate.
+    if (NoObjectGeneratedError.isInstance(error)) {
+      recordBrandingCall(input, modelName, error.usage);
+    }
+
     // Refusal: API returned content type "refusal" (e.g. "I can't assist with that") but the SDK
     // expects "output_text", so it throws before we get a result. Treat as soft failure, not a bug.
     const message = error instanceof Error ? error.message : String(error);

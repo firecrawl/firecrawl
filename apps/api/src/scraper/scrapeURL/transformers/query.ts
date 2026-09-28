@@ -29,6 +29,9 @@ const DIRECT_QUOTE_MODEL = {
   provider: "fireworks" as const,
   // gpt-oss-20b's context window.
   contextTokens: 131_072,
+  // The fine-tune has no per-token list price; cost tracking uses the base
+  // model's serverless rate as the estimate.
+  pricedAs: "fireworks_ai/accounts/fireworks/models/gpt-oss-20b",
 };
 // Room for the system prompt, the query, and the model's reasoning and answer.
 const DIRECT_QUOTE_RESERVED_TOKENS = 16_384;
@@ -207,7 +210,11 @@ ${escapePromptTags(indexedLines)}
       type: "other",
       metadata: { feature: "query", model: modelName },
       model: modelName,
-      cost: calculateCost(modelName, inputTokens, outputTokens),
+      cost: calculateCost(
+        DIRECT_QUOTE_MODEL.pricedAs,
+        inputTokens,
+        outputTokens,
+      ),
       tokens: { input: inputTokens, output: outputTokens },
     });
 
