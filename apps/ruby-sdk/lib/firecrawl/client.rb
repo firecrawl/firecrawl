@@ -583,7 +583,7 @@ module Firecrawl
         if job.done?
           begin
             paginate_crawl(job)
-          rescue FirecrawlError => e
+          rescue StandardError => e
             raise JobFailedError.new(job, "Crawl", pagination_error: e) unless job.status == "completed"
             raise
           end
@@ -603,7 +603,7 @@ module Firecrawl
         if job.done?
           begin
             paginate_batch_scrape(job)
-          rescue FirecrawlError => e
+          rescue StandardError => e
             raise JobFailedError.new(job, "Batch scrape", pagination_error: e) unless job.status == "completed"
             raise
           end
