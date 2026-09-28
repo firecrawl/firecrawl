@@ -558,8 +558,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 
       let crawler: WebCrawler | null = null;
+      let teamFlags: TeamFlags | null = null;
       if (job.data.crawlerOptions !== null) {
-        const teamFlags = (await getACUCTeam(job.data.team_id))?.flags ?? null;
+        teamFlags = (await getACUCTeam(job.data.team_id))?.flags ?? null;
         crawler = crawlToCrawler(
           job.data.crawl_id,
           sc,
@@ -599,6 +600,16 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           // TODO: re-fetch sitemap for redirect target domain
           sc.originUrl = doc.metadata.url;
           await saveCrawl(job.data.crawl_id, sc);
+          // Link filtering treats a page off the crawl's origin as an external
+          // page, so rebuild the crawler on the new origin before discovering
+          // this page's links.
+          crawler = crawlToCrawler(
+            job.data.crawl_id,
+            sc,
+            teamFlags,
+            sc.originUrl,
+            job.data.crawlerOptions,
+          );
         }
 
         const p1 = generateURLPermutations(normalizeURL(doc.metadata.url, sc));
