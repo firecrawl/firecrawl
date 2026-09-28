@@ -1032,13 +1032,15 @@ func (c *Client) pollCrawl(ctx context.Context, jobID string, pollIntervalSec, t
 		}
 		if job.IsDone() {
 			if job.Status != "completed" {
+				// Keep every available result page on the typed failure.
+				_, paginationErr := c.paginateCrawl(ctx, job)
 				message := job.Error
 				if message == "" {
 					message = "crawl did not complete"
 				}
 				return nil, &JobFailedError{
 					FirecrawlError: FirecrawlError{Message: message},
-					JobID:          jobID, Status: job.Status, Job: job,
+					JobID:          jobID, Status: job.Status, Job: job, PaginationError: paginationErr,
 				}
 			}
 			return c.paginateCrawl(ctx, job)
@@ -1072,13 +1074,14 @@ func (c *Client) pollBatchScrape(ctx context.Context, jobID string, pollInterval
 		}
 		if job.IsDone() {
 			if job.Status != "completed" {
+				_, paginationErr := c.paginateBatchScrape(ctx, job)
 				message := job.Error
 				if message == "" {
 					message = "batch scrape did not complete"
 				}
 				return nil, &JobFailedError{
 					FirecrawlError: FirecrawlError{Message: message},
-					JobID:          jobID, Status: job.Status, Job: job,
+					JobID:          jobID, Status: job.Status, Job: job, PaginationError: paginationErr,
 				}
 			}
 			return c.paginateBatchScrape(ctx, job)

@@ -63,12 +63,16 @@ func (e *JobTimeoutError) Error() string {
 // terminates without completing. Job retains any partial results for inspection.
 type JobFailedError struct {
 	FirecrawlError
-	JobID  string
-	Status string
-	Job    interface{}
+	JobID           string
+	Status          string
+	Job             interface{}
+	PaginationError error
 }
 
 func (e *JobFailedError) Error() string {
+	if e.PaginationError != nil {
+		return fmt.Sprintf("firecrawl: job %s %s: %s (partial results could not be fully fetched: %v)", e.JobID, e.Status, e.Message, e.PaginationError)
+	}
 	return fmt.Sprintf("firecrawl: job %s %s: %s", e.JobID, e.Status, e.Message)
 }
 
