@@ -11,7 +11,7 @@ const XAI_RESPONSES_MODEL = "grok-4-1-fast-non-reasoning";
 
 function xTwitterTelemetry(functionId: string, meta: Meta) {
   return {
-    isEnabled: true,
+    isEnabled: !meta.internalOptions.zeroDataRetention,
     functionId,
     metadata: {
       scrapeId: meta.id,

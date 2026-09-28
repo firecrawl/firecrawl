@@ -49,14 +49,14 @@ function grokReturns(output: unknown) {
   });
 }
 
-function makeMeta(url: string): Meta {
+function makeMeta(url: string, zeroDataRetention = false): Meta {
   const logger = { info: () => {}, warn: () => {}, error: () => {} };
   return {
     id: "019990c0-0000-7000-8000-000000000001",
     url,
     logger,
     abort: { asSignal: () => undefined },
-    internalOptions: { teamId: "team-test" },
+    internalOptions: { teamId: "team-test", zeroDataRetention },
   } as unknown as Meta;
 }
 
@@ -118,6 +118,7 @@ describe("x-twitter engine LLM telemetry", () => {
       "ai.usage.completionTokens": 400,
       "ai.usage.cachedInputTokens": 2000,
     });
+    expect(span.attributes["ai.prompt.messages"]).toContain("@firecrawl");
   });
 
   it("records a usage span for a post lookup", async () => {
@@ -136,8 +137,29 @@ describe("x-twitter engine LLM telemetry", () => {
     expect(span.attributes).toMatchObject({
       "ai.telemetry.functionId": "xTwitter/post",
       "ai.telemetry.metadata.feature": "x-twitter",
+      "ai.telemetry.metadata.teamId": "team-test",
+      "ai.telemetry.metadata.scrapeId": "019990c0-0000-7000-8000-000000000001",
+      "ai.model.id": "grok-4-1-fast-non-reasoning",
+      "ai.usage.promptTokens": 3000,
+      "ai.usage.completionTokens": 400,
       "ai.usage.cachedInputTokens": 2000,
     });
+    expect(span.attributes["ai.prompt.messages"]).toContain(
+      "post id 1234567890123",
+    );
+  });
+
+  // Covers the per-call guard on its own; ZDR scrape jobs additionally run
+  // under the tracer's ZDR context (see otel-tracer.test.ts).
+  it("records no AI SDK spans for zero-data-retention scrapes", async () => {
+    grokReturns({ username: "firecrawl", latestPosts: [] });
+
+    await scrapeURLWithXTwitter(makeMeta("https://x.com/firecrawl", true));
+
+    await provider.forceFlush();
+    expect(
+      exporter.getFinishedSpans().filter(s => s.name.startsWith("ai.")),
+    ).toEqual([]);
   });
 
   it("records the span with an error status when the Grok call is rejected", async () => {
