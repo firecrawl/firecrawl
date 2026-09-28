@@ -9,12 +9,20 @@ const { connectMock, channelMock, connectionMock } = vi.hoisted(() => {
     consume: vi.fn(),
     ack: vi.fn(),
     nack: vi.fn(),
-    sendToQueue: vi.fn(() => true),
+    sendToQueue: vi.fn(
+      (
+        _queue: string,
+        _body: Buffer,
+        _options: Record<string, unknown>,
+        _confirm?: (error: Error | null) => void,
+      ) => true,
+    ),
     close: vi.fn(),
     on: vi.fn(),
   };
   const connectionMock = {
     createChannel: vi.fn(() => channelMock),
+    createConfirmChannel: vi.fn(() => channelMock),
     on: vi.fn(),
     close: vi.fn(),
   };
@@ -51,6 +59,7 @@ describe("monitoring queue (RabbitMQ wrapper)", () => {
     vi.clearAllMocks();
     connectMock.mockReturnValue(connectionMock);
     connectionMock.createChannel.mockReturnValue(channelMock);
+    connectionMock.createConfirmChannel.mockReturnValue(channelMock);
     channelMock.sendToQueue.mockReturnValue(true);
   });
 
@@ -138,5 +147,112 @@ describe("monitoring queue (RabbitMQ wrapper)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("waits for broker confirmation before a monitor check is enqueued", async () => {
+    const q = await freshQueueModule();
+    const data = { monitorId: "m1", checkId: "c1", teamId: "t1" };
+    let confirm!: (error: Error | null) => void;
+    channelMock.sendToQueue.mockImplementationOnce(
+      (_queue, _body, _opts, cb) => {
+        confirm = cb!;
+        return true;
+      },
+    );
+
+    const publishing = q.addMonitorCheckJob(data);
+    await vi.waitFor(() =>
+      expect(channelMock.sendToQueue).toHaveBeenCalledOnce(),
+    );
+    let resolved = false;
+    void publishing.then(() => {
+      resolved = true;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    expect(connectionMock.createConfirmChannel).toHaveBeenCalledOnce();
+    expect(connectionMock.createChannel).not.toHaveBeenCalled();
+    expect(channelMock.sendToQueue.mock.calls[0][2]).toMatchObject({
+      persistent: true,
+      mandatory: true,
+      messageId: "c1",
+    });
+
+    confirm(null);
+    await expect(publishing).resolves.toBeUndefined();
+  });
+
+  it("propagates a broker nack to the monitor scheduler", async () => {
+    const q = await freshQueueModule();
+    let confirm!: (error: Error | null) => void;
+    channelMock.sendToQueue.mockImplementationOnce(
+      (_queue, _body, _opts, cb) => {
+        confirm = cb!;
+        return true;
+      },
+    );
+    const publishing = q.addMonitorCheckJob({
+      monitorId: "m1",
+      checkId: "c1",
+      teamId: "t1",
+    });
+    await vi.waitFor(() =>
+      expect(channelMock.sendToQueue).toHaveBeenCalledOnce(),
+    );
+    confirm(new Error("broker nack"));
+    await expect(publishing).rejects.toThrow("broker nack");
+  });
+
+  it("rejects an unroutable check even if the broker acknowledges it", async () => {
+    const q = await freshQueueModule();
+    let confirm!: (error: Error | null) => void;
+    channelMock.sendToQueue.mockImplementationOnce(
+      (_queue, _body, _opts, cb) => {
+        confirm = cb!;
+        return true;
+      },
+    );
+    const publishing = q.addMonitorCheckJob({
+      monitorId: "m1",
+      checkId: "c1",
+      teamId: "t1",
+    });
+    await vi.waitFor(() =>
+      expect(channelMock.sendToQueue).toHaveBeenCalledOnce(),
+    );
+    const onReturn = (channelMock.on as Mock).mock.calls.find(
+      call => call[0] === "return",
+    )?.[1];
+    expect(onReturn).toBeTypeOf("function");
+    onReturn({
+      properties: {
+        correlationId: channelMock.sendToQueue.mock.calls[0][2].correlationId,
+      },
+    });
+    confirm(null);
+    await expect(publishing).rejects.toThrow("unroutable monitor check job");
+  });
+
+  it("routes search checks to the dedicated queue", async () => {
+    const q = await freshQueueModule();
+    let confirm!: (error: Error | null) => void;
+    channelMock.sendToQueue.mockImplementationOnce(
+      (_queue, _body, _opts, cb) => {
+        confirm = cb!;
+        return true;
+      },
+    );
+    const publishing = q.addMonitorCheckJob(
+      { monitorId: "m1", checkId: "c1", teamId: "t1" },
+      { search: true },
+    );
+    await vi.waitFor(() =>
+      expect(channelMock.sendToQueue).toHaveBeenCalledOnce(),
+    );
+    expect(channelMock.sendToQueue.mock.calls[0][0]).toBe(
+      "monitor.checks.search",
+    );
+    confirm(null);
+    await publishing;
   });
 });
