@@ -28,6 +28,7 @@ import {
   typeIncludes,
 } from "../../../lib/openai-strict-schema";
 import { CostTracking } from "../../../lib/cost-tracking";
+import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
 
@@ -345,6 +346,11 @@ export type GenerateCompletionsOptions = {
     deepResearchId?: string;
     llmsTxtId?: string;
   };
+  /**
+   * Turns off AI SDK telemetry for the call. Also on whenever the caller runs
+   * in a zero data retention context, so a caller that forgets to pass it
+   * cannot export prompts.
+   */
   zeroDataRetention?: boolean;
 };
 export async function generateCompletions({
@@ -359,7 +365,7 @@ export async function generateCompletions({
   retryModel = getModel("gpt-4.1-mini", "openai"),
   costTrackingOptions,
   metadata,
-  zeroDataRetention = false,
+  zeroDataRetention: zeroDataRetentionOption,
 }: GenerateCompletionsOptions): Promise<{
   extract: any;
   numTokens: number;
@@ -367,6 +373,8 @@ export async function generateCompletions({
   totalUsage: TokenUsage;
   model: string;
 }> {
+  const zeroDataRetention =
+    zeroDataRetentionOption === true || isZeroDataRetentionActive();
   let extract: any;
   let warning: string | undefined;
   let currentModel = model;
@@ -1611,6 +1619,7 @@ export async function generateCrawlerOptionsFromPrompt(
   logger: Logger,
   costTracking: CostTracking,
   metadata: { teamId: string; crawlId?: string },
+  zeroDataRetention = false,
 ): Promise<{ extract: any }> {
   const model = getModel("gpt-4o-mini", "openai");
   const retryModel = getModel("gpt-4.1-mini", "openai");
@@ -1657,6 +1666,7 @@ Return a JSON object with only the relevant options for the user's request. Don'
           ...metadata,
           functionId: "generateCrawlerOptionsFromPrompt",
         },
+        zeroDataRetention,
       });
 
       return { extract };
