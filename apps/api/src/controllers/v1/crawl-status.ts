@@ -322,11 +322,12 @@ export async function crawlStatusController(
 
   outputBulkB = {
     data: scrapes,
-    // A running job can still produce documents past this page; a finished or
-    // cancelled one has none beyond its total, so its last page ends the cursor.
+    // A running job can still produce documents past this page. Otherwise only
+    // completed documents are paged, and `total` also counts jobs that were
+    // still queued or running, so the cursor ends after the last completed one.
     next:
-      (outputBulkA.total ?? 0) > start + iteratedOver ||
-      outputBulkA.status === "scraping"
+      outputBulkA.status === "scraping" ||
+      (outputBulkA.completed ?? 0) > start + iteratedOver
         ? `${req.protocol}://${req.host}/v1/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
         : undefined,
   };
