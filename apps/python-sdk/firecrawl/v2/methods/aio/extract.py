@@ -3,6 +3,8 @@ import asyncio
 import warnings
 
 from ...types import ExtractResponse, ScrapeOptions, ThreatProtectionOptions
+from ...types import AgentOptions
+from ...utils.error_handler import handle_response_error
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import prepare_scrape_options
 
@@ -25,6 +27,7 @@ def _prepare_extract_request(
     scrape_options: Optional[ScrapeOptions] = None,
     ignore_invalid_urls: Optional[bool] = None,
     integration: Optional[str] = None,
+    agent: Optional[AgentOptions] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
@@ -50,11 +53,27 @@ def _prepare_extract_request(
             body["scrapeOptions"] = prepared
     if integration is not None and str(integration).strip():
         body["integration"] = str(integration).strip()
+    if agent is not None:
+        try:
+            body["agent"] = agent.model_dump(exclude_none=True)  # type: ignore[attr-defined]
+        except AttributeError:
+            body["agent"] = agent  # fallback
     if threat_protection is not None:
         body["threatProtection"] = threat_protection.model_dump(
             by_alias=True, exclude_none=True
         )
     return body
+
+
+def _normalize_extract_response_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(payload)
+    if "expiresAt" in out and "expires_at" not in out:
+        out["expires_at"] = out["expiresAt"]
+    if "creditsUsed" in out and "credits_used" not in out:
+        out["credits_used"] = out["creditsUsed"]
+    if "tokensUsed" in out and "tokens_used" not in out:
+        out["tokens_used"] = out["tokensUsed"]
+    return out
 
 
 async def start_extract(
@@ -70,6 +89,7 @@ async def start_extract(
     scrape_options: Optional[ScrapeOptions] = None,
     ignore_invalid_urls: Optional[bool] = None,
     integration: Optional[str] = None,
+    agent: Optional[AgentOptions] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> ExtractResponse:
     """Start an extract job (non-blocking, async).
@@ -91,10 +111,14 @@ async def start_extract(
         scrape_options=scrape_options,
         ignore_invalid_urls=ignore_invalid_urls,
         integration=integration,
+        agent=agent,
         threat_protection=threat_protection,
     )
     resp = await client.post("/v2/extract", body)
-    return ExtractResponse(**resp.json())
+    if resp.status_code >= 400:
+        handle_response_error(resp, "extract")
+    payload = _normalize_extract_response_payload(resp.json())
+    return ExtractResponse(**payload)
 
 
 async def get_extract_status(client: AsyncHttpClient, job_id: str) -> ExtractResponse:
@@ -107,7 +131,10 @@ async def get_extract_status(client: AsyncHttpClient, job_id: str) -> ExtractRes
     """
     warnings.warn(_EXTRACT_DEPRECATION_MSG, DeprecationWarning, stacklevel=2)
     resp = await client.get(f"/v2/extract/{job_id}")
-    return ExtractResponse(**resp.json())
+    if resp.status_code >= 400:
+        handle_response_error(resp, "extract-status")
+    payload = _normalize_extract_response_payload(resp.json())
+    return ExtractResponse(**payload)
 
 
 async def wait_extract(
@@ -142,6 +169,7 @@ async def extract(
     poll_interval: int = 2,
     timeout: Optional[int] = None,
     integration: Optional[str] = None,
+    agent: Optional[AgentOptions] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> ExtractResponse:
     """Extract structured data and wait until completion (async).
@@ -164,6 +192,7 @@ async def extract(
         scrape_options=scrape_options,
         ignore_invalid_urls=ignore_invalid_urls,
         integration=integration,
+        agent=agent,
         threat_protection=threat_protection,
     )
     job_id = getattr(started, "id", None)
