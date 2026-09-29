@@ -1,5 +1,10 @@
 import { Response } from "express";
-import { enrichmentSetupError } from "../../services/alexandria/scrape-enrichment";
+import {
+  enrichmentSetupError,
+  enrichmentTarget,
+  enrichmentFormat,
+} from "../../services/alexandria/scrape-enrichment";
+import { hasOrgScopedBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 import { providerScrapeController } from "./scrape-alexandria";
 import { discoverTools } from "../../search/alexandria";
 import { config } from "../../config";
@@ -238,6 +243,32 @@ export async function scrapeController(
         return res.status(403).json({
           success: false,
           error: "Agent interop is not enabled.",
+        });
+      }
+
+      const enrichment = enrichmentTarget(preNormalizedBody.url);
+      if (enrichment) {
+        if (
+          zeroDataRetention ||
+          safeMode.safeMode ||
+          threatProtection.policy ||
+          hasOrgScopedBlocklist(req.acuc?.org_id)
+        )
+          return res.status(403).json({
+            success: false,
+            error:
+              "Profile enrichment is not available with this request's retention or organization policies.",
+          });
+        const format = enrichmentFormat(preNormalizedBody);
+        if (!format)
+          return res.status(400).json({
+            success: false,
+            error:
+              "Profile enrichment supports one plain json or markdown format and no browser, extraction, or other scrape options.",
+          });
+        return providerScrapeController(req, res, false, {
+          ...enrichment,
+          format,
         });
       }
 
