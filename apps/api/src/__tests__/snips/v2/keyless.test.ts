@@ -40,6 +40,11 @@ async function flushKeylessBuckets() {
   }
 }
 
+// Every keyless prompt links to signup with these tags so new accounts can be
+// attributed to the keyless free tier.
+const KEYLESS_SIGNUP_URL =
+  "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api";
+
 // Recover the loopback IP the server keyed on, so we can seed its credit counter.
 async function currentKeylessIp(): Promise<string> {
   const keys = await redisRateLimitClient.keys("keyless_requests:*");
@@ -107,7 +112,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     expect(response.body.error).toContain(
       "not supported by the keyless free tier",
     );
-    expect(response.body.error).toContain("https://www.firecrawl.dev/signin");
+    expect(response.body.error).toContain(KEYLESS_SIGNUP_URL);
     expect(response.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
   });
 
@@ -158,7 +163,8 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
     expect(blocked.statusCode).toBe(429);
     expect(blocked.body.error).toContain("keyless free tier rate limit");
-    expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+    expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
+    expect(blocked.body.error).not.toContain(`${KEYLESS_SIGNUP_URL}.`);
     expect(blocked.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
     // Out of quota → emit the OAuth-discovery header so agents find the key flow.
     expect(blocked.headers["www-authenticate"]).toContain("resource_metadata");
@@ -183,7 +189,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
     expect(blocked.statusCode).toBe(429);
     expect(blocked.body.error).toContain("keyless free tier rate limit");
-    expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+    expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
     expect(blocked.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
   });
 
@@ -212,7 +218,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
     expect(blocked.statusCode).toBe(429);
     expect(blocked.body.error).toContain("keyless free tier rate limit");
-    expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+    expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
     expect(blocked.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
   });
 
@@ -255,7 +261,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.reason).toBe("credits");
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -300,7 +306,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.reason).toBe("credits");
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -342,7 +348,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -472,7 +478,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -511,7 +517,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -562,7 +568,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
         .send({ origin: "mcp" });
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -685,7 +691,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -805,6 +811,7 @@ describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
       expect(response.statusCode).toBe(403);
       expect(response.body.success).toBe(false);
       expect(response.body.error).toContain("suspicious");
+      expect(response.body.error).toContain(KEYLESS_SIGNUP_URL);
       // Out of the keyless path → emit the OAuth-discovery header.
       expect(response.headers["www-authenticate"]).toContain(
         "resource_metadata",
