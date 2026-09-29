@@ -283,30 +283,33 @@ export async function scrapeInteractController(
             creationFailure = created;
             return;
           }
+          const abandonCreatedSession = async () => {
+            // Unlink and disable billing before Hangar cleanup. If Hangar stop
+            // fails, reconciliation can still settle the unlinked row at zero.
+            const abandoned = await abandonBrowserSession(created.session.id);
+            await stopBrowserSession(abandoned).catch(error =>
+              logger.error("Failed to stop abandoned scrape browser", {
+                scrapeId,
+                sessionId: created.session.id,
+                error,
+              }),
+            );
+          };
           if (signal.aborted) {
             // A lost lease must not expose or bill a browser the caller never got.
             // Mark it non-billable and unlink it before stopping Hangar, so a
             // later request can create its own session under the new lease.
-            const abandoned = await abandonBrowserSession(created.session.id);
-            await stopBrowserSession(abandoned).catch(error =>
-              logger.error("Failed to stop browser after scrape lock loss", {
-                scrapeId,
-                sessionId: created.session.id,
-                error,
-              }),
-            );
+            await abandonCreatedSession();
             throw signal.error;
           }
-          await updateBrowserSessionScrapeId(created.session.id, scrapeId);
+          try {
+            await updateBrowserSessionScrapeId(created.session.id, scrapeId);
+          } catch (error) {
+            await abandonCreatedSession();
+            throw error;
+          }
           if (signal.aborted) {
-            const abandoned = await abandonBrowserSession(created.session.id);
-            await stopBrowserSession(abandoned).catch(error =>
-              logger.error("Failed to stop browser after scrape lock loss", {
-                scrapeId,
-                sessionId: created.session.id,
-                error,
-              }),
-            );
+            await abandonCreatedSession();
             throw signal.error;
           }
           session = { ...created.session, scrape_id: scrapeId };
