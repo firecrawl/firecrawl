@@ -1,0 +1,231 @@
+---
+title: "Node.js Agent Quickstart"
+description: "Canonical Firecrawl Node.js quickstart for external agents using search, scrape, and interact."
+---
+
+# Firecrawl Node.js Agent Quickstart
+
+Canonical quickstart for external agents. Generated from SDK source (`@mendable/firecrawl-js`) and the v2 OpenAPI spec.
+
+## Install
+
+```bash
+npm install @mendable/firecrawl-js
+```
+
+Requires Node.js >= 22.
+
+## Authenticate
+
+```ts
+import Firecrawl from "@mendable/firecrawl-js";
+
+const client = new Firecrawl({
+  apiKey: process.env.FIRECRAWL_API_KEY,
+});
+```
+
+Constructor options:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `apiKey` | string | API key. Falls back to `FIRECRAWL_API_KEY` env var. |
+| `apiUrl` | string | API base URL. Falls back to `FIRECRAWL_API_URL` or `https://api.firecrawl.dev`. |
+| `timeoutMs` | number | HTTP timeout in milliseconds. |
+| `maxRetries` | number | Number of retries for transient failures. |
+| `backoffFactor` | number | Exponential backoff factor. |
+
+You can also pass a string directly: `new Firecrawl("fc-your-api-key")`.
+
+## When To Use What
+
+- **search** — start with a query and need to discover relevant pages.
+- **scrape** — already have a URL and want page content.
+- **interact** — need clicks, forms, or post-scrape browser actions on a page.
+
+## Search
+
+### Why use it
+
+Discover relevant pages from a query. Pick URLs from the results to scrape or interact with. Use `site:example.com` in the query to constrain results to a domain.
+
+### Preferred SDK method
+
+```
+client.search(query, options?) → Promise<SearchData>
+```
+
+### Example
+
+```ts
+const results = await client.search("site:docs.firecrawl.dev webhook retries");
+
+for (const hit of results.web ?? []) {
+  console.log(hit.url, hit.title);
+}
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `query` | string (required) | Search query. Use `site:example.com` to scope to a domain. |
+| `options.sources` | array | Sources to search: `"web"`, `"news"`, `"images"`, or `{ type: "web" \| "news" \| "images" }`. |
+| `options.categories` | array | Filter by category: `"github"`, `"research"`, `"pdf"`, or `{ type: "github" \| "research" \| "pdf" }`. |
+| `options.includeDomains` | string[] | Only include results from these domains. Cannot be used with `excludeDomains`. |
+| `options.excludeDomains` | string[] | Exclude results from these domains. Cannot be used with `includeDomains`. |
+| `options.limit` | number | Maximum results to return. Must be positive. |
+| `options.tbs` | string | Time-based filter (e.g. `"qdr:d"` for past day, `"qdr:w"` for past week). |
+| `options.location` | string | Geographic location for localized results. |
+| `options.ignoreInvalidURLs` | boolean | Drop URLs that cannot be scraped by other Firecrawl endpoints. |
+| `options.timeout` | number | Request timeout in milliseconds. Must be positive. |
+| `options.scrapeOptions` | ScrapeOptions | Scrape each result with these options (same fields as scrape). |
+| `options.integration` | string | Integration identifier. |
+
+### Return value
+
+`SearchData` with optional arrays keyed by source:
+
+- `web` — array of `SearchResultWeb` or `Document` (when `scrapeOptions` is set)
+- `news` — array of `SearchResultNews` or `Document`
+- `images` — array of `SearchResultImages` or `Document`
+
+Access results via `results.web`, `results.news`, `results.images` — not `results.data`.
+
+## Scrape
+
+### Why use it
+
+Fetch structured content from a URL in one or more formats.
+
+### Preferred SDK method
+
+```
+client.scrape(url, options?) → Promise<Document>
+```
+
+### Example
+
+```ts
+const doc = await client.scrape("https://docs.firecrawl.dev", {
+  formats: ["markdown"],
+});
+console.log(doc.markdown);
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `url` | string (required) | URL to scrape. |
+| `options.formats` | FormatOption[] | Output formats. See format options below. |
+| `options.headers` | Record\<string, string\> | Custom HTTP headers. |
+| `options.includeTags` | string[] | Only include content from these HTML tags. |
+| `options.excludeTags` | string[] | Exclude content from these HTML tags. |
+| `options.onlyMainContent` | boolean | Strip nav, footer, and other boilerplate. |
+| `options.timeout` | number | Timeout in milliseconds. Min 1000, max 300000. |
+| `options.waitFor` | number | Delay in milliseconds before scraping (on top of smart wait). |
+| `options.mobile` | boolean | Emulate mobile viewport. |
+| `options.parsers` | array | Parser config. `"pdf"` or `{ type: "pdf", mode?: "fast" \| "auto" \| "ocr", maxPages?: number }`. |
+| `options.actions` | ActionOption[] | Browser actions before scraping. See action types below. |
+| `options.location` | object | `{ country?: string, languages?: string[] }`. Defaults to US. |
+| `options.skipTlsVerification` | boolean | Skip TLS verification. |
+| `options.removeBase64Images` | boolean | Strip base64 images from markdown. |
+| `options.fastMode` | boolean | Faster scrapes with reduced fidelity. |
+| `options.blockAds` | boolean | Block ads and cookie popups. |
+| `options.proxy` | string | `"basic"`, `"stealth"`, `"enhanced"`, `"auto"`, or a custom proxy URL. |
+| `options.maxAge` | number | Return cached version if younger than this (milliseconds). |
+| `options.minAge` | number | Only check cache, never trigger fresh scrape (milliseconds). |
+| `options.storeInCache` | boolean | Cache the result. |
+| `options.lockdown` | boolean | Serve only cached results, never make outbound requests. |
+| `options.profile` | object | `{ name: string, saveChanges?: boolean }`. Persistent browser profile. |
+| `options.integration` | string | Integration identifier. |
+
+### Format options
+
+String formats: `"markdown"`, `"html"`, `"rawHtml"`, `"links"`, `"images"`, `"screenshot"`, `"summary"`, `"changeTracking"`, `"attributes"`, `"branding"`, `"audio"`, `"video"`.
+
+Object formats:
+
+| Format | Fields |
+|--------|--------|
+| `{ type: "json", prompt?, schema? }` | At least one of `prompt` or `schema` required. Zod schemas accepted. |
+| `{ type: "question", question }` | Question-answer extraction. |
+| `{ type: "highlights", query }` | Relevant source-text extraction. |
+| `{ type: "screenshot", fullPage?, quality?, viewport? }` | Screenshot with options. |
+| `{ type: "changeTracking", modes, schema?, prompt?, tag? }` | `modes` is required: `["git-diff"]` and/or `["json"]`. |
+| `{ type: "attributes", selectors }` | `selectors: [{ selector, attribute }]`. |
+
+Note: plain string `"json"` in `formats` is rejected by the SDK — use the object form.
+
+### Action types
+
+| Action | Required fields | Optional fields |
+|--------|----------------|-----------------|
+| `wait` | `milliseconds` or `selector` | — |
+| `screenshot` | — | `fullPage`, `quality`, `viewport` |
+| `click` | `selector` | `all` |
+| `write` | `text` | — |
+| `press` | `key` | — |
+| `scroll` | — | `direction` (`"up"` or `"down"`), `selector` |
+| `scrape` | — | — |
+| `executeJavascript` | `script` | — |
+| `pdf` | — | `format`, `landscape`, `scale` |
+
+## Interact
+
+### Why use it
+
+Control a browser session tied to a prior scrape via code or natural-language prompts. Use `interact` for multi-step flows — it is preferred over scrape-time `actions` for anything beyond quick pre-scrape tweaks.
+
+### Preferred SDK method
+
+```
+client.interact(jobId, args) → Promise<ScrapeExecuteResponse>
+```
+
+### Example
+
+```ts
+const doc = await client.scrape("https://example.com", { formats: ["markdown"] });
+const jobId = doc.metadata?.scrapeId;
+if (!jobId) throw new Error("Missing scrapeId");
+
+const result = await client.interact(jobId, {
+  prompt: "Click the pricing tab and summarize the plans.",
+});
+console.log(result.output);
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `jobId` | string (required) | Scrape job ID from `document.metadata.scrapeId`. |
+| `args.code` | string | Code to execute in the browser session (e.g. Playwright `page` usage). |
+| `args.prompt` | string | Natural-language instruction for the browser agent. |
+| `args.language` | string | Runtime: `"python"`, `"node"`, or `"bash"`. Default: `"node"`. |
+| `args.timeout` | number | Execution timeout in seconds (1–300). |
+
+At least one of `code` or `prompt` must be non-empty.
+
+### Stop session
+
+```ts
+await client.stopInteraction(jobId);
+```
+
+Returns `{ success, sessionDurationMs?, creditsBilled?, error? }`.
+
+## Notes
+
+- Deprecated aliases: `scrapeExecute` → `interact`, `stopInteractiveBrowser` / `deleteScrapeBrowser` → `stopInteraction`.
+- The default export `Firecrawl` is the v2 client. The v1 client is at `client.v1`.
+- Zod schemas in `formats` (for `json` or `changeTracking`) are converted to JSON Schema by the SDK.
+
+## Source Of Truth
+
+- `firecrawl/apps/js-sdk/firecrawl/src/index.ts`
+- `firecrawl/apps/js-sdk/firecrawl/src/v2/client.ts`
+- `firecrawl/apps/js-sdk/firecrawl/src/v2/types.ts`
+- `firecrawl-docs/api-reference/v2-openapi.json`
