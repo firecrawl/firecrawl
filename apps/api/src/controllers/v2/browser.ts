@@ -29,6 +29,7 @@ import {
 } from "../../lib/hangar";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
+import { withKeylessPromptDate } from "../../lib/keyless";
 
 export const browserCreateRequestSchema = z.object({
   ttl: z.number().int().min(30).max(3600).default(600),
@@ -69,7 +70,7 @@ export function browserError(res: Response, error: unknown) {
     success: false,
     error:
       error instanceof HangarError
-        ? error.message
+        ? withKeylessPromptDate(error.message)
         : "Browser operation failed.",
   });
 }

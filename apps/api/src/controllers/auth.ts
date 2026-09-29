@@ -16,6 +16,7 @@ import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   KEYLESS_SIGNUP_URL,
   consumeKeylessRequest,
+  withKeylessPromptDate,
   isKeylessConfigured,
   keylessExhaustionTelemetry,
   isKeylessIpEligible,
@@ -499,7 +500,7 @@ async function handleKeylessAuth(
   if (!allowKeyless) {
     return {
       success: false,
-      error: KEYLESS_ENDPOINT_NOT_AVAILABLE_MESSAGE,
+      error: withKeylessPromptDate(KEYLESS_ENDPOINT_NOT_AVAILABLE_MESSAGE),
       status: 401,
     };
   }
@@ -550,7 +551,7 @@ async function handleKeylessAuth(
     });
     return {
       success: false,
-      error: KEYLESS_SUSPICIOUS_IP_MESSAGE,
+      error: withKeylessPromptDate(KEYLESS_SUSPICIOUS_IP_MESSAGE),
       status: 403,
       // Tell agents where to find the key/signup flow they now need.
       agentAuthDiscovery: true,
@@ -609,7 +610,7 @@ async function handleKeylessAuth(
     });
     return {
       success: false,
-      error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
+      error: withKeylessPromptDate(KEYLESS_FREE_TIER_LIMIT_MESSAGE),
       status: 429,
       // Direct API callers receive discovery metadata; MCP maps this in-band.
       agentAuthDiscovery: true,

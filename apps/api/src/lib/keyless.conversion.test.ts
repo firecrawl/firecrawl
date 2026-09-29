@@ -7,9 +7,12 @@ import { config } from "../config";
 import { logger } from "./logger";
 import {
   KEYLESS_CONVERSION_COHORT_VERSION,
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
+  KEYLESS_SIGNUP_URL,
   keylessConversionCohort,
   keylessExhaustionTelemetry,
   keylessLimitBody,
+  withKeylessPromptDate,
 } from "./keyless";
 import { redisRateLimitClient } from "../services/rate-limiter";
 
@@ -68,5 +71,45 @@ describe("keyless conversion cohort telemetry", () => {
         conversionCohort: keylessConversionCohort("203.0.113.8"),
       }),
     );
+  });
+});
+
+describe("keyless signup prompt date", () => {
+  const now = new Date("2026-09-30T02:00:00Z");
+  const dated = `${KEYLESS_SIGNUP_URL}&utm_content=2026-09-30`;
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("stamps the keyless signup link with the UTC date of the prompt", () => {
+    expect(withKeylessPromptDate(KEYLESS_FREE_TIER_LIMIT_MESSAGE, now)).toBe(
+      KEYLESS_FREE_TIER_LIMIT_MESSAGE.replace(KEYLESS_SIGNUP_URL, dated),
+    );
+  });
+
+  it("leaves stamped messages and messages without the link unchanged", () => {
+    const stamped = withKeylessPromptDate(KEYLESS_FREE_TIER_LIMIT_MESSAGE, now);
+    expect(
+      withKeylessPromptDate(stamped, new Date("2026-10-05T00:00:00Z")),
+    ).toBe(stamped);
+    expect(withKeylessPromptDate("Browser operation failed.", now)).toBe(
+      "Browser operation failed.",
+    );
+  });
+
+  it("stamps the reservation-limit body", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
+    vi.spyOn(redisRateLimitClient, "ttl").mockResolvedValue(42);
+    vi.spyOn(logger, "warn").mockImplementation(() => logger);
+
+    const body = await keylessLimitBody(
+      "preview_keyless_203.0.113.8",
+      "search",
+    );
+
+    expect(body.error).toContain(dated);
   });
 });

@@ -214,7 +214,7 @@ describe("authenticateUser", () => {
     );
   });
 
-  it("links every keyless signup prompt to the keyless-tagged signup URL", async () => {
+  it("links every keyless signup prompt to the keyless-tagged signup URL with the UTC prompt date", async () => {
     config.USE_DB_AUTHENTICATION = true;
     vi.mocked(isKeylessConfigured).mockReturnValue(true);
     vi.mocked(consumeKeylessRequest).mockResolvedValue({
@@ -228,47 +228,54 @@ describe("authenticateUser", () => {
       headers: {},
       socket: { remoteAddress: "203.0.113.8" },
     });
-    const taggedSignupUrl =
-      "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api";
+    // Still September 29 in US time zones, so this also pins the date to UTC.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-30T02:00:00Z"));
+    const promptSignupUrl =
+      "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api&utm_content=2026-09-30";
 
-    const limited = await authenticateUser(
-      keylessRequest(),
-      {},
-      RateLimiterMode.Scrape,
-      { allowKeyless: true },
-    );
-    const unsupported = await authenticateUser(
-      keylessRequest(),
-      {},
-      RateLimiterMode.Scrape,
-      { allowKeyless: false },
-    );
-    vi.mocked(isKeylessIpSuspicious).mockResolvedValueOnce(true);
-    const suspicious = await authenticateUser(
-      keylessRequest(),
-      {},
-      RateLimiterMode.Scrape,
-      { allowKeyless: true },
-    );
+    try {
+      const limited = await authenticateUser(
+        keylessRequest(),
+        {},
+        RateLimiterMode.Scrape,
+        { allowKeyless: true },
+      );
+      const unsupported = await authenticateUser(
+        keylessRequest(),
+        {},
+        RateLimiterMode.Scrape,
+        { allowKeyless: false },
+      );
+      vi.mocked(isKeylessIpSuspicious).mockResolvedValueOnce(true);
+      const suspicious = await authenticateUser(
+        keylessRequest(),
+        {},
+        RateLimiterMode.Scrape,
+        { allowKeyless: true },
+      );
 
-    // A period right after the URL would be copied into utm_medium.
-    expect(limited).toEqual(
-      expect.objectContaining({
-        error: expect.not.stringContaining(`${taggedSignupUrl}.`),
-      }),
-    );
-    for (const [auth, status] of [
-      [limited, 429],
-      [unsupported, 401],
-      [suspicious, 403],
-    ] as const) {
-      expect(auth).toEqual(
+      // A period right after the URL would be copied into the link.
+      expect(limited).toEqual(
         expect.objectContaining({
-          success: false,
-          status,
-          error: expect.stringContaining(taggedSignupUrl),
+          error: expect.not.stringContaining(`${promptSignupUrl}.`),
         }),
       );
+      for (const [auth, status] of [
+        [limited, 429],
+        [unsupported, 401],
+        [suspicious, 403],
+      ] as const) {
+        expect(auth).toEqual(
+          expect.objectContaining({
+            success: false,
+            status,
+            error: expect.stringContaining(promptSignupUrl),
+          }),
+        );
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 
