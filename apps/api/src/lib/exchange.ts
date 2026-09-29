@@ -275,7 +275,6 @@ const ENRICHMENT_PROVIDER_ID = "firecrawl-enrich";
 const LEGACY_FULLENRICH_ORGS = new Set([
   "34a599c6-e6c2-4e6f-b563-0e23bb2552c1",
   "adcef175-be20-4534-96ad-fcd413e3c457",
-  "c52bbf0e-6fda-4f68-9347-c3bcab7589df",
   "2567598d-d959-44d3-8c4a-19fd467ec66d",
   "709cf0a7-7769-4c7e-a5e1-ad44f38f9c36",
 ]);
