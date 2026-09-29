@@ -43,6 +43,17 @@ describe("xSearchUsageFromResponseBody", () => {
         },
       },
     ],
+    [
+      "one valid and one invalid item count",
+      {
+        usage: {
+          server_side_tool_usage_details: {
+            x_posts_fetched: 44,
+            x_users_fetched: "3",
+          },
+        },
+      },
+    ],
   ])("returns undefined for %s", (_, body) => {
     expect(xSearchUsageFromResponseBody(body)).toBeUndefined();
   });
