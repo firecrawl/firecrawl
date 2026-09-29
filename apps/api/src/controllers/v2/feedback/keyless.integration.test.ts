@@ -47,10 +47,13 @@ suite("keyless feedback HTTP and persistence", () => {
   const orgId = randomUUID();
   const team = () => identity.keylessTeamUuid(identity.keylessTeamId(ip))!;
   const attemptKeys = () =>
-    [ip, ...secondaryIps].map(
-      clientIp =>
-        `keyless_feedback_attempts:${identity.keylessTeamUuid(identity.keylessTeamId(clientIp))}`,
-    );
+    [ip, ...secondaryIps].flatMap(clientIp => {
+      const teamId = identity.keylessTeamUuid(identity.keylessTeamId(clientIp));
+      return [
+        `keyless_feedback_attempts:${teamId}`,
+        `keyless_feedback_attempts_day:${teamId}`,
+      ];
+    });
   const body = (endpoint: "search" | "scrape" | "parse", jobId: string) => ({
     endpoint,
     jobId,
@@ -213,14 +216,16 @@ suite("keyless feedback HTTP and persistence", () => {
       )`);
     }
     await fixture.pool.query(`CREATE TABLE search_feedback (
-      id uuid PRIMARY KEY, search_id uuid, endpoint text NOT NULL DEFAULT 'search', job_id uuid,
+      id uuid PRIMARY KEY, search_id uuid CONSTRAINT search_feedback_search_id_unique UNIQUE,
+      endpoint text NOT NULL DEFAULT 'search', job_id uuid,
       request_id uuid, api_version text DEFAULT 'v2', team_id uuid NOT NULL, api_key_id bigint,
       overall_rating text NOT NULL, issue_types text[] NOT NULL DEFAULT '{}', tags text[] NOT NULL DEFAULT '{}',
       comment text, valuable_sources jsonb NOT NULL DEFAULT '[]', missing_content jsonb NOT NULL DEFAULT '[]',
       query_suggestions text, metadata jsonb NOT NULL DEFAULT '{}', job_status text,
       credits_billed integer NOT NULL DEFAULT 0, integration text, origin text,
       credits_refunded integer NOT NULL DEFAULT 0, refund_policy jsonb,
-      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT search_feedback_job_unique UNIQUE(team_id, endpoint, job_id)
     )`);
     await fixture.pool.query(`CREATE TABLE alexandria_feedback (
       id uuid PRIMARY KEY, team_id uuid NOT NULL, api_key_id bigint, api_version text NOT NULL DEFAULT 'v2',
@@ -492,31 +497,42 @@ suite("keyless feedback HTTP and persistence", () => {
         ...(await job(endpoint)),
       })),
     );
-    const attempts = jobs.flatMap(({ endpoint, jobId }) =>
-      ["api", "mcp", "cli"].map(origin => ({ jobId, endpoint, origin })),
-    );
-    const responses = await Promise.all(
-      attempts.map(({ endpoint, jobId, origin }) =>
-        submit({ ...body(endpoint, jobId), origin }),
-      ),
-    );
-    expect(responses.every(response => response.status === 200)).toBe(true);
-    const idsByJob = new Map<string, Set<string>>();
-    responses.forEach((response, index) => {
-      const ids = idsByJob.get(attempts[index].jobId) ?? new Set();
-      idsByJob.set(attempts[index].jobId, ids.add(response.body.feedbackId));
-    });
-    expect([...idsByJob.values()].map(ids => ids.size)).toEqual([1, 1, 1]);
-    expect(new Set([...idsByJob.values()].flatMap(ids => [...ids])).size).toBe(
-      3,
-    );
-    expect(
-      responses.filter(response => !response.body.alreadySubmitted),
-    ).toHaveLength(3);
-    const rows = await fixture.db!.select().from(table);
-    expect(rows.map(row => row.id).sort()).toEqual(
-      [...idsByJob.values()].flatMap(ids => [...ids]).sort(),
-    );
+    // Prove keyless idempotency without relying on either database constraint.
+    // Restore both before the authenticated compatibility cases run.
+    await fixture.pool!.query(`ALTER TABLE search_feedback
+      DROP CONSTRAINT search_feedback_search_id_unique,
+      DROP CONSTRAINT search_feedback_job_unique`);
+    try {
+      const attempts = jobs.flatMap(({ endpoint, jobId }) =>
+        ["api", "mcp", "cli"].map(origin => ({ jobId, endpoint, origin })),
+      );
+      const responses = await Promise.all(
+        attempts.map(({ endpoint, jobId, origin }) =>
+          submit({ ...body(endpoint, jobId), origin }),
+        ),
+      );
+      expect(responses.every(response => response.status === 200)).toBe(true);
+      const idsByJob = new Map<string, Set<string>>();
+      responses.forEach((response, index) => {
+        const ids = idsByJob.get(attempts[index].jobId) ?? new Set();
+        idsByJob.set(attempts[index].jobId, ids.add(response.body.feedbackId));
+      });
+      expect([...idsByJob.values()].map(ids => ids.size)).toEqual([1, 1, 1]);
+      expect(
+        new Set([...idsByJob.values()].flatMap(ids => [...ids])).size,
+      ).toBe(3);
+      expect(
+        responses.filter(response => !response.body.alreadySubmitted),
+      ).toHaveLength(3);
+      const rows = await fixture.db!.select().from(table);
+      expect(rows.map(row => row.id).sort()).toEqual(
+        [...idsByJob.values()].flatMap(ids => [...ids]).sort(),
+      );
+    } finally {
+      await fixture.pool!.query(`ALTER TABLE search_feedback
+        ADD CONSTRAINT search_feedback_search_id_unique UNIQUE(search_id),
+        ADD CONSTRAINT search_feedback_job_unique UNIQUE(team_id, endpoint, job_id)`);
+    }
   });
   it("rejects another identity, wrong category, nonexistent positions and malformed evidence without recording feedback", async () => {
     const { jobId } = await job("search");
@@ -892,6 +908,17 @@ suite("keyless feedback HTTP and persistence", () => {
     expect((await submit({}, "203.0.113.99")).status).toBe(403);
     expect((await submit({}, "not-an-ip")).status).toBe(401);
     expect(await fixture.db!.select().from(table)).toHaveLength(0);
+  });
+  it("caps sustained feedback attempts without spending the job quota", async () => {
+    const dailyKey = `keyless_feedback_attempts_day:${team()}`;
+    const requestKey = `keyless_requests:${ip}`;
+    const requestsBefore = await redis.get(requestKey);
+    await redis.set(dailyKey, "299", "EX", 86400);
+    expect((await submit({})).status).toBe(400);
+    const blocked = await submit({});
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.retry_after_seconds).toBeGreaterThan(60);
+    expect(await redis.get(requestKey)).toBe(requestsBefore);
   });
   it("records accepted, duplicate and rejected outcomes without feedback content", async () => {
     const { logger } = await import("../../../lib/logger.js");

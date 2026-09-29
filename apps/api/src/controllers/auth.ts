@@ -597,6 +597,7 @@ async function handleKeylessAuth(
       status: number,
       reason: "disabled" | "attempt_limit" | "limiter_unavailable",
       error: string,
+      retryAfterSeconds?: number,
     ): AuthResponse => {
       logKeylessFeedbackOutcome({
         identity,
@@ -609,7 +610,7 @@ async function handleKeylessAuth(
         success: false,
         status,
         error,
-        ...(reason === "attempt_limit" ? { retryAfterSeconds: 60 } : {}),
+        ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
       };
     };
     if (!config.KEYLESS_FEEDBACK_ENABLED)
@@ -619,11 +620,13 @@ async function handleKeylessAuth(
         "Feedback is unavailable on this deployment.",
       );
     try {
-      if (!(await consumeKeylessFeedbackAttempt(identity))) {
+      const attempt = await consumeKeylessFeedbackAttempt(identity);
+      if (!attempt.allowed) {
         return reject(
           429,
           "attempt_limit",
-          "Too many feedback attempts. Retry in one minute.",
+          "Too many feedback attempts. Retry later.",
+          attempt.retryAfterSeconds,
         );
       }
     } catch {
