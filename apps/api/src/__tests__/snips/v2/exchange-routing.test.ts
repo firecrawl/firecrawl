@@ -291,6 +291,7 @@ describe("Exchange routing", () => {
 
       expect(mocks.robustFetch.mock.calls[0][0].body).toMatchObject({
         teamId: "team-1",
+        provider: "acme",
         organizationId: "org-1",
         organizationDataSourceAccess:
           ACCEPTED_FLAGS.organizationDataSourceAccess,

@@ -110,6 +110,35 @@ describe("Exchange routing", () => {
     ).resolves.not.toBeNull();
   });
 
+  it("keeps legacy FullEnrich organizations off the enrichment provider", async () => {
+    const linkedin = [
+      {
+        domains: ["linkedin.com", "www.linkedin.com"],
+        pathPrefixes: ["/in/", "/company/"],
+      },
+    ];
+    setExchangeProvidersForTest([
+      { id: "firecrawl-enrich", routes: linkedin },
+      {
+        id: "fullenrich",
+        creditsCost: 15,
+        terms: ACME_TERMS,
+        routes: linkedin,
+      },
+    ]);
+    const url = "https://www.linkedin.com/in/example";
+
+    await expect(
+      resolveExchangeProvider(url, "34a599c6-e6c2-4e6f-b563-0e23bb2552c1"),
+    ).resolves.toMatchObject({ id: "fullenrich", creditsCost: 15 });
+    await expect(
+      resolveExchangeProvider(url, "00000000-0000-0000-0000-000000000000"),
+    ).resolves.toMatchObject({ id: "firecrawl-enrich" });
+    await expect(resolveExchangeProvider(url)).resolves.toMatchObject({
+      id: "firecrawl-enrich",
+    });
+  });
+
   it("matches any subdomain through a wildcard route but never the apex", async () => {
     setExchangeProvidersForTest([
       {
