@@ -20,6 +20,7 @@ import {
   keylessConversionCohort,
 } from "../../lib/keyless";
 import { logger } from "../../lib/logger";
+import { isKeylessIpSuspicious } from "../../lib/spur";
 import { db } from "../../db/connection";
 import { autumnService } from "../../services/autumn/autumn.service";
 
@@ -211,6 +212,67 @@ describe("authenticateUser", () => {
         conversionCohort: keylessConversionCohort("203.0.113.8"),
       }),
     );
+  });
+
+  it("links every keyless signup prompt to the keyless-tagged signup URL", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(isKeylessConfigured).mockReturnValue(true);
+    vi.mocked(consumeKeylessRequest).mockResolvedValue({
+      ok: false,
+      reason: "credits",
+      requestsUsed: 1,
+      creditsUsed: 100,
+    });
+    vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const keylessRequest = () => ({
+      headers: {},
+      socket: { remoteAddress: "203.0.113.8" },
+    });
+    const taggedSignupUrl =
+      "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api";
+
+    const limited = await authenticateUser(
+      keylessRequest(),
+      {},
+      RateLimiterMode.Scrape,
+      { allowKeyless: true },
+    );
+    const unsupported = await authenticateUser(
+      keylessRequest(),
+      {},
+      RateLimiterMode.Scrape,
+      { allowKeyless: false },
+    );
+    vi.mocked(isKeylessIpSuspicious).mockResolvedValueOnce(true);
+    const suspicious = await authenticateUser(
+      keylessRequest(),
+      {},
+      RateLimiterMode.Scrape,
+      { allowKeyless: true },
+    );
+
+    // A period right after the URL would be copied into utm_medium.
+    expect(limited).toEqual(
+      expect.objectContaining({
+        error: expect.not.stringContaining(`${taggedSignupUrl}.`),
+      }),
+    );
+    for (const [auth, status] of [
+      [limited, 429],
+      [unsupported, 401],
+      [suspicious, 403],
+    ] as const) {
+      expect(auth).toEqual(
+        expect.objectContaining({
+          success: false,
+          status,
+          // Nothing follows the URL's query, so a dropped utm_content stays out.
+          error: expect.stringMatching(
+            /https:\/\/www\.firecrawl\.dev\/signin\?utm_source=keyless&utm_medium=api(?![&\w])/,
+          ),
+        }),
+      );
+    }
   });
 
   it("writes normal API-key ACUC entries to the general-purpose cache", async () => {
