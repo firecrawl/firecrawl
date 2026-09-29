@@ -579,6 +579,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         const filterResult = await crawler!.filterURL(
           doc.metadata.url,
           doc.metadata.sourceURL,
+          { checkIncludes: true },
         );
         if (!filterResult.allowed && !job.data.isCrawlSourceScrape) {
           const reason =

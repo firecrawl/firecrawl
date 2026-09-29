@@ -729,7 +729,11 @@ export class WebCrawler {
     return count;
   }
 
-  public async filterURL(href: string, url: string): Promise<FilterResult> {
+  public async filterURL(
+    href: string,
+    url: string,
+    { checkIncludes = false }: { checkIncludes?: boolean } = {},
+  ): Promise<FilterResult> {
     return await filterUrl({
       href: href,
       url: url,
@@ -740,6 +744,12 @@ export class WebCrawler {
       robotsUserAgent: this.robotsUserAgent,
       allowExternalContentLinks: this.allowExternalContentLinks,
       allowSubdomains: this.allowSubdomains,
+      // Link extraction calls this for every link on a page, and filterLinks
+      // checks includePaths on those links afterwards, so only callers that
+      // skip filterLinks (a redirect target) ask for it here.
+      ...(checkIncludes
+        ? { includes: this.includes, regexOnFullUrl: this.regexOnFullURL }
+        : {}),
     });
   }
 
