@@ -1427,6 +1427,12 @@ export type MapRequest = z.infer<typeof mapRequestSchema>;
 export type MapRequestInput = z.input<typeof mapRequestSchema>;
 
 export type Document = {
+  enrichment?: {
+    entity: "person" | "company";
+    source: { provider: string; capability: string; [key: string]: unknown };
+    creditsUsed: number;
+    billingComplete: boolean;
+  };
   title?: string;
   description?: string;
   url?: string;

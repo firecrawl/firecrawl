@@ -21,6 +21,11 @@ import {
 } from "../../services/alexandria/retrieve";
 import type { RequestWithAuth } from "./types";
 
+import {
+  enrichmentResponse,
+  type EnrichmentScrape,
+} from "../../services/alexandria/scrape-enrichment";
+
 const providerScrapeSchema = z.strictObject({
   alexandria: z.preprocess(
     value => (Array.isArray(value) ? value : [value]),
@@ -48,6 +53,7 @@ export async function providerScrapeController(
   req: RequestWithAuth<any, any, any>,
   res: Response,
   legacy = false,
+  enrichment?: EnrichmentScrape,
 ) {
   const legacyBody = legacy
     ? z
@@ -60,7 +66,20 @@ export async function providerScrapeController(
           alexandria:
             "requests" in legacyBody ? legacyBody.requests : [legacyBody],
         }
-      : req.body,
+      : enrichment
+        ? {
+            alexandria: [
+              {
+                provider: "firecrawl",
+                capability: "enrich",
+                options: { url: enrichment.url, format: enrichment.format },
+              },
+            ],
+            timeout: req.body.timeout,
+            origin: req.body.origin,
+            integration: req.body.integration,
+          }
+        : req.body,
   );
 
   if (body.__agentInterop) {
@@ -105,7 +124,7 @@ export async function providerScrapeController(
       error: "Verify this API key before executing provider tools.",
     });
   const restriction = await checkKeyFormatRestriction(
-    ["json"],
+    enrichment ? [enrichment.format] : ["json"],
     [],
     req.acuc.api_key_id,
     req.acuc.flags,
@@ -146,23 +165,28 @@ export async function providerScrapeController(
       error: "Provider request unavailable. Retry with the same x-request-id.",
     });
   }
+  const enrichmentResult = enrichment
+    ? enrichmentResponse(result, enrichment, req.auth.team_id)
+    : undefined;
   const timeTaken = (Date.now() - startedAt) / 1000;
   if (result.executed && !body.__agentInterop) {
     const apiKeyId = req.acuc.api_key_id ?? null;
     const served = answerSchema.safeParse(result.body);
-    const failure = result.body as {
+    const failure = (enrichmentResult?.body ?? result.body) as {
       error?: unknown;
       creditsCost?: unknown;
     } | null;
     const successful =
       result.status === 200 &&
+      (!enrichmentResult || enrichmentResult.status === 200) &&
       served.success &&
       served.data.results.every(item => !item.error);
-    const error = served.success
-      ? served.data.results.find(item => item.error)?.error?.message
-      : typeof failure?.error === "string"
+    const error =
+      typeof failure?.error === "string"
         ? failure.error
-        : undefined;
+        : served.success
+          ? served.data.results.find(item => item.error)?.error?.message
+          : undefined;
     const credits = served.success
       ? served.data.creditsCost
       : failure?.creditsCost;
@@ -202,7 +226,8 @@ export async function providerScrapeController(
         is_successful: successful,
         error: successful
           ? undefined
-          : (error ?? `Provider request failed (${result.status}).`),
+          : (error ??
+            `Provider request failed (${enrichmentResult?.status ?? result.status}).`),
       });
     })().catch(error =>
       logger.warn("Provider activity logging failed", {
@@ -211,6 +236,9 @@ export async function providerScrapeController(
       }),
     );
   }
+
+  if (enrichmentResult)
+    return res.status(enrichmentResult.status).json(enrichmentResult.body);
 
   if (result.status !== 200) return res.status(result.status).json(result.body);
   const answer = answerSchema.parse(result.body);

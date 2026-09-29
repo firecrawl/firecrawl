@@ -287,3 +287,81 @@ it("executes with supplied arguments but stores only tool identifiers in activit
     alexandria: [{ provider: call.provider, capability: call.capability }],
   });
 });
+
+app.post("/enriched-profile", (req, res) =>
+  providerScrapeController(req as any, res, false, {
+    url: "https://www.linkedin.com/in/jane",
+    entity: "person",
+    format: "json",
+  }),
+);
+it("adapts a profile through the existing authenticated provider path", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      {
+        provider: "firecrawl",
+        capability: "enrich",
+        creditsCost: 0,
+        data: {
+          status: "matched",
+          entity: "person",
+          url: "https://www.linkedin.com/in/jane",
+          profile: { name: "Jane" },
+          source: { provider: "fullenrich", capability: "people/lookup" },
+          providerCredits: 5,
+          billingComplete: true,
+          steps: [],
+        },
+      },
+    ]),
+  );
+  const response = await request(app)
+    .post("/enriched-profile")
+    .set("authorization", "Bearer caller")
+    .send({ url: "https://ca.linkedin.com/in/jane", formats: ["json"] });
+  expect(response.status).toBe(200);
+  expect(response.body.data.json).toEqual({ name: "Jane" });
+  expect(response.body.data.enrichment.creditsUsed).toBe(5);
+  expect(mocks.retrieve).toHaveBeenCalledTimes(1);
+  expect(mocks.retrieve).toHaveBeenCalledWith(
+    expect.objectContaining({
+      teamId: "team",
+      resultAuthorization: "Bearer caller",
+      calls: [
+        {
+          provider: "firecrawl",
+          capability: "enrich",
+          options: { url: "https://www.linkedin.com/in/jane", format: "json" },
+        },
+      ],
+    }),
+  );
+  expect(mocks.scrapeLog).toHaveBeenCalledWith(
+    expect.objectContaining({ credits_cost: 0 }),
+  );
+});
+it("returns actionable setup errors from the provider controller", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      {
+        provider: "firecrawl",
+        capability: "enrich",
+        creditsCost: 0,
+        data: {
+          status: "disabled",
+          entity: "person",
+          url: "https://www.linkedin.com/in/jane",
+          providerCredits: 0,
+          billingComplete: true,
+          steps: [],
+        },
+      },
+    ]),
+  );
+  const response = await request(app)
+    .post("/enriched-profile")
+    .send({ url: "https://www.linkedin.com/in/jane" });
+  expect(response.status).toBe(403);
+  expect(response.body.code).toBe("ENRICHMENT_SETUP_REQUIRED");
+  expect(response.body.details.action.url).toContain("enrichment%3Dtrue");
+});
