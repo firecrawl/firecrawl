@@ -42,9 +42,15 @@ suite("keyless feedback HTTP and persistence", () => {
   let table: typeof import("../../../db/schema").search_feedback;
   let config: typeof import("../../../config").config;
   const ip = "203.0.113.71";
+  const secondaryIps = ["203.0.113.72", "203.0.113.73"];
   const authenticatedTeam = randomUUID();
   const orgId = randomUUID();
   const team = () => identity.keylessTeamUuid(identity.keylessTeamId(ip))!;
+  const attemptKeys = () =>
+    [ip, ...secondaryIps].map(
+      clientIp =>
+        `keyless_feedback_attempts:${identity.keylessTeamUuid(identity.keylessTeamId(clientIp))}`,
+    );
   const body = (endpoint: "search" | "scrape" | "parse", jobId: string) => ({
     endpoint,
     jobId,
@@ -291,14 +297,14 @@ suite("keyless feedback HTTP and persistence", () => {
     await fixture.pool!.query(
       "TRUNCATE search_feedback, alexandria_feedback, searches, scrapes, parses, requests CASCADE",
     );
-    await redis.del(`keyless_feedback_attempts:${team()}`);
+    await redis.del(...attemptKeys());
   });
   afterAll(async () => {
     if (redis) {
       await redis.del(
         `keyless_requests:${ip}`,
         `keyless_credits:${ip}`,
-        `keyless_feedback_attempts:${team()}`,
+        ...attemptKeys(),
       );
     }
     if (fixture.pool) {
@@ -514,7 +520,7 @@ suite("keyless feedback HTTP and persistence", () => {
   });
   it("rejects another identity, wrong category, nonexistent positions and malformed evidence without recording feedback", async () => {
     const { jobId } = await job("search");
-    expect((await submit(body("search", jobId), "203.0.113.72")).status).toBe(
+    expect((await submit(body("search", jobId), secondaryIps[0])).status).toBe(
       404,
     );
     expect((await submit(body("parse", jobId))).status).toBe(404);
@@ -1009,22 +1015,15 @@ suite("keyless feedback HTTP and persistence", () => {
     );
   });
   it("records feedback for different identities independently", async () => {
-    const otherIp = "203.0.113.73";
-    const otherIdentity = identity.keylessTeamUuid(
-      identity.keylessTeamId(otherIp),
-    )!;
-    try {
-      const first = await job("search");
-      expect((await submit(body("search", first.jobId))).status).toBe(200);
-      const second = await job("search", true, otherIp);
-      expect(second.metadata.feedback).toBeDefined();
-      expect((await submit(body("search", second.jobId), otherIp)).status).toBe(
-        200,
-      );
-      expect(await fixture.db!.select().from(table)).toHaveLength(2);
-    } finally {
-      await redis.del(`keyless_feedback_attempts:${otherIdentity}`);
-    }
+    const otherIp = secondaryIps[1];
+    const first = await job("search");
+    expect((await submit(body("search", first.jobId))).status).toBe(200);
+    const second = await job("search", true, otherIp);
+    expect(second.metadata.feedback).toBeDefined();
+    expect((await submit(body("search", second.jobId), otherIp)).status).toBe(
+      200,
+    );
+    expect(await fixture.db!.select().from(table)).toHaveLength(2);
   });
   it("accepts a retry after persistence fails", async () => {
     const { jobId } = await job("parse");
