@@ -37,6 +37,53 @@ describe("executeTransformers", () => {
     mockedPerformLLMExtract.mockClear();
   });
 
+  it.each([
+    "application/json",
+    "Application/JSON; charset=utf-8",
+    "application/vnd.api+json",
+    "application/ld+json; charset=utf-8",
+    "Application/Problem+JSON",
+  ])("preserves %s bodies in a JSON code fence", async contentType => {
+    const rawHtml = JSON.stringify({
+      data: [{ full_name: "a_b", tags: ["c_d"] }],
+    });
+    const document = await executeTransformers(
+      {
+        url: "https://example.com/api",
+        options: { formats: [{ type: "markdown" }], onlyMainContent: false },
+        internalOptions: {},
+        logger: logger(),
+      } as any,
+      { rawHtml, metadata: { contentType } } as any,
+    );
+
+    expect(document.markdown).toBe("```json\n" + rawHtml + "\n```");
+  });
+
+  it.each([
+    'text/html; profile="application/json"',
+    'text/html; profile="application/vnd.api+json"',
+  ])("does not treat %s as JSON", async contentType => {
+    const document = await executeTransformers(
+      {
+        url: "https://example.com",
+        options: { formats: [{ type: "markdown" }], onlyMainContent: false },
+        internalOptions: {},
+        logger: logger(),
+      } as any,
+      {
+        rawHtml:
+          "<html><body><p>Hello <strong>world</strong></p></body></html>",
+        metadata: {
+          contentType,
+        },
+      } as any,
+    );
+
+    expect(document.markdown).toContain("Hello **world**");
+    expect(document.markdown).not.toContain("```json");
+  });
+
   it("keeps native JSON and markdown without running LLM JSON extraction", async () => {
     const nativeJson = { id: "person-1", full_name: "Example Person" };
     const nativeMarkdown = "# Example Person";
