@@ -10,7 +10,9 @@ vi.mock("../../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+import { UnrecoverableError } from "bullmq";
 import {
+  MAX_RETRY_AGE_MS,
   handOffTrack,
   processFirebillTrackRetryJob,
   retryJobId,
@@ -36,12 +38,12 @@ const outcomes = async () =>
   );
 
 /** The slice of a BullMQ job the processor touches. */
-const job = (attemptsMade: number, attempts = 10) =>
+const job = (attemptsMade: number, attempts = 10, ageMs = 1000) =>
   ({
     data: { path: "/v1/track", params },
     attemptsMade,
     opts: { attempts },
-    timestamp: Date.now() - 1000,
+    timestamp: Date.now() - ageMs,
     moveToCompleted: vi.fn(async () => {}),
     moveToFailed: vi.fn(async () => {}),
   }) as any;
@@ -168,5 +170,19 @@ describe("processFirebillTrackRetryJob", () => {
       processFirebillTrackRetryJob("token", j, async () => ({ ok: false })),
     ).resolves.toBeUndefined();
     expect(await outcomes()).toEqual({});
+  });
+
+  it("stops retrying a job older than the dedupe window, without sending it", async () => {
+    const j = job(2, 10, MAX_RETRY_AGE_MS + 1);
+    const attempt = vi.fn(async () => ({ ok: true }));
+    await processFirebillTrackRetryJob("token", j, attempt);
+    expect(attempt).not.toHaveBeenCalled();
+    expect(j.moveToFailed).toHaveBeenCalledWith(
+      expect.any(UnrecoverableError),
+      "token",
+      false,
+    );
+    expect(await outcomes()).toEqual({ expired: 1 });
+    expect(logger.error).toHaveBeenCalledTimes(1);
   });
 });

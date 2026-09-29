@@ -1,4 +1,4 @@
-import type { Job } from "bullmq";
+import { UnrecoverableError, type Job } from "bullmq";
 import { logger } from "../../lib/logger";
 import { getFirebillTrackRetryQueue } from "../queue-service";
 import type { TrackParams } from "./types";
@@ -21,6 +21,12 @@ export type AttemptOnce = (
   path: string,
   params: TrackParams,
 ) => Promise<{ ok: boolean }>;
+
+// The retry schedule spans ~43 minutes, but a job can wait far longer if
+// index-worker is down. Past this age it is not retried: Autumn may have
+// forgotten the key, and a retry could charge twice. Failed jobs are kept a
+// week for manual recovery.
+export const MAX_RETRY_AGE_MS = 60 * 60 * 1000;
 
 // The shared Redis client never times out on its own
 // (`maxRetriesPerRequest: null`), so this bounds what the caller can wait.
@@ -107,7 +113,11 @@ export async function processFirebillTrackRetryJob(
   attempt: AttemptOnce,
 ): Promise<void> {
   const { path, params } = job.data;
-  const result = await attempt(path, params).catch(() => ({ ok: false }));
+  const ageMs = Date.now() - job.timestamp;
+  const tooOld = ageMs > MAX_RETRY_AGE_MS;
+  const result = tooOld
+    ? { ok: false }
+    : await attempt(path, params).catch(() => ({ ok: false }));
 
   if (result.ok) {
     try {
@@ -130,10 +140,14 @@ export async function processFirebillTrackRetryJob(
     return;
   }
 
-  const last = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+  const last = tooOld || job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
   try {
     await job.moveToFailed(
-      new Error("firebill did not confirm the event"),
+      tooOld
+        ? new UnrecoverableError(
+            "too old to retry without risking a double charge",
+          )
+        : new Error("firebill did not confirm the event"),
       token,
       false,
     );
@@ -151,14 +165,16 @@ export async function processFirebillTrackRetryJob(
   }
   firebillTrackRetryTotal.labels("expired").inc();
   logger.error(
-    "gave up retrying a usage event firebill never confirmed; it will not be billed",
+    tooOld
+      ? "a usage event waited too long to be retried safely; it will not be billed unless recovered by hand"
+      : "gave up retrying a usage event firebill never confirmed; it will not be billed",
     {
       customerId: params.customerId,
       value: params.value,
       idempotencyKey: params.idempotencyKey,
       path,
-      attempts: job.attemptsMade + 1,
-      ageMs: Date.now() - job.timestamp,
+      attempts: job.attemptsMade + (tooOld ? 0 : 1),
+      ageMs,
     },
   );
 }
