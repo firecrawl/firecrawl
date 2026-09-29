@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
-import { getThirdPartyDataTermsRequiredResponse } from "../../lib/exchange";
+import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { exchangeRequest } from "./client";
 import { refusal, type ExchangeResponse, type ProviderCall } from "./contracts";
 import {
@@ -86,7 +86,7 @@ export async function authorizeProviders(
           continue;
         return {
           status: 403,
-          body: getThirdPartyDataTermsRequiredResponse(item.terms),
+          body: new ThirdPartyDataTermsRequiredError(item.terms).response(),
         };
       }
       return refusal(
@@ -107,7 +107,7 @@ export async function authorizeProviders(
     }
     return {
       status: 403,
-      body: getThirdPartyDataTermsRequiredResponse(item.terms),
+      body: new ThirdPartyDataTermsRequiredError(item.terms).response(),
     };
   }
 

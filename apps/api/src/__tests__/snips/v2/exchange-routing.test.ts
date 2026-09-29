@@ -167,7 +167,7 @@ describe("Exchange routing", () => {
 
       expect(result).toEqual({
         status: 403,
-        body: exchange.getThirdPartyDataTermsRequiredResponse(TERMS),
+        body: new exchange.ThirdPartyDataTermsRequiredError(TERMS).response(),
       });
     });
 
@@ -221,7 +221,7 @@ describe("Exchange routing", () => {
 
       expect(error).toBeInstanceOf(exchange.ThirdPartyDataTermsRequiredError);
       expect(error.response()).toEqual(
-        exchange.getThirdPartyDataTermsRequiredResponse(TERMS),
+        new exchange.ThirdPartyDataTermsRequiredError(TERMS).response(),
       );
     });
 

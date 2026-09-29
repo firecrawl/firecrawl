@@ -29,7 +29,7 @@ import {
   CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
-import { getThirdPartyDataTermsRequiredResponse } from "../lib/exchange";
+import { ThirdPartyDataTermsRequiredError } from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { isToolsOnlySearch } from "../search/alexandria";
 import { getScrapeZDR } from "../lib/zdr-helpers";
@@ -418,7 +418,11 @@ function blocklistGate(
       if (exchangeAccess.termsRequired && !res.headersSent) {
         return res
           .status(403)
-          .json(getThirdPartyDataTermsRequiredResponse(exchangeAccess.terms));
+          .json(
+            new ThirdPartyDataTermsRequiredError(
+              exchangeAccess.terms,
+            ).response(),
+          );
       }
     }
 

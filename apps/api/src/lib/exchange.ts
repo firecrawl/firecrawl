@@ -73,7 +73,6 @@ type ExchangeProvider = {
 // against page HTML, which Exchange responses do not carry.
 const SUPPORTED_FORMATS = new Set(["markdown", "json"]);
 const EXCHANGE_BETA_FLAG = "professionalProfileCompanyDataBeta";
-const THIRD_PARTY_DATA_TERMS_REQUIRED_CODE = "THIRD_PARTY_DATA_TERMS_REQUIRED";
 
 const EXCHANGE_PROVIDERS_PATH = "/v1/providers";
 const EXCHANGE_PROVIDERS_TIMEOUT_MS = 2_000;
@@ -621,38 +620,40 @@ function getThirdPartyDataTermsUrl(terms: ExchangeTerms): string {
   return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria/${encodeURIComponent(terms.key)}`;
 }
 
-export function getThirdPartyDataTermsRequiredResponse(terms: ExchangeTerms) {
-  const url = getThirdPartyDataTermsUrl(terms);
-  return {
-    success: false as const,
-    code: THIRD_PARTY_DATA_TERMS_REQUIRED_CODE as "THIRD_PARTY_DATA_TERMS_REQUIRED",
-    error: `An organization admin must accept the ${terms.key} provider's terms (version ${terms.version}) before this request can run. Accept them at ${url}`,
-    requiresAction: {
-      type: "accept_terms",
-      terms: terms.key,
-      version: terms.version,
-      url,
-    },
-  };
-}
-
 /**
- * Raised while choosing engines when unaccepted terms are all that keeps the
- * Exchange from serving a blocklisted URL. Transportable, so it reaches the
- * caller from every route and through the worker queue; scrape controllers
- * answer it with the same 403 body the scrape blocklist gate sends.
+ * An organization admin has to accept a provider's terms before the request
+ * can run. Transportable, so it crosses the worker queue intact; every
+ * surface that reports it sends `response()`, or `requiresAction` alone where
+ * the error is one entry of a list.
  */
 export class ThirdPartyDataTermsRequiredError extends TransportableError {
-  constructor(public readonly terms: ExchangeTerms) {
+  public readonly terms: ExchangeTerms;
+
+  constructor(terms: ExchangeTerms) {
     super(
       "THIRD_PARTY_DATA_TERMS_REQUIRED",
-      getThirdPartyDataTermsRequiredResponse(terms).error,
+      `An organization admin must accept the ${terms.key} provider's terms (version ${terms.version}) before this request can run. Accept them at ${getThirdPartyDataTermsUrl(terms)}`,
     );
     this.name = "ThirdPartyDataTermsRequiredError";
+    this.terms = { key: terms.key, version: terms.version };
+  }
+
+  get requiresAction() {
+    return {
+      type: "accept_terms" as const,
+      terms: this.terms.key,
+      version: this.terms.version,
+      url: getThirdPartyDataTermsUrl(this.terms),
+    };
   }
 
   response() {
-    return getThirdPartyDataTermsRequiredResponse(this.terms);
+    return {
+      success: false as const,
+      code: "THIRD_PARTY_DATA_TERMS_REQUIRED" as const,
+      error: this.message,
+      requiresAction: this.requiresAction,
+    };
   }
 
   serialize() {

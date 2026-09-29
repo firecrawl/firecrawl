@@ -15,7 +15,6 @@ import {
   getExchangeRequestLogContext,
   getExchangeResponseLogContext,
   getExchangeSuccessCredits,
-  getThirdPartyDataTermsRequiredResponse,
   isSuccessfulExchangeStatusCode,
   isSupportedExchangeFormatRequest,
   resolveExchangeProvider,
@@ -411,7 +410,9 @@ describe("Exchange routing", () => {
       terms: ACME_TERMS,
     });
 
-    const response = getThirdPartyDataTermsRequiredResponse(ACME_TERMS);
+    const response = new ThirdPartyDataTermsRequiredError(
+      ACME_TERMS,
+    ).response();
     expect(response).toMatchObject({
       success: false,
       code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
@@ -930,10 +931,14 @@ describe("Exchange terms acceptance", () => {
 
     expect(error).toBeInstanceOf(ThirdPartyDataTermsRequiredError);
     expect((error as ThirdPartyDataTermsRequiredError).response()).toEqual(
-      getThirdPartyDataTermsRequiredResponse(ACME_TERMS),
+      new ThirdPartyDataTermsRequiredError(ACME_TERMS).response(),
     );
     expect(error?.message).toBe(
-      getThirdPartyDataTermsRequiredResponse(ACME_TERMS).error,
+      new ThirdPartyDataTermsRequiredError(ACME_TERMS).response().error,
+    );
+    expect((error as ThirdPartyDataTermsRequiredError).requiresAction).toEqual(
+      new ThirdPartyDataTermsRequiredError(ACME_TERMS).response()
+        .requiresAction,
     );
   });
 });

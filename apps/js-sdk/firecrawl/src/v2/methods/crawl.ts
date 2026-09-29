@@ -162,7 +162,7 @@ export async function crawl(http: HttpClient, request: CrawlRequest, pollInterva
 
 export async function getCrawlErrors(http: HttpClient, crawlId: string): Promise<CrawlErrorsResponse> {
   try {
-    const res = await http.get<{ success?: boolean; data?: { errors: Array<Record<string, string>>; robotsBlocked: string[] } }>(`/v2/crawl/${crawlId}/errors`);
+    const res = await http.get<{ success?: boolean; data?: CrawlErrorsResponse }>(`/v2/crawl/${crawlId}/errors`);
     if (res.status !== 200) throwForBadResponse(res, "get crawl errors");
     const payload = res.data?.data ?? (res.data as any);
     return { errors: payload.errors || [], robotsBlocked: payload.robotsBlocked || [] };
