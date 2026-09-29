@@ -58,6 +58,7 @@ import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { CostTracking } from "../../lib/cost-tracking";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
+import { startUrlOnHost } from "../../lib/crawl-scope";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
@@ -597,17 +598,18 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           normalizeUrlOnlyHostname(doc.metadata.url) !==
           normalizeUrlOnlyHostname(doc.metadata.sourceURL);
         if (job.data.isCrawlSourceScrape && isHostnameDifferent) {
+          // Link filtering treats a page off the crawl's host as an external
+          // page, so this page's links are filtered on the new host, with the
+          // path the crawl was started from.
+          const startUrl = startUrlOnHost(sc.originUrl!, doc.metadata.url);
           // TODO: re-fetch sitemap for redirect target domain
           sc.originUrl = doc.metadata.url;
           await saveCrawl(job.data.crawl_id, sc);
-          // Link filtering treats a page off the crawl's origin as an external
-          // page, so rebuild the crawler on the new origin before discovering
-          // this page's links.
           crawler = crawlToCrawler(
             job.data.crawl_id,
-            sc,
+            { ...sc, originUrl: startUrl },
             teamFlags,
-            sc.originUrl,
+            startUrl,
             job.data.crawlerOptions,
           );
         }
