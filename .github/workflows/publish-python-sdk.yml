@@ -38,6 +38,9 @@ jobs:
       # them is completed on the next run instead of being skipped.
       - name: Run version check script
         id: version_check
+        # Explicit `shell: bash` runs with `-eo pipefail`, so a failing version
+        # check fails the step instead of being masked by `| tail -n 1`.
+        shell: bash
         run: |
           PUBLISH_FIRECRAWL_PY=$(python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl-py | tail -n 1)
           PUBLISH_FIRECRAWL=$(python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl | tail -n 1)
