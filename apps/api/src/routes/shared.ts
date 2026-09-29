@@ -363,11 +363,14 @@ export function blocklistMiddleware(
 }
 
 /**
- * Blocklist gate for single-URL scrape-shaped routes (scrape, crawl), where
- * an Exchange-eligible URL may bypass the blocklist because the exchange
- * engine can serve it. Everything else (map, search, batch scrape, monitors)
- * keeps plain blocklist behavior - batch stays out until its jobs carry the
- * access flags the worker-side recheck needs.
+ * Blocklist gate for single-URL scrape-shaped routes (scrape, crawl), where a
+ * blocklisted URL still passes when the exchange engine can serve it, and
+ * asks for the provider's terms when unaccepted terms are all that stands in
+ * the way. Unblocked URLs never consult the Exchange here: engine selection
+ * decides for them, identically on every route, and scrapes them normally
+ * when terms are missing. Everything else (map, search, batch scrape,
+ * monitors) keeps plain blocklist behavior - batch stays out until its jobs
+ * carry the access flags the worker-side recheck needs.
  */
 export function scrapeBlocklistMiddleware(
   req: RequestWithMaybeACUC<any, any, any>,
@@ -384,44 +387,46 @@ function blocklistGate(
   options: { exchange: boolean },
 ) {
   (async () => {
-    const zeroDataRetention =
-      getScrapeZDR(req.acuc?.flags) === "forced" ||
-      req.body?.zeroDataRetention === true;
-    const exchangeAccess =
-      options.exchange &&
-      typeof req.body.url === "string" &&
-      (await getExchangeAccessForRequestBody({
+    if (
+      typeof req.body.url !== "string" ||
+      !isUrlBlocked(req.body.url, req.acuc?.flags ?? null, {
+        team_id: req.acuc?.team_id ?? null,
+        org_id: req.acuc?.org_id ?? null,
+        origin: typeof req.body.origin === "string" ? req.body.origin : null,
+      })
+    ) {
+      return next();
+    }
+
+    if (options.exchange) {
+      const zeroDataRetention =
+        getScrapeZDR(req.acuc?.flags) === "forced" ||
+        req.body?.zeroDataRetention === true;
+      const exchangeAccess = await getExchangeAccessForRequestBody({
         body: req.body,
         flags: req.acuc?.flags ?? null,
         url: req.body.url,
         zeroDataRetention,
-      }));
-    const canUseExchange =
-      typeof exchangeAccess === "object" && exchangeAccess.allowed;
+        teamId: req.acuc?.team_id ?? null,
+        orgId: req.acuc?.org_id ?? null,
+      });
 
-    if (typeof exchangeAccess === "object" && exchangeAccess.termsRequired) {
-      if (!res.headersSent) {
+      if (exchangeAccess.allowed) {
+        return next();
+      }
+
+      if (exchangeAccess.termsRequired && !res.headersSent) {
         return res
           .status(403)
           .json(getThirdPartyDataTermsRequiredResponse(exchangeAccess.terms));
       }
     }
 
-    if (
-      typeof req.body.url === "string" &&
-      !canUseExchange &&
-      isUrlBlocked(req.body.url, req.acuc?.flags ?? null, {
-        team_id: req.acuc?.team_id ?? null,
-        org_id: req.acuc?.org_id ?? null,
-        origin: typeof req.body.origin === "string" ? req.body.origin : null,
-      })
-    ) {
-      if (!res.headersSent) {
-        return res.status(403).json({
-          success: false,
-          error: UNSUPPORTED_SITE_MESSAGE,
-        });
-      }
+    if (!res.headersSent) {
+      return res.status(403).json({
+        success: false,
+        error: UNSUPPORTED_SITE_MESSAGE,
+      });
     }
     next();
   })().catch(err => next(err));

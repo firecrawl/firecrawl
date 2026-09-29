@@ -1,11 +1,6 @@
-import {
-  getExchangeAccessForRequest,
-  type ExchangeAccess,
-} from "./exchange";
+import { getExchangeAccessForRequest, type ExchangeAccess } from "./exchange";
 
-type ExchangeFlags = Parameters<
-  typeof getExchangeAccessForRequest
->[0]["flags"];
+type ExchangeFlags = Parameters<typeof getExchangeAccessForRequest>[0]["flags"];
 
 /**
  * Run the Exchange access gate against an API request body, sourcing the
@@ -18,6 +13,8 @@ export function getExchangeAccessForRequestBody(input: {
   flags: ExchangeFlags;
   url: string;
   zeroDataRetention: boolean;
+  teamId: string | null;
+  orgId: string | null;
 }): Promise<ExchangeAccess> {
   const body = input.body ?? {};
   const scrapeOptions =
@@ -27,6 +24,8 @@ export function getExchangeAccessForRequestBody(input: {
 
   return getExchangeAccessForRequest({
     url: input.url,
+    teamId: input.teamId,
+    orgId: input.orgId,
     formats: scrapeOptions.formats,
     actions: scrapeOptions.actions,
     headers: scrapeOptions.headers,

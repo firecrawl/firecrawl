@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import { config } from "../config";
 import type { FormatObject } from "../controllers/v2/types";
+import { hasLedgerAcceptance } from "../services/alexandria/terms";
+import { type ErrorCodes, TransportableError } from "./error";
 import { logger as rootLogger } from "./logger";
 
 type OrganizationDataSourceAccessRecord = {
@@ -22,6 +24,8 @@ type OrganizationDataSourceAccess = Record<
 
 type RouteInput = {
   url: string;
+  teamId?: string | null;
+  orgId?: string | null;
   formats?: FormatObject[] | unknown[];
   actions?: unknown[];
   headers?: Record<string, unknown>;
@@ -356,15 +360,71 @@ export function isSupportedExchangeFormatRequest(
 
 type DataSourceAccessDecision = "allowed" | "terms_required" | "not_enabled";
 
-function getProviderAccessDecision(
+const LEDGER_ACCEPTANCE_TIMEOUT_MS = 2_000;
+const LEDGER_ACCEPTED_TTL_MS = 60_000;
+const LEDGER_NOT_ACCEPTED_TTL_MS = 10_000;
+const LEDGER_ACCEPTANCE_CACHE_MAX_ENTRIES = 10_000;
+
+const ledgerAcceptanceCache = new Map<
+  string,
+  { expiresAt: number; value: Promise<boolean> }
+>();
+
+// The ledger lookup costs two Exchange calls and sits on the scrape path, so
+// answers are cached per process: briefly when not accepted, so a fresh
+// acceptance is picked up quickly, and longer once accepted.
+function getLedgerAcceptance(input: {
+  teamId: string;
+  orgId: string;
+  provider: string;
+  revocation?: { disabledAt: unknown };
+}): Promise<boolean> {
+  const key = [
+    input.orgId,
+    input.provider,
+    input.revocation === undefined ? "" : String(input.revocation.disabledAt),
+  ].join("\0");
+  const cached = ledgerAcceptanceCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  if (ledgerAcceptanceCache.size >= LEDGER_ACCEPTANCE_CACHE_MAX_ENTRIES) {
+    ledgerAcceptanceCache.clear();
+  }
+
+  const entry = {
+    expiresAt: Date.now() + LEDGER_NOT_ACCEPTED_TTL_MS,
+    value: Promise.resolve(false),
+  };
+  entry.value = hasLedgerAcceptance({
+    ...input,
+    timeoutMs: LEDGER_ACCEPTANCE_TIMEOUT_MS,
+  })
+    .catch(() => false)
+    .then(accepted => {
+      if (accepted) {
+        entry.expiresAt = Date.now() + LEDGER_ACCEPTED_TTL_MS;
+      }
+      return accepted;
+    });
+  ledgerAcceptanceCache.set(key, entry);
+  return entry.value;
+}
+
+// Mirrors authorizeProviders (services/alexandria/access.ts), so a provider
+// is reachable through Scrape exactly when it is through Alexandria: the
+// organizationDataSourceAccess flags first, then the Exchange ledger, where
+// the API's accept route records acceptance.
+async function getProviderAccessDecision(
   provider: ExchangeProvider,
-  flags: RouteInput["flags"],
-): DataSourceAccessDecision {
+  input: RouteInput,
+): Promise<DataSourceAccessDecision> {
   if (config.USE_DB_AUTHENTICATION !== true) {
     return "allowed";
   }
 
-  const access = flags?.organizationDataSourceAccess?.[provider.id];
+  const access = input.flags?.organizationDataSourceAccess?.[provider.id];
   const entry = typeof access === "object" && access !== null ? access : null;
 
   if (provider.terms === undefined) {
@@ -373,18 +433,46 @@ function getProviderAccessDecision(
       : "allowed";
   }
 
-  if (entry === null) {
-    return "terms_required";
+  const teamId = input.teamId ?? null;
+  const orgId = input.orgId ?? null;
+
+  if (entry !== null && entry.status !== "enabled") {
+    // An admin revocation is lifted by a ledger acceptance recorded after
+    // it; until then the provider asks for its terms again.
+    const revokedByAdmin =
+      entry.status === "disabled" &&
+      entry.disabledReason === "revoked_by_organization_admin";
+    if (!revokedByAdmin || teamId === null || orgId === null) {
+      return "not_enabled";
+    }
+
+    return (await getLedgerAcceptance({
+      teamId,
+      orgId,
+      provider: provider.id,
+      revocation: { disabledAt: entry.disabledAt },
+    }))
+      ? "allowed"
+      : "terms_required";
   }
 
-  if (entry.status !== "enabled") {
-    return "not_enabled";
-  }
-
-  return entry.termsKey === provider.terms.key &&
+  if (
+    entry !== null &&
+    entry.termsKey === provider.terms.key &&
     entry.termsVersion === provider.terms.version
-    ? "allowed"
-    : "terms_required";
+  ) {
+    return "allowed";
+  }
+
+  if (
+    teamId !== null &&
+    orgId !== null &&
+    (await getLedgerAcceptance({ teamId, orgId, provider: provider.id }))
+  ) {
+    return "allowed";
+  }
+
+  return "terms_required";
 }
 
 function isExchangeEligibleRequest(input: RouteInput): boolean {
@@ -490,7 +578,7 @@ export async function getExchangeAccessForRequest(
       return { allowed: false, termsRequired: false };
     }
 
-    const decision = getProviderAccessDecision(provider, input.flags);
+    const decision = await getProviderAccessDecision(provider, input);
     if (decision === "terms_required" && provider.terms !== undefined) {
       return { allowed: false, termsRequired: true, terms: provider.terms };
     }
@@ -531,6 +619,42 @@ export function getThirdPartyDataTermsRequiredResponse(terms: ExchangeTerms) {
       url,
     },
   };
+}
+
+/**
+ * Raised while choosing engines when unaccepted terms are all that keeps the
+ * Exchange from serving a blocklisted URL. Transportable, so it reaches the
+ * caller from every route and through the worker queue; scrape controllers
+ * answer it with the same 403 body the scrape blocklist gate sends.
+ */
+export class ThirdPartyDataTermsRequiredError extends TransportableError {
+  constructor(public readonly terms: ExchangeTerms) {
+    super(
+      "THIRD_PARTY_DATA_TERMS_REQUIRED",
+      getThirdPartyDataTermsRequiredResponse(terms).error,
+    );
+    this.name = "ThirdPartyDataTermsRequiredError";
+  }
+
+  response() {
+    return getThirdPartyDataTermsRequiredResponse(this.terms);
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+      terms: this.terms,
+    };
+  }
+
+  static deserialize(
+    _code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ThirdPartyDataTermsRequiredError(data.terms);
+    x.stack = data.stack;
+    return x;
+  }
 }
 
 export function getExchangeSuccessCredits(input: {
@@ -759,4 +883,5 @@ export function setExchangeProvidersForTest(
 export function clearExchangeProvidersForTest() {
   cachedProviders = undefined;
   providersRequest = undefined;
+  ledgerAcceptanceCache.clear();
 }

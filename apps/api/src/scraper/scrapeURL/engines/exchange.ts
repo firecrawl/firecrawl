@@ -9,7 +9,7 @@ import {
 } from "../../../lib/exchange";
 import { setSpanAttributes, withSpan } from "../../../lib/otel-tracer";
 import { robustFetch } from "../lib/fetch";
-import { EngineError } from "../error";
+import { EngineError, ExchangeRefusedError } from "../error";
 
 const exchangeScrapeResponseSchema = z.union([
   z
@@ -51,6 +51,33 @@ const exchangeScrapeResponseSchema = z.union([
     .passthrough(),
 ]);
 
+// Exchange refusals that describe the request itself. Any other failure is an
+// engine failure.
+const EXCHANGE_REFUSALS = new Map<
+  string,
+  {
+    code: ConstructorParameters<typeof ExchangeRefusedError>[0];
+    message: string;
+  }
+>([
+  [
+    "record_not_found",
+    {
+      code: "THIRD_PARTY_DATA_NOT_FOUND",
+      message:
+        "The third-party data provider for this URL has no record for it.",
+    },
+  ],
+  [
+    "provider_not_enabled",
+    {
+      code: "THIRD_PARTY_DATA_NOT_ENABLED",
+      message:
+        "The third-party data provider for this URL is not enabled for this team.",
+    },
+  ],
+]);
+
 export function exchangeMaxReasonableTime(meta: Meta): number {
   return meta.options.timeout ?? 60_000;
 }
@@ -66,7 +93,8 @@ function escapeHtml(value: string): string {
 // Exchange responses carry no page HTML; synthesize a minimal head so the
 // metadata transformer can populate the document's title and description.
 function buildMetadataHtml(title?: string, description?: string): string {
-  const titleTag = title === undefined ? "" : `<title>${escapeHtml(title)}</title>`;
+  const titleTag =
+    title === undefined ? "" : `<title>${escapeHtml(title)}</title>`;
   const descriptionTag =
     description === undefined
       ? ""
@@ -126,6 +154,13 @@ export async function scrapeURLWithExchange(
           errorCode: response.error?.code,
           durationMs: Date.now() - startTime,
         });
+        const refusal = EXCHANGE_REFUSALS.get(response.error?.code ?? "");
+        if (refusal !== undefined) {
+          throw new ExchangeRefusedError(
+            refusal.code,
+            response.error?.message || refusal.message,
+          );
+        }
         throw new EngineError("Exchange request failed");
       }
 

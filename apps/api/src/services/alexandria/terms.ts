@@ -57,14 +57,48 @@ export type LedgerAcceptance = {
   acceptedAt?: string | null;
 };
 
+const timestampSchema = z.iso.datetime({ offset: true });
+
+function timestamp(value: unknown): number {
+  const parsed = timestampSchema.safeParse(value);
+  return parsed.success ? Date.parse(parsed.data) : NaN;
+}
+
+export function matchesAcceptance(
+  accepted: LedgerAcceptance | undefined,
+  terms: { version: string; digest?: string },
+): boolean {
+  return (
+    terms.digest !== undefined &&
+    accepted?.version === terms.version &&
+    accepted.textHash === terms.digest
+  );
+}
+
+// Whether the acceptance was recorded after `since`, e.g. an admin revocation
+// it has to lift. Unparseable timestamps never qualify.
+export function acceptedAfter(
+  accepted: LedgerAcceptance | undefined,
+  since: unknown,
+): boolean {
+  const acceptedAt = timestamp(accepted?.acceptedAt);
+  const sinceAt = timestamp(since);
+  return (
+    Number.isFinite(acceptedAt) &&
+    Number.isFinite(sinceAt) &&
+    acceptedAt > sinceAt
+  );
+}
+
 export async function acceptedProviders(
   teamId: string,
   orgId: string,
+  timeoutMs = TIMEOUT_MS,
 ): Promise<Map<string, LedgerAcceptance>> {
   const response = await exchangeRequest({
     teamId,
     path: `/v1/provider-terms/status?organizationId=${encodeURIComponent(orgId)}`,
-    timeoutMs: TIMEOUT_MS,
+    timeoutMs,
   }).catch(() => undefined);
   const parsed =
     response?.status === 200
@@ -82,6 +116,45 @@ export async function acceptedProviders(
       });
   }
   return accepted;
+}
+
+/**
+ * Whether the organization's ledger on the Exchange holds an acceptance of the
+ * provider's current terms, recorded after `revocation.disabledAt` when an
+ * admin revocation has to be lifted. The API's accept route records
+ * acceptance only there. Any failure reads as not accepted.
+ */
+export async function hasLedgerAcceptance(input: {
+  teamId: string;
+  orgId: string;
+  provider: string;
+  revocation?: { disabledAt: unknown };
+  timeoutMs: number;
+}): Promise<boolean> {
+  const [requirements, ledger] = await Promise.all([
+    exchangeRequest({
+      teamId: input.teamId,
+      path: "/v1/provider-terms/requirements",
+      body: { providers: [input.provider] },
+      timeoutMs: input.timeoutMs,
+    }).catch(() => undefined),
+    acceptedProviders(input.teamId, input.orgId, input.timeoutMs),
+  ]);
+  const parsed =
+    requirements?.status === 200
+      ? requirementsSchema.safeParse(requirements.body)
+      : undefined;
+  const terms = parsed?.success
+    ? parsed.data.providers.find(item => item.provider === input.provider)
+        ?.terms
+    : undefined;
+  if (!terms) return false;
+  const accepted = ledger.get(input.provider);
+  return (
+    matchesAcceptance(accepted, terms) &&
+    (input.revocation === undefined ||
+      acceptedAfter(accepted, input.revocation.disabledAt))
+  );
 }
 
 export async function acceptProviderTerms(input: {

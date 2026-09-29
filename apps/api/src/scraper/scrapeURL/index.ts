@@ -60,6 +60,7 @@ import {
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
   XTwitterConfigurationError,
+  ExchangeRefusedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
@@ -1006,7 +1007,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof ProxySelectionError ||
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
-              error.error instanceof XTwitterConfigurationError
+              error.error instanceof XTwitterConfigurationError ||
+              error.error instanceof ExchangeRefusedError
             ) {
               throw error.error;
             } else if (error.error instanceof LLMRefusalError) {
