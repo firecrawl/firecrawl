@@ -295,6 +295,9 @@ class V1CrawlError(pydantic.BaseModel):
     url: str
     code: Optional[str] = None
     error: str
+    # Set when the page needs provider terms accepted first:
+    # {"type": "accept_terms", "terms", "version", "url"}.
+    requiresAction: Optional[Dict[str, Any]] = None
 
 class V1CrawlErrorsResponse(pydantic.BaseModel):
     """Response from crawl/batch scrape error monitoring."""

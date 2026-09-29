@@ -1,5 +1,6 @@
 from unittest.mock import Mock
 
+from firecrawl.v1.client import V1CrawlErrorsResponse
 from firecrawl.v2.methods.batch import get_batch_scrape_errors
 from firecrawl.v2.methods.crawl import get_crawl_errors
 
@@ -51,3 +52,10 @@ def test_batch_scrape_errors_carry_requires_action():
 
     assert result.errors[0].requires_action == REQUIRES_ACTION
     assert result.errors[1].requires_action is None
+
+
+def test_v1_crawl_errors_carry_requires_action():
+    result = V1CrawlErrorsResponse(**ERRORS)
+
+    assert result.errors[0].requiresAction == REQUIRES_ACTION
+    assert result.errors[1].requiresAction is None

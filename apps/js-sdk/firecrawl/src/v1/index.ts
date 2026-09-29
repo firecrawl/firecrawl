@@ -2,6 +2,7 @@ import axios, { type AxiosResponse, type AxiosRequestHeaders, AxiosError } from 
 import * as zt from "zod";
 import { zodSchemaToJsonSchema } from "../utils/zodSchemaToJson";
 import { TypedEventTarget } from "typescript-event-target";
+import type { RequiresAction } from "../v2/types";
 
 /**
  * Configuration interface for FirecrawlApp.
@@ -439,6 +440,8 @@ export interface CrawlErrorsResponse {
     url: string,
     code?: string,
     error: string,
+    /** Present when the page needs provider terms accepted first. */
+    requiresAction?: RequiresAction,
   }[];
 
   /**
