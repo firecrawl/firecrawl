@@ -7,6 +7,7 @@ import {
   getBrowserSessionFromScrape,
   updateBrowserSessionActivity,
   updateBrowserSessionScrapeId,
+  abandonBrowserSession,
 } from "../../lib/browser-sessions";
 import {
   BrowserExecutionResult,
@@ -283,9 +284,11 @@ export async function scrapeInteractController(
             return;
           }
           if (signal.aborted) {
-            // The lock may have expired while Hangar initialized. Do not leave
-            // this newly created browser billable and unaddressable by scrape ID.
-            await stopBrowserSession(created.session).catch(error =>
+            // A lost lease must not expose or bill a browser the caller never got.
+            // Mark it non-billable and unlink it before stopping Hangar, so a
+            // later request can create its own session under the new lease.
+            const abandoned = await abandonBrowserSession(created.session.id);
+            await stopBrowserSession(abandoned).catch(error =>
               logger.error("Failed to stop browser after scrape lock loss", {
                 scrapeId,
                 sessionId: created.session.id,
@@ -294,7 +297,19 @@ export async function scrapeInteractController(
             );
             throw signal.error;
           }
-          session = created.session;
+          await updateBrowserSessionScrapeId(created.session.id, scrapeId);
+          if (signal.aborted) {
+            const abandoned = await abandonBrowserSession(created.session.id);
+            await stopBrowserSession(abandoned).catch(error =>
+              logger.error("Failed to stop browser after scrape lock loss", {
+                scrapeId,
+                sessionId: created.session.id,
+                error,
+              }),
+            );
+            throw signal.error;
+          }
+          session = { ...created.session, scrape_id: scrapeId };
 
           logger = logger.child({
             sessionId: session.id,
@@ -517,6 +532,7 @@ async function createSessionForScrape(
     const { session } = await createBrowserSession(req, {
       ...browserCreateRequestSchema.parse({}),
       scrapeId,
+      deferScrapeLink: true,
       profile,
       initialize: async browserId => {
         const replay = await executeHangarBrowser(browserId, {

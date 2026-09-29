@@ -78,6 +78,8 @@ export async function createBrowserSession(
     recordSession: boolean;
     profile?: { name: string; saveChanges: boolean };
     scrapeId?: string;
+    /** Keep a new session private until the caller has validated its lock. */
+    deferScrapeLink?: boolean;
     shouldBill?: boolean;
     requestId?: string;
     initialize?: (browserId: string) => Promise<void>;
@@ -166,7 +168,7 @@ export async function createBrowserSession(
       team_id: req.auth.team_id,
       request_id: options.requestId ?? id,
       should_bill: shouldBill,
-      scrape_id: options.scrapeId,
+      scrape_id: options.deferScrapeLink ? null : options.scrapeId,
       browser_id: browser.id,
       workspace_id: "",
       context_id: browser.playlist_url ?? "",
