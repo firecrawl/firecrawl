@@ -104,6 +104,21 @@ class HttpClient:
                     timeout=timeout
                 )
 
+                # Handle 429 Rate Limit - parse Retry-After header and wait
+                if response.status_code == 429:
+                    if attempt < num_attempts - 1:
+                        retry_after = response.headers.get('Retry-After')
+                        if retry_after:
+                            try:
+                                wait_time = float(retry_after)
+                            except (ValueError, TypeError):
+                                wait_time = backoff_factor * (2 ** attempt)
+                        else:
+                            wait_time = backoff_factor * (2 ** attempt)
+                        time.sleep(wait_time)
+                        continue
+
+                # Handle 502 Bad Gateway - retry with backoff
                 if response.status_code == 502:
                     if attempt < num_attempts - 1:
                         time.sleep(backoff_factor * (2 ** attempt))
@@ -202,6 +217,21 @@ class HttpClient:
                     timeout=timeout
                 )
 
+                # Handle 429 Rate Limit - parse Retry-After header and wait
+                if response.status_code == 429:
+                    if attempt < num_attempts - 1:
+                        retry_after = response.headers.get('Retry-After')
+                        if retry_after:
+                            try:
+                                wait_time = float(retry_after)
+                            except (ValueError, TypeError):
+                                wait_time = backoff_factor * (2 ** attempt)
+                        else:
+                            wait_time = backoff_factor * (2 ** attempt)
+                        time.sleep(wait_time)
+                        continue
+
+                # Handle 502 Bad Gateway - retry with backoff
                 if response.status_code == 502:
                     if attempt < num_attempts - 1:
                         time.sleep(backoff_factor * (2 ** attempt))
@@ -249,6 +279,21 @@ class HttpClient:
                     timeout=timeout
                 )
 
+                # Handle 429 Rate Limit - parse Retry-After header and wait
+                if response.status_code == 429:
+                    if attempt < num_attempts - 1:
+                        retry_after = response.headers.get('Retry-After')
+                        if retry_after:
+                            try:
+                                wait_time = float(retry_after)
+                            except (ValueError, TypeError):
+                                wait_time = backoff_factor * (2 ** attempt)
+                        else:
+                            wait_time = backoff_factor * (2 ** attempt)
+                        time.sleep(wait_time)
+                        continue
+
+                # Handle 502 Bad Gateway - retry with backoff
                 if response.status_code == 502:
                     if attempt < num_attempts - 1:
                         time.sleep(backoff_factor * (2 ** attempt))
