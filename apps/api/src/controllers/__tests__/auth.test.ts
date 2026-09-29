@@ -266,7 +266,10 @@ describe("authenticateUser", () => {
         expect.objectContaining({
           success: false,
           status,
-          error: expect.stringContaining(taggedSignupUrl),
+          // Nothing follows the URL's query, so a dropped utm_content stays out.
+          error: expect.stringMatching(
+            /https:\/\/www\.firecrawl\.dev\/signin\?utm_source=keyless&utm_medium=api(?![&\w])/,
+          ),
         }),
       );
     }
