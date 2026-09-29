@@ -104,7 +104,7 @@ const jevResponse = (overrides: Record<string, unknown> = {}) => ({
     primary_button: {
       type: "choice",
       choice: "button_0",
-      probabilities: { button_0: 0.9, button_1: 0.08, none: 0.02 },
+      probabilities: { button_0: 0.9, button_1: 0.1 },
       confidence: 0.85,
     },
     secondary_button: {
@@ -360,6 +360,31 @@ describe("branding with Jev", () => {
       { family: "Inter", role: "body" },
       { family: "Söhne", role: "heading" },
     ]);
+  });
+
+  it("treats a pick between identical-looking buttons as confident", async () => {
+    const input = baseInput(new CostTracking());
+    input.buttons.push({
+      ...input.buttons[0],
+      index: 2,
+      text: "Start free trial",
+    });
+    respondWith(
+      jevResponse({
+        primary_button: {
+          type: "choice",
+          choice: "button_0",
+          // split between the two violet buttons
+          probabilities: { button_0: 0.48, button_1: 0.04, button_2: 0.48 },
+          confidence: 0.35,
+        },
+      }),
+    );
+
+    const result = await enhanceBrandingWithLLM(input);
+
+    expect(result.buttonClassification.primaryButtonIndex).toBe(0);
+    expect(result.buttonClassification.confidence).toBeCloseTo(0.96);
   });
 
   it("falls back to the LLM when the TypeSafe API errors", async () => {

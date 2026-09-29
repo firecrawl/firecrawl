@@ -289,6 +289,8 @@ type JevRequest = {
   fonts: FontCandidate[];
   logoCount: number;
   buttonCount: number;
+  /** Background + text color per button, to group look-alike buttons. */
+  buttonStyles: string[];
 };
 
 export function buildJevRequest(input: BrandingLLMInput): JevRequest {
@@ -410,11 +412,9 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     questions.primary_button = {
       type: "choice",
       instructions:
-        "Which entry in `buttons` is the primary call-to-action button: the most prominent action (such as Sign up, Get started, Buy, Book a demo), usually filled with the brand color?",
-      criteria: options(
-        buttonIds,
-        "There is no primary call-to-action button.",
-      ),
+        "Which entry in `buttons` is the site's primary call-to-action button: the most prominent action a visitor is invited to take (such as Sign up, Get started, Buy, Book a demo, Donate)? Cookie-consent buttons are not calls to action.",
+      // No "none": when a page has buttons, one of them is the primary style.
+      criteria: options(buttonIds),
     };
     questions.secondary_button = {
       type: "choice",
@@ -537,6 +537,10 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     fonts,
     logoCount: logos.length,
     buttonCount: buttons.length,
+    buttonStyles: buttons.map(
+      b =>
+        `${normalizeHex(b.background) ?? "none"}/${normalizeHex(b.textColor) ?? "none"}`,
+    ),
   };
 }
 
@@ -572,6 +576,17 @@ function bestExcluding(answer: ChoiceAnswer, exclude: Set<string>) {
   return Object.entries(answer.probabilities)
     .filter(([option]) => !exclude.has(option))
     .sort((a, b) => b[1] - a[1])[0]?.[0];
+}
+
+function styleProbability(request: JevRequest, answer: ChoiceAnswer): number {
+  const chosen = indexOf(answer.choice, "button");
+  if (chosen < 0) return 0;
+  const style = request.buttonStyles[chosen];
+  return Object.entries(answer.probabilities)
+    .filter(
+      ([option]) => request.buttonStyles[indexOf(option, "button")] === style,
+    )
+    .reduce((sum, [, p]) => sum + p, 0);
 }
 
 const indexOf = (option: string | undefined, prefix: string) =>
@@ -655,7 +670,15 @@ function mapJevAnswers(
       primaryButtonReasoning: `${tag}: p=${primaryButton?.probabilities[primaryButton.choice]?.toFixed(2) ?? "n/a"}`,
       secondaryButtonIndex: indexOf(secondaryOption, "button"),
       secondaryButtonReasoning: `${tag}: p=${secondaryOption ? (secondaryButton?.probabilities[secondaryOption]?.toFixed(2) ?? "n/a") : "n/a"}`,
-      confidence: primaryButton?.confidence ?? 0,
+      // The output keeps only the button's style, so choosing between
+      // identical-looking buttons is not uncertainty: count their combined
+      // probability.
+      confidence: primaryButton
+        ? Math.max(
+            primaryButton.confidence,
+            styleProbability(request, primaryButton),
+          )
+        : 0,
     },
     colorRoles: {
       primaryColor: roleHex(primaryColor, primaryColor?.choice) ?? "",
