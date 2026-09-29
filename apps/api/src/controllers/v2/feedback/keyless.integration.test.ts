@@ -213,15 +213,15 @@ suite("keyless feedback HTTP and persistence", () => {
       )`);
     }
     await fixture.pool.query(`CREATE TABLE search_feedback (
-      id uuid PRIMARY KEY, search_id uuid UNIQUE, endpoint text NOT NULL DEFAULT 'search', job_id uuid,
+      id uuid PRIMARY KEY, search_id uuid, endpoint text NOT NULL DEFAULT 'search', job_id uuid,
       request_id uuid, api_version text DEFAULT 'v2', team_id uuid NOT NULL, api_key_id bigint,
       overall_rating text NOT NULL, issue_types text[] NOT NULL DEFAULT '{}', tags text[] NOT NULL DEFAULT '{}',
       comment text, valuable_sources jsonb NOT NULL DEFAULT '[]', missing_content jsonb NOT NULL DEFAULT '[]',
       query_suggestions text, metadata jsonb NOT NULL DEFAULT '{}', job_status text,
       credits_billed integer NOT NULL DEFAULT 0, integration text, origin text,
       credits_refunded integer NOT NULL DEFAULT 0, refund_policy jsonb,
-      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-      UNIQUE(team_id, endpoint, job_id))`);
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+    )`);
     await fixture.pool.query(`CREATE TABLE alexandria_feedback (
       id uuid PRIMARY KEY, team_id uuid NOT NULL, api_key_id bigint, api_version text NOT NULL DEFAULT 'v2',
       rating text NOT NULL, requested_url text NOT NULL, requested_functionality text NOT NULL,
