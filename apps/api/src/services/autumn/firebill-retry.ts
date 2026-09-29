@@ -46,19 +46,35 @@ export function retryJobId(idempotencyKey: string): string {
 export const MAX_BACKLOG = 50000;
 const BACKLOG_REFRESH_MS = 5000;
 
-let backlog = { size: 0, checkedAt: 0, refreshing: false };
+let backlog = { size: 0, checkedAt: 0, refreshing: false, admitted: 0 };
 
-/** Last known backlog, refreshed in the background so a handoff never waits on it. */
+/**
+ * Last known backlog, refreshed in the background so a handoff never waits on
+ * it. Handoffs admitted while a refresh is in flight are added back on top of
+ * the count it returns. A failed read keeps the last count plus local admits,
+ * so the cap stays enforced in this process.
+ */
 function knownBacklog(now = Date.now()): number {
   if (!backlog.refreshing && now - backlog.checkedAt > BACKLOG_REFRESH_MS) {
     backlog.refreshing = true;
+    backlog.admitted = 0;
     getFirebillTrackRetryQueue()
       .getJobCounts("waiting", "delayed", "active")
       .then(counts => {
-        backlog.size = Object.values(counts).reduce((a, b) => a + b, 0);
+        backlog.size =
+          Object.values(counts).reduce((a, b) => a + b, 0) + backlog.admitted;
         backlog.checkedAt = Date.now();
       })
-      .catch(() => {})
+      .catch(error => {
+        backlog.checkedAt = Date.now();
+        logger.warn(
+          "could not read the firebill retry backlog; keeping the last count",
+          {
+            backlog: backlog.size,
+            error,
+          },
+        );
+      })
       .finally(() => {
         backlog.refreshing = false;
       });
@@ -68,7 +84,12 @@ function knownBacklog(now = Date.now()): number {
 
 /** Tests only. */
 export function resetBacklogForTest(size = 0): void {
-  backlog = { size, checkedAt: size ? Date.now() : 0, refreshing: false };
+  backlog = {
+    size,
+    checkedAt: size ? Date.now() : 0,
+    refreshing: false,
+    admitted: 0,
+  };
 }
 
 /**
@@ -86,6 +107,8 @@ export async function handOffTrack(
     value: params.value,
     idempotencyKey: params.idempotencyKey,
     path,
+    // Everything needed to replay the event by hand if it is lost.
+    params,
   };
   const failed = (error: unknown) => {
     firebillTrackRetryTotal.labels("queue_failed").inc();
@@ -107,6 +130,7 @@ export async function handOffTrack(
   // other before the next refresh. Other processes are seen on refresh: the
   // cap is soft by at most their adds in one refresh window.
   backlog.size++;
+  backlog.admitted++;
 
   const add = getFirebillTrackRetryQueue().add(
     "track",
@@ -217,6 +241,8 @@ export async function processFirebillTrackRetryJob(
       value: params.value,
       idempotencyKey: params.idempotencyKey,
       path,
+      // Everything needed to replay the event by hand.
+      params,
       attempts: job.attemptsMade + (tooOld ? 0 : 1),
       ageMs,
     },

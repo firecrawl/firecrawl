@@ -56,6 +56,8 @@ const job = (attemptsMade: number, attempts = 10, ageMs = 1000) =>
 beforeEach(() => {
   queue.add.mockReset();
   queue.add.mockImplementation(async () => ({}));
+  queue.getJobCounts.mockReset();
+  queue.getJobCounts.mockImplementation(async () => ({ waiting: 0 }));
   resetBacklogForTest();
   firebillTrackRetryTotal.reset();
   vi.mocked(logger.error).mockClear();
@@ -99,6 +101,26 @@ describe("handOffTrack", () => {
     await new Promise(resolve => setImmediate(resolve));
     await expect(handOffTrack("/v1/track", params)).resolves.toBe(false);
     expect(await outcomes()).toEqual({ queued: 1, queue_full: 1 });
+  });
+
+  it("keeps handoffs admitted during a refresh on top of its count", async () => {
+    let answer!: (c: { waiting: number }) => void;
+    queue.getJobCounts.mockImplementation(
+      () => new Promise<{ waiting: number }>(resolve => (answer = resolve)),
+    );
+    await handOffTrack("/v1/track", params); // starts the refresh
+    await handOffTrack("/v1/track", params); // admitted while it is in flight
+    answer({ waiting: MAX_BACKLOG - 2 });
+    await new Promise(resolve => setImmediate(resolve));
+    // 49,998 in Redis + the 2 admitted here = full.
+    await expect(handOffTrack("/v1/track", params)).resolves.toBe(false);
+  });
+
+  it("keeps enforcing the cap when the count cannot be read", async () => {
+    resetBacklogForTest(MAX_BACKLOG - 1);
+    queue.getJobCounts.mockRejectedValue(new Error("redis down"));
+    await expect(handOffTrack("/v1/track", params)).resolves.toBe(true);
+    await expect(handOffTrack("/v1/track", params)).resolves.toBe(false);
   });
 
   it("reports false and logs when the queue rejects", async () => {
