@@ -1056,6 +1056,17 @@ suite("keyless feedback HTTP and persistence", () => {
     );
     expect((await submit(body("scrape", jobId))).status).toBe(200);
   });
+  it("rejects a job timestamp beyond the allowed clock skew", async () => {
+    const { jobId } = await job("scrape");
+    await fixture.pool!.query(
+      "UPDATE scrapes SET created_at = now() + interval '10 minutes' WHERE id = $1",
+      [jobId],
+    );
+    const response = await submit(body("scrape", jobId));
+    expect(response.status).toBe(409);
+    expect(response.body.feedbackErrorCode).toBe("FEEDBACK_WINDOW_EXPIRED");
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+  });
   it.each(["search", "scrape", "parse"] as const)(
     "excludes zero-retention %s jobs",
     async endpoint => {

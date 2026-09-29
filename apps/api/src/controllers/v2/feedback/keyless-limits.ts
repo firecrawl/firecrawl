@@ -20,3 +20,4 @@ return count
 }
 
 export const KEYLESS_FEEDBACK_MAX_AGE_SEC = 86400;
+export const KEYLESS_FEEDBACK_MAX_FUTURE_SKEW_SEC = 300;

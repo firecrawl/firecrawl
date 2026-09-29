@@ -88,7 +88,10 @@ export async function lookupFeedbackJob(
   }
 
   const table = JOB_TABLES[endpoint] as any;
-  const [row] = await dbRr
+  // Keyless feedback can arrive as soon as the response is returned. Read the
+  // primary for its job options so replica lag cannot hide a new job.
+  const reader = requireOptions ? db : dbRr;
+  const [row] = await reader
     .select({
       id: table.id,
       request_id: table.request_id,

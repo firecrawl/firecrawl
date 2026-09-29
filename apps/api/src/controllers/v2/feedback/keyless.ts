@@ -6,7 +6,10 @@ import { LOOKUP_RACE_RETRY_MS, lookupJobWithRetry } from "./record";
 import { isKeylessFeedbackRestricted } from "./zdr-persistence";
 import { feedbackMetadataSchema, type RequestWithAuth } from "../types";
 import { keylessFeedbackSchema } from "./keyless-schema";
-import { KEYLESS_FEEDBACK_MAX_AGE_SEC } from "./keyless-limits";
+import {
+  KEYLESS_FEEDBACK_MAX_AGE_SEC,
+  KEYLESS_FEEDBACK_MAX_FUTURE_SKEW_SEC,
+} from "./keyless-limits";
 import { insertKeylessFeedback } from "./keyless-store";
 import { logKeylessFeedbackOutcome } from "./keyless-outcome";
 import { logger } from "../../../lib/logger";
@@ -60,10 +63,14 @@ export async function keylessFeedbackController(
         "JOB_NOT_FOUND",
         "No eligible job found for this caller and category.",
       );
-    // created_at comes from the logging host's clock, so a slightly future
-    // timestamp is skew, not expiry; only the upper bound is enforced.
+    // Allow modest clock skew between the logging host and the API while
+    // keeping the feedback window bounded in both directions.
     const age = Date.now() - new Date(job.created_at).getTime();
-    if (!Number.isFinite(age) || age > KEYLESS_FEEDBACK_MAX_AGE_SEC * 1000)
+    if (
+      !Number.isFinite(age) ||
+      age < -KEYLESS_FEEDBACK_MAX_FUTURE_SKEW_SEC * 1000 ||
+      age > KEYLESS_FEEDBACK_MAX_AGE_SEC * 1000
+    )
       return fail(
         409,
         "FEEDBACK_WINDOW_EXPIRED",
