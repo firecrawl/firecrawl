@@ -341,6 +341,7 @@ const scrapePage = async (
     status: response ? response.status() : null,
     headers,
     contentType: ct,
+    finalUrl: page.url(),
   };
 };
 
@@ -537,6 +538,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
       content: result.content,
       pageStatusCode: result.status,
       contentType: result.contentType,
+      finalUrl: result.finalUrl,
       ...(pageError && { pageError }),
     });
   } catch (error) {

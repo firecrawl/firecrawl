@@ -27,6 +27,7 @@ export async function scrapeURLWithPlaywright(
       pageStatusCode: z.number(),
       pageError: z.string().optional(),
       contentType: z.string().optional(),
+      finalUrl: z.string().optional(),
     }),
     mock: meta.mock,
     abort: meta.abort.asSignal(),
@@ -36,8 +37,16 @@ export async function scrapeURLWithPlaywright(
     response.content = await getInnerJson(response.content);
   }
 
+  // The microservice observes the browser's final URL after redirects; prefer
+  // it over the requested/rewritten URL when it is a usable http(s) location.
+  const fallbackUrl = meta.rewrittenUrl ?? meta.url;
+  const url =
+    response.finalUrl && /^https?:\/\//i.test(response.finalUrl)
+      ? response.finalUrl
+      : fallbackUrl;
+
   return {
-    url: meta.rewrittenUrl ?? meta.url, // TODO: impove redirect following
+    url,
     html: response.content,
     statusCode: response.pageStatusCode,
     error: response.pageError,
