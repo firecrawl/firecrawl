@@ -108,6 +108,41 @@ describe("batch scrape invalid URLs", () => {
     ]);
   });
 
+  it("skips an invalid URL when ignoreInvalidURLs is true", async () => {
+    const res = makeRes();
+    await batchScrapeController(
+      makeReq({
+        urls: ["https://example.com", "not a url"],
+        ignoreInvalidURLs: true,
+      }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true, invalidURLs: ["not a url"] }),
+    );
+    const jobs = mocks.addScrapeJobs.mock.calls[0][0];
+    expect(jobs.map((job: any) => job.data.url)).toEqual([
+      "https://example.com",
+    ]);
+  });
+
+  it("answers 400 without queueing when every URL is invalid", async () => {
+    const res = makeRes();
+    await batchScrapeController(
+      makeReq({ urls: ["not a url", "also bad"] }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "No valid URLs provided",
+    });
+    expect(mocks.addScrapeJobs).not.toHaveBeenCalled();
+  });
+
   it("rejects the whole request when ignoreInvalidURLs is false", async () => {
     await expect(
       batchScrapeController(
