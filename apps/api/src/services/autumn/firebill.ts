@@ -4,6 +4,7 @@ import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { sampled } from "../../lib/rollout";
 import type { LockDeniedReason, TrackParams } from "./types";
+import { handOffTrack, startFirebillTrackRetries } from "./firebill-retry";
 import {
   firebillCheckTotal,
   firebillFailureCauseTotal,
@@ -370,7 +371,19 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
   // `increase()`, which evaluates per series, so a `cause` label on that counter
   // would quietly turn one threshold into one threshold per cause.
   firebillFailureCauseTotal.labels(operation, last.cause).inc();
+  // The caller has been answered; keep trying off its path. Still `false`:
+  // nothing is confirmed yet, and callers' refund logic reads it that way.
+  if (await handOffTrack(path, attempted)) startTrackRetries();
   return false;
+}
+
+/**
+ * Starts the background retrier for events handed off above. Called lazily on
+ * every handoff, and at boot by a long-lived worker so events queued by a
+ * process that has since exited are still drained.
+ */
+export function startTrackRetries(): void {
+  startFirebillTrackRetries(firebillAttempt);
 }
 
 type AttemptResult =

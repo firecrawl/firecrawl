@@ -15,6 +15,7 @@ import {
   startBillingBatchProcessing,
 } from "../billing/batch_billing";
 import { resolveBillingMetadata } from "../billing/types";
+import { startTrackRetries } from "../autumn/firebill";
 import systemMonitor from "../system-monitor";
 import { v7 as uuidv7 } from "uuid";
 import {
@@ -704,6 +705,8 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
 (async () => {
   // Start billing worker and batch processing
   startBillingBatchProcessing();
+  // Drains firebill track retries queued by processes that have since exited.
+  startTrackRetries();
   const billingWorkerPromise = workerFun(
     getBillingQueue(),
     processBillingJobInternal,
