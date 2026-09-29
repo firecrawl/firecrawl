@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { queue } = vi.hoisted(() => ({
-  queue: { add: vi.fn(async (..._args: unknown[]) => ({})) },
+  queue: {
+    add: vi.fn(async (..._args: unknown[]) => ({})),
+    getJobCounts: vi.fn(async (..._args: unknown[]) => ({ waiting: 0 })),
+  },
 }));
 vi.mock("../../queue-service", () => ({
   getFirebillTrackRetryQueue: () => queue,
@@ -12,8 +15,10 @@ vi.mock("../../../lib/logger", () => ({
 
 import { UnrecoverableError } from "bullmq";
 import {
+  MAX_BACKLOG,
   MAX_RETRY_AGE_MS,
   handOffTrack,
+  resetBacklogForTest,
   processFirebillTrackRetryJob,
   retryJobId,
 } from "../firebill-retry";
@@ -51,6 +56,7 @@ const job = (attemptsMade: number, attempts = 10, ageMs = 1000) =>
 beforeEach(() => {
   queue.add.mockReset();
   queue.add.mockImplementation(async () => ({}));
+  resetBacklogForTest();
   firebillTrackRetryTotal.reset();
   vi.mocked(logger.error).mockClear();
 });
@@ -64,6 +70,25 @@ describe("handOffTrack", () => {
       { jobId: retryJobId(params.idempotencyKey), delay: 5000 },
     );
     expect(await outcomes()).toEqual({ queued: 1 });
+  });
+
+  it("refuses a handoff once the backlog is full", async () => {
+    resetBacklogForTest(MAX_BACKLOG);
+    await expect(handOffTrack("/v1/track", params)).resolves.toBe(false);
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(await outcomes()).toEqual({ queue_full: 1 });
+    expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+
+  it("learns the backlog in the background, never on the caller's path", async () => {
+    queue.getJobCounts.mockImplementation(async () => ({
+      waiting: MAX_BACKLOG,
+    }));
+    // First handoff queues on the last known (empty) backlog and starts a refresh.
+    await expect(handOffTrack("/v1/track", params)).resolves.toBe(true);
+    await new Promise(resolve => setImmediate(resolve));
+    await expect(handOffTrack("/v1/track", params)).resolves.toBe(false);
+    expect(await outcomes()).toEqual({ queued: 1, queue_full: 1 });
   });
 
   it("reports false and logs when the queue rejects", async () => {

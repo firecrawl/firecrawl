@@ -40,6 +40,37 @@ export function retryJobId(idempotencyKey: string): string {
   return encodeURIComponent(idempotencyKey);
 }
 
+// Caps the retry backlog on the shared Redis. At ~1KB a job this is ~50MB; a
+// normal burst is a few hundred, so reaching it means firebill itself is down
+// and retries are no longer the tool.
+export const MAX_BACKLOG = 50000;
+const BACKLOG_REFRESH_MS = 5000;
+
+let backlog = { size: 0, checkedAt: 0, refreshing: false };
+
+/** Last known backlog, refreshed in the background so a handoff never waits on it. */
+function knownBacklog(now = Date.now()): number {
+  if (!backlog.refreshing && now - backlog.checkedAt > BACKLOG_REFRESH_MS) {
+    backlog.refreshing = true;
+    getFirebillTrackRetryQueue()
+      .getJobCounts("waiting", "delayed", "active")
+      .then(counts => {
+        backlog.size = Object.values(counts).reduce((a, b) => a + b, 0);
+        backlog.checkedAt = Date.now();
+      })
+      .catch(() => {})
+      .finally(() => {
+        backlog.refreshing = false;
+      });
+  }
+  return backlog.size;
+}
+
+/** Tests only. */
+export function resetBacklogForTest(size = 0): void {
+  backlog = { size, checkedAt: size ? Date.now() : 0, refreshing: false };
+}
+
 /**
  * Queue an unconfirmed event for background retry. `true` means Redis holds
  * it. `false` means it was not confirmed stored within the caller's budget:
@@ -63,6 +94,15 @@ export async function handOffTrack(
       { ...context, error },
     );
   };
+
+  if (knownBacklog() >= MAX_BACKLOG) {
+    firebillTrackRetryTotal.labels("queue_full").inc();
+    logger.error(
+      "the firebill retry backlog is full; this usage event will not be billed",
+      { ...context, backlog: backlog.size },
+    );
+    return false;
+  }
 
   const add = getFirebillTrackRetryQueue().add(
     "track",

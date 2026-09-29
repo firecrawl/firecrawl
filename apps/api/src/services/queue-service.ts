@@ -109,9 +109,9 @@ export function getFirebillTrackRetryQueue() {
         defaultJobOptions: {
           attempts: 10,
           backoff: { type: "exponential", delay: 5000 },
-          removeOnComplete: { age: 3600 },
+          removeOnComplete: { age: 3600, count: 10000 },
           // Kept a week: a failed job is usage that was never billed.
-          removeOnFail: { age: 7 * 24 * 3600 },
+          removeOnFail: { age: 7 * 24 * 3600, count: 10000 },
         },
       },
     );

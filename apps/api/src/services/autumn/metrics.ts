@@ -29,12 +29,12 @@ export const firebillTrackTotal = new Counter({
 /**
  * The background retrier for usage events firebill never confirmed
  * (`firebill-retry.ts`). `queue_failed` and `expired` are usage that will not
- * be billed; alert on either.
+ * be billed, as is `queue_full`; alert on all three.
  */
 export const firebillTrackRetryTotal = new Counter({
   name: "firecrawl_firebill_track_retry_total",
   help: "Background retries of usage events firebill did not confirm",
-  // outcome: queued|queue_slow|queue_failed|retrying|recovered|expired
+  // outcome: queued|queue_slow|queue_full|queue_failed|retrying|recovered|expired
   labelNames: ["outcome"] as const,
 });
 
