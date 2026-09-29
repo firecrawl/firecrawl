@@ -6,15 +6,11 @@ import { config } from "../../../config";
 import {
   getExchangeRequestLogContext,
   getExchangeResponseLogContext,
-  getThirdPartyDataTermsRequiredResponse,
+  ThirdPartyDataTermsRequiredError,
 } from "../../../lib/exchange";
 import { setSpanAttributes, withSpan } from "../../../lib/otel-tracer";
 import { robustFetch } from "../lib/fetch";
-import {
-  EngineError,
-  EnrichmentNotEnabledError,
-  ThirdPartyDataTermsRequiredError,
-} from "../error";
+import { EngineError, ExchangeRefusedError } from "../error";
 
 const exchangeScrapeResponseSchema = z.union([
   z
@@ -57,31 +53,49 @@ const exchangeScrapeResponseSchema = z.union([
     .passthrough(),
 ]);
 
-const exchangeRefusalSchema = exchangeScrapeResponseSchema.options[1];
-
-// The Exchange refusals a customer can act on, as the errors they see.
-function refusalError(
-  error: z.infer<typeof exchangeRefusalSchema>["error"],
-): Error | undefined {
-  const settingsUrl = `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria?enrichment=true`;
-  if (error?.code === "enrichment_not_enabled") {
-    return new EnrichmentNotEnabledError(
-      `LinkedIn scrapes run through your team's enrichment providers, and enrichment is not enabled for this kind of profile. An organization admin can choose providers at ${settingsUrl}`,
-    );
+// Exchange refusals that describe the request itself. Any other failure is an
+// engine failure. Enrichment refusals point at the settings that fix them.
+const EXCHANGE_REFUSALS = new Map<
+  string,
+  {
+    code: ConstructorParameters<typeof ExchangeRefusedError>[0];
+    message: string;
+    enrichmentSettings?: true;
   }
-  if (error?.code === "enrichment_unavailable") {
-    return new EnrichmentNotEnabledError(
-      `None of your team's enrichment providers can serve this LinkedIn URL. An organization admin can change them at ${settingsUrl}`,
-    );
-  }
-  if (error?.code === "third_party_data_terms_required" && error.terms) {
-    return new ThirdPartyDataTermsRequiredError(
-      error.terms,
-      getThirdPartyDataTermsRequiredResponse(error.terms).error,
-    );
-  }
-  return undefined;
-}
+>([
+  [
+    "record_not_found",
+    {
+      code: "THIRD_PARTY_DATA_NOT_FOUND",
+      message:
+        "The third-party data provider for this URL has no record for it.",
+    },
+  ],
+  [
+    "provider_not_enabled",
+    {
+      code: "THIRD_PARTY_DATA_NOT_ENABLED",
+      message:
+        "The third-party data provider for this URL is not enabled for this team.",
+    },
+  ],
+  [
+    "enrichment_not_enabled",
+    {
+      code: "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
+      message: "Enrichment is not enabled for this kind of profile.",
+      enrichmentSettings: true,
+    },
+  ],
+  [
+    "enrichment_unavailable",
+    {
+      code: "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
+      message: "None of the team's enrichment providers can serve this URL.",
+      enrichmentSettings: true,
+    },
+  ],
+]);
 
 export function exchangeMaxReasonableTime(meta: Meta): number {
   return meta.options.timeout ?? 60_000;
@@ -98,7 +112,8 @@ function escapeHtml(value: string): string {
 // Exchange responses carry no page HTML; synthesize a minimal head so the
 // metadata transformer can populate the document's title and description.
 function buildMetadataHtml(title?: string, description?: string): string {
-  const titleTag = title === undefined ? "" : `<title>${escapeHtml(title)}</title>`;
+  const titleTag =
+    title === undefined ? "" : `<title>${escapeHtml(title)}</title>`;
   const descriptionTag =
     description === undefined
       ? ""
@@ -141,8 +156,8 @@ export async function scrapeURLWithExchange(
           ...(meta.options.maxAge === undefined
             ? {}
             : { maxAge: meta.options.maxAge }),
-          // The Exchange checks each enrichment step's provider terms against
-          // these rows and its own ledger of the organization's acceptances.
+          // Enrichment checks each provider step's terms against these rows
+          // and the Exchange's own ledger for the organization.
           ...(meta.internalOptions.orgId
             ? { organizationId: meta.internalOptions.orgId }
             : {}),
@@ -169,10 +184,23 @@ export async function scrapeURLWithExchange(
           errorCode: response.error?.code,
           durationMs: Date.now() - startTime,
         });
-        throw (
-          refusalError(response.error) ??
-          new EngineError("Exchange request failed")
-        );
+        if (
+          response.error?.code === "third_party_data_terms_required" &&
+          response.error.terms !== undefined
+        ) {
+          throw new ThirdPartyDataTermsRequiredError(response.error.terms);
+        }
+        const refusal = EXCHANGE_REFUSALS.get(response.error?.code ?? "");
+        if (refusal !== undefined) {
+          const message = response.error?.message || refusal.message;
+          throw new ExchangeRefusedError(
+            refusal.code,
+            refusal.enrichmentSettings
+              ? `${message} An organization admin can choose enrichment providers at ${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria?enrichment=true`
+              : message,
+          );
+        }
+        throw new EngineError("Exchange request failed");
       }
 
       const responseLogContext = getExchangeResponseLogContext(

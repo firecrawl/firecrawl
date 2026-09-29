@@ -2544,11 +2544,18 @@ class JobStatus(BaseModel):
 class CrawlError(BaseModel):
     """A crawl error."""
 
+    model_config = {"populate_by_name": True}
+
     id: str
     timestamp: Optional[datetime] = None
     url: str
     code: Optional[str] = None
     error: str
+    # Set when the page needs provider terms accepted first:
+    # {"type": "accept_terms", "terms", "version", "url"}.
+    requires_action: Optional[Dict[str, Any]] = Field(
+        default=None, alias="requiresAction"
+    )
 
 
 class CrawlErrorsResponse(BaseModel):

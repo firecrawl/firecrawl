@@ -17,6 +17,7 @@ import {
   getTimeoutProcessingDetails,
   TransportableError,
 } from "../../lib/error";
+import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -51,8 +52,6 @@ import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { getThirdPartyDataTermsRequiredResponse } from "../../lib/exchange";
-import { ThirdPartyDataTermsRequiredError } from "../../scraper/scrapeURL/error";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -584,16 +583,28 @@ export async function scrapeController(
             });
           }
 
+          if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 400,
+            });
+            return res.status(400).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           if (e instanceof ThirdPartyDataTermsRequiredError) {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
-            return res
-              .status(403)
-              .json(getThirdPartyDataTermsRequiredResponse(e.terms));
+            return res.status(403).json(e.response());
           }
 
-          if (e.code === "SCRAPE_ENRICHMENT_NOT_ENABLED") {
+          if (
+            e.code === "THIRD_PARTY_DATA_NOT_ENABLED" ||
+            e.code === "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED"
+          ) {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
@@ -604,11 +615,11 @@ export async function scrapeController(
             });
           }
 
-          if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
+          if (e.code === "THIRD_PARTY_DATA_NOT_FOUND") {
             setSpanAttributes(span, {
-              "scrape.status_code": 400,
+              "scrape.status_code": 404,
             });
-            return res.status(400).json({
+            return res.status(404).json({
               success: false,
               code: e.code,
               error: e.message,

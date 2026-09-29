@@ -12,8 +12,7 @@ import { v7 as uuidv7 } from "uuid";
 import { getJobPriority } from "../../lib/job-priority";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { TransportableError } from "../../lib/error";
-import { getThirdPartyDataTermsRequiredResponse } from "../../lib/exchange";
-import { ThirdPartyDataTermsRequiredError } from "../../scraper/scrapeURL/error";
+import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -404,13 +403,22 @@ async function scrapeControllerInner(
         });
       }
 
-      if (e instanceof ThirdPartyDataTermsRequiredError) {
-        return res
-          .status(403)
-          .json(getThirdPartyDataTermsRequiredResponse(e.terms));
+      if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
+        return res.status(400).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
       }
 
-      if (e.code === "SCRAPE_ENRICHMENT_NOT_ENABLED") {
+      if (e instanceof ThirdPartyDataTermsRequiredError) {
+        return res.status(403).json(e.response());
+      }
+
+      if (
+        e.code === "THIRD_PARTY_DATA_NOT_ENABLED" ||
+        e.code === "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED"
+      ) {
         return res.status(403).json({
           success: false,
           code: e.code,
@@ -418,8 +426,8 @@ async function scrapeControllerInner(
         });
       }
 
-      if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
-        return res.status(400).json({
+      if (e.code === "THIRD_PARTY_DATA_NOT_FOUND") {
+        return res.status(404).json({
           success: false,
           code: e.code,
           error: e.message,

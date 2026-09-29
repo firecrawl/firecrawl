@@ -60,8 +60,7 @@ import {
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
   XTwitterConfigurationError,
-  EnrichmentNotEnabledError,
-  ThirdPartyDataTermsRequiredError,
+  ExchangeRefusedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
@@ -108,7 +107,10 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import type { ExchangeScrapeMetadata } from "../../lib/exchange";
+import {
+  type ExchangeScrapeMetadata,
+  ThirdPartyDataTermsRequiredError,
+} from "../../lib/exchange";
 import {
   checkUrl,
   type ThreatCheckDedup,
@@ -1009,7 +1011,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
               error.error instanceof XTwitterConfigurationError ||
-              error.error instanceof EnrichmentNotEnabledError ||
+              error.error instanceof ExchangeRefusedError ||
               error.error instanceof ThirdPartyDataTermsRequiredError
             ) {
               throw error.error;
@@ -1886,17 +1888,6 @@ export async function scrapeURL(
               error,
               domain: error.domain,
               rule: error.decision.rule,
-            },
-          );
-        } else if (
-          error instanceof EnrichmentNotEnabledError ||
-          error instanceof ThirdPartyDataTermsRequiredError
-        ) {
-          errorType = error.constructor.name;
-          meta.logger.warn(
-            "scrapeURL: Exchange refused the enrichment scrape",
-            {
-              error,
             },
           );
         } else if (error instanceof AbortManagerThrownError) {

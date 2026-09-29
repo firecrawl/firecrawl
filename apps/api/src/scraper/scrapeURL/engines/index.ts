@@ -44,7 +44,8 @@ import {
 import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
 import { hasCustomRequestContext } from "../lib/request-context";
 import {
-  canUseExchangeForRequest,
+  getExchangeAccessForRequest,
+  ThirdPartyDataTermsRequiredError,
   type ExchangeScrapeMetadata,
 } from "../../../lib/exchange";
 
@@ -665,27 +666,28 @@ export async function buildFallbackList(meta: Meta): Promise<
     !meta.internalOptions.agentIndexOnly &&
     meta.internalOptions.forceEngine === undefined
   ) {
-    if (
-      await canUseExchangeForRequest({
-        url: meta.rewrittenUrl ?? meta.url,
-        formats: meta.options.formats,
-        actions: meta.options.actions,
-        headers: meta.options.headers,
-        waitFor: meta.options.waitFor,
-        mobile: meta.options.mobile,
-        location: meta.options.location,
-        proxy: meta.options.proxy,
-        blockAds: meta.options.blockAds,
-        profile: meta.options.profile,
-        atsv: meta.internalOptions.atsv,
-        minAge: meta.options.minAge,
-        includeTags: meta.options.includeTags,
-        excludeTags: meta.options.excludeTags,
-        zeroDataRetention: meta.internalOptions.zeroDataRetention,
-        lockdown: meta.options.lockdown,
-        flags: meta.internalOptions.teamFlags ?? null,
-      })
-    ) {
+    const exchangeAccess = await getExchangeAccessForRequest({
+      url: meta.rewrittenUrl ?? meta.url,
+      teamId: meta.internalOptions.teamId ?? null,
+      orgId: meta.internalOptions.orgId ?? null,
+      formats: meta.options.formats,
+      actions: meta.options.actions,
+      headers: meta.options.headers,
+      waitFor: meta.options.waitFor,
+      mobile: meta.options.mobile,
+      location: meta.options.location,
+      proxy: meta.options.proxy,
+      blockAds: meta.options.blockAds,
+      profile: meta.options.profile,
+      atsv: meta.internalOptions.atsv,
+      minAge: meta.options.minAge,
+      includeTags: meta.options.includeTags,
+      excludeTags: meta.options.excludeTags,
+      zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      lockdown: meta.options.lockdown,
+      flags: meta.internalOptions.teamFlags ?? null,
+    });
+    if (exchangeAccess.allowed) {
       return [
         {
           engine: "exchange",
@@ -695,34 +697,40 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
 
     // A blocked URL can only have been admitted by the Exchange bypass in
-    // blocklistMiddleware, which only applies to flagged orgs; if the
+    // scrapeBlocklistMiddleware, which only applies to flagged orgs; if the
     // Exchange is no longer usable by execution time (catalog changed,
     // service down), fail closed rather than letting normal engines scrape
     // a blocklisted site. An error here also fails closed: this branch only
     // runs for flagged orgs, and a retryable scrape failure is preferable
     // to scraping a potentially blocklisted site with normal engines.
+    // Unblocked URLs whose provider wants unaccepted terms fall through and
+    // scrape normally.
     if (
       meta.internalOptions.teamFlags?.professionalProfileCompanyDataBeta ===
       true
     ) {
+      let blocked: boolean;
       try {
-        if (
-          isUrlBlocked(
-            meta.rewrittenUrl ?? meta.url,
-            meta.internalOptions.teamFlags ?? null,
-            {
-              team_id: meta.internalOptions.teamId ?? null,
-              org_id: meta.internalOptions.orgId ?? null,
-              origin: null,
-            },
-          )
-        ) {
-          return [];
-        }
+        blocked = isUrlBlocked(
+          meta.rewrittenUrl ?? meta.url,
+          meta.internalOptions.teamFlags ?? null,
+          {
+            team_id: meta.internalOptions.teamId ?? null,
+            org_id: meta.internalOptions.orgId ?? null,
+            origin: null,
+          },
+        );
       } catch (error) {
         meta.logger.warn("Exchange blocklist re-check failed; failing closed", {
           error,
         });
+        return [];
+      }
+
+      if (blocked) {
+        if (exchangeAccess.termsRequired) {
+          throw new ThirdPartyDataTermsRequiredError(exchangeAccess.terms);
+        }
         return [];
       }
     }
