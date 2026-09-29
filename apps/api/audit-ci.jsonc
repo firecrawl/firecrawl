@@ -2,13 +2,17 @@
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
     "low": true,
     "allowlist": [
-        // GHSA-v2v4-37r5-5v8g / GHSA-mwp4-54f8-5fhr (ip-address):
-        // geoip-country still depends on ip-address 6.x; the non-affected
-        // line is a multi-major jump outside the upstream range.
+        // GHSA-v2v4-37r5-5v8g / GHSA-mwp4-54f8-5fhr / GHSA-rpw4-54j3-4h4q (ip-address):
+        // geoip-country@5.x requires ip-address@^6.4.0; ip-address 6.4.0 is the
+        // latest 6.x release (no patch exists in the 6.x line). A cross-major
+        // override to 10.x would break geoip-country's API surface. Our SSRF
+        // protection is handled by ipaddr.js, not ip-address, so the isLinkLocal()
+        // inaccuracy in ip-address is not reachable through security-sensitive paths.
         // Do not override across majors without compatibility approval.
         // Owner: team-engineering-reviewers. Tracking: create internal ticket.
-        // Expires: 2026-10-08.
+        // Expires: 2026-12-29.
         "GHSA-v2v4-37r5-5v8g",
-        "GHSA-mwp4-54f8-5fhr"
+        "GHSA-mwp4-54f8-5fhr",
+        "GHSA-rpw4-54j3-4h4q"
     ]
 }
