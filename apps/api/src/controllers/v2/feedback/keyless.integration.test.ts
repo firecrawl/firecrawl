@@ -1080,6 +1080,17 @@ suite("keyless feedback HTTP and persistence", () => {
       expect(await fixture.db!.select().from(table)).toHaveLength(0);
     },
   );
+  it("rejects a job without saved options before reading its formats", async () => {
+    const { jobId } = await job("scrape");
+    await fixture.pool!.query(
+      "UPDATE scrapes SET options = NULL WHERE id = $1",
+      [jobId],
+    );
+    const response = await submit(body("scrape", jobId));
+    expect(response.status).toBe(404);
+    expect(response.body.feedbackErrorCode).toBe("JOB_NOT_FOUND");
+    expect(await fixture.db!.select().from(table)).toHaveLength(0);
+  });
   it("retries a job that becomes visible after the first lookup", async () => {
     const store = await import("./feedback-store.js");
     const jobId = randomUUID();
