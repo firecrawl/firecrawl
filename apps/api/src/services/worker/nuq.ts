@@ -10,6 +10,8 @@ import { nuqRedis } from "./redis";
 
 // === Basics
 
+const DRAIN_TIMEOUT = 30000;
+
 const nuqPool = new Pool({
   connectionString: config.NUQ_DATABASE_URL, // may be a pgbouncer transaction pooler URL
   application_name: "nuq",
@@ -379,6 +381,46 @@ class NuQ<JobData = any, JobReturnValue = any> {
     }
   }
 
+  private waitForSenderDrain(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.sender) {
+        return reject(new Error("Sender channel not available"));
+      }
+
+      const ch = this.sender.channel;
+      const listeners: Record<string, any> = {};
+
+      const cleanup = () => {
+        ch.removeListener("drain", listeners.drain);
+        ch.removeListener("error", listeners.error);
+        ch.removeListener("close", listeners.close);
+        clearTimeout(listeners.timeout);
+      };
+
+      listeners.drain = () => {
+        cleanup();
+        resolve();
+      };
+      listeners.error = (err: Error) => {
+        cleanup();
+        reject(err);
+      };
+      listeners.close = () => {
+        cleanup();
+        reject(new Error("Sender channel closed during drain"));
+      };
+
+      listeners.timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Sender drain timeout after ${DRAIN_TIMEOUT}ms`));
+      }, DRAIN_TIMEOUT);
+
+      ch.on("drain", listeners.drain);
+      ch.on("error", listeners.error);
+      ch.on("close", listeners.close);
+    });
+  }
+
   private async sendJobEnd(
     id: string,
     status: "completed" | "failed",
@@ -388,13 +430,22 @@ class NuQ<JobData = any, JobReturnValue = any> {
     await this.startSender();
 
     if (this.sender) {
-      this.sender.channel.sendToQueue(
+      const canSendMore = this.sender.channel.sendToQueue(
         this.queueName + ".listen." + listenChannelId,
         Buffer.from(status, "utf8"),
         {
           correlationId: id,
         },
       );
+
+      if (!canSendMore) {
+        _logger.warn("NuQ sender buffer full, waiting for drain", {
+          module: "nuq/rabbitmq",
+          jobId: id,
+        });
+        await this.waitForSenderDrain();
+      }
+
       _logger.info("NuQ job sent", { module: "nuq/rabbitmq" });
     } else {
       _logger.warn("NuQ sender not started", { module: "nuq/rabbitmq" });
@@ -408,7 +459,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     await this.startSender();
 
     if (this.sender) {
-      this.sender.channel.sendToQueue(
+      const canSendMore = this.sender.channel.sendToQueue(
         this.queueName + ".prefetch",
         Buffer.from(JSON.stringify(job), "utf8"),
         {
@@ -417,6 +468,15 @@ class NuQ<JobData = any, JobReturnValue = any> {
           expiration: "50000", // must be less than lock reaper timeout (1 min) to minimize dead zone where jobs are expired from RabbitMQ but still "active" in DB
         },
       );
+
+      if (!canSendMore) {
+        _logger.warn("NuQ prefetch buffer full, waiting for drain", {
+          module: "nuq/rabbitmq",
+          jobId: job.id,
+        });
+        await this.waitForSenderDrain();
+      }
+
       _logger.info("NuQ job prefetch sent", { module: "nuq/rabbitmq" });
     } else {
       _logger.warn("NuQ sender not started", { module: "nuq/rabbitmq" });
