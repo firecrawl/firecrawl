@@ -1,0 +1,227 @@
+---
+title: "Rust Agent Quickstart"
+description: "Canonical Firecrawl Rust quickstart for external agents using search, scrape, and interact."
+---
+
+# Firecrawl Rust Agent Quickstart
+
+Canonical quickstart for external agents. Generated from the `firecrawl` crate v2.5.0 source and the v2 OpenAPI spec. Method names, parameters, and types match the SDK public API.
+
+## Install
+
+Add to `Cargo.toml`:
+
+```toml
+[dependencies]
+firecrawl = "2.5.0"
+tokio = { version = "1", features = ["full"] }
+```
+
+## Authenticate
+
+```rust
+use firecrawl::FirecrawlClient;
+
+// Cloud (requires API key)
+let client = FirecrawlClient::new("fc-your-api-key")?;
+
+// Self-hosted (API key optional)
+let client = FirecrawlClient::new_selfhosted("https://your-instance.com", Some("fc-your-api-key"))?;
+```
+
+## When To Use What
+
+- **search** — start with a query and need to discover relevant pages.
+- **scrape** — already have a URL and want page content in one or more formats.
+- **interact** — the page needs clicks, forms, or other browser actions after a scrape has created a session.
+
+## Search
+
+### Why use it
+
+Use search to discover relevant pages from a query, then pick URLs to scrape or interact with.
+
+### Preferred SDK method
+
+`client.search(query, options)` → `Result<SearchResponse, FirecrawlError>`
+
+### Example
+
+```rust
+use firecrawl::{FirecrawlClient, SearchOptions};
+
+let client = FirecrawlClient::new("fc-your-api-key")?;
+
+let results = client.search("site:docs.firecrawl.dev webhook retries", SearchOptions {
+    limit: Some(5),
+    ..Default::default()
+}).await?;
+
+for hit in results.data.web.unwrap_or_default() {
+    println!("{}", hit.url());
+}
+```
+
+### Parameters
+
+All fields on `SearchOptions` are optional. Uses `#[serde(rename_all = "camelCase")]`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `limit` | `Option<u32>` | Max results. Default: 5, max: 20. |
+| `sources` | `Option<Vec<SearchSource>>` | Sources: `Web`, `News`, `Images`. |
+| `categories` | `Option<Vec<SearchCategory>>` | Categories: `Github`, `Research`, `Pdf`. |
+| `include_domains` | `Option<Vec<String>>` | Restrict to these domains. Cannot combine with `exclude_domains`. |
+| `exclude_domains` | `Option<Vec<String>>` | Exclude these domains. |
+| `tbs` | `Option<String>` | Time-based filter (e.g. `"qdr:d"`). |
+| `location` | `Option<String>` | Location for geo-targeted results. |
+| `ignore_invalid_urls` | `Option<bool>` | Drop URLs that cannot be scraped. |
+| `timeout` | `Option<u32>` | Timeout in milliseconds. |
+| `scrape_options` | `Option<ScrapeOptions>` | Scrape each result (same fields as `scrape`). |
+| `integration` | `Option<String>` | Integration identifier. |
+
+### Return value
+
+`SearchResponse` with `success`, `data` (`SearchData`), and optional `warning`. `SearchData` has:
+
+- `web` — `Vec<SearchResultOrDocument>` (either `WebResult` or `Document`)
+- `news` — `Vec<SearchResultNews>`
+- `images` — `Vec<SearchResultImage>`
+
+Convenience method: `client.search_and_scrape(query, limit)` returns only `Vec<Document>`.
+
+## Scrape
+
+### Why use it
+
+Use scrape when you already have a URL and want structured content in one or more formats.
+
+### Preferred SDK method
+
+`client.scrape(url, options)` → `Result<Document, FirecrawlError>`
+
+### Example
+
+```rust
+use firecrawl::{FirecrawlClient, ScrapeOptions, Format};
+
+let client = FirecrawlClient::new("fc-your-api-key")?;
+
+let doc = client.scrape("https://example.com/pricing", ScrapeOptions {
+    formats: Some(vec![Format::Markdown, Format::Links]),
+    only_main_content: Some(true),
+    ..Default::default()
+}).await?;
+
+println!("{}", doc.markdown.unwrap_or_default());
+```
+
+### Parameters
+
+All fields on `ScrapeOptions` are optional. Uses `#[serde(rename_all = "camelCase")]`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `formats` | `Option<Vec<Format>>` | Output formats: `Markdown`, `Html`, `RawHtml`, `Links`, `Images`, `Screenshot`, `Summary`, `ChangeTracking`, `Json`, `Attributes`, `Branding`, `Audio`, `Video`, `Question(QuestionFormat)`, `Highlights(HighlightsFormat)`. |
+| `headers` | `Option<HashMap<String, String>>` | Custom HTTP headers. |
+| `include_tags` | `Option<Vec<String>>` | HTML tags to include. |
+| `exclude_tags` | `Option<Vec<String>>` | HTML tags to exclude. |
+| `only_main_content` | `Option<bool>` | Strip nav, footer, boilerplate. |
+| `timeout` | `Option<u32>` | Timeout in milliseconds. |
+| `wait_for` | `Option<u32>` | Wait before scraping (milliseconds). |
+| `mobile` | `Option<bool>` | Emulate mobile viewport. |
+| `parsers` | `Option<Vec<ParserConfig>>` | File parsing controls (e.g. PDF: `ParserConfig::Pdf { ... }`). |
+| `actions` | `Option<Vec<Action>>` | Browser actions: `Wait`, `Screenshot`, `Click`, `Write`, `Press`, `Scroll`, `Scrape`, `ExecuteJavascript`, `Pdf`. |
+| `location` | `Option<LocationConfig>` | `LocationConfig { country, languages }`. |
+| `skip_tls_verification` | `Option<bool>` | Skip TLS verification. |
+| `remove_base64_images` | `Option<bool>` | Remove base64 images from markdown. |
+| `fast_mode` | `Option<bool>` | Faster scrapes with reduced fidelity. |
+| `block_ads` | `Option<bool>` | Block ads and cookie popups. |
+| `proxy` | `Option<ProxyType>` | `Basic`, `Stealth`, `Enhanced`, `Auto`. |
+| `max_age` | `Option<u32>` | Return cached data up to this age (seconds). |
+| `min_age` | `Option<u32>` | Cache-only mode. |
+| `store_in_cache` | `Option<bool>` | Cache the result. |
+| `lockdown` | `Option<bool>` | Serve from cache only. |
+| `profile` | `Option<ProfileConfig>` | `ProfileConfig { name, save_changes }`. |
+| `json_options` | `Option<JsonOptions>` | `JsonOptions { schema, system_prompt, prompt }`. |
+| `screenshot_options` | `Option<ScreenshotOptions>` | `ScreenshotOptions { full_page, quality, viewport }`. |
+| `change_tracking_options` | `Option<ChangeTrackingOptions>` | `ChangeTrackingOptions { modes, schema, prompt, tag }`. |
+| `attribute_selectors` | `Option<Vec<AttributeSelector>>` | `AttributeSelector { selector, attribute }`. |
+| `integration` | `Option<String>` | Integration identifier. |
+
+Convenience method: `client.scrape_with_schema(url, schema, prompt)` returns extracted JSON directly.
+
+## Interact
+
+### Why use it
+
+Use `interact` for code or natural-language control of the browser session tied to a scrape job. At least one of `code` or `prompt` must be non-empty.
+
+### Preferred SDK method
+
+`client.interact(job_id, options)` → `Result<ScrapeExecuteResponse, FirecrawlError>`
+
+### Example
+
+```rust
+use firecrawl::{FirecrawlClient, ScrapeOptions, ScrapeExecuteOptions, Format};
+
+let client = FirecrawlClient::new("fc-your-api-key")?;
+
+let doc = client.scrape("https://example.com", ScrapeOptions {
+    formats: Some(vec![Format::Markdown]),
+    ..Default::default()
+}).await?;
+
+let job_id = doc.metadata.as_ref()
+    .and_then(|m| m.scrape_id.as_ref())
+    .expect("scrape_id required");
+
+let result = client.interact(job_id, ScrapeExecuteOptions {
+    code: Some("console.log(await page.title());".into()),
+    language: Some(ScrapeExecuteLanguage::Node),
+    timeout: Some(60),
+    ..Default::default()
+}).await?;
+
+println!("{}", result.stdout.unwrap_or_default());
+
+// Stop the session when done:
+client.stop_interaction(job_id).await?;
+```
+
+### Parameters
+
+`ScrapeExecuteOptions` fields (all optional, but at least `code` or `prompt` must be set):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `code` | `Option<String>` | Code to execute. At least one of `code` or `prompt` required. |
+| `prompt` | `Option<String>` | Natural-language instruction for the browser agent. |
+| `language` | `Option<ScrapeExecuteLanguage>` | `Python`, `Node`, `Bash`. Default: `Node`. |
+| `timeout` | `Option<u32>` | Execution timeout in seconds. |
+| `origin` | `Option<String>` | Origin tag for request attribution. |
+
+### Return value
+
+`ScrapeExecuteResponse` with: `success`, `live_view_url`, `interactive_live_view_url`, `output`, `stdout`, `result`, `stderr`, `exit_code`, `killed`, `error`.
+
+### Stop session
+
+`client.stop_interaction(job_id)` → `Result<ScrapeBrowserDeleteResponse, FirecrawlError>` with `success`, `session_duration_ms`, `credits_billed`, `error`.
+
+## Notes
+
+- All structs use `#[serde(rename_all = "camelCase")]` for JSON serialization. Rust field names are snake_case.
+- String parameters use `impl AsRef<str>` to accept both `&str` and `String`.
+- Deprecated aliases: `scrape_execute()` → `interact()`; `stop_interactive_browser()` and `delete_scrape_browser()` → `stop_interaction()`.
+- Errors use a custom `FirecrawlError` enum with variants for API errors, HTTP errors, and parse errors.
+
+## Source Of Truth
+
+- `firecrawl/apps/rust-sdk/Cargo.toml` (v2.5.0)
+- `firecrawl/apps/rust-sdk/src/client.rs`
+- `firecrawl/apps/rust-sdk/src/scrape.rs`
+- `firecrawl/apps/rust-sdk/src/search.rs`
+- `firecrawl/apps/rust-sdk/src/types.rs`
+- `firecrawl-docs/api-reference/v2-openapi.json`
