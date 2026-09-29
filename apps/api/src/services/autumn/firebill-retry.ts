@@ -26,62 +26,74 @@ export type AttemptOnce = (
 // (`maxRetriesPerRequest: null`), so this bounds what the caller can wait.
 const HANDOFF_TIMEOUT_MS = 1000;
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`timed out after ${ms}ms`)),
-      ms,
-    );
-    promise.then(
-      value => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      error => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
+/**
+ * BullMQ job id for an event. Deterministic, so the same event is queued at
+ * most once; encoded so the id carries no `:`, BullMQ's key separator.
+ */
+export function retryJobId(idempotencyKey: string): string {
+  return encodeURIComponent(idempotencyKey);
 }
 
 /**
  * Queue an unconfirmed event for background retry. `true` means Redis holds
- * it; `false` means it could not be stored and will not be billed.
- *
- * The job id is the idempotency key, so handing off the same event twice
- * queues it once.
+ * it. `false` means it was not confirmed stored within the caller's budget:
+ * either the add failed (the event will not be billed) or it is still in
+ * flight, in which case its late outcome is recorded when it settles.
  */
 export async function handOffTrack(
   path: string,
   params: TrackParams & { idempotencyKey: string },
 ): Promise<boolean> {
-  try {
-    await withTimeout(
-      getFirebillTrackRetryQueue().add(
-        "track",
-        { path, params } satisfies FirebillTrackRetryJobData,
-        // Give a frozen pod a moment before the first retry.
-        { jobId: params.idempotencyKey, delay: 5000 },
-      ),
-      HANDOFF_TIMEOUT_MS,
-    );
-    firebillTrackRetryTotal.labels("queued").inc();
-    return true;
-  } catch (error) {
+  const context = {
+    customerId: params.customerId,
+    value: params.value,
+    idempotencyKey: params.idempotencyKey,
+    path,
+  };
+  const failed = (error: unknown) => {
     firebillTrackRetryTotal.labels("queue_failed").inc();
     logger.error(
       "could not queue an unconfirmed usage event for retry; it will not be billed",
-      {
-        customerId: params.customerId,
-        value: params.value,
-        idempotencyKey: params.idempotencyKey,
-        path,
-        error,
-      },
+      { ...context, error },
     );
+  };
+
+  const add = getFirebillTrackRetryQueue().add(
+    "track",
+    { path, params } satisfies FirebillTrackRetryJobData,
+    // Give a frozen pod a moment before the first retry.
+    { jobId: retryJobId(params.idempotencyKey), delay: 5000 },
+  );
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<"timeout">(resolve => {
+    timer = setTimeout(() => resolve("timeout"), HANDOFF_TIMEOUT_MS);
+  });
+
+  try {
+    const outcome = await Promise.race([
+      add.then(() => "added" as const),
+      timedOut,
+    ]);
+    if (outcome === "added") {
+      firebillTrackRetryTotal.labels("queued").inc();
+      return true;
+    }
+  } catch (error) {
+    failed(error);
     return false;
+  } finally {
+    clearTimeout(timer);
   }
+
+  // The caller stops waiting here, but the add is still in flight on a client
+  // that never gives up, so it may yet land. Record whichever way it settles.
+  firebillTrackRetryTotal.labels("queue_slow").inc();
+  logger.warn(
+    "queueing an unconfirmed usage event is slow; still trying",
+    context,
+  );
+  add.then(() => firebillTrackRetryTotal.labels("queued").inc(), failed);
+  return false;
 }
 
 /**
@@ -98,7 +110,16 @@ export async function processFirebillTrackRetryJob(
   const result = await attempt(path, params).catch(() => ({ ok: false }));
 
   if (result.ok) {
-    await job.moveToCompleted({ success: true }, token, false);
+    try {
+      await job.moveToCompleted({ success: true }, token, false);
+    } catch (error) {
+      // The event is accepted; a job left behind only re-sends it under the
+      // same key. Never let this escape: workerFun would take index-worker down.
+      logger.warn("could not complete a recovered firebill retry job", {
+        idempotencyKey: params.idempotencyKey,
+        error,
+      });
+    }
     firebillTrackRetryTotal.labels("recovered").inc();
     logger.info("a usage event firebill had not confirmed is now accepted", {
       customerId: params.customerId,
@@ -110,11 +131,20 @@ export async function processFirebillTrackRetryJob(
   }
 
   const last = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
-  await job.moveToFailed(
-    new Error("firebill did not confirm the event"),
-    token,
-    false,
-  );
+  try {
+    await job.moveToFailed(
+      new Error("firebill did not confirm the event"),
+      token,
+      false,
+    );
+  } catch (error) {
+    // The stalled check hands the job back for another attempt.
+    logger.warn("could not reschedule a firebill retry job", {
+      idempotencyKey: params.idempotencyKey,
+      error,
+    });
+    return;
+  }
   if (!last) {
     firebillTrackRetryTotal.labels("retrying").inc();
     return;

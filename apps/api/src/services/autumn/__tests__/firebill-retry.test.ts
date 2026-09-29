@@ -10,7 +10,11 @@ vi.mock("../../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { handOffTrack, processFirebillTrackRetryJob } from "../firebill-retry";
+import {
+  handOffTrack,
+  processFirebillTrackRetryJob,
+  retryJobId,
+} from "../firebill-retry";
 import { firebillTrackRetryTotal } from "../metrics";
 import { logger } from "../../../lib/logger";
 
@@ -55,7 +59,7 @@ describe("handOffTrack", () => {
     expect(queue.add).toHaveBeenCalledWith(
       "track",
       { path: "/v1/track", params },
-      { jobId: params.idempotencyKey, delay: 5000 },
+      { jobId: retryJobId(params.idempotencyKey), delay: 5000 },
     );
     expect(await outcomes()).toEqual({ queued: 1 });
   });
@@ -67,12 +71,40 @@ describe("handOffTrack", () => {
     expect(logger.error).toHaveBeenCalledTimes(1);
   });
 
-  it("bounds the caller's wait when Redis does not answer", async () => {
-    queue.add.mockImplementation(() => new Promise(() => {}));
+  it("uses a deterministic job id with no BullMQ key separator", () => {
+    expect(retryJobId(params.idempotencyKey)).not.toContain(":");
+    expect(retryJobId(params.idempotencyKey)).toBe(
+      retryJobId(params.idempotencyKey),
+    );
+  });
+
+  it("bounds the caller's wait, then records the late outcome", async () => {
+    let land!: () => void;
+    queue.add.mockImplementation(
+      () => new Promise(resolve => (land = () => resolve({}))),
+    );
     const started = Date.now();
     await expect(handOffTrack("/v1/track", params)).resolves.toBe(false);
     expect(Date.now() - started).toBeLessThan(2000);
-    expect(await outcomes()).toEqual({ queue_failed: 1 });
+    // Slow is not lost: no "will not be billed" yet.
+    expect(await outcomes()).toEqual({ queue_slow: 1 });
+    expect(logger.error).not.toHaveBeenCalled();
+
+    land();
+    await new Promise(resolve => setImmediate(resolve));
+    expect(await outcomes()).toEqual({ queue_slow: 1, queued: 1 });
+  });
+
+  it("reports a slow add that finally fails as lost", async () => {
+    let fail!: () => void;
+    queue.add.mockImplementation(
+      () => new Promise((_, reject) => (fail = () => reject(new Error("x")))),
+    );
+    await handOffTrack("/v1/track", params);
+    fail();
+    await new Promise(resolve => setImmediate(resolve));
+    expect(await outcomes()).toEqual({ queue_slow: 1, queue_failed: 1 });
+    expect(logger.error).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -118,5 +150,23 @@ describe("processFirebillTrackRetryJob", () => {
     expect(j.moveToFailed).toHaveBeenCalled();
     expect(await outcomes()).toEqual({ expired: 1 });
     expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let a failed completion escape the worker loop", async () => {
+    const j = job(0);
+    j.moveToCompleted.mockRejectedValue(new Error("lock lost"));
+    await expect(
+      processFirebillTrackRetryJob("token", j, async () => ({ ok: true })),
+    ).resolves.toBeUndefined();
+    expect(await outcomes()).toEqual({ recovered: 1 });
+  });
+
+  it("does not let a failed reschedule escape the worker loop", async () => {
+    const j = job(3);
+    j.moveToFailed.mockRejectedValue(new Error("lock lost"));
+    await expect(
+      processFirebillTrackRetryJob("token", j, async () => ({ ok: false })),
+    ).resolves.toBeUndefined();
+    expect(await outcomes()).toEqual({});
   });
 });

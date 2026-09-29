@@ -34,7 +34,7 @@ export const firebillTrackTotal = new Counter({
 export const firebillTrackRetryTotal = new Counter({
   name: "firecrawl_firebill_track_retry_total",
   help: "Background retries of usage events firebill did not confirm",
-  // outcome: queued|queue_failed|retrying|recovered|expired
+  // outcome: queued|queue_slow|queue_failed|retrying|recovered|expired
   labelNames: ["outcome"] as const,
 });
 

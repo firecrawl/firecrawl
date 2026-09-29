@@ -371,8 +371,9 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
   // `increase()`, which evaluates per series, so a `cause` label on that counter
   // would quietly turn one threshold into one threshold per cause.
   firebillFailureCauseTotal.labels(operation, last.cause).inc();
-  // The caller has been answered; keep trying off its path. Still `false`:
-  // nothing is confirmed yet, and callers' refund logic reads it that way.
+  // Queue it for background retry. The caller waits for the queue add only,
+  // bounded at 1s. Still `false`: nothing is confirmed yet, and callers'
+  // refund logic reads it that way.
   await handOffTrack(path, attempted);
   return false;
 }
