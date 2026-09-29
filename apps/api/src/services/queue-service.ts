@@ -5,6 +5,7 @@ import IORedis from "ioredis";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
 import { addExtractJob, ExtractJobData } from "./extract-queue";
 import type { BillTeamJobData } from "./billing/types";
+import type { FirebillTrackRetryJobData } from "./autumn/firebill-retry";
 
 let loggingQueue: Queue;
 let indexQueue: Queue;
@@ -12,6 +13,7 @@ let deepResearchQueue: Queue;
 let generateLlmsTxtQueue: Queue;
 let billingQueue: Queue<BillTeamJobData>;
 let precrawlQueue: Queue;
+let firebillTrackRetryQueue: Queue<FirebillTrackRetryJobData>;
 let redisConnection: IORedis;
 
 export function getRedisConnection(): IORedis {
@@ -30,6 +32,7 @@ const generateLlmsTxtQueueName = "{generateLlmsTxtQueue}";
 const deepResearchQueueName = "{deepResearchQueue}";
 const billingQueueName = "{billingQueue}";
 export const precrawlQueueName = "{precrawlQueue}";
+const firebillTrackRetryQueueName = "{firebillTrackRetryQueue}";
 
 export async function addExtractJobToQueue(
   extractId: string,
@@ -90,6 +93,30 @@ export function getBillingQueue() {
     });
   }
   return billingQueue;
+}
+
+/**
+ * Usage events firebill did not confirm in-request (`autumn/firebill-retry.ts`).
+ * 10 attempts with exponential backoff from 5s spans ~43 minutes, well inside
+ * the window Autumn remembers an idempotency key for.
+ */
+export function getFirebillTrackRetryQueue() {
+  if (!firebillTrackRetryQueue) {
+    firebillTrackRetryQueue = new Queue<FirebillTrackRetryJobData>(
+      firebillTrackRetryQueueName,
+      {
+        connection: getRedisConnection(),
+        defaultJobOptions: {
+          attempts: 10,
+          backoff: { type: "exponential", delay: 5000 },
+          removeOnComplete: { age: 3600 },
+          // Kept a week: a failed job is usage that was never billed.
+          removeOnFail: { age: 7 * 24 * 3600 },
+        },
+      },
+    );
+  }
+  return firebillTrackRetryQueue;
 }
 
 export function getPrecrawlQueue() {

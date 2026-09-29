@@ -24,6 +24,12 @@ const { configState } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../config", () => ({ config: configState }));
+const { retrier } = vi.hoisted(() => ({
+  retrier: {
+    handOffTrack: vi.fn(async () => true),
+  },
+}));
+vi.mock("../firebill-retry", () => retrier);
 vi.mock("../../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -73,6 +79,8 @@ beforeEach(() => {
   vi.mocked(logger.info).mockClear();
   vi.mocked(logger.warn).mockClear();
   vi.mocked(logger.error).mockClear();
+  retrier.handOffTrack.mockClear();
+  retrier.handOffTrack.mockImplementation(async () => true);
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -185,6 +193,40 @@ describe("firebillTrack", () => {
 
     await expect(firebillTrack(params)).resolves.toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("hands an unconfirmed event to the background retrier under its own key", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(wrapped(abortError())));
+
+    await expect(firebillTrack(params)).resolves.toBe(false);
+    expect(retrier.handOffTrack).toHaveBeenCalledTimes(1);
+    expect(retrier.handOffTrack).toHaveBeenCalledWith(
+      "/v1/track",
+      expect.objectContaining({ idempotencyKey: params.idempotencyKey }),
+    );
+  });
+
+  it("hands off a refund on its own path", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ambiguous()),
+    );
+
+    await firebillTrack({ ...params, value: -3 });
+    expect(retrier.handOffTrack).toHaveBeenCalledWith(
+      "/v1/refund",
+      expect.objectContaining({ value: -3 }),
+    );
+  });
+
+  it("does not hand off an event firebill accepted", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => ok()),
+    );
+
+    await expect(firebillTrack(params)).resolves.toBe(true);
+    expect(retrier.handOffTrack).not.toHaveBeenCalled();
   });
 
   it("reuses one key across attempts even when the caller supplies none", async () => {

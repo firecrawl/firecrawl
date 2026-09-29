@@ -6,6 +6,7 @@ import { logger as _logger, logger } from "../../lib/logger";
 import {
   getRedisConnection,
   getBillingQueue,
+  getFirebillTrackRetryQueue,
   getPrecrawlQueue,
   precrawlQueueName,
 } from "../queue-service";
@@ -15,6 +16,8 @@ import {
   startBillingBatchProcessing,
 } from "../billing/batch_billing";
 import { resolveBillingMetadata } from "../billing/types";
+import { retryFirebillTrackOnce } from "../autumn/firebill";
+import { processFirebillTrackRetryJob } from "../autumn/firebill-retry";
 import systemMonitor from "../system-monitor";
 import { v7 as uuidv7 } from "uuid";
 import {
@@ -708,6 +711,11 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
     getBillingQueue(),
     processBillingJobInternal,
   );
+  const firebillTrackRetryWorkerPromise = workerFun(
+    getFirebillTrackRetryQueue(),
+    (token, job) =>
+      processFirebillTrackRetryJob(token, job, retryFirebillTrackOnce),
+  );
 
   const precrawlWorkerPromise = config.PRECRAWL_TEAM_ID
     ? workerFun(getPrecrawlQueue(), processPrecrawlJob)
@@ -803,6 +811,7 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
   // Wait for all workers to complete (which should only happen on shutdown)
   await Promise.all([
     billingWorkerPromise,
+    firebillTrackRetryWorkerPromise,
     precrawlWorkerPromise,
     engpickerPromise,
   ]);
