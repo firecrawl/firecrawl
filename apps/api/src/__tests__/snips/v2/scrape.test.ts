@@ -1996,16 +1996,18 @@ describe("Scrape tests", () => {
   );
 });
 
-// TODO: this is remote, how should we handle this? Production only or also self?
 describe("Attribute formats", () => {
   const base = TEST_SUITE_WEBSITE;
+  const attributeFixtureUrl = "https://example.com/attribute-fixture";
+  const attributeFixtureMock = "attribute-formats";
 
   concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
     "should extract attributes from HTML elements",
     async () => {
       const response = await scrape(
         {
-          url: "https://news.ycombinator.com",
+          url: attributeFixtureUrl,
+          useMock: attributeFixtureMock,
           formats: [
             { type: "markdown" },
             {
@@ -2036,7 +2038,8 @@ describe("Attribute formats", () => {
     async () => {
       const response = await scrape(
         {
-          url: "https://github.com/microsoft/vscode",
+          url: attributeFixtureUrl,
+          useMock: attributeFixtureMock,
           formats: [
             {
               type: "attributes",
@@ -2071,7 +2074,8 @@ describe("Attribute formats", () => {
     async () => {
       const response = await scrape(
         {
-          url: "https://httpbin.org/html",
+          url: attributeFixtureUrl,
+          useMock: attributeFixtureMock,
           formats: [
             {
               type: "attributes",
