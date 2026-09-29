@@ -120,6 +120,24 @@ exchangeRouter.get(
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
 );
 
+// People enrichment on Scrape: a team's configuration and the plan Exchange derives for a
+// URL. Reads and writes need a signed-in team, not the retrieve flag; the plan spends nothing.
+exchangeRouter.get(
+  "/enrichment/preferences",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+exchangeRouter.put(
+  "/enrichment/preferences",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+exchangeRouter.post(
+  "/enrichment/plan",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
 exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
