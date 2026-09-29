@@ -120,8 +120,6 @@ exchangeRouter.get(
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
 );
 
-// People enrichment on Scrape: a team's configuration and the plan Exchange derives for a
-// URL. Reads and writes need a signed-in team, not the retrieve flag; the plan spends nothing.
 exchangeRouter.get(
   "/enrichment/preferences",
   authMiddleware(RateLimiterMode.Labs),
