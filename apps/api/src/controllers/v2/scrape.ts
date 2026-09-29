@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { enrichScrape } from "../../lib/exchange-enrichment";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import {
@@ -621,12 +622,21 @@ export async function scrapeController(
         concurrencyQueueDurationMs: lockTime || undefined,
       });
 
+      // Opt-in people enrichment for supported profile URLs; never delays a
+      // failed scrape and never changes the page result on its own failure.
+      const enrichment = await enrichScrape({
+        teamId: req.auth.team_id,
+        requestId: jobId,
+        url: req.body.url,
+      });
+
       return res.status(200).json({
         success: true,
         data: {
           ...doc!,
           metadata: {
             ...doc!.metadata,
+            ...(enrichment ? { enrichment } : {}),
             concurrencyLimited,
             concurrencyQueueDurationMs: concurrencyLimited
               ? lockTime || 0
