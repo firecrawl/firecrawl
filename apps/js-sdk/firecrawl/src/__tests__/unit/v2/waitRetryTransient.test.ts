@@ -1,4 +1,4 @@
-import { describe, test, expect, jest } from "@jest/globals";
+import { describe, test, expect, jest, beforeEach, afterEach } from "@jest/globals";
 import { SdkError } from "../../../v2/types";
 import { isRetryableError } from "../../../v2/utils/errorHandler";
 import { waitForCrawlCompletion } from "../../../v2/methods/crawl";
@@ -11,7 +11,21 @@ function axiosStatusError(status: number, message: string) {
   });
 }
 
+// The waiters sleep at least one second between polls. Fake timers keep the suite fast.
+async function settleWithPolling<T>(waiter: Promise<T>): Promise<T> {
+  await jest.advanceTimersByTimeAsync(1000);
+  return waiter;
+}
+
 describe("v2 job waiters: transient 4xx responses", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   test("isRetryableError treats 408 and 429 as retryable and other 4xx as permanent", () => {
     expect(isRetryableError(new SdkError("rate limited", 429))).toBe(true);
     expect(isRetryableError(new SdkError("timeout", 408))).toBe(true);
@@ -28,7 +42,7 @@ describe("v2 job waiters: transient 4xx responses", () => {
         data: { success: true, status: "completed", completed: 1, total: 1, data: [] },
       });
 
-    const job = await waitForCrawlCompletion({ get } as any, "job-1", 1);
+    const job = await settleWithPolling(waitForCrawlCompletion({ get } as any, "job-1", 1));
 
     expect(job.status).toBe("completed");
     expect(get).toHaveBeenCalledTimes(2);
@@ -43,7 +57,7 @@ describe("v2 job waiters: transient 4xx responses", () => {
         data: { success: true, status: "completed", completed: 1, total: 1, data: [] },
       });
 
-    const job = await waitForBatchCompletion({ get } as any, "job-2", 1);
+    const job = await settleWithPolling(waitForBatchCompletion({ get } as any, "job-2", 1));
 
     expect(job.status).toBe("completed");
     expect(get).toHaveBeenCalledTimes(2);
@@ -58,7 +72,7 @@ describe("v2 job waiters: transient 4xx responses", () => {
         data: { success: true, status: "completed", completed: 1, total: 1, data: [] },
       });
 
-    const job = await waitForCrawlCompletion({ get } as any, "job-4", 1);
+    const job = await settleWithPolling(waitForCrawlCompletion({ get } as any, "job-4", 1));
 
     expect(job.status).toBe("completed");
     expect(get).toHaveBeenCalledTimes(2);
@@ -73,7 +87,7 @@ describe("v2 job waiters: transient 4xx responses", () => {
         data: { success: true, status: "completed", completed: 1, total: 1, data: [] },
       });
 
-    const job = await waitForBatchCompletion({ get } as any, "job-5", 1);
+    const job = await settleWithPolling(waitForBatchCompletion({ get } as any, "job-5", 1));
 
     expect(job.status).toBe("completed");
     expect(get).toHaveBeenCalledTimes(2);
