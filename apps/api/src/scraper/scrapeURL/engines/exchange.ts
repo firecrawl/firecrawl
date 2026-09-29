@@ -141,7 +141,11 @@ export async function scrapeURLWithExchange(
           ...(meta.options.maxAge === undefined
             ? {}
             : { maxAge: meta.options.maxAge }),
-          // The Exchange checks each enrichment step's provider terms against these.
+          // The Exchange checks each enrichment step's provider terms against
+          // these rows and its own ledger of the organization's acceptances.
+          ...(meta.internalOptions.orgId
+            ? { organizationId: meta.internalOptions.orgId }
+            : {}),
           ...(meta.internalOptions.teamFlags?.organizationDataSourceAccess
             ? {
                 organizationDataSourceAccess:

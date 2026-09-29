@@ -15,7 +15,10 @@ const access = {
   apollo: { status: "enabled", termsKey: "apollo", termsVersion: "F-1.0.0" },
 };
 
-function makeMeta(teamFlags: Record<string, unknown> = {}): Meta {
+function makeMeta(
+  teamFlags: Record<string, unknown> = {},
+  orgId: string | null = null,
+): Meta {
   const logger = {
     info: () => {},
     warn: () => {},
@@ -29,7 +32,7 @@ function makeMeta(teamFlags: Record<string, unknown> = {}): Meta {
     options: {},
     mock: null,
     abort: { asSignal: () => undefined },
-    internalOptions: { teamId: "team-test", teamFlags },
+    internalOptions: { teamId: "team-test", teamFlags, orgId },
   } as unknown as Meta;
 }
 
@@ -43,7 +46,7 @@ describe("exchange engine", () => {
     config.FIRE_EXCHANGE_URL = originalExchangeUrl;
   });
 
-  it("forwards the organization's data source access and bills the reported price", async () => {
+  it("forwards the organization and its data source access and bills the reported price", async () => {
     vi.mocked(robustFetch).mockResolvedValue({
       success: true,
       accessEventId: "access-1",
@@ -57,12 +60,16 @@ describe("exchange engine", () => {
     });
 
     const result = await scrapeURLWithExchange(
-      makeMeta({ organizationDataSourceAccess: access }),
+      makeMeta({ organizationDataSourceAccess: access }, "org-test"),
     );
 
     expect(vi.mocked(robustFetch).mock.calls[0][0]).toMatchObject({
       url: "https://exchange.example/v1/scrape",
-      body: { teamId: "team-test", organizationDataSourceAccess: access },
+      body: {
+        teamId: "team-test",
+        organizationId: "org-test",
+        organizationDataSourceAccess: access,
+      },
     });
     expect(result.exchange).toEqual({
       handled: true,
@@ -72,7 +79,7 @@ describe("exchange engine", () => {
     });
   });
 
-  it("omits access rows the team does not have", async () => {
+  it("omits an organization and access rows the team does not have", async () => {
     vi.mocked(robustFetch).mockResolvedValue({
       success: false,
       error: { code: "not_found" },
@@ -81,9 +88,9 @@ describe("exchange engine", () => {
     await expect(scrapeURLWithExchange(makeMeta())).rejects.toBeInstanceOf(
       EngineError,
     );
-    expect(vi.mocked(robustFetch).mock.calls[0][0].body).not.toHaveProperty(
-      "organizationDataSourceAccess",
-    );
+    const body = vi.mocked(robustFetch).mock.calls[0][0].body;
+    expect(body).not.toHaveProperty("organizationId");
+    expect(body).not.toHaveProperty("organizationDataSourceAccess");
   });
 
   it.each(["enrichment_not_enabled", "enrichment_unavailable"])(
