@@ -8,17 +8,27 @@ namespace Firecrawl.Tests;
 public class RetrySafetyTests
 {
     [Theory]
-    [InlineData("post")]
-    [InlineData("multipart")]
-    [InlineData("patch")]
-    [InlineData("delete")]
-    public async Task AmbiguousGatewayFailure_DoesNotReplayWrite(string method)
+    [InlineData("post", HttpStatusCode.RequestTimeout)]
+    [InlineData("post", HttpStatusCode.Conflict)]
+    [InlineData("post", HttpStatusCode.BadGateway)]
+    [InlineData("multipart", HttpStatusCode.RequestTimeout)]
+    [InlineData("multipart", HttpStatusCode.Conflict)]
+    [InlineData("multipart", HttpStatusCode.BadGateway)]
+    [InlineData("patch", HttpStatusCode.RequestTimeout)]
+    [InlineData("patch", HttpStatusCode.Conflict)]
+    [InlineData("patch", HttpStatusCode.BadGateway)]
+    [InlineData("delete", HttpStatusCode.RequestTimeout)]
+    [InlineData("delete", HttpStatusCode.Conflict)]
+    [InlineData("delete", HttpStatusCode.BadGateway)]
+    public async Task AmbiguousHttpFailure_DoesNotReplayWrite(string method, HttpStatusCode status)
     {
         var handler = new ScriptedHandler((attempt, _) =>
-            JsonResponse(attempt == 1 ? HttpStatusCode.BadGateway : HttpStatusCode.OK));
+            JsonResponse(attempt == 1 ? status : HttpStatusCode.OK));
         var client = Client(handler);
 
-        await Assert.ThrowsAsync<FirecrawlException>(() => SendWrite(client, method));
+        var error = await Assert.ThrowsAsync<FirecrawlException>(() => SendWrite(client, method));
+        Assert.Equal((int)status, error.StatusCode);
+        Assert.Contains("upstream failure", error.Message);
         Assert.Equal(1, handler.SendCount);
     }
 
