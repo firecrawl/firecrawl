@@ -1,0 +1,30 @@
+apps/api/src/lib/generic-ai.ts
+  s_e3cba8d3486419::t_798db03d11f452 11,64,66
+apps/api/src/lib/ai-usage-telemetry.ts
+  s_e3cba8d3486419::t_6da32ee323012f 1,3,7-12,15-30,32-45,47-55,57-58
+  s_e3cba8d3486419::t_5837678906c458 2,4-6,46,56
+  s_e3cba8d3486419::t_7867c6b11e9c27 31
+  s_e3cba8d3486419::t_fa04d44c03409d 13-14
+apps/api/src/lib/ai-usage-telemetry.test.ts
+  s_e3cba8d3486419::t_7b75d771b4b636 49
+  s_e3cba8d3486419::t_5d5179739f00d5 127
+  s_e3cba8d3486419::t_f511a7bed94fbc 7
+  s_e3cba8d3486419::t_6498c1103b3829 1-6,9-48,50-63,67-126,128-208,213-279
+  s_e3cba8d3486419::t_7867c6b11e9c27 8,64-66,209-212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "24cf533b04d090b984894d163a5f318470f3cbf8",
+  "prompts": {},
+  "sessions": {
+    "s_e3cba8d3486419": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7af3ed4d-b84f-44c5-9d08-89ee82e8d574",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

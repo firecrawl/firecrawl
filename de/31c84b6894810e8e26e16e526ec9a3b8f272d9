@@ -1,0 +1,27 @@
+apps/api/src/config.ts
+  s_37f0fa963ee544::t_837104e37155ce 456-457
+apps/api/src/controllers/v1/types.ts
+  s_37f0fa963ee544::t_9dec4112cfbe71 1385-1386
+apps/api/src/controllers/v2/types.ts
+  s_37f0fa963ee544::t_6f006c845ba62f 2072-2073
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/fireEngineHandoff.test.ts
+  s_37f0fa963ee544::t_14ac301a0434ef 211-229
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference.ts
+  s_37f0fa963ee544::t_dcb16bf8b2cd83 167-169,186-191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de31c84b6894810e8e26e16e526ec9a3b8f272d9",
+  "prompts": {},
+  "sessions": {
+    "s_37f0fa963ee544": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0f9b595d-9010-4a34-a219-5a91a8ce8778",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

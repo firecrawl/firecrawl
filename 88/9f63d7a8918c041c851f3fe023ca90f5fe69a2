@@ -1,0 +1,30 @@
+apps/api/src/controllers/v2/__tests__/crawl-prompt-zdr.test.ts
+  s_03359021770c90::t_a25c7a22435d8b 1-52,56-99,108-127,132-272,274-288
+  s_03359021770c90::t_2355c0c83b9dde 53-55,128-131
+  s_03359021770c90::t_eceedaf8bf725f 100-107,273
+apps/api/src/controllers/v2/crawl-params-preview.ts
+  s_03359021770c90::t_75cd306cade99b 8-10,52-55,60,72-91,93-102
+apps/api/src/controllers/v2/crawl.ts
+  s_03359021770c90::t_8092310a5058a2 37,231-238,240-258
+  s_03359021770c90::t_a2f36ae40cb657 229,239
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_03359021770c90::t_40171c0cf7761a 31,349-353,368,376-377,1622,1669
+apps/api/src/lib/otel-tracer.ts
+  s_03359021770c90::t_37427b9f07a560 70-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "889f63d7a8918c041c851f3fe023ca90f5fe69a2",
+  "prompts": {},
+  "sessions": {
+    "s_03359021770c90": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c7cc2224-fe0f-4a26-a007-a439e690323a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
