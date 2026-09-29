@@ -241,9 +241,16 @@ function providerMatchesUrl(
 
   const host = normalizeHost(parsed.hostname);
   const pathname = parsed.pathname || "/";
+  // "*.example.com" claims every subdomain of example.com, never the apex.
+  const wildcards = [...host.matchAll(/\./g)].map(
+    dot => `*${host.slice(dot.index)}`,
+  );
 
   return provider.routes.some(route => {
-    if (!route.domains.has(host)) {
+    if (
+      !route.domains.has(host) &&
+      !wildcards.some(wildcard => route.domains.has(wildcard))
+    ) {
       return false;
     }
 

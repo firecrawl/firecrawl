@@ -110,6 +110,31 @@ describe("Exchange routing", () => {
     ).resolves.not.toBeNull();
   });
 
+  it("matches any subdomain through a wildcard route but never the apex", async () => {
+    setExchangeProvidersForTest([
+      {
+        id: "firecrawl-enrich",
+        routes: [{ domains: ["*.profiles.example"], pathPrefixes: ["/in/"] }],
+      },
+    ]);
+
+    await expect(
+      resolveExchangeProvider("https://ca.profiles.example/in/example"),
+    ).resolves.toMatchObject({ id: "firecrawl-enrich" });
+    await expect(
+      resolveExchangeProvider("https://m.uk.profiles.example/in/example"),
+    ).resolves.toMatchObject({ id: "firecrawl-enrich" });
+    await expect(
+      resolveExchangeProvider("https://profiles.example/in/example"),
+    ).resolves.toBeNull();
+    await expect(
+      resolveExchangeProvider("https://evilprofiles.example/in/example"),
+    ).resolves.toBeNull();
+    await expect(
+      resolveExchangeProvider("https://ca.profiles.example/jobs/1"),
+    ).resolves.toBeNull();
+  });
+
   it("respects path segment boundaries for prefixes without trailing slashes", async () => {
     setExchangeProvidersForTest([
       {
