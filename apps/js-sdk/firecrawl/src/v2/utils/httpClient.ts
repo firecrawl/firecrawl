@@ -28,7 +28,7 @@ export class HttpClient {
   constructor(options: HttpClientOptions) {
     this.apiKey = options.apiKey;
     this.apiUrl = options.apiUrl.replace(/\/$/, "");
-    this.maxRetries = options.maxRetries ?? 3;
+    this.maxRetries = Math.max(1, options.maxRetries ?? 3);
     this.backoffFactor = options.backoffFactor ?? 0.5;
     this.instance = axios.create({
       baseURL: this.apiUrl,
