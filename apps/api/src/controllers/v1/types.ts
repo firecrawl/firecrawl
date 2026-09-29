@@ -1137,6 +1137,12 @@ export type Document = {
     publishedTime?: string;
     articleTag?: string;
     articleSection?: string;
+    alternateLinks?: {
+      href?: string;
+      type?: string;
+      title?: string;
+      hreflang?: string;
+    }[];
     url?: string;
     sourceURL?: string;
     statusCode: number;
