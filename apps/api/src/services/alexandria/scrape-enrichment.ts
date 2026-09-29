@@ -108,27 +108,44 @@ export function enrichmentResponse(
   target: EnrichmentScrape,
   teamId: string,
 ): ExchangeResponse {
-  const redirect = `/app/t/${encodeURIComponent(teamId)}/alexandria?enrichment=true`;
-  const action = {
-    label: "Configure enrichment and review provider terms",
-    url: `https://www.firecrawl.dev/signin?redirect=${encodeURIComponent(redirect)}`,
-  };
-  const fail = (
+  const setup = enrichmentSetupError(target.url, teamId)!;
+  const problem = (
     status: number,
     code: ErrorCodes,
     error: string,
-    setup = false,
-    extra = {},
+    details: Record<string, unknown> = {},
   ) => ({
     status,
-    body: {
-      success: false,
-      code,
-      error: setup ? `${error} ${action.url}` : error,
-      scrape_id: result.scrapeId,
-      details: { ...extra, ...(setup ? { action } : {}) },
-    },
+    body: { success: false, code, error, scrape_id: result.scrapeId, details },
   });
+  const failed = (
+    reason: string,
+    status = 502,
+    billing: Record<string, unknown> = { billingComplete: false },
+  ) =>
+    problem(
+      status,
+      "ENRICHMENT_FAILED",
+      "Profile enrichment could not complete.",
+      { reason, ...billing },
+    );
+  const setupRequired = (
+    reason: string,
+    message: string,
+    billing: Record<string, unknown>,
+    status = 403,
+  ) =>
+    problem(
+      status,
+      "ENRICHMENT_SETUP_REQUIRED",
+      `${message} ${setup.details.action.url}`,
+      {
+        reason,
+        ...billing,
+        ...setup.details,
+      },
+    );
+
   if (result.status !== 200) return result;
   const answer = answerSchema.safeParse(result.body);
   if (
@@ -136,35 +153,19 @@ export function enrichmentResponse(
     answer.data.results.length !== 1 ||
     answer.data.creditsCost !== 0
   )
-    return fail(
-      502,
-      "ENRICHMENT_INVALID_RESPONSE",
-      "Enrichment returned an invalid response.",
-    );
+    return failed("invalid_response");
   const entry = answer.data.results[0];
-  if (entry.error)
-    return fail(
-      502,
-      "ENRICHMENT_UNAVAILABLE",
-      "Enrichment could not execute. Retry with the same x-request-id.",
-    );
+  if (entry.error) return failed("execution_failed");
   if (entry.provider !== "firecrawl" || entry.capability !== "enrich")
-    return fail(
-      502,
-      "ENRICHMENT_INVALID_RESPONSE",
-      "Enrichment returned an unexpected capability.",
-    );
+    return failed("invalid_response");
   const parsed = payloadSchema.safeParse(entry.data);
   if (
     !parsed.success ||
     parsed.data.entity !== target.entity ||
     parsed.data.url !== target.url
   )
-    return fail(
-      502,
-      "ENRICHMENT_INVALID_RESPONSE",
-      "Enrichment returned an invalid profile response.",
-    );
+    return failed("invalid_response");
+
   const data = parsed.data;
   const billing = {
     creditsUsed: data.providerCredits,
@@ -173,46 +174,36 @@ export function enrichmentResponse(
   switch (data.status) {
     case "disabled":
     case "unavailable":
-      return fail(
-        403,
-        "ENRICHMENT_SETUP_REQUIRED",
-        "Enable enrichment and select providers for this profile type.",
-        true,
+      return setupRequired(
+        data.status,
+        "Set up profile enrichment to use your selected providers.",
         billing,
       );
     case "not_found":
-      return fail(
+      return problem(
         404,
         "ENRICHMENT_NOT_FOUND",
         "No selected provider found this profile.",
-        false,
         billing,
       );
     case "budget_exceeded":
-      return fail(
-        402,
-        "ENRICHMENT_BUDGET_EXCEEDED",
-        "The saved enrichment credit limit was reached.",
-        true,
+      return setupRequired(
+        data.status,
+        "Review your enrichment configuration: its credit limit was reached.",
         billing,
+        402,
       );
     case "stopped": {
       const error = data.steps.find(step => step.error)?.error;
       if (error?.status === 403)
-        return fail(
-          403,
-          "ENRICHMENT_ACCESS_REQUIRED",
-          "Review provider access and terms for this team before retrying.",
-          true,
+        return setupRequired(
+          "access_required",
+          "Review your provider access and terms.",
           billing,
         );
-      return fail(
-        error?.status === 504 ? 504 : 502,
-        "ENRICHMENT_PROVIDER_ERROR",
-        "Enrichment stopped after a provider error. Charges may have occurred; retry only with the same x-request-id.",
-        false,
-        billing,
-      );
+      const status =
+        error?.status === 504 ? 504 : error?.status === 429 ? 429 : 502;
+      return failed(error?.code ?? "provider_error", status, billing);
     }
     case "matched":
       if (
@@ -220,13 +211,7 @@ export function enrichmentResponse(
         !data.billingComplete ||
         (target.format === "json" ? !data.profile : !data.markdown)
       )
-        return fail(
-          502,
-          "ENRICHMENT_INVALID_RESPONSE",
-          "Enrichment returned an incomplete profile.",
-          false,
-          billing,
-        );
+        return failed("invalid_response", 502, billing);
       return {
         status: 200,
         body: {
