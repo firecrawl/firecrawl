@@ -70,12 +70,7 @@ vi.mock("../../../services/billing/credit_billing", () => ({
   billTeam: mocks.billTeam,
 }));
 
-import { browserDeleteController, browserError } from "../browser";
-import { HangarError } from "../../../lib/hangar";
-import {
-  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
-  KEYLESS_SIGNUP_URL,
-} from "../../../lib/keyless";
+import { browserDeleteController } from "../browser";
 import { scrapeStopInteractiveBrowserController } from "../scrape-browser";
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
@@ -245,25 +240,6 @@ describe("browser session DELETE on an already destroyed session", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ success: true, sessionDurationMs: 1000 }),
-    );
-  });
-});
-
-describe("browser errors", () => {
-  it("stamps the keyless limit link with the prompt date", () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-09-30T02:00:00Z"));
-    const res = makeRes();
-
-    try {
-      browserError(res, new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE));
-    } finally {
-      vi.useRealTimers();
-    }
-
-    expect(res.statusCode).toBe(429);
-    expect(res.json.mock.calls[0][0].error).toContain(
-      `${KEYLESS_SIGNUP_URL}&utm_content=2026-09-30`,
     );
   });
 });

@@ -28,25 +28,8 @@ const KEYLESS_CREDITS_PER_DAY = config.KEYLESS_CREDITS_PER_DAY;
 export const KEYLESS_SIGNUP_URL =
   "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api";
 
-/**
- * Stamps the keyless signup link in an outgoing message with the UTC date the
- * prompt is shown (utm_content=YYYY-MM-DD), so a signup can be measured against
- * the prompt that led to it. Messages without the link, or already stamped, are
- * returned unchanged, so this is safe to apply to any error text.
- */
-export function withKeylessPromptDate(
-  message: string,
-  now: Date = new Date(),
-): string {
-  if (message.includes(`${KEYLESS_SIGNUP_URL}&utm_content=`)) return message;
-  return message.replaceAll(
-    KEYLESS_SIGNUP_URL,
-    `${KEYLESS_SIGNUP_URL}&utm_content=${now.toISOString().slice(0, 10)}`,
-  );
-}
-
 // Shared 429 copy for both keyless request-cap and credit-cap failures. The URL
-// ends the sentence without a period so a copied link keeps clean UTM values.
+// ends the sentence without a period so a copied link keeps a clean utm_medium.
 export const KEYLESS_FREE_TIER_LIMIT_MESSAGE = `You've hit Firecrawl's keyless free tier rate limit. To continue now, create a free API key at ${KEYLESS_SIGNUP_URL}
 
 Then authenticate with:
@@ -204,7 +187,7 @@ export async function keylessLimitBody(
   });
   return {
     success: false,
-    error: withKeylessPromptDate(KEYLESS_FREE_TIER_LIMIT_MESSAGE),
+    error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
     reason: "credits",
     ...(retryAfterSeconds ? { retry_after_seconds: retryAfterSeconds } : {}),
   };

@@ -258,7 +258,10 @@ export async function scrapeInteractController(
       profile,
     );
     if (created.error === true) {
-      if (created.status === 429 && "reason" in created.body) {
+      if (
+        created.status === 429 &&
+        created.body.error === KEYLESS_FREE_TIER_LIMIT_MESSAGE
+      ) {
         applyAgentAuthDiscoveryHeader(res);
       }
       return res.status(created.status).json(created.body);
