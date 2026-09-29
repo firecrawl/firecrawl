@@ -119,12 +119,11 @@ describe("keyless feedback invitations", () => {
         },
       });
       const message = (metadata.feedback as { message: string }).message;
-      expect(message).toContain("when appropriate");
       expect(message).toContain("wrong, incomplete, blocked, or an error");
       expect(message).toContain("POST /v2/feedback");
       expect(message).toContain("Include specific evidence");
       expect(message).not.toMatch(
-        /limit|per day|UTC|in exchange|please submit|after your task/i,
+        /limit|per day|UTC|in exchange|please submit|after your task|when appropriate/i,
       );
     }
   });
