@@ -206,6 +206,21 @@ describe("firebillTrack", () => {
     );
   });
 
+  it("hands off the key it minted when the caller supplied none", async () => {
+    // The minted key is the only thing that makes a background retry of a
+    // keyless event a dedupe rather than a second charge.
+    const fetchMock = vi.fn().mockRejectedValue(wrapped(abortError()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await firebillTrack({ ...params, idempotencyKey: undefined });
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body).idempotency_key;
+    expect(sent).toEqual(expect.any(String));
+    expect(retrier.handOffTrack).toHaveBeenCalledWith(
+      "/v1/track",
+      expect.objectContaining({ idempotencyKey: sent }),
+    );
+  });
+
   it("hands off a refund on its own path", async () => {
     vi.stubGlobal(
       "fetch",
