@@ -251,6 +251,12 @@ describe("authenticateUser", () => {
       { allowKeyless: true },
     );
 
+    // A period right after the URL would be copied into utm_medium.
+    expect(limited).toEqual(
+      expect.objectContaining({
+        error: expect.not.stringContaining(`${taggedSignupUrl}.`),
+      }),
+    );
     for (const [auth, status] of [
       [limited, 429],
       [unsupported, 401],

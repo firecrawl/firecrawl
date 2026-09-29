@@ -164,6 +164,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     expect(blocked.statusCode).toBe(429);
     expect(blocked.body.error).toContain("keyless free tier rate limit");
     expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
+    expect(blocked.body.error).not.toContain(`${KEYLESS_SIGNUP_URL}.`);
     expect(blocked.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
     // Out of quota → emit the OAuth-discovery header so agents find the key flow.
     expect(blocked.headers["www-authenticate"]).toContain("resource_metadata");
