@@ -40,9 +40,7 @@ class AsyncHttpClient:
         base = urlparse(self.api_url)
         ep = urlparse(endpoint)
 
-        # Absolute or protocol-relative (has netloc) pointing at a different
-        # host: keep path/query but force base host/scheme (no token leakage)
-        if ep.netloc and (ep.hostname or "") != (base.hostname or ""):
+        if ep.netloc:
             path = ep.path or "/"
             return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
 
