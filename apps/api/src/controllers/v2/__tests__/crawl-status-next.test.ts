@@ -77,15 +77,22 @@ const doc = (url: string) => ({
 });
 
 // Two completed pages. Pages 0-1 are returned by the first request and the
-// page past them (skip=2) is empty.
-function mockCrawl(options: { cancelled: boolean; groupStatus: string }) {
+// page past them (skip=2) is empty. `pending` jobs are still queued or running.
+function mockCrawl(options: {
+  cancelled: boolean;
+  groupStatus: string;
+  pending?: number;
+}) {
   mocks.getGroup.mockResolvedValue({ status: options.groupStatus });
   mocks.getCrawl.mockResolvedValue({
     team_id: TEAM_ID,
     cancelled: options.cancelled,
     createdAt: Date.now(),
   });
-  mocks.getGroupNumericStats.mockResolvedValue({ completed: 2 });
+  mocks.getGroupNumericStats.mockResolvedValue({
+    completed: 2,
+    active: options.pending ?? 0,
+  });
   mocks.getGroupJobs.mockImplementation(
     async (_id: string, _status: string, limit: number, offset: number) =>
       [doc("https://example.com/a"), doc("https://example.com/b")].slice(
@@ -112,6 +119,17 @@ describe("crawl status next cursor", () => {
 
     // Following a cursor past the end must not hand back the same cursor.
     const past = await getStatus({ skip: "2" });
+    expect(past.data).toHaveLength(0);
+    expect(past.next).toBeUndefined();
+  });
+
+  it("ends the cursor of a cancelled crawl whose pending jobs are still counted", async () => {
+    // total is 5 (2 completed + 3 still queued or running), but only completed
+    // jobs have pages, so the page past them is the last one.
+    mockCrawl({ cancelled: true, groupStatus: "active", pending: 3 });
+
+    const past = await getStatus({ skip: "2" });
+    expect(past.total).toBe(5);
     expect(past.data).toHaveLength(0);
     expect(past.next).toBeUndefined();
   });
