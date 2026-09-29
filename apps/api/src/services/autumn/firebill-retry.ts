@@ -40,9 +40,10 @@ export function retryJobId(idempotencyKey: string): string {
   return encodeURIComponent(idempotencyKey);
 }
 
-// Caps the retry backlog on the shared Redis. At ~1KB a job this is ~50MB; a
-// normal burst is a few hundred, so reaching it means firebill itself is down
-// and retries are no longer the tool.
+// Caps the live retry backlog (waiting + delayed + active) on the shared Redis.
+// With failed and completed jobs capped at 10k each, the queue's worst case is
+// ~70k jobs, ~70MB at ~1KB a job. A normal burst is a few hundred, so reaching
+// this means firebill itself is down and retries are no longer the tool.
 export const MAX_BACKLOG = 50000;
 const BACKLOG_REFRESH_MS = 5000;
 
