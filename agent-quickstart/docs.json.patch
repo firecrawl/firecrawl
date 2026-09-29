@@ -1,0 +1,4660 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "colors": {
+    "dark": "#000",
+    "light": "#fff",
+    "primary": "#000"
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude"
+    ]
+  },
+  "favicon": "/favicon.ico",
+  "footer": {
+    "links": [
+      {
+        "header": "For AI agents",
+        "items": [
+          {
+            "href": "https://docs.firecrawl.dev/llms.txt",
+            "label": "Agent docs (llms.txt)"
+          },
+          {
+            "href": "https://docs.firecrawl.dev/llms-full.txt",
+            "label": "Full docs (llms-full.txt)"
+          },
+          {
+            "href": "https://docs.firecrawl.dev/sdks/cli",
+            "label": "Agent skill"
+          },
+          {
+            "href": "https://docs.firecrawl.dev/mcp-server",
+            "label": "MCP server"
+          }
+        ]
+      }
+    ],
+    "socials": {
+      "discord": "https://discord.gg/firecrawl",
+      "github": "https://github.com/firecrawl/firecrawl",
+      "linkedin": "https://www.linkedin.com/company/firecrawl",
+      "x": "https://x.com/firecrawl"
+    }
+  },
+  "integrations": {
+    "ga4": {
+      "measurementId": "G-JZJ1L5MYR1"
+    }
+  },
+  "logo": {
+    "dark": "/logo/logo-dark.png",
+    "href": "https://firecrawl.dev",
+    "light": "/logo/logo.png"
+  },
+  "name": "Firecrawl Docs",
+  "navbar": {
+    "links": [
+      {
+        "href": "https://firecrawl.betteruptime.com",
+        "label": "Status"
+      },
+      {
+        "href": "mailto:help@firecrawl.com",
+        "label": "Support"
+      },
+      {
+        "href": "https://www.firecrawl.dev/signin?utm_source=firecrawl_docs&utm_medium=nav_bar&utm_content=sign_up",
+        "label": "Sign Up"
+      }
+    ],
+    "primary": {
+      "href": "https://github.com/firecrawl/firecrawl",
+      "type": "github"
+    }
+  },
+  "navigation": {
+    "languages": [
+      {
+        "global": {
+          "anchors": [
+            {
+              "anchor": "Playground",
+              "href": "https://firecrawl.dev/playground",
+              "icon": "play"
+            },
+            {
+              "anchor": "Blog",
+              "href": "https://firecrawl.dev/blog",
+              "icon": "newspaper"
+            },
+            {
+              "anchor": "Community",
+              "href": "https://discord.gg/firecrawl",
+              "icon": "discord"
+            },
+            {
+              "anchor": "Changelog",
+              "href": "https://firecrawl.dev/changelog",
+              "icon": "list"
+            }
+          ]
+        },
+        "language": "en",
+        "versions": [
+          {
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "Get Started",
+                    "pages": [
+                      "introduction",
+                      "sdks/cli",
+                      "ai-onboarding",
+                      "mcp-server",
+                      "advanced-scraping-guide",
+                      {
+                        "group": "Plans and Billing",
+                        "pages": [
+                          "billing",
+                          "rate-limits",
+                          "partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Core Endpoints",
+                    "pages": [
+                      "features/search",
+                      {
+                        "group": "Scrape",
+                        "icon": "markdown",
+                        "pages": [
+                          "features/scrape",
+                          "features/fast-scraping",
+                          "features/batch-scrape",
+                          "features/llm-extract",
+                          "features/change-tracking",
+                          "features/enhanced-mode",
+                          "features/lockdown",
+                          "features/proxies",
+                          "features/document-parsing"
+                        ]
+                      },
+                      "features/interact"
+                    ]
+                  },
+                  {
+                    "group": "More",
+                    "pages": [
+                      "features/parse",
+                      "features/map",
+                      "features/crawl",
+                      {
+                        "group": "Agent (Research Preview)",
+                        "hidden": true,
+                        "icon": "robot",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Quickstarts",
+                    "pages": [
+                      {
+                        "group": "Node.js",
+                        "pages": [
+                          "quickstarts/nodejs",
+                          "quickstarts/nextjs",
+                          "quickstarts/express",
+                          "quickstarts/nestjs",
+                          "quickstarts/fastify",
+                          "quickstarts/hono",
+                          "quickstarts/bun",
+                          "quickstarts/remix",
+                          "quickstarts/nuxt",
+                          "quickstarts/sveltekit",
+                          "quickstarts/astro",
+                          "quickstarts/mastra"
+                        ]
+                      },
+                      {
+                        "group": "Serverless",
+                        "pages": [
+                          "quickstarts/cloudflare-workers",
+                          "quickstarts/vercel-functions",
+                          "quickstarts/aws-lambda",
+                          "quickstarts/supabase-edge-functions",
+                          "quickstarts/deno-deploy"
+                        ]
+                      },
+                      {
+                        "group": "PHP",
+                        "pages": [
+                          "quickstarts/php",
+                          "quickstarts/laravel"
+                        ]
+                      },
+                      {
+                        "group": "Ruby",
+                        "pages": [
+                          "quickstarts/ruby",
+                          "quickstarts/rails"
+                        ]
+                      },
+                      {
+                        "group": "Python",
+                        "pages": [
+                          "quickstarts/python",
+                          "quickstarts/fastapi",
+                          "quickstarts/django",
+                          "quickstarts/flask"
+                        ]
+                      },
+                      "quickstarts/go",
+                      "quickstarts/rust",
+                      "quickstarts/elixir",
+                      {
+                        "group": "Java",
+                        "pages": [
+                          "quickstarts/java",
+                          "quickstarts/spring-boot"
+                        ]
+                      },
+                      {
+                        "group": ".NET",
+                        "pages": [
+                          "quickstarts/dotnet",
+                          "quickstarts/aspnet-core"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Agent Quickstarts",
+                    "icon": "robot",
+                    "pages": [
+                      "agent-quickstart/node",
+                      "agent-quickstart/python",
+                      "agent-quickstart/rust",
+                      "agent-quickstart/java",
+                      "agent-quickstart/elixir"
+                    ]
+                  },
+                  {
+                    "group": "Developer Guides",
+                    "pages": [
+                      "developer-guides/examples",
+                      {
+                        "group": "Usage Guides",
+                        "icon": "compass",
+                        "pages": [
+                          "developer-guides/usage-guides/choosing-the-data-extractor"
+                        ]
+                      },
+                      {
+                        "group": "LLM SDKs and Frameworks",
+                        "icon": "puzzle-piece",
+                        "pages": [
+                          "developer-guides/llm-sdks-and-frameworks/openai",
+                          "developer-guides/llm-sdks-and-frameworks/anthropic",
+                          "developer-guides/llm-sdks-and-frameworks/gemini",
+                          "developer-guides/llm-sdks-and-frameworks/google-adk",
+                          "developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                          "developer-guides/llm-sdks-and-frameworks/langchain",
+                          "developer-guides/llm-sdks-and-frameworks/langgraph",
+                          "developer-guides/llm-sdks-and-frameworks/llamaindex",
+                          "developer-guides/llm-sdks-and-frameworks/mastra",
+                          "developer-guides/llm-sdks-and-frameworks/elevenagents"
+                        ]
+                      },
+                      {
+                        "group": "Cookbooks",
+                        "icon": "book",
+                        "pages": [
+                          "developer-guides/cookbooks/ai-research-assistant-cookbook",
+                          "developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                        ]
+                      },
+                      {
+                        "group": "MCP Setup Guides",
+                        "icon": "plug",
+                        "pages": [
+                          "developer-guides/mcp-setup-guides/chatgpt",
+                          "developer-guides/mcp-setup-guides/claude-ai",
+                          "developer-guides/mcp-setup-guides/factory-ai"
+                        ]
+                      },
+                      {
+                        "group": "Common Sites",
+                        "icon": "globe",
+                        "pages": [
+                          "developer-guides/common-sites/amazon",
+                          "developer-guides/common-sites/etsy",
+                          "developer-guides/common-sites/github",
+                          "developer-guides/common-sites/wikipedia"
+                        ]
+                      },
+                      {
+                        "group": "Workflow Automation",
+                        "icon": "bolt",
+                        "pages": [
+                          "developer-guides/workflow-automation/n8n",
+                          "developer-guides/workflow-automation/zapier",
+                          "developer-guides/workflow-automation/make",
+                          "developer-guides/workflow-automation/dify"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Webhooks",
+                    "pages": [
+                      "webhooks/overview",
+                      "webhooks/events",
+                      "webhooks/security",
+                      "webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "Use Cases",
+                    "pages": [
+                      "use-cases/overview",
+                      "use-cases/ai-platforms",
+                      "use-cases/lead-enrichment",
+                      "use-cases/seo-platforms",
+                      "use-cases/deep-research",
+                      {
+                        "group": "View more",
+                        "pages": [
+                          "use-cases/product-ecommerce",
+                          "use-cases/content-generation",
+                          "use-cases/developers-mcp",
+                          "use-cases/investment-finance",
+                          "use-cases/competitive-intelligence",
+                          "use-cases/data-migration",
+                          "use-cases/observability"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Other",
+                    "pages": [
+                      "dashboard",
+                      "features/ask"
+                    ]
+                  },
+                  {
+                    "group": "Contributing",
+                    "pages": [
+                      "contributing/open-source-or-cloud",
+                      "contributing/guide",
+                      "contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "Documentation"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Overall",
+                    "pages": [
+                      "sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "Official",
+                    "pages": [
+                      "sdks/python",
+                      "sdks/node",
+                      "sdks/go",
+                      "sdks/java",
+                      "sdks/ruby",
+                      "sdks/rust",
+                      "sdks/dotnet",
+                      "sdks/php",
+                      "sdks/elixir",
+                      "sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "Community",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDKs"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "Integrations"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Using the API",
+                    "pages": [
+                      "api-reference/v2-introduction",
+                      "api-reference/errors"
+                    ]
+                  },
+                  {
+                    "group": "Search Endpoints",
+                    "pages": [
+                      "api-reference/endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "Scrape Endpoints",
+                    "pages": [
+                      "api-reference/endpoint/scrape",
+                      "api-reference/endpoint/batch-scrape",
+                      "api-reference/endpoint/batch-scrape-get",
+                      "api-reference/endpoint/batch-scrape-delete",
+                      "api-reference/endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "Interact Endpoints",
+                    "pages": [
+                      "api-reference/endpoint/scrape-execute",
+                      "api-reference/endpoint/scrape-browser-delete",
+                      "api-reference/endpoint/browser-list"
+                    ]
+                  },
+                  {
+                    "group": "Map Endpoints",
+                    "pages": [
+                      "api-reference/endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "Parse Endpoints",
+                    "pages": [
+                      "api-reference/endpoint/parse"
+                    ]
+                  },
+                  {
+                    "group": "Crawl Endpoints",
+                    "pages": [
+                      "api-reference/endpoint/crawl-post",
+                      "api-reference/endpoint/crawl-get",
+                      "api-reference/endpoint/crawl-params-preview",
+                      "api-reference/endpoint/crawl-delete",
+                      "api-reference/endpoint/crawl-get-errors",
+                      "api-reference/endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "Agent Endpoints",
+                    "hidden": true,
+                    "pages": [
+                      "api-reference/endpoint/agent",
+                      "api-reference/endpoint/agent-get",
+                      "api-reference/endpoint/agent-delete"
+                    ]
+                  },
+                  {
+                    "group": "Extract Endpoints",
+                    "hidden": true,
+                    "pages": [
+                      "api-reference/endpoint/extract",
+                      "api-reference/endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "Agentic Debugging Endpoints",
+                    "pages": [
+                      "api-reference/endpoint/ask",
+                      "api-reference/endpoint/docs-search"
+                    ]
+                  },
+                  {
+                    "group": "Account Endpoints",
+                    "pages": [
+                      "api-reference/endpoint/activity",
+                      "api-reference/endpoint/credit-usage",
+                      "api-reference/endpoint/credit-usage-historical",
+                      "api-reference/endpoint/token-usage",
+                      "api-reference/endpoint/token-usage-historical",
+                      "api-reference/endpoint/queue-status"
+                    ]
+                  },
+                  {
+                    "group": "Webhook Payloads",
+                    "pages": [
+                      {
+                        "group": "Crawl",
+                        "pages": [
+                          "api-reference/endpoint/webhook-crawl-started",
+                          "api-reference/endpoint/webhook-crawl-page",
+                          "api-reference/endpoint/webhook-crawl-completed"
+                        ]
+                      },
+                      {
+                        "group": "Batch Scrape",
+                        "pages": [
+                          "api-reference/endpoint/webhook-batch-scrape-started",
+                          "api-reference/endpoint/webhook-batch-scrape-page",
+                          "api-reference/endpoint/webhook-batch-scrape-completed"
+                        ]
+                      },
+                      {
+                        "group": "Agent",
+                        "hidden": true,
+                        "pages": [
+                          "api-reference/endpoint/webhook-agent-started",
+                          "api-reference/endpoint/webhook-agent-action",
+                          "api-reference/endpoint/webhook-agent-completed",
+                          "api-reference/endpoint/webhook-agent-failed",
+                          "api-reference/endpoint/webhook-agent-cancelled"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Partner Integration",
+                    "pages": [
+                      "partner-integration"
+                    ]
+                  }
+                ],
+                "tab": "API Reference"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Getting Started",
+                    "pages": [
+                      "ai-onboarding"
+                    ]
+                  },
+                  {
+                    "group": "AI Tools",
+                    "pages": [
+                      "sdks/cli",
+                      "mcp-server",
+                      "quickstarts/openclaw"
+                    ]
+                  },
+                  {
+                    "group": "Agent Harnesses",
+                    "pages": [
+                      "quickstarts/openclaw",
+                      "quickstarts/claude-code",
+                      "quickstarts/cursor",
+                      "quickstarts/opencode",
+                      "quickstarts/codex-cli",
+                      "quickstarts/openrouter",
+                      "quickstarts/amp",
+                      "quickstarts/windsurf",
+                      "quickstarts/antigravity",
+                      "quickstarts/gemini-cli",
+                      "quickstarts/nous-research",
+                      "quickstarts/autogen"
+                    ]
+                  },
+                  {
+                    "group": "LLM SDKs and Frameworks",
+                    "pages": [
+                      "developer-guides/llm-sdks-and-frameworks/openai",
+                      "developer-guides/llm-sdks-and-frameworks/anthropic",
+                      "developer-guides/llm-sdks-and-frameworks/gemini",
+                      "developer-guides/llm-sdks-and-frameworks/google-adk",
+                      "developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                      "developer-guides/llm-sdks-and-frameworks/langchain",
+                      "developer-guides/llm-sdks-and-frameworks/langgraph",
+                      "developer-guides/llm-sdks-and-frameworks/llamaindex",
+                      "developer-guides/llm-sdks-and-frameworks/mastra",
+                      "developer-guides/llm-sdks-and-frameworks/elevenagents"
+                    ]
+                  },
+                  {
+                    "group": "Agent Endpoint",
+                    "pages": [
+                      "agents/fire-1",
+                      "agents/fire-1-extract"
+                    ]
+                  },
+                  {
+                    "group": "Agentic Debugging",
+                    "pages": [
+                      "features/ask"
+                    ]
+                  },
+                  {
+                    "group": "Cookbooks",
+                    "pages": [
+                      "developer-guides/cookbooks/ai-research-assistant-cookbook",
+                      "developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                    ]
+                  }
+                ],
+                "tab": "Build with AI"
+              }
+            ],
+            "version": "v2"
+          },
+          {
+            "hidden": true,
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "Get Started",
+                    "pages": [
+                      "introduction",
+                      "mcp-server",
+                      "migrate-to-v2",
+                      "advanced-scraping-guide",
+                      {
+                        "group": "Plans and Billing",
+                        "pages": [
+                          "billing",
+                          "rate-limits",
+                          "partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "New Features",
+                    "pages": [
+                      {
+                        "group": "Agent",
+                        "hidden": true,
+                        "icon": "magic",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Standard Features",
+                    "pages": [
+                      {
+                        "group": "Scrape",
+                        "icon": "markdown",
+                        "pages": [
+                          "features/scrape",
+                          "features/fast-scraping",
+                          "features/batch-scrape",
+                          "features/llm-extract",
+                          "features/change-tracking",
+                          "features/enhanced-mode",
+                          "features/proxies"
+                        ]
+                      },
+                      "features/crawl",
+                      "features/map",
+                      "features/search"
+                    ]
+                  },
+                  {
+                    "group": "Agentic Features",
+                    "pages": [
+                      "agents/fire-1"
+                    ]
+                  },
+                  {
+                    "group": "Webhooks",
+                    "pages": [
+                      "webhooks/overview",
+                      "webhooks/events",
+                      "webhooks/security",
+                      "webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "Dashboard",
+                    "pages": [
+                      "dashboard"
+                    ]
+                  },
+                  {
+                    "group": "Contributing",
+                    "pages": [
+                      "contributing/open-source-or-cloud",
+                      "contributing/guide",
+                      "contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "Documentation"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Overall",
+                    "pages": [
+                      "sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "Official",
+                    "pages": [
+                      "sdks/python",
+                      "sdks/node",
+                      "sdks/go",
+                      "sdks/java",
+                      "sdks/ruby",
+                      "sdks/rust",
+                      "sdks/dotnet",
+                      "sdks/php",
+                      "sdks/elixir",
+                      "sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "Community",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDKs"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "Integrations"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Using the API",
+                    "pages": [
+                      "v1/api-reference/introduction"
+                    ]
+                  },
+                  {
+                    "group": "Scrape Endpoints",
+                    "pages": [
+                      "api-reference/v1-endpoint/scrape",
+                      "api-reference/v1-endpoint/batch-scrape",
+                      "api-reference/v1-endpoint/batch-scrape-get",
+                      "api-reference/v1-endpoint/batch-scrape-delete",
+                      "api-reference/v1-endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "Crawl Endpoints",
+                    "pages": [
+                      "api-reference/v1-endpoint/crawl-post",
+                      "api-reference/v1-endpoint/crawl-get",
+                      "api-reference/v1-endpoint/crawl-delete",
+                      "api-reference/v1-endpoint/crawl-get-errors",
+                      "api-reference/v1-endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "Map Endpoints",
+                    "pages": [
+                      "api-reference/v1-endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "Search Endpoints",
+                    "pages": [
+                      "api-reference/v1-endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "Extract Endpoints",
+                    "pages": [
+                      "api-reference/v1-endpoint/extract",
+                      "api-reference/v1-endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "Account Endpoints",
+                    "pages": [
+                      "api-reference/v1-endpoint/credit-usage",
+                      "api-reference/v1-endpoint/credit-usage-historical",
+                      "api-reference/v1-endpoint/token-usage",
+                      "api-reference/v1-endpoint/token-usage-historical",
+                      "api-reference/v1-endpoint/queue-status"
+                    ]
+                  }
+                ],
+                "tab": "API Reference"
+              }
+            ],
+            "version": "v1"
+          }
+        ]
+      },
+      {
+        "global": {
+          "anchors": [
+            {
+              "anchor": "Playground",
+              "href": "https://firecrawl.dev/playground",
+              "icon": "play"
+            },
+            {
+              "anchor": "Blog",
+              "href": "https://firecrawl.dev/blog",
+              "icon": "newspaper"
+            },
+            {
+              "anchor": "Comunidad",
+              "href": "https://discord.gg/firecrawl",
+              "icon": "discord"
+            },
+            {
+              "anchor": "Registro de cambios",
+              "href": "https://firecrawl.dev/changelog",
+              "icon": "list"
+            }
+          ]
+        },
+        "language": "es",
+        "versions": [
+          {
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "Primeros pasos",
+                    "pages": [
+                      "es/introduction",
+                      "es/sdks/cli",
+                      "es/ai-onboarding",
+                      "es/mcp-server",
+                      "es/advanced-scraping-guide",
+                      {
+                        "group": "Planes y facturaci\u00f3n",
+                        "pages": [
+                          "es/billing",
+                          "es/rate-limits",
+                          "es/partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Endpoints principales",
+                    "pages": [
+                      "es/features/search",
+                      {
+                        "group": "scraping",
+                        "icon": "markdown",
+                        "pages": [
+                          "es/features/scrape",
+                          "es/features/fast-scraping",
+                          "es/features/batch-scrape",
+                          "es/features/llm-extract",
+                          "es/features/change-tracking",
+                          "es/features/enhanced-mode",
+                          "es/features/lockdown",
+                          "es/features/proxies",
+                          "es/features/document-parsing"
+                        ]
+                      },
+                      "es/features/interact"
+                    ]
+                  },
+                  {
+                    "group": "M\u00e1s",
+                    "pages": [
+                      "es/features/parse",
+                      "es/features/map",
+                      "es/features/crawl",
+                      {
+                        "group": "Agent (Research Preview)",
+                        "hidden": true,
+                        "icon": "robot",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Inicios r\u00e1pidos",
+                    "pages": [
+                      {
+                        "group": "Node.js",
+                        "pages": [
+                          "es/quickstarts/nodejs",
+                          "es/quickstarts/nextjs",
+                          "es/quickstarts/express",
+                          "es/quickstarts/nestjs",
+                          "es/quickstarts/fastify",
+                          "es/quickstarts/hono",
+                          "es/quickstarts/bun",
+                          "es/quickstarts/remix",
+                          "es/quickstarts/nuxt",
+                          "es/quickstarts/sveltekit",
+                          "es/quickstarts/astro",
+                          "es/quickstarts/mastra"
+                        ]
+                      },
+                      {
+                        "group": "Serverless",
+                        "pages": [
+                          "es/quickstarts/cloudflare-workers",
+                          "es/quickstarts/vercel-functions",
+                          "es/quickstarts/aws-lambda",
+                          "es/quickstarts/supabase-edge-functions",
+                          "es/quickstarts/deno-deploy"
+                        ]
+                      },
+                      {
+                        "group": "PHP",
+                        "pages": [
+                          "es/quickstarts/php",
+                          "es/quickstarts/laravel"
+                        ]
+                      },
+                      {
+                        "group": "Ruby",
+                        "pages": [
+                          "es/quickstarts/ruby",
+                          "es/quickstarts/rails"
+                        ]
+                      },
+                      {
+                        "group": "Python",
+                        "pages": [
+                          "es/quickstarts/python",
+                          "es/quickstarts/fastapi",
+                          "es/quickstarts/django",
+                          "es/quickstarts/flask"
+                        ]
+                      },
+                      "es/quickstarts/go",
+                      "es/quickstarts/rust",
+                      "es/quickstarts/elixir",
+                      {
+                        "group": "Java",
+                        "pages": [
+                          "es/quickstarts/java",
+                          "es/quickstarts/spring-boot"
+                        ]
+                      },
+                      {
+                        "group": ".NET",
+                        "pages": [
+                          "es/quickstarts/dotnet",
+                          "es/quickstarts/aspnet-core"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Gu\u00edas para desarrolladores",
+                    "pages": [
+                      "es/developer-guides/examples",
+                      {
+                        "group": "Gu\u00edas de uso",
+                        "icon": "compass",
+                        "pages": [
+                          "es/developer-guides/usage-guides/choosing-the-data-extractor"
+                        ]
+                      },
+                      {
+                        "group": "SDKs y frameworks de LLM",
+                        "icon": "puzzle-piece",
+                        "pages": [
+                          "es/developer-guides/llm-sdks-and-frameworks/openai",
+                          "es/developer-guides/llm-sdks-and-frameworks/anthropic",
+                          "es/developer-guides/llm-sdks-and-frameworks/gemini",
+                          "es/developer-guides/llm-sdks-and-frameworks/google-adk",
+                          "es/developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                          "es/developer-guides/llm-sdks-and-frameworks/langchain",
+                          "es/developer-guides/llm-sdks-and-frameworks/langgraph",
+                          "es/developer-guides/llm-sdks-and-frameworks/llamaindex",
+                          "es/developer-guides/llm-sdks-and-frameworks/mastra",
+                          "es/developer-guides/llm-sdks-and-frameworks/elevenagents"
+                        ]
+                      },
+                      {
+                        "group": "Gu\u00edas pr\u00e1cticas",
+                        "icon": "book",
+                        "pages": [
+                          "es/developer-guides/cookbooks/ai-research-assistant-cookbook",
+                          "es/developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                        ]
+                      },
+                      {
+                        "group": "Gu\u00edas de configuraci\u00f3n de MCP",
+                        "icon": "plug",
+                        "pages": [
+                          "es/developer-guides/mcp-setup-guides/chatgpt",
+                          "es/developer-guides/mcp-setup-guides/claude-ai",
+                          "es/developer-guides/mcp-setup-guides/factory-ai"
+                        ]
+                      },
+                      {
+                        "group": "Sitios habituales",
+                        "icon": "globe",
+                        "pages": [
+                          "es/developer-guides/common-sites/amazon",
+                          "es/developer-guides/common-sites/etsy",
+                          "es/developer-guides/common-sites/github",
+                          "es/developer-guides/common-sites/wikipedia"
+                        ]
+                      },
+                      {
+                        "group": "Automatizaci\u00f3n de flujos de trabajo",
+                        "icon": "bolt",
+                        "pages": [
+                          "es/developer-guides/workflow-automation/n8n",
+                          "es/developer-guides/workflow-automation/zapier",
+                          "es/developer-guides/workflow-automation/make",
+                          "es/developer-guides/workflow-automation/dify"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Webhooks",
+                    "pages": [
+                      "es/webhooks/overview",
+                      "es/webhooks/events",
+                      "es/webhooks/security",
+                      "es/webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "Casos de uso",
+                    "pages": [
+                      "es/use-cases/overview",
+                      "es/use-cases/ai-platforms",
+                      "es/use-cases/lead-enrichment",
+                      "es/use-cases/seo-platforms",
+                      "es/use-cases/deep-research",
+                      {
+                        "group": "Ver m\u00e1s",
+                        "pages": [
+                          "es/use-cases/product-ecommerce",
+                          "es/use-cases/content-generation",
+                          "es/use-cases/developers-mcp",
+                          "es/use-cases/investment-finance",
+                          "es/use-cases/competitive-intelligence",
+                          "es/use-cases/data-migration",
+                          "es/use-cases/observability"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Otro",
+                    "pages": [
+                      "es/dashboard",
+                      "es/features/ask"
+                    ]
+                  },
+                  {
+                    "group": "Contribuir",
+                    "pages": [
+                      "es/contributing/open-source-or-cloud",
+                      "es/contributing/guide",
+                      "es/contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "Documentaci\u00f3n"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "General",
+                    "pages": [
+                      "es/sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "Oficial",
+                    "pages": [
+                      "es/sdks/python",
+                      "es/sdks/node",
+                      "es/sdks/go",
+                      "es/sdks/java",
+                      "es/sdks/ruby",
+                      "es/sdks/rust",
+                      "es/sdks/dotnet",
+                      "es/sdks/php",
+                      "es/sdks/elixir",
+                      "es/sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "Comunidad",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDKs"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "Integraciones"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Uso de la API",
+                    "pages": [
+                      "es/api-reference/v2-introduction",
+                      "es/api-reference/errors"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de b\u00fasqueda",
+                    "pages": [
+                      "es/api-reference/endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de scraping",
+                    "pages": [
+                      "es/api-reference/endpoint/scrape",
+                      "es/api-reference/endpoint/batch-scrape",
+                      "es/api-reference/endpoint/batch-scrape-get",
+                      "es/api-reference/endpoint/batch-scrape-delete",
+                      "es/api-reference/endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de Interact",
+                    "pages": [
+                      "es/api-reference/endpoint/scrape-execute",
+                      "es/api-reference/endpoint/scrape-browser-delete",
+                      "es/api-reference/endpoint/browser-list"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de mapeo",
+                    "pages": [
+                      "es/api-reference/endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de parseo",
+                    "pages": [
+                      "es/api-reference/endpoint/parse"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de rastreo",
+                    "pages": [
+                      "es/api-reference/endpoint/crawl-post",
+                      "es/api-reference/endpoint/crawl-get",
+                      "es/api-reference/endpoint/crawl-params-preview",
+                      "es/api-reference/endpoint/crawl-delete",
+                      "es/api-reference/endpoint/crawl-get-errors",
+                      "es/api-reference/endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints del agente",
+                    "hidden": true,
+                    "pages": [
+                      "es/api-reference/endpoint/agent",
+                      "es/api-reference/endpoint/agent-get",
+                      "es/api-reference/endpoint/agent-delete"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de extracci\u00f3n",
+                    "hidden": true,
+                    "pages": [
+                      "es/api-reference/endpoint/extract",
+                      "es/api-reference/endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de depuraci\u00f3n ag\u00e9ntica",
+                    "pages": [
+                      "es/api-reference/endpoint/ask",
+                      "es/api-reference/endpoint/docs-search"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de cuenta",
+                    "pages": [
+                      "es/api-reference/endpoint/activity",
+                      "es/api-reference/endpoint/credit-usage",
+                      "es/api-reference/endpoint/credit-usage-historical",
+                      "es/api-reference/endpoint/token-usage",
+                      "es/api-reference/endpoint/token-usage-historical",
+                      "es/api-reference/endpoint/queue-status"
+                    ]
+                  },
+                  {
+                    "group": "Cargas \u00fatiles de Webhook",
+                    "pages": [
+                      {
+                        "group": "Rastreo",
+                        "pages": [
+                          "es/api-reference/endpoint/webhook-crawl-started",
+                          "es/api-reference/endpoint/webhook-crawl-page",
+                          "es/api-reference/endpoint/webhook-crawl-completed"
+                        ]
+                      },
+                      {
+                        "group": "Extracci\u00f3n por lotes",
+                        "pages": [
+                          "es/api-reference/endpoint/webhook-batch-scrape-started",
+                          "es/api-reference/endpoint/webhook-batch-scrape-page",
+                          "es/api-reference/endpoint/webhook-batch-scrape-completed"
+                        ]
+                      },
+                      {
+                        "group": "Agent",
+                        "hidden": true,
+                        "pages": [
+                          "es/api-reference/endpoint/webhook-agent-started",
+                          "es/api-reference/endpoint/webhook-agent-action",
+                          "es/api-reference/endpoint/webhook-agent-completed",
+                          "es/api-reference/endpoint/webhook-agent-failed",
+                          "es/api-reference/endpoint/webhook-agent-cancelled"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Integraci\u00f3n para partners",
+                    "pages": [
+                      "es/partner-integration"
+                    ]
+                  }
+                ],
+                "tab": "Referencia de la API"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Primeros pasos",
+                    "pages": [
+                      "es/ai-onboarding"
+                    ]
+                  },
+                  {
+                    "group": "Herramientas de IA",
+                    "pages": [
+                      "es/sdks/cli",
+                      "es/mcp-server",
+                      "es/quickstarts/openclaw"
+                    ]
+                  },
+                  {
+                    "group": "Harnesses para agentes",
+                    "pages": [
+                      "es/quickstarts/openclaw",
+                      "es/quickstarts/claude-code",
+                      "es/quickstarts/cursor",
+                      "es/quickstarts/opencode",
+                      "es/quickstarts/codex-cli",
+                      "es/quickstarts/openrouter",
+                      "es/quickstarts/amp",
+                      "es/quickstarts/windsurf",
+                      "es/quickstarts/antigravity",
+                      "es/quickstarts/gemini-cli",
+                      "es/quickstarts/nous-research",
+                      "es/quickstarts/autogen"
+                    ]
+                  },
+                  {
+                    "group": "SDKs y frameworks de LLM",
+                    "pages": [
+                      "es/developer-guides/llm-sdks-and-frameworks/openai",
+                      "es/developer-guides/llm-sdks-and-frameworks/anthropic",
+                      "es/developer-guides/llm-sdks-and-frameworks/gemini",
+                      "es/developer-guides/llm-sdks-and-frameworks/google-adk",
+                      "es/developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                      "es/developer-guides/llm-sdks-and-frameworks/langchain",
+                      "es/developer-guides/llm-sdks-and-frameworks/langgraph",
+                      "es/developer-guides/llm-sdks-and-frameworks/llamaindex",
+                      "es/developer-guides/llm-sdks-and-frameworks/mastra",
+                      "es/developer-guides/llm-sdks-and-frameworks/elevenagents"
+                    ]
+                  },
+                  {
+                    "group": "Endpoint de agente",
+                    "pages": [
+                      "es/agents/fire-1",
+                      "es/agents/fire-1-extract"
+                    ]
+                  },
+                  {
+                    "group": "Depuraci\u00f3n ag\u00e9ntica",
+                    "pages": [
+                      "es/features/ask"
+                    ]
+                  },
+                  {
+                    "group": "Gu\u00edas pr\u00e1cticas",
+                    "pages": [
+                      "es/developer-guides/cookbooks/ai-research-assistant-cookbook",
+                      "es/developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                    ]
+                  }
+                ],
+                "tab": "Desarrolla con IA"
+              }
+            ],
+            "version": "v2"
+          },
+          {
+            "hidden": true,
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "Primeros pasos",
+                    "pages": [
+                      "es/introduction",
+                      "es/mcp-server",
+                      "es/migrate-to-v2",
+                      "es/advanced-scraping-guide",
+                      {
+                        "group": "Planes y facturaci\u00f3n",
+                        "pages": [
+                          "es/billing",
+                          "es/rate-limits",
+                          "es/partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Novedades",
+                    "pages": [
+                      {
+                        "group": "Agente",
+                        "hidden": true,
+                        "icon": "magic",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Caracter\u00edsticas est\u00e1ndar",
+                    "pages": [
+                      {
+                        "group": "Extracci\u00f3n",
+                        "icon": "markdown",
+                        "pages": [
+                          "es/features/scrape",
+                          "es/features/fast-scraping",
+                          "es/features/batch-scrape",
+                          "es/features/llm-extract",
+                          "es/features/change-tracking",
+                          "es/features/enhanced-mode",
+                          "es/features/proxies"
+                        ]
+                      },
+                      "es/features/crawl",
+                      "es/features/map",
+                      "es/features/search"
+                    ]
+                  },
+                  {
+                    "group": "Funciones del agente",
+                    "pages": [
+                      "es/agents/fire-1"
+                    ]
+                  },
+                  {
+                    "group": "Webhooks",
+                    "pages": [
+                      "es/webhooks/overview",
+                      "es/webhooks/events",
+                      "es/webhooks/security",
+                      "es/webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "Panel de control",
+                    "pages": [
+                      "es/dashboard"
+                    ]
+                  },
+                  {
+                    "group": "Contribuciones",
+                    "pages": [
+                      "es/contributing/open-source-or-cloud",
+                      "es/contributing/guide",
+                      "es/contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "Documentaci\u00f3n"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "General",
+                    "pages": [
+                      "es/sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "Oficial",
+                    "pages": [
+                      "es/sdks/python",
+                      "es/sdks/node",
+                      "es/sdks/go",
+                      "es/sdks/java",
+                      "es/sdks/ruby",
+                      "es/sdks/rust",
+                      "es/sdks/dotnet",
+                      "es/sdks/php",
+                      "es/sdks/elixir",
+                      "es/sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "Comunidad",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDKs"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "Integraciones"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Uso de la API",
+                    "pages": [
+                      "es/v1/api-reference/introduction"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de Scrape",
+                    "pages": [
+                      "es/api-reference/v1-endpoint/scrape",
+                      "es/api-reference/v1-endpoint/batch-scrape",
+                      "es/api-reference/v1-endpoint/batch-scrape-get",
+                      "es/api-reference/v1-endpoint/batch-scrape-delete",
+                      "es/api-reference/v1-endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de Crawl",
+                    "pages": [
+                      "es/api-reference/v1-endpoint/crawl-post",
+                      "es/api-reference/v1-endpoint/crawl-get",
+                      "es/api-reference/v1-endpoint/crawl-delete",
+                      "es/api-reference/v1-endpoint/crawl-get-errors",
+                      "es/api-reference/v1-endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de Map",
+                    "pages": [
+                      "es/api-reference/v1-endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de Search",
+                    "pages": [
+                      "es/api-reference/v1-endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de Extract",
+                    "pages": [
+                      "es/api-reference/v1-endpoint/extract",
+                      "es/api-reference/v1-endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de la cuenta",
+                    "pages": [
+                      "es/api-reference/v1-endpoint/credit-usage",
+                      "es/api-reference/v1-endpoint/credit-usage-historical",
+                      "es/api-reference/v1-endpoint/token-usage",
+                      "es/api-reference/v1-endpoint/token-usage-historical",
+                      "es/api-reference/v1-endpoint/queue-status"
+                    ]
+                  }
+                ],
+                "tab": "Referencia de la API"
+              }
+            ],
+            "version": "v1"
+          }
+        ]
+      },
+      {
+        "global": {
+          "anchors": [
+            {
+              "anchor": "Sandbox",
+              "href": "https://firecrawl.dev/playground",
+              "icon": "play"
+            },
+            {
+              "anchor": "Blog",
+              "href": "https://firecrawl.dev/blog",
+              "icon": "newspaper"
+            },
+            {
+              "anchor": "Communaut\u00e9",
+              "href": "https://discord.gg/firecrawl",
+              "icon": "discord"
+            },
+            {
+              "anchor": "Journal des modifications",
+              "href": "https://firecrawl.dev/changelog",
+              "icon": "list"
+            }
+          ]
+        },
+        "language": "fr",
+        "versions": [
+          {
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "Prise en main",
+                    "pages": [
+                      "fr/introduction",
+                      "fr/sdks/cli",
+                      "fr/ai-onboarding",
+                      "fr/mcp-server",
+                      "fr/advanced-scraping-guide",
+                      {
+                        "group": "Offres et facturation",
+                        "pages": [
+                          "fr/billing",
+                          "fr/rate-limits",
+                          "fr/partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison principaux",
+                    "pages": [
+                      "fr/features/search",
+                      {
+                        "group": "Scrape",
+                        "icon": "markdown",
+                        "pages": [
+                          "fr/features/scrape",
+                          "fr/features/fast-scraping",
+                          "fr/features/batch-scrape",
+                          "fr/features/llm-extract",
+                          "fr/features/change-tracking",
+                          "fr/features/enhanced-mode",
+                          "fr/features/lockdown",
+                          "fr/features/proxies",
+                          "fr/features/document-parsing"
+                        ]
+                      },
+                      "fr/features/interact"
+                    ]
+                  },
+                  {
+                    "group": "Plus",
+                    "pages": [
+                      "fr/features/parse",
+                      "fr/features/map",
+                      "fr/features/crawl",
+                      {
+                        "group": "Agent (Research Preview)",
+                        "hidden": true,
+                        "icon": "robot",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "D\u00e9marrage rapide",
+                    "pages": [
+                      {
+                        "group": "Node.js",
+                        "pages": [
+                          "fr/quickstarts/nodejs",
+                          "fr/quickstarts/nextjs",
+                          "fr/quickstarts/express",
+                          "fr/quickstarts/nestjs",
+                          "fr/quickstarts/fastify",
+                          "fr/quickstarts/hono",
+                          "fr/quickstarts/bun",
+                          "fr/quickstarts/remix",
+                          "fr/quickstarts/nuxt",
+                          "fr/quickstarts/sveltekit",
+                          "fr/quickstarts/astro",
+                          "fr/quickstarts/mastra"
+                        ]
+                      },
+                      {
+                        "group": "Serverless",
+                        "pages": [
+                          "fr/quickstarts/cloudflare-workers",
+                          "fr/quickstarts/vercel-functions",
+                          "fr/quickstarts/aws-lambda",
+                          "fr/quickstarts/supabase-edge-functions",
+                          "fr/quickstarts/deno-deploy"
+                        ]
+                      },
+                      {
+                        "group": "PHP",
+                        "pages": [
+                          "fr/quickstarts/php",
+                          "fr/quickstarts/laravel"
+                        ]
+                      },
+                      {
+                        "group": "Ruby",
+                        "pages": [
+                          "fr/quickstarts/ruby",
+                          "fr/quickstarts/rails"
+                        ]
+                      },
+                      {
+                        "group": "Python",
+                        "pages": [
+                          "fr/quickstarts/python",
+                          "fr/quickstarts/fastapi",
+                          "fr/quickstarts/django",
+                          "fr/quickstarts/flask"
+                        ]
+                      },
+                      "fr/quickstarts/go",
+                      "fr/quickstarts/rust",
+                      "fr/quickstarts/elixir",
+                      {
+                        "group": "Java",
+                        "pages": [
+                          "fr/quickstarts/java",
+                          "fr/quickstarts/spring-boot"
+                        ]
+                      },
+                      {
+                        "group": ".NET",
+                        "pages": [
+                          "fr/quickstarts/dotnet",
+                          "fr/quickstarts/aspnet-core"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Guides d\u00e9veloppeur",
+                    "pages": [
+                      "fr/developer-guides/examples",
+                      {
+                        "group": "Guides d\u2019utilisation",
+                        "icon": "compass",
+                        "pages": [
+                          "fr/developer-guides/usage-guides/choosing-the-data-extractor"
+                        ]
+                      },
+                      {
+                        "group": "SDK et frameworks pour LLM",
+                        "icon": "puzzle-piece",
+                        "pages": [
+                          "fr/developer-guides/llm-sdks-and-frameworks/openai",
+                          "fr/developer-guides/llm-sdks-and-frameworks/anthropic",
+                          "fr/developer-guides/llm-sdks-and-frameworks/gemini",
+                          "fr/developer-guides/llm-sdks-and-frameworks/google-adk",
+                          "fr/developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                          "fr/developer-guides/llm-sdks-and-frameworks/langchain",
+                          "fr/developer-guides/llm-sdks-and-frameworks/langgraph",
+                          "fr/developer-guides/llm-sdks-and-frameworks/llamaindex",
+                          "fr/developer-guides/llm-sdks-and-frameworks/mastra",
+                          "fr/developer-guides/llm-sdks-and-frameworks/elevenagents"
+                        ]
+                      },
+                      {
+                        "group": "Guides pratiques",
+                        "icon": "book",
+                        "pages": [
+                          "fr/developer-guides/cookbooks/ai-research-assistant-cookbook",
+                          "fr/developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                        ]
+                      },
+                      {
+                        "group": "Guides de configuration MCP",
+                        "icon": "plug",
+                        "pages": [
+                          "fr/developer-guides/mcp-setup-guides/chatgpt",
+                          "fr/developer-guides/mcp-setup-guides/claude-ai",
+                          "fr/developer-guides/mcp-setup-guides/factory-ai"
+                        ]
+                      },
+                      {
+                        "group": "Sites courants",
+                        "icon": "globe",
+                        "pages": [
+                          "fr/developer-guides/common-sites/amazon",
+                          "fr/developer-guides/common-sites/etsy",
+                          "fr/developer-guides/common-sites/github",
+                          "fr/developer-guides/common-sites/wikipedia"
+                        ]
+                      },
+                      {
+                        "group": "Automatisation des workflows",
+                        "icon": "bolt",
+                        "pages": [
+                          "fr/developer-guides/workflow-automation/n8n",
+                          "fr/developer-guides/workflow-automation/zapier",
+                          "fr/developer-guides/workflow-automation/make",
+                          "fr/developer-guides/workflow-automation/dify"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Webhooks",
+                    "pages": [
+                      "fr/webhooks/overview",
+                      "fr/webhooks/events",
+                      "fr/webhooks/security",
+                      "fr/webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "Cas d'utilisation",
+                    "pages": [
+                      "fr/use-cases/overview",
+                      "fr/use-cases/ai-platforms",
+                      "fr/use-cases/lead-enrichment",
+                      "fr/use-cases/seo-platforms",
+                      "fr/use-cases/deep-research",
+                      {
+                        "group": "Voir plus",
+                        "pages": [
+                          "fr/use-cases/product-ecommerce",
+                          "fr/use-cases/content-generation",
+                          "fr/use-cases/developers-mcp",
+                          "fr/use-cases/investment-finance",
+                          "fr/use-cases/competitive-intelligence",
+                          "fr/use-cases/data-migration",
+                          "fr/use-cases/observability"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Autres",
+                    "pages": [
+                      "fr/dashboard",
+                      "fr/features/ask"
+                    ]
+                  },
+                  {
+                    "group": "Contribuer",
+                    "pages": [
+                      "fr/contributing/open-source-or-cloud",
+                      "fr/contributing/guide",
+                      "fr/contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "Documentation"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Global",
+                    "pages": [
+                      "fr/sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "Officiel",
+                    "pages": [
+                      "fr/sdks/python",
+                      "fr/sdks/node",
+                      "fr/sdks/go",
+                      "fr/sdks/java",
+                      "fr/sdks/ruby",
+                      "fr/sdks/rust",
+                      "fr/sdks/dotnet",
+                      "fr/sdks/php",
+                      "fr/sdks/elixir",
+                      "fr/sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "Communaut\u00e9",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDKs"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "Int\u00e9grations"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Utilisation de l\u2019API",
+                    "pages": [
+                      "fr/api-reference/v2-introduction",
+                      "fr/api-reference/errors"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison de recherche",
+                    "pages": [
+                      "fr/api-reference/endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison Scrape",
+                    "pages": [
+                      "fr/api-reference/endpoint/scrape",
+                      "fr/api-reference/endpoint/batch-scrape",
+                      "fr/api-reference/endpoint/batch-scrape-get",
+                      "fr/api-reference/endpoint/batch-scrape-delete",
+                      "fr/api-reference/endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison d\u2019Interact",
+                    "pages": [
+                      "fr/api-reference/endpoint/scrape-execute",
+                      "fr/api-reference/endpoint/scrape-browser-delete",
+                      "fr/api-reference/endpoint/browser-list"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison de cartographie",
+                    "pages": [
+                      "fr/api-reference/endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison Parse",
+                    "pages": [
+                      "fr/api-reference/endpoint/parse"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison Crawl",
+                    "pages": [
+                      "fr/api-reference/endpoint/crawl-post",
+                      "fr/api-reference/endpoint/crawl-get",
+                      "fr/api-reference/endpoint/crawl-params-preview",
+                      "fr/api-reference/endpoint/crawl-delete",
+                      "fr/api-reference/endpoint/crawl-get-errors",
+                      "fr/api-reference/endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison Agent",
+                    "hidden": true,
+                    "pages": [
+                      "fr/api-reference/endpoint/agent",
+                      "fr/api-reference/endpoint/agent-get",
+                      "fr/api-reference/endpoint/agent-delete"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison Extract",
+                    "hidden": true,
+                    "pages": [
+                      "fr/api-reference/endpoint/extract",
+                      "fr/api-reference/endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison de d\u00e9bogage des agents",
+                    "pages": [
+                      "fr/api-reference/endpoint/ask",
+                      "fr/api-reference/endpoint/docs-search"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison du compte",
+                    "pages": [
+                      "fr/api-reference/endpoint/activity",
+                      "fr/api-reference/endpoint/credit-usage",
+                      "fr/api-reference/endpoint/credit-usage-historical",
+                      "fr/api-reference/endpoint/token-usage",
+                      "fr/api-reference/endpoint/token-usage-historical",
+                      "fr/api-reference/endpoint/queue-status"
+                    ]
+                  },
+                  {
+                    "group": "Payloads de webhook",
+                    "pages": [
+                      {
+                        "group": "Crawl",
+                        "pages": [
+                          "fr/api-reference/endpoint/webhook-crawl-started",
+                          "fr/api-reference/endpoint/webhook-crawl-page",
+                          "fr/api-reference/endpoint/webhook-crawl-completed"
+                        ]
+                      },
+                      {
+                        "group": "Extraction par lot",
+                        "pages": [
+                          "fr/api-reference/endpoint/webhook-batch-scrape-started",
+                          "fr/api-reference/endpoint/webhook-batch-scrape-page",
+                          "fr/api-reference/endpoint/webhook-batch-scrape-completed"
+                        ]
+                      },
+                      {
+                        "group": "Agent",
+                        "hidden": true,
+                        "pages": [
+                          "fr/api-reference/endpoint/webhook-agent-started",
+                          "fr/api-reference/endpoint/webhook-agent-action",
+                          "fr/api-reference/endpoint/webhook-agent-completed",
+                          "fr/api-reference/endpoint/webhook-agent-failed",
+                          "fr/api-reference/endpoint/webhook-agent-cancelled"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Int\u00e9gration partenaire",
+                    "pages": [
+                      "fr/partner-integration"
+                    ]
+                  }
+                ],
+                "tab": "R\u00e9f\u00e9rence de l\u2019API"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Premiers pas",
+                    "pages": [
+                      "fr/ai-onboarding"
+                    ]
+                  },
+                  {
+                    "group": "Outils d\u2019IA",
+                    "pages": [
+                      "fr/sdks/cli",
+                      "fr/mcp-server",
+                      "fr/quickstarts/openclaw"
+                    ]
+                  },
+                  {
+                    "group": "Harnais d\u2019agent",
+                    "pages": [
+                      "fr/quickstarts/openclaw",
+                      "fr/quickstarts/claude-code",
+                      "fr/quickstarts/cursor",
+                      "fr/quickstarts/opencode",
+                      "fr/quickstarts/codex-cli",
+                      "fr/quickstarts/openrouter",
+                      "fr/quickstarts/amp",
+                      "fr/quickstarts/windsurf",
+                      "fr/quickstarts/antigravity",
+                      "fr/quickstarts/gemini-cli",
+                      "fr/quickstarts/nous-research",
+                      "fr/quickstarts/autogen"
+                    ]
+                  },
+                  {
+                    "group": "SDK et frameworks pour LLM",
+                    "pages": [
+                      "fr/developer-guides/llm-sdks-and-frameworks/openai",
+                      "fr/developer-guides/llm-sdks-and-frameworks/anthropic",
+                      "fr/developer-guides/llm-sdks-and-frameworks/gemini",
+                      "fr/developer-guides/llm-sdks-and-frameworks/google-adk",
+                      "fr/developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                      "fr/developer-guides/llm-sdks-and-frameworks/langchain",
+                      "fr/developer-guides/llm-sdks-and-frameworks/langgraph",
+                      "fr/developer-guides/llm-sdks-and-frameworks/llamaindex",
+                      "fr/developer-guides/llm-sdks-and-frameworks/mastra",
+                      "fr/developer-guides/llm-sdks-and-frameworks/elevenagents"
+                    ]
+                  },
+                  {
+                    "group": "Point de terminaison de l\u2019Agent",
+                    "pages": [
+                      "fr/agents/fire-1",
+                      "fr/agents/fire-1-extract"
+                    ]
+                  },
+                  {
+                    "group": "D\u00e9bogage des agents",
+                    "pages": [
+                      "fr/features/ask"
+                    ]
+                  },
+                  {
+                    "group": "Guides pratiques",
+                    "pages": [
+                      "fr/developer-guides/cookbooks/ai-research-assistant-cookbook",
+                      "fr/developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                    ]
+                  }
+                ],
+                "tab": "Cr\u00e9er avec l\u2019IA"
+              }
+            ],
+            "version": "v2"
+          },
+          {
+            "hidden": true,
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "D\u00e9marrage rapide",
+                    "pages": [
+                      "fr/introduction",
+                      "fr/mcp-server",
+                      "fr/migrate-to-v2",
+                      "fr/advanced-scraping-guide",
+                      {
+                        "group": "Offres et facturation",
+                        "pages": [
+                          "fr/billing",
+                          "fr/rate-limits",
+                          "fr/partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Nouvelles fonctionnalit\u00e9s",
+                    "pages": [
+                      {
+                        "group": "Agent",
+                        "hidden": true,
+                        "icon": "magic",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Fonctionnalit\u00e9s de base",
+                    "pages": [
+                      {
+                        "group": "Extraction",
+                        "icon": "markdown",
+                        "pages": [
+                          "fr/features/scrape",
+                          "fr/features/fast-scraping",
+                          "fr/features/batch-scrape",
+                          "fr/features/llm-extract",
+                          "fr/features/change-tracking",
+                          "fr/features/enhanced-mode",
+                          "fr/features/proxies"
+                        ]
+                      },
+                      "fr/features/crawl",
+                      "fr/features/map",
+                      "fr/features/search"
+                    ]
+                  },
+                  {
+                    "group": "Fonctionnalit\u00e9s d\u2019agent",
+                    "pages": [
+                      "fr/agents/fire-1"
+                    ]
+                  },
+                  {
+                    "group": "Webhooks",
+                    "pages": [
+                      "fr/webhooks/overview",
+                      "fr/webhooks/events",
+                      "fr/webhooks/security",
+                      "fr/webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "Dashboard",
+                    "pages": [
+                      "fr/dashboard"
+                    ]
+                  },
+                  {
+                    "group": "Contribuer",
+                    "pages": [
+                      "fr/contributing/open-source-or-cloud",
+                      "fr/contributing/guide",
+                      "fr/contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "Documentation"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Global",
+                    "pages": [
+                      "fr/sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "Officiel",
+                    "pages": [
+                      "fr/sdks/python",
+                      "fr/sdks/node",
+                      "fr/sdks/go",
+                      "fr/sdks/java",
+                      "fr/sdks/ruby",
+                      "fr/sdks/rust",
+                      "fr/sdks/dotnet",
+                      "fr/sdks/php",
+                      "fr/sdks/elixir",
+                      "fr/sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "Communaut\u00e9",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDKs"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "Int\u00e9grations"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Utiliser l\u2019API",
+                    "pages": [
+                      "fr/v1/api-reference/introduction"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison de scraping",
+                    "pages": [
+                      "fr/api-reference/v1-endpoint/scrape",
+                      "fr/api-reference/v1-endpoint/batch-scrape",
+                      "fr/api-reference/v1-endpoint/batch-scrape-get",
+                      "fr/api-reference/v1-endpoint/batch-scrape-delete",
+                      "fr/api-reference/v1-endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison de crawl",
+                    "pages": [
+                      "fr/api-reference/v1-endpoint/crawl-post",
+                      "fr/api-reference/v1-endpoint/crawl-get",
+                      "fr/api-reference/v1-endpoint/crawl-delete",
+                      "fr/api-reference/v1-endpoint/crawl-get-errors",
+                      "fr/api-reference/v1-endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison de cartographie",
+                    "pages": [
+                      "fr/api-reference/v1-endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison de recherche",
+                    "pages": [
+                      "fr/api-reference/v1-endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison d\u2019extraction",
+                    "pages": [
+                      "fr/api-reference/v1-endpoint/extract",
+                      "fr/api-reference/v1-endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "Points de terminaison du compte",
+                    "pages": [
+                      "fr/api-reference/v1-endpoint/credit-usage",
+                      "fr/api-reference/v1-endpoint/credit-usage-historical",
+                      "fr/api-reference/v1-endpoint/token-usage",
+                      "fr/api-reference/v1-endpoint/token-usage-historical",
+                      "fr/api-reference/v1-endpoint/queue-status"
+                    ]
+                  }
+                ],
+                "tab": "R\u00e9f\u00e9rence de l\u2019API"
+              }
+            ],
+            "version": "v1"
+          }
+        ]
+      },
+      {
+        "global": {
+          "anchors": [
+            {
+              "anchor": "\u30d7\u30ec\u30a4\u30b0\u30e9\u30a6\u30f3\u30c9",
+              "href": "https://firecrawl.dev/playground",
+              "icon": "play"
+            },
+            {
+              "anchor": "\u30d6\u30ed\u30b0",
+              "href": "https://firecrawl.dev/blog",
+              "icon": "newspaper"
+            },
+            {
+              "anchor": "\u30b3\u30df\u30e5\u30cb\u30c6\u30a3",
+              "href": "https://discord.gg/firecrawl",
+              "icon": "discord"
+            },
+            {
+              "anchor": "\u5909\u66f4\u5c65\u6b74",
+              "href": "https://firecrawl.dev/changelog",
+              "icon": "list"
+            }
+          ]
+        },
+        "language": "ja",
+        "versions": [
+          {
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "\u306f\u3058\u3081\u306b",
+                    "pages": [
+                      "ja/introduction",
+                      "ja/sdks/cli",
+                      "ja/ai-onboarding",
+                      "ja/mcp-server",
+                      "ja/advanced-scraping-guide",
+                      {
+                        "group": "\u30d7\u30e9\u30f3\u3068\u8ab2\u91d1",
+                        "pages": [
+                          "ja/billing",
+                          "ja/rate-limits",
+                          "ja/partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u4e3b\u8981\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/features/search",
+                      {
+                        "group": "\u30b9\u30af\u30ec\u30a4\u30d4\u30f3\u30b0",
+                        "icon": "markdown",
+                        "pages": [
+                          "ja/features/scrape",
+                          "ja/features/fast-scraping",
+                          "ja/features/batch-scrape",
+                          "ja/features/llm-extract",
+                          "ja/features/change-tracking",
+                          "ja/features/enhanced-mode",
+                          "ja/features/lockdown",
+                          "ja/features/proxies",
+                          "ja/features/document-parsing"
+                        ]
+                      },
+                      "ja/features/interact"
+                    ]
+                  },
+                  {
+                    "group": "\u305d\u306e\u4ed6",
+                    "pages": [
+                      "ja/features/parse",
+                      "ja/features/map",
+                      "ja/features/crawl",
+                      {
+                        "group": "Agent\uff08Research Preview\uff09",
+                        "hidden": true,
+                        "icon": "robot",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u30af\u30a4\u30c3\u30af\u30b9\u30bf\u30fc\u30c8",
+                    "pages": [
+                      {
+                        "group": "Node.js",
+                        "pages": [
+                          "ja/quickstarts/nodejs",
+                          "ja/quickstarts/nextjs",
+                          "ja/quickstarts/express",
+                          "ja/quickstarts/nestjs",
+                          "ja/quickstarts/fastify",
+                          "ja/quickstarts/hono",
+                          "ja/quickstarts/bun",
+                          "ja/quickstarts/remix",
+                          "ja/quickstarts/nuxt",
+                          "ja/quickstarts/sveltekit",
+                          "ja/quickstarts/astro",
+                          "ja/quickstarts/mastra"
+                        ]
+                      },
+                      {
+                        "group": "\u30b5\u30fc\u30d0\u30fc\u30ec\u30b9",
+                        "pages": [
+                          "ja/quickstarts/cloudflare-workers",
+                          "ja/quickstarts/vercel-functions",
+                          "ja/quickstarts/aws-lambda",
+                          "ja/quickstarts/supabase-edge-functions",
+                          "ja/quickstarts/deno-deploy"
+                        ]
+                      },
+                      {
+                        "group": "PHP",
+                        "pages": [
+                          "ja/quickstarts/php",
+                          "ja/quickstarts/laravel"
+                        ]
+                      },
+                      {
+                        "group": "Ruby",
+                        "pages": [
+                          "ja/quickstarts/ruby",
+                          "ja/quickstarts/rails"
+                        ]
+                      },
+                      {
+                        "group": "Python",
+                        "pages": [
+                          "ja/quickstarts/python",
+                          "ja/quickstarts/fastapi",
+                          "ja/quickstarts/django",
+                          "ja/quickstarts/flask"
+                        ]
+                      },
+                      "ja/quickstarts/go",
+                      "ja/quickstarts/rust",
+                      "ja/quickstarts/elixir",
+                      {
+                        "group": "Java",
+                        "pages": [
+                          "ja/quickstarts/java",
+                          "ja/quickstarts/spring-boot"
+                        ]
+                      },
+                      {
+                        "group": ".NET",
+                        "pages": [
+                          "ja/quickstarts/dotnet",
+                          "ja/quickstarts/aspnet-core"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u958b\u767a\u8005\u30ac\u30a4\u30c9",
+                    "pages": [
+                      "ja/developer-guides/examples",
+                      {
+                        "group": "\u5229\u7528\u30ac\u30a4\u30c9",
+                        "icon": "compass",
+                        "pages": [
+                          "ja/developer-guides/usage-guides/choosing-the-data-extractor"
+                        ]
+                      },
+                      {
+                        "group": "LLM SDK\u3068\u30d5\u30ec\u30fc\u30e0\u30ef\u30fc\u30af",
+                        "icon": "puzzle-piece",
+                        "pages": [
+                          "ja/developer-guides/llm-sdks-and-frameworks/openai",
+                          "ja/developer-guides/llm-sdks-and-frameworks/anthropic",
+                          "ja/developer-guides/llm-sdks-and-frameworks/gemini",
+                          "ja/developer-guides/llm-sdks-and-frameworks/google-adk",
+                          "ja/developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                          "ja/developer-guides/llm-sdks-and-frameworks/langchain",
+                          "ja/developer-guides/llm-sdks-and-frameworks/langgraph",
+                          "ja/developer-guides/llm-sdks-and-frameworks/llamaindex",
+                          "ja/developer-guides/llm-sdks-and-frameworks/mastra",
+                          "ja/developer-guides/llm-sdks-and-frameworks/elevenagents"
+                        ]
+                      },
+                      {
+                        "group": "\u30af\u30c3\u30af\u30d6\u30c3\u30af",
+                        "icon": "book",
+                        "pages": [
+                          "ja/developer-guides/cookbooks/ai-research-assistant-cookbook",
+                          "ja/developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                        ]
+                      },
+                      {
+                        "group": "MCP\u30bb\u30c3\u30c8\u30a2\u30c3\u30d7\u30ac\u30a4\u30c9",
+                        "icon": "plug",
+                        "pages": [
+                          "ja/developer-guides/mcp-setup-guides/chatgpt",
+                          "ja/developer-guides/mcp-setup-guides/claude-ai",
+                          "ja/developer-guides/mcp-setup-guides/factory-ai"
+                        ]
+                      },
+                      {
+                        "group": "\u3088\u304f\u4f7f\u308f\u308c\u308b\u30b5\u30a4\u30c8",
+                        "icon": "globe",
+                        "pages": [
+                          "ja/developer-guides/common-sites/amazon",
+                          "ja/developer-guides/common-sites/etsy",
+                          "ja/developer-guides/common-sites/github",
+                          "ja/developer-guides/common-sites/wikipedia"
+                        ]
+                      },
+                      {
+                        "group": "\u30ef\u30fc\u30af\u30d5\u30ed\u30fc\u81ea\u52d5\u5316",
+                        "icon": "bolt",
+                        "pages": [
+                          "ja/developer-guides/workflow-automation/n8n",
+                          "ja/developer-guides/workflow-automation/zapier",
+                          "ja/developer-guides/workflow-automation/make",
+                          "ja/developer-guides/workflow-automation/dify"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "webhook",
+                    "pages": [
+                      "ja/webhooks/overview",
+                      "ja/webhooks/events",
+                      "ja/webhooks/security",
+                      "ja/webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "\u30e6\u30fc\u30b9\u30b1\u30fc\u30b9",
+                    "pages": [
+                      "ja/use-cases/overview",
+                      "ja/use-cases/ai-platforms",
+                      "ja/use-cases/lead-enrichment",
+                      "ja/use-cases/seo-platforms",
+                      "ja/use-cases/deep-research",
+                      {
+                        "group": "\u3082\u3063\u3068\u898b\u308b",
+                        "pages": [
+                          "ja/use-cases/product-ecommerce",
+                          "ja/use-cases/content-generation",
+                          "ja/use-cases/developers-mcp",
+                          "ja/use-cases/investment-finance",
+                          "ja/use-cases/competitive-intelligence",
+                          "ja/use-cases/data-migration",
+                          "ja/use-cases/observability"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u305d\u306e\u4ed6",
+                    "pages": [
+                      "ja/dashboard",
+                      "ja/features/ask"
+                    ]
+                  },
+                  {
+                    "group": "\u30b3\u30f3\u30c8\u30ea\u30d3\u30e5\u30fc\u30b7\u30e7\u30f3",
+                    "pages": [
+                      "ja/contributing/open-source-or-cloud",
+                      "ja/contributing/guide",
+                      "ja/contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "\u30c9\u30ad\u30e5\u30e1\u30f3\u30c8"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "\u5168\u4f53\u50cf",
+                    "pages": [
+                      "ja/sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "\u516c\u5f0f",
+                    "pages": [
+                      "ja/sdks/python",
+                      "ja/sdks/node",
+                      "ja/sdks/go",
+                      "ja/sdks/java",
+                      "ja/sdks/ruby",
+                      "ja/sdks/rust",
+                      "ja/sdks/dotnet",
+                      "ja/sdks/php",
+                      "ja/sdks/elixir",
+                      "ja/sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "\u30b3\u30df\u30e5\u30cb\u30c6\u30a3",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDK"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "\u30a4\u30f3\u30c6\u30b0\u30ec\u30fc\u30b7\u30e7\u30f3"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "API \u306e\u5229\u7528\u65b9\u6cd5",
+                    "pages": [
+                      "ja/api-reference/v2-introduction",
+                      "ja/api-reference/errors"
+                    ]
+                  },
+                  {
+                    "group": "\u691c\u7d22\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "\u30b9\u30af\u30ec\u30a4\u30d4\u30f3\u30b0\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/endpoint/scrape",
+                      "ja/api-reference/endpoint/batch-scrape",
+                      "ja/api-reference/endpoint/batch-scrape-get",
+                      "ja/api-reference/endpoint/batch-scrape-delete",
+                      "ja/api-reference/endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "Interact \u306e\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/endpoint/scrape-execute",
+                      "ja/api-reference/endpoint/scrape-browser-delete",
+                      "ja/api-reference/endpoint/browser-list"
+                    ]
+                  },
+                  {
+                    "group": "\u30de\u30c3\u30d7\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "\u30d1\u30fc\u30b9\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/endpoint/parse"
+                    ]
+                  },
+                  {
+                    "group": "\u30af\u30ed\u30fc\u30eb\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/endpoint/crawl-post",
+                      "ja/api-reference/endpoint/crawl-get",
+                      "ja/api-reference/endpoint/crawl-params-preview",
+                      "ja/api-reference/endpoint/crawl-delete",
+                      "ja/api-reference/endpoint/crawl-get-errors",
+                      "ja/api-reference/endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "hidden": true,
+                    "pages": [
+                      "ja/api-reference/endpoint/agent",
+                      "ja/api-reference/endpoint/agent-get",
+                      "ja/api-reference/endpoint/agent-delete"
+                    ]
+                  },
+                  {
+                    "group": "\u62bd\u51fa\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "hidden": true,
+                    "pages": [
+                      "ja/api-reference/endpoint/extract",
+                      "ja/api-reference/endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8\u578b\u30c7\u30d0\u30c3\u30b0\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/endpoint/ask",
+                      "ja/api-reference/endpoint/docs-search"
+                    ]
+                  },
+                  {
+                    "group": "\u30a2\u30ab\u30a6\u30f3\u30c8\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/endpoint/activity",
+                      "ja/api-reference/endpoint/credit-usage",
+                      "ja/api-reference/endpoint/credit-usage-historical",
+                      "ja/api-reference/endpoint/token-usage",
+                      "ja/api-reference/endpoint/token-usage-historical",
+                      "ja/api-reference/endpoint/queue-status"
+                    ]
+                  },
+                  {
+                    "group": "webhook\u30da\u30a4\u30ed\u30fc\u30c9",
+                    "pages": [
+                      {
+                        "group": "\u30af\u30ed\u30fc\u30eb",
+                        "pages": [
+                          "ja/api-reference/endpoint/webhook-crawl-started",
+                          "ja/api-reference/endpoint/webhook-crawl-page",
+                          "ja/api-reference/endpoint/webhook-crawl-completed"
+                        ]
+                      },
+                      {
+                        "group": "\u30d0\u30c3\u30c1\u30b9\u30af\u30ec\u30a4\u30d7",
+                        "pages": [
+                          "ja/api-reference/endpoint/webhook-batch-scrape-started",
+                          "ja/api-reference/endpoint/webhook-batch-scrape-page",
+                          "ja/api-reference/endpoint/webhook-batch-scrape-completed"
+                        ]
+                      },
+                      {
+                        "group": "\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8",
+                        "hidden": true,
+                        "pages": [
+                          "ja/api-reference/endpoint/webhook-agent-started",
+                          "ja/api-reference/endpoint/webhook-agent-action",
+                          "ja/api-reference/endpoint/webhook-agent-completed",
+                          "ja/api-reference/endpoint/webhook-agent-failed",
+                          "ja/api-reference/endpoint/webhook-agent-cancelled"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u30d1\u30fc\u30c8\u30ca\u30fc\u9023\u643a",
+                    "pages": [
+                      "ja/partner-integration"
+                    ]
+                  }
+                ],
+                "tab": "API \u30ea\u30d5\u30a1\u30ec\u30f3\u30b9"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "\u306f\u3058\u3081\u306b",
+                    "pages": [
+                      "ja/ai-onboarding"
+                    ]
+                  },
+                  {
+                    "group": "AI\u30c4\u30fc\u30eb",
+                    "pages": [
+                      "ja/sdks/cli",
+                      "ja/mcp-server",
+                      "ja/quickstarts/openclaw"
+                    ]
+                  },
+                  {
+                    "group": "\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8\u30cf\u30fc\u30cd\u30b9",
+                    "pages": [
+                      "ja/quickstarts/openclaw",
+                      "ja/quickstarts/claude-code",
+                      "ja/quickstarts/cursor",
+                      "ja/quickstarts/opencode",
+                      "ja/quickstarts/codex-cli",
+                      "ja/quickstarts/openrouter",
+                      "ja/quickstarts/amp",
+                      "ja/quickstarts/windsurf",
+                      "ja/quickstarts/antigravity",
+                      "ja/quickstarts/gemini-cli",
+                      "ja/quickstarts/nous-research",
+                      "ja/quickstarts/autogen"
+                    ]
+                  },
+                  {
+                    "group": "LLM SDK\u3068\u30d5\u30ec\u30fc\u30e0\u30ef\u30fc\u30af",
+                    "pages": [
+                      "ja/developer-guides/llm-sdks-and-frameworks/openai",
+                      "ja/developer-guides/llm-sdks-and-frameworks/anthropic",
+                      "ja/developer-guides/llm-sdks-and-frameworks/gemini",
+                      "ja/developer-guides/llm-sdks-and-frameworks/google-adk",
+                      "ja/developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                      "ja/developer-guides/llm-sdks-and-frameworks/langchain",
+                      "ja/developer-guides/llm-sdks-and-frameworks/langgraph",
+                      "ja/developer-guides/llm-sdks-and-frameworks/llamaindex",
+                      "ja/developer-guides/llm-sdks-and-frameworks/mastra",
+                      "ja/developer-guides/llm-sdks-and-frameworks/elevenagents"
+                    ]
+                  },
+                  {
+                    "group": "\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/agents/fire-1",
+                      "ja/agents/fire-1-extract"
+                    ]
+                  },
+                  {
+                    "group": "\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8\u578b\u30c7\u30d0\u30c3\u30b0",
+                    "pages": [
+                      "ja/features/ask"
+                    ]
+                  },
+                  {
+                    "group": "\u30af\u30c3\u30af\u30d6\u30c3\u30af",
+                    "pages": [
+                      "ja/developer-guides/cookbooks/ai-research-assistant-cookbook",
+                      "ja/developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                    ]
+                  }
+                ],
+                "tab": "AI\u3067\u69cb\u7bc9\u3059\u308b"
+              }
+            ],
+            "version": "v2"
+          },
+          {
+            "hidden": true,
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "\u306f\u3058\u3081\u306b",
+                    "pages": [
+                      "ja/introduction",
+                      "ja/mcp-server",
+                      "ja/migrate-to-v2",
+                      "ja/advanced-scraping-guide",
+                      {
+                        "group": "\u30d7\u30e9\u30f3\u3068\u8ab2\u91d1",
+                        "pages": [
+                          "ja/billing",
+                          "ja/rate-limits",
+                          "ja/partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u65b0\u6a5f\u80fd",
+                    "pages": [
+                      {
+                        "group": "\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8",
+                        "hidden": true,
+                        "icon": "magic",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u57fa\u672c\u6a5f\u80fd",
+                    "pages": [
+                      {
+                        "group": "\u30b9\u30af\u30ec\u30a4\u30d4\u30f3\u30b0",
+                        "icon": "markdown",
+                        "pages": [
+                          "ja/features/scrape",
+                          "ja/features/fast-scraping",
+                          "ja/features/batch-scrape",
+                          "ja/features/llm-extract",
+                          "ja/features/change-tracking",
+                          "ja/features/enhanced-mode",
+                          "ja/features/proxies"
+                        ]
+                      },
+                      "ja/features/crawl",
+                      "ja/features/map",
+                      "ja/features/search"
+                    ]
+                  },
+                  {
+                    "group": "\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8\u6a5f\u80fd",
+                    "pages": [
+                      "ja/agents/fire-1"
+                    ]
+                  },
+                  {
+                    "group": "\u30a6\u30a7\u30d6\u30d5\u30c3\u30af",
+                    "pages": [
+                      "ja/webhooks/overview",
+                      "ja/webhooks/events",
+                      "ja/webhooks/security",
+                      "ja/webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "\u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9",
+                    "pages": [
+                      "ja/dashboard"
+                    ]
+                  },
+                  {
+                    "group": "\u8ca2\u732e",
+                    "pages": [
+                      "ja/contributing/open-source-or-cloud",
+                      "ja/contributing/guide",
+                      "ja/contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "\u30c9\u30ad\u30e5\u30e1\u30f3\u30c8"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "\u6982\u8981",
+                    "pages": [
+                      "ja/sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "\u516c\u5f0f",
+                    "pages": [
+                      "ja/sdks/python",
+                      "ja/sdks/node",
+                      "ja/sdks/go",
+                      "ja/sdks/java",
+                      "ja/sdks/ruby",
+                      "ja/sdks/rust",
+                      "ja/sdks/dotnet",
+                      "ja/sdks/php",
+                      "ja/sdks/elixir",
+                      "ja/sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "\u30b3\u30df\u30e5\u30cb\u30c6\u30a3",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDK"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "\u30a4\u30f3\u30c6\u30b0\u30ec\u30fc\u30b7\u30e7\u30f3"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "API \u306e\u4f7f\u3044\u65b9",
+                    "pages": [
+                      "ja/v1/api-reference/introduction"
+                    ]
+                  },
+                  {
+                    "group": "\u30b9\u30af\u30ec\u30a4\u30d4\u30f3\u30b0 \u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/v1-endpoint/scrape",
+                      "ja/api-reference/v1-endpoint/batch-scrape",
+                      "ja/api-reference/v1-endpoint/batch-scrape-get",
+                      "ja/api-reference/v1-endpoint/batch-scrape-delete",
+                      "ja/api-reference/v1-endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "\u30af\u30ed\u30fc\u30ea\u30f3\u30b0 \u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/v1-endpoint/crawl-post",
+                      "ja/api-reference/v1-endpoint/crawl-get",
+                      "ja/api-reference/v1-endpoint/crawl-delete",
+                      "ja/api-reference/v1-endpoint/crawl-get-errors",
+                      "ja/api-reference/v1-endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "\u30de\u30c3\u30d4\u30f3\u30b0 \u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/v1-endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "\u691c\u7d22\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/v1-endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "\u62bd\u51fa\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/v1-endpoint/extract",
+                      "ja/api-reference/v1-endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "\u30a2\u30ab\u30a6\u30f3\u30c8 \u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8",
+                    "pages": [
+                      "ja/api-reference/v1-endpoint/credit-usage",
+                      "ja/api-reference/v1-endpoint/credit-usage-historical",
+                      "ja/api-reference/v1-endpoint/token-usage",
+                      "ja/api-reference/v1-endpoint/token-usage-historical",
+                      "ja/api-reference/v1-endpoint/queue-status"
+                    ]
+                  }
+                ],
+                "tab": "API\u30ea\u30d5\u30a1\u30ec\u30f3\u30b9"
+              }
+            ],
+            "version": "v1"
+          }
+        ]
+      },
+      {
+        "global": {
+          "anchors": [
+            {
+              "anchor": "Playground",
+              "href": "https://firecrawl.dev/playground",
+              "icon": "play"
+            },
+            {
+              "anchor": "Blog",
+              "href": "https://firecrawl.dev/blog",
+              "icon": "newspaper"
+            },
+            {
+              "anchor": "Comunidade",
+              "href": "https://discord.gg/firecrawl",
+              "icon": "discord"
+            },
+            {
+              "anchor": "Registro de altera\u00e7\u00f5es",
+              "href": "https://firecrawl.dev/changelog",
+              "icon": "list"
+            }
+          ]
+        },
+        "language": "pt-BR",
+        "versions": [
+          {
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "Primeiros passos",
+                    "pages": [
+                      "pt-BR/introduction",
+                      "pt-BR/sdks/cli",
+                      "pt-BR/ai-onboarding",
+                      "pt-BR/mcp-server",
+                      "pt-BR/advanced-scraping-guide",
+                      {
+                        "group": "Planos e cobran\u00e7a",
+                        "pages": [
+                          "pt-BR/billing",
+                          "pt-BR/rate-limits",
+                          "pt-BR/partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Endpoints principais",
+                    "pages": [
+                      "pt-BR/features/search",
+                      {
+                        "group": "Scraping",
+                        "icon": "markdown",
+                        "pages": [
+                          "pt-BR/features/scrape",
+                          "pt-BR/features/fast-scraping",
+                          "pt-BR/features/batch-scrape",
+                          "pt-BR/features/llm-extract",
+                          "pt-BR/features/change-tracking",
+                          "pt-BR/features/enhanced-mode",
+                          "pt-BR/features/lockdown",
+                          "pt-BR/features/proxies",
+                          "pt-BR/features/document-parsing"
+                        ]
+                      },
+                      "pt-BR/features/interact"
+                    ]
+                  },
+                  {
+                    "group": "Mais",
+                    "pages": [
+                      "pt-BR/features/parse",
+                      "pt-BR/features/map",
+                      "pt-BR/features/crawl",
+                      {
+                        "group": "Agente (Research Preview)",
+                        "hidden": true,
+                        "icon": "robot",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Guias de in\u00edcio r\u00e1pido",
+                    "pages": [
+                      {
+                        "group": "Node.js",
+                        "pages": [
+                          "pt-BR/quickstarts/nodejs",
+                          "pt-BR/quickstarts/nextjs",
+                          "pt-BR/quickstarts/express",
+                          "pt-BR/quickstarts/nestjs",
+                          "pt-BR/quickstarts/fastify",
+                          "pt-BR/quickstarts/hono",
+                          "pt-BR/quickstarts/bun",
+                          "pt-BR/quickstarts/remix",
+                          "pt-BR/quickstarts/nuxt",
+                          "pt-BR/quickstarts/sveltekit",
+                          "pt-BR/quickstarts/astro",
+                          "pt-BR/quickstarts/mastra"
+                        ]
+                      },
+                      {
+                        "group": "Serverless",
+                        "pages": [
+                          "pt-BR/quickstarts/cloudflare-workers",
+                          "pt-BR/quickstarts/vercel-functions",
+                          "pt-BR/quickstarts/aws-lambda",
+                          "pt-BR/quickstarts/supabase-edge-functions",
+                          "pt-BR/quickstarts/deno-deploy"
+                        ]
+                      },
+                      {
+                        "group": "PHP",
+                        "pages": [
+                          "pt-BR/quickstarts/php",
+                          "pt-BR/quickstarts/laravel"
+                        ]
+                      },
+                      {
+                        "group": "Ruby",
+                        "pages": [
+                          "pt-BR/quickstarts/ruby",
+                          "pt-BR/quickstarts/rails"
+                        ]
+                      },
+                      {
+                        "group": "Python",
+                        "pages": [
+                          "pt-BR/quickstarts/python",
+                          "pt-BR/quickstarts/fastapi",
+                          "pt-BR/quickstarts/django",
+                          "pt-BR/quickstarts/flask"
+                        ]
+                      },
+                      "pt-BR/quickstarts/go",
+                      "pt-BR/quickstarts/rust",
+                      "pt-BR/quickstarts/elixir",
+                      {
+                        "group": "Java",
+                        "pages": [
+                          "pt-BR/quickstarts/java",
+                          "pt-BR/quickstarts/spring-boot"
+                        ]
+                      },
+                      {
+                        "group": ".NET",
+                        "pages": [
+                          "pt-BR/quickstarts/dotnet",
+                          "pt-BR/quickstarts/aspnet-core"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Guias para desenvolvedores",
+                    "pages": [
+                      "pt-BR/developer-guides/examples",
+                      {
+                        "group": "Guias de uso",
+                        "icon": "compass",
+                        "pages": [
+                          "pt-BR/developer-guides/usage-guides/choosing-the-data-extractor"
+                        ]
+                      },
+                      {
+                        "group": "SDKs e frameworks de LLM",
+                        "icon": "puzzle-piece",
+                        "pages": [
+                          "pt-BR/developer-guides/llm-sdks-and-frameworks/openai",
+                          "pt-BR/developer-guides/llm-sdks-and-frameworks/anthropic",
+                          "pt-BR/developer-guides/llm-sdks-and-frameworks/gemini",
+                          "pt-BR/developer-guides/llm-sdks-and-frameworks/google-adk",
+                          "pt-BR/developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                          "pt-BR/developer-guides/llm-sdks-and-frameworks/langchain",
+                          "pt-BR/developer-guides/llm-sdks-and-frameworks/langgraph",
+                          "pt-BR/developer-guides/llm-sdks-and-frameworks/llamaindex",
+                          "pt-BR/developer-guides/llm-sdks-and-frameworks/mastra",
+                          "pt-BR/developer-guides/llm-sdks-and-frameworks/elevenagents"
+                        ]
+                      },
+                      {
+                        "group": "Guias pr\u00e1ticos",
+                        "icon": "book",
+                        "pages": [
+                          "pt-BR/developer-guides/cookbooks/ai-research-assistant-cookbook",
+                          "pt-BR/developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                        ]
+                      },
+                      {
+                        "group": "Guias de configura\u00e7\u00e3o do MCP",
+                        "icon": "plug",
+                        "pages": [
+                          "pt-BR/developer-guides/mcp-setup-guides/chatgpt",
+                          "pt-BR/developer-guides/mcp-setup-guides/claude-ai",
+                          "pt-BR/developer-guides/mcp-setup-guides/factory-ai"
+                        ]
+                      },
+                      {
+                        "group": "Sites mais comuns",
+                        "icon": "globe",
+                        "pages": [
+                          "pt-BR/developer-guides/common-sites/amazon",
+                          "pt-BR/developer-guides/common-sites/etsy",
+                          "pt-BR/developer-guides/common-sites/github",
+                          "pt-BR/developer-guides/common-sites/wikipedia"
+                        ]
+                      },
+                      {
+                        "group": "Automa\u00e7\u00e3o de fluxos de trabalho",
+                        "icon": "bolt",
+                        "pages": [
+                          "pt-BR/developer-guides/workflow-automation/n8n",
+                          "pt-BR/developer-guides/workflow-automation/zapier",
+                          "pt-BR/developer-guides/workflow-automation/make",
+                          "pt-BR/developer-guides/workflow-automation/dify"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Webhooks",
+                    "pages": [
+                      "pt-BR/webhooks/overview",
+                      "pt-BR/webhooks/events",
+                      "pt-BR/webhooks/security",
+                      "pt-BR/webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "Casos de uso",
+                    "pages": [
+                      "pt-BR/use-cases/overview",
+                      "pt-BR/use-cases/ai-platforms",
+                      "pt-BR/use-cases/lead-enrichment",
+                      "pt-BR/use-cases/seo-platforms",
+                      "pt-BR/use-cases/deep-research",
+                      {
+                        "group": "Ver mais",
+                        "pages": [
+                          "pt-BR/use-cases/product-ecommerce",
+                          "pt-BR/use-cases/content-generation",
+                          "pt-BR/use-cases/developers-mcp",
+                          "pt-BR/use-cases/investment-finance",
+                          "pt-BR/use-cases/competitive-intelligence",
+                          "pt-BR/use-cases/data-migration",
+                          "pt-BR/use-cases/observability"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Outros",
+                    "pages": [
+                      "pt-BR/dashboard",
+                      "pt-BR/features/ask"
+                    ]
+                  },
+                  {
+                    "group": "Como contribuir",
+                    "pages": [
+                      "pt-BR/contributing/open-source-or-cloud",
+                      "pt-BR/contributing/guide",
+                      "pt-BR/contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "Documenta\u00e7\u00e3o"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Geral",
+                    "pages": [
+                      "pt-BR/sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "Oficial",
+                    "pages": [
+                      "pt-BR/sdks/python",
+                      "pt-BR/sdks/node",
+                      "pt-BR/sdks/go",
+                      "pt-BR/sdks/java",
+                      "pt-BR/sdks/ruby",
+                      "pt-BR/sdks/rust",
+                      "pt-BR/sdks/dotnet",
+                      "pt-BR/sdks/php",
+                      "pt-BR/sdks/elixir",
+                      "pt-BR/sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "Comunidade",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDKs"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "Integra\u00e7\u00f5es"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Usando a API",
+                    "pages": [
+                      "pt-BR/api-reference/v2-introduction",
+                      "pt-BR/api-reference/errors"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de busca",
+                    "pages": [
+                      "pt-BR/api-reference/endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints /scrape",
+                    "pages": [
+                      "pt-BR/api-reference/endpoint/scrape",
+                      "pt-BR/api-reference/endpoint/batch-scrape",
+                      "pt-BR/api-reference/endpoint/batch-scrape-get",
+                      "pt-BR/api-reference/endpoint/batch-scrape-delete",
+                      "pt-BR/api-reference/endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de intera\u00e7\u00e3o",
+                    "pages": [
+                      "pt-BR/api-reference/endpoint/scrape-execute",
+                      "pt-BR/api-reference/endpoint/scrape-browser-delete",
+                      "pt-BR/api-reference/endpoint/browser-list"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de map",
+                    "pages": [
+                      "pt-BR/api-reference/endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de Parse",
+                    "pages": [
+                      "pt-BR/api-reference/endpoint/parse"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de Rastreamento",
+                    "pages": [
+                      "pt-BR/api-reference/endpoint/crawl-post",
+                      "pt-BR/api-reference/endpoint/crawl-get",
+                      "pt-BR/api-reference/endpoint/crawl-params-preview",
+                      "pt-BR/api-reference/endpoint/crawl-delete",
+                      "pt-BR/api-reference/endpoint/crawl-get-errors",
+                      "pt-BR/api-reference/endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de Agente",
+                    "hidden": true,
+                    "pages": [
+                      "pt-BR/api-reference/endpoint/agent",
+                      "pt-BR/api-reference/endpoint/agent-get",
+                      "pt-BR/api-reference/endpoint/agent-delete"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de Extra\u00e7\u00e3o",
+                    "hidden": true,
+                    "pages": [
+                      "pt-BR/api-reference/endpoint/extract",
+                      "pt-BR/api-reference/endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de depura\u00e7\u00e3o de agentes",
+                    "pages": [
+                      "pt-BR/api-reference/endpoint/ask",
+                      "pt-BR/api-reference/endpoint/docs-search"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints da conta",
+                    "pages": [
+                      "pt-BR/api-reference/endpoint/activity",
+                      "pt-BR/api-reference/endpoint/credit-usage",
+                      "pt-BR/api-reference/endpoint/credit-usage-historical",
+                      "pt-BR/api-reference/endpoint/token-usage",
+                      "pt-BR/api-reference/endpoint/token-usage-historical",
+                      "pt-BR/api-reference/endpoint/queue-status"
+                    ]
+                  },
+                  {
+                    "group": "Payloads de webhook",
+                    "pages": [
+                      {
+                        "group": "Rastreamento",
+                        "pages": [
+                          "pt-BR/api-reference/endpoint/webhook-crawl-started",
+                          "pt-BR/api-reference/endpoint/webhook-crawl-page",
+                          "pt-BR/api-reference/endpoint/webhook-crawl-completed"
+                        ]
+                      },
+                      {
+                        "group": "Extra\u00e7\u00e3o em lote",
+                        "pages": [
+                          "pt-BR/api-reference/endpoint/webhook-batch-scrape-started",
+                          "pt-BR/api-reference/endpoint/webhook-batch-scrape-page",
+                          "pt-BR/api-reference/endpoint/webhook-batch-scrape-completed"
+                        ]
+                      },
+                      {
+                        "group": "Agente",
+                        "hidden": true,
+                        "pages": [
+                          "pt-BR/api-reference/endpoint/webhook-agent-started",
+                          "pt-BR/api-reference/endpoint/webhook-agent-action",
+                          "pt-BR/api-reference/endpoint/webhook-agent-completed",
+                          "pt-BR/api-reference/endpoint/webhook-agent-failed",
+                          "pt-BR/api-reference/endpoint/webhook-agent-cancelled"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Integra\u00e7\u00e3o de parceiro",
+                    "pages": [
+                      "pt-BR/partner-integration"
+                    ]
+                  }
+                ],
+                "tab": "Refer\u00eancia da API"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Primeiros passos",
+                    "pages": [
+                      "pt-BR/ai-onboarding"
+                    ]
+                  },
+                  {
+                    "group": "Ferramentas de IA",
+                    "pages": [
+                      "pt-BR/sdks/cli",
+                      "pt-BR/mcp-server",
+                      "pt-BR/quickstarts/openclaw"
+                    ]
+                  },
+                  {
+                    "group": "Harnesses para agentes",
+                    "pages": [
+                      "pt-BR/quickstarts/openclaw",
+                      "pt-BR/quickstarts/claude-code",
+                      "pt-BR/quickstarts/cursor",
+                      "pt-BR/quickstarts/opencode",
+                      "pt-BR/quickstarts/codex-cli",
+                      "pt-BR/quickstarts/openrouter",
+                      "pt-BR/quickstarts/amp",
+                      "pt-BR/quickstarts/windsurf",
+                      "pt-BR/quickstarts/antigravity",
+                      "pt-BR/quickstarts/gemini-cli",
+                      "pt-BR/quickstarts/nous-research",
+                      "pt-BR/quickstarts/autogen"
+                    ]
+                  },
+                  {
+                    "group": "SDKs e frameworks de LLM",
+                    "pages": [
+                      "pt-BR/developer-guides/llm-sdks-and-frameworks/openai",
+                      "pt-BR/developer-guides/llm-sdks-and-frameworks/anthropic",
+                      "pt-BR/developer-guides/llm-sdks-and-frameworks/gemini",
+                      "pt-BR/developer-guides/llm-sdks-and-frameworks/google-adk",
+                      "pt-BR/developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                      "pt-BR/developer-guides/llm-sdks-and-frameworks/langchain",
+                      "pt-BR/developer-guides/llm-sdks-and-frameworks/langgraph",
+                      "pt-BR/developer-guides/llm-sdks-and-frameworks/llamaindex",
+                      "pt-BR/developer-guides/llm-sdks-and-frameworks/mastra",
+                      "pt-BR/developer-guides/llm-sdks-and-frameworks/elevenagents"
+                    ]
+                  },
+                  {
+                    "group": "Endpoint de agente",
+                    "pages": [
+                      "pt-BR/agents/fire-1",
+                      "pt-BR/agents/fire-1-extract"
+                    ]
+                  },
+                  {
+                    "group": "Depura\u00e7\u00e3o de agentes",
+                    "pages": [
+                      "pt-BR/features/ask"
+                    ]
+                  },
+                  {
+                    "group": "Guias pr\u00e1ticos",
+                    "pages": [
+                      "pt-BR/developer-guides/cookbooks/ai-research-assistant-cookbook",
+                      "pt-BR/developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                    ]
+                  }
+                ],
+                "tab": "Crie com IA"
+              }
+            ],
+            "version": "v2"
+          },
+          {
+            "hidden": true,
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "Primeiros passos",
+                    "pages": [
+                      "pt-BR/introduction",
+                      "pt-BR/mcp-server",
+                      "pt-BR/migrate-to-v2",
+                      "pt-BR/advanced-scraping-guide",
+                      {
+                        "group": "Planos e cobran\u00e7a",
+                        "pages": [
+                          "pt-BR/billing",
+                          "pt-BR/rate-limits",
+                          "pt-BR/partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Novidades",
+                    "pages": [
+                      {
+                        "group": "Agente",
+                        "hidden": true,
+                        "icon": "magic",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Recursos padr\u00e3o",
+                    "pages": [
+                      {
+                        "group": "Raspagem",
+                        "icon": "markdown",
+                        "pages": [
+                          "pt-BR/features/scrape",
+                          "pt-BR/features/fast-scraping",
+                          "pt-BR/features/batch-scrape",
+                          "pt-BR/features/llm-extract",
+                          "pt-BR/features/change-tracking",
+                          "pt-BR/features/enhanced-mode",
+                          "pt-BR/features/proxies"
+                        ]
+                      },
+                      "pt-BR/features/crawl",
+                      "pt-BR/features/map",
+                      "pt-BR/features/search"
+                    ]
+                  },
+                  {
+                    "group": "Recursos de agente",
+                    "pages": [
+                      "pt-BR/agents/fire-1"
+                    ]
+                  },
+                  {
+                    "group": "Webhooks",
+                    "pages": [
+                      "pt-BR/webhooks/overview",
+                      "pt-BR/webhooks/events",
+                      "pt-BR/webhooks/security",
+                      "pt-BR/webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "Painel",
+                    "pages": [
+                      "pt-BR/dashboard"
+                    ]
+                  },
+                  {
+                    "group": "Contribuindo",
+                    "pages": [
+                      "pt-BR/contributing/open-source-or-cloud",
+                      "pt-BR/contributing/guide",
+                      "pt-BR/contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "Documenta\u00e7\u00e3o"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Geral",
+                    "pages": [
+                      "pt-BR/sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "Oficial",
+                    "pages": [
+                      "pt-BR/sdks/python",
+                      "pt-BR/sdks/node",
+                      "pt-BR/sdks/go",
+                      "pt-BR/sdks/java",
+                      "pt-BR/sdks/ruby",
+                      "pt-BR/sdks/rust",
+                      "pt-BR/sdks/dotnet",
+                      "pt-BR/sdks/php",
+                      "pt-BR/sdks/elixir",
+                      "pt-BR/sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "Comunidade",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDKs"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "Integra\u00e7\u00f5es"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "Usando a API",
+                    "pages": [
+                      "pt-BR/v1/api-reference/introduction"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de scraping",
+                    "pages": [
+                      "pt-BR/api-reference/v1-endpoint/scrape",
+                      "pt-BR/api-reference/v1-endpoint/batch-scrape",
+                      "pt-BR/api-reference/v1-endpoint/batch-scrape-get",
+                      "pt-BR/api-reference/v1-endpoint/batch-scrape-delete",
+                      "pt-BR/api-reference/v1-endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de rastreamento",
+                    "pages": [
+                      "pt-BR/api-reference/v1-endpoint/crawl-post",
+                      "pt-BR/api-reference/v1-endpoint/crawl-get",
+                      "pt-BR/api-reference/v1-endpoint/crawl-delete",
+                      "pt-BR/api-reference/v1-endpoint/crawl-get-errors",
+                      "pt-BR/api-reference/v1-endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de mapeamento",
+                    "pages": [
+                      "pt-BR/api-reference/v1-endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de busca",
+                    "pages": [
+                      "pt-BR/api-reference/v1-endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de extra\u00e7\u00e3o",
+                    "pages": [
+                      "pt-BR/api-reference/v1-endpoint/extract",
+                      "pt-BR/api-reference/v1-endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "Endpoints de conta",
+                    "pages": [
+                      "pt-BR/api-reference/v1-endpoint/credit-usage",
+                      "pt-BR/api-reference/v1-endpoint/credit-usage-historical",
+                      "pt-BR/api-reference/v1-endpoint/token-usage",
+                      "pt-BR/api-reference/v1-endpoint/token-usage-historical",
+                      "pt-BR/api-reference/v1-endpoint/queue-status"
+                    ]
+                  }
+                ],
+                "tab": "Refer\u00eancia da API"
+              }
+            ],
+            "version": "v1"
+          }
+        ]
+      },
+      {
+        "global": {
+          "anchors": [
+            {
+              "anchor": "\u6c99\u76d2",
+              "href": "https://firecrawl.dev/playground",
+              "icon": "play"
+            },
+            {
+              "anchor": "\u535a\u5ba2",
+              "href": "https://firecrawl.dev/blog",
+              "icon": "newspaper"
+            },
+            {
+              "anchor": "\u793e\u533a",
+              "href": "https://discord.gg/firecrawl",
+              "icon": "discord"
+            },
+            {
+              "anchor": "\u66f4\u65b0\u65e5\u5fd7",
+              "href": "https://firecrawl.dev/changelog",
+              "icon": "list"
+            }
+          ]
+        },
+        "language": "zh",
+        "versions": [
+          {
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "\u5feb\u901f\u4e0a\u624b",
+                    "pages": [
+                      "zh/introduction",
+                      "zh/sdks/cli",
+                      "zh/ai-onboarding",
+                      "zh/mcp-server",
+                      "zh/advanced-scraping-guide",
+                      {
+                        "group": "\u5957\u9910\u4e0e\u8ba1\u8d39",
+                        "pages": [
+                          "zh/billing",
+                          "zh/rate-limits",
+                          "zh/partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u6838\u5fc3\u7aef\u70b9",
+                    "pages": [
+                      "zh/features/search",
+                      {
+                        "group": "\u6293\u53d6",
+                        "icon": "markdown",
+                        "pages": [
+                          "zh/features/scrape",
+                          "zh/features/fast-scraping",
+                          "zh/features/batch-scrape",
+                          "zh/features/llm-extract",
+                          "zh/features/change-tracking",
+                          "zh/features/enhanced-mode",
+                          "zh/features/lockdown",
+                          "zh/features/proxies",
+                          "zh/features/document-parsing"
+                        ]
+                      },
+                      "zh/features/interact"
+                    ]
+                  },
+                  {
+                    "group": "\u66f4\u591a",
+                    "pages": [
+                      "zh/features/parse",
+                      "zh/features/map",
+                      "zh/features/crawl",
+                      {
+                        "group": "\u4ee3\u7406\uff08\u7814\u7a76\u9884\u89c8\u7248\uff09",
+                        "hidden": true,
+                        "icon": "robot",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u5feb\u901f\u5165\u95e8",
+                    "pages": [
+                      {
+                        "group": "Node.js",
+                        "pages": [
+                          "zh/quickstarts/nodejs",
+                          "zh/quickstarts/nextjs",
+                          "zh/quickstarts/express",
+                          "zh/quickstarts/nestjs",
+                          "zh/quickstarts/fastify",
+                          "zh/quickstarts/hono",
+                          "zh/quickstarts/bun",
+                          "zh/quickstarts/remix",
+                          "zh/quickstarts/nuxt",
+                          "zh/quickstarts/sveltekit",
+                          "zh/quickstarts/astro",
+                          "zh/quickstarts/mastra"
+                        ]
+                      },
+                      {
+                        "group": "\u65e0\u670d\u52a1\u5668",
+                        "pages": [
+                          "zh/quickstarts/cloudflare-workers",
+                          "zh/quickstarts/vercel-functions",
+                          "zh/quickstarts/aws-lambda",
+                          "zh/quickstarts/supabase-edge-functions",
+                          "zh/quickstarts/deno-deploy"
+                        ]
+                      },
+                      {
+                        "group": "PHP",
+                        "pages": [
+                          "zh/quickstarts/php",
+                          "zh/quickstarts/laravel"
+                        ]
+                      },
+                      {
+                        "group": "Ruby",
+                        "pages": [
+                          "zh/quickstarts/ruby",
+                          "zh/quickstarts/rails"
+                        ]
+                      },
+                      {
+                        "group": "Python",
+                        "pages": [
+                          "zh/quickstarts/python",
+                          "zh/quickstarts/fastapi",
+                          "zh/quickstarts/django",
+                          "zh/quickstarts/flask"
+                        ]
+                      },
+                      "zh/quickstarts/go",
+                      "zh/quickstarts/rust",
+                      "zh/quickstarts/elixir",
+                      {
+                        "group": "Java",
+                        "pages": [
+                          "zh/quickstarts/java",
+                          "zh/quickstarts/spring-boot"
+                        ]
+                      },
+                      {
+                        "group": ".NET",
+                        "pages": [
+                          "zh/quickstarts/dotnet",
+                          "zh/quickstarts/aspnet-core"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u5f00\u53d1\u8005\u6307\u5357",
+                    "pages": [
+                      "zh/developer-guides/examples",
+                      {
+                        "group": "\u4f7f\u7528\u65b9\u5f0f\u6307\u5357",
+                        "icon": "compass",
+                        "pages": [
+                          "zh/developer-guides/usage-guides/choosing-the-data-extractor"
+                        ]
+                      },
+                      {
+                        "group": "LLM SDK \u4e0e\u6846\u67b6",
+                        "icon": "puzzle-piece",
+                        "pages": [
+                          "zh/developer-guides/llm-sdks-and-frameworks/openai",
+                          "zh/developer-guides/llm-sdks-and-frameworks/anthropic",
+                          "zh/developer-guides/llm-sdks-and-frameworks/gemini",
+                          "zh/developer-guides/llm-sdks-and-frameworks/google-adk",
+                          "zh/developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                          "zh/developer-guides/llm-sdks-and-frameworks/langchain",
+                          "zh/developer-guides/llm-sdks-and-frameworks/langgraph",
+                          "zh/developer-guides/llm-sdks-and-frameworks/llamaindex",
+                          "zh/developer-guides/llm-sdks-and-frameworks/mastra",
+                          "zh/developer-guides/llm-sdks-and-frameworks/elevenagents"
+                        ]
+                      },
+                      {
+                        "group": "\u5b9e\u6218\u624b\u518c",
+                        "icon": "book",
+                        "pages": [
+                          "zh/developer-guides/cookbooks/ai-research-assistant-cookbook",
+                          "zh/developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                        ]
+                      },
+                      {
+                        "group": "MCP \u8bbe\u7f6e\u6307\u5357",
+                        "icon": "plug",
+                        "pages": [
+                          "zh/developer-guides/mcp-setup-guides/chatgpt",
+                          "zh/developer-guides/mcp-setup-guides/claude-ai",
+                          "zh/developer-guides/mcp-setup-guides/factory-ai"
+                        ]
+                      },
+                      {
+                        "group": "\u5e38\u89c1\u7f51\u7ad9",
+                        "icon": "globe",
+                        "pages": [
+                          "zh/developer-guides/common-sites/amazon",
+                          "zh/developer-guides/common-sites/etsy",
+                          "zh/developer-guides/common-sites/github",
+                          "zh/developer-guides/common-sites/wikipedia"
+                        ]
+                      },
+                      {
+                        "group": "\u5de5\u4f5c\u6d41\u81ea\u52a8\u5316",
+                        "icon": "bolt",
+                        "pages": [
+                          "zh/developer-guides/workflow-automation/n8n",
+                          "zh/developer-guides/workflow-automation/zapier",
+                          "zh/developer-guides/workflow-automation/make",
+                          "zh/developer-guides/workflow-automation/dify"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "Webhooks",
+                    "pages": [
+                      "zh/webhooks/overview",
+                      "zh/webhooks/events",
+                      "zh/webhooks/security",
+                      "zh/webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "\u5e94\u7528\u573a\u666f",
+                    "pages": [
+                      "zh/use-cases/overview",
+                      "zh/use-cases/ai-platforms",
+                      "zh/use-cases/lead-enrichment",
+                      "zh/use-cases/seo-platforms",
+                      "zh/use-cases/deep-research",
+                      {
+                        "group": "\u67e5\u770b\u66f4\u591a",
+                        "pages": [
+                          "zh/use-cases/product-ecommerce",
+                          "zh/use-cases/content-generation",
+                          "zh/use-cases/developers-mcp",
+                          "zh/use-cases/investment-finance",
+                          "zh/use-cases/competitive-intelligence",
+                          "zh/use-cases/data-migration",
+                          "zh/use-cases/observability"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u5176\u4ed6",
+                    "pages": [
+                      "zh/dashboard",
+                      "zh/features/ask"
+                    ]
+                  },
+                  {
+                    "group": "\u53c2\u4e0e\u8d21\u732e",
+                    "pages": [
+                      "zh/contributing/open-source-or-cloud",
+                      "zh/contributing/guide",
+                      "zh/contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "\u6587\u6863"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "\u6982\u89c8",
+                    "pages": [
+                      "zh/sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "\u5b98\u65b9",
+                    "pages": [
+                      "zh/sdks/python",
+                      "zh/sdks/node",
+                      "zh/sdks/go",
+                      "zh/sdks/java",
+                      "zh/sdks/ruby",
+                      "zh/sdks/rust",
+                      "zh/sdks/dotnet",
+                      "zh/sdks/php",
+                      "zh/sdks/elixir",
+                      "zh/sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "\u793e\u533a",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDK"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "\u96c6\u6210"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "\u4f7f\u7528 API",
+                    "pages": [
+                      "zh/api-reference/v2-introduction",
+                      "zh/api-reference/errors"
+                    ]
+                  },
+                  {
+                    "group": "\u641c\u7d22\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "\u6293\u53d6\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/endpoint/scrape",
+                      "zh/api-reference/endpoint/batch-scrape",
+                      "zh/api-reference/endpoint/batch-scrape-get",
+                      "zh/api-reference/endpoint/batch-scrape-delete",
+                      "zh/api-reference/endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "\u4ea4\u4e92\u63a5\u53e3",
+                    "pages": [
+                      "zh/api-reference/endpoint/scrape-execute",
+                      "zh/api-reference/endpoint/scrape-browser-delete",
+                      "zh/api-reference/endpoint/browser-list"
+                    ]
+                  },
+                  {
+                    "group": "Map \u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "\u89e3\u6790\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/endpoint/parse"
+                    ]
+                  },
+                  {
+                    "group": "\u722c\u53d6\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/endpoint/crawl-post",
+                      "zh/api-reference/endpoint/crawl-get",
+                      "zh/api-reference/endpoint/crawl-params-preview",
+                      "zh/api-reference/endpoint/crawl-delete",
+                      "zh/api-reference/endpoint/crawl-get-errors",
+                      "zh/api-reference/endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "\u4ee3\u7406\u7aef\u70b9",
+                    "hidden": true,
+                    "pages": [
+                      "zh/api-reference/endpoint/agent",
+                      "zh/api-reference/endpoint/agent-get",
+                      "zh/api-reference/endpoint/agent-delete"
+                    ]
+                  },
+                  {
+                    "group": "Extract \u7aef\u70b9",
+                    "hidden": true,
+                    "pages": [
+                      "zh/api-reference/endpoint/extract",
+                      "zh/api-reference/endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "\u4ee3\u7406\u5f0f\u8c03\u8bd5\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/endpoint/ask",
+                      "zh/api-reference/endpoint/docs-search"
+                    ]
+                  },
+                  {
+                    "group": "\u8d26\u6237\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/endpoint/activity",
+                      "zh/api-reference/endpoint/credit-usage",
+                      "zh/api-reference/endpoint/credit-usage-historical",
+                      "zh/api-reference/endpoint/token-usage",
+                      "zh/api-reference/endpoint/token-usage-historical",
+                      "zh/api-reference/endpoint/queue-status"
+                    ]
+                  },
+                  {
+                    "group": "Webhook \u8d1f\u8f7d",
+                    "pages": [
+                      {
+                        "group": "\u722c\u53d6",
+                        "pages": [
+                          "zh/api-reference/endpoint/webhook-crawl-started",
+                          "zh/api-reference/endpoint/webhook-crawl-page",
+                          "zh/api-reference/endpoint/webhook-crawl-completed"
+                        ]
+                      },
+                      {
+                        "group": "\u6279\u91cf\u6293\u53d6",
+                        "pages": [
+                          "zh/api-reference/endpoint/webhook-batch-scrape-started",
+                          "zh/api-reference/endpoint/webhook-batch-scrape-page",
+                          "zh/api-reference/endpoint/webhook-batch-scrape-completed"
+                        ]
+                      },
+                      {
+                        "group": "\u4ee3\u7406",
+                        "hidden": true,
+                        "pages": [
+                          "zh/api-reference/endpoint/webhook-agent-started",
+                          "zh/api-reference/endpoint/webhook-agent-action",
+                          "zh/api-reference/endpoint/webhook-agent-completed",
+                          "zh/api-reference/endpoint/webhook-agent-failed",
+                          "zh/api-reference/endpoint/webhook-agent-cancelled"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u5408\u4f5c\u4f19\u4f34\u96c6\u6210",
+                    "pages": [
+                      "zh/partner-integration"
+                    ]
+                  }
+                ],
+                "tab": "API \u53c2\u8003"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "\u5feb\u901f\u5f00\u59cb",
+                    "pages": [
+                      "zh/ai-onboarding"
+                    ]
+                  },
+                  {
+                    "group": "AI \u5de5\u5177",
+                    "pages": [
+                      "zh/sdks/cli",
+                      "zh/mcp-server",
+                      "zh/quickstarts/openclaw"
+                    ]
+                  },
+                  {
+                    "group": "\u4ee3\u7406\u5de5\u5177\u96c6",
+                    "pages": [
+                      "zh/quickstarts/openclaw",
+                      "zh/quickstarts/claude-code",
+                      "zh/quickstarts/cursor",
+                      "zh/quickstarts/opencode",
+                      "zh/quickstarts/codex-cli",
+                      "zh/quickstarts/openrouter",
+                      "zh/quickstarts/amp",
+                      "zh/quickstarts/windsurf",
+                      "zh/quickstarts/antigravity",
+                      "zh/quickstarts/gemini-cli",
+                      "zh/quickstarts/nous-research",
+                      "zh/quickstarts/autogen"
+                    ]
+                  },
+                  {
+                    "group": "LLM SDK \u4e0e\u6846\u67b6",
+                    "pages": [
+                      "zh/developer-guides/llm-sdks-and-frameworks/openai",
+                      "zh/developer-guides/llm-sdks-and-frameworks/anthropic",
+                      "zh/developer-guides/llm-sdks-and-frameworks/gemini",
+                      "zh/developer-guides/llm-sdks-and-frameworks/google-adk",
+                      "zh/developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+                      "zh/developer-guides/llm-sdks-and-frameworks/langchain",
+                      "zh/developer-guides/llm-sdks-and-frameworks/langgraph",
+                      "zh/developer-guides/llm-sdks-and-frameworks/llamaindex",
+                      "zh/developer-guides/llm-sdks-and-frameworks/mastra",
+                      "zh/developer-guides/llm-sdks-and-frameworks/elevenagents"
+                    ]
+                  },
+                  {
+                    "group": "\u4ee3\u7406\u7aef\u70b9",
+                    "pages": [
+                      "zh/agents/fire-1",
+                      "zh/agents/fire-1-extract"
+                    ]
+                  },
+                  {
+                    "group": "\u4ee3\u7406\u5f0f\u8c03\u8bd5",
+                    "pages": [
+                      "zh/features/ask"
+                    ]
+                  },
+                  {
+                    "group": "\u5b9e\u6218\u6307\u5357",
+                    "pages": [
+                      "zh/developer-guides/cookbooks/ai-research-assistant-cookbook",
+                      "zh/developer-guides/cookbooks/brand-style-guide-generator-cookbook"
+                    ]
+                  }
+                ],
+                "tab": "\u7528 AI \u6784\u5efa"
+              }
+            ],
+            "version": "v2"
+          },
+          {
+            "hidden": true,
+            "tabs": [
+              {
+                "groups": [
+                  {
+                    "group": "\u5feb\u901f\u5f00\u59cb",
+                    "pages": [
+                      "zh/introduction",
+                      "zh/mcp-server",
+                      "zh/migrate-to-v2",
+                      "zh/advanced-scraping-guide",
+                      {
+                        "group": "\u5957\u9910\u4e0e\u8ba1\u8d39",
+                        "pages": [
+                          "zh/billing",
+                          "zh/rate-limits",
+                          "zh/partner-credits"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u65b0\u529f\u80fd",
+                    "pages": [
+                      {
+                        "group": "\u667a\u80fd\u4f53",
+                        "hidden": true,
+                        "icon": "magic",
+                        "pages": []
+                      }
+                    ]
+                  },
+                  {
+                    "group": "\u6807\u51c6\u529f\u80fd",
+                    "pages": [
+                      {
+                        "group": "\u6293\u53d6",
+                        "icon": "markdown",
+                        "pages": [
+                          "zh/features/scrape",
+                          "zh/features/fast-scraping",
+                          "zh/features/batch-scrape",
+                          "zh/features/llm-extract",
+                          "zh/features/change-tracking",
+                          "zh/features/enhanced-mode",
+                          "zh/features/proxies"
+                        ]
+                      },
+                      "zh/features/crawl",
+                      "zh/features/map",
+                      "zh/features/search"
+                    ]
+                  },
+                  {
+                    "group": "\u667a\u80fd\u4f53\u529f\u80fd",
+                    "pages": [
+                      "zh/agents/fire-1"
+                    ]
+                  },
+                  {
+                    "group": "Webhook \u56de\u8c03",
+                    "pages": [
+                      "zh/webhooks/overview",
+                      "zh/webhooks/events",
+                      "zh/webhooks/security",
+                      "zh/webhooks/testing"
+                    ]
+                  },
+                  {
+                    "group": "Dashboard",
+                    "pages": [
+                      "zh/dashboard"
+                    ]
+                  },
+                  {
+                    "group": "\u53c2\u4e0e\u8d21\u732e",
+                    "pages": [
+                      "zh/contributing/open-source-or-cloud",
+                      "zh/contributing/guide",
+                      "zh/contributing/self-host"
+                    ]
+                  }
+                ],
+                "tab": "\u6587\u6863"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "\u6982\u89c8",
+                    "pages": [
+                      "zh/sdks/overview"
+                    ]
+                  },
+                  {
+                    "group": "\u5b98\u65b9",
+                    "pages": [
+                      "zh/sdks/python",
+                      "zh/sdks/node",
+                      "zh/sdks/go",
+                      "zh/sdks/java",
+                      "zh/sdks/ruby",
+                      "zh/sdks/rust",
+                      "zh/sdks/dotnet",
+                      "zh/sdks/php",
+                      "zh/sdks/elixir",
+                      "zh/sdks/cli"
+                    ]
+                  },
+                  {
+                    "group": "\u793e\u533a",
+                    "pages": []
+                  }
+                ],
+                "tab": "SDK"
+              },
+              {
+                "href": "https://www.firecrawl.dev/app",
+                "tab": "\u96c6\u6210"
+              },
+              {
+                "groups": [
+                  {
+                    "group": "\u4f7f\u7528 API",
+                    "pages": [
+                      "zh/v1/api-reference/introduction"
+                    ]
+                  },
+                  {
+                    "group": "\u6293\u53d6\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/v1-endpoint/scrape",
+                      "zh/api-reference/v1-endpoint/batch-scrape",
+                      "zh/api-reference/v1-endpoint/batch-scrape-get",
+                      "zh/api-reference/v1-endpoint/batch-scrape-delete",
+                      "zh/api-reference/v1-endpoint/batch-scrape-get-errors"
+                    ]
+                  },
+                  {
+                    "group": "\u722c\u53d6\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/v1-endpoint/crawl-post",
+                      "zh/api-reference/v1-endpoint/crawl-get",
+                      "zh/api-reference/v1-endpoint/crawl-delete",
+                      "zh/api-reference/v1-endpoint/crawl-get-errors",
+                      "zh/api-reference/v1-endpoint/crawl-active"
+                    ]
+                  },
+                  {
+                    "group": "\u6620\u5c04\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/v1-endpoint/map"
+                    ]
+                  },
+                  {
+                    "group": "\u641c\u7d22\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/v1-endpoint/search"
+                    ]
+                  },
+                  {
+                    "group": "\u63d0\u53d6\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/v1-endpoint/extract",
+                      "zh/api-reference/v1-endpoint/extract-get"
+                    ]
+                  },
+                  {
+                    "group": "\u8d26\u6237\u7aef\u70b9",
+                    "pages": [
+                      "zh/api-reference/v1-endpoint/credit-usage",
+                      "zh/api-reference/v1-endpoint/credit-usage-historical",
+                      "zh/api-reference/v1-endpoint/token-usage",
+                      "zh/api-reference/v1-endpoint/token-usage-historical",
+                      "zh/api-reference/v1-endpoint/queue-status"
+                    ]
+                  }
+                ],
+                "tab": "API \u53c2\u8003"
+              }
+            ],
+            "version": "v1"
+          }
+        ]
+      }
+    ]
+  },
+  "redirects": [
+    {
+      "destination": "/sdks/cli",
+      "source": "/cli"
+    },
+    {
+      "destination": "features/extract",
+      "source": "features/extract-beta"
+    },
+    {
+      "destination": "/api-reference/endpoint/:slug*",
+      "source": "/api-reference/v2-endpoint/:slug*"
+    },
+    {
+      "destination": "/features/enhanced-mode",
+      "source": "/features/stealth-mode"
+    },
+    {
+      "destination": "/developer-guides/llm-sdks-and-frameworks/vercel-ai-sdk",
+      "source": "/integrations/ai-sdk"
+    },
+    {
+      "destination": "/api-reference/endpoint/webhook-crawl-started",
+      "source": "/api-reference/endpoint/crawl-webhooks"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-post",
+      "source": "/api-reference/endpoint/crawl"
+    },
+    {
+      "destination": "/webhooks/overview",
+      "source": "/api-reference/endpoint/crawl-with-webhook"
+    },
+    {
+      "destination": "/webhooks/overview",
+      "source": "/features/webhooks"
+    },
+    {
+      "destination": "/webhooks/overview",
+      "source": "/api-reference/endpoint/batch-scrape-with-webhook"
+    },
+    {
+      "destination": "/api-reference/endpoint/batch-scrape",
+      "source": "/api-reference/batch-scrape"
+    },
+    {
+      "destination": "/webhooks/overview",
+      "source": "/api-reference/webhooks"
+    },
+    {
+      "destination": "/api-reference/endpoint/batch-scrape",
+      "source": "/api-reference/v2-batch-scrape"
+    },
+    {
+      "destination": "/api-reference/endpoint/agent",
+      "source": "/api-reference/v2-agent"
+    },
+    {
+      "destination": "/api-reference/endpoint/agent",
+      "source": "/api-reference/agent"
+    },
+    {
+      "destination": "/webhooks/events",
+      "source": "/webhooks/batch-scrape-events"
+    },
+    {
+      "destination": "/webhooks/events",
+      "source": "/features/webhooks/event-types"
+    },
+    {
+      "destination": "/webhooks/events",
+      "source": "/webhooks/event-types"
+    },
+    {
+      "destination": "/api-reference/endpoint/agent-get",
+      "source": "/api-reference/endpoint/agent-status"
+    },
+    {
+      "destination": "/api-reference/endpoint/agent",
+      "source": "/api-reference/endpoint/agent-create"
+    },
+    {
+      "destination": "/api-reference/endpoint/agent-get",
+      "source": "/api-reference/endpoint/agent-result"
+    },
+    {
+      "destination": "/api-reference/endpoint/agent-delete",
+      "source": "/api-reference/endpoint/cancel-agent"
+    },
+    {
+      "destination": "/api-reference/endpoint/extract",
+      "source": "/api-reference/endpoint/extract-post"
+    },
+    {
+      "destination": "/api-reference/endpoint/extract",
+      "source": "/api-reference/endpoint/extract-post.md"
+    },
+    {
+      "destination": "/api-reference/endpoint/extract-get",
+      "source": "/api-reference/endpoint/extract-get"
+    },
+    {
+      "destination": "/api-reference/endpoint/credit-usage",
+      "source": "/api-reference/endpoint/get-team-credit-usage"
+    },
+    {
+      "destination": "/api-reference/endpoint/token-usage",
+      "source": "/api-reference/endpoint/get-team-token-usage"
+    },
+    {
+      "destination": "/api-reference/endpoint/activity",
+      "source": "/api-reference/endpoint/team-activity"
+    },
+    {
+      "destination": "/api-reference/endpoint/credit-usage-historical",
+      "source": "/api-reference/endpoint/team-credit-usage-historical"
+    },
+    {
+      "destination": "/api-reference/endpoint/batch-scrape-get",
+      "source": "/api-reference/endpoint/batch-scrape-status"
+    },
+    {
+      "destination": "/api-reference/endpoint/batch-scrape-get-errors",
+      "source": "/api-reference/endpoint/batch-scrape-errors"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-post",
+      "source": "/api-reference/endpoint/crawl-create"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-get-errors",
+      "source": "/api-reference/endpoint/crawl-errors"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-get-errors",
+      "source": "/api-reference/endpoint/crawl-job-errors"
+    },
+    {
+      "destination": "/webhooks/overview",
+      "source": "/api-reference/endpoint/crawl-webhook"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-get",
+      "source": "/api-reference/endpoint/get-crawl"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-get",
+      "source": "/api-reference/endpoint/get-crawl-status"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-active",
+      "source": "/api-reference/endpoint/get-active-crawls"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-delete",
+      "source": "/api-reference/endpoint/delete-crawl"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-params-preview",
+      "source": "/api-reference/endpoint/crawl-params-preview-post"
+    },
+    {
+      "destination": "/api-reference/endpoint/browser-list",
+      "source": "/api-reference/endpoint/browser-get"
+    },
+    {
+      "destination": "/webhooks/events",
+      "source": "/api-reference/endpoint/webhook-events"
+    },
+    {
+      "destination": "/api-reference/endpoint/scrape",
+      "source": "/api-reference/scrape"
+    },
+    {
+      "destination": "/api-reference/endpoint/extract",
+      "source": "/api-reference/extract"
+    },
+    {
+      "destination": "/api-reference/endpoint/agent",
+      "source": "/api-reference/agent-api"
+    },
+    {
+      "destination": "/api-reference/endpoint/browser-list",
+      "source": "/api-reference/browser"
+    },
+    {
+      "destination": "/api-reference/v2-introduction",
+      "source": "/api-reference/v2"
+    },
+    {
+      "destination": "/api-reference/v1-endpoint/crawl-post",
+      "source": "/api-reference/v1/crawl"
+    },
+    {
+      "destination": "/api-reference/introduction",
+      "source": "/api-reference/v1-introduction"
+    },
+    {
+      "destination": "/api-reference/endpoint/activity",
+      "source": "/api-reference/team"
+    },
+    {
+      "destination": "/api-reference/endpoint/activity",
+      "source": "/api-reference/team-api"
+    },
+    {
+      "destination": "/api-reference/endpoint/activity",
+      "source": "/api-reference/team-activity"
+    },
+    {
+      "destination": "/api-reference/endpoint/credit-usage",
+      "source": "/api-reference/team-credit-usage"
+    },
+    {
+      "destination": "/api-reference/endpoint/activity",
+      "source": "/api-reference/team-endpoints"
+    },
+    {
+      "destination": "/api-reference/endpoint/credit-usage",
+      "source": "/api-reference/get-team-credit-usage"
+    },
+    {
+      "destination": "/api-reference/endpoint/token-usage",
+      "source": "/api-reference/get-team-token-usage"
+    },
+    {
+      "destination": "/api-reference/endpoint/queue-status",
+      "source": "/api-reference/queue-status"
+    },
+    {
+      "destination": "/api-reference/endpoint/credit-usage",
+      "source": "/api-reference/credit-usage"
+    },
+    {
+      "destination": "/api-reference/endpoint/token-usage",
+      "source": "/api-reference/token-usage"
+    },
+    {
+      "destination": "/api-reference/endpoint/batch-scrape",
+      "source": "/api-reference/batch-scrape-api"
+    },
+    {
+      "destination": "/api-reference/endpoint/batch-scrape",
+      "source": "/api-reference/batch-scrape-page"
+    },
+    {
+      "destination": "/api-reference/endpoint/batch-scrape",
+      "source": "/api-reference/batch-scrape-urls"
+    },
+    {
+      "destination": "/webhooks/overview",
+      "source": "/api-reference/batch-webhook"
+    },
+    {
+      "destination": "/webhooks/overview",
+      "source": "/api-reference/create-webhook"
+    },
+    {
+      "destination": "/api-reference/endpoint/batch-scrape",
+      "source": "/api-reference/post-batch-scrape"
+    },
+    {
+      "destination": "/introduction",
+      "source": "/api-reference/documentation"
+    },
+    {
+      "destination": "/api-reference/endpoint/map",
+      "source": "/api-reference/map"
+    },
+    {
+      "destination": "/api-reference/endpoint/search",
+      "source": "/api-reference/search"
+    },
+    {
+      "destination": "/api-reference/endpoint/parse",
+      "source": "/api-reference/parse"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-post",
+      "source": "/api-reference/crawl"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-get",
+      "source": "/api-reference/crawl-status"
+    },
+    {
+      "destination": "/api-reference/endpoint/batch-scrape-get",
+      "source": "/api-reference/batch-scrape-status"
+    },
+    {
+      "destination": "/api-reference/endpoint/extract-get",
+      "source": "/api-reference/get-extract-status"
+    },
+    {
+      "destination": "/api-reference/endpoint/agent-get",
+      "source": "/api-reference/agent-status"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-delete",
+      "source": "/api-reference/cancel-crawl"
+    },
+    {
+      "destination": "/api-reference/endpoint/batch-scrape-delete",
+      "source": "/api-reference/cancel-batch-scrape"
+    },
+    {
+      "destination": "/api-reference/endpoint/agent-delete",
+      "source": "/api-reference/cancel-agent"
+    },
+    {
+      "destination": "/api-reference/endpoint/activity",
+      "source": "/api-reference/activity"
+    },
+    {
+      "destination": "/api-reference/endpoint/scrape",
+      "source": "/v2/scrape"
+    },
+    {
+      "destination": "/api-reference/endpoint/search",
+      "source": "/v2/search"
+    },
+    {
+      "destination": "/api-reference/endpoint/map",
+      "source": "/v2/map"
+    },
+    {
+      "destination": "/api-reference/endpoint/agent",
+      "source": "/v2/agent"
+    },
+    {
+      "destination": "/api-reference/endpoint/extract",
+      "source": "/v2/extract"
+    },
+    {
+      "destination": "/api-reference/endpoint/crawl-post",
+      "source": "/v2/crawl"
+    },
+    {
+      "destination": "/api-reference/endpoint/batch-scrape",
+      "source": "/v2/batch-scrape"
+    },
+    {
+      "destination": "/api-reference/endpoint/parse",
+      "source": "/v2/parse"
+    },
+    {
+      "destination": "/introduction",
+      "source": "/documentation"
+    },
+    {
+      "destination": "/sdks/python",
+      "source": "/python-sdk"
+    },
+    {
+      "destination": "/sdks/node",
+      "source": "/node-sdk"
+    },
+    {
+      "destination": "/sdks/go",
+      "source": "/go-sdk"
+    },
+    {
+      "destination": "/sdks/rust",
+      "source": "/rust-sdk"
+    },
+    {
+      "destination": "/features/agent",
+      "source": "/features/agents"
+    },
+    {
+      "destination": "/features/agent",
+      "source": "/agents"
+    },
+    {
+      "destination": "/webhooks/overview",
+      "source": "/webhooks"
+    }
+  ],
+  "seo": {
+    "metatags": {
+      "google-site-verification": "Y83UZz1dXMKuT59lnLY_7umo6LJorqIwuP_2rFX6_eE"
+    }
+  },
+  "theme": "aspen"
+}
