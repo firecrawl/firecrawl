@@ -171,6 +171,9 @@ export type Meta = {
   abort: AbortManager;
   featureFlags: Set<FeatureFlag>;
   mock: MockState | null;
+  /** The Exchange provider whose access was checked when the exchange engine
+   * was chosen, so the engine asks the Exchange for that same provider. */
+  exchangeProviderId?: string;
   /** Whether this scrape may OCR raster images: the request's parsers
    * include `image` (the default; a parse upload of an image always counts)
    * and the deployment has image OCR switched on with FirePDF configured.

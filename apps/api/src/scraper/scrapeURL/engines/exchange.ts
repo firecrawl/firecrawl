@@ -6,7 +6,6 @@ import { config } from "../../../config";
 import {
   getExchangeRequestLogContext,
   getExchangeResponseLogContext,
-  resolveExchangeProvider,
   ThirdPartyDataTermsRequiredError,
 } from "../../../lib/exchange";
 import { setSpanAttributes, withSpan } from "../../../lib/otel-tracer";
@@ -146,12 +145,6 @@ export async function scrapeURLWithExchange(
     });
 
     try {
-      // The provider the access gate resolved, named so the Exchange serves the
-      // same one when several claim the URL.
-      const provider = await resolveExchangeProvider(
-        url,
-        meta.internalOptions.orgId,
-      );
       const response = await robustFetch({
         url: `${config.FIRE_EXCHANGE_URL!.replace(/\/+$/, "")}/v1/scrape`,
         method: "POST",
@@ -159,7 +152,11 @@ export async function scrapeURLWithExchange(
           requestId: meta.id,
           teamId: meta.internalOptions.teamId,
           url,
-          ...(provider === null ? {} : { provider: provider.id }),
+          // Named so the Exchange serves the provider whose access was checked
+          // when several claim the URL.
+          ...(meta.exchangeProviderId === undefined
+            ? {}
+            : { provider: meta.exchangeProviderId }),
           formats: ["markdown", "json"],
           ...(meta.options.maxAge === undefined
             ? {}

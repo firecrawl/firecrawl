@@ -688,6 +688,7 @@ export async function buildFallbackList(meta: Meta): Promise<
       flags: meta.internalOptions.teamFlags ?? null,
     });
     if (exchangeAccess.allowed) {
+      meta.exchangeProviderId = exchangeAccess.provider.id;
       return [
         {
           engine: "exchange",
