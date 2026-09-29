@@ -29,6 +29,64 @@ describe("monitoring store credit helpers", () => {
     expect(estimateMonitorCreditsPerRun(targets, true)).toBe(12);
   });
 
+  it("includes the x-twitter surcharge, so the hold covers what is billed", () => {
+    const targets: MonitorTarget[] = [
+      {
+        id: "target-x",
+        type: "scrape",
+        urls: ["https://x.com/blknoiz06"],
+        scrapeOptions: {},
+      },
+    ];
+
+    // 1 scrape + 29 x-twitter, + 1 judge.
+    expect(estimateMonitorCreditsPerRun(targets, false)).toBe(30);
+    expect(estimateMonitorCreditsPerRun(targets, true)).toBe(31);
+    expect(
+      calculateMonitorCheckActualCreditsFromPages(
+        [
+          {
+            target_id: "target-x",
+            status: "changed",
+            metadata: { creditsUsed: null, postprocessorsUsed: ["x-twitter"] },
+            judgment: { meaningful: false },
+          },
+        ],
+        targets,
+      ),
+    ).toBe(estimateMonitorCreditsPerRun(targets, true));
+  });
+
+  it("charges the surcharge only for URLs the x-twitter engine takes", () => {
+    const targets: MonitorTarget[] = [
+      {
+        id: "target-mixed",
+        type: "scrape",
+        urls: [
+          "https://twitter.com/someone/status/1234567890",
+          "https://x.com/home",
+          "https://example.com/x.com",
+        ],
+        scrapeOptions: {},
+      },
+    ];
+
+    expect(estimateMonitorCreditsPerRun(targets, false)).toBe(3 + 29);
+  });
+
+  it("skips the surcharge when a browser profile bypasses the x-twitter engine", () => {
+    const targets: MonitorTarget[] = [
+      {
+        id: "target-profile",
+        type: "scrape",
+        urls: ["https://x.com/someone"],
+        scrapeOptions: { profile: { name: "p" } },
+      },
+    ];
+
+    expect(estimateMonitorCreditsPerRun(targets, false)).toBe(1);
+  });
+
   it("adds predictable lockdown costs and judge credits separately", () => {
     const targets: MonitorTarget[] = [
       {
