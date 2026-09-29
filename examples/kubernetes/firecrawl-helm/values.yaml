@@ -72,6 +72,8 @@ cclogWorker:
       cpu: "500m"
 
 nuqPostgres:
+  # Set to false to disable the in-cluster PostgreSQL deployment and use an external instance instead.
+  enabled: true
   replicaCount: 1
   image:
     repository: docker.io/winkkgmbh/nuq-postgres
@@ -92,8 +94,20 @@ nuqPostgres:
     enabled: false
     size: 10Gi
     storageClass: ""
+  # External PostgreSQL configuration — used when nuqPostgres.enabled is false.
+  external:
+    # Full connection URL (takes precedence over individual fields if set).
+    # e.g. "postgresql://user:password@my-postgres-host:5432/mydb"
+    url: ""
+    # Individual connection fields (used to build the URL when url is empty).
+    host: ""
+    port: 5432
+    username: postgres
+    password: ""
+    database: postgres
 
 rabbitmq:
+  # Set to false to disable the in-cluster RabbitMQ deployment and provide an external URL instead.
   enabled: true
   image: rabbitmq:3-management
   replicaCount: 1
@@ -104,6 +118,10 @@ rabbitmq:
     limits:
       memory: "1Gi"
       cpu: "500m"
+  # External RabbitMQ configuration — used when rabbitmq.enabled is false.
+  external:
+    # Full AMQP URL. e.g. "amqp://user:password@my-rabbitmq-host:5672/vhost"
+    url: ""
 
 image:
   repository: docker.io/winkkgmbh/firecrawl
@@ -118,8 +136,16 @@ playwright:
   replicaCount: 1
 
 redis:
+  # Set to false to disable the in-cluster Redis deployment and use an external instance instead.
+  enabled: true
   image: redis:alpine
   replicaCount: 1
+  # External Redis configuration — used when redis.enabled is false.
+  external:
+    # Full Redis URL. e.g. "redis://:password@my-redis-host:6379"
+    url: ""
+    # Separate rate-limit Redis URL (falls back to url if not set).
+    rateLimitUrl: ""
 
 service:
   api:
