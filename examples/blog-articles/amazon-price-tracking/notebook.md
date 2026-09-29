@@ -275,17 +275,17 @@ The `.env` file is used to securely store sensitive configuration values like AP
 Now, we can start writing the `scraper.py`:
 
 ```python
-from firecrawl import FirecrawlApp
+from firecrawl import Firecrawl
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from datetime import datetime
 
 load_dotenv()
 
-app = FirecrawlApp()
+app = Firecrawl()
 ```
 
-Here, `load_dotenv()` function reads the `.env` file you have in your working directory and loads the environment variables inside, including the Firecrawl API key. When you create an instance of `FirecrawlApp` class, the API key is automatically detected to establish a connection between your script and the scraping engine in the form of the `app` variable.
+Here, `load_dotenv()` function reads the `.env` file you have in your working directory and loads the environment variables inside, including the Firecrawl API key. When you create an instance of the `Firecrawl` class, the API key is automatically detected to establish a connection between your script and the scraping engine in the form of the `app` variable.
 
 Now, we create a Pydantic class (usually called a model) that defines the details we want to scrape from each product:
 
@@ -314,18 +314,19 @@ Now, let's create a function to call the engine to scrape URL's based on the sch
 
 ```python
 def scrape_product(url: str):
-    extracted_data = app.scrape_url(
+    doc = app.scrape(
         url,
-        params={
-            "formats": ["extract"],
-            "extract": {"schema": Product.model_json_schema()},
-        },
+        formats=[{
+            "type": "json",
+            "schema": Product,
+        }],
     )
 
     # Add the scraping date to the extracted data
-    extracted_data["extract"]["timestamp"] = datetime.utcnow()
+    product_data = dict(doc.json)
+    product_data["timestamp"] = datetime.utcnow()
 
-    return extracted_data["extract"]
+    return product_data
 
 
 if __name__ == "__main__":
@@ -336,16 +337,16 @@ if __name__ == "__main__":
 
 The code above defines a function called `scrape_product` that takes a URL as input and uses it to scrape product information. Here's how it works:
 
-The function calls `app.scrape_url` with two parameters:
+The function calls `app.scrape` with two parameters:
 
 1. The product URL to scrape
-2. A params dictionary that configures the scraping:
-   - It specifies we want to use the "extract" format
-   - It provides our `Product` Pydantic model schema as the extraction template as a JSON object
+2. A `formats` list that configures structured extraction:
+   - It specifies we want JSON output via the `"json"` format
+   - It provides our `Product` Pydantic model as the extraction schema
 
 The scraper will attempt to find and extract data that matches our Product schema fields - the URL, name, price, currency, and image URL.
 
-The function returns just the "extract" portion of the scraped data, which contains the structured product information. `extract` returns a dictionary to which we add the date of the scraping as it will be important later on.
+The function reads the structured data from `doc.json`, adds the date of the scraping as it will be important later on, and returns the resulting dictionary.
 
 Let's test the script by running it:
 
@@ -793,16 +794,14 @@ Now, we want to write a script that adds new price entries in the `price_histori
 import os
 from database import Database
 from dotenv import load_dotenv
-from firecrawl import FirecrawlApp
 from scraper import scrape_product
 
 load_dotenv()
 
 db = Database(os.getenv("POSTGRES_URL"))
-app = FirecrawlApp()
 ```
 
-At the top, we are importing the functions and packages and initializing the database and a Firecrawl app. Then, we define a simple `check_prices` function:
+At the top, we are importing the functions and packages and initializing the database (Firecrawl is initialized in `scraper.py`). Then, we define a simple `check_prices` function:
 
 ```python
 def check_prices():
@@ -1103,14 +1102,12 @@ import os
 import asyncio
 from database import Database
 from dotenv import load_dotenv
-from firecrawl import FirecrawlApp
 from scraper import scrape_product
 from notifications import send_price_alert
 
 load_dotenv()
 
 db = Database(os.getenv("POSTGRES_URL"))
-app = FirecrawlApp()
 
 # Threshold percentage for price drop alerts (e.g., 5% = 0.05)
 PRICE_DROP_THRESHOLD = 0.05
@@ -1231,7 +1228,7 @@ Some of these features are implemented in [the advanced version of the project](
 Here are some more guides from our blog if you are interested:
 
 - [How to Run Web Scrapers on Schedule](https://www.firecrawl.dev/blog/automated-web-scraping-free-2025)
-- [More about using Firecrawl's `scrape_url` function](https://www.firecrawl.dev/blog/mastering-firecrawl-scrape-endpoint)
+- [More about using Firecrawl's `scrape` function](https://www.firecrawl.dev/blog/mastering-firecrawl-scrape-endpoint)
 - [Scraping entire websites with Firecrawl in a single command - the /crawl endpoint](https://www.firecrawl.dev/blog/mastering-the-crawl-endpoint-in-firecrawl)
 
 Thank you for reading!
