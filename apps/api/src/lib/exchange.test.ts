@@ -808,6 +808,20 @@ describe("Exchange terms acceptance", () => {
     expect(exchangeRequest).toHaveBeenCalledTimes(2);
   });
 
+  it("does not share cached ledger answers between teams", async () => {
+    ledgerAnswers([{ version: ACME_TERMS.version, textHash: DIGEST }]);
+    const flags = { professionalProfileCompanyDataBeta: true };
+
+    await getExchangeAccessForRequest({ ...PROFILE_REQUEST, flags });
+    await getExchangeAccessForRequest({
+      ...PROFILE_REQUEST,
+      teamId: "team-2",
+      flags,
+    });
+
+    expect(exchangeRequest).toHaveBeenCalledTimes(4);
+  });
+
   it("rechecks the ledger once the catalog carries new terms", async () => {
     const input = {
       ...PROFILE_REQUEST,

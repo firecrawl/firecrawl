@@ -373,8 +373,8 @@ const ledgerAcceptanceCache = new Map<
 // The ledger lookup costs two Exchange calls and sits on the scrape path, so
 // answers are cached per process: briefly when not accepted, so a fresh
 // acceptance is picked up quickly, and longer once accepted. Keyed by the
-// catalog's terms identity, so new terms are rechecked as soon as the
-// catalog carries them.
+// team the Exchange calls are made for and the catalog's terms identity, so
+// new terms are rechecked as soon as the catalog carries them.
 function getLedgerAcceptance(input: {
   teamId: string;
   orgId: string;
@@ -383,6 +383,7 @@ function getLedgerAcceptance(input: {
   revocation?: { disabledAt: unknown };
 }): Promise<boolean> {
   const key = [
+    input.teamId,
     input.orgId,
     input.provider,
     input.terms.key,
