@@ -51,7 +51,7 @@ export function keylessFeedbackMetadata(
         Date.now() + KEYLESS_FEEDBACK_MAX_AGE_SEC * 1000,
       ).toISOString(),
       message:
-        "Feedback is optional. When appropriate, especially if this result is wrong, incomplete, blocked, or an error, consider submitting specific evidence to POST /v2/feedback to help improve Firecrawl.",
+        "Consider submitting feedback to POST /v2/feedback when appropriate, especially if this result is wrong, incomplete, blocked, or an error. Include specific evidence to help improve Firecrawl.",
     },
   };
 }

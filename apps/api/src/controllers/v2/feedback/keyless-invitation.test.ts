@@ -115,13 +115,14 @@ describe("keyless feedback invitations", () => {
         jobId: `job-${index}`,
         feedback: {
           docs: "https://docs.firecrawl.dev/api-reference/endpoint/feedback",
-          message: expect.stringContaining("Feedback is optional."),
+          message: expect.stringContaining("Consider submitting feedback"),
         },
       });
       const message = (metadata.feedback as { message: string }).message;
-      expect(message).toContain("When appropriate");
+      expect(message).toContain("when appropriate");
       expect(message).toContain("wrong, incomplete, blocked, or an error");
       expect(message).toContain("POST /v2/feedback");
+      expect(message).toContain("Include specific evidence");
       expect(message).not.toMatch(
         /limit|per day|UTC|in exchange|please submit|after your task/i,
       );
