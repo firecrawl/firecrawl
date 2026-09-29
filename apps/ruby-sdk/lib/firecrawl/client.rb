@@ -454,8 +454,10 @@ module Firecrawl
 
       raw = @http.post("/v2/agent", options.to_h)
       response = Models::AgentResponse.new(raw)
-      if response.success == false
-        raise FirecrawlError, "Agent start failed: #{response.error || "response was unsuccessful"}"
+      if response.success != true
+        reason = response.error.to_s.strip
+        reason = "response was unsuccessful" if reason.empty?
+        raise FirecrawlError, "Agent start failed: #{reason}"
       end
       if !response.id.is_a?(String) || response.id.strip.empty?
         raise FirecrawlError, "Agent start did not return a job ID"

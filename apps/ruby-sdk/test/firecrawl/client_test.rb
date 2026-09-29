@@ -691,6 +691,9 @@ class ClientTest < Minitest::Test
     [
       [{ success: false, id: "phantom", error: "quota exceeded" }, "quota exceeded"],
       [{ success: false, id: "phantom" }, "unsuccessful"],
+      [{ id: "phantom" }, "unsuccessful"],
+      [{ success: "true", id: "phantom" }, "unsuccessful"],
+      [{ success: false, id: "phantom", error: "" }, "unsuccessful"],
       [{ success: true }, "job ID"],
       [{ success: true, id: "  " }, "job ID"],
     ].each do |body, expected|
