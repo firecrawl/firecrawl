@@ -673,9 +673,12 @@ public class FirecrawlClient
     {
         job.Data ??= new List<Document>();
         var current = job;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
 
         while (!string.IsNullOrEmpty(current.Next))
         {
+            if (!visited.Add(current.Next))
+                throw new FirecrawlException("Crawl returned a repeated pagination URL.");
             var nextPage = await _http.GetAbsoluteAsync<CrawlJob>(
                 current.Next, cancellationToken);
 
@@ -695,9 +698,12 @@ public class FirecrawlClient
     {
         job.Data ??= new List<Document>();
         var current = job;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
 
         while (!string.IsNullOrEmpty(current.Next))
         {
+            if (!visited.Add(current.Next))
+                throw new FirecrawlException("Batch scrape returned a repeated pagination URL.");
             var nextPage = await _http.GetAbsoluteAsync<BatchScrapeJob>(
                 current.Next, cancellationToken);
 
@@ -717,9 +723,12 @@ public class FirecrawlClient
     {
         check.Pages ??= new List<MonitorCheckPage>();
         var current = check;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
 
         while (!string.IsNullOrEmpty(current.Next))
         {
+            if (!visited.Add(current.Next))
+                throw new FirecrawlException("Monitor check returned a repeated pagination URL.");
             var response = await _http.GetAbsoluteAsync<ApiResponse<MonitorCheckDetail>>(
                 current.Next, cancellationToken);
             if (response.Data == null)
