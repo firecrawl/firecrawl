@@ -618,6 +618,11 @@ describe("Crawl tests", () => {
         // The start page and the one external page it links to, nothing more.
         expect(sourceUrls).toHaveLength(2);
         expect(sourceUrls).toContain("https://example.org");
+        expect(
+          sourceUrls.some(
+            url => new URL(url).hostname.replace(/^www\./, "") === "iana.org",
+          ),
+        ).toBe(true);
       }
     },
     5 * scrapeTimeout,
