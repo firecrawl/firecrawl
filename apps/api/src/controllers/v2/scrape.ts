@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { enrichmentSetupError } from "../../services/alexandria/scrape-enrichment";
 import { providerScrapeController } from "./scrape-alexandria";
 import { discoverTools } from "../../search/alexandria";
 import { config } from "../../config";
@@ -51,12 +52,6 @@ import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-
-import {
-  enrichmentTarget,
-  enrichmentFormat,
-} from "../../services/alexandria/scrape-enrichment";
-import { hasOrgScopedBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -243,36 +238,6 @@ export async function scrapeController(
         return res.status(403).json({
           success: false,
           error: "Agent interop is not enabled.",
-        });
-      }
-
-      const enrichment = enrichmentTarget(
-        preNormalizedBody.url,
-        req.auth.team_id,
-        config.SCRAPE_ENRICHMENT_TEAM_IDS,
-      );
-      if (enrichment) {
-        if (
-          zeroDataRetention ||
-          safeMode.safeMode ||
-          threatProtection.policy ||
-          hasOrgScopedBlocklist(req.acuc?.org_id)
-        )
-          return res.status(403).json({
-            success: false,
-            error:
-              "Profile enrichment is not available with this request's retention or organization policies.",
-          });
-        const format = enrichmentFormat(preNormalizedBody);
-        if (!format)
-          return res.status(400).json({
-            success: false,
-            error:
-              "Profile enrichment supports one plain json or markdown format and no browser, extraction, or other scrape options.",
-          });
-        return providerScrapeController(req, res, false, {
-          ...enrichment,
-          format,
         });
       }
 
@@ -593,6 +558,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...enrichmentSetupError(preNormalizedBody.url, req.auth.team_id),
             });
           }
 

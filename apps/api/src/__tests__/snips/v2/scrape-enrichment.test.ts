@@ -1,73 +1,42 @@
 import request from "supertest";
-import { randomUUID } from "node:crypto";
 import { TEST_API_URL, scrapeTimeout } from "../lib";
 
-// Both fixture teams must be on the adapter allowlist. The enabled fixture
-// needs accepted provider terms and saved preferences; the disabled one must not.
-const enabledKey = process.env.TEST_ENRICHMENT_ENABLED_API_KEY;
-const disabledKey = process.env.TEST_ENRICHMENT_DISABLED_API_KEY;
-const profileUrl = process.env.TEST_ENRICHMENT_PROFILE_URL;
-const enabled = !!enabledKey && !!disabledKey && !!profileUrl;
-const submit = (key: string, body: object) =>
+// Use a fixture team for which direct LinkedIn scraping is blocked.
+const apiKey = process.env.TEST_LINKEDIN_BLOCKED_API_KEY;
+const submit = (url: string) =>
   request(TEST_API_URL)
     .post("/v2/scrape")
-    .set("Authorization", `Bearer ${key}`)
-    .set("x-request-id", randomUUID())
-    .send(body);
+    .set("Authorization", `Bearer ${apiKey}`)
+    .send({ url });
 
-describe.skipIf(!enabled)("LinkedIn profile enrichment adapter", () => {
-  it(
-    "returns the configured provider's deterministic profile",
-    async () => {
-      const response = await submit(enabledKey!, {
-        url: profileUrl,
-        formats: ["json"],
-      });
-      expect(response.statusCode).toBe(200);
-      expect(response.body).toMatchObject({
-        success: true,
-        data: {
-          json: { name: expect.any(String) },
-          enrichment: {
-            source: { provider: expect.any(String) },
-            creditsUsed: expect.any(Number),
-            billingComplete: true,
-          },
-        },
-      });
-      expect(response.body.data.alexandria).toBeUndefined();
-    },
-    scrapeTimeout,
-  );
-
-  it(
-    "links disabled teams to setup without executing providers",
-    async () => {
-      const response = await submit(disabledKey!, { url: profileUrl });
+describe.skipIf(!apiKey)("LinkedIn enrichment setup guidance", () => {
+  it.each([
+    "https://ca.linkedin.com/in/example",
+    "https://linkedin.com/company/example",
+  ])(
+    "adds setup guidance to a blocked supported profile: %s",
+    async url => {
+      const response = await submit(url);
       expect(response.statusCode).toBe(403);
       expect(response.body).toMatchObject({
         success: false,
-        code: "ENRICHMENT_SETUP_REQUIRED",
+        code: "UNSUPPORTED_SITE",
         details: {
-          creditsUsed: 0,
-          billingComplete: true,
           action: { url: expect.stringContaining("enrichment%3Dtrue") },
         },
       });
+      expect(response.body.error).toContain(response.body.details.action.url);
     },
     scrapeTimeout,
   );
 
   it(
-    "rejects browser formats before calling enrichment",
+    "keeps unsupported LinkedIn paths on the existing error",
     async () => {
-      const response = await submit(enabledKey!, {
-        url: profileUrl,
-        formats: ["html"],
-      });
-      expect(response.statusCode).toBe(400);
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain("plain json or markdown");
+      const response = await submit("https://linkedin.com/jobs/123");
+      expect(response.statusCode).toBe(403);
+      expect(response.body.code).toBe("UNSUPPORTED_SITE");
+      expect(response.body.details?.action).toBeUndefined();
     },
     scrapeTimeout,
   );

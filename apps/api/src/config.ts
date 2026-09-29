@@ -301,7 +301,6 @@ const configSchema = z.object({
 
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
-  SCRAPE_ENRICHMENT_TEAM_IDS: z.string().default(""),
   EXCHANGE_INTERNAL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
 
   // Fire Engine
