@@ -18,7 +18,9 @@ overrides:
   ajv: "^8.18.0"
   fast-xml-builder: ">=1.1.6 <2.0.0"
   fast-xml-parser: "^5.7.0"
-  fast-uri: "3.1.6"
+  # GHSA-qw65-cvwx-89v3 / GHSA-58mr-gqgx-xq4g: stay on the 3.x
+  # line. Exact 3.1.8 cannot resolve to 4.x.
+  fast-uri: "3.1.8"
   "glob@>=10.2.0 <10.5.0": ">=10.5.0"
   "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
   "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
@@ -27,7 +29,9 @@ overrides:
   "bn.js@<5.2.3": ">=5.2.3"
   "@tootallnate/once@<3.0.1": ">=3.0.1"
   yauzl: "^3.2.1"
-  undici: "7.29.0"
+  # GHSA-3wwx-pv8p-q78v: stay on the 7.x line. Exact 7.29.1
+  # cannot resolve to 8.x.
+  undici: "7.29.1"
   "picomatch@<4.0.4": ">=4.0.4"
   "yaml@<2.8.3": ">=2.8.3"
   "smol-toml@<1.7.1": "1.8.0"

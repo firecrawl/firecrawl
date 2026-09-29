@@ -5,4 +5,6 @@ overrides:
   "path-to-regexp@<8.4.0": ">=8.4.0"
   "qs@<6.16.0": ">=6.16.0 <7.0.0"
   "esbuild@>=0.17.0 <0.28.1": "0.28.1"
-  "ip-address@>=10.0.0 <10.3.1": "10.4.0"
+  # GHSA-rpw4-54j3-4h4q / GHSA-2vr4-cq9g-pvrc: stay on the 10.x
+  # line. Exact 10.7.2 cannot resolve to 11.x.
+  "ip-address@>=10.0.0 <11.0.0": "10.7.2"

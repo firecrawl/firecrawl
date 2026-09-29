@@ -4,7 +4,9 @@ allowBuilds:
 overrides:
   "@humanfs/node@<0.16.8": ">=0.16.8 <0.17.0"
   ajv: "^8.18.0"
-  fast-uri: "3.1.6"
+  # GHSA-qw65-cvwx-89v3 / GHSA-58mr-gqgx-xq4g: stay on the 3.x
+  # line. Exact 3.1.8 cannot resolve to 4.x.
+  fast-uri: "3.1.8"
   "flatted@<3.4.2": ">=3.4.2"
   "minimatch@<10.2.3": ">=10.2.3"
   "rollup@<4.59.0": ">=4.59.0"
