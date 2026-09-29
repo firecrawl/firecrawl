@@ -80,6 +80,16 @@ describe("handOffTrack", () => {
     expect(logger.error).toHaveBeenCalledTimes(1);
   });
 
+  it("admits concurrent handoffs only up to the cap", async () => {
+    resetBacklogForTest(MAX_BACKLOG - 2);
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => handOffTrack("/v1/track", params)),
+    );
+    expect(results.filter(Boolean)).toHaveLength(2);
+    expect(queue.add).toHaveBeenCalledTimes(2);
+    expect(await outcomes()).toEqual({ queued: 2, queue_full: 3 });
+  });
+
   it("learns the backlog in the background, never on the caller's path", async () => {
     queue.getJobCounts.mockImplementation(async () => ({
       waiting: MAX_BACKLOG,

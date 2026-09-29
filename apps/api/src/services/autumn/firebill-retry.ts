@@ -103,6 +103,10 @@ export async function handOffTrack(
     );
     return false;
   }
+  // Counted at admission, so concurrent handoffs in this process see each
+  // other before the next refresh. Other processes are seen on refresh: the
+  // cap is soft by at most their adds in one refresh window.
+  backlog.size++;
 
   const add = getFirebillTrackRetryQueue().add(
     "track",
