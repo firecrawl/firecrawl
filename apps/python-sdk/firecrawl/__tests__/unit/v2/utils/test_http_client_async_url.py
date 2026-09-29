@@ -45,6 +45,20 @@ def test_get_keeps_relative_endpoint_untouched():
     assert url == "/v2/team/crawl/id"
 
 
+def test_get_rewrites_same_host_alternate_port():
+    client = _client()
+    asyncio.run(client.get("https://api.firecrawl.dev:8443/v2/team/crawl/id"))
+    url = client._client.get.await_args.args[0]
+    assert url == "https://api.firecrawl.dev/v2/team/crawl/id"
+
+
+def test_get_rewrites_same_host_http_url():
+    client = _client()
+    asyncio.run(client.get("http://api.firecrawl.dev/v2/team/crawl/id"))
+    url = client._client.get.await_args.args[0]
+    assert url == "https://api.firecrawl.dev/v2/team/crawl/id"
+
+
 def test_post_rewrites_cross_host_url():
     client = _client()
     asyncio.run(
