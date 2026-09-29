@@ -372,16 +372,21 @@ const ledgerAcceptanceCache = new Map<
 
 // The ledger lookup costs two Exchange calls and sits on the scrape path, so
 // answers are cached per process: briefly when not accepted, so a fresh
-// acceptance is picked up quickly, and longer once accepted.
+// acceptance is picked up quickly, and longer once accepted. Keyed by the
+// catalog's terms identity, so new terms are rechecked as soon as the
+// catalog carries them.
 function getLedgerAcceptance(input: {
   teamId: string;
   orgId: string;
   provider: string;
+  terms: ExchangeTerms;
   revocation?: { disabledAt: unknown };
 }): Promise<boolean> {
   const key = [
     input.orgId,
     input.provider,
+    input.terms.key,
+    input.terms.version,
     input.revocation === undefined ? "" : String(input.revocation.disabledAt),
   ].join("\0");
   const cached = ledgerAcceptanceCache.get(key);
@@ -398,7 +403,10 @@ function getLedgerAcceptance(input: {
     value: Promise.resolve(false),
   };
   entry.value = hasLedgerAcceptance({
-    ...input,
+    teamId: input.teamId,
+    orgId: input.orgId,
+    provider: input.provider,
+    revocation: input.revocation,
     timeoutMs: LEDGER_ACCEPTANCE_TIMEOUT_MS,
   })
     .catch(() => false)
@@ -450,6 +458,7 @@ async function getProviderAccessDecision(
       teamId,
       orgId,
       provider: provider.id,
+      terms: provider.terms,
       revocation: { disabledAt: entry.disabledAt },
     }))
       ? "allowed"
@@ -467,7 +476,12 @@ async function getProviderAccessDecision(
   if (
     teamId !== null &&
     orgId !== null &&
-    (await getLedgerAcceptance({ teamId, orgId, provider: provider.id }))
+    (await getLedgerAcceptance({
+      teamId,
+      orgId,
+      provider: provider.id,
+      terms: provider.terms,
+    }))
   ) {
     return "allowed";
   }

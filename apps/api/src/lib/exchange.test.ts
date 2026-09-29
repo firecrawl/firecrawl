@@ -808,6 +808,60 @@ describe("Exchange terms acceptance", () => {
     expect(exchangeRequest).toHaveBeenCalledTimes(2);
   });
 
+  it("rechecks the ledger once the catalog carries new terms", async () => {
+    const input = {
+      ...PROFILE_REQUEST,
+      flags: { professionalProfileCompanyDataBeta: true },
+    };
+    ledgerAnswers([{ version: ACME_TERMS.version, textHash: DIGEST }]);
+    await expect(getExchangeAccessForRequest(input)).resolves.toMatchObject({
+      allowed: true,
+    });
+
+    // The provider publishes new terms; the ledger still holds the old ones.
+    const NEW_TERMS = { key: "acme", version: "2026-02-01" };
+    setExchangeProvidersForTest(
+      TEST_PROVIDERS.map(provider =>
+        provider.id === "acme" ? { ...provider, terms: NEW_TERMS } : provider,
+      ),
+    );
+    vi.mocked(exchangeRequest).mockImplementation(async ({ path }) =>
+      path === "/v1/provider-terms/requirements"
+        ? {
+            status: 200,
+            body: {
+              providers: [
+                {
+                  provider: "acme",
+                  required: true,
+                  terms: { ...NEW_TERMS, digest: "c".repeat(64) },
+                },
+              ],
+            },
+          }
+        : {
+            status: 200,
+            body: {
+              providers: [
+                {
+                  provider: "acme",
+                  revoked: false,
+                  version: ACME_TERMS.version,
+                  textHash: DIGEST,
+                  acceptedAt: "2026-01-05T00:00:00.000Z",
+                },
+              ],
+            },
+          },
+    );
+
+    await expect(getExchangeAccessForRequest(input)).resolves.toEqual({
+      allowed: false,
+      termsRequired: true,
+      terms: NEW_TERMS,
+    });
+  });
+
   it("asks for terms again after an admin revocation until re-accepted", async () => {
     const revokedFlags = {
       professionalProfileCompanyDataBeta: true,
