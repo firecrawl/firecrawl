@@ -30,7 +30,7 @@ export type XTwitterPostUrl = {
   normalizedUrl: string;
 };
 
-export type XTwitterUrl = XTwitterProfileUrl | XTwitterPostUrl;
+type XTwitterUrl = XTwitterProfileUrl | XTwitterPostUrl;
 
 export function parseXTwitterUrl(url: string): XTwitterUrl | null {
   let parsed: URL;
