@@ -23,8 +23,14 @@ import {
 const KEYLESS_REQUESTS_PER_DAY = config.KEYLESS_REQUESTS_PER_DAY;
 const KEYLESS_CREDITS_PER_DAY = config.KEYLESS_CREDITS_PER_DAY;
 
-// Shared 429 copy for both keyless request-cap and credit-cap failures.
-export const KEYLESS_FREE_TIER_LIMIT_MESSAGE = `You've hit Firecrawl's keyless free tier rate limit. To continue now, create a free API key at https://www.firecrawl.dev/signin.
+// Signup link for every keyless prompt. The UTM tags attribute the new account
+// to the keyless free tier; the CLI swaps utm_medium to `cli` before printing.
+export const KEYLESS_SIGNUP_URL =
+  "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api";
+
+// Shared 429 copy for both keyless request-cap and credit-cap failures. The URL
+// ends the sentence without a period so a copied link keeps a clean utm_medium.
+export const KEYLESS_FREE_TIER_LIMIT_MESSAGE = `You've hit Firecrawl's keyless free tier rate limit. To continue now, create a free API key at ${KEYLESS_SIGNUP_URL}
 
 Then authenticate with:
 Authorization: Bearer YOUR_API_KEY`;
