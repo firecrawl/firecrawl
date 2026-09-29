@@ -228,7 +228,10 @@ describe("authenticateUser", () => {
       headers: {},
       socket: { remoteAddress: "203.0.113.8" },
     });
-    // Still September 29 in US time zones, so this also pins the date to UTC.
+    // 02:00 UTC on the 30th is still the 29th in Chicago, so pinning that zone
+    // checks the date is UTC on any runner.
+    const originalTz = process.env.TZ;
+    process.env.TZ = "America/Chicago";
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-09-30T02:00:00Z"));
     const promptSignupUrl =
@@ -276,6 +279,8 @@ describe("authenticateUser", () => {
       }
     } finally {
       vi.useRealTimers();
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
     }
   });
 

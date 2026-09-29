@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../services/rate-limiter", () => ({
   redisRateLimitClient: { ttl: vi.fn() },
@@ -75,12 +75,21 @@ describe("keyless conversion cohort telemetry", () => {
 });
 
 describe("keyless signup prompt date", () => {
+  // 02:00 UTC on the 30th is still the 29th in Chicago, so pinning that zone
+  // checks the date is UTC on any runner.
+  const originalTz = process.env.TZ;
   const now = new Date("2026-09-30T02:00:00Z");
   const dated = `${KEYLESS_SIGNUP_URL}&utm_content=2026-09-30`;
+
+  beforeEach(() => {
+    process.env.TZ = "America/Chicago";
+  });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
   });
 
   it("stamps the keyless signup link with the UTC date of the prompt", () => {
