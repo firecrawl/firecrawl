@@ -51,6 +51,8 @@ import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { getThirdPartyDataTermsRequiredResponse } from "../../lib/exchange";
+import { ThirdPartyDataTermsRequiredError } from "../../scraper/scrapeURL/error";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -572,6 +574,26 @@ export async function scrapeController(
           }
 
           if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e instanceof ThirdPartyDataTermsRequiredError) {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res
+              .status(403)
+              .json(getThirdPartyDataTermsRequiredResponse(e.terms));
+          }
+
+          if (e.code === "SCRAPE_ENRICHMENT_NOT_ENABLED") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });

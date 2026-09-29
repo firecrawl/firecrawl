@@ -42,13 +42,14 @@ import {
   PromptInjectionDetectedError,
   JsonExtractionContentTooLargeError,
   XTwitterConfigurationError,
+  EnrichmentNotEnabledError,
+  ThirdPartyDataTermsRequiredError,
 } from "../scraper/scrapeURL/error";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
 
 // TODO: figure out correct typing for this
 const errorMap: Record<ErrorCodes, any> = {
-  // Terms responses are API-level, never transported through workers.
-  THIRD_PARTY_DATA_TERMS_REQUIRED: null,
+  THIRD_PARTY_DATA_TERMS_REQUIRED: ThirdPartyDataTermsRequiredError,
   SAFE_MODE_BLOCKED: null,
   SCRAPE_SITE_RESTRICTION_BLOCKED: SiteRestrictionError,
   SCRAPE_TIMEOUT: ScrapeJobTimeoutError,
@@ -87,6 +88,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_PROMPT_INJECTION_DETECTED: PromptInjectionDetectedError,
   SCRAPE_JSON_CONTENT_TOO_LARGE: JsonExtractionContentTooLargeError,
   SCRAPE_X_TWITTER_CONFIGURATION_ERROR: XTwitterConfigurationError,
+  SCRAPE_ENRICHMENT_NOT_ENABLED: EnrichmentNotEnabledError,
   MAP_FAILED: MapFailedError,
   CONCURRENCY_QUEUE_TIMEOUT: ConcurrencyQueueTimeoutError,
   unsafe_domain_blocked: UnsafeDomainBlockedError,

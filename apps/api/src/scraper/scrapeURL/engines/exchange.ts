@@ -6,10 +6,15 @@ import { config } from "../../../config";
 import {
   getExchangeRequestLogContext,
   getExchangeResponseLogContext,
+  getThirdPartyDataTermsRequiredResponse,
 } from "../../../lib/exchange";
 import { setSpanAttributes, withSpan } from "../../../lib/otel-tracer";
 import { robustFetch } from "../lib/fetch";
-import { EngineError } from "../error";
+import {
+  EngineError,
+  EnrichmentNotEnabledError,
+  ThirdPartyDataTermsRequiredError,
+} from "../error";
 
 const exchangeScrapeResponseSchema = z.union([
   z
@@ -44,12 +49,39 @@ const exchangeScrapeResponseSchema = z.union([
         .object({
           code: z.string().optional(),
           message: z.string().optional(),
+          terms: z.object({ key: z.string(), version: z.string() }).optional(),
         })
         .passthrough()
         .optional(),
     })
     .passthrough(),
 ]);
+
+const exchangeRefusalSchema = exchangeScrapeResponseSchema.options[1];
+
+// The Exchange refusals a customer can act on, as the errors they see.
+function refusalError(
+  error: z.infer<typeof exchangeRefusalSchema>["error"],
+): Error | undefined {
+  const settingsUrl = `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria?enrichment=true`;
+  if (error?.code === "enrichment_not_enabled") {
+    return new EnrichmentNotEnabledError(
+      `LinkedIn scrapes run through your team's enrichment providers, and enrichment is not enabled for this kind of profile. An organization admin can choose providers at ${settingsUrl}`,
+    );
+  }
+  if (error?.code === "enrichment_unavailable") {
+    return new EnrichmentNotEnabledError(
+      `None of your team's enrichment providers can serve this LinkedIn URL. An organization admin can change them at ${settingsUrl}`,
+    );
+  }
+  if (error?.code === "third_party_data_terms_required" && error.terms) {
+    return new ThirdPartyDataTermsRequiredError(
+      error.terms,
+      getThirdPartyDataTermsRequiredResponse(error.terms).error,
+    );
+  }
+  return undefined;
+}
 
 export function exchangeMaxReasonableTime(meta: Meta): number {
   return meta.options.timeout ?? 60_000;
@@ -109,6 +141,13 @@ export async function scrapeURLWithExchange(
           ...(meta.options.maxAge === undefined
             ? {}
             : { maxAge: meta.options.maxAge }),
+          // The Exchange checks each enrichment step's provider terms against these.
+          ...(meta.internalOptions.teamFlags?.organizationDataSourceAccess
+            ? {
+                organizationDataSourceAccess:
+                  meta.internalOptions.teamFlags.organizationDataSourceAccess,
+              }
+            : {}),
         },
         logger: logger.child({ method: "exchangeScrape/robustFetch" }),
         tryCount: 2,
@@ -126,7 +165,10 @@ export async function scrapeURLWithExchange(
           errorCode: response.error?.code,
           durationMs: Date.now() - startTime,
         });
-        throw new EngineError("Exchange request failed");
+        throw (
+          refusalError(response.error) ??
+          new EngineError("Exchange request failed")
+        );
       }
 
       const responseLogContext = getExchangeResponseLogContext(

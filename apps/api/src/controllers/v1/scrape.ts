@@ -12,6 +12,8 @@ import { v7 as uuidv7 } from "uuid";
 import { getJobPriority } from "../../lib/job-priority";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { TransportableError } from "../../lib/error";
+import { getThirdPartyDataTermsRequiredResponse } from "../../lib/exchange";
+import { ThirdPartyDataTermsRequiredError } from "../../scraper/scrapeURL/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -395,6 +397,20 @@ async function scrapeControllerInner(
       }
 
       if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+        return res.status(403).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
+      if (e instanceof ThirdPartyDataTermsRequiredError) {
+        return res
+          .status(403)
+          .json(getThirdPartyDataTermsRequiredResponse(e.terms));
+      }
+
+      if (e.code === "SCRAPE_ENRICHMENT_NOT_ENABLED") {
         return res.status(403).json({
           success: false,
           code: e.code,

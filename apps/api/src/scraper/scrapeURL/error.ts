@@ -31,6 +31,50 @@ export class XTwitterConfigurationError extends TransportableError {
   }
 }
 
+export class EnrichmentNotEnabledError extends TransportableError {
+  constructor(message: string) {
+    super("SCRAPE_ENRICHMENT_NOT_ENABLED", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new EnrichmentNotEnabledError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class ThirdPartyDataTermsRequiredError extends TransportableError {
+  constructor(
+    public terms: { key: string; version: string },
+    message: string,
+  ) {
+    super("THIRD_PARTY_DATA_TERMS_REQUIRED", message);
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+      terms: this.terms,
+    };
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ThirdPartyDataTermsRequiredError(data.terms, data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class NoEnginesLeftError extends TransportableError {
   public fallbackList: Engine[];
 
