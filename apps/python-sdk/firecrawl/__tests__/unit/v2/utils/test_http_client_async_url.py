@@ -110,3 +110,16 @@ def test_auto_paginated_crawl_status_never_leaves_api_host():
     urls = [c.args[0] for c in client._client.get.await_args_list]
     assert urls == ["/v2/crawl/id", "https://api.firecrawl.dev/v2/crawl/id?skip=1"]
     assert [d.markdown for d in job.data] == ["a", "b"]
+
+
+def test_rewrite_keeps_path_params():
+    client = _client()
+    asyncio.run(client.get("https://evil.example.com/v2/crawl/id;p=1?skip=1"))
+    url = client._client.get.await_args.args[0]
+    assert url == "https://api.firecrawl.dev/v2/crawl/id;p=1?skip=1"
+
+
+def test_rewrite_refuses_non_absolute_api_url():
+    client = AsyncHttpClient(api_key="fc-test-key", api_url="api.firecrawl.dev")
+    with pytest.raises(ValueError):
+        client._build_url("https://evil.example.com/v2/crawl/id")

@@ -19,6 +19,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ./apps/python-sdk/requirements.txt
 
       - name: Install dependencies
         working-directory: ./apps/python-sdk

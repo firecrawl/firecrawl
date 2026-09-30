@@ -1,7 +1,7 @@
 import asyncio
 import httpx
 from typing import Optional, Dict, Any
-from urllib.parse import urlparse, urlunparse
+from .api_origin import pin_to_api_origin
 from .get_version import get_version
 
 version = get_version()
@@ -37,14 +37,7 @@ class AsyncHttpClient:
         await self._client.aclose()
 
     def _build_url(self, endpoint: str) -> str:
-        base = urlparse(self.api_url)
-        ep = urlparse(endpoint)
-
-        if ep.netloc:
-            path = ep.path or "/"
-            return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
-
-        return endpoint
+        return pin_to_api_origin(self.api_url, endpoint)
 
     def _headers(self, idempotency_key: Optional[str] = None) -> Dict[str, str]:
         headers: Dict[str, str] = {}

@@ -9,6 +9,26 @@ from firecrawl.v1.client import AsyncV1FirecrawlApp, V1FirecrawlApp
 
 API_URL = "https://api.firecrawl.dev"
 
+NEXT_URLS = [
+    ("https://evil.example.com/v1/x/id?skip=1", f"{API_URL}/v1/x/id?skip=1"),
+    ("//evil.example.com/v1/x/id?skip=1", f"{API_URL}/v1/x/id?skip=1"),
+    ("http://api.firecrawl.dev:8443/v1/x/id?skip=1", f"{API_URL}/v1/x/id?skip=1"),
+    ("https://evil.example.com/v1/x/id;p=1?skip=1", f"{API_URL}/v1/x/id;p=1?skip=1"),
+    (f"{API_URL}/v1/x/id?skip=1", f"{API_URL}/v1/x/id?skip=1"),
+]
+
+SYNC_CALLS = [
+    ("check_crawl_status", lambda app: app.check_crawl_status("id"), "/v1/crawl/id"),
+    ("check_batch_scrape_status", lambda app: app.check_batch_scrape_status("id"), "/v1/batch/scrape/id"),
+    ("_monitor_job_status", lambda app: app._monitor_job_status("id", {}, 2), "/v1/crawl/id"),
+]
+
+ASYNC_CALLS = [
+    ("check_crawl_status", lambda app: app.check_crawl_status("id"), "/v1/crawl/id"),
+    ("check_batch_scrape_status", lambda app: app.check_batch_scrape_status("id"), "/v1/batch/scrape/id"),
+    ("_async_monitor_job_status", lambda app: app._async_monitor_job_status("id", {}), "/v1/crawl/id"),
+]
+
 
 def _page(markdown, next_url=None):
     page = {"success": True, "status": "completed", "completed": 2, "total": 2,
@@ -19,36 +39,39 @@ def _page(markdown, next_url=None):
     return page
 
 
-@pytest.mark.parametrize(
-    "next_url, expected",
-    [
-        ("https://evil.example.com/v1/crawl/id?skip=1", f"{API_URL}/v1/crawl/id?skip=1"),
-        ("//evil.example.com/v1/crawl/id?skip=1", f"{API_URL}/v1/crawl/id?skip=1"),
-        ("http://api.firecrawl.dev:8443/v1/crawl/id?skip=1", f"{API_URL}/v1/crawl/id?skip=1"),
-        (f"{API_URL}/v1/crawl/id?skip=1", f"{API_URL}/v1/crawl/id?skip=1"),
-    ],
-)
-def test_sync_crawl_status_pins_next_url(next_url, expected):
+@pytest.mark.parametrize("name, call, first_path", SYNC_CALLS, ids=[c[0] for c in SYNC_CALLS])
+@pytest.mark.parametrize("next_url, expected", NEXT_URLS)
+def test_sync_pagination_pins_next_url(name, call, first_path, next_url, expected):
     app = V1FirecrawlApp(api_key="fc-test-key", api_url=API_URL)
     responses = [
         MagicMock(status_code=200, json=MagicMock(return_value=_page("a", next_url))),
         MagicMock(status_code=200, json=MagicMock(return_value=_page("b"))),
     ]
     with patch("firecrawl.v1.client.requests.get", side_effect=responses) as get:
-        status = app.check_crawl_status("id")
+        call(app)
 
-    assert [c.args[0] for c in get.call_args_list] == [f"{API_URL}/v1/crawl/id", expected]
-    assert [d.markdown for d in status.data] == ["a", "b"]
+    assert [c.args[0] for c in get.call_args_list] == [f"{API_URL}{first_path}", expected]
 
 
-def test_async_crawl_status_pins_next_url():
+@pytest.mark.parametrize("name, call, first_path", ASYNC_CALLS, ids=[c[0] for c in ASYNC_CALLS])
+@pytest.mark.parametrize("next_url, expected", NEXT_URLS)
+def test_async_pagination_pins_next_url(name, call, first_path, next_url, expected):
     app = AsyncV1FirecrawlApp(api_key="fc-test-key", api_url=API_URL)
-    app._async_get_request = AsyncMock(
-        side_effect=[_page("a", "https://evil.example.com/v1/crawl/id?skip=1"), _page("b")]
-    )
+    app._async_get_request = AsyncMock(side_effect=[_page("a", next_url), _page("b")])
 
-    status = asyncio.run(app.check_crawl_status("id"))
+    asyncio.run(call(app))
 
     urls = [c.args[0] for c in app._async_get_request.await_args_list]
-    assert urls == [f"{API_URL}/v1/crawl/id", f"{API_URL}/v1/crawl/id?skip=1"]
+    assert urls == [f"{API_URL}{first_path}", expected]
+
+
+def test_sync_crawl_status_keeps_all_pages():
+    app = V1FirecrawlApp(api_key="fc-test-key", api_url=API_URL)
+    responses = [
+        MagicMock(status_code=200, json=MagicMock(return_value=_page("a", "https://evil.example.com/v1/crawl/id?skip=1"))),
+        MagicMock(status_code=200, json=MagicMock(return_value=_page("b"))),
+    ]
+    with patch("firecrawl.v1.client.requests.get", side_effect=responses):
+        status = app.check_crawl_status("id")
+
     assert [d.markdown for d in status.data] == ["a", "b"]
