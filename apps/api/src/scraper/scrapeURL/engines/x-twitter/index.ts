@@ -463,11 +463,31 @@ async function fetchProfile(
     }),
     abortSignal: meta.abort.asSignal(),
     experimental_telemetry: xTwitterTelemetry("xTwitter/profile", meta),
-    prompt: `Give me current public X/Twitter profile details for @${xUrl.handle}: display name, username, profile picture URL, bio, follower count, verification status, and profile URL. Also return exactly the 5 latest posts authored by @${xUrl.handle} that are top-level posts, not replies or comments. Include fewer posts only if fewer public non-reply posts are available. Use the current public X data available to x_search.`,
+    // xAI bills every profile a user search returns, and the model otherwise
+    // often asks for 3 candidates. Pin the lookup to the one exact handle, and
+    // filter replies in the search so they aren't fetched and then dropped.
+    prompt: `Give me current public X/Twitter profile details for @${xUrl.handle}: display name, username, profile picture URL, bio, follower count, verification status, and profile URL. Look up this exact username directly with a single user search for "${xUrl.handle}" that returns only 1 result; do not search for other or similarly named accounts. If no account has the username ${xUrl.handle} (ignoring case), return null for every profile field and no posts rather than another account's data. Also return exactly the 5 latest posts authored by @${xUrl.handle} that are top-level posts, not replies or comments, found with a single latest-posts search for "from:${xUrl.handle} -filter:replies" limited to 5 results. Include fewer posts only if fewer public non-reply posts are available. Use the current public X data available to x_search.`,
   });
   recordGrokCost(meta, "xTwitter/profile", result);
 
-  return result.output as XTwitterProfileData;
+  const profile = result.output as XTwitterProfileData;
+  // A user search can still surface a similarly named account; never pass it
+  // off as the requested one. Without a username nothing ties the data to the
+  // requested account either, so that case is dropped too (it is the normal
+  // result for a handle that doesn't exist, so it isn't worth a warning).
+  const username = stripAt(profile.username);
+  if (!username) {
+    return {};
+  }
+  if (username.toLowerCase() !== xUrl.handle.toLowerCase()) {
+    meta.logger.warn("X/Twitter profile lookup returned a different account", {
+      requestedHandle: xUrl.handle,
+      returnedUsername: username,
+    });
+    return {};
+  }
+
+  return profile;
 }
 
 async function fetchPost(
