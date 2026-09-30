@@ -457,11 +457,12 @@ export async function brandingTransformer(
     });
   }
 
+  // Every `__` key (page snapshots, logo candidates, LLM reasoning and
+  // metadata) is internal; only teams debugging branding get them back.
   if (!isDebugBrandingEnabled(meta)) {
-    delete (brandingProfile as any).__button_snapshots;
-    delete (brandingProfile as any).__input_snapshots;
-    delete (brandingProfile as any).__logo_candidates;
-    delete (brandingProfile as any).__framework_hints;
+    for (const key of Object.keys(brandingProfile)) {
+      if (key.startsWith("__")) delete (brandingProfile as any)[key];
+    }
   }
 
   if (brandName) {
