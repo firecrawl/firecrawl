@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
@@ -614,7 +614,7 @@ function isDirectRun() {
     return false;
   }
 
-  return import.meta.url === pathToFileURL(path.resolve(entry)).href;
+  return import.meta.url === pathToFileURL(realpathSync(path.resolve(entry))).href;
 }
 
 if (isDirectRun()) {
