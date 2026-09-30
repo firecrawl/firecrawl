@@ -54,9 +54,10 @@ describe("searchRequestSchema highlights", () => {
   it("accepts optional agent task context without changing search defaults", () => {
     const request = searchRequestSchema.parse({
       query: "React memo docs",
-      objective: "Find official guidance on preventing unnecessary rerenders",
-      sessionId: "task_123",
-      clientModel: "claude-sonnet-4-6",
+      objective:
+        "  Find official guidance on preventing unnecessary rerenders  ",
+      sessionId: "  task_123  ",
+      clientModel: "  claude-sonnet-4-6  ",
     });
 
     expect(request).toMatchObject({
