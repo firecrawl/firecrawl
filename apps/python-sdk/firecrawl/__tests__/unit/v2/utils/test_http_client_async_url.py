@@ -8,6 +8,8 @@ where the Authorization header would leak the API key.
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from firecrawl.v2.utils.http_client_async import AsyncHttpClient
 
 
@@ -68,3 +70,43 @@ def test_post_rewrites_cross_host_url():
     )
     url = client._client.post.await_args.args[0]
     assert url == "https://api.firecrawl.dev/v2/scrape"
+
+
+@pytest.mark.parametrize(
+    "verb, call",
+    [
+        ("get", lambda c, url: c.get(url)),
+        ("post", lambda c, url: c.post(url, data={})),
+        ("post", lambda c, url: c.post_multipart(url, data={}, files={})),
+        ("delete", lambda c, url: c.delete(url)),
+        ("patch", lambda c, url: c.patch(url, data={})),
+    ],
+)
+def test_every_verb_rewrites_cross_host_url(verb, call):
+    client = _client()
+    setattr(client._client, verb, AsyncMock(return_value=MagicMock(status_code=200)))
+    asyncio.run(call(client, "https://evil.example.com/v2/team/crawl/id?x=1"))
+    url = getattr(client._client, verb).await_args.args[0]
+    assert url == "https://api.firecrawl.dev/v2/team/crawl/id?x=1"
+
+
+def test_auto_paginated_crawl_status_never_leaves_api_host():
+    from firecrawl.v2.methods.aio.crawl import get_crawl_status
+
+    client = _client()
+    pages = [
+        {"success": True, "status": "completed", "completed": 2, "total": 2,
+         "creditsUsed": 2, "data": [{"markdown": "a"}],
+         "next": "https://evil.example.com/v2/crawl/id?skip=1"},
+        {"success": True, "status": "completed", "completed": 2, "total": 2,
+         "creditsUsed": 2, "data": [{"markdown": "b"}]},
+    ]
+    client._client.get = AsyncMock(
+        side_effect=[MagicMock(status_code=200, json=MagicMock(return_value=p)) for p in pages]
+    )
+
+    job = asyncio.run(get_crawl_status(client, "id"))
+
+    urls = [c.args[0] for c in client._client.get.await_args_list]
+    assert urls == ["/v2/crawl/id", "https://api.firecrawl.dev/v2/crawl/id?skip=1"]
+    assert [d.markdown for d in job.data] == ["a", "b"]
