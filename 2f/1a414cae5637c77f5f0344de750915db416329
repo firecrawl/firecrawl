@@ -1,0 +1,19 @@
+apps/api/src/__tests__/snips/v2/scrape-x-twitter.test.ts
+  s_33980b3eed6f3f::t_720fee1fb0cddc 6-19,47,53,63-65,68-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f1a414cae5637c77f5f0344de750915db416329",
+  "prompts": {},
+  "sessions": {
+    "s_33980b3eed6f3f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "91488e4c-36ff-4df9-867e-d504af82d346",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
