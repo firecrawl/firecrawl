@@ -50,4 +50,38 @@ describe("searchRequestSchema highlights", () => {
 
     expect(request.highlights).toBe(false);
   });
+
+  it("accepts optional agent task context without changing search defaults", () => {
+    const request = searchRequestSchema.parse({
+      query: "React memo docs",
+      objective: "Find official guidance on preventing unnecessary rerenders",
+      sessionId: "task_123",
+      clientModel: "claude-sonnet-4-6",
+    });
+
+    expect(request).toMatchObject({
+      query: "React memo docs",
+      objective: "Find official guidance on preventing unnecessary rerenders",
+      sessionId: "task_123",
+      clientModel: "claude-sonnet-4-6",
+      limit: 10,
+    });
+    expect(
+      searchRequestSchema.parse({ query: "React memo docs" }),
+    ).not.toHaveProperty("sessionId");
+  });
+
+  it.each([
+    { objective: " " },
+    { objective: "x".repeat(5001) },
+    { sessionId: " " },
+    { sessionId: "x".repeat(129) },
+    { clientModel: " " },
+    { clientModel: "x".repeat(129) },
+  ])("rejects invalid agent task context %j", context => {
+    expect(
+      searchRequestSchema.safeParse({ query: "React memo docs", ...context })
+        .success,
+    ).toBe(false);
+  });
 });

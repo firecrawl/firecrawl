@@ -36,6 +36,36 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   );
 
   it.concurrent(
+    "accepts optional agent task context",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl documentation",
+          objective: "Find official Firecrawl API documentation",
+          sessionId: "task_123",
+          clientModel: "claude-sonnet-4-6",
+          limit: 1,
+        },
+        identity,
+      );
+      expect(res.web?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "rejects oversized agent task context",
+    async () => {
+      const res = await searchWithFailure(
+        { query: "firecrawl", objective: "x".repeat(5001) },
+        identity,
+      );
+      expect(res.error).toBe("Invalid request body");
+    },
+    60000,
+  );
+
+  it.concurrent(
     "works with includeDomains",
     async () => {
       const res = await search(

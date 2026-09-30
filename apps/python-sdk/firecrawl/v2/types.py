@@ -2392,6 +2392,9 @@ class SearchRequest(BaseModel):
     """Request for search operations."""
 
     query: str
+    objective: Optional[str] = None
+    session_id: Optional[str] = Field(default=None, alias="sessionId")
+    client_model: Optional[str] = Field(default=None, alias="clientModel")
     domain_tools: Optional[bool] = Field(default=None, alias="domainTools")
     tool_detail: Optional[Literal["compact", "summary", "full"]] = Field(default=None, alias="toolDetail")
     sources: Optional[List[SourceOption]] = None

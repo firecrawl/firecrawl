@@ -977,6 +977,12 @@ export interface CategoryOption {
 
 export interface SearchRequest {
   query: string;
+  /** Optional broader task goal behind this search. */
+  objective?: string;
+  /** Opaque ID shared by related searches in one agent task. */
+  sessionId?: string;
+  /** Model issuing and consuming results, if known. */
+  clientModel?: string;
   /** Include domain-matched tools in tools alongside semantic matches. */
   domainTools?: boolean;
   /** Compact by default; summary adds metadata, full includes contracts. */
