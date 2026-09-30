@@ -361,12 +361,40 @@ describe("Exchange routing", () => {
       }),
     ).resolves.toBe(false);
 
+    // atsv requests stay on engines that support the flag.
+    await expect(
+      canUseExchangeForRequest({
+        url: "https://profiles.example/person/example-person",
+        formats: [{ type: "markdown" }],
+        atsv: true,
+        flags: ENABLED_EXCHANGE_FLAGS,
+      }),
+    ).resolves.toBe(false);
+
     // minAge asks for Firecrawl-cached data, which the Exchange never has.
     await expect(
       canUseExchangeForRequest({
         url: "https://profiles.example/person/example-person",
         formats: [{ type: "markdown" }],
         minAge: 3_600_000,
+        flags: ENABLED_EXCHANGE_FLAGS,
+      }),
+    ).resolves.toBe(false);
+
+    // Selector-based filtering does not apply to provider records.
+    await expect(
+      canUseExchangeForRequest({
+        url: "https://profiles.example/person/example-person",
+        formats: [{ type: "markdown" }],
+        includeTags: ["article"],
+        flags: ENABLED_EXCHANGE_FLAGS,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      canUseExchangeForRequest({
+        url: "https://profiles.example/person/example-person",
+        formats: [{ type: "markdown" }],
+        excludeTags: ["nav"],
         flags: ENABLED_EXCHANGE_FLAGS,
       }),
     ).resolves.toBe(false);
@@ -487,14 +515,26 @@ describe("Exchange routing", () => {
       }),
     ).resolves.toBe(false);
 
-    // A blocked URL has no other way to be served.
+    // A blocked URL has no other way to be served, and still needs its terms.
     await expect(
       canUseExchangeForRequest({
         url: "https://facts.example/records/1",
         formats: [{ type: "markdown" }],
+        waitFor: 1000,
         blocked: true,
       }),
     ).resolves.toBe(true);
+    await expect(
+      getExchangeAccessForRequest({
+        url: "https://profiles.example/person/example-person",
+        formats: [{ type: "markdown" }],
+        blocked: true,
+      }),
+    ).resolves.toEqual({
+      allowed: false,
+      termsRequired: true,
+      terms: ACME_TERMS,
+    });
   });
 
   it("does not route unless the Exchange is configured", async () => {

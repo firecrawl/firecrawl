@@ -157,6 +157,7 @@ export type EngineScrapeResult = {
   markdown?: string;
   pages?: Array<{ pageNumber: number; markdown: string }>;
   blocks?: PdfPageBlocks[];
+  json?: unknown;
   statusCode: number;
   error?: string;
 
@@ -675,6 +676,7 @@ export async function buildFallbackList(meta: Meta): Promise<
         team_id: meta.internalOptions.teamId ?? null,
         org_id: meta.internalOptions.orgId ?? null,
         origin: null,
+        record: false,
       });
     } catch (error) {
       // Beta teams fail closed, as they always have. Anyone else keeps the
@@ -695,8 +697,17 @@ export async function buildFallbackList(meta: Meta): Promise<
       blocked,
       formats: meta.options.formats,
       actions: meta.options.actions,
+      headers: meta.options.headers,
+      waitFor: meta.options.waitFor,
+      mobile: meta.options.mobile,
+      location: meta.options.location,
+      proxy: meta.options.proxy,
+      blockAds: meta.options.blockAds,
       profile: meta.options.profile,
+      atsv: meta.internalOptions.atsv,
       minAge: meta.options.minAge,
+      includeTags: meta.options.includeTags,
+      excludeTags: meta.options.excludeTags,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       lockdown: meta.options.lockdown,
       flags: meta.internalOptions.teamFlags ?? null,

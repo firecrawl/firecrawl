@@ -33,6 +33,7 @@ import { ThirdPartyDataTermsRequiredError } from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { isToolsOnlySearch } from "../search/alexandria";
 import { getScrapeZDR } from "../lib/zdr-helpers";
+import { isLockdownZeroDataRetention } from "../lib/safe-mode";
 import {
   agentInteropStatus,
   isAgentInteropSecretValid,
@@ -399,9 +400,11 @@ function blocklistGate(
     }
 
     if (options.exchange) {
+      // Safe Mode lockdown implies ZDR, which keeps the Exchange out.
       const zeroDataRetention =
         getScrapeZDR(req.acuc?.flags) === "forced" ||
-        req.body?.zeroDataRetention === true;
+        req.body?.zeroDataRetention === true ||
+        isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
       const exchangeAccess = await getExchangeAccessForRequestBody({
         body: req.body,
         flags: req.acuc?.flags ?? null,

@@ -30,8 +30,17 @@ type RouteInput = {
   blocked?: boolean;
   formats?: FormatObject[] | unknown[];
   actions?: unknown[];
+  headers?: Record<string, unknown>;
+  waitFor?: number;
+  mobile?: boolean;
+  location?: unknown;
+  proxy?: unknown;
+  blockAds?: boolean;
   profile?: unknown;
+  atsv?: boolean;
   minAge?: number;
+  includeTags?: unknown[];
+  excludeTags?: unknown[];
   zeroDataRetention?: boolean;
   lockdown?: boolean;
   flags?: {
@@ -544,6 +553,25 @@ function isExchangeEligibleRequest(input: RouteInput): boolean {
   // Profile-backed scrapes expect session-specific content, which the
   // Exchange cannot serve.
   if (input.profile !== undefined) {
+    return false;
+  }
+
+  // Rendering options only mean something for a real page. A blocked URL has
+  // no page Firecrawl may render, so they are ignored there; anywhere else a
+  // request that sets them keeps the normal engines.
+  if (
+    input.blocked !== true &&
+    ((input.headers !== undefined && Object.keys(input.headers).length > 0) ||
+      (input.waitFor !== undefined && input.waitFor !== 0) ||
+      input.mobile ||
+      input.location ||
+      input.blockAds === false ||
+      input.atsv === true ||
+      input.proxy === "stealth" ||
+      input.proxy === "enhanced" ||
+      (Array.isArray(input.includeTags) && input.includeTags.length > 0) ||
+      (Array.isArray(input.excludeTags) && input.excludeTags.length > 0))
+  ) {
     return false;
   }
 
