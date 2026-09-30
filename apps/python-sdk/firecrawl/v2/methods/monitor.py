@@ -84,6 +84,7 @@ def _fetch_all_monitor_check_pages(
 ) -> List[MonitorCheckPage]:
     pages = initial_pages.copy()
     current_url = next_url
+    visited_urls = set()
     page_count = 0
     max_pages = pagination_config.max_pages if pagination_config else None
     max_results = pagination_config.max_results if pagination_config else None
@@ -95,6 +96,10 @@ def _fetch_all_monitor_check_pages(
             break
         if max_wait_time is not None and (time.monotonic() - start_time) > max_wait_time:
             break
+
+        if current_url in visited_urls:
+            raise RuntimeError("Repeated pagination cursor while fetching monitor check pages")
+        visited_urls.add(current_url)
 
         response = client.get(current_url)
         if not response.ok:
