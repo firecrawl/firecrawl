@@ -816,7 +816,38 @@ class FirecrawlClient:
         request = CrawlRequest(**request_kwargs)
 
         return crawl_module.start_crawl(self.http_client, request)
-    
+
+    def wait_crawl(
+        self,
+        job_id: str,
+        poll_interval: int = 2,
+        timeout: Optional[int] = None,
+        *,
+        request_timeout: Optional[float] = None,
+    ) -> CrawlJob:
+        """
+        Poll a crawl job until it reaches a terminal state.
+
+        Args:
+            job_id: ID of the crawl job
+            poll_interval: Seconds between status checks
+            timeout: Maximum seconds to wait for the whole job (None waits indefinitely)
+            request_timeout: Optional timeout (in seconds) for each status request
+
+        Returns:
+            CrawlJob in a terminal state ("completed", "failed", or "cancelled")
+
+        Raises:
+            TimeoutError: If the job does not finish within timeout
+        """
+        return crawl_module.wait_for_crawl_completion(
+            self.http_client,
+            job_id,
+            poll_interval=poll_interval,
+            timeout=timeout,
+            request_timeout=request_timeout,
+        )
+
     def get_crawl_status(
         self,
         job_id: str,
