@@ -251,6 +251,7 @@ class V1BatchScrapeStatusResponse(pydantic.BaseModel):
     expiresAt: datetime
     next: Optional[str] = None
     data: List[V1FirecrawlDocument]
+    error: Optional[str] = None
 
 class V1CrawlParams(pydantic.BaseModel):
     """Parameters for crawling operations."""
@@ -4608,6 +4609,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             expiresAt=status_data.get('expiresAt'),
             data=status_data.get('data'),
             next=status_data.get('next'),
+            error=status_data.get('error'),
         )
 
     async def check_batch_scrape_errors(self, id: str) -> V1CrawlErrorsResponse:
