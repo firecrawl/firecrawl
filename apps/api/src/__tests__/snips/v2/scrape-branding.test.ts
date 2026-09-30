@@ -162,6 +162,9 @@ describe("Branding response", () => {
       );
 
       expect(response.branding).toBeDefined();
+      // Still a real extraction, not an empty object.
+      expect(response.branding?.logo).toContain("firecrawl");
+      expect(response.branding?.colors?.primary).toMatch(/^#[0-9A-F]{6}$/);
       expect(
         Object.keys(response.branding!).filter(key => key.startsWith("__")),
       ).toEqual([]);
