@@ -1,0 +1,22 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/poll.ts
+  s_28f2768f245c7c::t_f0b69c316357ea 187,200
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFLongPoll.test.ts
+  s_28f2768f245c7c::t_f0b69c316357ea 181,183,187-192,228-252
+  s_28f2768f245c7c::t_364622aded1fbe 253-254
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c356f4a0d99af95ef97342f9201bdc6346b4debe",
+  "prompts": {},
+  "sessions": {
+    "s_28f2768f245c7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "056dce34-98a7-4d60-815b-3ca2e5da75b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
