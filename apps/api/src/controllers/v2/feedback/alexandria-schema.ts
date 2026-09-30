@@ -47,6 +47,8 @@ export const alexandriaFeedbackSchema = z
       requestedFunctionality: detail,
     }),
     rationale: detail,
+    // Optional so clients released before the field keep working.
+    objective: detail.optional(),
     providerFeedback: z.array(providerFeedback).max(20).optional(),
     capabilityFeedback: z.array(capabilityFeedback).max(20).optional(),
     origin: z.string().trim().min(1).max(100).default("api"),
