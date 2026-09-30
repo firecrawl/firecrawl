@@ -2,9 +2,16 @@ import { noul, TypeSafeClient, type JsonValue } from "@typesafe-ai/sdk";
 import type { Logger } from "winston";
 import type { SearchV2Response } from "../lib/entities";
 import { config } from "../config";
+import { setSpanAttributes, SpanKind, withSpan } from "../lib/otel-tracer";
 
 /** Jev's probability that a result is adult content, above which it is dropped. */
 const EXPLICIT_THRESHOLD = 0.5;
+
+/** Most Jev calls in flight at once for one result type. */
+const MAX_CONCURRENT_JUDGMENTS = 20;
+
+/** Past this, results not yet judged are kept rather than delaying the search. */
+const FILTER_BUDGET_MS = 5000;
 
 const questions = {
   explicit: noul(
@@ -37,7 +44,8 @@ function getClient(): TypeSafeClient | null {
 /**
  * Drops web, news and image results Jev judges to be adult content, keeping up
  * to `limit` of each in their original order. A result Jev fails to judge is
- * kept, so an outage falls back to the search provider's own safe search.
+ * kept, so an outage or slow judgment falls back to the search provider's own
+ * safe search.
  */
 export async function removeExplicitResults(
   response: SearchV2Response,
@@ -45,83 +53,116 @@ export async function removeExplicitResults(
   limit: number,
   logger: Logger,
 ): Promise<void> {
+  const { web, news, images } = response;
+  if (!web?.length && !news?.length && !images?.length) return;
+
   const typesafe = getClient();
   if (!typesafe) return;
 
-  let judged = 0;
-  let dropped = 0;
-  let failed = 0;
-  let lastError: unknown;
+  await withSpan(
+    "search.safe_filter",
+    async span => {
+      const signal = AbortSignal.timeout(FILTER_BUDGET_MS);
+      let judged = 0;
+      let dropped = 0;
+      let failed = 0;
+      let lastError: unknown;
 
-  const isExplicit = async (
-    result: Record<string, JsonValue>,
-  ): Promise<boolean> => {
-    judged++;
-    try {
-      const { answers } = await typesafe.systemOne({
-        state: { search_query: query, result },
-        questions,
+      const isExplicit = async (
+        type: string,
+        result: Record<string, JsonValue>,
+      ): Promise<boolean> => {
+        judged++;
+        try {
+          return await withSpan(
+            "typesafe.systemone",
+            async callSpan => {
+              const { model, answers } = await typesafe.systemOne(
+                { state: { search_query: query, result }, questions },
+                { signal },
+              );
+              setSpanAttributes(callSpan, {
+                "typesafe.model": model,
+                "search.safe_filter.explicit_probability":
+                  answers.explicit.noul,
+              });
+              return answers.explicit.noul > EXPLICIT_THRESHOLD;
+            },
+            {
+              kind: SpanKind.CLIENT,
+              attributes: { "search.safe_filter.result_type": type },
+            },
+          );
+        } catch (error) {
+          failed++;
+          lastError = error;
+          return false;
+        }
+      };
+
+      // Judges only as many results as can still be returned, then backfills
+      // from the provider's surplus for each one dropped.
+      const keepSafe = async <T>(
+        type: string,
+        items: T[],
+        describe: (item: T) => Record<string, JsonValue>,
+      ): Promise<T[]> => {
+        const kept: T[] = [];
+        let next = 0;
+        while (kept.length < limit && next < items.length) {
+          const batch = items.slice(
+            next,
+            next + Math.min(limit - kept.length, MAX_CONCURRENT_JUDGMENTS),
+          );
+          next += batch.length;
+          const verdicts = await Promise.all(
+            batch.map(item => isExplicit(type, describe(item))),
+          );
+          batch.forEach((item, index) => {
+            if (verdicts[index]) dropped++;
+            else kept.push(item);
+          });
+        }
+        return kept;
+      };
+
+      const [safeWeb, safeNews, safeImages] = await Promise.all([
+        web &&
+          keepSafe("web", web, result => ({
+            title: result.title,
+            snippet: result.description,
+            url: result.url,
+          })),
+        news &&
+          keepSafe("news", news, result => ({
+            title: result.title ?? null,
+            snippet: result.snippet ?? null,
+            url: result.url ?? null,
+          })),
+        images &&
+          keepSafe("images", images, result => ({
+            title: result.title ?? null,
+            url: result.url ?? null,
+            imageUrl: result.imageUrl ?? null,
+          })),
+      ]);
+      if (safeWeb) response.web = safeWeb;
+      if (safeNews) response.news = safeNews;
+      if (safeImages) response.images = safeImages;
+
+      setSpanAttributes(span, {
+        "search.safe_filter.judged": judged,
+        "search.safe_filter.dropped": dropped,
+        "search.safe_filter.failed": failed,
       });
-      return answers.explicit.noul > EXPLICIT_THRESHOLD;
-    } catch (error) {
-      failed++;
-      lastError = error;
-      return false;
-    }
-  };
-
-  // Judges only as many results as can still be returned, then backfills
-  // from the provider's surplus for each one dropped.
-  const keepSafe = async <T>(
-    items: T[],
-    describe: (item: T) => Record<string, JsonValue>,
-  ): Promise<T[]> => {
-    const kept: T[] = [];
-    let next = 0;
-    while (kept.length < limit && next < items.length) {
-      const batch = items.slice(next, next + limit - kept.length);
-      next += batch.length;
-      const verdicts = await Promise.all(
-        batch.map(item => isExplicit(describe(item))),
-      );
-      batch.forEach((item, index) => {
-        if (verdicts[index]) dropped++;
-        else kept.push(item);
-      });
-    }
-    return kept;
-  };
-
-  const { web, news, images } = response;
-  const [safeWeb, safeNews, safeImages] = await Promise.all([
-    web &&
-      keepSafe(web, result => ({
-        title: result.title,
-        snippet: result.description,
-        url: result.url,
-      })),
-    news &&
-      keepSafe(news, result => ({
-        title: result.title ?? null,
-        snippet: result.snippet ?? null,
-        url: result.url ?? null,
-      })),
-    images &&
-      keepSafe(images, result => ({
-        title: result.title ?? null,
-        url: result.url ?? null,
-        imageUrl: result.imageUrl ?? null,
-      })),
-  ]);
-  if (safeWeb) response.web = safeWeb;
-  if (safeNews) response.news = safeNews;
-  if (safeImages) response.images = safeImages;
-
-  logger.info("Safe search filter applied", { judged, dropped, failed });
-  if (failed > 0) {
-    logger.warn("Safe search filter kept results Jev could not judge", {
-      failed,
-      error: lastError,
-    });
-  }
+      logger.info("Safe search filter applied", { judged, dropped, failed });
+      if (failed > 0) {
+        logger.warn("Safe search filter kept results Jev could not judge", {
+          failed,
+          error: lastError,
+        });
+      }
+    },
+    { attributes: { "search.safe_filter.limit": limit } },
+  );
 }

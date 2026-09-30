@@ -74,7 +74,29 @@ it("drops results Jev judges explicit and backfills from the surplus", async () 
         },
       },
     }),
+    { signal: expect.any(AbortSignal) },
   );
+});
+
+it("caps how many results are judged at once", async () => {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  mocks.systemOne.mockImplementation(async () => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await new Promise(resolve => setTimeout(resolve, 1));
+    inFlight--;
+    return { answers: { explicit: { type: "noul", noul: 0.1 } } };
+  });
+  const response = {
+    web: Array.from({ length: 50 }, (_, index) => web(`safe${index}`)),
+  };
+
+  await removeExplicitResults(response, "query", 50, logger);
+
+  expect(response.web).toHaveLength(50);
+  expect(mocks.systemOne).toHaveBeenCalledTimes(50);
+  expect(maxInFlight).toBe(20);
 });
 
 it("filters news and images alongside web", async () => {
@@ -116,6 +138,14 @@ it("keeps results Jev fails to judge", async () => {
     "Safe search filter kept results Jev could not judge",
     expect.objectContaining({ failed: 2 }),
   );
+});
+
+it("skips responses with nothing to judge", async () => {
+  await removeExplicitResults({}, "query", 5, logger);
+  await removeExplicitResults({ web: [] }, "query", 5, logger);
+
+  expect(mocks.systemOne).not.toHaveBeenCalled();
+  expect(logger.info).not.toHaveBeenCalled();
 });
 
 it("does nothing without a TypeSafe API key", async () => {

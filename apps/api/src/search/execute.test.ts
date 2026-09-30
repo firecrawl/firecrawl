@@ -127,17 +127,35 @@ describe("executeSearch safe search", () => {
     description: "An example page.",
   };
 
-  it("runs the Jev filter on safe searches", async () => {
-    mocks.search.mockResolvedValue({ web: [webResult] });
+  it("bills and returns only the results the Jev filter keeps", async () => {
+    const safe = Array.from({ length: 10 }, (_, index) => ({
+      ...webResult,
+      url: `https://safe${index}.example/`,
+    }));
+    const explicit = { ...webResult, url: "https://nsfw.example/" };
+    mocks.search.mockResolvedValue({ web: [...safe, explicit] });
+    mocks.removeExplicitResults.mockImplementationOnce(async response => {
+      response.web = response.web.filter(
+        (result: { url: string }) => result.url !== explicit.url,
+      );
+    });
 
-    await executeSearch({ ...options([]), safe: true }, context, logger);
-
-    expect(mocks.removeExplicitResults).toHaveBeenCalledWith(
-      expect.objectContaining({ web: expect.any(Array) }),
-      "retries",
-      10,
+    const result = await executeSearch(
+      { ...options([]), limit: 20, safe: true },
+      context,
       logger,
     );
+
+    expect(mocks.removeExplicitResults).toHaveBeenCalledWith(
+      expect.anything(),
+      "retries",
+      20,
+      logger,
+    );
+    expect(result.response.web?.map(x => x.url)).toEqual(safe.map(x => x.url));
+    expect(result.totalResultsCount).toBe(10);
+    // 11 results would bill 4 credits; the 10 kept bill 2.
+    expect(result.searchCredits).toBe(2);
   });
 
   it("skips the Jev filter when safe is off or data must not be retained", async () => {
