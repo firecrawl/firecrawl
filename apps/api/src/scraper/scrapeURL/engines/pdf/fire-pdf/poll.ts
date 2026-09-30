@@ -13,6 +13,7 @@ import {
   LONG_POLL_MAX_EARLY_ANSWERS,
   LONG_POLL_MAX_WAIT_MS,
   LONG_POLL_MIN_WAIT_MS,
+  POLL_CAP_MS,
   POLL_FLOOR_MS,
   pollResponseSchema,
   TERMINAL_STATUSES,
@@ -92,16 +93,22 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
     // After an early answer, pause once on the regular floor before the
     // next wait_ms request. It runs before the deadline check and before
     // the wait is sized, so a held request never outlives the deadline.
-    // Skipped when no long-poll would fit after it: the scheduled sleep
-    // below then covers the wait on its own.
+    // When no long-poll would fit after it, this round takes the scheduled
+    // path instead (its sleep, then a plain poll).
+    // The hint is capped like every other use of it in this module.
+    let scheduledThisRound = false;
     if (longPollActive && earlyAnswers > 0) {
-      const pauseMs = Math.max(POLL_FLOOR_MS, retryAfterMs ?? 0);
+      const pauseMs = Math.max(
+        POLL_FLOOR_MS,
+        Math.min(POLL_CAP_MS, retryAfterMs ?? 0),
+      );
       const fitsAfterPause =
         longPollWaitFor(
           deps.longPollWaitMs ?? 0,
           pollingDeadline - now() - pauseMs,
         ) > 0;
       if (fitsAfterPause) await sleep(pauseMs, meta.abort.asSignal());
+      else scheduledThisRound = true;
     }
     if (now() > pollingDeadline) {
       firePdfAsyncPollCount.observe(pollCount);
@@ -109,9 +116,10 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
     }
 
     meta.abort.throwIfAborted();
-    const waitMs = longPollActive
-      ? longPollWaitFor(deps.longPollWaitMs ?? 0, pollingDeadline - now())
-      : 0;
+    const waitMs =
+      longPollActive && !scheduledThisRound
+        ? longPollWaitFor(deps.longPollWaitMs ?? 0, pollingDeadline - now())
+        : 0;
     // A long-poll is sent right away: the server does the waiting.
     let early: number | undefined;
     if (waitMs === 0) {

@@ -57,7 +57,7 @@ export const firePdfAsyncSubmit503Total = new Counter({
 
 export const firePdfAsyncLongPollTotal = new Counter({
   name: "firecrawl_fire_pdf_async_long_poll_total",
-  help: "GET /jobs/:id requests sent with wait_ms, by outcome: terminal (answered with a terminal status), held (non-terminal after holding), not_held (non-terminal answered early; the job falls back to scheduled polling)",
+  help: "GET /jobs/:id requests sent with wait_ms, by outcome: terminal (answered with a terminal status), held (non-terminal after holding), not_held (non-terminal answered early; followed by a pause, and by scheduled polling after repeated early answers)",
   labelNames: ["outcome"],
 });
 

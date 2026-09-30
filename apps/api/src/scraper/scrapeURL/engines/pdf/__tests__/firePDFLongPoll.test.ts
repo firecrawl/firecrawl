@@ -185,9 +185,42 @@ describe("pollUntilTerminal — wait_ms long-poll", () => {
       pollingDeadline: T0 + 2_500,
     });
     // 2.5s left: a 1s pause would leave too little for another long-poll,
-    // so it is skipped rather than stacked on the scheduled sleeps.
-    expect(urls.map(waitParam)).toEqual(["1500", "1500", undefined, undefined]);
+    // so that round takes the scheduled path: its sleep, then a plain poll.
+    expect(urls.map(waitParam)).toEqual(["1500", undefined, undefined]);
     expect(sleeps).toEqual([1_000, 2_000]);
+  });
+
+  it("caps a large retry_after_ms hint in the early-answer pause", async () => {
+    let virtualNow = T0;
+    const sleeps: number[] = [];
+    let calls = 0;
+    const fetchImpl: any = async () => {
+      calls++;
+      return calls >= 2
+        ? jsonResp({
+            status: 200,
+            body: { scrape_id: "x", status: "done", pages_processed: 1 },
+          })
+        : jsonResp({
+            status: 202,
+            body: { scrape_id: "x", status: "running", retry_after_ms: 30_000 },
+          });
+    };
+    await pollUntilTerminal({
+      baseUrl: "http://fire-pdf.test",
+      scrapeId: "x",
+      pollingDeadline: DEADLINE,
+      meta: makeMeta(),
+      fetchImpl,
+      sleep: async ms => {
+        sleeps.push(ms);
+        virtualNow += ms;
+      },
+      now: () => virtualNow,
+      random: () => 0,
+      longPollWaitMs: 20_000,
+    });
+    expect(sleeps).toEqual([5_000]);
   });
 
   it("bounds the wait by the polling deadline", async () => {
