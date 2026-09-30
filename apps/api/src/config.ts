@@ -508,11 +508,8 @@ const configSchema = z.object({
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
-  // Unset falls back to 8192 for any model outside modelPrices, inside
-  // generateCompletions (the JSON/query/summary path, and fire-0's reranker).
-  // Self-hosted models with a smaller real window should set this
-  // explicitly. fire-0's own extraction trimming (getModelLimits_F0) does
-  // not read it.
+  // Unset falls back to 8192 for any model outside modelPrices. Self-hosted
+  // models with a smaller real window should set this explicitly.
   MODEL_MAX_INPUT_TOKENS: z.coerce.number().int().positive().optional(),
 
   // LangSmith (tracing for interact agent)
