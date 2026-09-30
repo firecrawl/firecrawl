@@ -508,9 +508,11 @@ const configSchema = z.object({
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
-  // Unset falls back to 8192 for any model outside modelPrices. Self-hosted
-  // models with a smaller real context window (e.g. a 4k local model) should
-  // set this explicitly -- the default does not know their actual window.
+  // Unset falls back to 8192 for any model outside modelPrices, in the
+  // JSON/query/summary extraction path (generateCompletions) -- self-hosted
+  // models with a smaller real window (e.g. a 4k local model) should set
+  // this explicitly there. The separate /v1/extract (fire-0) pipeline does
+  // not read this yet.
   MODEL_MAX_INPUT_TOKENS: z.coerce.number().int().positive().optional(),
 
   // LangSmith (tracing for interact agent)
