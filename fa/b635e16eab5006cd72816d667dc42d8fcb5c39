@@ -1,0 +1,21 @@
+apps/api/src/lib/branding/transformer.ts
+  s_3002048a2ce37a::t_46da8e8a3e4d09 460-461,463-465
+apps/api/src/__tests__/snips/v2/scrape-branding.test.ts
+  s_3002048a2ce37a::t_46da8e8a3e4d09 151-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fab635e16eab5006cd72816d667dc42d8fcb5c39",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
