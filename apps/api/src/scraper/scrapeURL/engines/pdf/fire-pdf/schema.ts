@@ -11,12 +11,80 @@ export const POLL_FLOOR_MS = 1_000;
 export const POLL_CAP_MS = 5_000;
 export const POLL_TIMEOUT_BUFFER_MS = 30_000;
 
+// An inline job's deadline sits this far inside the caller's window. The
+// caller aborts the scrape the instant its window closes, so a job that is
+// still wrapping up at that instant is cancelled and every processed page is
+// lost. The margin covers the worker's end-of-deadline work (degrade the
+// remaining pages, assemble, upload) plus one poll interval and the result
+// fetch, so the deadline-degraded result the worker produces anyway is the
+// one the caller receives: 10% of the window, floored at 10s (a backoff-capped
+// poll alone is ~6s with jitter) and capped at 30s.
+export const INLINE_JOB_DEADLINE_MARGIN_FRACTION = 0.1;
+export const INLINE_JOB_DEADLINE_MARGIN_MIN_MS = 10_000;
+export const INLINE_JOB_DEADLINE_MARGIN_MAX_MS = 30_000;
+// Polls are pulled forward so one lands this long after the job deadline,
+// then run at POLL_FLOOR_MS until the caller window closes: the job is
+// expected to finish right there, and a backoff-capped poll would miss it.
+export const JOB_DEADLINE_POLL_GRACE_MS = 1_000;
+// One retry on a submit that provably never reached fire-pdf's handler: a
+// transport failure, or a 503 carrying Fastify's canned shutdown body
+// instead of one of fire-pdf's own 503 codes. Rolling api pods leave
+// kept-alive connections pointed at terminating pods; the retry opens a
+// fresh connection to a live one. POST /jobs is idempotent on scrape_id, so
+// a first request that did land is replayed, never duplicated.
+export const SUBMIT_TRANSIENT_RETRY_DELAY_MS = 250;
+// Slack for the submit round trip: fire-pdf validates `deadline_at - now`
+// against MIN_DEADLINE_MS on arrival, so the advertised deadline must clear
+// it by at least the request's flight time.
+const INLINE_SUBMIT_SLACK_MS = 5_000;
+// The smallest caller window async accepts. Below it, the margin would push
+// the inline job deadline to (or under) fire-pdf's minimum and the submit
+// would be rejected on arrival; such requests take the sync path instead.
+export const MIN_ASYNC_CALLER_WINDOW_MS =
+  MIN_DEADLINE_MS + INLINE_JOB_DEADLINE_MARGIN_MIN_MS + INLINE_SUBMIT_SLACK_MS;
+
 export const TERMINAL_STATUSES = new Set([
   "done",
   "failed",
   "expired",
   "cancelled",
 ]);
+
+/** The 503 codes fire-pdf's submit handlers document (api/src/http/handlers
+ * handle-submit-job / handle-sharded-submit). Closed on purpose: a 503 with
+ * any other body did not come from one of them, so it is retried once. If
+ * fire-pdf adds a code before this list learns it, the failure mode is one
+ * idempotent extra POST — never a swallowed retry. */
+export const FIRE_PDF_SUBMIT_503_CODES = [
+  "admission_rejected",
+  "admission_unavailable",
+  "submit_preflight_failed",
+  "submit_txn_failed",
+  "page_markdown_not_ready",
+  "gcs_upload_failed",
+  "gcs_head_failed",
+  "lookup_failed",
+  "internal",
+] as const;
+
+/** Error body a fire-pdf submit handler sends with a 503: one of its
+ * documented codes plus a human message. */
+export const firePdfSubmit503BodySchema = z
+  .object({
+    error: z.enum(FIRE_PDF_SUBMIT_503_CODES),
+    message: z.string().optional(),
+  })
+  .passthrough();
+
+/** Fastify's canned reply while an instance is shutting down
+ * (`return503OnClosing`, sent with `Connection: close` before any route
+ * handler runs): the request was never processed. */
+export const fastifyClosingBodySchema = z
+  .object({
+    error: z.literal("Service Unavailable"),
+    statusCode: z.literal(503),
+  })
+  .passthrough();
 
 export const submitResponseSchema = z.object({
   scrape_id: z.string(),
@@ -127,6 +195,77 @@ export const firePdfBlockPagesSchema = z.array(
 
 export const firePdfBlocksSchema = firePdfBlockPagesSchema.optional();
 
+/**
+ * fire-pdf's provenance stamp: who produced a result and how complete it is.
+ * Stored verbatim with every cache entry so a later cache policy can judge
+ * the entry without reading its content (fire-pdf docs/cache-policy.md).
+ * `passthrough` keeps fields a newer fire-pdf adds.
+ */
+export const firePdfProvenanceSchema = z
+  .object({
+    generation: z.string(),
+    build_sha: z.string(),
+    built_at: z.string().nullable(),
+    produced_at: z.string(),
+    stages: z.array(z.string()).optional(),
+    // Page counts: the write rule reads them, so a malformed stamp must
+    // fail validation rather than pass as a healthy result. parseProvenance
+    // turns that failure into a refused cache write, never a failed scrape.
+    quality: z
+      .object({
+        total_pages: z.int().nonnegative(),
+        failed_pages: z.int().nonnegative(),
+        partial_pages: z.int().nonnegative(),
+        degraded_pages: z.int().nonnegative(),
+        ocr_pages: z.int().nonnegative(),
+      })
+      .passthrough()
+      .optional(),
+    // `passthrough` on each item too: a newer fire-pdf may add per-build
+    // fields, and the entry stores the stamp verbatim.
+    contributing_builds: z
+      .array(
+        z
+          .object({
+            generation: z.string(),
+            build_sha: z.string(),
+            built_at: z.string().nullable(),
+          })
+          .passthrough(),
+      )
+      .optional(),
+  })
+  .passthrough();
+
+export type FirePdfProvenance = z.infer<typeof firePdfProvenanceSchema>;
+
+/**
+ * The stamp is parsed apart from the document. The document is what the
+ * caller asked for; the stamp only decides what the cache may remember, so
+ * a stamp this build cannot read degrades to `malformed` (the result is
+ * served, not cached) instead of failing the response.
+ */
+type ProvenanceParse =
+  | { status: "absent" }
+  | { status: "ok"; provenance: FirePdfProvenance }
+  | { status: "malformed"; issue: string };
+
+export function parseProvenance(raw: unknown): ProvenanceParse {
+  // Only a missing field is "no stamp" (a build from before the stamp
+  // existed). fire-pdf never sends an explicit null; one is unreadable.
+  if (raw === undefined) return { status: "absent" };
+  if (raw === null) return { status: "malformed", issue: "provenance: null" };
+  const parsed = firePdfProvenanceSchema.safeParse(raw);
+  if (parsed.success) return { status: "ok", provenance: parsed.data };
+  return {
+    status: "malformed",
+    issue: parsed.error.issues
+      .slice(0, 3)
+      .map(i => `${i.path.join(".") || "<root>"}: ${i.message}`)
+      .join("; "),
+  };
+}
+
 export const resultResponseSchema = z.object({
   schema_version: z
     .union([z.literal(1), z.literal(2), z.literal(3)])
@@ -142,6 +281,9 @@ export const resultResponseSchema = z.object({
   // is the only proof the fire-pdf worker build understood the option —
   // older workers ignore unknown option keys and omit it.
   page_markers: z.literal(true).optional(),
+  // Raw on purpose: parsed separately by parseProvenance so a stamp this
+  // build does not understand never fails the scrape.
+  provenance: z.unknown().optional(),
 });
 
 export type PollResponse = z.infer<typeof pollResponseSchema>;

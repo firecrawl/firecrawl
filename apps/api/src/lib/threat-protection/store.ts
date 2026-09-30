@@ -134,7 +134,9 @@ export function rowToConfig(
           ? "normal"
           : row.mode === "zscaler"
             ? "zscaler"
-            : "off",
+            : row.mode === "manual-only"
+              ? "manual-only"
+              : "off",
       riskScoreThreshold: doc.riskScoreThreshold,
       blacklist: doc.blacklist,
       whitelist: doc.whitelist,

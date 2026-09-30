@@ -188,6 +188,16 @@ export interface AuditMetadata {
   username: string;
 }
 
+/**
+ * OCR raster images (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP, WebP, AVIF) as
+ * one-page documents. Part of the default parsers list next to "pdf"; takes
+ * no options, so the string "image" is equivalent. Omit it from an explicit
+ * list to keep image URLs failing as unsupported files.
+ */
+export type ImageParser = {
+  type: "image";
+};
+
 export type PDFParser = {
   type: "pdf";
   mode?: "fast" | "auto" | "ocr";
@@ -249,7 +259,7 @@ export interface ScrapeOptions {
   timeout?: number;
   waitFor?: number;
   mobile?: boolean;
-  parsers?: Array<string | PDFParser>;
+  parsers?: Array<string | PDFParser | ImageParser>;
   actions?: ActionOption[];
   location?: LocationConfig;
   skipTlsVerification?: boolean;
@@ -275,15 +285,14 @@ export interface ScrapeOptions {
   };
   integration?: string;
   origin?: string;
+  /** Include domain-matched Alexandria tools for this URL in `tools`. Default off. */
+  domainTools?: boolean;
+  /** Summary by default; compact returns identity and description, full includes contracts. */
+  toolDetail?: "compact" | "summary" | "full";
 }
 
 export type RedactPIIEntity =
-  | "PERSON"
-  | "EMAIL"
-  | "PHONE"
-  | "LOCATION"
-  | "FINANCIAL"
-  | "SECRET";
+  "PERSON" | "EMAIL" | "PHONE" | "LOCATION" | "FINANCIAL" | "SECRET";
 
 export interface RedactPIIOptions {
   /**
@@ -309,8 +318,14 @@ export interface RedactPIIOptions {
  * fields you provide replace the team policy's values.
  */
 export interface ThreatProtectionOptions {
-  /** "off" disables scanning for this request; "normal" applies the policy. */
-  mode?: "off" | "normal";
+  /**
+   * "off" disables scanning for this request; "manual-only" enforces only the
+   * blacklist / whitelist / blocked TLDs (no provider scan, no scan fee);
+   * "normal" scans with Google Web Risk; "zscaler" classifies through your
+   * organization's Zscaler connection. Enforced teams may raise the mode per
+   * request but never lower it.
+   */
+  mode?: "off" | "manual-only" | "normal" | "zscaler";
   /** Block verdicts at or above this risk score (integer 0-100). */
   riskScoreThreshold?: number;
   /** Exact domains or globs like "*.example.com" to always block (max 1000). */
@@ -324,12 +339,7 @@ export interface ThreatProtectionOptions {
 }
 
 export type ParseFileData =
-  | Blob
-  | File
-  | Buffer
-  | Uint8Array
-  | ArrayBuffer
-  | string;
+  Blob | File | Buffer | Uint8Array | ArrayBuffer | string;
 
 export interface ParseFile {
   data: ParseFileData;
@@ -350,6 +360,7 @@ export type ParseOptions = Omit<
   | "lockdown"
   | "proxy"
   | "threatProtection"
+  | "toolDetail"
 > & {
   formats?: ParseFormatOption[];
   proxy?: "basic" | "auto";
@@ -364,11 +375,7 @@ export interface WebhookConfig {
 
 // Agent webhook events differ from crawl: has 'action' and 'cancelled', no 'page'
 export type AgentWebhookEvent =
-  | "started"
-  | "action"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  "started" | "action" | "completed" | "failed" | "cancelled";
 
 export interface AgentWebhookConfig {
   url: string;
@@ -489,10 +496,7 @@ export interface BrandingProfile {
     headerHeight?: string;
     footerHeight?: string;
     [key: string]:
-      | number
-      | string
-      | Record<string, number | string | undefined>
-      | undefined;
+      number | string | Record<string, number | string | undefined> | undefined;
   };
   tone?: {
     voice?: string;
@@ -674,6 +678,8 @@ export interface DocumentMetadata {
 }
 
 export interface Document {
+  /** API guidance, separate from extracted page content. */
+  agent_hints?: string[];
   markdown?: string;
   html?: string;
   rawHtml?: string;
@@ -702,6 +708,8 @@ export interface Document {
   pages?: PdfPage[];
   /** Typed PDF layout blocks, present only when `parsers[].blocks` is true. */
   blocks?: PdfPageBlocks[];
+  /** Present when `domainTools` discovered contracts matching this URL. */
+  tools?: DiscoveredTool[];
 }
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
@@ -814,9 +822,131 @@ export interface SearchResultImages {
 }
 
 export interface SearchData {
+  agent_hints?: string[];
+  warning?: string;
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
+  tools?: DiscoveredTool[];
+}
+
+/** A complete tool contract returned by semantic or contextual discovery. */
+export interface DiscoveredTool {
+  next?: AlexandriaCall;
+  id?: string;
+  provider: string;
+  capability: string;
+  name?: string;
+  description: string;
+  creditsCost?: number;
+  perRecord?: boolean;
+  options?: Array<{
+    name: string;
+    type: string;
+    required?: boolean;
+    [key: string]: unknown;
+  }>;
+  requiresOneOf?: string[][];
+  response?: {
+    about?: string;
+    key?: string;
+    fields?: Array<{ name: string; type: string; [key: string]: unknown }>;
+    [key: string]: unknown;
+  };
+  examples?: Partial<Record<"javascript" | "python" | "curl", string>> &
+    Record<string, string>;
+  example?: {
+    recordedAt: string;
+    request: Record<string, unknown>;
+    response: unknown;
+  };
+  label?: string;
+  whenToUse?: string;
+  returns?: unknown;
+  discovery?: unknown;
+  attribution?: unknown;
+  matchedBy?: Array<"semantic" | "domain">;
+  matchedUrls?: string[];
+  concept?: string;
+  cohorts?: string[];
+  similarity?: number;
+}
+
+export interface FindToolsOptions {
+  urls?: string[];
+  providers?: string[];
+  categories?: string[];
+  groups?: string[];
+  capabilities?: string[];
+  level?: "providers" | "groups" | "tools";
+  expand?: Array<"options" | "response" | "examples">;
+  limit?: number;
+  offset?: number;
+}
+
+export interface FindToolsData {
+  level: "providers" | "groups" | "tools";
+  items: Array<{
+    id: string;
+    name: string;
+    next?: AlexandriaCall;
+    execute?: Pick<AlexandriaCall, "provider" | "capability">;
+    [key: string]: unknown;
+  }>;
+  total: number;
+  next: AlexandriaCall | null;
+}
+
+export interface AlexandriaScrapeRequest extends AlexandriaOptions {
+  alexandria: AlexandriaCall | AlexandriaCall[];
+}
+
+export interface AlexandriaCall {
+  provider: string;
+  capability: string;
+  options?: Record<string, unknown>;
+}
+
+export interface AlexandriaScrapeError {
+  code: string;
+  message: string;
+  status?: number;
+  /** Present when credits were captured before the failure. */
+  chargeId?: string;
+}
+
+export type AlexandriaScrapeResult =
+  | {
+      provider: string;
+      capability: string;
+      creditsCost: number;
+      data: unknown;
+      records?: number;
+      upstreamStatus?: number;
+      recordedAt?: string;
+      error?: undefined;
+      [key: string]: unknown;
+    }
+  | {
+      provider?: string;
+      capability?: string;
+      error: AlexandriaScrapeError;
+      [key: string]: unknown;
+    };
+
+export interface AlexandriaScrapeData {
+  scrapeId: string;
+  requestId: string;
+  alexandria: AlexandriaScrapeResult[];
+  creditsCost: number;
+}
+
+export interface AlexandriaOptions {
+  /** Reuse this ID with the identical payload when retrying an execution. */
+  requestId?: string;
+  timeout?: number;
+  integration?: string;
+  origin?: string;
 }
 
 /**
@@ -847,8 +977,13 @@ export interface CategoryOption {
 
 export interface SearchRequest {
   query: string;
+  /** Include domain-matched tools in tools alongside semantic matches. */
+  domainTools?: boolean;
+  /** Compact by default; summary adds metadata, full includes contracts. */
+  toolDetail?: "compact" | "summary" | "full";
   sources?: Array<
-    "web" | "news" | "images" | { type: "web" | "news" | "images" }
+    "web" | "news" | "images" | "alexandria"
+    | { type: "web" | "news" | "images" | "alexandria" }
   >;
   /**
    * Narrow web search by category. See {@link CategoryOption}.
@@ -866,11 +1001,13 @@ export interface SearchRequest {
   limit?: number;
   tbs?: string;
   location?: string;
+  /** ISO 3166-1 alpha-2 country code used to geo-target the search results. */
+  country?: string;
   ignoreInvalidURLs?: boolean;
   timeout?: number; // ms
   /** Generate query-relevant highlights for search results. Defaults to true. */
   highlights?: boolean;
-  scrapeOptions?: ScrapeOptions;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail">;
   /**
    * Enterprise search options. Use `["zdr"]` for end-to-end Zero Data
    * Retention or `["anon"]` for anonymized search. Must be enabled for
@@ -899,7 +1036,7 @@ export interface CrawlOptions {
   delay?: number | null;
   maxConcurrency?: number | null;
   webhook?: string | WebhookConfig | null;
-  scrapeOptions?: ScrapeOptions | null;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail"> | null;
   regexOnFullURL?: boolean;
   zeroDataRetention?: boolean;
   integration?: string;
@@ -923,7 +1060,7 @@ export interface CrawlJob {
 }
 
 export interface BatchScrapeOptions {
-  options?: ScrapeOptions;
+  options?: Omit<ScrapeOptions, "toolDetail">;
   webhook?: string | WebhookConfig;
   appendToId?: string;
   ignoreInvalidURLs?: boolean;
@@ -952,6 +1089,7 @@ export interface BatchScrapeJob {
 }
 
 export interface MapData {
+  agent_hints?: string[];
   id?: string;
   links: SearchResultWeb[];
 }
@@ -1073,7 +1211,7 @@ export interface MonitorScrapeTarget {
   id?: string;
   type: "scrape";
   urls: string[];
-  scrapeOptions?: ScrapeOptions;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail">;
 }
 
 export interface MonitorCrawlTarget {
@@ -1081,7 +1219,7 @@ export interface MonitorCrawlTarget {
   type: "crawl";
   url: string;
   crawlOptions?: CrawlOptions;
-  scrapeOptions?: ScrapeOptions;
+  scrapeOptions?: Omit<ScrapeOptions, "toolDetail">;
 }
 
 export interface MonitorSearchTarget {
@@ -1095,9 +1233,7 @@ export interface MonitorSearchTarget {
 }
 
 export type MonitorTarget =
-  | MonitorScrapeTarget
-  | MonitorCrawlTarget
-  | MonitorSearchTarget;
+  MonitorScrapeTarget | MonitorCrawlTarget | MonitorSearchTarget;
 
 export interface CreateMonitorRequest {
   name: string;
@@ -1220,11 +1356,7 @@ export interface MonitorCheck {
   reservedCredits?: number | null;
   actualCredits?: number | null;
   billingStatus:
-    | "not_applicable"
-    | "reserved"
-    | "confirmed"
-    | "released"
-    | "failed";
+    "not_applicable" | "reserved" | "confirmed" | "released" | "failed";
   summary: MonitorSummary;
   targetResults?: MonitorTargetResult[];
   notificationStatus?: unknown;
@@ -1311,10 +1443,183 @@ export interface ExtractResponse {
   creditsUsed?: number;
 }
 
+/** Conversation mode for an agent run. Defaults to "extract" server-side. */
+export type AgentMode = "extract" | "chat";
+
+/** Options forwarded verbatim to the agent; the server owns every default. */
+export interface AgentExchangeOptions {
+  enabled?: boolean;
+  /** At most 5. */
+  toolkits?: string[];
+  maxCalls?: number;
+  requireApproval?: boolean;
+  /**
+   * Answers a pendingApproval from the previous turn of the thread. A `terms`
+   * approval is accepted or declined as a whole: `callIds` and `always` are
+   * ignored on it.
+   */
+  approve?: { approvalId: string; callIds?: string[]; always?: boolean };
+  decline?: { approvalId: string };
+  /**
+   * What to do when a provider the agent would use needs data terms the team
+   * has not accepted. Gated providers are never called in any mode:
+   * - "skip" (server default): answer with accepted providers only and list
+   *   the gated ones in `exchange.skippedProviders`.
+   * - "ask": the same, plus `exchange.requiresAction` and a `terms`
+   *   pendingApproval. Get your user's explicit consent, call terms/accept,
+   *   then continue the thread with `approve: { approvalId }`.
+   * Terms gating is rolling out: until it is on for a thread, none of the
+   * terms fields appear. There is no auto-accept mode. Omitted on a follow-up turn inherits the
+   * previous turn's value.
+   */
+  onTermsRequired?: AgentOnTermsRequired;
+}
+
+export type AgentOnTermsRequired = "skip" | "ask";
+
+/** A gated provider the run would have used but did not. */
+export interface AgentSkippedProvider {
+  provider: string;
+  name: string;
+  capability?: string;
+  /** What it would have added, in the agent's words. */
+  adds?: string;
+  reason: "terms_required";
+  /** The gating terms version. */
+  version: string;
+  /** Where a person accepts the terms in the dashboard. */
+  termsUrl: string;
+}
+
+/**
+ * The exact Exchange calls to view and accept a provider's terms. Nothing here
+ * is executed for you, and terms/accept must only be called after the user
+ * has explicitly agreed to that provider's terms.
+ */
+export interface AgentTermsRequiredAction {
+  type: "accept_terms";
+  /**
+   * The `terms` pendingApproval that answers this. After the user agrees and
+   * terms/accept succeeds, continue the thread with
+   * `exchange.approve: { approvalId }`, or refuse with `decline`.
+   */
+  approvalId: string;
+  providers: {
+    provider: string;
+    name: string;
+    capability?: string;
+    adds?: string;
+    version: string;
+    /** null when the catalog published no digest; terms/show returns it. */
+    digest: string | null;
+    url: string;
+    show: {
+      provider: "firecrawl";
+      capability: "terms/show";
+      options: { provider: string };
+    };
+    accept: {
+      provider: "firecrawl";
+      capability: "terms/accept";
+      options: {
+        provider: string;
+        version: string;
+        /** null when the catalog published no digest; terms/show returns it. */
+        digest: string | null;
+        confirmed: true;
+      };
+    };
+  }[];
+}
+
+/** Per-run summary reported on a status response. */
+export interface AgentExchangeSummary {
+  enabled: boolean;
+  /** What the run resolved to after thread inheritance, not what it requested. */
+  toolkits?: string[];
+  requireApproval?: boolean;
+  onTermsRequired?: AgentOnTermsRequired;
+  paidCalls: number;
+  creditsUsed: number | null;
+  /** Gated providers that would have helped and were not used. Any mode. */
+  skippedProviders?: AgentSkippedProvider[];
+  /** "ask" mode, when a terms offer ended the turn. */
+  requiresAction?: AgentTermsRequiredAction;
+}
+
+/** A provider in a `terms` pendingApproval. */
+export interface AgentTermsGate {
+  provider: string;
+  name: string;
+  logo?: string;
+  capability?: string;
+  adds?: string;
+  version: string;
+  /** null when the catalog published no digest; terms/show returns it. */
+  digest: string | null;
+  url: string;
+}
+
+/** A follow-up the agent offers for the next turn of the thread. */
+export interface AgentSuggestion {
+  label: string;
+  prompt: string;
+}
+
+/** A paid call a `calls` pendingApproval is holding back. */
+export interface PendingApprovalCall {
+  id: string;
+  provider: string;
+  capability: string;
+  input: Record<string, unknown>;
+  more?: Record<string, unknown>[];
+  creditsEstimate: number | null;
+}
+
+interface PendingApprovalBase {
+  id: string;
+  reason: string;
+  resolution: null | {
+    approved: boolean;
+    /** Calls approved. Ignored on terms offers. */
+    callIds: string[];
+    always: boolean;
+    byRunId: string;
+  };
+}
+
+/**
+ * A turn that ended waiting for the caller to allow or refuse paid calls.
+ * `kind` is absent on items written before terms offers existed.
+ */
+export interface PendingCallsApproval extends PendingApprovalBase {
+  kind?: "calls";
+  calls: PendingApprovalCall[];
+  terms?: never;
+}
+
+/**
+ * A turn that ended waiting for the caller to accept providers' data terms
+ * ("ask" mode). `calls` is always empty (typed `never[]` rather
+ * than `[]` so existing `pendingApproval.calls[0]` code still compiles).
+ */
+export interface PendingTermsApproval extends PendingApprovalBase {
+  kind: "terms";
+  calls: never[];
+  terms: AgentTermsGate[];
+}
+
+/** Narrow on `kind === "terms"`. */
+export type PendingApproval = PendingCallsApproval | PendingTermsApproval;
+
 export interface AgentResponse {
   success: boolean;
   id: string;
   error?: string;
+  /** Thread this run belongs to; pass it back to continue the conversation. */
+  threadId?: string;
+  /** 1-based position of this run in its thread. */
+  threadTurn?: number;
 }
 
 export interface AgentStatusResponse {
@@ -1335,12 +1640,106 @@ export interface AgentStatusResponse {
   effort?: "low" | "medium" | "high";
   expiresAt: string;
   creditsUsed?: number;
+  threadId?: string;
+  threadTurn?: number;
+  mode?: AgentMode;
+  /** Assistant text reply. Chat-mode runs answer here instead of in `data`. */
+  message?: string;
+  suggestions?: AgentSuggestion[];
+  pendingApproval?: PendingApproval;
+  exchange?: AgentExchangeSummary;
+}
+
+/** A single run of a thread, as returned by getAgentThread. */
+export interface AgentThreadRun {
+  id: string;
+  turn: number;
+  mode: AgentMode;
+  prompt: string;
+  urls?: string[];
+  schema?: unknown;
+  effort?: "low" | "medium" | "high";
+  status:
+    | "processing"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | "refused"
+    | "credit_limit_reached";
+  createdAt: string;
+  finishedAt: string | null;
+  creditsUsed: number | null;
+  message: string | null;
+  /** Only present when the request asked for includeData. */
+  data?: unknown;
+  suggestions?: AgentSuggestion[] | null;
+  pendingApproval?: PendingApproval | null;
+  exchange?: AgentExchangeSummary | null;
+}
+
+export interface AgentThread {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "idle" | "running";
+  runs: AgentThreadRun[];
+}
+
+export interface AgentThreadResponse {
+  success: boolean;
+  thread?: AgentThread;
+  error?: string;
 }
 
 /** Reasoning effort for agent jobs. Every level runs spark-2. */
 export type AgentEffort = "low" | "medium" | "high";
 
-export type AgentTraceAgentRole = "orchestrator" | "subagent" | "browser" | "system";
+/** A single agent run as returned by the agent list endpoint. */
+export interface AgentListItem {
+  id: string;
+  createdAt: string;
+  targetHint: string;
+  origin: string;
+  integration?: string;
+  settings: {
+    hidden: boolean;
+    starred: boolean;
+    label?: string;
+  };
+  status: "processing" | "completed" | "failed";
+  options?: {
+    urls?: string[];
+    prompt: string;
+    schema?: unknown;
+    /**
+     * Server-provided model name. Widened past the request-side union on
+     * purpose: new models ship without an SDK release, so pinning this to
+     * known names makes every future model a type error at the call site.
+     */
+    model: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
+    effort?: AgentEffort;
+  };
+}
+
+export interface AgentListResponse {
+  success: boolean;
+  agents?: AgentListItem[];
+  /**
+   * Absolute URL of the next page (pass its `before` value to listAgents to
+   * continue). Only present when more pages exist.
+   */
+  next?: string;
+  error?: string;
+}
+
+/** Options for listing agent runs. */
+export interface AgentListOptions {
+  /** Only return agent runs created before this unix millisecond timestamp. */
+  before?: number;
+}
+
+export type AgentTraceAgentRole =
+  "orchestrator" | "subagent" | "browser" | "system";
 
 export interface AgentTraceAgentIdentity {
   id: string;
@@ -1350,7 +1749,12 @@ export interface AgentTraceAgentIdentity {
 }
 
 export interface AgentTraceError {
-  code: "cancelled" | "credit_limit_reached" | "parent_finished" | "refused" | "internal";
+  code:
+    | "cancelled"
+    | "credit_limit_reached"
+    | "parent_finished"
+    | "refused"
+    | "internal";
   source: "agent" | "tool" | "billing" | "system";
   retryable: boolean;
   message: string;
@@ -1388,7 +1792,8 @@ export interface AgentTraceRunCancelRequestedEvent extends AgentTraceEventBase {
 
 export interface AgentTraceRunFinishedEvent extends AgentTraceEventBase {
   type: "run.finished";
-  outcome: "succeeded" | "failed" | "cancelled" | "refused" | "credit_limit_reached";
+  outcome:
+    "succeeded" | "failed" | "cancelled" | "refused" | "credit_limit_reached";
   /** The canonical schema always writes this key (nullable), but older rows may omit it. */
   error?: AgentTraceError | null;
 }
@@ -1550,6 +1955,8 @@ export interface CrawlErrorsResponse {
     url: string;
     code?: string;
     error: string;
+    /** Present when the page needs provider terms accepted first. */
+    requiresAction?: RequiresAction;
   }[];
   robotsBlocked: string[];
 }
@@ -1573,17 +1980,44 @@ export interface ErrorDetails {
   status?: number;
 }
 
+/** An out-of-band step the API requires before the request can succeed. */
+export interface RequiresAction {
+  type: "accept_terms" | (string & {});
+  terms?: string;
+  version?: string;
+  url?: string;
+}
+
+export function parseRequiresAction(value: unknown): RequiresAction | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.type !== "string") return undefined;
+  const action: RequiresAction = { type: record.type };
+  if (typeof record.terms === "string") action.terms = record.terms;
+  if (typeof record.version === "string") action.version = record.version;
+  if (typeof record.url === "string") action.url = record.url;
+  return action;
+}
+
 export class SdkError extends Error {
+  declare agent_hints?: string[];
+  requestId?: string;
   status?: number;
   code?: string;
   details?: unknown;
   jobId?: string;
+  /** Present on exchange-mediated scrape failures that already captured credits. */
+  chargeId?: string;
+  /** Present when the API needs an out-of-band step first, such as accepting provider terms. */
+  requiresAction?: RequiresAction;
   constructor(
     message: string,
     status?: number,
     code?: string,
     details?: unknown,
     jobId?: string,
+    chargeId?: string,
+    requiresAction?: RequiresAction,
   ) {
     super(message);
     this.name = "FirecrawlSdkError";
@@ -1591,6 +2025,8 @@ export class SdkError extends Error {
     this.code = code;
     this.details = details;
     this.jobId = jobId;
+    this.chargeId = chargeId;
+    this.requiresAction = requiresAction;
   }
 }
 
@@ -1645,11 +2081,13 @@ export interface BrowserExecuteResponse {
   stderr?: string;
   exitCode?: number;
   killed?: boolean;
+  truncated?: boolean;
   error?: string;
 }
 
 export interface BrowserDeleteResponse {
   success: boolean;
+  status?: string;
   sessionDurationMs?: number;
   creditsBilled?: number;
   error?: string;
@@ -1785,7 +2223,14 @@ export interface SimilarPapersResponse {
   note?: string | null;
 }
 
-/** Component scores; each field is present only when that signal contributed. */
+/**
+ * Component scores; each field is present only when that signal contributed.
+ *
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. The developer index does not
+ * expose a score breakdown. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubScoreBreakdown {
   rrf?: number;
   semantic?: number;
@@ -1794,6 +2239,11 @@ export interface GitHubScoreBreakdown {
   rerank?: number;
 }
 
+/**
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubSearchItem {
   resultType?: "github_history" | "repo_readme" | "web";
   /** `owner/name`; empty for web results whose URL is not a repo page. */
@@ -1816,9 +2266,18 @@ export interface GitHubSearchItem {
   scores: GitHubScoreBreakdown;
 }
 
+/**
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface GitHubSearchResponse {
   success: boolean;
   results: GitHubSearchItem[];
+  /** Deprecation notice while the sunset window is live. */
+  warnings?: string[];
+  /** Replacement endpoint path, while the sunset window is live. */
+  replacement?: string;
 }
 
 /** Options for `research.searchPapers`. */
@@ -1857,7 +2316,13 @@ export interface SimilarPapersOptions {
   anchor?: string[];
 }
 
-/** Options for `research.searchGithub`. */
+/**
+ * Options for `research.searchGithub`.
+ *
+ * @deprecated Use the developer index instead. The research index GitHub
+ * search stops responding after 2026-11-03. See
+ * https://docs.firecrawl.dev/features/developer.
+ */
 export interface SearchGithubOptions {
   /** Number of results to return (1–100, default 20). */
   k?: number;

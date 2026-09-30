@@ -2,9 +2,25 @@ import type { Meta } from "../../..";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
-import { firePdfAsyncSubmittedTotal } from "./metrics";
-import { submitResponseSchema } from "./schema";
-import { buildFirePdfJobOptions, failAsync, firePdfHeaders } from "./utils";
+import { buildFirePdfRequestMetadata } from "./request-metadata";
+import {
+  firePdfAsyncSubmit503Total,
+  firePdfAsyncSubmitRetriesTotal,
+  firePdfAsyncSubmittedTotal,
+  type SubmitRetryTrigger,
+} from "./metrics";
+import {
+  SUBMIT_TRANSIENT_RETRY_DELAY_MS,
+  fastifyClosingBodySchema,
+  firePdfSubmit503BodySchema,
+  submitResponseSchema,
+} from "./schema";
+import {
+  buildFirePdfJobOptions,
+  defaultSleep,
+  failAsync,
+  firePdfHeaders,
+} from "./utils";
 
 type SubmitOutcome = {
   lane: string | undefined;
@@ -35,6 +51,7 @@ type SubmitArgs = {
    * Optional: entitlement lookup must never block or fail a scrape. */
   teamConcurrency: number | undefined;
   fetchImpl: typeof undiciFetch;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 };
 
 /**
@@ -47,6 +64,26 @@ export class SubmitJobMayHaveBeenAcceptedError extends Error {
     super("FirePDF submit may have been accepted");
     this.name = "SubmitJobMayHaveBeenAcceptedError";
   }
+}
+
+/**
+ * A 503 is retryable when it did not come from a fire-pdf handler: the
+ * handlers answer with one of their documented codes
+ * (firePdfSubmit503BodySchema), so a 503 carrying anything else was produced
+ * in front of them — Fastify's shutdown reply on a terminating instance, or a
+ * proxy — and the request was never processed. Returns the retry trigger, or
+ * null for a real fire-pdf 503 (admission and storage failures keep their
+ * existing handling).
+ */
+export function classifyTransient503(
+  status: number,
+  body: unknown,
+): Extract<SubmitRetryTrigger, `http_503_${string}`> | null {
+  if (status !== 503) return null;
+  if (firePdfSubmit503BodySchema.safeParse(body).success) return null;
+  return fastifyClosingBodySchema.safeParse(body).success
+    ? "http_503_closing"
+    : "http_503_unattributed";
 }
 
 function failPossiblyAccepted(
@@ -96,6 +133,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
       : { input_gcs_uri: input.gcsUri, input_sha256: input.sha256 }),
     scrape_id: scrapeId,
     source: "firecrawl" as const,
+    ...buildFirePdfRequestMetadata(meta),
     zdr: false as const,
     deadline_at: deadlineAt,
     ...(meta.internalOptions.teamId && {
@@ -122,22 +160,62 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     }),
   };
 
+  // The retry does reach a different instance: Fastify's shutdown 503
+  // arrives with `Connection: close`, and a transport failure leaves a dead
+  // socket, so undici cannot reuse either connection — the next request
+  // opens a new one, which the Service routes to a pod still in its
+  // endpoints. The short pause lets endpoint updates propagate.
+  const sleep = args.sleep ?? defaultSleep;
+  const retryAfterTransient = async (
+    trigger: SubmitRetryTrigger,
+    extra: Record<string, unknown>,
+  ) => {
+    firePdfAsyncSubmitRetriesTotal.labels(trigger).inc();
+    meta.logger.info("FirePDF async POST /jobs retrying once", {
+      scrapeId,
+      event: "fire_pdf_async_submit_retry",
+      trigger,
+      ...extra,
+    });
+    await sleep(SUBMIT_TRANSIENT_RETRY_DELAY_MS, meta.abort.asSignal());
+  };
+
   let status: number;
   let json: unknown;
-  try {
-    const resp = await fetchImpl(`${baseUrl}/jobs`, {
-      method: "POST",
-      headers: firePdfHeaders(true),
-      body: JSON.stringify(body),
-      signal: meta.abort.asSignal(),
-    });
-    status = resp.status;
-    json = await resp.json().catch(() => ({}));
-  } catch (error) {
-    if (error instanceof AbortManagerThrownError) {
-      throw new SubmitJobMayHaveBeenAcceptedError(error);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const resp = await fetchImpl(`${baseUrl}/jobs`, {
+        method: "POST",
+        headers: firePdfHeaders(true),
+        body: JSON.stringify(body),
+        signal: meta.abort.asSignal(),
+      });
+      status = resp.status;
+      json = await resp.json().catch(() => ({}));
+    } catch (error) {
+      if (error instanceof AbortManagerThrownError) {
+        throw new SubmitJobMayHaveBeenAcceptedError(error);
+      }
+      if (attempt === 1) {
+        // The request may have landed (idempotent replay makes the retry
+        // safe either way); an abort during the pause keeps that ambiguity.
+        try {
+          await retryAfterTransient("transport_error", {
+            error: String(error),
+          });
+        } catch (pauseError) {
+          throw new SubmitJobMayHaveBeenAcceptedError(pauseError);
+        }
+        continue;
+      }
+      failPossiblyAccepted(meta, "network_error", { error: String(error) });
     }
-    failPossiblyAccepted(meta, "network_error", { error: String(error) });
+    const transient503 = attempt === 1 && classifyTransient503(status, json);
+    if (transient503) {
+      await retryAfterTransient(transient503, { body: json });
+      continue;
+    }
+    break;
   }
 
   if (status === 401) failAsync(meta, "http_401");
@@ -146,7 +224,14 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
   if (status === 413) failAsync(meta, "http_413");
   if (status === 429) failAsync(meta, "http_429");
   if (status === 502) failAsync(meta, "http_502", { body: json });
-  if (status === 503) failAsync(meta, "http_503");
+  if (status === 503) {
+    // Keep fire-pdf's own code (page_markdown_not_ready, admission_rejected,
+    // ...) so the 503 bucket can be split without the request body.
+    const parsed503 = firePdfSubmit503BodySchema.safeParse(json);
+    const code = parsed503.success ? parsed503.data.error : "unattributed";
+    firePdfAsyncSubmit503Total.labels(code).inc();
+    failAsync(meta, "http_503", { code });
+  }
 
   if (status === 409) {
     meta.logger.error(

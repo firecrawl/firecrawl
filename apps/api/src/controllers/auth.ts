@@ -9,17 +9,22 @@ import {
   getRateLimiter,
   getAutumnRateLimiter,
   getRateLimitOverride,
+  HOBBY_RATE_LIMIT_MULTIPLIER,
 } from "../services/rate-limiter";
+import { isTrustedAgentInteropRequest } from "../lib/agent-interop";
 import {
-  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   consumeKeylessRequest,
   isKeylessConfigured,
   keylessExhaustionTelemetry,
   isKeylessIpEligible,
+  keylessLimitPrompt,
+  keylessSignupUrlForIp,
   keylessTeamId,
   normalizeKeylessIpv4,
 } from "../lib/keyless";
+import { keylessSignupSurface } from "../lib/keyless-signup-link";
 import { isKeylessIpSuspicious } from "../lib/spur";
+import { keylessAuthTotal } from "../lib/keyless-metrics";
 import { checkIpRestriction } from "../lib/ip-restriction";
 import { checkKeyEndpointRestriction } from "../lib/key-restriction";
 import { deleteKey, getValue, setValue } from "../services/redis";
@@ -44,6 +49,7 @@ import {
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
 import { autumnService } from "../services/autumn/autumn.service";
+import { ReplyError } from "ioredis";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -84,7 +90,9 @@ async function setCachedACUC(
       await setValue(cacheKeyACUC, JSON.stringify(acuc), 600, true);
     });
   } catch (error) {
-    logger.error(`Error updating cached ACUC ${cacheKeyACUC}: ${error}`);
+    logger.error("Error updating cached ACUC", {
+      error,
+    });
   }
 }
 
@@ -172,18 +180,38 @@ async function getACUC(
   const cacheKeyACUC = `acuc_${credentialPurpose}_${api_key}_${isExtract ? "extract" : "scrape"}`;
 
   if (useCache) {
-    const cachedACUC = await getValue(cacheKeyACUC);
+    let cachedACUC: string | null;
+    try {
+      cachedACUC = await getValue(cacheKeyACUC);
+    } catch (error) {
+      if (
+        error instanceof ReplyError ||
+        (error instanceof Error &&
+          (error as any).address &&
+          (error as any).code &&
+          error.name === "Error") ||
+        (error instanceof Error && error.name === "MaxRetriesPerRequestError")
+      ) {
+        logger.warn(
+          "Reading ACUC out of cache redis failed, treating as miss",
+          {
+            error,
+          },
+        );
+        cachedACUC = null;
+      } else {
+        throw error;
+      }
+    }
     if (cachedACUC !== null) {
       try {
         return JSON.parse(cachedACUC);
       } catch (error) {
         logger.warn("Ignoring malformed ACUC cache entry", {
-          cacheKey: cacheKeyACUC,
           error,
         });
         void deleteKey(cacheKeyACUC).catch(deleteError => {
           logger.warn("Failed to delete malformed ACUC cache entry", {
-            cacheKey: cacheKeyACUC,
             error: deleteError,
           });
         });
@@ -279,7 +307,10 @@ async function setCachedACUCTeam(
       await setValue(cacheKeyACUC, JSON.stringify(acuc), 600, true);
     });
   } catch (error) {
-    logger.error(`Error updating cached ACUC ${cacheKeyACUC}: ${error}`);
+    logger.error("Error updating cached ACUC", {
+      cacheKey: cacheKeyACUC,
+      error,
+    });
   }
 }
 
@@ -308,9 +339,47 @@ export async function getACUCTeam(
   const cacheKeyACUC = `acuc_team_${team_id}_${isExtract ? "extract" : "scrape"}`;
 
   if (useCache) {
-    const cachedACUC = await getValue(cacheKeyACUC);
+    let cachedACUC: string | null;
+    try {
+      cachedACUC = await getValue(cacheKeyACUC);
+    } catch (error) {
+      if (
+        error instanceof ReplyError ||
+        (error instanceof Error &&
+          (error as any).address &&
+          (error as any).code &&
+          error.name === "Error") ||
+        (error instanceof Error && error.name === "MaxRetriesPerRequestError")
+      ) {
+        logger.warn(
+          "Reading ACUC out of cache redis failed, treating as miss",
+          {
+            cacheKey: cacheKeyACUC,
+            error,
+          },
+        );
+        cachedACUC = null;
+      } else {
+        throw error;
+      }
+    }
     if (cachedACUC !== null) {
-      return JSON.parse(cachedACUC);
+      // A corrupt entry is a miss, not a failure: callers that fall back to a
+      // null org on a throw would otherwise take the high fail-open limits.
+      try {
+        return JSON.parse(cachedACUC);
+      } catch (error) {
+        logger.warn("Ignoring malformed ACUC cache entry", {
+          cacheKey: cacheKeyACUC,
+          error,
+        });
+        void deleteKey(cacheKeyACUC).catch(deleteError => {
+          logger.warn("Failed to delete malformed ACUC cache entry", {
+            cacheKey: cacheKeyACUC,
+            error: deleteError,
+          });
+        });
+      }
     }
   }
 
@@ -396,12 +465,38 @@ export async function clearACUCTeam(team_id: string): Promise<void> {
   await deleteKey(`acuc_team_${team_id}`);
 }
 
-const KEYLESS_ENDPOINT_NOT_AVAILABLE_MESSAGE = `This endpoint is not supported by the keyless free tier. Sign up for a free API key at https://www.firecrawl.dev/signin for more endpoints, more usage, and higher rate limits.
+// Both prompts end the sentence after the URL with a space, so a copied link
+// never picks up the period.
+function keylessEndpointNotAvailableMessage(signupUrl: string): string {
+  return `This endpoint is not supported by the keyless free tier. Sign up for a free API key at ${signupUrl} for more endpoints, more usage, and higher rate limits.
 
 Then authenticate with:
 Authorization: Bearer YOUR_API_KEY`;
+}
 
-const KEYLESS_SUSPICIOUS_IP_MESSAGE = `Unfortunately, your IP address looks suspicious, so Firecrawl can't be used without an API key from here. Sign up for a free API key at https://firecrawl.dev for 1000 credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
+function keylessSuspiciousIpMessage(signupUrl: string): string {
+  return `Unfortunately, your IP address looks suspicious, so Firecrawl can't be used without an API key from here. Sign up for a free API key at ${signupUrl} for 1000 credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
+}
+
+/**
+ * The real client IP for keyless. A trusted proxy (e.g. the hosted MCP) may
+ * forward the end-user's IP via x-firecrawl-keyless-ip, authenticated with a
+ * shared secret — without the secret the header is ignored, so direct callers
+ * can't spoof their IP to dodge the per-IP cap.
+ */
+function keylessClientIp(req): string {
+  let ip = req.ip ?? req.socket?.remoteAddress ?? "unknown";
+  if (
+    config.KEYLESS_PROXY_SECRET &&
+    req.headers["x-firecrawl-keyless-secret"] === config.KEYLESS_PROXY_SECRET
+  ) {
+    const forwarded = req.headers["x-firecrawl-keyless-ip"];
+    if (typeof forwarded === "string" && forwarded.trim()) {
+      ip = forwarded.trim();
+    }
+  }
+  return ip;
+}
 
 /**
  * Keyless free tier: official MCP/CLI/SDK clients can call scrape, search, and
@@ -429,10 +524,16 @@ async function handleKeylessAuth(
   // Configured, but this endpoint isn't part of the keyless tier: tell the user
   // they need a key (with the signup nudge) rather than a bare "Unauthorized".
   if (!allowKeyless) {
+    const { url } = keylessSignupUrlForIp(
+      keylessClientIp(req),
+      keylessSignupSurface(req),
+      "unsupported_endpoint",
+    );
     return {
       success: false,
-      error: KEYLESS_ENDPOINT_NOT_AVAILABLE_MESSAGE,
+      error: keylessEndpointNotAvailableMessage(url),
       status: 401,
+      signupUrl: url,
     };
   }
 
@@ -440,22 +541,11 @@ async function handleKeylessAuth(
   const integration = req.body?.integration;
   // No origin/surface gate: any request without an API key may use the free
   // tier on the allowlisted endpoints (the API itself is free). origin and
-  // integration are still recorded below for abuse monitoring.
+  // integration are still recorded below for abuse monitoring, and pick the
+  // surface of the signup link.
+  const signupSurface = keylessSignupSurface(req);
 
-  // Key on the real client IP. A trusted proxy (e.g. the hosted MCP) may
-  // forward the end-user's IP via x-firecrawl-keyless-ip, authenticated with a
-  // shared secret — without the secret the header is ignored, so direct callers
-  // can't spoof their IP to dodge the per-IP cap.
-  let ip = req.ip ?? req.socket?.remoteAddress ?? "unknown";
-  if (
-    config.KEYLESS_PROXY_SECRET &&
-    req.headers["x-firecrawl-keyless-secret"] === config.KEYLESS_PROXY_SECRET
-  ) {
-    const forwarded = req.headers["x-firecrawl-keyless-ip"];
-    if (typeof forwarded === "string" && forwarded.trim()) {
-      ip = forwarded.trim();
-    }
-  }
+  let ip = keylessClientIp(req);
 
   // Only a valid IPv4 identity gets keyless: IPv6 is too cheap to rotate for a
   // per-IP cap to mean anything, and malformed/forwarded values must not be
@@ -471,6 +561,12 @@ async function handleKeylessAuth(
   // main way the per-IP caps get bypassed. Fails open on any Spur error, and
   // runs before consuming quota so a flagged IP doesn't burn a request slot.
   if (await isKeylessIpSuspicious(ip)) {
+    keylessAuthTotal.inc({ mode, outcome: "suspicious" });
+    const { url, signupRef } = keylessSignupUrlForIp(
+      ip,
+      signupSurface,
+      "suspicious_ip",
+    );
     logger.warn("Keyless request blocked: suspicious IP", {
       canonicalLog: "keyless/consume",
       ip,
@@ -478,13 +574,15 @@ async function handleKeylessAuth(
       integration: req.body?.integration,
       blocked: true,
       reason: "suspicious",
+      ...(signupRef ? { signupRef } : {}),
     });
     return {
       success: false,
-      error: KEYLESS_SUSPICIOUS_IP_MESSAGE,
+      error: keylessSuspiciousIpMessage(url),
       status: 403,
       // Tell agents where to find the key/signup flow they now need.
       agentAuthDiscovery: true,
+      signupUrl: url,
     };
   }
 
@@ -504,6 +602,7 @@ async function handleKeylessAuth(
   try {
     result = await consumeKeylessRequest(ip);
   } catch (error) {
+    keylessAuthTotal.inc({ mode, outcome: "error" });
     // Limiter store (Redis) unavailable — fail closed with a controlled auth
     // response instead of surfacing a 500, and shed the free traffic while the
     // limiter can't enforce quotas.
@@ -528,18 +627,22 @@ async function handleKeylessAuth(
   };
 
   if (!result.ok) {
+    keylessAuthTotal.inc({ mode, outcome: result.reason ?? "error" });
+    const prompt = keylessLimitPrompt(ip, signupSurface);
     logger.warn("Keyless request blocked", {
       ...baseLog,
       blocked: true,
       event: "keyless_exhausted",
       reason: result.reason,
       retryAfterSeconds: result.retryAfterSeconds,
+      ...(prompt.signupRef ? { signupRef: prompt.signupRef } : {}),
       ...keylessExhaustionTelemetry(ip),
     });
     return {
       success: false,
-      error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
+      error: prompt.error,
       status: 429,
+      signupUrl: prompt.signup_url,
       // Direct API callers receive discovery metadata; MCP maps this in-band.
       agentAuthDiscovery: true,
       keylessReason: result.reason,
@@ -548,6 +651,7 @@ async function handleKeylessAuth(
   }
 
   logger.debug("Keyless request consumed", { ...baseLog, blocked: false });
+  keylessAuthTotal.inc({ mode, outcome: "allowed" });
 
   // Tag as a preview team so billing (autumn isPreviewTeam) and GCS persistence
   // are skipped automatically; mockPreviewACUC supplies concurrency 2 + credits.
@@ -565,7 +669,7 @@ export async function authenticateUser(
   req,
   res,
   mode: RateLimiterMode,
-  options?: { allowKeyless?: boolean },
+  options?: AuthenticateOptions,
 ): Promise<AuthResponse> {
   const bypassChunk = mockACUC();
   bypassChunk.is_extract =
@@ -590,25 +694,45 @@ export async function authenticateUser(
  * on to getAutumnRateLimiter, which stays the only place deciding the final
  * limit. An override makes the multiplier irrelevant, so we skip fetching it
  * from Autumn in that case rather than paying for a value that is discarded.
+ *
+ * `minMultiplier` floors the Autumn multiplier (trusted agent traffic passes
+ * the hobby multiplier). It never applies on top of an override, which already
+ * replaces the whole computation.
  */
 async function buildAuthenticatedRateLimiter(
   teamId: string,
   orgId: string | null | undefined,
   mode: RateLimiterMode,
   flags: TeamFlags,
+  minMultiplier?: number,
 ): Promise<RateLimiterRedis> {
-  const multiplier =
-    getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined
-      ? 1
-      : await autumnService.getRateLimitMultiplier(teamId, orgId);
+  let multiplier: number;
+  if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
+    multiplier = 1;
+  } else {
+    multiplier = await autumnService.getRateLimitMultiplier(
+      teamId,
+      orgId ?? null,
+    );
+    if (minMultiplier !== undefined) {
+      multiplier = Math.max(multiplier, minMultiplier);
+    }
+  }
   return getAutumnRateLimiter(mode, multiplier, flags);
 }
+
+type AuthenticateOptions = {
+  allowKeyless?: boolean;
+  // Route opt-in: a trusted agent-interop request may authenticate with a
+  // hosted_mcp_oauth key, which agent runs started from the hosted MCP carry.
+  allowAgentManagedKey?: boolean;
+};
 
 async function supaAuthenticateUser(
   req,
   res,
   mode: RateLimiterMode,
-  options?: { allowKeyless?: boolean },
+  options?: AuthenticateOptions,
 ): Promise<AuthResponse> {
   const authHeader =
     req.headers.authorization ??
@@ -631,6 +755,15 @@ async function supaAuthenticateUser(
     req.headers["x-forwarded-for"] ||
     req.socket.remoteAddress) as string;
   const iptoken = incomingIP + token;
+
+  // An agent run fans one customer request out into ~10 sub-requests against
+  // the team's own bucket, so a free team (×1) gets throttled by its own agent.
+  // Floor trusted agent traffic at the hobby multiplier; paid plans already
+  // meet it and are unchanged.
+  const trustedAgentInterop = isTrustedAgentInteropRequest(req);
+  const minRateMultiplier = trustedAgentInterop
+    ? HOBBY_RATE_LIMIT_MULTIPLIER
+    : undefined;
 
   let rateLimiter: RateLimiterRedis;
   let subscriptionData: { team_id: string } | null = null;
@@ -688,6 +821,7 @@ async function supaAuthenticateUser(
       chunk.org_id,
       mode,
       chunk.flags,
+      minRateMultiplier,
     );
   } else if (token.startsWith("fco_")) {
     // OAuth access token — resolve via introspection endpoint
@@ -757,6 +891,7 @@ async function supaAuthenticateUser(
       chunk.org_id,
       mode,
       chunk.flags,
+      minRateMultiplier,
     );
   } else {
     normalizedApi = parseApi(token);
@@ -769,6 +904,23 @@ async function supaAuthenticateUser(
     }
 
     chunk = await getACUC(normalizedApi, false, true, RateLimiterMode.Scrape);
+
+    // Agent runs from the hosted MCP hold the grant's hosted_mcp_oauth key,
+    // not a general one. Accept it only from the trusted agent service, only
+    // on opted-in routes, and only via the uncached primary-read lookup.
+    if (
+      chunk === null &&
+      options?.allowAgentManagedKey === true &&
+      trustedAgentInterop
+    ) {
+      chunk = await getACUC(
+        normalizedApi,
+        false,
+        false,
+        RateLimiterMode.Scrape,
+        "hosted_mcp_oauth",
+      );
+    }
 
     if (chunk === null) {
       return {
@@ -788,6 +940,7 @@ async function supaAuthenticateUser(
       chunk.org_id,
       mode,
       chunk.flags,
+      minRateMultiplier,
     );
   }
 

@@ -112,6 +112,20 @@ describe("RESEARCH_KEYLESS_DISABLED parsing", () => {
     expect(config.RESEARCH_KEYLESS_DISABLED).toEqual(["inspect", "similar"]);
   });
 
+  it("accepts the deprecated github operation only when it is named", async () => {
+    const { config } = await loadWithFlag("github");
+
+    expect(config.RESEARCH_KEYLESS_DISABLED).toEqual(["github"]);
+  });
+
+  it("keeps github out of the true/all shorthand and out of the default", async () => {
+    for (const flag of [undefined, "true", "all", "on", "1", "yes"]) {
+      const { config } = await loadWithFlag(flag);
+
+      expect(config.RESEARCH_KEYLESS_DISABLED).not.toContain("github");
+    }
+  });
+
   it("refuses an unknown operation at boot instead of silently ignoring it", async () => {
     await expect(loadWithFlag("inspect,papers")).rejects.toThrow();
   });
@@ -139,6 +153,33 @@ describe("Research Index paper operation gate", () => {
     ).toBe(false);
     expect(
       isResearchKeylessDisabled(fakeRequest("/github", { query: "x" })),
+    ).toBe(false);
+  });
+
+  it("blocks the deprecated github operation once the flag names it", async () => {
+    const { isResearchKeylessDisabled } = await loadWithFlag("github");
+
+    expect(
+      isResearchKeylessDisabled(fakeRequest("/github", { query: "x" })),
+    ).toBe(true);
+    expect(
+      isResearchKeylessDisabled(
+        fakeRequest("/v2/search/research/github", { query: "x" }),
+      ),
+    ).toBe(true);
+    expect(
+      isResearchKeylessDisabled(fakeRequest("/papers", { query: "rag" })),
+    ).toBe(false);
+  });
+
+  it("does not mistake a paper path for the github route", async () => {
+    const { isResearchKeylessDisabled } = await loadWithFlag("github");
+
+    expect(isResearchKeylessDisabled(fakeRequest("/papers/github"))).toBe(
+      false,
+    );
+    expect(
+      isResearchKeylessDisabled(fakeRequest("/papers/github/similar")),
     ).toBe(false);
   });
 

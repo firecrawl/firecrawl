@@ -32,7 +32,7 @@ import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
-import { CrawlDenialError } from "../../lib/error";
+import { UnsupportedSiteError } from "../../lib/error";
 async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
   res: Response<ExtractResponse>,
@@ -71,6 +71,7 @@ async function oldExtract(
       request,
       teamId: req.auth.team_id,
       apiKeyId: req.acuc?.api_key_id ?? null,
+      externalRequestId: externalRequestId(req),
     });
 
     if (sender) {
@@ -142,7 +143,7 @@ export async function extractController(
       apiKeyId: req.acuc?.api_key_id ?? null,
       auditMetadata: req.body.scrapeOptions?.auditMetadata,
       url,
-      error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
+      error: new UnsupportedSiteError(),
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       zeroDataRetention: false,
@@ -191,10 +192,12 @@ export async function extractController(
     if (threatScanCredits > 0) {
       billTeam(
         req.auth.team_id,
+        req.acuc?.org_id ?? null,
         threatScanCredits,
         req.acuc?.api_key_id ?? null,
         {
           endpoint: "extract",
+          externalRequestId: externalRequestId(req),
           // Suffixed: the extract's MAIN charge (fire-0) uses the bare
           // extractId — a shared key would collapse the two into one charge.
           chargeId: `${extractId}:threat`,
@@ -280,6 +283,7 @@ export async function extractController(
     extractId,
     agent: req.body.agent,
     apiKeyId: req.acuc?.api_key_id ?? null,
+    externalRequestId: externalRequestId(req),
     createdAt,
   };
 

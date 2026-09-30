@@ -1,6 +1,7 @@
 import asyncio
 import httpx
 from typing import Optional, Dict, Any
+from .api_origin import pin_to_api_origin
 from .get_version import get_version
 
 version = get_version()
@@ -38,6 +39,9 @@ class AsyncHttpClient:
     async def close(self) -> None:
         await self._client.aclose()
 
+    def _build_url(self, endpoint: str) -> str:
+        return pin_to_api_origin(self.api_url, endpoint)
+
     def _headers(self, idempotency_key: Optional[str] = None) -> Dict[str, str]:
         headers: Dict[str, str] = {}
         if idempotency_key:
@@ -68,8 +72,9 @@ class AsyncHttpClient:
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.post(
-                    endpoint,
+                    url,
                     json=payload,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
@@ -109,8 +114,9 @@ class AsyncHttpClient:
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.post(
-                    endpoint,
+                    url,
                     data=data,
                     files=files,
                     headers={**self._headers(), **(headers or {})},
@@ -149,8 +155,9 @@ class AsyncHttpClient:
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.get(
-                    endpoint,
+                    url,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
                 )
@@ -187,8 +194,9 @@ class AsyncHttpClient:
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.delete(
-                    endpoint,
+                    url,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
                 )
@@ -229,8 +237,9 @@ class AsyncHttpClient:
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.patch(
-                    endpoint,
+                    url,
                     json=payload,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,

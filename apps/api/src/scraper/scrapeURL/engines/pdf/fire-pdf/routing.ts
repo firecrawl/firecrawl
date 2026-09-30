@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
-import { MIN_DEADLINE_MS } from "./schema";
+import type { Meta } from "../../..";
+import {
+  firePdfRouteDecisionsTotal,
+  firePdfRouteRemainingSeconds,
+} from "./metrics";
+import type { FirePdfSourceKind } from "./request-metadata";
+import { MIN_ASYNC_CALLER_WINDOW_MS } from "./schema";
 
-export const FIRE_PDF_ASYNC_MIN_REMAINING_MS = MIN_DEADLINE_MS + 10_000;
+export const FIRE_PDF_ASYNC_MIN_REMAINING_MS = MIN_ASYNC_CALLER_WINDOW_MS;
 
 type FirePdfAsyncRouteReason =
   | "zdr"
@@ -95,4 +101,79 @@ export function decideFirePdfAsyncRoute(
     return { enabled: true, reason: "percentage" };
   }
   return { enabled: false, reason: "outside_percentage" };
+}
+
+/** Why a request's first FirePDF attempt took the transport it did: the
+ * async cohort decision for inline PDFs, plus the two routes that never
+ * consult it (large PDFs always go by reference; images have no async
+ * route yet). */
+type FirePdfRouteReason =
+  | FirePdfAsyncRouteReason
+  | "by_reference"
+  | "no_async_route";
+
+type FirePdfRoute = {
+  sourceKind: FirePdfSourceKind;
+  path: "sync" | "async";
+  reason: FirePdfRouteReason;
+  features: string;
+  /** Caller time left when the transport was chosen. Pass it when the
+   * decision is recorded after the attempt ran; defaults to now. */
+  remainingMs?: number;
+};
+
+/** Stable label for the page-aware options a request asked for, e.g.
+ * "none" or "pages+markers". At most 8 values. */
+export function firePdfFeaturesLabel(features: {
+  pageMarkdown: boolean;
+  blocks: boolean;
+  pageMarkers: boolean;
+}): string {
+  const parts = [
+    features.pageMarkdown && "pages",
+    features.blocks && "blocks",
+    features.pageMarkers && "markers",
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join("+") : "none";
+}
+
+/**
+ * Counts every first-attempt transport decision, sync and async alike, so
+ * the sync remainder can be attributed (ZDR, short deadline, outside the
+ * cohort, images) without reconstructing it from logs. Labels only: no URL
+ * or content, so it is safe for ZDR requests. Async decisions are already
+ * logged by the caller (`fire_pdf_async_routed`); sync ones are logged here.
+ */
+export function recordFirePdfRoute(meta: Meta, route: FirePdfRoute): void {
+  const zdr = meta.internalOptions.zeroDataRetention ?? false;
+  firePdfRouteDecisionsTotal
+    .labels(
+      route.sourceKind,
+      route.path,
+      route.reason,
+      route.features,
+      String(zdr),
+    )
+    .inc();
+
+  const remainingMs =
+    "remainingMs" in route ? route.remainingMs : meta.abort.scrapeTimeout();
+  if (remainingMs !== undefined) {
+    firePdfRouteRemainingSeconds
+      .labels(route.sourceKind, route.path)
+      .observe(Math.max(0, remainingMs) / 1000);
+  }
+
+  if (route.path === "sync") {
+    meta.logger.info("Routing FirePDF request to sync /ocr", {
+      method: route.sourceKind === "image" ? "scrapeImage" : "scrapePDF",
+      event: "fire_pdf_sync_routed",
+      source_kind: route.sourceKind,
+      reason: route.reason,
+      features: route.features,
+      remaining_ms: remainingMs,
+      scrape_id: meta.id,
+      team_id: meta.internalOptions.teamId,
+    });
+  }
 }

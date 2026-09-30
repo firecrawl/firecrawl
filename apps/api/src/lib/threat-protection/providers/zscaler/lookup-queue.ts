@@ -4,6 +4,7 @@ import { logger as _logger } from "../../../logger";
 import { redisRateLimitClient } from "../../../../services/rate-limiter";
 import { redlock } from "../../../../services/redlock";
 import { getOrgZscalerCredentials } from "../../store";
+import { firstPipelineError } from "../../../redis-pipeline";
 import {
   ZscalerError,
   zscalerLookupUrls,
@@ -310,20 +311,47 @@ function isExpired(entry: QueueEntry): boolean {
   );
 }
 
+// Never throws: the reply write is an idempotent SET with an
+// already-computed payload, so it retries in place — requeueing the entries
+// would re-spend the tenant's urlLookup budget on a call that already
+// succeeded. If every attempt fails, requesters exit via their wait timeout
+// and the org's failurePolicy, which is the designed backstop.
 async function replyAll(
   entries: QueueEntry[],
   payloadFor: (entry: QueueEntry) => ReplyPayload,
 ): Promise<void> {
-  const pipeline = redisRateLimitClient.pipeline();
-  for (const entry of entries) {
-    pipeline.set(
-      replyKey(entry.id),
-      JSON.stringify(payloadFor(entry)),
-      "EX",
-      REPLY_TTL_SECONDS,
-    );
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    let error: unknown = null;
+    try {
+      const pipeline = redisRateLimitClient.pipeline();
+      for (const entry of entries) {
+        pipeline.set(
+          replyKey(entry.id),
+          JSON.stringify(payloadFor(entry)),
+          "EX",
+          REPLY_TTL_SECONDS,
+        );
+      }
+      error = firstPipelineError(await pipeline.exec());
+    } catch (e) {
+      error = e;
+    }
+
+    if (error === null) {
+      return;
+    }
+
+    logger.error("Redis pipeline command failed", {
+      method: "replyAll",
+      entries: entries.length,
+      attempt,
+      error,
+    });
+
+    if (attempt < 3) {
+      await sleep(50 * 2 ** attempt);
+    }
   }
-  await pipeline.exec();
 }
 
 async function drainQueue(orgId: string): Promise<void> {
@@ -357,7 +385,7 @@ async function drainQueue(orgId: string): Promise<void> {
         await replyAll(expired, () => ({
           status: "error",
           message: "The lookup request expired before the batch was sent",
-        })).catch(() => {});
+        }));
         entries = entries.filter(entry => !isExpired(entry));
         if (entries.length === 0) continue;
       }
@@ -408,31 +436,17 @@ async function drainQueue(orgId: string): Promise<void> {
         await replyAll(entries, () => ({
           status: "error",
           message: "Zscaler lookup drainer failed before the batch was sent",
-        })).catch(() => {});
+        }));
         throw error;
       }
 
       const uniqueUrls = [...new Set(entries.map(entry => entry.url))];
+      let byUrl: Map<string, ZscalerUrlLookupResult>;
       try {
         const results = await zscalerLookupUrls(credentials, uniqueUrls, {
           signal: AbortSignal.timeout(LOOKUP_CALL_TIMEOUT_MS),
         });
-        const byUrl = new Map(results.map(result => [result.url, result]));
-        await replyAll(entries, entry => {
-          const result = byUrl.get(entry.url);
-          if (!result) {
-            return {
-              status: "error",
-              message: "Zscaler returned no verdict for this URL",
-            };
-          }
-          return {
-            status: "ok",
-            urlClassifications: result.urlClassifications,
-            urlClassificationsWithSecurityAlert:
-              result.urlClassificationsWithSecurityAlert,
-          };
-        });
+        byUrl = new Map(results.map(result => [result.url, result]));
       } catch (error) {
         const zscalerError =
           error instanceof ZscalerError
@@ -461,7 +475,26 @@ async function drainQueue(orgId: string): Promise<void> {
           status: "error",
           message: zscalerError.message,
         }));
+        continue;
       }
+
+      // Reply outside the lookup try/catch: a reply-write failure is not a
+      // lookup failure and must not be handled as one.
+      await replyAll(entries, entry => {
+        const result = byUrl.get(entry.url);
+        if (!result) {
+          return {
+            status: "error",
+            message: "Zscaler returned no verdict for this URL",
+          };
+        }
+        return {
+          status: "ok",
+          urlClassifications: result.urlClassifications,
+          urlClassificationsWithSecurityAlert:
+            result.urlClassificationsWithSecurityAlert,
+        };
+      });
     }
   } finally {
     await lock.release().catch(() => {});

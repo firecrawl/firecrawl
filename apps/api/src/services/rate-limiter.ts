@@ -38,6 +38,9 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
   research: 100,
   developerSearch: 100,
   labs: 1000,
+  exchange: 100,
+  // Catalogue reads only; no paid tool runs behind them.
+  exchangeDiscover: 10000,
 };
 
 /**
@@ -48,10 +51,13 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
  *
  * Endpoint → mode mapping: agent + extract share `Extract`; interact is
  * `Browser`; interactExecute is `BrowserExecute`; agentStatus is
- * `ExtractStatus`.
+ * `ExtractStatus`. Exchange data routes (discover, retrieve, records/fetch)
+ * match Scrape so an Alexandria call costs the same request budget whichever
+ * path it takes.
  */
 const BASE_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
   [RateLimiterMode.Scrape]: 10,
+  [RateLimiterMode.Exchange]: 10,
   [RateLimiterMode.Map]: 10,
   [RateLimiterMode.Crawl]: 2,
   [RateLimiterMode.Search]: 10,
@@ -125,6 +131,17 @@ export function getAutumnRateLimiter(
 }
 
 /**
+ * Autumn rate-limit multiplier granted to the hobby plan. Trusted agent
+ * traffic (a valid `__agentInterop` secret) is floored at this multiplier so a
+ * free team's agent runs are limited like hobby rather than at ×1; see
+ * buildAuthenticatedRateLimiter in controllers/auth.ts. Paid plans already
+ * meet or exceed it, so the floor only ever lifts free. Pairs with
+ * HOBBY_CONCURRENCY_LIMIT in lib/concurrency-limit.ts; change both if the
+ * hobby plan in firecrawl-web autumn.config.ts changes.
+ */
+export const HOBBY_RATE_LIMIT_MULTIPLIER = 10;
+
+/**
  * Plan-priority tiers keyed by the minimum Autumn rate-limit multiplier that
  * qualifies. Values mirror the tuned production `plan_priority` for each plan.
  * A customer's multiplier selects the highest tier they meet or exceed, so
@@ -140,7 +157,11 @@ const PLAN_PRIORITY_TIERS: {
   planModifier: number;
 }[] = [
   { minMultiplier: 1, bucketLimit: 25, planModifier: 0.5 }, // free
-  { minMultiplier: 10, bucketLimit: 100, planModifier: 0.3 }, // hobby
+  {
+    minMultiplier: HOBBY_RATE_LIMIT_MULTIPLIER,
+    bucketLimit: 100,
+    planModifier: 0.3,
+  }, // hobby
   { minMultiplier: 50, bucketLimit: 200, planModifier: 0.2 }, // standard
   { minMultiplier: 500, bucketLimit: 400, planModifier: 0.1 }, // growth
   { minMultiplier: 1000, bucketLimit: 400, planModifier: 0.1 }, // scale

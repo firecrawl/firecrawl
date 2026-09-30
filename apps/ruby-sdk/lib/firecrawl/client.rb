@@ -129,6 +129,10 @@ module Firecrawl
 
     # Search GitHub research content.
     #
+    # @deprecated Stops responding after 2026-11-03. Use the developer index at
+    #   GET or POST /v2/search/developer, which this SDK does not wrap yet, so
+    #   call it directly. It does not carry over the score breakdown or the
+    #   web fallback results.
     # @param query_text [String] GitHub query
     # @param options [Hash] optional query parameters
     # @return [Hash]
@@ -461,6 +465,20 @@ module Firecrawl
 
       raw = @http.get("/v2/agent/#{job_id}")
       Models::AgentStatusResponse.new(raw)
+    end
+
+    # Lists agent tasks, most recent first.
+    #
+    # Pages are fixed at 20 runs. To fetch the next page, pass the before
+    # value from the previous page's next URL. This method does not
+    # auto-paginate.
+    #
+    # @param before [Integer, nil] only return agent runs created before this
+    #   unix millisecond timestamp
+    # @return [Models::AgentListResponse]
+    def list_agents(before: nil)
+      raw = @http.get("/v2/agent#{query(before: before)}")
+      Models::AgentListResponse.new(raw)
     end
 
     # Runs an agent task and waits for completion (auto-polling).

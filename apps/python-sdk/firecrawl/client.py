@@ -71,6 +71,8 @@ class V2Proxy:
 
         if client_instance:
             self.scrape = client_instance.scrape
+            self.scrape_alexandria = client_instance.scrape_alexandria
+            self.find_tools = client_instance.find_tools
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
             self.stop_interactive_browser = client_instance.stop_interactive_browser
@@ -97,6 +99,7 @@ class V2Proxy:
             self.start_agent = client_instance.start_agent
             self.get_agent_status = client_instance.get_agent_status
             self.cancel_agent = client_instance.cancel_agent
+            self.list_agents = client_instance.list_agents
             self.get_agent_trace = client_instance.get_agent_trace
             self.get_agent_snapshot = client_instance.get_agent_snapshot
 
@@ -160,6 +163,8 @@ class AsyncV2Proxy:
 
         if client_instance:
             self.scrape = client_instance.scrape
+            self.scrape_alexandria = client_instance.scrape_alexandria
+            self.find_tools = client_instance.find_tools
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
             self.stop_interactive_browser = client_instance.stop_interactive_browser
@@ -187,6 +192,7 @@ class AsyncV2Proxy:
             self.start_agent = client_instance.start_agent
             self.get_agent_status = client_instance.get_agent_status
             self.cancel_agent = client_instance.cancel_agent
+            self.list_agents = client_instance.list_agents
             self.get_agent_trace = client_instance.get_agent_trace
             self.get_agent_snapshot = client_instance.get_agent_snapshot
 
@@ -273,6 +279,8 @@ class Firecrawl:
         self.v2 = V2Proxy(self._v2_client)
         
         self.scrape = self._v2_client.scrape
+        self.scrape_alexandria = self._v2_client.scrape_alexandria
+        self.find_tools = self._v2_client.find_tools
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction
         self.stop_interactive_browser = self._v2_client.stop_interactive_browser
@@ -316,6 +324,7 @@ class Firecrawl:
         self.start_agent = self._v2_client.start_agent
         self.get_agent_status = self._v2_client.get_agent_status
         self.cancel_agent = self._v2_client.cancel_agent
+        self.list_agents = self._v2_client.list_agents
         self.get_agent_trace = self._v2_client.get_agent_trace
         self.get_agent_snapshot = self._v2_client.get_agent_snapshot
         self.agent = self._v2_client.agent
@@ -414,6 +423,8 @@ class AsyncFirecrawl:
         # Expose v2 async surface directly on the top-level client for ergonomic access
         # Keep method names aligned with the sync client
         self.scrape = self._v2_client.scrape
+        self.scrape_alexandria = self._v2_client.scrape_alexandria
+        self.find_tools = self._v2_client.find_tools
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction
         self.stop_interactive_browser = self._v2_client.stop_interactive_browser
@@ -456,6 +467,7 @@ class AsyncFirecrawl:
         self.start_agent = self._v2_client.start_agent
         self.get_agent_status = self._v2_client.get_agent_status
         self.cancel_agent = self._v2_client.cancel_agent
+        self.list_agents = self._v2_client.list_agents
         self.get_agent_trace = self._v2_client.get_agent_trace
         self.get_agent_snapshot = self._v2_client.get_agent_snapshot
         self.agent = self._v2_client.agent

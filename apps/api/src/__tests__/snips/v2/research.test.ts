@@ -101,9 +101,10 @@ async function snapshotKeylessCounts(): Promise<Map<string, number>> {
 // our snapshot window resets the counters. Ambiguity retries the whole probe
 // (the requests under test are idempotent zero-credit GETs) instead of
 // asserting on a poisoned window.
-async function issueAndResolveKeylessIp<
-  T extends { statusCode: number },
->(forwardedIp: string, issue: () => Promise<T>): Promise<{ res: T; ip: string }> {
+async function issueAndResolveKeylessIp<T extends { statusCode: number }>(
+  forwardedIp: string,
+  issue: () => Promise<T>,
+): Promise<{ res: T; ip: string }> {
   if (KEYLESS_PROXY_SECRET) {
     return { res: await issue(), ip: forwardedIp };
   }
@@ -116,7 +117,9 @@ async function issueAndResolveKeylessIp<
       .filter(([ip, count]) => count > (before.get(ip) ?? 0))
       .map(([ip]) => ip);
     if (bumped.length === 1) return { res, ip: bumped[0] };
-    attempts.push(bumped.length === 0 ? "none" : `multiple[${bumped.join(", ")}]`);
+    attempts.push(
+      bumped.length === 0 ? "none" : `multiple[${bumped.join(", ")}]`,
+    );
   }
   // Distinguish the two failure modes: "none" means the request was never
   // counted against any candidate key (not treated as keyless, or the server
@@ -535,4 +538,95 @@ describeIf(HAS_RESEARCH)("Research API", () => {
       expect(before - after).toBe(0);
     }, 180000);
   });
+});
+
+const GITHUB_DEPRECATED_AT = "@1788393600";
+const GITHUB_SUNSET = "Tue, 03 Nov 2026 23:59:59 GMT";
+
+describeIf(HAS_RESEARCH)("Research API github search deprecation", () => {
+  it("carries the deprecation headers and body warning on the canonical mount", async () => {
+    const identity = await idmux({
+      name: "research/github deprecation canonical",
+      credits: 100,
+    });
+
+    const res = await researchRaw(
+      "/v2/search/research/github",
+      { query: "milvus hybrid search", k: 3 },
+      identity,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    expect(res.headers["deprecation"]).toBe(GITHUB_DEPRECATED_AT);
+    expect(res.headers["sunset"]).toBe(GITHUB_SUNSET);
+    expect(res.headers["link"]).toContain('rel="deprecation"');
+    expect(res.headers["link"]).toContain(
+      '</v2/search/developer>; rel="successor-version"',
+    );
+    expect(res.headers["warning"]).toMatch(/^299 - "/);
+
+    expect(Array.isArray(res.body.warnings)).toBe(true);
+    expect(
+      res.body.warnings.some((w: string) => /\/v2\/search\/developer/.test(w)),
+    ).toBe(true);
+    expect(res.body.replacement).toBe("/v2/search/developer");
+  }, 120000);
+
+  it("leaves the paper routes on the same router undeprecated", async () => {
+    const identity = await idmux({
+      name: "research/github deprecation scope",
+      credits: 100,
+    });
+
+    const res = await researchRaw(
+      "/v2/search/research/papers",
+      { query: "retrieval augmented generation", k: 1 },
+      identity,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["deprecation"]).toBeUndefined();
+    expect(res.headers["sunset"]).toBeUndefined();
+    expect(res.body.warnings).toBeUndefined();
+    expect(res.body.replacement).toBeUndefined();
+  }, 120000);
+
+  it("keeps the legacy snake_case aliases alongside the new warning", async () => {
+    const identity = await idmux({
+      name: "research/github deprecation legacy",
+      credits: 100,
+    });
+
+    const res = await researchRaw(
+      "/v2/research/github",
+      { query: "milvus hybrid search", k: 3 },
+      identity,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["deprecation"]).toBe(GITHUB_DEPRECATED_AT);
+    expect(Array.isArray(res.body.warnings)).toBe(true);
+    expect(res.body.results.length).toBeGreaterThan(0);
+    // resultType is optional, so only assert the alias when the camel key is set.
+    const first = res.body.results[0];
+    if (first.resultType !== undefined) {
+      expect(first.result_type).toBe(first.resultType);
+    }
+  }, 120000);
+
+  it("still warns when the request is rejected", async () => {
+    const identity = await idmux({
+      name: "research/github deprecation 400",
+      credits: 100,
+    });
+
+    const res = await researchRaw("/v2/search/research/github", {}, identity);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.headers["deprecation"]).toBe(GITHUB_DEPRECATED_AT);
+    expect(Array.isArray(res.body.warnings)).toBe(true);
+  }, 60000);
 });

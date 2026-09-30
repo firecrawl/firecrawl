@@ -8,10 +8,13 @@ import {
 import { getCrawl } from "../../lib/crawl-redis";
 import { creditsBilledByCrawlId } from "../../db/rpc";
 import { db } from "../../db/connection";
+import { readRequestCredits } from "../../lib/request-credits-store";
 import { getJobs } from "../../controllers/v1/crawl-status";
 import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
+import { recordJobStorePostgresFallback } from "../../lib/job-store-fallback";
+import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
 
 export async function finishCrawlSuper(job: NuQJob<any>) {
   const crawlId = job.groupId;
@@ -142,11 +145,30 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     const num_docs = await getDoneJobsOrderedLength(crawlId);
 
     let credits_billed: number | null = null;
+    let creditsReadFailed = false;
 
-    if (config.USE_DB_AUTHENTICATION) {
+    try {
+      credits_billed = await readRequestCredits(requestId);
+    } catch (error) {
+      creditsReadFailed = true;
+      logger.warn("Bigtable request credits read failed", { error });
+    }
+
+    if (credits_billed === null) {
+      try {
+        credits_billed = await readRequestCreditsFromAnalytics(crawlId);
+      } catch (error) {
+        logger.warn("Analytics request credits read failed", { error });
+      }
+    }
+
+    if (credits_billed === null && config.USE_DB_AUTHENTICATION) {
       try {
         const creditsRows = await creditsBilledByCrawlId(db, crawlId);
         credits_billed = creditsRows?.[0]?.credits_billed ?? null;
+        if (credits_billed !== null && !creditsReadFailed) {
+          recordJobStorePostgresFallback("request_credits", requestId);
+        }
       } catch (error) {
         logger.warn("Credits billed is null", { error });
       }

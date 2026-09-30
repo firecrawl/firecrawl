@@ -4,7 +4,9 @@ import { and, asc, count, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { monitoringClaimDueMonitors } from "../../db/rpc";
+import { config } from "../../config";
 import { shouldParsePDF } from "../../controllers/v2/types";
+import { isXTwitterUrl } from "../../scraper/scrapeURL/engines/x-twitter/url";
 import {
   getNextMonitorRunAt,
   estimateRunsPerMonth,
@@ -37,7 +39,7 @@ function ensureTargetIds(targets: Array<Record<string, any>>): MonitorTarget[] {
 }
 
 const BASE_SCRAPE_CREDITS_PER_PAGE = 1;
-const JSON_SCRAPE_CREDITS_PER_PAGE = 5;
+const JSON_SCRAPE_CREDIT_BONUS = 4;
 const DETERMINISTIC_JSON_SCRAPE_CREDITS_PER_PAGE = 7;
 const SCRAPE_OPTION_CREDIT_BONUS = 4;
 const JUDGE_CREDITS_PER_PAGE = 1;
@@ -76,6 +78,18 @@ function hasAnyFormatOfType(formats: unknown, types: string[]): boolean {
   return types.some(type => hasFormatOfType(formats, type));
 }
 
+function requestsPromptInjectionCheck(formats: unknown): boolean {
+  if (!Array.isArray(formats)) return false;
+  return formats.some(
+    format =>
+      !!format &&
+      typeof format === "object" &&
+      formatType(format) === "json" &&
+      "checkPromptInjection" in format &&
+      format.checkPromptInjection === true,
+  );
+}
+
 function requestsJsonChangeTracking(formats: unknown): boolean {
   if (!Array.isArray(formats)) return false;
   return formats.some(format => {
@@ -105,11 +119,19 @@ function estimateBaseCreditsPerPage(
     credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
-  // Deterministic JSON costs more than plain JSON; both override the base scrape credit.
+  // Deterministic JSON is a flat per-page rate that overrides the base scrape
+  // credit. Plain JSON adds its premium on top, so an earlier surcharge such
+  // as lockdown survives. This mirrors calculateCreditsToBeBilled.
   if (usesDeterministicJson) {
     credits = DETERMINISTIC_JSON_SCRAPE_CREDITS_PER_PAGE;
   } else if (usesJsonCredits) {
-    credits = JSON_SCRAPE_CREDITS_PER_PAGE;
+    credits += JSON_SCRAPE_CREDIT_BONUS;
+  }
+
+  // The prompt injection guard bills +4 in calculateCreditsToBeBilled. The
+  // estimate cannot know whether the guard ran, so it assumes it does.
+  if (requestsPromptInjectionCheck(formats)) {
+    credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
   if (hasAnyFormatOfType(formats, ["question", "query"])) {
@@ -153,13 +175,37 @@ function estimateSearchTargetCredits(
   );
 }
 
+/**
+ * The x-twitter engine's surcharge, which billing adds per page (see
+ * fallbackBaseCreditsForPage). Left out of the estimate, a judged one-URL X
+ * monitor reserves 2 credits and costs 31, and an account with a few credits
+ * left passes every hold and is never charged.
+ */
+function xTwitterSurcharge(
+  url: string,
+  options: MonitorTarget["scrapeOptions"],
+): number {
+  // Mirrors the engine router (scrapeURL/engines/index.ts): the engine exists
+  // only with an xAI key or DB auth, lockdown serves from the index alone, and
+  // a browser profile routes around it.
+  const engineEnabled =
+    (config.XAI_API_KEY !== undefined && config.XAI_API_KEY !== "") ||
+    config.USE_DB_AUTHENTICATION === true;
+  if (!engineEnabled || options?.lockdown || options?.profile) return 0;
+  return isXTwitterUrl(url) ? X_TWITTER_POSTPROCESSOR_CREDIT_BONUS : 0;
+}
+
 function estimateTargetBaseCredits(
   target: MonitorTarget,
   judgeEnabled: boolean = false,
 ): number {
   const creditsPerPage = estimateBaseCreditsPerPage(target.scrapeOptions);
   if (target.type === "scrape") {
-    return target.urls.length * creditsPerPage;
+    return target.urls.reduce(
+      (sum, url) =>
+        sum + creditsPerPage + xTwitterSurcharge(url, target.scrapeOptions),
+      0,
+    );
   }
   if (target.type === "search") {
     return estimateSearchTargetCredits(target, judgeEnabled);
@@ -757,6 +803,30 @@ export async function getMonitorCheck(
   return (data ?? null) as MonitorCheckRow | null;
 }
 
+// Finalizers must observe terminal writes before deciding whether to settle a hold.
+export async function getMonitorCheckForUpdate(
+  teamId: string,
+  monitorId: string,
+  checkId: string,
+): Promise<MonitorCheckRow | null> {
+  const [data] = await run(
+    () =>
+      db
+        .select()
+        .from(schema.monitor_checks)
+        .where(
+          and(
+            eq(schema.monitor_checks.id, checkId),
+            eq(schema.monitor_checks.monitor_id, monitorId),
+            eq(schema.monitor_checks.team_id, teamId),
+          ),
+        )
+        .limit(1),
+    "Failed to get monitor check for update",
+  );
+  return (data ?? null) as MonitorCheckRow | null;
+}
+
 export async function listRunningMonitorChecks(
   limit: number = 100,
 ): Promise<MonitorCheckRow[]> {
@@ -883,6 +953,16 @@ export async function updateMonitorCheckIfRunning(
   checkId: string,
   patch: Partial<MonitorCheckRow>,
 ): Promise<MonitorCheckRow | null> {
+  return updateMonitorCheckIfStatus(checkId, "running", patch);
+}
+
+// The terminal transition grants ownership of settlement and its follow-up work.
+// A competing worker must not confirm/release the hold when this returns null.
+export async function updateMonitorCheckIfStatus(
+  checkId: string,
+  expectedStatus: "queued" | "running",
+  patch: Partial<MonitorCheckRow>,
+): Promise<MonitorCheckRow | null> {
   const [data] = await run(
     () =>
       db
@@ -894,7 +974,7 @@ export async function updateMonitorCheckIfRunning(
         .where(
           and(
             eq(schema.monitor_checks.id, checkId),
-            eq(schema.monitor_checks.status, "running"),
+            eq(schema.monitor_checks.status, expectedStatus),
           ),
         )
         .returning(),

@@ -39,7 +39,7 @@
 
 # **🔥 Firecrawl**
 
-**The API to search, scrape, and interact with the web at scale. 🔥** The web context API to find sources, extract content, and turn it into clean Markdown or structured data your agents can ship with. Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
+**The API to search, scrape, and interact with the web at scale. 🔥** The web data API to find sources, extract content, and turn it into clean Markdown or structured data your agents can ship with. Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
 
 _Pst. Hey, you, join our stargazers :)_
 

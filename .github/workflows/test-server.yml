@@ -218,6 +218,61 @@ jobs:
         env:
           npm_config_ignore_scripts: 'true'
 
+      - name: Run monitor finalization regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/services/monitoring/runner.finalization.test.ts
+          src/services/monitoring/store.finalization.test.ts
+          src/services/monitoring/scheduler.test.ts
+          --reporter=default
+        working-directory: apps/api
+
+      - name: Run Autumn entity provisioning regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: pnpm exec vitest run src/services/autumn/__tests__/autumn.service.test.ts --reporter=default
+        working-directory: apps/api
+
+      - name: Run safeFetch SSRF guard regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: pnpm exec vitest run src/scraper/scrapeURL/engines/utils/safeFetch.proxy.test.ts --reporter=default
+        working-directory: apps/api
+
+      - name: Run browser session DELETE regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: pnpm exec vitest run src/controllers/v2/__tests__/browser-delete.test.ts --reporter=default
+        working-directory: apps/api
+
+      - name: Run search safe filter regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/search/safe-search.test.ts
+          src/search/execute.test.ts
+          --reporter=default
+        working-directory: apps/api
+
+      - name: Run crawl status cursor regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/controllers/v1/__tests__/crawl-status-next.test.ts
+          src/controllers/v2/__tests__/crawl-status-next.test.ts
+          --reporter=default
+        working-directory: apps/api
+
+      - name: Run agent interop auth and concurrency regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/lib/agent-interop.test.ts
+          src/controllers/__tests__/auth.test.ts
+          src/__tests__/routes/exchange-agent-managed-key.routes.test.ts
+          src/controllers/v2/__tests__/browser-agent-concurrency.test.ts
+          src/__tests__/routes/interact-agent-concurrency.routes.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Install test site dependencies
         run: pnpm install --frozen-lockfile
         working-directory: apps/test-site
@@ -579,6 +634,11 @@ jobs:
   nuq-fdb-core:
     name: NuQ FoundationDB core tests
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
     env:
       FDB_VERSION: 7.3.63
     steps:

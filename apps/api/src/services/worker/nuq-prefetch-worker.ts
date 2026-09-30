@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { config } from "../../config";
-import "../sentry";
-import { setSentryServiceTag } from "../sentry";
+import { shutdownTracing } from "../../otel";
 import {
   scrapeQueue,
   nuqGetLocalMetrics,
@@ -13,8 +12,6 @@ import Express from "express";
 import { logger } from "../../lib/logger";
 
 (async () => {
-  setSentryServiceTag("nuq-prefetch-worker");
-
   const app = Express();
 
   app.get("/metrics", (_, res) =>
@@ -46,6 +43,7 @@ import { logger } from "../../lib/logger";
   async function shutdown() {
     server.close();
     await nuqShutdown();
+    await shutdownTracing();
     process.exit(0);
   }
 

@@ -17,6 +17,11 @@ const CCLOG_SAMPLE_TTL_SECONDS = 60 * 60;
 const CCLOG_MINUTE_MS = 60 * 1000;
 const CCLOG_AGGREGATE_INTERVAL_MINUTES = 10;
 
+// Dragonfly rejects commands with more than 2^16 arguments ("invalid
+// multibulk length") and drops the connection, so a single HSET silently
+// fails once a sample holds ~32k+ teams. Chunk well below that limit.
+const CCLOG_HSET_FIELD_CHUNK_SIZE = 16000;
+
 type CclogSample = {
   at: Date;
   concurrencyByTeam: Map<string, number>;
@@ -127,19 +132,31 @@ async function saveCclogMinuteSample(
   const pipeline = redis.pipeline();
 
   if (sample.concurrencyByTeam.size > 0) {
-    const values: Record<string, string> = {};
+    let values: Record<string, string> = {};
 
     for (const [teamId, concurrency] of sample.concurrencyByTeam) {
       values[teamId] = String(concurrency);
+
+      if (Object.keys(values).length >= CCLOG_HSET_FIELD_CHUNK_SIZE) {
+        pipeline.hset(key, values);
+        values = {};
+      }
     }
 
-    pipeline.hset(key, values);
+    if (Object.keys(values).length > 0) {
+      pipeline.hset(key, values);
+    }
   } else {
     pipeline.hset(key, "__empty__", "0");
   }
 
   pipeline.expire(key, CCLOG_SAMPLE_TTL_SECONDS);
-  await pipeline.exec();
+
+  const results = await pipeline.exec();
+  const error = (results ?? []).find(([err]) => err)?.[0];
+  if (error) {
+    throw new Error(`Failed to save cclog minute sample: ${error.message}`);
+  }
 }
 
 async function buildCclogAggregateEntries(

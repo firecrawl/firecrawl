@@ -1,7 +1,5 @@
 import { configDotenv } from "dotenv";
 import { config } from "../../config";
-import * as Sentry from "@sentry/node";
-import { applyZdrScope, captureExceptionWithZdrCheck } from "../sentry";
 import http from "http";
 import https from "https";
 
@@ -18,6 +16,7 @@ import {
   addCrawlJobs,
   addCrawlJobDone,
   crawlToCrawler,
+  queueCrawlJobDoneRepair,
   recordRobotsBlocked,
   recordThreatBlocked,
   finishCrawlKickoff,
@@ -52,6 +51,7 @@ import { getJobPriority } from "../../lib/job-priority";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
+import { orgIdForTeam } from "../../lib/team-org";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { CustomError } from "../../lib/custom-error";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
@@ -59,7 +59,7 @@ import { CostTracking } from "../../lib/cost-tracking";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
-import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
+
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
 import { WebCrawler } from "../../scraper/WebScraper/crawler";
 import {
@@ -78,8 +78,10 @@ import {
   SitemapError,
   TransportableError,
   UnknownError,
+  UnsupportedSiteError,
 } from "../../lib/error";
 import { serializeTransportableError } from "../../lib/error-serde";
+import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 import { trackScrape } from "../../lib/tracking";
 import type { NuQJob } from "./nuq";
 import {
@@ -92,10 +94,11 @@ import { scrapeSitemap } from "../../scraper/crawler/sitemap";
 import {
   withTraceContextAsync,
   withSpan,
+  withZeroDataRetention,
   setSpanAttributes,
 } from "../../lib/otel-tracer";
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
-import { logScrape } from "../logging/log_job";
+import { logScrape, type ScrapeStateOutcome } from "../logging/log_job";
 import { FeatureFlag } from "../../scraper/scrapeURL/engines";
 import {
   recordMonitorScrapeFailure,
@@ -110,6 +113,12 @@ import { emitScrapeActivityEvent } from "../../lib/siem-logging";
 
 configDotenv();
 
+/**
+ * How long a sync scrape waits for its Bigtable terminal state to be written
+ * before answering anyway. A write normally takes a few milliseconds.
+ */
+const SCRAPE_STATE_BARRIER_MS = 2_000;
+
 const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
 const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 
@@ -117,6 +126,18 @@ if (require.main === module) {
   cacheableLookup.install(http.globalAgent);
   cacheableLookup.install(https.globalAgent);
   warmExchangeCatalog();
+}
+
+// The org for a job's Autumn lookups. It rides the job payload, snapshotted
+// from the request ACUC at acceptance; the ACUC answers only for a job
+// enqueued without one (monitor jobs null it deliberately, since the field
+// also gates blocklist enforcement) — the same lookup getJobPriority used to
+// make for itself, now hoisted to once per job instead of once per link.
+async function orgIdForJob(
+  orgIdFromJob: string | null | undefined,
+  teamId: string,
+): Promise<string | null> {
+  return orgIdFromJob ?? (await orgIdForTeam(teamId));
 }
 
 async function billScrapeJob(
@@ -170,24 +191,38 @@ async function billScrapeJob(
       job.data.team_id !== config.BACKGROUND_INDEX_TEAM_ID! &&
       config.USE_DB_AUTHENTICATION
     ) {
+      // The org rides the job payload, snapshotted from the request ACUC at
+      // acceptance. The ACUC answers only for a job enqueued without one —
+      // the same lookup the billing service used to make on every charge.
+      const orgId = await orgIdForJob(
+        job.data.internalOptions?.orgId,
+        job.data.team_id,
+      );
+
       // Resolved outside the try so the catch's refund decision can see it.
       let routedToFirebill = false;
       try {
-        routedToFirebill = await autumnService.isRoutedThroughFirebill(
-          job.data.team_id,
-        );
-        trackedInRequest = await autumnService.trackCredits({
-          teamId: job.data.team_id,
-          value: creditsToBeBilled,
-          properties: autumnProperties,
-          featureId,
-          // The worker job id is the one identity that is unique per charge
-          // (a crawl id is shared by every page — keying on it would collapse
-          // a crawl's pages into one billed event) AND survives a stall
-          // requeue, which re-runs the job under the same id: with this key,
-          // the re-run dedupes instead of double-billing (firebill route).
-          idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
-        });
+        routedToFirebill = orgId
+          ? await autumnService.isRoutedThroughFirebill(job.data.team_id, orgId)
+          : false;
+        trackedInRequest = orgId
+          ? await autumnService.trackCredits({
+              teamId: job.data.team_id,
+              orgId,
+              value: creditsToBeBilled,
+              properties: autumnProperties,
+              featureId,
+              // The worker job id is the one identity that is unique per charge
+              // (a crawl id is shared by every page — keying on it would collapse
+              // a crawl's pages into one billed event) AND survives a stall
+              // requeue, which re-runs the job under the same id: with this key,
+              // the re-run dedupes instead of double-billing (firebill route).
+              idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
+              // The caller's own operation id, carried on the charge so
+              // firebill reports it without a request lookup.
+              externalRequestId: billing.externalRequestId ?? undefined,
+            })
+          : false;
         // On the firebill route the ledger enqueue must be idempotent by the
         // originating job: a stalled job reruns under the same job.id, the
         // track dedupes in firebill, and a fresh random billing job id would
@@ -224,6 +259,7 @@ async function billScrapeJob(
               "bill_team",
               {
                 team_id: job.data.team_id,
+                org_id: orgId,
                 credits: creditsToBeBilled,
                 billing,
                 is_extract: false,
@@ -278,15 +314,17 @@ async function billScrapeJob(
                 billing,
               },
             );
-          } else {
+          } else if (orgId) {
             await autumnService.refundCredits({
               teamId: job.data.team_id,
+              orgId,
               value: creditsToBeBilled,
               properties: autumnProperties,
               featureId,
               // Distinct from the track key: a refund is its own charge event
               // (same key would 409 as a duplicate of the track and be dropped).
               idempotencyKey: `fc:refund:${billing.endpoint}:${job.id}`,
+              externalRequestId: billing.externalRequestId ?? undefined,
             });
           }
         }
@@ -302,9 +340,6 @@ async function billScrapeJob(
             status: "void",
           });
         }
-        captureExceptionWithZdrCheck(error, {
-          extra: { zeroDataRetention: job.data.zeroDataRetention ?? false },
-        });
         return creditsToBeBilled;
       }
     }
@@ -326,6 +361,8 @@ async function billScrapeJob(
 function billThreatBlockedDiscoveries(
   args: {
     teamId: string;
+    /** Snapshotted onto the job at acceptance; see InternalOptions.orgId. */
+    orgId: string | null;
     apiKeyId: number | null;
     billing: BillingMetadata;
     bypassBilling: boolean;
@@ -342,14 +379,18 @@ function billThreatBlockedDiscoveries(
   // billing metadata (each page job that discovers new blocked URLs bills its
   // own batch under the same crawl id) — a shared key would collapse them
   // into one charge, i.e. underbill. Keyless until per-batch identity exists.
-  billTeam(args.teamId, threatScanCredits, args.apiKeyId, args.billing).catch(
-    error => {
-      logger.error(
-        `Failed to bill team ${args.teamId} for ${threatScanCredits} threat scan credit(s)`,
-        { error },
-      );
-    },
-  );
+  billTeam(
+    args.teamId,
+    args.orgId,
+    threatScanCredits,
+    args.apiKeyId,
+    args.billing,
+  ).catch(error => {
+    logger.error(
+      `Failed to bill team ${args.teamId} for ${threatScanCredits} threat scan credit(s)`,
+      { error },
+    );
+  });
 }
 
 async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
@@ -362,7 +403,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     teamId: job.data?.team_id ?? undefined,
     zeroDataRetention: job.data?.zeroDataRetention ?? false,
   });
-  applyZdrScope(job.data?.zeroDataRetention);
   logger.info(`🐂 Worker taking job ${job.id}`, { url: job.data.url });
   const start = job.data.startTime ?? Date.now();
   const remainingTime = job.data.scrapeOptions.timeout
@@ -436,6 +476,33 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     const timeTakenInSeconds = (end - start) / 1000;
 
     const doc = pipeline.document;
+
+    if (
+      pipeline.exchange === undefined &&
+      job.data.origin !== "monitor" &&
+      !job.data.internalOptions?.isParse &&
+      doc.metadata.url !== undefined &&
+      doc.metadata.sourceURL !== undefined &&
+      canonicalizeUrl(doc.metadata.url) !==
+        canonicalizeUrl(doc.metadata.sourceURL)
+    ) {
+      let teamFlags = job.data.internalOptions?.teamFlags ?? null;
+      let orgId = job.data.internalOptions?.orgId ?? null;
+      if (job.data.internalOptions?.teamFlags === undefined) {
+        const teamChunk = await getACUCTeam(job.data.team_id);
+        teamFlags = teamChunk?.flags ?? null;
+        orgId = orgId ?? teamChunk?.org_id ?? null;
+      }
+      if (
+        isUrlBlocked(doc.metadata.url, teamFlags, {
+          team_id: job.data.team_id,
+          org_id: orgId,
+          origin: job.data.origin,
+        })
+      ) {
+        throw new UnsupportedSiteError();
+      }
+    }
 
     const rawHtml = doc.rawHtml ?? "";
 
@@ -534,17 +601,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           await saveCrawl(job.data.crawl_id, sc);
         }
 
-        const teamChunk = await getACUCTeam(job.data.team_id);
-        if (
-          isUrlBlocked(doc.metadata.url, teamChunk?.flags ?? null, {
-            team_id: job.data.team_id,
-            org_id: teamChunk?.org_id ?? null,
-            origin: job.data.origin,
-          })
-        ) {
-          throw new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
-        }
-
         const p1 = generateURLPermutations(normalizeURL(doc.metadata.url, sc));
         const p2 = generateURLPermutations(
           normalizeURL(doc.metadata.sourceURL, sc),
@@ -635,6 +691,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 billThreatBlockedDiscoveries(
                   {
                     teamId: job.data.team_id,
+                    // A null org here would drop a real charge, so this falls
+                    // through the payload, the stored crawl, then the ACUC.
+                    orgId: await orgIdForJob(
+                      job.data.internalOptions?.orgId ??
+                        sc.internalOptions?.orgId,
+                      job.data.team_id,
+                    ),
                     apiKeyId: job.data.apiKeyId ?? null,
                     billing: resolveBillingMetadata({
                       billing: job.data.billing,
@@ -658,11 +721,18 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               }
             }
 
+            // Hoisted: one org resolution per job, not one per discovered link.
+            const crawlOrgId =
+              discoveredLinks.length > 0
+                ? await orgIdForJob(sc.internalOptions?.orgId, sc.team_id)
+                : null;
+
             for (const link of discoveredLinks) {
               if (await lockURL(job.data.crawl_id, sc, link)) {
                 // This seems to work really welel
                 const jobPriority = await getJobPriority({
                   team_id: sc.team_id,
+                  org_id: crawlOrgId,
                   basePriority: job.data.crawl_id ? 20 : 10,
                 });
                 const jobId = uuidv7();
@@ -834,7 +904,22 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       await recordMonitorScrapeSuccess(job, doc);
 
       logger.debug("Declaring job as done...");
-      await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
+      try {
+        await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
+      } catch (e) {
+        // The scrape succeeded and its success webhook already went out —
+        // a bookkeeping failure must not route this job through the
+        // failure path (contradictory failure webhook, misrecorded job).
+        // Already logged canonically inside addCrawlJobDone.
+        logger.error("Failed to mark successful crawl job as done", {
+          crawlId: job.data.crawl_id,
+          jobId: job.id,
+          error: e,
+        });
+        // Durable fallback so the crawl's completion marker is retried by
+        // the reconciler instead of being lost for good.
+        await queueCrawlJobDoneRepair(job.data.crawl_id, job.id, true, logger);
+      }
     } else {
       try {
         signal?.throwIfAborted();
@@ -856,6 +941,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
+      let stateWritten: (outcome: ScrapeStateOutcome) => void = () => {};
+      const scrapeStateWritten = new Promise<ScrapeStateOutcome>(resolve => {
+        stateWritten = resolve;
+      });
       const logScrapePromise = logScrape(
         {
           id: job.id,
@@ -877,6 +966,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           monitor_check_id: job.data.monitoring?.checkId,
         },
         false,
+        { onStateWritten: stateWritten },
+      );
+      // Release the barrier if logging dies before the state write settles.
+      logScrapePromise.then(
+        () => stateWritten("failed"),
+        () => stateWritten("failed"),
       );
 
       trackScrape({
@@ -897,10 +992,34 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       );
 
       if (job.data.skipNuq) {
-        // doesn't use GCS for result retrieval, safe to not await
+        // doesn't use GCS for result retrieval, safe to not await the rest
         logScrapePromise.catch(err =>
           logger.warn("Background scrape log failed", { error: err }),
         );
+        // ...but the terminal state must be readable before the sync response
+        // goes out: an interact call right after a fast scrape reads it for
+        // its replay context, and there is no NuQ job to fall back on. The
+        // wait is bounded so a Bigtable stall cannot hold every sync scrape.
+        let barrier: NodeJS.Timeout | undefined;
+        const outcome = await Promise.race([
+          scrapeStateWritten,
+          new Promise<"timed_out">(resolve => {
+            barrier = setTimeout(
+              () => resolve("timed_out"),
+              SCRAPE_STATE_BARRIER_MS,
+            );
+          }),
+        ]);
+        if (barrier !== undefined) clearTimeout(barrier);
+        if (outcome === "failed" || outcome === "timed_out") {
+          logger.warn(
+            "Sync scrape answered without a readable terminal state",
+            {
+              outcome,
+              barrierMs: SCRAPE_STATE_BARRIER_MS,
+            },
+          );
+        }
       } else {
         // v0 - must await because waitForJob reads from GCS
         await logScrapePromise;
@@ -944,7 +1063,18 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 
       logger.debug("Declaring job as done...");
-      await addCrawlJobDone(job.data.crawl_id, job.id, false, logger);
+      try {
+        await addCrawlJobDone(job.data.crawl_id, job.id, false, logger);
+      } catch (e) {
+        // Already logged canonically inside addCrawlJobDone; a throw here
+        // must not escape the error handler and fail the job a second time.
+        logger.error("Failed to declare failed crawl job as done", {
+          crawlId: job.data.crawl_id,
+          jobId: job.id,
+          error: e,
+        });
+        await queueCrawlJobDoneRepair(job.data.crawl_id, job.id, false, logger);
+      }
       await redisEvictConnection.srem(
         "crawl:" + job.data.crawl_id + ":visited_unique",
         normalizeURL(job.data.url, sc),
@@ -967,16 +1097,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       logger.warn(`🐂 Job got cancelled, silently failing`);
     } else {
       logger.error(`🐂 Job errored ${job.id} - ${error}`, { error });
-
-      // Filter out TransportableErrors (flow control)
-      if (!(error instanceof TransportableError)) {
-        captureExceptionWithZdrCheck(error, {
-          data: {
-            job: job.id,
-          },
-          extra: { zeroDataRetention: job.data.zeroDataRetention ?? false },
-        });
-      }
 
       if (error instanceof CustomError) {
         // Here we handle the error, then save the failed job
@@ -1271,7 +1391,11 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
           : undefined,
       },
       jobId,
-      await getJobPriority({ team_id: job.data.team_id, basePriority: 15 }),
+      await getJobPriority({
+        team_id: job.data.team_id,
+        org_id: await orgIdForJob(sc.internalOptions?.orgId, job.data.team_id),
+        basePriority: 15,
+      }),
     );
     logger.debug("Adding scrape job to BullMQ...", { jobId });
     await addCrawlJob(job.data.crawl_id, jobId, logger);
@@ -1360,6 +1484,12 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         billThreatBlockedDiscoveries(
           {
             teamId: job.data.team_id,
+            // Kickoff jobs may carry no internalOptions; the stored crawl and
+            // then the ACUC answer, since a null org would drop a real charge.
+            orgId: await orgIdForJob(
+              job.data.internalOptions?.orgId ?? sc.internalOptions?.orgId,
+              job.data.team_id,
+            ),
             apiKeyId: job.data.apiKeyId ?? null,
             billing: resolveBillingMetadata({
               billing: job.data.billing,
@@ -1381,6 +1511,10 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
       let jobPriority = await getJobPriority({
         team_id: job.data.team_id,
+        org_id: await orgIdForJob(
+          job.data.internalOptions?.orgId,
+          job.data.team_id,
+        ),
         basePriority: 21,
       });
       logger.debug("Using job priority " + jobPriority, { jobPriority });
@@ -1527,6 +1661,12 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         billThreatBlockedDiscoveries(
           {
             teamId: job.data.team_id,
+            // Same as the other kickoff path: the ACUC answers when the crawl
+            // names no org, so a real charge is not dropped.
+            orgId: await orgIdForJob(
+              sc.internalOptions?.orgId,
+              job.data.team_id,
+            ),
             apiKeyId: job.data.apiKeyId ?? null,
             billing: resolveBillingMetadata({
               billing: job.data.billing,
@@ -1548,6 +1688,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
 
       const jobPriority = await getJobPriority({
         team_id: job.data.team_id,
+        org_id: await orgIdForJob(sc.internalOptions?.orgId, job.data.team_id),
         basePriority: 21,
       });
 
@@ -1635,8 +1776,13 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
     zeroDataRetention: job.data?.zeroDataRetention ?? false,
   });
 
-  // Restore trace context if available and execute within span
-  if (job.data.traceContext) {
+  // Restore trace context if available and execute within span. The ZDR
+  // context is applied either way so nothing below records for ZDR jobs.
+  return withZeroDataRetention(job.data.zeroDataRetention === true, () => {
+    if (!job.data.traceContext) {
+      return processJobWithTracing(job, logger);
+    }
+
     return withTraceContextAsync(job.data.traceContext, () =>
       withSpan("worker.scrape.process", async span => {
         setSpanAttributes(span, {
@@ -1650,9 +1796,7 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
         return processJobWithTracing(job, logger);
       }),
     );
-  } else {
-    return processJobWithTracing(job, logger);
-  }
+  });
 };
 
 async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
@@ -1739,20 +1883,6 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
     }
   } catch (error) {
     logger.warn("Job failed", { error });
-
-    // Filter out expected errors (flow control, not real errors)
-    if (
-      error instanceof TransportableError ||
-      error instanceof JobCancelledError ||
-      error instanceof RacedRedirectError ||
-      error instanceof ScrapeJobTimeoutError
-    ) {
-      // These are expected flow control errors, don't send to Sentry
-    } else {
-      captureExceptionWithZdrCheck(error, {
-        extra: { zeroDataRetention: job.data.zeroDataRetention ?? false },
-      });
-    }
 
     if (job.data.skipNuq) {
       throw error;

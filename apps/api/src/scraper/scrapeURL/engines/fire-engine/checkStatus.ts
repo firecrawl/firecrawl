@@ -1,5 +1,4 @@
 import { Logger } from "winston";
-import * as Sentry from "@sentry/node";
 import { z } from "zod";
 
 import { robustFetch } from "../../lib/fetch";
@@ -13,9 +12,11 @@ import {
   DNSResolutionError,
   FEPageLoadFailed,
   ProxySelectionError,
+  SiteRestrictionError,
 } from "../../error";
 import { MockState } from "../../lib/mock";
 import { fireEngineURL } from "./scrape";
+import { fireEngineFileSchema } from "./fileSchema";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
 import { Meta } from "../..";
 
@@ -33,7 +34,6 @@ const successSchema = z.object({
 
   // timeTaken: z.number(),
   content: z.string(),
-  json: z.unknown().optional(),
   url: z.string().optional(),
 
   pageStatusCode: z.number(),
@@ -104,24 +104,9 @@ const successSchema = z.object({
     .array()
     .optional(),
 
-  // chrome-cdp only -- file download handler. Small files arrive inline as
-  // base64 `content`; large PDFs arrive as a GCS reference instead
-  // (fire-engine uploads them to its handoff bucket rather than inlining
-  // hundreds of MB of base64 into this response). Exactly one of
-  // `content` / `gcs_uri` is expected.
-  file: z
-    .object({
-      name: z.string(),
-      content: z.string().optional(),
-      gcs_uri: z.string().optional(),
-      sha256: z.string().optional(),
-      size_bytes: z.number().optional(),
-    })
-    .refine(f => (f.content !== undefined) !== (f.gcs_uri !== undefined), {
-      message: "file must carry exactly one of content or gcs_uri",
-    })
-    .optional()
-    .or(z.null()),
+  // chrome-cdp only -- file download handler (inline base64 or a GCS
+  // handoff reference; see fileSchema.ts).
+  file: fireEngineFileSchema,
 
   docUrl: z.string().optional(),
 
@@ -152,6 +137,7 @@ const failedSchema = z.object({
   processing: z.literal(false),
   error: z.string(),
   retryWithStealth: z.boolean().optional(),
+  failureReason: z.literal("site_protection").optional(),
 });
 
 export class StillProcessingError extends Error {
@@ -205,6 +191,12 @@ export async function fireEngineCheckStatus(
     throw new StillProcessingError(jobId);
   } else if (failedParse.success) {
     logger.debug("Scrape job failed", { status, jobId });
+    if (
+      failedParse.data.failureReason === "site_protection" &&
+      meta.internalOptions.safeMode?.disableSiteHandling
+    ) {
+      throw new SiteRestrictionError();
+    }
     if (
       failedParse.data.retryWithStealth &&
       meta.options.proxy === "auto" &&

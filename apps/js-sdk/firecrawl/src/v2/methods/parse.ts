@@ -1,5 +1,6 @@
 import { type Document, type ParseFile, type ParseOptions } from "../types";
 import { HttpClient } from "../utils/httpClient";
+import { agentHintMetadata } from "../utils/agentHints";
 import { ensureValidParseOptions } from "../utils/validation";
 import {
   throwForBadResponse,
@@ -88,7 +89,7 @@ export async function parse(
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "parse");
     }
-    return (res.data.data || {}) as Document;
+    return { ...res.data.data, ...agentHintMetadata(res.data) };
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "parse");
     throw err;

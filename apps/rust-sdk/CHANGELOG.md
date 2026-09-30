@@ -1,5 +1,29 @@
 ## CHANGELOG
 
+## [2.21.1] - 2026-09-30
+
+### Security
+
+- Pagination `next` URLs followed by `get_crawl_status`,
+  `get_batch_scrape_status`, and `get_monitor_check` are now pinned to the
+  configured API origin, so the API key is never sent to another host.
+
+## [2.19.0] - 2026-09-08
+
+### Added
+
+- Added `SearchOptions::country` to geo-target a v2 search. The field
+  is omitted when the caller does not set it.
+
+## [2.18.0] - 2026-08-31
+
+### Added
+
+- Added `Client::list_agents` returning a page of the team's agent runs
+  (most recent first) with an optional `before` cursor. The method does not
+  auto-paginate; pass the `before` value from the response's `next` URL to
+  fetch the next page.
+
 ## [2.17.0] - 2026-08-26
 
 ### Added

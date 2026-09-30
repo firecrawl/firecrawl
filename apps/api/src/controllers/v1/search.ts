@@ -20,10 +20,14 @@ import {
 } from "../../lib/key-restriction";
 import type { Logger } from "winston";
 import { ScrapeJobTimeoutError } from "../../lib/error";
-import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import { z } from "zod";
 import { executeSearch } from "../../search/execute";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import {
+  resolveSafeMode,
+  getEffectiveSearchForcedKind,
+} from "../../lib/safe-mode";
+import { checkPermissions } from "../../lib/permissions";
 import {
   DocumentWithCostTracking,
   scrapeSearchResults,
@@ -33,7 +37,6 @@ import {
   filterDocumentsWithContent,
 } from "../../search/transform";
 import { fromV1ScrapeOptions } from "../v2/types";
-import { getSearchForcedKind } from "../../lib/zdr-helpers";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
@@ -103,7 +106,12 @@ export async function searchController(
   const controllerStartTime = new Date().getTime();
 
   const jobId = uuidv7();
-  const teamForcedKind = getSearchForcedKind(req.acuc?.flags);
+  // Safe Mode lockdown forces the "zdr" kind like the searchZDR flag does
+  // (see getEffectiveSearchForcedKind).
+  const teamForcedKind = getEffectiveSearchForcedKind(
+    req.acuc?.flags,
+    req.body.scrapeOptions?.safeMode,
+  );
   const zeroDataRetention = teamForcedKind !== null;
   const teamEnterprise = teamForcedKind ? [teamForcedKind] : undefined;
   let logger = _logger.child({
@@ -155,6 +163,21 @@ export async function searchController(
       origin: req.body.origin,
     });
 
+    // Safe Mode: validate the per-request param up front and reject scrape
+    // options it forbids (the worker backstop would otherwise strip them
+    // silently). Domain controls force threat protection over the results.
+    const safeMode = resolveSafeMode(
+      req.acuc?.flags,
+      req.body.scrapeOptions?.safeMode,
+    );
+    if (safeMode.error) {
+      return res.status(403).json({
+        success: false,
+        code: safeMode.code,
+        error: safeMode.error,
+      });
+    }
+
     // Threat protection: resolve the effective policy. Blocked domains are
     // removed from search results entirely.
     const threatProtection = await resolveThreatProtection({
@@ -163,12 +186,37 @@ export async function searchController(
       flags: req.acuc?.flags ?? null,
       override:
         req.body.threatProtection ?? req.body.scrapeOptions?.threatProtection,
+      force: safeMode.safeMode?.domainControls === true,
     });
     if (threatProtection.error) {
       return res.status(403).json({
         success: false,
         error: threatProtection.error,
       });
+    }
+
+    // Search only scrapes (and only honors scrapeOptions) when formats are
+    // requested, so the scrape-option checks apply only then.
+    if (
+      safeMode.safeMode &&
+      requestedFormats.length > 0 &&
+      req.body.scrapeOptions
+    ) {
+      const permissions = checkPermissions(
+        req.body.scrapeOptions,
+        req.acuc?.flags,
+        {
+          threatProtectionOrgConfig: threatProtection.orgConfig,
+          safeMode: safeMode.safeMode,
+        },
+      );
+      if (permissions.error) {
+        return res.status(403).json({
+          success: false,
+          code: permissions.code,
+          error: permissions.error,
+        });
+      }
     }
 
     await logRequest({
@@ -216,7 +264,7 @@ export async function searchController(
         applyAgentAuthDiscoveryHeader(res);
         return res
           .status(429)
-          .json(await keylessLimitBody(req.auth.team_id, "v1_search"));
+          .json(await keylessLimitBody(req.auth.team_id, "v1_search", req));
       }
       reservedKeylessCredits = projectedKeylessCredits;
     }
@@ -251,6 +299,7 @@ export async function searchController(
         agentIndexOnly: (req as any).agentIndexOnly ?? false,
         keylessReserved: reservedKeylessCredits > 0,
         threatProtectionPolicy: threatProtection.policy,
+        safeModeBypassed: safeMode.bypassed === true,
       },
       logger,
     );
@@ -284,9 +333,15 @@ export async function searchController(
     if (!isSearchPreview) {
       billTeam(
         req.auth.team_id,
+        req.acuc?.org_id ?? null,
         result.searchCredits,
         req.acuc?.api_key_id ?? null,
-        { endpoint: "search", jobId, chargeId: jobId },
+        {
+          endpoint: "search",
+          jobId,
+          chargeId: jobId,
+          externalRequestId: externalRequestId(req),
+        },
       ).catch(error => {
         logger.error(
           `Failed to bill team ${req.auth.team_id} for ${result.searchCredits} credits: ${error}`,
@@ -328,7 +383,9 @@ export async function searchController(
         zeroDataRetention,
       },
       false,
-    );
+    ).catch(error => {
+      logger.error("Failed to log search", { error, jobId });
+    });
 
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;
@@ -372,9 +429,6 @@ export async function searchController(
       });
     }
 
-    captureExceptionWithZdrCheck(error, {
-      extra: { zeroDataRetention },
-    });
     logger.error("Unhandled error occurred in search", {
       version: "v1",
       error,

@@ -6,6 +6,7 @@ import {
   type ScrapeOptions,
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
+import { agentHintMetadata } from "../utils/agentHints";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import {
   throwForBadResponse,
@@ -88,9 +89,11 @@ export async function scrape(
   if (options) ensureValidScrapeOptions(options);
 
   // autoResume is SDK behavior, never part of the wire payload.
-  const { autoResume, ...requestOptions } = options ?? {};
+  const { autoResume, domainTools, ...requestOptions } = options ?? {};
   const payload: Record<string, unknown> = { url: url.trim() };
   Object.assign(payload, requestOptions);
+  // Default off: omit entirely rather than send `false`.
+  if (domainTools) payload.domainTools = domainTools;
 
   // Per-request timeout. With auto-resume disabled this is exactly the
   // pre-existing behavior (explicit timeout +5s, else the client's own
@@ -129,7 +132,7 @@ export async function scrape(
       if (res.status !== 200 || !res.data?.success) {
         throwForBadResponse(res, "scrape");
       }
-      return (res.data.data || {}) as Document;
+      return { ...res.data.data, ...agentHintMetadata(res.data) };
     } catch (err: any) {
       const delayMs = autoResume !== false ? processingContinuesDelayMs(err) : undefined;
       if (

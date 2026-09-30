@@ -176,4 +176,16 @@ describe("feedback ZDR persistence guards", () => {
       ),
     ).toBe(false);
   });
+
+  it("does not let an override bypass a stored ZDR decision", () => {
+    expect(
+      shouldSkipPersistenceForJobZdr(
+        {
+          ...job("scrape", null),
+          zero_data_retention: true,
+        },
+        options("scrape", { skipZdrPersistence: false }),
+      ),
+    ).toBe(true);
+  });
 });

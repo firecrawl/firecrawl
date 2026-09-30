@@ -7,6 +7,7 @@ namespace Firecrawl\Client;
 use Firecrawl\Exceptions\FirecrawlException;
 use Firecrawl\Version;
 use Firecrawl\Exceptions\JobTimeoutException;
+use Firecrawl\Models\AgentListResponse;
 use Firecrawl\Models\AgentOptions;
 use Firecrawl\Models\AgentResponse;
 use Firecrawl\Models\AgentSnapshotResponse;
@@ -180,6 +181,10 @@ final class FirecrawlClient
     /**
      * Search GitHub research content.
      *
+     * @deprecated Stops responding after 2026-11-03. Use the developer index at
+     *   GET or POST /v2/search/developer, which this SDK does not wrap yet, so
+     *   call it directly. It does not carry over the score breakdown or the web
+     *   fallback results.
      * @param array<string, mixed> $options
      * @return array<string, mixed>
      */
@@ -657,6 +662,23 @@ final class FirecrawlClient
     {
         return AgentSnapshotResponse::fromArray(
             $this->http->get("/v2/agent/{$jobId}/snapshots/{$snapshotId}"),
+        );
+    }
+
+    /**
+     * List agent runs, most recent first.
+     *
+     * Pages are fixed at 20 runs. To fetch the next page, pass the before
+     * value from the previous page's next URL. This method does not
+     * auto-paginate.
+     *
+     * @param int|null $before Only return agent runs created before this unix
+     *                         millisecond timestamp.
+     */
+    public function listAgents(?int $before = null): AgentListResponse
+    {
+        return AgentListResponse::fromArray(
+            $this->http->get('/v2/agent' . $this->query(['before' => $before])),
         );
     }
 

@@ -6,6 +6,7 @@ import {
 } from "./methods/scrape";
 import { parse as parseMethod } from "./methods/parse";
 import { search } from "./methods/search";
+import { scrapeAlexandria, findTools } from "./methods/tools";
 import { developerSearch as developerSearchMethod } from "./methods/developer";
 import { map as mapMethod } from "./methods/map";
 import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
@@ -26,7 +27,7 @@ import {
   batchScrape as batchWaiter,
 } from "./methods/batch";
 import { startExtract, getExtractStatus, extract as extractWaiter } from "./methods/extract";
-import { startAgent, getAgentStatus, getAgentTrace, getAgentSnapshot, cancelAgent, agent as agentWaiter } from "./methods/agent";
+import { startAgent, getAgentStatus, getAgentThread, getAgentTrace, getAgentSnapshot, cancelAgent, listAgents, agent as agentWaiter } from "./methods/agent";
 import {
   browser as browserMethod,
   browserExecute,
@@ -47,6 +48,10 @@ import {
 } from "./methods/monitor";
 import type {
   Document,
+  AlexandriaScrapeRequest,
+  FindToolsOptions,
+  FindToolsData,
+  AlexandriaScrapeData,
   ParseFile,
   ParseOptions,
   ScrapeOptions,
@@ -70,6 +75,9 @@ import type {
   AgentStatusResponse,
   AgentTraceResponse,
   AgentSnapshotResponse,
+  AgentThreadResponse,
+  AgentListOptions,
+  AgentListResponse,
   CrawlOptions,
   BatchScrapeOptions,
   PaginationConfig,
@@ -168,11 +176,42 @@ export class FirecrawlClient {
    */
   async scrape<Opts extends ScrapeOptions>(
     url: string,
-    options: Opts
+    options: Opts,
   ): Promise<Omit<Document, "json"> & { json?: InferredJsonFromOptions<Opts> }>;
   async scrape(url: string, options?: ScrapeCallOptions): Promise<Document>;
-  async scrape(url: string, options?: ScrapeCallOptions): Promise<Document> {
-    return scrape(this.http, url, options);
+  async scrape(request: AlexandriaScrapeRequest): Promise<AlexandriaScrapeData>;
+  async scrape(
+    url: string | AlexandriaScrapeRequest,
+    options?: ScrapeCallOptions,
+  ): Promise<Document | AlexandriaScrapeData> {
+    if (typeof url === "string") return scrape(this.http, url, options);
+    if (
+      !url ||
+      options !== undefined ||
+      Object.keys(url).some(
+        (key) =>
+          ![
+            "alexandria",
+            "requestId",
+            "timeout",
+            "integration",
+            "origin",
+          ].includes(key),
+      )
+    ) {
+      throw new Error("Provide an alexandria request without URL scrape options");
+    }
+    const { alexandria, ...opts } = url;
+    return scrapeAlexandria(
+      this.http,
+      Array.isArray(alexandria) ? alexandria : [alexandria],
+      opts,
+    );
+  }
+
+  /** Explore the catalogue without executing the tools it returns. */
+  async findTools(options?: FindToolsOptions): Promise<FindToolsData> {
+    return findTools(this.http, options);
   }
   /**
    * Interact with the browser session associated with a scrape job.
@@ -281,6 +320,9 @@ export class FirecrawlClient {
   /**
    * Access the v2 research endpoints — Firecrawl's **research paper index**
    * (~43M paper abstracts) plus GitHub history/readmes.
+   *
+   * `research.searchGithub()` is deprecated and stops responding after
+   * 2026-11-03. Use `developerSearch()` instead.
    *
    * The paper corpus is roughly 90% biomedical and life sciences — PubMed,
    * bioRxiv and medRxiv — with arXiv covering physics, mathematics and
@@ -522,6 +564,17 @@ export class FirecrawlClient {
     return getAgentStatus(this.http, jobId);
   }
   /**
+   * List agent runs, most recent first.
+   *
+   * Pages are fixed at 20 runs. To fetch the next page, pass the `before`
+   * value from the previous page's `next` URL. This method does not
+   * auto-paginate.
+   * @param options.before Only return runs created before this unix ms timestamp.
+   */
+  async listAgents(options?: AgentListOptions): Promise<AgentListResponse> {
+    return listAgents(this.http, options);
+  }
+  /**
    * Convenience waiter: start an agent and poll until it finishes.
    * @param args Agent request plus waiter controls (pollInterval, timeout seconds).
    * @returns Final agent response.
@@ -552,6 +605,14 @@ export class FirecrawlClient {
    */
   async getAgentSnapshot(jobId: string, snapshotId: string): Promise<AgentSnapshotResponse> {
     return getAgentSnapshot(this.http, jobId, snapshotId);
+  }
+  /**
+   * Get a thread and its runs, oldest turn first.
+   * @param threadId Thread id, as returned by startAgent or getAgentStatus.
+   * @param options.includeData Inline each succeeded run's data.
+   */
+  async getAgentThread(threadId: string, options?: { includeData?: boolean }): Promise<AgentThreadResponse> {
+    return getAgentThread(this.http, threadId, options);
   }
 
   // Browser

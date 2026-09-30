@@ -339,3 +339,102 @@ func TestGetAgentSnapshotRequiresIDs(t *testing.T) {
 		t.Fatalf("expected error for empty snapshot ID")
 	}
 }
+
+func TestListAgentsParsesResponse(t *testing.T) {
+	captured := make(chan capturedRequest, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured <- captureRequest(r)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"success": true,
+			"agents": [{
+				"id": "018f3c5e-0000-7000-8000-000000000000",
+				"createdAt": "2026-08-31T12:00:00.000Z",
+				"targetHint": "https://example.com",
+				"origin": "api",
+				"settings": {"hidden": false, "starred": true, "label": "prod"},
+				"status": "completed",
+				"options": {"urls": ["https://example.com"], "prompt": "find pricing", "model": "spark-1-pro"}
+			}]
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		option.WithAPIKey("fc-test"),
+		option.WithAPIURL(server.URL),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	resp, err := client.ListAgents(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListAgents: %v", err)
+	}
+
+	req := <-captured
+	if req.method != http.MethodGet || req.path != "/v2/agent" {
+		t.Errorf("unexpected request: %s %s", req.method, req.path)
+	}
+	if req.query != "" {
+		t.Errorf("query = %q, want empty", req.query)
+	}
+	if len(resp.Agents) != 1 {
+		t.Fatalf("agents = %+v", resp.Agents)
+	}
+	agent := resp.Agents[0]
+	if agent.ID != "018f3c5e-0000-7000-8000-000000000000" || agent.Status != "completed" {
+		t.Errorf("agent = %+v", agent)
+	}
+	if !agent.Settings.Starred || agent.Settings.Label != "prod" {
+		t.Errorf("settings = %+v", agent.Settings)
+	}
+	if agent.Options == nil || agent.Options.Prompt != "find pricing" {
+		t.Errorf("options = %+v", agent.Options)
+	}
+	if resp.Next != "" {
+		t.Errorf("next = %q, want empty", resp.Next)
+	}
+}
+
+func TestListAgentsSendsBefore(t *testing.T) {
+	captured := make(chan capturedRequest, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured <- captureRequest(r)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"agents":[],"next":"https://api.firecrawl.dev/v2/agent?before=1756600000000"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		option.WithAPIKey("fc-test"),
+		option.WithAPIURL(server.URL),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	before := int64(1756600000000)
+	resp, err := client.ListAgents(context.Background(), &ListAgentsOptions{Before: &before})
+	if err != nil {
+		t.Fatalf("ListAgents: %v", err)
+	}
+
+	req := <-captured
+	if req.method != http.MethodGet || req.path != "/v2/agent" {
+		t.Errorf("unexpected request: %s %s", req.method, req.path)
+	}
+	if req.query != "before=1756600000000" {
+		t.Errorf("query = %q, want before=1756600000000", req.query)
+	}
+	if resp.Next != "https://api.firecrawl.dev/v2/agent?before=1756600000000" {
+		t.Errorf("next = %q", resp.Next)
+	}
+}

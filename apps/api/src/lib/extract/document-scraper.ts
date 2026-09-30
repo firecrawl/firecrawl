@@ -52,6 +52,7 @@ export async function scrapeDocument(
     const jobId = uuidv7();
     const jobPriority = await getJobPriority({
       team_id: options.teamId,
+      org_id: options.orgId ?? null,
       basePriority: 10,
     });
 
@@ -71,6 +72,8 @@ export async function scrapeDocument(
             ? true
             : false,
           bypassBilling: true,
+          // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
+          teamFlags: options.flags ?? undefined,
         },
         origin: options.origin,
         is_scrape: true,

@@ -55,6 +55,18 @@ _ASYNC_CLIENT_ARG = "client: Async HTTP client."
 # Implementation functions (``research.py`` / ``aio/research.py``)
 # ---------------------------------------------------------------------------
 
+GITHUB_SEARCH_DEPRECATION_MSG = (
+    "search_github() is deprecated and the research index GitHub endpoint "
+    "stops responding after 2026-11-03. Use developer_search() instead: it "
+    "searches GitHub issues, pull requests and READMEs plus curated "
+    "documentation sources, returns matched passages, and adds filters for "
+    "repo, language, license and stars. Response changes: 'snippet' becomes "
+    "'passages', results gain an 'id', and there is no score breakdown and no "
+    "web fallback result type. See "
+    "https://docs.firecrawl.dev/features/developer."
+)
+
+
 _SEARCH_PAPERS_TEMPLATE = """
 Search the research paper index by abstract relevance.
 
@@ -169,12 +181,21 @@ Note:
 """
 
 _SEARCH_GITHUB_TEMPLATE = """
-Search the developer index: GitHub issue/PR history and repository readmes.
+Search the **research index** GitHub slice: GitHub issue/PR history and
+repository readmes.
+
+.. deprecated::
+    Use ``developer_search()`` instead. This endpoint stops responding after
+    2026-11-03. The developer index searches GitHub issues, pull requests and
+    readmes plus curated documentation sources, returns matched passages, and
+    adds filters for repo, language, license and stars. It does **not** carry
+    over the ``scores`` breakdown or the ``resultType: "web"`` fallback
+    results. See https://docs.firecrawl.dev/features/developer.
 
 This is the code-and-discussion companion to ``search_papers`` and is served
-by the same ``/v2/search/research`` surface. It searches indexed GitHub
-history and readmes — it does **not** search the paper corpus, and it is not
-the same as ``search(categories=["github"])`` (which is a ``site:github.com``
+by the same ``/v2/search/research`` surface. It is a separate index from the
+developer index, it does **not** search the paper corpus, and it is not the
+same as ``search(categories=["github"])`` (which is a ``site:github.com``
 filter on ordinary web search).
 
 Args:
@@ -185,7 +206,9 @@ Args:
 Returns:
     Raw API ``dict`` with ``success`` and ``results``. Keys are camelCase and
     are **not** normalized to snake_case — expect ``resultType``, ``repo``,
-    ``url``, ``pageType``, ``number`` and a ``scoreBreakdown`` object.
+    ``url``, ``pageType``, ``number`` and a ``scores`` object. The response
+    also carries a ``warnings`` list and a ``replacement`` field while the
+    deprecation is live.
 """
 
 SEARCH_PAPERS_DOC = _SEARCH_PAPERS_TEMPLATE.replace(_CLIENT_ARG, _SYNC_CLIENT_ARG)
@@ -287,12 +310,22 @@ Note:
 """
 
 _CLIENT_SEARCH_GITHUB_TEMPLATE = """
-Search the developer index: GitHub issue/PR history and repo readmes.
+Search the **research index** GitHub slice: issue/PR history and repo
+readmes.
+
+.. deprecated::
+    Use ``developer_search()`` instead. This endpoint stops responding
+    after 2026-11-03. The developer index searches GitHub issues, pull
+    requests and readmes plus curated documentation sources, and returns
+    matched passages. It does **not** carry over the ``scores`` breakdown
+    or the ``resultType: "web"`` fallback results. See
+    https://docs.firecrawl.dev/features/developer.
 
 The code-and-discussion companion to ``search_papers``, served by the
-same ``/v2/search/research`` surface. It does not search the paper
-corpus, and it is not ``search(categories=["github"])`` (which is just a
-``site:github.com`` filter on ordinary web search).
+same ``/v2/search/research`` surface. A separate index from the developer
+index. It does not search the paper corpus, and it is not
+``search(categories=["github"])`` (which is just a ``site:github.com``
+filter on ordinary web search).
 
 Args:
     query: Natural-language query, e.g. ``"pysam VCF parsing memory leak"``.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Firecrawl\Laravel\Facades;
 
 use Firecrawl\Client\FirecrawlClient;
+use Firecrawl\Models\AgentListResponse;
 use Firecrawl\Models\AgentOptions;
 use Firecrawl\Models\AgentStatusResponse;
 use Firecrawl\Models\BatchScrapeJob;
@@ -38,6 +39,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static SearchData search(string $query, ?SearchOptions $options = null)
  * @method static AgentStatusResponse agent(AgentOptions $options, int $pollIntervalSec = 2, int $timeoutSec = 300)
  * @method static array<string, mixed> cancelAgent(string $jobId)
+ * @method static AgentListResponse listAgents(?int $before = null)
  * @method static BrowserCreateResponse browser(?int $ttl = null, ?int $activityTtl = null, ?bool $streamWebView = null)
  * @method static BrowserExecuteResponse browserExecute(string $sessionId, string $code, string $language = 'bash', ?int $timeout = null)
  * @method static BrowserDeleteResponse deleteBrowser(string $sessionId)

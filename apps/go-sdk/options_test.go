@@ -162,6 +162,19 @@ func TestScrapeOptionsSerializesRedactPII(t *testing.T) {
 	}
 }
 
+func TestScrapeOptionsSerializesDomainTools(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		DomainTools: Bool(true),
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"domainTools":true`) {
+		t.Fatalf("serialized domainTools = %s", payload)
+	}
+}
+
 func TestSearchOptionsSerializesHighlights(t *testing.T) {
 	payload, err := json.Marshal(SearchOptions{Highlights: Bool(false)})
 	if err != nil {
@@ -170,6 +183,26 @@ func TestSearchOptionsSerializesHighlights(t *testing.T) {
 
 	if !strings.Contains(string(payload), `"highlights":false`) {
 		t.Fatalf("serialized search options = %s", payload)
+	}
+}
+
+func TestSearchOptionsSerializesCountry(t *testing.T) {
+	payload, err := json.Marshal(SearchOptions{Country: String("de")})
+	if err != nil {
+		t.Fatalf("Marshal SearchOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"country":"de"`) {
+		t.Fatalf("serialized search options = %s", payload)
+	}
+
+	payload, err = json.Marshal(SearchOptions{})
+	if err != nil {
+		t.Fatalf("Marshal SearchOptions: %v", err)
+	}
+
+	if strings.Contains(string(payload), `"country"`) {
+		t.Fatalf("serialized search options without country = %s", payload)
 	}
 }
 

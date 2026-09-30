@@ -1,8 +1,6 @@
 import "dotenv/config";
 import { config } from "../config";
-import "./sentry";
-import { setSentryServiceTag } from "./sentry";
-import * as Sentry from "@sentry/node";
+import { shutdownTracing } from "../otel";
 import {
   getDeepResearchQueue,
   getGenerateLlmsTxtQueue,
@@ -24,7 +22,6 @@ import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forc
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
-import { TransportableError } from "../lib/error";
 import {
   processMonitorCheckJob,
   reconcileRunningMonitorChecks,
@@ -34,6 +31,7 @@ import {
   consumeMonitorCheckJobs,
   consumeMonitorSearchCheckJobs,
 } from "./monitoring/queue";
+import { shutdownPubSubLogging } from "./logging/log_job";
 
 configDotenv();
 
@@ -83,6 +81,7 @@ const processDeepResearchJobInternal = async (
       formats: job.data.request.formats,
       jsonOptions: job.data.request.jsonOptions,
       apiKeyId: job.data.apiKeyId,
+      externalRequestId: job.data.externalRequestId ?? null,
     });
 
     if (result.success) {
@@ -100,15 +99,6 @@ const processDeepResearchJobInternal = async (
     }
   } catch (error) {
     logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
-
-    // Skip TransportableErrors: they're flow control, not failures.
-    if (!(error instanceof TransportableError)) {
-      Sentry.captureException(error, {
-        data: {
-          job: job.id,
-        },
-      });
-    }
 
     try {
       await job.moveToFailed(error, token, false);
@@ -153,6 +143,7 @@ const processGenerateLlmsTxtJobInternal = async (
       showFullText: job.data.request.showFullText,
       cache: job.data.request.cache,
       apiKeyId: job.data.apiKeyId,
+      externalRequestId: job.data.externalRequestId ?? null,
     });
 
     if (result.success) {
@@ -176,15 +167,6 @@ const processGenerateLlmsTxtJobInternal = async (
     }
   } catch (error) {
     logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
-
-    // Skip TransportableErrors: they're flow control, not failures.
-    if (!(error instanceof TransportableError)) {
-      Sentry.captureException(error, {
-        data: {
-          job: job.id,
-        },
-      });
-    }
 
     try {
       await job.moveToFailed(error, token, false);
@@ -455,8 +437,6 @@ app.listen(workerPort, (error?: Error) => {
 });
 
 (async () => {
-  setSentryServiceTag("queue-worker");
-
   await initializeBlocklist().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
@@ -512,5 +492,7 @@ app.listen(workerPort, (error?: Error) => {
   }
 
   _logger.info("All jobs finished. Shutting down...");
+  await shutdownPubSubLogging();
+  await shutdownTracing();
   process.exit(0);
 })();

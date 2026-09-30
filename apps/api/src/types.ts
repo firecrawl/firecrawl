@@ -11,7 +11,7 @@ import { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/cost-tracking";
 import type { BillingMetadata } from "./services/billing/types";
 import { webhookSchema } from "./services/webhook/schema";
-import { SerializedTraceContext } from "./lib/otel-tracer";
+import type { SerializedTraceContext } from "./lib/otel-tracer";
 
 type ScrapeJobCommon = {
   concurrencyLimited?: boolean;
@@ -60,7 +60,6 @@ type ScrapeJobSingleUrlsUnique = {
   from_extract?: boolean;
   startTime?: number;
 
-  sentry?: any;
   is_extract?: boolean;
   apiKeyId: number | null;
 
@@ -161,6 +160,8 @@ export enum RateLimiterMode {
   Research = "research",
   DeveloperSearch = "developerSearch",
   Labs = "labs",
+  Exchange = "exchange",
+  ExchangeDiscover = "exchangeDiscover",
 }
 
 export type AuthResponse =
@@ -181,6 +182,8 @@ export type AuthResponse =
       // Machine-readable keyless quota details for trusted MCP recovery.
       keylessReason?: "requests" | "credits";
       retryAfterSeconds?: number;
+      // Keyless prompts: the signup link in `error`, for clients that relay it.
+      signupUrl?: string;
     };
 
 export enum NotificationType {

@@ -1,8 +1,12 @@
 import {
   getPDFBlocks,
+  getPDFMode,
   getPDFPageMarkdown,
   getPDFPageMarkers,
+  getPDFRefresh,
   scrapeOptions,
+  shouldParseImages,
+  shouldParsePDF,
 } from "../controllers/v2/types";
 
 function parsePdfParser(parser: Record<string, unknown>) {
@@ -61,5 +65,67 @@ describe("deprecated pageMarkdown alias", () => {
     expect(
       parsePdfParser({ type: "pdf", pages: true, pageMarkdown: false }).pages,
     ).toBe(true);
+  });
+});
+
+describe("image parser", () => {
+  it("is on by default, like pdf", () => {
+    expect(scrapeOptions.parse({}).parsers).toEqual(["pdf", "image"]);
+    expect(shouldParseImages(undefined)).toBe(true);
+    expect(shouldParseImages(["pdf", "image"])).toBe(true);
+    expect(shouldParsePDF(["pdf", "image"])).toBe(true);
+  });
+
+  it("opts out with an explicit list that omits it", () => {
+    expect(shouldParseImages([])).toBe(false);
+    expect(shouldParseImages(["pdf"])).toBe(false);
+    expect(shouldParseImages([{ type: "pdf", mode: "ocr" }])).toBe(false);
+    expect(scrapeOptions.parse({ parsers: ["pdf"] }).parsers).toEqual(["pdf"]);
+  });
+
+  it("accepts the string and object forms", () => {
+    expect(shouldParseImages(["image"])).toBe(true);
+    expect(shouldParseImages([{ type: "image" }])).toBe(true);
+    expect(shouldParseImages([{ type: "pdf", mode: "ocr" }, "image"])).toBe(
+      true,
+    );
+    expect(
+      scrapeOptions.parse({ parsers: ["pdf", { type: "image" }] }).parsers,
+    ).toEqual(["pdf", { type: "image" }]);
+  });
+
+  it("leaves the pdf parser alone", () => {
+    expect(shouldParsePDF(["image"])).toBe(false);
+    expect(getPDFMode(["pdf", "image"])).toBe("auto");
+    expect(getPDFMode([{ type: "image" }, { type: "pdf", mode: "ocr" }])).toBe(
+      "ocr",
+    );
+  });
+
+  it("rejects the plural and unknown options", () => {
+    expect(scrapeOptions.safeParse({ parsers: ["images"] }).success).toBe(
+      false,
+    );
+    expect(
+      scrapeOptions.safeParse({ parsers: [{ type: "image", mode: "ocr" }] })
+        .success,
+    ).toBe(false);
+  });
+});
+
+describe("pdf parser refresh option", () => {
+  it("is off unless the pdf parser object sets it", () => {
+    expect(getPDFRefresh(undefined)).toBe(false);
+    expect(getPDFRefresh(["pdf"])).toBe(false);
+    expect(getPDFRefresh([{ type: "pdf" }])).toBe(false);
+    expect(getPDFRefresh([{ type: "pdf", refresh: false }])).toBe(false);
+    expect(getPDFRefresh([{ type: "pdf", refresh: true }])).toBe(true);
+  });
+
+  it("parses through the strict schema", () => {
+    expect(parsePdfParser({ type: "pdf", refresh: true })).toMatchObject({
+      type: "pdf",
+      refresh: true,
+    });
   });
 });

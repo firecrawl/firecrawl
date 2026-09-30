@@ -5,6 +5,7 @@ import { InternalAction } from "../../../../controllers/v1/types";
 import { robustFetch } from "../../lib/fetch";
 import { MockState } from "../../lib/mock";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
+import { fireEngineFileSchema } from "./fileSchema";
 import {
   ActionError,
   AddFeatureError,
@@ -14,9 +15,11 @@ import {
   ProxySelectionError,
   SSLError,
   SiteError,
+  SiteRestrictionError,
   UnsupportedFileError,
 } from "../../error";
 import { Meta } from "../..";
+import type { ResolvedSafeMode } from "../../../../lib/safe-mode";
 
 import { config } from "../../../../config";
 
@@ -56,7 +59,32 @@ export type FireEngineScrapeRequestCommon = {
   maxAge?: number;
   saveScrapeResultToGCS?: boolean;
   zeroDataRetention?: boolean;
+
+  behaviorOverrides?: {
+    disableSiteHandling?: boolean;
+    exposeWebdriver?: boolean;
+    useHeadlessUserAgent?: boolean;
+    disablePlatformSelection?: boolean;
+    disableCountrySelection?: boolean;
+    disableAutomaticReferrer?: boolean;
+  };
 };
+
+export function safeModeParams(
+  safeMode: ResolvedSafeMode | undefined,
+): Pick<FireEngineScrapeRequestCommon, "behaviorOverrides"> {
+  if (!safeMode) return {};
+  return {
+    behaviorOverrides: {
+      disableSiteHandling: safeMode.disableSiteHandling,
+      exposeWebdriver: safeMode.exposeWebdriver,
+      useHeadlessUserAgent: safeMode.useHeadlessUserAgent,
+      disablePlatformSelection: safeMode.disablePlatformSelection,
+      disableCountrySelection: safeMode.disableCountrySelection,
+      disableAutomaticReferrer: safeMode.disableAutomaticReferrer,
+    },
+  };
+}
 
 export type FireEngineScrapeRequestChromeCDP = {
   engine: "chrome-cdp";
@@ -70,7 +98,7 @@ export type FireEngineScrapeRequestChromeCDP = {
   forceNonRender?: boolean;
   mobile?: boolean;
   disableSmartWaitCache?: boolean;
-  persistentStorage?: { uniqueId: string };
+  profile?: { owner: string; name: string };
 };
 
 export type FireEngineScrapeRequestTLSClient = {
@@ -84,7 +112,6 @@ const successSchema = z.object({
 
   timeTaken: z.number(),
   content: z.string(),
-  json: z.unknown().optional(),
   url: z.string().optional(),
 
   pageStatusCode: z.number(),
@@ -155,14 +182,12 @@ const successSchema = z.object({
     .array()
     .optional(),
 
-  // chrome-cdp only -- file download handler
-  file: z
-    .object({
-      name: z.string(),
-      content: z.string(),
-    })
-    .optional()
-    .or(z.null()),
+  // chrome-cdp only -- file download handler (inline base64 or a GCS
+  // handoff reference; see fileSchema.ts). Must accept exactly what the
+  // poll parser in checkStatus.ts accepts: fire-engine returns finished
+  // jobs from POST /scrape too, and a handoff rejected here surfaced as
+  // "response not matched by any schema" -> a spurious engine failure.
+  file: fireEngineFileSchema,
 
   docUrl: z.string().optional(),
 
@@ -181,6 +206,7 @@ const processingSchema = z.object({
 const failedSchema = z.object({
   error: z.string(),
   retryWithStealth: z.boolean().optional(),
+  failureReason: z.literal("site_protection").optional(),
 });
 
 export const fireEngineURL =
@@ -242,6 +268,12 @@ export async function fireEngineScrape<
     logger.debug("Scrape job failed", {
       status,
     });
+    if (
+      failedParse.data.failureReason === "site_protection" &&
+      meta.internalOptions.safeMode?.disableSiteHandling
+    ) {
+      throw new SiteRestrictionError();
+    }
     if (
       failedParse.data.retryWithStealth &&
       meta.options.proxy === "auto" &&

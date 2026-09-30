@@ -1,17 +1,16 @@
 import { vi, describe, it, expect } from "vitest";
 
-vi.mock("ai", () => ({
+vi.mock("ai", async importOriginal => ({
+  ...(await importOriginal<typeof import("ai")>()),
   generateObject: vi.fn().mockRejectedValue(new Error("connection reset")),
 }));
 vi.mock("../../../lib/generic-ai", () => ({
   getModel: vi.fn().mockReturnValue({}),
 }));
-vi.mock("../../../services/sentry", () => ({
-  captureExceptionWithZdrCheck: vi.fn(),
-}));
 
 import { enhanceBrandingWithLLM } from "../../../lib/branding/llm";
 import { mergeBrandingResults } from "../../../lib/branding/merge";
+import { CostTracking } from "../../../lib/cost-tracking";
 import { logger } from "../../../lib/logger";
 
 const CANDIDATES = [
@@ -41,6 +40,7 @@ describe("LLM failure fallback", () => {
       buttons: [],
       logoCandidates: CANDIDATES,
       url: "https://example.com",
+      costTracking: new CostTracking(),
       logger,
     });
 

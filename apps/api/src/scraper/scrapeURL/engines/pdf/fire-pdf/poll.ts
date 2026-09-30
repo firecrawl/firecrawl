@@ -11,7 +11,12 @@ import {
   TERMINAL_STATUSES,
   type PollResponse,
 } from "./schema";
-import { failAsync, firePdfHeaders, nextPollDelay } from "./utils";
+import {
+  alignPollDelay,
+  failAsync,
+  firePdfHeaders,
+  nextPollDelay,
+} from "./utils";
 
 type PollDeps = {
   baseUrl: string;
@@ -23,6 +28,10 @@ type PollDeps = {
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   now: () => number;
   random?: () => number;
+  /** When the job is expected to finish (its `deadline_at`). Polls are
+   * pulled forward to land just after it and run at the floor past it —
+   * see alignPollDelay. Absent, plain backoff applies throughout. */
+  jobDeadlineAtMs?: number;
   /** Observes each non-terminal status seen while polling — lets the
    * caller keep a live "where is this job" snapshot (used to enrich
    * timeout errors for by-reference jobs that outlive the scrape).
@@ -49,7 +58,10 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
     }
 
     meta.abort.throwIfAborted();
-    await sleep(lastDelay, meta.abort.asSignal());
+    await sleep(
+      alignPollDelay(lastDelay, now(), deps.jobDeadlineAtMs),
+      meta.abort.asSignal(),
+    );
     pollCount++;
 
     let pollResp;

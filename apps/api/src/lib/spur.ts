@@ -12,8 +12,9 @@
 import { randomUUID } from "crypto";
 import { isIPv4 } from "net";
 import { config } from "../config";
-import { redisRateLimitClient } from "../services/rate-limiter";
+import { redisSpurClient } from "../services/spur-redis";
 import { logger } from "./logger";
+import { spurBypassesTotal, spurEventsTotal } from "./keyless-metrics";
 
 const FETCH_TIMEOUT_MS = 5000;
 // Headroom over the fetch timeout for the Redis round-trips around it.
@@ -89,6 +90,7 @@ function isSuspicious(ctx: SpurContext): boolean {
 
 function verdict(ip: string, ctx: SpurContext | null): boolean {
   if (!ctx || !isSuspicious(ctx)) return false;
+  spurEventsTotal.inc({ event: "suspicious" });
   logger.info("Keyless IP flagged suspicious by Spur", {
     ...meta(ip),
     suspicious: true,
@@ -99,6 +101,12 @@ function verdict(ip: string, ctx: SpurContext | null): boolean {
 
 // Verdict for a cache entry that is not a miss: a failure marker fails open.
 function cachedVerdict(ip: string, cached: CacheState): boolean {
+  spurEventsTotal.inc({
+    event: cached.state === "hit" ? "cache_hit" : "cached_failure",
+  });
+  if (cached.state === "failed") {
+    spurBypassesTotal.inc({ reason: "cached_failure" });
+  }
   return verdict(ip, cached.state === "hit" ? cached.ctx : null);
 }
 
@@ -115,12 +123,10 @@ async function readCache(ip: string): Promise<CacheState> {
   let raw: string | null;
   let failed: string | null;
   try {
-    [raw, failed] = await redisRateLimitClient.mget(
-      contextKey(ip),
-      failedKey(ip),
-    );
+    [raw, failed] = await redisSpurClient.mget(contextKey(ip), failedKey(ip));
   } catch (error) {
     logger.warn("Spur cache read failed", { ...meta(ip), error });
+    spurEventsTotal.inc({ event: "cache_error" });
     return { state: "miss" };
   }
   const ctx = parseContext(raw);
@@ -136,17 +142,19 @@ async function writeCache(
   ttlSec: number,
 ) {
   try {
-    await redisRateLimitClient.set(key, value, "EX", ttlSec);
+    await redisSpurClient.set(key, value, "EX", ttlSec);
   } catch (error) {
     logger.warn("Spur cache write failed", { ...meta(ip), key, error });
+    spurEventsTotal.inc({ event: "cache_error" });
   }
 }
 
 async function releaseLock(ip: string, token: string) {
   try {
-    await redisRateLimitClient.eval(RELEASE_LOCK_SCRIPT, 1, lockKey(ip), token);
+    await redisSpurClient.eval(RELEASE_LOCK_SCRIPT, 1, lockKey(ip), token);
   } catch (error) {
     logger.warn("Spur lock release failed", { ...meta(ip), error });
+    spurEventsTotal.inc({ event: "cache_error" });
   }
 }
 
@@ -155,6 +163,7 @@ async function fetchContext(
   apiKey: string,
 ): Promise<SpurContext | null> {
   logger.info("Spur Context API request (cache miss)", meta(ip));
+  spurEventsTotal.inc({ event: "lookup" });
   const res = await fetch(
     `https://api.spur.us/v2/context/${encodeURIComponent(ip)}`,
     {
@@ -193,6 +202,8 @@ async function lookup(ip: string, apiKey: string): Promise<boolean> {
   if (ctx) {
     await writeCache(ip, contextKey(ip), JSON.stringify(ctx), CONTEXT_TTL_SEC);
   } else {
+    spurEventsTotal.inc({ event: "lookup_error" });
+    spurBypassesTotal.inc({ reason: "lookup_error" });
     await writeCache(ip, failedKey(ip), "1", FAILED_TTL_SEC);
   }
   return verdict(ip, ctx);
@@ -214,12 +225,21 @@ async function waitForResult(ip: string): Promise<boolean> {
     ...meta(ip),
     savedApiCall: false,
   });
+  spurEventsTotal.inc({ event: "wait_timeout" });
+  spurBypassesTotal.inc({ reason: "wait_timeout" });
   return false;
 }
 
 export async function isKeylessIpSuspicious(ip: string): Promise<boolean> {
   const apiKey = config.SPUR_API_KEY;
-  if (!apiKey || !isIPv4(ip)) return false;
+  if (!apiKey) {
+    spurBypassesTotal.inc({ reason: "disabled" });
+    return false;
+  }
+  if (!isIPv4(ip)) {
+    spurBypassesTotal.inc({ reason: "non_ipv4" });
+    return false;
+  }
 
   const cached = await readCache(ip);
   if (cached.state !== "miss") return cachedVerdict(ip, cached);
@@ -228,7 +248,7 @@ export async function isKeylessIpSuspicious(ip: string): Promise<boolean> {
   let locked: boolean;
   try {
     locked =
-      (await redisRateLimitClient.set(
+      (await redisSpurClient.set(
         lockKey(ip),
         token,
         "PX",
@@ -236,6 +256,8 @@ export async function isKeylessIpSuspicious(ip: string): Promise<boolean> {
         "NX",
       )) === "OK";
   } catch (error) {
+    spurEventsTotal.inc({ event: "cache_error" });
+    spurBypassesTotal.inc({ reason: "lock_error" });
     logger.warn("Spur context lookup failed; failing open", {
       ...meta(ip),
       timedOut: false,

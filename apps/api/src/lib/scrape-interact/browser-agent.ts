@@ -4,10 +4,7 @@ import path from "path";
 import { tool, stepCountIs } from "ai";
 import { logger as _logger } from "../logger";
 import { getModel } from "../generic-ai";
-import {
-  browserServiceRequest,
-  BrowserServiceExecResponse,
-} from "./browser-service-client";
+import { executeHangarBrowser, BrowserExecutionResult } from "../hangar";
 import { config } from "../../config";
 import {
   generateText,
@@ -143,7 +140,7 @@ Your final text response is what the user sees. It MUST be a clean, human-readab
 // Helpers
 // ---------------------------------------------------------------------------
 
-export interface AgentResult extends BrowserServiceExecResponse {
+export interface AgentResult extends BrowserExecutionResult {
   output: string;
 }
 
@@ -151,13 +148,12 @@ async function execInBrowser(
   browserId: string,
   code: string,
   timeout: number,
-  origin: string,
-): Promise<BrowserServiceExecResponse> {
-  return browserServiceRequest<BrowserServiceExecResponse>(
-    "POST",
-    `/browsers/${browserId}/exec`,
-    { code, language: "bash", timeout, origin },
-  );
+): Promise<BrowserExecutionResult> {
+  return executeHangarBrowser(browserId, {
+    code,
+    language: "bash",
+    timeout,
+  });
 }
 
 async function getCurrentUrl(browserId: string): Promise<string> {
@@ -166,7 +162,6 @@ async function getCurrentUrl(browserId: string): Promise<string> {
       browserId,
       "agent-browser get url",
       SNAPSHOT_TIMEOUT,
-      "agent_get_url",
     );
     return (result.stdout || result.result || "").trim();
   } catch {
@@ -180,7 +175,6 @@ async function takeSnapshot(browserId: string): Promise<string> {
       browserId,
       "agent-browser snapshot -i",
       SNAPSHOT_TIMEOUT,
-      "agent_snapshot",
     );
     return (result.stdout || result.result || "").slice(0, SNAPSHOT_MAX_CHARS);
   } catch {
@@ -188,28 +182,40 @@ async function takeSnapshot(browserId: string): Promise<string> {
   }
 }
 
-/**
- * Keep a single foregrounded content tab, closing agent-browser's stray
- * about:blank tab (it safely falls back to the surviving tab).
- */
-async function syncTabs(browserId: string): Promise<void> {
-  try {
-    await browserServiceRequest("POST", `/browsers/${browserId}/exec`, {
-      code: [
-        `const ctx = page.context();`,
-        `const pages = ctx.pages();`,
-        `if (pages.length > 1) {`,
-        `  const target = pages.find(p => { const u = p.url(); return u && u !== 'about:blank'; }) || pages[pages.length - 1];`,
-        `  for (const p of pages) { if (p !== target) await p.close().catch(() => {}); }`,
-        `  page = target;`,
-        `}`,
-        `await page.bringToFront();`,
-      ].join("\n"),
-      language: "node",
-      timeout: 5,
-      origin: "tab_sync",
-    });
-  } catch {}
+/** Align the CLI with the replay's page without discarding the user's other tabs. */
+export async function selectBrowserAgentTab(browserId: string): Promise<void> {
+  const target = await executeHangarBrowser(browserId, {
+    code: `await (async () => {
+      for (const candidate of [page, ...context.pages().filter(p => p !== page)]) {
+        if (await candidate.evaluate(() => document.visibilityState === 'visible').catch(() => false)) {
+          page = candidate;
+          break;
+        }
+      }
+      await page.bringToFront();
+      const cdp = await context.newCDPSession(page);
+      try {
+        const { targetInfo } = await cdp.send('Target.getTargetInfo');
+        console.log(targetInfo.targetId);
+      } finally { await cdp.detach(); }
+    })()`,
+    language: "node",
+    timeout: 10,
+  });
+  const targetId = (target.stdout || target.result || "").trim();
+  if (
+    target.exitCode !== 0 ||
+    target.killed ||
+    !/^[a-f0-9]{32}$/i.test(targetId)
+  )
+    throw new Error("Could not identify the replay browser tab.");
+  const selected = await execInBrowser(
+    browserId,
+    `agent-browser tab ${targetId}`,
+    10,
+  );
+  if (selected.exitCode !== 0 || selected.killed)
+    throw new Error("Could not select the replay browser tab.");
 }
 
 // ---------------------------------------------------------------------------
@@ -243,10 +249,7 @@ export async function executePromptViaBrowserAgent(
   debugLog.add(`Prompt:  ${prompt}\n`);
   logger.info("Agent debug log", { path: debugLog.getPath() });
 
-  // Prime agent-browser and consolidate tabs first: its first command of a
-  // session spawns an about:blank tab that would otherwise get snapshotted.
-  await getCurrentUrl(browserId);
-  await syncTabs(browserId);
+  await selectBrowserAgentTab(browserId);
 
   const [initialSnapshot, initialUrl] = await Promise.all([
     takeSnapshot(browserId),
@@ -284,16 +287,10 @@ export async function executePromptViaBrowserAgent(
       }
 
       try {
-        const result = await execInBrowser(
-          browserId,
-          code,
-          stepTimeout,
-          "agent_action",
-        );
+        const result = await execInBrowser(browserId, code, stepTimeout);
         const output = (result.stdout || result.result || "").trim();
 
-        // Ensure only one tab exists and it's in the foreground for live view
-        await syncTabs(browserId);
+        await selectBrowserAgentTab(browserId);
 
         const elapsed = Date.now() - start;
 
@@ -448,16 +445,16 @@ export async function executeCodeViaBrowserSession(
     origin?: string;
   },
   trace?: BrowserAgentTraceContext,
-): Promise<BrowserServiceExecResponse> {
+): Promise<BrowserExecutionResult> {
   // Arg must be named so langsmith's traceable sees the exec params as the
   // run's `inputs`; a zero-arg closure would record `{}` and strip the code,
   // language, timeout, and origin from every trace.
   const run = async (execParams: typeof params) =>
-    browserServiceRequest<BrowserServiceExecResponse>(
-      "POST",
-      `/browsers/${browserId}/exec`,
-      execParams,
-    );
+    executeHangarBrowser(browserId, {
+      code: execParams.code,
+      language: execParams.language,
+      timeout: execParams.timeout,
+    });
 
   if (!trace) return run(params);
 

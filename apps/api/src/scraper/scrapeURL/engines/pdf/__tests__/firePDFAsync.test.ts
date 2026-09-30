@@ -2,7 +2,10 @@
 // client calls these on the happy path; without the stub the first cache lookup
 // blows up trying to download from GCS using the credentials in .env.
 vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
+  pdfCacheConfigured: vi.fn(() => true),
   createPdfCacheKey: (s: string) => `sha-${s.length}`,
+  resolvePdfCacheKey: (input: string | { key: string }) =>
+    typeof input === "string" ? `sha-${input.length}` : input.key,
   getPdfResultFromCache: vi.fn(async () => null),
   savePdfResultToCache: vi.fn(async () => null),
 }));
@@ -17,6 +20,12 @@ import {
   savePdfResultToCache,
 } from "../../../../../lib/gcs-pdf-cache";
 import { config } from "../../../../../config";
+import {
+  jsonResp,
+  makeFetchFromSequence,
+  makeMeta,
+  noopSleep,
+} from "./firePDFAsyncFixtures";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────
 
@@ -38,104 +47,6 @@ afterAll(() => {
     process.env[BASE_URL_ENV] = ORIGINAL_BASE_URL;
   }
 });
-
-type FakeResponse = {
-  status: number;
-  body: unknown;
-};
-
-function jsonResp({ status, body }: FakeResponse) {
-  return {
-    status,
-    json: async () => body,
-  } as any;
-}
-
-function makeMeta(overrides: Record<string, unknown> = {}) {
-  const noopLogger: any = {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-    child: vi.fn(function child() {
-      return noopLogger;
-    }),
-  };
-
-  return {
-    id: "scrape-id-test",
-    url: "https://example.com/doc.pdf",
-    rewrittenUrl: undefined,
-    logger: noopLogger,
-    mock: null,
-    abort: {
-      throwIfAborted: vi.fn(),
-      asSignal: vi.fn(() => new AbortController().signal),
-      scrapeTimeout: vi.fn(() => 60_000),
-    },
-    internalOptions: {
-      zeroDataRetention: false,
-      teamId: "team-x",
-      teamConcurrency: 12,
-      crawlId: undefined,
-    },
-    options: {
-      parsers: [{ type: "pdf", __firePdfAsync: true }],
-    },
-    largePdfProcessing: {},
-    ...overrides,
-  } as any;
-}
-
-function makeFetchFromSequence(
-  matchers: Array<{
-    matchUrl: RegExp;
-    matchMethod?: "DELETE" | "GET" | "POST";
-    response: FakeResponse | (() => FakeResponse);
-  }>,
-) {
-  const calls: Array<{
-    url: string;
-    method: string;
-    headers: Record<string, string> | undefined;
-    body: unknown;
-  }> = [];
-  const cursor = { idx: 0 };
-  const fetchImpl: any = async (url: string, init: any) => {
-    const method = (init?.method ?? "GET").toUpperCase();
-    let body: unknown;
-    try {
-      body = init?.body ? JSON.parse(init.body) : undefined;
-    } catch {
-      body = init?.body;
-    }
-    calls.push({ url, method, headers: init?.headers, body });
-    const matcher = matchers[cursor.idx++];
-    if (!matcher) {
-      throw new Error(
-        `unexpected request #${cursor.idx} to ${method} ${url} (no matcher left)`,
-      );
-    }
-    if (!matcher.matchUrl.test(url)) {
-      throw new Error(
-        `request ${cursor.idx} url mismatch: got ${url}, expected ${matcher.matchUrl}`,
-      );
-    }
-    if (matcher.matchMethod && matcher.matchMethod !== method) {
-      throw new Error(
-        `request ${cursor.idx} method mismatch: got ${method}, expected ${matcher.matchMethod}`,
-      );
-    }
-    const r =
-      typeof matcher.response === "function"
-        ? matcher.response()
-        : matcher.response;
-    return jsonResp(r);
-  };
-  return { fetchImpl, calls };
-}
-
-const noopSleep = async () => {};
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
@@ -256,10 +167,72 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect(result.pagesProcessed).toBe(12);
     expect(fallback).not.toHaveBeenCalled();
     expect(calls).toHaveLength(4);
+    expect(calls[0].body).toMatchObject({
+      source: "firecrawl",
+      source_endpoint: "scrape",
+      source_request_context: "default",
+      url: "https://example.com/doc.pdf",
+    });
     // Account context rides the submit body (FirePDF ENG-5049).
     expect(
       (calls[0].body as { team_concurrency?: number }).team_concurrency,
     ).toBe(12);
+  });
+
+  it("marks parse requests without forwarding their synthetic upload URL", async () => {
+    const fetchImpl = vi.fn(async (url: string) =>
+      jsonResp({
+        status: 200,
+        body: url.endsWith("/result")
+          ? { schema_version: 1, markdown: "Document", pages_processed: 1 }
+          : { scrape_id: "scrape-id-test", status: "done", lane: "fast" },
+      }),
+    );
+    const meta = makeMeta();
+    meta.internalOptions.isParse = true;
+    meta.url = "https://example.com/uploads/document.pdf";
+
+    await scrapePDFWithFirePDFAsync(meta, "BASE64", 1, 1, "auto", {
+      fetchImpl: fetchImpl as any,
+      sleepImpl: noopSleep,
+    });
+
+    const body = JSON.parse((fetchImpl.mock.calls[0] as any)[1].body);
+    expect(body.source).toBe("firecrawl");
+    expect(body.source_endpoint).toBe("parse");
+    expect(body.source_request_context).toBe("default");
+    expect(body).not.toHaveProperty("url");
+  });
+
+  it("describes custom options without forwarding their values", async () => {
+    const fetchImpl = vi.fn(async (url: string) =>
+      jsonResp({
+        status: 200,
+        body: url.endsWith("/result")
+          ? { schema_version: 1, markdown: "Document", pages_processed: 1 }
+          : { scrape_id: "scrape-id-test", status: "done", lane: "fast" },
+      }),
+    );
+    const meta = makeMeta();
+    meta.options.headers = { "X-Example": "example-value" };
+    meta.options.actions = [{ type: "write", text: "example-text" }];
+    meta.options.profile = { name: "example-profile", saveChanges: false };
+    meta.url = "  document source  ";
+
+    await scrapePDFWithFirePDFAsync(meta, "BASE64", 1, 1, "auto", {
+      fetchImpl: fetchImpl as any,
+      sleepImpl: noopSleep,
+    });
+
+    const body = JSON.parse((fetchImpl.mock.calls[0] as any)[1].body);
+    expect(body.source_request_context).toBe("custom");
+    expect(body.url).toBe(meta.url);
+    expect(body).not.toHaveProperty("headers");
+    expect(body).not.toHaveProperty("actions");
+    expect(body).not.toHaveProperty("profile");
+    expect(JSON.stringify(body)).not.toContain("example-value");
+    expect(JSON.stringify(body)).not.toContain("example-text");
+    expect(JSON.stringify(body)).not.toContain("example-profile");
   });
 
   it("requests and returns physical page markdown", async () => {
@@ -724,22 +697,24 @@ describe("scrapePDFWithFirePDFAsync", () => {
   });
 
   it.each([
-    ["401", 401, "http_401"],
-    ["404", 404, "http_404"],
-    ["410", 410, "http_410"],
-    ["413", 413, "http_413"],
-    ["429", 429, "http_429"],
-    ["502", 502, "http_502"],
-    ["503", 503, "http_503"],
-    ["generic 5xx", 500, "http_5xx"],
+    ["401", 401, "http_401", { error: "x" }],
+    ["404", 404, "http_404", { error: "x" }],
+    ["410", 410, "http_410", { error: "x" }],
+    ["413", 413, "http_413", { error: "x" }],
+    ["429", 429, "http_429", { error: "x" }],
+    ["502", 502, "http_502", { error: "x" }],
+    // A 503 is only fire-pdf's own when it carries one of its documented
+    // codes; any other 503 body is retried once (firePDFAsyncDeadline.test).
+    ["503", 503, "http_503", { error: "admission_unavailable" }],
+    ["generic 5xx", 500, "http_5xx", { error: "x" }],
   ])(
     "throws FirePdfAsyncFailure when POST /jobs returns %s",
-    async (_, status, reason) => {
+    async (_, status, reason, body) => {
       const { fetchImpl, calls } = makeFetchFromSequence([
         {
           matchUrl: /\/jobs$/,
           matchMethod: "POST",
-          response: { status, body: { error: "x" } },
+          response: { status, body },
         },
       ]);
       const fallback = vi.fn();
@@ -785,7 +760,10 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect(err).toBeInstanceOf(FirePdfAsyncFailure);
     expect(err.reason).toBe("network_error");
     expect(fallback).not.toHaveBeenCalled();
+    // One retry on a fresh connection, then the ambiguous failure is
+    // treated as possibly accepted and the scrape_id is cancelled.
     expect(calls.map(({ url, method }) => ({ url, method }))).toEqual([
+      { method: "POST", url: "http://fire-pdf.test/jobs" },
       { method: "POST", url: "http://fire-pdf.test/jobs" },
       {
         method: "DELETE",
@@ -990,13 +968,13 @@ describe("scrapePDFWithFirePDFAsync", () => {
     ]);
     const fallback = vi.fn();
 
-    // 15s scrape budget → polling deadline = submit + 15s + 30s = 45s.
+    // 25s scrape budget → polling deadline = submit + 25s + 30s = 55s.
     // Each sleep advances time by 60s, blowing past the polling deadline.
     const meta = makeMeta({
       abort: {
         throwIfAborted: vi.fn(),
         asSignal: vi.fn(() => new AbortController().signal),
-        scrapeTimeout: vi.fn(() => 15_000),
+        scrapeTimeout: vi.fn(() => 25_000),
       },
     });
 
@@ -1215,6 +1193,10 @@ describe("scrapePDFWithFirePDFAsync", () => {
       const body = calls[0].body as Record<string, unknown>;
       expect(body.input_gcs_uri).toBe(BY_REF.gcsUri);
       expect(body.input_sha256).toBe(BY_REF.sha256);
+      expect(body.source).toBe("firecrawl");
+      expect(body.source_endpoint).toBe("scrape");
+      expect(body.source_request_context).toBe("default");
+      expect(body.url).toBe(meta.url);
       expect(body.pdf_b64).toBeUndefined();
       expect((body.options as { pages_estimate?: number }).pages_estimate).toBe(
         6543,

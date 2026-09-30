@@ -37,7 +37,7 @@ import java.util.concurrent.ForkJoinPool;
 public class FirecrawlClient {
 
     private static final String DEFAULT_API_URL = "https://api.firecrawl.dev";
-    private static final String SDK_ORIGIN = "java-sdk@1.16.0";
+    private static final String SDK_ORIGIN = "java-sdk@1.18.1";
     private static final long DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
     private static final int DEFAULT_MAX_RETRIES = 3;
     private static final double DEFAULT_BACKOFF_FACTOR = 0.5;
@@ -602,10 +602,24 @@ public class FirecrawlClient {
         return http.get("/v2/search/research/papers/" + urlEncode(paperId) + "/similar" + researchQuery(params), ResearchModels.SimilarPapersResponse.class);
     }
 
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use the developer index at
+     *             GET or POST /v2/search/developer, which this SDK does not wrap
+     *             yet, so call it directly. It does not carry over the score
+     *             breakdown or the web fallback results.
+     */
+    @Deprecated
     public ResearchModels.GitHubSearchResponse searchGitHub(String query) {
         return searchGitHub(query, null);
     }
 
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use the developer index at
+     *             GET or POST /v2/search/developer, which this SDK does not wrap
+     *             yet, so call it directly. It does not carry over the score
+     *             breakdown or the web fallback results.
+     */
+    @Deprecated
     public ResearchModels.GitHubSearchResponse searchGitHub(String query, ResearchModels.SearchGitHubOptions options) {
         Objects.requireNonNull(query, "Query is required");
         Map<String, Object> params = new LinkedHashMap<>();
@@ -639,6 +653,34 @@ public class FirecrawlClient {
     public AgentStatusResponse getAgentStatus(String jobId) {
         Objects.requireNonNull(jobId, "Job ID is required");
         return http.get("/v2/agent/" + jobId, AgentStatusResponse.class);
+    }
+
+    /**
+     * Lists agent runs, most recent first.
+     *
+     * @return the agent list response
+     */
+    public AgentListResponse listAgents() {
+        return listAgents(null);
+    }
+
+    /**
+     * Lists agent runs, most recent first.
+     *
+     * Pages are fixed at 20 runs. To fetch the next page, pass the before
+     * value from the previous page's next URL. This method does not
+     * auto-paginate.
+     *
+     * @param before only return agent runs created before this unix
+     *               millisecond timestamp (nullable)
+     * @return the agent list response
+     */
+    public AgentListResponse listAgents(Long before) {
+        String endpoint = "/v2/agent";
+        if (before != null) {
+            endpoint += "?before=" + before;
+        }
+        return http.get(endpoint, AgentListResponse.class);
     }
 
     /**
@@ -1028,6 +1070,13 @@ public class FirecrawlClient {
         return CompletableFuture.supplyAsync(() -> relatedPapers(paperId, intent, options), asyncExecutor);
     }
 
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use the developer index at
+     *             GET or POST /v2/search/developer, which this SDK does not wrap
+     *             yet, so call it directly. It does not carry over the score
+     *             breakdown or the web fallback results.
+     */
+    @Deprecated
     public CompletableFuture<ResearchModels.GitHubSearchResponse> searchGitHubAsync(String query, ResearchModels.SearchGitHubOptions options) {
         return CompletableFuture.supplyAsync(() -> searchGitHub(query, options), asyncExecutor);
     }
@@ -1224,6 +1273,17 @@ public class FirecrawlClient {
      */
     public CompletableFuture<AgentStatusResponse> getAgentStatusAsync(String jobId) {
         return CompletableFuture.supplyAsync(() -> getAgentStatus(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously lists agent runs, most recent first.
+     *
+     * @param before only return agent runs created before this unix
+     *               millisecond timestamp (nullable)
+     * @return a CompletableFuture that resolves to the AgentListResponse
+     */
+    public CompletableFuture<AgentListResponse> listAgentsAsync(Long before) {
+        return CompletableFuture.supplyAsync(() -> listAgents(before), asyncExecutor);
     }
 
     /**

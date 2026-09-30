@@ -12,7 +12,6 @@ import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
-import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
 import {
   fromLegacyScrapeOptions,
@@ -28,6 +27,10 @@ import {
   isThreatProtectionForced,
   THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/threat-protection/request";
+import {
+  getSafeMode,
+  SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
+} from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
 async function searchHelper(
@@ -89,9 +92,15 @@ async function searchHelper(
     const searchCredits = Math.ceil(res.length / 10) * 2;
     billTeam(
       team_id,
+      org_id,
       searchCredits,
       api_key_id,
-      { endpoint: "search", jobId, chargeId: jobId },
+      {
+        endpoint: "search",
+        jobId,
+        chargeId: jobId,
+        externalRequestId: externalRequestId(req),
+      },
       logger,
     ).catch(error => {
       logger.error(
@@ -118,8 +127,16 @@ async function searchHelper(
     return { success: true, error: "No search results found", returnCode: 200 };
   }
 
-  const jobPriority = await getJobPriority({ team_id, basePriority: 20 });
-  const billing = { endpoint: "search" as const, jobId };
+  const jobPriority = await getJobPriority({
+    team_id,
+    org_id,
+    basePriority: 20,
+  });
+  const billing = {
+    endpoint: "search" as const,
+    jobId,
+    externalRequestId: externalRequestId(req),
+  };
 
   // filter out social media links
 
@@ -204,6 +221,12 @@ export async function searchController(req: Request, res: Response) {
       });
     }
 
+    if (getSafeMode(chunk?.flags)) {
+      return res.status(403).json({
+        error: SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
+      });
+    }
+
     const jobId = uuidv7();
 
     await logRequest({
@@ -248,20 +271,25 @@ export async function searchController(req: Request, res: Response) {
     const searchOptions = req.body.searchOptions ?? { limit: 5 };
 
     try {
-      const autumnResult = await autumnService.checkCredits({
-        teamId: team_id,
-        value: 1,
-        properties: {
-          source: "v0/search",
-          apiKeyId: chunk?.api_key_id ?? null,
-        },
-      });
+      // No org, no Autumn customer to gate against: fail open, exactly as
+      // checkCredits answered for an identity it could not name.
+      const orgId = chunk?.org_id ?? null;
+      const autumnResult = orgId
+        ? await autumnService.checkCredits({
+            teamId: team_id,
+            orgId,
+            value: 1,
+            properties: {
+              source: "v0/search",
+              apiKeyId: chunk?.api_key_id ?? null,
+            },
+          })
+        : null;
       // null = Autumn unavailable / self-hosted -> fail open, matching v1/v2.
       if (autumnResult !== null && !autumnResult.allowed) {
         return res.status(402).json({ error: "Insufficient credits" });
       }
     } catch (error) {
-      Sentry.captureException(error);
       logger.error(error);
       return res.status(500).json({ error: "Internal server error" });
     }
@@ -301,7 +329,6 @@ export async function searchController(req: Request, res: Response) {
       return res.status(408).json({ error: error.message });
     }
 
-    Sentry.captureException(error);
     logger.error("Unhandled error occurred in search", { error });
     return res.status(500).json({ error: error.message });
   }

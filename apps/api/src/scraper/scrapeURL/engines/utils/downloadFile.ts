@@ -16,6 +16,90 @@ import * as undici from "undici";
 import { getSecureDispatcher } from "./safeFetch";
 import { logger } from "../../../../lib/logger";
 
+/**
+ * Matches undici ProxyAgent tunnel failures: the proxy's CONNECT response was
+ * not 200 (502, 407, ...). undici emits `RequestAbortedError` (code
+ * UND_ERR_ABORTED) with the message "Proxy response (NNN) !== 200 when HTTP
+ * Tunneling" — see undici's lib/dispatcher/proxy-agent.js.
+ */
+const PROXY_TUNNEL_FAILURE_MESSAGE =
+  /Proxy response \(\d+\) !== 200 when HTTP Tunneling/;
+
+/**
+ * Detects a proxy tunneling failure anywhere in an error's cause chain.
+ *
+ * undici wraps these several levels deep —
+ * TypeError("fetch failed") → DOMException("Request was cancelled.") →
+ * RequestAbortedError("Proxy response (502) !== 200 when HTTP Tunneling") —
+ * so, unlike mapUndiciError, we walk the whole chain. Callers use this to
+ * retry the download through a different transport (e.g. the browser engine's
+ * own proxy infra) instead of failing the scrape.
+ */
+function isProxyFetchFailure(error: unknown): boolean {
+  let current: unknown = error;
+  // Bounded walk with a visited guard: cause chains are short in practice,
+  // but a malformed/cyclic chain must never spin or crash the scrape.
+  const visited = new Set<unknown>();
+  while (
+    typeof current === "object" &&
+    current !== null &&
+    !visited.has(current)
+  ) {
+    visited.add(current);
+    const message = (current as { message?: unknown }).message;
+    if (
+      typeof message === "string" &&
+      PROXY_TUNNEL_FAILURE_MESSAGE.test(message)
+    ) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * Wraps a file engine's direct undici download so a proxy tunneling failure
+ * converts into an engine-level error that the scrapeURL retry loop treats
+ * exactly like the antibot case: clear the file flag and re-run the waterfall,
+ * letting the browser engine fetch the file through fire-engine's own proxy
+ * infrastructure instead of ours (see PDFFetchProxyError /
+ * DocumentFetchProxyError).
+ *
+ * Converts when the engine is the flag-mandated handler for the file type
+ * and no usable prefetch exists. The retry loop distinguishes the two empty
+ * prefetch states: `undefined` ("browser never attempted") triggers the
+ * browser fallback; `null` ("browser attempted, delivered no file") fails
+ * fast with this error rather than burning another prefetch round trip.
+ * A real prefetch object never reaches the direct download at all.
+ */
+export async function fetchFileGuardingProxyFailure<T>(
+  opts: {
+    /** meta's prefetch state for this file type; undefined = not attempted,
+     *  null = attempted and came back empty, object = use the file. */
+    prefetch: unknown;
+    /** Whether the engine is the flag-mandated handler for this file type
+     *  (feature flag, or a scalar forceEngine pinning this engine). */
+    flagMandated: boolean;
+    /** Error that triggers the browser-engine fallback in the retry loop. */
+    makeError: () => Error;
+  },
+  fetch: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fetch();
+  } catch (error) {
+    if (
+      opts.prefetch == null &&
+      opts.flagMandated &&
+      isProxyFetchFailure(error)
+    ) {
+      throw opts.makeError();
+    }
+    throw error;
+  }
+}
+
 const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
   const code = e?.code ?? e?.cause?.code ?? e?.errno ?? e?.name;
   if (e?.name === "AbortError") {

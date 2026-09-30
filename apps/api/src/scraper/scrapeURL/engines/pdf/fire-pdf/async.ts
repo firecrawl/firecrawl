@@ -2,12 +2,18 @@ import type { Meta } from "../../..";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import { config } from "../../../../../config";
 import { fetch as undiciFetch } from "undici";
+import { AbortManagerThrownError } from "../../../lib/abortManager";
 import type { PDFProcessorResult } from "../types";
 import { safeMarkdownToHtml } from "../markdownToHtml";
 import { scrapePDFWithFirePDF } from "../firePDF";
 import { cancelJob } from "./cancel";
-import { tryGetCached, maybeSaveResult } from "./cache";
-import { firePdfAsyncTotalDurationSeconds } from "./metrics";
+import { maybeSaveResult, provenanceFromResponse, tryGetCached } from "./cache";
+import { resolvePdfCacheKey } from "../../../../../lib/gcs-pdf-cache";
+import {
+  firePdfAsyncAbandonedTotal,
+  firePdfAsyncTotalDurationSeconds,
+  type AbandonedPhase,
+} from "./metrics";
 import { pollUntilTerminal } from "./poll";
 import { fetchResult } from "./result";
 import type { FirePdfByReferenceInput } from "./by-reference";
@@ -18,6 +24,7 @@ import { submitJob, SubmitJobMayHaveBeenAcceptedError } from "./submit";
 import {
   computeByReferenceDeadlineMs,
   computeDeadlineMs,
+  computeInlineJobDeadlineMs,
   defaultSleep,
   failAsync,
   FirePdfAsyncFailure,
@@ -90,9 +97,10 @@ export async function scrapePDFWithFirePDFAsync(
   // Cache addressing: inline submits keep the historical key (sha256 of
   // the base64 payload); by-reference submits use a `raw-` prefixed key
   // over the raw-byte sha, so repeat scrapes of the same large document
-  // don't reprocess it. The two keyspaces are deliberately distinct — an
-  // inline and a by-reference parse of the same document do not share
-  // entries. The LOOKUP for by-reference happens at the call site BEFORE
+  // don't reprocess it. On the direct-bucket path the two keyspaces are
+  // distinct — an inline and a by-reference parse of the same document do
+  // not share entries; the cache service is asked with both keys. The
+  // LOOKUP for by-reference happens at the call site BEFORE
   // the input object is uploaded (a hit must skip the 30-256MB transfer,
   // which has already happened by the time this function runs); only the
   // inline path looks up here. Both paths save here.
@@ -154,18 +162,22 @@ export async function scrapePDFWithFirePDFAsync(
   const callerWindowMs = computeDeadlineMs(remainingMs);
   // The JOB deadline is decoupled from the caller for by-reference
   // submits: page-scaled, never below the caller window, capped at
-  // 30 min. An inline job's deadline stays the caller window exactly —
-  // when its caller dies, the job is cancelled and the work discarded, so
-  // advertising more time would be a lie. A by-reference job instead
-  // outlives its caller on purpose (cancel is skipped below): it finishes
-  // server-side, lands in the raw-sha cache and the content-adoption
-  // lookup, and the customer's retry — with a fresh scrape_id — converges
-  // instead of restarting a multi-minute document from zero. Callers
-  // wanting first-attempt success must still pass an explicit `timeout`.
+  // 30 min. An inline job's deadline sits INSIDE the caller window by a
+  // margin (computeInlineJobDeadlineMs): when its caller dies the job is
+  // cancelled and the work discarded, so the worker must reach its own
+  // deadline — and write the deadline-degraded result it produces there —
+  // while the caller is still around to poll and fetch it. A by-reference
+  // job instead outlives its caller on purpose (cancel is skipped below):
+  // it finishes server-side, lands in the raw-sha cache and the
+  // content-adoption lookup, and the customer's retry — with a fresh
+  // scrape_id — converges instead of restarting a multi-minute document
+  // from zero. Callers wanting first-attempt success must still pass an
+  // explicit `timeout`.
   const deadlineFromNow = byReference
     ? computeByReferenceDeadlineMs(remainingMs, pagesProcessed)
-    : callerWindowMs;
-  const deadlineAt = new Date(submitTime + deadlineFromNow).toISOString();
+    : computeInlineJobDeadlineMs(callerWindowMs);
+  const jobDeadlineAtMs = submitTime + deadlineFromNow;
+  const deadlineAt = new Date(jobDeadlineAtMs).toISOString();
   const pollingDeadline = submitTime + callerWindowMs + POLL_TIMEOUT_BUFFER_MS;
 
   // Account context for FirePDF's per-team admission observation,
@@ -181,6 +193,7 @@ export async function scrapePDFWithFirePDFAsync(
   // ── Step 1: POST /jobs (skipped when adopting an existing job) ────────
   let submissionAccepted = false;
   let terminalReached = false;
+  let lastNonTerminalStatus: "queued" | "published" | "running" | undefined;
   let polled: Awaited<ReturnType<typeof pollUntilTerminal>>;
   let fetched: Awaited<ReturnType<typeof fetchResult>>;
   // What goes on the wire for step 1 — null means nothing does: an
@@ -239,6 +252,7 @@ export async function scrapePDFWithFirePDFAsync(
         deadlineAt,
         teamConcurrency,
         fetchImpl,
+        sleep,
       });
       submissionAccepted = true;
       alreadyDone = submit.alreadyDone;
@@ -253,7 +267,7 @@ export async function scrapePDFWithFirePDFAsync(
           jobScrapeId,
           pagesEstimate: pagesProcessed,
           submittedAtMs: submitTime,
-          jobDeadlineAtMs: submitTime + deadlineFromNow,
+          jobDeadlineAtMs,
           lastStatus: "queued",
         };
       }
@@ -276,7 +290,13 @@ export async function scrapePDFWithFirePDFAsync(
           sleep,
           now,
           random,
+          // Only a job WE submitted inline has a deadline we know and that
+          // sits inside this caller's window. An adopted job's deadline is
+          // its owner's; a by-reference job's lies beyond the window.
+          jobDeadlineAtMs:
+            wireInput?.kind === "inline" ? jobDeadlineAtMs : undefined,
           onNonTerminalStatus: (status, estimatedRemainingMs) => {
+            lastNonTerminalStatus = status;
             const current = meta.largePdfProcessing?.current;
             if (!current) return;
             current.lastStatus = status;
@@ -309,6 +329,37 @@ export async function scrapePDFWithFirePDFAsync(
     if ((jobAlreadyTerminal || terminalReached) && meta.largePdfProcessing) {
       // The job is dead — a "processing continues" message would lie.
       meta.largePdfProcessing.current = undefined;
+    }
+    const abortError =
+      error instanceof AbortManagerThrownError
+        ? error
+        : submitMayHaveBeenAccepted &&
+            error.originalError instanceof AbortManagerThrownError
+          ? error.originalError
+          : undefined;
+    if (abortError?.tier === "scrape") {
+      // The caller's scrape window closed first — the outcome the job
+      // deadline margin exists to avoid — so count where it happened.
+      // Engine-tier aborts (the waterfall moving on) and external aborts
+      // (the client hung up) are not that signal.
+      const phase: AbandonedPhase =
+        wireInput !== null && !submissionAccepted
+          ? "submit"
+          : terminalReached
+            ? "result"
+            : "poll";
+      firePdfAsyncAbandonedTotal.labels(phase).inc();
+      meta.logger.warn("FirePDF async abandoned by caller abort", {
+        scrapeId: meta.id,
+        event: "fire_pdf_async_abandoned",
+        phase,
+        tier: abortError.tier,
+        lastStatus: lastNonTerminalStatus,
+        // Only meaningful for a job this attempt submitted itself.
+        jobDeadlineInMs:
+          wireInput !== null ? jobDeadlineAtMs - now() : undefined,
+        elapsedMs: now() - overallStartedAt,
+      });
     }
     if (
       cancelOnAbandon &&
@@ -354,6 +405,12 @@ export async function scrapePDFWithFirePDFAsync(
   const durationMs = now() - overallStartedAt;
   firePdfAsyncTotalDurationSeconds.observe(durationMs / 1000);
 
+  const cacheKey = resolvePdfCacheKey(cacheInput);
+  const provenance = provenanceFromResponse(fetched.provenance, meta.logger, {
+    scrapeId: meta.id,
+    cacheKey,
+  });
+
   meta.logger.info("FirePDF async completed", {
     scrapeId: meta.id,
     durationMs,
@@ -364,6 +421,11 @@ export async function scrapePDFWithFirePDFAsync(
     failedPages: fetched.failed_pages,
     partialPages: fetched.partial_pages,
     pollCount: polled.pollCount,
+    // The content-cache key and the producer, so a report can be turned
+    // into keys to purge and a result can be tied to a fire-pdf build.
+    cacheKey,
+    generation: provenance?.generation ?? "unknown",
+    buildSha: provenance?.build_sha ?? "unknown",
   });
 
   const processorResult: PDFProcessorResult & { markdown: string } = {
@@ -383,6 +445,8 @@ export async function scrapePDFWithFirePDFAsync(
     includeBlocks,
     pageMarkers,
     result: processorResult,
+    provenance,
+    failedPages: fetched.failed_pages,
   });
 
   return processorResult;

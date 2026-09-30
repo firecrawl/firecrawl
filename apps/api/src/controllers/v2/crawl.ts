@@ -19,12 +19,14 @@ import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
 import { checkPermissions } from "../../lib/permissions";
+import { resolveSafeMode } from "../../lib/safe-mode";
 import {
   actionTypesOf,
   checkKeyFormatRestriction,
   formatTypesOf,
 } from "../../lib/key-restriction";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
+import { collectPathPatternIssues } from "../../lib/crawl-regex";
 import {
   crawlGroup,
   resolveNewGroupBackend,
@@ -32,6 +34,7 @@ import {
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { checkUrl } from "../../lib/threat-protection";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
@@ -39,6 +42,10 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
+import {
+  initializeRequestCredits,
+  requestCreditsShards,
+} from "../../lib/request-credits-store";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -47,14 +54,32 @@ export async function crawlController(
   const preNormalizedBody = req.body;
   req.body = crawlRequestSchema.parse(req.body);
   const id = uuidv7();
+
+  const safeMode = resolveSafeMode(
+    req.acuc?.flags,
+    req.body.scrapeOptions?.safeMode,
+    req.body.url,
+  );
+  if (safeMode.error) {
+    return res.status(403).json({
+      success: false,
+      code: safeMode.code,
+      error: safeMode.error,
+    });
+  }
+
+  // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" || req.body.zeroDataRetention;
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body.zeroDataRetention ||
+    (safeMode.safeMode?.lockdown ?? false);
 
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
     override: req.body.scrapeOptions?.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
     return res.status(403).json({
@@ -63,14 +88,27 @@ export async function crawlController(
     });
   }
 
+  // Scrape params live under scrapeOptions; checkPermissions reads them
+  // top-level, so spread scrapeOptions while keeping the top-level fields it
+  // also reads (zeroDataRetention, crawlerOptions.ignoreRobotsTxt) and the
+  // nested scrapeOptions (location / threatProtection).
   const permissions = checkPermissions(
-    { ...req.body, crawlerOptions: req.body },
+    {
+      ...req.body.scrapeOptions,
+      zeroDataRetention: req.body.zeroDataRetention,
+      crawlerOptions: req.body,
+      scrapeOptions: req.body.scrapeOptions,
+    },
     req.acuc?.flags,
-    { threatProtectionOrgConfig: threatProtection.orgConfig },
+    {
+      threatProtectionOrgConfig: threatProtection.orgConfig,
+      safeMode: safeMode.safeMode ?? null,
+    },
   );
   if (permissions.error) {
     return res.status(403).json({
       success: false,
+      code: permissions.code,
       error: permissions.error,
     });
   }
@@ -90,6 +128,7 @@ export async function crawlController(
       if (threatScanCredits > 0) {
         billTeam(
           req.auth.team_id,
+          req.acuc?.org_id ?? null,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
           // No chargeId: a fresh crawl id is minted per request and the
@@ -163,6 +202,9 @@ export async function crawlController(
     target_hint: req.body.url,
     zeroDataRetention: zeroDataRetention || false,
     api_key_id: req.acuc?.api_key_id ?? null,
+    jobAccessExpiresAt: new Date(
+      Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+    ),
   });
 
   // checkCreditsMiddleware (always runs before this controller) is the source
@@ -184,27 +226,36 @@ export async function crawlController(
 
   let promptGeneratedOptions = {};
   if (req.body.prompt) {
+    const basePrompt = req.body.prompt;
     try {
-      // Enhance prompt with discovered site URLs (up to 120) to improve option generation
-      const { prompt: enhancedPrompt } = await buildPromptWithWebsiteStructure({
-        basePrompt: req.body.prompt,
-        url: req.body.url,
-        teamId: req.auth.team_id,
-        orgId: req.acuc?.org_id ?? null,
-        flags: req.acuc?.flags ?? null,
-        logger,
-        limit: 50,
-        includeSubdomains: false,
-        allowExternalLinks: false,
-        useIndex: true,
-        maxFireEngineResults: 500,
-      });
-      const costTracking = new CostTracking();
-      const { extract } = await generateCrawlerOptionsFromPrompt(
-        enhancedPrompt,
-        logger,
-        costTracking,
-        { teamId: req.auth.team_id, crawlId: id },
+      // The prompt and the discovered URLs end up in LLM telemetry, so keep
+      // this whole step out of traces for zero data retention crawls.
+      const { extract } = await withZeroDataRetention(
+        zeroDataRetention,
+        async () => {
+          // Enhance prompt with discovered site URLs (up to 120) to improve option generation
+          const { prompt: enhancedPrompt } =
+            await buildPromptWithWebsiteStructure({
+              basePrompt,
+              url: req.body.url,
+              teamId: req.auth.team_id,
+              orgId: req.acuc?.org_id ?? null,
+              flags: req.acuc?.flags ?? null,
+              logger,
+              limit: 50,
+              includeSubdomains: false,
+              allowExternalLinks: false,
+              useIndex: true,
+              maxFireEngineResults: 500,
+            });
+          return generateCrawlerOptionsFromPrompt(
+            enhancedPrompt,
+            logger,
+            new CostTracking(),
+            { teamId: req.auth.team_id, crawlId: id },
+            zeroDataRetention,
+          );
+        },
       );
       promptGeneratedOptions = extract || {};
       logger.debug("Generated crawler options from prompt", {
@@ -245,23 +296,15 @@ export async function crawlController(
     }
   }
 
-  if (Array.isArray(finalCrawlerOptions.includePaths)) {
-    for (const x of finalCrawlerOptions.includePaths) {
-      try {
-        new RegExp(x);
-      } catch (e) {
-        return res.status(400).json({ success: false, error: e.message });
-      }
-    }
-  }
-
-  if (Array.isArray(finalCrawlerOptions.excludePaths)) {
-    for (const x of finalCrawlerOptions.excludePaths) {
-      try {
-        new RegExp(x);
-      } catch (e) {
-        return res.status(400).json({ success: false, error: e.message });
-      }
+  // The request schema already validated user-supplied includePaths /
+  // excludePaths. Options generated from a prompt bypass the schema, so hold
+  // the merged result to the same caps, budget, and engine syntax.
+  if (req.body.prompt) {
+    const pathPatternIssues = collectPathPatternIssues(finalCrawlerOptions);
+    if (pathPatternIssues.length > 0) {
+      return res
+        .status(400)
+        .json({ success: false, error: pathPatternIssues[0].message });
     }
   }
 
@@ -276,9 +319,17 @@ export async function crawlController(
     originalBodyLimit: preNormalizedBody.limit,
   });
 
+  const creditsShards = requestCreditsShards(finalCrawlerOptions.limit);
+  await initializeRequestCredits(id, creditsShards).catch(error => {
+    logger.warn("Failed to initialize Bigtable request credits", {
+      error,
+      shards: creditsShards,
+    });
+  });
+
   const effectiveConcurrency = await getEffectiveConcurrencyLimit(
     req.auth.team_id,
-    req.acuc?.org_id,
+    req.acuc?.org_id ?? null,
   );
   const sc: StoredCrawl = {
     originUrl: req.body.url,
@@ -292,6 +343,10 @@ export async function crawlController(
       zeroDataRetention,
       agentIndexOnly: (req as any).agentIndexOnly ?? false,
       threatProtection: threatProtection.policy ?? undefined,
+      // Safe Mode rides the crawl payload so every child scrape resolves it
+      // per-URL at the scrapeURL backstop (allowlist applies per child).
+      teamFlags: req.acuc?.flags ?? undefined,
+      safeModeBypassed: safeMode.bypassed === true,
     },
     team_id: req.auth.team_id,
     createdAt: Date.now(),
@@ -344,7 +399,11 @@ export async function crawlController(
       internalOptions: sc.internalOptions,
       origin: req.body.origin,
       integration: req.body.integration,
-      billing: { endpoint: "crawl", jobId: id },
+      billing: {
+        endpoint: "crawl",
+        jobId: id,
+        externalRequestId: externalRequestId(req),
+      },
       crawl_id: id,
       webhook: req.body.webhook,
       v1: true,

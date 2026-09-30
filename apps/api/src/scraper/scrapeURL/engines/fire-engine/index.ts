@@ -7,7 +7,9 @@ import {
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
   FireEngineScrapeRequestTLSClient,
+  safeModeParams,
 } from "./scrape";
+import { stripCredentialHeaders } from "../../../../lib/safe-mode";
 import { EngineScrapeResult } from "..";
 import {
   fireEngineCheckStatus,
@@ -20,12 +22,12 @@ import {
   EngineError,
   DNSResolutionError,
   SiteError,
+  SiteRestrictionError,
   SSLError,
   UnsupportedFileError,
   FEPageLoadFailed,
   ProxySelectionError,
 } from "../../error";
-import * as Sentry from "@sentry/node";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import {
@@ -56,7 +58,6 @@ import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { getBrandingScript } from "./brandingScript";
 import { abTestFireEngine } from "../../../../services/ab-test";
 import { scheduleABComparison } from "../../../../services/ab-test-comparison";
-import { createHash } from "node:crypto";
 
 /** Default wait (ms) before running the branding script when user did not set waitFor. Lets the page settle so DOM/images are ready and reduces JS errors. */
 const BRANDING_DEFAULT_WAIT_MS = 2000;
@@ -153,6 +154,7 @@ async function performFireEngineScrape<
           } else if (
             error instanceof EngineError ||
             error instanceof SiteError ||
+            error instanceof SiteRestrictionError ||
             error instanceof SSLError ||
             error instanceof DNSResolutionError ||
             error instanceof ActionError ||
@@ -202,7 +204,6 @@ async function performFireEngineScrape<
               `An unexpeceted error occurred while calling checkStatus. Error counter is now at ${errors.length}.`,
               { error, jobId: (scrape as any).jobId },
             );
-            Sentry.captureException(error);
           }
         }
 
@@ -229,6 +230,7 @@ async function performFireEngineScrape<
         fireEngineHandoffEligible(meta)
           ? largePdfLimitBytes(meta)
           : PDF_DOWNLOAD_MAX_FILE_SIZE,
+        meta.imageOcrEnabled,
       );
     }
 
@@ -486,12 +488,25 @@ export async function scrapeURLWithFireEngineChromeCDP(
         : {}),
       ...(shouldAllowMedia ? { blockMedia: false } : {}),
       ...(forceNonRender ? { forceNonRender: true } : {}),
-      persistentStorage: meta.options.profile
+      profile: meta.options.profile
         ? {
-            uniqueId: `${createHash("sha256").update(meta.internalOptions.teamId).digest("hex").slice(0, 16)}_${meta.options.profile.name}`,
+            owner: meta.internalOptions.teamId,
+            name: meta.options.profile.name,
           }
         : undefined,
+      ...safeModeParams(meta.internalOptions.safeMode),
     };
+
+    // Safe Mode worker-side hardening: neutralize anything that request-time
+    // enforcement would reject but that inherited scrape options can still carry.
+    const sm = meta.internalOptions.safeMode;
+    if (sm?.disableStealthProxy) {
+      request.mobileProxy = false;
+    }
+    if (sm?.disableAuthentication) {
+      request.profile = undefined;
+      request.headers = stripCredentialHeaders(request.headers);
+    }
 
     let response = await performFireEngineScrape(
       meta,
@@ -582,7 +597,6 @@ export async function scrapeURLWithFireEngineChromeCDP(
       markdown: contentType?.includes("text/markdown")
         ? response.content
         : undefined,
-      json: response.json,
       error: response.pageError,
       statusCode: response.pageStatusCode,
 
@@ -643,7 +657,16 @@ export async function scrapeURLWithFireEngineTLSClient(
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      ...safeModeParams(meta.internalOptions.safeMode),
     };
+
+    const sm = meta.internalOptions.safeMode;
+    if (sm?.disableStealthProxy) {
+      request.mobileProxy = false;
+    }
+    if (sm?.disableAuthentication) {
+      request.headers = stripCredentialHeaders(request.headers);
+    }
 
     let response = await performFireEngineScrape(
       meta,
@@ -674,7 +697,6 @@ export async function scrapeURLWithFireEngineTLSClient(
       markdown: contentType?.includes("text/markdown")
         ? response.content
         : undefined,
-      json: response.json,
       error: response.pageError,
       statusCode: response.pageStatusCode,
 

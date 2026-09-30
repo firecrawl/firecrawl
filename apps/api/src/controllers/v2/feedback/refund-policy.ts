@@ -4,6 +4,7 @@ import {
   FeedbackRating,
   RefundPolicySnapshot,
 } from "./internal-types";
+import type { RefundClass } from "../../../lib/feedback-job-store";
 
 type RefundablePolicy =
   | {
@@ -61,8 +62,8 @@ function none(
   };
 }
 
-function policyFor(job: FeedbackJobRow): RefundablePolicy {
-  switch (job.endpoint) {
+function policyForRefundClass(refundClass: RefundClass): RefundablePolicy {
+  switch (refundClass) {
     case "search":
       return {
         mode: "flat",
@@ -85,33 +86,27 @@ function policyFor(job: FeedbackJobRow): RefundablePolicy {
         percent: 0.25,
         maxCredits: 10,
       };
-    case "scrape":
-      if (optionListIncludes(job.options, "parsers", "pdf")) {
-        return {
-          mode: "percentage_with_cap",
-          reason: "scrape_pdf_feedback",
-          ratings: ["partial", "bad"],
-          percent: 0.25,
-          maxCredits: 10,
-        };
-      }
-
-      if (
-        optionListIncludes(job.options, "formats", "json") ||
-        optionListIncludes(job.options, "formats", "screenshot") ||
-        hasActions(job.options)
-      ) {
-        return {
-          mode: "percentage_with_cap",
-          reason: optionListIncludes(job.options, "formats", "json")
+    case "scrape_pdf":
+      return {
+        mode: "percentage_with_cap",
+        reason: "scrape_pdf_feedback",
+        ratings: ["partial", "bad"],
+        percent: 0.25,
+        maxCredits: 10,
+      };
+    case "scrape_json":
+    case "scrape_addon":
+      return {
+        mode: "percentage_with_cap",
+        reason:
+          refundClass === "scrape_json"
             ? "scrape_json_feedback"
             : "scrape_addon_feedback",
-          ratings: ["partial", "bad"],
-          percent: 0.25,
-          maxCredits: 5,
-        };
-      }
-
+        ratings: ["partial", "bad"],
+        percent: 0.25,
+        maxCredits: 5,
+      };
+    case "scrape_basic":
       return {
         mode: "flat",
         reason: "scrape_feedback",
@@ -119,6 +114,24 @@ function policyFor(job: FeedbackJobRow): RefundablePolicy {
         credits: 1,
       };
   }
+}
+
+function policyFor(job: FeedbackJobRow): RefundablePolicy {
+  if (job.refund_class) return policyForRefundClass(job.refund_class);
+  if (job.endpoint !== "scrape") return policyForRefundClass(job.endpoint);
+  if (optionListIncludes(job.options, "parsers", "pdf")) {
+    return policyForRefundClass("scrape_pdf");
+  }
+  if (optionListIncludes(job.options, "formats", "json")) {
+    return policyForRefundClass("scrape_json");
+  }
+  if (
+    optionListIncludes(job.options, "formats", "screenshot") ||
+    hasActions(job.options)
+  ) {
+    return policyForRefundClass("scrape_addon");
+  }
+  return policyForRefundClass("scrape_basic");
 }
 
 export function computeRefundPolicy(

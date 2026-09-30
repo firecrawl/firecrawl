@@ -2,10 +2,16 @@ import { v7 as uuidv7 } from "uuid";
 import { config } from "../../../config";
 import { logger as _logger } from "../../../lib/logger";
 import {
+  withSpan,
+  setSpanAttributes,
+  recordSpanException,
+  type Span,
+} from "../../../lib/otel-tracer";
+import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
+import {
   autumnService,
   featureIdForBillingEndpoint,
 } from "../../../services/autumn/autumn.service";
-import { captureExceptionWithZdrCheck } from "../../../services/sentry";
 import {
   EndpointFeedbackErrorCode,
   RequestWithAuth,
@@ -156,6 +162,17 @@ function validateJob(
     );
   }
 
+  if (job.feedback_deadline_ms !== undefined) {
+    if (job.feedback_deadline_ms > Date.now()) return null;
+    const maxAgeSec = options.maxAgeSec ?? config.FEEDBACK_MAX_AGE_SEC;
+    return feedbackFailure(
+      409,
+      "FEEDBACK_WINDOW_EXPIRED",
+      options.windowExpiredMessage ??
+        `Feedback must be submitted within ${maxAgeSec} seconds of the job.`,
+    );
+  }
+
   const maxAgeSec = options.maxAgeSec ?? config.FEEDBACK_MAX_AGE_SEC;
   const createdAtMs = new Date(job.created_at).getTime();
   if (Number.isNaN(createdAtMs)) {
@@ -212,9 +229,18 @@ async function refundCredits(params: {
   const { req, options, feedbackId, cappedRefund, policy, logger } = params;
   if (cappedRefund <= 0) return 0;
 
+  const orgId = req.acuc?.org_id ?? null;
+  if (!orgId) {
+    // No org, no Autumn customer to credit back. Reported as refunded anyway,
+    // which is what a refund that could not name its org already did.
+    logger.error("Feedback refund skipped: no org for the team");
+    return cappedRefund;
+  }
+
   try {
     await autumnService.refundCredits({
       teamId: req.auth.team_id,
+      orgId,
       value: cappedRefund,
       // One refund per feedback record; a retried refund dedupes (firebill
       // route) instead of crediting twice.
@@ -238,9 +264,49 @@ async function refundCredits(params: {
   }
 }
 
+/**
+ * Team-level zero data retention for the endpoint the feedback refers to. Unlike
+ * `shouldSkipPersistenceForForcedZdr` this ignores the persistence override:
+ * the trace must stay unrecorded whenever the team is forced into ZDR.
+ */
+function isForcedZdrTeam(
+  req: RequestWithAuth<any, any, any>,
+  options: FeedbackRecordOptions,
+): boolean {
+  if (options.endpoint === "search") {
+    const searchZDR = getSearchZDR(req.acuc?.flags);
+    return searchZDR === "forced-zdr" || searchZDR === "forced-anon";
+  }
+
+  if (options.endpoint === "scrape" || options.endpoint === "parse") {
+    return getScrapeZDR(req.acuc?.flags) === "forced";
+  }
+
+  return false;
+}
+
 export async function recordEndpointFeedback(
   req: RequestWithAuth<any, any, any>,
   options: FeedbackRecordOptions,
+): Promise<FeedbackRecordResult> {
+  return withSpan(
+    "api.feedback.record",
+    span => recordEndpointFeedbackInner(req, options, span),
+    {
+      attributes: {
+        "feedback.endpoint": options.endpoint,
+        "feedback.job_id": options.jobId,
+        "feedback.team_id": req.auth.team_id,
+      },
+      zeroDataRetention: isForcedZdrTeam(req, options),
+    },
+  );
+}
+
+async function recordEndpointFeedbackInner(
+  req: RequestWithAuth<any, any, any>,
+  options: FeedbackRecordOptions,
+  span: Span,
 ): Promise<FeedbackRecordResult> {
   const logger = _logger.child({
     module: "api/v2",
@@ -252,6 +318,7 @@ export async function recordEndpointFeedback(
 
   if (shouldSkipPersistenceForForcedZdr(req, options)) {
     logger.info("Skipping feedback persistence for forced ZDR team");
+    setSpanAttributes(span, { "feedback.zero_data_retention": true });
     return zdrFeedbackSuccess(options);
   }
 
@@ -265,7 +332,9 @@ export async function recordEndpointFeedback(
     if ("status" in jobOrFailure) return jobOrFailure;
 
     if (shouldSkipPersistenceForJobZdr(jobOrFailure, options)) {
+      // Learned late: the attribute drops this span and flags the trace.
       logger.info("Skipping feedback persistence for ZDR job");
+      setSpanAttributes(span, { "feedback.zero_data_retention": true });
       return zdrFeedbackSuccess(options);
     }
 
@@ -365,10 +434,10 @@ export async function recordEndpointFeedback(
       },
     };
   } catch (error) {
-    captureExceptionWithZdrCheck(error);
     logger.error("Unhandled error while recording endpoint feedback", {
       error,
     });
+    recordSpanException(span, error);
     return feedbackFailure(
       500,
       "INTERNAL",

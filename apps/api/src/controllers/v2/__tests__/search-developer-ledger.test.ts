@@ -51,11 +51,6 @@ vi.mock("../../../lib/key-restriction", () => ({
   checkKeyEndpointRestriction: vi.fn().mockResolvedValue({ allowed: true }),
 }));
 
-vi.mock("../../../services/sentry", () => ({
-  applyZdrScope: vi.fn(),
-  captureExceptionWithZdrCheck: vi.fn(),
-}));
-
 vi.mock("../../../lib/logger", () => ({
   logger: {
     info: vi.fn(),
@@ -148,7 +143,12 @@ describe("developer category code_searches ledger", () => {
     await searchController(req, res);
 
     expect(res.status).toHaveBeenCalledWith(429);
-    expect(mockKeylessLimitBody).toHaveBeenCalledWith(TEAM_ID, "v2_search");
+    // The request picks the utm_medium of the caller's signup link.
+    expect(mockKeylessLimitBody).toHaveBeenCalledWith(
+      TEAM_ID,
+      "v2_search",
+      req,
+    );
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       error: "keyless limit reached",

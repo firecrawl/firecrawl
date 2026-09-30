@@ -1,6 +1,5 @@
 import { Logger } from "winston";
 import { z, ZodError } from "zod";
-import * as Sentry from "@sentry/node";
 import { MockState, saveMock } from "./mock";
 import { fireEngineURL } from "../engines/fire-engine/scrape";
 import { fetch, Response, FormData, Agent } from "undici";
@@ -137,7 +136,6 @@ export async function robustFetch<
       if (error instanceof AbortManagerThrownError) {
         throw error;
       } else if (!ignoreFailure) {
-        Sentry.captureException(error);
         if (tryCount > 1) {
           logger.debug(
             "Request failed, trying " + (tryCount - 1) + " more times",

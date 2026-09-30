@@ -65,16 +65,19 @@ export class AddFeatureError extends Error {
   public featureFlags: FeatureFlag[];
   public pdfPrefetch: Meta["pdfPrefetch"];
   public documentPrefetch: Meta["documentPrefetch"];
+  public imagePrefetch: Meta["imagePrefetch"];
 
   constructor(
     featureFlags: FeatureFlag[],
     pdfPrefetch?: Meta["pdfPrefetch"],
     documentPrefetch?: Meta["documentPrefetch"],
+    imagePrefetch?: Meta["imagePrefetch"],
   ) {
     super("New feature flags have been discovered: " + featureFlags.join(", "));
     this.featureFlags = featureFlags;
     this.pdfPrefetch = pdfPrefetch;
     this.documentPrefetch = documentPrefetch;
+    this.imagePrefetch = imagePrefetch;
   }
 }
 
@@ -113,6 +116,32 @@ export class SSLError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new SSLError(data.skipTlsVerification);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+type ExchangeRefusalCode =
+  | "THIRD_PARTY_DATA_NOT_FOUND"
+  | "THIRD_PARTY_DATA_NOT_ENABLED"
+  | "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED";
+
+// A definitive answer from the Exchange about this URL: the provider holds no
+// record for it, or the team is not entitled to the provider. Another attempt
+// cannot change it, so it surfaces as-is instead of as an engine failure.
+export class ExchangeRefusedError extends TransportableError {
+  constructor(code: ExchangeRefusalCode, message: string) {
+    super(code, message);
+  }
+
+  static deserialize(
+    code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ExchangeRefusedError(
+      code as ExchangeRefusalCode,
+      data.message,
+    );
     x.stack = data.stack;
     return x;
   }
@@ -200,6 +229,30 @@ export class ProxySelectionError extends TransportableError {
   }
 }
 
+export class SiteRestrictionError extends TransportableError {
+  constructor() {
+    super(
+      "SCRAPE_SITE_RESTRICTION_BLOCKED",
+      "This site restricts automated access to the requested content. Safe Mode is enabled for your organization, so the site's restriction is returned instead of being worked around.",
+    );
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+    };
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new SiteRestrictionError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class ActionError extends TransportableError {
   constructor(public errorCode: string) {
     super(
@@ -229,7 +282,7 @@ export class UnsupportedFileError extends TransportableError {
   constructor(public reason: string) {
     super(
       "SCRAPE_UNSUPPORTED_FILE_ERROR",
-      `The URL returned a file type that Firecrawl cannot process: ${reason}. Firecrawl supports HTML web pages, PDFs, and common document formats. Binary files like images, videos, executables, and archives are not supported. If you expected this URL to return a web page, the server may be misconfigured or returning the wrong content type.`,
+      `The URL returned a file type that Firecrawl cannot process: ${reason}. Firecrawl supports HTML web pages, PDFs, and common document formats. Raster images (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP, WebP, AVIF) are OCR'd when the parsers option includes "image" (the default), where image parsing is available. Other binary files like videos, executables, archives, and other image formats are not supported. If you expected this URL to return a web page, the server may be misconfigured or returning the wrong content type.`,
     );
   }
 
@@ -264,6 +317,29 @@ export class PDFAntibotError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new PDFAntibotError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class PDFFetchProxyError extends TransportableError {
+  constructor() {
+    const message = isSelfHosted()
+      ? "Failed to download the PDF file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
+      : "Failed to download the PDF file — Firecrawl could not establish a connection to the website while downloading it. Please retry your request, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
+
+    super("SCRAPE_PDF_FETCH_PROXY_ERROR", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new PDFFetchProxyError();
     x.stack = data.stack;
     return x;
   }
@@ -463,6 +539,29 @@ export class DocumentAntibotError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new DocumentAntibotError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class DocumentFetchProxyError extends TransportableError {
+  constructor() {
+    const message = isSelfHosted()
+      ? "Failed to download the document file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
+      : "Failed to download the document file — Firecrawl could not establish a connection to the website while downloading it. Please retry your request, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
+
+    super("SCRAPE_DOCUMENT_FETCH_PROXY_ERROR", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new DocumentFetchProxyError();
     x.stack = data.stack;
     return x;
   }
@@ -727,7 +826,9 @@ export type ScrapeRetryLimitReason =
   | "feature_toggle"
   | "feature_removal"
   | "pdf_antibot"
-  | "document_antibot";
+  | "document_antibot"
+  | "pdf_fetch_proxy"
+  | "document_fetch_proxy";
 
 export type ScrapeRetryStats = {
   totalAttempts: number;
@@ -735,6 +836,8 @@ export type ScrapeRetryStats = {
   removeFeatureAttempts: number;
   pdfAntibotAttempts: number;
   documentAntibotAttempts: number;
+  pdfFetchProxyAttempts: number;
+  documentFetchProxyAttempts: number;
 };
 
 export class ScrapeRetryLimitError extends TransportableError {
@@ -760,7 +863,14 @@ export class ScrapeRetryLimitError extends TransportableError {
     _: ErrorCodes,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
-    const x = new ScrapeRetryLimitError(data.reason, data.stats);
+    // Counters added after this error first shipped default to 0: during a
+    // rolling deploy, workers on the older build serialize stats payloads
+    // without them, and the ScrapeRetryStats contract types them as numbers.
+    const x = new ScrapeRetryLimitError(data.reason, {
+      ...data.stats,
+      pdfFetchProxyAttempts: data.stats.pdfFetchProxyAttempts ?? 0,
+      documentFetchProxyAttempts: data.stats.documentFetchProxyAttempts ?? 0,
+    });
     x.stack = data.stack;
     return x;
   }

@@ -349,6 +349,8 @@ export async function browserCreateRaw(
     ttl?: number;
     activityTtl?: number;
     recordSession?: boolean;
+    streamWebView?: boolean;
+    profile?: { name: string; saveChanges?: boolean };
   },
   identity: Identity,
 ) {
@@ -396,10 +398,7 @@ export async function browserReplayPageRaw(
 ) {
   return await request(TEST_API_URL)
     .get(
-      "/v2/interact/" +
-        encodeURIComponent(sessionId) +
-        "/replay/" +
-        encodeURIComponent(pageId),
+      `/v2/interact/${encodeURIComponent(sessionId)}/replay/${encodeURIComponent(pageId)}`,
     )
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .send();
@@ -871,16 +870,21 @@ export async function creditUsage(
   return req.body.data;
 }
 
-export async function creditUsageHistorical(identity: Identity): Promise<{
+export async function creditUsageHistorical(
+  identity: Identity,
+  options: { byApiKey?: boolean } = {},
+): Promise<{
   success: boolean;
   periods: {
     startDate: string | null;
     endDate: string | null;
+    apiKey?: string;
     creditsUsed: number;
   }[];
 }> {
   const req = await request(TEST_API_URL)
     .get("/v2/team/credit-usage/historical")
+    .query(options.byApiKey ? { byApiKey: "true" } : {})
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json");
 

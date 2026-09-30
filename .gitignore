@@ -65,3 +65,5 @@ apps/api/src/lib/scrape-interact/*.md
 
 # stray test runner logs
 vitest.out
+
+tmp/

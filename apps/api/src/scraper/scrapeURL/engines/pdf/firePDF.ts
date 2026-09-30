@@ -6,8 +6,16 @@ import type { PDFProcessorResult } from "./types";
 import type { PDFMode } from "../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import { createPdfCacheKey } from "../../../../lib/gcs-pdf-cache";
-import { maybeSaveResult, tryGetCached } from "./fire-pdf/cache";
+import {
+  maybeSaveResult,
+  provenanceFromResponse,
+  tryGetCached,
+} from "./fire-pdf/cache";
 import { firePdfBlocksSchema, firePdfPagesSchema } from "./fire-pdf/schema";
+import {
+  buildFirePdfRequestMetadata,
+  type FirePdfSourceKind,
+} from "./fire-pdf/request-metadata";
 
 /**
  * Reconcile an existing page count with what fire-pdf reported.
@@ -48,6 +56,7 @@ export async function scrapePDFWithFirePDF(
   includePageMarkdown = false,
   includeBlocks = false,
   pageMarkers = false,
+  sourceKind: FirePdfSourceKind = "pdf",
 ): Promise<PDFProcessorResult> {
   const logger = meta.logger;
 
@@ -138,7 +147,7 @@ export async function scrapePDFWithFirePDF(
       ...(meta.internalOptions.crawlId && {
         crawl_id: meta.internalOptions.crawlId,
       }),
-      ...(zdr ? {} : { url: meta.rewrittenUrl ?? meta.url }),
+      ...buildFirePdfRequestMetadata(meta, sourceKind),
       pdf_sha256: pdfSha256,
       source: "firecrawl",
       zdr,
@@ -148,9 +157,15 @@ export async function scrapePDFWithFirePDF(
     schema: z.object({
       markdown: z.string(),
       failed_pages: z.array(z.number()).nullable(),
+      partial_pages: z.array(z.number()).nullable().optional(),
       pages_processed: z.number().optional(),
       pages: firePdfPagesSchema,
       blocks: firePdfBlocksSchema,
+      // fire-pdf's stamp (generation, build, stages, quality). Taken raw
+      // and parsed separately (provenanceFromResponse) so a stamp this
+      // build cannot read never fails the scrape; a missing stamp means an
+      // older fire-pdf build.
+      provenance: z.unknown().optional(),
       // Echo of an honored page_markers request. Markers are baked into
       // `markdown` and their absence is not reliably detectable there (a
       // single-page or fully-stitched document legitimately has none), so
@@ -179,6 +194,10 @@ export async function scrapePDFWithFirePDF(
     );
   }
   const pages = resp.pages_processed ?? pagesProcessed;
+  const provenance = provenanceFromResponse(resp.provenance, logger, {
+    scrapeId: meta.id,
+    cacheKey: pdfSha256,
+  });
 
   logger.info("FirePDF completed", {
     scrapeId: meta.id,
@@ -186,8 +205,14 @@ export async function scrapePDFWithFirePDF(
     durationMs,
     markdownLength: resp.markdown.length,
     failedPages: resp.failed_pages,
+    partialPages: resp.partial_pages ?? null,
     pagesProcessed: pages,
     perPageMs: pages ? Math.round(durationMs / pages) : undefined,
+    // The content-cache key and the producer, so a report can be turned
+    // into keys to purge and a result can be tied to a fire-pdf build.
+    cacheKey: pdfSha256,
+    generation: provenance?.generation ?? "unknown",
+    buildSha: provenance?.build_sha ?? "unknown",
   });
 
   const processorResult: PDFProcessorResult & { markdown: string } = {
@@ -208,6 +233,8 @@ export async function scrapePDFWithFirePDF(
       includeBlocks,
       pageMarkers,
       result: processorResult,
+      provenance,
+      failedPages: resp.failed_pages,
     });
   }
 

@@ -623,3 +623,83 @@ public class ModelsTests
         Assert.Equal(5, result.ResultsJudged);
     }
 }
+
+public class AgentListModelsTests
+{
+    private static readonly JsonSerializerOptions JsonOptions = FirecrawlHttpClient.JsonOptions;
+
+    [Fact]
+    public void AgentListResponse_DeserializesCorrectly()
+    {
+        var json = """
+        {
+            "success": true,
+            "agents": [
+                {
+                    "id": "018f3c5e-0000-7000-8000-000000000000",
+                    "createdAt": "2026-08-31T12:00:00.000Z",
+                    "targetHint": "https://example.com",
+                    "origin": "api",
+                    "integration": "my-app",
+                    "settings": { "hidden": false, "starred": true, "label": "prod" },
+                    "status": "completed",
+                    "options": {
+                        "urls": ["https://example.com"],
+                        "prompt": "find pricing",
+                        "model": "spark-1-pro",
+                        "effort": "high"
+                    }
+                }
+            ],
+            "next": "https://api.firecrawl.dev/v2/agent?before=1756600000000"
+        }
+        """;
+
+        var response = JsonSerializer.Deserialize<AgentListResponse>(json, JsonOptions);
+
+        Assert.NotNull(response);
+        Assert.True(response.Success);
+        Assert.Equal("https://api.firecrawl.dev/v2/agent?before=1756600000000", response.Next);
+        Assert.NotNull(response.Agents);
+        Assert.Single(response.Agents);
+
+        var agent = response.Agents[0];
+        Assert.Equal("018f3c5e-0000-7000-8000-000000000000", agent.Id);
+        Assert.Equal("2026-08-31T12:00:00.000Z", agent.CreatedAt);
+        Assert.Equal("https://example.com", agent.TargetHint);
+        Assert.Equal("api", agent.Origin);
+        Assert.Equal("my-app", agent.Integration);
+        Assert.Equal("completed", agent.Status);
+
+        Assert.NotNull(agent.Settings);
+        Assert.False(agent.Settings.Hidden);
+        Assert.True(agent.Settings.Starred);
+        Assert.Equal("prod", agent.Settings.Label);
+
+        Assert.NotNull(agent.Options);
+        Assert.Equal("find pricing", agent.Options.Prompt);
+        Assert.Equal("spark-1-pro", agent.Options.Model);
+        Assert.Equal("high", agent.Options.Effort);
+        Assert.NotNull(agent.Options.Urls);
+        Assert.Single(agent.Options.Urls);
+    }
+
+    [Fact]
+    public void AgentListResponse_DeserializesWithoutNext()
+    {
+        var json = """
+        {
+            "success": true,
+            "agents": []
+        }
+        """;
+
+        var response = JsonSerializer.Deserialize<AgentListResponse>(json, JsonOptions);
+
+        Assert.NotNull(response);
+        Assert.True(response.Success);
+        Assert.Null(response.Next);
+        Assert.NotNull(response.Agents);
+        Assert.Empty(response.Agents);
+    }
+}

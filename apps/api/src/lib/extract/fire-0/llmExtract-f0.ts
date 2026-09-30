@@ -193,7 +193,8 @@ export async function generateCompletions_F0({
   mode?: "object" | "no-object";
   metadata: {
     teamId: string;
-    functionId?: string;
+    // Required so every call is attributed in LLM telemetry.
+    functionId: string;
     extractId?: string;
     scrapeId?: string;
   };

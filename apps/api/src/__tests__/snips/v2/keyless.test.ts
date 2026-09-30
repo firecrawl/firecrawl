@@ -8,10 +8,12 @@ import {
   scrapeTimeout,
 } from "../lib";
 import { redisRateLimitClient } from "../../../services/rate-limiter";
+import { redisSpurClient } from "../../../services/spur-redis";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import { and, desc, eq, gt } from "drizzle-orm";
 import request from "supertest";
+import { decryptKeylessSignupToken } from "../../../lib/keyless-signup-link";
 
 // The keyless tier is disabled unless both limits are configured. The harness
 // passes the shell env through to the server, so we read the same env here and
@@ -37,6 +39,28 @@ async function flushKeylessBuckets() {
   if (keys.length > 0) {
     await redisRateLimitClient.del(...keys);
   }
+}
+
+// Every keyless prompt links to signup at firecrawl.dev/k/<token>, the
+// encrypted prompt, or the regular signup link (utm_source=keyless plus the
+// surface) when the server has no KEYLESS_SIGNUP_LINK_KEYS. The URL is always
+// followed by whitespace, never punctuation.
+const KEYLESS_SIGNUP_URL =
+  /https:\/\/(firecrawl\.dev\/k\/[0-9abcdefghjkmnpqrstvwxyz]{12}|www\.firecrawl\.dev\/signin\?utm_source=keyless&utm_medium=(api|mcp|cli))(?=\s)/;
+const KEYLESS_SIGNUP_URL_EXACT =
+  /^https:\/\/(firecrawl\.dev\/k\/[0-9abcdefghjkmnpqrstvwxyz]{12}|www\.firecrawl\.dev\/signin\?utm_source=keyless&utm_medium=(api|mcp|cli))$/;
+
+// The harness passes the shell env to the server, so the token can be checked
+// here when a key is set; without one the server sends the regular link.
+const SIGNUP_LINK_KEYS_SET = !!process.env.KEYLESS_SIGNUP_LINK_KEYS;
+
+/** Surface and reason a /k link carries; null for the regular signup link. */
+function signupLinkPrompt(url: unknown) {
+  const token = String(url).split("/k/")[1];
+  if (!token) return null;
+  const prompt = decryptKeylessSignupToken(token);
+  expect(prompt).not.toBeNull();
+  return { surface: prompt!.surface, reason: prompt!.reason };
 }
 
 // Recover the loopback IP the server keyed on, so we can seed its credit counter.
@@ -106,7 +130,15 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     expect(response.body.error).toContain(
       "not supported by the keyless free tier",
     );
-    expect(response.body.error).toContain("https://www.firecrawl.dev/signin");
+    expect(response.body.error).toMatch(KEYLESS_SIGNUP_URL);
+    expect(response.body.signup_url).toMatch(KEYLESS_SIGNUP_URL_EXACT);
+    expect(response.body.error).toContain(response.body.signup_url);
+    if (SIGNUP_LINK_KEYS_SET) {
+      expect(signupLinkPrompt(response.body.signup_url)).toEqual({
+        surface: "api",
+        reason: "unsupported_endpoint",
+      });
+    }
     expect(response.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
   });
 
@@ -157,10 +189,55 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
     expect(blocked.statusCode).toBe(429);
     expect(blocked.body.error).toContain("keyless free tier rate limit");
-    expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+    expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
     expect(blocked.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
     // Out of quota → emit the OAuth-discovery header so agents find the key flow.
     expect(blocked.headers["www-authenticate"]).toContain("resource_metadata");
+  });
+
+  it("gives an identity the same signup link on every prompt, and a separate one per surface (429)", async () => {
+    await request(TEST_API_URL)
+      .post("/v2/scrape")
+      .set("Content-Type", "application/json")
+      .send({ origin: "mcp" });
+    const ip = await currentKeylessIp();
+    await redisRateLimitClient.set(
+      `keyless_credits:${ip}`,
+      String(KEYLESS_CREDITS_PER_DAY),
+    );
+
+    const blockedAs = (body: Record<string, unknown>) =>
+      request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Content-Type", "application/json")
+        .send(body);
+    const mcpFirst = await blockedAs({ origin: "mcp-claude-code@3.24.1" });
+    const mcpSecond = await blockedAs({ origin: "mcp-claude-code@3.24.1" });
+    const cli = await blockedAs({ integration: "cli" });
+
+    for (const blocked of [mcpFirst, mcpSecond, cli]) {
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.body.signup_url).toMatch(KEYLESS_SIGNUP_URL_EXACT);
+      expect(blocked.body.error).toContain(blocked.body.signup_url);
+      // A /k link shows nothing about the caller or the surface.
+      if (String(blocked.body.signup_url).includes("/k/")) {
+        expect(blocked.body.signup_url).not.toContain("utm_");
+      }
+      expect(blocked.body.signup_url).not.toContain(ip);
+    }
+    expect(mcpSecond.body.signup_url).toBe(mcpFirst.body.signup_url);
+
+    if (SIGNUP_LINK_KEYS_SET) {
+      expect(cli.body.signup_url).not.toBe(mcpFirst.body.signup_url);
+      expect(signupLinkPrompt(mcpFirst.body.signup_url)).toEqual({
+        surface: "mcp",
+        reason: "limit",
+      });
+      expect(signupLinkPrompt(cli.body.signup_url)).toEqual({
+        surface: "cli",
+        reason: "limit",
+      });
+    }
   });
 
   it("enforces the daily credit cap with the credit signup message (429)", async () => {
@@ -182,7 +259,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
     expect(blocked.statusCode).toBe(429);
     expect(blocked.body.error).toContain("keyless free tier rate limit");
-    expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+    expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
     expect(blocked.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
   });
 
@@ -211,7 +288,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
     expect(blocked.statusCode).toBe(429);
     expect(blocked.body.error).toContain("keyless free tier rate limit");
-    expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+    expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
     expect(blocked.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
   });
 
@@ -254,7 +331,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.reason).toBe("credits");
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -299,7 +376,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.reason).toBe("credits");
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -341,7 +418,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -471,7 +548,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -510,7 +587,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -561,7 +638,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
         .send({ origin: "mcp" });
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -654,7 +731,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     scrapeTimeout,
   );
 
-  itIf(!!config.BROWSER_SERVICE_URL)(
+  itIf(!!config.HANGAR_URL)(
     "rejects projected keyless interact session creation before browser work (429)",
     async () => {
       const scrapeResponse = await request(TEST_API_URL)
@@ -684,7 +761,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -774,8 +851,7 @@ describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
 
   afterAll(async () => {
     delete config.USE_DB_AUTHENTICATION;
-    const keys = await redisRateLimitClient.keys("spur_context:*");
-    if (keys.length > 0) await redisRateLimitClient.del(...keys);
+    await redisSpurClient.del(spurKey("203.0.113.66"), spurKey("203.0.113.67"));
   });
 
   it(
@@ -783,11 +859,11 @@ describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
     async () => {
       const ip = "203.0.113.66";
       // Seed the Spur cache with a suspicious context (active VPN tunnel).
-      await redisRateLimitClient.set(
+      await redisSpurClient.set(
         spurKey(ip),
         JSON.stringify({
           ip,
-          tunnels: [{ type: "VPN", operator: "PROTON_VPN" }],
+          tunnels: [{ anonymous: true, type: "VPN", operator: "PROTON_VPN" }],
         }),
       );
 
@@ -805,6 +881,15 @@ describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
       expect(response.statusCode).toBe(403);
       expect(response.body.success).toBe(false);
       expect(response.body.error).toContain("suspicious");
+      expect(response.body.error).toMatch(KEYLESS_SIGNUP_URL);
+      expect(response.body.signup_url).toMatch(KEYLESS_SIGNUP_URL_EXACT);
+      if (SIGNUP_LINK_KEYS_SET) {
+        // Relayed with the proxy secret, so the prompt reached the user via MCP.
+        expect(signupLinkPrompt(response.body.signup_url)).toEqual({
+          surface: "mcp",
+          reason: "suspicious_ip",
+        });
+      }
       // Out of the keyless path → emit the OAuth-discovery header.
       expect(response.headers["www-authenticate"]).toContain(
         "resource_metadata",
@@ -818,7 +903,7 @@ describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
     async () => {
       const ip = "203.0.113.67";
       // Seed a clean context: datacenter alone is not "suspicious".
-      await redisRateLimitClient.set(
+      await redisSpurClient.set(
         spurKey(ip),
         JSON.stringify({ ip, infrastructure: "DATACENTER", risks: [] }),
       );

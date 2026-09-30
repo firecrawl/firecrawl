@@ -19,6 +19,52 @@ export function isIPPrivate(address: string): boolean {
   return addr.range() !== "unicast";
 }
 
+/**
+ * Reject private IP literals and localhost names before dispatch, on the
+ * initial request and every redirect hop. With PROXY_SERVER set, the socket
+ * check below never sees the destination, so this is the only local guard.
+ * Other hostnames are resolved proxy-side and must be filtered by the proxy.
+ */
+export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeInterceptor =
+  dispatch => (options, handler) => {
+    if (config.ALLOW_LOCAL_WEBHOOKS === true || options.origin === undefined) {
+      return dispatch(options, handler);
+    }
+
+    let privateTarget = false;
+
+    try {
+      const origin =
+        options.origin instanceof URL
+          ? options.origin
+          : new URL(options.origin.toString());
+      const hostname = origin.hostname.replace(/^\[|\]$/g, "");
+      privateTarget =
+        isIPPrivate(hostname) || /(^|\.)localhost\.?$/.test(hostname);
+    } catch {
+      // Let Undici report malformed origins through its normal path.
+    }
+
+    if (privateTarget) {
+      const error = new InsecureConnectionError();
+      const compatibleHandler = handler as typeof handler & {
+        onResponseError?: (controller: unknown, error: Error) => void;
+      };
+
+      if (typeof compatibleHandler.onError === "function") {
+        compatibleHandler.onError(error);
+      } else if (typeof compatibleHandler.onResponseError === "function") {
+        compatibleHandler.onResponseError(null, error);
+      } else {
+        throw error;
+      }
+
+      return true;
+    }
+
+    return dispatch(options, handler);
+  };
+
 function createBaseAgent(skipTlsVerification: boolean) {
   const baseAgent = config.PROXY_SERVER
     ? new undici.ProxyAgent({
@@ -39,7 +85,10 @@ function createBaseAgent(skipTlsVerification: boolean) {
       });
 
   // Add redirect interceptor for handling redirects
-  return baseAgent.compose(interceptors.redirect({ maxRedirections: 5000 }));
+  return baseAgent.compose(
+    rejectPrivateIPLiteralTargets,
+    interceptors.redirect({ maxRedirections: 5000 }),
+  );
 }
 
 function attachSecurityCheck(agent: undici.Dispatcher) {

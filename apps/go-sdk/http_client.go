@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -61,9 +62,45 @@ func (h *httpClient) get(ctx context.Context, path string) (json.RawMessage, err
 	return h.doJSON(ctx, "GET", url, nil, nil)
 }
 
-// getAbsolute sends a GET request to an absolute URL (for pagination cursors).
+// getAbsolute sends a GET request to a pagination cursor URL, pinned to the
+// API origin by pinToAPIOrigin.
 func (h *httpClient) getAbsolute(ctx context.Context, absoluteURL string) (json.RawMessage, error) {
-	return h.doJSON(ctx, "GET", absoluteURL, nil, nil)
+	pinned, err := pinToAPIOrigin(h.baseURL, absoluteURL)
+	if err != nil {
+		return nil, &FirecrawlError{Message: err.Error()}
+	}
+	return h.doJSON(ctx, "GET", pinned, nil, nil)
+}
+
+// pinToAPIOrigin rewrites an absolute or protocol-relative URL onto apiURL's
+// scheme and host, keeping its path and query, so credentials never leave the
+// API origin. Relative URLs are resolved against apiURL. It returns an error if
+// apiURL is not an absolute URL.
+func pinToAPIOrigin(apiURL, rawURL string) (string, error) {
+	base, err := url.Parse(apiURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return "", fmt.Errorf("api_url must be an absolute URL, got %q", apiURL)
+	}
+	ref, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid pagination URL %q: %v", rawURL, err)
+	}
+	ref.Fragment = ""
+	ref.RawFragment = ""
+	if ref.Scheme == "" && ref.Host == "" {
+		if !strings.HasSuffix(base.Path, "/") {
+			base.Path += "/"
+			if base.RawPath != "" {
+				base.RawPath += "/"
+			}
+		}
+		return base.ResolveReference(ref).String(), nil
+	}
+	pinned := url.URL{Scheme: base.Scheme, Host: base.Host, Path: ref.Path, RawPath: ref.RawPath, RawQuery: ref.RawQuery}
+	if pinned.Path == "" {
+		pinned.Path = "/"
+	}
+	return pinned.String(), nil
 }
 
 // delete sends a DELETE request.
@@ -165,24 +202,24 @@ func (h *httpClient) postMultipart(
 			return json.RawMessage(respBody), nil
 		}
 
-		errMsg, errCode := extractError(respBody, resp.StatusCode)
+		errMsg, errCode, requiresAction := extractError(respBody, resp.StatusCode)
 
 		switch resp.StatusCode {
 		case 401:
 			return nil, &AuthenticationError{
-				FirecrawlError: FirecrawlError{StatusCode: 401, ErrorCode: errCode, Message: errMsg},
+				FirecrawlError: FirecrawlError{StatusCode: 401, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction},
 			}
 		case 429:
 			return nil, &RateLimitError{
-				FirecrawlError: FirecrawlError{StatusCode: 429, ErrorCode: errCode, Message: errMsg},
+				FirecrawlError: FirecrawlError{StatusCode: 429, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction},
 			}
 		}
 
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 408 && resp.StatusCode != 409 {
-			return nil, &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg}
+			return nil, &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}
 		}
 
-		lastErr = &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg}
+		lastErr = &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}
 	}
 
 	if lastErr != nil {
@@ -259,26 +296,26 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 		}
 
 		// Parse error details from the response.
-		errMsg, errCode := extractError(respBody, resp.StatusCode)
+		errMsg, errCode, requiresAction := extractError(respBody, resp.StatusCode)
 
 		// Non-retryable client errors.
 		switch resp.StatusCode {
 		case 401:
 			return nil, &AuthenticationError{
-				FirecrawlError: FirecrawlError{StatusCode: 401, ErrorCode: errCode, Message: errMsg},
+				FirecrawlError: FirecrawlError{StatusCode: 401, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction},
 			}
 		case 429:
 			return nil, &RateLimitError{
-				FirecrawlError: FirecrawlError{StatusCode: 429, ErrorCode: errCode, Message: errMsg},
+				FirecrawlError: FirecrawlError{StatusCode: 429, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction},
 			}
 		}
 
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 408 && resp.StatusCode != 409 {
-			return nil, &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg}
+			return nil, &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}
 		}
 
 		// Retryable: 408, 409, 5xx
-		lastErr = &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg}
+		lastErr = &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg, RequiresAction: requiresAction}
 	}
 
 	if lastErr != nil {
@@ -300,11 +337,11 @@ func (h *httpClient) sleepBackoff(ctx context.Context, attempt int) error {
 	}
 }
 
-// extractError parses an API error response to get the message and error code.
-func extractError(body []byte, statusCode int) (string, string) {
+// extractError parses an API error response to get the message, error code, and any required action.
+func extractError(body []byte, statusCode int) (string, string, *RequiresAction) {
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return fmt.Sprintf("HTTP %d error", statusCode), ""
+		return fmt.Sprintf("HTTP %d error", statusCode), "", nil
 	}
 
 	msg := fmt.Sprintf("HTTP %d error", statusCode)
@@ -319,5 +356,16 @@ func extractError(body []byte, statusCode int) (string, string) {
 		errCode = fmt.Sprintf("%v", v)
 	}
 
-	return msg, errCode
+	var requiresAction *RequiresAction
+	if raw, ok := parsed["requiresAction"].(map[string]interface{}); ok {
+		encoded, err := json.Marshal(raw)
+		if err == nil {
+			var action RequiresAction
+			if json.Unmarshal(encoded, &action) == nil && action.Type != "" {
+				requiresAction = &action
+			}
+		}
+	}
+
+	return msg, errCode, requiresAction
 }

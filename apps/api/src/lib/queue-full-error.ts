@@ -1,5 +1,4 @@
 const QUEUE_FULL_ERROR_NAME = "QueueFullError";
-const QUEUE_FULL_ERROR_MESSAGE_PREFIX = "Queue limit reached:";
 
 export class QueueFullError extends Error {
   statusCode = 429;
@@ -10,42 +9,4 @@ export class QueueFullError extends Error {
     );
     this.name = QUEUE_FULL_ERROR_NAME;
   }
-}
-
-function getStringField(
-  error: Record<string, unknown>,
-  fields: string[],
-): string {
-  for (const field of fields) {
-    if (field in error && error[field] !== undefined && error[field] !== null) {
-      return String(error[field]);
-    }
-  }
-
-  return "";
-}
-
-export function isQueueFullError(error: unknown): boolean {
-  const objectError =
-    error && typeof error === "object"
-      ? (error as Record<string, unknown>)
-      : null;
-
-  const errorName = objectError
-    ? getStringField(objectError, ["name", "type"])
-    : "";
-  if (errorName === QUEUE_FULL_ERROR_NAME) {
-    return true;
-  }
-
-  const errorMessage =
-    error instanceof Error
-      ? error.message
-      : typeof error === "string"
-        ? error
-        : objectError
-          ? getStringField(objectError, ["message", "value"])
-          : "";
-
-  return errorMessage.startsWith(QUEUE_FULL_ERROR_MESSAGE_PREFIX);
 }

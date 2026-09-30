@@ -106,6 +106,74 @@ pub struct AgentStatusResponse {
     pub credits_used: Option<u32>,
 }
 
+/// Per-session settings attached to an agent run.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentListItemSettings {
+    /// Whether the run is hidden.
+    pub hidden: bool,
+    /// Whether the run is starred.
+    pub starred: bool,
+    /// User-assigned label for the run.
+    pub label: Option<String>,
+}
+
+/// Options an agent run was started with.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentListItemOptions {
+    /// URLs the agent was constrained to.
+    pub urls: Option<Vec<String>>,
+    /// The prompt describing what the agent should accomplish.
+    pub prompt: String,
+    /// JSON schema for the expected output structure.
+    pub schema: Option<Value>,
+    /// Agent model the run used.
+    pub model: Option<AgentModel>,
+    /// Reasoning effort the run used, if one was requested.
+    pub effort: Option<AgentEffort>,
+}
+
+/// A single agent run as returned by the agent list endpoint.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentListItem {
+    /// The agent task ID.
+    pub id: String,
+    /// When the run was created (ISO 8601).
+    pub created_at: String,
+    /// Short hint describing the run's target.
+    pub target_hint: String,
+    /// Origin of the run (e.g. "api").
+    pub origin: String,
+    /// Integration identifier, if any.
+    pub integration: Option<String>,
+    /// Per-session settings for the run.
+    pub settings: AgentListItemSettings,
+    /// Current status of the run.
+    pub status: AgentStatus,
+    /// Options the run was started with.
+    pub options: Option<AgentListItemOptions>,
+}
+
+/// Response from listing agent runs.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentListResponse {
+    /// Whether the request was successful.
+    pub success: bool,
+    /// The agent runs, most recent first.
+    pub agents: Option<Vec<AgentListItem>>,
+    /// Absolute URL of the next page; only present when more pages exist.
+    pub next: Option<String>,
+    /// Error message if the request failed.
+    pub error: Option<String>,
+}
+
 // Agent trace types (GET /v2/agent/:id/trace). These mirror the agent
 // service's canonical event schema (schemaVersion 1): usage.recorded events
 // are withheld server-side and agent.started carries no model name.
@@ -486,6 +554,58 @@ impl Client {
 
         self.handle_response(response, format!("agent status {}", id.as_ref()))
             .await
+    }
+
+    /// Lists agent runs, most recent first.
+    ///
+    /// Pages are fixed at 20 runs. To fetch the next page, pass the `before`
+    /// value from the previous page's `next` URL. This method does not
+    /// auto-paginate.
+    ///
+    /// # Arguments
+    ///
+    /// * `before` - Only return agent runs created before this unix
+    ///   millisecond timestamp.
+    ///
+    /// # Returns
+    ///
+    /// The list of agent runs and an optional next page URL.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use firecrawl::Client;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let client = Client::new("your-api-key")?;
+    ///
+    ///     let page = client.list_agents(None).await?;
+    ///     for run in page.agents.unwrap_or_default() {
+    ///         println!("{}: {:?}", run.id, run.status);
+    ///     }
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn list_agents(
+        &self,
+        before: Option<u64>,
+    ) -> Result<AgentListResponse, FirecrawlError> {
+        let path = match before {
+            Some(before) => format!("/agent?before={}", before),
+            None => "/agent".to_string(),
+        };
+
+        let response = self
+            .client
+            .get(self.url(&path))
+            .headers(self.prepare_headers(None))
+            .send()
+            .await
+            .map_err(|e| FirecrawlError::HttpError("Listing agents".to_string(), e))?;
+
+        self.handle_response(response, "list agents").await
     }
 
     /// Gets the execution trace of an agent task (spark-2 runs only).
@@ -1140,6 +1260,82 @@ mod tests {
         assert_eq!(status.status, AgentStatus::Completed);
         assert!(status.data.is_some());
         assert_eq!(status.credits_used, Some(5));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_agents_with_mock() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/agent")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "agents": [{
+                        "id": "agent-123",
+                        "createdAt": "2026-08-31T12:00:00.000Z",
+                        "targetHint": "https://example.com",
+                        "origin": "api",
+                        "settings": {"hidden": false, "starred": true, "label": "prod"},
+                        "status": "completed",
+                        "options": {
+                            "urls": ["https://example.com"],
+                            "prompt": "find pricing",
+                            "model": "spark-1-pro"
+                        }
+                    }]
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let page = client.list_agents(None).await.unwrap();
+
+        assert!(page.success);
+        assert!(page.next.is_none());
+        let agents = page.agents.unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].id, "agent-123");
+        assert_eq!(agents[0].status, AgentStatus::Completed);
+        assert!(agents[0].settings.starred);
+        assert_eq!(agents[0].settings.label.as_deref(), Some("prod"));
+        let options = agents[0].options.as_ref().unwrap();
+        assert_eq!(options.prompt, "find pricing");
+        assert_eq!(options.model, Some(AgentModel::Spark1Pro));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_agents_with_before() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/agent")
+            .match_query(Matcher::UrlEncoded("before".into(), "1756600000000".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "agents": [],
+                    "next": "https://api.firecrawl.dev/v2/agent?before=1756600000000"
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let page = client.list_agents(Some(1756600000000)).await.unwrap();
+
+        assert!(page.success);
+        assert_eq!(
+            page.next.as_deref(),
+            Some("https://api.firecrawl.dev/v2/agent?before=1756600000000")
+        );
         mock.assert();
     }
 

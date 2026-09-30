@@ -1,5 +1,10 @@
+import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
+
 export type ErrorCodes =
   | "THIRD_PARTY_DATA_TERMS_REQUIRED"
+  | "THIRD_PARTY_DATA_NOT_FOUND"
+  | "THIRD_PARTY_DATA_NOT_ENABLED"
+  | "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED"
   | "SCRAPE_TIMEOUT"
   | "MAP_TIMEOUT"
   | "UNKNOWN_ERROR"
@@ -15,8 +20,10 @@ export type ErrorCodes =
   | "SCRAPE_DNS_RESOLUTION_ERROR"
   | "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR"
   | "SCRAPE_PDF_ANTIBOT_ERROR"
+  | "SCRAPE_PDF_FETCH_PROXY_ERROR"
   | "SCRAPE_PDF_OCR_REQUIRED"
   | "SCRAPE_DOCUMENT_ANTIBOT_ERROR"
+  | "SCRAPE_DOCUMENT_FETCH_PROXY_ERROR"
   | "SCRAPE_UNSUPPORTED_FILE_ERROR"
   | "SCRAPE_ACTION_ERROR"
   | "SCRAPE_RACED_REDIRECT_ERROR"
@@ -34,12 +41,22 @@ export type ErrorCodes =
   | "SCRAPE_X_TWITTER_CONFIGURATION_ERROR"
   | "PARSE_UNSUPPORTED_OPTIONS"
   | "CRAWL_DENIAL"
+  | "UNSUPPORTED_SITE"
   | "MAP_FAILED"
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST"
+  | "CONCURRENCY_QUEUE_TIMEOUT"
+  | "SAFE_MODE_BLOCKED"
+  | "SCRAPE_SITE_RESTRICTION_BLOCKED"
   // Threat protection (enterprise domain risk blocking). Lowercase by design:
   // this is the documented, user-facing error code for the feature.
-  | "unsafe_domain_blocked";
+  | "unsafe_domain_blocked"
+  // Agent threads. Lowercase for the same reason as unsafe_domain_blocked.
+  | "thread_not_found"
+  | "thread_busy"
+  | "thread_expired"
+  | "threads_disabled"
+  | "exchange_not_enabled";
 
 export class TransportableError extends Error {
   public readonly code: ErrorCodes;
@@ -205,6 +222,27 @@ export class ScrapeJobTimeoutError extends TransportableError {
   }
 }
 
+export class ConcurrencyQueueTimeoutError extends TransportableError {
+  constructor(
+    message: string = "The operation timed out while waiting for a concurrency slot to become available. This means that your requests are exhausting your concurrent browsers limit. Consider using batch endpoints which wait for concurrency slots to become available indefinitely, or consider upgrading your plan to incrase your concurrency limit at https://firecrawl.dev/pricing.",
+  ) {
+    super("CONCURRENCY_QUEUE_TIMEOUT", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ConcurrencyQueueTimeoutError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class UnknownError extends TransportableError {
   constructor(inner: unknown) {
     const innerMessage =
@@ -338,6 +376,25 @@ export class CrawlDenialError extends TransportableError {
   }
 }
 
+export class UnsupportedSiteError extends TransportableError {
+  constructor() {
+    super("UNSUPPORTED_SITE", UNSUPPORTED_SITE_MESSAGE);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new UnsupportedSiteError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class ActionsNotSupportedError extends TransportableError {
   constructor(message: string) {
     super("SCRAPE_ACTIONS_NOT_SUPPORTED", message);
@@ -359,7 +416,7 @@ export class ActionsNotSupportedError extends TransportableError {
 
 /**
  * Error thrown when a job is cancelled (expected flow control, not a real error)
- * This should not be sent to Sentry as it's expected behavior when a crawl/batch is cancelled
+ * This is expected behavior when a crawl/batch is cancelled
  */
 export class JobCancelledError extends Error {
   constructor() {

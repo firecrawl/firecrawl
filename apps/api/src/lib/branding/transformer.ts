@@ -2,6 +2,7 @@ import { processRawBranding } from "./processor";
 import { config } from "../../config";
 import { BrandingProfile } from "../../types/branding";
 import { enhanceBrandingWithLLM } from "./llm";
+import { CostLimitExceededError } from "../cost-tracking";
 import { Meta } from "../../scraper/scrapeURL";
 import { Document } from "../../controllers/v2/types";
 import { BrandingScriptReturn, ButtonSnapshot } from "./types";
@@ -210,6 +211,7 @@ export async function brandingTransformer(
       scrapeId: meta.id,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       teamFlags: meta.internalOptions.teamFlags,
+      costTracking: meta.costTracking,
       logger: meta.logger,
     });
 
@@ -414,6 +416,10 @@ export async function brandingTransformer(
       types: inputSnapshots.map((i: any) => i.type).slice(0, 10),
     });
   } catch (error) {
+    if (error instanceof CostLimitExceededError) {
+      throw error;
+    }
+
     meta.logger.error(
       "LLM branding enhancement failed, using JS analysis only",
       { error },

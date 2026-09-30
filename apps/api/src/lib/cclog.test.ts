@@ -30,6 +30,8 @@ function sampleKey(at: Date): string {
 
 class FakeRedis {
   private hashes = new Map<string, Record<string, string>>();
+  hsetCalls: Array<{ key: string; fields: number }> = [];
+  execError: Error | null = null;
 
   constructor(
     private readonly keys: string[],
@@ -38,6 +40,10 @@ class FakeRedis {
 
   seedHash(key: string, values: Record<string, string>) {
     this.hashes.set(key, { ...values });
+  }
+
+  getHash(key: string) {
+    return this.hashes.get(key) ?? {};
   }
 
   async scan() {
@@ -55,6 +61,8 @@ class FakeRedis {
   }
 
   pipeline() {
+    const self = this;
+    let commands = 0;
     return {
       hset: (
         key: string,
@@ -65,10 +73,18 @@ class FakeRedis {
           typeof valuesOrField === "string"
             ? { [valuesOrField]: value ?? "" }
             : valuesOrField;
-        this.hashes.set(key, { ...(this.hashes.get(key) ?? {}), ...values });
+        self.hsetCalls.push({ key, fields: Object.keys(values).length });
+        self.hashes.set(key, { ...(self.hashes.get(key) ?? {}), ...values });
+        commands++;
       },
-      expire: () => {},
-      exec: async () => [],
+      expire: () => {
+        commands++;
+      },
+      exec: async (): Promise<[Error | null, unknown][]> =>
+        Array.from({ length: commands }, (_, i) => [
+          i === 0 ? self.execError : null,
+          0,
+        ]),
     };
   }
 }
@@ -178,5 +194,53 @@ describe("cclog", () => {
       { throwOnError: true },
     );
     expect(result.insertedRows).toBe(0);
+  });
+
+  it("saves samples with more teams than fit in a single HSET in chunks", async () => {
+    // Dragonfly rejects commands with > 2^16 arguments, so a single HSET
+    // breaks once a sample holds ~32k+ teams (production incident: aggregate
+    // inserts silently logged rows=0 while samples never landed).
+    const teamCount = 35491;
+    const keys: string[] = [];
+    const activeCounts: Record<string, number> = {};
+    for (let i = 0; i < teamCount; i++) {
+      const key = `concurrency-limiter:team-${i}`;
+      keys.push(key);
+      activeCounts[key] = 1;
+    }
+
+    const at = new Date("2026-06-26T12:20:15.000Z");
+    const redis = new FakeRedis(keys, activeCounts);
+
+    const result = await runCclogTick(redis as any, at);
+
+    expect(result.sampledTeams).toBe(teamCount);
+
+    const saved = redis.getHash(
+      sampleKey(new Date("2026-06-26T12:20:00.000Z")),
+    );
+    expect(Object.keys(saved)).toHaveLength(teamCount);
+
+    const sampleHsets = redis.hsetCalls.filter(
+      x => x.key === sampleKey(new Date("2026-06-26T12:20:00.000Z")),
+    );
+    expect(sampleHsets.length).toBeGreaterThan(1);
+    for (const call of sampleHsets) {
+      // 2 args (HSET + key) + 2 per field must stay under 2^16
+      expect(2 + call.fields * 2).toBeLessThanOrEqual(2 ** 16);
+    }
+  });
+
+  it("fails loudly when the sample save pipeline errors", async () => {
+    const at = new Date("2026-06-26T12:21:15.000Z");
+    const redis = new FakeRedis(["concurrency-limiter:team-a"], {
+      "concurrency-limiter:team-a": 3,
+    });
+    redis.execError = new Error("ERR Protocol error: invalid multibulk length");
+
+    await expect(runCclogTick(redis as any, at)).rejects.toThrow(
+      "Failed to save cclog minute sample",
+    );
+    expect(chInsertMock).not.toHaveBeenCalled();
   });
 });

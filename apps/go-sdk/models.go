@@ -28,6 +28,9 @@ type Document struct {
 	Pages []PdfPage `json:"pages,omitempty"`
 	// Blocks is typed PDF layout data, present only when parsers[].blocks is true.
 	Blocks []PdfPageBlocks `json:"blocks,omitempty"`
+	// Tools contains domain tools discovered during the scrape, present only
+	// when domainTools is enabled.
+	Tools []DiscoveredTool `json:"tools,omitempty"`
 }
 
 // PDFParser configures PDF parsing. Use in ScrapeOptions.Parsers / ParseOptions.Parsers.
@@ -604,9 +607,53 @@ type GetMonitorCheckOptions struct {
 
 // SearchData represents the result of a search request.
 type SearchData struct {
-	Web    []map[string]interface{} `json:"web,omitempty"`
-	News   []map[string]interface{} `json:"news,omitempty"`
-	Images []map[string]interface{} `json:"images,omitempty"`
+	Warning string                   `json:"warning,omitempty"`
+	Web     []map[string]interface{} `json:"web,omitempty"`
+	News    []map[string]interface{} `json:"news,omitempty"`
+	Images  []map[string]interface{} `json:"images,omitempty"`
+	Tools   []DiscoveredTool         `json:"tools,omitempty"`
+}
+
+type AlexandriaCall struct {
+	Provider   string                 `json:"provider"`
+	Capability string                 `json:"capability"`
+	Options    map[string]interface{} `json:"options,omitempty"`
+}
+
+type AlexandriaOptions struct {
+	RequestID   string  `json:"-"`
+	Timeout     *int    `json:"timeout,omitempty"`
+	Integration *string `json:"integration,omitempty"`
+	Origin      *string `json:"origin,omitempty"`
+}
+
+type AlexandriaScrapeError struct {
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Status   *int   `json:"status,omitempty"`
+	ChargeID string `json:"chargeId,omitempty"`
+}
+
+type AlexandriaScrapeResult struct {
+	Provider       string                 `json:"provider,omitempty"`
+	Capability     string                 `json:"capability,omitempty"`
+	CreditsCost    *int                   `json:"creditsCost,omitempty"`
+	Data           interface{}            `json:"data,omitempty"`
+	Records        *int                   `json:"records,omitempty"`
+	UpstreamStatus *int                   `json:"upstreamStatus,omitempty"`
+	RecordedAt     string                 `json:"recordedAt,omitempty"`
+	Error          *AlexandriaScrapeError `json:"error,omitempty"`
+}
+
+func (r *AlexandriaScrapeResult) Failed() bool {
+	return r.Error != nil
+}
+
+type AlexandriaScrapeData struct {
+	RequestID   string                   `json:"requestId"`
+	ScrapeID    string                   `json:"scrapeId"`
+	Alexandria  []AlexandriaScrapeResult `json:"alexandria"`
+	CreditsCost int                      `json:"creditsCost"`
 }
 
 // AgentResponse is returned when starting an async agent task.
@@ -721,6 +768,52 @@ type AgentSnapshotResponse struct {
 	Error      string `json:"error,omitempty"`
 }
 
+// ListAgentsOptions controls agent list pagination.
+type ListAgentsOptions struct {
+	// Before only returns agent runs created before this unix millisecond
+	// timestamp.
+	Before *int64
+}
+
+// AgentListItemSettings represents per-session settings attached to an agent
+// run.
+type AgentListItemSettings struct {
+	Hidden  bool   `json:"hidden"`
+	Starred bool   `json:"starred"`
+	Label   string `json:"label,omitempty"`
+}
+
+// AgentListItemOptions represents the options an agent run was started with.
+type AgentListItemOptions struct {
+	URLs   []string               `json:"urls,omitempty"`
+	Prompt string                 `json:"prompt,omitempty"`
+	Schema map[string]interface{} `json:"schema,omitempty"`
+	Model  string                 `json:"model,omitempty"`
+	Effort string                 `json:"effort,omitempty"`
+}
+
+// AgentListItem represents a single agent run in the agent list.
+type AgentListItem struct {
+	ID          string                `json:"id"`
+	CreatedAt   string                `json:"createdAt"`
+	TargetHint  string                `json:"targetHint"`
+	Origin      string                `json:"origin"`
+	Integration string                `json:"integration,omitempty"`
+	Settings    AgentListItemSettings `json:"settings"`
+	Status      string                `json:"status"`
+	Options     *AgentListItemOptions `json:"options,omitempty"`
+}
+
+// AgentListResponse is returned when listing agent runs.
+type AgentListResponse struct {
+	Success bool            `json:"success"`
+	Agents  []AgentListItem `json:"agents,omitempty"`
+	// Next is the absolute URL of the next page, only present when more pages
+	// exist.
+	Next  string `json:"next,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
 // BrowserCreateResponse is returned when creating a browser session.
 type BrowserCreateResponse struct {
 	Success     bool   `json:"success"`
@@ -780,4 +873,49 @@ type CreditUsage struct {
 	PlanCredits        int    `json:"planCredits"`
 	BillingPeriodStart string `json:"billingPeriodStart,omitempty"`
 	BillingPeriodEnd   string `json:"billingPeriodEnd,omitempty"`
+}
+
+// DiscoveredTool includes the contract and its semantic/domain provenance.
+type DiscoveredTool struct {
+	ID            string                   `json:"id,omitempty"`
+	Provider      string                   `json:"provider"`
+	Capability    string                   `json:"capability"`
+	Name          string                   `json:"name"`
+	Description   string                   `json:"description"`
+	CreditsCost   int                      `json:"creditsCost"`
+	PerRecord     bool                     `json:"perRecord"`
+	Options       []map[string]interface{} `json:"options"`
+	RequiresOneOf [][]string               `json:"requiresOneOf,omitempty"`
+	Response      map[string]interface{}   `json:"response,omitempty"`
+	Examples      map[string]string        `json:"examples,omitempty"`
+	Example       map[string]interface{}   `json:"example,omitempty"`
+	Label         string                   `json:"label,omitempty"`
+	WhenToUse     string                   `json:"whenToUse,omitempty"`
+	Returns       interface{}              `json:"returns,omitempty"`
+	Discovery     interface{}              `json:"discovery,omitempty"`
+	Attribution   interface{}              `json:"attribution,omitempty"`
+	MatchedBy     []string                 `json:"matchedBy,omitempty"`
+	MatchedURLs   []string                 `json:"matchedUrls,omitempty"`
+	Concept       string                   `json:"concept,omitempty"`
+	Cohorts       []string                 `json:"cohorts,omitempty"`
+	Similarity    *float64                 `json:"similarity,omitempty"`
+}
+
+type FindToolsOptions struct {
+	URLs         []string `json:"urls,omitempty"`
+	Providers    []string `json:"providers,omitempty"`
+	Categories   []string `json:"categories,omitempty"`
+	Groups       []string `json:"groups,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	Level        string   `json:"level,omitempty"`
+	Expand       []string `json:"expand,omitempty"`
+	Limit        *int     `json:"limit,omitempty"`
+	Offset       *int     `json:"offset,omitempty"`
+}
+
+type FindToolsData struct {
+	Level string                   `json:"level"`
+	Items []map[string]interface{} `json:"items"`
+	Total int                      `json:"total"`
+	Next  *AlexandriaCall          `json:"next"`
 }

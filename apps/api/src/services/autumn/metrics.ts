@@ -26,6 +26,39 @@ export const firebillTrackTotal = new Counter({
   labelNames: ["operation", "outcome"] as const,
 });
 
+/**
+ * **Who failed, when a firebill call did not produce a usable answer.**
+ *
+ * A separate series rather than a `cause` label on the counters above, and that
+ * is the whole point. `increase()` evaluates per series, so
+ * `increase(firecrawl_firebill_check_total{outcome="unavailable"}[15m]) > 5` —
+ * the live `FirebillCheckUnavailable` rule — would silently start comparing 5
+ * against each cause on its own: two causes sitting at 4 apiece would be 8
+ * unanswered credit checks that nobody is paged about. The counters those rules
+ * read stay byte-for-byte what they were; this one adds the detail beside them.
+ *
+ * - `timeout` / `connection` — the request never completed. **A client-side or
+ *   transport failure, not firebill**: it never answered, and its own
+ *   server-side p99 may be fine (73ms, while ~1,800 of these were logged per
+ *   30h against a 5s client deadline).
+ * - `non_ok` — firebill answered, with a status we cannot use.
+ * - `unusable` — firebill answered, and the answer is not one we can read.
+ *   Never proof that anything was lost.
+ * - `refused` — firebill answered `success: false`: on a track it did not take
+ *   the event, on a check it declined to answer.
+ * - `ambiguous` — firebill answered "I do not know" (a 504, or
+ *   `ambiguous: true`).
+ *
+ * Only incremented on failure, so a healthy service produces no series at all.
+ */
+export const firebillFailureCauseTotal = new Counter({
+  name: "firecrawl_firebill_failure_cause_total",
+  help: "Why a firebill call did not produce a usable answer",
+  // operation: track|refund|check|lock|finalize
+  // cause: timeout|connection|non_ok|unusable|refused|ambiguous
+  labelNames: ["operation", "cause"] as const,
+});
+
 /** Retries of a firebill call that answered `false` or threw. */
 export const firebillRetryTotal = new Counter({
   name: "firecrawl_firebill_retry_total",
@@ -47,4 +80,28 @@ export const firebillCheckTotal = new Counter({
   name: "firecrawl_firebill_check_total",
   help: "Outcomes of credit checks sent to firebill",
   labelNames: ["outcome"] as const, // allowed | denied | unavailable
+});
+
+/**
+ * Entities the request path had to create for itself, by the method that did
+ * it. Provisioning is meant to happen at team creation, so anything counted
+ * here is the back-fill still being needed, and is what the per-request
+ * provisioning prefix is buying. A 409 is not counted: the entity was already
+ * there.
+ */
+export const autumnEntityCreatedInlineTotal = new Counter({
+  name: "firecrawl_autumn_entity_created_inline_total",
+  help: "Autumn entities created inline on a billing path",
+  labelNames: ["path"] as const, // the method that created it
+});
+
+/**
+ * Calls to `customers.get_or_create` attempted against Autumn, counted before
+ * the response so a failure counts too. Deliberately not "created": the
+ * endpoint answers 200 either way and autumn-js parses only the customer body,
+ * so nothing in the response tells a creation from a get.
+ */
+export const autumnCustomerGetOrCreateTotal = new Counter({
+  name: "firecrawl_autumn_customer_get_or_create_total",
+  help: "Autumn customers.get_or_create calls attempted from a billing path",
 });

@@ -695,6 +695,35 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
   );
 
   it.concurrent(
+    "returns historical credit usage by API key",
+    async () => {
+      const identity = await idmux({
+        name: "billing/returns historical credit usage by API key",
+        credits: 100,
+      });
+
+      const result = await creditUsageHistorical(identity, { byApiKey: true });
+
+      expect(result.success).toBe(true);
+      expect(Array.isArray(result.periods)).toBe(true);
+
+      for (const period of result.periods) {
+        expect(typeof period.apiKey).toBe("string");
+        expect(typeof period.creditsUsed).toBe("number");
+        expect(period.creditsUsed).toBeGreaterThanOrEqual(0);
+        expect(Number.isNaN(Date.parse(period.startDate ?? ""))).toBe(false);
+      }
+
+      for (let i = 1; i < result.periods.length; i++) {
+        expect(Date.parse(result.periods[i].startDate!)).toBeGreaterThanOrEqual(
+          Date.parse(result.periods[i - 1].startDate!),
+        );
+      }
+    },
+    60000,
+  );
+
+  it.concurrent(
     "returns historical token usage",
     async () => {
       const identity = await idmux({

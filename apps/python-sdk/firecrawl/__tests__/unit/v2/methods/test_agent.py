@@ -13,9 +13,10 @@ from firecrawl.v2.methods.agent import (
     agent,
     get_agent_status,
     cancel_agent,
+    list_agents,
     wait_agent
 )
-from firecrawl.v2.types import AgentResponse
+from firecrawl.v2.types import AgentListResponse, AgentResponse
 from firecrawl.v2.utils.error_handler import BadRequestError
 
 
@@ -217,16 +218,73 @@ class TestAgentMethods:
         mock_response = Mock()
         mock_response.ok = True
         mock_response.json.return_value = {"success": True}
-        
+
         self.mock_client.delete.return_value = mock_response
-        
+
         result = cancel_agent(self.mock_client, self.job_id)
-        
+
         # Check that delete was called with correct endpoint
         self.mock_client.delete.assert_called_once_with(f"/v2/agent/{self.job_id}")
-        
+
         # Check result
         assert result is True
+
+    def test_list_agents(self):
+        """Test listing agent runs without a before param."""
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "success": True,
+            "agents": [
+                {
+                    "id": "agent-1",
+                    "createdAt": "2026-08-31T12:00:00.000Z",
+                    "targetHint": "https://example.com",
+                    "origin": "api",
+                    "settings": {"hidden": False, "starred": True, "label": "prod"},
+                    "status": "completed",
+                    "options": {
+                        "urls": ["https://example.com"],
+                        "prompt": "Find the pricing",
+                        "model": "spark-1-pro",
+                    },
+                }
+            ],
+        }
+
+        self.mock_client.get.return_value = mock_response
+
+        result = list_agents(self.mock_client)
+
+        self.mock_client.get.assert_called_once_with("/v2/agent")
+
+        assert isinstance(result, AgentListResponse)
+        assert result.success is True
+        assert len(result.agents) == 1
+        assert result.agents[0].id == "agent-1"
+        assert result.agents[0].created_at == "2026-08-31T12:00:00.000Z"
+        assert result.agents[0].target_hint == "https://example.com"
+        assert result.agents[0].settings.starred is True
+        assert result.agents[0].settings.label == "prod"
+        assert result.agents[0].options.prompt == "Find the pricing"
+        assert result.next is None
+
+    def test_list_agents_with_before(self):
+        """Test listing agent runs passes before as a query param."""
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "success": True,
+            "agents": [],
+            "next": "https://api.firecrawl.dev/v2/agent?before=1756600000000",
+        }
+
+        self.mock_client.get.return_value = mock_response
+
+        result = list_agents(self.mock_client, before=1756600000000)
+
+        self.mock_client.get.assert_called_once_with("/v2/agent?before=1756600000000")
+        assert result.next == "https://api.firecrawl.dev/v2/agent?before=1756600000000"
 
     @patch('time.sleep')
     def test_wait_agent_completed(self, mock_sleep):
