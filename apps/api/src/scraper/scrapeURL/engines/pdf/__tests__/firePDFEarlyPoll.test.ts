@@ -180,18 +180,17 @@ describe("earlyPollDelay", () => {
     random: () => 0,
   };
 
-  it("stays between 250ms and 500ms in the fast phase, jitter included", () => {
-    for (const random of [() => 0, () => 0.5, () => 0.999]) {
-      const delay = earlyPollDelay({
+  it("applies +0-20% jitter to the ~300ms fast interval", () => {
+    const delays = [0, 0.5, 0.999].map(random =>
+      earlyPollDelay({
         ...base,
         pagesEstimate: 10,
         pollCount: 3,
         elapsedMs: 4_000,
-        random,
-      })!;
-      expect(delay).toBeGreaterThanOrEqual(250);
-      expect(delay).toBeLessThanOrEqual(500);
-    }
+        random: () => random,
+      }),
+    );
+    expect(delays).toEqual([300, 330, 360]);
   });
 
   it("picks the bucket from the page estimate", () => {
