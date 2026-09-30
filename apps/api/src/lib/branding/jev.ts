@@ -276,6 +276,28 @@ function fileName(src: string): string {
   return (path.split("/").pop() || "").slice(0, 80);
 }
 
+// Cookie-consent controls are page chrome, never the site's call to action.
+const CONSENT =
+  /cookie|consent|gdpr|accept all|reject all|allow all|decline|manage (?:preferences|settings)|akzeptieren|ablehnen|accepter|refuser|aceptar|rechazar/i;
+const isConsentButton = (button: { text?: string; classes?: string }) =>
+  CONSENT.test(`${button.text ?? ""} ${button.classes ?? ""}`);
+
+/** Everything merge copies from the chosen button, so look-alikes are truly alike. */
+const buttonStyle = (b: {
+  background?: string;
+  textColor?: string;
+  borderColor?: string | null;
+  borderRadius?: string;
+  shadow?: string | null;
+}) =>
+  [
+    normalizeHex(b.background) ?? "none",
+    normalizeHex(b.textColor) ?? "none",
+    normalizeHex(b.borderColor) ?? "none",
+    b.borderRadius ?? "",
+    b.shadow ?? "",
+  ].join("/");
+
 const clip = (value: string | undefined, max: number) =>
   (value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 
@@ -336,10 +358,15 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     );
   }
 
-  if (buttons.length > 0) {
+  // Ids keep each button's index in `input.buttons`, which is what merge reads.
+  const ctaButtons = buttons
+    .map((button, i) => ({ button, id: `button_${i}` }))
+    .filter(({ button }) => !isConsentButton(button));
+
+  if (ctaButtons.length > 0) {
     state.buttons = Object.fromEntries(
-      buttons.map((button, i) => [
-        `button_${i}`,
+      ctaButtons.map(({ button, id }) => [
+        id,
         {
           text: clip(button.text, 80),
           background: colorName(button.background, "transparent"),
@@ -404,8 +431,8 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     };
   }
 
-  if (buttons.length > 0) {
-    const buttonIds = ids("button", buttons.length);
+  if (ctaButtons.length > 0) {
+    const buttonIds = ctaButtons.map(({ id }) => id);
     questions.primary_button = {
       type: "choice",
       instructions:
@@ -534,10 +561,7 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     fonts,
     logoCount: logos.length,
     buttonCount: buttons.length,
-    buttonStyles: buttons.map(
-      b =>
-        `${normalizeHex(b.background) ?? "none"}/${normalizeHex(b.textColor) ?? "none"}`,
-    ),
+    buttonStyles: buttons.map(buttonStyle),
   };
 }
 
@@ -744,10 +768,11 @@ export async function enhanceBrandingWithJev(
 ): Promise<JevBrandingResult | null> {
   const typesafe = getTypeSafeClient();
   if (!typesafe) return null;
-  const request = buildJevRequest(input);
   const started = Date.now();
+  let request: JevRequest;
   let response: JevResponse;
   try {
+    request = buildJevRequest(input);
     response = await withSpan(
       "typesafe.systemone",
       async span => {
@@ -795,7 +820,17 @@ export async function enhanceBrandingWithJev(
     tokens: { input: inputTokens, output: outputTokens },
   });
 
-  const result = mapJevAnswers(request, response);
+  let result: JevBrandingResult;
+  try {
+    result = mapJevAnswers(request, response);
+  } catch (error) {
+    // A successful call whose answers don't have the expected shape.
+    input.logger.warn("Jev branding answers unusable, falling back to LLM", {
+      error,
+      model: response.model,
+    });
+    return null;
+  }
   input.logger.info("Jev branding call", {
     model: response.model,
     elapsedMs: Date.now() - started,

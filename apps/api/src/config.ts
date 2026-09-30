@@ -525,11 +525,15 @@ const configSchema = z.object({
   // TYPESAFE_API_KEY. BRANDING_JEV turns it on for every team, the brandingJev
   // team flag for one team, and BRANDING_JEV_ROLLOUT_PERCENT for a stable
   // share of teams.
-  BRANDING_JEV: z.stringbool().optional(),
+  BRANDING_JEV: emptyStringAsUndefined(z.stringbool()),
   BRANDING_JEV_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
-  BRANDING_JEV_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  BRANDING_JEV_TIMEOUT_MS: emptyStringAsUndefined(
+    z.coerce.number().int().positive(),
+  ),
   // Rerun branding on the LLM when Jev's logo confidence is below this (0-1).
-  BRANDING_JEV_ESCALATE_BELOW: z.coerce.number().min(0).max(1).optional(),
+  BRANDING_JEV_ESCALATE_BELOW: emptyStringAsUndefined(
+    z.coerce.number().min(0).max(1),
+  ),
 
   // AI/ML
   MODEL_NAME: z.string().optional(),

@@ -25,6 +25,7 @@ import {
   describeColor,
 } from "../../../lib/branding/jev";
 import { enhanceBrandingWithLLM } from "../../../lib/branding/llm";
+import { mergeBrandingResults } from "../../../lib/branding/merge";
 import { BrandingLLMInput } from "../../../lib/branding/types";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { logger } from "../../../lib/logger";
@@ -324,6 +325,8 @@ describe("branding with Jev", () => {
   });
 
   it("keeps the heuristic value for a color role Jev is unsure of", async () => {
+    const input = baseInput(new CostTracking());
+    input.jsAnalysis.colors = { ...input.jsAnalysis.colors, accent: "#FF5500" };
     respondWith(
       jevResponse({
         accent_color: {
@@ -335,10 +338,55 @@ describe("branding with Jev", () => {
       }),
     );
 
-    const result = await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    const result = await enhanceBrandingWithLLM(input);
 
     expect(result.colorRoles.accentColor).toBe("");
     expect(result.colorRoles.primaryColor).toBe("#6D28D9");
+    const merged = mergeBrandingResults(
+      input.jsAnalysis,
+      result,
+      input.buttons,
+    );
+    expect(merged.colors?.accent).toBe("#FF5500");
+    expect(merged.colors?.primary).toBe("#6D28D9");
+  });
+
+  it("never asks Jev to pick a cookie-consent button", async () => {
+    const input = baseInput(new CostTracking());
+    input.buttons = [
+      { ...input.buttons[0], index: 0, text: "Accept all cookies" },
+      { ...input.buttons[1], index: 1, text: "Reject all" },
+      { ...input.buttons[0], index: 2, text: "Get started" },
+    ];
+    expect(Object.keys(buildJevRequest(input).state.buttons as object)).toEqual(
+      ["button_2"],
+    );
+
+    input.buttons = input.buttons.slice(0, 2);
+    const request = buildJevRequest(input);
+    expect(request.questions.primary_button).toBeUndefined();
+    respondWith(
+      jevResponse({ primary_button: undefined, secondary_button: undefined }),
+    );
+    const result = await enhanceBrandingWithLLM(input);
+    expect(result.buttonClassification.primaryButtonIndex).toBe(-1);
+  });
+
+  it("falls back to the LLM when Jev's answers have an unexpected shape", async () => {
+    respondWith({
+      model: "jev-1.13.0",
+      usage: { input_tokens: 10, output_tokens: 0 },
+    });
+    const costTracking = new CostTracking();
+
+    const result = await enhanceBrandingWithLLM(baseInput(costTracking));
+
+    expect(generateObject).toHaveBeenCalledTimes(1);
+    expect(result.colorRoles.primaryColor).toBe("#000000");
+    expect(costTracking.calls.map(c => c.metadata.method)).toEqual([
+      "enhanceBrandingWithJev",
+      "enhanceBrandingWithLLM",
+    ]);
   });
 
   it("takes font roles from the page's typography when it has them", async () => {
@@ -386,6 +434,31 @@ describe("branding with Jev", () => {
 
     expect(result.buttonClassification.primaryButtonIndex).toBe(0);
     expect(result.buttonClassification.confidence).toBeCloseTo(0.96);
+  });
+
+  it("does not pool buttons that differ in shape", async () => {
+    const input = baseInput(new CostTracking());
+    input.buttons[0].borderRadius = "4px";
+    input.buttons.push({
+      ...input.buttons[0],
+      index: 2,
+      text: "Start free trial",
+      borderRadius: "999px",
+    });
+    respondWith(
+      jevResponse({
+        primary_button: {
+          type: "choice",
+          choice: "button_0",
+          probabilities: { button_0: 0.48, button_1: 0.04, button_2: 0.48 },
+          confidence: 0.35,
+        },
+      }),
+    );
+
+    const result = await enhanceBrandingWithLLM(input);
+
+    expect(result.buttonClassification.confidence).toBeCloseTo(0.48);
   });
 
   it("falls back to the LLM when the TypeSafe API errors", async () => {
