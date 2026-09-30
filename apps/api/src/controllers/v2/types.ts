@@ -464,8 +464,9 @@ const queryFormatWithOptions = z.strictObject({
 type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
 
 // Which engine answers branding decisions: "fast" (Jev), "standard" (the
-// LLM) or "auto". Internal for now: honored only for teams listed in
-// BRANDING_JEV_TEAM_IDS and ignored for everyone else (lib/branding/jev.ts).
+// LLM) or "auto" (the LLM for now). Internal for now: honored only for teams
+// listed in BRANDING_JEV_TEAM_IDS and ignored for everyone else
+// (lib/branding/jev.ts).
 const brandingFormatWithOptions = z.strictObject({
   type: z.literal("branding"),
   mode: z.enum(["auto", "fast", "standard"]).optional(),

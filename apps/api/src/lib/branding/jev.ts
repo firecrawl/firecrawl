@@ -50,11 +50,10 @@ type JevBrandingResult = {
 
 export function isJevBrandingEnabled(input: BrandingLLMInput): boolean {
   if (!config.TYPESAFE_API_KEY) return false;
-  // Listed teams choose per request with the format's `mode`: "standard" runs
-  // the LLM, anything else Jev. Every other team ignores `mode` and follows
-  // the settings below.
+  // Listed teams stay on the LLM unless a request asks for mode "fast". Every
+  // other team ignores `mode` and follows the settings below.
   if (input.teamId && config.BRANDING_JEV_TEAM_IDS?.includes(input.teamId)) {
-    return input.mode !== "standard";
+    return input.mode === "fast";
   }
   return (
     config.BRANDING_JEV === true ||

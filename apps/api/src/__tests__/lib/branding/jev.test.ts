@@ -97,6 +97,7 @@ const baseInput = (costTracking: CostTracking): BrandingLLMInput => ({
   pageTitle: "Acme | Home",
   url: "https://acme.test/",
   teamId: "team-jev",
+  mode: "fast",
   costTracking,
   logger,
 });
@@ -531,13 +532,12 @@ describe("branding with Jev", () => {
     withSpan.mockRestore();
   });
 
-  it("lets a listed team pick the LLM per request with mode: standard", async () => {
-    await enhanceBrandingWithLLM({
-      ...baseInput(new CostTracking()),
-      mode: "standard",
-    });
+  it("keeps a listed team on the LLM unless the request asks for fast", async () => {
+    for (const mode of [undefined, "auto", "standard"] as const) {
+      await enhanceBrandingWithLLM({ ...baseInput(new CostTracking()), mode });
+    }
     expect(mocks.systemOne).not.toHaveBeenCalled();
-    expect(generateObject).toHaveBeenCalledTimes(1);
+    expect(generateObject).toHaveBeenCalledTimes(3);
 
     respondWith(jevResponse());
     await enhanceBrandingWithLLM({
