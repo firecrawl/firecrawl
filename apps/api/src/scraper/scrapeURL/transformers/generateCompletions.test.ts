@@ -1,8 +1,12 @@
 import { vi } from "vitest";
 
-vi.mock("../../../config", () => ({
-  config: { MODEL_MAX_INPUT_TOKENS: undefined },
-}));
+vi.mock("../../../config", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../../config")>();
+  return {
+    ...actual,
+    config: { ...actual.config, MODEL_MAX_INPUT_TOKENS: undefined },
+  };
+});
 
 vi.mock("ai", async importOriginal => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -99,6 +103,17 @@ describe("generateCompletions content trimming", () => {
 
     expect(result.warning).toBeUndefined();
     expect(lastCall().prompt).toContain(markdown);
+  });
+
+  // gradient_ai/llama3-8b-instruct is listed in modelPrices with max_tokens:
+  // 512 (its output cap) and no max_input_tokens. getModelLimits' fallback
+  // would treat that 512 as an input budget and over-trim; a listed model
+  // missing max_input_tokens must keep the old no-trim behavior instead.
+  it("does not trim a listed model whose only known limit is an output cap", async () => {
+    const result = await run(hugeMarkdown, "gradient_ai/llama3-8b-instruct");
+
+    expect(result.warning).toBeUndefined();
+    expect(lastCall().prompt).toContain(hugeMarkdown);
   });
 
   // Neither model name is a real Tiktoken model, so encoding_for_model()

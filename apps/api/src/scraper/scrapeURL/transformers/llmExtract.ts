@@ -469,13 +469,17 @@ export async function generateCompletions({
   }
 
   // Keep the content inside the model's context window, leaving the rest for
-  // the prompt, schema and output. Local self-hosted models are the case with
-  // the smallest windows, so an unknown model still gets getModelLimits'
-  // default (or MODEL_MAX_INPUT_TOKENS) rather than being skipped. A BPE
+  // the prompt, schema and output. An unlisted model (e.g. self-hosted) gets
+  // getModelLimits' conservative default. A listed model missing
+  // max_input_tokens stays unset instead -- max_tokens is an output cap on
+  // some entries, and using it as an input budget would over-trim them. A BPE
   // token is at least one byte, so content that fits in bytes skips the
   // (synchronous) tokenizer entirely.
   const maxInputTokens =
-    config.MODEL_MAX_INPUT_TOKENS ?? getModelLimits(modelId).maxInputTokens;
+    config.MODEL_MAX_INPUT_TOKENS ??
+    (modelPrices[modelId]
+      ? modelPrices[modelId].max_input_tokens
+      : getModelLimits(modelId).maxInputTokens);
   if (markdown && maxInputTokens) {
     const maxContentTokens = Math.floor(maxInputTokens * 0.8);
     if (Buffer.byteLength(markdown, "utf8") > maxContentTokens) {
