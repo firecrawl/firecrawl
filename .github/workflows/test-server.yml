@@ -243,6 +243,15 @@ jobs:
         run: pnpm exec vitest run src/controllers/v2/__tests__/browser-delete.test.ts --reporter=default
         working-directory: apps/api
 
+      - name: Run search safe filter regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/search/safe-search.test.ts
+          src/search/execute.test.ts
+          --reporter=default
+        working-directory: apps/api
+
       - name: Run crawl status cursor regression tests
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: >-

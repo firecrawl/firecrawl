@@ -124,6 +124,9 @@ importers:
       '@types/ws':
         specifier: ^8.5.12
         version: 8.5.12
+      '@typesafe-ai/sdk':
+        specifier: ^0.6.0
+        version: 0.6.0
       ai:
         specifier: 6.0.86
         version: 6.0.86(zod@4.1.12)
@@ -2012,6 +2015,10 @@ packages:
 
   '@types/ws@8.5.12':
     resolution: {integrity: sha512-3tPRkv1EtkDpzlgyKyI8pGsGZAGPEaXeu0DOj5DI25Ja91bdAYddYHbADRYVrZMRbfW+1l5YwXVDKohDJNQxkQ==}
+
+  '@typesafe-ai/sdk@0.6.0':
+    resolution: {integrity: sha512-IddX+Q0XM+VagOUZFeP7wZjaO4SHMdvnh2zEBdrZZnXedWI3BNK1lKhMx3ayrkFWvVLbVcUHJy6AVZlY+e6Jaw==}
+    engines: {node: '>=20'}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
@@ -6145,6 +6152,8 @@ snapshots:
   '@types/ws@8.5.12':
     dependencies:
       '@types/node': 24.10.1
+
+  '@typesafe-ai/sdk@0.6.0': {}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true

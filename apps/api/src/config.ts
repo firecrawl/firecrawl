@@ -315,6 +315,9 @@ const configSchema = z.object({
   // returned. The remaining eligible traffic still runs in shadow mode.
   HIGHLIGHT_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
+  // TypeSafe (Jev): judges search results for the `safe: true` filter.
+  TYPESAFE_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
   EXCHANGE_INTERNAL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
