@@ -158,6 +158,60 @@ describe("scrapePDFWithFirePDFAsync — deadline and submit lifecycle", () => {
     expect(pollTimes).toEqual([1000, 3000, 7000, 12000, 17000, 21000, 22000]);
   });
 
+  it("polls on the page-aware early schedule when the caller passes a page estimate", async () => {
+    let virtualNow = 1_000_000;
+    const sleeps: number[] = [];
+    let polls = 0;
+    const fetchImpl: any = async (url: string, init: any) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (/\/jobs$/.test(url) && method === "POST") {
+        return jsonResp({
+          status: 202,
+          body: { scrape_id: "x", status: "queued", lane: "standard" },
+        });
+      }
+      if (/\/jobs\/scrape-id-test$/.test(url)) {
+        polls++;
+        return jsonResp(
+          polls <= 3
+            ? { status: 202, body: { scrape_id: "x", status: "running" } }
+            : {
+                status: 200,
+                body: { scrape_id: "x", status: "done", pages_processed: 3 },
+              },
+        );
+      }
+      return jsonResp({
+        status: 200,
+        body: { markdown: "ok", pages_processed: 3 },
+      });
+    };
+
+    // Same flow as above but with a 3-page estimate (inline and
+    // by-reference callers both pass it): first poll at the 3-page p50
+    // rather than the 1s floor, then the fast interval.
+    const result = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      3,
+      undefined,
+      {
+        fetchImpl,
+        fallbackImpl: vi.fn(),
+        sleepImpl: async ms => {
+          sleeps.push(ms);
+          virtualNow += ms;
+        },
+        nowImpl: () => virtualNow,
+        randomImpl: () => 0,
+      },
+    );
+
+    expect(result.markdown).toBe("ok");
+    expect(sleeps).toEqual([1200, 300, 300, 300]);
+  });
+
   it("retries the submit once when a closing api pod answers with Fastify's 503 body", async () => {
     const before = await counterValue(firePdfAsyncSubmitRetriesTotal, {
       trigger: "http_503_closing",

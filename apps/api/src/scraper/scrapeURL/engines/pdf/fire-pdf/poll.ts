@@ -11,6 +11,7 @@ import {
   TERMINAL_STATUSES,
   type PollResponse,
 } from "./schema";
+import { earlyPollDelay } from "./early-poll";
 import {
   alignPollDelay,
   failAsync,
@@ -21,7 +22,11 @@ import {
 type PollDeps = {
   baseUrl: string;
   scrapeId: string;
-  initialDelay: number;
+  /** fire-pdf's `retry_after_ms` from the submit response, when it sent one. */
+  initialDelay?: number;
+  /** Page count of the document, when the caller has one. Selects the early
+   * poll schedule (see early-poll.ts); absent, plain backoff applies. */
+  pagesEstimate?: number;
   pollingDeadline: number;
   meta: Meta;
   fetchImpl: typeof undiciFetch;
@@ -50,6 +55,10 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
   let pollCount = 0;
   const random = deps.random ?? Math.random;
   let lastDelay = nextPollDelay(0, deps.initialDelay, random);
+  const startedAt = now();
+  let retryAfterMs = deps.initialDelay;
+  let fastPollCount = 0;
+  let inEarlySchedule = false;
 
   while (true) {
     if (now() > pollingDeadline) {
@@ -58,8 +67,25 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
     }
 
     meta.abort.throwIfAborted();
+    const early = earlyPollDelay({
+      pagesEstimate: deps.pagesEstimate,
+      elapsedMs: now() - startedAt,
+      pollCount,
+      fastPollCount,
+      retryAfterMs,
+      random,
+    });
+    if (early !== undefined && pollCount > 0) fastPollCount++;
+    if (early !== undefined) {
+      inEarlySchedule = true;
+    } else if (inEarlySchedule) {
+      // Handover: backoff restarts from the floor (or the latest hint),
+      // not from the seed computed before the early polls began.
+      inEarlySchedule = false;
+      lastDelay = nextPollDelay(0, retryAfterMs, random);
+    }
     await sleep(
-      alignPollDelay(lastDelay, now(), deps.jobDeadlineAtMs),
+      alignPollDelay(early ?? lastDelay, now(), deps.jobDeadlineAtMs),
       meta.abort.asSignal(),
     );
     pollCount++;
@@ -166,6 +192,10 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
       );
     }
 
-    lastDelay = nextPollDelay(lastDelay, parsed.data.retry_after_ms, random);
+    retryAfterMs = parsed.data.retry_after_ms;
+    // Backoff advances only while it is the schedule in use.
+    if (early === undefined) {
+      lastDelay = nextPollDelay(lastDelay, retryAfterMs, random);
+    }
   }
 }
