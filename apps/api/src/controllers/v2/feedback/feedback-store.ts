@@ -8,10 +8,12 @@ import {
 } from "../../../lib/feedback-job-store";
 import { logger } from "../../../lib/logger";
 import { EndpointFeedbackEndpoint } from "../types";
+import type { SearchResultType } from "../../../lib/entities";
 import {
   FeedbackJobRow,
   FeedbackRecordOptions,
   RefundPolicySnapshot,
+  ValuableResultInput,
 } from "./internal-types";
 import { recordJobStorePostgresFallback } from "../../../lib/job-store-fallback";
 
@@ -22,6 +24,262 @@ type ExistingFeedback = {
   credits_refunded: number | null;
 };
 
+type ValuableResultDocument = {
+  documentId: string;
+  searchId: string;
+  /** The `data` group the client addressed, as sent: web | images | news. */
+  requestedSource: SearchResultType;
+  /** Analytics spelling, as used in `documentId`. */
+  resultType: SearchResultDocumentType;
+  resultIndex: number;
+  position: number;
+  /**
+   * Which vertical served this result, as the response tagged it — `developer`
+   * for an index-served hit, `github` / `research` / `pdf` for a URL-derived
+   * one. Absent when the result carried no category, or when the search row
+   * predates `result_categories`. This is the attribution half of the label:
+   * `requestedSource` says where in `data` the result sat, `category` says who
+   * answered.
+   */
+  category?: string;
+  reason?: string;
+  source: "position";
+};
+
+/**
+ * Result type as recorded in analytics. The API groups image results under
+ * `images` (matching `data.images`), but the ClickHouse `search_results` table
+ * writes the singular `image`; document IDs use the analytics spelling so they
+ * join directly on (search_id, result_type, result_index).
+ */
+type SearchResultDocumentType = "web" | "news" | "image";
+
+const RESULT_DOCUMENT_TYPES: Record<
+  SearchResultType,
+  SearchResultDocumentType
+> = {
+  web: "web",
+  news: "news",
+  images: "image",
+};
+
+function searchFeedbackResultDocumentId(
+  searchId: string,
+  resultType: SearchResultDocumentType,
+  resultIndex: number,
+): string {
+  return `search:${searchId}:${resultType}:${resultIndex}`;
+}
+
+/**
+ * Number of results in each `data` group, read from the persisted per-source
+ * counts. Returns null when the row predates `num_results_by_source` or carries
+ * an unrecognised shape, so callers fall back to a looser bound rather than
+ * silently treating every group as empty.
+ */
+function resultCountsBySource(
+  job: FeedbackJobRow,
+): Partial<Record<SearchResultType, number>> | null {
+  const counts = job.num_results_by_source;
+  if (counts === null || counts === undefined || typeof counts !== "object") {
+    return null;
+  }
+
+  const entries = Object.entries(counts as Record<string, unknown>).filter(
+    (entry): entry is [SearchResultType, number] =>
+      entry[0] in RESULT_DOCUMENT_TYPES &&
+      typeof entry[1] === "number" &&
+      Number.isInteger(entry[1]) &&
+      entry[1] >= 0,
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : null;
+}
+
+/**
+ * Vertical that served each position, read from the persisted per-result
+ * categories. Returns null when the row predates `result_categories` or
+ * carries an unrecognised shape — which is not the same as an empty object,
+ * meaning the search ran with nothing tagged.
+ */
+function resultCategoriesBySource(
+  job: FeedbackJobRow,
+): Partial<Record<SearchResultType, Record<string, string>>> | null {
+  const categories = job.result_categories;
+  if (
+    categories === null ||
+    categories === undefined ||
+    typeof categories !== "object"
+  ) {
+    return null;
+  }
+
+  const bySource: Partial<Record<SearchResultType, Record<string, string>>> =
+    {};
+  for (const [source, positions] of Object.entries(
+    categories as Record<string, unknown>,
+  )) {
+    if (!(source in RESULT_DOCUMENT_TYPES)) continue;
+    if (!positions || typeof positions !== "object") continue;
+
+    const byPosition: Record<string, string> = {};
+    for (const [position, category] of Object.entries(
+      positions as Record<string, unknown>,
+    )) {
+      if (typeof category === "string" && category.length > 0) {
+        byPosition[position] = category;
+      }
+    }
+    bySource[source as SearchResultType] = byPosition;
+  }
+
+  return bySource;
+}
+
+/**
+ * Source types the search requested, normalised from the stored request body.
+ * Returns null when the shape is unrecognised, so callers fall back to a looser
+ * bound instead of guessing.
+ *
+ * "Unrecognised" includes rows whose request body was never persisted at all:
+ * zero-data-retention searches log only `{enterprise}`, and rows served from
+ * the Bigtable fast path carry no options. Those say nothing about which
+ * sources were asked for, and assuming web-only would bound every news and
+ * images group to 0 — silently discarding every legitimate label from those
+ * groups. Unknown is the safe answer; the looser count/limit bound still
+ * applies.
+ */
+function requestedSourceTypes(job: FeedbackJobRow): Set<string> | null {
+  if (job.zero_data_retention) return null;
+
+  const options = job.options as
+    | { sources?: unknown; enterprise?: unknown }
+    | null
+    | undefined;
+  if (options === null || options === undefined) return null;
+
+  const sources = options.sources;
+  if (sources === undefined || sources === null) {
+    // ZDR rows reaching this through PostgreSQL keep only `enterprise`, so the
+    // absent `sources` is redaction rather than the ["web"] prefault.
+    const enterprise = options.enterprise;
+    if (
+      Array.isArray(enterprise) &&
+      enterprise.some(kind => kind === "zdr" || kind === "anon")
+    ) {
+      return null;
+    }
+    // `sources` prefaults to ["web"], so an absent value means web-only.
+    return new Set(["web"]);
+  }
+  if (!Array.isArray(sources)) return null;
+
+  const types = sources.map(entry =>
+    typeof entry === "string"
+      ? entry
+      : (entry as { type?: unknown } | null)?.type,
+  );
+  return types.every((type): type is string => typeof type === "string")
+    ? new Set(types)
+    : null;
+}
+
+/**
+ * Highest 1-indexed position addressable in `data[source]`, or null when the
+ * job row carries no usable bound.
+ *
+ * Prefers the exact per-source count, which bounds every group exactly.
+ *
+ * Rows written before that column existed fall back to `min(limit, num_results)`
+ * per group — each group is sliced to `limit` independently in
+ * `search/execute.ts`, so that bounds a group even though the combined
+ * `num_results` does not — and a source the request never asked for is bounded
+ * to 0, since it cannot have returned anything.
+ *
+ * That fallback is deliberately not exact: a source that *was* requested but
+ * returned nothing still gets a positive bound, so a hallucinated position in
+ * an empty group can slip through. Reconstructing the real count is impossible
+ * for those rows (the response bodies live in GCS, not Postgres). The exposure
+ * is bounded by SEARCH_FEEDBACK_MAX_AGE_SEC — feedback is only accepted within ~2
+ * minutes of the search — so this path only covers searches run in the couple
+ * of minutes spanning the migration deploy, and closes on its own after that.
+ */
+function maxResultPosition(
+  job: FeedbackJobRow,
+  source: SearchResultType,
+): number | null {
+  const counts = resultCountsBySource(job);
+  if (counts !== null) return counts[source] ?? 0;
+
+  // Without per-source counts, the requested source list is the only thing
+  // separating "this group was empty" from "this group is unbounded".
+  const requested = requestedSourceTypes(job);
+  if (requested !== null && !requested.has(source)) return 0;
+
+  const numResults =
+    typeof job.num_results === "number" &&
+    Number.isInteger(job.num_results) &&
+    job.num_results >= 0
+      ? job.num_results
+      : null;
+  if (numResults === null) return null;
+
+  const limit = (job.options as { limit?: unknown } | null)?.limit;
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit <= 0) {
+    return numResults;
+  }
+  return Math.min(numResults, limit);
+}
+
+function valuableResultDocuments(
+  job: FeedbackJobRow,
+  results: ValuableResultInput[] | undefined,
+): ValuableResultDocument[] {
+  if (job.endpoint !== "search" || !results?.length) return [];
+
+  // Rejects hallucinated positions, which would otherwise be stored as
+  // false-positive relevance labels. Zero is a real bound: a group that
+  // returned nothing — or was never requested — has no valuable positions.
+  const maxPositions = new Map<SearchResultType, number | null>();
+  const seen = new Set<string>();
+  const categories = resultCategoriesBySource(job);
+
+  return results.flatMap(({ source, position, reason }) => {
+    if (!(source in RESULT_DOCUMENT_TYPES)) return [];
+    if (!Number.isInteger(position) || position <= 0) return [];
+
+    if (!maxPositions.has(source)) {
+      maxPositions.set(source, maxResultPosition(job, source));
+    }
+    const maxPosition = maxPositions.get(source) ?? null;
+    if (maxPosition !== null && position > maxPosition) return [];
+
+    const key = `${source}:${position}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+
+    const resultType = RESULT_DOCUMENT_TYPES[source];
+    const resultIndex = position - 1;
+    const category = categories?.[source]?.[String(position)];
+    return [
+      {
+        documentId: searchFeedbackResultDocumentId(
+          job.id,
+          resultType,
+          resultIndex,
+        ),
+        searchId: job.id,
+        requestedSource: source,
+        resultType,
+        resultIndex,
+        position,
+        ...(category ? { category } : {}),
+        ...(reason ? { reason } : {}),
+        source: "position" as const,
+      },
+    ];
+  });
+}
+
 const JOB_TABLES = {
   search: schema.searches,
   scrape: schema.scrapes,
@@ -31,6 +289,7 @@ const JOB_TABLES = {
 
 function feedbackMetadata(
   options: FeedbackRecordOptions,
+  valuableResultDocs: ValuableResultDocument[],
 ): Record<string, unknown> {
   return {
     ...(options.feedback.metadata ?? {}),
@@ -38,6 +297,102 @@ function feedbackMetadata(
     ...(options.feedback.pageNumbers
       ? { pageNumbers: options.feedback.pageNumbers }
       : {}),
+    ...(valuableResultDocs.length > 0
+      ? {
+          // Echoed back in the vocabulary the client sent, not the analytics
+          // spelling used in the document IDs.
+          valuableResults: valuableResultDocs.map(doc => ({
+            source: doc.requestedSource,
+            position: doc.position,
+            ...(doc.category ? { category: doc.category } : {}),
+          })),
+          valuableResultDocumentIds: valuableResultDocs.map(
+            doc => doc.documentId,
+          ),
+        }
+      : {}),
+  };
+}
+
+/**
+ * Fills in the search columns the Bigtable feedback record does not carry.
+ *
+ * The Bigtable row holds what the refund and window checks need — team,
+ * endpoint, deadline, credits — and nothing about the results themselves.
+ * Position feedback needs three more columns to bound and attribute each
+ * `{source, position}`, so they are read separately, and only for a caller
+ * that actually sent positions.
+ *
+ * A miss here leaves the job as the fast path returned it, which keeps the
+ * established "unknown bound" behaviour rather than discarding the labels:
+ * `logSearch` writes the Bigtable record before the `searches` row, so a
+ * caller fast enough to beat that insert would otherwise lose real feedback.
+ */
+type SearchResultColumns = {
+  options: unknown;
+  num_results: number | null;
+  num_results_by_source: unknown;
+  result_categories: unknown;
+};
+
+function selectSearchResultColumns(
+  conn: typeof db | typeof dbRr,
+  jobId: string,
+  dbTeamId: string,
+): Promise<SearchResultColumns[]> {
+  return conn
+    .select({
+      options: schema.searches.options,
+      num_results: schema.searches.num_results,
+      num_results_by_source: schema.searches.num_results_by_source,
+      result_categories: schema.searches.result_categories,
+    })
+    .from(schema.searches)
+    .where(
+      and(eq(schema.searches.id, jobId), eq(schema.searches.team_id, dbTeamId)),
+    )
+    .limit(1) as unknown as Promise<SearchResultColumns[]>;
+}
+
+async function withSearchResultColumns(
+  job: FeedbackJobRow,
+  jobId: string,
+  dbTeamId: string,
+): Promise<FeedbackJobRow> {
+  let row: SearchResultColumns | null = null;
+
+  try {
+    [row] = await selectSearchResultColumns(dbRr, jobId, dbTeamId);
+  } catch (error) {
+    // A replica error says nothing about whether the row exists, and dropping
+    // the bounds on it would accept any position. Ask the primary before
+    // giving them up.
+    try {
+      [row] = await selectSearchResultColumns(db, jobId, dbTeamId);
+    } catch (retryError) {
+      logger.warn("Could not read search columns for feedback positions", {
+        error,
+        retryError,
+        jobId,
+        module: "feedback-store",
+        method: "withSearchResultColumns",
+      });
+      return job;
+    }
+  }
+
+  // No row is the expected Bigtable-before-PostgreSQL race — `logSearch`
+  // writes the feedback record first, so a prompt caller can arrive between
+  // the two. Not an anomaly, so not logged; the positions stay unbounded
+  // rather than being discarded.
+  if (!row) return job;
+
+  return {
+    ...job,
+    options: row.options ?? null,
+    num_results: row.num_results ?? null,
+    num_results_by_source: row.num_results_by_source ?? null,
+    result_categories: row.result_categories ?? null,
   };
 }
 
@@ -45,6 +400,12 @@ export async function lookupFeedbackJob(
   endpoint: EndpointFeedbackEndpoint,
   jobId: string,
   dbTeamId: string,
+  /**
+   * Whether the caller sent `valuableResults`. Only then does the Bigtable
+   * fast path need the supplementary read above; a rating-only submission —
+   * the common case — is served entirely from Bigtable as before.
+   */
+  needsSearchResults = false,
 ): Promise<FeedbackJobRow | null> {
   let bigtableFailed = false;
   try {
@@ -57,7 +418,7 @@ export async function lookupFeedbackJob(
         endpoint === "search"
           ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
           : config.FEEDBACK_MAX_AGE_SEC;
-      return {
+      const row: FeedbackJobRow = {
         endpoint,
         id: jobId,
         request_id: job.requestId,
@@ -72,6 +433,15 @@ export async function lookupFeedbackJob(
         refund_class: job.refundClass,
         zero_data_retention: job.zeroDataRetention,
       };
+
+      // Not for a zero-data-retention job: its feedback is dropped before it
+      // reaches the result bounds, and those columns are redacted for it
+      // anyway, so there is nothing to read and no reason to go looking.
+      return endpoint === "search" &&
+        needsSearchResults &&
+        !job.zeroDataRetention
+        ? withSearchResultColumns(row, jobId, dbTeamId)
+        : row;
     }
   } catch (error) {
     bigtableFailed = true;
@@ -95,6 +465,13 @@ export async function lookupFeedbackJob(
       created_at: table.created_at,
       options: table.options,
       ...(endpoint === "map" ? {} : { is_successful: table.is_successful }),
+      ...(endpoint === "search"
+        ? {
+            num_results: table.num_results,
+            num_results_by_source: table.num_results_by_source,
+            result_categories: table.result_categories,
+          }
+        : {}),
     })
     .from(table)
     .where(and(eq(table.id, jobId), eq(table.team_id, dbTeamId)))
@@ -114,6 +491,11 @@ export async function lookupFeedbackJob(
     created_at: row.created_at,
     is_successful: endpoint === "map" ? true : (row.is_successful ?? null),
     options: row.options ?? null,
+    num_results: endpoint === "search" ? (row.num_results ?? null) : null,
+    num_results_by_source:
+      endpoint === "search" ? (row.num_results_by_source ?? null) : null,
+    result_categories:
+      endpoint === "search" ? (row.result_categories ?? null) : null,
   };
 }
 
@@ -138,6 +520,15 @@ export async function insertFeedback(params: {
   apiKeyId?: number | null;
 }): Promise<DbError | null> {
   const { feedbackId, options, job, dbTeamId, apiKeyId } = params;
+  const valuableResultDocs = valuableResultDocuments(
+    job,
+    options.feedback.valuableResults,
+  );
+  const valuableSources = [
+    ...(options.feedback.valuableSources ?? []),
+    ...valuableResultDocs,
+  ];
+
   try {
     await db.insert(schema.search_feedback).values({
       id: feedbackId,
@@ -152,10 +543,10 @@ export async function insertFeedback(params: {
       issue_types: options.feedback.issues ?? [],
       tags: options.feedback.tags ?? [],
       comment: options.feedback.note ?? null,
-      valuable_sources: options.feedback.valuableSources ?? [],
+      valuable_sources: valuableSources,
       missing_content: options.feedback.missingContent ?? [],
       query_suggestions: options.feedback.querySuggestions ?? null,
-      metadata: feedbackMetadata(options),
+      metadata: feedbackMetadata(options, valuableResultDocs),
       job_status: job.is_successful === false ? "failed" : "completed",
       credits_billed: job.credits_cost ?? 0,
       credits_refunded: 0,
