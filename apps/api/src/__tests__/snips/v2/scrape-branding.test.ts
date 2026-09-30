@@ -148,6 +148,28 @@ describe("Branding with Jev", () => {
   );
 });
 
+describe("Branding response", () => {
+  concurrentIf(TEST_PRODUCTION)(
+    "returns no internal fields to teams that aren't debugging branding",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/",
+          formats: ["branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.branding).toBeDefined();
+      expect(
+        Object.keys(response.branding!).filter(key => key.startsWith("__")),
+      ).toEqual([]);
+    },
+    scrapeTimeout,
+  );
+});
+
 const PDF_URL = "https://www.orimi.com/pdf-test.pdf";
 
 describe("Branding on pages it can't run on", () => {
