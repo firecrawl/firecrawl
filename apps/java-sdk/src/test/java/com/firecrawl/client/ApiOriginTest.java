@@ -1,5 +1,6 @@
 package com.firecrawl.client;
 
+import com.firecrawl.errors.FirecrawlException;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -54,6 +55,18 @@ class ApiOriginTest {
     void relativeUrlIsResolvedAgainstApiUrl() {
         assertEquals("https://api.firecrawl.dev/v2/crawl/abc?skip=10",
                 pin(API, "/v2/crawl/abc?skip=10"));
+    }
+
+    @Test
+    void pathRelativeUrlKeepsApiUrlPathPrefix() {
+        assertEquals("https://api.example/prefix/next?skip=10",
+                pin("https://api.example/prefix/", "next?skip=10"));
+    }
+
+    @Test
+    void unresolvableUrlIsRejected() {
+        assertThrows(FirecrawlException.class,
+                () -> pin(API, "ftp://evil.example/v2/crawl/abc"));
     }
 
     @Test

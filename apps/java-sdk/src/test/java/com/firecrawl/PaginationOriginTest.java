@@ -32,7 +32,7 @@ class PaginationOriginTest {
     private HttpServer foreign;
     private final List<String> apiRequests = new CopyOnWriteArrayList<>();
     private final List<String> foreignRequests = new CopyOnWriteArrayList<>();
-    private String nextUrl;
+    private volatile String nextUrl;
 
     @BeforeEach
     void setup() throws IOException {

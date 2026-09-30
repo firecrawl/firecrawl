@@ -178,7 +178,7 @@ class FirecrawlHttpClient {
      */
     <T> T getAbsolute(String nextUrl, Class<T> responseType) {
         Request.Builder builder = new Request.Builder()
-                .url(pinToApiOrigin(baseUrl, nextUrl))
+                .url(pinToApiOrigin(baseUrl + "/", nextUrl))
                 .get();
         applyAuth(builder);
         Request request = builder.build();
