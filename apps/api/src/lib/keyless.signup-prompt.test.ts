@@ -156,7 +156,7 @@ describe("keyless eligibility signup link", () => {
       query,
     }) as any;
 
-  it.each(["requests", "credits", "suspicious"] as const)(
+  it.each(["requests", "credits"] as const)(
     "links an identity refused for %s to its own mcp link",
     async reason => {
       vi.mocked(checkKeylessEligibility).mockResolvedValue({
@@ -178,8 +178,8 @@ describe("keyless eligibility signup link", () => {
     },
   );
 
-  it.each(["disabled", "error"] as const)(
-    "gives the bare link without issuing when the tier is %s",
+  it.each(["disabled", "error", "suspicious"] as const)(
+    "gives the bare link without issuing when the refusal is %s",
     async reason => {
       vi.mocked(checkKeylessEligibility).mockResolvedValue({
         eligible: false,

@@ -18,11 +18,13 @@ import {
   keylessExhaustionTelemetry,
   isKeylessIpEligible,
   keylessLimitPrompt,
-  keylessSignupUrlForIp,
   keylessTeamId,
   normalizeKeylessIpv4,
 } from "../lib/keyless";
-import { keylessSignupSurface } from "../lib/keyless-signup-link";
+import {
+  KEYLESS_SIGNUP_FALLBACK_URL,
+  keylessSignupSurface,
+} from "../lib/keyless-signup-link";
 import { isKeylessIpSuspicious } from "../lib/spur";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
 import { checkIpRestriction } from "../lib/ip-restriction";
@@ -501,6 +503,21 @@ async function handleKeylessAuth(
   // that the tier exists.
   if (!isKeylessConfigured()) return unauthorized;
 
+  // Configured, but this endpoint isn't part of the keyless tier: tell the user
+  // they need a key (with the signup nudge) rather than a bare "Unauthorized".
+  // The bare link, not a per-identity one: this path runs before any quota or
+  // eligibility check, so issuing here would let anonymous traffic write a
+  // keyless_signup_links row per source IP.
+  if (!allowKeyless) {
+    const url = KEYLESS_SIGNUP_FALLBACK_URL;
+    return {
+      success: false,
+      error: keylessEndpointNotAvailableMessage(url),
+      status: 401,
+      signupUrl: url,
+    };
+  }
+
   const origin = req.body?.origin;
   const integration = req.body?.integration;
   // No origin/surface gate: any request without an API key may use the free
@@ -522,18 +539,6 @@ async function handleKeylessAuth(
     if (typeof forwarded === "string" && forwarded.trim()) {
       ip = forwarded.trim();
     }
-  }
-
-  // Configured, but this endpoint isn't part of the keyless tier: tell the user
-  // they need a key (with the signup nudge) rather than a bare "Unauthorized".
-  if (!allowKeyless) {
-    const { url } = await keylessSignupUrlForIp(ip, signupSurface);
-    return {
-      success: false,
-      error: keylessEndpointNotAvailableMessage(url),
-      status: 401,
-      signupUrl: url,
-    };
   }
 
   // Only a valid IPv4 identity gets keyless: IPv6 is too cheap to rotate for a
@@ -559,7 +564,9 @@ async function handleKeylessAuth(
       blocked: true,
       reason: "suspicious",
     });
-    const { url } = await keylessSignupUrlForIp(ip, signupSurface);
+    // Flagged IPs are the rotating ones, so they get the bare link too rather
+    // than a stored row each.
+    const url = KEYLESS_SIGNUP_FALLBACK_URL;
     return {
       success: false,
       error: keylessSuspiciousIpMessage(url),

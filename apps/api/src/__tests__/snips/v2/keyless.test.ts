@@ -117,6 +117,8 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       "not supported by the keyless free tier",
     );
     expect(response.body.error).toMatch(KEYLESS_SIGNUP_URL);
+    // Anonymous traffic on a non-keyless endpoint must not write a link row.
+    expect(response.body.signup_url).toBe("https://firecrawl.dev/k");
     expect(response.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
   });
 

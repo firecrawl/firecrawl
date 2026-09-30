@@ -41,9 +41,12 @@ export async function keylessEligibilityController(
     res.status(200).json(result);
     return;
   }
-  // No identity to key a link on when the tier is off or the limiter is down.
+  // No identity to key a link on when the tier is off or the limiter is down,
+  // and flagged (rotating) IPs get the bare link rather than a stored row each.
   const signupUrl =
-    result.reason === "disabled" || result.reason === "error"
+    result.reason === "disabled" ||
+    result.reason === "error" ||
+    result.reason === "suspicious"
       ? KEYLESS_SIGNUP_FALLBACK_URL
       : (await keylessSignupUrlForIp(ip, keylessSignupSurface(req))).url;
   res.status(200).json({ ...result, signupUrl });
