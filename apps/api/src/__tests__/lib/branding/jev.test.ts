@@ -29,6 +29,7 @@ import { mergeBrandingResults } from "../../../lib/branding/merge";
 import { BrandingLLMInput } from "../../../lib/branding/types";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { logger } from "../../../lib/logger";
+import * as tracer from "../../../lib/otel-tracer";
 
 const LOGO = {
   src: "https://acme.test/logo.svg",
@@ -500,18 +501,34 @@ describe("branding with Jev", () => {
     ]);
   });
 
-  it("keeps zero-data-retention scrapes and unlisted teams off Jev", async () => {
-    await enhanceBrandingWithLLM({
-      ...baseInput(new CostTracking()),
-      zeroDataRetention: true,
-    });
+  it("keeps unlisted teams off Jev", async () => {
     await enhanceBrandingWithLLM({
       ...baseInput(new CostTracking()),
       teamId: "team-unlisted",
     });
 
     expect(mocks.systemOne).not.toHaveBeenCalled();
-    expect(generateObject).toHaveBeenCalledTimes(2);
+    expect(generateObject).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses Jev for zero-data-retention scrapes and keeps their span unexported", async () => {
+    respondWith(jevResponse());
+    const withSpan = vi.spyOn(tracer, "withSpan");
+
+    const result = await enhanceBrandingWithLLM({
+      ...baseInput(new CostTracking()),
+      zeroDataRetention: true,
+    });
+
+    expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+    expect(generateObject).not.toHaveBeenCalled();
+    expect(result.logoSelection?.selectedLogoIndex).toBe(1);
+    expect(withSpan).toHaveBeenCalledWith(
+      "typesafe.systemone",
+      expect.any(Function),
+      expect.objectContaining({ zeroDataRetention: true }),
+    );
+    withSpan.mockRestore();
   });
 
   it("lets a listed team pick the LLM per request with mode: standard", async () => {

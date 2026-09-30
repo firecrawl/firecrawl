@@ -50,9 +50,6 @@ type JevBrandingResult = {
 
 export function isJevBrandingEnabled(input: BrandingLLMInput): boolean {
   if (!config.TYPESAFE_API_KEY) return false;
-  // TypeSafe only offers zero data retention on enterprise contracts; keep
-  // ZDR scrapes on the existing path until that is in place.
-  if (input.zeroDataRetention) return false;
   // Listed teams choose per request with the format's `mode`: "standard" runs
   // the LLM, anything else Jev. Every other team ignores `mode` and follows
   // the settings below.
@@ -800,6 +797,9 @@ export async function enhanceBrandingWithJev(
       },
       {
         kind: SpanKind.CLIENT,
+        // TypeSafe retains nothing for our account; our own trace of a ZDR
+        // scrape must not be exported either.
+        zeroDataRetention: input.zeroDataRetention === true,
         attributes: {
           feature: "branding",
           "branding.jev.questions": Object.keys(request.questions).length,
