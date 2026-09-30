@@ -5,11 +5,12 @@ const mocks = vi.hoisted(() => ({
   getGroup: vi.fn(),
   getGroupNumericStats: vi.fn(),
   getGroupJobs: vi.fn(),
+  getCrawlError: vi.fn(),
 }));
 
 vi.mock("../../../lib/crawl-redis", () => ({
   getCrawl: mocks.getCrawl,
-  getCrawlError: vi.fn().mockResolvedValue(null),
+  getCrawlError: mocks.getCrawlError,
   getCrawlExpiry: vi.fn().mockResolvedValue(new Date(0)),
   getCrawlQualifiedJobCount: vi.fn(),
   getDoneJobsOrderedLength: vi.fn(),
@@ -83,7 +84,9 @@ function mockCrawl(options: {
   groupStatus: string;
   pending?: number;
   completed?: number;
+  crawlError?: string;
 }) {
+  mocks.getCrawlError.mockResolvedValue(options.crawlError ?? null);
   mocks.getGroup.mockResolvedValue({ status: options.groupStatus });
   mocks.getCrawl.mockResolvedValue({
     team_id: TEAM_ID,
@@ -173,6 +176,48 @@ describe("crawl status next cursor", () => {
     const past = await getStatus({ skip: "2", limit: "2" });
     expect(past.data).toHaveLength(0);
     expect(past.next).toBeUndefined();
+  });
+
+  it("keeps the cursor when the response size cap cuts a page short", async () => {
+    mockCrawl({ cancelled: true, groupStatus: "active", completed: 1 });
+    const big = {
+      id: "big",
+      returnvalue: { markdown: "x".repeat(11 * 1024 * 1024), metadata: {} },
+    };
+    mocks.getGroupJobs.mockImplementation(
+      async (_id: string, _status: string, limit: number, offset: number) =>
+        [big, doc("https://example.com/b")].slice(offset, offset + limit),
+    );
+
+    const first = await getStatus();
+    expect(first.data).toHaveLength(1);
+    expect(first.next).toBe(`http://localhost/v1/crawl/${JOB_ID}?skip=1`);
+  });
+
+  it("ends the cursor of a crawl whose group was cancelled", async () => {
+    mockCrawl({ cancelled: false, groupStatus: "cancelled" });
+
+    const first = await getStatus();
+    expect(first.status).toBe("cancelled");
+    expect(first.data).toHaveLength(2);
+    expect(first.next).toBeUndefined();
+
+    const past = await getStatus({ skip: "2" });
+    expect(past.data).toHaveLength(0);
+    expect(past.next).toBeUndefined();
+  });
+
+  it("returns no cursor for a crawl that failed during kickoff", async () => {
+    mockCrawl({
+      cancelled: false,
+      groupStatus: "completed",
+      completed: 0,
+      crawlError: "queue full",
+    });
+
+    const first = await getStatus();
+    expect(first.status).toBe("failed");
+    expect(first.next).toBeUndefined();
   });
 
   it("ends the cursor after a full last page of a completed crawl", async () => {

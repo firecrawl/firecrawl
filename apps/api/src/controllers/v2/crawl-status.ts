@@ -353,11 +353,12 @@ export async function crawlStatusController(
   outputBulkB = {
     data: scrapes,
     // Only completed documents are paged, so a finished job's cursor ends after
-    // its last one. `completed` is read before this page, so a full page of a
-    // cancelled or failed job keeps the cursor for jobs that finished meanwhile.
+    // its last one. `completed` is read before this page, so a full or
+    // size-capped page keeps the cursor for jobs that finished meanwhile.
     next:
       outputBulkA.status === "scraping" ||
       (outputBulkA.completed ?? 0) > start + iteratedOver ||
+      doneJobs.length > iteratedOver ||
       (outputBulkA.status !== "completed" &&
         doneJobs.length > 0 &&
         doneJobs.length === pageSize)
