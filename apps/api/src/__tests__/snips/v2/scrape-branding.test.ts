@@ -43,8 +43,17 @@ const isBrandingCall = (call: CostTrackingCall) =>
   call.metadata?.module === "branding" &&
   call.metadata?.method === "enhanceBrandingWithLLM";
 
+// Whether the server could route a test team's branding to Jev (all teams, a
+// listed team, or a rollout share). The LLM-only assertion below only holds
+// when none of these is configured.
+const JEV_MAY_APPLY =
+  !!process.env.TYPESAFE_API_KEY &&
+  (process.env.BRANDING_JEV === "true" ||
+    !!process.env.BRANDING_JEV_TEAM_IDS?.trim() ||
+    Number(process.env.BRANDING_JEV_ROLLOUT_PERCENT || 0) > 0);
+
 describe("Branding cost tracking", () => {
-  concurrentIf(TEST_PRODUCTION)(
+  concurrentIf(TEST_PRODUCTION && !JEV_MAY_APPLY)(
     "records the branding LLM call with its model and cost",
     async () => {
       const response = await scrape(
@@ -82,6 +91,44 @@ describe("Branding cost tracking", () => {
 
       const calls = await getCostTrackingCalls(response.metadata.scrapeId!);
 
+      expect(calls.filter(isBrandingCall)).toHaveLength(0);
+    },
+    scrapeTimeout + 15000,
+  );
+});
+
+// Runs when the API server was started with TYPESAFE_API_KEY and
+// BRANDING_JEV=true, which puts every team (including test identities, whose
+// ids aren't known ahead of time) on Jev.
+const JEV_ON =
+  !!process.env.TYPESAFE_API_KEY && process.env.BRANDING_JEV === "true";
+
+describe("Branding with Jev", () => {
+  concurrentIf(TEST_PRODUCTION && JEV_ON)(
+    "answers branding with Jev and records its cost, not an LLM call",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/",
+          formats: ["branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.branding).toBeDefined();
+      expect(response.branding?.logo).toContain("firecrawl");
+      expect(response.branding?.colors?.primary).toMatch(/^#[0-9A-F]{6}$/);
+
+      const calls = await getCostTrackingCalls(response.metadata.scrapeId!);
+      const jevCalls = calls.filter(
+        call =>
+          call.metadata?.module === "branding" &&
+          call.metadata?.method === "enhanceBrandingWithJev",
+      );
+      expect(jevCalls).toHaveLength(1);
+      expect(jevCalls[0].model).toMatch(/^jev/);
+      expect(jevCalls[0].cost).toBeGreaterThan(0);
       expect(calls.filter(isBrandingCall)).toHaveLength(0);
     },
     scrapeTimeout + 15000,
