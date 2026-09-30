@@ -12,8 +12,9 @@ import {
   keylessCreditsTotal,
 } from "./keyless-metrics";
 import {
-  KEYLESS_SIGNUP_FALLBACK_URL,
   type KeylessSignupSurface,
+  existingKeylessSignupUrl,
+  keylessFallbackSignupUrl,
   keylessSignupSurface,
   keylessSignupUrl,
 } from "./keyless-signup-link";
@@ -31,7 +32,7 @@ const KEYLESS_CREDITS_PER_DAY = config.KEYLESS_CREDITS_PER_DAY;
 
 // Keyless prompts link to signup at firecrawl.dev/k/<id>, where <id> is an
 // opaque per-identity reference (see keyless-signup-link.ts). The constant uses
-// the bare /k link and stays the marker for internal equality checks; responses
+// the regular signup link and stays the marker for internal equality checks; responses
 // swap in the caller's own link where they leave the API. The URL ends its
 // line, so a copied link never picks up punctuation.
 function keylessFreeTierLimitMessage(signupUrl: string): string {
@@ -42,7 +43,7 @@ Authorization: Bearer YOUR_API_KEY`;
 }
 
 export const KEYLESS_FREE_TIER_LIMIT_MESSAGE = keylessFreeTierLimitMessage(
-  KEYLESS_SIGNUP_FALLBACK_URL,
+  keylessFallbackSignupUrl("api"),
 );
 
 // The tier is "configured" when BOTH limits are set — even to 0. Unset means the
@@ -166,7 +167,7 @@ async function retryAfterSecondsFor(key: string): Promise<number | undefined> {
   }
 }
 
-/** Signup link for a keyless IP identity; the bare /k link for anything else. */
+/** Signup link for a keyless IP identity; the regular signup link for anything else. */
 export function keylessSignupUrlForIp(
   ip: string | null | undefined,
   surface: KeylessSignupSurface,
@@ -179,8 +180,23 @@ export function keylessSignupUrlForIp(
 }
 
 /**
+ * The link already issued to a keyless IP identity, without issuing one; the
+ * regular signup link when there is none. See existingKeylessSignupUrl.
+ */
+export function existingKeylessSignupUrlForIp(
+  ip: string | null | undefined,
+  surface: KeylessSignupSurface,
+): Promise<{ url: string; shortId?: string }> {
+  const teamUuid =
+    ip && isKeylessIpEligible(ip)
+      ? keylessTeamUuid(keylessTeamId(normalizeKeylessIpv4(ip)))
+      : null;
+  return existingKeylessSignupUrl(teamUuid, surface);
+}
+
+/**
  * The caller's own signup link and the limit message that carries it. Never
- * throws: when no per-identity link can be issued the bare /k link is used.
+ * throws: when no per-identity link can be issued the regular signup link is used.
  */
 export async function keylessLimitPrompt(
   ip: string | null | undefined,
@@ -194,7 +210,7 @@ export async function keylessLimitPrompt(
   };
 }
 
-/** keylessLimitPrompt for a keyless team id; the bare link for other teams. */
+/** keylessLimitPrompt for a keyless team id; the regular signup link for other teams. */
 export function keylessLimitPromptForTeam(
   teamId: string,
   req: Parameters<typeof keylessSignupSurface>[0],

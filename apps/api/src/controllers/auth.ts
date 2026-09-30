@@ -14,6 +14,7 @@ import {
 import { isTrustedAgentInteropRequest } from "../lib/agent-interop";
 import {
   consumeKeylessRequest,
+  existingKeylessSignupUrlForIp,
   isKeylessConfigured,
   keylessExhaustionTelemetry,
   isKeylessIpEligible,
@@ -21,10 +22,7 @@ import {
   keylessTeamId,
   normalizeKeylessIpv4,
 } from "../lib/keyless";
-import {
-  KEYLESS_SIGNUP_FALLBACK_URL,
-  keylessSignupSurface,
-} from "../lib/keyless-signup-link";
+import { keylessSignupSurface } from "../lib/keyless-signup-link";
 import { isKeylessIpSuspicious } from "../lib/spur";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
 import { checkIpRestriction } from "../lib/ip-restriction";
@@ -481,6 +479,26 @@ function keylessSuspiciousIpMessage(signupUrl: string): string {
 }
 
 /**
+ * The real client IP for keyless. A trusted proxy (e.g. the hosted MCP) may
+ * forward the end-user's IP via x-firecrawl-keyless-ip, authenticated with a
+ * shared secret — without the secret the header is ignored, so direct callers
+ * can't spoof their IP to dodge the per-IP cap.
+ */
+function keylessClientIp(req): string {
+  let ip = req.ip ?? req.socket?.remoteAddress ?? "unknown";
+  if (
+    config.KEYLESS_PROXY_SECRET &&
+    req.headers["x-firecrawl-keyless-secret"] === config.KEYLESS_PROXY_SECRET
+  ) {
+    const forwarded = req.headers["x-firecrawl-keyless-ip"];
+    if (typeof forwarded === "string" && forwarded.trim()) {
+      ip = forwarded.trim();
+    }
+  }
+  return ip;
+}
+
+/**
  * Keyless free tier: official MCP/CLI/SDK clients can call scrape, search, and
  * interact with no API key. `origin`/`integration` are client-set and spoofable,
  * so they're only a soft UX gate — the real abuse controls are the per-IP daily
@@ -505,11 +523,15 @@ async function handleKeylessAuth(
 
   // Configured, but this endpoint isn't part of the keyless tier: tell the user
   // they need a key (with the signup nudge) rather than a bare "Unauthorized".
-  // The bare link, not a per-identity one: this path runs before any quota or
-  // eligibility check, so issuing here would let anonymous traffic write a
-  // keyless_signup_links row per source IP.
+  // This path runs before any quota or eligibility check, so it never issues
+  // (that would let anonymous traffic write a keyless_signup_links row per
+  // source IP). It reuses a link this identity was already given, from the
+  // cache only, so the signup still joins; otherwise the regular signup link.
   if (!allowKeyless) {
-    const url = KEYLESS_SIGNUP_FALLBACK_URL;
+    const { url } = await existingKeylessSignupUrlForIp(
+      keylessClientIp(req),
+      keylessSignupSurface(req),
+    );
     return {
       success: false,
       error: keylessEndpointNotAvailableMessage(url),
@@ -526,20 +548,7 @@ async function handleKeylessAuth(
   // surface of the signup link.
   const signupSurface = keylessSignupSurface(req);
 
-  // Key on the real client IP. A trusted proxy (e.g. the hosted MCP) may
-  // forward the end-user's IP via x-firecrawl-keyless-ip, authenticated with a
-  // shared secret — without the secret the header is ignored, so direct callers
-  // can't spoof their IP to dodge the per-IP cap.
-  let ip = req.ip ?? req.socket?.remoteAddress ?? "unknown";
-  if (
-    config.KEYLESS_PROXY_SECRET &&
-    req.headers["x-firecrawl-keyless-secret"] === config.KEYLESS_PROXY_SECRET
-  ) {
-    const forwarded = req.headers["x-firecrawl-keyless-ip"];
-    if (typeof forwarded === "string" && forwarded.trim()) {
-      ip = forwarded.trim();
-    }
-  }
+  let ip = keylessClientIp(req);
 
   // Only a valid IPv4 identity gets keyless: IPv6 is too cheap to rotate for a
   // per-IP cap to mean anything, and malformed/forwarded values must not be
@@ -564,9 +573,9 @@ async function handleKeylessAuth(
       blocked: true,
       reason: "suspicious",
     });
-    // Flagged IPs are the rotating ones, so they get the bare link too rather
-    // than a stored row each.
-    const url = KEYLESS_SIGNUP_FALLBACK_URL;
+    // Flagged IPs are the rotating ones, so this never issues a stored row
+    // each; it only reuses a link the identity was already given.
+    const { url } = await existingKeylessSignupUrlForIp(ip, signupSurface);
     return {
       success: false,
       error: keylessSuspiciousIpMessage(url),

@@ -17,7 +17,11 @@ vi.mock("./keyless", async importOriginal => {
 });
 vi.mock("./keyless-signup-link", async importOriginal => {
   const actual = await importOriginal<typeof import("./keyless-signup-link")>();
-  return { ...actual, keylessSignupUrl: vi.fn() };
+  return {
+    ...actual,
+    keylessSignupUrl: vi.fn(),
+    existingKeylessSignupUrl: vi.fn(),
+  };
 });
 
 import { config } from "../config";
@@ -32,7 +36,10 @@ import {
   keylessTeamId,
   keylessTeamUuid,
 } from "./keyless";
-import { keylessSignupUrl } from "./keyless-signup-link";
+import {
+  existingKeylessSignupUrl,
+  keylessSignupUrl,
+} from "./keyless-signup-link";
 import { logger } from "./logger";
 
 const OWN_LINK = "https://firecrawl.dev/k/7fq2xab9";
@@ -59,11 +66,10 @@ afterEach(() => {
 });
 
 describe("keyless limit prompt", () => {
-  it("keeps the internal marker message on the bare /k link", () => {
+  it("keeps the internal marker message on the regular signup link", () => {
     expect(KEYLESS_FREE_TIER_LIMIT_MESSAGE).toContain(
-      "create a free API key at https://firecrawl.dev/k\n",
+      "create a free API key at https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api\n",
     );
-    expect(KEYLESS_FREE_TIER_LIMIT_MESSAGE).not.toContain("utm_");
   });
 
   it("puts the caller's own link in the credit-limit body and log", async () => {
@@ -178,8 +184,31 @@ describe("keyless eligibility signup link", () => {
     },
   );
 
-  it.each(["disabled", "error", "suspicious"] as const)(
-    "gives the bare link without issuing when the refusal is %s",
+  it("only reuses an existing link for a suspicious refusal, never issuing", async () => {
+    vi.mocked(checkKeylessEligibility).mockResolvedValue({
+      eligible: false,
+      reason: "suspicious",
+    });
+    vi.mocked(existingKeylessSignupUrl).mockResolvedValue({
+      url: OWN_LINK,
+      shortId: "7fq2xab9",
+    });
+    const res = fakeRes();
+
+    await keylessEligibilityController(eligibilityRequest(), res);
+
+    expect(keylessSignupUrl).not.toHaveBeenCalled();
+    expect(existingKeylessSignupUrl).toHaveBeenCalledWith(TEAM_UUID, "mcp");
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      eligible: false,
+      reason: "suspicious",
+      signupUrl: OWN_LINK,
+    });
+  });
+
+  it.each(["disabled", "error"] as const)(
+    "gives the regular signup link without issuing when the refusal is %s",
     async reason => {
       vi.mocked(checkKeylessEligibility).mockResolvedValue({
         eligible: false,
@@ -194,7 +223,8 @@ describe("keyless eligibility signup link", () => {
       expect(res.json).toHaveBeenCalledWith({
         eligible: false,
         reason,
-        signupUrl: "https://firecrawl.dev/k",
+        signupUrl:
+          "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=mcp",
       });
     },
   );

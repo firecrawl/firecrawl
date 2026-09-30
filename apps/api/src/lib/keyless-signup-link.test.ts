@@ -23,10 +23,11 @@ vi.mock("../services/rate-limiter", () => ({
 import { config } from "../config";
 import { logger } from "./logger";
 import {
-  KEYLESS_SIGNUP_FALLBACK_URL,
   KEYLESS_SIGNUP_ID_PATTERN,
+  existingKeylessSignupUrl,
   generateKeylessSignupId,
   issueKeylessSignupId,
+  keylessFallbackSignupUrl,
   keylessSignupSurface,
   keylessSignupUrl,
   resetKeylessSignupLinkStateForTests,
@@ -263,10 +264,74 @@ describe("keylessSignupUrl", () => {
     });
   });
 
-  it("falls back to the bare /k link", async () => {
+  it("falls back to the regular signup link, tagged with the surface", async () => {
     await expect(keylessSignupUrl(null, "mcp")).resolves.toEqual({
-      url: KEYLESS_SIGNUP_FALLBACK_URL,
+      url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=mcp",
     });
-    expect(KEYLESS_SIGNUP_FALLBACK_URL).toBe("https://firecrawl.dev/k");
+    expect(keylessFallbackSignupUrl("cli")).toBe(
+      "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=cli",
+    );
+  });
+
+  it("falls back to the regular signup link while issuance is backed off", async () => {
+    mocks.redisGet.mockResolvedValue(null);
+    mocks.returning.mockRejectedValue(new Error("db down"));
+    await keylessSignupUrl(TEAM_UUID, "api");
+
+    await expect(keylessSignupUrl(TEAM_UUID, "api")).resolves.toEqual({
+      url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
+    });
+  });
+});
+
+describe("existingKeylessSignupUrl", () => {
+  const originalUseDbAuth = config.USE_DB_AUTHENTICATION;
+  beforeEach(() => {
+    config.USE_DB_AUTHENTICATION = true;
+    mocks.redisGet.mockReset().mockResolvedValue(null);
+    mocks.insert.mockClear();
+  });
+  afterEach(() => {
+    config.USE_DB_AUTHENTICATION = originalUseDbAuth;
+    vi.useRealTimers();
+  });
+
+  it("returns the identity's cached link without touching the database", async () => {
+    mocks.redisGet.mockResolvedValue("7fq2xab9");
+
+    await expect(existingKeylessSignupUrl(TEAM_UUID, "cli")).resolves.toEqual({
+      url: "https://firecrawl.dev/k/7fq2xab9",
+      shortId: "7fq2xab9",
+    });
+    expect(mocks.redisGet).toHaveBeenCalledWith(
+      `keyless_signup_link:v1:${TEAM_UUID}:cli`,
+    );
+    expect(mocks.insert).not.toHaveBeenCalled();
+  });
+
+  it("never issues: a miss, a bad value, an error or a slow cache give the regular link", async () => {
+    const regular = {
+      url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
+    };
+    await expect(existingKeylessSignupUrl(TEAM_UUID, "api")).resolves.toEqual(
+      regular,
+    );
+    mocks.redisGet.mockResolvedValue("not-an-id");
+    await expect(existingKeylessSignupUrl(TEAM_UUID, "api")).resolves.toEqual(
+      regular,
+    );
+    mocks.redisGet.mockRejectedValue(new Error("redis down"));
+    await expect(existingKeylessSignupUrl(TEAM_UUID, "api")).resolves.toEqual(
+      regular,
+    );
+    vi.useFakeTimers();
+    mocks.redisGet.mockReturnValue(new Promise(() => {}));
+    const slow = existingKeylessSignupUrl(TEAM_UUID, "api");
+    await vi.advanceTimersByTimeAsync(50);
+    await expect(slow).resolves.toEqual(regular);
+    await expect(existingKeylessSignupUrl(null, "api")).resolves.toEqual(
+      regular,
+    );
+    expect(mocks.insert).not.toHaveBeenCalled();
   });
 });

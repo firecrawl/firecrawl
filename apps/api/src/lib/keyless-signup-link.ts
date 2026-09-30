@@ -10,11 +10,22 @@ import { logger } from "./logger";
 // surface that showed it, so the link shows nothing about the caller and the
 // warehouse joins a signup (user_onboarding.keyless_ref) to the keyless ledger
 // without a secret.
-// The bare link is the fallback when no id can be issued; the web route still
-// tags the signup keyless, with no surface.
-export const KEYLESS_SIGNUP_FALLBACK_URL = "https://firecrawl.dev/k";
+const KEYLESS_SHORT_LINK_BASE = "https://firecrawl.dev/k";
 
 export type KeylessSignupSurface = "api" | "mcp" | "cli";
+
+/**
+ * The regular signup link, used whenever no id can be given (no identity,
+ * database slow or failing, issuance backed off, or a pre-quota prompt for an
+ * identity with no link yet). It still tags the signup keyless with its
+ * surface through the UTMs the web app already reads, so only the per-identity
+ * join is lost, not the attribution.
+ */
+export function keylessFallbackSignupUrl(
+  surface: KeylessSignupSurface,
+): string {
+  return `https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=${surface}`;
+}
 
 // Crockford base32, lowercase: no i, l, o, u, so a relayed or retyped link
 // survives case changes and look-alike characters. 8 chars = 40 random bits.
@@ -24,7 +35,7 @@ export const KEYLESS_SIGNUP_ID_PATTERN = /^[0-9abcdefghjkmnpqrstvwxyz]{8}$/;
 
 const CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 // Issuance runs while building an error response. Past this budget the prompt
-// uses the bare link instead of waiting on the database.
+// uses the regular signup link instead of waiting on the database.
 const ISSUE_TIMEOUT_MS = 300;
 // After a database failure, skip issuance in this process for a short while so
 // an outage does not add a timed-out query to every blocked request.
@@ -192,13 +203,48 @@ export async function issueKeylessSignupId(
   }
 }
 
-/** The caller's own signup link, or the bare /k link when none is issued. */
+// Budget for the cache-only lookup on prompts that run before any quota check.
+const REUSE_TIMEOUT_MS = 50;
+
+/**
+ * The link already issued to this identity and surface, read from the cache
+ * only: never touches the database and never issues. For prompts that run
+ * before any quota check (unsupported endpoint, suspicious IP), where issuing
+ * would let anonymous or rotating traffic write a row per source IP. An
+ * identity that has hit a quota prompt before gets its own link back, so the
+ * signup still joins; anything else gets the regular signup link.
+ */
+export async function existingKeylessSignupUrl(
+  teamUuid: string | null | undefined,
+  surface: KeylessSignupSurface,
+): Promise<{ url: string; shortId?: string }> {
+  const fallback = { url: keylessFallbackSignupUrl(surface) };
+  if (!teamUuid || config.USE_DB_AUTHENTICATION !== true) return fallback;
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const cached = await Promise.race([
+      redisRateLimitClient.get(cacheKey(teamUuid, surface)),
+      new Promise<null>(resolve => {
+        timer = setTimeout(() => resolve(null), REUSE_TIMEOUT_MS);
+      }),
+    ]);
+    return cached && KEYLESS_SIGNUP_ID_PATTERN.test(cached)
+      ? { url: `${KEYLESS_SHORT_LINK_BASE}/${cached}`, shortId: cached }
+      : fallback;
+  } catch {
+    return fallback;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The caller's own signup link, or the regular signup link when none is issued. */
 export async function keylessSignupUrl(
   teamUuid: string | null | undefined,
   surface: KeylessSignupSurface,
 ): Promise<{ url: string; shortId?: string }> {
   const shortId = await issueKeylessSignupId(teamUuid, surface);
   return shortId
-    ? { url: `${KEYLESS_SIGNUP_FALLBACK_URL}/${shortId}`, shortId }
-    : { url: KEYLESS_SIGNUP_FALLBACK_URL };
+    ? { url: `${KEYLESS_SHORT_LINK_BASE}/${shortId}`, shortId }
+    : { url: keylessFallbackSignupUrl(surface) };
 }

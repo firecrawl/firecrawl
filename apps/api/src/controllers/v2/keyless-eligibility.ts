@@ -2,10 +2,11 @@ import { Request, Response } from "express";
 import { config } from "../../config";
 import {
   checkKeylessEligibility,
+  existingKeylessSignupUrlForIp,
   keylessSignupUrlForIp,
 } from "../../lib/keyless";
 import {
-  KEYLESS_SIGNUP_FALLBACK_URL,
+  keylessFallbackSignupUrl,
   keylessSignupSurface,
 } from "../../lib/keyless-signup-link";
 
@@ -41,13 +42,15 @@ export async function keylessEligibilityController(
     res.status(200).json(result);
     return;
   }
-  // No identity to key a link on when the tier is off or the limiter is down,
-  // and flagged (rotating) IPs get the bare link rather than a stored row each.
+  // No identity to key a link on when the tier is off or the limiter is down.
+  // Flagged (rotating) IPs never get a stored row each: they only reuse a link
+  // the identity was already given.
   const signupUrl =
-    result.reason === "disabled" ||
-    result.reason === "error" ||
-    result.reason === "suspicious"
-      ? KEYLESS_SIGNUP_FALLBACK_URL
-      : (await keylessSignupUrlForIp(ip, keylessSignupSurface(req))).url;
+    result.reason === "disabled" || result.reason === "error"
+      ? keylessFallbackSignupUrl(keylessSignupSurface(req))
+      : result.reason === "suspicious"
+        ? (await existingKeylessSignupUrlForIp(ip, keylessSignupSurface(req)))
+            .url
+        : (await keylessSignupUrlForIp(ip, keylessSignupSurface(req))).url;
   res.status(200).json({ ...result, signupUrl });
 }

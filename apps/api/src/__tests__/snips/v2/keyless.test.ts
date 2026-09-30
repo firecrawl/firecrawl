@@ -41,13 +41,14 @@ async function flushKeylessBuckets() {
 }
 
 // Every keyless prompt links to signup at firecrawl.dev/k/<id>, an opaque
-// per-identity id, or the bare /k link when no id could be issued (e.g. a test
-// database without keyless_signup_links). The URL is always followed by
-// whitespace, never punctuation, and carries no query string.
+// per-identity id, or the regular signup link (utm_source=keyless plus the
+// surface) when no id could be given (e.g. a test database without
+// keyless_signup_links). The URL is always followed by whitespace, never
+// punctuation.
 const KEYLESS_SIGNUP_URL =
-  /https:\/\/firecrawl\.dev\/k(\/[0-9abcdefghjkmnpqrstvwxyz]{8})?(?=\s)/;
+  /https:\/\/(firecrawl\.dev\/k\/[0-9abcdefghjkmnpqrstvwxyz]{8}|www\.firecrawl\.dev\/signin\?utm_source=keyless&utm_medium=(api|mcp|cli))(?=\s)/;
 const KEYLESS_SIGNUP_URL_EXACT =
-  /^https:\/\/firecrawl\.dev\/k(\/[0-9abcdefghjkmnpqrstvwxyz]{8})?$/;
+  /^https:\/\/(firecrawl\.dev\/k\/[0-9abcdefghjkmnpqrstvwxyz]{8}|www\.firecrawl\.dev\/signin\?utm_source=keyless&utm_medium=(api|mcp|cli))$/;
 
 // Recover the loopback IP the server keyed on, so we can seed its credit counter.
 // Row count of keyless_signup_links, or null when this database has no such
@@ -131,8 +132,11 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       "not supported by the keyless free tier",
     );
     expect(response.body.error).toMatch(KEYLESS_SIGNUP_URL);
-    // Anonymous traffic on a non-keyless endpoint must not write a link row.
-    expect(response.body.signup_url).toBe("https://firecrawl.dev/k");
+    // Anonymous traffic on a non-keyless endpoint must not write a link row;
+    // a new identity gets the regular signup link.
+    expect(response.body.signup_url).toBe(
+      "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
+    );
     expect(response.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
     if (rowsBefore !== null) {
       expect(await countSignupLinkRows()).toBe(rowsBefore);
@@ -216,7 +220,10 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.signup_url).toMatch(KEYLESS_SIGNUP_URL_EXACT);
       expect(blocked.body.error).toContain(blocked.body.signup_url);
-      expect(blocked.body.signup_url).not.toContain("utm_");
+      // A /k link shows nothing about the caller or the surface.
+      if (String(blocked.body.signup_url).includes("/k/")) {
+        expect(blocked.body.signup_url).not.toContain("utm_");
+      }
       expect(blocked.body.signup_url).not.toContain(ip);
     }
     expect(mcpSecond.body.signup_url).toBe(mcpFirst.body.signup_url);
