@@ -12,6 +12,7 @@ const origins: Array<[string, string]> = [
   ["protocol-relative", "//evil.example"],
   ["different port", "https://api.firecrawl.dev:8443"],
   ["different scheme", "http://api.firecrawl.dev"],
+  ["whitespace-prefixed", "\n https://evil.example"],
 ];
 
 function makeClient(firstPage: (next: string) => unknown, lastPage: unknown, next: string) {
@@ -86,6 +87,9 @@ describe("pinToApiOrigin", () => {
       "http://localhost:3002/v2/crawl/abc?skip=10",
     );
     expect(pinToApiOrigin(API_URL, "\\\\evil.example/v2/crawl/abc")).toBe(`${API_URL}/v2/crawl/abc`);
+    for (const url of ["\nhttps://evil.example/v2/crawl/abc", "h\tttps://evil.example/v2/crawl/abc", "\u0000 //evil.example/v2/crawl/abc", "/\\evil.example/v2/crawl/abc"]) {
+      expect(pinToApiOrigin(API_URL, url)).toBe(`${API_URL}/v2/crawl/abc`);
+    }
   });
 
   test("leaves relative URLs unchanged", () => {

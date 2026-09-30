@@ -11,6 +11,7 @@ const origins: Array<[string, string]> = [
   ["protocol-relative", "//evil.example"],
   ["different port", "https://api.firecrawl.dev:8443"],
   ["different scheme", "http://api.firecrawl.dev"],
+  ["whitespace-prefixed", "\n https://evil.example"],
 ];
 
 function mockGet(respond: (url: URL) => unknown) {

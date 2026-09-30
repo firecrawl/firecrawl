@@ -5,12 +5,13 @@
  * Throws if apiUrl is not an absolute URL.
  */
 export function pinToApiOrigin(apiUrl: string, url: string): string {
-  if (!/^([a-z][a-z\d+\-.]*:|[\\/]{2})/i.test(url)) return url;
+  const normalized = url.replace(/[\t\n\r]/g, "").replace(/^[\u0000-\u0020]+/, "");
+  if (!/^([a-z][a-z\d+\-.]*:|[\\/]{2})/i.test(normalized)) return url;
   const base = URL.canParse(apiUrl) ? new URL(apiUrl) : null;
   if (!base?.host) {
     throw new Error(`apiUrl must be an absolute URL, got ${JSON.stringify(apiUrl)}`);
   }
-  const target = new URL(url, base);
+  const target = new URL(normalized, base);
   const pinned = new URL(base.origin);
   pinned.pathname = target.pathname;
   pinned.search = target.search;
