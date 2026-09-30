@@ -87,7 +87,7 @@ export async function removeExplicitResults(
             "typesafe.systemone",
             async callSpan => {
               const { model, answers } = await typesafe.systemOne(
-                { state: { search_query: query, result }, questions },
+                { state: { search_query: clip(query), result }, questions },
                 { signal },
               );
               setSpanAttributes(callSpan, {

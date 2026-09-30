@@ -140,6 +140,45 @@ it("keeps results Jev fails to judge", async () => {
   );
 });
 
+it("keeps results still pending when the filter's time budget runs out", async () => {
+  const budget = new AbortController();
+  const timeout = vi
+    .spyOn(AbortSignal, "timeout")
+    .mockReturnValue(budget.signal);
+  mocks.systemOne.mockImplementation(({ state }, { signal }) =>
+    state.result.url.includes("//nsfw.")
+      ? Promise.resolve({
+          answers: { explicit: { type: "noul", noul: 0.9 } },
+        })
+      : new Promise((_, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason)),
+        ),
+  );
+  const response = { web: [web("slow1"), web("nsfw"), web("slow2")] };
+
+  const run = removeExplicitResults(response, "query", 5, logger);
+  await vi.waitFor(() => expect(mocks.systemOne).toHaveBeenCalledTimes(3));
+  budget.abort();
+  await run;
+  expect(timeout).toHaveBeenCalledWith(5000);
+  timeout.mockRestore();
+
+  expect(response.web.map(result => result.title)).toEqual(["slow1", "slow2"]);
+  expect(logger.warn).toHaveBeenCalledWith(
+    "Safe search filter kept results Jev could not judge",
+    expect.objectContaining({ failed: 2 }),
+  );
+});
+
+it("clips an ultralong query", async () => {
+  judgeByUrl([]);
+
+  await removeExplicitResults({ web: [web("a")] }, "q".repeat(5000), 5, logger);
+
+  const [{ state }] = mocks.systemOne.mock.calls[0];
+  expect(state.search_query).toHaveLength(500);
+});
+
 it("sends Jev only the start of ultralong fields", async () => {
   judgeByUrl([]);
   const response = {
