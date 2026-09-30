@@ -140,6 +140,20 @@ it("keeps results Jev fails to judge", async () => {
   );
 });
 
+it("sends Jev only the start of ultralong fields", async () => {
+  judgeByUrl([]);
+  const response = {
+    web: [{ ...web("long"), description: "x".repeat(20_000) }],
+  };
+
+  await removeExplicitResults(response, "query", 5, logger);
+
+  const [{ state }] = mocks.systemOne.mock.calls[0];
+  expect(state.result.snippet).toHaveLength(500);
+  expect(state.result.title).toBe("long");
+  expect(response.web[0].description).toHaveLength(20_000);
+});
+
 it("skips responses with nothing to judge", async () => {
   await removeExplicitResults({}, "query", 5, logger);
   await removeExplicitResults({ web: [] }, "query", 5, logger);

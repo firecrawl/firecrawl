@@ -4,8 +4,11 @@ import type { SearchV2Response } from "../lib/entities";
 import { config } from "../config";
 import { setSpanAttributes, SpanKind, withSpan } from "../lib/otel-tracer";
 
-/** Jev's probability that a result is adult content, above which it is dropped. */
-const EXPLICIT_THRESHOLD = 0.5;
+/**
+ * Jev's probability that a result is adult content, above which it is dropped.
+ * Labeled adult results scored 0.51 and up, safe ones 0.04 and below.
+ */
+const EXPLICIT_THRESHOLD = 0.3;
 
 /** Most Jev calls in flight at once for one result type. */
 const MAX_CONCURRENT_JUDGMENTS = 20;
@@ -13,17 +16,23 @@ const MAX_CONCURRENT_JUDGMENTS = 20;
 /** Past this, results not yet judged are kept rather than delaying the search. */
 const FILTER_BUDGET_MS = 5000;
 
+/** Some providers return page markdown as the snippet; Jev only needs the start. */
+const MAX_FIELD_CHARS = 500;
+
+const clip = (text: string | undefined): string | null =>
+  text ? text.slice(0, MAX_FIELD_CHARS) : null;
+
 const questions = {
   explicit: noul(
     {
-      task: "`result` is one result a web search returned for `search_query`. Is the result itself adult sexual content?",
+      task: "`result` is one result a web search returned for `search_query`. Is the result adult content, or does it mention an adult content platform?",
       guidance:
-        "Judge the result's own title, snippet and URL. The query only clarifies ambiguous words; a sexual query does not make an unrelated result adult content.",
+        "Judge the result's own title, snippet and URL. Any mention of an adult content platform counts, in any context, including news, business, software, tax or creator advice. The query only clarifies ambiguous words.",
     },
     {
-      true: "Pornographic or sexually explicit material, or a page mainly about adult sexual entertainment: porn sites, NSFW or sex AI generators and chat, escorting, camming, and adult creator or fan subscription platforms.",
+      true: "Pornographic or sexually explicit material; NSFW or sex AI generators and chat; escorting or camming; or any mention of an adult content platform or adult creator subscription site such as OnlyFans, Fansly, ManyVids, Chaturbate or Pornhub, including guides, comparisons, clones and news about them.",
       false:
-        "Anything else, including sex education, sexual health and medicine, news, law, dating, and fashion that is not sexually explicit.",
+        "Anything else, including sex education, sexual health and medicine, dating, fashion, and uses of 'adult' that mean grown-up, such as adult education or adult ADHD.",
     },
   ),
 };
@@ -129,21 +138,21 @@ export async function removeExplicitResults(
       const [safeWeb, safeNews, safeImages] = await Promise.all([
         web &&
           keepSafe("web", web, result => ({
-            title: result.title,
-            snippet: result.description,
-            url: result.url,
+            title: clip(result.title),
+            snippet: clip(result.description),
+            url: clip(result.url),
           })),
         news &&
           keepSafe("news", news, result => ({
-            title: result.title ?? null,
-            snippet: result.snippet ?? null,
-            url: result.url ?? null,
+            title: clip(result.title),
+            snippet: clip(result.snippet),
+            url: clip(result.url),
           })),
         images &&
           keepSafe("images", images, result => ({
-            title: result.title ?? null,
-            url: result.url ?? null,
-            imageUrl: result.imageUrl ?? null,
+            title: clip(result.title),
+            url: clip(result.url),
+            imageUrl: clip(result.imageUrl),
           })),
       ]);
       if (safeWeb) response.web = safeWeb;
