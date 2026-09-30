@@ -2,8 +2,21 @@ import {
   type CostTrackingCall,
   getCostTrackingCalls,
 } from "../cost-tracking-helpers";
-import { concurrentIf, HAS_AI, TEST_PRODUCTION } from "../lib";
-import { scrape, scrapeTimeout, idmux, Identity } from "./lib";
+import {
+  ALLOW_TEST_SUITE_WEBSITE,
+  concurrentIf,
+  HAS_AI,
+  TEST_PRODUCTION,
+  TEST_SELF_HOST,
+  TEST_SUITE_WEBSITE,
+} from "../lib";
+import {
+  scrape,
+  scrapeTimeout,
+  scrapeWithFailure,
+  idmux,
+  Identity,
+} from "./lib";
 
 let identity: Identity;
 
@@ -132,6 +145,64 @@ describe("Branding with Jev", () => {
       expect(calls.filter(isBrandingCall)).toHaveLength(0);
     },
     scrapeTimeout + 15000,
+  );
+});
+
+const PDF_URL = "https://www.orimi.com/pdf-test.pdf";
+
+describe("Branding on pages it can't run on", () => {
+  concurrentIf(TEST_PRODUCTION)(
+    "keeps the other formats and warns when the page is a PDF",
+    async () => {
+      const response = await scrape(
+        {
+          url: PDF_URL,
+          formats: ["markdown", "branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.markdown?.length).toBeGreaterThan(0);
+      expect(response.branding).toBeUndefined();
+      expect(response.warning).toContain("Branding was skipped");
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(TEST_PRODUCTION)(
+    "still fails a branding-only request for a PDF",
+    async () => {
+      const response = await scrapeWithFailure(
+        { url: PDF_URL, formats: ["branding"], timeout: scrapeTimeout },
+        identity,
+      );
+
+      expect(response.error).toContain(
+        "Branding extraction is only supported for HTML web pages",
+      );
+    },
+    scrapeTimeout,
+  );
+
+  // Self-hosted has no fire-engine, so branding can never run there.
+  concurrentIf(TEST_SELF_HOST && ALLOW_TEST_SUITE_WEBSITE)(
+    "keeps the other formats when branding can't run self-hosted",
+    async () => {
+      const response = await scrape(
+        {
+          url: TEST_SUITE_WEBSITE,
+          formats: ["markdown", "branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.markdown?.length).toBeGreaterThan(0);
+      expect(response.branding).toBeUndefined();
+      expect(response.warning).toContain("Branding was skipped");
+    },
+    scrapeTimeout,
   );
 });
 
