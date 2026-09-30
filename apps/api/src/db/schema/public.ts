@@ -35,6 +35,25 @@ export const keyless_credit_usage = pgTable("keyless_credit_usage", {
   created_at: ts("created_at").notNull().defaultNow(),
 });
 
+// Opaque keyless signup link ids (firecrawl.dev/k/<short_id>) and the keyless
+// identity and surface each resolves to. keyless_team_id is the same
+// deterministic keyless team UUID as keyless_credit_usage.team_id.
+export const keyless_signup_links = pgTable(
+  "keyless_signup_links",
+  {
+    short_id: text("short_id").primaryKey(),
+    keyless_team_id: uuid("keyless_team_id").notNull(),
+    surface: text("surface").notNull(),
+    first_issued_at: ts("first_issued_at").notNull().defaultNow(),
+  },
+  table => [
+    unique("keyless_signup_links_identity_surface_key").on(
+      table.keyless_team_id,
+      table.surface,
+    ),
+  ],
+);
+
 export const agent_sponsors = pgTable("agent_sponsors", {
   id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
   email: text("email").notNull(),

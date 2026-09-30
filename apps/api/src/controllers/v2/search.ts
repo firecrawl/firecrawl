@@ -385,7 +385,7 @@ async function searchControllerInner(
         applyAgentAuthDiscoveryHeader(res);
         return res
           .status(429)
-          .json(await keylessLimitBody(req.auth.team_id, "v2_search"));
+          .json(await keylessLimitBody(req.auth.team_id, "v2_search", req));
       }
       reservedKeylessCredits = projectedKeylessCredits;
     }

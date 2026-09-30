@@ -319,6 +319,7 @@ export function authMiddleware(
             ...(auth.retryAfterSeconds
               ? { retry_after_seconds: auth.retryAfterSeconds }
               : {}),
+            ...(auth.signupUrl ? { signup_url: auth.signupUrl } : {}),
           });
         } else {
           return;

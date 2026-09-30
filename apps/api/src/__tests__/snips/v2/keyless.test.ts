@@ -40,10 +40,14 @@ async function flushKeylessBuckets() {
   }
 }
 
-// Every keyless prompt links to signup with these tags so new accounts can be
-// attributed to the keyless free tier.
+// Every keyless prompt links to signup at firecrawl.dev/k/<id>, an opaque
+// per-identity id, or the bare /k link when no id could be issued (e.g. a test
+// database without keyless_signup_links). The URL is always followed by
+// whitespace, never punctuation, and carries no query string.
 const KEYLESS_SIGNUP_URL =
-  "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api";
+  /https:\/\/firecrawl\.dev\/k(\/[0-9abcdefghjkmnpqrstvwxyz]{8})?(?=\s)/;
+const KEYLESS_SIGNUP_URL_EXACT =
+  /^https:\/\/firecrawl\.dev\/k(\/[0-9abcdefghjkmnpqrstvwxyz]{8})?$/;
 
 // Recover the loopback IP the server keyed on, so we can seed its credit counter.
 async function currentKeylessIp(): Promise<string> {
@@ -112,7 +116,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     expect(response.body.error).toContain(
       "not supported by the keyless free tier",
     );
-    expect(response.body.error).toContain(KEYLESS_SIGNUP_URL);
+    expect(response.body.error).toMatch(KEYLESS_SIGNUP_URL);
     expect(response.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
   });
 
@@ -163,11 +167,62 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
     expect(blocked.statusCode).toBe(429);
     expect(blocked.body.error).toContain("keyless free tier rate limit");
-    expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
-    expect(blocked.body.error).not.toContain(`${KEYLESS_SIGNUP_URL}.`);
+    expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
     expect(blocked.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
     // Out of quota → emit the OAuth-discovery header so agents find the key flow.
     expect(blocked.headers["www-authenticate"]).toContain("resource_metadata");
+  });
+
+  it("gives an identity the same signup link on every prompt, and a separate one per surface (429)", async () => {
+    await request(TEST_API_URL)
+      .post("/v2/scrape")
+      .set("Content-Type", "application/json")
+      .send({ origin: "mcp" });
+    const ip = await currentKeylessIp();
+    await redisRateLimitClient.set(
+      `keyless_credits:${ip}`,
+      String(KEYLESS_CREDITS_PER_DAY),
+    );
+
+    const blockedAs = (body: Record<string, unknown>) =>
+      request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Content-Type", "application/json")
+        .send(body);
+    const mcpFirst = await blockedAs({ origin: "mcp-claude-code@3.24.1" });
+    const mcpSecond = await blockedAs({ origin: "mcp-claude-code@3.24.1" });
+    const cli = await blockedAs({ integration: "cli" });
+
+    for (const blocked of [mcpFirst, mcpSecond, cli]) {
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.body.signup_url).toMatch(KEYLESS_SIGNUP_URL_EXACT);
+      expect(blocked.body.error).toContain(blocked.body.signup_url);
+      expect(blocked.body.signup_url).not.toContain("utm_");
+      expect(blocked.body.signup_url).not.toContain(ip);
+    }
+    expect(mcpSecond.body.signup_url).toBe(mcpFirst.body.signup_url);
+
+    // Only assert the mapping when this database has the links table.
+    const mcpId = String(mcpFirst.body.signup_url).split("/k/")[1];
+    if (mcpId) {
+      const cliId = String(cli.body.signup_url).split("/k/")[1];
+      expect(cliId).toBeDefined();
+      expect(cliId).not.toBe(mcpId);
+      const rows = await db
+        .select()
+        .from(schema.keyless_signup_links)
+        .where(eq(schema.keyless_signup_links.short_id, mcpId));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ surface: "mcp" });
+      await db
+        .delete(schema.keyless_signup_links)
+        .where(
+          eq(
+            schema.keyless_signup_links.keyless_team_id,
+            rows[0].keyless_team_id,
+          ),
+        );
+    }
   });
 
   it("enforces the daily credit cap with the credit signup message (429)", async () => {
@@ -189,7 +244,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
     expect(blocked.statusCode).toBe(429);
     expect(blocked.body.error).toContain("keyless free tier rate limit");
-    expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
+    expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
     expect(blocked.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
   });
 
@@ -218,7 +273,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
     expect(blocked.statusCode).toBe(429);
     expect(blocked.body.error).toContain("keyless free tier rate limit");
-    expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
+    expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
     expect(blocked.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
   });
 
@@ -261,7 +316,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.reason).toBe("credits");
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -306,7 +361,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.reason).toBe("credits");
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -348,7 +403,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -478,7 +533,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -517,7 +572,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -568,7 +623,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
         .send({ origin: "mcp" });
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -691,7 +746,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       expect(blocked.statusCode).toBe(429);
       expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toContain(KEYLESS_SIGNUP_URL);
+      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
       expect(blocked.body.error).toContain(
         "Authorization: Bearer YOUR_API_KEY",
       );
@@ -811,7 +866,7 @@ describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
       expect(response.statusCode).toBe(403);
       expect(response.body.success).toBe(false);
       expect(response.body.error).toContain("suspicious");
-      expect(response.body.error).toContain(KEYLESS_SIGNUP_URL);
+      expect(response.body.error).toMatch(KEYLESS_SIGNUP_URL);
       // Out of the keyless path → emit the OAuth-discovery header.
       expect(response.headers["www-authenticate"]).toContain(
         "resource_metadata",

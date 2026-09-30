@@ -1,6 +1,13 @@
 import { Request, Response } from "express";
 import { config } from "../../config";
-import { checkKeylessEligibility } from "../../lib/keyless";
+import {
+  checkKeylessEligibility,
+  keylessSignupUrlForIp,
+} from "../../lib/keyless";
+import {
+  KEYLESS_SIGNUP_FALLBACK_URL,
+  keylessSignupSurface,
+} from "../../lib/keyless-signup-link";
 
 /**
  * Internal endpoint for trusted proxies (the hosted MCP) to check, before a
@@ -8,6 +15,11 @@ import { checkKeylessEligibility } from "../../lib/keyless";
  * consuming quota. Gated by the shared KEYLESS_PROXY_SECRET; the client IP is
  * supplied via x-firecrawl-keyless-ip. Lets the MCP serve keyless when eligible
  * and return a structured recovery action when the IP is not eligible.
+ *
+ * An ineligible result carries `signupUrl`, the caller's own signup link, which
+ * the MCP relays in its recovery message. `?signup_link=1` asks for the link on
+ * an eligible result too, for recovery that eligibility does not cause (a tool
+ * that keyless sessions cannot use).
  */
 export async function keylessEligibilityController(
   req: Request,
@@ -24,5 +36,15 @@ export async function keylessEligibilityController(
     (typeof ipHeader === "string" ? ipHeader.trim() : "") || req.ip || "";
 
   const result = await checkKeylessEligibility(ip);
-  res.status(200).json(result);
+  const wantsLink = !result.eligible || req.query?.signup_link === "1";
+  if (!wantsLink) {
+    res.status(200).json(result);
+    return;
+  }
+  // No identity to key a link on when the tier is off or the limiter is down.
+  const signupUrl =
+    result.reason === "disabled" || result.reason === "error"
+      ? KEYLESS_SIGNUP_FALLBACK_URL
+      : (await keylessSignupUrlForIp(ip, keylessSignupSurface(req))).url;
+  res.status(200).json({ ...result, signupUrl });
 }
