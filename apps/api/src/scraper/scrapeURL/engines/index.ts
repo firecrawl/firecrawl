@@ -157,7 +157,6 @@ export type EngineScrapeResult = {
   markdown?: string;
   pages?: Array<{ pageNumber: number; markdown: string }>;
   blocks?: PdfPageBlocks[];
-  json?: unknown;
   statusCode: number;
   error?: string;
 
