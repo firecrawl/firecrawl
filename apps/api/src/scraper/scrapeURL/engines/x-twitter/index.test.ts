@@ -126,10 +126,17 @@ describe("x-twitter engine X Search requests", () => {
       followers: 12,
       latestPosts: [{ text: "Not from @firecrawl." }],
     });
+    const meta = makeMeta("https://x.com/firecrawl");
+    const warn = vi.fn();
+    meta.logger.warn = warn;
 
-    const result = await scrapeURLWithXTwitter(
-      makeMeta("https://x.com/firecrawl"),
-    );
+    const result = await scrapeURLWithXTwitter(meta);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+      requestedHandle: "firecrawl",
+      returnedUsername: "firecrawlfans",
+    });
 
     expect(result.markdown).toContain("# @unknown (@unknown)");
     expect(result.markdown).toContain(
@@ -146,11 +153,13 @@ describe("x-twitter engine X Search requests", () => {
       bio: "Unofficial.",
       latestPosts: [{ text: "Not from @firecrawl." }],
     });
+    const meta = makeMeta("https://x.com/firecrawl");
+    const warn = vi.fn();
+    meta.logger.warn = warn;
 
-    const result = await scrapeURLWithXTwitter(
-      makeMeta("https://x.com/firecrawl"),
-    );
+    const result = await scrapeURLWithXTwitter(meta);
 
+    expect(warn).not.toHaveBeenCalled();
     expect(result.markdown).toContain("# @unknown (@unknown)");
     expect(result.markdown).not.toContain("Fan Club");
     expect(result.markdown).not.toContain("Unofficial.");

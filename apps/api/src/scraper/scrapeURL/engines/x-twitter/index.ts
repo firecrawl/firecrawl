@@ -473,12 +473,16 @@ async function fetchProfile(
   const profile = result.output as XTwitterProfileData;
   // A user search can still surface a similarly named account; never pass it
   // off as the requested one. Without a username nothing ties the data to the
-  // requested account either.
+  // requested account either, so that case is dropped too (it is the normal
+  // result for a handle that doesn't exist, so it isn't worth a warning).
   const username = stripAt(profile.username);
-  if (username?.toLowerCase() !== xUrl.handle.toLowerCase()) {
-    meta.logger.warn("X/Twitter profile lookup did not return the account", {
+  if (!username) {
+    return {};
+  }
+  if (username.toLowerCase() !== xUrl.handle.toLowerCase()) {
+    meta.logger.warn("X/Twitter profile lookup returned a different account", {
       requestedHandle: xUrl.handle,
-      returnedUsername: username ?? null,
+      returnedUsername: username,
     });
     return {};
   }
