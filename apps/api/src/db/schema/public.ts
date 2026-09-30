@@ -84,6 +84,42 @@ export const api_keys = pgTable(
   ],
 );
 
+// Vercel Marketplace installations (icfg_...) and the resources provisioned
+// under them. Written by the integration webhooks outside this service; the
+// API only reads them, to resolve a Vercel OIDC resource token to the key
+// issued for that resource.
+const vercel_marketplace_installations = pgTable(
+  "vercel_marketplace_installations",
+  {
+    installation_id: text("installation_id").primaryKey(),
+    team_id: uuid("team_id"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+);
+
+export const vercel_marketplace_resources = pgTable(
+  "vercel_marketplace_resources",
+  {
+    installation_id: text("installation_id")
+      .notNull()
+      .references(() => vercel_marketplace_installations.installation_id, {
+        onDelete: "cascade",
+      }),
+    resource_id: text("resource_id").notNull(),
+    api_key_id: bigintNum("api_key_id").references(() => api_keys.id, {
+      onDelete: "set null",
+    }),
+    team_id: uuid("team_id"),
+    resource_name: text("resource_name"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  table => [
+    primaryKey({ columns: [table.installation_id, table.resource_id] }),
+  ],
+);
+
 export const batch_scrapes = pgTable("batch_scrapes", {
   id: uuid("id").notNull(),
   request_id: uuid("request_id").notNull(),

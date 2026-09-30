@@ -201,6 +201,13 @@ const configSchema = z.object({
   FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
   FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),
 
+  // Vercel Marketplace integration id (oac_...). When set, Vercel OIDC resource
+  // tokens (iss https://integrations.vercel.com/<id>) are accepted as bearer
+  // credentials. Unset disables the branch. Not a secret.
+  VERCEL_MARKETPLACE_INTEGRATION_ID: emptyStringAsUndefined(
+    z.string().regex(/^oac_[A-Za-z0-9]+$/),
+  ),
+
   // OAuth token introspection
   OAUTH_INTROSPECT_URL: z.string().optional(),
   OAUTH_INTROSPECT_SECRET: z.string().optional(),
