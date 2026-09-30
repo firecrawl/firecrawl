@@ -70,8 +70,17 @@ const isBrandingCall = (call: CostTrackingCall) =>
   call.metadata?.module === "branding" &&
   call.metadata?.method === "enhanceBrandingWithLLM";
 
+// Whether the server could route a test team's branding to Jev (all teams, a
+// listed team, or a rollout share). The LLM-only assertion below only holds
+// when none of these is configured.
+const JEV_MAY_APPLY =
+  !!process.env.TYPESAFE_API_KEY &&
+  (process.env.BRANDING_JEV === "true" ||
+    !!process.env.BRANDING_JEV_TEAM_IDS?.trim() ||
+    Number(process.env.BRANDING_JEV_ROLLOUT_PERCENT || 0) > 0);
+
 describe("Branding cost tracking", () => {
-  concurrentIf(TEST_PRODUCTION && process.env.BRANDING_JEV !== "true")(
+  concurrentIf(TEST_PRODUCTION && !JEV_MAY_APPLY)(
     "records the branding LLM call with its model and cost",
     async () => {
       const response = await scrape(
