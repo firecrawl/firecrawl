@@ -1,0 +1,33 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/poll.ts
+  s_28f2768f245c7c::t_07a661a1c7cd7c 6,11-12,15,55-57,60-67,69-73,88,98-100,103,110-131,135-139,142,212,243-245,251-252,255
+  s_28f2768f245c7c::t_a7cf67eaad4d4c 13-14,16,68,86-87,89,101-102,104-109,246-250
+apps/api/src/config.ts
+  s_28f2768f245c7c::t_07a661a1c7cd7c 436-438,440
+  s_28f2768f245c7c::t_a7cf67eaad4d4c 439
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/async.ts
+  s_28f2768f245c7c::t_07a661a1c7cd7c 288
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/schema.ts
+  s_28f2768f245c7c::t_07a661a1c7cd7c 12-17,24,26-27
+  s_28f2768f245c7c::t_a7cf67eaad4d4c 18-23,25,28
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/metrics.ts
+  s_28f2768f245c7c::t_07a661a1c7cd7c 58-63
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFLongPoll.test.ts
+  s_28f2768f245c7c::t_ce9d03161385cc 1-14,16-25,31-77,82-132,134-138,140-142,148-149,151-152,166-177
+  s_28f2768f245c7c::t_a7cf67eaad4d4c 15,26-30,78-81,133,139,143-147,150,153-165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "48140171d0a4242f786e3e97a13bb79db5882682",
+  "prompts": {},
+  "sessions": {
+    "s_28f2768f245c7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "056dce34-98a7-4d60-815b-3ca2e5da75b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
