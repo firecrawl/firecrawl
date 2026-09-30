@@ -6,7 +6,7 @@ import { setSpanAttributes, SpanKind, withSpan } from "../lib/otel-tracer";
 
 /**
  * Jev's probability that a result is adult content, above which it is dropped.
- * Labeled adult results scored 0.51 and up, safe ones 0.04 and below.
+ * Labeled adult results scored 0.42 and up, safe ones 0.04 and below.
  */
 const EXPLICIT_THRESHOLD = 0.3;
 
@@ -25,9 +25,9 @@ const clip = (text: string | undefined): string | null =>
 const questions = {
   explicit: noul(
     {
-      task: "`result` is one result a web search returned for `search_query`. Is the result adult content, or does it mention an adult content platform?",
+      task: "`result` is one result a web search returned. Is the result adult content, or does it mention an adult content platform?",
       guidance:
-        "Judge the result's own title, snippet and URL. Any mention of an adult content platform counts, in any context, including news, business, software, tax or creator advice. The query only clarifies ambiguous words.",
+        "Judge the result's own title, snippet and URL. Any mention of an adult content platform counts, in any context, including news, business, software, tax or creator advice.",
     },
     {
       true: "Pornographic or sexually explicit material; NSFW or sex AI generators and chat; escorting or camming; or any mention of an adult content platform or adult creator subscription site such as OnlyFans, Fansly, ManyVids, Chaturbate or Pornhub, including guides, comparisons, clones and news about them.",
@@ -58,7 +58,6 @@ function getClient(): TypeSafeClient | null {
  */
 export async function removeExplicitResults(
   response: SearchV2Response,
-  query: string,
   limit: number,
   logger: Logger,
 ): Promise<void> {
@@ -87,7 +86,7 @@ export async function removeExplicitResults(
             "typesafe.systemone",
             async callSpan => {
               const { model, answers } = await typesafe.systemOne(
-                { state: { search_query: clip(query), result }, questions },
+                { state: { result }, questions },
                 { signal },
               );
               setSpanAttributes(callSpan, {

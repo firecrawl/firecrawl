@@ -148,7 +148,6 @@ describe("executeSearch safe search", () => {
 
     expect(mocks.removeExplicitResults).toHaveBeenCalledWith(
       expect.anything(),
-      "retries",
       20,
       logger,
     );

@@ -204,14 +204,14 @@ export async function executeSearch(
     }
   }
 
-  // The filter shares the query and results with TypeSafe, so zero data
-  // retention and anonymous requests skip it.
+  // The filter shares results with TypeSafe, so zero data retention and
+  // anonymous requests skip it.
   if (
     options.safe &&
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon")
   ) {
-    await removeExplicitResults(searchResponse, query, limit, logger);
+    await removeExplicitResults(searchResponse, limit, logger);
   }
 
   if (searchResponse.web && searchResponse.web.length > 0) {

@@ -58,7 +58,7 @@ it("drops results Jev judges explicit and backfills from the surplus", async () 
     ],
   };
 
-  await removeExplicitResults(response, "creator platforms", 3, logger);
+  await removeExplicitResults(response, 3, logger);
 
   expect(response.web.map(result => result.title)).toEqual([
     "safe1",
@@ -70,7 +70,6 @@ it("drops results Jev judges explicit and backfills from the surplus", async () 
   expect(mocks.systemOne).toHaveBeenCalledWith(
     expect.objectContaining({
       state: {
-        search_query: "creator platforms",
         result: {
           title: "safe1",
           snippet: "safe1 snippet",
@@ -96,7 +95,7 @@ it("caps how many results are judged at once", async () => {
     web: Array.from({ length: 50 }, (_, index) => web(`safe${index}`)),
   };
 
-  await removeExplicitResults(response, "query", 50, logger);
+  await removeExplicitResults(response, 50, logger);
 
   expect(response.web).toHaveLength(50);
   expect(mocks.systemOne).toHaveBeenCalledTimes(50);
@@ -124,7 +123,7 @@ it("filters news and images alongside web", async () => {
     ],
   };
 
-  await removeExplicitResults(response, "query", 5, logger);
+  await removeExplicitResults(response, 5, logger);
 
   expect(response.news.map(result => result.title)).toEqual(["News"]);
   expect(response.images.map(result => result.title)).toEqual(["Photo"]);
@@ -135,7 +134,7 @@ it("keeps results Jev fails to judge", async () => {
   mocks.systemOne.mockRejectedValue(new Error("upstream down"));
   const response = { web: [web("a"), web("b")] };
 
-  await removeExplicitResults(response, "query", 5, logger);
+  await removeExplicitResults(response, 5, logger);
 
   expect(response.web.map(result => result.title)).toEqual(["a", "b"]);
   expect(logger.warn).toHaveBeenCalledWith(
@@ -160,7 +159,7 @@ it("keeps results still pending when the filter's time budget runs out", async (
   );
   const response = { web: [web("slow1"), web("nsfw"), web("slow2")] };
 
-  const run = removeExplicitResults(response, "query", 5, logger);
+  const run = removeExplicitResults(response, 5, logger);
   await vi.waitFor(() => expect(mocks.systemOne).toHaveBeenCalledTimes(3));
   budget.abort();
   await run;
@@ -173,22 +172,13 @@ it("keeps results still pending when the filter's time budget runs out", async (
   );
 });
 
-it("clips an ultralong query", async () => {
-  judgeByUrl([]);
-
-  await removeExplicitResults({ web: [web("a")] }, "q".repeat(5000), 5, logger);
-
-  const [{ state }] = mocks.systemOne.mock.calls[0];
-  expect(state.search_query).toHaveLength(500);
-});
-
 it("sends Jev only the start of ultralong fields", async () => {
   judgeByUrl([]);
   const response = {
     web: [{ ...web("long"), description: "x".repeat(20_000) }],
   };
 
-  await removeExplicitResults(response, "query", 5, logger);
+  await removeExplicitResults(response, 5, logger);
 
   const [{ state }] = mocks.systemOne.mock.calls[0];
   expect(state.result.snippet).toHaveLength(500);
@@ -197,8 +187,8 @@ it("sends Jev only the start of ultralong fields", async () => {
 });
 
 it("skips responses with nothing to judge", async () => {
-  await removeExplicitResults({}, "query", 5, logger);
-  await removeExplicitResults({ web: [] }, "query", 5, logger);
+  await removeExplicitResults({}, 5, logger);
+  await removeExplicitResults({ web: [] }, 5, logger);
 
   expect(mocks.systemOne).not.toHaveBeenCalled();
   expect(logger.info).not.toHaveBeenCalled();
@@ -208,7 +198,7 @@ it("does nothing without a TypeSafe API key", async () => {
   mocks.config.TYPESAFE_API_KEY = undefined;
   const response = { web: [web("a")] };
 
-  await removeExplicitResults(response, "query", 5, logger);
+  await removeExplicitResults(response, 5, logger);
 
   expect(mocks.systemOne).not.toHaveBeenCalled();
   expect(response.web).toHaveLength(1);
