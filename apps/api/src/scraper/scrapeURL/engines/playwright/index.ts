@@ -38,12 +38,21 @@ export async function scrapeURLWithPlaywright(
   }
 
   // The microservice observes the browser's final URL after redirects; prefer
-  // it over the requested/rewritten URL when it is a usable http(s) location.
+  // it over the requested/rewritten URL when it parses as a usable http(s)
+  // location. A prefix check alone would accept malformed values such as
+  // "https://", which downstream `new URL(...)` consumers cannot use.
   const fallbackUrl = meta.rewrittenUrl ?? meta.url;
-  const url =
-    response.finalUrl && /^https?:\/\//i.test(response.finalUrl)
-      ? response.finalUrl
-      : fallbackUrl;
+  let url = fallbackUrl;
+  if (response.finalUrl) {
+    try {
+      const parsed = new URL(response.finalUrl);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        url = response.finalUrl;
+      }
+    } catch {
+      // Not a parseable absolute URL; fall back to the requested URL.
+    }
+  }
 
   return {
     url,

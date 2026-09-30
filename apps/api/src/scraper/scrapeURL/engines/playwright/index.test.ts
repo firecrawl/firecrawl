@@ -88,4 +88,43 @@ describe("scrapeURLWithPlaywright final URL handling", () => {
 
     expect(result.url).toBe("https://example.com/start");
   });
+
+  it("ignores malformed final URLs that only look http(s), such as https:// without a host", async () => {
+    mockedRobustFetch.mockResolvedValue(
+      microserviceResponse({
+        contentType: "text/html",
+        finalUrl: "https://",
+      }) as Awaited<ReturnType<typeof robustFetch>>,
+    );
+
+    const result = await scrapeURLWithPlaywright(baseMeta());
+
+    expect(result.url).toBe("https://example.com/start");
+  });
+
+  it("ignores final URLs that cannot be parsed at all", async () => {
+    mockedRobustFetch.mockResolvedValue(
+      microserviceResponse({
+        contentType: "text/html",
+        finalUrl: "not a url",
+      }) as Awaited<ReturnType<typeof robustFetch>>,
+    );
+
+    const result = await scrapeURLWithPlaywright(baseMeta());
+
+    expect(result.url).toBe("https://example.com/start");
+  });
+
+  it("accepts an http final URL with an explicit port", async () => {
+    mockedRobustFetch.mockResolvedValue(
+      microserviceResponse({
+        contentType: "text/html",
+        finalUrl: "http://example.com:8080/destination",
+      }) as Awaited<ReturnType<typeof robustFetch>>,
+    );
+
+    const result = await scrapeURLWithPlaywright(baseMeta());
+
+    expect(result.url).toBe("http://example.com:8080/destination");
+  });
 });
