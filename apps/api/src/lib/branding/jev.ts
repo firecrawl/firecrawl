@@ -53,10 +53,14 @@ export function isJevBrandingEnabled(input: BrandingLLMInput): boolean {
   // TypeSafe only offers zero data retention on enterprise contracts; keep
   // ZDR scrapes on the existing path until that is in place.
   if (input.zeroDataRetention) return false;
+  // Listed teams choose per request with the format's `mode`: "standard" runs
+  // the LLM, anything else Jev. Every other team ignores `mode` and follows
+  // the settings below.
+  if (input.teamId && config.BRANDING_JEV_TEAM_IDS?.includes(input.teamId)) {
+    return input.mode !== "standard";
+  }
   return (
     config.BRANDING_JEV === true ||
-    (!!input.teamId &&
-      !!config.BRANDING_JEV_TEAM_IDS?.includes(input.teamId)) ||
     (!!input.teamId &&
       sampled(`team:${input.teamId}`, config.BRANDING_JEV_ROLLOUT_PERCENT))
   );

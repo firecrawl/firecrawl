@@ -12,6 +12,7 @@ import {
   getTopCandidatesForLLM,
 } from "./logo-selector";
 import { extractHeaderHtmlChunk } from "./extractHeaderHtmlChunk";
+import { hasFormatOfType } from "../format-utils";
 import {
   declaredLogoCandidate,
   pickDeclaredLogo,
@@ -211,6 +212,7 @@ export async function brandingTransformer(
       scrapeId: meta.id,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       teamFlags: meta.internalOptions.teamFlags,
+      mode: hasFormatOfType(meta.options.formats, "branding")?.mode,
       costTracking: meta.costTracking,
       logger: meta.logger,
     });

@@ -514,6 +514,40 @@ describe("branding with Jev", () => {
     expect(generateObject).toHaveBeenCalledTimes(2);
   });
 
+  it("lets a listed team pick the LLM per request with mode: standard", async () => {
+    await enhanceBrandingWithLLM({
+      ...baseInput(new CostTracking()),
+      mode: "standard",
+    });
+    expect(mocks.systemOne).not.toHaveBeenCalled();
+    expect(generateObject).toHaveBeenCalledTimes(1);
+
+    respondWith(jevResponse());
+    await enhanceBrandingWithLLM({
+      ...baseInput(new CostTracking()),
+      mode: "fast",
+    });
+    expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores mode for teams that aren't listed", async () => {
+    await enhanceBrandingWithLLM({
+      ...baseInput(new CostTracking()),
+      teamId: "team-unlisted",
+      mode: "fast",
+    });
+    expect(mocks.systemOne).not.toHaveBeenCalled();
+
+    config.BRANDING_JEV = true;
+    respondWith(jevResponse());
+    await enhanceBrandingWithLLM({
+      ...baseInput(new CostTracking()),
+      teamId: "team-unlisted",
+      mode: "standard",
+    });
+    expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+  });
+
   it("puts a rollout share of teams on Jev without listing them", async () => {
     const unlisted = { ...baseInput(new CostTracking()), teamId: "team-a" };
 
