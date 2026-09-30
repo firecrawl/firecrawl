@@ -1,0 +1,36 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsyncDeadline.test.ts
+  s_db3eecc5aa0ee2::t_6b679dc934f8b1 161-214
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/async.ts
+  s_db3eecc5aa0ee2::t_df36c255ecb27a 22
+  s_db3eecc5aa0ee2::t_296648bc0a5e41 222,259,287
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFEarlyPoll.test.ts
+  s_db3eecc5aa0ee2::t_cf285a24962406 122,129-137
+  s_db3eecc5aa0ee2::t_b0312c477c595e 95,102,111,142
+  s_db3eecc5aa0ee2::t_13566b42348457 1-94,96-101,103-109,113,117-118,120-121,125,127,138-141,143-216
+  s_db3eecc5aa0ee2::t_55fa6d1f6d66cb 110,112,114-116
+  s_db3eecc5aa0ee2::t_9ddaf58926ef2c 119,123-124,126,128
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/poll.ts
+  s_db3eecc5aa0ee2::t_296648bc0a5e41 14,25-29,58-60,70-78,88,195,197-199
+  s_db3eecc5aa0ee2::t_5a70d730b44f71 61,79-86,196
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/early-poll.ts
+  s_db3eecc5aa0ee2::t_93ff2dfa20134c 1-33,35-39,41-71,73-75,81
+  s_db3eecc5aa0ee2::t_774502bc7e10e6 40
+  s_db3eecc5aa0ee2::t_c90751b25315a5 34,72,76
+  s_db3eecc5aa0ee2::t_5a70d730b44f71 77-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "78267b035a935b5bd6a88434291a65e0f58bbfd0",
+  "prompts": {},
+  "sessions": {
+    "s_db3eecc5aa0ee2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "41140c8b-e88f-4e54-8df8-2acdd10e1ce4",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
