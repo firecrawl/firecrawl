@@ -9,7 +9,9 @@ overrides:
   "minimatch@<10.2.3": ">=10.2.3"
   "rollup@<4.59.0": ">=4.59.0"
   "picomatch@<4.0.4": ">=4.0.4"
-  "brace-expansion@>=5.0.0 <5.0.9": "5.0.9"
+  # GHSA-q2hr-2g5m-vwhr / GHSA-qhr7-859c-m2p7 / GHSA-6j4f-fj2g-mc7p:
+  # pin the 5.x line only. Exact 5.0.12 cannot resolve to 6.x.
+  "brace-expansion@>=5.0.0 <5.0.12": "5.0.12"
   "@babel/core@>=7.0.0 <7.29.6": "7.29.7"
   "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
   "js-yaml@>=4.0.0 <4.3.2": "4.3.2"

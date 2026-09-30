@@ -9,7 +9,12 @@ overrides:
   "minimatch@<10.2.3": ">=10.2.3"
   "undici@>=7.0.0 <8.0.0": "7.30.0"
   "picomatch@<4.0.4": ">=4.0.4"
-  "brace-expansion@>=5.0.0 <5.0.9": "5.0.9"
+  # GHSA-q2hr-2g5m-vwhr / GHSA-qhr7-859c-m2p7 / GHSA-6j4f-fj2g-mc7p:
+  # pin the 5.x line only. Exact 5.0.12 cannot resolve to 6.x.
+  "brace-expansion@>=5.0.0 <5.0.12": "5.0.12"
+  # GHSA-4p3w-j4w9-5jqw: pin the 2.x line only. Exact 2.31.0 cannot
+  # resolve to 3.x.
+  "moment@>=2.0.0 <2.31.0": "2.31.0"
   "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
   "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
   # GHSA-6w3j-5fw6-r9vr / GHSA-gg4h-3hg2-grpc: artillery still asks

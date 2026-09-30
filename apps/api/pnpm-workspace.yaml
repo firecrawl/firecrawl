@@ -33,7 +33,9 @@ overrides:
   "smol-toml@<1.7.1": "1.8.0"
   handlebars: ">=4.7.9"
   "path-to-regexp@~0.1.12": "0.1.13"
-  "brace-expansion@>=5.0.0 <5.0.9": "5.0.9"
+  # GHSA-q2hr-2g5m-vwhr / GHSA-qhr7-859c-m2p7 / GHSA-6j4f-fj2g-mc7p:
+  # pin the 5.x line only. Exact 5.0.12 cannot resolve to 6.x.
+  "brace-expansion@>=5.0.0 <5.0.12": "5.0.12"
   "postcss@>=8.0.0 <8.5.26": "8.5.26"
   "nanoid@>=3.0.0 <3.3.18": "3.3.18"
   "ws@>=7.0.0 <7.5.11": "7.5.11"
