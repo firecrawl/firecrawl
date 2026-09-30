@@ -55,7 +55,8 @@ export function isJevBrandingEnabled(input: BrandingLLMInput): boolean {
   if (input.zeroDataRetention) return false;
   return (
     config.BRANDING_JEV === true ||
-    input.teamFlags?.brandingJev === true ||
+    (!!input.teamId &&
+      !!config.BRANDING_JEV_TEAM_IDS?.includes(input.teamId)) ||
     (!!input.teamId &&
       sampled(`team:${input.teamId}`, config.BRANDING_JEV_ROLLOUT_PERCENT))
   );

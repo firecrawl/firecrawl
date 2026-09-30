@@ -95,7 +95,7 @@ const baseInput = (costTracking: CostTracking): BrandingLLMInput => ({
   brandName: "Acme",
   pageTitle: "Acme | Home",
   url: "https://acme.test/",
-  teamFlags: { brandingJev: true },
+  teamId: "team-jev",
   costTracking,
   logger,
 });
@@ -204,6 +204,7 @@ const jevResponse = (overrides: Record<string, unknown> = {}) => ({
 const saved = {
   key: config.TYPESAFE_API_KEY,
   global: config.BRANDING_JEV,
+  teamIds: config.BRANDING_JEV_TEAM_IDS,
   rollout: config.BRANDING_JEV_ROLLOUT_PERCENT,
   escalate: config.BRANDING_JEV_ESCALATE_BELOW,
 };
@@ -211,6 +212,7 @@ const saved = {
 beforeEach(() => {
   config.TYPESAFE_API_KEY = "ts-test";
   config.BRANDING_JEV = undefined;
+  config.BRANDING_JEV_TEAM_IDS = ["team-jev"];
   config.BRANDING_JEV_ROLLOUT_PERCENT = 0;
   config.BRANDING_JEV_ESCALATE_BELOW = undefined;
   mocks.systemOne.mockReset();
@@ -239,6 +241,7 @@ beforeEach(() => {
 afterEach(() => {
   config.TYPESAFE_API_KEY = saved.key;
   config.BRANDING_JEV = saved.global;
+  config.BRANDING_JEV_TEAM_IDS = saved.teamIds;
   config.BRANDING_JEV_ROLLOUT_PERCENT = saved.rollout;
   config.BRANDING_JEV_ESCALATE_BELOW = saved.escalate;
 });
@@ -497,33 +500,29 @@ describe("branding with Jev", () => {
     ]);
   });
 
-  it("keeps zero-data-retention scrapes and unflagged teams off Jev", async () => {
+  it("keeps zero-data-retention scrapes and unlisted teams off Jev", async () => {
     await enhanceBrandingWithLLM({
       ...baseInput(new CostTracking()),
       zeroDataRetention: true,
     });
     await enhanceBrandingWithLLM({
       ...baseInput(new CostTracking()),
-      teamFlags: null,
+      teamId: "team-unlisted",
     });
 
     expect(mocks.systemOne).not.toHaveBeenCalled();
     expect(generateObject).toHaveBeenCalledTimes(2);
   });
 
-  it("puts a rollout share of teams on Jev without a team flag", async () => {
-    const unflagged = {
-      ...baseInput(new CostTracking()),
-      teamFlags: null,
-      teamId: "team-a",
-    };
+  it("puts a rollout share of teams on Jev without listing them", async () => {
+    const unlisted = { ...baseInput(new CostTracking()), teamId: "team-a" };
 
-    await enhanceBrandingWithLLM(unflagged);
+    await enhanceBrandingWithLLM(unlisted);
     expect(mocks.systemOne).not.toHaveBeenCalled();
 
     config.BRANDING_JEV_ROLLOUT_PERCENT = 100;
     respondWith(jevResponse());
-    await enhanceBrandingWithLLM(unflagged);
+    await enhanceBrandingWithLLM(unlisted);
     expect(mocks.systemOne).toHaveBeenCalledTimes(1);
   });
 

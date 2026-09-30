@@ -2070,8 +2070,6 @@ export type TeamFlags = {
   keyRestriction?: boolean;
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
-  // answers branding decisions with TypeSafe Jev instead of gpt-4o
-  brandingJev?: boolean;
   maxBrowserSessions?: number;
   // grants the privileged large-PDF size cap (PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED)
   largePdfs?: boolean;

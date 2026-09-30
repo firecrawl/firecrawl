@@ -522,10 +522,11 @@ const configSchema = z.object({
   FORCED_ENGINE_DOMAINS: z.string().optional(),
   DEBUG_BRANDING: z.stringbool().optional(),
   // TypeSafe Jev for branding decisions (lib/branding/jev.ts); needs
-  // TYPESAFE_API_KEY. BRANDING_JEV turns it on for every team, the brandingJev
-  // team flag for one team, and BRANDING_JEV_ROLLOUT_PERCENT for a stable
-  // share of teams.
+  // TYPESAFE_API_KEY. BRANDING_JEV turns it on for every team,
+  // BRANDING_JEV_TEAM_IDS (comma-separated) for listed teams, and
+  // BRANDING_JEV_ROLLOUT_PERCENT for a stable share of teams.
   BRANDING_JEV: emptyStringAsUndefined(z.stringbool()),
+  BRANDING_JEV_TEAM_IDS: delimitedList(",").optional(),
   BRANDING_JEV_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
   BRANDING_JEV_TIMEOUT_MS: emptyStringAsUndefined(
     z.coerce.number().int().positive(),

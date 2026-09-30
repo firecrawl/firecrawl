@@ -95,7 +95,7 @@ export interface BrandingLLMInput {
   teamId?: string;
   scrapeId?: string;
   zeroDataRetention?: boolean;
-  teamFlags?: { debugBranding?: boolean; brandingJev?: boolean } | null;
+  teamFlags?: { debugBranding?: boolean } | null;
   costTracking: CostTracking;
   logger: Logger;
 }

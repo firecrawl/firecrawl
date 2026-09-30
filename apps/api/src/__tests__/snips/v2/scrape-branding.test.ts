@@ -71,7 +71,7 @@ const isBrandingCall = (call: CostTrackingCall) =>
   call.metadata?.method === "enhanceBrandingWithLLM";
 
 describe("Branding cost tracking", () => {
-  concurrentIf(TEST_PRODUCTION)(
+  concurrentIf(TEST_PRODUCTION && process.env.BRANDING_JEV !== "true")(
     "records the branding LLM call with its model and cost",
     async () => {
       const response = await scrape(
@@ -115,23 +115,14 @@ describe("Branding cost tracking", () => {
   );
 });
 
-// Needs the API server started with TYPESAFE_API_KEY; the team flag routes
-// only this identity's branding decisions to Jev.
-const HAS_TYPESAFE = !!process.env.TYPESAFE_API_KEY;
+// Runs when the API server was started with TYPESAFE_API_KEY and
+// BRANDING_JEV=true, which puts every team (including test identities, whose
+// ids aren't known ahead of time) on Jev.
+const JEV_ON =
+  !!process.env.TYPESAFE_API_KEY && process.env.BRANDING_JEV === "true";
 
 describe("Branding with Jev", () => {
-  let jevIdentity: Identity;
-
-  beforeAll(async () => {
-    jevIdentity = await idmux({
-      name: "scrape-branding-jev",
-      concurrency: 10,
-      credits: 100000,
-      flags: { brandingJev: true },
-    });
-  }, 10000 + scrapeTimeout);
-
-  concurrentIf(TEST_PRODUCTION && HAS_TYPESAFE)(
+  concurrentIf(TEST_PRODUCTION && JEV_ON)(
     "answers branding with Jev and records its cost, not an LLM call",
     async () => {
       const response = await scrape(
@@ -140,7 +131,7 @@ describe("Branding with Jev", () => {
           formats: ["branding"],
           timeout: scrapeTimeout,
         },
-        jevIdentity,
+        identity,
       );
 
       expect(response.branding).toBeDefined();
@@ -157,29 +148,6 @@ describe("Branding with Jev", () => {
       expect(jevCalls[0].model).toMatch(/^jev/);
       expect(jevCalls[0].cost).toBeGreaterThan(0);
       expect(calls.filter(isBrandingCall)).toHaveLength(0);
-    },
-    scrapeTimeout + 15000,
-  );
-
-  concurrentIf(TEST_PRODUCTION && HAS_TYPESAFE)(
-    "keeps teams without the flag on the LLM",
-    async () => {
-      const response = await scrape(
-        {
-          url: "https://firecrawl-test-site.vercel.app/",
-          formats: ["branding"],
-          timeout: scrapeTimeout,
-        },
-        identity,
-      );
-
-      const calls = await getCostTrackingCalls(response.metadata.scrapeId!);
-      expect(
-        calls.filter(
-          call => call.metadata?.method === "enhanceBrandingWithJev",
-        ),
-      ).toHaveLength(0);
-      expect(calls.filter(isBrandingCall)).toHaveLength(1);
     },
     scrapeTimeout + 15000,
   );
