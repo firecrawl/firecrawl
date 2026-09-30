@@ -1,5 +1,7 @@
 import { Agent, fetch } from "undici";
 import { config } from "../../config";
+import { autumnService } from "../autumn/autumn.service";
+import { planTierFromMultiplier, type PlanTier } from "../rate-limiter";
 import type { ExchangeResponse } from "./contracts";
 
 const dispatcher = new Agent({
@@ -7,6 +9,26 @@ const dispatcher = new Agent({
   headersTimeout: 120_000,
   bodyTimeout: 120_000,
 });
+
+/**
+ * The caller's plan for the Exchange's `x-exchange-plan` header, or undefined
+ * when it cannot be known. Reads the same cached entity limits authentication
+ * already loaded for the request's rate limiter.
+ */
+export async function exchangePlanTier(
+  teamId: string,
+  orgId: string | null | undefined,
+): Promise<PlanTier | undefined> {
+  try {
+    const multiplier = await autumnService.getKnownRateLimitMultiplier(
+      teamId,
+      orgId ?? null,
+    );
+    return multiplier === null ? undefined : planTierFromMultiplier(multiplier);
+  } catch {
+    return undefined;
+  }
+}
 
 export async function exchangeRequest(input: {
   teamId: string;
@@ -17,8 +39,10 @@ export async function exchangeRequest(input: {
   maximumCredits?: number;
   resultAuthorization?: string;
   termsIdentity?: { organizationId: string; apiKeyId: string };
+  plan?: PlanTier;
 }): Promise<ExchangeResponse> {
-  if (!config.FIRE_EXCHANGE_URL) throw new Error("Alexandria is not configured");
+  if (!config.FIRE_EXCHANGE_URL)
+    throw new Error("Alexandria is not configured");
   const base = config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
   const response = await fetch(base + input.path, {
     method: input.body === undefined ? "GET" : "POST",
@@ -38,6 +62,7 @@ export async function exchangeRequest(input: {
           }
         : {}),
       "x-exchange-extended-catalog-access": "true",
+      ...(input.plan ? { "x-exchange-plan": input.plan } : {}),
       ...(input.requestId ? { "x-request-id": input.requestId } : {}),
       ...(input.maximumCredits === undefined
         ? {}
@@ -67,5 +92,10 @@ export async function exchangeRequest(input: {
   try {
     body = JSON.parse(text);
   } catch {}
-  return { status: response.status, body };
+  const retryAfter = response.headers.get("retry-after");
+  return {
+    status: response.status,
+    body,
+    ...(retryAfter ? { retryAfter } : {}),
+  };
 }

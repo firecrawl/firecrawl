@@ -1,6 +1,7 @@
 import { bountyBlocklistMiddleware } from "./exchange-blocklist";
 import { providerScrapeController } from "../controllers/v2/scrape-alexandria";
 import { orgIdFromAcuc } from "../lib/team-org";
+import { exchangePlanTier } from "../services/alexandria/client";
 import {
   acceptProviderTerms,
   acceptTermsSchema,
@@ -22,7 +23,11 @@ const SUPPLY_TIMEOUT_MS = 30_000;
 const INGEST_TIMEOUT_MS = 50_000;
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
-const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
+const FORWARDED_RESPONSE_HEADERS = [
+  "content-type",
+  "x-request-id",
+  "retry-after",
+];
 
 function dispatcherFor(timeout: number) {
   return new Agent({
@@ -74,6 +79,10 @@ function exchangeProxy(
     const path = req.originalUrl.replace(/^\/exchange/, "/v1");
 
     try {
+      const plan = await exchangePlanTier(
+        authedReq.auth.team_id,
+        authedReq.auth.org_id,
+      );
       const upstream = await fetch(base + path, {
         method: req.method,
         headers: {
@@ -85,6 +94,7 @@ function exchangeProxy(
           ),
           ...(hasBody ? { "content-type": "application/json" } : {}),
           "x-exchange-team-id": authedReq.auth.team_id,
+          ...(plan ? { "x-exchange-plan": plan } : {}),
         },
         body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
         signal: AbortSignal.timeout(timeout),
