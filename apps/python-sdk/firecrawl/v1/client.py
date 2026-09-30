@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional, List, Union, Callable, Literal, TypeVar,
 import json
 from datetime import datetime
 import re
+from urllib.parse import urlparse, urlunparse
 import requests
 import pydantic
 import websockets
@@ -1170,7 +1171,7 @@ class V1FirecrawlApp:
                             logger.warning("Expected 'next' URL is missing.")
                             break
                         try:
-                            status_response = self._get_request(next_url, headers)
+                            status_response = self._get_request(self._pin_to_api_url(next_url), headers)
                             if status_response.status_code != 200:
                                 logger.error(f"Failed to fetch next page: {status_response.status_code}")
                                 break
@@ -1893,7 +1894,7 @@ class V1FirecrawlApp:
                             logger.warning("Expected 'next' URL is missing.")
                             break
                         try:
-                            status_response = self._get_request(next_url, headers)
+                            status_response = self._get_request(self._pin_to_api_url(next_url), headers)
                             if status_response.status_code != 200:
                                 logger.error(f"Failed to fetch next page: {status_response.status_code}")
                                 break
@@ -2391,6 +2392,14 @@ class V1FirecrawlApp:
 
         return V1GenerateLLMsTextStatusResponse(success=False, error='Internal server error', status='failed', expiresAt='')
 
+    def _pin_to_api_url(self, url: str) -> str:
+        """Force an absolute `next` URL onto the configured api_url origin so the API key never leaves it."""
+        base = urlparse(self.api_url)
+        parsed = urlparse(url)
+        if not parsed.netloc:
+            return url
+        return urlunparse((base.scheme or "https", base.netloc, parsed.path or "/", "", parsed.query, ""))
+
     def _prepare_headers(
             self,
             idempotency_key: Optional[str] = None) -> Dict[str, str]:
@@ -2538,7 +2547,7 @@ class V1FirecrawlApp:
                         while 'next' in status_data:
                             if len(status_data['data']) == 0:
                                 break
-                            status_response = self._get_request(status_data['next'], headers)
+                            status_response = self._get_request(self._pin_to_api_url(status_data['next']), headers)
                             try:
                                 status_data = status_response.json()
                             except:
@@ -4304,7 +4313,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                     if not next_url:
                         logger.warning("Expected 'next' URL is missing.")
                         break
-                    next_data = await self._async_get_request(next_url, headers)
+                    next_data = await self._async_get_request(self._pin_to_api_url(next_url), headers)
                     data.extend(next_data.get('data', []))
                     status_data = next_data
                 status_data['data'] = data
@@ -4358,7 +4367,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                         if not next_url:
                             logger.warning("Expected 'next' URL is missing.")
                             break
-                        next_data = await self._async_get_request(next_url, headers)
+                        next_data = await self._async_get_request(self._pin_to_api_url(next_url), headers)
                         data.extend(next_data.get('data', []))
                         status_data = next_data
                     status_data['data'] = data
@@ -4592,7 +4601,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                     if not next_url:
                         logger.warning("Expected 'next' URL is missing.")
                         break
-                    next_data = await self._async_get_request(next_url, headers)
+                    next_data = await self._async_get_request(self._pin_to_api_url(next_url), headers)
                     data.extend(next_data.get('data', []))
                     status_data = next_data
                 status_data['data'] = data
