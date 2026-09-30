@@ -25,6 +25,8 @@ import {
   checkKeylessEligibility,
   keylessLimitBody,
   keylessSignupUrlForIp,
+  keylessTeamId,
+  keylessTeamUuid,
 } from "./keyless";
 import { decryptKeylessSignupToken } from "./keyless-signup-link";
 import { logger } from "./logger";
@@ -57,6 +59,14 @@ afterEach(() => {
   config.KEYLESS_SIGNUP_LINK_KEYS = originalKeys;
   vi.clearAllMocks();
   vi.restoreAllMocks();
+});
+
+describe("keylessTeamUuid", () => {
+  it("matches the cross-repo vector in firecrawl-web lib/keyless-signup-link.test.ts", () => {
+    expect(keylessTeamUuid(keylessTeamId(IP))).toBe(
+      "abd15a03-d147-557e-801b-005da8c69bbf",
+    );
+  });
 });
 
 describe("keyless limit prompt", () => {
