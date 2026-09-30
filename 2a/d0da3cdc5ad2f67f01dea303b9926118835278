@@ -1,0 +1,19 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFEarlyPoll.test.ts
+  s_db3eecc5aa0ee2::t_f6bd97efc776d1 183-185,190-193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2ad0da3cdc5ad2f67f01dea303b9926118835278",
+  "prompts": {},
+  "sessions": {
+    "s_db3eecc5aa0ee2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "41140c8b-e88f-4e54-8df8-2acdd10e1ce4",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
