@@ -3,6 +3,7 @@ const mocks = vi.hoisted(() => ({
   searchDeveloperCategory: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
   discoverTools: vi.fn(),
+  removeExplicitResults: vi.fn(),
 }));
 
 vi.mock("./alexandria", () => ({
@@ -41,6 +42,9 @@ vi.mock("../lib/threat-protection/request", () => ({
 }));
 vi.mock("../lib/scrape-billing", () => ({
   calculateThreatScanCredits: vi.fn(() => 0),
+}));
+vi.mock("./safe-search", () => ({
+  removeExplicitResults: mocks.removeExplicitResults,
 }));
 
 import { executeSearch } from "./execute";
@@ -172,6 +176,67 @@ it("keeps the default rates when the flag is absent", async () => {
     logger,
   );
   expect(zdr.searchCredits).toBe(10);
+});
+
+describe("executeSearch safe search", () => {
+  const webResult = {
+    url: "https://example.com/",
+    title: "Example",
+    description: "An example page.",
+  };
+
+  it("bills and returns only the results the Jev filter keeps", async () => {
+    const safe = Array.from({ length: 10 }, (_, index) => ({
+      ...webResult,
+      url: `https://safe${index}.example/`,
+    }));
+    const explicit = { ...webResult, url: "https://nsfw.example/" };
+    mocks.search.mockResolvedValue({ web: [...safe, explicit] });
+    mocks.removeExplicitResults.mockImplementationOnce(async response => {
+      response.web = response.web.filter(
+        (result: { url: string }) => result.url !== explicit.url,
+      );
+    });
+
+    const result = await executeSearch(
+      { ...options([]), limit: 20, safe: true },
+      context,
+      logger,
+    );
+
+    expect(mocks.removeExplicitResults).toHaveBeenCalledWith(
+      expect.anything(),
+      20,
+      logger,
+    );
+    expect(result.response.web?.map(x => x.url)).toEqual(safe.map(x => x.url));
+    expect(result.totalResultsCount).toBe(10);
+    // 11 results would bill 4 credits; the 10 kept bill 2.
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("skips the Jev filter when safe is off or data must not be retained", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+
+    await executeSearch(options([]), context, logger);
+    await executeSearch(
+      { ...options([]), safe: true },
+      { ...context, zeroDataRetention: true },
+      logger,
+    );
+    await executeSearch(
+      { ...options([]), safe: true, enterprise: ["zdr"] },
+      context,
+      logger,
+    );
+    await executeSearch(
+      { ...options([]), safe: true, enterprise: ["anon"] },
+      context,
+      logger,
+    );
+
+    expect(mocks.removeExplicitResults).not.toHaveBeenCalled();
+  });
 });
 
 describe("executeSearch developer category", () => {

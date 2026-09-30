@@ -60,6 +60,7 @@ import {
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
   XTwitterConfigurationError,
+  ExchangeRefusedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
@@ -106,7 +107,10 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import type { ExchangeScrapeMetadata } from "../../lib/exchange";
+import {
+  type ExchangeScrapeMetadata,
+  ThirdPartyDataTermsRequiredError,
+} from "../../lib/exchange";
 import {
   checkUrl,
   type ThreatCheckDedup,
@@ -167,6 +171,9 @@ export type Meta = {
   abort: AbortManager;
   featureFlags: Set<FeatureFlag>;
   mock: MockState | null;
+  /** The Exchange provider whose access was checked when the exchange engine
+   * was chosen, so the engine asks the Exchange for that same provider. */
+  exchangeProviderId?: string;
   /** Whether this scrape may OCR raster images: the request's parsers
    * include `image` (the default; a parse upload of an image always counts)
    * and the deployment has image OCR switched on with FirePDF configured.
@@ -1006,7 +1013,9 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof ProxySelectionError ||
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
-              error.error instanceof XTwitterConfigurationError
+              error.error instanceof XTwitterConfigurationError ||
+              error.error instanceof ExchangeRefusedError ||
+              error.error instanceof ThirdPartyDataTermsRequiredError
             ) {
               throw error.error;
             } else if (error.error instanceof LLMRefusalError) {
@@ -1155,7 +1164,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       blocks: engineResult.blocks,
       rawHtml: engineResult.html,
       rawBase64: engineResult.rawBase64,
-      json: engineResult.json,
       screenshot: engineResult.screenshot,
       actions: engineResult.actions,
       branding: engineResult.branding,

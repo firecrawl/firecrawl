@@ -2,6 +2,8 @@ import axios, { type AxiosResponse, type AxiosRequestHeaders, AxiosError } from 
 import * as zt from "zod";
 import { zodSchemaToJsonSchema } from "../utils/zodSchemaToJson";
 import { TypedEventTarget } from "typescript-event-target";
+import type { RequiresAction } from "../v2/types";
+import { pinToApiOrigin } from "../utils/apiOrigin";
 
 /**
  * Configuration interface for FirecrawlApp.
@@ -439,6 +441,8 @@ export interface CrawlErrorsResponse {
     url: string,
     code?: string,
     error: string,
+    /** Present when the page needs provider terms accepted first. */
+    requiresAction?: RequiresAction,
   }[];
 
   /**
@@ -919,7 +923,7 @@ export default class FirecrawlApp {
     }
 
     const headers: AxiosRequestHeaders = this.prepareHeaders();
-    const targetURL = new URL(nextURL ?? `${this.apiUrl}/v1/crawl/${id}`);
+    const targetURL = new URL(nextURL ?? `${this.apiUrl}/v1/crawl/${id}`, this.apiUrl);
     if (skip !== undefined) {
       targetURL.searchParams.set("skip", skip.toString());
     }
@@ -1207,7 +1211,7 @@ export default class FirecrawlApp {
     }
 
     const headers: AxiosRequestHeaders = this.prepareHeaders();
-    const targetURL = new URL(nextURL ?? `${this.apiUrl}/v1/batch/scrape/${id}`);
+    const targetURL = new URL(nextURL ?? `${this.apiUrl}/v1/batch/scrape/${id}`, this.apiUrl);
     if (skip !== undefined) {
       targetURL.searchParams.set("skip", skip.toString());
     }
@@ -1448,7 +1452,7 @@ export default class FirecrawlApp {
     headers: AxiosRequestHeaders
   ): Promise<AxiosResponse> {
     try {
-      return await axios.get(url, { headers });
+      return await axios.get(pinToApiOrigin(this.apiUrl, url), { headers });
     } catch (error) {
       if (error instanceof AxiosError && error.response) {
         return error.response as AxiosResponse;

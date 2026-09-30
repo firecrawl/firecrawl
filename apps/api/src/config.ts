@@ -110,6 +110,22 @@ const configSchema = z.object({
   // existing privacy-controlled conversion pipeline. Never use the proxy or
   // credential secrets here: this value is only an analytics pseudonymizer.
   KEYLESS_CONVERSION_HMAC_SECRET: emptyStringAsUndefined(z.string().min(32)),
+  // AES-128 keys for keyless signup link tokens (firecrawl.dev/k/<token>):
+  // comma-separated base64, 16 bytes each. The first encrypts; every key is
+  // tried to decrypt, so keep a rotated-out key listed while its links live.
+  // Must match firecrawl-web's KEYLESS_SIGNUP_LINK_KEYS. Unset sends the
+  // regular signup link.
+  KEYLESS_SIGNUP_LINK_KEYS: emptyStringAsUndefined(
+    z
+      .string()
+      .refine(
+        value =>
+          value
+            .split(",")
+            .every(key => /^[A-Za-z0-9+/]{21}[AQgw]==$/.test(key.trim())),
+        "KEYLESS_SIGNUP_LINK_KEYS must be comma-separated base64 16-byte keys",
+      ),
+  ),
   // Dedicated signer/verifier secret for short-lived MCP delegated credentials.
   // Keep separate from KEYLESS_PROXY_SECRET because delegated credentials can
   // authorize billed requests for a managed OAuth connection.
@@ -299,6 +315,9 @@ const configSchema = z.object({
   // returned. The remaining eligible traffic still runs in shadow mode.
   HIGHLIGHT_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
+  // TypeSafe (Jev): judges search results for the `safe: true` filter.
+  TYPESAFE_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
   EXCHANGE_INTERNAL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
@@ -453,7 +472,8 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(256 * 1024 * 1024),
-  // Comma-separated team ids granted the privileged cap.
+  // Comma-separated team ids granted the privileged cap. Prefer the
+  // `largePdfs` team flag, which grants the same cap without a deploy.
   PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),
 
   // RunPod

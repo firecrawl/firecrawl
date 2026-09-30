@@ -153,15 +153,13 @@ export async function calculateCreditsToBeBilled(
     return creditsToBeBilled + threatScanCredits;
   }
 
+  // An Exchange access is priced by its provider in place of the base
+  // credit; format surcharges (json, question, ...) still apply on top.
   const exchangeCredits = getExchangeSuccessCredits({
     exchange,
     statusCode: document.metadata?.statusCode,
   });
-  if (exchangeCredits !== null) {
-    return exchangeCredits + threatScanCredits;
-  }
-
-  let creditsToBeBilled = 1; // Assuming 1 credit per document
+  let creditsToBeBilled = exchangeCredits ?? 1;
 
   if (options.lockdown) {
     creditsToBeBilled += 4;
@@ -202,7 +200,9 @@ export async function calculateCreditsToBeBilled(
     internalOptions.v1Agent?.model === "fire-1" ||
     internalOptions.v1JSONAgent?.model?.toLowerCase() === "fire-1"
   ) {
-    creditsToBeBilled = Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
+    creditsToBeBilled =
+      (exchangeCredits ?? 0) +
+      Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
   }
 
   const hasQuestionFormat =
@@ -258,7 +258,10 @@ export async function calculateCreditsToBeBilled(
     document.metadata?.url,
     document.metadata?.sourceURL,
   ].filter((u): u is string => !!u);
-  if (urlsToCheck.some(u => isUrlBlocked(u, null) && !isUrlBlocked(u, flags))) {
+  if (
+    exchangeCredits === null &&
+    urlsToCheck.some(u => isUrlBlocked(u, null) && !isUrlBlocked(u, flags))
+  ) {
     creditsToBeBilled += unblockedDomainCostBonus;
   }
 

@@ -42,13 +42,17 @@ import {
   PromptInjectionDetectedError,
   JsonExtractionContentTooLargeError,
   XTwitterConfigurationError,
+  ExchangeRefusedError,
 } from "../scraper/scrapeURL/error";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
+import { ThirdPartyDataTermsRequiredError } from "./exchange";
 
 // TODO: figure out correct typing for this
 const errorMap: Record<ErrorCodes, any> = {
-  // Terms responses are API-level, never transported through workers.
-  THIRD_PARTY_DATA_TERMS_REQUIRED: null,
+  THIRD_PARTY_DATA_TERMS_REQUIRED: ThirdPartyDataTermsRequiredError,
+  THIRD_PARTY_DATA_NOT_FOUND: ExchangeRefusedError,
+  THIRD_PARTY_DATA_NOT_ENABLED: ExchangeRefusedError,
+  THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED: ExchangeRefusedError,
   SAFE_MODE_BLOCKED: null,
   SCRAPE_SITE_RESTRICTION_BLOCKED: SiteRestrictionError,
   SCRAPE_TIMEOUT: ScrapeJobTimeoutError,

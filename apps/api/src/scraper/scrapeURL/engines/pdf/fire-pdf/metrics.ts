@@ -36,6 +36,25 @@ export const firePdfAsyncFallbackTotal = new Counter({
   labelNames: ["reason"],
 });
 
+export const firePdfRouteDecisionsTotal = new Counter({
+  name: "firecrawl_fire_pdf_route_decisions_total",
+  help: "Transport chosen for a request's first FirePDF attempt: path=sync (POST /ocr) or async (POST /jobs), by routing reason",
+  labelNames: ["source_kind", "path", "reason", "features", "zdr"],
+});
+
+export const firePdfRouteRemainingSeconds = new Histogram({
+  name: "firecrawl_fire_pdf_route_remaining_seconds",
+  help: "Caller time left on the scrape when the FirePDF transport was chosen",
+  labelNames: ["source_kind", "path"],
+  buckets: [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300, 600],
+});
+
+export const firePdfAsyncSubmit503Total = new Counter({
+  name: "firecrawl_fire_pdf_async_submit_503_total",
+  help: "fire-pdf POST /jobs 503s that ended the async attempt, by the error code in the response body (unattributed when the body carried none)",
+  labelNames: ["code"],
+});
+
 export const firePdfAsyncTotalDurationSeconds = new Histogram({
   name: "firecrawl_fire_pdf_async_total_duration_seconds",
   help: "End-to-end duration from 'decide to use async' to 'result available'",

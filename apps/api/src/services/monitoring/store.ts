@@ -4,7 +4,9 @@ import { and, asc, count, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { monitoringClaimDueMonitors } from "../../db/rpc";
+import { config } from "../../config";
 import { shouldParsePDF } from "../../controllers/v2/types";
+import { isXTwitterUrl } from "../../scraper/scrapeURL/engines/x-twitter/url";
 import {
   getNextMonitorRunAt,
   estimateRunsPerMonth,
@@ -173,13 +175,37 @@ function estimateSearchTargetCredits(
   );
 }
 
+/**
+ * The x-twitter engine's surcharge, which billing adds per page (see
+ * fallbackBaseCreditsForPage). Left out of the estimate, a judged one-URL X
+ * monitor reserves 2 credits and costs 31, and an account with a few credits
+ * left passes every hold and is never charged.
+ */
+function xTwitterSurcharge(
+  url: string,
+  options: MonitorTarget["scrapeOptions"],
+): number {
+  // Mirrors the engine router (scrapeURL/engines/index.ts): the engine exists
+  // only with an xAI key or DB auth, lockdown serves from the index alone, and
+  // a browser profile routes around it.
+  const engineEnabled =
+    (config.XAI_API_KEY !== undefined && config.XAI_API_KEY !== "") ||
+    config.USE_DB_AUTHENTICATION === true;
+  if (!engineEnabled || options?.lockdown || options?.profile) return 0;
+  return isXTwitterUrl(url) ? X_TWITTER_POSTPROCESSOR_CREDIT_BONUS : 0;
+}
+
 function estimateTargetBaseCredits(
   target: MonitorTarget,
   judgeEnabled: boolean = false,
 ): number {
   const creditsPerPage = estimateBaseCreditsPerPage(target.scrapeOptions);
   if (target.type === "scrape") {
-    return target.urls.length * creditsPerPage;
+    return target.urls.reduce(
+      (sum, url) =>
+        sum + creditsPerPage + xTwitterSurcharge(url, target.scrapeOptions),
+      0,
+    );
   }
   if (target.type === "search") {
     return estimateSearchTargetCredits(target, judgeEnabled);

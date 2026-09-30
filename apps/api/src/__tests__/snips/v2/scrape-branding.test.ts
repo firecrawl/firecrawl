@@ -1,3 +1,6 @@
+import { eq } from "drizzle-orm";
+import { db } from "../../../db/connection";
+import * as schema from "../../../db/schema";
 import { concurrentIf, HAS_AI, TEST_PRODUCTION } from "../lib";
 import { scrape, scrapeTimeout, idmux, Identity } from "./lib";
 
@@ -32,6 +35,83 @@ describe("Branding declared-logo fallback", () => {
       );
     },
     scrapeTimeout,
+  );
+});
+
+type CostTrackingCall = {
+  model: string;
+  cost: number;
+  metadata: Record<string, unknown>;
+  tokens?: { input: number; output: number };
+};
+
+// The scrape row is written when the job finishes; give the insert a moment.
+async function getCostTrackingCalls(
+  scrapeId: string,
+): Promise<CostTrackingCall[]> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const rows = await db
+      .select({ cost_tracking: schema.scrapes.cost_tracking })
+      .from(schema.scrapes)
+      .where(eq(schema.scrapes.id, scrapeId))
+      .limit(1);
+    if (rows.length === 1) {
+      const costTracking = rows[0].cost_tracking as {
+        calls?: CostTrackingCall[];
+      } | null;
+      return costTracking?.calls ?? [];
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  throw new Error(`No scrapes row for ${scrapeId}`);
+}
+
+const isBrandingCall = (call: CostTrackingCall) =>
+  call.metadata?.module === "branding" &&
+  call.metadata?.method === "enhanceBrandingWithLLM";
+
+describe("Branding cost tracking", () => {
+  concurrentIf(TEST_PRODUCTION)(
+    "records the branding LLM call with its model and cost",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/branding-declared-only",
+          formats: ["branding"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+      expect(response.branding).toBeDefined();
+
+      const calls = await getCostTrackingCalls(response.metadata.scrapeId!);
+      const brandingCalls = calls.filter(isBrandingCall);
+
+      expect(brandingCalls).toHaveLength(1);
+      expect(brandingCalls[0].model).toMatch(/^gpt-4o/);
+      expect(brandingCalls[0].tokens?.input).toBeGreaterThan(0);
+      expect(brandingCalls[0].cost).toBeGreaterThan(0);
+    },
+    scrapeTimeout + 15000,
+  );
+
+  concurrentIf(TEST_PRODUCTION)(
+    "records no branding call when branding is not requested",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl-test-site.vercel.app/branding-declared-only",
+          formats: ["markdown"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      const calls = await getCostTrackingCalls(response.metadata.scrapeId!);
+
+      expect(calls.filter(isBrandingCall)).toHaveLength(0);
+    },
+    scrapeTimeout + 15000,
   );
 });
 
