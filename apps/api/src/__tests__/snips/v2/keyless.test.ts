@@ -11,8 +11,9 @@ import { redisRateLimitClient } from "../../../services/rate-limiter";
 import { redisSpurClient } from "../../../services/spur-redis";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
-import { and, count, desc, eq, gt } from "drizzle-orm";
+import { and, desc, eq, gt } from "drizzle-orm";
 import request from "supertest";
+import { decryptKeylessSignupToken } from "../../../lib/keyless-signup-link";
 
 // The keyless tier is disabled unless both limits are configured. The harness
 // passes the shell env through to the server, so we read the same env here and
@@ -40,30 +41,29 @@ async function flushKeylessBuckets() {
   }
 }
 
-// Every keyless prompt links to signup at firecrawl.dev/k/<id>, an opaque
-// per-identity id, or the regular signup link (utm_source=keyless plus the
-// surface) when no id could be given (e.g. a test database without
-// keyless_signup_links). The URL is always followed by whitespace, never
-// punctuation.
+// Every keyless prompt links to signup at firecrawl.dev/k/<token>, the
+// encrypted prompt, or the regular signup link (utm_source=keyless plus the
+// surface) when the server has no KEYLESS_SIGNUP_LINK_KEYS. The URL is always
+// followed by whitespace, never punctuation.
 const KEYLESS_SIGNUP_URL =
-  /https:\/\/(firecrawl\.dev\/k\/[0-9abcdefghjkmnpqrstvwxyz]{8}|www\.firecrawl\.dev\/signin\?utm_source=keyless&utm_medium=(api|mcp|cli))(?=\s)/;
+  /https:\/\/(firecrawl\.dev\/k\/[0-9abcdefghjkmnpqrstvwxyz]{12}|www\.firecrawl\.dev\/signin\?utm_source=keyless&utm_medium=(api|mcp|cli))(?=\s)/;
 const KEYLESS_SIGNUP_URL_EXACT =
-  /^https:\/\/(firecrawl\.dev\/k\/[0-9abcdefghjkmnpqrstvwxyz]{8}|www\.firecrawl\.dev\/signin\?utm_source=keyless&utm_medium=(api|mcp|cli))$/;
+  /^https:\/\/(firecrawl\.dev\/k\/[0-9abcdefghjkmnpqrstvwxyz]{12}|www\.firecrawl\.dev\/signin\?utm_source=keyless&utm_medium=(api|mcp|cli))$/;
 
-// Recover the loopback IP the server keyed on, so we can seed its credit counter.
-// Row count of keyless_signup_links, or null when this database has no such
-// table (the links migration is optional for these snips).
-async function countSignupLinkRows(): Promise<number | null> {
-  try {
-    const [row] = await db
-      .select({ n: count() })
-      .from(schema.keyless_signup_links);
-    return Number(row?.n ?? 0);
-  } catch {
-    return null;
-  }
+// The harness passes the shell env to the server, so the token can be checked
+// here when a key is set; without one the server sends the regular link.
+const SIGNUP_LINK_KEYS_SET = !!process.env.KEYLESS_SIGNUP_LINK_KEYS;
+
+/** Surface and reason a /k link carries; null for the regular signup link. */
+function signupLinkPrompt(url: unknown) {
+  const token = String(url).split("/k/")[1];
+  if (!token) return null;
+  const prompt = decryptKeylessSignupToken(token);
+  expect(prompt).not.toBeNull();
+  return { surface: prompt!.surface, reason: prompt!.reason };
 }
 
+// Recover the loopback IP the server keyed on, so we can seed its credit counter.
 async function currentKeylessIp(): Promise<string> {
   const keys = await redisRateLimitClient.keys("keyless_requests:*");
   expect(keys.length).toBeGreaterThan(0);
@@ -119,7 +119,6 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
   );
 
   it("does not grant keyless access on non-allowlisted endpoints (401)", async () => {
-    const rowsBefore = await countSignupLinkRows();
     // batch/scrape shares RateLimiterMode.Scrape but is NOT allowKeyless.
     const response = await request(TEST_API_URL)
       .post("/v2/batch/scrape")
@@ -132,15 +131,15 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       "not supported by the keyless free tier",
     );
     expect(response.body.error).toMatch(KEYLESS_SIGNUP_URL);
-    // Anonymous traffic on a non-keyless endpoint must not write a link row;
-    // a new identity gets the regular signup link.
-    expect(response.body.signup_url).toBe(
-      "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
-    );
-    expect(response.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
-    if (rowsBefore !== null) {
-      expect(await countSignupLinkRows()).toBe(rowsBefore);
+    expect(response.body.signup_url).toMatch(KEYLESS_SIGNUP_URL_EXACT);
+    expect(response.body.error).toContain(response.body.signup_url);
+    if (SIGNUP_LINK_KEYS_SET) {
+      expect(signupLinkPrompt(response.body.signup_url)).toEqual({
+        surface: "api",
+        reason: "unsupported_endpoint",
+      });
     }
+    expect(response.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
   });
 
   it(
@@ -228,20 +227,16 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     }
     expect(mcpSecond.body.signup_url).toBe(mcpFirst.body.signup_url);
 
-    // Only assert the mapping when this database has the links table.
-    const mcpId = String(mcpFirst.body.signup_url).split("/k/")[1];
-    if (mcpId) {
-      const cliId = String(cli.body.signup_url).split("/k/")[1];
-      expect(cliId).toBeDefined();
-      expect(cliId).not.toBe(mcpId);
-      const rows = await db
-        .select()
-        .from(schema.keyless_signup_links)
-        .where(eq(schema.keyless_signup_links.short_id, mcpId));
-      expect(rows).toHaveLength(1);
-      // Mappings are durable and idempotent, so the rows are left in place:
-      // deleting them would break links already issued to this identity.
-      expect(rows[0]).toMatchObject({ surface: "mcp" });
+    if (SIGNUP_LINK_KEYS_SET) {
+      expect(cli.body.signup_url).not.toBe(mcpFirst.body.signup_url);
+      expect(signupLinkPrompt(mcpFirst.body.signup_url)).toEqual({
+        surface: "mcp",
+        reason: "limit",
+      });
+      expect(signupLinkPrompt(cli.body.signup_url)).toEqual({
+        surface: "cli",
+        reason: "limit",
+      });
     }
   });
 
@@ -887,6 +882,14 @@ describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
       expect(response.body.success).toBe(false);
       expect(response.body.error).toContain("suspicious");
       expect(response.body.error).toMatch(KEYLESS_SIGNUP_URL);
+      expect(response.body.signup_url).toMatch(KEYLESS_SIGNUP_URL_EXACT);
+      if (SIGNUP_LINK_KEYS_SET) {
+        // Relayed with the proxy secret, so the prompt reached the user via MCP.
+        expect(signupLinkPrompt(response.body.signup_url)).toEqual({
+          surface: "mcp",
+          reason: "suspicious_ip",
+        });
+      }
       // Out of the keyless path → emit the OAuth-discovery header.
       expect(response.headers["www-authenticate"]).toContain(
         "resource_metadata",

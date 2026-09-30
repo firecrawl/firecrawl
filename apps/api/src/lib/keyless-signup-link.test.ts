@@ -1,53 +1,205 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const mocks = vi.hoisted(() => {
-  const returning = vi.fn();
-  const onConflictDoUpdate = vi.fn((_conflict: unknown) => ({ returning }));
-  const values = vi.fn((_row: unknown) => ({ onConflictDoUpdate }));
-  const insert = vi.fn((_table: unknown) => ({ values }));
-  return {
-    insert,
-    values,
-    onConflictDoUpdate,
-    returning,
-    redisGet: vi.fn(),
-    redisSet: vi.fn(),
-  };
-});
-
-vi.mock("../db/connection", () => ({ db: { insert: mocks.insert } }));
-vi.mock("../services/rate-limiter", () => ({
-  redisRateLimitClient: { get: mocks.redisGet, set: mocks.redisSet },
-}));
-
 import { config } from "../config";
 import { logger } from "./logger";
 import {
-  KEYLESS_SIGNUP_ID_PATTERN,
-  existingKeylessSignupUrl,
-  generateKeylessSignupId,
-  issueKeylessSignupId,
+  type KeylessPromptReason,
+  type KeylessSignupSurface,
+  decryptKeylessSignupToken,
+  encryptKeylessSignupToken,
+  ff1Decrypt,
+  ff1Encrypt,
   keylessFallbackSignupUrl,
+  keylessSignupLink,
   keylessSignupSurface,
-  keylessSignupUrl,
-  resetKeylessSignupLinkStateForTests,
 } from "./keyless-signup-link";
 
-const TEAM_UUID = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
+// Shared with firecrawl-web lib/keyless-signup-link.test.ts: both repos must
+// produce and accept exactly this token for this key and payload.
+const CROSS_REPO_KEY = "AAECAwQFBgcICQoLDA0ODw==";
+const CROSS_REPO_PAYLOAD = {
+  ipv4: "203.0.113.8",
+  surface: "mcp",
+  reason: "limit",
+} as const;
+const CROSS_REPO_TOKEN = "hrxch5c20tcs";
 
-describe("generateKeylessSignupId", () => {
-  it("returns 8 lowercase Crockford base32 characters", () => {
-    for (let i = 0; i < 500; i++) {
-      expect(generateKeylessSignupId()).toMatch(KEYLESS_SIGNUP_ID_PATTERN);
+const KEY = Buffer.from(CROSS_REPO_KEY, "base64");
+const OTHER_KEY = Buffer.alloc(16, 7);
+const TOKEN_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
+
+describe("FF1 (NIST SP 800-38G AES-128 samples)", () => {
+  const key = Buffer.from("2B7E151628AED2A6ABF7158809CF4F3C", "hex");
+  const alphabet = "0123456789abcdefghijklmnopqrstuvwxyz";
+  const toNumerals = (s: string) => [...s].map(c => alphabet.indexOf(c));
+  const fromNumerals = (n: number[]) => n.map(d => alphabet[d]).join("");
+
+  it.each([
+    ["sample 1", 10, "", "0123456789", "2433477484"],
+    ["sample 2", 10, "39383736353433323130", "0123456789", "6124200773"],
+    [
+      "sample 3",
+      36,
+      "3737373770717273373737",
+      "0123456789abcdefghi",
+      "a9tv40mll9kdu509eum",
+    ],
+  ] as const)("%s", (_name, radix, tweakHex, plaintext, ciphertext) => {
+    const tweak = Buffer.from(tweakHex, "hex");
+    expect(
+      fromNumerals(ff1Encrypt(key, tweak, radix, toNumerals(plaintext))),
+    ).toBe(ciphertext);
+    expect(
+      fromNumerals(ff1Decrypt(key, tweak, radix, toNumerals(ciphertext))),
+    ).toBe(plaintext);
+  });
+});
+
+describe("keyless signup token", () => {
+  it("matches the cross-repo vector", () => {
+    expect(encryptKeylessSignupToken(CROSS_REPO_PAYLOAD, KEY)).toBe(
+      CROSS_REPO_TOKEN,
+    );
+    expect(decryptKeylessSignupToken(CROSS_REPO_TOKEN, [KEY])).toEqual(
+      CROSS_REPO_PAYLOAD,
+    );
+  });
+
+  const surfaces: KeylessSignupSurface[] = ["api", "mcp", "cli"];
+  const reasons: KeylessPromptReason[] = [
+    "limit",
+    "account_only_tool",
+    "unsupported_endpoint",
+    "suspicious_ip",
+  ];
+  it.each(
+    surfaces.flatMap(surface => reasons.map(reason => [surface, reason])),
+  )("round-trips surface %s and reason %s", (surface, reason) => {
+    for (const ipv4 of ["0.0.0.0", "203.0.113.8", "255.255.255.255"]) {
+      const payload = {
+        ipv4,
+        surface: surface as KeylessSignupSurface,
+        reason: reason as KeylessPromptReason,
+      };
+      const token = encryptKeylessSignupToken(payload, KEY);
+      expect(token).toMatch(/^[0-9abcdefghjkmnpqrstvwxyz]{12}$/);
+      expect(decryptKeylessSignupToken(token!, [KEY])).toEqual(payload);
     }
   });
 
-  it("does not repeat across many draws", () => {
-    const ids = new Set(
-      Array.from({ length: 5000 }, () => generateKeylessSignupId()),
-    );
-    expect(ids.size).toBe(5000);
+  it("rejects every single-character change to a token", () => {
+    for (let i = 0; i < CROSS_REPO_TOKEN.length; i++) {
+      for (const c of TOKEN_ALPHABET) {
+        if (c === CROSS_REPO_TOKEN[i]) continue;
+        const tampered =
+          CROSS_REPO_TOKEN.slice(0, i) + c + CROSS_REPO_TOKEN.slice(i + 1);
+        expect(decryptKeylessSignupToken(tampered, [KEY])).toBeNull();
+      }
+    }
   });
+
+  it.each([
+    "",
+    "hrxch5c20tc",
+    "hrxch5c20tcss",
+    "HRXCH5C20TCS",
+    "hrxch5c20tci",
+    "hrxch5c20tc/",
+  ])("rejects the malformed token %j", token => {
+    expect(decryptKeylessSignupToken(token, [KEY])).toBeNull();
+  });
+
+  it("decrypts a token from a rotated-out key while it stays listed", () => {
+    const oldToken = encryptKeylessSignupToken(CROSS_REPO_PAYLOAD, OTHER_KEY)!;
+    expect(decryptKeylessSignupToken(oldToken, [KEY])).toBeNull();
+    expect(decryptKeylessSignupToken(oldToken, [KEY, OTHER_KEY])).toEqual(
+      CROSS_REPO_PAYLOAD,
+    );
+    expect(
+      decryptKeylessSignupToken(CROSS_REPO_TOKEN, [KEY, OTHER_KEY]),
+    ).toEqual(CROSS_REPO_PAYLOAD);
+  });
+
+  it("shows no IP bytes in the clear", () => {
+    // The unencrypted numerals of the IP, and the IP in hex or decimal.
+    const ipNumerals = (
+      (((203n << 24n) | (0n << 16n) | (113n << 8n) | 8n) << 28n) >>
+      25n
+    )
+      .toString(32)
+      .padStart(7, "0");
+    const token = encryptKeylessSignupToken(CROSS_REPO_PAYLOAD, KEY)!;
+    expect(token.slice(0, 7)).not.toBe(ipNumerals);
+    for (const clear of ["cb007108", "203", "113", "cb", "71"]) {
+      expect(token).not.toContain(clear);
+    }
+    // Neighbouring IPs give unrelated tokens.
+    const next = encryptKeylessSignupToken(
+      { ...CROSS_REPO_PAYLOAD, ipv4: "203.0.113.9" },
+      KEY,
+    )!;
+    const shared = [...token].filter((c, i) => next[i] === c).length;
+    expect(shared).toBeLessThan(6);
+  });
+
+  it("gives no token for a non-IPv4 identity", () => {
+    for (const ipv4 of ["2001:db8::1", "::ffff:203.0.113.8", "unknown", ""]) {
+      expect(
+        encryptKeylessSignupToken({ ...CROSS_REPO_PAYLOAD, ipv4 }, KEY),
+      ).toBeUndefined();
+    }
+  });
+});
+
+describe("keylessSignupLink", () => {
+  const originalKeys = config.KEYLESS_SIGNUP_LINK_KEYS;
+  beforeEach(() => {
+    config.KEYLESS_SIGNUP_LINK_KEYS = CROSS_REPO_KEY;
+  });
+  afterEach(() => {
+    config.KEYLESS_SIGNUP_LINK_KEYS = originalKeys;
+  });
+
+  it("builds a clean /k/<token> link with no query string", () => {
+    expect(keylessSignupLink("203.0.113.8", "mcp", "limit")).toEqual({
+      url: `https://firecrawl.dev/k/${CROSS_REPO_TOKEN}`,
+      signupRef: CROSS_REPO_TOKEN,
+    });
+  });
+
+  it("encrypts with the first key and decrypts with any listed key", () => {
+    config.KEYLESS_SIGNUP_LINK_KEYS = `${OTHER_KEY.toString("base64")}, ${CROSS_REPO_KEY}`;
+    const { signupRef } = keylessSignupLink("203.0.113.8", "mcp", "limit");
+    expect(signupRef).not.toBe(CROSS_REPO_TOKEN);
+    expect(decryptKeylessSignupToken(signupRef!, [OTHER_KEY])).toEqual(
+      CROSS_REPO_PAYLOAD,
+    );
+    expect(decryptKeylessSignupToken(CROSS_REPO_TOKEN)).toEqual(
+      CROSS_REPO_PAYLOAD,
+    );
+  });
+
+  it.each([undefined, "", "not-a-key", "AAECAwQFBgcICQoLDA0O"])(
+    "gives the regular signup link when the keys are %j",
+    keys => {
+      const warn = vi.spyOn(logger, "warn");
+      config.KEYLESS_SIGNUP_LINK_KEYS = keys;
+      expect(keylessSignupLink("203.0.113.8", "cli", "limit")).toEqual({
+        url: keylessFallbackSignupUrl("cli"),
+      });
+      // A missing key is a plain fallback, not a caught failure.
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    },
+  );
+
+  it.each([null, undefined, "", "2001:db8::1", "unknown"])(
+    "gives the regular signup link for the non-IPv4 identity %j",
+    ip => {
+      expect(keylessSignupLink(ip, "api", "unsupported_endpoint")).toEqual({
+        url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
+      });
+    },
+  );
 });
 
 describe("keylessSignupSurface", () => {
@@ -98,240 +250,5 @@ describe("keylessSignupSurface", () => {
         headers: { "x-firecrawl-keyless-secret": "wrong" },
       }),
     ).toBe("api");
-  });
-});
-
-describe("issueKeylessSignupId", () => {
-  const originalUseDbAuth = config.USE_DB_AUTHENTICATION;
-
-  beforeEach(() => {
-    config.USE_DB_AUTHENTICATION = true;
-    resetKeylessSignupLinkStateForTests();
-    mocks.redisGet.mockReset().mockResolvedValue(null);
-    mocks.redisSet.mockReset().mockResolvedValue("OK");
-    mocks.returning.mockReset();
-    mocks.insert.mockClear();
-    mocks.values.mockClear();
-    mocks.onConflictDoUpdate.mockClear();
-    vi.spyOn(logger, "warn").mockImplementation(() => logger);
-  });
-
-  afterEach(() => {
-    config.USE_DB_AUTHENTICATION = originalUseDbAuth;
-    vi.restoreAllMocks();
-    vi.useRealTimers();
-  });
-
-  it("returns the cached id without touching the database", async () => {
-    mocks.redisGet.mockResolvedValue("7fq2xab9");
-
-    await expect(issueKeylessSignupId(TEAM_UUID, "mcp")).resolves.toBe(
-      "7fq2xab9",
-    );
-    expect(mocks.redisGet).toHaveBeenCalledWith(
-      `keyless_signup_link:v1:${TEAM_UUID}:mcp`,
-    );
-    expect(mocks.insert).not.toHaveBeenCalled();
-  });
-
-  it("upserts per (identity, surface) and caches the stored id", async () => {
-    mocks.returning.mockResolvedValue([{ short_id: "k3m9q2zz" }]);
-
-    await expect(issueKeylessSignupId(TEAM_UUID, "cli")).resolves.toBe(
-      "k3m9q2zz",
-    );
-    const row = mocks.values.mock.calls[0][0] as Record<string, string>;
-    expect(row).toMatchObject({
-      keyless_team_id: TEAM_UUID,
-      surface: "cli",
-    });
-    expect(row.short_id).toMatch(KEYLESS_SIGNUP_ID_PATTERN);
-    // Nothing identifying goes into the row besides the team UUID.
-    expect(Object.keys(row).sort()).toEqual(
-      ["keyless_team_id", "short_id", "surface"].sort(),
-    );
-    const conflict = mocks.onConflictDoUpdate.mock.calls[0][0] as {
-      target: unknown[];
-    };
-    expect(conflict.target).toHaveLength(2);
-    expect(mocks.redisSet).toHaveBeenCalledWith(
-      `keyless_signup_link:v1:${TEAM_UUID}:cli`,
-      "k3m9q2zz",
-      "EX",
-      30 * 24 * 60 * 60,
-    );
-  });
-
-  it("ignores a malformed cached value", async () => {
-    mocks.redisGet.mockResolvedValue("not-an-id");
-    mocks.returning.mockResolvedValue([{ short_id: "k3m9q2zz" }]);
-
-    await expect(issueKeylessSignupId(TEAM_UUID, "api")).resolves.toBe(
-      "k3m9q2zz",
-    );
-  });
-
-  it("retries once with a fresh id after a short_id collision", async () => {
-    mocks.returning
-      .mockRejectedValueOnce(
-        new Error("duplicate key keyless_signup_links_pkey"),
-      )
-      .mockResolvedValueOnce([{ short_id: "k3m9q2zz" }]);
-
-    await expect(issueKeylessSignupId(TEAM_UUID, "api")).resolves.toBe(
-      "k3m9q2zz",
-    );
-    const [first, second] = mocks.values.mock.calls.map(
-      c => (c[0] as { short_id: string }).short_id,
-    );
-    expect(first).not.toBe(second);
-  });
-
-  it("still issues when Redis is down", async () => {
-    mocks.redisGet.mockRejectedValue(new Error("redis down"));
-    mocks.redisSet.mockRejectedValue(new Error("redis down"));
-    mocks.returning.mockResolvedValue([{ short_id: "k3m9q2zz" }]);
-
-    await expect(issueKeylessSignupId(TEAM_UUID, "api")).resolves.toBe(
-      "k3m9q2zz",
-    );
-  });
-
-  it("returns undefined and backs off when the database fails", async () => {
-    mocks.returning.mockRejectedValue(new Error("db down"));
-
-    await expect(issueKeylessSignupId(TEAM_UUID, "api")).resolves.toBe(
-      undefined,
-    );
-    mocks.returning.mockResolvedValue([{ short_id: "k3m9q2zz" }]);
-    await expect(issueKeylessSignupId(TEAM_UUID, "api")).resolves.toBe(
-      undefined,
-    );
-    expect(mocks.insert).toHaveBeenCalledTimes(2);
-  });
-
-  it("gives up after its time budget instead of delaying the response", async () => {
-    vi.useFakeTimers();
-    mocks.returning.mockReturnValue(new Promise(() => {}));
-
-    const pending = issueKeylessSignupId(TEAM_UUID, "api");
-    await vi.advanceTimersByTimeAsync(300);
-    await expect(pending).resolves.toBe(undefined);
-  });
-
-  it("backs off after a timeout so a slow database is not queried per request", async () => {
-    vi.useFakeTimers();
-    mocks.returning.mockReturnValue(new Promise(() => {}));
-
-    const first = issueKeylessSignupId(TEAM_UUID, "api");
-    await vi.advanceTimersByTimeAsync(300);
-    await expect(first).resolves.toBe(undefined);
-
-    mocks.returning.mockResolvedValue([{ short_id: "k3m9q2zz" }]);
-    await expect(issueKeylessSignupId(TEAM_UUID, "api")).resolves.toBe(
-      undefined,
-    );
-    expect(mocks.insert).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(30_000);
-    await expect(issueKeylessSignupId(TEAM_UUID, "api")).resolves.toBe(
-      "k3m9q2zz",
-    );
-  });
-
-  it("issues nothing without an identity or without the database", async () => {
-    await expect(issueKeylessSignupId(null, "api")).resolves.toBe(undefined);
-    config.USE_DB_AUTHENTICATION = false;
-    await expect(issueKeylessSignupId(TEAM_UUID, "api")).resolves.toBe(
-      undefined,
-    );
-    expect(mocks.redisGet).not.toHaveBeenCalled();
-  });
-});
-
-describe("keylessSignupUrl", () => {
-  beforeEach(() => {
-    config.USE_DB_AUTHENTICATION = true;
-    resetKeylessSignupLinkStateForTests();
-  });
-
-  it("builds a clean /k/<id> link with no query string", async () => {
-    mocks.redisGet.mockResolvedValue("7fq2xab9");
-
-    await expect(keylessSignupUrl(TEAM_UUID, "mcp")).resolves.toEqual({
-      url: "https://firecrawl.dev/k/7fq2xab9",
-      shortId: "7fq2xab9",
-    });
-  });
-
-  it("falls back to the regular signup link, tagged with the surface", async () => {
-    await expect(keylessSignupUrl(null, "mcp")).resolves.toEqual({
-      url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=mcp",
-    });
-    expect(keylessFallbackSignupUrl("cli")).toBe(
-      "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=cli",
-    );
-  });
-
-  it("falls back to the regular signup link while issuance is backed off", async () => {
-    mocks.redisGet.mockResolvedValue(null);
-    mocks.returning.mockRejectedValue(new Error("db down"));
-    await keylessSignupUrl(TEAM_UUID, "api");
-
-    await expect(keylessSignupUrl(TEAM_UUID, "api")).resolves.toEqual({
-      url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
-    });
-  });
-});
-
-describe("existingKeylessSignupUrl", () => {
-  const originalUseDbAuth = config.USE_DB_AUTHENTICATION;
-  beforeEach(() => {
-    config.USE_DB_AUTHENTICATION = true;
-    mocks.redisGet.mockReset().mockResolvedValue(null);
-    mocks.insert.mockClear();
-  });
-  afterEach(() => {
-    config.USE_DB_AUTHENTICATION = originalUseDbAuth;
-    vi.useRealTimers();
-  });
-
-  it("returns the identity's cached link without touching the database", async () => {
-    mocks.redisGet.mockResolvedValue("7fq2xab9");
-
-    await expect(existingKeylessSignupUrl(TEAM_UUID, "cli")).resolves.toEqual({
-      url: "https://firecrawl.dev/k/7fq2xab9",
-      shortId: "7fq2xab9",
-    });
-    expect(mocks.redisGet).toHaveBeenCalledWith(
-      `keyless_signup_link:v1:${TEAM_UUID}:cli`,
-    );
-    expect(mocks.insert).not.toHaveBeenCalled();
-  });
-
-  it("never issues: a miss, a bad value, an error or a slow cache give the regular link", async () => {
-    const regular = {
-      url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
-    };
-    await expect(existingKeylessSignupUrl(TEAM_UUID, "api")).resolves.toEqual(
-      regular,
-    );
-    mocks.redisGet.mockResolvedValue("not-an-id");
-    await expect(existingKeylessSignupUrl(TEAM_UUID, "api")).resolves.toEqual(
-      regular,
-    );
-    mocks.redisGet.mockRejectedValue(new Error("redis down"));
-    await expect(existingKeylessSignupUrl(TEAM_UUID, "api")).resolves.toEqual(
-      regular,
-    );
-    vi.useFakeTimers();
-    mocks.redisGet.mockReturnValue(new Promise(() => {}));
-    const slow = existingKeylessSignupUrl(TEAM_UUID, "api");
-    await vi.advanceTimersByTimeAsync(50);
-    await expect(slow).resolves.toEqual(regular);
-    await expect(existingKeylessSignupUrl(null, "api")).resolves.toEqual(
-      regular,
-    );
-    expect(mocks.insert).not.toHaveBeenCalled();
   });
 });

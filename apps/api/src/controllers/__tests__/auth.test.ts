@@ -18,13 +18,8 @@ import {
   consumeKeylessRequest,
   isKeylessConfigured,
   keylessConversionCohort,
-  keylessTeamId,
-  keylessTeamUuid,
 } from "../../lib/keyless";
-import {
-  existingKeylessSignupUrl,
-  keylessSignupUrl,
-} from "../../lib/keyless-signup-link";
+import { decryptKeylessSignupToken } from "../../lib/keyless-signup-link";
 import { logger } from "../../lib/logger";
 import { isKeylessIpSuspicious } from "../../lib/spur";
 import { db } from "../../db/connection";
@@ -36,9 +31,7 @@ vi.mock("../../services/queue-service", () => ({
   })),
 }));
 
-// Keep the real v5: keyless signup links are keyed on the keyless team UUID.
-vi.mock("uuid", async importOriginal => ({
-  ...(await importOriginal<typeof import("uuid")>()),
+vi.mock("uuid", () => ({
   validate: vi.fn(() => true),
 }));
 
@@ -91,20 +84,6 @@ vi.mock("../../lib/keyless", async importOriginal => {
   };
 });
 
-vi.mock("../../lib/keyless-signup-link", async importOriginal => {
-  const actual =
-    await importOriginal<typeof import("../../lib/keyless-signup-link")>();
-  return {
-    ...actual,
-    keylessSignupUrl: vi.fn().mockResolvedValue({
-      url: actual.keylessFallbackSignupUrl("api"),
-    }),
-    existingKeylessSignupUrl: vi.fn().mockResolvedValue({
-      url: actual.keylessFallbackSignupUrl("api"),
-    }),
-  };
-});
-
 vi.mock("../../lib/spur", () => ({
   isKeylessIpSuspicious: vi.fn().mockResolvedValue(false),
 }));
@@ -130,6 +109,7 @@ describe("authenticateUser", () => {
   const originalIntrospectSecret = config.OAUTH_INTROSPECT_SECRET;
   const originalPreviewToken = config.PREVIEW_TOKEN;
   const originalAgentInteropSecret = config.AGENT_INTEROP_SECRET;
+  const originalKeylessSignupLinkKeys = config.KEYLESS_SIGNUP_LINK_KEYS;
 
   beforeEach(() => {
     vi.mocked(isKeylessConfigured).mockReturnValue(false);
@@ -149,6 +129,7 @@ describe("authenticateUser", () => {
     config.OAUTH_INTROSPECT_SECRET = originalIntrospectSecret;
     config.PREVIEW_TOKEN = originalPreviewToken;
     config.AGENT_INTEROP_SECRET = originalAgentInteropSecret;
+    config.KEYLESS_SIGNUP_LINK_KEYS = originalKeylessSignupLinkKeys;
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
@@ -236,8 +217,17 @@ describe("authenticateUser", () => {
     );
   });
 
-  it("issues on the limit prompt and only reuses an existing link on the pre-quota prompts", async () => {
+  // The prompt a /k link carries, or null for any other link.
+  const decodedLink = (url: unknown) => {
+    const match = /^https:\/\/firecrawl\.dev\/k\/([0-9a-z]{12})$/.exec(
+      String(url),
+    );
+    return match ? decryptKeylessSignupToken(match[1]) : null;
+  };
+
+  it("links every keyless prompt to the caller's own token, tagged with the prompt reason", async () => {
     config.USE_DB_AUTHENTICATION = true;
+    config.KEYLESS_SIGNUP_LINK_KEYS = "AAECAwQFBgcICQoLDA0ODw==";
     vi.mocked(isKeylessConfigured).mockReturnValue(true);
     vi.mocked(consumeKeylessRequest).mockResolvedValue({
       ok: false,
@@ -245,18 +235,10 @@ describe("authenticateUser", () => {
       requestsUsed: 1,
       creditsUsed: 100,
     });
-    vi.mocked(keylessSignupUrl).mockResolvedValue({
-      url: "https://firecrawl.dev/k/7fq2xab9",
-      shortId: "7fq2xab9",
-    });
-    vi.mocked(existingKeylessSignupUrl).mockResolvedValue({
-      url: "https://firecrawl.dev/k/7fq2xab9",
-      shortId: "7fq2xab9",
-    });
     const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
     const keylessRequest = () => ({
       headers: {},
-      socket: { remoteAddress: "203.0.113.8" },
+      socket: { remoteAddress: "::ffff:203.0.113.8" },
     });
 
     const limited = await authenticateUser(
@@ -279,43 +261,42 @@ describe("authenticateUser", () => {
       { allowKeyless: true },
     );
 
-    // An identity that already has a link gets it back on every prompt, so a
-    // signup from any of them joins.
-    for (const [auth, status] of [
-      [limited, 429],
-      [unsupported, 401],
-      [suspicious, 403],
+    for (const [auth, status, reason] of [
+      [limited, 429, "limit"],
+      [unsupported, 401, "unsupported_endpoint"],
+      [suspicious, 403, "suspicious_ip"],
     ] as const) {
+      const signupUrl = (auth as { signupUrl?: string }).signupUrl;
+      expect(decodedLink(signupUrl)).toEqual({
+        ipv4: "203.0.113.8",
+        surface: "api",
+        reason,
+      });
       expect(auth).toEqual(
         expect.objectContaining({
           success: false,
           status,
-          signupUrl: "https://firecrawl.dev/k/7fq2xab9",
-          // The URL is followed by whitespace, never punctuation, and nothing
-          // about the surface or the identity is visible in it.
-          error: expect.stringMatching(
-            /https:\/\/firecrawl\.dev\/k\/7fq2xab9\s/,
+          // The URL is followed by whitespace, never punctuation.
+          error: expect.stringContaining(
+            `${signupUrl}${status === 429 ? "\n" : " "}`,
           ),
         }),
       );
-      expect((auth as { error: string }).error).not.toContain("utm_");
+      // Nothing about the surface or the identity is visible in the link.
+      expect(signupUrl).not.toContain("utm_");
       expect((auth as { error: string }).error).not.toContain("203.0.113.8");
     }
-    // Only the limit prompt may issue (and write a row). The unsupported and
-    // suspicious prompts run before any quota check, so they only read.
-    const teamUuid = keylessTeamUuid(keylessTeamId("203.0.113.8"));
-    expect(vi.mocked(keylessSignupUrl).mock.calls).toEqual([[teamUuid, "api"]]);
-    expect(vi.mocked(existingKeylessSignupUrl).mock.calls).toEqual([
-      [teamUuid, "api"],
-      [teamUuid, "api"],
-    ]);
-    expect(warn).toHaveBeenCalledWith(
-      "Keyless request blocked",
-      expect.objectContaining({
-        event: "keyless_exhausted",
-        signupRef: "7fq2xab9",
-      }),
-    );
+    for (const [message, auth] of [
+      ["Keyless request blocked", limited],
+      ["Keyless request blocked: suspicious IP", suspicious],
+    ] as const) {
+      expect(warn).toHaveBeenCalledWith(
+        message,
+        expect.objectContaining({
+          signupRef: (auth as { signupUrl: string }).signupUrl.split("/k/")[1],
+        }),
+      );
+    }
   });
 
   it.each([
@@ -324,9 +305,10 @@ describe("authenticateUser", () => {
     [{}, { "x-origin": "cli" }, "cli"],
     [{ origin: "js-sdk@4.3.0" }, {}, "api"],
   ] as const)(
-    "issues the keyless limit link for body %j headers %j on the %s surface",
+    "tags the keyless limit link for body %j headers %j with the %s surface",
     async (body, headers, surface) => {
       config.USE_DB_AUTHENTICATION = true;
+      config.KEYLESS_SIGNUP_LINK_KEYS = "AAECAwQFBgcICQoLDA0ODw==";
       vi.mocked(isKeylessConfigured).mockReturnValue(true);
       vi.mocked(consumeKeylessRequest).mockResolvedValue({
         ok: false,
@@ -334,29 +316,27 @@ describe("authenticateUser", () => {
         requestsUsed: 11,
         creditsUsed: 0,
       });
-      vi.mocked(keylessSignupUrl).mockResolvedValue({
-        url: "https://firecrawl.dev/k/7fq2xab9",
-        shortId: "7fq2xab9",
-      });
       vi.spyOn(logger, "warn").mockImplementation(() => logger);
 
-      await authenticateUser(
+      const auth = await authenticateUser(
         { body, headers, socket: { remoteAddress: "203.0.113.8" } },
         {},
         RateLimiterMode.Scrape,
         { allowKeyless: true },
       );
 
-      expect(vi.mocked(keylessSignupUrl)).toHaveBeenLastCalledWith(
-        keylessTeamUuid(keylessTeamId("203.0.113.8")),
+      expect(decodedLink((auth as { signupUrl?: string }).signupUrl)).toEqual({
+        ipv4: "203.0.113.8",
         surface,
-      );
+        reason: "limit",
+      });
     },
   );
 
   it("keys the hosted MCP's link on the forwarded end-user IP and the mcp surface", async () => {
     config.USE_DB_AUTHENTICATION = true;
     config.KEYLESS_PROXY_SECRET = "proxy-secret";
+    config.KEYLESS_SIGNUP_LINK_KEYS = "AAECAwQFBgcICQoLDA0ODw==";
     vi.mocked(isKeylessConfigured).mockReturnValue(true);
     vi.mocked(consumeKeylessRequest).mockResolvedValue({
       ok: false,
@@ -364,13 +344,9 @@ describe("authenticateUser", () => {
       requestsUsed: 1,
       creditsUsed: 100,
     });
-    vi.mocked(keylessSignupUrl).mockResolvedValue({
-      url: "https://firecrawl.dev/k/7fq2xab9",
-      shortId: "7fq2xab9",
-    });
     vi.spyOn(logger, "warn").mockImplementation(() => logger);
 
-    await authenticateUser(
+    const auth = await authenticateUser(
       {
         body: { origin: "api" },
         headers: {
@@ -384,23 +360,22 @@ describe("authenticateUser", () => {
       { allowKeyless: true },
     );
 
-    expect(vi.mocked(keylessSignupUrl)).toHaveBeenLastCalledWith(
-      keylessTeamUuid(keylessTeamId("198.51.100.7")),
-      "mcp",
-    );
+    expect(decodedLink((auth as { signupUrl?: string }).signupUrl)).toEqual({
+      ipv4: "198.51.100.7",
+      surface: "mcp",
+      reason: "limit",
+    });
   });
 
-  it("falls back to the regular signup link and still returns the 429 when no link is issued", async () => {
+  it("falls back to the regular signup link and still returns the 429 when no key is configured", async () => {
     config.USE_DB_AUTHENTICATION = true;
+    config.KEYLESS_SIGNUP_LINK_KEYS = undefined;
     vi.mocked(isKeylessConfigured).mockReturnValue(true);
     vi.mocked(consumeKeylessRequest).mockResolvedValue({
       ok: false,
       reason: "credits",
       requestsUsed: 1,
       creditsUsed: 100,
-    });
-    vi.mocked(keylessSignupUrl).mockResolvedValue({
-      url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
     });
     vi.spyOn(logger, "warn").mockImplementation(() => logger);
 
@@ -423,12 +398,10 @@ describe("authenticateUser", () => {
     );
   });
 
-  it("gives a new identity on an unsupported endpoint the regular signup link without issuing", async () => {
+  it("gives a non-IPv4 caller on an unsupported endpoint the regular signup link", async () => {
     config.USE_DB_AUTHENTICATION = true;
+    config.KEYLESS_SIGNUP_LINK_KEYS = "AAECAwQFBgcICQoLDA0ODw==";
     vi.mocked(isKeylessConfigured).mockReturnValue(true);
-    vi.mocked(existingKeylessSignupUrl).mockResolvedValue({
-      url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
-    });
 
     const auth = await authenticateUser(
       { headers: {}, socket: { remoteAddress: "2001:db8::1" } },
@@ -443,12 +416,6 @@ describe("authenticateUser", () => {
         signupUrl:
           "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
       }),
-    );
-    expect(vi.mocked(keylessSignupUrl)).not.toHaveBeenCalled();
-    // A non-IPv4 caller has no identity to look up.
-    expect(vi.mocked(existingKeylessSignupUrl)).toHaveBeenLastCalledWith(
-      null,
-      "api",
     );
   });
 

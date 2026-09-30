@@ -110,6 +110,22 @@ const configSchema = z.object({
   // existing privacy-controlled conversion pipeline. Never use the proxy or
   // credential secrets here: this value is only an analytics pseudonymizer.
   KEYLESS_CONVERSION_HMAC_SECRET: emptyStringAsUndefined(z.string().min(32)),
+  // AES-128 keys for keyless signup link tokens (firecrawl.dev/k/<token>):
+  // comma-separated base64, 16 bytes each. The first encrypts; every key is
+  // tried to decrypt, so keep a rotated-out key listed while its links live.
+  // Must match firecrawl-web's KEYLESS_SIGNUP_LINK_KEYS. Unset sends the
+  // regular signup link.
+  KEYLESS_SIGNUP_LINK_KEYS: emptyStringAsUndefined(
+    z
+      .string()
+      .refine(
+        value =>
+          value
+            .split(",")
+            .every(key => /^[A-Za-z0-9+/]{21}[AQgw]==$/.test(key.trim())),
+        "KEYLESS_SIGNUP_LINK_KEYS must be comma-separated base64 16-byte keys",
+      ),
+  ),
   // Dedicated signer/verifier secret for short-lived MCP delegated credentials.
   // Keep separate from KEYLESS_PROXY_SECRET because delegated credentials can
   // authorize billed requests for a managed OAuth connection.

@@ -14,11 +14,11 @@ import {
 import { isTrustedAgentInteropRequest } from "../lib/agent-interop";
 import {
   consumeKeylessRequest,
-  existingKeylessSignupUrlForIp,
   isKeylessConfigured,
   keylessExhaustionTelemetry,
   isKeylessIpEligible,
   keylessLimitPrompt,
+  keylessSignupUrlForIp,
   keylessTeamId,
   normalizeKeylessIpv4,
 } from "../lib/keyless";
@@ -523,14 +523,11 @@ async function handleKeylessAuth(
 
   // Configured, but this endpoint isn't part of the keyless tier: tell the user
   // they need a key (with the signup nudge) rather than a bare "Unauthorized".
-  // This path runs before any quota or eligibility check, so it never issues
-  // (that would let anonymous traffic write a keyless_signup_links row per
-  // source IP). It reuses a link this identity was already given, from the
-  // cache only, so the signup still joins; otherwise the regular signup link.
   if (!allowKeyless) {
-    const { url } = await existingKeylessSignupUrlForIp(
+    const { url } = keylessSignupUrlForIp(
       keylessClientIp(req),
       keylessSignupSurface(req),
+      "unsupported_endpoint",
     );
     return {
       success: false,
@@ -565,6 +562,11 @@ async function handleKeylessAuth(
   // runs before consuming quota so a flagged IP doesn't burn a request slot.
   if (await isKeylessIpSuspicious(ip)) {
     keylessAuthTotal.inc({ mode, outcome: "suspicious" });
+    const { url, signupRef } = keylessSignupUrlForIp(
+      ip,
+      signupSurface,
+      "suspicious_ip",
+    );
     logger.warn("Keyless request blocked: suspicious IP", {
       canonicalLog: "keyless/consume",
       ip,
@@ -572,10 +574,8 @@ async function handleKeylessAuth(
       integration: req.body?.integration,
       blocked: true,
       reason: "suspicious",
+      ...(signupRef ? { signupRef } : {}),
     });
-    // Flagged IPs are the rotating ones, so this never issues a stored row
-    // each; it only reuses a link the identity was already given.
-    const { url } = await existingKeylessSignupUrlForIp(ip, signupSurface);
     return {
       success: false,
       error: keylessSuspiciousIpMessage(url),
@@ -628,7 +628,7 @@ async function handleKeylessAuth(
 
   if (!result.ok) {
     keylessAuthTotal.inc({ mode, outcome: result.reason ?? "error" });
-    const prompt = await keylessLimitPrompt(ip, signupSurface);
+    const prompt = keylessLimitPrompt(ip, signupSurface);
     logger.warn("Keyless request blocked", {
       ...baseLog,
       blocked: true,

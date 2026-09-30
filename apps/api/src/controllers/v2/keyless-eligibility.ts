@@ -2,10 +2,10 @@ import { Request, Response } from "express";
 import { config } from "../../config";
 import {
   checkKeylessEligibility,
-  existingKeylessSignupUrlForIp,
   keylessSignupUrlForIp,
 } from "../../lib/keyless";
 import {
+  type KeylessPromptReason,
   keylessFallbackSignupUrl,
   keylessSignupSurface,
 } from "../../lib/keyless-signup-link";
@@ -19,8 +19,8 @@ import {
  *
  * An ineligible result carries `signupUrl`, the caller's own signup link, which
  * the MCP relays in its recovery message. `?signup_link=1` asks for the link on
- * an eligible result too, for recovery that eligibility does not cause (a tool
- * that keyless sessions cannot use).
+ * any result, for the account-only tool prompt (a tool keyless sessions cannot
+ * use), and tags it with that reason whatever the eligibility.
  */
 export async function keylessEligibilityController(
   req: Request,
@@ -37,20 +37,23 @@ export async function keylessEligibilityController(
     (typeof ipHeader === "string" ? ipHeader.trim() : "") || req.ip || "";
 
   const result = await checkKeylessEligibility(ip);
-  const wantsLink = !result.eligible || req.query?.signup_link === "1";
-  if (!wantsLink) {
+  const accountOnlyTool = req.query?.signup_link === "1";
+  if (result.eligible && !accountOnlyTool) {
     res.status(200).json(result);
     return;
   }
-  // No identity to key a link on when the tier is off or the limiter is down.
-  // Flagged (rotating) IPs never get a stored row each: they only reuse a link
-  // the identity was already given.
-  const signupUrl =
-    result.reason === "disabled" || result.reason === "error"
-      ? keylessFallbackSignupUrl(keylessSignupSurface(req))
+  const surface = keylessSignupSurface(req);
+  const reason: KeylessPromptReason | undefined = accountOnlyTool
+    ? "account_only_tool"
+    : result.reason === "requests" || result.reason === "credits"
+      ? "limit"
       : result.reason === "suspicious"
-        ? (await existingKeylessSignupUrlForIp(ip, keylessSignupSurface(req)))
-            .url
-        : (await keylessSignupUrlForIp(ip, keylessSignupSurface(req))).url;
+        ? "suspicious_ip"
+        : undefined;
+  // A tier that is off or a limiter that is down is not a prompt about this
+  // identity, so it gets the regular signup link.
+  const signupUrl = reason
+    ? keylessSignupUrlForIp(ip, surface, reason).url
+    : keylessFallbackSignupUrl(surface);
   res.status(200).json({ ...result, signupUrl });
 }

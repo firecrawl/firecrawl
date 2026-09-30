@@ -15,14 +15,6 @@ vi.mock("./keyless", async importOriginal => {
   const actual = await importOriginal<typeof import("./keyless")>();
   return { ...actual, checkKeylessEligibility: vi.fn() };
 });
-vi.mock("./keyless-signup-link", async importOriginal => {
-  const actual = await importOriginal<typeof import("./keyless-signup-link")>();
-  return {
-    ...actual,
-    keylessSignupUrl: vi.fn(),
-    existingKeylessSignupUrl: vi.fn(),
-  };
-});
 
 import { config } from "../config";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
@@ -33,17 +25,20 @@ import {
   checkKeylessEligibility,
   keylessLimitBody,
   keylessSignupUrlForIp,
-  keylessTeamId,
-  keylessTeamUuid,
 } from "./keyless";
-import {
-  existingKeylessSignupUrl,
-  keylessSignupUrl,
-} from "./keyless-signup-link";
+import { decryptKeylessSignupToken } from "./keyless-signup-link";
 import { logger } from "./logger";
 
-const OWN_LINK = "https://firecrawl.dev/k/7fq2xab9";
-const TEAM_UUID = keylessTeamUuid(keylessTeamId("203.0.113.8"));
+const TEST_KEY = "AAECAwQFBgcICQoLDA0ODw==";
+const IP = "203.0.113.8";
+
+/** The prompt a /k link carries, or null for any other link. */
+function decoded(url: unknown) {
+  const match = /^https:\/\/firecrawl\.dev\/k\/([0-9a-z]{12})$/.exec(
+    String(url),
+  );
+  return match ? decryptKeylessSignupToken(match[1]) : null;
+}
 
 function fakeRes() {
   const res: any = {};
@@ -52,15 +47,14 @@ function fakeRes() {
   return res;
 }
 
+const originalKeys = config.KEYLESS_SIGNUP_LINK_KEYS;
 beforeEach(() => {
-  vi.mocked(keylessSignupUrl).mockResolvedValue({
-    url: OWN_LINK,
-    shortId: "7fq2xab9",
-  });
+  config.KEYLESS_SIGNUP_LINK_KEYS = TEST_KEY;
   vi.spyOn(logger, "warn").mockImplementation(() => logger);
 });
 
 afterEach(() => {
+  config.KEYLESS_SIGNUP_LINK_KEYS = originalKeys;
   vi.clearAllMocks();
   vi.restoreAllMocks();
 });
@@ -79,63 +73,84 @@ describe("keyless limit prompt", () => {
       { body: { integration: "cli" } },
     );
 
-    expect(keylessSignupUrl).toHaveBeenCalledWith(TEAM_UUID, "cli");
-    expect(body).toMatchObject({
-      success: false,
-      reason: "credits",
-      signup_url: OWN_LINK,
+    expect(decoded(body.signup_url)).toEqual({
+      ipv4: IP,
+      surface: "cli",
+      reason: "limit",
     });
-    expect(body.error).toContain(`${OWN_LINK}\n`);
+    expect(body).toMatchObject({ success: false, reason: "credits" });
+    expect(body.error).toContain(`${body.signup_url}\n`);
     expect(logger.warn).toHaveBeenCalledWith(
       "Keyless request blocked",
-      expect.objectContaining({ signupRef: "7fq2xab9" }),
+      expect.objectContaining({
+        signupRef: body.signup_url.split("/k/")[1],
+      }),
     );
   });
 
   it("uses the api surface when no request is given", async () => {
-    await keylessLimitBody("preview_keyless_203.0.113.8", "v2_scrape");
-    expect(keylessSignupUrl).toHaveBeenCalledWith(TEAM_UUID, "api");
+    const body = await keylessLimitBody(
+      "preview_keyless_203.0.113.8",
+      "v2_scrape",
+    );
+    expect(decoded(body.signup_url)?.surface).toBe("api");
   });
 
-  it("keys IPv4-mapped IPv6 on the IPv4 identity and issues nothing for other IPs", async () => {
-    await keylessSignupUrlForIp("::ffff:203.0.113.8", "mcp");
-    expect(keylessSignupUrl).toHaveBeenLastCalledWith(TEAM_UUID, "mcp");
-    await keylessSignupUrlForIp("2001:db8::1", "mcp");
-    expect(keylessSignupUrl).toHaveBeenLastCalledWith(null, "mcp");
-    await keylessSignupUrlForIp("unknown", "api");
-    expect(keylessSignupUrl).toHaveBeenLastCalledWith(null, "api");
+  it("gives the regular signup link when no key is configured", async () => {
+    config.KEYLESS_SIGNUP_LINK_KEYS = undefined;
+    const body = await keylessLimitBody(
+      "preview_keyless_203.0.113.8",
+      "v2_scrape",
+      { body: { origin: "mcp-cursor@1" } },
+    );
+    expect(body.signup_url).toBe(
+      "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=mcp",
+    );
+    expect(body.error).toContain(`${body.signup_url}\n`);
+  });
+
+  it("keys IPv4-mapped IPv6 on the IPv4 identity and gives other IPs the regular link", () => {
+    expect(
+      decoded(keylessSignupUrlForIp("::ffff:203.0.113.8", "mcp", "limit").url),
+    ).toEqual({ ipv4: IP, surface: "mcp", reason: "limit" });
+    expect(keylessSignupUrlForIp("2001:db8::1", "mcp", "limit")).toEqual({
+      url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=mcp",
+    });
+    expect(keylessSignupUrlForIp("unknown", "api", "limit")).toEqual({
+      url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
+    });
   });
 });
 
 describe("browserError", () => {
-  it("replaces the keyless browser limit text with the caller's own link", async () => {
+  it("replaces the keyless browser limit text with the caller's own link", () => {
     const res = fakeRes();
-    await browserError(
-      res,
-      new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE),
-      {
-        auth: { team_id: "preview_keyless_203.0.113.8" },
-        body: { origin: "cli" },
-        headers: {},
-      } as any,
-    );
+    browserError(res, new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE), {
+      auth: { team_id: "preview_keyless_203.0.113.8" },
+      body: { origin: "cli" },
+      headers: {},
+    } as any);
 
-    expect(keylessSignupUrl).toHaveBeenCalledWith(TEAM_UUID, "cli");
     expect(res.status).toHaveBeenCalledWith(429);
-    expect(res.json).toHaveBeenCalledWith({
+    const body = res.json.mock.calls[0][0];
+    expect(decoded(body.signup_url)).toEqual({
+      ipv4: IP,
+      surface: "cli",
+      reason: "limit",
+    });
+    expect(body).toEqual({
       success: false,
-      error: expect.stringContaining(OWN_LINK),
-      signup_url: OWN_LINK,
+      error: expect.stringContaining(`${body.signup_url}\n`),
+      signup_url: body.signup_url,
     });
   });
 
-  it("leaves other browser errors unchanged", async () => {
+  it("leaves other browser errors unchanged", () => {
     const res = fakeRes();
-    await browserError(res, new HangarError(409, "Session closed."), {
+    browserError(res, new HangarError(409, "Session closed."), {
       auth: { team_id: "preview_keyless_203.0.113.8" },
     } as any);
 
-    expect(keylessSignupUrl).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(409);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
@@ -153,62 +168,68 @@ describe("keyless eligibility signup link", () => {
     config.KEYLESS_PROXY_SECRET = originalSecret;
   });
 
-  const eligibilityRequest = (query: Record<string, string> = {}) =>
+  const eligibilityRequest = (query: Record<string, string> = {}, ip = IP) =>
     ({
       headers: {
         "x-firecrawl-keyless-secret": "proxy-secret",
-        "x-firecrawl-keyless-ip": "203.0.113.8",
+        "x-firecrawl-keyless-ip": ip,
       },
       query,
     }) as any;
 
-  it.each(["requests", "credits"] as const)(
-    "links an identity refused for %s to its own mcp link",
-    async reason => {
+  const MCP_FALLBACK =
+    "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=mcp";
+
+  it.each([
+    ["requests", "limit"],
+    ["credits", "limit"],
+    ["suspicious", "suspicious_ip"],
+  ] as const)(
+    "links an identity refused for %s to its own mcp link tagged %s",
+    async (refusal, reason) => {
       vi.mocked(checkKeylessEligibility).mockResolvedValue({
         eligible: false,
-        reason,
+        reason: refusal,
       });
       const res = fakeRes();
 
       await keylessEligibilityController(eligibilityRequest(), res);
 
-      expect(keylessSignupUrl).toHaveBeenCalledWith(TEAM_UUID, "mcp");
       // Refusals stay 200 so the MCP serves structured recovery, not a challenge.
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({
+      const body = res.json.mock.calls[0][0];
+      expect(body).toEqual({
         eligible: false,
+        reason: refusal,
+        signupUrl: expect.any(String),
+      });
+      expect(decoded(body.signupUrl)).toEqual({
+        ipv4: IP,
+        surface: "mcp",
         reason,
-        signupUrl: OWN_LINK,
       });
     },
   );
 
-  it("only reuses an existing link for a suspicious refusal, never issuing", async () => {
+  it("gives a suspicious refusal the regular mcp link when no key is configured", async () => {
+    config.KEYLESS_SIGNUP_LINK_KEYS = undefined;
     vi.mocked(checkKeylessEligibility).mockResolvedValue({
       eligible: false,
       reason: "suspicious",
-    });
-    vi.mocked(existingKeylessSignupUrl).mockResolvedValue({
-      url: OWN_LINK,
-      shortId: "7fq2xab9",
     });
     const res = fakeRes();
 
     await keylessEligibilityController(eligibilityRequest(), res);
 
-    expect(keylessSignupUrl).not.toHaveBeenCalled();
-    expect(existingKeylessSignupUrl).toHaveBeenCalledWith(TEAM_UUID, "mcp");
-    expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       eligible: false,
       reason: "suspicious",
-      signupUrl: OWN_LINK,
+      signupUrl: MCP_FALLBACK,
     });
   });
 
   it.each(["disabled", "error"] as const)(
-    "gives the regular signup link without issuing when the refusal is %s",
+    "gives the regular signup link when the refusal is %s",
     async reason => {
       vi.mocked(checkKeylessEligibility).mockResolvedValue({
         eligible: false,
@@ -218,16 +239,33 @@ describe("keyless eligibility signup link", () => {
 
       await keylessEligibilityController(eligibilityRequest(), res);
 
-      expect(keylessSignupUrl).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
         eligible: false,
         reason,
-        signupUrl:
-          "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=mcp",
+        signupUrl: MCP_FALLBACK,
       });
     },
   );
+
+  it("gives a non-IPv4 caller the regular signup link", async () => {
+    vi.mocked(checkKeylessEligibility).mockResolvedValue({
+      eligible: false,
+      reason: "ineligible_ip",
+    });
+    const res = fakeRes();
+
+    await keylessEligibilityController(
+      eligibilityRequest({ signup_link: "1" }, "2001:db8::1"),
+      res,
+    );
+
+    expect(res.json).toHaveBeenCalledWith({
+      eligible: false,
+      reason: "ineligible_ip",
+      signupUrl: MCP_FALLBACK,
+    });
+  });
 
   it("omits the link for an eligible IP unless asked", async () => {
     vi.mocked(checkKeylessEligibility).mockResolvedValue({ eligible: true });
@@ -240,9 +278,30 @@ describe("keyless eligibility signup link", () => {
     );
 
     expect(res.status.mock.calls).toEqual([[200], [200]]);
-    expect(res.json.mock.calls).toEqual([
-      [{ eligible: true }],
-      [{ eligible: true, signupUrl: OWN_LINK }],
-    ]);
+    expect(res.json.mock.calls[0]).toEqual([{ eligible: true }]);
+    const asked = res.json.mock.calls[1][0];
+    expect(asked).toEqual({ eligible: true, signupUrl: expect.any(String) });
+    expect(decoded(asked.signupUrl)).toEqual({
+      ipv4: IP,
+      surface: "mcp",
+      reason: "account_only_tool",
+    });
+  });
+
+  it("tags the account-only link with that reason even when the IP is also refused", async () => {
+    vi.mocked(checkKeylessEligibility).mockResolvedValue({
+      eligible: false,
+      reason: "credits",
+    });
+    const res = fakeRes();
+
+    await keylessEligibilityController(
+      eligibilityRequest({ signup_link: "1" }),
+      res,
+    );
+
+    expect(decoded(res.json.mock.calls[0][0].signupUrl)?.reason).toBe(
+      "account_only_tool",
+    );
   });
 });

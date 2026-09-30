@@ -12,11 +12,11 @@ import {
   keylessCreditsTotal,
 } from "./keyless-metrics";
 import {
+  type KeylessPromptReason,
   type KeylessSignupSurface,
-  existingKeylessSignupUrl,
   keylessFallbackSignupUrl,
+  keylessSignupLink,
   keylessSignupSurface,
-  keylessSignupUrl,
 } from "./keyless-signup-link";
 
 // Keyless free tier: scrape, search, and interact can be used without an API key
@@ -30,11 +30,11 @@ import {
 const KEYLESS_REQUESTS_PER_DAY = config.KEYLESS_REQUESTS_PER_DAY;
 const KEYLESS_CREDITS_PER_DAY = config.KEYLESS_CREDITS_PER_DAY;
 
-// Keyless prompts link to signup at firecrawl.dev/k/<id>, where <id> is an
-// opaque per-identity reference (see keyless-signup-link.ts). The constant uses
-// the regular signup link and stays the marker for internal equality checks; responses
-// swap in the caller's own link where they leave the API. The URL ends its
-// line, so a copied link never picks up punctuation.
+// Keyless prompts link to signup at firecrawl.dev/k/<token>, where <token>
+// is the encrypted prompt (see keyless-signup-link.ts). The constant uses the
+// regular signup link and stays the marker for internal equality checks;
+// responses swap in the caller's own link where they leave the API. The URL
+// ends its line, so a copied link never picks up punctuation.
 function keylessFreeTierLimitMessage(signupUrl: string): string {
   return `You've hit Firecrawl's keyless free tier rate limit. To continue now, create a free API key at ${signupUrl}
 
@@ -167,46 +167,32 @@ async function retryAfterSecondsFor(key: string): Promise<number | undefined> {
   }
 }
 
-/** Signup link for a keyless IP identity; the regular signup link for anything else. */
+/**
+ * Signup link for a keyless prompt: the caller's own /k/<token> link for a
+ * valid IPv4 identity, the regular signup link for anything else.
+ */
 export function keylessSignupUrlForIp(
   ip: string | null | undefined,
   surface: KeylessSignupSurface,
-): Promise<{ url: string; shortId?: string }> {
-  const teamUuid =
-    ip && isKeylessIpEligible(ip)
-      ? keylessTeamUuid(keylessTeamId(normalizeKeylessIpv4(ip)))
-      : null;
-  return keylessSignupUrl(teamUuid, surface);
+  reason: KeylessPromptReason,
+): { url: string; signupRef?: string } {
+  return keylessSignupLink(
+    ip && isKeylessIpEligible(ip) ? normalizeKeylessIpv4(ip) : null,
+    surface,
+    reason,
+  );
 }
 
-/**
- * The link already issued to a keyless IP identity, without issuing one; the
- * regular signup link when there is none. See existingKeylessSignupUrl.
- */
-export function existingKeylessSignupUrlForIp(
+/** The caller's own signup link and the limit message that carries it. */
+export function keylessLimitPrompt(
   ip: string | null | undefined,
   surface: KeylessSignupSurface,
-): Promise<{ url: string; shortId?: string }> {
-  const teamUuid =
-    ip && isKeylessIpEligible(ip)
-      ? keylessTeamUuid(keylessTeamId(normalizeKeylessIpv4(ip)))
-      : null;
-  return existingKeylessSignupUrl(teamUuid, surface);
-}
-
-/**
- * The caller's own signup link and the limit message that carries it. Never
- * throws: when no per-identity link can be issued the regular signup link is used.
- */
-export async function keylessLimitPrompt(
-  ip: string | null | undefined,
-  surface: KeylessSignupSurface,
-): Promise<{ error: string; signup_url: string; signupRef?: string }> {
-  const { url, shortId } = await keylessSignupUrlForIp(ip, surface);
+): { error: string; signup_url: string; signupRef?: string } {
+  const { url, signupRef } = keylessSignupUrlForIp(ip, surface, "limit");
   return {
     error: keylessFreeTierLimitMessage(url),
     signup_url: url,
-    ...(shortId ? { signupRef: shortId } : {}),
+    ...(signupRef ? { signupRef } : {}),
   };
 }
 
@@ -243,7 +229,7 @@ export async function keylessLimitBody(
     // The reservation already proved the limit; missing TTL must not turn its
     // controlled 429 into a server error.
   }
-  const prompt = await keylessLimitPrompt(
+  const prompt = keylessLimitPrompt(
     ip,
     req ? keylessSignupSurface(req) : "api",
   );

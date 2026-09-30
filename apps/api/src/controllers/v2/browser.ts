@@ -68,7 +68,7 @@ const browserExecuteRequestSchema = z.object({
   origin: z.string().optional(),
 });
 
-export async function browserError(
+export function browserError(
   res: Response,
   error: unknown,
   req?: RequestWithAuth<any, any, any>,
@@ -80,7 +80,7 @@ export async function browserError(
     error.status === 429 &&
     error.message === KEYLESS_FREE_TIER_LIMIT_MESSAGE
   ) {
-    const prompt = await keylessLimitPromptForTeam(req.auth.team_id, req);
+    const prompt = keylessLimitPromptForTeam(req.auth.team_id, req);
     return res.status(429).json({
       success: false,
       error: prompt.error,
