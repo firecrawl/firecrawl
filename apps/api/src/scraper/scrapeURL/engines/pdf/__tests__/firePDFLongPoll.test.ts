@@ -178,16 +178,18 @@ describe("pollUntilTerminal — wait_ms long-poll", () => {
   });
 
   it("skips the early-answer pause when no long-poll fits after it", async () => {
-    const { urls, sleeps } = await runLongPoll({
+    const { urls, sleeps, seenAtMs } = await runLongPoll({
       longPollWaitMs: 20_000,
-      doneAtMs: 2_000,
+      doneAtMs: 1_000,
       holding: false,
       pollingDeadline: T0 + 2_500,
     });
-    // 2.5s left: a 1s pause would leave too little for another long-poll,
-    // so that round takes the scheduled path: its sleep, then a plain poll.
-    expect(urls.map(waitParam)).toEqual(["1500", undefined, undefined]);
-    expect(sleeps).toEqual([1_000, 2_000]);
+    // 2.5s left: after the early answer a 1s pause would leave too little
+    // for another long-poll, so that round takes the scheduled path (its
+    // sleep, then a plain poll), finishing inside the deadline.
+    expect(urls.map(waitParam)).toEqual(["1500", undefined]);
+    expect(sleeps).toEqual([1_000]);
+    expect(seenAtMs).toBeLessThanOrEqual(2_500);
   });
 
   it("caps a large retry_after_ms hint in the early-answer pause", async () => {
@@ -221,6 +223,33 @@ describe("pollUntilTerminal — wait_ms long-poll", () => {
       longPollWaitMs: 20_000,
     });
     expect(sleeps).toEqual([5_000]);
+  });
+
+  it("counts an expired or cancelled answer to a long-poll as terminal", async () => {
+    const before = await counterValue(firePdfAsyncLongPollTotal, {
+      outcome: "terminal",
+    });
+    const fetchImpl: any = async () =>
+      jsonResp({
+        status: 410,
+        body: { scrape_id: "x", status: "expired" },
+      });
+    await expect(
+      pollUntilTerminal({
+        baseUrl: "http://fire-pdf.test",
+        scrapeId: "x",
+        pollingDeadline: DEADLINE,
+        meta: makeMeta(),
+        fetchImpl,
+        sleep: async () => {},
+        now: () => T0,
+        random: () => 0,
+        longPollWaitMs: 20_000,
+      }),
+    ).rejects.toMatchObject({ reason: "terminal_expired" });
+    expect(
+      await counterValue(firePdfAsyncLongPollTotal, { outcome: "terminal" }),
+    ).toBe(before + 1);
   });
 
   it("bounds the wait by the polling deadline", async () => {

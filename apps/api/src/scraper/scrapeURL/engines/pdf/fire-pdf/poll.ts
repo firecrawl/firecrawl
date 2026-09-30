@@ -184,6 +184,7 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
     }
 
     if (pollStatus === 410) {
+      if (waitMs > 0) firePdfAsyncLongPollTotal.labels("terminal").inc();
       firePdfAsyncPollCount.observe(pollCount);
       const parsed = pollResponseSchema.safeParse(pollBody);
       const status = parsed.success ? parsed.data.status : "expired";
@@ -196,6 +197,7 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
     }
 
     if (pollStatus === 502) {
+      if (waitMs > 0) firePdfAsyncLongPollTotal.labels("terminal").inc();
       firePdfAsyncPollCount.observe(pollCount);
       firePdfAsyncCompletedTotal.labels("failed").inc();
       failAsync(meta, "terminal_failed", {
