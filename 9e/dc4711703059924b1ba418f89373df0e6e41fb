@@ -1,0 +1,38 @@
+apps/api/src/scraper/scrapeURL/engines/x-twitter/index.test.ts
+  s_738559dfb424df::t_cf1da570afb9bf 122-141,160-171,173-174
+  s_738559dfb424df::t_a75b45dbde0d32 75-90
+  s_738559dfb424df::t_e7747f90d874bc 172
+  s_738559dfb424df::t_c08771f382e399 142-159
+  s_738559dfb424df::t_887288f8193678 103-121,175-195
+apps/api/src/__tests__/snips/lib.ts
+  s_738559dfb424df::t_05e2176f2f970b 26
+apps/api/src/scraper/scrapeURL/engines/x-twitter/index.ts
+  s_738559dfb424df::t_1587b271e0ff18 473-474,477,483-486
+  s_738559dfb424df::t_28c77a94b2cba2 466-469
+  s_738559dfb424df::t_c3ca18fb1812de 475-476,478-482
+apps/api/src/__tests__/snips/cost-tracking-helpers.ts
+  s_738559dfb424df::t_ed566a603e0ade 1-4,6-31
+  s_738559dfb424df::t_121438a5262b20 5
+apps/api/src/__tests__/snips/v2/scrape-x-twitter.test.ts
+  s_738559dfb424df::t_33b5976b1c25db 1
+  s_738559dfb424df::t_ecd67351bb3576 22,26
+  s_738559dfb424df::t_f1e450265b391f 2-21,23-25,27-60
+apps/api/src/__tests__/snips/v2/scrape-branding.test.ts
+  s_738559dfb424df::t_121438a5262b20 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9edc4711703059924b1ba418f89373df0e6e41fb",
+  "prompts": {},
+  "sessions": {
+    "s_738559dfb424df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "399a020e-7ff1-46d8-868b-871d5a4e800a",
+        "model": "unknown"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
