@@ -2,13 +2,17 @@
 
 import asyncio
 from types import SimpleNamespace
+from urllib.parse import urlsplit, urlunsplit
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 
 from firecrawl.v2.methods import monitor
 from firecrawl.v2.methods.aio import monitor as async_monitor
 from firecrawl.v2.types import MonitorCheckPage, PaginationConfig
+from firecrawl.v2.utils.http_client import HttpClient
+from firecrawl.v2.utils.http_client_async import AsyncHttpClient
 
 
 FIRST = "/v2/monitor/monitor-id/checks/check-id"
@@ -46,6 +50,8 @@ def pagination(request):
 
     def client_for(responses):
         client = MagicMock()
+        client._build_url.side_effect = lambda url: url
+        client._client.build_request.side_effect = lambda method, url: SimpleNamespace(url=url)
         # Fail promptly if the implementation requests an unexpected extra page.
         # This keeps regression tests bounded even without cycle detection.
         remaining = iter(responses)
@@ -136,6 +142,8 @@ def test_get_monitor_check_pagination_mode(is_async, auto_paginate):
     ))
     get = AsyncMock if is_async else MagicMock
     client = MagicMock()
+    client._build_url.side_effect = lambda url: url
+    client._client.build_request.side_effect = lambda method, url: SimpleNamespace(url=url)
     client.get = get(side_effect=[initial_response, _response("a", CURSOR_A)])
 
     def call():
@@ -154,3 +162,50 @@ def test_get_monitor_check_pagination_mode(is_async, auto_paginate):
         assert result.next == CURSOR_A
         assert [page.id for page in result.pages] == ["initial"]
         client.get.assert_called_once_with(FIRST)
+
+
+@pytest.mark.parametrize("is_async", [False, True], ids=["sync", "async"])
+@pytest.mark.parametrize("api_url", ["https://api.firecrawl.dev", "https://self-hosted.example/api"])
+@pytest.mark.parametrize("entry_form", ["relative", "absolute", "cross-host"])
+@pytest.mark.parametrize("direct_cycle", [False, True], ids=["via-next-page", "direct-entry-repeat"])
+def test_entry_url_is_not_requested_twice(is_async, api_url, entry_form, direct_cycle):
+    module = async_monitor if is_async else monitor
+    # Use the real transport's URL builder without opening a network session.
+    transport = object.__new__(AsyncHttpClient if is_async else HttpClient)
+    transport.api_url = api_url
+    if is_async:
+        transport._client = httpx.AsyncClient(base_url=api_url)
+    entry = FIRST + "?limit=1&skip=0&status=new"
+    resolved_entry = str(transport._client.build_request("GET", transport._build_url(entry)).url) if is_async else transport._build_url(entry)
+    parsed_entry = urlsplit(resolved_entry)
+    repeated_entry = {
+        "relative": entry,
+        "absolute": resolved_entry,
+        "cross-host": urlunsplit(parsed_entry._replace(netloc="other.example")),
+    }[entry_form]
+    detail = {
+        "id": "check-id", "monitorId": "monitor-id", "status": "completed",
+        "trigger": "manual", "billingStatus": "confirmed", "summary": {},
+        "createdAt": "2026-09-30T00:00:00Z", "updatedAt": "2026-09-30T00:00:00Z",
+        "pages": [_page("initial")],
+    }
+    initial = MagicMock(ok=True, status_code=200, json=MagicMock(return_value={
+        "success": True, "data": detail,
+        "next": repeated_entry if direct_cycle else CURSOR_A,
+    }))
+    client = MagicMock()
+    client._build_url.side_effect = transport._build_url
+    if is_async:
+        client._client = transport._client
+    get = AsyncMock if is_async else MagicMock
+    client.get = get(side_effect=[initial] if direct_cycle else [initial, _response("a", repeated_entry)])
+
+    with pytest.raises(RuntimeError, match="Repeated pagination cursor"):
+        result = module.get_monitor_check(client, "monitor-id", "check-id", limit=1, skip=0, status="new")
+        if is_async:
+            asyncio.run(result)
+
+    expected = [entry] if direct_cycle else [entry, CURSOR_A]
+    assert [call.args[0] for call in client.get.call_args_list] == expected
+    if is_async:
+        asyncio.run(transport.close())
