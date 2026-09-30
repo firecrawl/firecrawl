@@ -208,7 +208,10 @@ impl Client {
                 ))
             })?;
         let resolved = pinned.join(next).map_err(|e| {
-            FirecrawlError::Misuse(format!("Invalid pagination URL {:?}: {}", next, e))
+            FirecrawlError::ResponseParseError(serde::de::Error::custom(format!(
+                "invalid pagination URL {:?}: {}",
+                next, e
+            )))
         })?;
         pinned.set_path(resolved.path());
         pinned.set_query(resolved.query());
@@ -327,6 +330,15 @@ mod tests {
                 .as_str(),
             "http://localhost:3002/v2/batch/scrape/x?skip=5"
         );
+    }
+
+    #[test]
+    fn test_pin_to_api_origin_reports_malformed_next_as_response_error() {
+        let client = Client::new("key").unwrap();
+        assert!(matches!(
+            client.pin_to_api_origin("https://evil.example:99999/v2/crawl/abc"),
+            Err(FirecrawlError::ResponseParseError(_))
+        ));
     }
 
     #[test]
