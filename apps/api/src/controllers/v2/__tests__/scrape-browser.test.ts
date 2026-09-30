@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { readScrapeJobState } from "../../../lib/job-state-store";
 import { vi } from "vitest";
 import { config } from "../../../config";
 import {
@@ -69,7 +70,6 @@ vi.mock("../../../lib/keyless", () => ({
 vi.mock("../../../lib/scrape-interact/langsmith", () => ({
   sanitizeUrlForTrace: (url: string) => url,
 }));
-
 
 vi.mock("../../../lib/browser-sessions", () => ({
   insertBrowserSession: vi.fn(),
@@ -185,11 +185,13 @@ describe("scrapeInteractController", () => {
       control_url: "https://hangar.example/live#control",
       recording: true,
     };
-    vi.mocked(supabaseGetScrapeByIdDirect).mockResolvedValue({
-      id: "scrape-123",
-      team_id: "team-123",
-      url: "https://example.com",
-      options: {},
+    // The replay context comes from the scrape's Bigtable terminal state.
+    vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+      status: "completed",
+      requestId: "scrape-123",
+      completedAtMs: Date.now(),
+      creditsBilled: 1,
+      replay: { targetUrl: "https://example.com", waitForMs: 0, actions: [] },
     } as any);
     const executed = {
       stdout: "https://example.com",
