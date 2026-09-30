@@ -1,11 +1,16 @@
 import { xai } from "@ai-sdk/xai";
-import { generateText, jsonSchema, Output } from "ai";
+import { generateText, jsonSchema, Output, type GenerateTextResult } from "ai";
 import { config } from "../../../../config";
 import { withUsageTelemetry } from "../../../../lib/ai-usage-telemetry";
+import {
+  xSearchCost,
+  xSearchUsageFromResponseBody,
+} from "../../../../lib/xai-x-search";
 import { Meta } from "../..";
 import { EngineScrapeResult } from "..";
 import { EngineError, XTwitterConfigurationError } from "../../error";
 import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
+import { calculateCost } from "../../transformers/llmExtract";
 import {
   isXTwitterUrl,
   parseXTwitterUrl,
@@ -27,6 +32,41 @@ function xTwitterTelemetry(functionId: string, meta: Meta) {
       feature: "x-twitter",
     },
   };
+}
+
+// Records the call's token cost plus the per-item X Search fee xAI bills on
+// top of it.
+function recordGrokCost(
+  meta: Meta,
+  method: string,
+  {
+    totalUsage,
+    steps,
+  }: Pick<GenerateTextResult<any, any>, "totalUsage" | "steps">,
+) {
+  const inputTokens = totalUsage.inputTokens ?? 0;
+  const outputTokens = totalUsage.outputTokens ?? 0;
+  const xSearch = { posts: 0, profiles: 0 };
+  for (const step of steps) {
+    const usage = xSearchUsageFromResponseBody(step.response.body);
+    xSearch.posts += usage?.posts ?? 0;
+    xSearch.profiles += usage?.profiles ?? 0;
+  }
+
+  meta.costTracking.addCall({
+    type: "other",
+    metadata: {
+      module: "scrapeURL",
+      method,
+      xSearchPosts: xSearch.posts,
+      xSearchProfiles: xSearch.profiles,
+    },
+    model: XAI_RESPONSES_MODEL,
+    tokens: { input: inputTokens, output: outputTokens },
+    cost:
+      calculateCost(XAI_RESPONSES_MODEL, inputTokens, outputTokens) +
+      xSearchCost(xSearch),
+  });
 }
 
 type ProfilePost = {
@@ -408,7 +448,7 @@ async function fetchProfile(
   xUrl: XTwitterProfileUrl,
   meta: Meta,
 ): Promise<XTwitterProfileData> {
-  const { output } = await generateText({
+  const result = await generateText({
     model: withUsageTelemetry(xai.responses(XAI_RESPONSES_MODEL)),
     maxOutputTokens: 20000,
     tools: {
@@ -425,8 +465,9 @@ async function fetchProfile(
     experimental_telemetry: xTwitterTelemetry("xTwitter/profile", meta),
     prompt: `Give me current public X/Twitter profile details for @${xUrl.handle}: display name, username, profile picture URL, bio, follower count, verification status, and profile URL. Also return exactly the 5 latest posts authored by @${xUrl.handle} that are top-level posts, not replies or comments. Include fewer posts only if fewer public non-reply posts are available. Use the current public X data available to x_search.`,
   });
+  recordGrokCost(meta, "xTwitter/profile", result);
 
-  return output as XTwitterProfileData;
+  return result.output as XTwitterProfileData;
 }
 
 async function fetchPost(
@@ -445,7 +486,7 @@ async function fetchPost(
         enableImageUnderstanding: true,
       };
 
-  const { output } = await generateText({
+  const result = await generateText({
     model: withUsageTelemetry(xai.responses(XAI_RESPONSES_MODEL)),
     maxOutputTokens: 20000,
     tools: {
@@ -462,8 +503,9 @@ async function fetchPost(
     experimental_telemetry: xTwitterTelemetry("xTwitter/post", meta),
     prompt: `Fetch the public X/Twitter post${handlePart} with post id ${xUrl.postId} at ${xUrl.normalizedUrl}. Return the post body in text as GitHub-flavored Markdown, preserving its original structure like headings and lists. Also return author, URL, created date, likes, and retweets. If this post is part of a thread, return the unrolled thread in chronological order under thread. Return the top 5 public comments or replies to the post under comments. Use the current public X data available to x_search.`,
   });
+  recordGrokCost(meta, "xTwitter/post", result);
 
-  return output as XTwitterPostData;
+  return result.output as XTwitterPostData;
 }
 
 function stripAt(value: string | null | undefined): string | undefined {
