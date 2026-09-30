@@ -27,8 +27,7 @@ export async function scrapeURLWithPlaywright(
       pageStatusCode: z.number(),
       pageError: z.string().optional(),
       contentType: z.string().optional(),
-      // Optional so an OLDER playwright-service (one that does not send it)
-      // still validates — the fallback below keeps today's behaviour.
+      // Optional: older playwright-service builds don't send it.
       url: z.string().optional(),
     }),
     mock: meta.mock,
@@ -40,12 +39,10 @@ export async function scrapeURLWithPlaywright(
   }
 
   return {
-    // The landed URL, reported by the service from page.url(). This is what
-    // metadata.url is supposed to carry — scrapeURL compares it against the
-    // initial URL for its own threat check, and callers rely on it to tell a
-    // redirect from a same-page load. Falls back to the requested URL when the
-    // service predates the field (keeps the previous, redirect-blind result).
-    url: response.url ?? meta.rewrittenUrl ?? meta.url,
+    // The landed URL reported by the service. Redirect threat and blocklist
+    // re-checks compare it against the requested URL. Falls back to the
+    // requested URL for older services or a non-http(s) value (about:blank).
+    url: landedHttpUrl(response.url) ?? meta.rewrittenUrl ?? meta.url,
     html: response.content,
     statusCode: response.pageStatusCode,
     error: response.pageError,
@@ -53,6 +50,16 @@ export async function scrapeURLWithPlaywright(
 
     proxyUsed: "basic",
   };
+}
+
+function landedHttpUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "http:" || protocol === "https:" ? url : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function playwrightMaxReasonableTime(meta: Meta): number {

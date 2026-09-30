@@ -320,7 +320,8 @@ const scrapePage = async (
   }
 
   let headers = null,
-    content = await page.content();
+    content = await page.content(),
+    landedUrl = page.url();
   let ct: string | undefined = undefined;
   if (response) {
     headers = await response.allHeaders();
@@ -333,18 +334,16 @@ const scrapePage = async (
         ct.toLowerCase().includes('text/plain'))
     ) {
       content = (await response.body()).toString('utf8'); // TODO: determine real encoding
+      landedUrl = response.url();
     }
   }
 
   return {
     content,
-    // Where the browser ACTUALLY ended up. page.url() reflects the post-
-    // navigation location, so it covers client-side redirects (location.href
-    // from a bot-detection script) as well as HTTP 3xx — neither of which the
-    // caller could previously see. Without this the API can only echo the
-    // REQUESTED url, so a page fetched from somebody else's site is
-    // indistinguishable from the real one.
-    url: page.url(),
+    // Where the returned content came from: page.url() for rendered HTML
+    // (covers HTTP 3xx and client-side redirects), response.url() for raw
+    // JSON/text bodies, which come from the page.goto response.
+    url: landedUrl,
     status: response ? response.status() : null,
     headers,
     contentType: ct,

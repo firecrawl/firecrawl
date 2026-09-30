@@ -389,6 +389,22 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
+  concurrentIf(TEST_SELF_HOST && HAS_PLAYWRIGHT && ALLOW_TEST_SUITE_WEBSITE)(
+    "playwright reports the landed URL after a client-side redirect",
+    async () => {
+      const url = `${TEST_SUITE_WEBSITE}/client-redirect.html`;
+      const response = await scrape({ url, waitFor: 1000 }, identity);
+
+      expect(response.metadata.sourceURL).toBe(url);
+      expect(response.metadata.url).toBeDefined();
+      expect(new URL(response.metadata.url!).pathname.replace(/\/$/, "")).toBe(
+        "/about",
+      );
+      expect(response.markdown).not.toContain("Redirecting to the about page");
+    },
+    scrapeTimeout,
+  );
+
   concurrentIf(TEST_PRODUCTION || (HAS_PLAYWRIGHT && ALLOW_TEST_SUITE_WEBSITE))(
     "waitFor works",
     async () => {
