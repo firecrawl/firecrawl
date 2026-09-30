@@ -24,6 +24,9 @@ describe("bundled branding script", () => {
     const result = window.eval(getBrandingScript());
 
     expect(scans).toBe(1);
-    expect(result?.branding).toBeDefined();
+    // A real extraction, not just an object: the brand comes from the title,
+    // and the scan recorded no errors.
+    expect(result?.branding?.brandName).toBe("Acme");
+    expect(result?.branding?.errors).toBeUndefined();
   });
 });
