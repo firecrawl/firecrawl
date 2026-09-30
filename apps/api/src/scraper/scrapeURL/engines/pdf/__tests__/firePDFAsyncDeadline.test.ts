@@ -15,6 +15,7 @@ import {
 } from "../fire-pdf/async";
 import {
   firePdfAsyncAbandonedTotal,
+  firePdfAsyncFallbackTotal,
   firePdfAsyncSubmit503Total,
   firePdfAsyncSubmitRetriesTotal,
 } from "../fire-pdf/metrics";
@@ -259,6 +260,115 @@ describe("scrapePDFWithFirePDFAsync — deadline and submit lifecycle", () => {
       await counterValue(firePdfAsyncSubmitRetriesTotal, {
         trigger: "http_503_closing",
       }),
+    ).toBe(before + 1);
+  });
+
+  it.each([
+    ["a zero page count", 0],
+    ["no estimate at all", undefined],
+  ])(
+    "omits pages_estimate on an inline submit with %s so fire-pdf counts pages itself",
+    async (_name, pagesProcessed) => {
+      const { fetchImpl, calls } = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs$/,
+          matchMethod: "POST",
+          response: {
+            status: 200,
+            body: { scrape_id: "scrape-id-test", status: "done", lane: "fast" },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test\/result$/,
+          matchMethod: "GET",
+          response: {
+            status: 200,
+            body: { markdown: "ok", pages_processed: 3 },
+          },
+        },
+      ]);
+
+      const result = await scrapePDFWithFirePDFAsync(
+        makeMeta(),
+        "BASE64",
+        undefined,
+        pagesProcessed,
+        undefined,
+        { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+      );
+
+      expect(result.markdown).toBe("ok");
+      const options = (calls[0].body as { options?: Record<string, unknown> })
+        .options;
+      expect(options).not.toHaveProperty("pages_estimate");
+    },
+  );
+
+  it("sends a positive page count as pages_estimate", async () => {
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 200,
+          body: { scrape_id: "scrape-id-test", status: "done", lane: "fast" },
+        },
+      },
+      {
+        matchUrl: /\/jobs\/scrape-id-test\/result$/,
+        matchMethod: "GET",
+        response: { status: 200, body: { markdown: "ok", pages_processed: 7 } },
+      },
+    ]);
+
+    await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      7,
+      undefined,
+      { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+    );
+
+    expect(
+      (calls[0].body as { options: Record<string, unknown> }).options
+        .pages_estimate,
+    ).toBe(7);
+  });
+
+  it("counts a submit 400 as an async fallback and keeps fire-pdf's code", async () => {
+    const before = await counterValue(firePdfAsyncFallbackTotal, {
+      reason: "http_400",
+    });
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 400,
+          body: {
+            error: "invalid_pages_estimate",
+            message: "options.pages_estimate must be a positive integer",
+          },
+        },
+      },
+    ]);
+
+    const error = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      undefined,
+      { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+    ).catch(e => e);
+
+    expect(error).toBeInstanceOf(FirePdfAsyncFailure);
+    expect(error.reason).toBe("http_400");
+    expect(error.extra.code).toBe("invalid_pages_estimate");
+    expect(calls).toHaveLength(1);
+    expect(
+      await counterValue(firePdfAsyncFallbackTotal, { reason: "http_400" }),
     ).toBe(before + 1);
   });
 

@@ -87,6 +87,7 @@ export type SubmitRetryTrigger =
 export type AbandonedPhase = "submit" | "poll" | "result";
 
 export type FallbackReason =
+  | "http_400"
   | "http_401"
   | "http_404"
   | "http_410"
