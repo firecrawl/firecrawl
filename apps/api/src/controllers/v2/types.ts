@@ -1797,7 +1797,7 @@ export type AgentStatusResponse =
       status: "processing" | "completed" | "failed";
       error?: string;
       data?: any;
-      /** Best-effort JSON when a run is incomplete; `data` remains completed-only. */
+      /** Best-effort JSON on a failed run; `data` remains completed-only. */
       partial?: unknown;
       /** Only present when the caller supplied a JSON Schema. */
       partialSchemaValid?: boolean;

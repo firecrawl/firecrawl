@@ -131,6 +131,9 @@ describe("agentStatusController", () => {
       model: "spark-2",
       effort: "medium",
       data: { result: "ok" },
+      partial: { stale: true },
+      partialSchemaValid: false,
+      stopReason: "credit_limit_reached",
       message: "Done",
       threadId: "thread-123",
       threadTurn: 2,
@@ -152,6 +155,10 @@ describe("agentStatusController", () => {
         creditsUsed: 7,
       }),
     );
+    const body = (res.json as Mock).mock.calls[0][0];
+    expect(body).not.toHaveProperty("partial");
+    expect(body).not.toHaveProperty("partialSchemaValid");
+    expect(body).not.toHaveProperty("stopReason");
   });
 
   it("forwards a credit-limited partial without treating it as completed data", async () => {
@@ -186,7 +193,7 @@ describe("agentStatusController", () => {
     );
   });
 
-  it("preserves an unstructured processing partial without schema metadata", async () => {
+  it("does not expose a live processing checkpoint", async () => {
     (getAgentJobAccess as Mock).mockResolvedValue({
       teamId: "team-123",
       expiresAtMs: Date.now() + 60_000,
@@ -196,19 +203,19 @@ describe("agentStatusController", () => {
       success: true,
       status: "processing",
       partial: { companies: [{ name: "Acme" }] },
+      partialSchemaValid: false,
+      stopReason: "credit_limit_reached",
       model: "spark-2",
     });
 
     const res = buildRes();
     await agentStatusController(baseReq, res);
 
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: "processing",
-        partial: { companies: [{ name: "Acme" }] },
-        partialSchemaValid: undefined,
-      }),
-    );
+    const body = (res.json as Mock).mock.calls[0][0];
+    expect(body.status).toBe("processing");
+    expect(body).not.toHaveProperty("partial");
+    expect(body).not.toHaveProperty("partialSchemaValid");
+    expect(body).not.toHaveProperty("stopReason");
   });
 
   it.each([
