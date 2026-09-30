@@ -41,6 +41,10 @@ beforeEach(() => {
   mocks.config.TYPESAFE_API_KEY = "test-key";
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 it("drops results Jev judges explicit and backfills from the surplus", async () => {
   judgeByUrl(["nsfw1", "nsfw2"]);
   const response = {
@@ -161,7 +165,6 @@ it("keeps results still pending when the filter's time budget runs out", async (
   budget.abort();
   await run;
   expect(timeout).toHaveBeenCalledWith(5000);
-  timeout.mockRestore();
 
   expect(response.web.map(result => result.title)).toEqual(["slow1", "slow2"]);
   expect(logger.warn).toHaveBeenCalledWith(
