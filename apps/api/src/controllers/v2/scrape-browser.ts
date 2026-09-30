@@ -70,6 +70,13 @@ const browserExecuteRequestSchema = z
     origin: z.string().optional(),
     integration: integrationSchema.optional().transform(val => val || null),
     existingSessionId: z.string().optional(),
+    location: z
+      .object({
+        country: z.string().optional(),
+        languages: z.array(z.string()).optional(),
+      })
+      .optional(),
+    proxy: z.enum(["basic", "stealth", "enhanced", "auto"]).optional(),
   })
   .refine(data => data.code || data.prompt, {
     message: "Either 'code' or 'prompt' must be provided.",
@@ -214,10 +221,21 @@ export async function scrapeInteractController(
     });
   }
 
+  // Allow request body to override location/proxy from the original scrape
+  const { location: requestLocation, proxy: requestProxy } = req.body;
+  if (requestLocation) {
+    replayContext.location = requestLocation;
+  }
+  if (requestProxy) {
+    replayContext.proxy = requestProxy;
+  }
+
   logger = logger.child({
     replayTargetUrl: replayContext.targetUrl,
     replayWaitForMs: replayContext.waitForMs,
     replayActions: replayContext.actions.length,
+    replayLocation: replayContext.location,
+    replayProxy: replayContext.proxy,
   });
 
   // --- Ensure a browser session exists (create + replay if needed) ---
@@ -463,6 +481,8 @@ async function createSessionForScrape(
       ...browserCreateRequestSchema.parse({}),
       scrapeId,
       profile,
+      location: replayContext.location,
+      proxy: replayContext.proxy,
       initialize: async browserId => {
         const replay = await executeHangarBrowser(browserId, {
           code: buildReplayScript(replayContext),
