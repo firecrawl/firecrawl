@@ -82,6 +82,7 @@ function mockCrawl(options: {
   cancelled: boolean;
   groupStatus: string;
   pending?: number;
+  completed?: number;
 }) {
   mocks.getGroup.mockResolvedValue({ status: options.groupStatus });
   mocks.getCrawl.mockResolvedValue({
@@ -90,7 +91,7 @@ function mockCrawl(options: {
     createdAt: Date.now(),
   });
   mocks.getGroupNumericStats.mockResolvedValue({
-    completed: 2,
+    completed: options.completed ?? 2,
     active: options.pending ?? 0,
   });
   mocks.getGroupJobs.mockImplementation(
@@ -158,5 +159,27 @@ describe("crawl status next cursor", () => {
     expect(first.next).toBe(
       `http://localhost/v2/crawl/${JOB_ID}?skip=1&limit=1`,
     );
+  });
+
+  it("keeps the cursor on a full page of a cancelled crawl whose jobs finished during the request", async () => {
+    mockCrawl({ cancelled: true, groupStatus: "active", completed: 1 });
+
+    const first = await getStatus({ limit: "2" });
+    expect(first.data).toHaveLength(2);
+    expect(first.next).toBe(
+      `http://localhost/v2/crawl/${JOB_ID}?skip=2&limit=2`,
+    );
+
+    const past = await getStatus({ skip: "2", limit: "2" });
+    expect(past.data).toHaveLength(0);
+    expect(past.next).toBeUndefined();
+  });
+
+  it("ends the cursor after a full last page of a completed crawl", async () => {
+    mockCrawl({ cancelled: false, groupStatus: "completed" });
+
+    const first = await getStatus({ limit: "2" });
+    expect(first.data).toHaveLength(2);
+    expect(first.next).toBeUndefined();
   });
 });
