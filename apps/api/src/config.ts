@@ -433,6 +433,11 @@ const configSchema = z.object({
   FIRE_PDF_ASYNC_FORCE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_DISABLE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_ALLOW_REQUEST_OVERRIDE: z.stringbool().default(false),
+  // Long-poll wait sent as `wait_ms` on GET /jobs/:id: fire-pdf holds the
+  // request until the job is terminal or the wait elapses, so completion is
+  // seen as it happens instead of at the next scheduled poll. 0 disables
+  // it; values above fire-pdf's 25s cap are clamped to it.
+  FIRE_PDF_ASYNC_WAIT_MS: z.coerce.number().int().min(0).default(0),
   // Large-PDF by-reference submits (30-256MB files uploaded to GCS and
   // handed to fire-pdf via `input_gcs_uri`). This is an explicit on/off
   // switch, not a percentage: no alternative engine exists at this size,

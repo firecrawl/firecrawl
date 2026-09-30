@@ -9,6 +9,23 @@ export const MIN_DEADLINE_MS = 5_000;
 export const MAX_DEADLINE_MS = 30 * 60 * 1_000;
 export const POLL_FLOOR_MS = 1_000;
 export const POLL_CAP_MS = 5_000;
+// Long-poll (`wait_ms`). A wait shorter than LONG_POLL_MIN_WAIT_MS isn't
+// worth holding a connection for, so the last stretch before the polling
+// deadline runs on the regular schedule. A non-terminal answer that came
+// back in under LONG_POLL_HELD_FRACTION of the requested wait means the
+// server did not hold it (older build, or its wake-up path unavailable):
+// the job drops back to the regular schedule instead of re-polling at once.
+// LONG_POLL_MAX_WAIT_MS mirrors fire-pdf's default cap
+// (FIRE_PDF_JOBS_LONG_POLL_MAX_WAIT_MS): fire-pdf clamps longer waits, so
+// asking for more would only make a held answer look early. After
+// LONG_POLL_MAX_EARLY_ANSWERS early answers in a row the job stays on the
+// regular schedule; a single early answer is followed by one scheduled
+// pause, never an immediate re-poll.
+export const LONG_POLL_MIN_WAIT_MS = 1_000;
+export const LONG_POLL_MAX_WAIT_MS = 25_000;
+export const LONG_POLL_DEADLINE_SLACK_MS = 1_000;
+export const LONG_POLL_HELD_FRACTION = 0.5;
+export const LONG_POLL_MAX_EARLY_ANSWERS = 2;
 export const POLL_TIMEOUT_BUFFER_MS = 30_000;
 
 // An inline job's deadline sits this far inside the caller's window. The

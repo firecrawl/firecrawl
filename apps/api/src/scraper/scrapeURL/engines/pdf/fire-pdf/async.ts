@@ -285,6 +285,7 @@ export async function scrapePDFWithFirePDFAsync(
           scrapeId: jobScrapeId,
           initialDelay,
           pagesEstimate: pagesProcessed,
+          longPollWaitMs: config.FIRE_PDF_ASYNC_WAIT_MS,
           pollingDeadline,
           meta,
           fetchImpl,
