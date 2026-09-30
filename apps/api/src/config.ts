@@ -508,6 +508,7 @@ const configSchema = z.object({
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
+  MODEL_MAX_INPUT_TOKENS: z.coerce.number().int().positive().optional(),
 
   // LangSmith (tracing for interact agent)
   LANGSMITH_API_KEY: z.string().optional(),

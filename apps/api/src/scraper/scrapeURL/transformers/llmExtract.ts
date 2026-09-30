@@ -8,6 +8,7 @@ import {
 import { Logger } from "winston";
 import { Meta } from "..";
 import { logger } from "../../../lib/logger";
+import { config } from "../../../config";
 import { modelPrices } from "../../../lib/extract/usage/model-prices";
 import {
   AISDKError,
@@ -468,10 +469,13 @@ export async function generateCompletions({
   }
 
   // Keep the content inside the model's context window, leaving the rest for
-  // the prompt, schema and output. Models without known limits are sent the
-  // content as-is. A BPE token is at least one byte, so content that fits in
-  // bytes skips the (synchronous) tokenizer entirely.
-  const maxInputTokens = modelPrices[modelId]?.max_input_tokens;
+  // the prompt, schema and output. Local self-hosted models are the case with
+  // the smallest windows, so an unknown model still gets getModelLimits'
+  // default (or MODEL_MAX_INPUT_TOKENS) rather than being skipped. A BPE
+  // token is at least one byte, so content that fits in bytes skips the
+  // (synchronous) tokenizer entirely.
+  const maxInputTokens =
+    config.MODEL_MAX_INPUT_TOKENS ?? getModelLimits(modelId).maxInputTokens;
   if (markdown && maxInputTokens) {
     const maxContentTokens = Math.floor(maxInputTokens * 0.8);
     if (Buffer.byteLength(markdown, "utf8") > maxContentTokens) {
