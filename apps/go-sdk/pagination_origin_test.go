@@ -2,6 +2,7 @@ package firecrawl
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,6 +29,7 @@ func TestPinToAPIOrigin(t *testing.T) {
 		{"empty path", "https://api.firecrawl.dev", "https://evil.example", "https://api.firecrawl.dev/"},
 		{"relative path", "https://api.firecrawl.dev", "/v2/crawl/abc?skip=10", "https://api.firecrawl.dev/v2/crawl/abc?skip=10"},
 		{"relative path with api url prefix", "https://proxy.example/firecrawl", "v2/crawl/abc?skip=10", "https://proxy.example/firecrawl/v2/crawl/abc?skip=10"},
+		{"relative path with escaped api url prefix", "https://proxy.example/a%2Fb", "v2/crawl/abc", "https://proxy.example/a%2Fb/v2/crawl/abc"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -50,9 +52,11 @@ func TestPinToAPIOriginRejectsRelativeAPIURL(t *testing.T) {
 	}
 }
 
-// recordingTransport records every outgoing request before forwarding it, so
-// tests can assert that no request ever left for a foreign host.
+// recordingTransport records every outgoing request and only forwards those
+// addressed to the test server, so tests can assert that no request was aimed
+// at a foreign host without ever reaching the real network.
 type recordingTransport struct {
+	apiHost  string
 	mu       sync.Mutex
 	requests []*http.Request
 }
@@ -61,6 +65,9 @@ func (rt *recordingTransport) RoundTrip(r *http.Request) (*http.Response, error)
 	rt.mu.Lock()
 	rt.requests = append(rt.requests, r.Clone(r.Context()))
 	rt.mu.Unlock()
+	if r.URL.Scheme != "http" || r.URL.Host != rt.apiHost {
+		return nil, fmt.Errorf("refusing request outside the test server origin: %s", r.URL)
+	}
 	return http.DefaultTransport.RoundTrip(r)
 }
 
@@ -180,7 +187,7 @@ func TestPaginationNextURLPinnedToAPIOrigin(t *testing.T) {
 				server.Start()
 				defer server.Close()
 
-				transport := &recordingTransport{}
+				transport := &recordingTransport{apiHost: apiHost}
 				client, err := NewClient(
 					option.WithAPIKey("fc-test"),
 					option.WithAPIURL(server.URL),

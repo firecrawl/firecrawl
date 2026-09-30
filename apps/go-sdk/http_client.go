@@ -90,7 +90,9 @@ func pinToAPIOrigin(apiURL, rawURL string) (string, error) {
 	if ref.Scheme == "" && ref.Host == "" {
 		if !strings.HasSuffix(base.Path, "/") {
 			base.Path += "/"
-			base.RawPath = ""
+			if base.RawPath != "" {
+				base.RawPath += "/"
+			}
 		}
 		return base.ResolveReference(ref).String(), nil
 	}
