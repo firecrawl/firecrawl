@@ -130,6 +130,7 @@ describe("browserError", () => {
     } as any);
 
     expect(keylessSignupUrl).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(409);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
       error: "Session closed.",
@@ -167,6 +168,8 @@ describe("keyless eligibility signup link", () => {
       await keylessEligibilityController(eligibilityRequest(), res);
 
       expect(keylessSignupUrl).toHaveBeenCalledWith(TEAM_UUID, "mcp");
+      // Refusals stay 200 so the MCP serves structured recovery, not a challenge.
+      expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
         eligible: false,
         reason,
@@ -187,6 +190,7 @@ describe("keyless eligibility signup link", () => {
       await keylessEligibilityController(eligibilityRequest(), res);
 
       expect(keylessSignupUrl).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
         eligible: false,
         reason,
@@ -205,6 +209,7 @@ describe("keyless eligibility signup link", () => {
       res,
     );
 
+    expect(res.status.mock.calls).toEqual([[200], [200]]);
     expect(res.json.mock.calls).toEqual([
       [{ eligible: true }],
       [{ eligible: true, signupUrl: OWN_LINK }],

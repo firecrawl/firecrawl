@@ -47,6 +47,10 @@ type RequestLike = {
   headers?: Record<string, string | string[] | undefined>;
 };
 
+function lowerString(value: unknown): string | undefined {
+  return typeof value === "string" ? value.trim().toLowerCase() : undefined;
+}
+
 function firstHeader(req: RequestLike, name: string): string | undefined {
   const value = req.headers?.[name];
   if (Array.isArray(value)) return value[0];
@@ -66,8 +70,18 @@ export function keylessSignupSurface(req: RequestLike): KeylessSignupSurface {
     req.body && typeof req.body === "object"
       ? (req.body as Record<string, unknown>)
       : {};
-  const origin = body.origin ?? firstHeader(req, "x-origin");
-  const integration = body.integration ?? firstHeader(req, "x-integration");
+  // v1 schemas prefault a missing body origin to "api", which would mask an
+  // x-origin header, so a bare "api" defers to the header. Classification is
+  // case-insensitive, like the warehouse's.
+  const bodyOrigin = lowerString(body.origin);
+  const headerOrigin = lowerString(firstHeader(req, "x-origin"));
+  const origin =
+    bodyOrigin && bodyOrigin !== "api"
+      ? bodyOrigin
+      : (headerOrigin ?? bodyOrigin);
+  const integration =
+    lowerString(body.integration) ??
+    lowerString(firstHeader(req, "x-integration"));
   if (
     config.KEYLESS_PROXY_SECRET &&
     firstHeader(req, "x-firecrawl-keyless-secret") ===
@@ -76,7 +90,7 @@ export function keylessSignupSurface(req: RequestLike): KeylessSignupSurface {
     return "mcp";
   }
   if (integration === "cli" || origin === "cli") return "cli";
-  if (typeof origin === "string" && origin.startsWith("mcp")) return "mcp";
+  if (origin?.startsWith("mcp")) return "mcp";
   return "api";
 }
 
@@ -148,8 +162,9 @@ export async function issueKeylessSignupId(
   if (Date.now() < issuanceBackoffUntil) return undefined;
 
   let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<undefined>(resolve => {
-    timer = setTimeout(() => resolve(undefined), ISSUE_TIMEOUT_MS);
+  const TIMED_OUT = Symbol("timed out");
+  const timeout = new Promise<typeof TIMED_OUT>(resolve => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ISSUE_TIMEOUT_MS);
   });
   const issued = lookupOrIssue(teamUuid, surface).catch(error => {
     issuanceBackoffUntil = Date.now() + FAILURE_BACKOFF_MS;
@@ -161,7 +176,17 @@ export async function issueKeylessSignupId(
     return undefined;
   });
   try {
-    return await Promise.race([issued, timeout]);
+    const result = await Promise.race([issued, timeout]);
+    if (result !== TIMED_OUT) return result;
+    // A slow database is treated like a failing one, so a stalled query does
+    // not pile up behind every blocked request while it recovers.
+    issuanceBackoffUntil = Date.now() + FAILURE_BACKOFF_MS;
+    logger.warn("Keyless signup link issuance timed out", {
+      module: "keyless-signup-link",
+      surface,
+      timeoutMs: ISSUE_TIMEOUT_MS,
+    });
+    return undefined;
   } finally {
     clearTimeout(timer);
   }

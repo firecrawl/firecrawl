@@ -66,6 +66,19 @@ describe("keylessSignupSurface", () => {
     [{ body: { origin: "website" } }, "api"],
     [{ body: {} }, "api"],
     [{}, "api"],
+    // Case-insensitive, like the warehouse classifier.
+    [{ body: { origin: "CLI" } }, "cli"],
+    [{ body: { integration: "Cli" } }, "cli"],
+    [{ body: { origin: "MCP-Claude-Code@3.24.1" } }, "mcp"],
+    [{ body: {}, headers: { "x-origin": "MCP-fastmcp@3.24.1" } }, "mcp"],
+    // v1 schemas prefault a missing origin to "api"; the header still counts.
+    [{ body: { origin: "api" }, headers: { "x-origin": "cli" } }, "cli"],
+    [{ body: { origin: "api" }, headers: { "x-origin": "mcp-x@1" } }, "mcp"],
+    // An explicit non-default body origin still wins over the header.
+    [
+      { body: { origin: "js-sdk@4.3.0" }, headers: { "x-origin": "cli" } },
+      "api",
+    ],
   ] as const)("classifies %j as %s", (req, surface) => {
     expect(keylessSignupSurface(req as never)).toBe(surface);
   });
@@ -203,6 +216,26 @@ describe("issueKeylessSignupId", () => {
     const pending = issueKeylessSignupId(TEAM_UUID, "api");
     await vi.advanceTimersByTimeAsync(300);
     await expect(pending).resolves.toBe(undefined);
+  });
+
+  it("backs off after a timeout so a slow database is not queried per request", async () => {
+    vi.useFakeTimers();
+    mocks.returning.mockReturnValue(new Promise(() => {}));
+
+    const first = issueKeylessSignupId(TEAM_UUID, "api");
+    await vi.advanceTimersByTimeAsync(300);
+    await expect(first).resolves.toBe(undefined);
+
+    mocks.returning.mockResolvedValue([{ short_id: "k3m9q2zz" }]);
+    await expect(issueKeylessSignupId(TEAM_UUID, "api")).resolves.toBe(
+      undefined,
+    );
+    expect(mocks.insert).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(issueKeylessSignupId(TEAM_UUID, "api")).resolves.toBe(
+      "k3m9q2zz",
+    );
   });
 
   it("issues nothing without an identity or without the database", async () => {

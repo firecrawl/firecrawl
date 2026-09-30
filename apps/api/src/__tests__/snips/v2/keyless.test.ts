@@ -213,15 +213,9 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
         .from(schema.keyless_signup_links)
         .where(eq(schema.keyless_signup_links.short_id, mcpId));
       expect(rows).toHaveLength(1);
+      // Mappings are durable and idempotent, so the rows are left in place:
+      // deleting them would break links already issued to this identity.
       expect(rows[0]).toMatchObject({ surface: "mcp" });
-      await db
-        .delete(schema.keyless_signup_links)
-        .where(
-          eq(
-            schema.keyless_signup_links.keyless_team_id,
-            rows[0].keyless_team_id,
-          ),
-        );
     }
   });
 
