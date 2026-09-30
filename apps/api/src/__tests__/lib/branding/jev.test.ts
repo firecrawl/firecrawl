@@ -2,6 +2,14 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Mock } from "vitest";
 import { generateObject } from "ai";
 
+const mocks = vi.hoisted(() => ({ systemOne: vi.fn() }));
+
+vi.mock("@typesafe-ai/sdk", async importOriginal => ({
+  ...(await importOriginal<typeof import("@typesafe-ai/sdk")>()),
+  TypeSafeClient: class {
+    systemOne = mocks.systemOne;
+  },
+}));
 vi.mock("ai", async importOriginal => ({
   ...(await importOriginal<typeof import("ai")>()),
   generateObject: vi.fn(),
@@ -192,19 +200,19 @@ const jevResponse = (overrides: Record<string, unknown> = {}) => ({
   usage: { input_tokens: 2000, output_tokens: 60 },
 });
 
-let fetchMock: Mock;
 const saved = {
   key: config.TYPESAFE_API_KEY,
   global: config.BRANDING_JEV,
+  rollout: config.BRANDING_JEV_ROLLOUT_PERCENT,
   escalate: config.BRANDING_JEV_ESCALATE_BELOW,
 };
 
 beforeEach(() => {
   config.TYPESAFE_API_KEY = "ts-test";
   config.BRANDING_JEV = undefined;
+  config.BRANDING_JEV_ROLLOUT_PERCENT = 0;
   config.BRANDING_JEV_ESCALATE_BELOW = undefined;
-  fetchMock = vi.fn();
-  vi.stubGlobal("fetch", fetchMock);
+  mocks.systemOne.mockReset();
   (generateObject as Mock).mockReset().mockResolvedValue({
     object: {
       cleanedFonts: [],
@@ -230,17 +238,12 @@ beforeEach(() => {
 afterEach(() => {
   config.TYPESAFE_API_KEY = saved.key;
   config.BRANDING_JEV = saved.global;
+  config.BRANDING_JEV_ROLLOUT_PERCENT = saved.rollout;
   config.BRANDING_JEV_ESCALATE_BELOW = saved.escalate;
-  vi.unstubAllGlobals();
 });
 
-const respondWith = (body: unknown, status = 200) =>
-  fetchMock.mockResolvedValueOnce(
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { "Content-Type": "application/json" },
-    }),
-  );
+const respondWith = (body: unknown) =>
+  mocks.systemOne.mockResolvedValueOnce(body);
 
 describe("branding with Jev", () => {
   it("answers branding from Jev and records its cost instead of an LLM call", async () => {
@@ -284,12 +287,10 @@ describe("branding with Jev", () => {
       12,
     );
 
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://api.typesafe.ai/v1/systemone");
-    expect(init.headers.Authorization).toBe("Bearer ts-test");
-    const body = JSON.parse(init.body);
-    expect(body.model).toBe("jev-latest");
-    expect(Object.keys(body.questions.logo.criteria)).toEqual([
+    const [request, options] = mocks.systemOne.mock.calls[0];
+    expect(request.model).toBe("jev-latest");
+    expect(options).toEqual({ timeout: 5000, retry: { maxRetries: 1 } });
+    expect(Object.keys(request.questions.logo.criteria)).toEqual([
       "logo_0",
       "logo_1",
       "none",
@@ -388,7 +389,7 @@ describe("branding with Jev", () => {
   });
 
   it("falls back to the LLM when the TypeSafe API errors", async () => {
-    respondWith({ detail: "invalid api key" }, 401);
+    mocks.systemOne.mockRejectedValueOnce(new Error("invalid api key"));
     const costTracking = new CostTracking();
 
     const result = await enhanceBrandingWithLLM(baseInput(costTracking));
@@ -398,17 +399,6 @@ describe("branding with Jev", () => {
     expect(costTracking.calls.map(c => c.metadata.method)).toEqual([
       "enhanceBrandingWithLLM",
     ]);
-  });
-
-  it("retries once when TypeSafe is rate limited", async () => {
-    respondWith({ detail: "slow down" }, 429);
-    respondWith(jevResponse());
-
-    const result = await enhanceBrandingWithLLM(baseInput(new CostTracking()));
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(generateObject).not.toHaveBeenCalled();
-    expect(result.logoSelection?.selectedLogoIndex).toBe(1);
   });
 
   it("escalates to the LLM when Jev is unsure of the logo", async () => {
@@ -444,8 +434,33 @@ describe("branding with Jev", () => {
       teamFlags: null,
     });
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.systemOne).not.toHaveBeenCalled();
     expect(generateObject).toHaveBeenCalledTimes(2);
+  });
+
+  it("puts a rollout share of teams on Jev without a team flag", async () => {
+    const unflagged = {
+      ...baseInput(new CostTracking()),
+      teamFlags: null,
+      teamId: "team-a",
+    };
+
+    await enhanceBrandingWithLLM(unflagged);
+    expect(mocks.systemOne).not.toHaveBeenCalled();
+
+    config.BRANDING_JEV_ROLLOUT_PERCENT = 100;
+    respondWith(jevResponse());
+    await enhanceBrandingWithLLM(unflagged);
+    expect(mocks.systemOne).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays on the LLM when no TypeSafe key is configured", async () => {
+    config.TYPESAFE_API_KEY = undefined;
+
+    await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+
+    expect(mocks.systemOne).not.toHaveBeenCalled();
+    expect(generateObject).toHaveBeenCalledTimes(1);
   });
 });
 

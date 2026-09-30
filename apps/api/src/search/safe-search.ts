@@ -1,7 +1,7 @@
-import { noul, TypeSafeClient, type JsonValue } from "@typesafe-ai/sdk";
+import { noul, type JsonValue } from "@typesafe-ai/sdk";
 import type { Logger } from "winston";
 import type { SearchV2Response } from "../lib/entities";
-import { config } from "../config";
+import { getTypeSafeClient } from "../lib/typesafe";
 import { setSpanAttributes, SpanKind, withSpan } from "../lib/otel-tracer";
 
 /**
@@ -37,19 +37,6 @@ const questions = {
   ),
 };
 
-let client: TypeSafeClient | undefined;
-
-function getClient(): TypeSafeClient | null {
-  if (!config.TYPESAFE_API_KEY) return null;
-  client ??= new TypeSafeClient({
-    apiKey: config.TYPESAFE_API_KEY,
-    timeout: 2000,
-    retry: { maxRetries: 1 },
-    logLevel: "off",
-  });
-  return client;
-}
-
 /**
  * Drops web, news and image results Jev judges to be adult content, keeping up
  * to `limit` of each in their original order. A result Jev fails to judge is
@@ -64,7 +51,7 @@ export async function removeExplicitResults(
   const { web, news, images } = response;
   if (!web?.length && !news?.length && !images?.length) return;
 
-  const typesafe = getClient();
+  const typesafe = getTypeSafeClient();
   if (!typesafe) return;
 
   await withSpan(
@@ -87,7 +74,7 @@ export async function removeExplicitResults(
             async callSpan => {
               const { model, answers } = await typesafe.systemOne(
                 { state: { result }, questions },
-                { signal },
+                { signal, timeout: 2000, retry: { maxRetries: 1 } },
               );
               setSpanAttributes(callSpan, {
                 "typesafe.model": model,

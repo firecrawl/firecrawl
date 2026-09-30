@@ -77,7 +77,11 @@ it("drops results Jev judges explicit and backfills from the surplus", async () 
         },
       },
     }),
-    { signal: expect.any(AbortSignal) },
+    {
+      signal: expect.any(AbortSignal),
+      timeout: 2000,
+      retry: { maxRetries: 1 },
+    },
   );
 });
 

@@ -1,6 +1,16 @@
+import type {
+  ChoiceResponse,
+  JsonValue,
+  NoulResponse,
+  Question,
+  SystemOneResult,
+} from "@typesafe-ai/sdk";
 import { formatHex, hsl, parse } from "culori";
 
 import { config } from "../../config";
+import { setSpanAttributes, SpanKind, withSpan } from "../otel-tracer";
+import { sampled } from "../rollout";
+import { getTypeSafeClient } from "../typesafe";
 import { BrandingEnhancement } from "./schema";
 import { BrandingLLMInput } from "./types";
 
@@ -9,13 +19,11 @@ import { BrandingLLMInput } from "./types";
 // returns calibrated probabilities. It cannot generate text, so every branding
 // decision is posed as a pick from options built here, and the answers are
 // mapped back onto the same BrandingEnhancement the gpt-4o call returns.
-const DEFAULT_BASE_URL = "https://api.typesafe.ai";
 const JEV_MODEL = "jev-latest";
 // https://docs.typesafe.ai/models (2026-09-28): $0.042 per million input
 // tokens, output tokens are not billed.
 const JEV_INPUT_USD_PER_MTOK = 0.042;
 const DEFAULT_TIMEOUT_MS = 5000;
-const RETRYABLE_STATUS = new Set([429, 529]);
 
 const MAX_LOGOS = 20;
 const MAX_BUTTONS = 12;
@@ -26,28 +34,12 @@ const NONE = "none";
 // Below this a color role keeps the heuristic value.
 const ROLE_MIN_CONFIDENCE = 0.35;
 
-type ChoiceQuestion = {
-  type: "choice";
-  instructions: string;
-  criteria: Record<string, string | null>;
-};
-type NoulQuestion = { type: "noul"; instructions: string };
-type Question = ChoiceQuestion | NoulQuestion;
-
-type ChoiceAnswer = {
-  type: "choice";
-  choice: string;
-  probabilities: Record<string, number>;
-  confidence: number;
-};
-type NoulAnswer = { type: "noul"; noul: number };
-type Answer = ChoiceAnswer | NoulAnswer;
-
-type JevResponse = {
-  model: string;
-  answers: Record<string, Answer>;
-  usage?: { input_tokens?: number; output_tokens?: number };
-};
+type ChoiceAnswer = ChoiceResponse;
+type Answer = ChoiceResponse | NoulResponse;
+type JevResponse = Pick<
+  SystemOneResult<Record<string, Question>>,
+  "model" | "usage"
+> & { answers: Record<string, Answer> };
 
 type JevBrandingResult = {
   enhancement: BrandingEnhancement;
@@ -61,7 +53,12 @@ export function isJevBrandingEnabled(input: BrandingLLMInput): boolean {
   // TypeSafe only offers zero data retention on enterprise contracts; keep
   // ZDR scrapes on the existing path until that is in place.
   if (input.zeroDataRetention) return false;
-  return config.BRANDING_JEV === true || input.teamFlags?.brandingJev === true;
+  return (
+    config.BRANDING_JEV === true ||
+    input.teamFlags?.brandingJev === true ||
+    (!!input.teamId &&
+      sampled(`team:${input.teamId}`, config.BRANDING_JEV_ROLLOUT_PERCENT))
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +280,7 @@ const clip = (value: string | undefined, max: number) =>
   (value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 
 type JevRequest = {
-  state: Record<string, unknown>;
+  state: Record<string, JsonValue>;
   questions: Record<string, Question>;
   colors: ColorCandidate[];
   fonts: FontCandidate[];
@@ -300,7 +297,7 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
   const colors = collectColors(input);
   const fonts = collectFonts(input);
 
-  const state: Record<string, unknown> = {
+  const state: Record<string, JsonValue> = {
     page: {
       url: pageUrl,
       title: clip(input.pageTitle, 200),
@@ -738,31 +735,6 @@ function mapJevAnswers(
 // ---------------------------------------------------------------------------
 // Client
 
-async function postSystemOne(
-  body: Record<string, unknown>,
-): Promise<JevResponse> {
-  const url = `${config.TYPESAFE_BASE_URL || DEFAULT_BASE_URL}/v1/systemone`;
-  const timeoutMs = config.BRANDING_JEV_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS;
-  for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.TYPESAFE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (res.ok) return (await res.json()) as JevResponse;
-    if (attempt === 0 && RETRYABLE_STATUS.has(res.status)) {
-      await new Promise(resolve => setTimeout(resolve, 250));
-      continue;
-    }
-    const detail = (await res.text().catch(() => "")).slice(0, 300);
-    throw new Error(`TypeSafe API ${res.status}: ${detail}`);
-  }
-}
-
 /**
  * Answer the branding decisions with Jev. Returns null when the call fails so
  * the caller can fall back to the LLM path.
@@ -770,15 +742,41 @@ async function postSystemOne(
 export async function enhanceBrandingWithJev(
   input: BrandingLLMInput,
 ): Promise<JevBrandingResult | null> {
+  const typesafe = getTypeSafeClient();
+  if (!typesafe) return null;
   const request = buildJevRequest(input);
   const started = Date.now();
   let response: JevResponse;
   try {
-    response = await postSystemOne({
-      model: JEV_MODEL,
-      state: request.state,
-      questions: request.questions,
-    });
+    response = await withSpan(
+      "typesafe.systemone",
+      async span => {
+        const result = await typesafe.systemOne(
+          {
+            model: JEV_MODEL,
+            state: request.state,
+            questions: request.questions,
+          },
+          {
+            timeout: config.BRANDING_JEV_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS,
+            retry: { maxRetries: 1 },
+          },
+        );
+        setSpanAttributes(span, {
+          "typesafe.model": result.model,
+          "typesafe.usage.input_tokens": result.usage?.input_tokens,
+        });
+        return result as JevResponse;
+      },
+      {
+        kind: SpanKind.CLIENT,
+        attributes: {
+          feature: "branding",
+          "branding.jev.questions": Object.keys(request.questions).length,
+          ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
+        },
+      },
+    );
   } catch (error) {
     input.logger.warn("Jev branding call failed, falling back to LLM", {
       error,
