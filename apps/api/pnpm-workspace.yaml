@@ -28,6 +28,15 @@ overrides:
   "@tootallnate/once@<3.0.1": ">=3.0.1"
   yauzl: "^3.2.1"
   undici: "7.30.0"
+  # GHSA-vh66-26gq-q6x8 / GHSA-9fr6-4gfg-395g / GHSA-c29m-xwm3-cm6r /
+  # GHSA-mghh-pgcx-3jjj / GHSA-x97p-jq2g-jp4f / GHSA-3pq3-5fj3-cg6v /
+  # GHSA-542g-h47m-68v8 / GHSA-j8rh-479h-cp32 / GHSA-4hqw-qxg8-jxx2 /
+  # GHSA-m8m8-qj5v-23w3 / GHSA-44g4-m2mj-wpvx / GHSA-r4gj-5m52-g5wh:
+  # pin the 1.x line only. Exact 1.20.0 cannot resolve to 2.x.
+  "axios@>=1.0.0 <1.20.0": "1.20.0"
+  # GHSA-m9gg-hp2v-232j / GHSA-f596-whhp-79r4: pin the 1.x line only.
+  # Exact 1.14.5 cannot resolve to 2.x.
+  "@grpc/grpc-js@>=1.14.0 <2.0.0": "1.14.5"
   "picomatch@<4.0.4": ">=4.0.4"
   "yaml@<2.8.3": ">=2.8.3"
   "smol-toml@<1.7.1": "1.8.0"

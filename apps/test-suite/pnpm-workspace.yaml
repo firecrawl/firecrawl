@@ -29,6 +29,8 @@ overrides:
   "postcss@<8.5.26": ">=8.5.26 <9.0.0"
   "nanoid@>=3.0.0 <3.3.18": "3.3.18"
   "socket.io-parser@>=4.0.0 <4.2.7": "4.2.7"
-  "@grpc/grpc-js@>=1.14.0 <2.0.0": "1.14.4"
+  # GHSA-m9gg-hp2v-232j / GHSA-f596-whhp-79r4: pin the 1.x line only.
+  # Exact 1.14.5 cannot resolve to 2.x.
+  "@grpc/grpc-js@>=1.14.0 <2.0.0": "1.14.5"
   "@opentelemetry/core@>=2.0.0 <2.8.0": "2.8.0"
   "fflate@<0.8.2": "0.8.3"
