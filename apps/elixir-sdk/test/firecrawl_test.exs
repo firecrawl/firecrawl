@@ -723,10 +723,21 @@ defmodule FirecrawlTest do
       send(parent, {:request, request})
 
       body =
-        if request.url.path == "/v2/monitor/mon-1/checks/chk-1" do
-          %{"success" => true, "data" => %{"id" => "chk-1", "pages" => [%{"url" => "https://a.example"}], "next" => next}}
-        else
-          %{"success" => true, "data" => %{"pages" => [%{"url" => "https://b.example"}]}}
+        case request.url.path do
+          "/v2/monitor/mon-1/checks/chk-1" ->
+            %{"success" => true, "data" => %{"id" => "chk-1", "pages" => [%{"url" => "https://a.example"}], "next" => next}}
+
+          "/v2/monitor/mon-1/checks/chk-1/pages" ->
+            %{
+              "success" => true,
+              "data" => %{
+                "pages" => [%{"url" => "https://b.example"}],
+                "next" => "https://evil2.example/v2/monitor/mon-1/checks/chk-1/last?skip=20"
+              }
+            }
+
+          _ ->
+            %{"success" => true, "data" => %{"pages" => [%{"url" => "https://c.example"}]}}
         end
 
       resp =
@@ -744,12 +755,20 @@ defmodule FirecrawlTest do
     adapter = monitor_check_adapter(self(), next)
     response = get_check.(adapter)
 
-    assert response.body["data"]["pages"] == [%{"url" => "https://a.example"}, %{"url" => "https://b.example"}]
+    assert response.body["data"]["pages"] == [
+             %{"url" => "https://a.example"},
+             %{"url" => "https://b.example"},
+             %{"url" => "https://c.example"}
+           ]
+
     assert_receive {:request, first}
     assert URI.to_string(first.url) == "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1"
     assert_receive {:request, followed}
     assert URI.to_string(followed.url) == expected_url
     assert followed.headers["authorization"] == ["Bearer test-key"]
+    assert_receive {:request, last}
+    assert URI.to_string(last.url) == "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/last?skip=20"
+    assert last.headers["authorization"] == ["Bearer test-key"]
     refute_receive {:request, _}
   end
 
@@ -761,6 +780,10 @@ defmodule FirecrawlTest do
     {"protocol-relative", "//evil.example/v2/monitor/mon-1/checks/chk-1/pages?skip=10",
      "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10"},
     {"different port", "https://api.firecrawl.dev:8443/v2/monitor/mon-1/checks/chk-1/pages?skip=10",
+     "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10"},
+    {"relative", "/monitor/mon-1/checks/chk-1/pages?skip=10",
+     "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10"},
+    {"userinfo", "https://user:pass@evil.example/v2/monitor/mon-1/checks/chk-1/pages?skip=10",
      "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10"},
     {"different scheme", "http://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10#frag",
      "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10"}

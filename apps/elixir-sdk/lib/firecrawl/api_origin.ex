@@ -16,7 +16,9 @@ defmodule Firecrawl.ApiOrigin do
         url
 
       parsed ->
-        case URI.parse(api_url) do
+        base = if is_binary(api_url) or is_struct(api_url, URI), do: URI.parse(api_url)
+
+        case base do
           %URI{scheme: scheme, host: host} = base
           when is_binary(scheme) and host not in [nil, ""] ->
             URI.to_string(%URI{

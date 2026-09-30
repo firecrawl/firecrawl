@@ -15,6 +15,16 @@ defmodule Firecrawl.ApiOriginTest do
              "https://api.firecrawl.dev/v2/crawl/abc?skip=10"
   end
 
+  test "drops userinfo from a foreign URL" do
+    assert ApiOrigin.pin("https://user:pass@evil.example/v2/crawl/abc?skip=10", @api_url) ==
+             "https://api.firecrawl.dev/v2/crawl/abc?skip=10"
+  end
+
+  test "accepts a URI struct as api_url" do
+    assert ApiOrigin.pin("https://evil.example/v2/crawl/abc", URI.parse(@api_url)) ==
+             "https://api.firecrawl.dev/v2/crawl/abc"
+  end
+
   test "rewrites protocol-relative URLs" do
     assert ApiOrigin.pin("//evil.example/v2/crawl/abc?skip=10", @api_url) ==
              "https://api.firecrawl.dev/v2/crawl/abc?skip=10"
@@ -50,6 +60,10 @@ defmodule Firecrawl.ApiOriginTest do
   test "raises when api_url is not absolute" do
     assert_raise ArgumentError, ~r/api_url must be an absolute URL/, fn ->
       ApiOrigin.pin("https://evil.example/v2/crawl/abc", "/v2")
+    end
+
+    assert_raise ArgumentError, ~r/api_url must be an absolute URL/, fn ->
+      ApiOrigin.pin("https://evil.example/v2/crawl/abc", fn -> @api_url end)
     end
   end
 end

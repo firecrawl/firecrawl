@@ -7,6 +7,13 @@ on:
     paths:
       - apps/elixir-sdk/**
       - .github/workflows/test-elixir-sdk.yml
+  push:
+    branches:
+      - main
+    paths:
+      - apps/elixir-sdk/**
+      - .github/workflows/test-elixir-sdk.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
