@@ -1,0 +1,26 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/metrics.ts
+  s_28f2768f245c7c::t_23ae9f20d5fb0f 90
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsyncDeadline.test.ts
+  s_28f2768f245c7c::t_fc007a413437f3 318,320
+  s_28f2768f245c7c::t_575f6dd8256b39 18,212-317,319
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/submit.ts
+  s_28f2768f245c7c::t_23ae9f20d5fb0f 257-263
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/utils.ts
+  s_28f2768f245c7c::t_23ae9f20d5fb0f 163-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6bfbfb9a5b92d63c9b53e99c25dea1dfbad3c988",
+  "prompts": {},
+  "sessions": {
+    "s_28f2768f245c7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "056dce34-98a7-4d60-815b-3ca2e5da75b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
