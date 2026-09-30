@@ -12,6 +12,7 @@ on:
       - main
     paths:
       - .github/scripts/**
+      - .github/workflows/test-ci-scripts.yml
   workflow_dispatch:
 
 permissions:
@@ -30,4 +31,4 @@ jobs:
           node-version: 22
 
       - name: Run node:test suites
-        run: node --test .github/scripts/audit-ci-vuln-scan.test.mjs
+        run: node --test ".github/scripts/**/*.test.mjs"
