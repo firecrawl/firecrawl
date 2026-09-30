@@ -11,7 +11,7 @@ import { redisRateLimitClient } from "../../../services/rate-limiter";
 import { redisSpurClient } from "../../../services/spur-redis";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
-import { and, desc, eq, gt } from "drizzle-orm";
+import { and, count, desc, eq, gt } from "drizzle-orm";
 import request from "supertest";
 
 // The keyless tier is disabled unless both limits are configured. The harness
@@ -50,6 +50,19 @@ const KEYLESS_SIGNUP_URL_EXACT =
   /^https:\/\/firecrawl\.dev\/k(\/[0-9abcdefghjkmnpqrstvwxyz]{8})?$/;
 
 // Recover the loopback IP the server keyed on, so we can seed its credit counter.
+// Row count of keyless_signup_links, or null when this database has no such
+// table (the links migration is optional for these snips).
+async function countSignupLinkRows(): Promise<number | null> {
+  try {
+    const [row] = await db
+      .select({ n: count() })
+      .from(schema.keyless_signup_links);
+    return Number(row?.n ?? 0);
+  } catch {
+    return null;
+  }
+}
+
 async function currentKeylessIp(): Promise<string> {
   const keys = await redisRateLimitClient.keys("keyless_requests:*");
   expect(keys.length).toBeGreaterThan(0);
@@ -105,6 +118,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
   );
 
   it("does not grant keyless access on non-allowlisted endpoints (401)", async () => {
+    const rowsBefore = await countSignupLinkRows();
     // batch/scrape shares RateLimiterMode.Scrape but is NOT allowKeyless.
     const response = await request(TEST_API_URL)
       .post("/v2/batch/scrape")
@@ -120,6 +134,9 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     // Anonymous traffic on a non-keyless endpoint must not write a link row.
     expect(response.body.signup_url).toBe("https://firecrawl.dev/k");
     expect(response.body.error).toContain("Authorization: Bearer YOUR_API_KEY");
+    if (rowsBefore !== null) {
+      expect(await countSignupLinkRows()).toBe(rowsBefore);
+    }
   });
 
   it(
