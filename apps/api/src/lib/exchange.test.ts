@@ -299,7 +299,7 @@ describe("Exchange routing", () => {
     expect(getExchangeResponseLogContext(null)).toEqual({});
   });
 
-  it("accepts only formats the Exchange can return directly", () => {
+  it("accepts only formats derivable from the Exchange's markdown", () => {
     expect(isSupportedExchangeFormatRequest(undefined)).toBe(true);
     expect(isSupportedExchangeFormatRequest([{ type: "markdown" }])).toBe(true);
     expect(isSupportedExchangeFormatRequest(["json"])).toBe(true);
@@ -309,7 +309,10 @@ describe("Exchange routing", () => {
         { type: "json" },
       ]),
     ).toBe(true);
-    expect(isSupportedExchangeFormatRequest([{ type: "html" }])).toBe(false);
+    expect(isSupportedExchangeFormatRequest([{ type: "html" }])).toBe(true);
+    expect(isSupportedExchangeFormatRequest([{ type: "screenshot" }])).toBe(
+      false,
+    );
     // deterministicJson extractors run against page HTML, which Exchange
     // responses do not carry.
     expect(
@@ -358,40 +361,12 @@ describe("Exchange routing", () => {
       }),
     ).resolves.toBe(false);
 
-    // atsv requests stay on engines that support the flag.
-    await expect(
-      canUseExchangeForRequest({
-        url: "https://profiles.example/person/example-person",
-        formats: [{ type: "markdown" }],
-        atsv: true,
-        flags: ENABLED_EXCHANGE_FLAGS,
-      }),
-    ).resolves.toBe(false);
-
     // minAge asks for Firecrawl-cached data, which the Exchange never has.
     await expect(
       canUseExchangeForRequest({
         url: "https://profiles.example/person/example-person",
         formats: [{ type: "markdown" }],
         minAge: 3_600_000,
-        flags: ENABLED_EXCHANGE_FLAGS,
-      }),
-    ).resolves.toBe(false);
-
-    // Selector-based filtering does not apply to provider records.
-    await expect(
-      canUseExchangeForRequest({
-        url: "https://profiles.example/person/example-person",
-        formats: [{ type: "markdown" }],
-        includeTags: ["article"],
-        flags: ENABLED_EXCHANGE_FLAGS,
-      }),
-    ).resolves.toBe(false);
-    await expect(
-      canUseExchangeForRequest({
-        url: "https://profiles.example/person/example-person",
-        formats: [{ type: "markdown" }],
-        excludeTags: ["nav"],
         flags: ENABLED_EXCHANGE_FLAGS,
       }),
     ).resolves.toBe(false);
@@ -496,7 +471,7 @@ describe("Exchange routing", () => {
     ).resolves.toEqual({ allowed: false, termsRequired: false });
   });
 
-  it("does not route unless the beta flag is enabled", async () => {
+  it("requires the beta flag except for blocked URLs", async () => {
     await expect(
       canUseExchangeForRequest({
         url: "https://profiles.example/person/example-person",
@@ -511,6 +486,15 @@ describe("Exchange routing", () => {
         flags: { professionalProfileCompanyDataBeta: false },
       }),
     ).resolves.toBe(false);
+
+    // A blocked URL has no other way to be served.
+    await expect(
+      canUseExchangeForRequest({
+        url: "https://facts.example/records/1",
+        formats: [{ type: "markdown" }],
+        blocked: true,
+      }),
+    ).resolves.toBe(true);
   });
 
   it("does not route unless the Exchange is configured", async () => {

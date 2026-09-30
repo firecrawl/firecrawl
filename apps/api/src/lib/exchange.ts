@@ -26,19 +26,12 @@ type RouteInput = {
   url: string;
   teamId?: string | null;
   orgId?: string | null;
+  /** The URL is on the team's blocklist, so the Exchange is the only way to serve it. */
+  blocked?: boolean;
   formats?: FormatObject[] | unknown[];
   actions?: unknown[];
-  headers?: Record<string, unknown>;
-  waitFor?: number;
-  mobile?: boolean;
-  location?: unknown;
-  proxy?: unknown;
-  blockAds?: boolean;
   profile?: unknown;
-  atsv?: boolean;
   minAge?: number;
-  includeTags?: unknown[];
-  excludeTags?: unknown[];
   zeroDataRetention?: boolean;
   lockdown?: boolean;
   flags?: {
@@ -69,9 +62,21 @@ type ExchangeProvider = {
   }[];
 };
 
-// deterministicJson is deliberately unsupported: its extractor scripts run
-// against page HTML, which Exchange responses do not carry.
-const SUPPORTED_FORMATS = new Set(["markdown", "json"]);
+// Formats the regular transformers derive from the Exchange's markdown (and the
+// HTML rendered from it). deterministicJson, screenshots and the like need the
+// real page, which the Exchange never fetches.
+const SUPPORTED_FORMATS = new Set([
+  "markdown",
+  "html",
+  "rawHtml",
+  "links",
+  "images",
+  "json",
+  "summary",
+  "question",
+  "highlights",
+  "query",
+]);
 const EXCHANGE_BETA_FLAG = "professionalProfileCompanyDataBeta";
 
 const EXCHANGE_PROVIDERS_PATH = "/v1/providers";
@@ -514,7 +519,9 @@ async function getProviderAccessDecision(
 }
 
 function isExchangeEligibleRequest(input: RouteInput): boolean {
-  if (input.flags?.[EXCHANGE_BETA_FLAG] !== true) {
+  // Blocked URLs go to the Exchange for every team, since nothing else may
+  // serve them; elsewhere it replaces a normal scrape only for the beta.
+  if (input.flags?.[EXCHANGE_BETA_FLAG] !== true && input.blocked !== true) {
     return false;
   }
 
@@ -534,27 +541,9 @@ function isExchangeEligibleRequest(input: RouteInput): boolean {
     return false;
   }
 
-  if (input.headers && Object.keys(input.headers).length > 0) {
-    return false;
-  }
-
-  if (input.waitFor !== undefined && input.waitFor !== 0) {
-    return false;
-  }
-
-  if (input.mobile || input.location || input.blockAds === false) {
-    return false;
-  }
-
   // Profile-backed scrapes expect session-specific content, which the
   // Exchange cannot serve.
   if (input.profile !== undefined) {
-    return false;
-  }
-
-  // atsv is only supported by browser engines; requests that set it keep an
-  // engine that can honor it instead of routing to the Exchange.
-  if (input.atsv === true) {
     return false;
   }
 
@@ -562,18 +551,6 @@ function isExchangeEligibleRequest(input: RouteInput): boolean {
   // provider data and Firecrawl never caches it, so the semantics cannot
   // be honored here.
   if (input.minAge !== undefined) {
-    return false;
-  }
-
-  // Selector-based content filtering does not apply to provider records.
-  if (
-    (Array.isArray(input.includeTags) && input.includeTags.length > 0) ||
-    (Array.isArray(input.excludeTags) && input.excludeTags.length > 0)
-  ) {
-    return false;
-  }
-
-  if (input.proxy === "stealth" || input.proxy === "enhanced") {
     return false;
   }
 
@@ -644,6 +621,10 @@ function getThirdPartyDataTermsUrl(terms: ExchangeTerms): string {
   return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria/${encodeURIComponent(terms.key)}`;
 }
 
+export function getEnrichmentSettingsUrl(): string {
+  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria?enrichment=true`;
+}
+
 /**
  * An organization admin has to accept a provider's terms before the request
  * can run. Transportable, so it crosses the worker queue intact; every
@@ -652,14 +633,20 @@ function getThirdPartyDataTermsUrl(terms: ExchangeTerms): string {
  */
 export class ThirdPartyDataTermsRequiredError extends TransportableError {
   public readonly terms: ExchangeTerms;
+  /** Set when the provider is a step in the team's enrichment order, which can drop it instead. */
+  public readonly enrichment: boolean;
 
-  constructor(terms: ExchangeTerms) {
+  constructor(terms: ExchangeTerms, options: { enrichment?: boolean } = {}) {
+    const accept = `An organization admin must accept the ${terms.key} provider's terms (version ${terms.version}) before this request can run. Accept them at ${getThirdPartyDataTermsUrl(terms)}`;
     super(
       "THIRD_PARTY_DATA_TERMS_REQUIRED",
-      `An organization admin must accept the ${terms.key} provider's terms (version ${terms.version}) before this request can run. Accept them at ${getThirdPartyDataTermsUrl(terms)}`,
+      options.enrichment
+        ? `${accept}, or turn off ${terms.key} in ${getEnrichmentSettingsUrl()}.`
+        : accept,
     );
     this.name = "ThirdPartyDataTermsRequiredError";
     this.terms = { key: terms.key, version: terms.version };
+    this.enrichment = options.enrichment === true;
   }
 
   get requiresAction() {
@@ -684,6 +671,7 @@ export class ThirdPartyDataTermsRequiredError extends TransportableError {
     return {
       ...super.serialize(),
       terms: this.terms,
+      enrichment: this.enrichment,
     };
   }
 
@@ -691,7 +679,9 @@ export class ThirdPartyDataTermsRequiredError extends TransportableError {
     _code: ErrorCodes,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
-    const x = new ThirdPartyDataTermsRequiredError(data.terms);
+    const x = new ThirdPartyDataTermsRequiredError(data.terms, {
+      enrichment: data.enrichment,
+    });
     x.stack = data.stack;
     return x;
   }

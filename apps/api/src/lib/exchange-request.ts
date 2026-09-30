@@ -12,6 +12,7 @@ export function getExchangeAccessForRequestBody(input: {
   body: Record<string, any>;
   flags: ExchangeFlags;
   url: string;
+  blocked: boolean;
   zeroDataRetention: boolean;
   teamId: string | null;
   orgId: string | null;
@@ -26,19 +27,11 @@ export function getExchangeAccessForRequestBody(input: {
     url: input.url,
     teamId: input.teamId,
     orgId: input.orgId,
+    blocked: input.blocked,
     formats: scrapeOptions.formats,
     actions: scrapeOptions.actions,
-    headers: scrapeOptions.headers,
-    waitFor: scrapeOptions.waitFor,
-    mobile: scrapeOptions.mobile,
-    location: scrapeOptions.location,
-    proxy: scrapeOptions.proxy,
-    blockAds: scrapeOptions.blockAds,
     profile: scrapeOptions.profile,
-    atsv: scrapeOptions.atsv ?? body.pageOptions?.atsv,
     minAge: scrapeOptions.minAge,
-    includeTags: scrapeOptions.includeTags ?? body.pageOptions?.includeTags,
-    excludeTags: scrapeOptions.excludeTags ?? body.pageOptions?.excludeTags,
     zeroDataRetention: input.zeroDataRetention,
     lockdown: scrapeOptions.lockdown ?? body.lockdown,
     flags: input.flags,

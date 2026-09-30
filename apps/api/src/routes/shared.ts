@@ -406,6 +406,7 @@ function blocklistGate(
         body: req.body,
         flags: req.acuc?.flags ?? null,
         url: req.body.url,
+        blocked: true,
         zeroDataRetention,
         teamId: req.acuc?.team_id ?? null,
         orgId: req.acuc?.org_id ?? null,

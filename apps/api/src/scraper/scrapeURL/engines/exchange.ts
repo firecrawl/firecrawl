@@ -5,11 +5,13 @@ import { EngineScrapeResult } from ".";
 import { config } from "../../../config";
 import {
   getExchangeRequestLogContext,
+  getEnrichmentSettingsUrl,
   getExchangeResponseLogContext,
   ThirdPartyDataTermsRequiredError,
 } from "../../../lib/exchange";
 import { setSpanAttributes, withSpan } from "../../../lib/otel-tracer";
 import { robustFetch } from "../lib/fetch";
+import { safeMarkdownToHtml } from "./pdf/markdownToHtml";
 import { EngineError, ExchangeRefusedError } from "../error";
 
 const exchangeScrapeResponseSchema = z.union([
@@ -33,7 +35,6 @@ const exchangeScrapeResponseSchema = z.union([
             .optional(),
           metadata: z.record(z.string(), z.unknown()).optional(),
           markdown: z.string().optional(),
-          json: z.unknown().optional(),
         })
         .passthrough(),
     })
@@ -109,16 +110,21 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-// Exchange responses carry no page HTML; synthesize a minimal head so the
-// metadata transformer can populate the document's title and description.
-function buildMetadataHtml(title?: string, description?: string): string {
+// Exchange responses carry no page HTML. Render the markdown into a page so
+// the regular transformers derive html, rawHtml, links, images and metadata
+// from it the way they do for any other page.
+function buildPageHtml(
+  body: string,
+  title?: string,
+  description?: string,
+): string {
   const titleTag =
     title === undefined ? "" : `<title>${escapeHtml(title)}</title>`;
   const descriptionTag =
     description === undefined
       ? ""
       : `<meta name="description" content="${escapeHtml(description)}">`;
-  return `<!DOCTYPE html><html><head>${titleTag}${descriptionTag}</head><body></body></html>`;
+  return `<!DOCTYPE html><html><head>${titleTag}${descriptionTag}</head><body>${body}</body></html>`;
 }
 
 export async function scrapeURLWithExchange(
@@ -157,7 +163,7 @@ export async function scrapeURLWithExchange(
           ...(meta.exchangeProviderId === undefined
             ? {}
             : { provider: meta.exchangeProviderId }),
-          formats: ["markdown", "json"],
+          formats: ["markdown"],
           ...(meta.options.maxAge === undefined
             ? {}
             : { maxAge: meta.options.maxAge }),
@@ -193,7 +199,11 @@ export async function scrapeURLWithExchange(
           response.error?.code === "third_party_data_terms_required" &&
           response.error.terms !== undefined
         ) {
-          throw new ThirdPartyDataTermsRequiredError(response.error.terms);
+          // Only enrichment checks terms inside the Exchange, so the step can
+          // also be turned off in the team's enrichment settings.
+          throw new ThirdPartyDataTermsRequiredError(response.error.terms, {
+            enrichment: true,
+          });
         }
         const refusal = EXCHANGE_REFUSALS.get(response.error?.code ?? "");
         if (refusal !== undefined) {
@@ -201,7 +211,7 @@ export async function scrapeURLWithExchange(
           throw new ExchangeRefusedError(
             refusal.code,
             refusal.enrichmentSettings
-              ? `${message} An organization admin can choose enrichment providers at ${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria?enrichment=true`
+              ? `${message} An organization admin can choose enrichment providers at ${getEnrichmentSettingsUrl()}`
               : message,
           );
         }
@@ -231,11 +241,15 @@ export async function scrapeURLWithExchange(
         "exchange.duration_ms": Date.now() - startTime,
       });
 
+      const markdown = response.data.markdown ?? "";
       return {
         url: response.data.url ?? url,
-        html: buildMetadataHtml(response.data.title, response.data.description),
-        markdown: response.data.markdown,
-        json: response.data.json,
+        html: buildPageHtml(
+          await safeMarkdownToHtml(markdown, meta.logger, meta.id),
+          response.data.title,
+          response.data.description,
+        ),
+        markdown,
         statusCode: 200,
         contentType: "text/markdown",
         proxyUsed: "basic",

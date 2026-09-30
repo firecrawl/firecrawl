@@ -588,7 +588,6 @@ export async function scrapeURLWithIndex(
   return {
     url: doc.url,
     html: doc.html,
-    json: doc.json,
     statusCode: doc.statusCode,
     error: doc.error,
     screenshot: doc.screenshot,

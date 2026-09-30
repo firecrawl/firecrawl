@@ -1164,7 +1164,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       blocks: engineResult.blocks,
       rawHtml: engineResult.html,
       rawBase64: engineResult.rawBase64,
-      json: engineResult.json,
       screenshot: engineResult.screenshot,
       actions: engineResult.actions,
       branding: engineResult.branding,
