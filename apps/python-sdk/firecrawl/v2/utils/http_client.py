@@ -91,7 +91,7 @@ class HttpClient:
             backoff_factor = self.backoff_factor
 
         payload = dict(data)
-        payload['origin'] = self.origin
+        payload['origin'] = payload.get('origin') or self.origin
 
         url = self._build_url(endpoint)
 
@@ -288,7 +288,7 @@ class HttpClient:
             backoff_factor = self.backoff_factor
 
         payload = dict(data)
-        payload['origin'] = self.origin
+        payload['origin'] = payload.get('origin') or self.origin
         url = self._build_url(endpoint)
 
         last_exception = None

@@ -61,7 +61,7 @@ class AsyncHttpClient:
             backoff_factor = self.backoff_factor
 
         payload = dict(data)
-        payload["origin"] = self.origin
+        payload["origin"] = payload.get("origin") or self.origin
 
         last_exception = None
         num_attempts = max(1, retries)
@@ -222,7 +222,7 @@ class AsyncHttpClient:
             backoff_factor = self.backoff_factor
 
         payload = dict(data)
-        payload["origin"] = self.origin
+        payload["origin"] = payload.get("origin") or self.origin
 
         last_exception = None
         num_attempts = max(1, retries)
