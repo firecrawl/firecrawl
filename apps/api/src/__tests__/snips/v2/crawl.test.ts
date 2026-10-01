@@ -350,6 +350,54 @@ describe("Crawl tests", () => {
     10 * scrapeTimeout,
   );
 
+  it.concurrent(
+    "crawl status completedAt follows the failed jobs when no page succeeds",
+    async () => {
+      // The start URL cannot resolve, so the only job in the crawl fails.
+      const results = await crawl(
+        {
+          url: `https://crawl-completed-at-${crypto.randomUUID()}.invalid/`,
+          limit: 1,
+        },
+        identity,
+        false,
+      );
+
+      expect(results.success).toBe(true);
+      if (!results.success) return;
+      expect(results.status).not.toBe("scraping");
+      expect(results.completed).toBe(0);
+      expect(typeof results.createdAt).toBe("string");
+      expect(typeof results.completedAt).toBe("string");
+
+      const createdAtMs = new Date(results.createdAt!).getTime();
+      const completedAtMs = new Date(results.completedAt!).getTime();
+
+      // Before the fix, completedAt fell back to createdAt (duration 0)
+      // because only successful jobs had a finish time.
+      expect(completedAtMs).toBeGreaterThan(createdAtMs);
+      expect(results.duration).toBeGreaterThan(0);
+
+      const errors = await request(TEST_API_URL)
+        .get("/v2/crawl/" + results.id + "/errors")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
+      expect(errors.statusCode).toBe(200);
+      expect(errors.body.errors.length).toBeGreaterThan(0);
+
+      const lastErrorMs = Math.max(
+        ...errors.body.errors.map((x: { timestamp: string }) =>
+          new Date(x.timestamp).getTime(),
+        ),
+      );
+      expect(lastErrorMs).not.toBeNaN();
+      // The worker records the done time just before the queue stamps the
+      // job as failed, so allow a small gap between the two clocks.
+      expect(completedAtMs).toBeGreaterThanOrEqual(lastErrorMs - 5000);
+    },
+    10 * scrapeTimeout,
+  );
+
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "delay parameter works",
     async () => {

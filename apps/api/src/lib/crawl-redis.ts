@@ -245,16 +245,23 @@ export async function addCrawlJobDone(
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
+      const now = Date.now();
       const pipeline = redisEvictConnection.pipeline();
       pipeline.sadd("crawl:" + id + ":jobs_done", job_id);
       pipeline.expire("crawl:" + id + ":jobs_done", 24 * 60 * 60);
 
+      // jobs_donez_ordered only holds successful jobs, so it cannot tell when
+      // a crawl ended if its last jobs failed. Keep the finish time of the
+      // latest job of any outcome for the crawl status completedAt.
+      pipeline.set(
+        "crawl:" + id + ":last_job_done_at",
+        now,
+        "EX",
+        24 * 60 * 60,
+      );
+
       if (success) {
-        pipeline.zadd(
-          "crawl:" + id + ":jobs_donez_ordered",
-          Date.now(),
-          job_id,
-        );
+        pipeline.zadd("crawl:" + id + ":jobs_donez_ordered", now, job_id);
       } else {
         // in case it's already been pushed, make sure it's removed
         pipeline.zrem("crawl:" + id + ":jobs_donez_ordered", job_id);
@@ -434,6 +441,9 @@ export async function getDoneJobsOrdered(
   );
 }
 
+/// Finish time of the latest done job in the crawl, failed jobs included.
+/// Crawls that started before last_job_done_at existed only have the
+/// successful-job timestamps, so take the later of the two.
 export async function getLastDoneJobTimestamp(
   id: string,
 ): Promise<number | null> {
@@ -441,15 +451,20 @@ export async function getLastDoneJobTimestamp(
     "crawl:" + id + ":jobs_donez_ordered",
     24 * 60 * 60,
   );
-  const result = await redisEvictConnection.zrange(
-    "crawl:" + id + ":jobs_donez_ordered",
-    -1,
-    -1,
-    "WITHSCORES",
-  );
-  if (!result || result.length < 2) return null;
-  const score = parseInt(result[1], 10);
-  return Number.isFinite(score) ? score : null;
+  const [lastAny, lastSuccess] = await Promise.all([
+    redisEvictConnection.get("crawl:" + id + ":last_job_done_at"),
+    redisEvictConnection.zrange(
+      "crawl:" + id + ":jobs_donez_ordered",
+      -1,
+      -1,
+      "WITHSCORES",
+    ),
+  ]);
+  const candidates = [
+    lastAny !== null ? parseInt(lastAny, 10) : NaN,
+    lastSuccess && lastSuccess.length >= 2 ? parseInt(lastSuccess[1], 10) : NaN,
+  ].filter(x => Number.isFinite(x));
+  return candidates.length > 0 ? Math.max(...candidates) : null;
 }
 
 export async function getDoneJobsOrderedUntil(
