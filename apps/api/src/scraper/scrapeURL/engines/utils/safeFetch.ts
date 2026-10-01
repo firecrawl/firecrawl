@@ -64,6 +64,11 @@ export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeI
 
     return dispatch(options, handler);
   };
+  if (!process.env.PROXY_SERVER && process.env.USE_DB_AUTHENTICATION === "true") {
+    throw new Error(
+      "PROXY_SERVER is not set and USE_DB_AUTHENTICATION is true",
+    );
+  }
 
 function createBaseAgent(skipTlsVerification: boolean) {
   const baseAgent = config.PROXY_SERVER
