@@ -343,8 +343,7 @@ export async function crawlStatusController(
     // Emit as separate simple logs so no meta is lost in sinks
     const statusNow = outputBulkA.status ?? "scraping";
     if (rbCount > 0 && statusNow !== "scraping") {
-      warning =
-        "One or more pages were unable to be crawled because the robots.txt file prevented this. Please use the /scrape endpoint instead.";
+      warning = `One or more pages could not be crawled because the site's robots.txt disallows them. See the robotsBlocked list on GET /v2/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}/errors. Teams with the feature enabled can set ignoreRobotsTxt: true.`;
     }
   } catch (error) {
     // If we can't check robots blocked URLs, continue without warning

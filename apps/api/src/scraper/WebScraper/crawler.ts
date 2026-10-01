@@ -51,6 +51,11 @@ enum DenialReason {
   NON_WEB_PROTOCOL = "This URL uses a non-web protocol (such as mailto:, tel:, ftp:, ssh:, file:, or telnet:) that Firecrawl cannot scrape. Firecrawl only supports HTTP and HTTPS protocols.",
 }
 
+/** True when a filterLinks denial reason is the robots.txt denial. */
+export function isRobotsDenialReason(reason: string | undefined): boolean {
+  return reason === DenialReason.ROBOTS_TXT;
+}
+
 interface FilterLinksResult {
   links: string[];
   denialReasons: Map<string, string>;
@@ -441,10 +446,7 @@ export class WebCrawler {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} ROBOTS FAIL`);
           }
-          denialReasons.set(
-            link,
-            `This URL is blocked by the website's robots.txt file, which instructs crawlers not to access this page. Firecrawl respects robots.txt by default. To crawl this URL anyway, set ignoreRobotsTxt: true in your crawl request (note: this may violate the website's crawling policies).`,
-          );
+          denialReasons.set(link, DenialReason.ROBOTS_TXT);
           return false;
         }
 
@@ -729,13 +731,17 @@ export class WebCrawler {
     return count;
   }
 
-  public async filterURL(href: string, url: string): Promise<FilterResult> {
+  public async filterURL(
+    href: string,
+    url: string,
+    skipRobots: boolean = false,
+  ): Promise<FilterResult> {
     return await filterUrl({
       href: href,
       url: url,
       baseUrl: this.baseUrl,
       excludes: this.excludes,
-      ignoreRobotsTxt: this.ignoreRobotsTxt,
+      ignoreRobotsTxt: this.ignoreRobotsTxt || skipRobots,
       robotsTxt: this.robotsTxt,
       robotsUserAgent: this.robotsUserAgent,
       allowExternalContentLinks: this.allowExternalContentLinks,
@@ -747,7 +753,7 @@ export class WebCrawler {
     const links = await extractLinks(html);
     const filteredLinks: string[] = [];
     for (const link of links) {
-      const filterResult = await this.filterURL(link, url);
+      const filterResult = await this.filterURL(link, url, true);
       if (filterResult.allowed && filterResult.url) {
         filteredLinks.push(filterResult.url);
       }
@@ -766,7 +772,7 @@ export class WebCrawler {
         if (href.match(/^https?:\/[^\/]/)) {
           href = href.replace(/^https?:\//, "$&/");
         }
-        const filterResult = await this.filterURL(href, url);
+        const filterResult = await this.filterURL(href, url, true);
         if (filterResult.allowed && filterResult.url) {
           links.push(filterResult.url);
         }
@@ -793,7 +799,7 @@ export class WebCrawler {
   private async extractLinksFromMarkdownContent(text: string, url: string) {
     const filteredLinks: string[] = [];
     for (const link of extractLinksFromMarkdown(text, url)) {
-      const filterResult = await this.filterURL(link, url);
+      const filterResult = await this.filterURL(link, url, true);
       if (filterResult.allowed && filterResult.url) {
         filteredLinks.push(filterResult.url);
       }
