@@ -177,6 +177,26 @@ export async function agentController(
         ...(typeof body?.runId === "string" ? { runId: body.runId } : {}),
       });
     }
+
+    // An omitted schema inherits the previous turn's value. Validate that
+    // effective schema before quota consumption, including schemas saved by
+    // older workers whose compilation policy was less strict.
+    if (req.body.schema === undefined) {
+      const body = (await thread.json().catch(() => null)) as {
+        thread?: { runs?: { schema?: unknown }[] };
+      } | null;
+      if (!Array.isArray(body?.thread?.runs) || body.thread.runs.length === 0) {
+        logger.error("Invalid agent thread response.");
+        return res.status(500).json({
+          success: false,
+          error: "Failed to check agent thread.",
+        });
+      }
+      agentRequestSchema.parse({
+        ...originalRequest,
+        schema: body.thread.runs.at(-1)?.schema,
+      });
+    }
   }
 
   // If maxCredits > 2500, skip free request consumption — this is always a paid request

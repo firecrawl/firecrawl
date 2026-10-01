@@ -11,6 +11,7 @@ describe("Agent schema intake", () => {
   it.each([
     ["zero", 0],
     ["empty string", ""],
+    ["async schema", { $async: true, type: "object" }],
     ["OpenAPI example", { type: "string", example: "a" }],
     ["unknown format", { type: "string", format: "phone" }],
     ["vendor keyword", { type: "object", propertyOrdering: ["name"] }],

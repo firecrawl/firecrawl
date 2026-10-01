@@ -11,6 +11,7 @@ import { config } from "../../../config";
 import { agentConsumeFreeRequestIfLeft } from "../../../db/rpc";
 import { logger } from "../../../lib/logger";
 import { logRequest } from "../../../services/logging/log_job";
+import { fetchAgentThread } from "../agent-thread";
 vi.mock("../../../lib/logger", () => {
   const logger = { info: vi.fn(), error: vi.fn(), child: vi.fn() };
   logger.child.mockReturnValue(logger);
@@ -119,6 +120,7 @@ describe("Agent schema intake", () => {
   it.each([
     ["zero", 0],
     ["empty string", ""],
+    ["async schema", { $async: true, type: "object" }],
     ["OpenAPI example", { type: "string", example: "a" }],
     ["unknown format", { type: "string", format: "phone" }],
     ["vendor keyword", { type: "object", propertyOrdering: ["name"] }],
@@ -132,6 +134,92 @@ describe("Agent schema intake", () => {
       await expect(
         agentController(request(schema) as any, response() as any),
       ).rejects.toThrow("Invalid JSON schema:");
+      expect(agentConsumeFreeRequestIfLeft).not.toHaveBeenCalled();
+      expect(logRequest).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([0, "", { type: "bogus" }, { $async: true, type: "object" }])(
+    "rejects an invalid inherited schema before admission: %j",
+    async schema => {
+      vi.mocked(fetchAgentThread).mockResolvedValue({
+        status: 200,
+        json: async () => ({ thread: { runs: [{ schema }] } }),
+      } as Response);
+      const req = request(undefined);
+      await expect(
+        agentController(
+          {
+            ...req,
+            body: {
+              ...req.body,
+              threadId: "018f0000-0000-7000-8000-000000000000",
+            },
+          } as any,
+          response() as any,
+        ),
+      ).rejects.toThrow("Invalid JSON schema:");
+      expect(agentConsumeFreeRequestIfLeft).not.toHaveBeenCalled();
+      expect(logRequest).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([undefined, null, { type: "object" }])(
+    "admits a valid continuation with requested schema %j",
+    async schema => {
+      vi.mocked(fetchAgentThread).mockResolvedValue({
+        status: 200,
+        json: async () => ({
+          thread: {
+            runs: [
+              {
+                schema:
+                  schema === undefined ? { type: "object" } : { type: "bogus" },
+              },
+            ],
+          },
+        }),
+      } as Response);
+      const req = request(schema);
+      const res = response();
+      await agentController(
+        {
+          ...req,
+          body: {
+            ...req.body,
+            threadId: "018f0000-0000-7000-8000-000000000000",
+          },
+        } as any,
+        res as any,
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(agentConsumeFreeRequestIfLeft).toHaveBeenCalledTimes(1);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([null, { thread: { runs: [] } }])(
+    "does not consume quota when the inherited schema cannot be read: %j",
+    async body => {
+      vi.mocked(fetchAgentThread).mockResolvedValue({
+        status: 200,
+        json: async () => body,
+      } as Response);
+      const req = request(undefined);
+      const res = response();
+      await agentController(
+        {
+          ...req,
+          body: {
+            ...req.body,
+            threadId: "018f0000-0000-7000-8000-000000000000",
+          },
+        } as any,
+        res as any,
+      );
+      expect(res.status).toHaveBeenCalledWith(500);
       expect(agentConsumeFreeRequestIfLeft).not.toHaveBeenCalled();
       expect(logRequest).not.toHaveBeenCalled();
       expect(fetch).not.toHaveBeenCalled();

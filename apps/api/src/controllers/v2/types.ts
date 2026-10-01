@@ -1124,7 +1124,10 @@ export const agentRequestSchema = z
           for (const keyword of agentSchemaExtensionKeywords(val)) {
             agentAjv.addKeyword({ keyword, valid: true });
           }
-          agentAjv.compile(val);
+          const validate = agentAjv.compile(val);
+          if ("$async" in validate && validate.$async) {
+            throw new Error("Async schemas ($async: true) are not supported");
+          }
         } catch (e) {
           const message =
             e instanceof Error
