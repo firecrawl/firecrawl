@@ -56,6 +56,7 @@ from .types import (
 )
 from .utils.http_client import HttpClient
 from .utils.http_client_async import AsyncHttpClient
+from .utils.error_handler import CrawlJobTimeoutError
 
 from .methods.aio import scrape as async_scrape  # type: ignore[attr-defined]
 from .methods.aio import parse as async_parse  # type: ignore[attr-defined]
@@ -391,7 +392,8 @@ class AsyncFirecrawlClient:
             CrawlJob: The final status of the crawl job when it reaches a terminal state.
 
         Raises:
-            TimeoutError: If the crawl does not reach a terminal state within the specified timeout.
+            CrawlJobTimeoutError: If the crawl does not reach a terminal state within the specified
+                timeout. It is a ``TimeoutError`` subclass that carries ``job_id`` and ``timeout``.
 
         Terminal states:
             - "completed": The crawl finished successfully.
@@ -408,7 +410,7 @@ class AsyncFirecrawlClient:
             if status.status in ["completed", "failed", "cancelled"]:
                 return status
             if timeout and (time.monotonic() - start) > timeout:
-                raise TimeoutError("Crawl wait timed out")
+                raise CrawlJobTimeoutError(job_id, timeout)
             await asyncio.sleep(poll_interval)
 
     async def crawl(self, **kwargs) -> CrawlJob:

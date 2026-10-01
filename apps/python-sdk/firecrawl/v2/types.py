@@ -1011,12 +1011,14 @@ class CrawlResponse(BaseModel):
 class CrawlJob(BaseModel):
     """Crawl job status and progress data."""
 
+    id: Optional[str] = None
     status: Literal["scraping", "completed", "failed", "cancelled"]
     total: int = 0
     completed: int = 0
     credits_used: int = 0
     expires_at: Optional[datetime] = None
     next: Optional[str] = None
+    warning: Optional[str] = None
     data: List[Document] = []
 
 
