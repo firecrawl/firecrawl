@@ -166,21 +166,8 @@ describe("reportKeylessPromptShown", () => {
     );
   });
 
-  it("reports an IPv6 caller with the fallback link under its own team id", () => {
-    reportKeylessPromptShown("2001:db8::1", "mcp", "unsupported_endpoint", 401);
-    expect(trackKeylessPromptShown).toHaveBeenCalledExactlyOnceWith(
-      shown({
-        keylessTeamId: keylessTeamUuid(keylessTeamId("2001:db8::1"))!,
-        surface: "mcp",
-        reason: "unsupported_endpoint",
-        httpStatus: 401,
-        tokenLink: false,
-      }),
-    );
-  });
-
-  it.each([null, undefined, "", "unknown"])(
-    "does not report a caller with no IP (%j)",
+  it.each([null, undefined, "", "unknown", "2001:db8::1"])(
+    "does not report a caller without a keyless identity (%j)",
     ip => {
       reportKeylessPromptShown(ip, "api", "limit", 429);
       expect(trackKeylessPromptShown).not.toHaveBeenCalled();
@@ -340,6 +327,8 @@ describe("keyless eligibility signup link", () => {
       reason: "ineligible_ip",
       signupUrl: MCP_FALLBACK,
     });
+    // An IPv6 caller is not a keyless identity, so nothing is reported.
+    expect(trackKeylessPromptShown).not.toHaveBeenCalled();
   });
 
   it("omits the link for an eligible IP unless asked", async () => {

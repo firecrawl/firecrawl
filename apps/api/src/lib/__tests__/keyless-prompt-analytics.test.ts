@@ -2,12 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   set: vi.fn(),
+  del: vi.fn(),
   capturePostHog: vi.fn(),
   enabled: vi.fn(),
 }));
 
 vi.mock("../../services/rate-limiter", () => ({
-  redisRateLimitClient: { set: mocks.set },
+  redisRateLimitClient: { set: mocks.set, del: mocks.del },
 }));
 vi.mock("../../services/posthog-capture", () => ({
   capturePostHog: mocks.capturePostHog,
@@ -35,6 +36,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 beforeEach(() => {
   mocks.enabled.mockReturnValue(true);
   mocks.set.mockResolvedValue("OK");
+  mocks.capturePostHog.mockResolvedValue(true);
   vi.useFakeTimers({
     now: new Date("2026-10-01T23:59:30.000Z"),
     toFake: ["Date"],
@@ -87,6 +89,38 @@ describe("trackKeylessPromptShown", () => {
         $process_person_profile: false,
       },
     );
+  });
+
+  it("keeps the marker once PostHog accepts the event", async () => {
+    trackKeylessPromptShown(PROMPT);
+    await settle();
+
+    expect(mocks.del).not.toHaveBeenCalled();
+  });
+
+  it("releases the marker when PostHog rejects the event, so the next prompt retries", async () => {
+    mocks.capturePostHog.mockResolvedValueOnce(false);
+
+    trackKeylessPromptShown(PROMPT);
+    await settle();
+
+    expect(mocks.del).toHaveBeenCalledExactlyOnceWith(
+      `keyless_prompt_shown:2026-10-01:${TEAM_UUID}:mcp:limit`,
+    );
+
+    trackKeylessPromptShown(PROMPT);
+    await settle();
+    expect(mocks.capturePostHog).toHaveBeenCalledTimes(2);
+  });
+
+  it("swallows a failed marker release", async () => {
+    mocks.capturePostHog.mockResolvedValueOnce(false);
+    mocks.del.mockRejectedValueOnce(new Error("redis down"));
+
+    expect(() => trackKeylessPromptShown(PROMPT)).not.toThrow();
+    await settle();
+
+    expect(mocks.del).toHaveBeenCalledTimes(1);
   });
 
   it("labels a prompt without a token as the fallback link", async () => {

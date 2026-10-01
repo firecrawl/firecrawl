@@ -22,17 +22,22 @@ export function isPostHogCaptureEnabled(): boolean {
   return Boolean(POSTHOG_API_KEY);
 }
 
-export function capturePostHog(
+/**
+ * Send one event. Resolves true when PostHog accepted it, false on a non-2xx
+ * answer, a network error, or no key; never rejects. Callers that hold a dedup
+ * marker release it on false. Do not await it in the request path.
+ */
+export async function capturePostHog(
   event: string,
   distinctId: string,
   properties: Record<string, unknown> = {},
-): void {
-  if (!POSTHOG_API_KEY) return;
+): Promise<boolean> {
+  if (!POSTHOG_API_KEY) return false;
 
-  // Fire-and-forget — do not await in the request path, never throw.
-  void (async () => {
-    try {
-      await fetch(`${POSTHOG_HOST.replace(/\/$/, "")}/capture/`, {
+  try {
+    const response = await fetch(
+      `${POSTHOG_HOST.replace(/\/$/, "")}/capture/`,
+      {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -41,13 +46,20 @@ export function capturePostHog(
           distinct_id: distinctId,
           properties,
         }),
-      });
-    } catch (error) {
-      _logger.debug("PostHog capture failed", {
-        module: "posthog",
-        event,
-        error,
-      });
-    }
-  })();
+      },
+    );
+    if (response.ok) return true;
+    _logger.debug("PostHog capture rejected", {
+      module: "posthog",
+      event,
+      status: response.status,
+    });
+  } catch (error) {
+    _logger.debug("PostHog capture failed", {
+      module: "posthog",
+      event,
+      error,
+    });
+  }
+  return false;
 }

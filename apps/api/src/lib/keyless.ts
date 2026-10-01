@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { isIP, isIPv4 } from "node:net";
+import { isIPv4 } from "node:net";
 import { v5 as uuidv5 } from "uuid";
 import { config } from "../config";
 import { db } from "../db/connection";
@@ -187,7 +187,8 @@ export function keylessSignupUrlForIp(
 /**
  * Report a keyless prompt shown to the caller, for the prompt to signup
  * funnel. Deduplicated per identity, surface and reason per UTC day; never
- * blocks or throws. A caller with no usable IP is not reported.
+ * blocks or throws. Only a keyless identity (IPv4) is reported: no other
+ * caller can hold a token link or a keyless ledger row to join on.
  */
 export function reportKeylessPromptShown(
   ip: string | null | undefined,
@@ -197,10 +198,10 @@ export function reportKeylessPromptShown(
   signupRef?: string,
 ): void {
   try {
-    const normalizedIp = ip ? normalizeKeylessIpv4(ip) : "";
-    const teamUuid = isIP(normalizedIp)
-      ? keylessTeamUuid(keylessTeamId(normalizedIp))
-      : null;
+    const teamUuid =
+      ip && isKeylessIpEligible(ip)
+        ? keylessTeamUuid(keylessTeamId(normalizeKeylessIpv4(ip)))
+        : null;
     if (!teamUuid) return;
     trackKeylessPromptShown({
       keylessTeamId: teamUuid,

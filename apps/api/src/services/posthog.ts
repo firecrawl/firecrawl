@@ -138,7 +138,7 @@ export function trackFirstSurfaceUse(args: {
         resolveOrgId(teamId),
       ]);
 
-      capturePostHog("api_surface_first_used", distinctId, {
+      const sent = await capturePostHog("api_surface_first_used", distinctId, {
         surface,
         raw_origin: origin ?? null,
         raw_integration: integration ?? null,
@@ -149,6 +149,8 @@ export function trackFirstSurfaceUse(args: {
         // `company` ($group_0) groups for group-level analysis.
         $groups: { team: teamId, ...(orgId ? { company: orgId } : {}) },
       });
+      // A rejected capture must not use up the one-time milestone.
+      if (!sent) await redisEvictConnection.del(key);
     } catch (error) {
       _logger.debug("trackFirstSurfaceUse failed", {
         module: "posthog",

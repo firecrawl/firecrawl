@@ -34,7 +34,8 @@ export function keylessPromptDedupeKey(
 
 /**
  * Emit `keyless_prompt_shown` at most once per (keyless team, surface, reason)
- * per UTC day. The dedup marker is a Redis SET NX. Fire-and-forget: never
+ * per UTC day. The dedup marker is a Redis SET NX, released when the capture
+ * fails so a later prompt retries. Fire-and-forget: never
  * awaited in the request path, never throws.
  */
 export function trackKeylessPromptShown(prompt: KeylessPromptShown): void {
@@ -43,8 +44,9 @@ export function trackKeylessPromptShown(prompt: KeylessPromptShown): void {
 
   void (async () => {
     try {
+      const key = keylessPromptDedupeKey(prompt);
       const first = await redisRateLimitClient.set(
-        keylessPromptDedupeKey(prompt),
+        key,
         "1",
         "EX",
         DEDUPE_TTL_SECONDS,
@@ -52,15 +54,21 @@ export function trackKeylessPromptShown(prompt: KeylessPromptShown): void {
       );
       if (first !== "OK") return;
 
-      capturePostHog(KEYLESS_PROMPT_SHOWN_EVENT, prompt.keylessTeamId, {
-        keyless_team_id: prompt.keylessTeamId,
-        surface: prompt.surface,
-        reason: prompt.reason,
-        http_status: prompt.httpStatus,
-        link_type: prompt.tokenLink ? "token" : "fallback",
-        // Keyless identities are per IP: do not create a person for each one.
-        $process_person_profile: false,
-      });
+      const sent = await capturePostHog(
+        KEYLESS_PROMPT_SHOWN_EVENT,
+        prompt.keylessTeamId,
+        {
+          keyless_team_id: prompt.keylessTeamId,
+          surface: prompt.surface,
+          reason: prompt.reason,
+          http_status: prompt.httpStatus,
+          link_type: prompt.tokenLink ? "token" : "fallback",
+          // Keyless identities are per IP: do not create a person for each one.
+          $process_person_profile: false,
+        },
+      );
+      // Release the marker so the next prompt today retries the event.
+      if (!sent) await redisRateLimitClient.del(key);
     } catch (error) {
       logger.debug("trackKeylessPromptShown failed", {
         module: "keyless-prompt-analytics",
