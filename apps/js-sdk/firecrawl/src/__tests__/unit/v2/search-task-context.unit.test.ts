@@ -10,7 +10,6 @@ describe("v2 search task context", () => {
     await search(http, {
       query: "React memo docs",
       objective: "Find official rerender guidance",
-      clientModel: "claude-sonnet-4-6",
     });
 
     expect(http.post).toHaveBeenCalledWith(
@@ -18,7 +17,6 @@ describe("v2 search task context", () => {
       {
         query: "React memo docs",
         objective: "Find official rerender guidance",
-        clientModel: "claude-sonnet-4-6",
       },
       {},
     );

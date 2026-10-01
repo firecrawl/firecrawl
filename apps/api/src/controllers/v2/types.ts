@@ -2486,7 +2486,6 @@ export const searchRequestSchema = z
   .strictObject({
     query: z.string(),
     objective: z.string().trim().min(1).max(5000).optional(),
-    clientModel: z.string().trim().min(1).max(128).optional(),
     limit: z.int().positive().finite().max(100).optional().prefault(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),

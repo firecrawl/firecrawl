@@ -42,7 +42,6 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
         {
           query: "firecrawl documentation",
           objective: "Find official Firecrawl API documentation",
-          clientModel: "claude-sonnet-4-6",
           limit: 1,
         },
         identity,

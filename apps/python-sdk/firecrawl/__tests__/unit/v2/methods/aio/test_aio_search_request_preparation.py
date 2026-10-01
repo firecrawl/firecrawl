@@ -19,10 +19,8 @@ class TestAsyncSearchRequestPreparation:
         data = _prepare_search_request(SearchRequest(
             query="React memo docs",
             objective="Find official rerender guidance",
-            client_model="claude-sonnet-4-6",
         ))
         assert data["objective"] == "Find official rerender guidance"
-        assert data["clientModel"] == "claude-sonnet-4-6"
 
     def test_all_fields_conversion(self):
         scrape_opts = ScrapeOptions(

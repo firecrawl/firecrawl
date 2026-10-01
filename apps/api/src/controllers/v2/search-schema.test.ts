@@ -51,18 +51,16 @@ describe("searchRequestSchema highlights", () => {
     expect(request.highlights).toBe(false);
   });
 
-  it("accepts optional agent task context without changing search defaults", () => {
+  it("accepts an optional objective without changing search defaults", () => {
     const request = searchRequestSchema.parse({
       query: "React memo docs",
       objective:
         "  Find official guidance on preventing unnecessary rerenders  ",
-      clientModel: "  claude-sonnet-4-6  ",
     });
 
     expect(request).toMatchObject({
       query: "React memo docs",
       objective: "Find official guidance on preventing unnecessary rerenders",
-      clientModel: "claude-sonnet-4-6",
       limit: 10,
     });
     expect(
@@ -73,9 +71,7 @@ describe("searchRequestSchema highlights", () => {
   it.each([
     { objective: " " },
     { objective: "x".repeat(5001) },
-    { clientModel: " " },
-    { clientModel: "x".repeat(129) },
-  ])("rejects invalid agent task context %j", context => {
+  ])("rejects an invalid objective %j", context => {
     expect(
       searchRequestSchema.safeParse({ query: "React memo docs", ...context })
         .success,

@@ -2393,7 +2393,6 @@ class SearchRequest(BaseModel):
 
     query: str
     objective: Optional[str] = None
-    client_model: Optional[str] = Field(default=None, alias="clientModel")
     domain_tools: Optional[bool] = Field(default=None, alias="domainTools")
     tool_detail: Optional[Literal["compact", "summary", "full"]] = Field(default=None, alias="toolDetail")
     sources: Optional[List[SourceOption]] = None
