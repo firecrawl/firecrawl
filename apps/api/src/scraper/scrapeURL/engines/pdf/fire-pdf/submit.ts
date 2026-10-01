@@ -254,7 +254,13 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
         body: json,
       },
     );
-    throw new Error("fire-pdf async POST /jobs validation error");
+    // Counted like every other exit from the async path, with fire-pdf's
+    // validation code, so 400s appear in the fallback metric.
+    const code =
+      typeof (json as { error?: unknown } | null)?.error === "string"
+        ? (json as { error: string }).error
+        : "unattributed";
+    failAsync(meta, "http_400", { code });
   }
 
   if (status !== 200 && status !== 202) {

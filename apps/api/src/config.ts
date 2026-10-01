@@ -433,6 +433,11 @@ const configSchema = z.object({
   FIRE_PDF_ASYNC_FORCE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_DISABLE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_ALLOW_REQUEST_OVERRIDE: z.stringbool().default(false),
+  // Long-poll wait sent as `wait_ms` on GET /jobs/:id: fire-pdf holds the
+  // request until the job is terminal or the wait elapses, so completion is
+  // seen as it happens instead of at the next scheduled poll. 0 disables
+  // it; values above fire-pdf's 25s cap are clamped to it.
+  FIRE_PDF_ASYNC_WAIT_MS: z.coerce.number().int().min(0).default(0),
   // Large-PDF by-reference submits (30-256MB files uploaded to GCS and
   // handed to fire-pdf via `input_gcs_uri`). This is an explicit on/off
   // switch, not a percentage: no alternative engine exists at this size,
@@ -521,6 +526,20 @@ const configSchema = z.object({
   DISABLE_BLOCKLIST: z.stringbool().optional(),
   FORCED_ENGINE_DOMAINS: z.string().optional(),
   DEBUG_BRANDING: z.stringbool().optional(),
+  // TypeSafe Jev for branding decisions (lib/branding/jev.ts); needs
+  // TYPESAFE_API_KEY. BRANDING_JEV turns it on for every team,
+  // BRANDING_JEV_TEAM_IDS (comma-separated) for listed teams, and
+  // BRANDING_JEV_ROLLOUT_PERCENT for a stable share of teams.
+  BRANDING_JEV: emptyStringAsUndefined(z.stringbool()),
+  BRANDING_JEV_TEAM_IDS: delimitedList(",").optional(),
+  BRANDING_JEV_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  BRANDING_JEV_TIMEOUT_MS: emptyStringAsUndefined(
+    z.coerce.number().int().positive(),
+  ),
+  // Rerun branding on the LLM when Jev's logo confidence is below this (0-1).
+  BRANDING_JEV_ESCALATE_BELOW: emptyStringAsUndefined(
+    z.coerce.number().min(0).max(1),
+  ),
 
   // AI/ML
   MODEL_NAME: z.string().optional(),

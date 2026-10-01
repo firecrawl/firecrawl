@@ -102,6 +102,7 @@ it.each(["good", "partial", "bad"])(
         requested_functionality:
           minimal.requestedWebsite.requestedFunctionality,
         rationale: minimal.rationale,
+        objective: null,
         origin: "api",
         integration: null,
         schema_version: 2,
@@ -111,6 +112,19 @@ it.each(["good", "partial", "bad"])(
     expect(capabilityRows()).toEqual([]);
   },
 );
+
+it("records the trimmed objective behind the session", async () => {
+  const response = await submit({
+    ...minimal,
+    objective: "  Build a list of open federal IT contracts to bid on.  ",
+  });
+  expect(response.status).toBe(200);
+  expect(parentRows()).toEqual([
+    expect.objectContaining({
+      objective: "Build a list of open federal IT contracts to bid on.",
+    }),
+  ]);
+});
 
 it.each(["endpoint", "rating", "requestedWebsite", "rationale"])(
   "requires %s",
@@ -179,6 +193,9 @@ it.each([
   { requestedVertical: "government" },
   { rationale: " " },
   { rationale: "x".repeat(2001) },
+  { objective: " " },
+  { objective: "x".repeat(2001) },
+  { objective: ["Find contracts"] },
   { rating: true },
   { jobId },
   { endpoint: "search", jobId },

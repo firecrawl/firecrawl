@@ -72,6 +72,22 @@ function grokReturns(
   });
 }
 
+// Captures the call options the engine sends to the model.
+function grokCapturesCall(output: unknown) {
+  const calls: any[] = [];
+  grokReturns(output);
+  const doGenerate = grok.doGenerate;
+  grok.doGenerate = async (options: any) => {
+    calls.push(options);
+    return doGenerate(options);
+  };
+  return calls;
+}
+
+function promptText(options: any): string {
+  return JSON.stringify(options.prompt);
+}
+
 function makeMeta(url: string, zeroDataRetention = false): Meta {
   const logger = { info: () => {}, warn: () => {}, error: () => {} };
   return {
@@ -83,6 +99,108 @@ function makeMeta(url: string, zeroDataRetention = false): Meta {
     costTracking: new CostTracking(),
   } as unknown as Meta;
 }
+
+describe("x-twitter engine X Search requests", () => {
+  it("asks the profile lookup for the one exact handle and top-level posts only", async () => {
+    const calls = grokCapturesCall({ username: "firecrawl", latestPosts: [] });
+
+    await scrapeURLWithXTwitter(makeMeta("https://x.com/firecrawl"));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].tools).toEqual([
+      expect.objectContaining({ id: "xai.x_search", args: {} }),
+    ]);
+    const prompt = promptText(calls[0]);
+    expect(prompt).toContain(
+      'single user search for \\"firecrawl\\" that returns only 1 result',
+    );
+    expect(prompt).toContain("do not search for other or similarly named");
+    expect(prompt).toContain("rather than another account's data");
+    expect(prompt).toContain('\\"from:firecrawl -filter:replies\\"');
+  });
+
+  it("drops a profile that belongs to a different account", async () => {
+    grokReturns({
+      displayName: "Firecrawl Fan Club",
+      username: "@firecrawlfans",
+      followers: 12,
+      latestPosts: [{ text: "Not from @firecrawl." }],
+    });
+    const meta = makeMeta("https://x.com/firecrawl");
+    const warn = vi.fn();
+    meta.logger.warn = warn;
+
+    const result = await scrapeURLWithXTwitter(meta);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+      requestedHandle: "firecrawl",
+      returnedUsername: "firecrawlfans",
+    });
+
+    expect(result.markdown).toContain("# @unknown (@unknown)");
+    expect(result.markdown).toContain(
+      "No recent top-level posts were returned.",
+    );
+    expect(result.markdown).not.toContain("firecrawlfans");
+    expect(result.markdown).not.toContain("Fan Club");
+  });
+
+  it("drops profile data that comes back without a username", async () => {
+    grokReturns({
+      displayName: "Firecrawl Fan Club",
+      username: null,
+      bio: "Unofficial.",
+      latestPosts: [{ text: "Not from @firecrawl." }],
+    });
+    const meta = makeMeta("https://x.com/firecrawl");
+    const warn = vi.fn();
+    meta.logger.warn = warn;
+
+    const result = await scrapeURLWithXTwitter(meta);
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(result.markdown).toContain("# @unknown (@unknown)");
+    expect(result.markdown).not.toContain("Fan Club");
+    expect(result.markdown).not.toContain("Unofficial.");
+    expect(result.markdown).not.toContain("### 1. Post");
+  });
+
+  it("keeps a profile whose username differs from the handle only in case", async () => {
+    grokReturns({
+      displayName: "Firecrawl",
+      username: "@FireCrawl",
+      latestPosts: [{ text: "Turn websites into LLM-ready data." }],
+    });
+
+    const result = await scrapeURLWithXTwitter(
+      makeMeta("https://x.com/firecrawl"),
+    );
+
+    expect(result.markdown).toContain("# Firecrawl (@FireCrawl)");
+    expect(result.markdown).toContain("> Turn websites into LLM-ready data.");
+  });
+
+  it("restricts the post lookup to the author's handle", async () => {
+    const calls = grokCapturesCall({ authorUsername: "firecrawl", text: "Hi" });
+
+    await scrapeURLWithXTwitter(
+      makeMeta("https://x.com/firecrawl/status/1234567890123"),
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].tools).toEqual([
+      expect.objectContaining({
+        id: "xai.x_search",
+        args: {
+          allowedXHandles: ["firecrawl"],
+          enableVideoUnderstanding: true,
+          enableImageUnderstanding: true,
+        },
+      }),
+    ]);
+  });
+});
 
 // grok-4-1-fast-non-reasoning at $0.20 / $0.50 per 1M input / output tokens.
 const tokenCost = (3000 * 0.2 + 400 * 0.5) / 1_000_000;

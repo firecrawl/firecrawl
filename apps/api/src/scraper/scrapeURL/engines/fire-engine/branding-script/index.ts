@@ -65,8 +65,3 @@ export const extractBrandDesign = (): BrandingResult => {
     },
   };
 };
-
-// Auto-execute when loaded in browser context (IIFE pattern)
-(function __extractBrandDesign() {
-  return extractBrandDesign();
-})();

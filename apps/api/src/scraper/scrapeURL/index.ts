@@ -1477,6 +1477,7 @@ export async function scrapeURL(
 
       try {
         let result: ScrapeUrlResponse;
+        let brandingSkippedReason: string | undefined;
         while (true) {
           try {
             result = await scrapeURLLoop(meta);
@@ -1625,10 +1626,39 @@ export async function scrapeURL(
                   [...meta.featureFlags].filter(x => x !== "document"),
                 );
               }
+            } else if (
+              error instanceof BrandingNotSupportedError &&
+              meta.options.formats.some(f => f.type !== "branding")
+            ) {
+              // The page turned out to be a PDF, document or image. Keep the
+              // other requested formats instead of failing the whole scrape;
+              // branding is dropped with a warning. Branding-only requests
+              // still fail with the error.
+              retryTracker.record("feature_removal", error);
+              meta.logger.info("Skipping branding for a non-HTML page", {
+                reason: error.message,
+              });
+              brandingSkippedReason = error.message;
+              meta.featureFlags = new Set(
+                [...meta.featureFlags].filter(x => x !== "branding"),
+              );
+              meta.options = {
+                ...meta.options,
+                formats: meta.options.formats.filter(
+                  f => f.type !== "branding",
+                ),
+              };
             } else {
               throw error;
             }
           }
+        }
+
+        if (brandingSkippedReason && result.success) {
+          const warning = `Branding was skipped: ${brandingSkippedReason}`;
+          result.document.warning = result.document.warning
+            ? `${result.document.warning} ${warning}`
+            : warning;
         }
 
         // Threat protection: if the scrape ended up on a different URL than
