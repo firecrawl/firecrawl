@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  /** Redis keys the SET NX / DEL mocks hold, so a test sees the marker lifecycle. */
+  markers: new Set<string>(),
   set: vi.fn(),
   del: vi.fn(),
   capturePostHog: vi.fn(),
@@ -35,7 +37,15 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 
 beforeEach(() => {
   mocks.enabled.mockReturnValue(true);
-  mocks.set.mockResolvedValue("OK");
+  mocks.markers.clear();
+  mocks.set.mockImplementation(async (key: string) => {
+    if (mocks.markers.has(key)) return null;
+    mocks.markers.add(key);
+    return "OK";
+  });
+  mocks.del.mockImplementation(async (key: string) =>
+    mocks.markers.delete(key) ? 1 : 0,
+  );
   mocks.capturePostHog.mockResolvedValue(true);
   vi.useFakeTimers({
     now: new Date("2026-10-01T23:59:30.000Z"),
@@ -96,6 +106,7 @@ describe("trackKeylessPromptShown", () => {
     await settle();
 
     expect(mocks.del).not.toHaveBeenCalled();
+    expect(mocks.markers.has(keylessPromptDedupeKey(PROMPT))).toBe(true);
   });
 
   it("releases the marker when PostHog rejects the event, so the next prompt retries", async () => {
@@ -107,10 +118,13 @@ describe("trackKeylessPromptShown", () => {
     expect(mocks.del).toHaveBeenCalledExactlyOnceWith(
       `keyless_prompt_shown:2026-10-01:${TEAM_UUID}:mcp:limit`,
     );
+    expect(mocks.markers.size).toBe(0);
 
+    // The retry captures only because the release cleared the SET NX marker.
     trackKeylessPromptShown(PROMPT);
     await settle();
     expect(mocks.capturePostHog).toHaveBeenCalledTimes(2);
+    expect(mocks.markers.has(keylessPromptDedupeKey(PROMPT))).toBe(true);
   });
 
   it("swallows a failed marker release", async () => {
@@ -144,13 +158,12 @@ describe("trackKeylessPromptShown", () => {
   });
 
   it("does not capture again once the day's marker exists", async () => {
-    mocks.set.mockResolvedValueOnce("OK").mockResolvedValueOnce(null);
-
     trackKeylessPromptShown(PROMPT);
     trackKeylessPromptShown(PROMPT);
     await settle();
 
     expect(mocks.set).toHaveBeenCalledTimes(2);
+    await expect(mocks.set.mock.results[1].value).resolves.toBeNull();
     expect(mocks.capturePostHog).toHaveBeenCalledTimes(1);
   });
 
