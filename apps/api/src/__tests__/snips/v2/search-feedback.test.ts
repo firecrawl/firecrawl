@@ -38,7 +38,6 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
         {
           query: "firecrawl",
           objective: "Find official Firecrawl information",
-          sessionId: "task_search_feedback",
           clientModel: "claude-sonnet-4-6",
           limit: 3,
         },
@@ -64,7 +63,6 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
       }
       expect(searchRow?.options).toMatchObject({
         objective: "Find official Firecrawl information",
-        sessionId: "task_search_feedback",
         clientModel: "claude-sonnet-4-6",
       });
 

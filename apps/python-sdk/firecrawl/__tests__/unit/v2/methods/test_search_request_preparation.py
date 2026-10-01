@@ -27,16 +27,13 @@ class TestSearchRequestPreparation:
         request = SearchRequest(
             query="React memo docs",
             objective="Find official rerender guidance",
-            session_id="task_123",
             client_model="claude-sonnet-4-6",
         )
 
         data = _prepare_search_request(request)
 
         assert data["objective"] == "Find official rerender guidance"
-        assert data["sessionId"] == "task_123"
         assert data["clientModel"] == "claude-sonnet-4-6"
-        assert "session_id" not in data
         assert "client_model" not in data
 
     def test_all_fields_conversion(self):

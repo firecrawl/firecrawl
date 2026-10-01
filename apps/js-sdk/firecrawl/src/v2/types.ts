@@ -979,8 +979,6 @@ export interface SearchRequest {
   query: string;
   /** Optional broader task goal behind this search (1–5000 characters). */
   objective?: string;
-  /** Opaque ID shared by related searches in one agent task (1–128 characters). */
-  sessionId?: string;
   /** Model issuing and consuming results, if known (1–128 characters). */
   clientModel?: string;
   /** Include domain-matched tools in tools alongside semantic matches. */

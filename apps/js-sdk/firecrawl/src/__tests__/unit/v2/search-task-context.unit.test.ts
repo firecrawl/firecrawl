@@ -10,7 +10,6 @@ describe("v2 search task context", () => {
     await search(http, {
       query: "React memo docs",
       objective: "Find official rerender guidance",
-      sessionId: "task_123",
       clientModel: "claude-sonnet-4-6",
     });
 
@@ -19,7 +18,6 @@ describe("v2 search task context", () => {
       {
         query: "React memo docs",
         objective: "Find official rerender guidance",
-        sessionId: "task_123",
         clientModel: "claude-sonnet-4-6",
       },
       {},

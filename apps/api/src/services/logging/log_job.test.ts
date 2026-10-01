@@ -237,7 +237,6 @@ describe("logSearch", () => {
     const options = {
       query: "React memo docs",
       objective: "Find official rerender guidance",
-      sessionId: "task_123",
       clientModel: "claude-sonnet-4-6",
     };
 
@@ -256,7 +255,6 @@ describe("logSearch", () => {
         options: {
           query: "React memo docs",
           objective: "Find official rerender guidance",
-          sessionId: "task_123",
           clientModel: "claude-sonnet-4-6",
           enterprise: ["zdr"],
         },
@@ -265,13 +263,11 @@ describe("logSearch", () => {
     );
 
     expect(values.mock.calls[0][0].options).not.toHaveProperty("objective");
-    expect(values.mock.calls[0][0].options).not.toHaveProperty("sessionId");
     expect(values.mock.calls[0][0].options).not.toHaveProperty("clientModel");
     const published = JSON.parse(
       publishMessage.mock.calls[0][0].data.toString(),
     );
     expect(published.options).not.toHaveProperty("objective");
-    expect(published.options).not.toHaveProperty("sessionId");
     expect(published.options).not.toHaveProperty("clientModel");
   });
 

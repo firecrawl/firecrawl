@@ -474,7 +474,6 @@ class FirecrawlClient:
         query: str,
         *,
         objective: Optional[str] = None,
-        session_id: Optional[str] = None,
         client_model: Optional[str] = None,
         sources: Optional[List[SourceOption]] = None,
         domain_tools: Optional[bool] = None,
@@ -520,7 +519,6 @@ class FirecrawlClient:
         request = SearchRequest(
             query=query,
             objective=objective,
-            session_id=session_id,
             client_model=client_model,
             sources=sources,
             domain_tools=domain_tools,
