@@ -212,6 +212,25 @@ export async function updateBrowserSessionScrapeId(
     .where(eq(schema.browser_sessions.id, id));
 }
 
+/** Make an unserved session unavailable and non-billable before stopping it. */
+export async function abandonBrowserSession(
+  id: string,
+): Promise<BrowserSessionRow> {
+  return withLockedBrowserSession(id, async (row, tx) => {
+    if (row.status !== "active" || row.credits_used !== null)
+      throw new Error("Browser session is already settled.");
+    await tx
+      .update(schema.browser_sessions)
+      .set({
+        should_bill: false,
+        scrape_id: null,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(schema.browser_sessions.id, id));
+    return { ...row, should_bill: false, scrape_id: null };
+  });
+}
+
 // Records a successful save of a persistent profile. Throws on failure so the
 // Hangar reconciliation retries the update.
 export async function upsertBrowserProfile(input: {
