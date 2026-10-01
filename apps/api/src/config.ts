@@ -182,6 +182,20 @@ const configSchema = z.object({
   ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
+
+  // Which OpenAI API surface to call. "auto" (default) uses Responses on
+  // official OpenAI and picks whichever the configured endpoint actually
+  // implements otherwise. "responses" and "chat" are explicit and never probe.
+  OPENAI_API_MODE: emptyStringAsDefault(
+    z.enum(["auto", "responses", "chat"]).default("auto"),
+  ),
+  // How a JSON Schema reaches the model. "auto" (default) prefers native
+  // strict json_schema and falls back to forced tool/function calling on a
+  // custom endpoint that lacks it; it never puts a schema in prompt text.
+  // "strict" and "tool" are explicit, never probe and never fall back.
+  OPENAI_STRUCTURED_OUTPUT_MODE: emptyStringAsDefault(
+    z.enum(["auto", "strict", "tool"]).default("auto"),
+  ),
   OPENROUTER_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),

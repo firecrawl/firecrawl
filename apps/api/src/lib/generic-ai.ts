@@ -9,6 +9,13 @@ import { fireworks } from "@ai-sdk/fireworks";
 import { deepinfra } from "@ai-sdk/deepinfra";
 import { createVertex } from "@ai-sdk/google-vertex";
 import { withUsageTelemetry } from "./ai-usage-telemetry";
+import {
+  apiModeSync,
+  applyStructuredOutputPolicy,
+  resolveApiMode,
+  resolveStructuredOutputMode,
+  structuredOutputModeSync,
+} from "./openai-structured-output";
 
 type Provider =
   | "openai"
@@ -59,11 +66,81 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
     name = "gemini-2.5-pro";
   }
   const modelName = config.MODEL_NAME || name;
-  // o3-mini returns empty text via the Responses API — force Chat Completions
-  if (provider === "openai" && modelName.startsWith("o3-mini")) {
-    return withUsageTelemetry(providerList.openai.chat(modelName));
+  if (provider === "openai") {
+    // o3-mini returns empty text via the Responses API — force Chat Completions.
+    if (modelName.startsWith("o3-mini")) {
+      return finish(providerList.openai.chat(modelName), modelName);
+    }
+    // Endpoint and structured-output capabilities are resolved lazily and
+    // memoized: the first applicable request decides, concurrent callers share
+    // one resolution, and boot never waits on an LLM backend.
+    const mode = apiModeSync();
+    if (mode !== "unresolved") {
+      return finish(openAiModel(modelName, mode), modelName);
+    }
+    return lazyOpenAiModel(modelName);
   }
-  return withUsageTelemetry(providerList[provider](modelName));
+  return finish(providerList[provider](modelName), modelName);
+}
+
+function openAiModel(modelName: string, mode: "responses" | "chat") {
+  return mode === "chat"
+    ? providerList.openai.chat(modelName)
+    : providerList.openai.responses(modelName);
+}
+
+/**
+ * Model handle for a capability that has not been resolved yet. It resolves
+ * on first use and then behaves exactly like the eager path, so an official
+ * OpenAI deployment (which always resolves to "responses"/"strict"
+ * synchronously) never takes this branch.
+ */
+function lazyOpenAiModel(modelName: string): any {
+  let ready: Promise<any> | null = null;
+  const ensure = () => {
+    if (!ready) {
+      ready = (async () => {
+        const [apiMode, structured] = await Promise.all([
+          resolveApiMode(modelName),
+          resolveStructuredOutputMode(modelName),
+        ]);
+        return finish(openAiModel(modelName, apiMode), modelName, structured);
+      })();
+    }
+    return ready;
+  };
+
+  const passthrough =
+    (method: string) =>
+    async (...args: unknown[]) => {
+      const model = await ensure();
+      return (model as any)[method](...args);
+    };
+
+  return {
+    specificationVersion: "v3",
+    provider: "openai.unresolved",
+    modelId: modelName,
+    doGenerate: passthrough("doGenerate"),
+    doStream: passthrough("doStream"),
+  };
+}
+
+/**
+ * Telemetry first, then the structured-output policy, so the policy is the
+ * outermost wrapper and still sees provider options on the way in.
+ */
+function finish(
+  model: any,
+  modelName: string,
+  structured?: "strict" | "tool",
+): any {
+  const telemetry = withUsageTelemetry(model);
+  const resolved = structured ?? structuredOutputModeSync();
+  return applyStructuredOutputPolicy(
+    telemetry,
+    resolved === "tool" ? "tool" : "strict",
+  );
 }
 
 export function getEmbeddingModel(

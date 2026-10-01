@@ -25,18 +25,27 @@ type EngpickerJob = {
   created_at: string;
 };
 
-async function evaluateURL(
+/**
+ * `evaluated` distinguishes "the model judged this scrape unsuccessful" from
+ * "the evaluation never produced a verdict". A provider or transport failure
+ * is not evidence about the scrape, and recording it as `result: false` would
+ * let an outage masquerade as an engine-quality verdict in the index.
+ */
+export type EngpickerEvaluation = {
+  engine: Engine;
+  stealth: boolean;
+  markdown: string | null;
+  result: boolean;
+  evaluated: boolean;
+};
+
+export async function evaluateURL(
   id: string,
   url: string,
   engine: Engine,
   stealth: boolean,
   logger: Logger,
-): Promise<{
-  engine: Engine;
-  stealth: boolean;
-  markdown: string | null;
-  result: boolean;
-}> {
+): Promise<EngpickerEvaluation> {
   const scrapeResult = await scrapeURL(
     id,
     url,
@@ -60,6 +69,7 @@ async function evaluateURL(
       stealth,
       markdown: null,
       result: false,
+      evaluated: true,
     };
   }
 
@@ -67,50 +77,70 @@ async function evaluateURL(
 
   logger.info("Scrape completed, waiting for AI evaluation");
 
-  // Use GPT-4o-mini to evaluate if the scrape was actually successful
-  const evaluationResult = await generateObject({
-    model: getModel("gpt-4o-mini", "openai"),
-    schema: z.object({
-      is_successful: z.boolean(),
-    }),
-    messages: [
-      {
-        role: "system",
-        content: `You are a web scraping quality evaluator. Your job is to determine if a web scrape was successful based on the returned markdown content.
+  try {
+    // Use GPT-4o-mini to evaluate if the scrape was actually successful
+    const evaluationResult = await generateObject({
+      model: getModel("gpt-4o-mini", "openai"),
+      schema: z.object({
+        is_successful: z.boolean(),
+      }),
+      messages: [
+        {
+          role: "system",
+          content: `You are a web scraping quality evaluator. Your job is to determine if a web scrape was successful based on the returned markdown content.
 
-A scrape should be considered UNSUCCESSFUL if the content indicates any of the following:
-- Antibot/captcha challenges (e.g., Cloudflare, reCAPTCHA, hCaptcha, bot detection messages)
-- Region/geo blocks (e.g., "not available in your region", "access denied from your location")
-- HTTP error pages (4xx or 5xx errors like "404 Not Found", "403 Forbidden", "500 Internal Server Error")
-- Access denied or authentication required pages
-- Rate limiting messages
-- Empty or near-empty content that suggests the page didn't load properly
+  A scrape should be considered UNSUCCESSFUL if the content indicates any of the following:
+  - Antibot/captcha challenges (e.g., Cloudflare, reCAPTCHA, hCaptcha, bot detection messages)
+  - Region/geo blocks (e.g., "not available in your region", "access denied from your location")
+  - HTTP error pages (4xx or 5xx errors like "404 Not Found", "403 Forbidden", "500 Internal Server Error")
+  - Access denied or authentication required pages
+  - Rate limiting messages
+  - Empty or near-empty content that suggests the page didn't load properly
 
-A scrape should be considered SUCCESSFUL if:
-- The content appears to be the actual page content with meaningful text
-- The page loaded properly with real content visible
+  A scrape should be considered SUCCESSFUL if:
+  - The content appears to be the actual page content with meaningful text
+  - The page loaded properly with real content visible
 
-A scrape may still be successful if:
-- Cookie consent walls block the actual content
-- Paywalls block the actual content`,
-      },
-      {
-        role: "user",
-        content: `Evaluate if this scraped markdown content represents a successful scrape:\n\n${markdown.slice(0, 4000)}`,
-      },
-    ],
-  });
+  A scrape may still be successful if:
+  - Cookie consent walls block the actual content
+  - Paywalls block the actual content`,
+        },
+        {
+          role: "user",
+          content: `Evaluate if this scraped markdown content represents a successful scrape:\n\n${markdown.slice(0, 4000)}`,
+        },
+      ],
+    });
 
-  const isSuccess = evaluationResult.object.is_successful;
+    const isSuccess = evaluationResult.object.is_successful;
 
-  logger.info("AI evaluation completed", { isSuccess });
+    logger.info("AI evaluation completed", { isSuccess });
 
-  return {
-    engine,
-    stealth,
-    markdown,
-    result: isSuccess,
-  };
+    return {
+      engine,
+      stealth,
+      markdown,
+      result: isSuccess,
+      evaluated: true,
+    };
+  } catch (error) {
+    // One engine's evaluation must not strand the whole job: the caller runs
+    // every engine inside Promise.all, so a throw here would skip the verdict
+    // insert and the `done: true` update, leaving the row picked up forever.
+    // Report the evaluation as unavailable rather than as a negative verdict.
+    logger.warn("AI evaluation failed; recording no verdict for this engine", {
+      error,
+      url,
+      engine,
+    });
+    return {
+      engine,
+      stealth,
+      markdown,
+      result: false,
+      evaluated: false,
+    };
+  }
 }
 
 export async function processEngpickerJob() {
@@ -272,6 +302,12 @@ export async function processEngpickerJob() {
       r => r.engine === "fire-engine;tlsclient;stealth",
     );
 
+    // `evaluated: false` folds into `success: false` here because the Rust
+    // verdict type is fixed-shape. That is the safe direction: a false
+    // success flag counts as a CDP failure, which pushes the final verdict to
+    // Uncertain rather than to a confident "tlsclient is insufficient". An
+    // evaluation outage must not degrade an engine, but it must also not be
+    // read as a clean bill of health.
     return {
       url: result.url,
       cdpBasicMarkdown: cdpBasic?.markdown ?? undefined,
