@@ -985,7 +985,7 @@ describe("V1 Types Validation", () => {
           schema: {
             type: "object",
             properties: {
-              changes: { type: "array" },
+              changes: { type: "array", items: { type: "string" } },
             },
           },
           modes: ["json"],

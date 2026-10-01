@@ -17,6 +17,7 @@ import {
   getTimeoutProcessingDetails,
   TransportableError,
 } from "../../lib/error";
+import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -267,7 +268,7 @@ export async function scrapeController(
           applyAgentAuthDiscoveryHeader(res);
           return res
             .status(429)
-            .json(await keylessLimitBody(req.auth.team_id, "v2_scrape"));
+            .json(await keylessLimitBody(req.auth.team_id, "v2_scrape", req));
         }
         reservedKeylessCredits = projectedKeylessCredits;
       }
@@ -587,6 +588,38 @@ export async function scrapeController(
               "scrape.status_code": 400,
             });
             return res.status(400).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e instanceof ThirdPartyDataTermsRequiredError) {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json(e.response());
+          }
+
+          if (
+            e.code === "THIRD_PARTY_DATA_NOT_ENABLED" ||
+            e.code === "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED"
+          ) {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e.code === "THIRD_PARTY_DATA_NOT_FOUND") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 404,
+            });
+            return res.status(404).json({
               success: false,
               code: e.code,
               error: e.message,

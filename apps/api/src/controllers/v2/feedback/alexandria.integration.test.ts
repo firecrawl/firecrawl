@@ -28,6 +28,7 @@ CREATE TABLE alexandria_feedback (
   requested_host text GENERATED ALWAYS AS (lower(substring(requested_url from '^[A-Za-z][A-Za-z0-9+.-]*://(?:[^@/?#]*@)?([^/?#:]+)'))) STORED,
   requested_functionality text NOT NULL,
   rationale text NOT NULL,
+  objective text,
   origin text,
   integration text,
   schema_version integer NOT NULL DEFAULT 2,
@@ -142,6 +143,7 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
         requested_functionality:
           minimal.requestedWebsite.requestedFunctionality,
         rationale: minimal.rationale,
+        objective: null,
         origin: "api",
         integration: null,
         schema_version: 2,
@@ -183,8 +185,10 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
         why: "The second page request timed out.",
       },
     ];
+    const objective = "Build a list of open federal IT contracts to bid on.";
     const response = await submit({
       ...minimal,
+      objective,
       providerFeedback,
       capabilityFeedback,
       integration: "cli",
@@ -192,13 +196,14 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
     expect(response.status).toBe(200);
     const feedbackId = response.body.feedbackId;
     const parent = await pool.query(
-      "SELECT rating, rationale, integration FROM alexandria_feedback WHERE id = $1",
+      "SELECT rating, rationale, objective, integration FROM alexandria_feedback WHERE id = $1",
       [feedbackId],
     );
     expect(parent.rows).toEqual([
       {
         rating: minimal.rating,
         rationale: minimal.rationale,
+        objective,
         integration: "cli",
       },
     ]);

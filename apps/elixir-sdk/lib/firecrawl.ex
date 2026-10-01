@@ -1819,7 +1819,9 @@ defmodule Firecrawl do
   defp fetch_monitor_check_pages("", pages, _opts), do: pages
 
   defp fetch_monitor_check_pages(next, pages, opts) do
-    case Req.get(client(opts), url: next) do
+    req = client(opts)
+
+    case Req.get(req, url: Firecrawl.ApiOrigin.pin(next, req.options.base_url)) do
       {:ok, %Req.Response{body: body}} when is_map(body) ->
         data = Map.get(body, "data") || %{}
         next_pages = Map.get(data, "pages") || []
@@ -1835,7 +1837,8 @@ defmodule Firecrawl do
   defp fetch_monitor_check_pages!("", pages, _opts), do: pages
 
   defp fetch_monitor_check_pages!(next, pages, opts) do
-    response = Req.get!(client(opts), url: next)
+    req = client(opts)
+    response = Req.get!(req, url: Firecrawl.ApiOrigin.pin(next, req.options.base_url))
     body = response.body
     data = if is_map(body), do: Map.get(body, "data") || %{}, else: %{}
     next_pages = Map.get(data, "pages") || []

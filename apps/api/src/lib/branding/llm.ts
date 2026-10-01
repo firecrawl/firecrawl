@@ -1,10 +1,100 @@
-import { generateObject } from "ai";
+import { generateObject, LanguageModelUsage, NoObjectGeneratedError } from "ai";
 
 import { config } from "../../config";
+import { calculateCost } from "../../scraper/scrapeURL/transformers/llmExtract";
+import { CostLimitExceededError } from "../cost-tracking";
 import { BrandingEnhancement, getBrandingEnhancementSchema } from "./schema";
+import { enhanceBrandingWithJev, isJevBrandingEnabled } from "./jev";
 import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
 import { getModel } from "../generic-ai";
+
+const JSON_SCHEMA_TYPES = new Set([
+  "string",
+  "number",
+  "integer",
+  "boolean",
+  "object",
+  "array",
+  "null",
+]);
+
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+
+// A node of an echoed schema, e.g. {"type": "number", "example": 2}. None of
+// the branding answer's own objects has a "type" key.
+function isSchemaNode(x: unknown): x is Record<string, unknown> {
+  return (
+    isRecord(x) && typeof x.type === "string" && JSON_SCHEMA_TYPES.has(x.type)
+  );
+}
+
+// Marks a schema node that carries no answer (no "example", no properties).
+const UNRESOLVED = Symbol("unresolved");
+
+function valueFromSchemaShape(node: unknown): unknown {
+  if (!isSchemaNode(node)) return node;
+  if ("example" in node) return node.example;
+  if (isRecord(node.properties)) return propertiesToValue(node.properties);
+  return UNRESOLVED;
+}
+
+function propertiesToValue(
+  properties: Record<string, unknown>,
+): Record<string, unknown> | typeof UNRESOLVED {
+  const value: Record<string, unknown> = {};
+  for (const [key, node] of Object.entries(properties)) {
+    const resolved = valueFromSchemaShape(node);
+    if (resolved === UNRESOLVED) return UNRESOLVED;
+    value[key] = resolved;
+  }
+  return value;
+}
+
+/**
+ * gpt-4o in non-strict mode sometimes answers in the shape of a JSON schema
+ * instead of an instance of it: the answer wrapped as
+ * {"type": "response", "properties": {...}}, or the schema echoed back with
+ * each answer in an "example" field. Both carry the whole answer, so unwrap
+ * them instead of failing the call. Returns null for anything else, including
+ * an echo with any field left without an answer, so the SDK reports the
+ * original error rather than one about half-repaired text.
+ */
+export function unwrapSchemaShapedAnswer(text: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (
+    !isRecord(parsed) ||
+    typeof parsed.type !== "string" ||
+    !isRecord(parsed.properties)
+  ) {
+    return null;
+  }
+  const value = propertiesToValue(parsed.properties);
+  return value === UNRESOLVED ? null : JSON.stringify(value);
+}
+
+function recordBrandingCall(
+  input: BrandingLLMInput,
+  modelName: string,
+  usage: LanguageModelUsage | undefined,
+) {
+  const inputTokens = usage?.inputTokens ?? 0;
+  const outputTokens = usage?.outputTokens ?? 0;
+  input.costTracking.addCall({
+    type: "other",
+    metadata: { module: "branding", method: "enhanceBrandingWithLLM" },
+    model: modelName,
+    cost: calculateCost(modelName, inputTokens, outputTokens),
+    tokens: { input: inputTokens, output: outputTokens },
+  });
+}
 
 function isDebugBrandingEnabled(input: BrandingLLMInput): boolean {
   return (
@@ -16,6 +106,23 @@ export async function enhanceBrandingWithLLM(
   input: BrandingLLMInput,
 ): Promise<BrandingEnhancement> {
   const logger = input.logger;
+
+  if (isJevBrandingEnabled(input)) {
+    const jev = await enhanceBrandingWithJev(input);
+    const escalateBelow = config.BRANDING_JEV_ESCALATE_BELOW;
+    const unsureOfLogo =
+      escalateBelow !== undefined &&
+      jev?.logoConfidence !== undefined &&
+      jev.logoConfidence < escalateBelow;
+    if (jev && !unsureOfLogo) return jev.enhancement;
+    if (jev) {
+      logger.info("Jev unsure of the logo, escalating branding to the LLM", {
+        logoConfidence: jev.logoConfidence,
+        escalateBelow,
+      });
+    }
+  }
+
   const prompt = buildBrandingPrompt(input);
 
   // Smart model selection: use more powerful model for complex cases
@@ -37,6 +144,9 @@ export async function enhanceBrandingWithLLM(
 
   const modelName = isComplexCase ? "gpt-4o" : "gpt-4o-mini";
   const model = getModel(modelName);
+  // getModel honors a MODEL_NAME override; record the model that actually ran.
+  const modelId =
+    (typeof model === "string" ? model : model.modelId) || modelName;
 
   if (isDebugBrandingEnabled(input)) {
     const logoCandidates = input.logoCandidates || [];
@@ -118,17 +228,24 @@ export async function enhanceBrandingWithLLM(
         },
       ],
       temperature: 0.1,
+      // Only called once the response failed to parse or validate.
+      experimental_repairText: async ({ text }) =>
+        unwrapSchemaShapedAnswer(text),
       experimental_telemetry: {
-        isEnabled: true,
+        isEnabled: !input.zeroDataRetention,
         // The input carries the page screenshot / raw page content; too large
         // for span attributes. Outputs stay recorded.
         recordInputs: false,
         functionId: "enhanceBrandingWithLLM",
         metadata: {
           teamId: input.teamId || "unknown",
+          feature: "branding",
+          ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
         },
       },
     });
+
+    recordBrandingCall(input, modelId, result.usage);
 
     if (isDebugBrandingEnabled(input)) {
       const reasoningPreview = result.reasoning
@@ -174,6 +291,16 @@ export async function enhanceBrandingWithLLM(
     }
     return resultObject;
   } catch (error) {
+    if (error instanceof CostLimitExceededError) {
+      throw error;
+    }
+
+    // The model still ran (and billed) when its output failed to parse or
+    // validate.
+    if (NoObjectGeneratedError.isInstance(error)) {
+      recordBrandingCall(input, modelId, error.usage);
+    }
+
     // Refusal: API returned content type "refusal" (e.g. "I can't assist with that") but the SDK
     // expects "output_text", so it throws before we get a result. Treat as soft failure, not a bug.
     const message = error instanceof Error ? error.message : String(error);

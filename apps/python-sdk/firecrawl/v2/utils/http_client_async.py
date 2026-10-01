@@ -1,6 +1,7 @@
 import asyncio
 import httpx
 from typing import Optional, Dict, Any
+from .api_origin import pin_to_api_origin
 from .get_version import get_version
 
 version = get_version()
@@ -14,12 +15,15 @@ class AsyncHttpClient:
         timeout: Optional[float] = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
+        origin: Optional[str] = None,
     ):
         self.api_key = api_key
         self.api_url = api_url
         self.timeout = timeout
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
+        # Attribution string stamped into request payloads / research query params.
+        self.origin = origin or f"python-sdk@{version}"
 
         headers = {}
 
@@ -34,6 +38,9 @@ class AsyncHttpClient:
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    def _build_url(self, endpoint: str) -> str:
+        return pin_to_api_origin(self.api_url, endpoint)
 
     def _headers(self, idempotency_key: Optional[str] = None) -> Dict[str, str]:
         headers: Dict[str, str] = {}
@@ -58,15 +65,16 @@ class AsyncHttpClient:
             backoff_factor = self.backoff_factor
 
         payload = dict(data)
-        payload["origin"] = f"python-sdk@{version}"
+        payload["origin"] = payload.get("origin") or self.origin
 
         last_exception = None
         num_attempts = max(1, retries)
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.post(
-                    endpoint,
+                    url,
                     json=payload,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
@@ -106,8 +114,9 @@ class AsyncHttpClient:
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.post(
-                    endpoint,
+                    url,
                     data=data,
                     files=files,
                     headers={**self._headers(), **(headers or {})},
@@ -146,8 +155,9 @@ class AsyncHttpClient:
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.get(
-                    endpoint,
+                    url,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
                 )
@@ -184,8 +194,9 @@ class AsyncHttpClient:
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.delete(
-                    endpoint,
+                    url,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,
                 )
@@ -219,15 +230,16 @@ class AsyncHttpClient:
             backoff_factor = self.backoff_factor
 
         payload = dict(data)
-        payload["origin"] = f"python-sdk@{version}"
+        payload["origin"] = payload.get("origin") or self.origin
 
         last_exception = None
         num_attempts = max(1, retries)
 
         for attempt in range(num_attempts):
             try:
+                url = self._build_url(endpoint)
                 response = await self._client.patch(
-                    endpoint,
+                    url,
                     json=payload,
                     headers={**self._headers(), **(headers or {})},
                     timeout=timeout,

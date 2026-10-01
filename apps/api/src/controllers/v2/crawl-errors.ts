@@ -12,6 +12,7 @@ import { getCrawlJobAccess } from "../../lib/operational-job-access";
 import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
 import { TransportableError } from "../../lib/error";
+import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 configDotenv();
 
@@ -29,7 +30,7 @@ export async function crawlErrorsController(
     const crawlTtlHours = req.acuc?.flags?.crawlTtlHours ?? 24;
     let access;
     try {
-      access = await getCrawlJobAccess(req.params.jobId, crawlTtlHours);
+      access = await getCrawlJobAccess(req.params.jobId);
     } catch (requestError) {
       _logger.error("Error getting request", { error: requestError });
       throw requestError;
@@ -87,6 +88,9 @@ export async function crawlErrorsController(
             ? {
                 code: error.code,
                 error: error.message,
+                ...(error instanceof ThirdPartyDataTermsRequiredError
+                  ? { requiresAction: error.requiresAction }
+                  : {}),
               }
             : {
                 error: x.failedReason!,

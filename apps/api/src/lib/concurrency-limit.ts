@@ -26,6 +26,13 @@ import { reportPipelineError } from "./redis-pipeline";
 const DEFAULT_CONCURRENCY_LIMIT = 2;
 
 /**
+ * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
+ * autumn.config.ts). Pairs with HOBBY_RATE_LIMIT_MULTIPLIER in
+ * services/rate-limiter.ts; change both if the hobby plan changes.
+ */
+export const HOBBY_CONCURRENCY_LIMIT = 5;
+
+/**
  * Returns the team's effective concurrency limit from Autumn's CONCURRENCY
  * balance. Autumn is authoritative; when the entity is missing we fall back to
  * the low default of 2. When Autumn errors, getConcurrencyLimit already returns

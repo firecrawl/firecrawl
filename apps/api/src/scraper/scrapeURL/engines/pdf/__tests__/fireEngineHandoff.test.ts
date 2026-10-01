@@ -208,6 +208,25 @@ describe("largePdfLimitBytes (team tiers)", () => {
     expect(largePdfLimitBytes(metaForTeam("team-b"))).toBe(256 * 1024 * 1024);
   });
 
+  it("returns the privileged cap for teams with the largePdfs flag", () => {
+    (config as any).PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS = "";
+    (config as any).PDF_BY_REFERENCE_MAX_BYTES_DEFAULT = 50 * 1024 * 1024;
+    (config as any).PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED = 200 * 1024 * 1024;
+    const meta = (teamFlags: unknown) =>
+      ({ internalOptions: { teamId: "team-x", teamFlags } }) as any;
+    expect(largePdfLimitBytes(meta({ largePdfs: true }))).toBe(
+      200 * 1024 * 1024,
+    );
+    expect(largePdfLimitBytes(meta({ largePdfs: false }))).toBe(
+      50 * 1024 * 1024,
+    );
+    expect(largePdfLimitBytes(meta({ largePdfs: "true" }))).toBe(
+      50 * 1024 * 1024,
+    );
+    expect(largePdfLimitBytes(meta({}))).toBe(50 * 1024 * 1024);
+    expect(largePdfLimitBytes(meta(null))).toBe(50 * 1024 * 1024);
+  });
+
   it("clamps configured caps to the 256MB architectural ceiling", () => {
     (config as any).PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS = "team-a";
     (config as any).PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED = 999 * 1024 * 1024;

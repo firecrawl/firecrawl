@@ -7,10 +7,17 @@ overrides:
   "rollup@<4.59.0": ">=4.59.0"
   "picomatch@<4.0.4": ">=4.0.4"
   handlebars: ">=4.7.9"
-  "brace-expansion@>=5.0.0 <5.0.9": "5.0.9"
+  # GHSA-q2hr-2g5m-vwhr / GHSA-qhr7-859c-m2p7 / GHSA-6j4f-fj2g-mc7p:
+  # pin the 5.x line only. Exact 5.0.12 cannot resolve to 6.x.
+  "brace-expansion@>=5.0.0 <5.0.12": "5.0.12"
   "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
   "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
-  "axios@>=1.0.0 <1.16.0": "1.16.1"
+  # GHSA-vh66-26gq-q6x8 / GHSA-9fr6-4gfg-395g / GHSA-c29m-xwm3-cm6r /
+  # GHSA-mghh-pgcx-3jjj / GHSA-x97p-jq2g-jp4f / GHSA-3pq3-5fj3-cg6v /
+  # GHSA-542g-h47m-68v8 / GHSA-j8rh-479h-cp32 / GHSA-4hqw-qxg8-jxx2 /
+  # GHSA-m8m8-qj5v-23w3 / GHSA-44g4-m2mj-wpvx / GHSA-r4gj-5m52-g5wh:
+  # pin the 1.x line only. Exact 1.20.0 cannot resolve to 2.x.
+  "axios@>=1.0.0 <1.20.0": "1.20.0"
   "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0"
   "form-data@>=4.0.0 <4.0.6": "4.0.6"
   "@babel/core@>=7.0.0 <7.29.6": "7.29.7"

@@ -187,6 +187,46 @@ describe("checkForPromptInjection", () => {
     expect(maxInFlight).toBe(5);
   });
 
+  it("tags every classifier span with the scrape and extract ids", async () => {
+    vi.mocked(generateObject).mockResolvedValue(verdict(false) as any);
+
+    await checkForPromptInjection({
+      markdown: threeChunkMarkdown,
+      logger: noopLogger,
+      costTracking: new CostTracking(),
+      metadata: {
+        teamId: "test-team",
+        scrapeId: "test-scrape",
+        extractId: "test-extract",
+      },
+      zeroDataRetention: false,
+    });
+
+    const telemetry = vi
+      .mocked(generateObject)
+      .mock.calls.map(([args]) => args.experimental_telemetry);
+    expect(telemetry).toHaveLength(3);
+    for (const t of telemetry) {
+      expect(t?.recordInputs).toBe(false);
+      expect(t?.metadata).toEqual({
+        teamId: "test-team",
+        scrapeId: "test-scrape",
+        extractId: "test-extract",
+      });
+    }
+  });
+
+  it("leaves job ids out of span metadata when the caller has none", async () => {
+    vi.mocked(generateObject).mockResolvedValue(verdict(false) as any);
+
+    await run(new CostTracking(), "short page");
+
+    const [[args]] = vi.mocked(generateObject).mock.calls;
+    expect(args.experimental_telemetry?.metadata).toEqual({
+      teamId: "test-team",
+    });
+  });
+
   it("resolves true without calling the classifier for empty content", async () => {
     const costTracking = new CostTracking();
 

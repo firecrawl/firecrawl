@@ -135,7 +135,9 @@ export function getAutumnRateLimiter(
  * traffic (a valid `__agentInterop` secret) is floored at this multiplier so a
  * free team's agent runs are limited like hobby rather than at ×1; see
  * buildAuthenticatedRateLimiter in controllers/auth.ts. Paid plans already
- * meet or exceed it, so the floor only ever lifts free.
+ * meet or exceed it, so the floor only ever lifts free. Pairs with
+ * HOBBY_CONCURRENCY_LIMIT in lib/concurrency-limit.ts; change both if the
+ * hobby plan in firecrawl-web autumn.config.ts changes.
  */
 export const HOBBY_RATE_LIMIT_MULTIPLIER = 10;
 

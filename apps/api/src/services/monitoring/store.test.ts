@@ -9,8 +9,118 @@ import {
 } from "./store";
 import { judgeCreditsForJudgedCount } from "./search/billing";
 import type { MonitorTarget } from "./types";
+import { config } from "../../config";
 
 describe("monitoring store credit helpers", () => {
+  describe("reserving credits using previous PDF results", () => {
+    const target: MonitorTarget = {
+      id: "crawl-target",
+      type: "crawl",
+      url: "https://example.com",
+      crawlOptions: { limit: 69 },
+      scrapeOptions: {},
+    };
+    const page = (
+      numPages: unknown,
+      url = "https://example.com/document.pdf",
+    ) => ({
+      target_id: target.id,
+      url,
+      metadata: { numPages },
+    });
+
+    it("covers the 905 PDF pages from the parked 943-credit monitor run", () => {
+      const pdfPageCounts = [
+        2, 103, 22, 328, 50, 2, 133, 84, 60, 1, 3, 3, 55, 4, 5, 2, 2, 3, 2, 2,
+        1, 1, 1, 2, 10, 1, 2, 2, 2, 1, 9, 2, 2, 3,
+      ];
+      // 69 URL credits + 69 judge allowance + 871 additional PDF pages.
+      expect(estimateMonitorCreditsPerRun([target], true)).toBe(138);
+      expect(
+        estimateMonitorCreditsPerRun(
+          [target],
+          true,
+          pdfPageCounts.map(n => page(n)),
+        ),
+      ).toBe(1009);
+    });
+
+    it("keeps the current option costs and allowance for undiscovered URLs", () => {
+      const jsonTarget = {
+        ...target,
+        scrapeOptions: { formats: [{ type: "json" }] },
+      } as MonitorTarget;
+      expect(
+        estimateMonitorCreditsPerRun([jsonTarget], true, [page(100)]),
+      ).toBe(69 * 6 + 99);
+    });
+
+    it("ignores saved pages for removed targets and removed scrape URLs", () => {
+      const scrape: MonitorTarget = {
+        id: target.id,
+        type: "scrape",
+        urls: ["https://example.com/current.pdf"],
+        scrapeOptions: {},
+      };
+      expect(
+        estimateMonitorCreditsPerRun([scrape], false, [
+          page(100),
+          { ...page(200, scrape.urls[0]), target_id: "old-target" },
+          page(10, scrape.urls[0]),
+        ]),
+      ).toBe(10);
+    });
+
+    it("respects the current PDF maxPages limit", () => {
+      const capped = {
+        ...target,
+        scrapeOptions: { parsers: [{ type: "pdf", maxPages: 5 }] },
+      } as MonitorTarget;
+      expect(estimateMonitorCreditsPerRun([capped], false, [page(100)])).toBe(
+        73,
+      );
+    });
+
+    it("does not reserve PDF costs when parsing is disabled", () => {
+      const unparsed = {
+        ...target,
+        scrapeOptions: { parsers: [] },
+      } as MonitorTarget;
+      expect(estimateMonitorCreditsPerRun([unparsed], true, [page(100)])).toBe(
+        138,
+      );
+    });
+
+    it("caps historical PDF URLs to a reduced crawl limit conservatively", () => {
+      const smaller = {
+        ...target,
+        crawlOptions: { limit: 1 },
+      } as MonitorTarget;
+      expect(
+        estimateMonitorCreditsPerRun([smaller], true, [page(10), page(100)]),
+      ).toBe(101);
+    });
+
+    it("includes redaction costs for each additional PDF page", () => {
+      const redacted = {
+        ...target,
+        scrapeOptions: { redactPII: true },
+      } as MonitorTarget;
+      expect(estimateMonitorCreditsPerRun([redacted], false, [page(10)])).toBe(
+        69 + 9 * 5,
+      );
+    });
+
+    it.each([null, undefined, "100", NaN, Infinity, -1, 0, 1.5])(
+      "preserves the baseline for invalid or missing historical page count %s",
+      numPages => {
+        expect(
+          estimateMonitorCreditsPerRun([target], true, [page(numPages)]),
+        ).toBe(138);
+      },
+    );
+  });
+
   it("estimates goal-enabled scrape monitors from scrape option costs", () => {
     const targets: MonitorTarget[] = [
       {
@@ -27,6 +137,108 @@ describe("monitoring store credit helpers", () => {
     // 2 URLs x 5 (json change tracking). Enhanced proxies add nothing.
     expect(estimateMonitorCreditsPerRun(targets, false)).toBe(10);
     expect(estimateMonitorCreditsPerRun(targets, true)).toBe(12);
+  });
+
+  // The x-twitter engine only exists with an xAI key or DB auth.
+  const withXTwitterEngine = (fn: () => void) => {
+    const saved = config.USE_DB_AUTHENTICATION;
+    config.USE_DB_AUTHENTICATION = true;
+    try {
+      fn();
+    } finally {
+      config.USE_DB_AUTHENTICATION = saved;
+    }
+  };
+
+  it("includes the x-twitter surcharge, so the hold covers what is billed", () =>
+    withXTwitterEngine(() => {
+      const targets: MonitorTarget[] = [
+        {
+          id: "target-x",
+          type: "scrape",
+          urls: ["https://x.com/blknoiz06"],
+          scrapeOptions: {},
+        },
+      ];
+
+      // 1 scrape + 29 x-twitter, + 1 judge.
+      expect(estimateMonitorCreditsPerRun(targets, false)).toBe(30);
+      expect(estimateMonitorCreditsPerRun(targets, true)).toBe(31);
+      expect(
+        calculateMonitorCheckActualCreditsFromPages(
+          [
+            {
+              target_id: "target-x",
+              status: "changed",
+              metadata: {
+                creditsUsed: null,
+                postprocessorsUsed: ["x-twitter"],
+              },
+              judgment: { meaningful: false },
+            },
+          ],
+          targets,
+        ),
+      ).toBe(estimateMonitorCreditsPerRun(targets, true));
+    }));
+
+  it("charges the surcharge only for URLs the x-twitter engine takes", () =>
+    withXTwitterEngine(() => {
+      const targets: MonitorTarget[] = [
+        {
+          id: "target-mixed",
+          type: "scrape",
+          urls: [
+            "https://twitter.com/someone/status/1234567890",
+            "https://x.com/home",
+            "https://example.com/x.com",
+          ],
+          scrapeOptions: {},
+        },
+      ];
+
+      expect(estimateMonitorCreditsPerRun(targets, false)).toBe(3 + 29);
+    }));
+
+  it("skips the surcharge when a browser profile bypasses the x-twitter engine", () =>
+    withXTwitterEngine(() => {
+      const targets: MonitorTarget[] = [
+        {
+          id: "target-profile",
+          type: "scrape",
+          urls: ["https://x.com/someone"],
+          scrapeOptions: { profile: { name: "p" } },
+        },
+      ];
+
+      expect(estimateMonitorCreditsPerRun(targets, false)).toBe(1);
+    }));
+
+  it("skips the surcharge where the x-twitter engine cannot run", () => {
+    const target = (
+      scrapeOptions: Record<string, unknown>,
+    ): MonitorTarget[] => [
+      {
+        id: "t",
+        type: "scrape",
+        urls: ["https://x.com/someone"],
+        scrapeOptions,
+      },
+    ];
+    withXTwitterEngine(() => {
+      // Lockdown serves from the index: 1 base + 4 lockdown, no surcharge.
+      expect(
+        estimateMonitorCreditsPerRun(target({ lockdown: true }), false),
+      ).toBe(5);
+    });
+    const saved = [config.USE_DB_AUTHENTICATION, config.XAI_API_KEY] as const;
+    config.USE_DB_AUTHENTICATION = false;
+    config.XAI_API_KEY = undefined;
+    try {
+      expect(estimateMonitorCreditsPerRun(target({}), false)).toBe(1);
+    } finally {
+      [config.USE_DB_AUTHENTICATION, config.XAI_API_KEY] = saved;
+    }
   });
 
   it("adds predictable lockdown costs and judge credits separately", () => {

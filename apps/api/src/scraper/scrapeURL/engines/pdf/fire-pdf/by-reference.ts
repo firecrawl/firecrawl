@@ -164,8 +164,9 @@ export async function rewritePdfInputForFirePdf(
 }
 
 /**
- * The per-team large-PDF byte limit: the privileged cap for allowlisted
- * team ids, the default cap for everyone else, both clamped to the 256MB
+ * The per-team large-PDF byte limit: the privileged cap for teams with the
+ * `largePdfs` flag or an id on the env allowlist, the default cap for
+ * everyone else, both clamped to the 256MB
  * architectural ceiling. Every acquisition path enforces this one number —
  * the direct-download admission, the fire-engine handoff download, the
  * by-reference routing gate, and (as pdfMaxSize) fire-engine's own capture
@@ -182,10 +183,12 @@ export function largePdfLimitBytes(meta: Meta): number {
       .map(id => id.trim())
       .filter(Boolean),
   );
-  const raw =
-    teamId && privilegedIds.has(teamId)
-      ? config.PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED
-      : config.PDF_BY_REFERENCE_MAX_BYTES_DEFAULT;
+  const privileged =
+    meta.internalOptions.teamFlags?.largePdfs === true ||
+    (!!teamId && privilegedIds.has(teamId));
+  const raw = privileged
+    ? config.PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED
+    : config.PDF_BY_REFERENCE_MAX_BYTES_DEFAULT;
   // Config is schema-validated to positive integers; the clamp bounds both
   // ends anyway so an invalid value can never reject every PDF or send
   // fire-engine a nonsensical pdfMaxSize.

@@ -12,6 +12,7 @@ import { v7 as uuidv7 } from "uuid";
 import { getJobPriority } from "../../lib/job-priority";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { TransportableError } from "../../lib/error";
+import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -224,7 +225,7 @@ async function scrapeControllerInner(
       applyAgentAuthDiscoveryHeader(res);
       return res
         .status(429)
-        .json(await keylessLimitBody(req.auth.team_id, "v1_scrape"));
+        .json(await keylessLimitBody(req.auth.team_id, "v1_scrape", req));
     }
     reservedKeylessCredits = projectedKeylessCredits;
   }
@@ -404,6 +405,29 @@ async function scrapeControllerInner(
 
       if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
         return res.status(400).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
+      if (e instanceof ThirdPartyDataTermsRequiredError) {
+        return res.status(403).json(e.response());
+      }
+
+      if (
+        e.code === "THIRD_PARTY_DATA_NOT_ENABLED" ||
+        e.code === "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED"
+      ) {
+        return res.status(403).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
+      if (e.code === "THIRD_PARTY_DATA_NOT_FOUND") {
+        return res.status(404).json({
           success: false,
           code: e.code,
           error: e.message,

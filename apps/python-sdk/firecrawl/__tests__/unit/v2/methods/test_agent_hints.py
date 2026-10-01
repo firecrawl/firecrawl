@@ -30,6 +30,7 @@ def body():
 @pytest.mark.parametrize("operation", ["search", "scrape", "parse", "map"])
 def test_sync_hints_survive_unwrapping(operation):
     client = Mock()
+    client.origin = "python-sdk@test"
     client.post.return_value = client.post_multipart.return_value = response(body())
     calls = {
         "search": lambda: search(client, SearchRequest(query="test")),
@@ -48,6 +49,7 @@ def test_sync_hints_survive_unwrapping(operation):
 @pytest.mark.parametrize("operation", ["search", "scrape", "parse", "map"])
 async def test_async_hints_survive_unwrapping(operation):
     client = Mock()
+    client.origin = "python-sdk@test"
     client.post = AsyncMock(return_value=response(body()))
     client.post_multipart = AsyncMock(return_value=response(body()))
     calls = {

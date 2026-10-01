@@ -1,7 +1,7 @@
 import type { Response } from "express";
+import { readScrapeJobState } from "../../../lib/job-state-store";
 import { vi } from "vitest";
 import { config } from "../../../config";
-import { supabaseGetScrapeByIdDirect } from "../../../lib/supabase-jobs";
 import {
   insertBrowserSession,
   getBrowserSession,
@@ -56,9 +56,6 @@ vi.mock("../../../lib/operational-job-access", () => ({
 vi.mock("../../../lib/job-state-store", () => ({
   readScrapeJobState: vi.fn(async () => null),
 }));
-vi.mock("../../../lib/job-store-fallback", () => ({
-  recordJobStorePostgresFallback: vi.fn(),
-}));
 vi.mock("../../auth", () => ({
   getACUCTeam: vi.fn(async () => ({ org_id: null })),
 }));
@@ -72,10 +69,6 @@ vi.mock("../../../lib/keyless", () => ({
 }));
 vi.mock("../../../lib/scrape-interact/langsmith", () => ({
   sanitizeUrlForTrace: (url: string) => url,
-}));
-
-vi.mock("../../../lib/supabase-jobs", () => ({
-  supabaseGetScrapeByIdDirect: vi.fn(),
 }));
 
 vi.mock("../../../lib/browser-sessions", () => ({
@@ -157,7 +150,7 @@ describe("scrapeInteractController", () => {
     config.USE_DB_AUTHENTICATION = previousUseDbAuthentication;
   });
 
-  it("rejects self-hosted scrape interact before querying Supabase", async () => {
+  it("rejects scrape interact when database authentication is disabled", async () => {
     config.USE_DB_AUTHENTICATION = false;
 
     const req = {
@@ -170,7 +163,6 @@ describe("scrapeInteractController", () => {
 
     await scrapeInteractController(req, res);
 
-    expect(supabaseGetScrapeByIdDirect).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(501);
     expect(res.json).toHaveBeenCalledWith({
       success: false,
@@ -193,11 +185,13 @@ describe("scrapeInteractController", () => {
       control_url: "https://hangar.example/live#control",
       recording: true,
     };
-    vi.mocked(supabaseGetScrapeByIdDirect).mockResolvedValue({
-      id: "scrape-123",
-      team_id: "team-123",
-      url: "https://example.com",
-      options: {},
+    // The replay context comes from the scrape's Bigtable terminal state.
+    vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+      status: "completed",
+      requestId: "scrape-123",
+      completedAtMs: Date.now(),
+      creditsBilled: 1,
+      replay: { targetUrl: "https://example.com", waitForMs: 0, actions: [] },
     } as any);
     const executed = {
       stdout: "https://example.com",

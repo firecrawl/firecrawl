@@ -15,6 +15,8 @@ import {
 } from "../fire-pdf/async";
 import {
   firePdfAsyncAbandonedTotal,
+  firePdfAsyncFallbackTotal,
+  firePdfAsyncSubmit503Total,
   firePdfAsyncSubmitRetriesTotal,
 } from "../fire-pdf/metrics";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
@@ -157,6 +159,60 @@ describe("scrapePDFWithFirePDFAsync — deadline and submit lifecycle", () => {
     expect(pollTimes).toEqual([1000, 3000, 7000, 12000, 17000, 21000, 22000]);
   });
 
+  it("polls on the page-aware early schedule when the caller passes a page estimate", async () => {
+    let virtualNow = 1_000_000;
+    const sleeps: number[] = [];
+    let polls = 0;
+    const fetchImpl: any = async (url: string, init: any) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (/\/jobs$/.test(url) && method === "POST") {
+        return jsonResp({
+          status: 202,
+          body: { scrape_id: "x", status: "queued", lane: "standard" },
+        });
+      }
+      if (/\/jobs\/scrape-id-test$/.test(url)) {
+        polls++;
+        return jsonResp(
+          polls <= 3
+            ? { status: 202, body: { scrape_id: "x", status: "running" } }
+            : {
+                status: 200,
+                body: { scrape_id: "x", status: "done", pages_processed: 3 },
+              },
+        );
+      }
+      return jsonResp({
+        status: 200,
+        body: { markdown: "ok", pages_processed: 3 },
+      });
+    };
+
+    // Same flow as above but with a 3-page estimate (inline and
+    // by-reference callers both pass it): first poll at the 3-page p50
+    // rather than the 1s floor, then the fast interval.
+    const result = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      3,
+      undefined,
+      {
+        fetchImpl,
+        fallbackImpl: vi.fn(),
+        sleepImpl: async ms => {
+          sleeps.push(ms);
+          virtualNow += ms;
+        },
+        nowImpl: () => virtualNow,
+        randomImpl: () => 0,
+      },
+    );
+
+    expect(result.markdown).toBe("ok");
+    expect(sleeps).toEqual([1200, 300, 300, 300]);
+  });
+
   it("retries the submit once when a closing api pod answers with Fastify's 503 body", async () => {
     const before = await counterValue(firePdfAsyncSubmitRetriesTotal, {
       trigger: "http_503_closing",
@@ -207,7 +263,119 @@ describe("scrapePDFWithFirePDFAsync — deadline and submit lifecycle", () => {
     ).toBe(before + 1);
   });
 
+  it.each([
+    ["a zero page count", 0],
+    ["no estimate at all", undefined],
+  ])(
+    "omits pages_estimate on an inline submit with %s so fire-pdf counts pages itself",
+    async (_name, pagesProcessed) => {
+      const { fetchImpl, calls } = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs$/,
+          matchMethod: "POST",
+          response: {
+            status: 200,
+            body: { scrape_id: "scrape-id-test", status: "done", lane: "fast" },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test\/result$/,
+          matchMethod: "GET",
+          response: {
+            status: 200,
+            body: { markdown: "ok", pages_processed: 3 },
+          },
+        },
+      ]);
+
+      const result = await scrapePDFWithFirePDFAsync(
+        makeMeta(),
+        "BASE64",
+        undefined,
+        pagesProcessed,
+        undefined,
+        { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+      );
+
+      expect(result.markdown).toBe("ok");
+      const options = (calls[0].body as { options?: Record<string, unknown> })
+        .options;
+      expect(options).not.toHaveProperty("pages_estimate");
+    },
+  );
+
+  it("sends a positive page count as pages_estimate", async () => {
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 200,
+          body: { scrape_id: "scrape-id-test", status: "done", lane: "fast" },
+        },
+      },
+      {
+        matchUrl: /\/jobs\/scrape-id-test\/result$/,
+        matchMethod: "GET",
+        response: { status: 200, body: { markdown: "ok", pages_processed: 7 } },
+      },
+    ]);
+
+    await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      7,
+      undefined,
+      { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+    );
+
+    expect(
+      (calls[0].body as { options: Record<string, unknown> }).options
+        .pages_estimate,
+    ).toBe(7);
+  });
+
+  it("counts a submit 400 as an async fallback and keeps fire-pdf's code", async () => {
+    const before = await counterValue(firePdfAsyncFallbackTotal, {
+      reason: "http_400",
+    });
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 400,
+          body: {
+            error: "invalid_pages_estimate",
+            message: "options.pages_estimate must be a positive integer",
+          },
+        },
+      },
+    ]);
+
+    const error = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      undefined,
+      { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+    ).catch(e => e);
+
+    expect(error).toBeInstanceOf(FirePdfAsyncFailure);
+    expect(error.reason).toBe("http_400");
+    expect(error.extra.code).toBe("invalid_pages_estimate");
+    expect(calls).toHaveLength(1);
+    expect(
+      await counterValue(firePdfAsyncFallbackTotal, { reason: "http_400" }),
+    ).toBe(before + 1);
+  });
+
   it("does not retry fire-pdf's own 503 codes", async () => {
+    const before = await counterValue(firePdfAsyncSubmit503Total, {
+      code: "admission_rejected",
+    });
     const { fetchImpl, calls } = makeFetchFromSequence([
       {
         matchUrl: /\/jobs$/,
@@ -233,7 +401,45 @@ describe("scrapePDFWithFirePDFAsync — deadline and submit lifecycle", () => {
 
     expect(error).toBeInstanceOf(FirePdfAsyncFailure);
     expect(error.reason).toBe("http_503");
+    expect(error.extra.code).toBe("admission_rejected");
     expect(calls).toHaveLength(1);
+    expect(
+      await counterValue(firePdfAsyncSubmit503Total, {
+        code: "admission_rejected",
+      }),
+    ).toBe(before + 1);
+  });
+
+  it("labels a 503 without a fire-pdf code as unattributed once the retry also fails", async () => {
+    const before = await counterValue(firePdfAsyncSubmit503Total, {
+      code: "unattributed",
+    });
+    const unattributed = {
+      matchUrl: /\/jobs$/,
+      matchMethod: "POST" as const,
+      response: { status: 503, body: { detail: "upstream overloaded" } },
+    };
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      unattributed,
+      unattributed,
+    ]);
+
+    const error = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      undefined,
+      { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+    ).catch(e => e);
+
+    expect(error).toBeInstanceOf(FirePdfAsyncFailure);
+    expect(error.reason).toBe("http_503");
+    expect(error.extra.code).toBe("unattributed");
+    expect(calls.filter(c => c.method === "POST")).toHaveLength(2);
+    expect(
+      await counterValue(firePdfAsyncSubmit503Total, { code: "unattributed" }),
+    ).toBe(before + 1);
   });
 
   it("retries the submit once on a transport failure, then proceeds", async () => {

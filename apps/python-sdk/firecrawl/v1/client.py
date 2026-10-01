@@ -24,6 +24,8 @@ import websockets
 import aiohttp
 import asyncio
 
+from ..v2.utils.api_origin import pin_to_api_origin
+
 logger : logging.Logger = logging.getLogger("firecrawl")
 
 def get_version():
@@ -249,6 +251,7 @@ class V1BatchScrapeStatusResponse(pydantic.BaseModel):
     expiresAt: datetime
     next: Optional[str] = None
     data: List[V1FirecrawlDocument]
+    error: Optional[str] = None
 
 class V1CrawlParams(pydantic.BaseModel):
     """Parameters for crawling operations."""
@@ -295,6 +298,9 @@ class V1CrawlError(pydantic.BaseModel):
     url: str
     code: Optional[str] = None
     error: str
+    # Set when the page needs provider terms accepted first:
+    # {"type": "accept_terms", "terms", "version", "url"}.
+    requiresAction: Optional[Dict[str, Any]] = None
 
 class V1CrawlErrorsResponse(pydantic.BaseModel):
     """Response from crawl/batch scrape error monitoring."""
@@ -1167,7 +1173,7 @@ class V1FirecrawlApp:
                             logger.warning("Expected 'next' URL is missing.")
                             break
                         try:
-                            status_response = self._get_request(next_url, headers)
+                            status_response = self._get_request(pin_to_api_origin(self.api_url, next_url), headers)
                             if status_response.status_code != 200:
                                 logger.error(f"Failed to fetch next page: {status_response.status_code}")
                                 break
@@ -1890,7 +1896,7 @@ class V1FirecrawlApp:
                             logger.warning("Expected 'next' URL is missing.")
                             break
                         try:
-                            status_response = self._get_request(next_url, headers)
+                            status_response = self._get_request(pin_to_api_origin(self.api_url, next_url), headers)
                             if status_response.status_code != 200:
                                 logger.error(f"Failed to fetch next page: {status_response.status_code}")
                                 break
@@ -2535,7 +2541,7 @@ class V1FirecrawlApp:
                         while 'next' in status_data:
                             if len(status_data['data']) == 0:
                                 break
-                            status_response = self._get_request(status_data['next'], headers)
+                            status_response = self._get_request(pin_to_api_origin(self.api_url, status_data['next']), headers)
                             try:
                                 status_data = status_response.json()
                             except:
@@ -4301,7 +4307,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                     if not next_url:
                         logger.warning("Expected 'next' URL is missing.")
                         break
-                    next_data = await self._async_get_request(next_url, headers)
+                    next_data = await self._async_get_request(pin_to_api_origin(self.api_url, next_url), headers)
                     data.extend(next_data.get('data', []))
                     status_data = next_data
                 status_data['data'] = data
@@ -4355,7 +4361,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                         if not next_url:
                             logger.warning("Expected 'next' URL is missing.")
                             break
-                        next_data = await self._async_get_request(next_url, headers)
+                        next_data = await self._async_get_request(pin_to_api_origin(self.api_url, next_url), headers)
                         data.extend(next_data.get('data', []))
                         status_data = next_data
                     status_data['data'] = data
@@ -4589,30 +4595,22 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                     if not next_url:
                         logger.warning("Expected 'next' URL is missing.")
                         break
-                    next_data = await self._async_get_request(next_url, headers)
+                    next_data = await self._async_get_request(pin_to_api_origin(self.api_url, next_url), headers)
                     data.extend(next_data.get('data', []))
                     status_data = next_data
                 status_data['data'] = data
 
-        response = V1BatchScrapeStatusResponse(
+        return V1BatchScrapeStatusResponse(
+            success=False if 'error' in status_data else True,
             status=status_data.get('status'),
             total=status_data.get('total'),
             completed=status_data.get('completed'),
             creditsUsed=status_data.get('creditsUsed'),
             expiresAt=status_data.get('expiresAt'),
-            data=status_data.get('data')
+            data=status_data.get('data'),
+            next=status_data.get('next'),
+            error=status_data.get('error'),
         )
-
-        if 'error' in status_data:
-            response['error'] = status_data['error']
-
-        if 'next' in status_data:
-            response['next'] = status_data['next']
-
-        return {
-            'success': False if 'error' in status_data else True,
-            **response
-        }
 
     async def check_batch_scrape_errors(self, id: str) -> V1CrawlErrorsResponse:
         """

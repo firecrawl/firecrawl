@@ -169,6 +169,33 @@ describe("monitor check finalization ownership", () => {
     }) as any);
   });
 
+  it("requests the persisted credit estimate and skips the check when its hold is denied", async () => {
+    current.status = "queued";
+    current.autumn_lock_id = null;
+    current.estimated_credits = 1009;
+    vi.mocked(autumnService.lockCredits).mockResolvedValue({
+      status: "denied",
+    });
+    await processMonitorCheckJob({
+      checkId: current.id,
+      monitorId: monitor.id,
+      teamId: monitor.team_id,
+    });
+    expect(autumnService.lockCredits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        value: 1009,
+        lockId: "monitor_check-1",
+      }),
+    );
+    expect(current).toMatchObject({
+      status: "skipped_no_credits",
+      actual_credits: 0,
+      billing_status: "not_applicable",
+    });
+    expect(autumnService.finalizeCreditsLock).not.toHaveBeenCalled();
+    expect(bill).not.toHaveBeenCalled();
+  });
+
   it("settles and schedules a completed check once when another batch retained its running snapshot", async () => {
     await reconcileRunningMonitorChecks();
     await reconcileRunningMonitorChecks();
