@@ -108,6 +108,7 @@ function adaptiveOpenAiModel(modelName: string, forcedApiMode?: ApiMode): any {
 
   const run = async (method: "doGenerate" | "doStream", params: unknown) => {
     const { apiMode, surface } = await resolve();
+    resolvedApiMode = apiMode;
     const wantsStructured = requestWantsStructuredOutput(
       params as Parameters<typeof requestWantsStructuredOutput>[0],
     );
@@ -132,20 +133,30 @@ function adaptiveOpenAiModel(modelName: string, forcedApiMode?: ApiMode): any {
     return (prepared as any)[method](params);
   };
 
+  // Resolved API surface, or undefined until the first request. The SDK reads
+  // `model.provider` for the `ai.model.provider` telemetry attribute when a call
+  // is recorded, so it must reflect the surface actually used rather than a
+  // static guess.
+  let resolvedApiMode: ApiMode | undefined = forcedApiMode;
+
   return {
     specificationVersion: "v3",
-    // Telemetry-only label. It is corrected once the API surface is known so
-    // traces do not report an "adaptive" surface that never existed; behaviour
-    // never depends on it.
-    provider:
-      forcedApiMode === "chat"
+    get provider() {
+      return resolvedApiMode === "chat"
         ? "openai.chat"
-        : forcedApiMode === "responses"
+        : resolvedApiMode === "responses"
           ? "openai.responses"
-          : "openai",
+          : "openai";
+    },
     modelId: modelName,
-    doGenerate: (params: unknown) => run("doGenerate", params),
-    doStream: (params: unknown) => run("doStream", params),
+    doGenerate: async (params: unknown) => {
+      const result = await run("doGenerate", params);
+      return result;
+    },
+    doStream: async (params: unknown) => {
+      const result = await run("doStream", params);
+      return result;
+    },
   };
 }
 

@@ -258,6 +258,14 @@ export function apiModeSync(target: CapabilityTarget): ApiMode | "unresolved" {
 
 const structuredCache = new Map<string, StructuredOutputMode>();
 const structuredInFlight = new Map<string, Promise<StructuredOutputMode>>();
+/**
+ * A definitive "this endpoint supports neither transport" is also a stable fact
+ * about the endpoint, so it is cached too. Without this, every schema request
+ * on such a backend would repeat both probes before failing. Indeterminate and
+ * operational failures are still never cached, so a backend that recovers is
+ * re-probed.
+ */
+const noTransportCache = new Set<string>();
 
 /** Structured capability is per (endpoint, model, API surface). */
 const structuredKey = (t: CapabilityTarget, apiMode: ApiMode) =>
@@ -283,6 +291,16 @@ function jsonSchemaIsAbsent(status: number, body: string): boolean {
   const shape =
     /\b(json_schema|structured[ _]?outputs?|response_format|text\.format)\b/i;
   if (!shape.test(body) || !unsupported.test(body)) return false;
+  // "Invalid parameter: response_format/json_schema is not supported" is a
+  // capability rejection that happens to use the word "invalid". The generic
+  // guard must not veto it, but it must still veto a caller mistake that merely
+  // names the field ("Invalid parameter: response_format").
+  if (
+    /\binvalid\s+parameter\b/i.test(body) &&
+    /\bnot\s+supported\b/i.test(body)
+  ) {
+    return true;
+  }
   const callerMistake =
     /\binvalid[ _]?(api[ _]key|model|argument|parameter|request|value|json)\b/i;
   return !callerMistake.test(body);
@@ -509,19 +527,32 @@ export async function resolveStructuredOutputMode(
   if (isOfficialOpenAiEndpoint(target.baseURL)) return "strict";
 
   const key = structuredKey(target, apiMode);
+  if (noTransportCache.has(key)) {
+    throw new OpenAiNoStructuredTransportError(
+      target.baseURL,
+      target.modelName,
+    );
+  }
   const cached = structuredCache.get(key);
   if (cached) return cached;
   const pending = structuredInFlight.get(key);
   if (pending) return pending;
 
   const inflight = resolveStructuredForTarget(target, apiMode)
+    .catch(error => {
+      if (error instanceof OpenAiNoStructuredTransportError) {
+        noTransportCache.add(key);
+      }
+      throw error;
+    })
     .then(mode => {
       structuredCache.set(key, mode);
       if (mode === "tool") {
-        _logger.info(
-          `using tool/function transport for structured output on ${apiMode}`,
-          { endpoint: target.baseURL, model: target.modelName },
-        );
+        _logger.info("using tool/function transport for structured output", {
+          endpoint: target.baseURL,
+          model: target.modelName,
+          apiMode,
+        });
       }
       return mode;
     })
@@ -550,6 +581,7 @@ export function __resetCapabilityCaches() {
   endpointInFlight.clear();
   structuredCache.clear();
   structuredInFlight.clear();
+  noTransportCache.clear();
 }
 
 /** Test seam: inspect cache state for key-isolation assertions. */

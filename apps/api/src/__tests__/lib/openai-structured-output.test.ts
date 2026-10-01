@@ -11,9 +11,14 @@ import { z } from "zod";
  *
  * The fake backend is scriptable per capability-response class and can be told
  * to support only Responses, only Chat, or to accept requests while ignoring
- * the structured field. Handlers must return `handled: true` when they answer,
- * so a handler that only matches one request shape cannot silently swallow
- * the other and make the probe hang until the timeout.
+ * the structured field.
+ *
+ * A custom handler claims a request only by returning the boolean `true`
+ * exactly. Any other return value (including an object such as
+ * `{ handled: true }`, or a bare `undefined`) means the handler did not claim
+ * it, and built-in handling answers instead. That strictness is deliberate:
+ * a handler that only matches one request shape then cannot silently swallow
+ * the other and leave it hanging until the probe timeout.
  */
 
 type Handler = (res: http.ServerResponse, body: any) => boolean | void;
@@ -22,9 +27,17 @@ type BackendOptions = {
   onResponses?: Handler;
   onChat?: Handler;
   delayMs?: number;
-  /** Answer a strict probe correctly (proves strict support). */
+  /**
+   * Strict probes: `false` answers 2xx but with a non-conforming body, i.e.
+   * the endpoint accepted the request without honouring the strict format.
+   * Defaults to `true` (a conforming answer).
+   */
   supportStrict?: boolean;
-  /** Answer a tool probe with a real forced tool call (proves tool support). */
+  /**
+   * Tool probes: `false` answers 2xx without calling the probe tool, i.e. the
+   * endpoint accepted the forced tool request without honouring it.
+   * Defaults to `true` (a real forced tool call).
+   */
   supportTools?: boolean;
   /** Reject strict structured output with a definite unsupported response. */
   rejectStrict?: boolean;
@@ -92,6 +105,26 @@ function startBackend(options: BackendOptions = {}) {
       }
 
       if (isStrictProbe(body)) {
+        if (!supportStrict) {
+          // Accepted, but the strict format was not honoured: 2xx with prose.
+          return isResponses
+            ? json(res, 200, {
+                id: "r",
+                object: "response",
+                status: "completed",
+                created_at: 1,
+                output: [
+                  {
+                    type: "message",
+                    role: "assistant",
+                    content: [
+                      { type: "output_text", text: "Sure! Here you go." },
+                    ],
+                  },
+                ],
+              })
+            : json(res, 200, chatEnvelope("Sure! Here you go.", false));
+        }
         if (rejectStrict) {
           return json(res, 400, {
             error: {
@@ -139,6 +172,26 @@ function startBackend(options: BackendOptions = {}) {
       }
 
       if (isToolProbe(body)) {
+        if (!supportTools) {
+          // Accepted, but the forced tool was not honoured: 2xx with text.
+          return isResponses
+            ? json(res, 200, {
+                id: "r",
+                object: "response",
+                status: "completed",
+                created_at: 1,
+                output: [
+                  {
+                    type: "message",
+                    role: "assistant",
+                    content: [
+                      { type: "output_text", text: "I cannot do that." },
+                    ],
+                  },
+                ],
+              })
+            : json(res, 200, chatEnvelope("I cannot do that.", false));
+        }
         if (rejectTools) {
           return json(res, 400, {
             error: { message: "tool calling is not supported by this backend" },
@@ -668,8 +721,28 @@ describe("openai endpoint + structured transport", () => {
       ).rejects.toBeInstanceOf(c.OpenAiNoStructuredTransportError);
     });
 
+    it("caches a definitive no-transport result and does not re-probe", async () => {
+      // A definitive rejection of both transports is a stable fact about the
+      // endpoint; repeating two probes on every schema request would be waste.
+      backend = await startBackend({ rejectStrict: true, rejectTools: true });
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      const target = M();
+
+      await expect(
+        c.resolveStructuredOutputMode(target, "chat"),
+      ).rejects.toBeInstanceOf(c.OpenAiNoStructuredTransportError);
+      const afterFirst = backend.requests.length;
+
+      await expect(
+        c.resolveStructuredOutputMode(target, "chat"),
+      ).rejects.toBeInstanceOf(c.OpenAiNoStructuredTransportError);
+      // No additional probes on the second attempt.
+      expect(backend.requests.length).toBe(afterFirst);
+    });
+
     it("does not cache a 2xx that ignored json_schema", async () => {
-      backend = await startBackend({ ignoreRequestedFormat: true });
+      // 2xx, but the strict format was not honoured.
+      backend = await startBackend({ supportStrict: false });
       const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
       await expect(
         c.resolveStructuredOutputMode(M(), "chat"),
@@ -680,9 +753,11 @@ describe("openai endpoint + structured transport", () => {
     });
 
     it("does not cache a 2xx that ignored the forced tool call", async () => {
+      // Strict is genuinely rejected, then the tool probe is accepted but the
+      // forced tool is not honoured.
       backend = await startBackend({
         rejectStrict: true,
-        ignoreRequestedFormat: true,
+        supportTools: false,
       });
       const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
       await expect(

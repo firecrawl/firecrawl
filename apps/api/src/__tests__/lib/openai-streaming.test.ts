@@ -26,6 +26,7 @@ const mutableConfig = vi.hoisted(() => ({
   MODEL_EMBEDDING_NAME: undefined as string | undefined,
 }));
 vi.mock("../../config", () => ({ config: mutableConfig }));
+import { generateText } from "ai";
 
 describe("openai streaming", () => {
   it("doStream resolves the API surface and performs zero structured probes", async () => {
@@ -65,6 +66,41 @@ describe("openai streaming", () => {
         c => c.body.response_format || c.body.text?.format || c.body.tools,
       ),
     ).toHaveLength(0);
+  }, 60000);
+
+  it("reports the resolved API surface in provider metadata", async () => {
+    // The SDK reads `model.provider` for the `ai.model.provider` telemetry
+    // attribute, so the label must reflect the surface actually used rather
+    // than a static guess. It is unknown before the first request, which is
+    // correct, and updated once resolved.
+    mutableConfig.OPENAI_BASE_URL = "http://telemetry.invalid/v1";
+    mutableConfig.MODEL_NAME = "m";
+    mutableConfig.OPENAI_API_MODE = "chat";
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            id: "c",
+            object: "chat.completion",
+            created: 1,
+            model: "m",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "hi" },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+    const { getModel } = await import("../../lib/generic-ai.js");
+    const model = getModel("gpt-4o-mini", "openai");
+    expect(model.provider).toBe("openai");
+    await generateText({ model, prompt: "hi" });
+    expect(model.provider).toBe("openai.chat");
   }, 60000);
 
   it("fails closed if a schema-bearing request ever reaches the stream path", async () => {

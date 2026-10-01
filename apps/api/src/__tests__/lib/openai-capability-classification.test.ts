@@ -60,6 +60,25 @@ const STRICT_CASES: [number, string, boolean, string][] = [
     false,
     "unknown parameter",
   ],
+  [
+    // A capability rejection that happens to use the word "invalid".
+    400,
+    '{"error":{"message":"Invalid parameter: response_format/json_schema is not supported"}}',
+    true,
+    "invalid-parameter wording, capability rejection",
+  ],
+  [
+    400,
+    '{"error":{"message":"Invalid parameter: max_tokens"}}',
+    false,
+    "invalid-parameter wording, real caller error",
+  ],
+  [
+    400,
+    '{"error":{"message":"Invalid parameter: response_format"}}',
+    false,
+    "names the field but no capability wording",
+  ],
   [429, "rate limited", false, "rate limited"],
   [500, "boom", false, "server error"],
   [401, "unauthorized", false, "unauthorized"],
