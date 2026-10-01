@@ -53,13 +53,13 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   );
 
   it.concurrent(
-    "rejects oversized agent task context",
+    "ignores invalid agent task context instead of failing the search",
     async () => {
-      const res = await searchWithFailure(
-        { query: "firecrawl", objective: "x".repeat(5001) },
+      const res = await search(
+        { query: "firecrawl", objective: "x".repeat(5001), limit: 1 },
         identity,
       );
-      expect(res.error).toBe("Invalid request body");
+      expect(res.web?.length).toBeGreaterThan(0);
     },
     60000,
   );
