@@ -10,11 +10,13 @@ import { deepinfra } from "@ai-sdk/deepinfra";
 import { createVertex } from "@ai-sdk/google-vertex";
 import { withUsageTelemetry } from "./ai-usage-telemetry";
 import {
-  apiModeSync,
   applyStructuredOutputPolicy,
+  OpenAiToolTransportViolationError,
+  capabilityTargetFor,
+  requestWantsStructuredOutput,
   resolveApiMode,
   resolveStructuredOutputMode,
-  structuredOutputModeSync,
+  type ApiMode,
 } from "./openai-structured-output";
 
 type Provider =
@@ -67,80 +69,84 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
   }
   const modelName = config.MODEL_NAME || name;
   if (provider === "openai") {
-    // o3-mini returns empty text via the Responses API — force Chat Completions.
-    if (modelName.startsWith("o3-mini")) {
-      return finish(providerList.openai.chat(modelName), modelName);
-    }
-    // Endpoint and structured-output capabilities are resolved lazily and
-    // memoized: the first applicable request decides, concurrent callers share
-    // one resolution, and boot never waits on an LLM backend.
-    const mode = apiModeSync();
-    if (mode !== "unresolved") {
-      return finish(openAiModel(modelName, mode), modelName);
-    }
-    return lazyOpenAiModel(modelName);
+    // o3-mini returns empty text via the Responses API — force Chat Completions
+    // for that model, but still resolve structured capability per request so a
+    // custom backend that cannot do strict structured output still works.
+    return adaptiveOpenAiModel(
+      modelName,
+      modelName.startsWith("o3-mini") ? "chat" : undefined,
+    );
   }
-  return finish(providerList[provider](modelName), modelName);
-}
-
-function openAiModel(modelName: string, mode: "responses" | "chat") {
-  return mode === "chat"
-    ? providerList.openai.chat(modelName)
-    : providerList.openai.responses(modelName);
+  // Non-OpenAI providers are untouched by OPENAI_API_MODE and
+  // OPENAI_STRUCTURED_OUTPUT_MODE, which are OpenAI-provider settings.
+  return withUsageTelemetry(providerList[provider](modelName));
 }
 
 /**
- * Model handle for a capability that has not been resolved yet. It resolves
- * on first use and then behaves exactly like the eager path, so an official
- * OpenAI deployment (which always resolves to "responses"/"strict"
- * synchronously) never takes this branch.
+ * An OpenAI-provider model handle that resolves capabilities per request.
+ *
+ * Every request needs an API surface; only schema-backed requests need a
+ * structured-output transport. Plain-text generation must not depend on
+ * structured capability, so a backend that can do ordinary text but no
+ * structured transport still serves non-structured features.
+ *
+ * Capability resolution is delegated to the resolver-level caches, so this
+ * handle keeps no long-lived Promise: a transient probe failure cannot poison
+ * the handle, and the next request retries.
  */
-function lazyOpenAiModel(modelName: string): any {
-  let ready: Promise<any> | null = null;
-  const ensure = () => {
-    if (!ready) {
-      ready = (async () => {
-        const [apiMode, structured] = await Promise.all([
-          resolveApiMode(modelName),
-          resolveStructuredOutputMode(modelName),
-        ]);
-        return finish(openAiModel(modelName, apiMode), modelName, structured);
-      })();
-    }
-    return ready;
+function adaptiveOpenAiModel(modelName: string, forcedApiMode?: ApiMode): any {
+  const target = capabilityTargetFor(modelName);
+  const resolve = async () => {
+    const apiMode = forcedApiMode ?? (await resolveApiMode(target));
+    const surface = withUsageTelemetry(
+      apiMode === "chat"
+        ? providerList.openai.chat(modelName)
+        : providerList.openai.responses(modelName),
+    );
+    return { apiMode, surface };
   };
 
-  const passthrough =
-    (method: string) =>
-    async (...args: unknown[]) => {
-      const model = await ensure();
-      return (model as any)[method](...args);
-    };
+  const run = async (method: "doGenerate" | "doStream", params: unknown) => {
+    const { apiMode, surface } = await resolve();
+    const wantsStructured = requestWantsStructuredOutput(
+      params as Parameters<typeof requestWantsStructuredOutput>[0],
+    );
+    if (!wantsStructured) {
+      // Ordinary text: no structured capability resolution at all.
+      return (surface as any)[method](params);
+    }
+    if (method === "doStream") {
+      // Unreachable today: no Firecrawl call site streams a schema-backed
+      // request. Fail loudly rather than send a schema-bearing request down a
+      // path with no forced-tool handling, which would let unvalidated model
+      // text stand in for a structured result. See toolTransportMiddleware.
+      throw new OpenAiToolTransportViolationError(
+        "structured streaming is not supported by the OpenAI compatibility " +
+          "middleware; use the non-streaming structured generation path",
+      );
+    }
+    // Structured capability is per (endpoint, model, API surface), so it can
+    // only be resolved once the surface is known.
+    const mode = await resolveStructuredOutputMode(target, apiMode);
+    const prepared = applyStructuredOutputPolicy(surface, mode);
+    return (prepared as any)[method](params);
+  };
 
   return {
     specificationVersion: "v3",
-    provider: "openai.unresolved",
+    // Telemetry-only label. It is corrected once the API surface is known so
+    // traces do not report an "adaptive" surface that never existed; behaviour
+    // never depends on it.
+    provider:
+      forcedApiMode === "chat"
+        ? "openai.chat"
+        : forcedApiMode === "responses"
+          ? "openai.responses"
+          : "openai",
     modelId: modelName,
-    doGenerate: passthrough("doGenerate"),
-    doStream: passthrough("doStream"),
+    doGenerate: (params: unknown) => run("doGenerate", params),
+    doStream: (params: unknown) => run("doStream", params),
   };
-}
-
-/**
- * Telemetry first, then the structured-output policy, so the policy is the
- * outermost wrapper and still sees provider options on the way in.
- */
-function finish(
-  model: any,
-  modelName: string,
-  structured?: "strict" | "tool",
-): any {
-  const telemetry = withUsageTelemetry(model);
-  const resolved = structured ?? structuredOutputModeSync();
-  return applyStructuredOutputPolicy(
-    telemetry,
-    resolved === "tool" ? "tool" : "strict",
-  );
 }
 
 export function getEmbeddingModel(

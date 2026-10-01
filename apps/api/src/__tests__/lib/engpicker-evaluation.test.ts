@@ -107,10 +107,12 @@ describe("engpicker evaluateURL failure isolation", () => {
       mockLogger,
     );
 
+    // On a thrown failure the markdown is not carried into the unavailable
+    // observation, so nothing downstream can mistake it for evidence.
     expect(result).toMatchObject({
       result: false,
       evaluated: false,
-      markdown: "# Real page content",
+      markdown: null,
     });
     expect(mockLogger.warn).toHaveBeenCalled();
   });
@@ -151,6 +153,29 @@ describe("engpicker evaluateURL failure isolation", () => {
     expect(result.evaluated).toBe(false);
   });
 
+  it("K: resolves evaluated:false when scrapeURL throws", async () => {
+    // The isolation boundary must cover the scrape, not just the evaluation:
+    // a rejection here would abort the enclosing Promise.all and strand the job.
+    for (const error of [
+      new Error("scrape timeout"),
+      Object.assign(new Error("aborted"), { name: "AbortError" }),
+      new Error("ECONNREFUSED"),
+      new Error("internal engine failure"),
+    ]) {
+      scrapeURL.mockRejectedValue(error);
+      const { evaluateURL } = await loadEngpicker();
+      await expect(
+        evaluateURL(
+          "job-k",
+          "https://example.com",
+          "fire-engine;chrome-cdp",
+          false,
+          mockLogger,
+        ),
+      ).resolves.toMatchObject({ evaluated: false, result: false });
+    }
+  });
+
   it("marks a failed scrape as evaluated, since that is a real verdict", async () => {
     scrapeURL.mockResolvedValue({ success: false, error: "blocked" });
     const { evaluateURL } = await loadEngpicker();
@@ -173,31 +198,125 @@ describe("engpicker evaluateURL failure isolation", () => {
   });
 });
 
-describe("engpicker verdict folding for unevaluated engines", () => {
-  // Architectural note: `EngpickerUrlResult` (Rust, fixed-shape booleans)
-  // cannot represent "no verdict". An unevaluated engine is therefore sent as
-  // success: false, which computeEngpickerVerdict counts as a CDP failure.
-  // This test pins that consequence so a future change to the fold is visible.
-  it("folds evaluated:false into the existing uncertain semantics", async () => {
-    computeEngpickerVerdict.mockResolvedValue({ verdict: "Uncertain" });
-    const verdict = await computeEngpickerVerdict(
-      [
-        {
-          url: "https://example.com",
-          cdpBasicMarkdown: "content",
-          cdpBasicSuccess: false, // evaluated: false folds here
-          cdpStealthMarkdown: undefined,
-          cdpStealthSuccess: false,
-          tlsBasicMarkdown: undefined,
-          tlsBasicSuccess: false,
-          tlsStealthMarkdown: undefined,
-          tlsStealthSuccess: false,
-        },
-      ],
-      0.85,
-      0.7,
-      0.5,
-    );
-    expect(verdict.verdict).toBe("Uncertain");
+describe("engpicker native-input evidence filtering", () => {
+  const E = (
+    engine: import("../../lib/engpicker.js").EngpickerEvaluation["engine"],
+    evaluated: boolean,
+    result = true,
+  ) => ({
+    engine,
+    stealth: engine.includes("stealth"),
+    markdown: evaluated ? "content" : null,
+    result: evaluated ? result : false,
+    evaluated,
+  });
+
+  const ALL_FOUR: import("../../lib/engpicker.js").EngpickerEvaluation["engine"][] =
+    [
+      "fire-engine;chrome-cdp",
+      "fire-engine;chrome-cdp;stealth",
+      "fire-engine;tlsclient",
+      "fire-engine;tlsclient;stealth",
+    ];
+
+  async function load() {
+    vi.resetModules();
+    return import("../../lib/engpicker.js");
+  }
+
+  it("M: includes a fully evaluated sample", async () => {
+    const { buildEngpickerNativeInput } = await load();
+    const input = buildEngpickerNativeInput([
+      { url: "https://a.com", results: ALL_FOUR.map(e => E(e, true, true)) },
+    ]);
+    expect(input).toHaveLength(1);
+    expect(input[0]).toMatchObject({
+      url: "https://a.com",
+      cdpBasicSuccess: true,
+      tlsStealthSuccess: true,
+    });
+  });
+
+  it("M: excludes a URL whose TLS evaluations are unavailable", async () => {
+    const { buildEngpickerNativeInput } = await load();
+    const input = buildEngpickerNativeInput([
+      {
+        url: "https://a.com",
+        results: [
+          E("fire-engine;chrome-cdp", true, true),
+          E("fire-engine;chrome-cdp;stealth", true, true),
+          E("fire-engine;tlsclient", false),
+          E("fire-engine;tlsclient;stealth", false),
+        ],
+      },
+    ]);
+    // The key regression: this must not become tlsSuccess:false, which the
+    // native scorer would read as evidence and could conclude ChromeCdpRequired.
+    expect(input).toEqual([]);
+  });
+
+  it("M: excludes a URL when one CDP evaluation is unavailable", async () => {
+    const { buildEngpickerNativeInput } = await load();
+    const input = buildEngpickerNativeInput([
+      {
+        url: "https://a.com",
+        results: [
+          E("fire-engine;chrome-cdp", false),
+          E("fire-engine;chrome-cdp;stealth", true, true),
+          E("fire-engine;tlsclient", true, true),
+          E("fire-engine;tlsclient;stealth", true, true),
+        ],
+      },
+    ]);
+    expect(input).toEqual([]);
+  });
+
+  it("N: keeps a genuine negative TLS evaluation as real evidence", async () => {
+    const { buildEngpickerNativeInput } = await load();
+    const input = buildEngpickerNativeInput([
+      {
+        url: "https://a.com",
+        results: [
+          E("fire-engine;chrome-cdp", true, true),
+          E("fire-engine;chrome-cdp;stealth", true, true),
+          E("fire-engine;tlsclient", true, false),
+          E("fire-engine;tlsclient;stealth", true, false),
+        ],
+      },
+    ]);
+    expect(input).toHaveLength(1);
+    expect(input[0]).toMatchObject({
+      tlsBasicSuccess: false,
+      tlsStealthSuccess: false,
+      cdpBasicSuccess: true,
+    });
+  });
+
+  it("scores only the fully evaluated subset", async () => {
+    const { buildEngpickerNativeInput } = await load();
+    const input = buildEngpickerNativeInput([
+      { url: "https://good.com", results: ALL_FOUR.map(e => E(e, true, true)) },
+      {
+        url: "https://outage.com",
+        results: [
+          E("fire-engine;chrome-cdp", true, true),
+          E("fire-engine;chrome-cdp;stealth", true, true),
+          E("fire-engine;tlsclient", false),
+          E("fire-engine;tlsclient;stealth", false),
+        ],
+      },
+    ]);
+    expect(input.map(i => i.url)).toEqual(["https://good.com"]);
+  });
+
+  it("returns an empty sample when nothing has complete evidence", async () => {
+    const { buildEngpickerNativeInput } = await load();
+    const input = buildEngpickerNativeInput([
+      {
+        url: "https://a.com",
+        results: ALL_FOUR.map(e => E(e, false)),
+      },
+    ]);
+    expect(input).toEqual([]);
   });
 });

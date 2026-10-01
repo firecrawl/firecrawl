@@ -1,33 +1,48 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject, jsonSchema } from "ai";
+import { generateObject } from "ai";
 import { z } from "zod";
 
 /**
  * Asserts on the HTTP bodies that actually reach the provider. That matters
- * because the whole point of this change is that an option the SDK silently
- * ignores is indistinguishable from a working one if you only inspect
- * JavaScript objects.
+ * because an option the SDK silently ignores is indistinguishable from a
+ * working one if you only inspect JavaScript objects.
  *
- * The fake backend is scriptable per capability-response class so 404 / 405 /
- * 501 / 401 / 403 / 429 / 5xx / timeout can each be exercised, and it can be
- * told to reject json_schema or tools so the auto policy can be walked through
- * every branch.
+ * The fake backend is scriptable per capability-response class and can be told
+ * to support only Responses, only Chat, or to accept requests while ignoring
+ * the structured field. Handlers must return `handled: true` when they answer,
+ * so a handler that only matches one request shape cannot silently swallow
+ * the other and make the probe hang until the timeout.
  */
 
-type Handler = (res: http.ServerResponse, body: any, url: string) => void;
+type Handler = (res: http.ServerResponse, body: any) => boolean | void;
 
 type BackendOptions = {
   onResponses?: Handler;
   onChat?: Handler;
   delayMs?: number;
-  chatReply?: string;
-  /** Chat reply as a forced tool call, with these arguments. */
-  toolArgs?: unknown;
-  rejectJsonSchema?: boolean;
+  /** Answer a strict probe correctly (proves strict support). */
+  supportStrict?: boolean;
+  /** Answer a tool probe with a real forced tool call (proves tool support). */
+  supportTools?: boolean;
+  /** Reject strict structured output with a definite unsupported response. */
+  rejectStrict?: boolean;
+  /** Reject tool calling with a definite unsupported response. */
   rejectTools?: boolean;
+  /** 2xx but ordinary text — proves nothing about the requested transport. */
+  ignoreRequestedFormat?: boolean;
+  /** Tool arguments returned by the real structured call. */
+  toolArgs?: unknown;
+  /** Reply with plain text instead of calling a tool. */
+  textOnly?: boolean;
 };
+
+const isStrictProbe = (body: any) =>
+  body?.text?.format?.name === "probe" ||
+  body?.response_format?.json_schema?.name === "probe";
+const isToolProbe = (body: any) =>
+  body?.tools?.some((t: any) => (t.function?.name ?? t.name) === "probe");
 
 function json(res: http.ServerResponse, status: number, payload: unknown) {
   res.writeHead(status, { "content-type": "application/json" });
@@ -40,10 +55,13 @@ function startBackend(options: BackendOptions = {}) {
     onResponses,
     onChat,
     delayMs = 0,
-    chatReply,
-    toolArgs,
-    rejectJsonSchema = false,
+    supportStrict = true,
+    supportTools = true,
+    rejectStrict = false,
     rejectTools = false,
+    ignoreRequestedFormat = false,
+    toolArgs,
+    textOnly = false,
   } = options;
 
   const server = http.createServer((req, res) => {
@@ -61,76 +79,185 @@ function startBackend(options: BackendOptions = {}) {
 
       const isResponses = (req.url ?? "").endsWith("/responses");
       const handler = isResponses ? onResponses : onChat;
-      if (handler) return handler(res, body, req.url ?? "");
+      // A handler must be called at most once and must explicitly claim the
+      // request; otherwise built-in handling applies. `undefined` for the
+      // handler itself must not be read as "handled".
+      // A handler must explicitly return true to claim the request. Anything
+      // else falls through to built-in handling, so a handler that only
+      // matches one request shape can never leave the other unanswered.
+      if (handler && handler(res, body) === true) return;
 
-      if (isResponses) return json(res, 200, { ok: true });
-
-      const isProbe =
-        body.response_format?.json_schema?.name === "probe" ||
-        body.tools?.[0]?.function?.name === "probe";
-      if (isProbe && body.response_format?.type === "json_schema") {
-        return rejectJsonSchema
-          ? json(res, 400, {
-              error: {
-                message: "response_format json_schema is not supported",
-              },
-            })
-          : json(res, 200, { ok: true });
-      }
-      if (isProbe && body.tools) {
-        return rejectTools
-          ? json(res, 400, {
-              error: {
-                message: "tool calling is not supported by this backend",
-              },
-            })
-          : json(res, 200, { ok: true });
+      if (isResponses && (body.input === undefined || body.input === null)) {
+        return json(res, 404, { error: { message: "unknown route" } });
       }
 
-      // chatReply forces a plain-text reply, ignoring any tool request.
-      const wantTool = body.tools?.length > 0 && chatReply === undefined;
-      json(res, 200, {
-        id: "chatcmpl_1",
-        object: "chat.completion",
-        created: 1,
-        model: "test-model",
-        choices: [
-          wantTool
-            ? {
-                index: 0,
-                message: {
+      if (isStrictProbe(body)) {
+        if (rejectStrict) {
+          return json(res, 400, {
+            error: {
+              message:
+                "response_format json_schema is not supported; use json_object",
+            },
+          });
+        }
+        if (ignoreRequestedFormat) {
+          // 2xx but the strict format was ignored: plain prose, not JSON.
+          return isResponses
+            ? json(res, 200, {
+                id: "r",
+                object: "response",
+                status: "completed",
+                created_at: 1,
+                output: [
+                  {
+                    type: "message",
+                    role: "assistant",
+                    content: [
+                      { type: "output_text", text: "Sure! Here you go." },
+                    ],
+                  },
+                ],
+              })
+            : json(res, 200, chatEnvelope("Sure! Here you go.", false));
+        }
+        const text = JSON.stringify({ ok: true });
+        return isResponses
+          ? json(res, 200, {
+              id: "r",
+              object: "response",
+              status: "completed",
+              created_at: 1,
+              output: [
+                {
+                  type: "message",
                   role: "assistant",
-                  content: null,
-                  tool_calls: [
-                    {
-                      id: "call_1",
-                      type: "function",
-                      function: {
-                        name: body.tools[0].function.name,
-                        arguments: JSON.stringify(
-                          toolArgs ??
-                            (isProbe ? { ok: true } : { title: "Example.com" }),
-                        ),
-                      },
-                    },
-                  ],
+                  content: [{ type: "output_text", text }],
                 },
-                finish_reason: "tool_calls",
-              }
-            : {
-                index: 0,
-                message: {
-                  role: "assistant",
-                  content:
-                    chatReply ?? JSON.stringify(isProbe ? { ok: true } : {}),
+              ],
+            })
+          : json(res, 200, chatEnvelope(text, false));
+      }
+
+      if (isToolProbe(body)) {
+        if (rejectTools) {
+          return json(res, 400, {
+            error: { message: "tool calling is not supported by this backend" },
+          });
+        }
+        if (ignoreRequestedFormat) {
+          return isResponses
+            ? json(res, 200, {
+                id: "r",
+                object: "response",
+                status: "completed",
+                created_at: 1,
+                output: [
+                  {
+                    type: "message",
+                    role: "assistant",
+                    content: [
+                      { type: "output_text", text: "I cannot do that." },
+                    ],
+                  },
+                ],
+              })
+            : json(res, 200, chatEnvelope("I cannot do that.", false));
+        }
+        const args = JSON.stringify({ ok: true });
+        return isResponses
+          ? json(res, 200, {
+              id: "r",
+              object: "response",
+              status: "completed",
+              created_at: 1,
+              output: [
+                {
+                  type: "function_call",
+                  id: "fc_1",
+                  call_id: "c1",
+                  name: "probe",
+                  arguments: args,
                 },
-                finish_reason: "stop",
+              ],
+            })
+          : json(res, 200, chatEnvelope(null, true, args, "probe"));
+      }
+
+      // Real (non-probe) structured call.
+      const wantsTool = body.tools?.length > 0;
+      if (wantsTool && !textOnly) {
+        const args = JSON.stringify(toolArgs ?? { title: "Example.com" });
+        const name =
+          body.tools[0].function?.name ?? body.tools[0].name ?? "tool";
+        return isResponses
+          ? json(res, 200, {
+              id: "r",
+              object: "response",
+              status: "completed",
+              created_at: 1,
+              output: [
+                {
+                  type: "function_call",
+                  id: "fc_1",
+                  call_id: "c1",
+                  name,
+                  arguments: args,
+                },
+              ],
+            })
+          : json(res, 200, chatEnvelope(null, true, args));
+      }
+      return isResponses
+        ? json(res, 200, {
+            id: "r",
+            object: "response",
+            status: "completed",
+            created_at: 1,
+            output: [
+              {
+                type: "message",
+                role: "assistant",
+                content: [{ type: "output_text", text: "hello" }],
               },
-        ],
-        usage: { prompt_tokens: 100, completion_tokens: 10, total_tokens: 110 },
-      });
+            ],
+          })
+        : json(res, 200, chatEnvelope("hello", false));
     });
   });
+
+  function chatEnvelope(
+    content: string | null,
+    tool: boolean,
+    args?: string,
+    toolName = "firecrawl_structured_output",
+  ) {
+    return {
+      id: "chatcmpl_1",
+      object: "chat.completion",
+      created: 1,
+      model: "test-model",
+      choices: [
+        {
+          index: 0,
+          message: tool
+            ? {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "c1",
+                    type: "function",
+                    function: { name: toolName, arguments: args ?? "{}" },
+                  },
+                ],
+              }
+            : { role: "assistant", content },
+          finish_reason: tool ? "tool_calls" : "stop",
+        },
+      ],
+      usage: { prompt_tokens: 100, completion_tokens: 10, total_tokens: 110 },
+    };
+  }
 
   return new Promise<{
     baseURL: string;
@@ -156,22 +283,17 @@ const ENV_KEYS = [
   "MODEL_NAME",
 ] as const;
 
-const SCHEMA = {
-  type: "object" as const,
-  properties: { title: { type: "string" as const, description: "The title" } },
-  required: ["title"],
-};
-
 function lastUserText(body: any): string {
-  const messages = body?.messages ?? [];
-  const user = [...messages].reverse().find((m: any) => m.role === "user");
+  const user = [...(body?.messages ?? [])]
+    .reverse()
+    .find((m: any) => m.role === "user");
   const content = user?.content ?? "";
   return Array.isArray(content)
     ? content.map((c: any) => c?.text ?? "").join("")
     : String(content);
 }
 
-describe("openai endpoint + structured-output transport", () => {
+describe("openai endpoint + structured transport", () => {
   let backend: Awaited<ReturnType<typeof startBackend>> | null = null;
   const savedEnv: Record<string, string | undefined> = {};
 
@@ -195,78 +317,81 @@ describe("openai endpoint + structured-output transport", () => {
       if (v !== undefined) process.env[k] = v;
     }
     const compat = await import("../../lib/openai-structured-output.js");
-    return {
-      ...compat,
-      model: (baseURL: string, useChat = true) => {
-        const o = createOpenAI({ apiKey: "k", baseURL });
-        return compat.applyStructuredOutputPolicy(
-          useChat ? o.chat("test-model") : o.responses("test-model"),
-          compat.structuredOutputModeSync() as "strict" | "tool",
-        );
-      },
-    };
+    return compat;
   }
 
-  const BASE = { OPENAI_API_KEY: "test-key", MODEL_NAME: "test-model" };
+  const BASE = { OPENAI_API_KEY: "test-key" };
   const chats = (b: typeof backend) =>
     b!.requests.filter(r => r.url.endsWith("/chat/completions"));
-  /** Last non-probe chat request, i.e. the real structured call. */
-  const lastCall = (b: typeof backend) =>
-    chats(b)
-      .filter(r => r.body.tools?.[0]?.function?.name !== "probe")
+  const responses = (b: typeof backend) =>
+    b!.requests.filter(r => r.url.endsWith("/responses"));
+  /** Last request that is an actual application call, not a capability probe. */
+  const realCall = (b: typeof backend) =>
+    [...b!.requests]
+      .filter(r => {
+        const toolNames = (r.body.tools ?? []).map(
+          (t: any) => t.function?.name ?? t.name,
+        );
+        const formatName =
+          r.body.text?.format?.name ??
+          r.body.response_format?.json_schema?.name;
+        return formatName !== "probe" && !toolNames.includes("probe");
+      })
       .at(-1);
+
+  const M = (name = "test-model") => ({
+    baseURL: backend!.baseURL,
+    modelName: name,
+  });
 
   // ---------------------------------------------------------------- official
 
   describe("official OpenAI", () => {
     it("never probes and stays on Responses + strict", async () => {
       const probe = vi.spyOn(globalThis, "fetch");
-      const p = await load(BASE);
+      const c = await load(BASE);
+      const target = { baseURL: "https://api.openai.com/v1", modelName: "m" };
 
-      await expect(p.resolveApiMode("m")).resolves.toBe("responses");
-      await expect(p.resolveStructuredOutputMode("m")).resolves.toBe("strict");
+      await expect(c.resolveApiMode(target)).resolves.toBe("responses");
+      await expect(
+        c.resolveStructuredOutputMode(target, "responses"),
+      ).resolves.toBe("strict");
       expect(probe).not.toHaveBeenCalled();
-      expect(p.apiModeSync()).toBe("responses");
-      expect(p.structuredOutputModeSync()).toBe("strict");
+      expect(c.apiModeSync(target)).toBe("responses");
       probe.mockRestore();
     });
 
-    it("recognises an explicit openai.com base URL as official", async () => {
-      const probe = vi.spyOn(globalThis, "fetch");
-      const p = await load({
-        ...BASE,
-        OPENAI_BASE_URL: "https://api.openai.com/v1",
-      });
-      expect(p.isOfficialOpenAiEndpoint()).toBe(true);
-      await expect(p.resolveApiMode()).resolves.toBe("responses");
-      expect(probe).not.toHaveBeenCalled();
-      probe.mockRestore();
-    });
+    it("never wraps official OpenAI in the tool transport", async () => {
+      // Official OpenAI must keep native strict output and receive no
+      // compatibility wrapper, whatever the transport setting says elsewhere.
+      const c = await load(BASE);
+      const target = {
+        baseURL: "https://api.openai.com/v1",
+        modelName: "gpt-4o-mini",
+      };
+      await expect(
+        c.resolveStructuredOutputMode(target, "responses"),
+      ).resolves.toBe("strict");
 
-    it("emits native strict json_schema and receives no tool wrapper", async () => {
-      backend = await startBackend();
-      const p = await load(BASE);
-      await Promise.resolve(
-        p.model(backend.baseURL, false).doGenerate({
-          prompt: [
-            { role: "user", content: [{ type: "text", text: "Extract." }] },
-          ],
-          mode: "json",
-          responseFormat: { type: "json", name: "response", schema: SCHEMA },
-        } as any),
-      ).catch(() => {});
-
-      const sent = backend.requests
-        .filter(r => r.url.endsWith("/responses"))
-        .at(-1)!;
-      expect(sent.url).toContain("/responses");
-      expect(sent.body.text.format.type).toBe("json_schema");
-      expect(sent.body.text.format.strict).toBe(true);
-      // Official OpenAI must never receive the tool compatibility transport.
-      expect(JSON.stringify(sent.body)).not.toContain(
-        "firecrawl_structured_output",
+      const base = createOpenAI({
+        apiKey: "k",
+        baseURL: target.baseURL,
+      }).responses("m");
+      // strict mode returns the provider model untouched.
+      expect(c.applyStructuredOutputPolicy(base, "strict")).toBe(base);
+      expect(c.applyStructuredOutputPolicy(base, "strict").provider).toBe(
+        "openai.responses",
       );
-      expect(sent.body.tools).toBeUndefined();
+    });
+
+    it("treats a custom endpoint as non-official", async () => {
+      const c = await load(BASE);
+      expect(c.isOfficialOpenAiEndpoint("https://api.openai.com/v1")).toBe(
+        true,
+      );
+      expect(c.isOfficialOpenAiEndpoint("http://127.0.0.1:11434/v1")).toBe(
+        false,
+      );
     });
   });
 
@@ -275,66 +400,68 @@ describe("openai endpoint + structured-output transport", () => {
   describe("endpoint detection (auto)", () => {
     it("keeps Responses when supported", async () => {
       backend = await startBackend();
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      await expect(p.resolveApiMode("m")).resolves.toBe("responses");
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await expect(c.resolveApiMode(M())).resolves.toBe("responses");
     });
 
     it.each([404, 405, 501])("selects Chat on HTTP %i", async status => {
       backend = await startBackend({
-        onResponses: res => json(res, status, { error: { message: "nope" } }),
+        onResponses: res => {
+          json(res, status, { error: { message: "nope" } });
+          return true;
+        },
       });
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      await expect(p.resolveApiMode("m")).resolves.toBe("chat");
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await expect(c.resolveApiMode(M())).resolves.toBe("chat");
     });
 
     it.each([401, 403, 429, 500, 503])(
       "refuses to classify HTTP %i as endpoint absence",
       async status => {
         backend = await startBackend({
-          onResponses: res =>
-            json(res, status, { error: { message: "operational" } }),
+          onResponses: res => {
+            json(res, status, { error: { message: "operational" } });
+            return true;
+          },
         });
-        const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-        await expect(p.resolveApiMode("m")).rejects.toMatchObject({
+        const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+        await expect(c.resolveApiMode(M())).rejects.toMatchObject({
           name: "OpenAiCapabilityIndeterminateError",
         });
       },
     );
 
     it("does not treat a connection failure as endpoint absence", async () => {
-      const p = await load({
-        ...BASE,
-        OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
-      });
-      await expect(p.resolveApiMode()).rejects.toMatchObject({
+      const c = await load(BASE);
+      await expect(
+        c.resolveApiMode({ baseURL: "http://127.0.0.1:9/v1", modelName: "m" }),
+      ).rejects.toMatchObject({
         name: "OpenAiCapabilityIndeterminateError",
       });
     });
 
-    it("explicit responses never falls back", async () => {
-      backend = await startBackend({
-        onResponses: res => json(res, 404, { error: {} }),
-      });
-      const p = await load({
+    it("explicit responses never probes", async () => {
+      backend = await startBackend();
+      const c = await load({
         ...BASE,
         OPENAI_BASE_URL: backend.baseURL,
         OPENAI_API_MODE: "responses",
       });
       const probe = vi.spyOn(globalThis, "fetch");
-      expect(p.apiModeSync()).toBe("responses");
+      expect(c.apiModeSync(M())).toBe("responses");
       expect(probe).not.toHaveBeenCalled();
       probe.mockRestore();
     });
 
     it("explicit chat never probes Responses", async () => {
       backend = await startBackend();
-      const p = await load({
+      const c = await load({
         ...BASE,
         OPENAI_BASE_URL: backend.baseURL,
         OPENAI_API_MODE: "chat",
       });
       const probe = vi.spyOn(globalThis, "fetch");
-      await expect(p.resolveApiMode()).resolves.toBe("chat");
+      await expect(c.resolveApiMode(M())).resolves.toBe("chat");
       expect(probe).not.toHaveBeenCalled();
       probe.mockRestore();
     });
@@ -342,57 +469,96 @@ describe("openai endpoint + structured-output transport", () => {
 
   // ---------------------------------------------------------------- caches
 
-  describe("capability cache", () => {
-    it("probes once across repeated resolution", async () => {
-      backend = await startBackend();
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      await p.resolveApiMode("m");
-      await p.resolveApiMode("m");
-      await p.resolveApiMode("m");
-      expect(
-        backend.requests.filter(r => r.url.endsWith("/responses")).length,
-      ).toBe(1);
-    });
-
-    it("shares one probe across concurrent callers", async () => {
-      backend = await startBackend();
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      await Promise.all([
-        p.resolveApiMode("m"),
-        p.resolveApiMode("m"),
-        p.resolveApiMode("m"),
-      ]);
-      expect(
-        backend.requests.filter(r => r.url.endsWith("/responses")).length,
-      ).toBe(1);
-    });
-
-    it("does not share capability between base URLs", async () => {
+  describe("capability cache identity", () => {
+    it("keys endpoint capability by base URL AND model", async () => {
       const a = await startBackend();
       const b = await startBackend({
-        onResponses: res => json(res, 404, { error: {} }),
+        onResponses: res => {
+          json(res, 404, { error: {} });
+          return true;
+        },
       });
+      backend = a;
+      const c = await load({ ...BASE, OPENAI_BASE_URL: a.baseURL });
       try {
-        const p = await load({ ...BASE, OPENAI_BASE_URL: a.baseURL });
-        await expect(p.resolveApiMode("m")).resolves.toBe("responses");
-        const q = await load({ ...BASE, OPENAI_BASE_URL: b.baseURL });
-        await expect(q.resolveApiMode("m")).resolves.toBe("chat");
-        const r = await load({ ...BASE, OPENAI_BASE_URL: a.baseURL });
-        await expect(r.resolveApiMode("m")).resolves.toBe("responses");
+        // Same module instance, two base URLs: must not share.
+        await expect(
+          c.resolveApiMode({ baseURL: a.baseURL, modelName: "m" }),
+        ).resolves.toBe("responses");
+        await expect(
+          c.resolveApiMode({ baseURL: b.baseURL, modelName: "m" }),
+        ).resolves.toBe("chat");
+        expect(c.__caches.endpoint.size).toBe(2);
+
+        // Same base URL, two models: must not share.
+        c.__resetCapabilityCaches();
+        await expect(
+          c.resolveApiMode({ baseURL: a.baseURL, modelName: "model-a" }),
+        ).resolves.toBe("responses");
+        await expect(
+          c.resolveApiMode({ baseURL: b.baseURL, modelName: "model-a" }),
+        ).resolves.toBe("chat");
       } finally {
         await a.close();
         await b.close();
       }
     });
 
-    it("keys capability by model too", async () => {
+    it("keys structured capability by surface as well as endpoint and model", async () => {
       backend = await startBackend();
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      await p.resolveApiMode("model-a");
-      await p.resolveApiMode("model-b");
+      const c = await load({
+        ...BASE,
+        OPENAI_BASE_URL: backend.baseURL,
+        OPENAI_API_MODE: "chat",
+      });
+      await expect(c.resolveStructuredOutputMode(M(), "chat")).resolves.toBe(
+        "strict",
+      );
+      // A responses-surface lookup must not reuse the chat answer.
       expect(
-        backend.requests.filter(r => r.url.endsWith("/responses")).length,
-      ).toBe(2);
+        c.__caches.structured.has(`${backend.baseURL}|test-model|chat`),
+      ).toBe(true);
+      expect(
+        c.__caches.structured.has(`${backend.baseURL}|test-model|responses`),
+      ).toBe(false);
+    });
+
+    it("shares one in-flight probe across concurrent callers", async () => {
+      backend = await startBackend();
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await Promise.all([
+        c.resolveApiMode(M()),
+        c.resolveApiMode(M()),
+        c.resolveApiMode(M()),
+      ]);
+      expect(responses(backend).length).toBe(1);
+    });
+
+    it("two endpoints with different capabilities do not share a cache entry", async () => {
+      // Falsifiability check: if either key omitted baseURL, this backend pair
+      // would collapse onto one answer and the second assertion would fail.
+      const strictBackend = await startBackend();
+      const toolBackend = await startBackend({ rejectStrict: true });
+      const c = await load({ ...BASE, OPENAI_BASE_URL: strictBackend.baseURL });
+      try {
+        expect(
+          await c.resolveStructuredOutputMode(
+            { baseURL: strictBackend.baseURL, modelName: "m" },
+            "chat",
+          ),
+        ).toBe("strict");
+        expect(
+          await c.resolveStructuredOutputMode(
+            { baseURL: toolBackend.baseURL, modelName: "m" },
+            "chat",
+          ),
+        ).toBe("tool");
+        // Two distinct cache entries, differing only by base URL.
+        expect(c.__caches.structured.size).toBe(2);
+      } finally {
+        await strictBackend.close();
+        await toolBackend.close();
+      }
     });
 
     it("never caches an operational failure", async () => {
@@ -400,14 +566,32 @@ describe("openai endpoint + structured-output transport", () => {
       backend = await startBackend({
         onResponses: res => {
           calls++;
-          return json(res, 503, { error: { message: "down" } });
+          json(res, 503, { error: { message: "down" } });
+          return true;
         },
       });
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      await expect(p.resolveApiMode("m")).rejects.toThrow();
-      await expect(p.resolveApiMode("m")).rejects.toThrow();
-      // A 503 must not become a cached "chat" decision.
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await expect(c.resolveApiMode(M())).rejects.toThrow();
+      await expect(c.resolveApiMode(M())).rejects.toThrow();
       expect(calls).toBe(2);
+      expect(c.__caches.endpoint.size).toBe(0);
+    });
+
+    it("recovers after a transient failure and then caches", async () => {
+      let calls = 0;
+      backend = await startBackend({
+        onResponses: res => {
+          calls++;
+          if (calls === 1) {
+            json(res, 503, { error: { message: "down" } });
+            return true;
+          }
+          return false;
+        },
+      });
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await expect(c.resolveApiMode(M())).rejects.toThrow();
+      await expect(c.resolveApiMode(M())).resolves.toBe("responses");
     });
   });
 
@@ -416,89 +600,152 @@ describe("openai endpoint + structured-output transport", () => {
   describe("automatic structured transport", () => {
     it("uses strict when json_schema is supported", async () => {
       backend = await startBackend();
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      await expect(p.resolveStructuredOutputMode("m")).resolves.toBe("strict");
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await expect(c.resolveStructuredOutputMode(M(), "chat")).resolves.toBe(
+        "strict",
+      );
     });
 
-    it("falls back to tool when json_schema is definitely rejected", async () => {
-      backend = await startBackend({ rejectJsonSchema: true });
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      await expect(p.resolveStructuredOutputMode("m")).resolves.toBe("tool");
+    it("falls back to tool when strict is definitely rejected", async () => {
+      backend = await startBackend({ rejectStrict: true });
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await expect(c.resolveStructuredOutputMode(M(), "chat")).resolves.toBe(
+        "tool",
+      );
+    });
+
+    it("probes the Responses surface when Responses is selected", async () => {
+      backend = await startBackend();
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await expect(
+        c.resolveStructuredOutputMode(M(), "responses"),
+      ).resolves.toBe("strict");
+      // The strict probe must have used the Responses request shape.
+      expect(responses(backend).length).toBeGreaterThan(0);
+      expect(responses(backend)[0]?.body.text?.format?.type).toBe(
+        "json_schema",
+      );
+      expect(chats(backend).length).toBe(0);
+    });
+
+    it("resolves auto structured on the Responses surface when API mode is responses", async () => {
+      // Explicit API mode must not decide structured capability on Chat; the
+      // two dimensions are independent.
+      backend = await startBackend();
+      const c = await load({
+        ...BASE,
+        OPENAI_BASE_URL: backend.baseURL,
+        OPENAI_API_MODE: "responses",
+      });
+      await expect(
+        c.resolveStructuredOutputMode(M(), "responses"),
+      ).resolves.toBe("strict");
+      // Probing happened on Responses only.
+      expect(responses(backend).length).toBeGreaterThan(0);
+      expect(chats(backend).length).toBe(0);
+    });
+
+    it("works on a Responses-only backend that has no Chat Completions", async () => {
+      backend = await startBackend({
+        onChat: res => {
+          json(res, 404, { error: { message: "unknown route" } });
+          return true;
+        },
+      });
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await expect(c.resolveApiMode(M())).resolves.toBe("responses");
+      await expect(
+        c.resolveStructuredOutputMode(M(), "responses"),
+      ).resolves.toBe("strict");
+      expect(chats(backend).length).toBe(0);
     });
 
     it("fails closed when neither transport is supported", async () => {
-      backend = await startBackend({
-        rejectJsonSchema: true,
-        rejectTools: true,
-      });
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      await expect(p.resolveStructuredOutputMode("m")).rejects.toBeInstanceOf(
-        p.OpenAiNoStructuredTransportError,
-      );
-      await expect(p.resolveStructuredOutputMode("m")).rejects.toThrow(
-        /supports neither native strict JSON-schema output nor forced tool\/function calling/,
-      );
+      backend = await startBackend({ rejectStrict: true, rejectTools: true });
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await expect(
+        c.resolveStructuredOutputMode(M(), "chat"),
+      ).rejects.toBeInstanceOf(c.OpenAiNoStructuredTransportError);
     });
 
-    it("propagates an indeterminate json_schema probe", async () => {
-      backend = await startBackend({
-        onChat: (res, body) => {
-          if (body.response_format?.json_schema?.name === "probe") {
-            return json(res, 403, { error: { message: "forbidden" } });
-          }
-        },
-      });
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      await expect(p.resolveStructuredOutputMode("m")).rejects.toMatchObject({
+    it("does not cache a 2xx that ignored json_schema", async () => {
+      backend = await startBackend({ ignoreRequestedFormat: true });
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await expect(
+        c.resolveStructuredOutputMode(M(), "chat"),
+      ).rejects.toMatchObject({
         name: "OpenAiCapabilityIndeterminateError",
       });
+      expect(c.__caches.structured.size).toBe(0);
     });
 
-    it("propagates an indeterminate tool probe", async () => {
+    it("does not cache a 2xx that ignored the forced tool call", async () => {
       backend = await startBackend({
-        rejectJsonSchema: true,
-        onChat: (res, body) => {
-          if (body.tools?.[0]?.function?.name === "probe") {
-            return json(res, 500, { error: { message: "boom" } });
-          }
-        },
+        rejectStrict: true,
+        ignoreRequestedFormat: true,
       });
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      await expect(p.resolveStructuredOutputMode("m")).rejects.toMatchObject({
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      await expect(
+        c.resolveStructuredOutputMode(M(), "chat"),
+      ).rejects.toMatchObject({
         name: "OpenAiCapabilityIndeterminateError",
       });
+      expect(c.__caches.structured.size).toBe(0);
     });
 
-    it("never selects a prompt-carried schema", async () => {
-      backend = await startBackend({ rejectJsonSchema: true });
-      const p = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
-      const mode = await p.resolveStructuredOutputMode("m");
-      expect(mode).toBe("tool");
-      expect(mode).not.toBe("prompt");
+    it("propagates an indeterminate tool probe without timing out", async () => {
+      let toolProbeSeen = false;
+      backend = await startBackend({
+        rejectStrict: true,
+        onChat: (res, body) => {
+          if (
+            body.tools?.some(
+              (t: any) => (t.function?.name ?? t.name) === "probe",
+            )
+          ) {
+            toolProbeSeen = true;
+            json(res, 500, { error: { message: "boom" } });
+            return true;
+          }
+          return false;
+        },
+      });
+      const c = await load({ ...BASE, OPENAI_BASE_URL: backend.baseURL });
+      const started = Date.now();
+      await expect(
+        c.resolveStructuredOutputMode(M(), "chat"),
+      ).rejects.toMatchObject({ name: "OpenAiCapabilityIndeterminateError" });
+      // Both probes must have happened, and quickly.
+      expect(toolProbeSeen).toBe(true);
+      expect(Date.now() - started).toBeLessThan(4000);
     });
 
     it("explicit strict never probes and never falls back", async () => {
-      backend = await startBackend({ rejectJsonSchema: true });
-      const p = await load({
+      backend = await startBackend({ rejectStrict: true });
+      const c = await load({
         ...BASE,
         OPENAI_BASE_URL: backend.baseURL,
         OPENAI_STRUCTURED_OUTPUT_MODE: "strict",
       });
       const probe = vi.spyOn(globalThis, "fetch");
-      await expect(p.resolveStructuredOutputMode()).resolves.toBe("strict");
+      await expect(c.resolveStructuredOutputMode(M(), "chat")).resolves.toBe(
+        "strict",
+      );
       expect(probe).not.toHaveBeenCalled();
       probe.mockRestore();
     });
 
     it("explicit tool never probes", async () => {
       backend = await startBackend();
-      const p = await load({
+      const c = await load({
         ...BASE,
         OPENAI_BASE_URL: backend.baseURL,
         OPENAI_STRUCTURED_OUTPUT_MODE: "tool",
       });
       const probe = vi.spyOn(globalThis, "fetch");
-      await expect(p.resolveStructuredOutputMode()).resolves.toBe("tool");
+      await expect(c.resolveStructuredOutputMode(M(), "chat")).resolves.toBe(
+        "tool",
+      );
       expect(probe).not.toHaveBeenCalled();
       probe.mockRestore();
     });
@@ -507,25 +754,29 @@ describe("openai endpoint + structured-output transport", () => {
   // ------------------------------------------------------- tool transport
 
   describe("tool transport request shaping", () => {
-    async function toolMode() {
+    async function loadTool() {
       backend = await startBackend({ toolArgs: { title: "Example.com" } });
-      const p = await load({
+      const c = await load({
         ...BASE,
-        OPENAI_BASE_URL: backend.baseURL,
+        OPENAI_BASE_URL: backend!.baseURL,
+        OPENAI_API_MODE: "chat",
         OPENAI_STRUCTURED_OUTPUT_MODE: "tool",
       });
-      return p;
+      return c;
     }
 
-    it("sends the schema only as a forced tool, never as json_schema or prompt text", async () => {
-      const p = await toolMode();
+    it("sends the schema only as a forced tool", async () => {
+      const c = await loadTool();
       const result = await generateObject({
-        model: p.model(backend!.baseURL),
+        model: c.applyStructuredOutputPolicy(
+          createOpenAI({ apiKey: "k", baseURL: backend!.baseURL }).chat("m"),
+          "tool",
+        ),
         schema: z.object({ title: z.string() }),
         prompt: "Extract the title.",
       });
 
-      const sent = lastCall(backend)!;
+      const sent = realCall(backend)!;
       expect(sent.body.tools?.[0]?.function?.name).toBe(
         "firecrawl_structured_output",
       );
@@ -535,104 +786,86 @@ describe("openai endpoint + structured-output transport", () => {
       });
       expect(JSON.stringify(sent.body)).not.toContain("json_schema");
       expect(sent.body.response_format).toBeUndefined();
-      // The schema must not appear in ordinary prompt content.
       expect(lastUserText(sent.body)).not.toContain('"title"');
       expect(result.object).toEqual({ title: "Example.com" });
     });
 
-    it("forwards annotations in the provider-facing tool schema", async () => {
-      const p = await toolMode();
-      await Promise.resolve(
-        p.model(backend!.baseURL).doGenerate({
-          prompt: [
-            { role: "user", content: [{ type: "text", text: "Extract." }] },
-          ],
-          mode: "json",
-          responseFormat: { type: "json", name: "response", schema: SCHEMA },
-        } as any),
-      ).catch(() => {});
-      const params = lastCall(backend)?.body.tools?.[0]?.function?.parameters;
-      expect(params?.properties?.title?.description).toBe("The title");
-    });
-
     it("validates tool arguments against the ORIGINAL zod schema", async () => {
       backend = await startBackend({ toolArgs: { title: 12345 } });
-      const p = await load({
+      const c = await load({
         ...BASE,
         OPENAI_BASE_URL: backend.baseURL,
+        OPENAI_API_MODE: "chat",
         OPENAI_STRUCTURED_OUTPUT_MODE: "tool",
       });
       await expect(
         generateObject({
-          model: p.model(backend.baseURL),
+          model: c.applyStructuredOutputPolicy(
+            createOpenAI({ apiKey: "k", baseURL: backend.baseURL }).chat("m"),
+            "tool",
+          ),
           schema: z.object({ title: z.string() }),
           prompt: "Extract.",
         }),
       ).rejects.toThrow();
     });
 
-    it("rejects a non-tool reply rather than trusting it", async () => {
-      backend = await startBackend({ chatReply: "I refuse to answer" });
-      const p = await load({
+    it("rejects valid JSON delivered as ordinary text when tool_choice is ignored", async () => {
+      // The strongest fail-closed case: the text is perfectly valid and would
+      // pass generateObject's parser, so only an explicit transport check can
+      // reject it.
+      backend = await startBackend({ textOnly: true });
+      const c = await load({
         ...BASE,
         OPENAI_BASE_URL: backend.baseURL,
+        OPENAI_API_MODE: "chat",
         OPENAI_STRUCTURED_OUTPUT_MODE: "tool",
       });
       await expect(
         generateObject({
-          model: p.model(backend.baseURL),
+          model: c.applyStructuredOutputPolicy(
+            createOpenAI({ apiKey: "k", baseURL: backend.baseURL }).chat("m"),
+            "tool",
+          ),
           schema: z.object({ title: z.string() }),
           prompt: "Extract.",
         }),
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({ name: "OpenAiToolTransportViolationError" });
     });
 
-    it("strict mode still sends native json_schema", async () => {
+    it("does not touch a model in strict mode", async () => {
       backend = await startBackend();
-      const p = await load({
+      const c = await load({
         ...BASE,
         OPENAI_BASE_URL: backend.baseURL,
+        OPENAI_API_MODE: "chat",
         OPENAI_STRUCTURED_OUTPUT_MODE: "strict",
       });
       await Promise.resolve(
-        p.model(backend.baseURL).doGenerate({
-          prompt: [
-            { role: "user", content: [{ type: "text", text: "Extract." }] },
-          ],
-          mode: "json",
-          responseFormat: { type: "json", name: "response", schema: SCHEMA },
-        } as any),
+        c
+          .applyStructuredOutputPolicy(
+            createOpenAI({ apiKey: "k", baseURL: backend.baseURL }).chat("m"),
+            "strict",
+          )
+          .doGenerate({
+            prompt: [
+              { role: "user", content: [{ type: "text", text: "Extract." }] },
+            ],
+            mode: "json",
+            responseFormat: {
+              type: "json",
+              name: "response",
+              schema: {
+                type: "object",
+                properties: { title: { type: "string" } },
+                required: ["title"],
+              },
+            },
+          } as any),
       ).catch(() => {});
-      const sent = lastCall(backend)!;
+      const sent = realCall(backend)!;
       expect(sent.body.response_format.type).toBe("json_schema");
       expect(sent.body.tools).toBeUndefined();
     });
-  });
-
-  // ------------------------------------------------- validator-regression trap
-
-  it("jsonSchema() alone does NOT validate; the original zod schema does", async () => {
-    // jsonSchema() carries no runtime validator, so a wrong-typed value passes
-    // through it. This is why the tool path must never treat the provider-side
-    // schema as authoritative. Pinned so it cannot silently change.
-    const bad = { title: 12345 };
-    const viaJsonSchema = await generateObject({
-      model: createOpenAI({
-        apiKey: "k",
-        baseURL: "http://127.0.0.1:9/v1",
-      }).chat("m"),
-      schema: jsonSchema(SCHEMA as any),
-      prompt: "x",
-    } as any).catch(() => null);
-    // Unreachable backend, so assert on the validators directly instead.
-    expect(viaJsonSchema).toBeNull();
-
-    // jsonSchema() admits a wrong type; zod does not.
-    const parsedByJsonSchema = await (jsonSchema(SCHEMA as any) as any)
-      .validate?.(bad)
-      .catch(() => "threw");
-    expect(parsedByJsonSchema).not.toBe("threw");
-
-    expect(z.object({ title: z.string() }).safeParse(bad).success).toBe(false);
   });
 });

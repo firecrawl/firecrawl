@@ -45,14 +45,16 @@ OPENAI_API_MODE=auto
 OPENAI_STRUCTURED_OUTPUT_MODE=auto
 ```
 
-`auto` is meant to remove protocol footguns. Firecrawl checks once per process,
-lazily on the first LLM request, which API surface the endpoint implements and
-how it can accept a schema, then caches the answer and shares it across
-concurrent requests. Boot never waits on your inference backend, so scrape and
-crawl paths keep working even if it is unavailable. Only a definite "no such
-endpoint" reply switches a setting; authentication failures, rate limits, 5xx
-responses and network errors are reported rather than silently changing
-behaviour.
+`auto` is meant to remove protocol footguns. Firecrawl checks lazily, on the
+first request that needs the answer, which API surface the endpoint implements
+and how it can accept a schema. Results are cached per endpoint, model and API
+surface, and shared across concurrent requests. Boot never waits on your
+inference backend, so scrape and crawl paths keep working even if it is
+unavailable, and plain-text features work even on a backend with no structured
+support at all. Only a definite "no such endpoint" reply switches a setting;
+authentication failures, rate limits, 5xx responses and network errors are
+reported rather than silently changing behaviour, and are never cached as a
+capability answer.
 
 If you already know your backend's capabilities, set them explicitly and skip
 the checks entirely:
@@ -73,6 +75,12 @@ and both keep the schema provider-side, where it is structure rather than text:
 `auto` prefers `strict`, falls back to `tool`, and **fails closed** if the
 backend supports neither. That error surfaces at the first affected LLM
 operation, not at startup.
+
+Structured capability is resolved per request and only for requests that
+actually ask for a schema, so ordinary text features never depend on it. A 2xx
+response is not treated as proof: Firecrawl checks that the reply really
+carried a schema-conforming result, or a real forced tool call, before caching a
+capability.
 
 There is deliberately no mode that puts a JSON Schema into the prompt. Carrying a
 caller-supplied schema as prompt text moves schema metadata — `description`,

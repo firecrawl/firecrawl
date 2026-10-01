@@ -85,6 +85,7 @@ const HOSTILE_SCHEMAS: Record<string, unknown> = {
 
 function startBackend(reply: unknown) {
   const asText = !!(reply as any)?.__text;
+  const wrongTool = !!(reply as any)?.__wrongTool;
   const payload = asText ? (reply as any).__text : reply;
   const requests: { url: string; body: any }[] = [];
   const server = http.createServer((req, res) => {
@@ -106,13 +107,8 @@ function startBackend(reply: unknown) {
           created: 1,
           model: "test-model",
           choices: [
-            asText
+            wrongTool
               ? {
-                  index: 0,
-                  message: { role: "assistant", content: payload },
-                  finish_reason: "stop",
-                }
-              : {
                   index: 0,
                   message: {
                     role: "assistant",
@@ -121,15 +117,36 @@ function startBackend(reply: unknown) {
                       {
                         id: "call_1",
                         type: "function",
-                        function: {
-                          name: body.tools?.[0]?.function?.name ?? "x",
-                          arguments: JSON.stringify(payload),
-                        },
+                        function: { name: "some_other_tool", arguments: "{}" },
                       },
                     ],
                   },
                   finish_reason: "tool_calls",
-                },
+                }
+              : asText
+                ? {
+                    index: 0,
+                    message: { role: "assistant", content: payload },
+                    finish_reason: "stop",
+                  }
+                : {
+                    index: 0,
+                    message: {
+                      role: "assistant",
+                      content: null,
+                      tool_calls: [
+                        {
+                          id: "call_1",
+                          type: "function",
+                          function: {
+                            name: body.tools?.[0]?.function?.name ?? "x",
+                            arguments: JSON.stringify(payload),
+                          },
+                        },
+                      ],
+                    },
+                    finish_reason: "tool_calls",
+                  },
           ],
           usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
         }),
@@ -198,6 +215,36 @@ describe("structured transport security", () => {
       "tool",
     );
   }
+
+  it("H: rejects schema-conforming JSON delivered as ordinary text", async () => {
+    // The strongest fail-closed case. The text is valid and would be parsed
+    // and accepted by generateObject, so only an explicit transport check can
+    // reject it. A backend that ignores tool_choice must never silently
+    // downgrade to text transport.
+    backend = await startBackend({
+      __text: JSON.stringify({ title: "looks valid" }),
+    });
+    const model = await toolModel();
+    await expect(
+      generateObject({
+        model,
+        schema: z.object({ title: z.string() }),
+        prompt: "Extract.",
+      }),
+    ).rejects.toMatchObject({ name: "OpenAiToolTransportViolationError" });
+  });
+
+  it("H2: rejects a tool call for a different tool name", async () => {
+    backend = await startBackend({ __wrongTool: true });
+    const model = await toolModel();
+    await expect(
+      generateObject({
+        model,
+        schema: z.object({ title: z.string() }),
+        prompt: "Extract.",
+      }),
+    ).rejects.toMatchObject({ name: "OpenAiToolTransportViolationError" });
+  });
 
   it.each(Object.keys(HOSTILE_SCHEMAS))(
     "keeps hostile metadata (%s) out of prompt content",
