@@ -43,8 +43,6 @@ type BackendOptions = {
   rejectStrict?: boolean;
   /** Reject tool calling with a definite unsupported response. */
   rejectTools?: boolean;
-  /** 2xx but ordinary text — proves nothing about the requested transport. */
-  ignoreRequestedFormat?: boolean;
   /** Tool arguments returned by the real structured call. */
   toolArgs?: unknown;
   /** Reply with plain text instead of calling a tool. */
@@ -72,7 +70,6 @@ function startBackend(options: BackendOptions = {}) {
     supportTools = true,
     rejectStrict = false,
     rejectTools = false,
-    ignoreRequestedFormat = false,
     toolArgs,
     textOnly = false,
   } = options;
@@ -133,26 +130,6 @@ function startBackend(options: BackendOptions = {}) {
             },
           });
         }
-        if (ignoreRequestedFormat) {
-          // 2xx but the strict format was ignored: plain prose, not JSON.
-          return isResponses
-            ? json(res, 200, {
-                id: "r",
-                object: "response",
-                status: "completed",
-                created_at: 1,
-                output: [
-                  {
-                    type: "message",
-                    role: "assistant",
-                    content: [
-                      { type: "output_text", text: "Sure! Here you go." },
-                    ],
-                  },
-                ],
-              })
-            : json(res, 200, chatEnvelope("Sure! Here you go.", false));
-        }
         const text = JSON.stringify({ ok: true });
         return isResponses
           ? json(res, 200, {
@@ -196,25 +173,6 @@ function startBackend(options: BackendOptions = {}) {
           return json(res, 400, {
             error: { message: "tool calling is not supported by this backend" },
           });
-        }
-        if (ignoreRequestedFormat) {
-          return isResponses
-            ? json(res, 200, {
-                id: "r",
-                object: "response",
-                status: "completed",
-                created_at: 1,
-                output: [
-                  {
-                    type: "message",
-                    role: "assistant",
-                    content: [
-                      { type: "output_text", text: "I cannot do that." },
-                    ],
-                  },
-                ],
-              })
-            : json(res, 200, chatEnvelope("I cannot do that.", false));
         }
         const args = JSON.stringify({ ok: true });
         return isResponses
