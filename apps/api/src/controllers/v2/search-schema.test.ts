@@ -73,12 +73,19 @@ describe("searchRequestSchema highlights", () => {
   it.each([
     { objective: " " },
     { objective: "x".repeat(5001) },
+    { objective: null },
     { clientModel: " " },
     { clientModel: "x".repeat(129) },
-  ])("rejects invalid agent task context %j", context => {
-    expect(
-      searchRequestSchema.safeParse({ query: "React memo docs", ...context })
-        .success,
-    ).toBe(false);
+    { clientModel: 42 },
+  ])("drops invalid agent task context without failing the search %j", context => {
+    const result = searchRequestSchema.safeParse({
+      query: "React memo docs",
+      ...context,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.objective).toBeUndefined();
+    expect(result.data?.clientModel).toBeUndefined();
+    expect(result.data?.limit).toBe(10);
   });
 });
