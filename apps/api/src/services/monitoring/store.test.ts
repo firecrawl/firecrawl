@@ -9,6 +9,7 @@ import {
 } from "./store";
 import { judgeCreditsForJudgedCount } from "./search/billing";
 import type { MonitorTarget } from "./types";
+import { config } from "../../config";
 
 describe("monitoring store credit helpers", () => {
   it("estimates goal-enabled scrape monitors from scrape option costs", () => {
@@ -27,6 +28,108 @@ describe("monitoring store credit helpers", () => {
     // 2 URLs x 5 (json change tracking). Enhanced proxies add nothing.
     expect(estimateMonitorCreditsPerRun(targets, false)).toBe(10);
     expect(estimateMonitorCreditsPerRun(targets, true)).toBe(12);
+  });
+
+  // The x-twitter engine only exists with an xAI key or DB auth.
+  const withXTwitterEngine = (fn: () => void) => {
+    const saved = config.USE_DB_AUTHENTICATION;
+    config.USE_DB_AUTHENTICATION = true;
+    try {
+      fn();
+    } finally {
+      config.USE_DB_AUTHENTICATION = saved;
+    }
+  };
+
+  it("includes the x-twitter surcharge, so the hold covers what is billed", () =>
+    withXTwitterEngine(() => {
+      const targets: MonitorTarget[] = [
+        {
+          id: "target-x",
+          type: "scrape",
+          urls: ["https://x.com/blknoiz06"],
+          scrapeOptions: {},
+        },
+      ];
+
+      // 1 scrape + 29 x-twitter, + 1 judge.
+      expect(estimateMonitorCreditsPerRun(targets, false)).toBe(30);
+      expect(estimateMonitorCreditsPerRun(targets, true)).toBe(31);
+      expect(
+        calculateMonitorCheckActualCreditsFromPages(
+          [
+            {
+              target_id: "target-x",
+              status: "changed",
+              metadata: {
+                creditsUsed: null,
+                postprocessorsUsed: ["x-twitter"],
+              },
+              judgment: { meaningful: false },
+            },
+          ],
+          targets,
+        ),
+      ).toBe(estimateMonitorCreditsPerRun(targets, true));
+    }));
+
+  it("charges the surcharge only for URLs the x-twitter engine takes", () =>
+    withXTwitterEngine(() => {
+      const targets: MonitorTarget[] = [
+        {
+          id: "target-mixed",
+          type: "scrape",
+          urls: [
+            "https://twitter.com/someone/status/1234567890",
+            "https://x.com/home",
+            "https://example.com/x.com",
+          ],
+          scrapeOptions: {},
+        },
+      ];
+
+      expect(estimateMonitorCreditsPerRun(targets, false)).toBe(3 + 29);
+    }));
+
+  it("skips the surcharge when a browser profile bypasses the x-twitter engine", () =>
+    withXTwitterEngine(() => {
+      const targets: MonitorTarget[] = [
+        {
+          id: "target-profile",
+          type: "scrape",
+          urls: ["https://x.com/someone"],
+          scrapeOptions: { profile: { name: "p" } },
+        },
+      ];
+
+      expect(estimateMonitorCreditsPerRun(targets, false)).toBe(1);
+    }));
+
+  it("skips the surcharge where the x-twitter engine cannot run", () => {
+    const target = (
+      scrapeOptions: Record<string, unknown>,
+    ): MonitorTarget[] => [
+      {
+        id: "t",
+        type: "scrape",
+        urls: ["https://x.com/someone"],
+        scrapeOptions,
+      },
+    ];
+    withXTwitterEngine(() => {
+      // Lockdown serves from the index: 1 base + 4 lockdown, no surcharge.
+      expect(
+        estimateMonitorCreditsPerRun(target({ lockdown: true }), false),
+      ).toBe(5);
+    });
+    const saved = [config.USE_DB_AUTHENTICATION, config.XAI_API_KEY] as const;
+    config.USE_DB_AUTHENTICATION = false;
+    config.XAI_API_KEY = undefined;
+    try {
+      expect(estimateMonitorCreditsPerRun(target({}), false)).toBe(1);
+    } finally {
+      [config.USE_DB_AUTHENTICATION, config.XAI_API_KEY] = saved;
+    }
   });
 
   it("adds predictable lockdown costs and judge credits separately", () => {

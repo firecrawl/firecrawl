@@ -61,6 +61,7 @@ def _validate_parse_options_payload(options_payload: Dict[str, Any]) -> None:
 
 def _prepare_parse_options_payload(
     options: Optional[ParseOptions],
+    origin: Optional[str] = None,
 ) -> Dict[str, Any]:
     request_data: Dict[str, Any] = {}
 
@@ -76,7 +77,7 @@ def _prepare_parse_options_payload(
             opts.pop("lockdown", None)
             request_data.update(opts)
 
-    request_data["origin"] = request_data.get("origin") or f"python-sdk@{version}"
+    request_data["origin"] = request_data.get("origin") or origin or f"python-sdk@{version}"
     return request_data
 
 
@@ -126,8 +127,9 @@ def _prepare_parse_request(
     *,
     filename: Optional[str] = None,
     content_type: Optional[str] = None,
+    origin: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Tuple[str, bytes, str]]]:
-    request_data = _prepare_parse_options_payload(options)
+    request_data = _prepare_parse_options_payload(options, origin)
     multipart_fields = {"options": json.dumps(request_data)}
     multipart_files = _prepare_file_payload(
         file,
@@ -150,6 +152,7 @@ def parse(
         options,
         filename=filename,
         content_type=content_type,
+        origin=client.origin,
     )
 
     response = client.post_multipart("/v2/parse", data=fields, files=files)

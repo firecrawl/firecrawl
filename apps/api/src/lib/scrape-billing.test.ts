@@ -38,6 +38,34 @@ describe("calculateCreditsToBeBilled", () => {
     expect(credits).toBe(12);
   });
 
+  it("adds format surcharges on top of an Exchange access", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        formats: [{ type: "json", prompt: "name" }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      {
+        metadata: {
+          statusCode: 200,
+          url: "https://profiles.example/person/example-person",
+          proxyUsed: "basic",
+        },
+      } as any,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+      undefined,
+      undefined,
+      { handled: true, creditsCost: 12 },
+    );
+
+    expect(credits).toBe(16);
+  });
+
   it("bills X/Twitter scrapes at 30 credits", async () => {
     const credits = await calculateCreditsToBeBilled(
       {

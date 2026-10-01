@@ -13,14 +13,16 @@ import {
 } from "../services/rate-limiter";
 import { isTrustedAgentInteropRequest } from "../lib/agent-interop";
 import {
-  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   consumeKeylessRequest,
   isKeylessConfigured,
   keylessExhaustionTelemetry,
   isKeylessIpEligible,
+  keylessLimitPrompt,
+  keylessSignupUrlForIp,
   keylessTeamId,
   normalizeKeylessIpv4,
 } from "../lib/keyless";
+import { keylessSignupSurface } from "../lib/keyless-signup-link";
 import { isKeylessIpSuspicious } from "../lib/spur";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
 import { checkIpRestriction } from "../lib/ip-restriction";
@@ -463,12 +465,38 @@ export async function clearACUCTeam(team_id: string): Promise<void> {
   await deleteKey(`acuc_team_${team_id}`);
 }
 
-const KEYLESS_ENDPOINT_NOT_AVAILABLE_MESSAGE = `This endpoint is not supported by the keyless free tier. Sign up for a free API key at https://www.firecrawl.dev/signin for more endpoints, more usage, and higher rate limits.
+// Both prompts end the sentence after the URL with a space, so a copied link
+// never picks up the period.
+function keylessEndpointNotAvailableMessage(signupUrl: string): string {
+  return `This endpoint is not supported by the keyless free tier. Sign up for a free API key at ${signupUrl} for more endpoints, more usage, and higher rate limits.
 
 Then authenticate with:
 Authorization: Bearer YOUR_API_KEY`;
+}
 
-const KEYLESS_SUSPICIOUS_IP_MESSAGE = `Unfortunately, your IP address looks suspicious, so Firecrawl can't be used without an API key from here. Sign up for a free API key at https://firecrawl.dev for 1000 credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
+function keylessSuspiciousIpMessage(signupUrl: string): string {
+  return `Unfortunately, your IP address looks suspicious, so Firecrawl can't be used without an API key from here. Sign up for a free API key at ${signupUrl} for 1000 credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
+}
+
+/**
+ * The real client IP for keyless. A trusted proxy (e.g. the hosted MCP) may
+ * forward the end-user's IP via x-firecrawl-keyless-ip, authenticated with a
+ * shared secret — without the secret the header is ignored, so direct callers
+ * can't spoof their IP to dodge the per-IP cap.
+ */
+function keylessClientIp(req): string {
+  let ip = req.ip ?? req.socket?.remoteAddress ?? "unknown";
+  if (
+    config.KEYLESS_PROXY_SECRET &&
+    req.headers["x-firecrawl-keyless-secret"] === config.KEYLESS_PROXY_SECRET
+  ) {
+    const forwarded = req.headers["x-firecrawl-keyless-ip"];
+    if (typeof forwarded === "string" && forwarded.trim()) {
+      ip = forwarded.trim();
+    }
+  }
+  return ip;
+}
 
 /**
  * Keyless free tier: official MCP/CLI/SDK clients can call scrape, search, and
@@ -496,10 +524,16 @@ async function handleKeylessAuth(
   // Configured, but this endpoint isn't part of the keyless tier: tell the user
   // they need a key (with the signup nudge) rather than a bare "Unauthorized".
   if (!allowKeyless) {
+    const { url } = keylessSignupUrlForIp(
+      keylessClientIp(req),
+      keylessSignupSurface(req),
+      "unsupported_endpoint",
+    );
     return {
       success: false,
-      error: KEYLESS_ENDPOINT_NOT_AVAILABLE_MESSAGE,
+      error: keylessEndpointNotAvailableMessage(url),
       status: 401,
+      signupUrl: url,
     };
   }
 
@@ -507,22 +541,11 @@ async function handleKeylessAuth(
   const integration = req.body?.integration;
   // No origin/surface gate: any request without an API key may use the free
   // tier on the allowlisted endpoints (the API itself is free). origin and
-  // integration are still recorded below for abuse monitoring.
+  // integration are still recorded below for abuse monitoring, and pick the
+  // surface of the signup link.
+  const signupSurface = keylessSignupSurface(req);
 
-  // Key on the real client IP. A trusted proxy (e.g. the hosted MCP) may
-  // forward the end-user's IP via x-firecrawl-keyless-ip, authenticated with a
-  // shared secret — without the secret the header is ignored, so direct callers
-  // can't spoof their IP to dodge the per-IP cap.
-  let ip = req.ip ?? req.socket?.remoteAddress ?? "unknown";
-  if (
-    config.KEYLESS_PROXY_SECRET &&
-    req.headers["x-firecrawl-keyless-secret"] === config.KEYLESS_PROXY_SECRET
-  ) {
-    const forwarded = req.headers["x-firecrawl-keyless-ip"];
-    if (typeof forwarded === "string" && forwarded.trim()) {
-      ip = forwarded.trim();
-    }
-  }
+  let ip = keylessClientIp(req);
 
   // Only a valid IPv4 identity gets keyless: IPv6 is too cheap to rotate for a
   // per-IP cap to mean anything, and malformed/forwarded values must not be
@@ -539,6 +562,11 @@ async function handleKeylessAuth(
   // runs before consuming quota so a flagged IP doesn't burn a request slot.
   if (await isKeylessIpSuspicious(ip)) {
     keylessAuthTotal.inc({ mode, outcome: "suspicious" });
+    const { url, signupRef } = keylessSignupUrlForIp(
+      ip,
+      signupSurface,
+      "suspicious_ip",
+    );
     logger.warn("Keyless request blocked: suspicious IP", {
       canonicalLog: "keyless/consume",
       ip,
@@ -546,13 +574,15 @@ async function handleKeylessAuth(
       integration: req.body?.integration,
       blocked: true,
       reason: "suspicious",
+      ...(signupRef ? { signupRef } : {}),
     });
     return {
       success: false,
-      error: KEYLESS_SUSPICIOUS_IP_MESSAGE,
+      error: keylessSuspiciousIpMessage(url),
       status: 403,
       // Tell agents where to find the key/signup flow they now need.
       agentAuthDiscovery: true,
+      signupUrl: url,
     };
   }
 
@@ -598,18 +628,21 @@ async function handleKeylessAuth(
 
   if (!result.ok) {
     keylessAuthTotal.inc({ mode, outcome: result.reason ?? "error" });
+    const prompt = keylessLimitPrompt(ip, signupSurface);
     logger.warn("Keyless request blocked", {
       ...baseLog,
       blocked: true,
       event: "keyless_exhausted",
       reason: result.reason,
       retryAfterSeconds: result.retryAfterSeconds,
+      ...(prompt.signupRef ? { signupRef: prompt.signupRef } : {}),
       ...keylessExhaustionTelemetry(ip),
     });
     return {
       success: false,
-      error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
+      error: prompt.error,
       status: 429,
+      signupUrl: prompt.signup_url,
       // Direct API callers receive discovery metadata; MCP maps this in-band.
       agentAuthDiscovery: true,
       keylessReason: result.reason,

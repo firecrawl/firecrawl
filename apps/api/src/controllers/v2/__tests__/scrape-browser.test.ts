@@ -15,6 +15,7 @@ import {
   executeHangarBrowser,
   stopHangarBrowser,
   getHangarRecording,
+  HangarError,
 } from "../../../lib/hangar";
 import {
   browserExecuteController,
@@ -26,6 +27,11 @@ import { executeCodeViaBrowserSession } from "../../../lib/scrape-interact/brows
 import { scrapeInteractController } from "../scrape-browser";
 import { redlock } from "../../../services/redlock";
 import { stopBrowserSession } from "../../../lib/browser-lifecycle";
+import {
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
+  keylessLimitBody,
+} from "../../../lib/keyless";
+import { applyAgentAuthDiscoveryHeader } from "../../../lib/agent-auth-discovery";
 import type { RequestWithAuth } from "../types";
 
 const lockState = vi.hoisted(() => ({
@@ -76,7 +82,12 @@ vi.mock("../../auth", () => ({
 vi.mock("../../../lib/request-credits-store", () => ({
   recordRequestCredits: vi.fn(),
 }));
+vi.mock("../../../lib/agent-auth-discovery", () => ({
+  applyAgentAuthDiscoveryHeader: vi.fn(),
+}));
 vi.mock("../../../lib/keyless", () => ({
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE: "fixture free-tier limit",
+  keylessLimitBody: vi.fn(),
   keylessTeamUuid: vi.fn(() => null),
   updateKeylessBrowserCredits: vi.fn(async () => true),
   adjustKeylessCredits: vi.fn(async () => {}),
@@ -283,6 +294,40 @@ describe("scrapeInteractController", () => {
         interactiveLiveViewUrl: created.control_url,
       }),
     );
+  });
+
+  it("keeps the auth discovery header on personalized keyless creation failures", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(getBrowserSessionFromScrape).mockResolvedValue(null);
+    vi.mocked(supabaseGetScrapeByIdDirect).mockResolvedValue({
+      id: "scrape-123",
+      team_id: "team-123",
+      url: "https://example.com",
+      options: {},
+    } as any);
+    vi.mocked(createHangarBrowser).mockRejectedValueOnce(
+      new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE),
+    );
+    const limitBody = {
+      success: false as const,
+      error: "Free limit reached; use the caller-specific signup link.",
+      signup_url: "https://example.test/k/fixture",
+    };
+    vi.mocked(keylessLimitBody).mockResolvedValueOnce(limitBody);
+    const res = buildRes();
+    await scrapeInteractController(
+      {
+        params: { jobId: "scrape-123" },
+        body: { code: "console.log('ok')" },
+        headers: {},
+        auth: { team_id: "team-123" },
+        acuc: {},
+      } as any,
+      res,
+    );
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.json).toHaveBeenCalledWith(limitBody);
+    expect(applyAgentAuthDiscoveryHeader).toHaveBeenCalledWith(res);
   });
 
   it("creates one browser for concurrent first interactions with the same scrape", async () => {

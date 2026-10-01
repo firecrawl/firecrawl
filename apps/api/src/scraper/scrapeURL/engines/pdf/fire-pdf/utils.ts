@@ -160,9 +160,15 @@ export function buildFirePdfJobOptions(args: {
   pageMarkers: boolean;
 }): Record<string, unknown> {
   return {
-    ...(args.pagesProcessed !== undefined && {
-      pages_estimate: args.pagesProcessed,
-    }),
+    // fire-pdf accepts only a positive integer here. When the router has no
+    // page count (0), the field is left out and fire-pdf counts the pages
+    // itself on inline submits. By-reference submits require a positive
+    // count and check for one before they get here.
+    ...(args.pagesProcessed !== undefined &&
+      Number.isInteger(args.pagesProcessed) &&
+      args.pagesProcessed > 0 && {
+        pages_estimate: args.pagesProcessed,
+      }),
     ...(args.maxPages !== undefined && { max_pages: args.maxPages }),
     ...(args.mode !== undefined && { mode: args.mode }),
     ...(args.includePageMarkdown && { include_page_markdown: true }),

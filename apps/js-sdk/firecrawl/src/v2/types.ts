@@ -1955,6 +1955,8 @@ export interface CrawlErrorsResponse {
     url: string;
     code?: string;
     error: string;
+    /** Present when the page needs provider terms accepted first. */
+    requiresAction?: RequiresAction;
   }[];
   robotsBlocked: string[];
 }

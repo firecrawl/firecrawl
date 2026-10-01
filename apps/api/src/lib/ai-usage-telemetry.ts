@@ -1,8 +1,10 @@
 import { trace, type Attributes, type Span } from "@opentelemetry/api";
 import { wrapLanguageModel, type LanguageModelMiddleware } from "ai";
+import { xSearchUsageFromResponseBody } from "./xai-x-search";
 
 type ProviderModel = Parameters<typeof wrapLanguageModel>[0]["model"];
-type ProviderUsage = Awaited<ReturnType<ProviderModel["doGenerate"]>>["usage"];
+type ProviderResult = Awaited<ReturnType<ProviderModel["doGenerate"]>>;
+type ProviderUsage = ProviderResult["usage"];
 
 // The AI SDK's `ai.generateObject.doGenerate` and `ai.generateText.doGenerate`
 // spans only record prompt and completion token totals, so cache reads and
@@ -43,12 +45,28 @@ function usageTelemetryAttributes(usage: ProviderUsage): Attributes {
   );
 }
 
+// Server-side tool fees the provider bills per item, which token counts
+// cannot price. Only xAI X Search today.
+function toolUsageTelemetryAttributes(result: ProviderResult): Attributes {
+  const xSearch = xSearchUsageFromResponseBody(result.response?.body);
+  if (!xSearch) {
+    return {};
+  }
+  return {
+    "firecrawl.llm.tool.x_search_posts": xSearch.posts,
+    "firecrawl.llm.tool.x_search_profiles": xSearch.profiles,
+  };
+}
+
 const usageTelemetryMiddleware: LanguageModelMiddleware = {
   specificationVersion: "v3",
   wrapGenerate: async ({ doGenerate }) => {
     const span = activeDoGenerateSpan();
     const result = await doGenerate();
-    span?.setAttributes(usageTelemetryAttributes(result.usage));
+    span?.setAttributes({
+      ...usageTelemetryAttributes(result.usage),
+      ...toolUsageTelemetryAttributes(result),
+    });
     return result;
   },
 };

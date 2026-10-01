@@ -95,6 +95,7 @@ export async function recordAlexandriaFeedback(
         requested_url: body.requestedWebsite.url,
         requested_functionality: body.requestedWebsite.requestedFunctionality,
         rationale: body.rationale,
+        objective: body.objective ?? null,
         origin: body.origin,
         integration: body.integration ?? null,
         schema_version: 2,

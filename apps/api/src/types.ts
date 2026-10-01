@@ -182,6 +182,8 @@ export type AuthResponse =
       // Machine-readable keyless quota details for trusted MCP recovery.
       keylessReason?: "requests" | "credits";
       retryAfterSeconds?: number;
+      // Keyless prompts: the signup link in `error`, for clients that relay it.
+      signupUrl?: string;
     };
 
 export enum NotificationType {

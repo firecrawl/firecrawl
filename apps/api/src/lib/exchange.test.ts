@@ -2,6 +2,11 @@ import { fetch } from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { config } from "../config";
+import { exchangeRequest } from "../services/alexandria/client";
+import {
+  deserializeTransportableError,
+  serializeTransportableError,
+} from "./error-serde";
 import {
   canUseExchangeForRequest,
   clearExchangeProvidersForTest,
@@ -10,15 +15,19 @@ import {
   getExchangeRequestLogContext,
   getExchangeResponseLogContext,
   getExchangeSuccessCredits,
-  getThirdPartyDataTermsRequiredResponse,
   isSuccessfulExchangeStatusCode,
   isSupportedExchangeFormatRequest,
   resolveExchangeProvider,
   setExchangeProvidersForTest,
+  ThirdPartyDataTermsRequiredError,
 } from "./exchange";
 
 vi.mock("undici", () => ({
   fetch: vi.fn(),
+}));
+
+vi.mock("../services/alexandria/client", () => ({
+  exchangeRequest: vi.fn(),
 }));
 
 const originalConfig = {
@@ -290,7 +299,7 @@ describe("Exchange routing", () => {
     expect(getExchangeResponseLogContext(null)).toEqual({});
   });
 
-  it("accepts only formats the Exchange can return directly", () => {
+  it("accepts only formats derivable from the Exchange's markdown", () => {
     expect(isSupportedExchangeFormatRequest(undefined)).toBe(true);
     expect(isSupportedExchangeFormatRequest([{ type: "markdown" }])).toBe(true);
     expect(isSupportedExchangeFormatRequest(["json"])).toBe(true);
@@ -300,7 +309,10 @@ describe("Exchange routing", () => {
         { type: "json" },
       ]),
     ).toBe(true);
-    expect(isSupportedExchangeFormatRequest([{ type: "html" }])).toBe(false);
+    expect(isSupportedExchangeFormatRequest([{ type: "html" }])).toBe(true);
+    expect(isSupportedExchangeFormatRequest([{ type: "screenshot" }])).toBe(
+      false,
+    );
     // deterministicJson extractors run against page HTML, which Exchange
     // responses do not carry.
     expect(
@@ -401,7 +413,9 @@ describe("Exchange routing", () => {
       terms: ACME_TERMS,
     });
 
-    const response = getThirdPartyDataTermsRequiredResponse(ACME_TERMS);
+    const response = new ThirdPartyDataTermsRequiredError(
+      ACME_TERMS,
+    ).response();
     expect(response).toMatchObject({
       success: false,
       code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
@@ -485,7 +499,7 @@ describe("Exchange routing", () => {
     ).resolves.toEqual({ allowed: false, termsRequired: false });
   });
 
-  it("does not route unless the beta flag is enabled", async () => {
+  it("requires the beta flag except for blocked URLs", async () => {
     await expect(
       canUseExchangeForRequest({
         url: "https://profiles.example/person/example-person",
@@ -500,6 +514,27 @@ describe("Exchange routing", () => {
         flags: { professionalProfileCompanyDataBeta: false },
       }),
     ).resolves.toBe(false);
+
+    // A blocked URL has no other way to be served, and still needs its terms.
+    await expect(
+      canUseExchangeForRequest({
+        url: "https://facts.example/records/1",
+        formats: [{ type: "markdown" }],
+        waitFor: 1000,
+        blocked: true,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      getExchangeAccessForRequest({
+        url: "https://profiles.example/person/example-person",
+        formats: [{ type: "markdown" }],
+        blocked: true,
+      }),
+    ).resolves.toEqual({
+      allowed: false,
+      termsRequired: true,
+      terms: ACME_TERMS,
+    });
   });
 
   it("does not route unless the Exchange is configured", async () => {
@@ -668,5 +703,266 @@ describe("Exchange routing", () => {
       }),
     ).resolves.toBe(false);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Exchange terms acceptance", () => {
+  const DIGEST = "a".repeat(64);
+  const PROFILE_REQUEST = {
+    url: "https://profiles.example/person/example-person",
+    formats: [{ type: "markdown" }],
+    teamId: "team-1",
+    orgId: "org-1",
+  };
+
+  // Answers the Exchange's requirements and ledger status routes the way
+  // the acceptance fallback reads them.
+  function ledgerAnswers(
+    ledger: {
+      version: string;
+      textHash: string;
+      acceptedAt?: string;
+    }[],
+  ) {
+    vi.mocked(exchangeRequest).mockImplementation(async ({ path }) => {
+      if (path === "/v1/provider-terms/requirements") {
+        return {
+          status: 200,
+          body: {
+            providers: [
+              {
+                provider: "acme",
+                required: true,
+                terms: { ...ACME_TERMS, digest: DIGEST },
+              },
+            ],
+          },
+        };
+      }
+      if (path.startsWith("/v1/provider-terms/status")) {
+        return {
+          status: 200,
+          body: {
+            providers: ledger.map(entry => ({
+              provider: "acme",
+              revoked: false,
+              acceptedAt: "2026-01-05T00:00:00.000Z",
+              ...entry,
+            })),
+          },
+        };
+      }
+      return { status: 404, body: {} };
+    });
+  }
+
+  beforeEach(() => {
+    vi.mocked(exchangeRequest).mockReset();
+    config.FIRE_EXCHANGE_URL = "https://exchange.example";
+    config.USE_DB_AUTHENTICATION = true;
+    setExchangeProvidersForTest(TEST_PROVIDERS);
+  });
+
+  afterEach(() => {
+    config.FIRE_EXCHANGE_URL = originalConfig.FIRE_EXCHANGE_URL;
+    config.USE_DB_AUTHENTICATION = originalConfig.USE_DB_AUTHENTICATION;
+    clearExchangeProvidersForTest();
+  });
+
+  it("routes when the terms were accepted on the Exchange ledger", async () => {
+    ledgerAnswers([{ version: ACME_TERMS.version, textHash: DIGEST }]);
+
+    const access = await getExchangeAccessForRequest({
+      ...PROFILE_REQUEST,
+      flags: { professionalProfileCompanyDataBeta: true },
+    });
+
+    expect(access.allowed).toBe(true);
+  });
+
+  it("does not accept a ledger entry for different terms text", async () => {
+    ledgerAnswers([{ version: ACME_TERMS.version, textHash: "b".repeat(64) }]);
+
+    await expect(
+      getExchangeAccessForRequest({
+        ...PROFILE_REQUEST,
+        flags: { professionalProfileCompanyDataBeta: true },
+      }),
+    ).resolves.toEqual({
+      allowed: false,
+      termsRequired: true,
+      terms: ACME_TERMS,
+    });
+  });
+
+  it("skips the ledger for requests without an organization", async () => {
+    ledgerAnswers([{ version: ACME_TERMS.version, textHash: DIGEST }]);
+
+    const access = await getExchangeAccessForRequest({
+      ...PROFILE_REQUEST,
+      orgId: null,
+      flags: { professionalProfileCompanyDataBeta: true },
+    });
+
+    expect(access).toMatchObject({ allowed: false, termsRequired: true });
+    expect(exchangeRequest).not.toHaveBeenCalled();
+  });
+
+  it("reads as not accepted when the ledger is unreachable", async () => {
+    vi.mocked(exchangeRequest).mockRejectedValue(new Error("unreachable"));
+
+    await expect(
+      getExchangeAccessForRequest({
+        ...PROFILE_REQUEST,
+        flags: { professionalProfileCompanyDataBeta: true },
+      }),
+    ).resolves.toMatchObject({ allowed: false, termsRequired: true });
+  });
+
+  it("caches ledger answers per organization and provider", async () => {
+    ledgerAnswers([{ version: ACME_TERMS.version, textHash: DIGEST }]);
+    const input = {
+      ...PROFILE_REQUEST,
+      flags: { professionalProfileCompanyDataBeta: true },
+    };
+
+    await getExchangeAccessForRequest(input);
+    await getExchangeAccessForRequest(input);
+
+    // One requirements read and one ledger read, not two of each.
+    expect(exchangeRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not share cached ledger answers between teams", async () => {
+    ledgerAnswers([{ version: ACME_TERMS.version, textHash: DIGEST }]);
+    const flags = { professionalProfileCompanyDataBeta: true };
+
+    await getExchangeAccessForRequest({ ...PROFILE_REQUEST, flags });
+    await getExchangeAccessForRequest({
+      ...PROFILE_REQUEST,
+      teamId: "team-2",
+      flags,
+    });
+
+    expect(exchangeRequest).toHaveBeenCalledTimes(4);
+  });
+
+  it("rechecks the ledger once the catalog carries new terms", async () => {
+    const input = {
+      ...PROFILE_REQUEST,
+      flags: { professionalProfileCompanyDataBeta: true },
+    };
+    ledgerAnswers([{ version: ACME_TERMS.version, textHash: DIGEST }]);
+    await expect(getExchangeAccessForRequest(input)).resolves.toMatchObject({
+      allowed: true,
+    });
+
+    // The provider publishes new terms; the ledger still holds the old ones.
+    const NEW_TERMS = { key: "acme", version: "2026-02-01" };
+    setExchangeProvidersForTest(
+      TEST_PROVIDERS.map(provider =>
+        provider.id === "acme" ? { ...provider, terms: NEW_TERMS } : provider,
+      ),
+    );
+    vi.mocked(exchangeRequest).mockImplementation(async ({ path }) =>
+      path === "/v1/provider-terms/requirements"
+        ? {
+            status: 200,
+            body: {
+              providers: [
+                {
+                  provider: "acme",
+                  required: true,
+                  terms: { ...NEW_TERMS, digest: "c".repeat(64) },
+                },
+              ],
+            },
+          }
+        : {
+            status: 200,
+            body: {
+              providers: [
+                {
+                  provider: "acme",
+                  revoked: false,
+                  version: ACME_TERMS.version,
+                  textHash: DIGEST,
+                  acceptedAt: "2026-01-05T00:00:00.000Z",
+                },
+              ],
+            },
+          },
+    );
+
+    await expect(getExchangeAccessForRequest(input)).resolves.toEqual({
+      allowed: false,
+      termsRequired: true,
+      terms: NEW_TERMS,
+    });
+  });
+
+  it("asks for terms again after an admin revocation until re-accepted", async () => {
+    const revokedFlags = {
+      professionalProfileCompanyDataBeta: true,
+      organizationDataSourceAccess: {
+        acme: {
+          status: "disabled",
+          termsKey: "acme",
+          termsVersion: "2026-01-01",
+          disabledAt: "2026-01-10T00:00:00.000Z",
+          disabledReason: "revoked_by_organization_admin",
+        },
+      },
+    };
+
+    ledgerAnswers([
+      {
+        version: ACME_TERMS.version,
+        textHash: DIGEST,
+        acceptedAt: "2026-01-05T00:00:00.000Z",
+      },
+    ]);
+    await expect(
+      getExchangeAccessForRequest({ ...PROFILE_REQUEST, flags: revokedFlags }),
+    ).resolves.toEqual({
+      allowed: false,
+      termsRequired: true,
+      terms: ACME_TERMS,
+    });
+
+    clearExchangeProvidersForTest();
+    setExchangeProvidersForTest(TEST_PROVIDERS);
+    ledgerAnswers([
+      {
+        version: ACME_TERMS.version,
+        textHash: DIGEST,
+        acceptedAt: "2026-01-11T00:00:00.000Z",
+      },
+    ]);
+    const access = await getExchangeAccessForRequest({
+      ...PROFILE_REQUEST,
+      flags: revokedFlags,
+    });
+    expect(access.allowed).toBe(true);
+  });
+
+  it("carries the terms-required response through the worker queue", () => {
+    const error = deserializeTransportableError(
+      serializeTransportableError(
+        new ThirdPartyDataTermsRequiredError(ACME_TERMS),
+      ),
+    );
+
+    expect(error).toBeInstanceOf(ThirdPartyDataTermsRequiredError);
+    expect((error as ThirdPartyDataTermsRequiredError).response()).toEqual(
+      new ThirdPartyDataTermsRequiredError(ACME_TERMS).response(),
+    );
+    expect(error?.message).toBe(
+      new ThirdPartyDataTermsRequiredError(ACME_TERMS).response().error,
+    );
+    expect((error as ThirdPartyDataTermsRequiredError).requiresAction).toEqual(
+      new ThirdPartyDataTermsRequiredError(ACME_TERMS).response()
+        .requiresAction,
+    );
   });
 });

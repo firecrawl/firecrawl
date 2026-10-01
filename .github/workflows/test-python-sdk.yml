@@ -1,0 +1,39 @@
+name: Python SDK Test Suite
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/python-sdk/**
+      - .github/workflows/test-python-sdk.yml
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ./apps/python-sdk/requirements.txt
+
+      - name: Install dependencies
+        working-directory: ./apps/python-sdk
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run unit tests
+        working-directory: ./apps/python-sdk
+        run: python -m pytest firecrawl/__tests__/unit -q

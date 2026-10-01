@@ -1,4 +1,5 @@
 import type { AgentInteropStatus } from "../../lib/agent-interop";
+import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { Request } from "express";
 import { config } from "../../config";
 import { z } from "zod";
@@ -1303,6 +1304,7 @@ export type CrawlErrorsResponse =
         timestamp?: string;
         url: string;
         error: string;
+        requiresAction?: ThirdPartyDataTermsRequiredError["requiresAction"];
       }[];
       robotsBlocked: string[];
     };

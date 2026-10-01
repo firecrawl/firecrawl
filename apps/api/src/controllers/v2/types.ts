@@ -1,4 +1,5 @@
 import type { AgentInteropStatus } from "../../lib/agent-interop";
+import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { Request, Response } from "express";
 import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
@@ -462,6 +463,15 @@ const queryFormatWithOptions = z.strictObject({
 
 type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
 
+// Which engine answers branding decisions: "fast" (Jev), "standard" (the
+// LLM) or "auto" (the LLM for now). Internal for now: honored only for teams
+// listed in BRANDING_JEV_TEAM_IDS and ignored for everyone else
+// (lib/branding/jev.ts).
+const brandingFormatWithOptions = z.strictObject({
+  type: z.literal("branding"),
+  mode: z.enum(["auto", "fast", "standard"]).optional(),
+});
+
 export type FormatObject =
   | { type: "markdown" }
   | { type: "html" }
@@ -478,7 +488,7 @@ export type FormatObject =
   | QuestionFormatWithOptions
   | HighlightsFormatWithOptions
   | QueryFormatWithOptions
-  | { type: "branding" }
+  | z.output<typeof brandingFormatWithOptions>
   | { type: "product" }
   | { type: "menu" }
   | { type: "audio" }
@@ -771,7 +781,7 @@ const scrapeOptionFields = z.strictObject({
           changeTrackingFormatWithOptions,
           screenshotFormatWithOptions,
           attributesFormatWithOptions,
-          z.strictObject({ type: z.literal("branding") }),
+          brandingFormatWithOptions,
           z.strictObject({ type: z.literal("product") }),
           z.strictObject({ type: z.literal("menu") }),
           questionFormatWithOptions,
@@ -2013,6 +2023,7 @@ export type CrawlErrorsResponse =
         url: string;
         code?: ErrorCodes;
         error: string;
+        requiresAction?: ThirdPartyDataTermsRequiredError["requiresAction"];
       }[];
       robotsBlocked: string[];
     };

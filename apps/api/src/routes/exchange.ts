@@ -195,6 +195,22 @@ exchangeRouter.post(
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
+exchangeRouter.get(
+  "/enrichment/preferences",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+exchangeRouter.put(
+  "/enrichment/preferences",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+exchangeRouter.post(
+  "/enrichment/plan",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
 exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),

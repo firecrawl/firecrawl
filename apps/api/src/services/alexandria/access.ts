@@ -1,10 +1,15 @@
 import { z } from "zod";
 import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
-import { getThirdPartyDataTermsRequiredResponse } from "../../lib/exchange";
+import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { exchangeRequest } from "./client";
 import { refusal, type ExchangeResponse, type ProviderCall } from "./contracts";
-import { acceptedProviders, type LedgerAcceptance } from "./terms";
+import {
+  acceptedAfter,
+  acceptedProviders,
+  matchesAcceptance,
+  type LedgerAcceptance,
+} from "./terms";
 import { autumnService } from "../autumn/autumn.service";
 import { HOBBY_RATE_LIMIT_MULTIPLIER } from "../rate-limiter";
 
@@ -28,24 +33,6 @@ const requirementsSchema = z.object({
     }),
   ),
 });
-
-const timestampSchema = z.iso.datetime({ offset: true });
-
-function timestamp(value: unknown): number {
-  const parsed = timestampSchema.safeParse(value);
-  return parsed.success ? Date.parse(parsed.data) : NaN;
-}
-
-function matchesAcceptance(
-  accepted: LedgerAcceptance | undefined,
-  terms: { version: string; digest?: string },
-): boolean {
-  return (
-    terms.digest !== undefined &&
-    accepted?.version === terms.version &&
-    accepted.textHash === terms.digest
-  );
-}
 
 export async function authorizeProviders(
   teamId: string,
@@ -92,18 +79,14 @@ export async function authorizeProviders(
       if (revokedByOwner && item.required && item.terms && orgId !== null) {
         ledger ??= await acceptedProviders(teamId, orgId);
         const accepted = ledger.get(item.provider);
-        const acceptedAt = timestamp(accepted?.acceptedAt);
-        const disabledAt = timestamp(access.disabledAt);
         if (
           matchesAcceptance(accepted, item.terms) &&
-          Number.isFinite(acceptedAt) &&
-          Number.isFinite(disabledAt) &&
-          acceptedAt > disabledAt
+          acceptedAfter(accepted, access.disabledAt)
         )
           continue;
         return {
           status: 403,
-          body: getThirdPartyDataTermsRequiredResponse(item.terms),
+          body: new ThirdPartyDataTermsRequiredError(item.terms).response(),
         };
       }
       return refusal(
@@ -124,7 +107,7 @@ export async function authorizeProviders(
     }
     return {
       status: 403,
-      body: getThirdPartyDataTermsRequiredResponse(item.terms),
+      body: new ThirdPartyDataTermsRequiredError(item.terms).response(),
     };
   }
 

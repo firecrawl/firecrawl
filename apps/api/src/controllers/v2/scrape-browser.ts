@@ -336,9 +336,11 @@ export async function scrapeInteractController(
       });
     }
     if (creationFailure?.error === true) {
+      // A keyless limit body carries the caller's own link, so match on it
+      // rather than on the message text.
       if (
         creationFailure.status === 429 &&
-        creationFailure.body.error === KEYLESS_FREE_TIER_LIMIT_MESSAGE
+        "signup_url" in creationFailure.body
       ) {
         applyAgentAuthDiscoveryHeader(res);
       }
@@ -404,7 +406,7 @@ export async function scrapeInteractController(
     try {
       await reserveBrowserPromptCredits(req, session);
     } catch (error) {
-      return browserError(res, error);
+      return browserError(res, error, req);
     }
 
     try {
@@ -518,7 +520,7 @@ export async function scrapeStopInteractiveBrowserController(
   try {
     return res.json(await stopBrowserSession(session));
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -561,7 +563,7 @@ async function createSessionForScrape(
         : "Failed to create browser session.";
     const body =
       message === KEYLESS_FREE_TIER_LIMIT_MESSAGE
-        ? await keylessLimitBody(req.auth.team_id, "v2_browser")
+        ? await keylessLimitBody(req.auth.team_id, "v2_browser", req)
         : { success: false as const, error: message };
     return { error: true as const, status, body };
   }
