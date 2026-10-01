@@ -11,9 +11,6 @@ vi.mock("../../../db/connection", () => ({
 vi.mock("../../../lib/feedback-job-store", () => ({
   readFeedbackJob: mocks.readCompactJob,
 }));
-vi.mock("../../../lib/job-store-fallback", () => ({
-  recordJobStorePostgresFallback: vi.fn(),
-}));
 
 import { lookupFeedbackJob } from "./feedback-store";
 
@@ -56,6 +53,6 @@ it("reads the primary for new keyless jobs", async () => {
 it("preserves the authenticated lookup path", async () => {
   expect(await lookupFeedbackJob("scrape", jobId, teamId)).toBeNull();
   expect(mocks.readCompactJob).toHaveBeenCalledWith(jobId);
-  expect(mocks.replicaSelect).toHaveBeenCalledOnce();
+  expect(mocks.replicaSelect).not.toHaveBeenCalled();
   expect(mocks.primarySelect).not.toHaveBeenCalled();
 });

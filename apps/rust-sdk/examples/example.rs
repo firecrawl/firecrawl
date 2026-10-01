@@ -159,7 +159,7 @@ async fn main() {
         urls: Some(vec!["https://example.com".to_string()]),
         prompt: "Describe what this website is about and list any key features mentioned"
             .to_string(),
-        model: Some(AgentModel::Spark1Pro),
+        model: Some(AgentModel::Spark2),
         timeout: Some(60),
         ..Default::default()
     };

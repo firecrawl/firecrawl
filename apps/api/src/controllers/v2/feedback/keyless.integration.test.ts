@@ -4,12 +4,17 @@ import request from "supertest";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
+import type { readFeedbackJob } from "../../../lib/feedback-job-store";
+
+type CompactFeedbackJob = NonNullable<
+  Awaited<ReturnType<typeof readFeedbackJob>>
+>;
 
 const fixture = vi.hoisted(() => ({
   pool: undefined as Pool | undefined,
   refund: vi.fn(),
   readFeedbackJob: vi.fn(),
-  recordFallback: vi.fn(),
+  compactJobs: new Map<string, CompactFeedbackJob>(),
   results: new Map<string, unknown>(),
   readResult: vi.fn<(id: string) => Promise<unknown>>(),
   db: undefined as ReturnType<typeof drizzle> | undefined,
@@ -22,9 +27,6 @@ vi.mock("../../../lib/spur", () => ({
 vi.mock("../../../lib/feedback-job-store", async importOriginal => ({
   ...(await importOriginal<typeof import("../../../lib/feedback-job-store")>()),
   readFeedbackJob: fixture.readFeedbackJob,
-}));
-vi.mock("../../../lib/job-store-fallback", () => ({
-  recordJobStorePostgresFallback: fixture.recordFallback,
 }));
 vi.mock("../../../lib/gcs-jobs", async importOriginal => ({
   ...(await importOriginal<typeof import("../../../lib/gcs-jobs")>()),
@@ -57,6 +59,28 @@ suite("keyless feedback HTTP and persistence", () => {
   const secondaryIps = ["203.0.113.72", "203.0.113.73"];
   const authenticatedTeam = randomUUID();
   const orgId = randomUUID();
+  const authenticatedJob = (
+    endpoint: "search" | "scrape" | "parse",
+    succeeded = true,
+    creditsBilled = 8,
+  ) => {
+    const jobId = randomUUID();
+    fixture.compactJobs.set(jobId, {
+      requestId: jobId,
+      teamId: authenticatedTeam,
+      refundClass: endpoint === "scrape" ? "scrape_basic" : endpoint,
+      feedbackDeadlineMs:
+        Date.now() +
+        (endpoint === "search"
+          ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
+          : config.FEEDBACK_MAX_AGE_SEC) *
+          1000,
+      succeeded,
+      creditsBilled,
+      zeroDataRetention: false,
+    });
+    return { jobId };
+  };
   const team = () => identity.keylessTeamUuid(identity.keylessTeamId(ip))!;
   const attemptKeys = () =>
     [ip, ...secondaryIps].flatMap(clientIp => {
@@ -308,8 +332,10 @@ suite("keyless feedback HTTP and persistence", () => {
   });
   beforeEach(async () => {
     fixture.refund.mockReset().mockResolvedValue(undefined);
-    fixture.readFeedbackJob.mockReset().mockResolvedValue(null);
-    fixture.recordFallback.mockReset();
+    fixture.compactJobs.clear();
+    fixture.readFeedbackJob
+      .mockReset()
+      .mockImplementation(async id => fixture.compactJobs.get(id) ?? null);
     fixture.results.clear();
     fixture.readResult
       .mockReset()
@@ -990,11 +1016,7 @@ suite("keyless feedback HTTP and persistence", () => {
   });
   it("dispatches keyless, authenticated Alexandria and authenticated job feedback through one controller", async () => {
     const keyless = await job("scrape");
-    const owned = await job("scrape");
-    await fixture.pool!.query(
-      "UPDATE scrapes SET team_id = $1, credits_cost = 8 WHERE id = $2",
-      [authenticatedTeam, owned.jobId],
-    );
+    const owned = authenticatedJob("scrape");
     const alexandria = {
       endpoint: "alexandria",
       rating: "partial",
@@ -1247,11 +1269,7 @@ suite("keyless feedback HTTP and persistence", () => {
   it.each(["generic", "legacy"] as const)(
     "preserves authenticated %s Search feedback and refunds",
     async route => {
-      const { jobId } = await job("search");
-      await fixture.pool!.query(
-        "UPDATE searches SET team_id = $1, credits_cost = 4 WHERE id = $2",
-        [authenticatedTeam, jobId],
-      );
+      const { jobId } = authenticatedJob("search", true, 4);
       config.KEYLESS_FEEDBACK_ENABLED = false;
       try {
         const path =
@@ -1301,7 +1319,6 @@ suite("keyless feedback HTTP and persistence", () => {
       });
       expect((await submit(body(endpoint, jobId))).status).toBe(200);
       expect(fixture.readFeedbackJob).not.toHaveBeenCalled();
-      expect(fixture.recordFallback).not.toHaveBeenCalled();
     },
   );
 
@@ -1327,12 +1344,11 @@ suite("keyless feedback HTTP and persistence", () => {
     expect(response.status).toBe(200);
     expect(response.body.creditsRefunded).toBe(1);
     expect(fixture.readFeedbackJob).toHaveBeenCalledWith(jobId);
-    expect(fixture.recordFallback).not.toHaveBeenCalled();
     expect(fixture.refund).toHaveBeenCalledTimes(1);
   });
 
   it.each(["missing", "error"])(
-    "records an authenticated PostgreSQL fallback only for a compact-record miss: %s",
+    "does not fall back to PostgreSQL for an authenticated compact-record miss: %s",
     async state => {
       const { jobId } = await job("scrape");
       await fixture.pool!.query(
@@ -1349,23 +1365,15 @@ suite("keyless feedback HTTP and persistence", () => {
           rating: "bad",
           note: "The output omitted the requested retry intervals.",
         });
-      expect(response.status).toBe(200);
-      if (state === "missing")
-        expect(fixture.recordFallback).toHaveBeenCalledExactlyOnceWith(
-          "feedback_job",
-          jobId,
-          { endpoint: "scrape" },
-        );
-      else expect(fixture.recordFallback).not.toHaveBeenCalled();
+      expect(response.status).toBe(404);
+      expect(response.body.feedbackErrorCode).toBe("JOB_NOT_FOUND");
+      expect(fixture.refund).not.toHaveBeenCalled();
+      expect(await fixture.db!.select().from(table)).toHaveLength(0);
     },
   );
 
   it("preserves authenticated Search failure and age restrictions", async () => {
-    const { jobId } = await job("search", false);
-    await fixture.pool!.query(
-      "UPDATE searches SET team_id = $1 WHERE id = $2",
-      [authenticatedTeam, jobId],
-    );
+    const { jobId } = authenticatedJob("search", false);
     const payload = {
       endpoint: "search",
       jobId,
@@ -1377,10 +1385,10 @@ suite("keyless feedback HTTP and persistence", () => {
       .send(payload);
     expect(failed.status).toBe(409);
     expect(failed.body.feedbackErrorCode).toBe("SEARCH_FAILED");
-    await fixture.pool!.query(
-      "UPDATE searches SET is_successful = true, created_at = now() - interval '10 minutes' WHERE id = $1",
-      [jobId],
-    );
+    Object.assign(fixture.compactJobs.get(jobId)!, {
+      succeeded: true,
+      feedbackDeadlineMs: Date.now() - 10 * 60 * 1000,
+    });
     const expired = await request(app)
       .post("/test/authenticated/feedback")
       .send(payload);
@@ -1389,11 +1397,7 @@ suite("keyless feedback HTTP and persistence", () => {
     expect(await fixture.db!.select().from(table)).toHaveLength(0);
   });
   it("preserves the authenticated metadata limit independently of other feedback fields", async () => {
-    const { jobId } = await job("scrape");
-    await fixture.pool!.query(
-      "UPDATE scrapes SET team_id = $1, credits_cost = 8 WHERE id = $2",
-      [authenticatedTeam, jobId],
-    );
+    const { jobId } = authenticatedJob("scrape");
     const metadata = { context: "" };
     metadata.context = "x".repeat(
       8192 - Buffer.byteLength(JSON.stringify(metadata)),
@@ -1434,12 +1438,7 @@ suite("keyless feedback HTTP and persistence", () => {
   it.each(["scrape", "parse"] as const)(
     "preserves authenticated %s refunds independently of keyless limits",
     async endpoint => {
-      const { jobId } = await job(endpoint);
-      const name = endpoint === "scrape" ? "scrapes" : "parses";
-      await fixture.pool!.query(
-        `UPDATE ${name} SET team_id = $1, credits_cost = 8 WHERE id = $2`,
-        [authenticatedTeam, jobId],
-      );
+      const { jobId } = authenticatedJob(endpoint);
       const payload = {
         endpoint,
         jobId,
