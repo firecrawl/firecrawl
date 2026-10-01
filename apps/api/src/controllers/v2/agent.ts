@@ -242,6 +242,40 @@ export async function agentController(
   if (passthrough.status !== 200) {
     const text = await passthrough.text();
 
+    // Intake rejects un-compilable schemas before creating an Agent run. Keep
+    // that client error actionable even if the public and internal validators
+    // differ, without exposing arbitrary upstream response bodies.
+    if (passthrough.status === 400) {
+      let body: unknown;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        // An unexpected upstream response remains a passthrough failure.
+      }
+      const error =
+        body && typeof body === "object" && "error" in body
+          ? body.error
+          : undefined;
+      if (
+        body &&
+        typeof body === "object" &&
+        "success" in body &&
+        body.success === false &&
+        typeof error === "string" &&
+        error.startsWith("Invalid schema: ")
+      ) {
+        const publicError = error.slice(0, 2048);
+        logger.info("Agent schema rejected by extract-v3.", {
+          error: publicError,
+        });
+        return res.status(400).json({
+          success: false,
+          code: "BAD_REQUEST",
+          error: publicError,
+        });
+      }
+    }
+
     logger.error("Failed to passthrough agent request.", {
       status: passthrough.status,
       text,

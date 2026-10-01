@@ -6,6 +6,11 @@ vi.mock("../../../lib/crawl-regex", async () => {
   };
 });
 import { agentController } from "../agent";
+import { agentRequestSchema } from "../types";
+import { config } from "../../../config";
+import { agentConsumeFreeRequestIfLeft } from "../../../db/rpc";
+import { logger } from "../../../lib/logger";
+import { logRequest } from "../../../services/logging/log_job";
 vi.mock("../../../lib/logger", () => {
   const logger = { info: vi.fn(), error: vi.fn(), child: vi.fn() };
   logger.child.mockReturnValue(logger);
@@ -43,6 +48,7 @@ vi.mock("../agent-thread", () => ({
 describe("Agent Alexandria rollout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (config as any).USE_DB_AUTHENTICATION = false;
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ status: 200, json: async () => ({}) }),
@@ -82,6 +88,106 @@ describe("Agent Alexandria rollout", () => {
       await agentController(req as any, res as any);
       expect(res.status).toHaveBeenCalledWith(forced ? 400 : 200);
       expect(fetch).toHaveBeenCalledTimes(forced ? 0 : 1);
+    },
+  );
+});
+
+describe("Agent schema intake", () => {
+  const request = (schema: unknown) => ({
+    body: { prompt: "Find the details", schema },
+    auth: { team_id: "team-test" },
+    acuc: { flags: {}, api_key: "test-key" },
+  });
+  const response = () => ({ status: vi.fn().mockReturnThis(), json: vi.fn() });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (config as any).USE_DB_AUTHENTICATION = true;
+    vi.mocked(agentConsumeFreeRequestIfLeft).mockResolvedValue([
+      { consumed: true },
+    ] as any);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ status: 200, json: async () => ({}) }),
+    );
+  });
+  afterEach(() => {
+    (config as any).USE_DB_AUTHENTICATION = false;
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ["OpenAPI example", { type: "string", example: "a" }],
+    ["unknown format", { type: "string", format: "phone" }],
+    ["vendor keyword", { type: "object", propertyOrdering: ["name"] }],
+    [
+      "schema wrapper",
+      { name: "result", strict: true, schema: { type: "object" } },
+    ],
+  ])(
+    "rejects %s before consuming a free request or logging",
+    async (_, schema) => {
+      await expect(
+        agentController(request(schema) as any, response() as any),
+      ).rejects.toThrow("Invalid JSON schema:");
+      expect(agentConsumeFreeRequestIfLeft).not.toHaveBeenCalled();
+      expect(logRequest).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("accepts x-* annotations, matching extract-v3", () => {
+    expect(
+      agentRequestSchema.safeParse({
+        prompt: "Find the details",
+        schema: {
+          type: "object",
+          "x-purpose": "source data",
+          properties: { name: { type: "string", "x-source": "title" } },
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("returns a recognized upstream schema rejection as a public 400", async () => {
+    const error = 'Invalid schema: unknown format "phone"';
+    vi.mocked(fetch).mockResolvedValue({
+      status: 400,
+      text: async () => JSON.stringify({ success: false, error }),
+    } as Response);
+    const res = response();
+
+    await agentController(request({ type: "object" }) as any, res as any);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      code: "BAD_REQUEST",
+      error,
+    });
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [400, { success: false, error: "Internal exception" }],
+    [503, { success: false, error: "Invalid schema: not an intake error" }],
+  ])(
+    "does not expose an unrecognized upstream %i response",
+    async (status, body) => {
+      vi.mocked(fetch).mockResolvedValue({
+        status,
+        text: async () => JSON.stringify(body),
+      } as Response);
+      const res = response();
+
+      await agentController(request({ type: "object" }) as any, res as any);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: "Failed to passthrough agent request.",
+      });
+      expect(logger.error).toHaveBeenCalled();
     },
   );
 });

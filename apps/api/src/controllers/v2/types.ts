@@ -974,8 +974,21 @@ export type UploadedParseFile = {
 };
 
 const ajv = new Ajv();
-const agentAjv = new Ajv();
-addFormats(agentAjv);
+
+function agentSchemaExtensionKeywords(schema: unknown): Set<string> {
+  const keywords = new Set<string>();
+  const seen = new WeakSet<object>();
+  const visit = (value: unknown) => {
+    if (value === null || typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    for (const [key, child] of Object.entries(value)) {
+      if (key.startsWith("x-")) keywords.add(key);
+      visit(child);
+    }
+  };
+  visit(schema);
+  return keywords;
+}
 
 const extractOptions = z
   .strictObject({
@@ -1102,6 +1115,13 @@ export const agentRequestSchema = z
       .superRefine((val, ctx) => {
         if (!val) return; // Allow undefined schema
         try {
+          // Match extract-v3's schema policy: x-* keys are annotations, while
+          // other unknown keywords and formats remain invalid.
+          const agentAjv = new Ajv({ allErrors: true });
+          addFormats(agentAjv);
+          for (const keyword of agentSchemaExtensionKeywords(val)) {
+            agentAjv.addKeyword({ keyword, valid: true });
+          }
           agentAjv.compile(val);
         } catch (e) {
           const message =
