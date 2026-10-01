@@ -22,6 +22,7 @@ import {
 import { decryptKeylessSignupToken } from "../../lib/keyless-signup-link";
 import { logger } from "../../lib/logger";
 import { isKeylessIpSuspicious } from "../../lib/spur";
+import { trackKeylessPromptShown } from "../../lib/keyless-prompt-analytics";
 import { db } from "../../db/connection";
 import { autumnService } from "../../services/autumn/autumn.service";
 
@@ -31,7 +32,9 @@ vi.mock("../../services/queue-service", () => ({
   })),
 }));
 
-vi.mock("uuid", () => ({
+vi.mock("uuid", async importOriginal => ({
+  // keyless prompts derive their analytics team id with the real v5.
+  ...(await importOriginal<typeof import("uuid")>()),
   validate: vi.fn(() => true),
 }));
 
@@ -83,6 +86,10 @@ vi.mock("../../lib/keyless", async importOriginal => {
     isKeylessConfigured: vi.fn(),
   };
 });
+
+vi.mock("../../lib/keyless-prompt-analytics", () => ({
+  trackKeylessPromptShown: vi.fn(),
+}));
 
 vi.mock("../../lib/spur", () => ({
   isKeylessIpSuspicious: vi.fn().mockResolvedValue(false),
@@ -285,7 +292,16 @@ describe("authenticateUser", () => {
       // Nothing about the surface or the identity is visible in the link.
       expect(signupUrl).not.toContain("utm_");
       expect((auth as { error: string }).error).not.toContain("203.0.113.8");
+      // Each prompt is reported for the funnel, keyed on the web's team id.
+      expect(trackKeylessPromptShown).toHaveBeenCalledWith({
+        keylessTeamId: "abd15a03-d147-557e-801b-005da8c69bbf",
+        surface: "api",
+        reason,
+        httpStatus: status,
+        tokenLink: true,
+      });
     }
+    expect(trackKeylessPromptShown).toHaveBeenCalledTimes(3);
     for (const [message, auth] of [
       ["Keyless request blocked", limited],
       ["Keyless request blocked: suspicious IP", suspicious],

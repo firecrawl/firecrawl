@@ -21,6 +21,7 @@ import {
   keylessSignupUrlForIp,
   keylessTeamId,
   normalizeKeylessIpv4,
+  reportKeylessPromptShown,
 } from "../lib/keyless";
 import { keylessSignupSurface } from "../lib/keyless-signup-link";
 import { isKeylessIpSuspicious } from "../lib/spur";
@@ -524,10 +525,19 @@ async function handleKeylessAuth(
   // Configured, but this endpoint isn't part of the keyless tier: tell the user
   // they need a key (with the signup nudge) rather than a bare "Unauthorized".
   if (!allowKeyless) {
-    const { url } = keylessSignupUrlForIp(
-      keylessClientIp(req),
-      keylessSignupSurface(req),
+    const ip = keylessClientIp(req);
+    const surface = keylessSignupSurface(req);
+    const { url, signupRef } = keylessSignupUrlForIp(
+      ip,
+      surface,
       "unsupported_endpoint",
+    );
+    reportKeylessPromptShown(
+      ip,
+      surface,
+      "unsupported_endpoint",
+      401,
+      signupRef,
     );
     return {
       success: false,
@@ -566,6 +576,13 @@ async function handleKeylessAuth(
       ip,
       signupSurface,
       "suspicious_ip",
+    );
+    reportKeylessPromptShown(
+      ip,
+      signupSurface,
+      "suspicious_ip",
+      403,
+      signupRef,
     );
     logger.warn("Keyless request blocked: suspicious IP", {
       canonicalLog: "keyless/consume",
