@@ -100,6 +100,10 @@ describe("Agent schema intake", () => {
     acuc: { flags: {}, api_key: "test-key" },
   });
   const response = () => ({ status: vi.fn().mockReturnThis(), json: vi.fn() });
+  const threadShapes = [
+    { shape: "wrapped", wrap: (thread: unknown) => ({ thread }) },
+    { shape: "bare", wrap: (thread: unknown) => thread },
+  ];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -140,12 +144,16 @@ describe("Agent schema intake", () => {
     },
   );
 
-  it.each([0, "", { type: "bogus" }, { $async: true, type: "object" }])(
-    "rejects an invalid inherited schema before admission: %j",
-    async schema => {
+  it.each(
+    [0, "", { type: "bogus" }, { $async: true, type: "object" }].flatMap(
+      schema => threadShapes.map(shape => ({ ...shape, schema })),
+    ),
+  )(
+    "rejects an invalid inherited schema from a $shape thread before admission: $schema",
+    async ({ schema, wrap }) => {
       vi.mocked(fetchAgentThread).mockResolvedValue({
         status: 200,
-        json: async () => ({ thread: { runs: [{ schema }] } }),
+        json: async () => wrap({ runs: [{ schema }] }),
       } as Response);
       const req = request(undefined);
       await expect(
@@ -166,21 +174,24 @@ describe("Agent schema intake", () => {
     },
   );
 
-  it.each([undefined, null, { type: "object" }])(
-    "admits a valid continuation with requested schema %j",
-    async schema => {
+  it.each(
+    [undefined, null, { type: "object" }].flatMap(schema =>
+      threadShapes.map(shape => ({ ...shape, schema })),
+    ),
+  )(
+    "admits a valid continuation from a $shape thread with requested schema $schema",
+    async ({ schema, wrap }) => {
       vi.mocked(fetchAgentThread).mockResolvedValue({
         status: 200,
-        json: async () => ({
-          thread: {
+        json: async () =>
+          wrap({
             runs: [
               {
                 schema:
                   schema === undefined ? { type: "object" } : { type: "bogus" },
               },
             ],
-          },
-        }),
+          }),
       } as Response);
       const req = request(schema);
       const res = response();
@@ -200,7 +211,7 @@ describe("Agent schema intake", () => {
     },
   );
 
-  it.each([null, { thread: { runs: [] } }])(
+  it.each([null, { thread: { runs: [] } }, { runs: [] }, { runs: "invalid" }])(
     "does not consume quota when the inherited schema cannot be read: %j",
     async body => {
       vi.mocked(fetchAgentThread).mockResolvedValue({

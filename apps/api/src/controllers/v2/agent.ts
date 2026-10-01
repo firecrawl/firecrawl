@@ -184,8 +184,12 @@ export async function agentController(
     if (req.body.schema === undefined) {
       const body = (await thread.json().catch(() => null)) as {
         thread?: { runs?: { schema?: unknown }[] };
+        runs?: { schema?: unknown }[];
       } | null;
-      if (!Array.isArray(body?.thread?.runs) || body.thread.runs.length === 0) {
+      // Match agentThreadController: the service may return a bare thread or
+      // wrap it in { thread }. Both carry the same inherited schema.
+      const runs = (body?.thread ?? body)?.runs;
+      if (!Array.isArray(runs) || runs.length === 0) {
         logger.error("Invalid agent thread response.");
         return res.status(500).json({
           success: false,
@@ -194,7 +198,7 @@ export async function agentController(
       }
       agentRequestSchema.parse({
         ...originalRequest,
-        schema: body.thread.runs.at(-1)?.schema,
+        schema: runs.at(-1)?.schema,
       });
     }
   }
