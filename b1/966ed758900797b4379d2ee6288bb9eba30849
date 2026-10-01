@@ -1,0 +1,21 @@
+apps/api/src/scraper/scrapeURL/transformers/generateCompletions.test.ts
+  s_b87c7786d57a30::t_352095930f0cf1 184,213
+apps/api/src/__tests__/lib/branding/llm-telemetry.test.ts
+  s_b87c7786d57a30::t_352095930f0cf1 51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b1966ed758900797b4379d2ee6288bb9eba30849",
+  "prompts": {},
+  "sessions": {
+    "s_b87c7786d57a30": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7d1e33dc-e56a-4abd-a0b1-0257e2374b21",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

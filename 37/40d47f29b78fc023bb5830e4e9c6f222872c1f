@@ -1,0 +1,29 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/poll.ts
+  s_28f2768f245c7c::t_07a661a1c7cd7c 6,11-13,52-54,57-69,82-84,93-119,123-127,130,200,231-238,241
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/async.ts
+  s_28f2768f245c7c::t_07a661a1c7cd7c 288
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/schema.ts
+  s_28f2768f245c7c::t_07a661a1c7cd7c 12-20
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFLongPoll.test.ts
+  s_28f2768f245c7c::t_ce9d03161385cc 1-156
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/metrics.ts
+  s_28f2768f245c7c::t_07a661a1c7cd7c 58-63
+apps/api/src/config.ts
+  s_28f2768f245c7c::t_07a661a1c7cd7c 436-440
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3740d47f29b78fc023bb5830e4e9c6f222872c1f",
+  "prompts": {},
+  "sessions": {
+    "s_28f2768f245c7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "056dce34-98a7-4d60-815b-3ca2e5da75b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

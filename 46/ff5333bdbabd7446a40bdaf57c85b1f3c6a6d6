@@ -1,0 +1,33 @@
+apps/api/src/lib/typesafe.ts
+  s_3002048a2ce37a::t_fe722e730e6077 1-17
+apps/api/src/config.ts
+  s_3002048a2ce37a::t_9b2d19d9490ffc 524-527,529
+apps/api/src/search/safe-search.ts
+  s_3002048a2ce37a::t_9b2d19d9490ffc 1,4,54,77
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_48bbff18adc575 1-2,4-7,11-13,37-42,56-61,745-746,751-754,760-779
+  s_3002048a2ce37a::t_aaf2238d8f108e 755-759
+  s_3002048a2ce37a::t_b82d6729c4c3d2 3,283,300
+apps/api/src/__tests__/lib/branding/jev.test.ts
+  s_3002048a2ce37a::t_aaf2238d8f108e 5-12,206,213,215,241,245-246,290-293,392,437,440-464
+apps/api/src/search/safe-search.test.ts
+  s_3002048a2ce37a::t_a426b7a9c5def5 80-84
+apps/api/.env.example
+  s_3002048a2ce37a::t_2cc79a3b84c305 73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46ff5333bdbabd7446a40bdaf57c85b1f3c6a6d6",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

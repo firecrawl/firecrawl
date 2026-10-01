@@ -1,0 +1,21 @@
+apps/api/src/scraper/scrapeURL/engines/x-twitter/index.ts
+  s_738559dfb424df::t_cbc967bdb1c5d0 476-477,479-483,485
+apps/api/src/scraper/scrapeURL/engines/x-twitter/index.test.ts
+  s_738559dfb424df::t_cbc967bdb1c5d0 129-131,133-139,156-158,160,162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c0c515dccf8dcd3785dfde57b4b56b0b0b734758",
+  "prompts": {},
+  "sessions": {
+    "s_738559dfb424df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "399a020e-7ff1-46d8-868b-871d5a4e800a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
