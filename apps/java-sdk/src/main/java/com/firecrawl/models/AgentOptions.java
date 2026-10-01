@@ -64,7 +64,7 @@ public class AgentOptions {
         public Builder maxCredits(Integer maxCredits) { this.maxCredits = maxCredits; return this; }
         /** Don't navigate outside provided URLs. */
         public Builder strictConstrainToURLs(Boolean strictConstrainToURLs) { this.strictConstrainToURLs = strictConstrainToURLs; return this; }
-        /** Agent model: "spark-1-pro" (default), "spark-1-mini", or "spark-2". */
+        /** Agent model: "spark-2" (default). "spark-1-pro" and "spark-1-mini" are deprecated and run spark-2. */
         public Builder model(String model) { this.model = model; return this; }
         /** Reasoning effort: "low", "medium", or "high". Sets the reasoning budget (every level runs spark-2). */
         public Builder effort(String effort) { this.effort = effort; return this; }

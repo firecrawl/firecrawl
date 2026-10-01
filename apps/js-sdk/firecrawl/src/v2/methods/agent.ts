@@ -12,6 +12,7 @@ function prepareAgentPayload(args: {
   origin?: string;
   maxCredits?: number;
   strictConstrainToURLs?: boolean;
+  /** Defaults to spark-2. "spark-1-pro" and "spark-1-mini" are deprecated and run spark-2. */
   model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
   effort?: AgentEffort;
   webhook?: string | AgentWebhookConfig;
