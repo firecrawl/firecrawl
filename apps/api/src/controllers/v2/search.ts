@@ -584,14 +584,14 @@ async function searchControllerInner(
             results: null,
             num_results: 0,
             time_taken: (Date.now() - middlewareStartTime) / 1000,
-            team_id: req.auth.team_id,
+            team_id: keylessTeamUuid(req.auth.team_id)!,
             options: req.body,
             credits_cost: 0,
             zeroDataRetention,
           },
           true,
         );
-        feedbackMetadata = keylessFeedbackMetadata(req, "search", jobId);
+        feedbackMetadata = await keylessFeedbackMetadata(req, "search", jobId);
       } catch (logError) {
         logger.warn("Failed to log keyless search failure", {
           error: logError,

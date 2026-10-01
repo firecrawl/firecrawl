@@ -106,7 +106,7 @@ export async function lookupFeedbackJob(
     .limit(1);
 
   if (!row) return null;
-  if (!bigtableFailed) {
+  if (!requireOptions && !bigtableFailed) {
     recordJobStorePostgresFallback("feedback_job", jobId, { endpoint });
   }
 

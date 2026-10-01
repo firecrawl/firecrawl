@@ -8,6 +8,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 const fixture = vi.hoisted(() => ({
   pool: undefined as Pool | undefined,
   refund: vi.fn(),
+  readFeedbackJob: vi.fn(),
+  recordFallback: vi.fn(),
   results: new Map<string, unknown>(),
   readResult: vi.fn<(id: string) => Promise<unknown>>(),
   db: undefined as ReturnType<typeof drizzle> | undefined,
@@ -17,6 +19,13 @@ vi.mock("../../../lib/spur", () => ({
   isKeylessIpSuspicious: async (ip: string) => ip === "203.0.113.99",
 }));
 
+vi.mock("../../../lib/feedback-job-store", async importOriginal => ({
+  ...(await importOriginal<typeof import("../../../lib/feedback-job-store")>()),
+  readFeedbackJob: fixture.readFeedbackJob,
+}));
+vi.mock("../../../lib/job-store-fallback", () => ({
+  recordJobStorePostgresFallback: fixture.recordFallback,
+}));
 vi.mock("../../../lib/gcs-jobs", async importOriginal => ({
   ...(await importOriginal<typeof import("../../../lib/gcs-jobs")>()),
   saveSearchToGCS: async (search: { id: string; results: unknown }) => {
@@ -27,6 +36,9 @@ vi.mock("../../../lib/gcs-jobs", async importOriginal => ({
 vi.mock("../../../services/posthog", async importOriginal => ({
   ...(await importOriginal<typeof import("../../../services/posthog")>()),
   trackFirstSurfaceUse: vi.fn(),
+}));
+vi.mock("../../../lib/zdr-queue", () => ({
+  enqueueZdrCleanupJob: vi.fn(),
 }));
 
 // Opt-in integration database. Each run owns a separate schema on a local server.
@@ -230,7 +242,8 @@ suite("keyless feedback HTTP and persistence", () => {
     await fixture.pool.query(`CREATE TABLE alexandria_feedback (
       id uuid PRIMARY KEY, team_id uuid NOT NULL, api_key_id bigint, api_version text NOT NULL DEFAULT 'v2',
       rating text NOT NULL, requested_url text NOT NULL, requested_functionality text NOT NULL,
-      rationale text NOT NULL, origin text, integration text, schema_version integer NOT NULL DEFAULT 2,
+      requested_host text GENERATED ALWAYS AS (lower(substring(requested_url from '^[A-Za-z][A-Za-z0-9+.-]*://(?:[^@/?#]*@)?([^/?#:]+)'))) STORED,
+      rationale text NOT NULL, objective text, origin text, integration text, schema_version integer NOT NULL DEFAULT 2,
       created_at timestamptz NOT NULL DEFAULT now()
     )`);
     for (const name of ["providers", "capabilities"]) {
@@ -295,6 +308,8 @@ suite("keyless feedback HTTP and persistence", () => {
   });
   beforeEach(async () => {
     fixture.refund.mockReset().mockResolvedValue(undefined);
+    fixture.readFeedbackJob.mockReset().mockResolvedValue(null);
+    fixture.recordFallback.mockReset();
     fixture.results.clear();
     fixture.readResult
       .mockReset()
@@ -1074,6 +1089,20 @@ suite("keyless feedback HTTP and persistence", () => {
     );
     expect(await fixture.db!.select().from(table)).toHaveLength(0);
   });
+  it("does not invite feedback when the PostgreSQL job copy was not saved", async () => {
+    await fixture.pool!.query(
+      "ALTER TABLE scrapes ADD CONSTRAINT reject_job_copy CHECK (false)",
+    );
+    try {
+      const { jobId, metadata } = await job("scrape");
+      expect(metadata).toEqual({ jobId });
+      expect((await submit(body("scrape", jobId))).status).toBe(404);
+    } finally {
+      await fixture.pool!.query(
+        "ALTER TABLE scrapes DROP CONSTRAINT reject_job_copy",
+      );
+    }
+  });
   it("accepts a job timestamp slightly ahead of this host's clock", async () => {
     const { jobId } = await job("scrape");
     await fixture.pool!.query(
@@ -1257,6 +1286,80 @@ suite("keyless feedback HTTP and persistence", () => {
       }
     },
   );
+  it.each(["search", "scrape", "parse"] as const)(
+    "uses full PostgreSQL options for keyless %s when compact feedback records exist",
+    async endpoint => {
+      const { jobId } = await job(endpoint);
+      fixture.readFeedbackJob.mockResolvedValue({
+        requestId: jobId,
+        teamId: team(),
+        refundClass: endpoint === "scrape" ? "scrape_basic" : endpoint,
+        feedbackDeadlineMs: Date.now() + 120000,
+        succeeded: true,
+        creditsBilled: 0,
+        zeroDataRetention: false,
+      });
+      expect((await submit(body(endpoint, jobId))).status).toBe(200);
+      expect(fixture.readFeedbackJob).not.toHaveBeenCalled();
+      expect(fixture.recordFallback).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps authenticated feedback on compact records without PostgreSQL job rows", async () => {
+    const jobId = randomUUID();
+    fixture.readFeedbackJob.mockResolvedValue({
+      requestId: jobId,
+      teamId: authenticatedTeam,
+      refundClass: "scrape_basic",
+      feedbackDeadlineMs: Date.now() + 120000,
+      succeeded: true,
+      creditsBilled: 8,
+      zeroDataRetention: false,
+    });
+    const response = await request(app)
+      .post("/test/authenticated/feedback")
+      .send({
+        endpoint: "scrape",
+        jobId,
+        rating: "bad",
+        note: "The output omitted the requested retry intervals.",
+      });
+    expect(response.status).toBe(200);
+    expect(response.body.creditsRefunded).toBe(1);
+    expect(fixture.readFeedbackJob).toHaveBeenCalledWith(jobId);
+    expect(fixture.recordFallback).not.toHaveBeenCalled();
+    expect(fixture.refund).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["missing", "error"])(
+    "records an authenticated PostgreSQL fallback only for a compact-record miss: %s",
+    async state => {
+      const { jobId } = await job("scrape");
+      await fixture.pool!.query(
+        "UPDATE scrapes SET team_id = $1 WHERE id = $2",
+        [authenticatedTeam, jobId],
+      );
+      if (state === "error")
+        fixture.readFeedbackJob.mockRejectedValue(new Error("Unavailable"));
+      const response = await request(app)
+        .post("/test/authenticated/feedback")
+        .send({
+          endpoint: "scrape",
+          jobId,
+          rating: "bad",
+          note: "The output omitted the requested retry intervals.",
+        });
+      expect(response.status).toBe(200);
+      if (state === "missing")
+        expect(fixture.recordFallback).toHaveBeenCalledExactlyOnceWith(
+          "feedback_job",
+          jobId,
+          { endpoint: "scrape" },
+        );
+      else expect(fixture.recordFallback).not.toHaveBeenCalled();
+    },
+  );
+
   it("preserves authenticated Search failure and age restrictions", async () => {
     const { jobId } = await job("search", false);
     await fixture.pool!.query(

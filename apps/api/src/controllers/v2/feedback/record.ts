@@ -122,6 +122,7 @@ export async function lookupJobWithRetry(
   options: Pick<FeedbackRecordOptions, "endpoint" | "jobId" | "notFoundCode">,
   dbTeamId: string,
   logger: FeedbackLogger,
+  lookupOptions?: { requireOptions: boolean },
 ): Promise<FeedbackJobRow | FeedbackRecordResult> {
   // Authenticated lookups keep their existing call; only keyless lookups pass options.
   const lookup = () =>

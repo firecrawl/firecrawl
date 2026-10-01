@@ -3,7 +3,9 @@ import { EventEmitter } from "node:events";
 const mocks = vi.hoisted(() => ({
   info: vi.fn(),
   warn: vi.fn(),
+  lookup: vi.fn(),
 }));
+vi.mock("./record", () => ({ lookupJobWithRetry: mocks.lookup }));
 vi.mock("../../../lib/logger", () => ({
   logger: { info: mocks.info, warn: mocks.warn },
 }));
@@ -24,6 +26,7 @@ describe("keyless feedback invitations", () => {
     vi.resetAllMocks();
     config.KEYLESS_FEEDBACK_ENABLED = true;
     config.USE_DB_AUTHENTICATION = true;
+    mocks.lookup.mockResolvedValue({ created_at: new Date(), options: {} });
   });
   afterEach(() => vi.useRealTimers());
   const prepare = (res = new EventEmitter(), overrides = {}) =>
@@ -103,7 +106,7 @@ describe("keyless feedback invitations", () => {
   it("includes the contract on every eligible response across endpoints and clients", async () => {
     const endpoints = ["search", "scrape", "parse"] as const;
     for (let index = 0; index < 6; index++) {
-      const metadata = keylessFeedbackMetadata(
+      const metadata = await keylessFeedbackMetadata(
         {
           auth: { team_id: "fixture" },
           body: { origin: ["api", "cli", "mcp"][index % 3] },
@@ -152,5 +155,31 @@ describe("keyless feedback invitations", () => {
       "job",
     );
     expect(metadata.feedback).toBeDefined();
+  });
+
+  it.each([
+    { status: 404 },
+    { status: 500 },
+    { created_at: new Date(), options: null },
+    { created_at: new Date(), options: { lockdown: true } },
+    { created_at: "invalid", options: {} },
+    { created_at: new Date(Date.now() - 86401 * 1000), options: {} },
+    { created_at: new Date(Date.now() + 600 * 1000), options: {} },
+  ])(
+    "preserves only the reference for an ineligible persisted job: %j",
+    async job => {
+      mocks.lookup.mockResolvedValue(job);
+      expect(await prepare()).toEqual({ jobId: "job" });
+      expect(mocks.info).not.toHaveBeenCalled();
+    },
+  );
+
+  it("advertises the deadline enforced by the persisted job timestamp", async () => {
+    const createdAt = new Date(Date.now() - 60_000);
+    mocks.lookup.mockResolvedValue({ created_at: createdAt, options: {} });
+    const metadata = await prepare();
+    expect(metadata.feedback).toMatchObject({
+      expiresAt: new Date(createdAt.getTime() + 86400 * 1000).toISOString(),
+    });
   });
 });

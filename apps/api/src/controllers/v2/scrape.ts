@@ -460,7 +460,6 @@ export async function scrapeController(
           },
         );
       } catch (e) {
-        let jobLogged = true;
         if (!workerStarted && keylessTeamUuid(req.auth.team_id)) {
           try {
             await logRequestPromise;
@@ -468,7 +467,7 @@ export async function scrapeController(
               {
                 id: jobId,
                 request_id: agentRequestId ?? jobId,
-                team_id: req.auth.team_id,
+                team_id: keylessTeamUuid(req.auth.team_id)!,
                 url: req.body.url,
                 options: req.body,
                 is_successful: false,
@@ -484,17 +483,17 @@ export async function scrapeController(
               true,
             );
           } catch (error) {
-            jobLogged = false;
             logger.warn("Failed to log job before worker execution", {
               error,
               jobId,
             });
           }
         }
-        // A job this controller failed to log has no row for feedback to find.
-        const feedbackMetadata = jobLogged
-          ? keylessFeedbackMetadata(req, "scrape", jobId)
-          : {};
+        const feedbackMetadata = await keylessFeedbackMetadata(
+          req,
+          "scrape",
+          jobId,
+        );
         if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
           reconciledKeylessCredits = true;
           adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(

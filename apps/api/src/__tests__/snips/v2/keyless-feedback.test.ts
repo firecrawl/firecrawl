@@ -35,6 +35,7 @@ describeIf(enabled)("keyless feedback", () => {
       `keyless_requests:${ip}`,
       `keyless_credits:${ip}`,
       `keyless_feedback_attempts:${identity}`,
+      `keyless_feedback_attempts_day:${identity}`,
     );
   };
   beforeEach(cleanup);

@@ -5,7 +5,9 @@ const mocks = vi.hoisted(() => ({
   semaphore: vi.fn(),
   requestLog: vi.fn(),
   scrapeLog: vi.fn(),
+  lookup: vi.fn(),
 }));
+vi.mock("./record", () => ({ lookupJobWithRetry: mocks.lookup }));
 vi.mock("../../../services/worker/scrape-worker", () => ({
   processJobInternal: mocks.worker,
 }));
@@ -37,7 +39,7 @@ vi.mock("../../../lib/threat-protection/request", () => ({
 import { scrapeController } from "../scrape";
 import { parseController } from "../parse";
 import { config } from "../../../config";
-import { keylessTeamId } from "../../../lib/keyless";
+import { keylessTeamId, keylessTeamUuid } from "../../../lib/keyless";
 import { TransportableError } from "../../../lib/error";
 
 const originalEnabled = config.KEYLESS_FEEDBACK_ENABLED;
@@ -78,6 +80,7 @@ beforeEach(() => {
   config.USE_DB_AUTHENTICATION = originalDbAuthentication;
   mocks.requestLog.mockResolvedValue(undefined);
   mocks.scrapeLog.mockResolvedValue(undefined);
+  mocks.lookup.mockResolvedValue({ created_at: new Date(), options: {} });
   mocks.semaphore.mockImplementation(
     async (_team, _id, _limit, _signal, _timeout, run) => run(false),
   );
@@ -125,7 +128,7 @@ it.each(["scrape", "parse"] as const)(
       expect.objectContaining({
         id: jobId,
         request_id: jobId,
-        team_id: teamId,
+        team_id: keylessTeamUuid(teamId),
         is_successful: false,
         credits_cost: 0,
         ...(endpoint === "parse" ? { is_parse: true } : {}),
@@ -148,11 +151,30 @@ it.each(["scrape", "parse"] as const)(
       new TransportableError("CONCURRENCY_QUEUE_TIMEOUT"),
     );
     mocks.scrapeLog.mockRejectedValueOnce(new Error("Publish failed"));
+    mocks.lookup.mockResolvedValueOnce({ status: 404 });
     const { res, promise } = start(endpoint);
     await promise;
     expect(res.status).toHaveBeenCalledWith(408);
     expect(mocks.scrapeLog).toHaveBeenCalledTimes(1);
-    expect(res.json.mock.calls[0][0].metadata).toBeUndefined();
+    expect(res.json.mock.calls[0][0].metadata).toEqual({
+      jobId: expect.any(String),
+    });
+  },
+);
+
+it.each(["scrape", "parse"] as const)(
+  "preserves the successful %s response when feedback persistence is unavailable",
+  async endpoint => {
+    config.KEYLESS_FEEDBACK_ENABLED = true;
+    config.USE_DB_AUTHENTICATION = true;
+    mocks.lookup.mockResolvedValueOnce({ status: 500 });
+    const { res, promise } = start(endpoint);
+    await promise;
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json.mock.calls[0][0].data.metadata.feedback).toBeUndefined();
+    expect(res.json.mock.calls[0][0].data.metadata.jobId).toEqual(
+      expect.any(String),
+    );
   },
 );
 
