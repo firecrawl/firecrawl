@@ -1,0 +1,148 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  set: vi.fn(),
+  capturePostHog: vi.fn(),
+  enabled: vi.fn(),
+}));
+
+vi.mock("../../services/rate-limiter", () => ({
+  redisRateLimitClient: { set: mocks.set },
+}));
+vi.mock("../../services/posthog-capture", () => ({
+  capturePostHog: mocks.capturePostHog,
+  isPostHogCaptureEnabled: mocks.enabled,
+}));
+
+import {
+  KEYLESS_PROMPT_SHOWN_EVENT,
+  keylessPromptDedupeKey,
+  trackKeylessPromptShown,
+} from "../keyless-prompt-analytics";
+
+const TEAM_UUID = "abd15a03-d147-557e-801b-005da8c69bbf";
+const PROMPT = {
+  keylessTeamId: TEAM_UUID,
+  surface: "mcp" as const,
+  reason: "limit" as const,
+  httpStatus: 429,
+  tokenLink: true,
+};
+
+/** Let the fire-and-forget task run. */
+const settle = () => new Promise(resolve => setImmediate(resolve));
+
+beforeEach(() => {
+  mocks.enabled.mockReturnValue(true);
+  mocks.set.mockResolvedValue("OK");
+  vi.useFakeTimers({
+    now: new Date("2026-10-01T23:59:30.000Z"),
+    toFake: ["Date"],
+  });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.clearAllMocks();
+});
+
+describe("keylessPromptDedupeKey", () => {
+  it("keys on the UTC day, team, surface and reason", () => {
+    expect(keylessPromptDedupeKey(PROMPT)).toBe(
+      `keyless_prompt_shown:2026-10-01:${TEAM_UUID}:mcp:limit`,
+    );
+    expect(
+      keylessPromptDedupeKey(PROMPT, new Date("2026-10-02T00:00:01.000Z")),
+    ).toBe(`keyless_prompt_shown:2026-10-02:${TEAM_UUID}:mcp:limit`);
+    expect(
+      keylessPromptDedupeKey({ ...PROMPT, reason: "suspicious_ip" }),
+    ).not.toBe(keylessPromptDedupeKey(PROMPT));
+    expect(keylessPromptDedupeKey({ ...PROMPT, surface: "cli" })).not.toBe(
+      keylessPromptDedupeKey(PROMPT),
+    );
+  });
+});
+
+describe("trackKeylessPromptShown", () => {
+  it("claims the day's marker with SET NX and a 25h TTL, then captures", async () => {
+    trackKeylessPromptShown(PROMPT);
+    await settle();
+
+    expect(mocks.set).toHaveBeenCalledExactlyOnceWith(
+      `keyless_prompt_shown:2026-10-01:${TEAM_UUID}:mcp:limit`,
+      "1",
+      "EX",
+      90000,
+      "NX",
+    );
+    expect(mocks.capturePostHog).toHaveBeenCalledExactlyOnceWith(
+      KEYLESS_PROMPT_SHOWN_EVENT,
+      TEAM_UUID,
+      {
+        keyless_team_id: TEAM_UUID,
+        surface: "mcp",
+        reason: "limit",
+        http_status: 429,
+        link_type: "token",
+        $process_person_profile: false,
+      },
+    );
+  });
+
+  it("labels a prompt without a token as the fallback link", async () => {
+    trackKeylessPromptShown({
+      ...PROMPT,
+      reason: "unsupported_endpoint",
+      httpStatus: 401,
+      tokenLink: false,
+    });
+    await settle();
+
+    expect(mocks.capturePostHog).toHaveBeenCalledWith(
+      KEYLESS_PROMPT_SHOWN_EVENT,
+      TEAM_UUID,
+      expect.objectContaining({
+        reason: "unsupported_endpoint",
+        http_status: 401,
+        link_type: "fallback",
+      }),
+    );
+  });
+
+  it("does not capture again once the day's marker exists", async () => {
+    mocks.set.mockResolvedValueOnce("OK").mockResolvedValueOnce(null);
+
+    trackKeylessPromptShown(PROMPT);
+    trackKeylessPromptShown(PROMPT);
+    await settle();
+
+    expect(mocks.set).toHaveBeenCalledTimes(2);
+    expect(mocks.capturePostHog).toHaveBeenCalledTimes(1);
+  });
+
+  it("spends no marker while capture is off", async () => {
+    mocks.enabled.mockReturnValue(false);
+
+    trackKeylessPromptShown(PROMPT);
+    await settle();
+
+    expect(mocks.set).not.toHaveBeenCalled();
+    expect(mocks.capturePostHog).not.toHaveBeenCalled();
+  });
+
+  it("returns before Redis answers and swallows a Redis failure", async () => {
+    let fail!: (error: Error) => void;
+    mocks.set.mockReturnValueOnce(
+      new Promise((_, reject) => {
+        fail = reject;
+      }),
+    );
+
+    expect(trackKeylessPromptShown(PROMPT)).toBeUndefined();
+    expect(mocks.capturePostHog).not.toHaveBeenCalled();
+    fail(new Error("redis down"));
+    await settle();
+
+    expect(mocks.capturePostHog).not.toHaveBeenCalled();
+  });
+});

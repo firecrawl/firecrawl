@@ -11,6 +11,9 @@ vi.mock("ioredis", () => ({
 vi.mock("../services/rate-limiter", () => ({
   redisRateLimitClient: { ttl: vi.fn().mockResolvedValue(-1), on: vi.fn() },
 }));
+vi.mock("./keyless-prompt-analytics", () => ({
+  trackKeylessPromptShown: vi.fn(),
+}));
 vi.mock("./keyless", async importOriginal => {
   const actual = await importOriginal<typeof import("./keyless")>();
   return { ...actual, checkKeylessEligibility: vi.fn() };
@@ -27,12 +30,24 @@ import {
   keylessSignupUrlForIp,
   keylessTeamId,
   keylessTeamUuid,
+  reportKeylessPromptShown,
 } from "./keyless";
+import { trackKeylessPromptShown } from "./keyless-prompt-analytics";
 import { decryptKeylessSignupToken } from "./keyless-signup-link";
 import { logger } from "./logger";
 
 const TEST_KEY = "AAECAwQFBgcICQoLDA0ODw==";
 const IP = "203.0.113.8";
+const TEAM_UUID = "abd15a03-d147-557e-801b-005da8c69bbf";
+
+/** The prompt reported to analytics, with its defaults for IP. */
+function shown(fields: Partial<Parameters<typeof trackKeylessPromptShown>[0]>) {
+  return {
+    keylessTeamId: TEAM_UUID,
+    tokenLink: true,
+    ...fields,
+  };
+}
 
 /** The prompt a /k link carries, or null for any other link. */
 function decoded(url: unknown) {
@@ -96,6 +111,9 @@ describe("keyless limit prompt", () => {
         signupRef: body.signup_url.split("/k/")[1],
       }),
     );
+    expect(trackKeylessPromptShown).toHaveBeenCalledExactlyOnceWith(
+      shown({ surface: "cli", reason: "limit", httpStatus: 429 }),
+    );
   });
 
   it("uses the api surface when no request is given", async () => {
@@ -117,6 +135,14 @@ describe("keyless limit prompt", () => {
       "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=mcp",
     );
     expect(body.error).toContain(`${body.signup_url}\n`);
+    expect(trackKeylessPromptShown).toHaveBeenCalledExactlyOnceWith(
+      shown({
+        surface: "mcp",
+        reason: "limit",
+        httpStatus: 429,
+        tokenLink: false,
+      }),
+    );
   });
 
   it("keys IPv4-mapped IPv6 on the IPv4 identity and gives other IPs the regular link", () => {
@@ -130,6 +156,36 @@ describe("keyless limit prompt", () => {
       url: "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
     });
   });
+});
+
+describe("reportKeylessPromptShown", () => {
+  it("reports an IPv4-mapped IPv6 caller under the IPv4 team id", () => {
+    reportKeylessPromptShown("::ffff:203.0.113.8", "api", "limit", 429, "ref");
+    expect(trackKeylessPromptShown).toHaveBeenCalledExactlyOnceWith(
+      shown({ surface: "api", reason: "limit", httpStatus: 429 }),
+    );
+  });
+
+  it("reports an IPv6 caller with the fallback link under its own team id", () => {
+    reportKeylessPromptShown("2001:db8::1", "mcp", "unsupported_endpoint", 401);
+    expect(trackKeylessPromptShown).toHaveBeenCalledExactlyOnceWith(
+      shown({
+        keylessTeamId: keylessTeamUuid(keylessTeamId("2001:db8::1"))!,
+        surface: "mcp",
+        reason: "unsupported_endpoint",
+        httpStatus: 401,
+        tokenLink: false,
+      }),
+    );
+  });
+
+  it.each([null, undefined, "", "unknown"])(
+    "does not report a caller with no IP (%j)",
+    ip => {
+      reportKeylessPromptShown(ip, "api", "limit", 429);
+      expect(trackKeylessPromptShown).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("browserError", () => {
@@ -153,6 +209,9 @@ describe("browserError", () => {
       error: expect.stringContaining(`${body.signup_url}\n`),
       signup_url: body.signup_url,
     });
+    expect(trackKeylessPromptShown).toHaveBeenCalledExactlyOnceWith(
+      shown({ surface: "cli", reason: "limit", httpStatus: 429 }),
+    );
   });
 
   it("leaves other browser errors unchanged", () => {
@@ -166,6 +225,7 @@ describe("browserError", () => {
       success: false,
       error: "Session closed.",
     });
+    expect(trackKeylessPromptShown).not.toHaveBeenCalled();
   });
 });
 
@@ -218,6 +278,10 @@ describe("keyless eligibility signup link", () => {
         surface: "mcp",
         reason,
       });
+      // The MCP relays the link as the prompt, so the check reports it.
+      expect(trackKeylessPromptShown).toHaveBeenCalledExactlyOnceWith(
+        shown({ surface: "mcp", reason, httpStatus: 200 }),
+      );
     },
   );
 
@@ -255,6 +319,7 @@ describe("keyless eligibility signup link", () => {
         reason,
         signupUrl: MCP_FALLBACK,
       });
+      expect(trackKeylessPromptShown).not.toHaveBeenCalled();
     },
   );
 
@@ -289,6 +354,10 @@ describe("keyless eligibility signup link", () => {
 
     expect(res.status.mock.calls).toEqual([[200], [200]]);
     expect(res.json.mock.calls[0]).toEqual([{ eligible: true }]);
+    // Only the asked-for account-only link is a prompt.
+    expect(trackKeylessPromptShown).toHaveBeenCalledExactlyOnceWith(
+      shown({ surface: "mcp", reason: "account_only_tool", httpStatus: 200 }),
+    );
     const asked = res.json.mock.calls[1][0];
     expect(asked).toEqual({ eligible: true, signupUrl: expect.any(String) });
     expect(decoded(asked.signupUrl)).toEqual({
