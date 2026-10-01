@@ -111,6 +111,17 @@ crawl_status = firecrawl.crawl(
 print(crawl_status)
 ```
 
+The result is a `CrawlJob`. It includes the job `id` and any `warning` from the API, so you can use the job after the crawl ends, for example with `get_crawl_errors(crawl_status.id)`. If the crawl does not finish within `timeout`, the SDK raises `CrawlJobTimeoutError`. It is a `TimeoutError` subclass with a `job_id` attribute, so you can check or cancel the job later.
+
+```python
+from firecrawl import CrawlJobTimeoutError
+
+try:
+  crawl_status = firecrawl.crawl('https://firecrawl.dev', limit=100, timeout=120)
+except CrawlJobTimeoutError as e:
+  firecrawl.cancel_crawl(e.job_id)
+```
+
 ### Asynchronous Crawling
 
 <Tip>Looking for async operations? Check out the [Async Class](#async-class) section below.</Tip>

@@ -907,7 +907,8 @@ class FirecrawlClient:
             CrawlJob in a terminal state ("completed", "failed", or "cancelled")
 
         Raises:
-            TimeoutError: If the job does not finish within timeout
+            CrawlJobTimeoutError: If the job does not finish within timeout (a
+                ``TimeoutError`` subclass that carries ``job_id`` and ``timeout``)
         """
         return crawl_module.wait_for_crawl_completion(
             self.http_client,
