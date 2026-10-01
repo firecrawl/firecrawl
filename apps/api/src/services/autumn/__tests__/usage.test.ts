@@ -63,6 +63,7 @@ vi.mock("../../../db/connection", () => ({
 import {
   getTeamBalance,
   getTeamHistoricalUsage,
+  getTeamUsageForRange,
   getTeamHistoricalUsageByApiKey,
 } from "../usage";
 
@@ -1239,5 +1240,85 @@ describe("historical usage Autumn timeout override", () => {
     for (const [, options] of mockAggregate.mock.calls) {
       expect(options?.timeoutMs).toBeGreaterThan(2000);
     }
+  });
+});
+
+describe("getTeamUsageForRange", () => {
+  const now = Date.parse("2026-10-02T12:30:00.000Z");
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([
+    ["day", 1, "hour"],
+    ["week", 7, "day"],
+    ["month", 30, "day"],
+  ] as const)(
+    "queries the exact rolling %s window for the authenticated team",
+    async (timeRange, days, binSize) => {
+      vi.spyOn(Date, "now").mockReturnValue(now);
+      mockAggregate.mockResolvedValue({ list: [] });
+      const result = await getTeamUsageForRange("team-1", timeRange);
+      expect(mockAggregate).toHaveBeenCalledWith(
+        {
+          customerId: "org-1",
+          entityId: "team-1",
+          featureId: "CREDITS",
+          customRange: { start: now - days * 86400000, end: now },
+          binSize,
+        },
+        { timeoutMs: EXPECTED_HISTORICAL_TIMEOUT_MS },
+      );
+      expect(result).toEqual({
+        window: {
+          timeRange,
+          binSize,
+          startDate: new Date(now - days * 86400000).toISOString(),
+          endDate: new Date(now).toISOString(),
+        },
+        periods: [],
+      });
+    },
+  );
+
+  it("clips edge bins, fills gaps, sums duplicates and excludes out-of-window bins", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    mockAggregate.mockResolvedValue({
+      list: [
+        { period: Date.parse("2026-10-02T12:00:00Z"), values: { CREDITS: 3 } },
+        { period: Date.parse("2026-10-01T12:00:00Z"), values: { CREDITS: 7 } },
+        { period: Date.parse("2026-10-01T12:00:00Z"), values: { CREDITS: 2 } },
+        { period: Date.parse("2026-10-01T11:00:00Z"), values: { CREDITS: 99 } },
+        { period: Date.parse("2026-10-02T13:00:00Z"), values: { CREDITS: 99 } },
+      ],
+    });
+    const { periods } = await getTeamUsageForRange("team-1", "day");
+    expect(periods).toHaveLength(25);
+    expect(periods[0]).toEqual({
+      startDate: "2026-10-01T12:30:00.000Z",
+      endDate: "2026-10-01T13:00:00.000Z",
+      creditsUsed: 9,
+    });
+    expect(periods[1].creditsUsed).toBe(0);
+    expect(periods.at(-1)).toEqual({
+      startDate: "2026-10-02T12:00:00.000Z",
+      endDate: "2026-10-02T12:30:00.000Z",
+      creditsUsed: 3,
+    });
+    expect(periods.reduce((sum, p) => sum + p.creditsUsed, 0)).toBe(12);
+  });
+
+  it("returns empty usage for a missing team entity without an org fallback", async () => {
+    mockAggregate.mockRejectedValue(
+      Object.assign(new Error("missing"), { statusCode: 404 }),
+    );
+    expect((await getTeamUsageForRange("team-1", "week")).periods).toEqual([]);
+    expect(mockAggregate).toHaveBeenCalledTimes(1);
+    expect(mockAggregate.mock.calls[0][0].entityId).toBe("team-1");
+  });
+
+  it("propagates billing failures instead of reporting zero usage", async () => {
+    mockAggregate.mockRejectedValue(new Error("unavailable"));
+    await expect(getTeamUsageForRange("team-1", "month")).rejects.toThrow(
+      "unavailable",
+    );
   });
 });

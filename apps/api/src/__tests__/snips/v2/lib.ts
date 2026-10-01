@@ -872,9 +872,15 @@ export async function creditUsage(
 
 export async function creditUsageHistorical(
   identity: Identity,
-  options: { byApiKey?: boolean } = {},
+  options: { byApiKey?: boolean; timeRange?: "day" | "week" | "month" } = {},
 ): Promise<{
   success: boolean;
+  window?: {
+    timeRange: "day" | "week" | "month";
+    binSize: "hour" | "day";
+    startDate: string;
+    endDate: string;
+  };
   periods: {
     startDate: string | null;
     endDate: string | null;
@@ -884,7 +890,10 @@ export async function creditUsageHistorical(
 }> {
   const req = await request(TEST_API_URL)
     .get("/v2/team/credit-usage/historical")
-    .query(options.byApiKey ? { byApiKey: "true" } : {})
+    .query({
+      ...(options.byApiKey ? { byApiKey: "true" } : {}),
+      ...(options.timeRange ? { timeRange: options.timeRange } : {}),
+    })
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json");
 

@@ -656,6 +656,41 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
     600000,
   );
 
+  it.each([
+    ["day", 1, "hour"],
+    ["week", 7, "day"],
+    ["month", 30, "day"],
+  ] as const)(
+    "returns a rolling %s credit-usage window",
+    async (timeRange, days, binSize) => {
+      const identity = await idmux({
+        name: "billing/rolling usage/" + timeRange,
+        credits: 100,
+      });
+      const result = await creditUsageHistorical(identity, { timeRange });
+      expect(result.success).toBe(true);
+      expect(result.window).toMatchObject({ timeRange, binSize });
+      const start = Date.parse(result.window!.startDate);
+      const end = Date.parse(result.window!.endDate);
+      expect(end - start).toBe(days * 86400000);
+      for (const period of result.periods) {
+        expect(Date.parse(period.startDate!)).toBeGreaterThanOrEqual(start);
+        expect(Date.parse(period.endDate!)).toBeLessThanOrEqual(end);
+        expect(period.creditsUsed).toBeGreaterThanOrEqual(0);
+      }
+    },
+  );
+
+  it("rejects unsupported rolling ranges", async () => {
+    const identity = await idmux({
+      name: "billing/invalid usage range",
+      credits: 100,
+    });
+    await expect(
+      creditUsageHistorical(identity, { timeRange: "year" as "day" }),
+    ).rejects.toMatchObject({ success: false });
+  });
+
   it.concurrent(
     "returns historical credit usage",
     async () => {

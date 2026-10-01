@@ -3,10 +3,13 @@ import { ErrorResponse, RequestWithAuth } from "./types";
 import {
   getTeamHistoricalUsage,
   getTeamHistoricalUsageByApiKey,
+  getTeamUsageForRange,
+  type RollingCreditUsage,
 } from "../../services/autumn/usage";
 
 interface CreditUsageHistoricalResponse {
   success: true;
+  window?: RollingCreditUsage["window"];
   periods: {
     startDate: string | null;
     endDate: string | null;
@@ -20,6 +23,30 @@ export async function creditUsageHistoricalController(
   res: Response<CreditUsageHistoricalResponse | ErrorResponse>,
 ): Promise<void> {
   const byApiKey = req.query.byApiKey === "true";
+  const timeRange = req.query.timeRange;
+  if (timeRange !== undefined) {
+    if (timeRange !== "day" && timeRange !== "week" && timeRange !== "month") {
+      res
+        .status(400)
+        .json({
+          success: false,
+          error: "timeRange must be day, week, or month.",
+        });
+      return;
+    }
+    if (byApiKey) {
+      res
+        .status(400)
+        .json({
+          success: false,
+          error: "byApiKey cannot be combined with timeRange.",
+        });
+      return;
+    }
+    const usage = await getTeamUsageForRange(req.auth.team_id, timeRange);
+    res.json({ success: true, ...usage });
+    return;
+  }
 
   const periods: CreditUsageHistoricalResponse["periods"] = byApiKey
     ? await getTeamHistoricalUsageByApiKey(req.auth.team_id)

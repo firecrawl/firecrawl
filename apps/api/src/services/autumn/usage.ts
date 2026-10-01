@@ -450,6 +450,80 @@ export async function getTeamHistoricalUsage(
   return aggregateHistoricalPeriodsByMonth(response.list ?? []);
 }
 
+export type UsageTimeRange = "day" | "week" | "month";
+export interface RollingCreditUsage {
+  window: {
+    timeRange: UsageTimeRange;
+    binSize: "hour" | "day";
+    startDate: string;
+    endDate: string;
+  };
+  periods: HistoricalPeriod[];
+}
+
+export async function getTeamUsageForRange(
+  teamId: string,
+  timeRange: UsageTimeRange,
+): Promise<RollingCreditUsage> {
+  if (!autumnClient) throw new Error("Autumn client is not configured");
+  const days = { day: 1, week: 7, month: 30 }[timeRange];
+  const binSize = timeRange === "day" ? "hour" : "day";
+  const binMs = binSize === "hour" ? DAY_MS / 24 : DAY_MS;
+  const end = Date.now();
+  const start = end - days * DAY_MS;
+  const result: RollingCreditUsage = {
+    window: {
+      timeRange,
+      binSize,
+      startDate: new Date(start).toISOString(),
+      endDate: new Date(end).toISOString(),
+    },
+    periods: [],
+  };
+  const orgId = await lookupOrgId(teamId);
+  let response;
+  try {
+    response = await autumnClient.events.aggregate(
+      {
+        customerId: orgId,
+        entityId: teamId,
+        featureId: CREDITS_FEATURE_ID,
+        customRange: { start, end },
+        binSize,
+      },
+      { timeoutMs: HISTORICAL_AGGREGATE_TIMEOUT_MS },
+    );
+  } catch (err: any) {
+    const status = err?.statusCode ?? err?.status ?? err?.response?.status;
+    if (status !== 404) throw err;
+    return result;
+  }
+
+  const totals = new Map<number, number>();
+  for (const item of response.list ?? []) {
+    const timestamp = item.period;
+    const credits = item.values?.[CREDITS_FEATURE_ID] ?? 0;
+    if (!Number.isFinite(timestamp) || !Number.isFinite(credits))
+      throw new Error("Invalid billing aggregate");
+    const bucket = Math.floor(timestamp / binMs) * binMs;
+    if (bucket + binMs <= start || bucket >= end) continue;
+    totals.set(bucket, (totals.get(bucket) ?? 0) + credits);
+  }
+  if (!totals.size) return result;
+  for (
+    let bucket = Math.floor(start / binMs) * binMs;
+    bucket < end;
+    bucket += binMs
+  ) {
+    result.periods.push({
+      startDate: new Date(Math.max(bucket, start)).toISOString(),
+      endDate: new Date(Math.min(bucket + binMs, end)).toISOString(),
+      creditsUsed: totals.get(bucket) ?? 0,
+    });
+  }
+  return result;
+}
+
 interface UsageSlice {
   start: number;
   end: number;
