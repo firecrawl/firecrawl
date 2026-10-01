@@ -89,6 +89,8 @@ export class Watcher extends EventEmitter {
   private readonly timeout?: number;
   private ws?: WebSocket;
   private closed = false;
+  private polling = false;
+  private doneEmitted = false;
   private readonly emittedDocumentKeys = new Set<string>();
 
   constructor(http: HttpClient, jobId: string, opts: WatcherOptions = {}) {
@@ -170,7 +172,7 @@ export class Watcher extends EventEmitter {
           const payload = body.data || body;
           const data = (payload.data || []) as Document[];
           if (data.length) this.emitDocuments(data);
-          this.emit("done", { status: "completed", data, id: this.jobId, total: payload.total, completed: payload.completed, creditsUsed: payload.creditsUsed });
+          this.emitDone({ status: "completed", data, id: this.jobId, total: payload.total, completed: payload.completed, creditsUsed: payload.creditsUsed });
           this.close();
           return;
         }
@@ -205,6 +207,12 @@ export class Watcher extends EventEmitter {
     } catch {
       return `${Date.now()}-${Math.random()}`;
     }
+  }
+
+  private emitDone(payload: any) {
+    if (this.doneEmitted) return;
+    this.doneEmitted = true;
+    this.emit("done", payload);
   }
 
   private emitDocuments(docs: Document[]) {
@@ -249,7 +257,7 @@ export class Watcher extends EventEmitter {
     // instead of closing permanently and silently dropping every document.
     const emptyCounters = (payload.total ?? 0) === 0 && (payload.completed ?? 0) === 0;
     if (terminal && !(status === "completed" && emptyCounters)) {
-      this.emit("done", { status, data, id: this.jobId, total: payload.total ?? 0, completed: payload.completed ?? 0, creditsUsed: payload.creditsUsed });
+      this.emitDone({ status, data, id: this.jobId, total: payload.total ?? 0, completed: payload.completed ?? 0, creditsUsed: payload.creditsUsed });
       this.close();
     } else if (terminal) {
       this.pollLoop();
@@ -257,9 +265,12 @@ export class Watcher extends EventEmitter {
   }
 
   private async pollLoop() {
-    const startTs = Date.now();
-    const timeoutMs = this.timeout ? this.timeout * 1000 : undefined;
-    while (!this.closed) {
+    if (this.polling) return;
+    this.polling = true;
+    try {
+      const startTs = Date.now();
+      const timeoutMs = this.timeout ? this.timeout * 1000 : undefined;
+      while (!this.closed) {
       try {
         const snap = this.kind === "crawl"
           ? await getCrawlStatus(this.http as any, this.jobId)
@@ -267,7 +278,7 @@ export class Watcher extends EventEmitter {
         this.emitDocuments((snap.data || []) as Document[]);
         this.emit("snapshot", snap);
         if (["completed", "failed", "cancelled"].includes(snap.status)) {
-          this.emit("done", { status: snap.status, data: snap.data, id: this.jobId, total: (snap as any).total ?? 0, completed: (snap as any).completed ?? 0, creditsUsed: (snap as any).creditsUsed });
+          this.emitDone({ status: snap.status, data: snap.data, id: this.jobId, total: (snap as any).total ?? 0, completed: (snap as any).completed ?? 0, creditsUsed: (snap as any).creditsUsed });
           this.close();
           break;
         }
@@ -280,6 +291,9 @@ export class Watcher extends EventEmitter {
         break;
       }
       await new Promise((r) => setTimeout(r, Math.max(1000, this.pollInterval * 1000)));
+      }
+    } finally {
+      this.polling = false;
     }
   }
 
