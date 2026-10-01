@@ -1,18 +1,21 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 
-const { select, where, insert, values } = vi.hoisted(() => {
+const { select, replicaSelect, where, insert, values } = vi.hoisted(() => {
   const where = vi.fn();
   const select = vi.fn(() => ({ from: () => ({ where }) }));
+  const replicaSelect = vi.fn(() => ({
+    from: () => ({ where: async () => [] }),
+  }));
   const values = vi.fn((row: Record<string, unknown>) => ({
     returning: async () => [row],
   }));
   const insert = vi.fn(() => ({ values }));
-  return { select, where, insert, values };
+  return { select, replicaSelect, where, insert, values };
 });
 
 vi.mock("../../db/connection", () => ({
-  db: { insert },
-  dbRr: { select },
+  db: { select, insert },
+  dbRr: { select: replicaSelect },
 }));
 vi.mock("../../db/rpc", () => ({ monitoringClaimDueMonitors: vi.fn() }));
 
@@ -39,7 +42,7 @@ beforeEach(() => {
 });
 
 describe("monitor check credit reservation", () => {
-  it("persists the history-based estimate the runner uses for its credit lock", async () => {
+  it("reserves primary PDF history even when the replica has not received it", async () => {
     where.mockResolvedValue([
       {
         target_id: "pdf-target",
@@ -48,6 +51,8 @@ describe("monitor check credit reservation", () => {
       },
     ]);
     const check = await createMonitorCheck({ monitor, trigger: "scheduled" });
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(replicaSelect).not.toHaveBeenCalled();
     expect(check.estimated_credits).toBe(101);
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -75,6 +80,9 @@ describe("monitor check credit reservation", () => {
 
   it("uses the ordinary estimate on a first run with no saved pages", async () => {
     const check = await createMonitorCheck({ monitor, trigger: "manual" });
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(where).toHaveBeenCalledTimes(1);
+    expect(replicaSelect).not.toHaveBeenCalled();
     expect(check.estimated_credits).toBe(2);
   });
 

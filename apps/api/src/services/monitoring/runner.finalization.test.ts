@@ -169,7 +169,7 @@ describe("monitor check finalization ownership", () => {
     }) as any);
   });
 
-  it("requests the history-based hold and skips the check when it is unaffordable", async () => {
+  it("requests the persisted credit estimate and skips the check when its hold is denied", async () => {
     current.status = "queued";
     current.autumn_lock_id = null;
     current.estimated_credits = 1009;

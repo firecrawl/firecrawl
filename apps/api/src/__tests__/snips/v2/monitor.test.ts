@@ -42,7 +42,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
           targets: [
             {
               type: "scrape",
-              urls: [`${TEST_SUITE_WEBSITE}/example-long.pdf`],
+              urls: [
+                `${TEST_SUITE_WEBSITE}/example-long.pdf?testId=${crypto.randomUUID()}`,
+              ],
               scrapeOptions: { formats: ["markdown"] },
             },
           ],

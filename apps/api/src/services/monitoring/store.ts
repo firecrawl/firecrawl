@@ -698,7 +698,9 @@ export async function createMonitorCheck(params: {
   const previousPages = pdfTargetIds.length
     ? await run(
         () =>
-          dbRr
+          // This decides how much balance is held: a lagging replica can hide
+          // pages saved by the previous run and under-reserve known PDF costs.
+          db
             .select({
               target_id: schema.monitor_pages.target_id,
               url: schema.monitor_pages.url,
