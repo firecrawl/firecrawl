@@ -979,6 +979,8 @@ export interface SearchRequest {
   query: string;
   /** Optional broader task goal behind this search (1–5000 characters). */
   objective?: string;
+  /** Model issuing and consuming results, if known (1–128 characters). */
+  clientModel?: string;
   /** Include domain-matched tools in tools alongside semantic matches. */
   domainTools?: boolean;
   /** Compact by default; summary adds metadata, full includes contracts. */
