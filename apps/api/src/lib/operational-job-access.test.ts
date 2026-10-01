@@ -69,13 +69,29 @@ describe("operational job access", () => {
     });
   });
 
+  it("crawl access accepts crawl and batch_scrape records and rejects a scrape", async () => {
+    const base = { teamId: "team-id", expiresAtMs: Date.now() + 60_000 };
+    readApiJobAccess.mockResolvedValueOnce({ ...base, kind: "crawl" });
+    await expect(getCrawlJobAccess(JOB_ID)).resolves.toMatchObject({
+      kind: "crawl",
+    });
+    readApiJobAccess.mockResolvedValueOnce({ ...base, kind: "batch_scrape" });
+    await expect(getCrawlJobAccess(JOB_ID)).resolves.toMatchObject({
+      kind: "batch_scrape",
+    });
+    readApiJobAccess.mockResolvedValueOnce({ ...base, kind: "scrape" });
+    await expect(getCrawlJobAccess(JOB_ID)).resolves.toBeNull();
+  });
+
   it("returns null when Bigtable has no row", async () => {
     readApiJobAccess.mockResolvedValue(null);
     await expect(getScrapeJobAccess(JOB_ID)).resolves.toBeNull();
   });
 
-  it("returns null, not an error, when the Bigtable read fails", async () => {
+  it("rethrows a failed Bigtable read instead of reporting a missing job", async () => {
     readApiJobAccess.mockRejectedValue(new Error("Bigtable unavailable"));
-    await expect(getScrapeJobAccess(JOB_ID)).resolves.toBeNull();
+    await expect(getScrapeJobAccess(JOB_ID)).rejects.toThrow(
+      "Bigtable unavailable",
+    );
   });
 });

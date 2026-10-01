@@ -177,12 +177,9 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
-  let creditsBilled = await readRequestCredits(req.params.jobId).catch(
-    error => {
-      logger.warn("Bigtable request credits read failed", { error });
-      return null;
-    },
-  );
+  // A failed Bigtable read propagates: during an outage the analytics sum
+  // could be behind by a second of ClickPipes lag and under-report credits.
+  let creditsBilled = await readRequestCredits(req.params.jobId);
   if (creditsBilled === null) {
     // Requests from before the Bigtable credit rows existed: sum the scrape
     // job log instead.
