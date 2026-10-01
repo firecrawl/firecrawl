@@ -1,8 +1,8 @@
 import { EventEmitter } from "events";
 import type { BatchScrapeJob, CrawlJob, Document } from "./types";
 import type { HttpClient } from "./utils/httpClient";
-import { getBatchScrapeStatus } from "./methods/batch";
-import { getCrawlStatus } from "./methods/crawl";
+import { getBatchScrapeStatus } from "./stubs/stubs.ts";
+import { getCrawlStatus } from "./stubs/stubs.ts";
 // Note: browsers/Deno expose globalThis.WebSocket, but many Node runtimes (<22.4 or without
 // experimental flags) do not. We lazily fall back to node:undici.
 
@@ -242,9 +242,17 @@ export class Watcher extends EventEmitter {
           data,
         };
     this.emit("snapshot", snap);
-    if (["completed", "failed", "cancelled"].includes(status)) {
+    const terminal = ["completed", "failed", "cancelled"].includes(status);
+    // A "completed" snapshot with total: 0 and completed: 0 is
+    // self-contradictory (firecrawl/firecrawl#4223): the server sends such a
+    // catchup frame for just-started crawls. Don't trust it; verify over REST
+    // instead of closing permanently and silently dropping every document.
+    const emptyCounters = (payload.total ?? 0) === 0 && (payload.completed ?? 0) === 0;
+    if (terminal && !(status === "completed" && emptyCounters)) {
       this.emit("done", { status, data, id: this.jobId, total: payload.total ?? 0, completed: payload.completed ?? 0, creditsUsed: payload.creditsUsed });
       this.close();
+    } else if (terminal) {
+      this.pollLoop();
     }
   }
 
