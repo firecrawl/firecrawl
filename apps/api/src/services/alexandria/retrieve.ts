@@ -117,6 +117,17 @@ export async function retrieveProviders(input: {
       ),
     );
 
+  const usesEnrichment = input.calls.some(
+    call => call.provider === "firecrawl" && call.capability === "enrich",
+  );
+  if (usesEnrichment && input.calls.length !== 1)
+    return notExecuted(
+      refusal(
+        400,
+        "Enrichment must be sent as a separate request; do not batch it with other calls.",
+      ),
+    );
+
   const loadsSavedResult = input.calls.some(
     call =>
       call.provider === "firecrawl" &&
@@ -358,7 +369,8 @@ export async function retrieveProviders(input: {
       body: { requests: input.calls },
       timeoutMs: remaining(),
       requestId: id,
-      ...((loadsSavedResult || usesSql) && input.resultAuthorization
+      ...((loadsSavedResult || usesSql || usesEnrichment) &&
+      input.resultAuthorization
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
       ...(termsIdentity ? { termsIdentity } : {}),

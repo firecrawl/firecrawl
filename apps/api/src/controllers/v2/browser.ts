@@ -5,6 +5,10 @@ import {
 import { deleteBrowserProfile } from "../../lib/browser-sessions";
 import { deleteHangarProfile } from "../../lib/hangar";
 import { Response } from "express";
+import {
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
+  keylessLimitPromptForTeam,
+} from "../../lib/keyless";
 import { z } from "zod";
 import { config } from "../../config";
 import { RequestWithAuth } from "./types";
@@ -64,7 +68,25 @@ const browserExecuteRequestSchema = z.object({
   origin: z.string().optional(),
 });
 
-export function browserError(res: Response, error: unknown) {
+export function browserError(
+  res: Response,
+  error: unknown,
+  req?: RequestWithAuth<any, any, any>,
+) {
+  // Keyless browser budget exhaustion: give the caller its own signup link.
+  if (
+    req &&
+    error instanceof HangarError &&
+    error.status === 429 &&
+    error.message === KEYLESS_FREE_TIER_LIMIT_MESSAGE
+  ) {
+    const prompt = keylessLimitPromptForTeam(req.auth.team_id, req);
+    return res.status(429).json({
+      success: false,
+      error: prompt.error,
+      signup_url: prompt.signup_url,
+    });
+  }
   return res.status(error instanceof HangarError ? error.status : 502).json({
     success: false,
     error:
@@ -107,7 +129,7 @@ export async function browserCreateController(
       expiresAt,
     });
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -165,7 +187,7 @@ export async function browserExecuteController(
         : {}),
     });
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -203,7 +225,7 @@ export async function browserProfileDeleteController(
           "A session is currently saving to this profile. Stop that session, then delete the profile.",
       });
     }
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -216,7 +238,7 @@ export async function browserDeleteController(
   try {
     return res.json(await stopBrowserSession(session));
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -238,7 +260,7 @@ export async function browserStatusController(
       error: browser.error ?? undefined,
     });
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -290,7 +312,7 @@ export async function browserReplayController(
       pageCount: 1,
     });
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -310,6 +332,6 @@ export async function browserReplayPageController(
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).send(recording.playlist);
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }

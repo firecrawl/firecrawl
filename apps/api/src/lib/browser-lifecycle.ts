@@ -26,7 +26,10 @@ import {
   BROWSER_CREDITS_PER_HOUR,
   INTERACT_CREDITS_PER_HOUR,
 } from "./browser-billing";
-import { getEffectiveConcurrencyLimit } from "./concurrency-limit";
+import {
+  getEffectiveConcurrencyLimit,
+  HOBBY_CONCURRENCY_LIMIT,
+} from "./concurrency-limit";
 import {
   reserveExternalSlot,
   mirrorExternalSlotRelease,
@@ -53,6 +56,19 @@ export function browserSessionLinks(session: BrowserSessionRow) {
   };
 }
 
+/**
+ * The 403 every browser entry point returns when the request sent an interop
+ * secret that is wrong, or null. Reads the flag authMiddleware set from the
+ * raw request, since interact's body parse drops `__agentInterop`.
+ */
+export function invalidAgentInteropError(
+  req: RequestWithAuth<any, any, any>,
+): HangarError | null {
+  return req.auth.agentInterop === "invalid"
+    ? new HangarError(403, "Invalid agent interop.")
+    : null;
+}
+
 export async function createBrowserSession(
   req: RequestWithAuth<any, any, any>,
   options: {
@@ -72,14 +88,23 @@ export async function createBrowserSession(
       503,
       "Browser feature is not configured (HANGAR_URL is missing).",
     );
+  const invalidInterop = invalidAgentInteropError(req);
+  if (invalidInterop) throw invalidInterop;
   const shouldBill = options.shouldBill ?? true;
   const estimatedCredits = shouldBill
     ? calculateBrowserSessionCredits(options.ttl * 1000)
     : 0;
-  const limit = await getEffectiveConcurrencyLimit(
+  const teamLimit = await getEffectiveConcurrencyLimit(
     req.auth.team_id,
     req.acuc?.org_id ?? null,
   );
+  // An agent run opens browsers against the team's own slots, so a free team
+  // (2) is throttled by its own agent. Floor trusted agent traffic at hobby,
+  // as the rate limiter does; plans at or above hobby are unchanged.
+  const limit =
+    req.auth.agentInterop === "trusted"
+      ? Math.max(teamLimit, HOBBY_CONCURRENCY_LIMIT)
+      : teamLimit;
   if (shouldBill && req.acuc?.org_id) {
     const credit = await autumnService.checkCredits({
       teamId: req.auth.team_id,

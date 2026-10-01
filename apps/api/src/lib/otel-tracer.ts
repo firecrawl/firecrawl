@@ -67,6 +67,15 @@ function isZeroDataRetentionContext(ctx: Context): boolean {
   return ctx.getValue(ZERO_DATA_RETENTION_CONTEXT_KEY) === true;
 }
 
+/**
+ * Whether the caller runs under `withZeroDataRetention` (or a ZDR `withSpan`),
+ * for code that must also switch off telemetry it controls directly, such as
+ * the AI SDK's `experimental_telemetry`.
+ */
+export function isZeroDataRetentionActive(): boolean {
+  return isZeroDataRetentionContext(context.active());
+}
+
 // Traces flagged ZDR after their root span started (a `*.zero_data_retention`
 // attribute set from inside a *recording* span). Descendants started afterwards
 // are not recorded and spans of these traces still in flight are dropped when

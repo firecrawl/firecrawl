@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import { config } from "../config";
 import type { FormatObject } from "../controllers/v2/types";
+import { hasLedgerAcceptance } from "../services/alexandria/terms";
+import { type ErrorCodes, TransportableError } from "./error";
 import { logger as rootLogger } from "./logger";
 
 type OrganizationDataSourceAccessRecord = {
@@ -22,6 +24,10 @@ type OrganizationDataSourceAccess = Record<
 
 type RouteInput = {
   url: string;
+  teamId?: string | null;
+  orgId?: string | null;
+  /** The URL is on the team's blocklist, so the Exchange is the only way to serve it. */
+  blocked?: boolean;
   formats?: FormatObject[] | unknown[];
   actions?: unknown[];
   headers?: Record<string, unknown>;
@@ -65,11 +71,22 @@ type ExchangeProvider = {
   }[];
 };
 
-// deterministicJson is deliberately unsupported: its extractor scripts run
-// against page HTML, which Exchange responses do not carry.
-const SUPPORTED_FORMATS = new Set(["markdown", "json"]);
+// Formats the regular transformers derive from the Exchange's markdown (and the
+// HTML rendered from it). deterministicJson, screenshots and the like need the
+// real page, which the Exchange never fetches.
+const SUPPORTED_FORMATS = new Set([
+  "markdown",
+  "html",
+  "rawHtml",
+  "links",
+  "images",
+  "json",
+  "summary",
+  "question",
+  "highlights",
+  "query",
+]);
 const EXCHANGE_BETA_FLAG = "professionalProfileCompanyDataBeta";
-const THIRD_PARTY_DATA_TERMS_REQUIRED_CODE = "THIRD_PARTY_DATA_TERMS_REQUIRED";
 
 const EXCHANGE_PROVIDERS_PATH = "/v1/providers";
 const EXCHANGE_PROVIDERS_TIMEOUT_MS = 2_000;
@@ -238,9 +255,16 @@ function providerMatchesUrl(
 
   const host = normalizeHost(parsed.hostname);
   const pathname = parsed.pathname || "/";
+  // "*.example.com" claims every subdomain of example.com, never the apex.
+  const wildcards = [...host.matchAll(/\./g)].map(
+    dot => `*${host.slice(dot.index)}`,
+  );
 
   return provider.routes.some(route => {
-    if (!route.domains.has(host)) {
+    if (
+      !route.domains.has(host) &&
+      !wildcards.some(wildcard => route.domains.has(wildcard))
+    ) {
       return false;
     }
 
@@ -258,16 +282,33 @@ function providerMatchesUrl(
   });
 }
 
+// Organizations kept on the direct FullEnrich path for LinkedIn, which predates
+// enrichment preferences: they skip the enrichment provider and resolve to the
+// next claimant in the catalog.
+const ENRICHMENT_PROVIDER_ID = "firecrawl-enrich";
+const LEGACY_FULLENRICH_ORGS = new Set([
+  "34a599c6-e6c2-4e6f-b563-0e23bb2552c1",
+  "adcef175-be20-4534-96ad-fcd413e3c457",
+  "2567598d-d959-44d3-8c4a-19fd467ec66d",
+  "709cf0a7-7769-4c7e-a5e1-ad44f38f9c36",
+]);
+
 export async function resolveExchangeProvider(
   inputUrl: string,
+  orgId?: string | null,
 ): Promise<ExchangeProvider | null> {
   const providers = await getExchangeProviders();
   if (providers === null) {
     return null;
   }
 
+  const skipEnrichment = orgId != null && LEGACY_FULLENRICH_ORGS.has(orgId);
   return (
-    providers.find(provider => providerMatchesUrl(provider, inputUrl)) ?? null
+    providers.find(
+      provider =>
+        !(skipEnrichment && provider.id === ENRICHMENT_PROVIDER_ID) &&
+        providerMatchesUrl(provider, inputUrl),
+    ) ?? null
   );
 }
 
@@ -356,15 +397,80 @@ export function isSupportedExchangeFormatRequest(
 
 type DataSourceAccessDecision = "allowed" | "terms_required" | "not_enabled";
 
-function getProviderAccessDecision(
+const LEDGER_ACCEPTANCE_TIMEOUT_MS = 2_000;
+const LEDGER_ACCEPTED_TTL_MS = 60_000;
+const LEDGER_NOT_ACCEPTED_TTL_MS = 10_000;
+const LEDGER_ACCEPTANCE_CACHE_MAX_ENTRIES = 10_000;
+
+const ledgerAcceptanceCache = new Map<
+  string,
+  { expiresAt: number; value: Promise<boolean> }
+>();
+
+// The ledger lookup costs two Exchange calls and sits on the scrape path, so
+// answers are cached per process: briefly when not accepted, so a fresh
+// acceptance is picked up quickly, and longer once accepted. Keyed by the
+// team the Exchange calls are made for and the catalog's terms identity, so
+// new terms are rechecked as soon as the catalog carries them.
+function getLedgerAcceptance(input: {
+  teamId: string;
+  orgId: string;
+  provider: string;
+  terms: ExchangeTerms;
+  revocation?: { disabledAt: unknown };
+}): Promise<boolean> {
+  const key = [
+    input.teamId,
+    input.orgId,
+    input.provider,
+    input.terms.key,
+    input.terms.version,
+    input.revocation === undefined ? "" : String(input.revocation.disabledAt),
+  ].join("\0");
+  const cached = ledgerAcceptanceCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  if (ledgerAcceptanceCache.size >= LEDGER_ACCEPTANCE_CACHE_MAX_ENTRIES) {
+    ledgerAcceptanceCache.clear();
+  }
+
+  const entry = {
+    expiresAt: Date.now() + LEDGER_NOT_ACCEPTED_TTL_MS,
+    value: Promise.resolve(false),
+  };
+  entry.value = hasLedgerAcceptance({
+    teamId: input.teamId,
+    orgId: input.orgId,
+    provider: input.provider,
+    revocation: input.revocation,
+    timeoutMs: LEDGER_ACCEPTANCE_TIMEOUT_MS,
+  })
+    .catch(() => false)
+    .then(accepted => {
+      if (accepted) {
+        entry.expiresAt = Date.now() + LEDGER_ACCEPTED_TTL_MS;
+      }
+      return accepted;
+    });
+  ledgerAcceptanceCache.set(key, entry);
+  return entry.value;
+}
+
+// Mirrors authorizeProviders (services/alexandria/access.ts), so a provider
+// is reachable through Scrape exactly when it is through Alexandria: the
+// organizationDataSourceAccess flags first, then the Exchange ledger, where
+// the API's accept route records acceptance.
+async function getProviderAccessDecision(
   provider: ExchangeProvider,
-  flags: RouteInput["flags"],
-): DataSourceAccessDecision {
+  input: RouteInput,
+): Promise<DataSourceAccessDecision> {
   if (config.USE_DB_AUTHENTICATION !== true) {
     return "allowed";
   }
 
-  const access = flags?.organizationDataSourceAccess?.[provider.id];
+  const access = input.flags?.organizationDataSourceAccess?.[provider.id];
   const entry = typeof access === "object" && access !== null ? access : null;
 
   if (provider.terms === undefined) {
@@ -373,22 +479,58 @@ function getProviderAccessDecision(
       : "allowed";
   }
 
-  if (entry === null) {
-    return "terms_required";
+  const teamId = input.teamId ?? null;
+  const orgId = input.orgId ?? null;
+
+  if (entry !== null && entry.status !== "enabled") {
+    // An admin revocation is lifted by a ledger acceptance recorded after
+    // it; until then the provider asks for its terms again.
+    const revokedByAdmin =
+      entry.status === "disabled" &&
+      entry.disabledReason === "revoked_by_organization_admin";
+    if (!revokedByAdmin || teamId === null || orgId === null) {
+      return "not_enabled";
+    }
+
+    return (await getLedgerAcceptance({
+      teamId,
+      orgId,
+      provider: provider.id,
+      terms: provider.terms,
+      revocation: { disabledAt: entry.disabledAt },
+    }))
+      ? "allowed"
+      : "terms_required";
   }
 
-  if (entry.status !== "enabled") {
-    return "not_enabled";
-  }
-
-  return entry.termsKey === provider.terms.key &&
+  if (
+    entry !== null &&
+    entry.termsKey === provider.terms.key &&
     entry.termsVersion === provider.terms.version
-    ? "allowed"
-    : "terms_required";
+  ) {
+    return "allowed";
+  }
+
+  if (
+    teamId !== null &&
+    orgId !== null &&
+    (await getLedgerAcceptance({
+      teamId,
+      orgId,
+      provider: provider.id,
+      terms: provider.terms,
+    }))
+  ) {
+    return "allowed";
+  }
+
+  return "terms_required";
 }
 
 function isExchangeEligibleRequest(input: RouteInput): boolean {
-  if (input.flags?.[EXCHANGE_BETA_FLAG] !== true) {
+  // Blocked URLs go to the Exchange for every team, since nothing else may
+  // serve them; elsewhere it replaces a normal scrape only for the beta.
+  if (input.flags?.[EXCHANGE_BETA_FLAG] !== true && input.blocked !== true) {
     return false;
   }
 
@@ -408,27 +550,28 @@ function isExchangeEligibleRequest(input: RouteInput): boolean {
     return false;
   }
 
-  if (input.headers && Object.keys(input.headers).length > 0) {
-    return false;
-  }
-
-  if (input.waitFor !== undefined && input.waitFor !== 0) {
-    return false;
-  }
-
-  if (input.mobile || input.location || input.blockAds === false) {
-    return false;
-  }
-
   // Profile-backed scrapes expect session-specific content, which the
   // Exchange cannot serve.
   if (input.profile !== undefined) {
     return false;
   }
 
-  // atsv is only supported by browser engines; requests that set it keep an
-  // engine that can honor it instead of routing to the Exchange.
-  if (input.atsv === true) {
+  // Rendering options only mean something for a real page. A blocked URL has
+  // no page Firecrawl may render, so they are ignored there; anywhere else a
+  // request that sets them keeps the normal engines.
+  if (
+    input.blocked !== true &&
+    ((input.headers !== undefined && Object.keys(input.headers).length > 0) ||
+      (input.waitFor !== undefined && input.waitFor !== 0) ||
+      input.mobile ||
+      input.location ||
+      input.blockAds === false ||
+      input.atsv === true ||
+      input.proxy === "stealth" ||
+      input.proxy === "enhanced" ||
+      (Array.isArray(input.includeTags) && input.includeTags.length > 0) ||
+      (Array.isArray(input.excludeTags) && input.excludeTags.length > 0))
+  ) {
     return false;
   }
 
@@ -436,18 +579,6 @@ function isExchangeEligibleRequest(input: RouteInput): boolean {
   // provider data and Firecrawl never caches it, so the semantics cannot
   // be honored here.
   if (input.minAge !== undefined) {
-    return false;
-  }
-
-  // Selector-based content filtering does not apply to provider records.
-  if (
-    (Array.isArray(input.includeTags) && input.includeTags.length > 0) ||
-    (Array.isArray(input.excludeTags) && input.excludeTags.length > 0)
-  ) {
-    return false;
-  }
-
-  if (input.proxy === "stealth" || input.proxy === "enhanced") {
     return false;
   }
 
@@ -485,12 +616,12 @@ export async function getExchangeAccessForRequest(
       return { allowed: false, termsRequired: false };
     }
 
-    const provider = await resolveExchangeProvider(input.url);
+    const provider = await resolveExchangeProvider(input.url, input.orgId);
     if (provider === null) {
       return { allowed: false, termsRequired: false };
     }
 
-    const decision = getProviderAccessDecision(provider, input.flags);
+    const decision = await getProviderAccessDecision(provider, input);
     if (decision === "terms_required" && provider.terms !== undefined) {
       return { allowed: false, termsRequired: true, terms: provider.terms };
     }
@@ -518,19 +649,70 @@ function getThirdPartyDataTermsUrl(terms: ExchangeTerms): string {
   return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria/${encodeURIComponent(terms.key)}`;
 }
 
-export function getThirdPartyDataTermsRequiredResponse(terms: ExchangeTerms) {
-  const url = getThirdPartyDataTermsUrl(terms);
-  return {
-    success: false as const,
-    code: THIRD_PARTY_DATA_TERMS_REQUIRED_CODE as "THIRD_PARTY_DATA_TERMS_REQUIRED",
-    error: `An organization admin must accept the ${terms.key} provider's terms (version ${terms.version}) before this request can run. Accept them at ${url}`,
-    requiresAction: {
-      type: "accept_terms",
-      terms: terms.key,
-      version: terms.version,
-      url,
-    },
-  };
+export function getEnrichmentSettingsUrl(): string {
+  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria?enrichment=true`;
+}
+
+/**
+ * An organization admin has to accept a provider's terms before the request
+ * can run. Transportable, so it crosses the worker queue intact; every
+ * surface that reports it sends `response()`, or `requiresAction` alone where
+ * the error is one entry of a list.
+ */
+export class ThirdPartyDataTermsRequiredError extends TransportableError {
+  public readonly terms: ExchangeTerms;
+  /** Set when the provider is a step in the team's enrichment order, which can drop it instead. */
+  public readonly enrichment: boolean;
+
+  constructor(terms: ExchangeTerms, options: { enrichment?: boolean } = {}) {
+    const accept = `An organization admin must accept the ${terms.key} provider's terms (version ${terms.version}) before this request can run. Accept them at ${getThirdPartyDataTermsUrl(terms)}`;
+    super(
+      "THIRD_PARTY_DATA_TERMS_REQUIRED",
+      options.enrichment
+        ? `${accept}, or turn off ${terms.key} in ${getEnrichmentSettingsUrl()}.`
+        : accept,
+    );
+    this.name = "ThirdPartyDataTermsRequiredError";
+    this.terms = { key: terms.key, version: terms.version };
+    this.enrichment = options.enrichment === true;
+  }
+
+  get requiresAction() {
+    return {
+      type: "accept_terms" as const,
+      terms: this.terms.key,
+      version: this.terms.version,
+      url: getThirdPartyDataTermsUrl(this.terms),
+    };
+  }
+
+  response() {
+    return {
+      success: false as const,
+      code: "THIRD_PARTY_DATA_TERMS_REQUIRED" as const,
+      error: this.message,
+      requiresAction: this.requiresAction,
+    };
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+      terms: this.terms,
+      enrichment: this.enrichment,
+    };
+  }
+
+  static deserialize(
+    _code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ThirdPartyDataTermsRequiredError(data.terms, {
+      enrichment: data.enrichment,
+    });
+    x.stack = data.stack;
+    return x;
+  }
 }
 
 export function getExchangeSuccessCredits(input: {
@@ -759,4 +941,5 @@ export function setExchangeProvidersForTest(
 export function clearExchangeProvidersForTest() {
   cachedProviders = undefined;
   providersRequest = undefined;
+  ledgerAcceptanceCache.clear();
 }

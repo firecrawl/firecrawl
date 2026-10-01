@@ -19,7 +19,9 @@ import {
   isKeylessConfigured,
   keylessConversionCohort,
 } from "../../lib/keyless";
+import { decryptKeylessSignupToken } from "../../lib/keyless-signup-link";
 import { logger } from "../../lib/logger";
+import { isKeylessIpSuspicious } from "../../lib/spur";
 import { db } from "../../db/connection";
 import { autumnService } from "../../services/autumn/autumn.service";
 
@@ -107,6 +109,7 @@ describe("authenticateUser", () => {
   const originalIntrospectSecret = config.OAUTH_INTROSPECT_SECRET;
   const originalPreviewToken = config.PREVIEW_TOKEN;
   const originalAgentInteropSecret = config.AGENT_INTEROP_SECRET;
+  const originalKeylessSignupLinkKeys = config.KEYLESS_SIGNUP_LINK_KEYS;
 
   beforeEach(() => {
     vi.mocked(isKeylessConfigured).mockReturnValue(false);
@@ -126,6 +129,7 @@ describe("authenticateUser", () => {
     config.OAUTH_INTROSPECT_SECRET = originalIntrospectSecret;
     config.PREVIEW_TOKEN = originalPreviewToken;
     config.AGENT_INTEROP_SECRET = originalAgentInteropSecret;
+    config.KEYLESS_SIGNUP_LINK_KEYS = originalKeylessSignupLinkKeys;
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
@@ -209,6 +213,208 @@ describe("authenticateUser", () => {
         event: "keyless_exhausted",
         reason: "requests",
         conversionCohort: keylessConversionCohort("203.0.113.8"),
+      }),
+    );
+  });
+
+  // The prompt a /k link carries, or null for any other link.
+  const decodedLink = (url: unknown) => {
+    const match = /^https:\/\/firecrawl\.dev\/k\/([0-9a-z]{12})$/.exec(
+      String(url),
+    );
+    return match ? decryptKeylessSignupToken(match[1]) : null;
+  };
+
+  it("links every keyless prompt to the caller's own token, tagged with the prompt reason", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    config.KEYLESS_SIGNUP_LINK_KEYS = "AAECAwQFBgcICQoLDA0ODw==";
+    vi.mocked(isKeylessConfigured).mockReturnValue(true);
+    vi.mocked(consumeKeylessRequest).mockResolvedValue({
+      ok: false,
+      reason: "credits",
+      requestsUsed: 1,
+      creditsUsed: 100,
+    });
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const keylessRequest = () => ({
+      headers: {},
+      socket: { remoteAddress: "::ffff:203.0.113.8" },
+    });
+
+    const limited = await authenticateUser(
+      keylessRequest(),
+      {},
+      RateLimiterMode.Scrape,
+      { allowKeyless: true },
+    );
+    const unsupported = await authenticateUser(
+      keylessRequest(),
+      {},
+      RateLimiterMode.Scrape,
+      { allowKeyless: false },
+    );
+    vi.mocked(isKeylessIpSuspicious).mockResolvedValueOnce(true);
+    const suspicious = await authenticateUser(
+      keylessRequest(),
+      {},
+      RateLimiterMode.Scrape,
+      { allowKeyless: true },
+    );
+
+    for (const [auth, status, reason] of [
+      [limited, 429, "limit"],
+      [unsupported, 401, "unsupported_endpoint"],
+      [suspicious, 403, "suspicious_ip"],
+    ] as const) {
+      const signupUrl = (auth as { signupUrl?: string }).signupUrl;
+      expect(decodedLink(signupUrl)).toEqual({
+        ipv4: "203.0.113.8",
+        surface: "api",
+        reason,
+      });
+      expect(auth).toEqual(
+        expect.objectContaining({
+          success: false,
+          status,
+          // The URL is followed by whitespace, never punctuation.
+          error: expect.stringContaining(
+            `${signupUrl}${status === 429 ? "\n" : " "}`,
+          ),
+        }),
+      );
+      // Nothing about the surface or the identity is visible in the link.
+      expect(signupUrl).not.toContain("utm_");
+      expect((auth as { error: string }).error).not.toContain("203.0.113.8");
+    }
+    for (const [message, auth] of [
+      ["Keyless request blocked", limited],
+      ["Keyless request blocked: suspicious IP", suspicious],
+    ] as const) {
+      expect(warn).toHaveBeenCalledWith(
+        message,
+        expect.objectContaining({
+          signupRef: (auth as { signupUrl: string }).signupUrl.split("/k/")[1],
+        }),
+      );
+    }
+  });
+
+  it.each([
+    [{ integration: "cli" }, {}, "cli"],
+    [{ origin: "mcp-cursor@3.24.1" }, {}, "mcp"],
+    [{}, { "x-origin": "cli" }, "cli"],
+    [{ origin: "js-sdk@4.3.0" }, {}, "api"],
+  ] as const)(
+    "tags the keyless limit link for body %j headers %j with the %s surface",
+    async (body, headers, surface) => {
+      config.USE_DB_AUTHENTICATION = true;
+      config.KEYLESS_SIGNUP_LINK_KEYS = "AAECAwQFBgcICQoLDA0ODw==";
+      vi.mocked(isKeylessConfigured).mockReturnValue(true);
+      vi.mocked(consumeKeylessRequest).mockResolvedValue({
+        ok: false,
+        reason: "requests",
+        requestsUsed: 11,
+        creditsUsed: 0,
+      });
+      vi.spyOn(logger, "warn").mockImplementation(() => logger);
+
+      const auth = await authenticateUser(
+        { body, headers, socket: { remoteAddress: "203.0.113.8" } },
+        {},
+        RateLimiterMode.Scrape,
+        { allowKeyless: true },
+      );
+
+      expect(decodedLink((auth as { signupUrl?: string }).signupUrl)).toEqual({
+        ipv4: "203.0.113.8",
+        surface,
+        reason: "limit",
+      });
+    },
+  );
+
+  it("keys the hosted MCP's link on the forwarded end-user IP and the mcp surface", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    config.KEYLESS_PROXY_SECRET = "proxy-secret";
+    config.KEYLESS_SIGNUP_LINK_KEYS = "AAECAwQFBgcICQoLDA0ODw==";
+    vi.mocked(isKeylessConfigured).mockReturnValue(true);
+    vi.mocked(consumeKeylessRequest).mockResolvedValue({
+      ok: false,
+      reason: "credits",
+      requestsUsed: 1,
+      creditsUsed: 100,
+    });
+    vi.spyOn(logger, "warn").mockImplementation(() => logger);
+
+    const auth = await authenticateUser(
+      {
+        body: { origin: "api" },
+        headers: {
+          "x-firecrawl-keyless-secret": "proxy-secret",
+          "x-firecrawl-keyless-ip": "198.51.100.7",
+        },
+        socket: { remoteAddress: "10.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Search,
+      { allowKeyless: true },
+    );
+
+    expect(decodedLink((auth as { signupUrl?: string }).signupUrl)).toEqual({
+      ipv4: "198.51.100.7",
+      surface: "mcp",
+      reason: "limit",
+    });
+  });
+
+  it("falls back to the regular signup link and still returns the 429 when no key is configured", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    config.KEYLESS_SIGNUP_LINK_KEYS = undefined;
+    vi.mocked(isKeylessConfigured).mockReturnValue(true);
+    vi.mocked(consumeKeylessRequest).mockResolvedValue({
+      ok: false,
+      reason: "credits",
+      requestsUsed: 1,
+      creditsUsed: 100,
+    });
+    vi.spyOn(logger, "warn").mockImplementation(() => logger);
+
+    const auth = await authenticateUser(
+      { headers: {}, socket: { remoteAddress: "203.0.113.8" } },
+      {},
+      RateLimiterMode.Scrape,
+      { allowKeyless: true },
+    );
+
+    expect(auth).toEqual(
+      expect.objectContaining({
+        status: 429,
+        signupUrl:
+          "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
+        error: expect.stringContaining(
+          "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api\n",
+        ),
+      }),
+    );
+  });
+
+  it("gives a non-IPv4 caller on an unsupported endpoint the regular signup link", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    config.KEYLESS_SIGNUP_LINK_KEYS = "AAECAwQFBgcICQoLDA0ODw==";
+    vi.mocked(isKeylessConfigured).mockReturnValue(true);
+
+    const auth = await authenticateUser(
+      { headers: {}, socket: { remoteAddress: "2001:db8::1" } },
+      {},
+      RateLimiterMode.Crawl,
+      { allowKeyless: false },
+    );
+
+    expect(auth).toEqual(
+      expect.objectContaining({
+        status: 401,
+        signupUrl:
+          "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api",
       }),
     );
   });
@@ -716,6 +922,367 @@ describe("authenticateUser", () => {
         RateLimiterMode.Scrape,
         1,
         overrideFlags,
+      );
+    });
+  });
+
+  describe("agent-managed key fallback", () => {
+    const managedKey = "22222222-2222-4222-8222-222222222222";
+    const managedRow = {
+      api_key: managedKey,
+      api_key_id: 7,
+      team_id: "team-mcp",
+      org_id: "org-mcp",
+      flags: null,
+      credential_purpose: "hosted_mcp_oauth",
+    };
+    const request = ({
+      key = managedKey,
+      body,
+      headers = {},
+    }: {
+      key?: string;
+      body?: unknown;
+      headers?: Record<string, unknown>;
+    } = {}) => ({
+      headers: { authorization: `Bearer ${key}`, ...headers },
+      socket: { remoteAddress: "127.0.0.1" },
+      body,
+    });
+    const interopBody = (auth: string) => ({
+      __agentInterop: { auth, requestId: "req-1", shouldBill: true },
+    });
+    const allow = { allowAgentManagedKey: true };
+    const lookupsFor = (purpose: string) =>
+      vi
+        .mocked(authCreditUsageChunk)
+        .mock.calls.filter(([, , p]) => (p ?? "general") === purpose);
+
+    beforeEach(() => {
+      config.USE_DB_AUTHENTICATION = true;
+      config.AGENT_INTEROP_SECRET = "agent-secret";
+      vi.mocked(getValue).mockResolvedValue(null);
+      vi.mocked(redlock.using).mockImplementation(
+        async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+      );
+      // Mirrors auth_chunk_1: a row only when the key's purpose matches.
+      vi.mocked(authCreditUsageChunk).mockImplementation(
+        async (_db, key, purpose = "general") =>
+          key === managedKey && purpose === "hosted_mcp_oauth"
+            ? [{ ...managedRow }]
+            : [],
+      );
+    });
+
+    it("rejects a hosted_mcp_oauth key without agent interop", async () => {
+      const auth = await authenticateUser(
+        request(),
+        {},
+        RateLimiterMode.Browser,
+        allow,
+      );
+
+      expect(auth).toEqual({
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      });
+      expect(lookupsFor("hosted_mcp_oauth")).toHaveLength(0);
+    });
+
+    it("accepts a hosted_mcp_oauth key with a valid interop body", async () => {
+      const auth = await authenticateUser(
+        request({ body: interopBody("agent-secret") }),
+        {},
+        RateLimiterMode.Browser,
+        allow,
+      );
+
+      expect(auth).toEqual(
+        expect.objectContaining({
+          success: true,
+          team_id: "team-mcp",
+          org_id: "org-mcp",
+        }),
+      );
+      if (!auth.success) throw new Error("expected fallback auth to succeed");
+      expect(auth.chunk?.api_key).toBe(managedKey);
+      // The managed lookup reads the primary and never touches the cache.
+      expect(authCreditUsageChunk).toHaveBeenLastCalledWith(
+        db,
+        managedKey,
+        "hosted_mcp_oauth",
+      );
+      expect(setValue).not.toHaveBeenCalledWith(
+        expect.stringContaining("hosted_mcp_oauth"),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it("accepts a hosted_mcp_oauth key with a valid interop header on a bodiless call", async () => {
+      const auth = await authenticateUser(
+        request({ headers: { "x-firecrawl-agent-interop": "agent-secret" } }),
+        {},
+        RateLimiterMode.BrowserExecute,
+        allow,
+      );
+
+      expect(auth).toEqual(
+        expect.objectContaining({ success: true, team_id: "team-mcp" }),
+      );
+    });
+
+    it("still bills and rate-limits against the key's own team", async () => {
+      const consume = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(getAutumnRateLimiter).mockReturnValue({ consume } as never);
+
+      await authenticateUser(
+        request({ body: interopBody("agent-secret") }),
+        {},
+        RateLimiterMode.Browser,
+        allow,
+      );
+
+      expect(autumnService.getRateLimitMultiplier).toHaveBeenCalledWith(
+        "team-mcp",
+        "org-mcp",
+      );
+      expect(consume).toHaveBeenCalledWith("team-mcp");
+    });
+
+    it.each([
+      ["body", { body: interopBody("not-the-secret") }],
+      [
+        "header",
+        { headers: { "x-firecrawl-agent-interop": "not-the-secret" } },
+      ],
+      [
+        "repeated header",
+        { headers: { "x-firecrawl-agent-interop": ["agent-secret"] } },
+      ],
+    ])("rejects a wrong interop secret in the %s", async (_where, parts) => {
+      const auth = await authenticateUser(
+        request(parts),
+        {},
+        RateLimiterMode.Browser,
+        allow,
+      );
+
+      expect(auth).toEqual(expect.objectContaining({ status: 401 }));
+      expect(lookupsFor("hosted_mcp_oauth")).toHaveLength(0);
+    });
+
+    it("rejects when no interop secret is configured", async () => {
+      config.AGENT_INTEROP_SECRET = undefined;
+
+      const auth = await authenticateUser(
+        request({ body: interopBody("agent-secret") }),
+        {},
+        RateLimiterMode.Browser,
+        allow,
+      );
+
+      expect(auth).toEqual(expect.objectContaining({ status: 401 }));
+      expect(lookupsFor("hosted_mcp_oauth")).toHaveLength(0);
+    });
+
+    it("rejects on a route that has not opted in", async () => {
+      const auth = await authenticateUser(
+        request({ body: interopBody("agent-secret") }),
+        {},
+        RateLimiterMode.Crawl,
+      );
+
+      expect(auth).toEqual(expect.objectContaining({ status: 401 }));
+      expect(lookupsFor("hosted_mcp_oauth")).toHaveLength(0);
+    });
+
+    it("rejects an unknown or revoked key even with valid interop", async () => {
+      // Revoking a grant deletes its managed key, so both lookups miss.
+      const auth = await authenticateUser(
+        request({
+          key: "33333333-3333-4333-8333-333333333333",
+          body: interopBody("agent-secret"),
+        }),
+        {},
+        RateLimiterMode.Browser,
+        allow,
+      );
+
+      expect(auth).toEqual({
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      });
+      expect(lookupsFor("hosted_mcp_oauth")).toHaveLength(1);
+    });
+
+    it("still rejects a banned team reached through the fallback", async () => {
+      vi.mocked(authCreditUsageChunk).mockImplementation(
+        async (_db, key, purpose = "general") =>
+          key === managedKey && purpose === "hosted_mcp_oauth"
+            ? [{ ...managedRow, is_banned: true }]
+            : [],
+      );
+
+      const auth = await authenticateUser(
+        request({ body: interopBody("agent-secret") }),
+        {},
+        RateLimiterMode.Browser,
+        allow,
+      );
+
+      expect(auth).toEqual(expect.objectContaining({ status: 403 }));
+    });
+
+    it("resolves a general key through the general lookup only", async () => {
+      const generalKey = "00000000-0000-4000-8000-000000000000";
+      vi.mocked(authCreditUsageChunk).mockImplementation(
+        async (_db, key, purpose = "general") =>
+          key === generalKey && purpose === "general"
+            ? [{ ...managedRow, api_key: generalKey, team_id: "team-1" }]
+            : [],
+      );
+
+      for (const parts of [{}, { body: interopBody("agent-secret") }]) {
+        const auth = await authenticateUser(
+          request({ key: generalKey, ...parts }),
+          {},
+          RateLimiterMode.Browser,
+          allow,
+        );
+        expect(auth).toEqual(
+          expect.objectContaining({ success: true, team_id: "team-1" }),
+        );
+      }
+      expect(lookupsFor("hosted_mcp_oauth")).toHaveLength(0);
+    });
+
+    it("takes the team only from the key's row, never from the request", async () => {
+      const consume = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(getAutumnRateLimiter).mockReturnValue({ consume } as never);
+
+      const auth = await authenticateUser(
+        request({
+          body: {
+            team_id: "attacker-team",
+            teamId: "attacker-team",
+            __agentInterop: {
+              auth: "agent-secret",
+              requestId: "req-1",
+              shouldBill: true,
+              team_id: "attacker-team",
+              teamId: "attacker-team",
+            },
+          },
+          headers: {
+            "x-firecrawl-team-id": "attacker-team",
+            "x-team-id": "attacker-team",
+          },
+        }),
+        {},
+        RateLimiterMode.Browser,
+        allow,
+      );
+
+      expect(auth).toEqual(
+        expect.objectContaining({
+          success: true,
+          team_id: "team-mcp",
+          org_id: "org-mcp",
+        }),
+      );
+      if (!auth.success) throw new Error("expected fallback auth to succeed");
+      expect(auth.chunk?.team_id).toBe("team-mcp");
+      expect(autumnService.getRateLimitMultiplier).toHaveBeenCalledWith(
+        "team-mcp",
+        "org-mcp",
+      );
+      expect(consume).toHaveBeenCalledWith("team-mcp");
+      expect(JSON.stringify(auth)).not.toContain("attacker-team");
+    });
+
+    it("leaves shouldBill: false untouched for the controllers", async () => {
+      const body = {
+        __agentInterop: {
+          auth: "agent-secret",
+          requestId: "req-1",
+          shouldBill: false,
+        },
+      };
+      const req = request({ body });
+
+      const auth = await authenticateUser(
+        req,
+        {},
+        RateLimiterMode.Scrape,
+        allow,
+      );
+
+      // Auth resolves the team as for a billed request and never rewrites the
+      // block; scrape/search/batch-scrape/parse read shouldBill from it later.
+      expect(auth).toEqual(
+        expect.objectContaining({ success: true, team_id: "team-mcp" }),
+      );
+      expect(req.body).toBe(body);
+      expect(body.__agentInterop).toEqual({
+        auth: "agent-secret",
+        requestId: "req-1",
+        shouldBill: false,
+      });
+    });
+
+    it("treats shouldBill: false on a general key exactly as before", async () => {
+      const generalKey = "00000000-0000-4000-8000-000000000000";
+      vi.mocked(authCreditUsageChunk).mockImplementation(
+        async (_db, key, purpose = "general") =>
+          key === generalKey && purpose === "general"
+            ? [{ ...managedRow, api_key: generalKey, team_id: "team-1" }]
+            : [],
+      );
+
+      const results: Awaited<ReturnType<typeof authenticateUser>>[] = [];
+      for (const shouldBill of [true, false]) {
+        results.push(
+          await authenticateUser(
+            request({
+              key: generalKey,
+              body: {
+                __agentInterop: {
+                  auth: "agent-secret",
+                  requestId: "req-1",
+                  shouldBill,
+                },
+              },
+            }),
+            {},
+            RateLimiterMode.Scrape,
+            allow,
+          ),
+        );
+      }
+
+      expect(results[0]).toEqual(results[1]);
+      expect(results[1]).toEqual(
+        expect.objectContaining({ success: true, team_id: "team-1" }),
+      );
+      expect(lookupsFor("hosted_mcp_oauth")).toHaveLength(0);
+    });
+
+    it("floors the rate multiplier for a header-only trusted request", async () => {
+      await authenticateUser(
+        request({ headers: { "x-firecrawl-agent-interop": "agent-secret" } }),
+        {},
+        RateLimiterMode.BrowserExecute,
+        allow,
+      );
+
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.BrowserExecute,
+        HOBBY_RATE_LIMIT_MULTIPLIER,
+        null,
       );
     });
   });

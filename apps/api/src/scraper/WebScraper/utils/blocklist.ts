@@ -17,6 +17,8 @@ type BlockContext = {
   team_id?: string | null;
   org_id?: string | null;
   origin?: string | null;
+  /** False for a re-check of a request whose hit was already recorded. */
+  record?: boolean;
 };
 
 type BlockHit = {
@@ -56,7 +58,7 @@ function recordHit(
   domain: string,
   context: BlockContext | undefined,
 ): void {
-  if (context === undefined) return;
+  if (context === undefined || context.record === false) return;
   if (config.USE_DB_AUTHENTICATION !== true) return;
   hitBuffer.push({
     id: uuidv7(),

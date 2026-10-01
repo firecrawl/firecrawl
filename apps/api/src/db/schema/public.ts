@@ -674,6 +674,7 @@ export const alexandria_feedback = pgTable(
     ),
     requested_functionality: text("requested_functionality").notNull(),
     rationale: text("rationale").notNull(),
+    objective: text("objective"),
     origin: text("origin"),
     integration: text("integration"),
     schema_version: integer("schema_version").notNull().default(2),

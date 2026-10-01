@@ -597,7 +597,6 @@ export async function scrapeURLWithFireEngineChromeCDP(
       markdown: contentType?.includes("text/markdown")
         ? response.content
         : undefined,
-      json: response.json,
       error: response.pageError,
       statusCode: response.pageStatusCode,
 
@@ -698,7 +697,6 @@ export async function scrapeURLWithFireEngineTLSClient(
       markdown: contentType?.includes("text/markdown")
         ? response.content
         : undefined,
-      json: response.json,
       error: response.pageError,
       statusCode: response.pageStatusCode,
 

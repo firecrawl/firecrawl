@@ -194,6 +194,39 @@ impl Client {
     pub(crate) fn url(&self, path: &str) -> String {
         format!("{}{}{}", self.api_url, API_VERSION, path)
     }
+
+    /// Resolves a pagination `next` URL against `api_url`, rewriting absolute and
+    /// protocol-relative URLs onto the `api_url` origin so credentials never leave it.
+    pub(crate) fn pin_to_api_origin(&self, next: &str) -> Result<reqwest::Url, FirecrawlError> {
+        let mut pinned = reqwest::Url::parse(&format!("{}/", self.api_url))
+            .ok()
+            .filter(reqwest::Url::has_host)
+            .ok_or_else(|| {
+                FirecrawlError::Misuse(format!(
+                    "api_url must be an absolute URL, got {:?}",
+                    self.api_url
+                ))
+            })?;
+        let resolved = pinned.join(next).map_err(|e| {
+            FirecrawlError::ResponseParseError(serde::de::Error::custom(format!(
+                "invalid pagination URL {:?}: {}",
+                next, e
+            )))
+        })?;
+        pinned.set_path(resolved.path());
+        pinned.set_query(resolved.query());
+        Ok(pinned)
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn foreign_next_urls(api_url: &str, other_port_url: &str, path: &str) -> Vec<String> {
+    vec![
+        format!("https://evil.example{}", path),
+        format!("//evil.example{}", path),
+        format!("{}{}", other_port_url, path),
+        format!("{}{}", api_url.replacen("http://", "https://", 1), path),
+    ]
 }
 
 #[cfg(test)]
@@ -254,5 +287,66 @@ mod tests {
         // Self-hosted URL normalization
         let client = Client::new_selfhosted("http://localhost:3000/", None::<&str>).unwrap();
         assert_eq!(client.api_url, "http://localhost:3000");
+    }
+
+    #[test]
+    fn test_pin_to_api_origin() {
+        let client = Client::new_selfhosted("https://api.firecrawl.dev", Some("key")).unwrap();
+        let pinned = |next: &str| client.pin_to_api_origin(next).unwrap().to_string();
+        let expected = "https://api.firecrawl.dev/v2/crawl/abc?skip=10";
+
+        assert_eq!(
+            pinned("https://api.firecrawl.dev/v2/crawl/abc?skip=10"),
+            expected
+        );
+        assert_eq!(
+            pinned("https://evil.example/v2/crawl/abc?skip=10"),
+            expected
+        );
+        assert_eq!(pinned("//evil.example/v2/crawl/abc?skip=10"), expected);
+        assert_eq!(
+            pinned("https://api.firecrawl.dev:8443/v2/crawl/abc?skip=10"),
+            expected
+        );
+        assert_eq!(
+            pinned("http://api.firecrawl.dev/v2/crawl/abc?skip=10"),
+            expected
+        );
+        assert_eq!(
+            pinned("https://user:pass@evil.example/v2/crawl/abc?skip=10#frag"),
+            expected
+        );
+        assert_eq!(pinned("/v2/crawl/abc?skip=10"), expected);
+        assert_eq!(pinned("https://evil.example"), "https://api.firecrawl.dev/");
+    }
+
+    #[test]
+    fn test_pin_to_api_origin_keeps_self_hosted_port() {
+        let client = Client::new_selfhosted("http://localhost:3002/", None::<&str>).unwrap();
+        assert_eq!(
+            client
+                .pin_to_api_origin("https://evil.example:444/v2/batch/scrape/x?skip=5")
+                .unwrap()
+                .as_str(),
+            "http://localhost:3002/v2/batch/scrape/x?skip=5"
+        );
+    }
+
+    #[test]
+    fn test_pin_to_api_origin_reports_malformed_next_as_response_error() {
+        let client = Client::new("key").unwrap();
+        assert!(matches!(
+            client.pin_to_api_origin("https://evil.example:99999/v2/crawl/abc"),
+            Err(FirecrawlError::ResponseParseError(_))
+        ));
+    }
+
+    #[test]
+    fn test_pin_to_api_origin_rejects_relative_api_url() {
+        let client = Client::new_selfhosted("localhost:3002", None::<&str>).unwrap();
+        assert!(matches!(
+            client.pin_to_api_origin("https://evil.example/v2/crawl/abc"),
+            Err(FirecrawlError::Misuse(_))
+        ));
     }
 }

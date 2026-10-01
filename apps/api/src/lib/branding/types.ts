@@ -1,5 +1,6 @@
 import { Logger } from "winston";
 import { BrandingProfile } from "../../types/branding";
+import { CostTracking } from "../cost-tracking";
 
 export interface ButtonSnapshot {
   index: number;
@@ -95,6 +96,9 @@ export interface BrandingLLMInput {
   scrapeId?: string;
   zeroDataRetention?: boolean;
   teamFlags?: { debugBranding?: boolean } | null;
+  /** The branding format's `mode`; see isJevBrandingEnabled. */
+  mode?: "auto" | "fast" | "standard";
+  costTracking: CostTracking;
   logger: Logger;
 }
 

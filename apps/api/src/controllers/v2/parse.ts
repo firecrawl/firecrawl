@@ -414,7 +414,7 @@ export async function parseController(
           applyAgentAuthDiscoveryHeader(res);
           return res
             .status(429)
-            .json(await keylessLimitBody(req.auth.team_id, "v2_parse"));
+            .json(await keylessLimitBody(req.auth.team_id, "v2_parse", req));
         }
         reservedKeylessCredits = projectedKeylessCredits;
       }

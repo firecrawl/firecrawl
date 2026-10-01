@@ -19,7 +19,7 @@ import { fetchResult } from "./result";
 import type { FirePdfByReferenceInput } from "./by-reference";
 import type { FirePdfAdoptedJobInput } from "./lookup";
 import { FIRE_PDF_ASYNC_MIN_REMAINING_MS } from "./routing";
-import { POLL_FLOOR_MS, POLL_TIMEOUT_BUFFER_MS } from "./schema";
+import { POLL_TIMEOUT_BUFFER_MS } from "./schema";
 import { submitJob, SubmitJobMayHaveBeenAcceptedError } from "./submit";
 import {
   computeByReferenceDeadlineMs,
@@ -219,7 +219,7 @@ export async function scrapePDFWithFirePDFAsync(
 
   try {
     let alreadyDone = false;
-    let initialDelay: number = POLL_FLOOR_MS;
+    let initialDelay: number | undefined;
     if (wireInput === null) {
       meta.logger.info("FirePDF async adopting existing job", {
         scrapeId: meta.id,
@@ -256,7 +256,7 @@ export async function scrapePDFWithFirePDFAsync(
       });
       submissionAccepted = true;
       alreadyDone = submit.alreadyDone;
-      initialDelay = submit.retryAfterMs ?? POLL_FLOOR_MS;
+      initialDelay = submit.retryAfterMs;
       if (byReference && !alreadyDone && meta.largePdfProcessing) {
         // The job now exists server-side and (per the cancel policy
         // above) will keep running if this scrape is abandoned — record
@@ -284,6 +284,8 @@ export async function scrapePDFWithFirePDFAsync(
           baseUrl,
           scrapeId: jobScrapeId,
           initialDelay,
+          pagesEstimate: pagesProcessed,
+          longPollWaitMs: config.FIRE_PDF_ASYNC_WAIT_MS,
           pollingDeadline,
           meta,
           fetchImpl,

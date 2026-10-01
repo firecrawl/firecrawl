@@ -190,7 +190,10 @@ v2Router.post(
   "/search",
   agentHintsMiddleware("search"),
   researchCategoryNoticeMiddleware,
-  authMiddleware(RateLimiterMode.Search, { allowKeyless: true }),
+  authMiddleware(RateLimiterMode.Search, {
+    allowKeyless: true,
+    allowAgentManagedKey: true,
+  }),
   countryCheck,
   checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
   blocklistMiddleware,
@@ -237,7 +240,10 @@ v2Router.post(
 v2Router.post(
   "/scrape",
   agentHintsMiddleware("scrape"),
-  authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
+  authMiddleware(RateLimiterMode.Scrape, {
+    allowKeyless: true,
+    allowAgentManagedKey: true,
+  }),
   countryCheck,
   checkCreditsMiddleware(1),
   scrapeBlocklistMiddleware,
@@ -267,7 +273,7 @@ v2Router.delete(
 
 v2Router.post(
   "/batch/scrape",
-  authMiddleware(RateLimiterMode.Scrape),
+  authMiddleware(RateLimiterMode.Scrape, { allowAgentManagedKey: true }),
   countryCheck,
   checkCreditsMiddleware(),
   blocklistMiddleware,
@@ -344,14 +350,14 @@ v2Router.ws(
 
 v2Router.get(
   "/batch/scrape/:jobId",
-  authMiddleware(RateLimiterMode.CrawlStatus),
+  authMiddleware(RateLimiterMode.CrawlStatus, { allowAgentManagedKey: true }),
   validateJobIdParam,
   wrap((req: any, res: any) => crawlStatusController(req, res, true)),
 );
 
 v2Router.delete(
   "/batch/scrape/:jobId",
-  authMiddleware(RateLimiterMode.CrawlStatus),
+  authMiddleware(RateLimiterMode.CrawlStatus, { allowAgentManagedKey: true }),
   validateJobIdParam,
   wrap(crawlCancelController),
 );
@@ -628,7 +634,7 @@ v2Router.post("/slack/events", wrap(slackEventsController));
 
 v2Router.post(
   ["/browser", "/interact"],
-  authMiddleware(RateLimiterMode.Browser),
+  authMiddleware(RateLimiterMode.Browser, { allowAgentManagedKey: true }),
   countryCheck,
   checkCreditsMiddleware(2),
   wrap(browserCreateController),
@@ -666,7 +672,9 @@ v2Router.delete(
 
 v2Router.delete(
   ["/browser/:sessionId", "/interact/:sessionId"],
-  authMiddleware(RateLimiterMode.BrowserExecute),
+  authMiddleware(RateLimiterMode.BrowserExecute, {
+    allowAgentManagedKey: true,
+  }),
   wrap(browserDeleteController),
 );
 

@@ -15,7 +15,7 @@ export async function analyzeSchemaAndPrompt_F0(
   urls: string[],
   schema: any,
   prompt: string,
-  metadata: { teamId: string; extractId?: string },
+  metadata: { teamId: string; functionId?: string; extractId?: string },
 ): Promise<{
   isMultiEntity: boolean;
   multiEntityKeys: string[];
@@ -54,7 +54,12 @@ export async function analyzeSchemaAndPrompt_F0(
       },
       markdown: "",
       model,
-      metadata,
+      metadata: {
+        ...metadata,
+        functionId: metadata.functionId
+          ? metadata.functionId + "/analyzeSchemaAndPrompt_F0"
+          : "analyzeSchemaAndPrompt_F0",
+      },
     });
 
     const { isMultiEntity, multiEntityKeys, reasoning, keyIndicators } =

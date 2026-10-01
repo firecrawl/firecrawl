@@ -118,7 +118,6 @@ export async function saveIndexToGCS(
   doc: {
     url: string;
     html: string;
-    json?: unknown;
     statusCode: number;
     error?: string;
     screenshot?: string;
