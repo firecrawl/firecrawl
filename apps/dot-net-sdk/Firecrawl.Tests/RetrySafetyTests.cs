@@ -49,11 +49,14 @@ public class RetrySafetyTests
         Assert.Equal(1, handler.SendCount);
     }
 
-    [Fact]
-    public async Task GatewayFailure_StillRetriesRead()
+    [Theory]
+    [InlineData(HttpStatusCode.RequestTimeout)]
+    [InlineData(HttpStatusCode.Conflict)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    public async Task AmbiguousHttpFailure_StillRetriesRead(HttpStatusCode status)
     {
         var handler = new ScriptedHandler((attempt, _) =>
-            JsonResponse(attempt == 1 ? HttpStatusCode.BadGateway : HttpStatusCode.OK));
+            JsonResponse(attempt == 1 ? status : HttpStatusCode.OK));
         var client = Client(handler);
 
         await client.GetAsync<Dictionary<string, object>>("/v2/crawl/job");
