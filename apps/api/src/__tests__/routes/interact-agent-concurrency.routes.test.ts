@@ -85,18 +85,14 @@ vi.mock("../../lib/operational-job-access", () => ({
     expiresAtMs: Date.now() + 60_000,
   })),
 }));
+// The scrape's replay context lives in its Bigtable terminal state.
 vi.mock("../../lib/job-state-store", () => ({
-  readScrapeJobState: vi.fn(async () => null),
-}));
-vi.mock("../../lib/job-store-fallback", () => ({
-  recordJobStorePostgresFallback: vi.fn(),
-}));
-vi.mock("../../lib/supabase-jobs", () => ({
-  supabaseGetScrapeByIdDirect: vi.fn(async () => ({
-    id: "scrape-1",
-    team_id: "team-free",
-    url: "https://example.com",
-    options: {},
+  readScrapeJobState: vi.fn(async () => ({
+    status: "completed",
+    requestId: "scrape-1",
+    completedAtMs: Date.now(),
+    creditsBilled: 1,
+    replay: { targetUrl: "https://example.com", waitForMs: 0, actions: [] },
   })),
 }));
 vi.mock("../../lib/browser-sessions", () => ({
