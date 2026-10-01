@@ -307,6 +307,7 @@ jobs:
         working-directory: apps/api
         env:
           KEYLESS_FEEDBACK_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+          ALEXANDRIA_FEEDBACK_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
           KEYLESS_REQUESTS_PER_DAY: '100'
           KEYLESS_CREDITS_PER_DAY: '100'
           REDIS_RATE_LIMIT_URL: redis://localhost:6379
@@ -316,7 +317,7 @@ jobs:
             sleep 1
           done
           docker exec postgres pg_isready -U postgres
-          pnpm exec vitest run src/controllers/v2/feedback/keyless.integration.test.ts src/controllers/v2/feedback/keyless-schema.test.ts src/controllers/v2/feedback/keyless-invitation.test.ts src/controllers/v2/feedback/keyless-jobs.test.ts src/controllers/v2/feedback/feedback-store.test.ts src/controllers/v2/feedback/record-options.test.ts src/controllers/v2/feedback/zdr-persistence.test.ts src/controllers/v2/feedback/alexandria.test.ts src/controllers/v2/feedback/feedback-window.test.ts
+          pnpm exec vitest run src/controllers/v2/feedback/keyless.integration.test.ts src/controllers/v2/feedback/keyless-schema.test.ts src/controllers/v2/feedback/keyless-invitation.test.ts src/controllers/v2/feedback/keyless-jobs.test.ts src/controllers/v2/feedback/feedback-store.test.ts src/controllers/v2/feedback/record-options.test.ts src/controllers/v2/feedback/zdr-persistence.test.ts src/controllers/v2/feedback/alexandria.test.ts src/controllers/v2/feedback/alexandria.integration.test.ts src/controllers/v2/feedback/refund-policy.test.ts src/controllers/v2/feedback/feedback-window.test.ts src/controllers/v2/__tests__/search-developer-ledger.test.ts
 
       - name: Start FoundationDB
         if: matrix.nuq == 'fdb'

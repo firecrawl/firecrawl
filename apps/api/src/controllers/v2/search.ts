@@ -469,7 +469,7 @@ async function searchControllerInner(
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
-    logSearch(
+    const logSearchPromise = logSearch(
       {
         id: jobId,
         request_id: agentRequestId ?? jobId,
@@ -519,6 +519,9 @@ async function searchControllerInner(
         });
       });
     }
+
+    if (config.KEYLESS_FEEDBACK_ENABLED && keylessTeamUuid(req.auth.team_id))
+      await logSearchPromise;
 
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;

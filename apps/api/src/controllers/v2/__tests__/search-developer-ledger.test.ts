@@ -69,6 +69,7 @@ vi.mock("../../../lib/logger", () => ({
 }));
 
 import { searchController } from "../search";
+import { config } from "../../../config";
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -345,7 +346,9 @@ it("returns both provider warnings and feedback metadata", async () => {
     executeResult({ toolsWarning: "Provider discovery is unavailable." }),
   );
   const res = makeRes();
-  await searchController(makeReq({ query: "http client" }), res);
+  const req = makeReq({ query: "http client" });
+  req.auth.team_id = "preview_keyless_203.0.113.86";
+  await searchController(req, res);
   expect(res.status).toHaveBeenCalledWith(200);
   expect(res.json).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -356,6 +359,42 @@ it("returns both provider warnings and feedback metadata", async () => {
     }),
   );
 });
+
+it.each([true, false])(
+  "awaits Search persistence only for a keyless invitation: keyless=%s",
+  async keyless => {
+    const originalEnabled = config.KEYLESS_FEEDBACK_ENABLED;
+    config.KEYLESS_FEEDBACK_ENABLED = true;
+    let release!: () => void;
+    mockLogSearch.mockReturnValueOnce(
+      new Promise<void>(resolve => {
+        release = resolve;
+      }),
+    );
+    const req = makeReq({ query: "http client" });
+    if (keyless) req.auth.team_id = "preview_keyless_203.0.113.86";
+    const res = makeRes();
+    const pending = searchController(req, res);
+    try {
+      await flushAsync();
+      expect(mockLogSearch).toHaveBeenCalledTimes(1);
+      if (keyless) {
+        expect(mockFeedbackMetadata).not.toHaveBeenCalled();
+        expect(res.json).not.toHaveBeenCalled();
+      } else {
+        expect(res.status).toHaveBeenCalledWith(200);
+      }
+      release();
+      await pending;
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockFeedbackMetadata).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+      await pending;
+      config.KEYLESS_FEEDBACK_ENABLED = originalEnabled;
+    }
+  },
+);
 
 describe("keyless Search failure feedback", () => {
   it("logs a failed job after its parent request before returning its feedback pointer", async () => {

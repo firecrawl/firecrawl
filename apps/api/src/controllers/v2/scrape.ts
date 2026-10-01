@@ -666,7 +666,12 @@ export async function scrapeController(
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
-            return res.status(403).json(e.response());
+            return res.status(403).json({
+              ...e.response(),
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
+            });
           }
 
           if (
@@ -678,6 +683,9 @@ export async function scrapeController(
             });
             return res.status(403).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });
@@ -689,6 +697,9 @@ export async function scrapeController(
             });
             return res.status(404).json({
               success: false,
+              ...(Object.keys(feedbackMetadata).length
+                ? { metadata: feedbackMetadata }
+                : {}),
               code: e.code,
               error: e.message,
             });

@@ -41,6 +41,7 @@ import { parseController } from "../parse";
 import { config } from "../../../config";
 import { keylessTeamId, keylessTeamUuid } from "../../../lib/keyless";
 import { TransportableError } from "../../../lib/error";
+import { ThirdPartyDataTermsRequiredError } from "../../../lib/exchange";
 
 const originalEnabled = config.KEYLESS_FEEDBACK_ENABLED;
 const originalDbAuthentication = config.USE_DB_AUTHENTICATION;
@@ -177,6 +178,35 @@ it.each(["scrape", "parse"] as const)(
     );
   },
 );
+
+it.each([
+  [
+    new ThirdPartyDataTermsRequiredError({
+      key: "reference-data",
+      version: "1",
+    }),
+    403,
+  ],
+  [new TransportableError("THIRD_PARTY_DATA_NOT_ENABLED"), 403],
+  [new TransportableError("THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED"), 403],
+  [new TransportableError("THIRD_PARTY_DATA_NOT_FOUND"), 404],
+] as const)("preserves the feedback pointer for %s", async (error, status) => {
+  config.KEYLESS_FEEDBACK_ENABLED = true;
+  config.USE_DB_AUTHENTICATION = true;
+  mocks.worker.mockRejectedValueOnce(error);
+  const { res, promise } = start("scrape");
+  await promise;
+  expect(res.status).toHaveBeenCalledWith(status);
+  const response = res.json.mock.calls[0][0];
+  expect(response.metadata.jobId).toEqual(expect.any(String));
+  expect(response.metadata.feedback).toMatchObject({
+    endpoint: "scrape",
+    jobId: response.metadata.jobId,
+    path: "/v2/feedback",
+  });
+  if (error instanceof ThirdPartyDataTermsRequiredError)
+    expect(response.requiresAction).toEqual(error.requiresAction);
+});
 
 it.each(["scrape", "parse"] as const)(
   "leaves %s worker failure logging with the worker",
