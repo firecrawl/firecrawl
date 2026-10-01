@@ -142,6 +142,17 @@ class TestSyncCrawlJobFields:
             with pytest.raises(TimeoutError):
                 crawl_module.wait_for_crawl_completion(client, JOB_ID, poll_interval=1, timeout=5)
 
+    def test_timeout_error_survives_pickle_and_deepcopy(self):
+        import copy
+        import pickle
+
+        error = CrawlJobTimeoutError(JOB_ID, 5)
+        for clone in (pickle.loads(pickle.dumps(error)), copy.deepcopy(error)):
+            assert isinstance(clone, CrawlJobTimeoutError)
+            assert clone.job_id == JOB_ID
+            assert clone.timeout == 5
+            assert str(clone) == str(error)
+
     def test_error_is_exported_from_package_root(self):
         assert firecrawl.CrawlJobTimeoutError is CrawlJobTimeoutError
 

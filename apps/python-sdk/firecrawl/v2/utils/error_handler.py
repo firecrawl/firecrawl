@@ -90,6 +90,11 @@ class CrawlJobTimeoutError(TimeoutError):
         self.job_id = job_id
         self.timeout = timeout
 
+    def __reduce__(self):
+        # self.args holds only the message, so rebuild from the constructor
+        # arguments. This keeps pickle and copy.deepcopy working.
+        return (type(self), (self.job_id, self.timeout))
+
 
 class RateLimitError(FirecrawlError):
     """Raised when the rate limit is exceeded (429)."""
