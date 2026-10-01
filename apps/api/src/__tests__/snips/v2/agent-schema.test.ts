@@ -9,6 +9,8 @@ beforeAll(async () => {
 
 describe("Agent schema intake", () => {
   it.each([
+    ["zero", 0],
+    ["empty string", ""],
     ["OpenAPI example", { type: "string", example: "a" }],
     ["unknown format", { type: "string", format: "phone" }],
     ["vendor keyword", { type: "object", propertyOrdering: ["name"] }],

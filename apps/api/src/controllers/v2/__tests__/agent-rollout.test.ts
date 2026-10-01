@@ -117,6 +117,8 @@ describe("Agent schema intake", () => {
   });
 
   it.each([
+    ["zero", 0],
+    ["empty string", ""],
     ["OpenAPI example", { type: "string", example: "a" }],
     ["unknown format", { type: "string", format: "phone" }],
     ["vendor keyword", { type: "object", propertyOrdering: ["name"] }],
@@ -133,6 +135,16 @@ describe("Agent schema intake", () => {
       expect(agentConsumeFreeRequestIfLeft).not.toHaveBeenCalled();
       expect(logRequest).not.toHaveBeenCalled();
       expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([undefined, null, false, true, {}])(
+    "accepts an absent or compilable schema %j",
+    schema => {
+      expect(
+        agentRequestSchema.safeParse({ prompt: "Find the details", schema })
+          .success,
+      ).toBe(true);
     },
   );
 

@@ -1113,7 +1113,9 @@ export const agentRequestSchema = z
       .any()
       .optional()
       .superRefine((val, ctx) => {
-        if (!val) return; // Allow undefined schema
+        // Match internal intake's nullish check. Falsy non-schemas such as 0
+        // and "" must fail here, before free-request consumption.
+        if (val === undefined || val === null) return;
         try {
           // Match extract-v3's schema policy: x-* keys are annotations, while
           // other unknown keywords and formats remain invalid.

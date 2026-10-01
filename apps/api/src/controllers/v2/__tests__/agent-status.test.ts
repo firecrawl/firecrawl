@@ -202,6 +202,7 @@ describe("agentStatusController", () => {
       id: "job-123",
       success: true,
       status: "processing",
+      data: { companies: [{ name: "Acme" }] },
       partial: { companies: [{ name: "Acme" }] },
       partialSchemaValid: false,
       stopReason: "credit_limit_reached",
@@ -213,6 +214,7 @@ describe("agentStatusController", () => {
 
     const body = (res.json as Mock).mock.calls[0][0];
     expect(body.status).toBe("processing");
+    expect(body.data).toBeUndefined();
     expect(body).not.toHaveProperty("partial");
     expect(body).not.toHaveProperty("partialSchemaValid");
     expect(body).not.toHaveProperty("stopReason");
