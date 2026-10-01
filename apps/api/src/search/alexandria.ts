@@ -160,6 +160,62 @@ export async function discoverTools(
             ),
           })
           .parse(result.body).skills;
+        try {
+          const selectors = new URLSearchParams();
+          for (const url of urls.slice(i, i + 100))
+            selectors.append("urls", url);
+          const routed = await exchangeRequest({
+            teamId: input.teamId,
+            path: `/v1/discover/domains?${selectors}`,
+            timeoutMs: remaining(),
+          });
+          if (routed.status !== 200)
+            throw new Error("URL tool discovery unavailable");
+          const routedMatches = z
+            .object({
+              matches: z.array(
+                z.object({
+                  url: z.string().optional(),
+                  domain: z.string(),
+                  providers: z.array(
+                    z.object({
+                      provider: z.string(),
+                      capabilities: z.array(z.object({ address: z.string() })),
+                    }),
+                  ),
+                }),
+              ),
+            })
+            .parse(routed.body).matches;
+          const routedProviders = new Map<
+            string,
+            {
+              id: string;
+              matchedDomains: string[];
+              domainCapabilities: Record<string, string[]>;
+            }
+          >();
+          for (const match of routedMatches) {
+            if (!match.url || !urls.slice(i, i + 100).includes(match.url))
+              continue;
+            for (const provider of match.providers) {
+              const entry = routedProviders.get(provider.provider) ?? {
+                id: provider.provider,
+                matchedDomains: [],
+                domainCapabilities: {},
+              };
+              entry.matchedDomains.push(match.domain);
+              entry.domainCapabilities[match.url] = provider.capabilities.map(
+                cap => cap.address,
+              );
+              routedProviders.set(provider.provider, entry);
+            }
+          }
+          matches.push(...routedProviders.values());
+        } catch (error) {
+          failed = true;
+          logger.warn("URL tool discovery unavailable", { error });
+        }
         const hostOf = (value: string) =>
           new URL(value).hostname.toLowerCase().replace(/\.$/, "");
         for (const match of matches) {

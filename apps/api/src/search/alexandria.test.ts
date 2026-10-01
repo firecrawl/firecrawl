@@ -80,23 +80,25 @@ it.each([undefined, "compact", "full"] as const)(
   "deduplicates semantic and domain tools with %s detail",
   async toolDetail => {
     request.mockImplementation(async args =>
-      args.path === "/v1/skills/resolve"
-        ? {
-            status: 200,
-            body: {
-              skills: [
-                {
-                  id: "sample",
-                  matchedDomains: ["example.com"],
-                  domainCapabilities: { "example.com": ["records/search"] },
-                },
-              ],
+      args.path.startsWith("/v1/discover/domains?")
+        ? { status: 200, body: { matches: [] } }
+        : args.path === "/v1/skills/resolve"
+          ? {
+              status: 200,
+              body: {
+                skills: [
+                  {
+                    id: "sample",
+                    matchedDomains: ["example.com"],
+                    domainCapabilities: { "example.com": ["records/search"] },
+                  },
+                ],
+              },
+            }
+          : {
+              status: 200,
+              body: { success: true, creditsCost: 0, data: { items: [tool] } },
             },
-          }
-        : {
-            status: 200,
-            body: { success: true, creditsCost: 0, data: { items: [tool] } },
-          },
     );
     const result = await discoverTools(
       { ...input, toolDetail, urls: ["https://example.com/records"] },
@@ -156,4 +158,116 @@ it("keeps tools when optional navigation is absent, extended or malformed", asyn
   expect(result.items[1]).toHaveProperty("next", { ...next, label: "Inspect" });
   expect(result.items[0]).toMatchObject({ next: undefined });
   expect(result.items[2]).toMatchObject({ next: undefined });
+});
+
+it("matches profile and video tools to their exact URLs without a coverage-domain claim", async () => {
+  const profile = "https://www.instagram.com/nike/";
+  const post = "https://www.instagram.com/reel/DdZ62eCxqzk/";
+  request.mockImplementation(async args => {
+    if (args.path === "/v1/skills/resolve")
+      return { status: 200, body: { skills: [] } };
+    if (args.path.startsWith("/v1/discover/domains?")) {
+      const params = new URL(args.path, "https://exchange.test").searchParams;
+      expect(params.getAll("urls")).toEqual([profile, post]);
+      return {
+        status: 200,
+        body: {
+          matches: [
+            {
+              url: profile,
+              domain: "www.instagram.com",
+              providers: [
+                {
+                  provider: "oriane",
+                  capabilities: [
+                    { address: "instagram/profile-lookup-default" },
+                  ],
+                },
+              ],
+            },
+            {
+              url: post,
+              domain: "www.instagram.com",
+              providers: [
+                {
+                  provider: "oriane",
+                  capabilities: [
+                    { address: "instagram/post-lookup-default" },
+                    { address: "instagram/post-lookup-full" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      };
+    }
+    const options = (args.body as any).options;
+    expect(options.providers).toEqual(["oriane"]);
+    return {
+      status: 200,
+      body: {
+        success: true,
+        creditsCost: 0,
+        data: {
+          items: options.capabilities.map((capability: string) => ({
+            ...tool,
+            provider: "oriane",
+            capability,
+          })),
+        },
+      },
+    };
+  });
+  const result = await discoverTools(
+    {
+      ...input,
+      query: undefined,
+      urls: [profile, post],
+      toolDetail: "summary",
+    },
+    logger,
+  );
+  expect(result.warning).toBeUndefined();
+  expect(result.items).toHaveLength(3);
+  expect(result.items).toContainEqual(
+    expect.objectContaining({
+      capability: "instagram/profile-lookup-default",
+      matchedUrls: [profile],
+    }),
+  );
+  expect(result.items).toContainEqual(
+    expect.objectContaining({
+      capability: "instagram/post-lookup-default",
+      matchedUrls: [post],
+    }),
+  );
+  expect(result.items).toContainEqual(
+    expect.objectContaining({
+      capability: "instagram/post-lookup-full",
+      matchedUrls: [post],
+    }),
+  );
+});
+
+it("preserves coverage-domain tools when URL routing is unavailable", async () => {
+  request.mockImplementation(async args => {
+    if (args.path === "/v1/skills/resolve")
+      return {
+        status: 200,
+        body: { skills: [{ id: "sample", matchedDomains: ["example.com"] }] },
+      };
+    if (args.path.startsWith("/v1/discover/domains?"))
+      return { status: 503, body: {} };
+    return {
+      status: 200,
+      body: { success: true, creditsCost: 0, data: { items: [tool] } },
+    };
+  });
+  const result = await discoverTools(
+    { ...input, query: undefined, urls: ["https://example.com/records"] },
+    logger,
+  );
+  expect(result.items).toHaveLength(1);
+  expect(result.warning).toBeTruthy();
 });

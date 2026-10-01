@@ -606,3 +606,41 @@ it("does not forward credentials to another provider's enrich capability", async
   ).toMatchObject({ status: 200, executed: true });
   expect(executions()[0][0].resultAuthorization).toBeUndefined();
 });
+
+it("releases a paid reservation for an empty Oriane result without a billing job", async () => {
+  const orianeCall = {
+    provider: "oriane",
+    capability: "instagram/post-lookup-default",
+    options: { url: "https://www.instagram.com/reel/DdZ62eCxqzk/" },
+  };
+  const empty = {
+    success: true,
+    creditsCost: 0,
+    results: [
+      {
+        ...orianeCall,
+        creditsCost: 0,
+        data: {
+          data: { results: [] },
+          message: "Oriane was unable to resolve this URL in its index.",
+        },
+      },
+    ],
+  };
+  exchangeAnswers(empty, 200, { status: 200, body: { maximumCredits: 30 } });
+  const result = await run({ calls: [orianeCall] });
+  expect(result.status).toBe(200);
+  expect(result.body).toEqual(empty);
+  expect(mocks.lock).toHaveBeenCalledWith(
+    expect.objectContaining({ value: 30 }),
+  );
+  expect(mocks.finalize).toHaveBeenCalledWith(
+    expect.objectContaining({
+      lockId: "held",
+      action: "release",
+      heldValue: 30,
+    }),
+  );
+  expect(mocks.billAdd).not.toHaveBeenCalled();
+  expect(mocks.refund).not.toHaveBeenCalled();
+});
