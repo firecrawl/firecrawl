@@ -6,7 +6,7 @@ import pytest
 
 from firecrawl import AsyncFirecrawl, Firecrawl
 from firecrawl.v2.types import ParseFormat
-from firecrawl.v2.utils.error_handler import InternalServerError, UnauthorizedError
+from firecrawl.v2.utils.error_handler import FirecrawlError, InternalServerError, UnauthorizedError
 
 API_URL = "https://api.example.test"
 API_KEY = "fc-test-key"
@@ -94,15 +94,32 @@ def test_get_parse_formats_sync_unauthorized(monkeypatch):
         Firecrawl(api_key=API_KEY, api_url=API_URL).get_parse_formats()
 
 
-def _async_client(handler):
-    client = AsyncFirecrawl(api_key=API_KEY, api_url=API_URL)
-    http = client._v2_client.async_http_client
-    http._client = httpx.AsyncClient(
-        base_url=API_URL,
-        headers=http._client.headers,
-        transport=httpx.MockTransport(handler),
+def test_get_parse_formats_sync_unsuccessful_body(monkeypatch):
+    monkeypatch.setattr(
+        "firecrawl.v2.utils.http_client.requests.get",
+        Mock(return_value=_sync_response(200, {"success": False, "error": "nope"})),
     )
-    return client
+    with pytest.raises(FirecrawlError):
+        Firecrawl(api_key=API_KEY, api_url=API_URL).get_parse_formats()
+
+
+def _run_async(handler, call):
+    async def run():
+        client = AsyncFirecrawl(api_key=API_KEY, api_url=API_URL)
+        http = client._v2_client.async_http_client
+        headers = http._client.headers
+        await http.close()
+        http._client = httpx.AsyncClient(
+            base_url=API_URL,
+            headers=headers,
+            transport=httpx.MockTransport(handler),
+        )
+        try:
+            return await call(client)
+        finally:
+            await http.close()
+
+    return asyncio.run(run())
 
 
 def test_get_parse_formats_async():
@@ -112,8 +129,7 @@ def test_get_parse_formats_async():
         requests_seen.append(request)
         return httpx.Response(200, json=FORMATS_BODY)
 
-    client = _async_client(handler)
-    formats = asyncio.run(client.get_parse_formats())
+    formats = _run_async(handler, lambda client: client.get_parse_formats())
 
     assert len(requests_seen) == 1
     request = requests_seen[0]
@@ -124,13 +140,24 @@ def test_get_parse_formats_async():
 
 
 def test_get_parse_formats_async_v2_surface():
-    client = _async_client(lambda request: httpx.Response(200, json=FORMATS_BODY))
-    _assert_formats(asyncio.run(client.v2.get_parse_formats()))
+    formats = _run_async(
+        lambda request: httpx.Response(200, json=FORMATS_BODY),
+        lambda client: client.v2.get_parse_formats(),
+    )
+    _assert_formats(formats)
 
 
 def test_get_parse_formats_async_server_error():
-    client = _async_client(
-        lambda request: httpx.Response(500, json={"success": False, "error": "boom"})
-    )
     with pytest.raises(InternalServerError):
-        asyncio.run(client.get_parse_formats())
+        _run_async(
+            lambda request: httpx.Response(500, json={"success": False, "error": "boom"}),
+            lambda client: client.get_parse_formats(),
+        )
+
+
+def test_get_parse_formats_async_unsuccessful_body():
+    with pytest.raises(FirecrawlError):
+        _run_async(
+            lambda request: httpx.Response(200, json={"success": False, "error": "nope"}),
+            lambda client: client.get_parse_formats(),
+        )

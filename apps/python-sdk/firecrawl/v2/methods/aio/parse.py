@@ -72,6 +72,6 @@ async def get_parse_formats(client: AsyncHttpClient) -> List[ParseFormat]:
         handle_response_error(resp, "get parse formats")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        handle_response_error(resp, "get parse formats")
     data = body.get("data") or {}
     return [ParseFormat.model_validate(item) for item in data.get("formats") or []]
