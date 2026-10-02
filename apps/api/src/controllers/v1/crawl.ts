@@ -291,6 +291,7 @@ export async function crawlController(
     zeroDataRetention,
     v1: true,
     webhook: req.body.webhook,
+    origin: req.body.origin,
   };
 
   const crawler = crawlToCrawler(id, sc, req.acuc?.flags ?? null);

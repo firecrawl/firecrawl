@@ -23,6 +23,12 @@ vi.mock("../webhook", () => ({}));
 vi.mock("./results", () => ({}));
 vi.mock("../notification/monitoring_email", () => ({}));
 vi.mock("../notification/monitoring_slack", () => ({}));
+vi.mock("../notification/monitoring_in_app", () => ({
+  recordMonitorInAppNotification: async () => ({
+    attempted: false,
+    success: true,
+  }),
+}));
 vi.mock("./types", () => ({}));
 vi.mock("./interest", () => ({
   trackMonitorCheckStartedInterest: async () => {},

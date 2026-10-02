@@ -33,6 +33,7 @@ import { createWebhookSender, WebhookEvent } from "../webhook";
 import { sendMonitorPageWebhook } from "./results";
 import { sendMonitoringEmailSummary } from "../notification/monitoring_email";
 import { sendMonitoringSlackSummary } from "../notification/monitoring_slack";
+import { recordMonitorInAppNotification } from "../notification/monitoring_in_app";
 import {
   bulkUpsertMonitorPages,
   calculateMonitorCheckActualCredits,
@@ -439,7 +440,12 @@ async function sendNotifications(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
   pages: PageResult[];
-}): Promise<{ webhook?: unknown; email?: unknown; slack?: unknown }> {
+}): Promise<{
+  webhook?: unknown;
+  email?: unknown;
+  slack?: unknown;
+  inApp?: unknown;
+}> {
   const payload = {
     monitorId: params.monitor.id,
     checkId: params.check.id,
@@ -543,10 +549,21 @@ async function sendNotifications(params: {
     };
   }
 
+  const inAppStatus = await recordMonitorInAppNotification({
+    monitor: params.monitor,
+    check: params.check,
+    pages: nonSamePages.map(page => ({
+      url: page.url,
+      status: page.status,
+      judgment: page.judgment ?? null,
+    })),
+  });
+
   return {
     webhook: webhookStatus,
     email: emailStatus,
     slack: slackStatus,
+    inApp: inAppStatus,
   };
 }
 
