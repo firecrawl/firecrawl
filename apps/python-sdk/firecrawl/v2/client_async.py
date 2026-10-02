@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union, Callable, Literal, BinaryIO
 from .types import (
+    ParseFormat,
     ParseOptions,
     ScrapeOptions,
     CrawlRequest,
@@ -303,6 +304,10 @@ class AsyncFirecrawlClient:
             filename=filename,
             content_type=content_type,
         )
+
+    async def get_parse_formats(self) -> List[ParseFormat]:
+        """List the file formats the parse endpoint accepts."""
+        return await async_parse.get_parse_formats(self.async_http_client)
 
 
     # Search
