@@ -1,0 +1,72 @@
+name: Canary API image
+
+# Builds the API image from any ref and publishes it under a single
+# `canary-<sha>` tag. It never touches the semver, `-production`, `-staging`
+# or `latest` tags that Keel and the staging chart follow, so a canary build
+# can only reach the cluster through an explicit `app.canary.tag` in infra.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: api-image-canary-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: './apps/api'
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve canary tag
+        id: meta
+        run: |
+          echo "tag=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/firecrawl:canary-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@ef12d5b165b596e3aa44ea8198d8fde563eab402 # v1
+
+      - name: 'Login to GitHub Container Registry'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - name: 'Build and Push Image'
+        uses: useblacksmith/build-push-action@30c71162f16ea2c27c3e21523255d209b8b538c1 # v2
+        with:
+          context: ./apps/api
+          push: true
+          tags: ${{ steps.meta.outputs.tag }}
+          platforms: linux/amd64
+          provenance: false
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/firecrawl:buildcache-linux-amd64
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/firecrawl:buildcache-canary-linux-amd64
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/firecrawl:buildcache-canary-linux-amd64,mode=max
+
+      - name: Verify pushed image contents
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.tag }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          docker pull "${IMAGE_TAG}"
+          actual_sha="$(docker run --rm --entrypoint node "${IMAGE_TAG}" -p 'process.env.FIRECRAWL_BUILD_SHA')"
+          if [ "${actual_sha}" != "${EXPECTED_SHA}" ]; then
+            echo "::error::Image build SHA mismatch: expected ${EXPECTED_SHA}, got ${actual_sha}"
+            exit 1
+          fi
+          echo "Published ${IMAGE_TAG}"
