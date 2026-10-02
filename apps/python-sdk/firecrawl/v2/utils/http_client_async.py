@@ -60,7 +60,7 @@ class AsyncHttpClient:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
-            retries = self.max_retries
+            retries = 1
         if backoff_factor is None:
             backoff_factor = self.backoff_factor
 
@@ -105,7 +105,7 @@ class AsyncHttpClient:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
-            retries = self.max_retries
+            retries = 1
         if backoff_factor is None:
             backoff_factor = self.backoff_factor
 
@@ -185,7 +185,7 @@ class AsyncHttpClient:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
-            retries = self.max_retries
+            retries = 1
         if backoff_factor is None:
             backoff_factor = self.backoff_factor
 
@@ -225,7 +225,7 @@ class AsyncHttpClient:
         if timeout is None:
             timeout = self.timeout
         if retries is None:
-            retries = self.max_retries
+            retries = 1
         if backoff_factor is None:
             backoff_factor = self.backoff_factor
 
