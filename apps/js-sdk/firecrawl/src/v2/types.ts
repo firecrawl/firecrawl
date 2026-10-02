@@ -1627,6 +1627,11 @@ export interface AgentStatusResponse {
   status: "processing" | "completed" | "failed";
   error?: string;
   data?: unknown;
+  /** Best-effort result on a failed run; never a completed `data` value. */
+  partial?: unknown;
+  /** Schema validity of `partial`, when a schema was supplied. */
+  partialSchemaValid?: boolean;
+  stopReason?: "credit_limit_reached";
   /**
    * Server-provided model name. Widened past the request-side union on
    * purpose: new models ship without an SDK release, so pinning this to known
@@ -1672,6 +1677,9 @@ export interface AgentThreadRun {
   message: string | null;
   /** Only present when the request asked for includeData. */
   data?: unknown;
+  partial?: unknown;
+  partialSchemaValid?: boolean;
+  stopReason?: "credit_limit_reached";
   suggestions?: AgentSuggestion[] | null;
   pendingApproval?: PendingApproval | null;
   exchange?: AgentExchangeSummary | null;
