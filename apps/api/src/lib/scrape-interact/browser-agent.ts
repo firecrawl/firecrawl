@@ -388,8 +388,6 @@ export async function executePromptViaBrowserAgent(
               openai: {
                 store: false,
                 reasoningEffort: "medium",
-                // This SDK version does not yet recognize GPT-6 model IDs.
-                forceReasoning: true,
               },
             },
           }

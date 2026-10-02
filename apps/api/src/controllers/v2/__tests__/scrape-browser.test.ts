@@ -385,7 +385,6 @@ describe("scrapeInteractController", () => {
             openai: {
               store: false,
               reasoningEffort: "medium",
-              forceReasoning: true,
             },
           },
           temperature: undefined,
