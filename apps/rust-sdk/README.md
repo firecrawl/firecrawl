@@ -122,6 +122,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+To list the upload formats `parse` accepts, call `get_parse_formats`. Each entry has `format`, `kind` (`Document` or `Image`), `extensions`, `mime_types`, and `available` (image formats are unavailable when image OCR is disabled on the deployment).
+
+```rust
+let formats = client.get_parse_formats().await?;
+for f in formats.iter().filter(|f| f.available) {
+    println!("{} ({:?}): {:?}", f.format, f.kind, f.extensions);
+}
+```
+
 ### Scraping with Extract
 
 With Extract, you can easily extract structured data from any URL. You need to specify your schema in the JSON Schema format, using the `serde_json::json!` macro.
