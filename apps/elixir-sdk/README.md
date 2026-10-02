@@ -120,8 +120,8 @@ mix run generate.exs
 
 This will:
 
-1. Fetch the latest OpenAPI JSON from GitHub and save it as `openapi.json`
-2. Generate all API wrapper functions in `lib/firecrawl.ex`
+1. Fetch the latest OpenAPI JSON from GitHub
+2. Generate all API wrapper functions in `lib/firecrawl.ex` and, if the code changed, save the spec it came from as `openapi.json`
 3. Bump the version in `mix.exs` using semver (only if the generated code changed):
    - **Major** bump if public functions were removed (breaking change)
    - **Minor** bump if new public functions were added

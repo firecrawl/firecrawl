@@ -6,9 +6,10 @@
 #   FIRECRAWL_OPENAPI_SPEC=openapi.json mix run generate.exs  # offline, from the vendored copy
 #
 # This script:
-# 1. Fetches the Firecrawl v2 OpenAPI JSON spec and saves it as openapi.json
+# 1. Fetches the Firecrawl v2 OpenAPI JSON spec
 # 2. Parses all endpoints and generates Elixir wrapper functions with NimbleOptions validation
-# 3. Writes lib/firecrawl.ex, keeping its HAND-WRITTEN region verbatim
+# 3. If the code changed, writes lib/firecrawl.ex (keeping its HAND-WRITTEN region
+#    verbatim) and saves the spec it came from as openapi.json
 # 4. Bumps the version in mix.exs if the generated code changed
 
 defmodule Firecrawl.Generator do
@@ -61,7 +62,6 @@ defmodule Firecrawl.Generator do
     IO.puts("Fetching OpenAPI spec...")
     {:ok, raw_spec} = fetch_spec()
     spec = Jason.decode!(raw_spec)
-    File.write!(@spec_file, raw_spec)
 
     old_code = File.read!(@output_file)
 
@@ -69,6 +69,7 @@ defmodule Firecrawl.Generator do
     code = generate_module(spec, hand_written_region(old_code))
 
     if code != old_code do
+      File.write!(@spec_file, raw_spec)
       File.write!(@output_file, code)
       IO.puts("Wrote #{@output_file}")
 
