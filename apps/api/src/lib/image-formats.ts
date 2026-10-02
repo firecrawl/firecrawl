@@ -5,34 +5,38 @@
 // them, so they keep failing fast as unsupported files instead of burning a
 // round trip.
 
-const CONTENT_TYPE_TO_EXTENSION = new Map<string, string>([
-  ["image/png", ".png"],
-  ["image/jpeg", ".jpg"],
-  // Non-standard but common in the wild.
-  ["image/jpg", ".jpg"],
-  ["image/pjpeg", ".jpg"],
-  ["image/tiff", ".tif"],
-  ["image/x-tiff", ".tif"],
-  ["image/gif", ".gif"],
-  ["image/bmp", ".bmp"],
-  ["image/x-ms-bmp", ".bmp"],
-  // JPEG 2000: the JP2 container digitized book scans and IIIF tile sources
-  // are served in, and its extended JPX sibling. Raw codestreams (.j2k,
-  // .j2c) share the type: FirePDF opens them the same way.
-  ["image/jp2", ".jp2"],
-  ["image/jpx", ".jp2"],
-  // Raw codestreams have no registered type; these are the labels servers
-  // use for them.
-  ["image/j2k", ".jp2"],
-  ["image/j2c", ".jp2"],
-  ["image/x-j2c", ".jp2"],
-  // WebP and AVIF: what CDNs serve to a browser that advertises them in
-  // Accept, whatever the URL's extension says. FirePDF transcodes both.
-  ["image/webp", ".webp"],
-  ["image/avif", ".avif"],
-]);
+export const IMAGE_CONTENT_TYPE_TO_EXTENSION: ReadonlyMap<string, string> =
+  new Map<string, string>([
+    ["image/png", ".png"],
+    ["image/jpeg", ".jpg"],
+    // Non-standard but common in the wild.
+    ["image/jpg", ".jpg"],
+    ["image/pjpeg", ".jpg"],
+    ["image/tiff", ".tif"],
+    ["image/x-tiff", ".tif"],
+    ["image/gif", ".gif"],
+    ["image/bmp", ".bmp"],
+    ["image/x-ms-bmp", ".bmp"],
+    // JPEG 2000: the JP2 container digitized book scans and IIIF tile sources
+    // are served in, and its extended JPX sibling. Raw codestreams (.j2k,
+    // .j2c) share the type: FirePDF opens them the same way.
+    ["image/jp2", ".jp2"],
+    ["image/jpx", ".jp2"],
+    // Raw codestreams have no registered type; these are the labels servers
+    // use for them.
+    ["image/j2k", ".jp2"],
+    ["image/j2c", ".jp2"],
+    ["image/x-j2c", ".jp2"],
+    // WebP and AVIF: what CDNs serve to a browser that advertises them in
+    // Accept, whatever the URL's extension says. FirePDF transcodes both.
+    ["image/webp", ".webp"],
+    ["image/avif", ".avif"],
+  ]);
 
-const EXTENSION_ALIASES = new Map<string, string>([
+export const IMAGE_EXTENSION_ALIASES: ReadonlyMap<string, string> = new Map<
+  string,
+  string
+>([
   [".jpeg", ".jpg"],
   [".tiff", ".tif"],
   [".jpx", ".jp2"],
@@ -42,8 +46,8 @@ const EXTENSION_ALIASES = new Map<string, string>([
 ]);
 
 export const IMAGE_EXTENSIONS = new Set([
-  ...CONTENT_TYPE_TO_EXTENSION.values(),
-  ...EXTENSION_ALIASES.keys(),
+  ...IMAGE_CONTENT_TYPE_TO_EXTENSION.values(),
+  ...IMAGE_EXTENSION_ALIASES.keys(),
 ]);
 
 export function imageExtensionFromContentType(
@@ -51,15 +55,15 @@ export function imageExtensionFromContentType(
 ): string | null {
   if (!contentType) return null;
   const mediaType = contentType.split(";")[0].trim().toLowerCase();
-  return CONTENT_TYPE_TO_EXTENSION.get(mediaType) ?? null;
+  return IMAGE_CONTENT_TYPE_TO_EXTENSION.get(mediaType) ?? null;
 }
 
 export function imageContentTypeFromExtension(
   extension: string,
 ): string | null {
   const lower = extension.toLowerCase();
-  const ext = EXTENSION_ALIASES.get(lower) ?? lower;
-  for (const [contentType, mapped] of CONTENT_TYPE_TO_EXTENSION) {
+  const ext = IMAGE_EXTENSION_ALIASES.get(lower) ?? lower;
+  for (const [contentType, mapped] of IMAGE_CONTENT_TYPE_TO_EXTENSION) {
     if (mapped === ext) return contentType;
   }
   return null;
