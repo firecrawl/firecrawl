@@ -26,7 +26,7 @@ async function getParseFormats(): Promise<ParseFormat[]> {
 
   expect(response.statusCode, JSON.stringify(response.body)).toBe(200);
   expect(response.body.success).toBe(true);
-  expect(response.headers["cache-control"]).toContain("max-age=");
+  expect(response.headers["cache-control"]).toBe("private, max-age=3600");
   return response.body.data.formats;
 }
 
