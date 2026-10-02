@@ -36,6 +36,9 @@ jobs:
       - name: Regenerate from OpenAPI spec
         run: mix run generate.exs
 
+      - name: Test regenerated code
+        run: mix test
+
       - name: Check for changes
         id: check_changes
         run: |
