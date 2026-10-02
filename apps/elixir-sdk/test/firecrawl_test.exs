@@ -781,6 +781,25 @@ defmodule FirecrawlTest do
     end
   end
 
+  test "get_parse_formats returns a non-API error for an unexpected success body" do
+    adapter = parse_formats_adapter(self(), 200, %{"success" => true, "data" => %{}})
+
+    assert {:error, %RuntimeError{message: msg}} =
+             Firecrawl.get_parse_formats(api_key: "test-key", adapter: adapter)
+
+    assert msg =~ "unexpected GET /parse/formats response (HTTP 200)"
+  end
+
+  test "get_parse_formats fills missing format and kind with empty strings" do
+    body = %{"success" => true, "data" => %{"formats" => [%{"extensions" => [".x"]}]}}
+
+    assert {:ok, [%Firecrawl.ParseFormat{format: "", kind: "", extensions: [".x"], available: false}]} =
+             Firecrawl.get_parse_formats(
+               api_key: "test-key",
+               adapter: parse_formats_adapter(self(), 200, body)
+             )
+  end
+
   test "get_parse_formats! raises Firecrawl.Error on server errors" do
     adapter =
       parse_formats_adapter(self(), 500, %{"success" => false, "error" => "Internal error"})

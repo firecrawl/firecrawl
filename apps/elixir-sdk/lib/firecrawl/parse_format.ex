@@ -28,8 +28,8 @@ defmodule Firecrawl.ParseFormat do
   @spec from_map(map()) :: t()
   def from_map(map) when is_map(map) do
     %__MODULE__{
-      format: map["format"],
-      kind: to_kind(map["kind"]),
+      format: map["format"] || "",
+      kind: to_kind(map["kind"] || ""),
       extensions: map["extensions"] || [],
       mime_types: map["mimeTypes"] || [],
       available: map["available"] == true

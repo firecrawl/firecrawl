@@ -266,7 +266,7 @@ defmodule Firecrawl.Generator do
       ## Returns
 
         * `{:ok, [%Firecrawl.ParseFormat{}]}` on success
-        * `{:error, exception}` on HTTP failure
+        * `{:error, exception}` on HTTP failure or an unexpected response shape
       """
       @spec get_parse_formats(keyword()) ::
               {:ok, [Firecrawl.ParseFormat.t()]} | {:error, Exception.t() | Firecrawl.Error.t()}
@@ -294,7 +294,10 @@ defmodule Firecrawl.Generator do
       end
 
       defp decode_parse_formats(%Req.Response{status: status, body: body}) do
-        {:error, Firecrawl.Error.exception(status: status, body: body)}
+        {:error,
+         RuntimeError.exception(
+           "unexpected GET /parse/formats response (HTTP #{status}): #{inspect(body)}"
+         )}
       end
     '''
   end
