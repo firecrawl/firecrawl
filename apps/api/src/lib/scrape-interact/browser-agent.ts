@@ -361,7 +361,7 @@ export async function executePromptViaBrowserAgent(
     const generate = zeroDataRetention ? untracedGenerateText : generateText;
     const result = await generate({
       model: zeroDataRetention
-        ? getModel("gpt-4.1", "openai")
+        ? getModel("gpt-6-luna", "openai")
         : getModel("gemini-3.5-flash", hasVertex() ? "vertex" : "google"),
       experimental_telemetry: { isEnabled: false },
       system: SYSTEM_PROMPT,
@@ -378,12 +378,21 @@ export async function executePromptViaBrowserAgent(
       ],
       tools: { browser: browserTool },
       stopWhen: stepCountIs(MAX_STEPS),
-      temperature: 0,
+      temperature: zeroDataRetention ? undefined : 0,
       // LangSmith's provider-options object is recognized by wrapAISDK but
       // does not satisfy AI SDK's SharedV3ProviderOptions shape, hence the
       // local cast — keeps the rest of the type surface strict.
       ...(zeroDataRetention
-        ? { providerOptions: { openai: { store: false } } }
+        ? {
+            providerOptions: {
+              openai: {
+                store: false,
+                reasoningEffort: "medium",
+                // This SDK version does not yet recognize GPT-6 model IDs.
+                forceReasoning: true,
+              },
+            },
+          }
         : langsmith
           ? { providerOptions: { langsmith } as Record<string, any> }
           : {}),

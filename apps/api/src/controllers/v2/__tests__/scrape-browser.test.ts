@@ -325,12 +325,19 @@ describe("scrapeInteractController", () => {
       expect(result.output).toBe("done");
     }
 
-    it("uses OpenAI without response storage or AI telemetry for ZDR prompts", async () => {
+    it("uses Luna medium without response storage or AI telemetry for ZDR prompts", async () => {
       await runPrompt();
-      expect(getModel).toHaveBeenCalledWith("gpt-4.1", "openai");
+      expect(getModel).toHaveBeenCalledWith("gpt-6-luna", "openai");
       expect(generateText).toHaveBeenCalledWith(
         expect.objectContaining({
-          providerOptions: { openai: { store: false } },
+          providerOptions: {
+            openai: {
+              store: false,
+              reasoningEffort: "medium",
+              forceReasoning: true,
+            },
+          },
+          temperature: undefined,
           experimental_telemetry: { isEnabled: false },
         }),
       );
