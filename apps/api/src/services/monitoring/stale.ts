@@ -1,6 +1,8 @@
 import type { MonitorCheckRow } from "./types";
 
 export const MONITOR_CHECK_STALE_TIMEOUT_MS = 60 * 60 * 1000;
+export const MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+export const MONITOR_CHECK_CREDIT_HOLD_BUFFER_MS = 10 * 60 * 1000;
 // Search checks run inline and finish in minutes; a stranded one should self-heal quickly, not look dead for an hour.
 const MONITOR_SEARCH_CHECK_STALE_TIMEOUT_MS = 10 * 60 * 1000;
 export const MONITOR_CHECK_STALE_ERROR =
@@ -44,11 +46,24 @@ export function isMonitorCheckStale(
   now: Date = new Date(),
   monitorTargets?: unknown,
 ): boolean {
-  const startedAt = check.started_at ?? check.updated_at ?? check.created_at;
-  const startedAtMs = Date.parse(startedAt);
-  if (!Number.isFinite(startedAtMs)) return false;
-  return (
-    now.getTime() - startedAtMs >=
-    monitorCheckStaleTimeoutMs(check, monitorTargets)
-  );
+  const searchOnly = isSearchOnlyCheck(check, monitorTargets);
+  const startedAtMs = Date.parse(check.started_at ?? check.created_at);
+  const updatedAtMs = Date.parse(check.updated_at);
+  const idleSinceMs = Number.isFinite(updatedAtMs) ? updatedAtMs : startedAtMs;
+
+  if (searchOnly) {
+    return (
+      Number.isFinite(startedAtMs) &&
+      now.getTime() - startedAtMs >=
+        monitorCheckStaleTimeoutMs(check, monitorTargets)
+    );
+  }
+
+  const idleTimedOut =
+    Number.isFinite(idleSinceMs) &&
+    now.getTime() - idleSinceMs >= MONITOR_CHECK_STALE_TIMEOUT_MS;
+  const absoluteTimedOut =
+    Number.isFinite(startedAtMs) &&
+    now.getTime() - startedAtMs >= MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS;
+  return idleTimedOut || absoluteTimedOut;
 }

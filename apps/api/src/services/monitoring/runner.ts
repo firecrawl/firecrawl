@@ -63,11 +63,15 @@ import { withMarkdownFormat } from "./types";
 import { redisEvictConnection } from "../redis";
 import type { MonitorCheckJobData } from "./queue";
 import {
+  MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS,
+  MONITOR_CHECK_CREDIT_HOLD_BUFFER_MS,
   MONITOR_CHECK_STALE_ERROR,
   isMonitorCheckStale,
   MONITOR_CHECK_STALE_TIMEOUT_MS,
   monitorCheckStaleTimeoutMs,
 } from "./stale";
+import { cancelCrawl } from "../../lib/crawl-cancel";
+import { acquireMonitorCheckFinalizeLease } from "./finalize-lease";
 import { trackMonitorCheckStartedInterest } from "./interest";
 import { runSearchTarget, type ScrapeSearchResult } from "./search/run";
 import { verdictJsonSchema } from "./search/judge";
@@ -83,7 +87,12 @@ import {
 import { requestCreditsShards } from "../../lib/request-credits-store";
 
 const logger = _logger.child({ module: "monitoring-runner" });
-export { isMonitorCheckStale, MONITOR_CHECK_STALE_TIMEOUT_MS };
+export {
+  isMonitorCheckStale,
+  MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS,
+  MONITOR_CHECK_CREDIT_HOLD_BUFFER_MS,
+  MONITOR_CHECK_STALE_TIMEOUT_MS,
+};
 
 const MONITOR_NOTIFY_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MONITOR_CHECK_PAGE_SCAN_LIMIT = 100_000;
@@ -1050,7 +1059,10 @@ export async function processMonitorCheckJob(
           orgId,
           value: check.estimated_credits ?? 1,
           lockId: `monitor_${check.id}`,
-          expiresAt: Date.now() + 60 * 60 * 1000,
+          expiresAt:
+            Date.now() +
+            MONITOR_CHECK_ABSOLUTE_TIMEOUT_MS +
+            MONITOR_CHECK_CREDIT_HOLD_BUFFER_MS,
           properties: {
             source: "monitorCheck",
             endpoint: "monitor",
@@ -1298,8 +1310,10 @@ async function processRemovedPagesForCompletedCrawls(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
   targetResults: any[];
+  abortSignal: AbortSignal;
 }): Promise<void> {
   for (const target of params.targetResults) {
+    if (params.abortSignal.aborted) return;
     if (target?.type !== "crawl" || target.removedProcessed) continue;
 
     const group = await crawlGroup.getGroup(target.crawlId);
@@ -1324,6 +1338,7 @@ async function processRemovedPagesForCompletedCrawls(params: {
 
     const removed: MonitorCheckPageInsert[] = [];
     for (const previous of activePages) {
+      if (params.abortSignal.aborted) return;
       if (seen.has(previous.url_hash.toString("hex"))) continue;
       await upsertMonitorPage({
         monitorId: params.monitor.id,
@@ -1335,7 +1350,9 @@ async function processRemovedPagesForCompletedCrawls(params: {
         scrapeId: previous.last_scrape_id,
         status: "removed",
         metadata: previous.metadata,
+        abortSignal: params.abortSignal,
       });
+      if (params.abortSignal.aborted) return;
       removed.push({
         check_id: params.check.id,
         monitor_id: params.monitor.id,
@@ -1349,6 +1366,7 @@ async function processRemovedPagesForCompletedCrawls(params: {
       });
     }
 
+    if (params.abortSignal.aborted) return;
     await insertMonitorCheckPages(removed);
     target.removedProcessed = true;
   }
@@ -1387,7 +1405,7 @@ async function isMonitorCheckComplete(
       if (recorded < expected) return false;
     } else if (target?.type === "crawl") {
       const group = await crawlGroup.getGroup(target.crawlId);
-      if (!group || group.status === "active") return false;
+      if (group?.status !== "completed") return false;
 
       const stats = await scrapeQueue.getGroupNumericStats(
         target.crawlId,
@@ -1405,11 +1423,14 @@ async function isMonitorCheckComplete(
 async function failStaleMonitorCheck(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
+  targetResults: any[];
+  leaseSignal: AbortSignal;
   /** See billMonitorCheck's orgId. */
   orgId: string | null;
 }): Promise<boolean> {
   if (!isMonitorCheckStale(params.check, new Date(), params.monitor.targets))
     return false;
+  if (params.leaseSignal.aborted) return true;
 
   const error = MONITOR_CHECK_STALE_ERROR;
   const claimed = await updateMonitorCheckIfRunning(params.check.id, {
@@ -1419,6 +1440,29 @@ async function failStaleMonitorCheck(params: {
     error,
   });
   if (!claimed) return true;
+
+  const crawlIds = [
+    ...new Set(
+      params.targetResults
+        .filter(target => target?.type === "crawl" && target.crawlId)
+        .map(target => target.crawlId as string),
+    ),
+  ];
+  const cancellations = await Promise.allSettled(
+    crawlIds.map(crawlId =>
+      cancelMonitorCrawlWithRetries(crawlId, params.monitor.team_id),
+    ),
+  );
+  cancellations.forEach((result, index) => {
+    if (result.status === "rejected" || !result.value) {
+      logger.warn("Failed to cancel stale monitor crawl target", {
+        error: result.status === "rejected" ? result.reason : undefined,
+        monitorId: params.monitor.id,
+        checkId: params.check.id,
+        crawlId: crawlIds[index],
+      });
+    }
+  });
 
   let released = true;
   if (claimed.autumn_lock_id) {
@@ -1515,21 +1559,31 @@ async function failStaleMonitorCheck(params: {
   return true;
 }
 
+async function cancelMonitorCrawlWithRetries(
+  crawlId: string,
+  teamId: string,
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      if (await cancelCrawl(crawlId, undefined, teamId)) return true;
+    } catch (error) {
+      logger.warn("Monitor crawl cancellation attempt failed", {
+        error,
+        crawlId,
+        attempt,
+      });
+    }
+  }
+  return false;
+}
+
 export async function reconcileRunningMonitorChecks(
   limit: number = 50,
 ): Promise<void> {
   const checks = await listRunningMonitorChecks(limit);
   for (const candidate of checks) {
-    const lockKey = `monitor-check-finalize:${candidate.id}`;
-    const lockToken = uuidv7();
-    const lock = await redisEvictConnection.set(
-      lockKey,
-      lockToken,
-      "EX",
-      60,
-      "NX",
-    );
-    if (lock !== "OK") continue;
+    const lease = await acquireMonitorCheckFinalizeLease(candidate.id);
+    if (!lease) continue;
 
     try {
       // The batch can outlive another finalizer. Read from the primary after
@@ -1540,6 +1594,7 @@ export async function reconcileRunningMonitorChecks(
         candidate.id,
       );
       if (!check || check.status !== "running") continue;
+      if (lease.signal.aborted) continue;
 
       // One org lookup per check — the billing service no longer makes it, so
       // the release, the stale-fail and the settle below all share this one.
@@ -1550,6 +1605,7 @@ export async function reconcileRunningMonitorChecks(
         check.monitor_id,
       );
       if (!monitor) {
+        if (lease.signal.aborted) continue;
         const failed = await updateMonitorCheckIfRunning(check.id, {
           status: "failed",
           finished_at: new Date().toISOString(),
@@ -1599,8 +1655,6 @@ export async function reconcileRunningMonitorChecks(
         continue;
       }
 
-      if (await failStaleMonitorCheck({ monitor, check, orgId })) continue;
-
       // The inline handler may still write target results after our primary read.
       let targetResults = Array.isArray(check.target_results)
         ? ([...check.target_results] as any[])
@@ -1620,17 +1674,29 @@ export async function reconcileRunningMonitorChecks(
         monitor,
         check,
         targetResults,
+        abortSignal: lease.signal,
       });
+      if (lease.signal.aborted) continue;
 
-      if (
-        !(await isMonitorCheckComplete(
-          {
-            ...check,
-            target_results: targetResults,
-          },
-          monitor,
-        ))
-      ) {
+      const complete = await isMonitorCheckComplete(
+        {
+          ...check,
+          target_results: targetResults,
+        },
+        monitor,
+      );
+      if (!complete) {
+        if (
+          await failStaleMonitorCheck({
+            monitor,
+            check,
+            targetResults,
+            leaseSignal: lease.signal,
+            orgId,
+          })
+        )
+          continue;
+
         // Only persist target_results we recovered from an empty snapshot. Writing
         // back a non-empty stale snapshot here can DOWNGRADE a searchCompleted=true
         // that the inline handler persisted after this reconciler loaded its
@@ -1659,6 +1725,7 @@ export async function reconcileRunningMonitorChecks(
         // Flat search credits come from target_results, not page metadata.
         targetResults,
       });
+      if (lease.signal.aborted) continue;
 
       // This conditional write is the durable claim. Even if the Redis lease
       // expires during preparation, only one worker may settle this check.
@@ -1806,16 +1873,7 @@ export async function reconcileRunningMonitorChecks(
         checkId: candidate.id,
       });
     } finally {
-      // An expired lease may already belong to another worker.
-      await redisEvictConnection.eval(
-        `if redis.call("get", KEYS[1]) == ARGV[1] then
-          return redis.call("del", KEYS[1])
-        end
-        return 0`,
-        1,
-        lockKey,
-        lockToken,
-      );
+      await lease.release();
     }
   }
 }
