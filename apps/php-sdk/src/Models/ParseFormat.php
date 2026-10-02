@@ -35,7 +35,7 @@ final class ParseFormat
             kind: (string) ($data['kind'] ?? ''),
             extensions: self::stringList($data['extensions'] ?? []),
             mimeTypes: self::stringList($data['mimeTypes'] ?? []),
-            available: (bool) ($data['available'] ?? false),
+            available: ($data['available'] ?? false) === true,
         );
     }
 
