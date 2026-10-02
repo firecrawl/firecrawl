@@ -129,6 +129,8 @@ export async function createBrowserSession(
     shouldBill?: boolean;
     requestId?: string;
     initialize?: (browserId: string) => Promise<void>;
+    location?: { country?: string; languages?: string[] };
+    proxy?: "basic" | "stealth" | "enhanced" | "auto";
   },
 ) {
   const zeroDataRetention =
@@ -211,6 +213,12 @@ async function createBrowserSessionInternal(
         estimatedCredits,
       ))
     )
+      throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
+    const browser = await createHangarBrowser(id, req.auth.team_id, {
+      ...options,
+      location: options.location,
+      proxy: options.proxy,
+    });
       throw new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
     const browser = await createHangarBrowser(id, req.auth.team_id, options);
     browserId = browser.id;

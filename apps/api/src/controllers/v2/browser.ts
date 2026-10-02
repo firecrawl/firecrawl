@@ -50,6 +50,13 @@ export const browserCreateRequestSchema = z.object({
       saveChanges: z.boolean().default(true),
     })
     .optional(),
+  location: z
+    .object({
+      country: z.string().optional(),
+      languages: z.array(z.string()).optional(),
+    })
+    .optional(),
+  proxy: z.enum(["basic", "stealth", "enhanced", "auto"]).optional(),
   __agentInterop: z
     .object({
       auth: z.string(),

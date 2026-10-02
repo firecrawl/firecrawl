@@ -70,6 +70,13 @@ const browserExecuteRequestSchema = z
     origin: z.string().optional(),
     integration: integrationSchema.optional().transform(val => val || null),
     existingSessionId: z.string().optional(),
+    location: z
+      .object({
+        country: z.string().optional(),
+        languages: z.array(z.string()).optional(),
+      })
+      .optional(),
+    proxy: z.enum(["basic", "stealth", "enhanced", "auto"]).optional(),
     zeroDataRetention: z.boolean().optional(),
     // ZDR scrapes do not retain the URL needed to initialize a new browser.
     url: z.url().optional(),
@@ -227,6 +234,31 @@ async function scrapeInteractInternal(
   if (!replayContext && req.body.url) {
     replayContext = { targetUrl: req.body.url, waitForMs: 0, actions: [] };
   }
+  if (!replayContext) {
+    return res.status(409).json({
+      success: false,
+      error:
+        replayError ??
+        "Replay context is unavailable for this scrape job. Please rerun the scrape.",
+    });
+  }
+
+  // Allow request body to override location/proxy from the original scrape
+  const { location: requestLocation, proxy: requestProxy } = req.body;
+  if (requestLocation) {
+    replayContext.location = requestLocation;
+  }
+  if (requestProxy) {
+    replayContext.proxy = requestProxy;
+  }
+
+  logger = logger.child({
+    replayTargetUrl: replayContext.targetUrl,
+    replayWaitForMs: replayContext.waitForMs,
+    replayActions: replayContext.actions.length,
+    replayLocation: replayContext.location,
+    replayProxy: replayContext.proxy,
+  });
 
   // --- Ensure a browser session exists (create + replay if needed) ---
 
@@ -478,6 +510,8 @@ async function createSessionForScrape(
       ...browserCreateRequestSchema.parse({}),
       scrapeId,
       profile,
+      location: replayContext.location,
+      proxy: replayContext.proxy,
       zeroDataRetention,
       initialize: async browserId => {
         const replay = await executeHangarBrowser(browserId, {

@@ -24,6 +24,8 @@ export interface ScrapeReplayContext {
   targetUrl: string;
   waitForMs: number;
   actions: ReplayAction[];
+  location?: { country?: string; languages?: string[] };
+  proxy?: "basic" | "stealth" | "enhanced" | "auto";
 }
 
 // ---------------------------------------------------------------------------
@@ -168,12 +170,20 @@ export function buildReplayContextFromScrape(scrape: ScrapeContextRow): {
 
   const waitForMs = clampPositiveInteger(scrape.options.waitFor, 60_000) ?? 0;
   const actions = sanitizeReplayActions(scrape.options.actions);
+  const location = scrape.options.location as
+    | { country?: string; languages?: string[] }
+    | undefined;
+  const proxy = scrape.options.proxy as
+    | "basic" | "stealth" | "enhanced" | "auto"
+    | undefined;
 
   return {
     context: {
       targetUrl,
       waitForMs,
       actions,
+      location,
+      proxy,
     },
   };
 }

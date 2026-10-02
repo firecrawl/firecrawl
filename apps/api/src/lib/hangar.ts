@@ -112,6 +112,8 @@ export async function createHangarBrowser(
     streamWebView: boolean;
     recordSession: boolean;
     profile?: { name: string; saveChanges: boolean };
+    location?: { country?: string; languages?: string[] };
+    proxy?: "basic" | "stealth" | "enhanced" | "auto";
   },
 ): Promise<HangarCreated> {
   const body = {
@@ -124,6 +126,15 @@ export async function createHangarBrowser(
     },
     recording: { enabled: options.recordSession },
     execution: { enabled: true },
+    ...(options.location
+      ? {
+          location: {
+            country: options.location.country,
+            languages: options.location.languages,
+          },
+        }
+      : {}),
+    ...(options.proxy ? { proxy: options.proxy } : {}),
     ...(options.profile
       ? {
           profile: {
