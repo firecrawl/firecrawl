@@ -955,6 +955,21 @@ class ScrapeOptions(BaseModel):
 ParseOptions = ScrapeOptions
 
 
+ParseFormatKind = Union[Literal["document", "image"], str]
+
+
+class ParseFormat(BaseModel):
+    """A file format accepted by the parse endpoint."""
+
+    model_config = {"populate_by_name": True}
+
+    format: str
+    kind: ParseFormatKind
+    extensions: List[str]
+    mime_types: List[str] = Field(alias="mimeTypes")
+    available: bool
+
+
 class ScrapeRequest(BaseModel):
     """Request for scraping a single URL."""
 
