@@ -4,6 +4,8 @@ name: Canary API image
 # `canary-<sha>` tag. It never touches the semver, `-production`, `-staging`
 # or `latest` tags that Keel and the staging chart follow, so a canary build
 # can only reach the cluster through an explicit `app.canary.tag` in infra.
+# Retention: the newest 5 `canary-*` tags are kept; older ones are deleted at
+# the end of each run (ghcr-clean.yml only removes untagged images).
 
 on:
   workflow_dispatch:
@@ -12,8 +14,9 @@ permissions:
   contents: read
   packages: write
 
+# One writer at a time: every run exports to the same mutable build-cache tag.
 concurrency:
-  group: api-image-canary-${{ github.ref }}
+  group: api-image-canary
   cancel-in-progress: false
 
 jobs:
@@ -70,3 +73,23 @@ jobs:
             exit 1
           fi
           echo "Published ${IMAGE_TAG}"
+
+      - name: Prune old canary tags (keep newest 5)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          KEEP: '5'
+        run: |
+          set -euo pipefail
+          # Only versions whose tags are all canary-* are candidates, newest first.
+          gh api --paginate "/orgs/${OWNER}/packages/container/firecrawl/versions?per_page=100" \
+            --jq '.[] | select((.metadata.container.tags | length) > 0)
+                       | select(all(.metadata.container.tags[]; startswith("canary-")))
+                       | "\(.created_at) \(.id) \(.metadata.container.tags | join(","))"' \
+            | sort -r > canary-versions.txt
+          echo "canary versions: $(wc -l < canary-versions.txt)"
+          tail -n "+$((KEEP + 1))" canary-versions.txt | while read -r created id tags; do
+            echo "Deleting ${tags} (${created})"
+            gh api -X DELETE "/orgs/${OWNER}/packages/container/firecrawl/versions/${id}"
+          done
