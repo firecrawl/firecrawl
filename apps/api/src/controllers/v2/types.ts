@@ -974,21 +974,8 @@ export type UploadedParseFile = {
 };
 
 const ajv = new Ajv();
-
-function agentSchemaExtensionKeywords(schema: unknown): Set<string> {
-  const keywords = new Set<string>();
-  const seen = new WeakSet<object>();
-  const visit = (value: unknown) => {
-    if (value === null || typeof value !== "object" || seen.has(value)) return;
-    seen.add(value);
-    for (const [key, child] of Object.entries(value)) {
-      if (key.startsWith("x-")) keywords.add(key);
-      visit(child);
-    }
-  };
-  visit(schema);
-  return keywords;
-}
+const agentAjv = new Ajv();
+addFormats(agentAjv);
 
 const extractOptions = z
   .strictObject({
@@ -1113,21 +1100,9 @@ export const agentRequestSchema = z
       .any()
       .optional()
       .superRefine((val, ctx) => {
-        // Match internal intake's nullish check. Falsy non-schemas such as 0
-        // and "" must fail here, before free-request consumption.
-        if (val === undefined || val === null) return;
+        if (!val) return; // Allow undefined schema
         try {
-          // Match extract-v3's schema policy: x-* keys are annotations, while
-          // other unknown keywords and formats remain invalid.
-          const agentAjv = new Ajv({ allErrors: true });
-          addFormats(agentAjv);
-          for (const keyword of agentSchemaExtensionKeywords(val)) {
-            agentAjv.addKeyword({ keyword, valid: true });
-          }
-          const validate = agentAjv.compile(val);
-          if ("$async" in validate && validate.$async) {
-            throw new Error("Async schemas ($async: true) are not supported");
-          }
+          agentAjv.compile(val);
         } catch (e) {
           const message =
             e instanceof Error

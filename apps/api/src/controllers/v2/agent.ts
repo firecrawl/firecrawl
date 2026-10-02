@@ -177,30 +177,6 @@ export async function agentController(
         ...(typeof body?.runId === "string" ? { runId: body.runId } : {}),
       });
     }
-
-    // An omitted schema inherits the previous turn's value. Validate that
-    // effective schema before quota consumption, including schemas saved by
-    // older workers whose compilation policy was less strict.
-    if (req.body.schema === undefined) {
-      const body = (await thread.json().catch(() => null)) as {
-        thread?: { runs?: { schema?: unknown }[] };
-        runs?: { schema?: unknown }[];
-      } | null;
-      // Match agentThreadController: the service may return a bare thread or
-      // wrap it in { thread }. Both carry the same inherited schema.
-      const runs = (body?.thread ?? body)?.runs;
-      if (!Array.isArray(runs) || runs.length === 0) {
-        logger.error("Invalid agent thread response.");
-        return res.status(500).json({
-          success: false,
-          error: "Failed to check agent thread.",
-        });
-      }
-      agentRequestSchema.parse({
-        ...originalRequest,
-        schema: runs.at(-1)?.schema,
-      });
-    }
   }
 
   // If maxCredits > 2500, skip free request consumption — this is always a paid request
@@ -265,40 +241,6 @@ export async function agentController(
 
   if (passthrough.status !== 200) {
     const text = await passthrough.text();
-
-    // Intake rejects un-compilable schemas before creating an Agent run. Keep
-    // that client error actionable even if the public and internal validators
-    // differ, without exposing arbitrary upstream response bodies.
-    if (passthrough.status === 400) {
-      let body: unknown;
-      try {
-        body = JSON.parse(text);
-      } catch {
-        // An unexpected upstream response remains a passthrough failure.
-      }
-      const error =
-        body && typeof body === "object" && "error" in body
-          ? body.error
-          : undefined;
-      if (
-        body &&
-        typeof body === "object" &&
-        "success" in body &&
-        body.success === false &&
-        typeof error === "string" &&
-        error.startsWith("Invalid schema: ")
-      ) {
-        const publicError = error.slice(0, 2048);
-        logger.info("Agent schema rejected by extract-v3.", {
-          error: publicError,
-        });
-        return res.status(400).json({
-          success: false,
-          code: "BAD_REQUEST",
-          error: publicError,
-        });
-      }
-    }
 
     logger.error("Failed to passthrough agent request.", {
       status: passthrough.status,
