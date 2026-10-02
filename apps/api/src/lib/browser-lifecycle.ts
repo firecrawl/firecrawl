@@ -62,7 +62,7 @@ export class BrowserSessionError extends Error {
   }
 }
 
-/** Returns the effective session policy; rejects disallowed ZDR requests. */
+/** Returns the effective session policy and rejects disallowed ZDR requests. */
 export function getBrowserZDR(
   req: RequestWithAuth<any, any, any>,
   session?: BrowserSessionRow,
@@ -252,7 +252,7 @@ async function createBrowserSessionInternal(
     });
     return {
       // Return access URLs on creation without persisting them for ZDR sessions.
-      // Later execution uses browser_id; callers can keep these original links.
+      // Later execution uses browser_id. Callers can keep these original links.
       session: {
         ...session,
         cdp_url: browser.cdp_url,

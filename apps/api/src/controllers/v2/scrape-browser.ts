@@ -305,7 +305,7 @@ async function scrapeInteractInternal(
     // The persisted session policy applies to every execution, including calls
     // that omit the original request's ZDR option.
 
-    // Upstream context from the scrape job — interact extends scrape, so
+    // Upstream context from the scrape job. Interact extends scrape, so
     // every run carries the URL / wait / actions / origin that set the stage
     // for what the agent does on top of it. URLs are stripped of query
     // strings to avoid leaking PII into LangSmith.
@@ -319,7 +319,7 @@ async function scrapeInteractInternal(
         (nuqJob?.data.mode === "single_urls" ? nuqJob.data.origin : undefined),
     };
 
-    // Identity fields below team_id — optional, normalized from null → undefined
+    // Identity fields below team_id are optional, normalized from null to undefined.
     // so LangSmith metadata filters don't match empty strings.
     const traceIdentity = {
       orgId: req.auth.org_id ?? undefined,

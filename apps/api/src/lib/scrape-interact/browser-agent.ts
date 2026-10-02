@@ -381,7 +381,7 @@ export async function executePromptViaBrowserAgent(
       temperature: zeroDataRetention ? undefined : 0,
       // LangSmith's provider-options object is recognized by wrapAISDK but
       // does not satisfy AI SDK's SharedV3ProviderOptions shape, hence the
-      // local cast — keeps the rest of the type surface strict.
+      // local cast keeps the rest of the type surface strict.
       ...(zeroDataRetention
         ? {
             providerOptions: {
