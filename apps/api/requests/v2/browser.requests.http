@@ -9,32 +9,6 @@ content-type: application/json
 
 {}
 
-### Create a ZDR Interact session (requires scrapeZDR allowed or forced)
-# Forced teams need no request flag. The policy persists for the session.
-# Recording and saved profiles are rejected. Billing/activity metadata remains;
-# browser access links are cleared when the stopped session is settled.
-POST {{baseUrl}}/v2/interact HTTP/1.1
-Authorization: Bearer {{$dotenv TEST_API_KEY}}
-content-type: application/json
-
-{
-  "zeroDataRetention": true
-}
-
-### Continue a ZDR scrape (supply the URL because replay context is not retained)
-# Alternatively, pass existingSessionId for a live ZDR browser already on the page.
-# ZDR prompts use the OpenAI configuration used by ZDR JSON extraction, with store:false.
-@scrapeId = {{}}
-POST {{baseUrl}}/v2/scrape/{{scrapeId}}/interact HTTP/1.1
-Authorization: Bearer {{$dotenv TEST_API_KEY}}
-content-type: application/json
-
-{
-  "url": "https://example.com",
-  "code": "console.log(await page.title())",
-  "zeroDataRetention": true
-}
-
 ### Create Browser Session (with options)
 POST {{baseUrl}}/v2/browser HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
