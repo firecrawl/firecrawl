@@ -241,6 +241,9 @@ describe("scrapeInteractController", () => {
         const req = buildRequest();
         req.acuc.flags.scrapeZDR = mode;
         if (mode === "forced") req.body = {};
+        const privateContent = "private-claim-sentinel";
+        req.body.url = `https://claims.example/${privateContent}`;
+        req.body.prompt = privateContent;
         const res = buildRes();
         await browserCreateController(req, res);
         expect(res.json).toHaveBeenCalledWith(
@@ -250,7 +253,13 @@ describe("scrapeInteractController", () => {
           expect.objectContaining({ zero_data_retention: true }),
         );
         expect(logRequest).toHaveBeenCalledWith(
-          expect.objectContaining({ zeroDataRetention: true }),
+          expect.objectContaining({
+            zeroDataRetention: true,
+            target_hint: "Browser session",
+          }),
+        );
+        expect(JSON.stringify(vi.mocked(logRequest).mock.calls)).not.toContain(
+          privateContent,
         );
         expect(createHangarBrowser).toHaveBeenCalledWith(
           expect.any(String),
