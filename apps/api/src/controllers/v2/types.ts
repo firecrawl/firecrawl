@@ -2790,6 +2790,7 @@ export const searchFeedbackSchema = z
       .optional(),
     missingContent: z.array(missingContentEntrySchema).max(20).optional(),
     querySuggestions: z.string().trim().max(2000).optional(),
+    objective: z.string().trim().min(1).max(2000).optional().catch(undefined),
     origin: z.string().optional().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
   })

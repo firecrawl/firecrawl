@@ -164,6 +164,28 @@ describe.each(routes)("%s job feedback keeps its submission window", route => {
   });
 });
 
+it("stores the objective sent with search feedback", async () => {
+  job("legacy-search", "postgres", 30);
+  const response = await request(app)
+    .post(`/v2/search/${jobId}/feedback`)
+    .send({
+      rating: "bad",
+      missingContent: [{ topic: "Contract attachments" }],
+      objective: "Shortlist federal IT contracts to bid on this quarter",
+    });
+
+  expect(response.status).toBe(200);
+  expect(fixture.insert).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      options: expect.objectContaining({
+        feedback: expect.objectContaining({
+          objective: "Shortlist federal IT contracts to bid on this quarter",
+        }),
+      }),
+    }),
+  );
+});
+
 it.each(stores)(
   "accepts Alexandria feedback when the session's original %s search has expired",
   async store => {

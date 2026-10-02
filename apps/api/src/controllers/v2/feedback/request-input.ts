@@ -23,5 +23,5 @@ export function toFeedbackInput(
 export function toSearchFeedbackInput(
   body: SearchFeedbackRequest,
 ): FeedbackInput {
-  return toFeedbackInput(body);
+  return { ...toFeedbackInput(body), objective: body.objective };
 }

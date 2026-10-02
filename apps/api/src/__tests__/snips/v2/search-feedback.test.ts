@@ -89,6 +89,7 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
           ],
           querySuggestions:
             "Include site:firecrawl.dev when the user mentions firecrawl by name.",
+          objective: "Compare Firecrawl plans before buying a team license",
         },
         identity,
       );
@@ -98,11 +99,17 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
       expect(result.alreadySubmitted).toBeFalsy();
       expect(typeof result.feedbackId).toBe("string");
       const [feedbackRow] = await db
-        .select({ searchId: schema.search_feedback.search_id })
+        .select({
+          searchId: schema.search_feedback.search_id,
+          objective: schema.search_feedback.objective,
+        })
         .from(schema.search_feedback)
         .where(eq(schema.search_feedback.id, result.feedbackId!))
         .limit(1);
       expect(feedbackRow?.searchId).toBe(raw.body.id);
+      expect(feedbackRow?.objective).toBe(
+        "Compare Firecrawl plans before buying a team license",
+      );
     },
     90000,
   );

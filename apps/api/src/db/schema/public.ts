@@ -647,6 +647,7 @@ export const search_feedback = pgTable("search_feedback", {
   valuable_sources: jsonb("valuable_sources").notNull().default([]),
   missing_content: jsonb("missing_content").notNull().default([]),
   query_suggestions: text("query_suggestions"),
+  objective: text("objective"),
   metadata: jsonb("metadata").notNull().default({}),
   job_status: text("job_status"),
   credits_billed: integer("credits_billed").notNull().default(0),
