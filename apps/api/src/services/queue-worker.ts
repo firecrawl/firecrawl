@@ -16,7 +16,6 @@ import { performDeepResearch } from "../lib/deep-research/deep-research-service"
 import { performGenerateLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-service";
 import { updateGeneratedLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-redis";
 import Express from "express";
-import { startNodeRuntimeMetrics } from "../lib/node-runtime-metrics";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
@@ -389,7 +388,6 @@ const crawlFinishWorker = async () => {
 };
 
 const app = Express();
-startNodeRuntimeMetrics();
 
 let currentLiveness: boolean = true;
 

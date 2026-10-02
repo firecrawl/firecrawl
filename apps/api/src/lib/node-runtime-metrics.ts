@@ -4,7 +4,7 @@ let started = false;
 
 /**
  * Export the Node runtime's own health through the default registry, next to
- * the request histograms the app, scrape-worker and nuq-worker already serve.
+ * the request histograms the app and the workers already serve.
  *
  * The interesting series are `nodejs_eventloop_lag_*_seconds` (sampled via
  * `perf_hooks.monitorEventLoopDelay`), the heap and GC series and the active
@@ -12,14 +12,11 @@ let started = false;
  * its CPU, memory and descriptor counts look normal is otherwise invisible.
  *
  * Idempotent: `collectDefaultMetrics` throws when a metric name is registered
- * twice, and several entry points share this module.
+ * twice, and several entry points share this module. The flag is set only
+ * after a successful registration so a failed attempt can be retried.
  */
 export function startNodeRuntimeMetrics(): void {
   if (started) return;
+  collectDefaultMetrics({ register });
   started = true;
-  collectDefaultMetrics({
-    register,
-    // Default sampling window for the event-loop delay histogram.
-    eventLoopMonitoringPrecision: 10,
-  });
 }
