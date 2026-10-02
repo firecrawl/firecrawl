@@ -56,19 +56,18 @@ async fn test_parse() {
 
 #[tokio::test]
 #[ignore = "Requires API access"]
-async fn test_get_parse_formats() {
+async fn test_get_parse_formats() -> Result<(), FirecrawlError> {
     let client = get_client();
     let formats = match client.get_parse_formats().await {
-        Ok(formats) => formats,
         Err(FirecrawlError::APIError(_, e)) if e.code.as_deref() == Some("NOT_FOUND") => {
             eprintln!("Skipping: /v2/parse/formats is not deployed on this API");
-            return;
+            return Ok(());
         }
         Err(FirecrawlError::HttpRequestFailed(_, 404, _)) => {
             eprintln!("Skipping: /v2/parse/formats is not deployed on this API");
-            return;
+            return Ok(());
         }
-        Err(e) => panic!("Get parse formats should succeed: {}", e),
+        result => result?,
     };
 
     assert!(!formats.is_empty(), "Formats list should not be empty");
@@ -78,6 +77,7 @@ async fn test_get_parse_formats() {
             .any(|f| f.format == "pdf" && f.kind == ParseFormatKind::Document),
         "Formats should include a pdf document entry"
     );
+    Ok(())
 }
 
 #[tokio::test]

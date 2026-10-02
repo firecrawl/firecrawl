@@ -331,7 +331,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_parse_formats() {
+    async fn test_get_parse_formats() -> Result<(), FirecrawlError> {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/v2/parse/formats")
@@ -364,8 +364,8 @@ mod tests {
             )
             .create();
 
-        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
-        let formats = client.get_parse_formats().await.unwrap();
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let formats = client.get_parse_formats().await?;
 
         assert_eq!(
             formats,
@@ -387,10 +387,12 @@ mod tests {
             ]
         );
         mock.assert();
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_get_parse_formats_tolerates_unknown_kind_and_fields() {
+    async fn test_get_parse_formats_tolerates_unknown_kind_and_fields() -> Result<(), FirecrawlError>
+    {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/v2/parse/formats")
@@ -417,8 +419,8 @@ mod tests {
             )
             .create();
 
-        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
-        let formats = client.get_parse_formats().await.unwrap();
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let formats = client.get_parse_formats().await?;
 
         assert_eq!(formats.len(), 1);
         assert_eq!(formats[0].format, "glb");
@@ -426,10 +428,11 @@ mod tests {
         assert_eq!(formats[0].mime_types, vec!["model/gltf-binary"]);
         assert!(formats[0].available);
         mock.assert();
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_get_parse_formats_unauthorized() {
+    async fn test_get_parse_formats_unauthorized() -> Result<(), FirecrawlError> {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/v2/parse/formats")
@@ -444,20 +447,24 @@ mod tests {
             )
             .create();
 
-        let client = Client::new_selfhosted(server.url(), Some("bad_key")).unwrap();
-        let err = client.get_parse_formats().await.unwrap_err();
+        let client = Client::new_selfhosted(server.url(), Some("bad_key"))?;
+        let result = client.get_parse_formats().await;
 
-        match err {
-            FirecrawlError::APIError(_, api_error) => {
-                assert_eq!(api_error.error, "Unauthorized: Invalid token");
-            }
-            other => panic!("Expected APIError, got: {:?}", other),
-        }
+        assert!(
+            matches!(
+                &result,
+                Err(FirecrawlError::APIError(_, api_error))
+                    if api_error.error == "Unauthorized: Invalid token"
+            ),
+            "Expected APIError, got: {:?}",
+            result
+        );
         mock.assert();
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_get_parse_formats_server_error() {
+    async fn test_get_parse_formats_server_error() -> Result<(), FirecrawlError> {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/v2/parse/formats")
@@ -465,15 +472,16 @@ mod tests {
             .with_body("Internal Server Error")
             .create();
 
-        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
-        let err = client.get_parse_formats().await.unwrap_err();
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let result = client.get_parse_formats().await;
 
         assert!(
-            matches!(err, FirecrawlError::HttpRequestFailed(_, 500, _)),
+            matches!(&result, Err(FirecrawlError::HttpRequestFailed(_, 500, _))),
             "Expected HttpRequestFailed with 500, got: {:?}",
-            err
+            result
         );
         mock.assert();
+        Ok(())
     }
 
     #[test]
