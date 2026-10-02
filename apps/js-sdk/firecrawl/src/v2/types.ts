@@ -366,6 +366,18 @@ export type ParseOptions = Omit<
   proxy?: "basic" | "auto";
 };
 
+/** A file format accepted by the parse endpoint. */
+export interface ParseFormatInfo {
+  /** Format identifier, e.g. "pdf". */
+  format: string;
+  kind: "document" | "image" | (string & {});
+  /** File extensions including the leading dot, e.g. ".pdf". */
+  extensions: string[];
+  mimeTypes: string[];
+  /** False when the format is recognized but not enabled on this deployment. */
+  available: boolean;
+}
+
 export interface WebhookConfig {
   url: string;
   headers?: Record<string, string>;
