@@ -11,6 +11,7 @@ type BrowserSessionStatus = "active" | "destroyed" | "error";
 
 export interface BrowserSessionRow {
   id: string;
+  zero_data_retention?: boolean;
   team_id: string;
   request_id: string | null;
   should_bill: boolean;
@@ -112,6 +113,9 @@ export async function completeBrowserSessionSettlement(id: string) {
     .set({
       status: "destroyed",
       deleted_at: new Date().toISOString(),
+      cdp_url: sql`CASE WHEN ${schema.browser_sessions.zero_data_retention} THEN '' ELSE ${schema.browser_sessions.cdp_url} END`,
+      cdp_path: sql`CASE WHEN ${schema.browser_sessions.zero_data_retention} THEN '' ELSE ${schema.browser_sessions.cdp_path} END`,
+      cdp_interactive_path: sql`CASE WHEN ${schema.browser_sessions.zero_data_retention} THEN '' ELSE ${schema.browser_sessions.cdp_interactive_path} END`,
     })
     .where(
       and(

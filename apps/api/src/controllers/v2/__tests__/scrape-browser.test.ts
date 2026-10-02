@@ -21,6 +21,21 @@ import {
 import { executeCodeViaBrowserSession } from "../../../lib/scrape-interact/browser-agent";
 import { scrapeInteractController } from "../scrape-browser";
 import type { RequestWithAuth } from "../types";
+import { browserCreateController } from "../browser";
+import { browserZeroDataRetention } from "../../../lib/browser-zdr";
+import { logRequest } from "../../../services/logging/log_job";
+import { getModel } from "../../../lib/generic-ai";
+import { generateText } from "ai";
+import * as langsmith from "../../../lib/scrape-interact/langsmith";
+import { promises as fs } from "fs";
+import { logger } from "../../../lib/logger";
+
+vi.mock("../../../lib/generic-ai", () => ({ getModel: vi.fn(() => ({})) }));
+vi.mock("../../../services/rate-limiter", () => ({ redisRateLimitClient: {} }));
+vi.mock("ai", async importOriginal => ({
+  ...(await importOriginal<typeof import("ai")>()),
+  generateText: vi.fn(async () => ({ text: "done" })),
+}));
 
 vi.mock("uuid", () => ({
   v7: vi.fn(() => "session-123"),
@@ -69,6 +84,8 @@ vi.mock("../../../lib/keyless", () => ({
 }));
 vi.mock("../../../lib/scrape-interact/langsmith", () => ({
   sanitizeUrlForTrace: (url: string) => url,
+  buildLangSmithProviderOptions: vi.fn(),
+  generateText: vi.fn(),
 }));
 
 vi.mock("../../../lib/browser-sessions", () => ({
@@ -96,6 +113,7 @@ vi.mock("../../../lib/hangar", () => ({
   executeHangarBrowser: vi.fn(),
   stopHangarBrowser: vi.fn(),
   getHangarRecording: vi.fn(),
+  getHangarBrowser: vi.fn(async () => ({ status: "running" })),
   HangarError: class HangarError extends Error {
     constructor(
       public status: number,
@@ -148,6 +166,152 @@ describe("scrapeInteractController", () => {
 
   afterEach(() => {
     config.USE_DB_AUTHENTICATION = previousUseDbAuthentication;
+  });
+
+  it("keeps ZDR across browser creation, execution and prompt tracing without retaining content", async () => {
+    const req = {
+      body: { zeroDataRetention: true },
+      headers: {},
+      auth: { team_id: "team-123" },
+      acuc: { flags: { scrapeZDR: "allowed" } },
+    } as any;
+    const created = {
+      id: "br_zdr",
+      max_expires_at: 700,
+      cdp_url: "wss://hangar.example/cdp?token=secret",
+    };
+    vi.mocked(createHangarBrowser).mockResolvedValue(created as any);
+    vi.mocked(insertBrowserSession).mockImplementation(async row => row as any);
+    const res = buildRes();
+    await browserCreateController(req, res);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true }),
+    );
+    const session = vi
+      .mocked(insertBrowserSession)
+      .mock.calls.at(-1)![0] as any;
+    expect(session.zero_data_retention).toBe(true);
+    expect(logRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ zeroDataRetention: true }),
+    );
+    expect(createHangarBrowser).toHaveBeenCalledWith(
+      expect.any(String),
+      "team-123",
+      expect.objectContaining({ recordSession: false }),
+    );
+
+    // Later calls need neither the opt-in nor the original account flag.
+    vi.mocked(getBrowserSession).mockResolvedValue(session);
+    const output = {
+      stdout: "claim-private",
+      result: "",
+      stderr: "",
+      exitCode: 0,
+      killed: false,
+    };
+    vi.mocked(executeHangarBrowser).mockResolvedValue(output);
+    const followup = {
+      ...req,
+      acuc: {},
+      params: { sessionId: session.id },
+      body: { code: "console.log('claim-private')" },
+    };
+    expect(browserZeroDataRetention(followup, session)).toBe(true);
+    const executed = buildRes();
+    await browserExecuteController(followup, executed);
+    expect(executed.json).toHaveBeenCalledWith(
+      expect.objectContaining({ stdout: "claim-private" }),
+    );
+
+    // A ZDR scrape has no saved URL/actions; adopt its live ZDR session.
+    vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+      status: "completed",
+      requestId: "scrape-123",
+      completedAtMs: Date.now(),
+      creditsBilled: 1,
+      zeroDataRetention: true,
+    });
+    vi.mocked(executeCodeViaBrowserSession).mockResolvedValue(output);
+    const continued = buildRes();
+    await scrapeInteractController(
+      {
+        ...followup,
+        params: { jobId: "scrape-123" },
+        body: {
+          code: "console.log('claim-private')",
+          existingSessionId: session.id,
+        },
+      },
+      continued,
+    );
+    expect(continued.status).toHaveBeenCalledWith(200);
+    expect(executeCodeViaBrowserSession).toHaveBeenCalledWith(
+      session.browser_id,
+      expect.anything(),
+      expect.objectContaining({ zeroDataRetention: true }),
+    );
+
+    // Exercise the real agent with both the traced SDK and local debug logs available.
+    const agent = await vi.importActual<
+      typeof import("../../../lib/scrape-interact/browser-agent")
+    >("../../../lib/scrape-interact/browser-agent");
+    const append = vi.spyOn(fs, "appendFile");
+    vi.mocked(executeHangarBrowser).mockResolvedValue({
+      ...output,
+      stdout: "a".repeat(32),
+    });
+    try {
+      const result = await agent.executePromptViaBrowserAgent(
+        "claim-private",
+        session.browser_id,
+        30,
+        logger,
+        {
+          sessionId: session.id,
+          scrapeId: "scrape-123",
+          teamId: "team-123",
+          zeroDataRetention: true,
+        },
+      );
+      expect(result.output).toBe("done");
+      expect(getModel).toHaveBeenCalledWith("gpt-4.1", "openai");
+      expect(generateText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerOptions: { openai: { store: false } },
+          experimental_telemetry: { isEnabled: false },
+        }),
+      );
+      expect(langsmith.generateText).not.toHaveBeenCalled();
+      expect(append).not.toHaveBeenCalled();
+    } finally {
+      append.mockRestore();
+    }
+
+    for (const forbidden of [
+      { recordSession: true },
+      { profile: { name: "claims" } },
+    ]) {
+      const rejected = buildRes();
+      await browserCreateController(
+        { ...req, body: { zeroDataRetention: true, ...forbidden } },
+        rejected,
+      );
+      expect(rejected.status).toHaveBeenCalledWith(400);
+    }
+    expect(createHangarBrowser).toHaveBeenCalledTimes(1);
+    expect(
+      browserZeroDataRetention({
+        ...req,
+        body: {},
+        acuc: { flags: { scrapeZDR: "forced" } },
+      }),
+    ).toBe(true);
+    expect(() => browserZeroDataRetention({ ...req, acuc: {} })).toThrow(
+      "not enabled",
+    );
+    expect(() =>
+      browserZeroDataRetention(req, { ...session, zero_data_retention: false }),
+    ).toThrow("new ZDR");
   });
 
   it("rejects scrape interact when database authentication is disabled", async () => {

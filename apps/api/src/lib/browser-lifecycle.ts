@@ -44,9 +44,16 @@ import {
   logKeylessCreditUsage,
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
 } from "./keyless";
-import { logger } from "./logger";
+import { logger as rootLogger } from "./logger";
+import {
+  browserZeroDataRetention,
+  checkBrowserZdrOptions,
+} from "./browser-zdr";
+import { withZeroDataRetention } from "./otel-tracer";
 import { redlock } from "../services/redlock";
 import { redisRateLimitClient } from "../services/rate-limiter";
+
+const logger = rootLogger;
 
 export function browserSessionLinks(session: BrowserSessionRow) {
   return {
@@ -76,6 +83,7 @@ export async function createBrowserSession(
     activityTtl: number;
     streamWebView: boolean;
     recordSession: boolean;
+    zeroDataRetention?: boolean;
     profile?: { name: string; saveChanges: boolean };
     scrapeId?: string;
     shouldBill?: boolean;
@@ -83,6 +91,20 @@ export async function createBrowserSession(
     initialize?: (browserId: string) => Promise<void>;
   },
 ) {
+  const zeroDataRetention =
+    browserZeroDataRetention(req) || options.zeroDataRetention === true;
+  checkBrowserZdrOptions({ ...options, zeroDataRetention });
+  return withZeroDataRetention(zeroDataRetention, () =>
+    createBrowserSessionInternal(req, options, zeroDataRetention),
+  );
+}
+
+async function createBrowserSessionInternal(
+  req: RequestWithAuth<any, any, any>,
+  options: Parameters<typeof createBrowserSession>[1],
+  zeroDataRetention: boolean,
+) {
+  const logger = rootLogger.child({ zeroDataRetention });
   if (!config.HANGAR_URL)
     throw new HangarError(
       503,
@@ -158,13 +180,14 @@ export async function createBrowserSession(
         target_hint: "Browser session",
         origin: req.body?.origin ?? "api",
         integration: req.body?.integration ?? null,
-        zeroDataRetention: false,
+        zeroDataRetention,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
     const session = await insertBrowserSession({
       id,
       team_id: req.auth.team_id,
       request_id: options.requestId ?? id,
+      zero_data_retention: zeroDataRetention,
       should_bill: shouldBill,
       scrape_id: options.scrapeId,
       browser_id: browser.id,
@@ -210,6 +233,18 @@ export async function settleBrowserSession(
   session: BrowserSessionRow,
   browser: HangarBrowser,
 ) {
+  return withZeroDataRetention(session.zero_data_retention, () =>
+    settleBrowserSessionInternal(session, browser),
+  );
+}
+
+async function settleBrowserSessionInternal(
+  session: BrowserSessionRow,
+  browser: HangarBrowser,
+) {
+  const logger = rootLogger.child({
+    zeroDataRetention: session.zero_data_retention,
+  });
   if (browser.status !== "stopped" && browser.status !== "failed") return;
   if (
     !Number.isFinite(browser.ended_at) ||
@@ -361,6 +396,12 @@ export async function reserveBrowserPromptCredits(
 }
 
 export async function stopBrowserSession(session: BrowserSessionRow) {
+  return withZeroDataRetention(session.zero_data_retention, () =>
+    stopBrowserSessionInternal(session),
+  );
+}
+
+async function stopBrowserSessionInternal(session: BrowserSessionRow) {
   if (session.status === "destroyed") {
     return {
       success: true,

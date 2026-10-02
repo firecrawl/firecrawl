@@ -235,7 +235,11 @@ export function checkCreditsMiddleware(
               teamId: req.auth.team_id,
               remainingCredits,
               clampedLimit,
-              request: req.body,
+              request:
+                getScrapeZDR(req.acuc?.flags) === "forced" ||
+                (req.body as any)?.zeroDataRetention === true
+                  ? undefined
+                  : req.body,
             });
             (req.body as any).limit = clampedLimit;
             return next();
@@ -249,7 +253,11 @@ export function checkCreditsMiddleware(
             teamId: req.auth.team_id,
             minimum,
             remainingCredits,
-            request: req.body,
+            request:
+              getScrapeZDR(req.acuc?.flags) === "forced" ||
+              (req.body as any)?.zeroDataRetention === true
+                ? undefined
+                : req.body,
             path: req.path,
           },
         );

@@ -33,12 +33,15 @@ import {
 } from "../../lib/hangar";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
+import { browserZeroDataRetention } from "../../lib/browser-zdr";
+import { withZeroDataRetention } from "../../lib/otel-tracer";
 
 export const browserCreateRequestSchema = z.object({
   ttl: z.number().int().min(30).max(3600).default(600),
   activityTtl: z.number().int().min(10).max(3600).default(300),
   streamWebView: z.boolean().default(true),
   recordSession: z.boolean().default(false),
+  zeroDataRetention: z.boolean().optional(),
   integration: integrationSchema.optional().transform(value => value || null),
   profile: z
     .object({
@@ -168,23 +171,26 @@ export async function browserExecuteController(
       .status(410)
       .json({ success: false, error: "Browser session has been destroyed." });
   try {
-    updateBrowserSessionActivity(session.id).catch(() => {});
-    const result = await executeHangarBrowser(session.browser_id, body);
-    enqueueBrowserSessionActivity({
-      team_id: req.auth.team_id,
-      session_id: session.id,
-      source: "browser",
-      language: body.language,
-      timeout: body.timeout,
-      exit_code: result.exitCode,
-      killed: result.killed,
-    });
-    return res.json({
-      success: true,
-      ...result,
-      ...(result.exitCode !== 0 || result.killed
-        ? { error: result.stderr || "Execution failed" }
-        : {}),
+    const zeroDataRetention = browserZeroDataRetention(req, session);
+    return await withZeroDataRetention(zeroDataRetention, async () => {
+      updateBrowserSessionActivity(session.id).catch(() => {});
+      const result = await executeHangarBrowser(session.browser_id, body);
+      enqueueBrowserSessionActivity({
+        team_id: req.auth.team_id,
+        session_id: session.id,
+        source: "browser",
+        language: body.language,
+        timeout: body.timeout,
+        exit_code: result.exitCode,
+        killed: result.killed,
+      });
+      return res.json({
+        success: true,
+        ...result,
+        ...(result.exitCode !== 0 || result.killed
+          ? { error: result.stderr || "Execution failed" }
+          : {}),
+      });
     });
   } catch (error) {
     return browserError(res, error, req);
