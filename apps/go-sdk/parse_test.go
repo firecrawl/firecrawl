@@ -196,12 +196,12 @@ func TestDocumentUnmarshalsMenu(t *testing.T) {
 }
 
 func TestGetParseFormats(t *testing.T) {
-	var gotAuth string
+	authCh := make(chan string, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/v2/parse/formats" {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
-		gotAuth = r.Header.Get("Authorization")
+		authCh <- r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"formats":[
 			{"format":"pdf","kind":"document","extensions":[".pdf"],"mimeTypes":["application/pdf"],"available":true},
@@ -220,7 +220,7 @@ func TestGetParseFormats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetParseFormats: %v", err)
 	}
-	if gotAuth != "Bearer fc-test" {
+	if gotAuth := <-authCh; gotAuth != "Bearer fc-test" {
 		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer fc-test")
 	}
 	if len(formats) != 3 {
@@ -292,5 +292,24 @@ func TestGetParseFormatsReturnsServerError(t *testing.T) {
 	var fcErr *FirecrawlError
 	if !errors.As(err, &fcErr) || fcErr.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("err = %T %v, want *FirecrawlError with status 500", err, err)
+	}
+}
+
+func TestGetParseFormatsRejectsMissingFormats(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":null}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(option.WithAPIKey("fc-test"), option.WithAPIURL(server.URL))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	_, err = client.GetParseFormats(context.Background())
+	var fcErr *FirecrawlError
+	if !errors.As(err, &fcErr) {
+		t.Fatalf("err = %T %v, want *FirecrawlError", err, err)
 	}
 }

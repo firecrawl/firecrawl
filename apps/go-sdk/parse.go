@@ -160,5 +160,8 @@ func (c *Client) GetParseFormats(ctx context.Context) ([]ParseFormat, error) {
 	if err != nil {
 		return nil, err
 	}
+	if data.Formats == nil {
+		return nil, &FirecrawlError{Message: "parse formats response missing formats list"}
+	}
 	return data.Formats, nil
 }
