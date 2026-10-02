@@ -88,6 +88,13 @@ All params are passed as keyword lists with snake_case keys. Invalid keys, missi
   formats: ["markdown"]
 )
 
+# List the file formats parse_file accepts on this deployment
+{:ok, formats} = Firecrawl.get_parse_formats()
+
+for %Firecrawl.ParseFormat{format: format, kind: kind, mime_types: mime_types, available: true} <- formats do
+  IO.puts("#{format} (#{kind}): #{Enum.join(mime_types, ", ")}")
+end
+
 # Self-hosted instance
 {:ok, response} = Firecrawl.scrape_and_extract_from_url(
   [url: "https://example.com"],
