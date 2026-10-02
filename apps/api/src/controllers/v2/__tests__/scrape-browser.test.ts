@@ -4,7 +4,6 @@ import { vi } from "vitest";
 import { config } from "../../../config";
 import {
   insertBrowserSession,
-  clearBrowserSessionLinks,
   getBrowserSession,
 } from "../../../lib/browser-sessions";
 import {
@@ -26,7 +25,6 @@ import { browserCreateController } from "../browser";
 import {
   getBrowserZDR,
   BrowserSessionError,
-  settleBrowserSession,
 } from "../../../lib/browser-lifecycle";
 import { logRequest } from "../../../services/logging/log_job";
 import { getModel } from "../../../lib/generic-ai";
@@ -35,23 +33,8 @@ import * as langsmith from "../../../lib/scrape-interact/langsmith";
 import { promises as fs } from "fs";
 import { logger } from "../../../lib/logger";
 
-const databaseUpdate = vi.hoisted(() => vi.fn());
-vi.mock("../../../db/connection", () => ({
-  db: {
-    update: () => ({
-      set: (values: unknown) => ({
-        where: async (condition: unknown) => databaseUpdate(values, condition),
-      }),
-    }),
-  },
-}));
-
 vi.mock("../../../lib/generic-ai", () => ({ getModel: vi.fn(() => ({})) }));
 vi.mock("../../../services/rate-limiter", () => ({ redisRateLimitClient: {} }));
-vi.mock("../../../services/redis", () => ({
-  getValue: vi.fn(),
-  setValue: vi.fn(),
-}));
 vi.mock("ai", async importOriginal => ({
   ...(await importOriginal<typeof import("ai")>()),
   generateText: vi.fn(async () => ({ text: "done" })),
@@ -110,7 +93,6 @@ vi.mock("../../../lib/scrape-interact/langsmith", () => ({
 
 vi.mock("../../../lib/browser-sessions", () => ({
   insertBrowserSession: vi.fn(),
-  clearBrowserSessionLinks: vi.fn(),
   completeBrowserSessionSettlement: vi.fn(async () => {}),
   getBrowserSession: vi.fn(),
   listUnsettledHangarSessions: vi.fn(async () => []),
@@ -272,39 +254,6 @@ describe("scrapeInteractController", () => {
           cdp_interactive_path: "https://hangar.example/control?token=secret",
         }),
       );
-    });
-
-    it("clears ZDR access URLs when the browser ends even if settlement fails", async () => {
-      const actual = await vi.importActual<
-        typeof import("../../../lib/browser-sessions")
-      >("../../../lib/browser-sessions");
-      vi.mocked(clearBrowserSessionLinks).mockImplementation(
-        actual.clearBrowserSessionLinks,
-      );
-      const activeSession = {
-        ...session,
-        cdp_url: "wss://hangar.example/cdp?token=secret",
-        cdp_path: "https://hangar.example/view?token=secret",
-        cdp_interactive_path: "https://hangar.example/control?token=secret",
-      };
-      await settleBrowserSession(activeSession, { status: "running" } as any);
-      expect(databaseUpdate).not.toHaveBeenCalled();
-      expect(activeSession.cdp_url).toContain("token=secret");
-
-      // Invalid billing timestamps must not prevent credential cleanup.
-      await expect(
-        settleBrowserSession(activeSession, { status: "stopped" } as any),
-      ).rejects.toThrow("Hangar did not return a valid session duration.");
-      const emptyLinks = {
-        cdp_url: "",
-        cdp_path: "",
-        cdp_interactive_path: "",
-      };
-      expect(databaseUpdate).toHaveBeenCalledWith(
-        emptyLinks,
-        expect.anything(),
-      );
-      expect(activeSession).toMatchObject(emptyLinks);
     });
 
     it("keeps the session's ZDR policy when later execution omits the option and team flag", async () => {

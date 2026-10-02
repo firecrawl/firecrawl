@@ -13,7 +13,6 @@ import {
 } from "./hangar";
 import {
   insertBrowserSession,
-  clearBrowserSessionLinks,
   completeBrowserSessionSettlement,
   markBrowserSessionUsedPrompt,
   settleBrowserSessionOnce,
@@ -292,13 +291,6 @@ async function settleBrowserSessionInternal(
     zeroDataRetention: session.zero_data_retention,
   });
   if (browser.status !== "stopped" && browser.status !== "failed") return;
-  if (session.zero_data_retention) {
-    // Clear access links before billing so failed settlement cannot retain them.
-    await clearBrowserSessionLinks(session.id);
-    session.cdp_url = "";
-    session.cdp_path = "";
-    session.cdp_interactive_path = "";
-  }
   if (
     !Number.isFinite(browser.ended_at) ||
     !Number.isFinite(browser.created_at) ||

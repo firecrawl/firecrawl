@@ -125,18 +125,6 @@ export async function completeBrowserSessionSettlement(id: string) {
   return completed.length > 0;
 }
 
-export async function clearBrowserSessionLinks(id: string): Promise<void> {
-  await db
-    .update(schema.browser_sessions)
-    .set({ cdp_url: "", cdp_path: "", cdp_interactive_path: "" })
-    .where(
-      and(
-        eq(schema.browser_sessions.id, id),
-        eq(schema.browser_sessions.zero_data_retention, true),
-      ),
-    );
-}
-
 export async function insertBrowserSession(
   row: Omit<BrowserSessionRow, "created_at" | "updated_at">,
 ): Promise<BrowserSessionRow> {
