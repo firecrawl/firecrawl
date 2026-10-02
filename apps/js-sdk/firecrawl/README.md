@@ -102,7 +102,7 @@ const parsed = await app.parse(
 console.log(parsed.markdown);
 ```
 
-To see which file formats `parse` accepts, call `getParseFormats`. Each entry has `format`, `kind` (`document` or `image`), `extensions`, `mimeTypes`, and `available` (false when the format is not enabled on this deployment).
+To see which file formats `parse` accepts, call `getParseFormats`. Each entry has `format`, `kind` (for example, `document` or `image`), `extensions`, `mimeTypes`, and `available` (false when the format is not enabled on this deployment).
 
 ```js
 const formats = await app.getParseFormats();

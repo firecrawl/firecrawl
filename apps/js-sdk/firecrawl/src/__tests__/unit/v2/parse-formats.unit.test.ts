@@ -60,6 +60,12 @@ describe("v2.getParseFormats unit", () => {
     expect(format!.mimeTypes).toEqual(["audio/mpeg"]);
   });
 
+  test("returns an empty list when formats is missing", async () => {
+    const { client } = makeClient(200, { success: true, data: {} });
+
+    await expect(client.getParseFormats()).resolves.toEqual([]);
+  });
+
   test.each([401, 500])("throws SdkError on %i", async status => {
     const { client } = makeClient(status, { success: false, error: "Unauthorized" });
 
