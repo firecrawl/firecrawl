@@ -13,6 +13,7 @@ import {
 } from "./hangar";
 import {
   insertBrowserSession,
+  clearBrowserSessionLinks,
   completeBrowserSessionSettlement,
   markBrowserSessionUsedPrompt,
   settleBrowserSessionOnce,
@@ -238,11 +239,9 @@ async function createBrowserSessionInternal(
       browser_id: browser.id,
       workspace_id: "",
       context_id: zeroDataRetention ? "" : (browser.playlist_url ?? ""),
-      cdp_url: zeroDataRetention ? "" : browser.cdp_url,
-      cdp_path: zeroDataRetention ? "" : (browser.view_url ?? ""),
-      cdp_interactive_path: zeroDataRetention
-        ? ""
-        : (browser.control_url ?? ""),
+      cdp_url: browser.cdp_url,
+      cdp_path: browser.view_url ?? "",
+      cdp_interactive_path: browser.control_url ?? "",
       stream_web_view: options.streamWebView,
       status: "active",
       ttl_total: options.ttl,
@@ -251,14 +250,7 @@ async function createBrowserSessionInternal(
       profile_name: options.profile?.name ?? null,
     });
     return {
-      // Return access URLs on creation without persisting them for ZDR sessions.
-      // Later execution uses browser_id. Callers can keep these original links.
-      session: {
-        ...session,
-        cdp_url: browser.cdp_url,
-        cdp_path: browser.view_url ?? "",
-        cdp_interactive_path: browser.control_url ?? "",
-      },
+      session,
       expiresAt:
         browser.max_expires_at === null
           ? undefined
@@ -300,6 +292,13 @@ async function settleBrowserSessionInternal(
     zeroDataRetention: session.zero_data_retention,
   });
   if (browser.status !== "stopped" && browser.status !== "failed") return;
+  if (session.zero_data_retention) {
+    // Clear access links before billing so failed settlement cannot retain them.
+    await clearBrowserSessionLinks(session.id);
+    session.cdp_url = "";
+    session.cdp_path = "";
+    session.cdp_interactive_path = "";
+  }
   if (
     !Number.isFinite(browser.ended_at) ||
     !Number.isFinite(browser.created_at) ||
