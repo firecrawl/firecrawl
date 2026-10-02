@@ -2,7 +2,8 @@
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
     "low": true,
     "allowlist": [
-        // GHSA-v2v4-37r5-5v8g / GHSA-mwp4-54f8-5fhr / GHSA-rpw4-54j3-4h4q (ip-address):
+        // GHSA-v2v4-37r5-5v8g / GHSA-mwp4-54f8-5fhr / GHSA-rpw4-54j3-4h4q /
+        // GHSA-j6r3-76f7-8jcv / GHSA-h3mg-xc3c-68pw (ip-address):
         // geoip-country@5.x requires ip-address@^6.4.0; ip-address 6.4.0 is the
         // latest 6.x release (no patch exists in the 6.x line). A cross-major
         // override to 10.x would break geoip-country's API surface. Our SSRF
@@ -13,6 +14,8 @@
         // Expires: 2026-12-29.
         "GHSA-v2v4-37r5-5v8g",
         "GHSA-mwp4-54f8-5fhr",
-        "GHSA-rpw4-54j3-4h4q"
+        "GHSA-rpw4-54j3-4h4q",
+        "GHSA-j6r3-76f7-8jcv",
+        "GHSA-h3mg-xc3c-68pw"
     ]
 }

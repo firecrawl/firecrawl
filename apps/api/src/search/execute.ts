@@ -15,6 +15,7 @@ import {
   calculateScrapeCredits,
 } from "./scrape";
 import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
+import { removeExplicitResults } from "./safe-search";
 import {
   highlightsEnvReady,
   runIndexedSearchHighlights,
@@ -201,6 +202,16 @@ export async function executeSearch(
       }
       developerResults = developerResults.filter(x => isAllowed(x.url));
     }
+  }
+
+  // The filter shares results with TypeSafe, so zero data retention and
+  // anonymous requests skip it.
+  if (
+    options.safe &&
+    !zeroDataRetention &&
+    !options.enterprise?.some(mode => mode === "zdr" || mode === "anon")
+  ) {
+    await removeExplicitResults(searchResponse, limit, logger);
   }
 
   if (searchResponse.web && searchResponse.web.length > 0) {

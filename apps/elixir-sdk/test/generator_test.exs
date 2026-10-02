@@ -159,4 +159,85 @@ defmodule Firecrawl.GeneratorTest do
       assert function_exported?(mod, :f, 0)
     end
   end
+
+  describe "regeneration" do
+    @lib_path Path.expand("../lib/firecrawl.ex", __DIR__)
+    @spec_path Path.expand("../openapi.json", __DIR__)
+
+    defp hand_written, do: @lib_path |> File.read!() |> Firecrawl.Generator.hand_written_region()
+
+    test "lib/firecrawl.ex is exactly what generate.exs produces from openapi.json" do
+      spec = @spec_path |> File.read!() |> Jason.decode!()
+      lib = File.read!(@lib_path)
+
+      assert Firecrawl.Generator.generate_module(spec, hand_written()) == lib,
+             "lib/firecrawl.ex drifted from the generator. Edit generate.exs or the " <>
+               "HAND-WRITTEN region, then run: FIRECRAWL_OPENAPI_SPEC=openapi.json mix run generate.exs"
+    end
+
+    test "get_parse_formats is emitted once even when the spec declares GET /parse/formats" do
+      spec = %{
+        "paths" => %{
+          "/parse/formats" => %{
+            "get" => %{"operationId" => "getParseFormats", "summary" => "List formats"}
+          }
+        }
+      }
+
+      code = Firecrawl.Generator.generate_module(spec, hand_written())
+
+      assert length(Regex.scan(~r/^  def get_parse_formats\(/m, code)) == 1
+      assert length(Regex.scan(~r/^  def get_parse_formats!\(/m, code)) == 1
+    end
+
+    test "a spec operation that clashes with the HAND-WRITTEN region stops generation" do
+      spec = %{
+        "paths" => %{
+          "/agent/{jobId}/trace-v2" => %{
+            "get" => %{
+              "operationId" => "getAgentTrace",
+              "parameters" => [%{"name" => "jobId", "in" => "path"}]
+            }
+          }
+        }
+      }
+
+      assert_raise RuntimeError, ~r/clash with the HAND-WRITTEN region: get_agent_trace/, fn ->
+        Firecrawl.Generator.generate_module(spec, hand_written())
+      end
+    end
+
+    test "$ref path parameters become interpolations, never literal holes" do
+      spec = %{
+        "components" => %{"parameters" => %{"ThingId" => %{"name" => "thingId", "in" => "path"}}},
+        "paths" => %{
+          "/things/{thingId}" => %{
+            "get" => %{
+              "operationId" => "getThing",
+              "parameters" => [%{"$ref" => "#/components/parameters/ThingId"}]
+            }
+          }
+        }
+      }
+
+      code = Firecrawl.Generator.generate_module(spec, hand_written())
+
+      assert code =~ ~S|def get_thing(thing_id, opts \\ []) do|
+      assert code =~ ~S|url: "/things/#{thing_id}"|
+    end
+
+    test "a path parameter the spec never declares stops generation" do
+      spec = %{"paths" => %{"/things/{thingId}" => %{"get" => %{"operationId" => "getThing"}}}}
+
+      assert_raise ArgumentError, ~r/unresolved path parameter/, fn ->
+        Firecrawl.Generator.generate_module(spec, hand_written())
+      end
+    end
+
+    test "a lib without a HAND-WRITTEN region is refused" do
+      assert_raise RuntimeError, ~r/exactly one HAND-WRITTEN region/, fn ->
+        Firecrawl.Generator.hand_written_region("defmodule Firecrawl do\nend\n")
+      end
+    end
+  end
 end

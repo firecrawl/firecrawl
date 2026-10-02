@@ -1,3 +1,4 @@
+import { createXai } from "@ai-sdk/xai";
 import { context, propagation, trace } from "@opentelemetry/api";
 import {
   InMemorySpanExporter,
@@ -75,6 +76,60 @@ const openAIResponsesBody = {
   },
 };
 
+// Responses API body as returned by xAI for a request that ran X Search.
+// Trimmed to the fields `@ai-sdk/xai` validates plus the usage block.
+function xaiResponsesBody(usage: Record<string, unknown>) {
+  return {
+    id: "resp_xai_test",
+    object: "response",
+    created_at: 1_700_000_000,
+    model: "grok-4-1-fast-non-reasoning",
+    status: "completed",
+    output: [
+      {
+        type: "x_search_call",
+        id: "xs_test",
+        name: "x_user_search",
+        arguments: '{"query":"firecrawl"}',
+        status: "completed",
+      },
+      {
+        type: "message",
+        id: "msg_xai_test",
+        role: "assistant",
+        status: "completed",
+        content: [{ type: "output_text", text: "ok", annotations: [] }],
+      },
+    ],
+    usage: {
+      input_tokens: 3000,
+      input_tokens_details: { cached_tokens: 2000 },
+      output_tokens: 400,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 3400,
+      num_server_side_tools_used: 2,
+      ...usage,
+    },
+  };
+}
+
+async function generateWithXaiResponses(body: unknown) {
+  const xai = createXai({
+    apiKey: "test-key",
+    fetch: async () =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+  });
+  await generateText({
+    model: withUsageTelemetry(xai.responses("grok-4-1-fast-non-reasoning")),
+    tools: { x_search: xai.tools.xSearch() } as any,
+    prompt: "hello",
+    experimental_telemetry: telemetry,
+  });
+}
+
 describe("usage telemetry middleware", () => {
   const exporter = new InMemorySpanExporter();
   let provider: NodeTracerProvider;
@@ -112,7 +167,7 @@ describe("usage telemetry middleware", () => {
       MODEL_NAME: process.env.MODEL_NAME,
     };
     process.env.OPENAI_API_KEY = "test-key";
-    process.env.MODEL_NAME = "";
+    process.env.MODEL_NAME = "global-model-override";
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
         new Response(JSON.stringify(openAIResponsesBody), {
@@ -125,9 +180,12 @@ describe("usage telemetry middleware", () => {
     try {
       vi.resetModules();
       const { getModel } = await import("./generic-ai.js");
+      expect(getModel("gpt-4o-mini", "openai").modelId).toBe(
+        "global-model-override",
+      );
 
       await generateObject({
-        model: getModel("gpt-4o-mini", "openai"),
+        model: getModel("gpt-4o-mini", "openai", { ignoreModelOverride: true }),
         schema: z.object({ answer: z.string() }),
         prompt: "hello",
         experimental_telemetry: telemetry,
@@ -157,6 +215,48 @@ describe("usage telemetry middleware", () => {
       "ai.usage.outputTokenDetails.textTokens": 30,
       "ai.usage.outputTokenDetails.reasoningTokens": 20,
     });
+  });
+
+  it("records X Search items fetched on the xAI Responses generateText span", async () => {
+    await generateWithXaiResponses(
+      xaiResponsesBody({
+        server_side_tool_usage_details: {
+          web_search_calls: 0,
+          x_search_calls: 2,
+          x_posts_fetched: 44,
+          x_users_fetched: 3,
+          code_interpreter_calls: 0,
+          file_search_calls: 0,
+          mcp_calls: 0,
+          document_search_calls: 0,
+          image_generation_calls: 0,
+        },
+      }),
+    );
+
+    const span = await spanNamed("ai.generateText.doGenerate");
+    expect(span.attributes).toMatchObject({
+      "ai.usage.promptTokens": 3000,
+      "ai.usage.cachedInputTokens": 2000,
+      "firecrawl.llm.tool.x_search_posts": 44,
+      "firecrawl.llm.tool.x_search_profiles": 3,
+    });
+  });
+
+  it("omits X Search attributes when xAI reports no item counts", async () => {
+    await generateWithXaiResponses(
+      xaiResponsesBody({
+        server_side_tool_usage_details: { x_search_calls: 1 },
+      }),
+    );
+
+    const span = await spanNamed("ai.generateText.doGenerate");
+    expect(span.attributes["ai.usage.promptTokens"]).toBe(3000);
+    expect(
+      Object.keys(span.attributes).filter(key =>
+        key.startsWith("firecrawl.llm.tool."),
+      ),
+    ).toEqual([]);
   });
 
   it("records cache writes on the generateText span", async () => {

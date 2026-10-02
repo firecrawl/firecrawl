@@ -4,6 +4,7 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import { getVersion } from "./getVersion";
+import { pinToApiOrigin } from "../../utils/apiOrigin";
 
 export interface HttpClientOptions {
   apiKey: string;
@@ -64,6 +65,7 @@ export class HttpClient {
     config.headers = {
       ...(config.headers || {}),
     };
+    if (config.url) config.url = pinToApiOrigin(this.apiUrl, config.url);
 
     let lastError: any;
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {

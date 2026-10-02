@@ -51,6 +51,25 @@ func NewParseFileFromBytes(filename string, content []byte) *ParseFile {
 	}
 }
 
+// ParseFormatKind classifies a parse input format. Unknown kinds returned by the
+// API are preserved as-is.
+type ParseFormatKind string
+
+const (
+	ParseFormatKindDocument ParseFormatKind = "document"
+	ParseFormatKindImage    ParseFormatKind = "image"
+)
+
+// ParseFormat describes one input file format accepted by the `/v2/parse` endpoint.
+type ParseFormat struct {
+	Format     string          `json:"format"`
+	Kind       ParseFormatKind `json:"kind"`
+	Extensions []string        `json:"extensions"`
+	MimeTypes  []string        `json:"mimeTypes"`
+	// Available is false when the format is supported but disabled on this deployment.
+	Available bool `json:"available"`
+}
+
 // ParseOptions configures a parse request.
 //
 // Parse does not support browser-rendering features (actions, waitFor, location,
@@ -126,4 +145,23 @@ func (c *Client) Parse(ctx context.Context, file *ParseFile, opts *ParseOptions)
 		return nil, err
 	}
 	return doc, nil
+}
+
+// GetParseFormats lists the input file formats accepted by the `/v2/parse` endpoint.
+func (c *Client) GetParseFormats(ctx context.Context) ([]ParseFormat, error) {
+	raw, err := c.http.get(ctx, "/v2/parse/formats")
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := extractDataAs[struct {
+		Formats []ParseFormat `json:"formats"`
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	if data.Formats == nil {
+		return nil, &FirecrawlError{Message: "parse formats response missing formats list"}
+	}
+	return data.Formats, nil
 }

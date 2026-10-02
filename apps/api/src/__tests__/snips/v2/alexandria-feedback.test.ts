@@ -72,6 +72,7 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
         requested_host: "sam.gov",
         requested_functionality: body.requestedWebsite.requestedFunctionality,
         rationale: body.rationale,
+        objective: null,
         origin: "api",
         integration: null,
         schema_version: 2,
@@ -112,8 +113,10 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
         why: "The second page request timed out.",
       },
     ];
+    const objective = "Build a list of open federal IT contracts to bid on.";
     const response = await submit({
       ...body,
+      objective,
       providerFeedback,
       capabilityFeedback,
       integration: "cli",
@@ -125,6 +128,7 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
         await feedbackRows(feedbackId);
       expect(parent).toMatchObject({
         rationale: body.rationale,
+        objective,
         integration: "cli",
       });
       expect(providers).toEqual(
@@ -168,6 +172,12 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
       ...body,
       requestedWebsite: { url: body.requestedWebsite.url },
     });
+    expect(response.statusCode).toBe(400);
+    expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
+  });
+
+  it("rejects a blank objective", async () => {
+    const response = await submit({ ...body, objective: " " });
     expect(response.statusCode).toBe(400);
     expect(response.body.feedbackErrorCode).toBe("INVALID_BODY");
   });

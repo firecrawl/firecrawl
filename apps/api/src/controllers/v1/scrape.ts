@@ -225,7 +225,7 @@ async function scrapeControllerInner(
       applyAgentAuthDiscoveryHeader(res);
       return res
         .status(429)
-        .json(await keylessLimitBody(req.auth.team_id, "v1_scrape"));
+        .json(await keylessLimitBody(req.auth.team_id, "v1_scrape", req));
     }
     reservedKeylessCredits = projectedKeylessCredits;
   }

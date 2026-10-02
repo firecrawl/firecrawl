@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { promises as fs } from "fs";
 import path from "path";
-import { tool, stepCountIs } from "ai";
+import { tool, stepCountIs, generateText as untracedGenerateText } from "ai";
 import { logger as _logger } from "../logger";
 import { getModel } from "../generic-ai";
 import { executeHangarBrowser, BrowserExecutionResult } from "../hangar";
@@ -44,8 +44,8 @@ class AgentDebugLog {
   private lines: string[] = [];
   private enabled: boolean;
 
-  constructor(browserId: string) {
-    this.enabled = !IS_PRODUCTION;
+  constructor(browserId: string, zeroDataRetention = false) {
+    this.enabled = !IS_PRODUCTION && !zeroDataRetention;
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     this.filePath = path.join(AGENT_LOG_DIR, `${ts}_${browserId}.log`);
   }
@@ -242,7 +242,8 @@ export async function executePromptViaBrowserAgent(
   logger: typeof _logger,
   trace?: BrowserAgentTraceContext,
 ): Promise<AgentResult> {
-  const debugLog = new AgentDebugLog(browserId);
+  const zeroDataRetention = trace?.zeroDataRetention === true;
+  const debugLog = new AgentDebugLog(browserId, zeroDataRetention);
   debugLog.add(`=== AGENT RUN ===`);
   debugLog.add(`Time:    ${new Date().toISOString()}`);
   debugLog.add(`Browser: ${browserId}`);
@@ -355,8 +356,14 @@ export async function executePromptViaBrowserAgent(
     : undefined;
 
   try {
-    const result = await generateText({
-      model: getModel("gemini-3.5-flash", hasVertex() ? "vertex" : "google"),
+    // Bypass the LangSmith-wrapped SDK entirely for ZDR, even when tracing
+    // is enabled globally. Use the same provider as ZDR JSON extraction.
+    const generate = zeroDataRetention ? untracedGenerateText : generateText;
+    const result = await generate({
+      model: zeroDataRetention
+        ? getModel("gpt-6-luna", "openai", { ignoreModelOverride: true })
+        : getModel("gemini-3.5-flash", hasVertex() ? "vertex" : "google"),
+      experimental_telemetry: { isEnabled: false },
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -371,13 +378,22 @@ export async function executePromptViaBrowserAgent(
       ],
       tools: { browser: browserTool },
       stopWhen: stepCountIs(MAX_STEPS),
-      temperature: 0,
+      temperature: zeroDataRetention ? undefined : 0,
       // LangSmith's provider-options object is recognized by wrapAISDK but
       // does not satisfy AI SDK's SharedV3ProviderOptions shape, hence the
-      // local cast — keeps the rest of the type surface strict.
-      ...(langsmith
-        ? { providerOptions: { langsmith } as Record<string, any> }
-        : {}),
+      // local cast keeps the rest of the type surface strict.
+      ...(zeroDataRetention
+        ? {
+            providerOptions: {
+              openai: {
+                store: false,
+                reasoningEffort: "medium",
+              },
+            },
+          }
+        : langsmith
+          ? { providerOptions: { langsmith } as Record<string, any> }
+          : {}),
       prepareStep: async ({ stepNumber, messages }) => {
         if (actionLog.length === 0) return {};
         return {

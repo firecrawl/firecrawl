@@ -288,6 +288,7 @@ const modelCosts: Record<string, { input_cost: number; output_cost: number }> =
     "google/gemini-2.0-flash-001": { input_cost: 0.15, output_cost: 0.6 },
     "gemini-2.0-flash": { input_cost: 0.15, output_cost: 0.6 },
     "gemini-2.5-flash-lite": { input_cost: 0.1, output_cost: 0.4 },
+    "grok-4-1-fast-non-reasoning": { input_cost: 0.2, output_cost: 0.5 },
     "deepseek/deepseek-r1": { input_cost: 0.55, output_cost: 2.19 },
     "google/gemini-2.0-flash-thinking-exp:free": {
       input_cost: 0.55,

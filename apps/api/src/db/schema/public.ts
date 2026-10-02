@@ -126,6 +126,7 @@ export const browser_session_activities = pgTable(
 
 export const browser_sessions = pgTable("browser_sessions", {
   id: uuid("id").notNull(),
+  zero_data_retention: boolean("zero_data_retention").notNull().default(false),
   team_id: text("team_id").notNull(),
   request_id: uuid("request_id"),
   should_bill: boolean("should_bill").notNull().default(true),
@@ -674,6 +675,7 @@ export const alexandria_feedback = pgTable(
     ),
     requested_functionality: text("requested_functionality").notNull(),
     rationale: text("rationale").notNull(),
+    objective: text("objective"),
     origin: text("origin"),
     integration: text("integration"),
     schema_version: integer("schema_version").notNull().default(2),

@@ -11,6 +11,14 @@ import {
   keylessCreditBlocksTotal,
   keylessCreditsTotal,
 } from "./keyless-metrics";
+import {
+  type KeylessPromptReason,
+  type KeylessSignupSurface,
+  keylessFallbackSignupUrl,
+  keylessSignupLink,
+  keylessSignupSurface,
+} from "./keyless-signup-link";
+import { trackKeylessPromptShown } from "./keyless-prompt-analytics";
 
 // Keyless free tier: scrape, search, and interact can be used without an API key
 // from the official MCP server, CLI, or SDKs. It's gated per-IP/day by TWO
@@ -23,17 +31,21 @@ import {
 const KEYLESS_REQUESTS_PER_DAY = config.KEYLESS_REQUESTS_PER_DAY;
 const KEYLESS_CREDITS_PER_DAY = config.KEYLESS_CREDITS_PER_DAY;
 
-// Signup link for every keyless prompt. The UTM tags attribute the new account
-// to the keyless free tier; the CLI swaps utm_medium to `cli` before printing.
-export const KEYLESS_SIGNUP_URL =
-  "https://www.firecrawl.dev/signin?utm_source=keyless&utm_medium=api";
-
-// Shared 429 copy for both keyless request-cap and credit-cap failures. The URL
-// ends the sentence without a period so a copied link keeps a clean utm_medium.
-export const KEYLESS_FREE_TIER_LIMIT_MESSAGE = `You've hit Firecrawl's keyless free tier rate limit. To continue now, create a free API key at ${KEYLESS_SIGNUP_URL}
+// Keyless prompts link to signup at firecrawl.dev/k/<token>, where <token>
+// is the encrypted prompt (see keyless-signup-link.ts). The constant uses the
+// regular signup link and stays the marker for internal equality checks;
+// responses swap in the caller's own link where they leave the API. The URL
+// ends its line, so a copied link never picks up punctuation.
+function keylessFreeTierLimitMessage(signupUrl: string): string {
+  return `You've hit Firecrawl's keyless free tier rate limit. To continue now, create a free API key at ${signupUrl}
 
 Then authenticate with:
 Authorization: Bearer YOUR_API_KEY`;
+}
+
+export const KEYLESS_FREE_TIER_LIMIT_MESSAGE = keylessFreeTierLimitMessage(
+  keylessFallbackSignupUrl("api"),
+);
 
 // The tier is "configured" when BOTH limits are set — even to 0. Unset means the
 // feature is off (callers get a plain Unauthorized); 0 means it's on but the
@@ -156,14 +168,91 @@ async function retryAfterSecondsFor(key: string): Promise<number | undefined> {
   }
 }
 
+/**
+ * Signup link for a keyless prompt: the caller's own /k/<token> link for a
+ * valid IPv4 identity, the regular signup link for anything else.
+ */
+export function keylessSignupUrlForIp(
+  ip: string | null | undefined,
+  surface: KeylessSignupSurface,
+  reason: KeylessPromptReason,
+): { url: string; signupRef?: string } {
+  return keylessSignupLink(
+    ip && isKeylessIpEligible(ip) ? normalizeKeylessIpv4(ip) : null,
+    surface,
+    reason,
+  );
+}
+
+/**
+ * Report a keyless prompt shown to the caller, for the prompt to signup
+ * funnel. Deduplicated per identity, surface and reason per UTC day; never
+ * blocks or throws. Only a keyless identity (IPv4) is reported: no other
+ * caller can hold a token link or a keyless ledger row to join on.
+ */
+export function reportKeylessPromptShown(
+  ip: string | null | undefined,
+  surface: KeylessSignupSurface,
+  reason: KeylessPromptReason,
+  httpStatus: number,
+  signupRef?: string,
+): void {
+  try {
+    const teamUuid =
+      ip && isKeylessIpEligible(ip)
+        ? keylessTeamUuid(keylessTeamId(normalizeKeylessIpv4(ip)))
+        : null;
+    if (!teamUuid) return;
+    trackKeylessPromptShown({
+      keylessTeamId: teamUuid,
+      surface,
+      reason,
+      httpStatus,
+      tokenLink: Boolean(signupRef),
+    });
+  } catch {
+    // Analytics only: the prompt itself must still go out.
+  }
+}
+
+/**
+ * The caller's own signup link and the limit message that carries it. Every
+ * caller answers 429 with it, so the prompt is reported here.
+ */
+export function keylessLimitPrompt(
+  ip: string | null | undefined,
+  surface: KeylessSignupSurface,
+): { error: string; signup_url: string; signupRef?: string } {
+  const { url, signupRef } = keylessSignupUrlForIp(ip, surface, "limit");
+  reportKeylessPromptShown(ip, surface, "limit", 429, signupRef);
+  return {
+    error: keylessFreeTierLimitMessage(url),
+    signup_url: url,
+    ...(signupRef ? { signupRef } : {}),
+  };
+}
+
+/** keylessLimitPrompt for a keyless team id; the regular signup link for other teams. */
+export function keylessLimitPromptForTeam(
+  teamId: string,
+  req: Parameters<typeof keylessSignupSurface>[0],
+): ReturnType<typeof keylessLimitPrompt> {
+  return keylessLimitPrompt(
+    keylessIpFromTeamId(teamId),
+    keylessSignupSurface(req),
+  );
+}
+
 /** Structured response for projected-credit reservation exhaustion. */
 export async function keylessLimitBody(
   teamId: string,
   mode: string,
+  req?: Parameters<typeof keylessSignupSurface>[0],
 ): Promise<{
   success: false;
   error: string;
   reason: "credits";
+  signup_url: string;
   retry_after_seconds?: number;
 }> {
   const ip = keylessIpFromTeamId(teamId);
@@ -176,6 +265,10 @@ export async function keylessLimitBody(
     // The reservation already proved the limit; missing TTL must not turn its
     // controlled 429 into a server error.
   }
+  const prompt = keylessLimitPrompt(
+    ip,
+    req ? keylessSignupSurface(req) : "api",
+  );
   logger.warn("Keyless request blocked", {
     canonicalLog: "keyless/consume",
     event: "keyless_exhausted",
@@ -183,12 +276,14 @@ export async function keylessLimitBody(
     reason: "credits",
     mode,
     retryAfterSeconds,
+    ...(prompt.signupRef ? { signupRef: prompt.signupRef } : {}),
     ...keylessExhaustionTelemetry(ip ?? ""),
   });
   return {
     success: false,
-    error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
+    error: prompt.error,
     reason: "credits",
+    signup_url: prompt.signup_url,
     ...(retryAfterSeconds ? { retry_after_seconds: retryAfterSeconds } : {}),
   };
 }

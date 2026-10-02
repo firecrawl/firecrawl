@@ -1,0 +1,34 @@
+name: CI Scripts Check
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/scripts/**
+      - .github/workflows/test-ci-scripts.yml
+  push:
+    branches:
+      - main
+    paths:
+      - .github/scripts/**
+      - .github/workflows/test-ci-scripts.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test CI scripts
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Run node:test suites
+        run: node --test ".github/scripts/**/*.test.mjs"

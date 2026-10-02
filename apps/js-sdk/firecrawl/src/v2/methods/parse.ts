@@ -1,4 +1,4 @@
-import { type Document, type ParseFile, type ParseOptions } from "../types";
+import { type Document, type ParseFile, type ParseFormatInfo, type ParseOptions } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { agentHintMetadata } from "../utils/agentHints";
 import { ensureValidParseOptions } from "../utils/validation";
@@ -92,6 +92,17 @@ export async function parse(
     return { ...res.data.data, ...agentHintMetadata(res.data) };
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "parse");
+    throw err;
+  }
+}
+
+export async function getParseFormats(http: HttpClient): Promise<ParseFormatInfo[]> {
+  try {
+    const res = await http.get<{ success: boolean; data?: { formats: ParseFormatInfo[] } }>("/v2/parse/formats");
+    if (res.status !== 200 || !res.data?.success) throwForBadResponse(res, "get parse formats");
+    return res.data.data?.formats ?? [];
+  } catch (err: any) {
+    if (err?.isAxiosError) return normalizeAxiosError(err, "get parse formats");
     throw err;
   }
 }

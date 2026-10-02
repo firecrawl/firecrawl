@@ -4,7 +4,7 @@ import { rewriteUrl } from "../../scraper/scrapeURL/lib/rewriteUrl";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface ScrapeContextRow {
+interface ScrapeContextRow {
   id: string;
   team_id: string;
   url: string | null;

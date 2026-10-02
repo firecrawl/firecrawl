@@ -5,6 +5,10 @@ import {
 import { deleteBrowserProfile } from "../../lib/browser-sessions";
 import { deleteHangarProfile } from "../../lib/hangar";
 import { Response } from "express";
+import {
+  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
+  keylessLimitPromptForTeam,
+} from "../../lib/keyless";
 import { z } from "zod";
 import { config } from "../../config";
 import { RequestWithAuth } from "./types";
@@ -17,6 +21,8 @@ import {
 } from "../../lib/browser-sessions";
 import {
   createBrowserSession,
+  getBrowserZDR,
+  BrowserSessionError,
   browserSessionLinks,
   stopBrowserSession,
   settleBrowserSession,
@@ -29,12 +35,14 @@ import {
 } from "../../lib/hangar";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
+import { withZeroDataRetention } from "../../lib/otel-tracer";
 
 export const browserCreateRequestSchema = z.object({
   ttl: z.number().int().min(30).max(3600).default(600),
   activityTtl: z.number().int().min(10).max(3600).default(300),
   streamWebView: z.boolean().default(true),
   recordSession: z.boolean().default(false),
+  zeroDataRetention: z.boolean().optional(),
   integration: integrationSchema.optional().transform(value => value || null),
   profile: z
     .object({
@@ -71,13 +79,30 @@ const browserExecuteRequestSchema = z.object({
   origin: z.string().optional(),
 });
 
-export function browserError(res: Response, error: unknown) {
-  return res.status(error instanceof HangarError ? error.status : 502).json({
+export function browserError(
+  res: Response,
+  error: unknown,
+  req?: RequestWithAuth<any, any, any>,
+) {
+  // Keyless browser budget exhaustion: give the caller its own signup link.
+  if (
+    req &&
+    error instanceof BrowserSessionError &&
+    error.status === 429 &&
+    error.message === KEYLESS_FREE_TIER_LIMIT_MESSAGE
+  ) {
+    const prompt = keylessLimitPromptForTeam(req.auth.team_id, req);
+    return res.status(429).json({
+      success: false,
+      error: prompt.error,
+      signup_url: prompt.signup_url,
+    });
+  }
+  const knownError =
+    error instanceof BrowserSessionError || error instanceof HangarError;
+  return res.status(knownError ? error.status : 502).json({
     success: false,
-    error:
-      error instanceof HangarError
-        ? error.message
-        : "Browser operation failed.",
+    error: knownError ? error.message : "Browser operation failed.",
   });
 }
 
@@ -114,7 +139,7 @@ export async function browserCreateController(
       expiresAt,
     });
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -153,26 +178,29 @@ export async function browserExecuteController(
       .status(410)
       .json({ success: false, error: "Browser session has been destroyed." });
   try {
-    updateBrowserSessionActivity(session.id).catch(() => {});
-    const result = await executeHangarBrowser(session.browser_id, body);
-    enqueueBrowserSessionActivity({
-      team_id: req.auth.team_id,
-      session_id: session.id,
-      source: "browser",
-      language: body.language,
-      timeout: body.timeout,
-      exit_code: result.exitCode,
-      killed: result.killed,
-    });
-    return res.json({
-      success: true,
-      ...result,
-      ...(result.exitCode !== 0 || result.killed
-        ? { error: result.stderr || "Execution failed" }
-        : {}),
+    const zeroDataRetention = getBrowserZDR(req, session);
+    return await withZeroDataRetention(zeroDataRetention, async () => {
+      updateBrowserSessionActivity(session.id).catch(() => {});
+      const result = await executeHangarBrowser(session.browser_id, body);
+      enqueueBrowserSessionActivity({
+        team_id: req.auth.team_id,
+        session_id: session.id,
+        source: "browser",
+        language: body.language,
+        timeout: body.timeout,
+        exit_code: result.exitCode,
+        killed: result.killed,
+      });
+      return res.json({
+        success: true,
+        ...result,
+        ...(result.exitCode !== 0 || result.killed
+          ? { error: result.stderr || "Execution failed" }
+          : {}),
+      });
     });
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -210,7 +238,7 @@ export async function browserProfileDeleteController(
           "A session is currently saving to this profile. Stop that session, then delete the profile.",
       });
     }
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -223,7 +251,7 @@ export async function browserDeleteController(
   try {
     return res.json(await stopBrowserSession(session));
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -245,7 +273,7 @@ export async function browserStatusController(
       error: browser.error ?? undefined,
     });
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -297,7 +325,7 @@ export async function browserReplayController(
       pageCount: 1,
     });
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }
 
@@ -317,6 +345,6 @@ export async function browserReplayPageController(
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).send(recording.playlist);
   } catch (error) {
-    return browserError(res, error);
+    return browserError(res, error, req);
   }
 }

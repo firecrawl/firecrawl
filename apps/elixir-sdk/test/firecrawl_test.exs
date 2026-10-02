@@ -1,14 +1,21 @@
 defmodule FirecrawlTest do
   use ExUnit.Case
 
-  test "raises when no API key is configured" do
+  test "sends no authorization header when no API key is configured" do
     old = Application.get_env(:firecrawl, :api_key)
     Application.delete_env(:firecrawl, :api_key)
     on_exit(fn -> if old, do: Application.put_env(:firecrawl, :api_key, old) end)
 
-    assert_raise RuntimeError, ~r/Firecrawl API key not found/, fn ->
-      Firecrawl.get_credit_usage()
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+      {request, Req.Response.new(status: 200, body: "")}
     end
+
+    assert {:ok, %Req.Response{status: 200}} = Firecrawl.get_credit_usage(adapter: adapter)
+    assert_receive {:request, request}
+    refute Map.has_key?(request.headers, "authorization")
   end
 
   test "does not raise when API key is in application config" do
@@ -315,8 +322,7 @@ defmodule FirecrawlTest do
     assert request.url.path == "/v2/agent"
     refute Map.has_key?(URI.decode_query(request.url.query || ""), "before")
 
-    body = Jason.decode!(response.body)
-    assert [%{"id" => "job-123", "status" => "completed"}] = body["agents"]
+    assert [%{"id" => "job-123", "status" => "completed"}] = response.body["agents"]
   end
 
   test "list_agents sends before query param" do
@@ -626,7 +632,7 @@ defmodule FirecrawlTest do
 
   test "audit_metadata rejects unsupported fields" do
     assert_raise NimbleOptions.ValidationError, fn ->
-      Firecrawl.scrape_and_extract_from_url(
+      Firecrawl.scrape_and_extract_from_url!(
         [
           url: "https://example.com",
           audit_metadata: [username: "alice@example.com", session: "session-123"]
@@ -670,6 +676,139 @@ defmodule FirecrawlTest do
     assert body["highlights"] == false
   end
 
+  defp parse_formats_adapter(parent, status, body) do
+    fn request ->
+      send(parent, {:request, request})
+
+      resp =
+        Req.Response.new(
+          status: status,
+          headers: %{"content-type" => ["application/json"]},
+          body: Jason.encode!(body)
+        )
+
+      {request, resp}
+    end
+  end
+
+  test "get_parse_formats sends GET /v2/parse/formats and returns typed formats" do
+    body = %{
+      "success" => true,
+      "data" => %{
+        "formats" => [
+          %{
+            "format" => "pdf",
+            "kind" => "document",
+            "extensions" => [".pdf"],
+            "mimeTypes" => ["application/pdf"],
+            "available" => true
+          },
+          %{
+            "format" => "png",
+            "kind" => "image",
+            "extensions" => [".png"],
+            "mimeTypes" => ["image/png"],
+            "available" => false
+          }
+        ]
+      }
+    }
+
+    assert {:ok, [pdf, png]} =
+             Firecrawl.get_parse_formats(
+               api_key: "test-key",
+               adapter: parse_formats_adapter(self(), 200, body)
+             )
+
+    assert_receive {:request, request}
+    assert request.method == :get
+    assert URI.to_string(request.url) == "https://api.firecrawl.dev/v2/parse/formats"
+    assert request.headers["authorization"] == ["Bearer test-key"]
+
+    assert pdf == %Firecrawl.ParseFormat{
+             format: "pdf",
+             kind: :document,
+             extensions: [".pdf"],
+             mime_types: ["application/pdf"],
+             available: true
+           }
+
+    assert png == %Firecrawl.ParseFormat{
+             format: "png",
+             kind: :image,
+             extensions: [".png"],
+             mime_types: ["image/png"],
+             available: false
+           }
+  end
+
+  test "get_parse_formats keeps unknown kinds as strings and ignores unknown fields" do
+    body = %{
+      "success" => true,
+      "data" => %{
+        "formats" => [
+          %{
+            "format" => "glb",
+            "kind" => "model",
+            "extensions" => [".glb"],
+            "mimeTypes" => ["model/gltf-binary"],
+            "available" => true,
+            "maxSizeBytes" => 1024
+          }
+        ]
+      }
+    }
+
+    formats =
+      Firecrawl.get_parse_formats!(
+        api_key: "test-key",
+        adapter: parse_formats_adapter(self(), 200, body)
+      )
+
+    assert [%Firecrawl.ParseFormat{format: "glb", kind: "model", mime_types: ["model/gltf-binary"]}] =
+             formats
+  end
+
+  test "get_parse_formats returns {:error, %Firecrawl.Error{}} on API errors" do
+    adapter =
+      parse_formats_adapter(self(), 401, %{"success" => false, "error" => "Unauthorized"})
+
+    assert {:error, %Firecrawl.Error{status: 401}} =
+             Firecrawl.get_parse_formats(api_key: "bad-key", adapter: adapter, retry: false)
+
+    assert_raise Firecrawl.Error, ~r/Unauthorized/, fn ->
+      Firecrawl.get_parse_formats!(api_key: "bad-key", adapter: adapter, retry: false)
+    end
+  end
+
+  test "get_parse_formats returns a non-API error for an unexpected success body" do
+    adapter = parse_formats_adapter(self(), 200, %{"success" => true, "data" => %{}})
+
+    assert {:error, %RuntimeError{message: msg}} =
+             Firecrawl.get_parse_formats(api_key: "test-key", adapter: adapter)
+
+    assert msg =~ "unexpected GET /parse/formats response (HTTP 200)"
+  end
+
+  test "get_parse_formats fills missing format and kind with empty strings" do
+    body = %{"success" => true, "data" => %{"formats" => [%{"extensions" => [".x"]}]}}
+
+    assert {:ok, [%Firecrawl.ParseFormat{format: "", kind: "", extensions: [".x"], available: false}]} =
+             Firecrawl.get_parse_formats(
+               api_key: "test-key",
+               adapter: parse_formats_adapter(self(), 200, body)
+             )
+  end
+
+  test "get_parse_formats! raises Firecrawl.Error on server errors" do
+    adapter =
+      parse_formats_adapter(self(), 500, %{"success" => false, "error" => "Internal error"})
+
+    assert_raise Firecrawl.Error, ~r/HTTP 500/, fn ->
+      Firecrawl.get_parse_formats!(api_key: "test-key", adapter: adapter, retry: false)
+    end
+  end
+
   test "all expected API functions are defined with bang variants" do
     functions = Firecrawl.__info__(:functions)
 
@@ -703,12 +842,129 @@ defmodule FirecrawlTest do
       {:list_agents, 2},
       {:list_agents!, 0},
       {:list_agents!, 1},
-      {:list_agents!, 2}
+      {:list_agents!, 2},
+      {:get_parse_formats, 0},
+      {:get_parse_formats, 1},
+      {:get_parse_formats!, 0},
+      {:get_parse_formats!, 1}
     ]
 
     for {name, arity} <- expected do
       assert {name, arity} in functions,
              "Expected #{name}/#{arity} to be defined in Firecrawl"
     end
+  end
+
+  defp monitor_check_adapter(parent, next) do
+    fn request ->
+      send(parent, {:request, request})
+
+      body =
+        case request.url.path do
+          "/v2/monitor/mon-1/checks/chk-1" ->
+            %{"success" => true, "data" => %{"id" => "chk-1", "pages" => [%{"url" => "https://a.example"}], "next" => next}}
+
+          "/v2/monitor/mon-1/checks/chk-1/pages" ->
+            %{
+              "success" => true,
+              "data" => %{
+                "pages" => [%{"url" => "https://b.example"}],
+                "next" => "https://evil2.example/v2/monitor/mon-1/checks/chk-1/last?skip=20"
+              }
+            }
+
+          _ ->
+            %{"success" => true, "data" => %{"pages" => [%{"url" => "https://c.example"}]}}
+        end
+
+      resp =
+        Req.Response.new(
+          status: 200,
+          headers: %{"content-type" => ["application/json"]},
+          body: Jason.encode!(body)
+        )
+
+      {request, resp}
+    end
+  end
+
+  defp assert_monitor_next_pinned(get_check, next, expected_url) do
+    adapter = monitor_check_adapter(self(), next)
+    response = get_check.(adapter)
+
+    assert response.body["data"]["pages"] == [
+             %{"url" => "https://a.example"},
+             %{"url" => "https://b.example"},
+             %{"url" => "https://c.example"}
+           ]
+
+    assert_receive {:request, first}
+    assert URI.to_string(first.url) == "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1"
+    assert_receive {:request, followed}
+    assert URI.to_string(followed.url) == expected_url
+    assert followed.headers["authorization"] == ["Bearer test-key"]
+    assert_receive {:request, last}
+    assert URI.to_string(last.url) == "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/last?skip=20"
+    assert last.headers["authorization"] == ["Bearer test-key"]
+    refute_receive {:request, _}
+  end
+
+  @monitor_next_cases [
+    {"same origin", "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=1",
+     "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=1"},
+    {"cross host", "https://evil.example/v2/monitor/mon-1/checks/chk-1/pages?skip=10",
+     "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10"},
+    {"protocol-relative", "//evil.example/v2/monitor/mon-1/checks/chk-1/pages?skip=10",
+     "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10"},
+    {"different port", "https://api.firecrawl.dev:8443/v2/monitor/mon-1/checks/chk-1/pages?skip=10",
+     "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10"},
+    {"relative", "/monitor/mon-1/checks/chk-1/pages?skip=10",
+     "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10"},
+    {"userinfo", "https://user:pass@evil.example/v2/monitor/mon-1/checks/chk-1/pages?skip=10",
+     "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10"},
+    {"different scheme", "http://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10#frag",
+     "https://api.firecrawl.dev/v2/monitor/mon-1/checks/chk-1/pages?skip=10"}
+  ]
+
+  for {name, next, expected} <- @monitor_next_cases do
+    test "get_monitor_check pins #{name} next URL to the api_url origin" do
+      assert_monitor_next_pinned(
+        fn adapter ->
+          assert {:ok, response} =
+                   Firecrawl.get_monitor_check("mon-1", "chk-1", [], api_key: "test-key", adapter: adapter)
+
+          response
+        end,
+        unquote(next),
+        unquote(expected)
+      )
+    end
+
+    test "get_monitor_check! pins #{name} next URL to the api_url origin" do
+      assert_monitor_next_pinned(
+        fn adapter ->
+          Firecrawl.get_monitor_check!("mon-1", "chk-1", [], api_key: "test-key", adapter: adapter)
+        end,
+        unquote(next),
+        unquote(expected)
+      )
+    end
+  end
+
+  test "get_monitor_check pins next URLs to a self-hosted base_url origin" do
+    adapter = monitor_check_adapter(self(), "https://evil.example/v2/monitor/mon-1/checks/chk-1/pages?skip=10")
+
+    assert {:ok, _} =
+             Firecrawl.get_monitor_check("mon-1", "chk-1", [],
+               api_key: "test-key",
+               base_url: "http://localhost:3002/v2",
+               adapter: adapter
+             )
+
+    assert_receive {:request, first}
+    assert URI.to_string(first.url) == "http://localhost:3002/v2/monitor/mon-1/checks/chk-1"
+    assert_receive {:request, followed}
+    assert URI.to_string(followed.url) == "http://localhost:3002/v2/monitor/mon-1/checks/chk-1/pages?skip=10"
+    assert followed.headers["authorization"] == ["Bearer test-key"]
   end
 end

@@ -4,8 +4,9 @@ HTTP client utilities for v2 API.
 
 import time
 from typing import Dict, Any, Optional
-from urllib.parse import urlparse, urlunparse, urljoin
+from urllib.parse import urlparse, urljoin
 import requests
+from .api_origin import pin_to_api_origin
 from .get_version import get_version
 
 version = get_version()
@@ -20,35 +21,22 @@ class HttpClient:
         timeout: Optional[float] = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
+        origin: Optional[str] = None,
     ):
         self.api_key = api_key
         self.api_url = api_url
         self.timeout = timeout
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
+        # Attribution string stamped into request payloads / research query params.
+        self.origin = origin or f"python-sdk@{version}"
 
     def _build_url(self, endpoint: str) -> str:
-        base = urlparse(self.api_url)
-        ep = urlparse(endpoint)
-
-        # Absolute or protocol-relative (has netloc)
-        if ep.netloc:
-            # Different host: keep path/query but force base host/scheme (no token leakage)
-            path = ep.path or "/"
-            if (ep.hostname or "") != (base.hostname or ""):
-                return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
-            # Same host: normalize scheme to base
-            return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
-
-        # Relative (including leading slash or not)
+        if urlparse(endpoint).netloc:
+            return pin_to_api_origin(self.api_url, endpoint)
         base_str = self.api_url if self.api_url.endswith("/") else f"{self.api_url}/"
-        # Guard protocol-relative like //host/path slipping through as “relative”
-        if endpoint.startswith("//"):
-            ep2 = urlparse(f"https:{endpoint}")
-            path = ep2.path or "/"
-            return urlunparse((base.scheme or "https", base.netloc, path, "", ep2.query, ""))
         return urljoin(base_str, endpoint)
-    
+
     def _prepare_headers(
         self,
         idempotency_key: Optional[str] = None,
@@ -88,7 +76,7 @@ class HttpClient:
             backoff_factor = self.backoff_factor
 
         payload = dict(data)
-        payload['origin'] = f'python-sdk@{version}'
+        payload['origin'] = payload.get('origin') or self.origin
 
         url = self._build_url(endpoint)
 
@@ -285,7 +273,7 @@ class HttpClient:
             backoff_factor = self.backoff_factor
 
         payload = dict(data)
-        payload['origin'] = f'python-sdk@{version}'
+        payload['origin'] = payload.get('origin') or self.origin
         url = self._build_url(endpoint)
 
         last_exception = None
