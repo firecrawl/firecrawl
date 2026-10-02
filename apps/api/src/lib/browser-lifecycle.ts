@@ -513,45 +513,51 @@ export async function reconcileBrowserSessions() {
         const cursor = await redisRateLimitClient.hgetall(scanKey);
         const { sessions, through } = await listUnsettledHangarSessions(cursor);
         const results = await Promise.allSettled(
-          sessions.map(async session => {
-            const key = `browser:reconcile:${session.id}`;
-            const state = await redisRateLimitClient.hgetall(key);
-            if (Number(state.next) > Date.now() || signal.aborted) return;
-            let failures = 0;
-            try {
-              // The persisted receipt lets quota reconciliation retry independently
-              // of Hangar availability and recording/session metadata retention.
-              if (session.credits_used !== null) {
-                await finalizeBrowserSession(session, session.credits_used);
-              } else {
-                await settleBrowserSession(
-                  session,
-                  await getHangarBrowser(session.browser_id, 0, 5000),
+          sessions.map(session =>
+            withZeroDataRetention(session.zero_data_retention, async () => {
+              const logger = rootLogger.child({
+                zeroDataRetention: session.zero_data_retention,
+              });
+              const key = `browser:reconcile:${session.id}`;
+              const state = await redisRateLimitClient.hgetall(key);
+              if (Number(state.next) > Date.now() || signal.aborted) return;
+              let failures = 0;
+              try {
+                // The persisted receipt lets quota reconciliation retry independently
+                // of Hangar availability and recording/session metadata retention.
+                if (session.credits_used !== null) {
+                  await finalizeBrowserSession(session, session.credits_used);
+                } else {
+                  await settleBrowserSession(
+                    session,
+                    await getHangarBrowser(session.browser_id, 0, 5000),
+                  );
+                }
+              } catch (error) {
+                failures = Math.min(Number(state.failures ?? 0) + 1, 5);
+                // Repeat failures during an outage are expected. Only the
+                // first one per session is an error.
+                logger[failures > 1 ? "warn" : "error"](
+                  "Failed to reconcile Hangar session",
+                  {
+                    sessionId: session.id,
+                    error,
+                  },
                 );
               }
-            } catch (error) {
-              failures = Math.min(Number(state.failures ?? 0) + 1, 5);
-              // Repeat failures during an outage are expected; only the
-              // first one per session is an error.
-              logger[failures > 1 ? "warn" : "error"](
-                "Failed to reconcile Hangar session",
-                {
-                  sessionId: session.id,
-                  error,
-                },
-              );
-            }
-            await redisRateLimitClient.hset(key, {
-              failures,
-              next: Date.now() + Math.min(300_000, 30_000 * 2 ** failures),
-            });
-            await redisRateLimitClient.expire(key, 2 * 86400);
-          }),
+              await redisRateLimitClient.hset(key, {
+                failures,
+                next: Date.now() + Math.min(300_000, 30_000 * 2 ** failures),
+              });
+              await redisRateLimitClient.expire(key, 2 * 86400);
+            }),
+          ),
         );
         results.forEach((result, index) => {
           if (result.status === "rejected")
             logger.error("Failed to update browser reconciliation state", {
               sessionId: sessions[index].id,
+              zeroDataRetention: sessions[index].zero_data_retention,
               error: result.reason,
             });
         });

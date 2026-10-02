@@ -361,7 +361,7 @@ export async function executePromptViaBrowserAgent(
     const generate = zeroDataRetention ? untracedGenerateText : generateText;
     const result = await generate({
       model: zeroDataRetention
-        ? getModel("gpt-6-luna", "openai")
+        ? getModel("gpt-6-luna", "openai", { ignoreModelOverride: true })
         : getModel("gemini-3.5-flash", hasVertex() ? "vertex" : "google"),
       experimental_telemetry: { isEnabled: false },
       system: SYSTEM_PROMPT,

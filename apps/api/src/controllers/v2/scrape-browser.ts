@@ -174,12 +174,18 @@ async function scrapeInteractInternal(
     });
   }
 
-  const [nuqJob, state] = await Promise.all([
-    scrapeQueue.getJob(scrapeId, logger),
-    // A failed policy read must not turn a ZDR scrape into a retained session.
-    readScrapeJobState(scrapeId),
-  ]);
-  const access = nuqJob ? null : await getScrapeJobAccess(scrapeId);
+  // Suppress lookup telemetry until the stored retention policy is known.
+  const [nuqJob, state, storedSession] = await withZeroDataRetention(true, () =>
+    Promise.all([
+      scrapeQueue.getJob(scrapeId, logger.child({ zeroDataRetention: true })),
+      // A failed policy read must not turn a ZDR scrape into a retained session.
+      readScrapeJobState(scrapeId),
+      getBrowserSessionFromScrape(scrapeId),
+    ]),
+  );
+  const access = nuqJob
+    ? null
+    : await withZeroDataRetention(true, () => getScrapeJobAccess(scrapeId));
   if (
     (!nuqJob && (!access || access.expiresAtMs <= Date.now())) ||
     (nuqJob && nuqJob.data.mode !== "single_urls")
@@ -202,7 +208,8 @@ async function scrapeInteractInternal(
 
   zeroDataRetention ||=
     state?.zeroDataRetention === true ||
-    nuqJob?.data.zeroDataRetention === true;
+    nuqJob?.data.zeroDataRetention === true ||
+    storedSession?.zero_data_retention === true;
   logger = logger.child({ zeroDataRetention });
 
   let replayContext = state?.replay;
@@ -223,17 +230,22 @@ async function scrapeInteractInternal(
 
   // --- Ensure a browser session exists (create + replay if needed) ---
 
-  let session = await getBrowserSessionFromScrape(scrapeId);
+  let session = storedSession;
 
   if (!session && req.body.existingSessionId) {
-    const existing = await getBrowserSession(req.body.existingSessionId);
+    const existing = await withZeroDataRetention(true, () =>
+      getBrowserSession(req.body.existingSessionId!),
+    );
     if (
       existing &&
       existing.team_id === req.auth.team_id &&
       existing.status === "active"
     ) {
-      getBrowserZDR(req, existing, zeroDataRetention);
-      await updateBrowserSessionScrapeId(existing.id, scrapeId);
+      zeroDataRetention = getBrowserZDR(req, existing, zeroDataRetention);
+      logger = logger.child({ zeroDataRetention });
+      await withZeroDataRetention(zeroDataRetention, () =>
+        updateBrowserSessionScrapeId(existing.id, scrapeId),
+      );
       session = { ...existing, scrape_id: scrapeId };
       logger.info("Adopted pre-created browser session for scrape", {
         scrapeId,
@@ -295,11 +307,10 @@ async function scrapeInteractInternal(
       .json({ success: false, error: "Browser session has been destroyed." });
   }
 
-  updateBrowserSessionActivity(session.id).catch(() => {});
-
   zeroDataRetention = getBrowserZDR(req, session, zeroDataRetention);
   logger = logger.child({ zeroDataRetention });
   return withZeroDataRetention(zeroDataRetention, async () => {
+    updateBrowserSessionActivity(session.id).catch(() => {});
     // --- Execute: prompt-based agent loop OR direct code ---
     //
     // The persisted session policy applies to every execution, including calls

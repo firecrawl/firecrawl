@@ -5,6 +5,7 @@ import { config } from "../../../config";
 import {
   insertBrowserSession,
   getBrowserSession,
+  listUnsettledHangarSessions,
 } from "../../../lib/browser-sessions";
 import {
   createHangarBrowser,
@@ -25,6 +26,7 @@ import { browserCreateController } from "../browser";
 import {
   getBrowserZDR,
   BrowserSessionError,
+  reconcileBrowserSessions,
 } from "../../../lib/browser-lifecycle";
 import { logRequest } from "../../../services/logging/log_job";
 import { getModel } from "../../../lib/generic-ai";
@@ -32,9 +34,24 @@ import { generateText } from "ai";
 import * as langsmith from "../../../lib/scrape-interact/langsmith";
 import { promises as fs } from "fs";
 import { logger } from "../../../lib/logger";
+import { context, propagation, trace } from "@opentelemetry/api";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
+import { scrapeQueue } from "../../../services/worker/nuq-router";
+import { redlock } from "../../../services/redlock";
+import { updateKeylessBrowserCredits } from "../../../lib/keyless";
 
 vi.mock("../../../lib/generic-ai", () => ({ getModel: vi.fn(() => ({})) }));
-vi.mock("../../../services/rate-limiter", () => ({ redisRateLimitClient: {} }));
+vi.mock("../../../services/rate-limiter", () => ({
+  redisRateLimitClient: {
+    get: vi.fn(async () => null),
+    set: vi.fn(),
+    hgetall: vi.fn(async () => ({})),
+    hset: vi.fn(),
+    expire: vi.fn(),
+    del: vi.fn(),
+  },
+}));
 vi.mock("ai", async importOriginal => ({
   ...(await importOriginal<typeof import("ai")>()),
   generateText: vi.fn(async () => ({ text: "done" })),
@@ -172,6 +189,14 @@ describe("scrapeInteractController", () => {
   });
 
   describe("ZDR", () => {
+    const provider = new NodeTracerProvider();
+    beforeAll(() => provider.register());
+    afterAll(async () => {
+      await provider.shutdown();
+      trace.disable();
+      context.disable();
+      propagation.disable();
+    });
     const buildRequest = () =>
       ({
         body: { zeroDataRetention: true },
@@ -272,12 +297,19 @@ describe("scrapeInteractController", () => {
     });
 
     it("continues a ZDR scrape using a live session without saved replay context", async () => {
-      vi.mocked(readScrapeJobState).mockResolvedValueOnce({
-        status: "completed",
-        requestId: "scrape-123",
-        completedAtMs: Date.now(),
-        creditsBilled: 1,
-        zeroDataRetention: true,
+      vi.mocked(scrapeQueue.getJob).mockImplementationOnce(async () => {
+        expect(isZeroDataRetentionActive()).toBe(true);
+        return null;
+      });
+      vi.mocked(readScrapeJobState).mockImplementationOnce(async () => {
+        expect(isZeroDataRetentionActive()).toBe(true);
+        return {
+          status: "completed",
+          requestId: "scrape-123",
+          completedAtMs: Date.now(),
+          creditsBilled: 1,
+          zeroDataRetention: true,
+        };
       });
       vi.mocked(executeCodeViaBrowserSession).mockResolvedValue(output);
       const res = buildRes();
@@ -300,6 +332,30 @@ describe("scrapeInteractController", () => {
         expect.objectContaining({ zeroDataRetention: true }),
       );
       expect(createHangarBrowser).not.toHaveBeenCalled();
+    });
+
+    it("preserves ZDR when reconciliation retries an already billed session", async () => {
+      let retentionDuringFinalization: boolean | undefined;
+      vi.mocked(redlock.using).mockImplementationOnce((async (...args: any[]) =>
+        args.at(-1)({ aborted: false })) as any);
+      vi.mocked(listUnsettledHangarSessions).mockResolvedValueOnce({
+        sessions: [{ ...session, credits_used: 2 }],
+        through: session.id,
+      });
+      vi.mocked(updateKeylessBrowserCredits).mockImplementationOnce(
+        async () => {
+          retentionDuringFinalization = isZeroDataRetentionActive();
+          return true;
+        },
+      );
+      await reconcileBrowserSessions();
+      expect(updateKeylessBrowserCredits).toHaveBeenCalledWith(
+        session.team_id,
+        session.id,
+        2,
+        true,
+      );
+      expect(retentionDuringFinalization).toBe(true);
     });
 
     async function runPrompt() {
@@ -327,7 +383,9 @@ describe("scrapeInteractController", () => {
 
     it("uses Luna medium without response storage or AI telemetry for ZDR prompts", async () => {
       await runPrompt();
-      expect(getModel).toHaveBeenCalledWith("gpt-6-luna", "openai");
+      expect(getModel).toHaveBeenCalledWith("gpt-6-luna", "openai", {
+        ignoreModelOverride: true,
+      });
       expect(generateText).toHaveBeenCalledWith(
         expect.objectContaining({
           providerOptions: {
