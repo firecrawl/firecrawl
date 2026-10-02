@@ -15,6 +15,7 @@ import {
 } from "../../lib/hangar";
 import {
   createBrowserSession,
+  browserZeroDataRetention,
   reserveBrowserPromptCredits,
   stopBrowserSession,
   browserSessionLinks,
@@ -34,7 +35,6 @@ import {
 } from "../../lib/scrape-interact/browser-agent";
 import { sanitizeUrlForTrace } from "../../lib/scrape-interact/langsmith";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
-import { browserZeroDataRetention } from "../../lib/browser-zdr";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import {
   getSafeMode,

@@ -22,7 +22,7 @@ import { executeCodeViaBrowserSession } from "../../../lib/scrape-interact/brows
 import { scrapeInteractController } from "../scrape-browser";
 import type { RequestWithAuth } from "../types";
 import { browserCreateController } from "../browser";
-import { browserZeroDataRetention } from "../../../lib/browser-zdr";
+import { browserZeroDataRetention } from "../../../lib/browser-lifecycle";
 import { logRequest } from "../../../services/logging/log_job";
 import { getModel } from "../../../lib/generic-ai";
 import { generateText } from "ai";
@@ -197,6 +197,8 @@ describe("scrapeInteractController", () => {
         id: session.browser_id,
         max_expires_at: 700,
         cdp_url: "wss://hangar.example/cdp?token=secret",
+        view_url: "https://hangar.example/view?token=secret",
+        control_url: "https://hangar.example/control?token=secret",
       } as any);
       vi.mocked(insertBrowserSession).mockImplementation(
         async row => row as any,
@@ -229,6 +231,27 @@ describe("scrapeInteractController", () => {
         );
       },
     );
+
+    it("returns access URLs on creation without storing them for ZDR sessions", async () => {
+      const res = buildRes();
+      await browserCreateController(buildRequest(), res);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          cdpUrl: "wss://hangar.example/cdp?token=secret",
+          liveViewUrl: "https://hangar.example/view?token=secret",
+          interactiveLiveViewUrl: "https://hangar.example/control?token=secret",
+        }),
+      );
+      expect(insertBrowserSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context_id: "",
+          cdp_url: "",
+          cdp_path: "",
+          cdp_interactive_path: "",
+        }),
+      );
+    });
 
     it("keeps the session's ZDR policy when later execution omits the option and team flag", async () => {
       const req = {
@@ -435,6 +458,13 @@ describe("scrapeInteractController", () => {
         cdpUrl: created.cdp_url,
         liveViewUrl: created.view_url,
         interactiveLiveViewUrl: created.control_url,
+      }),
+    );
+    expect(insertBrowserSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cdp_url: created.cdp_url,
+        cdp_path: created.view_url,
+        cdp_interactive_path: created.control_url,
       }),
     );
   });

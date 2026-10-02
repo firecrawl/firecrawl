@@ -45,15 +45,41 @@ import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
 } from "./keyless";
 import { logger as rootLogger } from "./logger";
-import {
-  browserZeroDataRetention,
-  checkBrowserZdrOptions,
-} from "./browser-zdr";
+import { getScrapeZDR } from "./zdr-helpers";
 import { withZeroDataRetention } from "./otel-tracer";
 import { redlock } from "../services/redlock";
 import { redisRateLimitClient } from "../services/rate-limiter";
 
 const logger = rootLogger;
+
+export function browserZeroDataRetention(
+  req: RequestWithAuth<any, any, any>,
+  session?: BrowserSessionRow,
+  inherited = false,
+): boolean {
+  const mode = getScrapeZDR(req.acuc?.flags);
+  if (
+    req.body?.zeroDataRetention === true &&
+    mode === "disabled" &&
+    !session?.zero_data_retention &&
+    !inherited
+  ) {
+    throw new HangarError(
+      403,
+      "Zero Data Retention is not enabled for your team.",
+    );
+  }
+  const enabled =
+    mode === "forced" ||
+    req.body?.zeroDataRetention === true ||
+    inherited ||
+    session?.zero_data_retention === true;
+  // A running browser may already have recorded or saved customer content.
+  if (enabled && session && !session.zero_data_retention) {
+    throw new HangarError(409, "Create a new ZDR browser session to continue.");
+  }
+  return enabled;
+}
 
 export function browserSessionLinks(session: BrowserSessionRow) {
   return {
@@ -93,7 +119,12 @@ export async function createBrowserSession(
 ) {
   const zeroDataRetention =
     browserZeroDataRetention(req) || options.zeroDataRetention === true;
-  checkBrowserZdrOptions({ ...options, zeroDataRetention });
+  if (zeroDataRetention && (options.recordSession || options.profile)) {
+    throw new HangarError(
+      400,
+      "Recordings and saved profiles are not supported with Zero Data Retention.",
+    );
+  }
   return withZeroDataRetention(zeroDataRetention, () =>
     createBrowserSessionInternal(req, options, zeroDataRetention),
   );
@@ -192,10 +223,12 @@ async function createBrowserSessionInternal(
       scrape_id: options.scrapeId,
       browser_id: browser.id,
       workspace_id: "",
-      context_id: browser.playlist_url ?? "",
-      cdp_url: browser.cdp_url,
-      cdp_path: browser.view_url ?? "",
-      cdp_interactive_path: browser.control_url ?? "",
+      context_id: zeroDataRetention ? "" : (browser.playlist_url ?? ""),
+      cdp_url: zeroDataRetention ? "" : browser.cdp_url,
+      cdp_path: zeroDataRetention ? "" : (browser.view_url ?? ""),
+      cdp_interactive_path: zeroDataRetention
+        ? ""
+        : (browser.control_url ?? ""),
       stream_web_view: options.streamWebView,
       status: "active",
       ttl_total: options.ttl,
@@ -204,7 +237,14 @@ async function createBrowserSessionInternal(
       profile_name: options.profile?.name ?? null,
     });
     return {
-      session,
+      // Return access URLs on creation without persisting them for ZDR sessions.
+      // Later execution uses browser_id; callers can keep these original links.
+      session: {
+        ...session,
+        cdp_url: browser.cdp_url,
+        cdp_path: browser.view_url ?? "",
+        cdp_interactive_path: browser.control_url ?? "",
+      },
       expiresAt:
         browser.max_expires_at === null
           ? undefined

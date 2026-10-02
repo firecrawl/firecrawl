@@ -21,6 +21,7 @@ import {
 } from "../../lib/browser-sessions";
 import {
   createBrowserSession,
+  browserZeroDataRetention,
   browserSessionLinks,
   stopBrowserSession,
   settleBrowserSession,
@@ -33,7 +34,6 @@ import {
 } from "../../lib/hangar";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
-import { browserZeroDataRetention } from "../../lib/browser-zdr";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 
 export const browserCreateRequestSchema = z.object({
