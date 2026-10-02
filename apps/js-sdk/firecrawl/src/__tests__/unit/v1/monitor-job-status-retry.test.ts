@@ -21,25 +21,35 @@ describe('monitorJobStatus retry logic', () => {
   beforeEach(() => {
     app = new FirecrawlApp({ apiKey: 'test-key', apiUrl: 'https://test.com' });
     delays = [];
+    jest.useFakeTimers();
+    const fakeSetTimeout = globalThis.setTimeout;
     jest.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
       delays.push(ms ?? 0);
-      fn();
-      return 0;
+      return fakeSetTimeout(fn, ms);
     }) as any);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+    jest.useRealTimers();
   });
 
-  function failFirst(n: number, error: Error) {
+  function failFirst(n: number, error: Error, statuses: string[] = []) {
     let calls = 0;
     app.getRequest = (async () => {
       calls++;
       if (calls <= n) throw error;
-      return successResponse;
+      const status = statuses.shift();
+      return status ? { status: 200, data: { status } } : successResponse;
     }) as any;
     return () => calls;
+  }
+
+  async function monitor() {
+    const result = app.monitorJobStatus('test-id', {} as any, 1);
+    result.catch(() => {});
+    await jest.runAllTimersAsync();
+    return result;
   }
 
   test.each([
@@ -50,7 +60,7 @@ describe('monitorJobStatus retry logic', () => {
   ])('retries once after a %s error and returns the job data', async (_label, error) => {
     const calls = failFirst(1, error);
 
-    const result = await app.monitorJobStatus('test-id', {} as any, 1);
+    const result = await monitor();
 
     expect(calls()).toBe(2);
     expect(result).toEqual(successResponse.data);
@@ -60,7 +70,17 @@ describe('monitorJobStatus retry logic', () => {
   test('uses exponential backoff between retries', async () => {
     const calls = failFirst(2, networkError('socket hang up', 'ECONNRESET'));
 
-    const result = await app.monitorJobStatus('test-id', {} as any, 1);
+    const result = await monitor();
+
+    expect(calls()).toBe(3);
+    expect(result).toEqual(successResponse.data);
+    expect(delays).toEqual([1000, 2000]);
+  });
+
+  test('records both the retry backoff and the 2s poll wait for an active job', async () => {
+    const calls = failFirst(1, networkError('socket hang up', 'ECONNRESET'), ['active']);
+
+    const result = await monitor();
 
     expect(calls()).toBe(3);
     expect(result).toEqual(successResponse.data);
@@ -70,7 +90,7 @@ describe('monitorJobStatus retry logic', () => {
   test('fails after max retries are exceeded', async () => {
     const calls = failFirst(Infinity, networkError('socket hang up', 'ECONNRESET'));
 
-    await expect(app.monitorJobStatus('test-id', {} as any, 1)).rejects.toThrow('socket hang up');
+    await expect(monitor()).rejects.toThrow('socket hang up');
 
     expect(calls()).toBe(4);
     expect(delays).toEqual([1000, 2000, 4000]);
@@ -79,7 +99,7 @@ describe('monitorJobStatus retry logic', () => {
   test('does not retry non-retryable errors', async () => {
     const calls = failFirst(Infinity, httpError('Unauthorized', 401));
 
-    await expect(app.monitorJobStatus('test-id', {} as any, 1)).rejects.toThrow('Unauthorized');
+    await expect(monitor()).rejects.toThrow('Unauthorized');
 
     expect(calls()).toBe(1);
     expect(delays).toEqual([]);
