@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable, Union, Literal, BinaryIO
 from .types import (
     ClientConfig,
+    ParseFormat,
     ParseOptions,
     ScrapeOptions,
     Document,
@@ -467,6 +468,16 @@ class FirecrawlClient:
             filename=filename,
             content_type=content_type,
         )
+
+    def get_parse_formats(self) -> List[ParseFormat]:
+        """
+        List the file formats the parse endpoint accepts.
+
+        Returns:
+            List of ParseFormat entries. ``available`` is False for formats
+            that are known but disabled on this deployment.
+        """
+        return parse_module.get_parse_formats(self.http_client)
 
 
     def search(

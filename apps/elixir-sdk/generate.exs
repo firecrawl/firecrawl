@@ -23,6 +23,10 @@ defmodule Firecrawl.Generator do
     "getHistoricalTokenUsage"
   ])
 
+  # Routes emitted by hand-written template code instead of the spec, so a
+  # spec entry for them never generates a second, untyped definition.
+  @hand_written_routes MapSet.new([{"get", "/parse/formats"}])
+
   # The method key becomes the Req function name in generated code, a position
   # no escaping can protect, so anything else stops generation outright.
   @http_methods ~w(get post put patch delete head options)
@@ -82,7 +86,7 @@ defmodule Firecrawl.Generator do
   # Module template
   # ---------------------------------------------------------------------------
 
-  defp generate_module(spec) do
+  def generate_module(spec) do
     base_url =
       case get_in(spec, ["servers"]) do
         [%{"url" => url} | _] -> url
@@ -107,8 +111,9 @@ defmodule Firecrawl.Generator do
           {method, path, operation, path_level_params}
         end)
       end)
-      |> Enum.reject(fn {_method, _path, op, _} ->
-        MapSet.member?(@skip_operations, Map.get(op, "operationId", ""))
+      |> Enum.reject(fn {method, path, op, _} ->
+        MapSet.member?(@skip_operations, Map.get(op, "operationId", "")) or
+          MapSet.member?(@hand_written_routes, {method, path})
       end)
       |> Enum.sort_by(fn {_method, _path, op, _} -> Map.get(op, "operationId", "") end)
       |> Enum.map(&generate_function(&1, spec))
@@ -242,8 +247,59 @@ defmodule Firecrawl.Generator do
         Enum.join([first | Enum.map(rest, &String.capitalize/1)])
       end
 
+    #{parse_formats_code()}
     #{functions}end
     """
+  end
+
+  # get_parse_formats returns typed structs rather than a raw response, so it
+  # is written by hand and emitted verbatim on every regeneration.
+  def parse_formats_code do
+    ~S'''
+      @doc """
+      List the file formats `parse_file/3` accepts
+
+      `GET /parse/formats`
+
+      Tag: Parsing
+
+      ## Returns
+
+        * `{:ok, [%Firecrawl.ParseFormat{}]}` on success
+        * `{:error, exception}` on HTTP failure or an unexpected response shape
+      """
+      @spec get_parse_formats(keyword()) ::
+              {:ok, [Firecrawl.ParseFormat.t()]} | {:error, Exception.t() | Firecrawl.Error.t()}
+      def get_parse_formats(opts \\ []) do
+        with {:ok, response} <- Req.get(client(opts), url: "/parse/formats") do
+          decode_parse_formats(response)
+        end
+      end
+
+
+      @doc """
+      Bang variant of `get_parse_formats`. Raises on error.
+      """
+      @spec get_parse_formats!(keyword()) :: [Firecrawl.ParseFormat.t()]
+      def get_parse_formats!(opts \\ []) do
+        case get_parse_formats(opts) do
+          {:ok, formats} -> formats
+          {:error, exception} -> raise exception
+        end
+      end
+
+      defp decode_parse_formats(%Req.Response{body: %{"data" => %{"formats" => formats}}})
+           when is_list(formats) do
+        {:ok, Enum.map(formats, &Firecrawl.ParseFormat.from_map/1)}
+      end
+
+      defp decode_parse_formats(%Req.Response{status: status, body: body}) do
+        {:error,
+         RuntimeError.exception(
+           "unexpected GET /parse/formats response (HTTP #{status}): #{inspect(body)}"
+         )}
+      end
+    '''
   end
 
   # ---------------------------------------------------------------------------

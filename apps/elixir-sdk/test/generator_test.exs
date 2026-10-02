@@ -159,4 +159,28 @@ defmodule Firecrawl.GeneratorTest do
       assert function_exported?(mod, :f, 0)
     end
   end
+
+  describe "get_parse_formats" do
+    test "is emitted once even when the spec declares GET /parse/formats" do
+      spec = %{
+        "paths" => %{
+          "/parse/formats" => %{
+            "get" => %{"operationId" => "getParseFormats", "summary" => "List formats"}
+          }
+        }
+      }
+
+      code = Firecrawl.Generator.generate_module(spec)
+
+      assert length(Regex.scan(~r/^  def get_parse_formats\(/m, code)) == 1
+      assert length(Regex.scan(~r/^  def get_parse_formats!\(/m, code)) == 1
+    end
+
+    test "lib/firecrawl.ex carries the generator's hand-written block verbatim" do
+      lib = File.read!(Path.expand("../lib/firecrawl.ex", __DIR__))
+      block = Firecrawl.Generator.parse_formats_code()
+
+      assert String.contains?(lib, block)
+    end
+  end
 end

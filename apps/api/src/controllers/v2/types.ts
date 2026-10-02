@@ -1812,6 +1812,11 @@ export type AgentStatusResponse =
       status: "processing" | "completed" | "failed";
       error?: string;
       data?: any;
+      /** Best-effort JSON on a failed run; `data` remains completed-only. */
+      partial?: unknown;
+      /** Only present when the caller supplied a JSON Schema. */
+      partialSchemaValid?: boolean;
+      stopReason?: "credit_limit_reached";
       model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
       effort?: "low" | "medium" | "high";
       expiresAt: string;
@@ -1846,6 +1851,9 @@ type AgentThreadRun = {
   message: string | null;
   // Only present when the request asked for includeData.
   data?: unknown;
+  partial?: unknown;
+  partialSchemaValid?: boolean;
+  stopReason?: "credit_limit_reached";
   suggestions?: AgentSuggestion[] | null;
   pendingApproval?: AgentPendingApproval | null;
   exchange?: AgentExchangeSummary | null;
@@ -2494,6 +2502,8 @@ const searchDomainSchema = z
 export const searchRequestSchema = z
   .strictObject({
     query: z.string(),
+    objective: z.string().trim().min(1).max(5000).optional().catch(undefined),
+    clientModel: z.string().trim().min(1).max(128).optional().catch(undefined),
     limit: z.int().positive().finite().max(100).optional().prefault(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),

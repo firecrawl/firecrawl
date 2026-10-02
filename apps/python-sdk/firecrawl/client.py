@@ -79,6 +79,7 @@ class V2Proxy:
             self.scrape_execute = self.interact
             self.delete_scrape_browser = self.stop_interaction
             self.parse = client_instance.parse
+            self.get_parse_formats = client_instance.get_parse_formats
             self.search = client_instance.search
             self.developer_search = client_instance.developer_search
             self.crawl = client_instance.crawl
@@ -171,6 +172,7 @@ class AsyncV2Proxy:
             self.scrape_execute = self.interact
             self.delete_scrape_browser = self.stop_interaction
             self.parse = client_instance.parse
+            self.get_parse_formats = client_instance.get_parse_formats
             self.search = client_instance.search
             self.developer_search = client_instance.developer_search
             self.crawl = client_instance.crawl
@@ -287,6 +289,7 @@ class Firecrawl:
         self.scrape_execute = self.interact
         self.delete_scrape_browser = self.stop_interaction
         self.parse = self._v2_client.parse
+        self.get_parse_formats = self._v2_client.get_parse_formats
         self.search = self._v2_client.search
         self.developer_search = self._v2_client.developer_search
         self.map = self._v2_client.map
@@ -431,6 +434,7 @@ class AsyncFirecrawl:
         self.scrape_execute = self.interact
         self.delete_scrape_browser = self.stop_interaction
         self.parse = self._v2_client.parse
+        self.get_parse_formats = self._v2_client.get_parse_formats
         self.search = self._v2_client.search
         self.developer_search = self._v2_client.developer_search
         self.map = self._v2_client.map

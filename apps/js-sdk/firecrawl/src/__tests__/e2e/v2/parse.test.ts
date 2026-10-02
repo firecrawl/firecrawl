@@ -3,6 +3,7 @@ import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
 import { testTimeoutMs, withRateLimitRetry } from "./utils/rateLimit";
 import { describe, test, expect, beforeAll } from "@jest/globals";
+import { SdkError } from "../../../v2/types";
 
 config();
 
@@ -62,6 +63,31 @@ describe("v2.parse e2e", () => {
           },
         ),
       ).rejects.toThrow();
+    },
+    testTimeoutMs(60_000),
+  );
+
+  test(
+    "lists supported parse formats",
+    async () => {
+      if (!client) throw new Error();
+
+      let formats;
+      try {
+        formats = await client.getParseFormats();
+      } catch (err) {
+        if (err instanceof SdkError && err.status === 404) {
+          console.warn("Skipping: /v2/parse/formats is not deployed on this API");
+          return;
+        }
+        throw err;
+      }
+
+      expect(formats.length).toBeGreaterThan(0);
+      const pdf = formats.find(f => f.format === "pdf");
+      expect(pdf?.kind).toBe("document");
+      expect(pdf?.extensions).toContain(".pdf");
+      expect(pdf?.mimeTypes).toContain("application/pdf");
     },
     testTimeoutMs(60_000),
   );

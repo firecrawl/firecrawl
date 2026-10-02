@@ -37,7 +37,7 @@ import java.util.concurrent.ForkJoinPool;
 public class FirecrawlClient {
 
     private static final String DEFAULT_API_URL = "https://api.firecrawl.dev";
-    private static final String SDK_ORIGIN = "java-sdk@1.18.1";
+    private static final String SDK_ORIGIN = "java-sdk@1.18.2";
     private static final long DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
     private static final int DEFAULT_MAX_RETRIES = 3;
     private static final double DEFAULT_BACKOFF_FACTOR = 0.5;
@@ -247,6 +247,25 @@ public class FirecrawlClient {
                 ),
                 Document.class
         );
+    }
+
+    /**
+     * Lists the upload types accepted by {@link #parse(ParseFile, ParseOptions)}.
+     *
+     * @return the supported parse formats
+     */
+    public List<ParseFormat> getParseFormats() {
+        Map<?, ?> raw = http.get("/v2/parse/formats", Map.class);
+        Object data = raw.get("data");
+        Object formats = data instanceof Map<?, ?> ? ((Map<?, ?>) data).get("formats") : null;
+        if (!(formats instanceof List<?>)) {
+            return Collections.emptyList();
+        }
+        List<ParseFormat> result = new ArrayList<>();
+        for (Object item : (List<?>) formats) {
+            result.add(http.objectMapper.convertValue(item, ParseFormat.class));
+        }
+        return result;
     }
 
     // ================================================================
@@ -1005,6 +1024,15 @@ public class FirecrawlClient {
      */
     public CompletableFuture<Document> parseAsync(ParseFile file, ParseOptions options) {
         return CompletableFuture.supplyAsync(() -> parse(file, options), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously lists the upload types accepted by parse.
+     *
+     * @return a CompletableFuture that resolves to the supported parse formats
+     */
+    public CompletableFuture<List<ParseFormat>> getParseFormatsAsync() {
+        return CompletableFuture.supplyAsync(this::getParseFormats, asyncExecutor);
     }
 
     /**
