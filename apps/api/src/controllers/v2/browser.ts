@@ -21,7 +21,8 @@ import {
 } from "../../lib/browser-sessions";
 import {
   createBrowserSession,
-  browserZeroDataRetention,
+  getBrowserZDR,
+  BrowserSessionError,
   browserSessionLinks,
   stopBrowserSession,
   settleBrowserSession,
@@ -79,7 +80,7 @@ export function browserError(
   // Keyless browser budget exhaustion: give the caller its own signup link.
   if (
     req &&
-    error instanceof HangarError &&
+    error instanceof BrowserSessionError &&
     error.status === 429 &&
     error.message === KEYLESS_FREE_TIER_LIMIT_MESSAGE
   ) {
@@ -90,12 +91,11 @@ export function browserError(
       signup_url: prompt.signup_url,
     });
   }
-  return res.status(error instanceof HangarError ? error.status : 502).json({
+  const knownError =
+    error instanceof BrowserSessionError || error instanceof HangarError;
+  return res.status(knownError ? error.status : 502).json({
     success: false,
-    error:
-      error instanceof HangarError
-        ? error.message
-        : "Browser operation failed.",
+    error: knownError ? error.message : "Browser operation failed.",
   });
 }
 
@@ -171,7 +171,7 @@ export async function browserExecuteController(
       .status(410)
       .json({ success: false, error: "Browser session has been destroyed." });
   try {
-    const zeroDataRetention = browserZeroDataRetention(req, session);
+    const zeroDataRetention = getBrowserZDR(req, session);
     return await withZeroDataRetention(zeroDataRetention, async () => {
       updateBrowserSessionActivity(session.id).catch(() => {});
       const result = await executeHangarBrowser(session.browser_id, body);

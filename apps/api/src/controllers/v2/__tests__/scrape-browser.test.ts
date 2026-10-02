@@ -22,7 +22,10 @@ import { executeCodeViaBrowserSession } from "../../../lib/scrape-interact/brows
 import { scrapeInteractController } from "../scrape-browser";
 import type { RequestWithAuth } from "../types";
 import { browserCreateController } from "../browser";
-import { browserZeroDataRetention } from "../../../lib/browser-lifecycle";
+import {
+  getBrowserZDR,
+  BrowserSessionError,
+} from "../../../lib/browser-lifecycle";
 import { logRequest } from "../../../services/logging/log_job";
 import { getModel } from "../../../lib/generic-ai";
 import { generateText } from "ai";
@@ -260,7 +263,7 @@ describe("scrapeInteractController", () => {
         params: { sessionId: session.id },
         body: { code: "console.log('claim-private')" },
       };
-      expect(browserZeroDataRetention(req, session)).toBe(true);
+      expect(getBrowserZDR(req, session)).toBe(true);
       const res = buildRes();
       await browserExecuteController(req, res);
       expect(res.json).toHaveBeenCalledWith(
@@ -363,8 +366,14 @@ describe("scrapeInteractController", () => {
 
     it("rejects request-scoped ZDR without the entitlement", async () => {
       const res = buildRes();
-      await browserCreateController({ ...buildRequest(), acuc: {} }, res);
+      const req = { ...buildRequest(), acuc: {} };
+      expect(() => getBrowserZDR(req)).toThrow(BrowserSessionError);
+      await browserCreateController(req, res);
       expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: "Zero Data Retention is not enabled for your team.",
+      });
       expect(createHangarBrowser).not.toHaveBeenCalled();
     });
 

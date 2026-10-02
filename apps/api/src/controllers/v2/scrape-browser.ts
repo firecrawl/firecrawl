@@ -15,7 +15,8 @@ import {
 } from "../../lib/hangar";
 import {
   createBrowserSession,
-  browserZeroDataRetention,
+  getBrowserZDR,
+  BrowserSessionError,
   reserveBrowserPromptCredits,
   stopBrowserSession,
   browserSessionLinks,
@@ -117,7 +118,11 @@ export async function scrapeInteractController(
       () => scrapeInteractInternal(req, res),
     );
   } catch (error) {
-    if (!(error instanceof HangarError)) throw error;
+    if (
+      !(error instanceof BrowserSessionError) &&
+      !(error instanceof HangarError)
+    )
+      throw error;
     return browserError(res, error, req);
   }
 }
@@ -149,7 +154,7 @@ async function scrapeInteractInternal(
 
   const scrapeId = req.params.jobId;
   const { code: rawCode, prompt, language, timeout, origin } = req.body;
-  let zeroDataRetention = browserZeroDataRetention(req);
+  let zeroDataRetention = getBrowserZDR(req);
 
   let logger = _logger.child({
     scrapeId,
@@ -227,7 +232,7 @@ async function scrapeInteractInternal(
       existing.team_id === req.auth.team_id &&
       existing.status === "active"
     ) {
-      browserZeroDataRetention(req, existing, zeroDataRetention);
+      getBrowserZDR(req, existing, zeroDataRetention);
       await updateBrowserSessionScrapeId(existing.id, scrapeId);
       session = { ...existing, scrape_id: scrapeId };
       logger.info("Adopted pre-created browser session for scrape", {
@@ -292,7 +297,7 @@ async function scrapeInteractInternal(
 
   updateBrowserSessionActivity(session.id).catch(() => {});
 
-  zeroDataRetention = browserZeroDataRetention(req, session, zeroDataRetention);
+  zeroDataRetention = getBrowserZDR(req, session, zeroDataRetention);
   logger = logger.child({ zeroDataRetention });
   return withZeroDataRetention(zeroDataRetention, async () => {
     // --- Execute: prompt-based agent loop OR direct code ---
@@ -480,11 +485,12 @@ async function createSessionForScrape(
     return { session };
   } catch (error) {
     logger.error("Failed to initialize scrape browser session", { error });
-    const status = error instanceof HangarError ? error.status : 502;
-    const message =
-      error instanceof HangarError
-        ? error.message
-        : "Failed to create browser session.";
+    const knownError =
+      error instanceof BrowserSessionError || error instanceof HangarError;
+    const status = knownError ? error.status : 502;
+    const message = knownError
+      ? error.message
+      : "Failed to create browser session.";
     const body =
       message === KEYLESS_FREE_TIER_LIMIT_MESSAGE
         ? await keylessLimitBody(req.auth.team_id, "v2_browser", req)

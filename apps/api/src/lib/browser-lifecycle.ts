@@ -52,7 +52,18 @@ import { redisRateLimitClient } from "../services/rate-limiter";
 
 const logger = rootLogger;
 
-export function browserZeroDataRetention(
+export class BrowserSessionError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "BrowserSessionError";
+  }
+}
+
+/** Returns the effective session policy; rejects disallowed ZDR requests. */
+export function getBrowserZDR(
   req: RequestWithAuth<any, any, any>,
   session?: BrowserSessionRow,
   inherited = false,
@@ -64,7 +75,7 @@ export function browserZeroDataRetention(
     !session?.zero_data_retention &&
     !inherited
   ) {
-    throw new HangarError(
+    throw new BrowserSessionError(
       403,
       "Zero Data Retention is not enabled for your team.",
     );
@@ -76,7 +87,10 @@ export function browserZeroDataRetention(
     session?.zero_data_retention === true;
   // A running browser may already have recorded or saved customer content.
   if (enabled && session && !session.zero_data_retention) {
-    throw new HangarError(409, "Create a new ZDR browser session to continue.");
+    throw new BrowserSessionError(
+      409,
+      "Create a new ZDR browser session to continue.",
+    );
   }
   return enabled;
 }
@@ -96,9 +110,9 @@ export function browserSessionLinks(session: BrowserSessionRow) {
  */
 export function invalidAgentInteropError(
   req: RequestWithAuth<any, any, any>,
-): HangarError | null {
+): BrowserSessionError | null {
   return req.auth.agentInterop === "invalid"
-    ? new HangarError(403, "Invalid agent interop.")
+    ? new BrowserSessionError(403, "Invalid agent interop.")
     : null;
 }
 
@@ -118,9 +132,9 @@ export async function createBrowserSession(
   },
 ) {
   const zeroDataRetention =
-    browserZeroDataRetention(req) || options.zeroDataRetention === true;
+    getBrowserZDR(req) || options.zeroDataRetention === true;
   if (zeroDataRetention && (options.recordSession || options.profile)) {
-    throw new HangarError(
+    throw new BrowserSessionError(
       400,
       "Recordings and saved profiles are not supported with Zero Data Retention.",
     );
@@ -170,7 +184,7 @@ async function createBrowserSessionInternal(
       },
     });
     if (credit !== null && !credit.allowed)
-      throw new HangarError(
+      throw new BrowserSessionError(
         402,
         `Insufficient credits for a ${options.ttl}s browser session (requires ~${estimatedCredits} credits).`,
       );
@@ -186,7 +200,7 @@ async function createBrowserSessionInternal(
         limit,
       ))
     )
-      throw new HangarError(
+      throw new BrowserSessionError(
         429,
         `You have reached the maximum number of concurrent jobs (${limit}).`,
       );
@@ -197,7 +211,7 @@ async function createBrowserSessionInternal(
         estimatedCredits,
       ))
     )
-      throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
+      throw new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
     const browser = await createHangarBrowser(id, req.auth.team_id, options);
     browserId = browser.id;
     if (options.initialize) await options.initialize(browser.id);
@@ -386,7 +400,7 @@ export async function reserveBrowserPromptCredits(
   req: RequestWithAuth<any, any, any>,
   session: BrowserSessionRow,
 ) {
-  const closed = new HangarError(
+  const closed = new BrowserSessionError(
     410,
     "Browser session is no longer accepting prompts.",
   );
@@ -414,7 +428,7 @@ export async function reserveBrowserPromptCredits(
       },
     });
     if (credit !== null && !credit.allowed)
-      throw new HangarError(
+      throw new BrowserSessionError(
         402,
         "Insufficient credits for a browser prompt session.",
       );
@@ -430,7 +444,7 @@ export async function reserveBrowserPromptCredits(
       current.should_bill &&
       !(await updateKeylessBrowserCredits(current.team_id, current.id, credits))
     )
-      throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
+      throw new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
     await markBrowserSessionUsedPrompt(current.id);
   });
 }
