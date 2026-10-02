@@ -4,7 +4,7 @@ import {
   interact as interactMethod,
   stopInteraction as stopInteractionMethod,
 } from "./methods/scrape";
-import { parse as parseMethod } from "./methods/parse";
+import { parse as parseMethod, getParseFormats } from "./methods/parse";
 import { search } from "./methods/search";
 import { scrapeAlexandria, findTools } from "./methods/tools";
 import { developerSearch as developerSearchMethod } from "./methods/developer";
@@ -53,6 +53,7 @@ import type {
   FindToolsData,
   AlexandriaScrapeData,
   ParseFile,
+  ParseFormatInfo,
   ParseOptions,
   ScrapeOptions,
   SearchData,
@@ -271,6 +272,14 @@ export class FirecrawlClient {
   async parse(file: ParseFile, options?: ParseOptions): Promise<Document>;
   async parse(file: ParseFile, options?: ParseOptions): Promise<Document> {
     return parseMethod(this.http, file, options);
+  }
+
+  /**
+   * List the file formats the parse endpoint accepts on this deployment.
+   * @returns Formats with their kind, extensions, MIME types, and availability.
+   */
+  async getParseFormats(): Promise<ParseFormatInfo[]> {
+    return getParseFormats(this.http);
   }
 
   // Search

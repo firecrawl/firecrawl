@@ -97,6 +97,13 @@ doc = firecrawl.parse(
 print(doc.markdown)
 ```
 
+To see which file formats `parse` accepts, call `get_parse_formats` (also available on `AsyncFirecrawl`). Each entry has `format`, `kind` (`"document"` or `"image"`), `extensions`, `mime_types`, and `available`, which is `False` when a format is disabled on the deployment.
+
+```python
+for f in firecrawl.get_parse_formats():
+  print(f.format, f.kind, f.extensions, f.mime_types, f.available)
+```
+
 ### Crawling a Website
 
 To crawl a website, use the `crawl` method. It takes the starting URL and optional parameters as arguments. You can control depth, limits, formats, and more.

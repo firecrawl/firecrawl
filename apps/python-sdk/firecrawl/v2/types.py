@@ -955,6 +955,21 @@ class ScrapeOptions(BaseModel):
 ParseOptions = ScrapeOptions
 
 
+ParseFormatKind = Union[Literal["document", "image"], str]
+
+
+class ParseFormat(BaseModel):
+    """A file format accepted by the parse endpoint."""
+
+    model_config = {"populate_by_name": True}
+
+    format: str
+    kind: ParseFormatKind
+    extensions: List[str]
+    mime_types: List[str] = Field(alias="mimeTypes")
+    available: bool
+
+
 class ScrapeRequest(BaseModel):
     """Request for scraping a single URL."""
 
@@ -1745,6 +1760,10 @@ class AgentResponse(BaseModel):
     id: Optional[str] = None
     status: Optional[Literal["processing", "completed", "failed"]] = None
     data: Optional[Any] = None
+    # Best-effort result on a failed run; never a completed `data` value.
+    partial: Optional[Any] = None
+    partial_schema_valid: Optional[bool] = Field(default=None, alias="partialSchemaValid")
+    stop_reason: Optional[str] = Field(default=None, alias="stopReason")
     error: Optional[str] = None
     # Deliberately a plain str, not a Literal: this is server-provided and new
     # models ship without an SDK release, so a narrow type turns an unknown
@@ -1838,6 +1857,9 @@ class AgentThreadRun(BaseModel):
     message: Optional[str] = None
     # Only present when the request asked for include_data.
     data: Optional[Any] = None
+    partial: Optional[Any] = None
+    partial_schema_valid: Optional[bool] = Field(default=None, alias="partialSchemaValid")
+    stop_reason: Optional[str] = Field(default=None, alias="stopReason")
     suggestions: Optional[List[AgentSuggestion]] = None
     pending_approval: Optional[PendingApproval] = Field(
         default=None, alias="pendingApproval"

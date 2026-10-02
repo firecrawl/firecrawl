@@ -131,6 +131,9 @@ describe("agentStatusController", () => {
       model: "spark-2",
       effort: "medium",
       data: { result: "ok" },
+      partial: { stale: true },
+      partialSchemaValid: false,
+      stopReason: "credit_limit_reached",
       message: "Done",
       threadId: "thread-123",
       threadTurn: 2,
@@ -152,6 +155,69 @@ describe("agentStatusController", () => {
         creditsUsed: 7,
       }),
     );
+    const body = (res.json as Mock).mock.calls[0][0];
+    expect(body).not.toHaveProperty("partial");
+    expect(body).not.toHaveProperty("partialSchemaValid");
+    expect(body).not.toHaveProperty("stopReason");
+  });
+
+  it("forwards a credit-limited partial without treating it as completed data", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+    });
+    (getExtractV3AgentStatus as Mock).mockResolvedValue({
+      id: "job-123",
+      success: true,
+      status: "failed",
+      error: "Agent reached max credits",
+      data: { shouldNotAppear: true },
+      stopReason: "credit_limit_reached",
+      partial: { companies: [{ name: "Acme" }] },
+      partialSchemaValid: false,
+      model: "spark-2",
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        data: undefined,
+        stopReason: "credit_limit_reached",
+        partial: { companies: [{ name: "Acme" }] },
+        partialSchemaValid: false,
+      }),
+    );
+  });
+
+  it("does not expose a live processing checkpoint", async () => {
+    (getAgentJobAccess as Mock).mockResolvedValue({
+      teamId: "team-123",
+      expiresAtMs: Date.now() + 60_000,
+    });
+    (getExtractV3AgentStatus as Mock).mockResolvedValue({
+      id: "job-123",
+      success: true,
+      status: "processing",
+      data: { companies: [{ name: "Acme" }] },
+      partial: { companies: [{ name: "Acme" }] },
+      partialSchemaValid: false,
+      stopReason: "credit_limit_reached",
+      model: "spark-2",
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    const body = (res.json as Mock).mock.calls[0][0];
+    expect(body.status).toBe("processing");
+    expect(body.data).toBeUndefined();
+    expect(body).not.toHaveProperty("partial");
+    expect(body).not.toHaveProperty("partialSchemaValid");
+    expect(body).not.toHaveProperty("stopReason");
   });
 
   it.each([

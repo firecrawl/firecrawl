@@ -195,6 +195,15 @@ module Firecrawl
       Models::Document.new(data)
     end
 
+    # Lists the file formats accepted by {#parse} on this deployment.
+    #
+    # @return [Array<Models::ParseFormat>]
+    def get_parse_formats
+      raw = @http.get("/v2/parse/formats")
+      formats = (raw["data"] || {})["formats"] || []
+      formats.map { |f| Models::ParseFormat.new(f) }
+    end
+
     # ================================================================
     # CRAWL
     # ================================================================

@@ -124,6 +124,50 @@ defmodule Firecrawl do
     Enum.join([first | Enum.map(rest, &String.capitalize/1)])
   end
 
+  @doc """
+  List the file formats `parse_file/3` accepts
+
+  `GET /parse/formats`
+
+  Tag: Parsing
+
+  ## Returns
+
+    * `{:ok, [%Firecrawl.ParseFormat{}]}` on success
+    * `{:error, exception}` on HTTP failure or an unexpected response shape
+  """
+  @spec get_parse_formats(keyword()) ::
+          {:ok, [Firecrawl.ParseFormat.t()]} | {:error, Exception.t() | Firecrawl.Error.t()}
+  def get_parse_formats(opts \\ []) do
+    with {:ok, response} <- Req.get(client(opts), url: "/parse/formats") do
+      decode_parse_formats(response)
+    end
+  end
+
+
+  @doc """
+  Bang variant of `get_parse_formats`. Raises on error.
+  """
+  @spec get_parse_formats!(keyword()) :: [Firecrawl.ParseFormat.t()]
+  def get_parse_formats!(opts \\ []) do
+    case get_parse_formats(opts) do
+      {:ok, formats} -> formats
+      {:error, exception} -> raise exception
+    end
+  end
+
+  defp decode_parse_formats(%Req.Response{body: %{"data" => %{"formats" => formats}}})
+       when is_list(formats) do
+    {:ok, Enum.map(formats, &Firecrawl.ParseFormat.from_map/1)}
+  end
+
+  defp decode_parse_formats(%Req.Response{status: status, body: body}) do
+    {:error,
+     RuntimeError.exception(
+       "unexpected GET /parse/formats response (HTTP #{status}): #{inspect(body)}"
+     )}
+  end
+
   defp fetch_file_field(file, key) do
     case Keyword.fetch(file, key) do
       {:ok, _value} = ok -> ok

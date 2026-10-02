@@ -93,6 +93,44 @@ pub enum ParseFormat {
     Attributes,
 }
 
+/// Kind of upload a parse format covers.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ParseFormatKind {
+    Document,
+    Image,
+    /// A kind this SDK release does not know about. Read-only catch-all so new
+    /// server-side kinds don't fail the whole response.
+    #[serde(other)]
+    Unknown,
+}
+
+/// One upload format listed by `GET /v2/parse/formats`.
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ParseFormatInfo {
+    /// Format name, e.g. `pdf` or `docx`.
+    pub format: String,
+    /// Whether this is a document or an image format.
+    pub kind: ParseFormatKind,
+    /// File extensions accepted for this format, e.g. `.pdf`.
+    pub extensions: Vec<String>,
+    /// MIME types accepted for this format.
+    pub mime_types: Vec<String>,
+    /// Whether this deployment currently accepts the format.
+    pub available: bool,
+}
+
+#[derive(Deserialize, Debug)]
+struct ParseFormatsData {
+    formats: Vec<ParseFormatInfo>,
+}
+
+#[derive(Deserialize, Debug)]
+struct ParseFormatsResponse {
+    data: ParseFormatsData,
+}
+
 /// Options accepted by the `/v2/parse` endpoint.
 ///
 /// This intentionally omits scrape-only fields that `/v2/parse` rejects
@@ -194,6 +232,21 @@ impl Client {
         let response: ParseResponse = self.handle_response(response, "parse").await?;
         Ok(response.data)
     }
+
+    /// Lists the upload formats `/v2/parse` accepts on this deployment.
+    pub async fn get_parse_formats(&self) -> Result<Vec<ParseFormatInfo>, FirecrawlError> {
+        let response = self
+            .client
+            .get(self.url("/parse/formats"))
+            .headers(self.prepare_headers(None))
+            .send()
+            .await
+            .map_err(|e| FirecrawlError::HttpError("Getting parse formats".to_string(), e))?;
+
+        let response: ParseFormatsResponse =
+            self.handle_response(response, "get parse formats").await?;
+        Ok(response.data.formats)
+    }
 }
 
 #[cfg(test)]
@@ -275,6 +328,160 @@ mod tests {
 
         assert!(doc.markdown.is_some());
         mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_get_parse_formats() -> Result<(), FirecrawlError> {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/v2/parse/formats")
+            .match_header("authorization", "Bearer test_key")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "data": {
+                        "formats": [
+                            {
+                                "format": "pdf",
+                                "kind": "document",
+                                "extensions": [".pdf"],
+                                "mimeTypes": ["application/pdf"],
+                                "available": true
+                            },
+                            {
+                                "format": "png",
+                                "kind": "image",
+                                "extensions": [".png"],
+                                "mimeTypes": ["image/png"],
+                                "available": false
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let formats = client.get_parse_formats().await?;
+
+        assert_eq!(
+            formats,
+            vec![
+                ParseFormatInfo {
+                    format: "pdf".to_string(),
+                    kind: ParseFormatKind::Document,
+                    extensions: vec![".pdf".to_string()],
+                    mime_types: vec!["application/pdf".to_string()],
+                    available: true,
+                },
+                ParseFormatInfo {
+                    format: "png".to_string(),
+                    kind: ParseFormatKind::Image,
+                    extensions: vec![".png".to_string()],
+                    mime_types: vec!["image/png".to_string()],
+                    available: false,
+                },
+            ]
+        );
+        mock.assert();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_parse_formats_tolerates_unknown_kind_and_fields() -> Result<(), FirecrawlError>
+    {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/v2/parse/formats")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "data": {
+                        "formats": [
+                            {
+                                "format": "glb",
+                                "kind": "model",
+                                "extensions": [".glb"],
+                                "mimeTypes": ["model/gltf-binary"],
+                                "available": true,
+                                "maxBytes": 1048576
+                            }
+                        ],
+                        "version": 2
+                    }
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let formats = client.get_parse_formats().await?;
+
+        assert_eq!(formats.len(), 1);
+        assert_eq!(formats[0].format, "glb");
+        assert_eq!(formats[0].kind, ParseFormatKind::Unknown);
+        assert_eq!(formats[0].mime_types, vec!["model/gltf-binary"]);
+        assert!(formats[0].available);
+        mock.assert();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_parse_formats_unauthorized() -> Result<(), FirecrawlError> {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/v2/parse/formats")
+            .with_status(401)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": false,
+                    "error": "Unauthorized: Invalid token"
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("bad_key"))?;
+        let result = client.get_parse_formats().await;
+
+        assert!(
+            matches!(
+                &result,
+                Err(FirecrawlError::APIError(_, api_error))
+                    if api_error.error == "Unauthorized: Invalid token"
+            ),
+            "Expected APIError, got: {:?}",
+            result
+        );
+        mock.assert();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_parse_formats_server_error() -> Result<(), FirecrawlError> {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/v2/parse/formats")
+            .with_status(500)
+            .with_body("Internal Server Error")
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let result = client.get_parse_formats().await;
+
+        assert!(
+            matches!(&result, Err(FirecrawlError::HttpRequestFailed(_, 500, _))),
+            "Expected HttpRequestFailed with 500, got: {:?}",
+            result
+        );
+        mock.assert();
+        Ok(())
     }
 
     #[test]
