@@ -58,7 +58,7 @@ jobs:
         id: app_creds
         if: steps.check_changes.outputs.changed == 'true'
         env:
-          CLIENT_ID: ${{ vars.ELIXIR_REGEN_APP_CLIENT_ID }}
+          CLIENT_ID: ${{ secrets.ELIXIR_REGEN_APP_CLIENT_ID }}
           PRIVATE_KEY: ${{ secrets.ELIXIR_REGEN_APP_PRIVATE_KEY }}
         run: |
           if [ -n "$CLIENT_ID" ] && [ -n "$PRIVATE_KEY" ]; then
@@ -73,7 +73,7 @@ jobs:
         if: steps.app_creds.outputs.available == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: ${{ vars.ELIXIR_REGEN_APP_CLIENT_ID }}
+          client-id: ${{ secrets.ELIXIR_REGEN_APP_CLIENT_ID }}
           private-key: ${{ secrets.ELIXIR_REGEN_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
