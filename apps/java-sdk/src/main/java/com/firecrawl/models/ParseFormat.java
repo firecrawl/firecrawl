@@ -1,5 +1,6 @@
 package com.firecrawl.models;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.util.Collections;
@@ -54,6 +55,7 @@ public class ParseFormat {
     public String getKind() { return kind; }
 
     /** Kind as an enum; {@link Kind#UNKNOWN} for values this SDK version does not know. */
+    @JsonIgnore
     public Kind getKindType() { return Kind.fromValue(kind); }
 
     /** File extensions including the leading dot, e.g. {@code ".pdf"}. */

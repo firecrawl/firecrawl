@@ -1,5 +1,7 @@
 package com.firecrawl;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.firecrawl.client.FirecrawlClient;
 import com.firecrawl.errors.AuthenticationException;
 import com.firecrawl.errors.FirecrawlException;
@@ -111,6 +113,26 @@ class ParseFormatsMockTest {
         assertEquals(ParseFormat.Kind.UNKNOWN, mp3.getKindType());
         assertEquals(List.of("audio/mpeg"), mp3.getMimeTypes());
         assertTrue(mp3.isAvailable());
+    }
+
+    @Test
+    void testGetParseFormatsReturnsEmptyListWhenFormatsMissing() {
+        respondWith(200, "{\"success\":true,\"data\":{}}");
+        assertTrue(client.getParseFormats().isEmpty());
+
+        respondWith(200, "{\"success\":true}");
+        assertTrue(client.getParseFormats().isEmpty());
+    }
+
+    @Test
+    void testParseFormatSerializesOnlyWireFields() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ParseFormat pdf = mapper.readValue("{\"format\":\"pdf\",\"kind\":\"document\","
+                + "\"extensions\":[\".pdf\"],\"mimeTypes\":[\"application/pdf\"],\"available\":true}", ParseFormat.class);
+
+        JsonNode json = mapper.valueToTree(pdf);
+        assertEquals("document", json.get("kind").asText());
+        assertFalse(json.has("kindType"));
     }
 
     @Test
