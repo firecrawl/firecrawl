@@ -511,7 +511,7 @@
                             }
                           }
                         ],
-                        "description": "Execute one or more catalogued provider tools instead of scraping a URL. Cannot be combined with `url`, `formats`, or other scrape options (400); the only allowed sibling keys are `timeout`, `origin`, and `integration`. Use the `x-request-id` request header as a client-chosen idempotency key (1 to 128 characters of letters, digits, `.`, `_`, `:`, `-`) — it is echoed back, and a completed request with the same key replays its original response and `scrape_id` instead of re-executing."
+                        "description": "Execute one or more catalogued provider tools instead of scraping a URL. Cannot be combined with `url`, `formats`, or other scrape options (400); the only allowed sibling keys are `timeout`, `origin`, and `integration`. Use the `x-request-id` request header as a client-chosen idempotency key (1 to 128 characters of letters, digits, `.`, `_`, `:`, `-`) — it is echoed back, and a completed request with the same key replays its original response and `scrape_id` instead of re-executing. To browse the catalogue and read tool contracts for free, call Find Tools: set `provider` to `firecrawl`, `capability` to `find-tools`, and `options` to a `FindToolsOptions` object. The result `data` is a `FindToolsData` page."
                       },
                       "domainTools": {
                         "type": "boolean",
@@ -521,6 +521,38 @@
                     }
                   }
                 ]
+              },
+              "examples": {
+                "scrapeUrl": {
+                  "summary": "Scrape a URL",
+                  "value": {
+                    "url": "https://example.com",
+                    "formats": [
+                      "markdown"
+                    ]
+                  }
+                },
+                "findTools": {
+                  "summary": "Find Tools: browse the Alexandria catalogue (free)",
+                  "description": "Calls the `firecrawl/find-tools` capability. It lists the tools of the `particle` provider and does not execute them. Follow an item's `next` call, or the page's `next` call, with another `alexandria` request.",
+                  "value": {
+                    "alexandria": {
+                      "provider": "firecrawl",
+                      "capability": "find-tools",
+                      "options": {
+                        "providers": [
+                          "particle"
+                        ],
+                        "level": "tools",
+                        "expand": [
+                          "options",
+                          "response"
+                        ],
+                        "limit": 2
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -615,8 +647,36 @@
                       "example": "THIRD_PARTY_DATA_TERMS_REQUIRED"
                     },
                     "requiresAction": {
-                      "type": "boolean",
-                      "description": "Present when the team must take action (e.g. accept third-party data terms) before this request can be retried."
+                      "type": "object",
+                      "description": "Present with `THIRD_PARTY_DATA_TERMS_REQUIRED`. Tells you which provider terms an organization admin must accept before you retry this request.",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "accept_terms"
+                          ],
+                          "description": "The action to take. Always `accept_terms`."
+                        },
+                        "terms": {
+                          "type": "string",
+                          "description": "The provider whose terms must be accepted."
+                        },
+                        "version": {
+                          "type": "string",
+                          "description": "The version of the provider's terms that must be accepted."
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri",
+                          "description": "The dashboard page where a human (an organization admin) accepts the terms. Send this URL to a person; do not accept the terms automatically."
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "terms",
+                        "version",
+                        "url"
+                      ]
                     },
                     "chargeId": {
                       "type": "string"
@@ -4374,6 +4434,16 @@
                   "domainTools": {
                     "type": "boolean",
                     "description": "Include tool contracts whose provider matches the domains of the returned web results. Defaults to on when `alexandria` is among the sources; set `false` to disable, or `true` alone to add domain-matched tools beside ordinary web results. Free."
+                  },
+                  "toolDetail": {
+                    "type": "string",
+                    "enum": [
+                      "compact",
+                      "summary",
+                      "full"
+                    ],
+                    "default": "compact",
+                    "description": "How much of each tool contract to return in `data.tools`. `compact` returns only `provider`, `capability`, and `description`. `summary` returns the full tool entry without `options` and `response`. `full` also returns `options`, `response`, and `examples`."
                   },
                   "categories": {
                     "type": "array",
@@ -10501,7 +10571,18 @@
           "options": {
             "type": "object",
             "default": {},
-            "description": "Capability-specific options passed through to the provider tool."
+            "description": "Capability-specific options passed through to the provider tool. For Find Tools (`provider: firecrawl`, `capability: find-tools`), use `FindToolsOptions`.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FindToolsOptions"
+              },
+              {
+                "type": "object",
+                "title": "Capability options",
+                "description": "Options for any other capability, as its contract defines them.",
+                "additionalProperties": true
+              }
+            ]
           }
         },
         "required": [
@@ -10531,7 +10612,16 @@
                 "description": "Credits charged for this call."
               },
               "data": {
-                "description": "The provider's response payload."
+                "description": "The provider's response payload. For Find Tools (`provider: firecrawl`, `capability: find-tools`), this is a `FindToolsData` page.",
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/FindToolsData"
+                  },
+                  {
+                    "title": "Capability response",
+                    "description": "The response of any other capability, as its contract defines it."
+                  }
+                ]
               },
               "records": {
                 "type": "integer",
@@ -10596,12 +10686,12 @@
       },
       "DiscoveredTool": {
         "type": "object",
-        "description": "A catalogued provider tool discovered via Alexandria, semantic search, or domain matching.",
+        "description": "A catalogued provider tool discovered via Alexandria, semantic search, or domain matching. The `toolDetail` request parameter sets which fields appear: `compact` returns only `provider`, `capability`, and `description`; `summary` adds the other fields except `options` and `response`; `full` also adds `options`, `response`, and `examples`.",
         "additionalProperties": true,
         "properties": {
           "id": {
             "type": "string",
-            "description": "The tool's identifier, formatted as `provider/capability`."
+            "description": "The tool's identifier, formatted as `provider/capability`. Omitted when `toolDetail` is `compact`."
           },
           "provider": {
             "type": "string",
@@ -10613,7 +10703,7 @@
           },
           "name": {
             "type": "string",
-            "description": "Human-readable name of the tool."
+            "description": "Human-readable name of the tool. Omitted when `toolDetail` is `compact`."
           },
           "description": {
             "type": "string",
@@ -10622,15 +10712,15 @@
           "creditsCost": {
             "type": "integer",
             "minimum": 0,
-            "description": "Credits charged per execution of this tool."
+            "description": "Credits charged per execution of this tool. Omitted when `toolDetail` is `compact`."
           },
           "perRecord": {
             "type": "boolean",
-            "description": "Whether `creditsCost` is charged per record returned rather than per call."
+            "description": "Whether `creditsCost` is charged per record returned rather than per call. Omitted when `toolDetail` is `compact`."
           },
           "options": {
             "type": "array",
-            "description": "The capability's accepted options.",
+            "description": "The capability's accepted options. Present only when `toolDetail` is `full`.",
             "items": {
               "type": "object",
               "additionalProperties": true,
@@ -10649,7 +10739,7 @@
           "response": {
             "type": "object",
             "additionalProperties": true,
-            "description": "Description of the shape of a successful response's `data`.",
+            "description": "Description of the shape of a successful response's `data`. Present only when `toolDetail` is `full`.",
             "properties": {
               "about": {
                 "type": "string",
@@ -10671,7 +10761,7 @@
           },
           "matchedBy": {
             "type": "array",
-            "description": "Why this tool was surfaced.",
+            "description": "Why this tool was surfaced. Omitted when `toolDetail` is `compact`.",
             "items": {
               "type": "string",
               "enum": [
@@ -10682,20 +10772,175 @@
           },
           "matchedUrls": {
             "type": "array",
-            "description": "URLs whose domain matched this tool, when matched by domain.",
+            "description": "URLs whose domain matched this tool, when matched by domain. Omitted when `toolDetail` is `compact`.",
             "items": {
               "type": "string"
             }
           }
         },
         "required": [
-          "id",
           "provider",
           "capability",
-          "name",
-          "description",
-          "creditsCost",
-          "perRecord"
+          "description"
+        ]
+      },
+      "FindToolsOptions": {
+        "type": "object",
+        "title": "Find Tools options",
+        "description": "Options for the Find Tools capability (`provider: firecrawl`, `capability: find-tools`) in an `alexandria` call. Find Tools is free and does not execute the tools it returns. All fields are optional. Selectors narrow the results.",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Natural-language description of the data you need. Returns tools that match by meaning."
+          },
+          "urls": {
+            "type": "array",
+            "description": "Website URLs. Returns tools whose provider matches the domain of a URL.",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "providers": {
+            "type": "array",
+            "description": "Provider IDs to browse, e.g. `particle`.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "categories": {
+            "type": "array",
+            "description": "Category IDs to browse.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "groups": {
+            "type": "array",
+            "description": "Group IDs to browse.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "capabilities": {
+            "type": "array",
+            "description": "Exact capability IDs to return.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "providers",
+              "groups",
+              "tools"
+            ],
+            "description": "The catalogue level to list in `items`."
+          },
+          "expand": {
+            "type": "array",
+            "description": "Contract parts to include on each tool. Use `[\"options\", \"response\"]` for inputs and output shape, add `examples` for example payloads, or use `[]` for compact results.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "options",
+                "response",
+                "examples"
+              ]
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Maximum number of items on the page."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of items to skip, for pagination."
+          }
+        }
+      },
+      "FindToolsData": {
+        "type": "object",
+        "title": "Find Tools result",
+        "description": "One page of the Alexandria catalogue, returned in `data.alexandria[].data` for a Find Tools call. The call costs 0 credits.",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "providers",
+              "groups",
+              "tools"
+            ],
+            "description": "The catalogue level of the items on this page."
+          },
+          "items": {
+            "type": "array",
+            "description": "Catalogue entries at `level`. At the `tools` level, each item also has the tool fields of `DiscoveredTool` (`provider`, `capability`, `description`, `creditsCost`, `perRecord`), plus `options` and `response` when `expand` asks for them.",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "The entry's identifier."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Human-readable name of the entry."
+                },
+                "next": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AlexandriaCall"
+                    }
+                  ],
+                  "description": "An `alexandria` call that returns more detail for this entry."
+                },
+                "execute": {
+                  "type": "object",
+                  "description": "The `provider` and `capability` to put in an `alexandria` call to execute this tool.",
+                  "properties": {
+                    "provider": {
+                      "type": "string"
+                    },
+                    "capability": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "provider",
+                    "capability"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of entries that match the selectors."
+          },
+          "next": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AlexandriaCall"
+              }
+            ],
+            "nullable": true,
+            "description": "An `alexandria` call for the next page of this listing, or `null` on the last page."
+          }
+        },
+        "required": [
+          "level",
+          "items",
+          "total"
         ]
       },
       "AlexandriaScrapeResponse": {
