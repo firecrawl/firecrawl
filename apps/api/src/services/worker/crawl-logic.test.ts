@@ -1,6 +1,6 @@
 import type { Mock } from "vitest";
 import { finishCrawlSuper } from "./crawl-logic";
-import { getCrawl } from "../../lib/crawl-redis";
+import { getCrawl, getDoneJobsOrderedLength } from "../../lib/crawl-redis";
 import { logCrawl } from "../logging/log_job";
 import { createWebhookSender } from "../webhook/index";
 import { createInAppNotification } from "../notification/in_app";
@@ -11,6 +11,14 @@ vi.mock("../../lib/crawl-redis", () => ({
   getCrawl: vi.fn(),
   getCrawlJobs: vi.fn(async () => []),
   getDoneJobsOrderedLength: vi.fn(async () => 2),
+}));
+
+vi.mock("../../lib/request-credits-store", () => ({
+  readRequestCredits: vi.fn(async () => 7),
+}));
+
+vi.mock("../../lib/request-credits-analytics", () => ({
+  readRequestCreditsFromAnalytics: vi.fn(async () => 7),
 }));
 
 vi.mock("../../controllers/v1/crawl-status", () => ({
@@ -29,6 +37,8 @@ vi.mock("../webhook/index", () => ({
     BATCH_SCRAPE_COMPLETED: "batch_scrape.completed",
   },
 }));
+
+vi.mock("../redis", () => ({ redisEvictConnection: {} }));
 
 vi.mock("../notification/in_app", async importOriginal => ({
   ...(await importOriginal<typeof import("../notification/in_app")>()),
@@ -126,8 +136,10 @@ describe("dashboard notification on finish", () => {
         jobId: "crawl-dash",
         url: "https://example.com",
         completed: 2,
+        creditsUsed: 7,
         link: "/app/logs?q=crawl-dash",
       }),
+      { dedupeKey: "crawl-dash" },
     );
   });
 
@@ -144,6 +156,7 @@ describe("dashboard notification on finish", () => {
       "team-from-sc",
       "crawlCompleted",
       expect.objectContaining({ url: null }),
+      expect.anything(),
     );
   });
 
@@ -161,16 +174,32 @@ describe("dashboard notification on finish", () => {
       "team-from-sc",
       "batchScrapeCompleted",
       expect.objectContaining({ url: null }),
+      expect.anything(),
     );
   });
 
-  test("stays quiet for API-started and cancelled jobs", async () => {
+  test("stays quiet for API-started, cancelled, and fully failed jobs", async () => {
     (getCrawl as Mock).mockResolvedValueOnce({
       ...baseSc,
       v1: true,
       origin: "api",
     });
     await finishCrawlSuper(job("api"));
+
+    (getCrawl as Mock).mockResolvedValueOnce({
+      ...baseSc,
+      v1: true,
+      origin: "not-the-website",
+    });
+    await finishCrawlSuper(job("lookalike"));
+
+    (getCrawl as Mock).mockResolvedValueOnce({
+      ...baseSc,
+      v1: true,
+      origin: "website",
+    });
+    (getDoneJobsOrderedLength as Mock).mockResolvedValueOnce(0);
+    await finishCrawlSuper(job("all-failed"));
 
     (getCrawl as Mock).mockResolvedValueOnce({
       ...baseSc,

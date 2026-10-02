@@ -227,7 +227,14 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       );
     }
 
-    if (!sc.cancelled && isDashboardOrigin(sc.origin ?? data?.origin)) {
+    // The origin is client-supplied, so this only scopes which of the caller's
+    // own jobs reach their team's feed. Runs with no successful page are not
+    // reported as completed.
+    if (
+      !sc.cancelled &&
+      num_docs > 0 &&
+      isDashboardOrigin(sc.origin ?? data?.origin)
+    ) {
       const isCrawl = sc.crawlerOptions !== null;
       await createInAppNotification(
         teamId,
@@ -239,6 +246,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
           creditsUsed: credits_billed,
           link: `/app/logs?q=${encodeURIComponent(crawlId)}`,
         },
+        { dedupeKey: crawlId },
       );
     }
 

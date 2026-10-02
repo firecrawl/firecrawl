@@ -74,6 +74,18 @@ describe("recording a monitor notification", () => {
     );
   });
 
+  test("reports a failed write without throwing", async () => {
+    (createInAppNotification as Mock).mockResolvedValueOnce(false);
+
+    const result = await recordMonitorInAppNotification({
+      monitor,
+      check,
+      pages: [{ url: "https://a.com", status: "changed" }],
+    });
+
+    expect(result).toEqual({ attempted: true, success: false });
+  });
+
   test("skips checks with no changes and changes the judge marked as noise", async () => {
     await recordMonitorInAppNotification({
       monitor,

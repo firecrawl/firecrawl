@@ -453,6 +453,19 @@ async function sendNotifications(params: {
     summary: toSummaryObject(params.check),
   };
 
+  const nonSamePages = params.pages.filter(page => page.status !== "same");
+
+  // Never throws, and goes first so a failing channel below cannot skip it.
+  const inAppStatus = await recordMonitorInAppNotification({
+    monitor: params.monitor,
+    check: params.check,
+    pages: nonSamePages.map(page => ({
+      url: page.url,
+      status: page.status,
+      judgment: page.judgment ?? null,
+    })),
+  });
+
   let webhookStatus: unknown = { attempted: false };
   if (params.monitor.webhook) {
     const sender = await createWebhookSender({
@@ -485,7 +498,6 @@ async function sendNotifications(params: {
     }
   }
 
-  const nonSamePages = params.pages.filter(page => page.status !== "same");
   // Pull diff text for up to 5 meaningful changed pages so the email leads with
   // the diff. Errors swallowed per-page so one GCS hiccup doesn't drop the alert.
   const diffEligible = nonSamePages
@@ -548,16 +560,6 @@ async function sendNotifications(params: {
       error: error instanceof Error ? error.message : String(error),
     };
   }
-
-  const inAppStatus = await recordMonitorInAppNotification({
-    monitor: params.monitor,
-    check: params.check,
-    pages: nonSamePages.map(page => ({
-      url: page.url,
-      status: page.status,
-      judgment: page.judgment ?? null,
-    })),
-  });
 
   return {
     webhook: webhookStatus,
