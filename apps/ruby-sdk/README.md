@@ -224,7 +224,7 @@ client = Firecrawl::Client.new(
   api_key: "fc-your-api-key",
   api_url: "https://api.firecrawl.dev",  # custom API URL
   timeout: 300,                           # HTTP timeout in seconds
-  max_retries: 3,                         # automatic retries
+  max_retries: 3,                         # automatic GET retries; writes are sent once
   backoff_factor: 0.5                     # exponential backoff factor
 )
 ```
