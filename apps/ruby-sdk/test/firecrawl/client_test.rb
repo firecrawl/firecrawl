@@ -1208,6 +1208,38 @@ class ClientTest < Minitest::Test
     assert_equal "# Page 2", job.data[1].markdown
   end
 
+  def test_crawl_batch_and_monitor_pagination_reject_two_page_cycles
+    cases = [
+      [:paginate_crawl, Firecrawl::Models::CrawlJob, { "status" => "completed", "data" => [] }],
+      [:paginate_batch_scrape, Firecrawl::Models::BatchScrapeJob, { "status" => "completed", "data" => [] }],
+      [:paginate_monitor_check, Firecrawl::Models::MonitorCheckDetail, { "pages" => [] }],
+    ]
+    cases.each do |method, model, initial|
+      stub_request(:get, "#{BASE_URL}/a")
+        .to_return(status: 200, body: JSON.generate(initial.merge("next" => "#{BASE_URL}/b")), headers: { "Content-Type" => "application/json" })
+      stub_request(:get, "#{BASE_URL}/b")
+        .to_return(status: 200, body: JSON.generate(initial.merge("next" => "#{BASE_URL}/a")), headers: { "Content-Type" => "application/json" })
+
+      error = assert_raises(Firecrawl::FirecrawlError) do
+        @client.send(method, model.new(initial.merge("next" => "#{BASE_URL}/a")))
+      end
+      assert_includes error.message, "Pagination cursor repeated"
+      assert_requested :get, "#{BASE_URL}/a", times: 1
+      assert_requested :get, "#{BASE_URL}/b", times: 1
+      WebMock.reset!
+    end
+  end
+
+  def test_distinct_pagination_cursors_still_complete
+    stub_request(:get, "#{BASE_URL}/a")
+      .to_return(status: 200, body: JSON.generate(status: "completed", data: [{ markdown: "first" }], next: "#{BASE_URL}/b"), headers: { "Content-Type" => "application/json" })
+    stub_request(:get, "#{BASE_URL}/b")
+      .to_return(status: 200, body: JSON.generate(status: "completed", data: [{ markdown: "second" }]), headers: { "Content-Type" => "application/json" })
+
+    result = @client.send(:paginate_crawl, Firecrawl::Models::CrawlJob.new("next" => "#{BASE_URL}/a", "data" => []))
+    assert_equal %w[first second], result.data.map(&:markdown)
+  end
+
   def test_crawl_pagination_rejects_third_party_url
     stub_request(:post, "#{BASE_URL}/v2/crawl")
       .to_return(
