@@ -325,6 +325,22 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
   let mut result_links = Vec::new();
   let mut denial_reasons = HashMap::new();
 
+  // External links are followed one hop: a page outside the crawl's site (one
+  // reached through allowExternalContentLinks) is scraped, but the links found
+  // on it are not crawled. Without this, its links to its own site would be
+  // classified as internal below, since base_url is the page being processed.
+  let page_in_crawl = is_internal_link(&base_url, &initial_url)
+    || (data.allow_subdomains && is_subdomain(&base_url, &initial_url));
+  if !page_in_crawl {
+    for link in data.links {
+      denial_reasons.insert(link, EXTERNAL_LINK.to_string());
+    }
+    return Ok(FilterLinksResult {
+      links: result_links,
+      denial_reasons,
+    });
+  }
+
   for link in data.links {
     if result_links.len() >= limit {
       break;
@@ -1239,6 +1255,81 @@ mod tests {
         .unwrap(),
       "INCLUDE_PATTERN"
     );
+  }
+
+  fn external_links_call(links: Vec<&str>, base_url: &str) -> FilterLinksCall {
+    FilterLinksCall {
+      links: links.into_iter().map(|x| x.to_string()).collect(),
+      limit: Some(10),
+      includes: vec![],
+      excludes: vec![],
+      ignore_robots_txt: true,
+      robots_txt: "".to_string(),
+      max_depth: 10,
+      base_url: base_url.to_string(),
+      initial_url: "https://example.com/".to_string(),
+      regex_on_full_url: false,
+      allow_backward_crawling: false,
+      allow_external_content_links: true,
+      allow_subdomains: false,
+      robots_user_agent: None,
+    }
+  }
+
+  // With allowExternalLinks, an external page is scraped once and its own links
+  // are not crawled. The worker sets base_url to the page being processed, so
+  // links to the external page's own site must not count as internal.
+  #[test]
+  fn test_filter_links_does_not_follow_links_found_on_an_external_page() {
+    let result = _filter_links(external_links_call(
+      vec![
+        "https://outside.test/next",
+        "/relative",
+        "https://other.test/page",
+      ],
+      "https://outside.test/article",
+    ))
+    .unwrap();
+
+    assert!(result.links.is_empty());
+    for link in [
+      "https://outside.test/next",
+      "/relative",
+      "https://other.test/page",
+    ] {
+      assert_eq!(result.denial_reasons.get(link).unwrap(), "EXTERNAL_LINK");
+    }
+  }
+
+  // Links on the crawl's own pages are unaffected: internal links and external
+  // content links are still followed.
+  #[test]
+  fn test_filter_links_follows_internal_and_external_links_on_a_crawled_page() {
+    let result = _filter_links(external_links_call(
+      vec!["https://example.com/next", "https://outside.test/article"],
+      "https://example.com/page",
+    ))
+    .unwrap();
+
+    assert_eq!(
+      result.links,
+      vec!["https://example.com/next", "https://outside.test/article"]
+    );
+  }
+
+  // A subdomain page reached through allowSubdomains is part of the crawl, so its
+  // links are still followed.
+  #[test]
+  fn test_filter_links_follows_links_on_an_allowed_subdomain_page() {
+    let mut call = external_links_call(
+      vec!["https://docs.example.com/guide/next"],
+      "https://docs.example.com/guide",
+    );
+    call.allow_external_content_links = false;
+    call.allow_subdomains = true;
+    let result = _filter_links(call).unwrap();
+
+    assert_eq!(result.links, vec!["https://docs.example.com/guide/next"]);
   }
 
   #[test]

@@ -58,6 +58,7 @@ import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { CostTracking } from "../../lib/cost-tracking";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
+import { startUrlOnHost } from "../../lib/crawl-scope";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
@@ -558,8 +559,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 
       let crawler: WebCrawler | null = null;
+      let teamFlags: TeamFlags | null = null;
       if (job.data.crawlerOptions !== null) {
-        const teamFlags = (await getACUCTeam(job.data.team_id))?.flags ?? null;
+        teamFlags = (await getACUCTeam(job.data.team_id))?.flags ?? null;
         crawler = crawlToCrawler(
           job.data.crawl_id,
           sc,
@@ -596,9 +598,20 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           normalizeUrlOnlyHostname(doc.metadata.url) !==
           normalizeUrlOnlyHostname(doc.metadata.sourceURL);
         if (job.data.isCrawlSourceScrape && isHostnameDifferent) {
+          // Link filtering treats a page off the crawl's host as an external
+          // page, so this page's links are filtered on the new host, with the
+          // path the crawl was started from.
+          const startUrl = startUrlOnHost(sc.originUrl!, doc.metadata.url);
           // TODO: re-fetch sitemap for redirect target domain
           sc.originUrl = doc.metadata.url;
           await saveCrawl(job.data.crawl_id, sc);
+          crawler = crawlToCrawler(
+            job.data.crawl_id,
+            { ...sc, originUrl: startUrl },
+            teamFlags,
+            startUrl,
+            job.data.crawlerOptions,
+          );
         }
 
         const p1 = generateURLPermutations(normalizeURL(doc.metadata.url, sc));
