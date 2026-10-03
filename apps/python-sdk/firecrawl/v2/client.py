@@ -601,6 +601,7 @@ class FirecrawlClient:
         allow_external_links: bool = False,
         allow_subdomains: bool = False,
         ignore_robots_txt: bool = False,
+        robots_user_agent: Optional[str] = None,
         delay: Optional[int] = None,
         max_concurrency: Optional[int] = None,
         webhook: Optional[Union[str, WebhookConfig]] = None,
@@ -652,6 +653,7 @@ class FirecrawlClient:
             allow_external_links: Follow external domain links
             allow_subdomains: Follow subdomains
             ignore_robots_txt: Whether to ignore robots.txt rules
+            robots_user_agent: User agent token matched against robots.txt rules
             delay: Delay in seconds between scrapes
             max_concurrency: Maximum number of concurrent scrapes
             webhook: Webhook configuration for notifications
@@ -724,6 +726,7 @@ class FirecrawlClient:
             "allow_external_links": allow_external_links,
             "allow_subdomains": allow_subdomains,
             "ignore_robots_txt": ignore_robots_txt,
+            "robots_user_agent": robots_user_agent,
             "delay": delay,
             "max_concurrency": max_concurrency,
             "webhook": webhook,
@@ -762,6 +765,7 @@ class FirecrawlClient:
         allow_external_links: bool = False,
         allow_subdomains: bool = False,
         ignore_robots_txt: bool = False,
+        robots_user_agent: Optional[str] = None,
         delay: Optional[int] = None,
         max_concurrency: Optional[int] = None,
         webhook: Optional[Union[str, WebhookConfig]] = None,
@@ -811,6 +815,7 @@ class FirecrawlClient:
             allow_external_links: Follow external domain links
             allow_subdomains: Follow subdomains
             ignore_robots_txt: Whether to ignore robots.txt rules
+            robots_user_agent: User agent token matched against robots.txt rules
             delay: Delay in seconds between scrapes
             max_concurrency: Maximum number of concurrent scrapes
             webhook: Webhook configuration for notifications
@@ -881,6 +886,7 @@ class FirecrawlClient:
             "allow_external_links": allow_external_links,
             "allow_subdomains": allow_subdomains,
             "ignore_robots_txt": ignore_robots_txt,
+            "robots_user_agent": robots_user_agent,
             "delay": delay,
             "max_concurrency": max_concurrency,
             "webhook": webhook,
