@@ -1018,7 +1018,7 @@ async function supaAuthenticateUser(
       rateLimiterRes,
     });
 
-    const secs = Math.round(rateLimiterRes.msBeforeNext / 1000) || 1;
+    const secs = Math.ceil(rateLimiterRes.msBeforeNext / 1000) || 1;
     const retryDate = new Date(Date.now() + rateLimiterRes.msBeforeNext);
 
     // We can only send a rate limit email every 7 days, send notification already has the date in between checking

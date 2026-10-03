@@ -42,5 +42,6 @@ describe("authMiddleware rate-limit responses", () => {
 
     expect(res.status).toBe(401);
     expect(res.headers["retry-after"]).toBeUndefined();
+    expect(res.body).not.toHaveProperty("retry_after_seconds");
   });
 });

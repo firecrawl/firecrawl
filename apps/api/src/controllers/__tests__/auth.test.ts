@@ -554,7 +554,7 @@ describe("authenticateUser", () => {
     expect(auth).toMatchObject({
       success: false,
       status: 429,
-      retryAfterSeconds: 12,
+      retryAfterSeconds: 13,
     });
   });
 
