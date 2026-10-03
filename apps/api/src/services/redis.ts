@@ -11,7 +11,10 @@ redisRateLimitClient.on("error", error => {
     } else if (error.message === "ECONNREFUSED") {
       logger.error("Connection to Redis Session Rate Limit Store refused!");
     } else logger.error(error);
-  } catch (error) {}
+  } catch (error) {
+    // last resort if the logger itself throws; never let the handler crash
+    console.error("Failed to log Redis connection error", error);
+  }
 });
 
 // Listen to 'reconnecting' event to Redis
@@ -20,14 +23,18 @@ redisRateLimitClient.on("reconnecting", err => {
     if (redisRateLimitClient.status === "reconnecting")
       logger.info("Reconnecting to Redis Session Rate Limit Store...");
     else logger.error("Error reconnecting to Redis Session Rate Limit Store.");
-  } catch (error) {}
+  } catch (error) {
+    console.error("Failed to log Redis reconnecting state", error);
+  }
 });
 
 // Listen to the 'connect' event to Redis
 redisRateLimitClient.on("connect", err => {
   try {
     if (!err) logger.info("Connected to Redis Session Rate Limit Store!");
-  } catch (error) {}
+  } catch (error) {
+    console.error("Failed to log Redis connect state", error);
+  }
 });
 
 /**
