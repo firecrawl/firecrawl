@@ -59,6 +59,32 @@ export function isKeylessConfigured(): boolean {
 
 const DAY_SECONDS = 86400;
 
+// A World ID verified human gets their own bucket, keyed on a hash of their
+// World ID subject instead of the client IP, with 20% more requests and
+// credits than the per-IP tier.
+const WORLD_ID_IDENTITY_PREFIX = "wid_";
+const WORLD_ID_LIMIT_MULTIPLIER = 1.2;
+
+export function keylessWorldIdIdentity(subjectHash: string): string {
+  return `${WORLD_ID_IDENTITY_PREFIX}${subjectHash}`;
+}
+
+/** Daily limits for a keyless identity (a client IP or a World ID identity). */
+function keylessLimitsFor(identity: string): {
+  requests: number;
+  credits: number;
+} {
+  const requests = KEYLESS_REQUESTS_PER_DAY ?? 0;
+  const credits = KEYLESS_CREDITS_PER_DAY ?? 0;
+  if (!identity.startsWith(WORLD_ID_IDENTITY_PREFIX)) {
+    return { requests, credits };
+  }
+  return {
+    requests: Math.floor(requests * WORLD_ID_LIMIT_MULTIPLIER),
+    credits: Math.floor(credits * WORLD_ID_LIMIT_MULTIPLIER),
+  };
+}
+
 // This value is emitted only on quota exhaustion. It is a versioned, keyed
 // pseudonym—not an IP address—so analytics can join the event to the existing
 // privacy-controlled signup/OAuth matching pipeline without expanding raw-IP
@@ -302,8 +328,7 @@ type KeylessCreditReservationResult = {
 export async function consumeKeylessRequest(
   ip: string,
 ): Promise<KeylessConsumeResult> {
-  const requestLimit = KEYLESS_REQUESTS_PER_DAY ?? 0;
-  const creditLimit = KEYLESS_CREDITS_PER_DAY ?? 0;
+  const { requests: requestLimit, credits: creditLimit } = keylessLimitsFor(ip);
 
   const rKey = requestsKey(ip);
   const requestsUsed = await redisRateLimitClient.incr(rKey);
@@ -346,7 +371,7 @@ export async function reserveKeylessCredits(
   projectedCredits: number,
 ): Promise<KeylessCreditReservationResult> {
   const ip = keylessIpFromTeamId(teamId);
-  const limit = KEYLESS_CREDITS_PER_DAY ?? 0;
+  const limit = ip ? keylessLimitsFor(ip).credits : 0;
   if (!ip || !Number.isFinite(projectedCredits) || projectedCredits <= 0) {
     return { ok: true, creditsUsed: 0, limit };
   }
@@ -464,7 +489,7 @@ export async function updateKeylessBrowserCredits(
     Date.now(),
     Math.ceil(credits),
     finalize ? "1" : "0",
-    KEYLESS_CREDITS_PER_DAY ?? 0,
+    keylessLimitsFor(ip).credits,
   );
   if (result !== 1 && !finalize) keylessCreditBlocksTotal.inc();
   return result === 1;
@@ -474,8 +499,13 @@ export async function updateKeylessBrowserCredits(
  * Read-only check of whether an IP could currently use the keyless tier (no
  * consumption). Used by the hosted MCP before a keyless tool call so an
  * ineligible caller receives structured recovery without an OAuth challenge.
+ * A World ID identity is checked against its own bucket and skips the IP
+ * checks, as it does in auth.
  */
-export async function checkKeylessEligibility(ip: string): Promise<{
+export async function checkKeylessEligibility(
+  ip: string,
+  worldIdIdentity?: string,
+): Promise<{
   eligible: boolean;
   reason?:
     | KeylessQuotaReason
@@ -486,23 +516,29 @@ export async function checkKeylessEligibility(ip: string): Promise<{
   retryAfterSeconds?: number;
 }> {
   if (!isKeylessConfigured()) return { eligible: false, reason: "disabled" };
-  if (!ip || !isKeylessIpEligible(ip)) {
-    return { eligible: false, reason: "ineligible_ip" };
+  if (worldIdIdentity) {
+    ip = worldIdIdentity;
+  } else {
+    if (!ip || !isKeylessIpEligible(ip)) {
+      return { eligible: false, reason: "ineligible_ip" };
+    }
+    // Key the Spur cache and quota buckets below off the canonical IPv4 form.
+    ip = normalizeKeylessIpv4(ip);
+    // Optional Spur Context check (only when SPUR_API_KEY is set): treat IPs on
+    // anonymizing/rotating infrastructure as ineligible so the hosted MCP can
+    // return a bounded recovery result instead of serving a request auth
+    // rejects.
+    if (await isKeylessIpSuspicious(ip)) {
+      return { eligible: false, reason: "suspicious" };
+    }
   }
-  // Key the Spur cache and quota buckets below off the canonical IPv4 form.
-  ip = normalizeKeylessIpv4(ip);
-  // Optional Spur Context check (only when SPUR_API_KEY is set): treat IPs on
-  // anonymizing/rotating infrastructure as ineligible so the hosted MCP can
-  // return a bounded recovery result instead of serving a request auth rejects.
-  if (await isKeylessIpSuspicious(ip)) {
-    return { eligible: false, reason: "suspicious" };
-  }
+  const limits = keylessLimitsFor(ip);
   try {
     const requestsUsed = parseInt(
       (await redisRateLimitClient.get(requestsKey(ip))) ?? "0",
       10,
     );
-    if (requestsUsed >= (KEYLESS_REQUESTS_PER_DAY ?? 0)) {
+    if (requestsUsed >= limits.requests) {
       return {
         eligible: false,
         reason: "requests",
@@ -514,7 +550,7 @@ export async function checkKeylessEligibility(ip: string): Promise<{
       (await redisRateLimitClient.get(creditKey)) ?? "0",
       10,
     );
-    if (creditsUsed >= (KEYLESS_CREDITS_PER_DAY ?? 0)) {
+    if (creditsUsed >= limits.credits) {
       return {
         eligible: false,
         reason: "credits",

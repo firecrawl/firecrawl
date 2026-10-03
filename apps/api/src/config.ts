@@ -130,6 +130,18 @@ const configSchema = z.object({
   // Keep separate from KEYLESS_PROXY_SECRET because delegated credentials can
   // authorize billed requests for a managed OAuth connection.
   MCP_DELEGATED_CREDENTIAL_SECRET: emptyStringAsUndefined(z.string().min(32)),
+  // World ID verified-human keyless bucket. Off unless all four are set: the
+  // OIDC issuer (e.g. https://auth.world.org), the confidential client
+  // registered with it, and a dedicated secret that signs the keyless
+  // credentials minted after verification and pseudonymizes World ID subjects.
+  WORLD_ID_ISSUER: emptyStringAsUndefined(z.string().url()),
+  WORLD_ID_CLIENT_ID: emptyStringAsUndefined(z.string()),
+  WORLD_ID_CLIENT_SECRET: emptyStringAsUndefined(z.string()),
+  WORLD_ID_CREDENTIAL_SECRET: emptyStringAsUndefined(z.string().min(32)),
+  // Optional comma-separated allowlist of subject hashes. When set, only these
+  // verified humans are issued a credential; unset issues one to anyone who
+  // verifies.
+  WORLD_ID_ALLOWED_SUBJECTS: emptyStringAsUndefined(z.string()),
   // Optional Spur Context API token (https://docs.spur.us/context-api). When
   // set, keyless requests have their client IP checked against Spur and are
   // refused if the IP fronts anonymizing/rotating infrastructure (VPN/proxy/
