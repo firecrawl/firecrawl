@@ -238,12 +238,20 @@ rescue Firecrawl::AuthenticationError => e
   puts "Invalid API key: #{e.message}"
 rescue Firecrawl::RateLimitError => e
   puts "Rate limited: #{e.message}"
+rescue Firecrawl::JobFailedError => e
+  puts "#{e.job.status} job; #{e.job.data.length} partial documents available"
+  puts "Pagination also failed: #{e.pagination_error.message}" if e.pagination_error
 rescue Firecrawl::JobTimeoutError => e
   puts "Job #{e.job_id} timed out after #{e.timeout_seconds}s"
 rescue Firecrawl::FirecrawlError => e
   puts "Error (#{e.status_code}): #{e.message}"
 end
 ```
+
+`crawl` and `batch_scrape` raise `JobFailedError` when a job finishes as `failed` or
+`cancelled`. Its `job` contains the terminal status and any fetched partial
+documents. If fetching later pages also fails, `pagination_error` retains that
+exception; otherwise it is `nil`.
 
 ## Development
 

@@ -5,7 +5,7 @@ module Firecrawl
     # Status and results of a crawl job.
     class CrawlJob
       attr_reader :id, :status, :total, :completed, :credits_used,
-                  :expires_at, :next_url
+                  :expires_at, :next_url, :error
       attr_accessor :data
 
       def initialize(raw)
@@ -16,6 +16,7 @@ module Firecrawl
         @credits_used = raw["creditsUsed"]
         @expires_at = raw["expiresAt"]
         @next_url = raw["next"]
+        @error = raw["error"]
         @data = (raw["data"] || []).map { |d| Document.new(d) }
       end
 
