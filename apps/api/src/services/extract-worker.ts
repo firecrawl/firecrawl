@@ -8,6 +8,7 @@ import { updateExtract } from "../lib/extract/extract-redis";
 import { performExtraction_F0 } from "../lib/extract/fire-0/extraction-service-f0";
 import { createWebhookSender, WebhookEvent } from "./webhook";
 import Express from "express";
+import { startNodeRuntimeMetrics } from "../lib/node-runtime-metrics";
 import { getErrorContactMessage } from "../lib/deployment";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
@@ -175,6 +176,7 @@ const processDLQJob = async (data: ExtractJobData) => {
 
 // Start the worker
 const app = Express();
+startNodeRuntimeMetrics();
 
 app.get("/health", (req, res) => {
   res.status(200).json({ ok: true });
