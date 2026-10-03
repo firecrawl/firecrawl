@@ -1103,7 +1103,13 @@ export type LoggedSearch = {
   zeroDataRetention: boolean;
 };
 
-export async function logSearch(search: LoggedSearch, force: boolean = false) {
+export async function logSearch(
+  search: LoggedSearch,
+  force: boolean = false,
+  {
+    saveResultsInBackground = false,
+  }: { saveResultsInBackground?: boolean } = {},
+) {
   return withLogSpan(
     {
       operation: "search",
@@ -1113,11 +1119,15 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
       force,
       zeroDataRetention: search.zeroDataRetention,
     },
-    () => logSearchInternal(search, force),
+    () => logSearchInternal(search, force, saveResultsInBackground),
   );
 }
 
-async function logSearchInternal(search: LoggedSearch, force: boolean = false) {
+async function logSearchInternal(
+  search: LoggedSearch,
+  force: boolean = false,
+  saveResultsInBackground: boolean = false,
+) {
   const logger = _logger.child({
     module: "log_job",
     method: "logSearch",
@@ -1184,7 +1194,17 @@ async function logSearchInternal(search: LoggedSearch, force: boolean = false) {
   }
 
   if (search.results && !search.zeroDataRetention) {
-    await saveSearchToGCS(search, logger);
+    const savedResults = saveSearchToGCS(search, logger);
+    if (saveResultsInBackground) {
+      savedResults.catch(error => {
+        logger.warn("Background search result save failed", {
+          error,
+          searchId: search.id,
+        });
+      });
+    } else {
+      await savedResults;
+    }
   }
 }
 

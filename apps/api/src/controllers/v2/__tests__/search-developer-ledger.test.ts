@@ -378,6 +378,9 @@ it.each([true, false])(
     try {
       await flushAsync();
       expect(mockLogSearch).toHaveBeenCalledTimes(1);
+      expect(mockLogSearch.mock.calls[0].slice(1)).toEqual(
+        keyless ? [false, { saveResultsInBackground: true }] : [false],
+      );
       if (keyless) {
         expect(mockFeedbackMetadata).not.toHaveBeenCalled();
         expect(res.json).not.toHaveBeenCalled();

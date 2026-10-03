@@ -469,24 +469,28 @@ async function searchControllerInner(
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
-    const logSearchPromise = logSearch(
-      {
-        id: jobId,
-        request_id: agentRequestId ?? jobId,
-        query: req.body.query,
-        is_successful: true,
-        error: undefined,
-        results: result.response as any,
-        num_results: result.totalResultsCount,
-        time_taken: timeTakenInSeconds,
-        team_id: req.auth.team_id,
-        options: req.body,
-        // Don't record preview tokens as billed in the ledger — only record
-        // credits when billing is actually applied.
-        credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
-        zeroDataRetention,
-      },
-      false,
+    const keylessFeedback =
+      config.KEYLESS_FEEDBACK_ENABLED && !!keylessTeamUuid(req.auth.team_id);
+    const searchLog = {
+      id: jobId,
+      request_id: agentRequestId ?? jobId,
+      query: req.body.query,
+      is_successful: true,
+      error: undefined,
+      results: result.response as any,
+      num_results: result.totalResultsCount,
+      time_taken: timeTakenInSeconds,
+      team_id: req.auth.team_id,
+      options: req.body,
+      // Don't record preview tokens as billed in the ledger — only record
+      // credits when billing is actually applied.
+      credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
+      zeroDataRetention,
+    };
+    const logSearchPromise = (
+      keylessFeedback
+        ? logSearch(searchLog, false, { saveResultsInBackground: true })
+        : logSearch(searchLog, false)
     ).catch(error => {
       logger.error("Failed to log search", { error, jobId });
     });
@@ -520,8 +524,8 @@ async function searchControllerInner(
       });
     }
 
-    if (config.KEYLESS_FEEDBACK_ENABLED && keylessTeamUuid(req.auth.team_id))
-      await logSearchPromise;
+    // The invitation needs the job row, not the saved response artifact.
+    if (keylessFeedback) await logSearchPromise;
 
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;
