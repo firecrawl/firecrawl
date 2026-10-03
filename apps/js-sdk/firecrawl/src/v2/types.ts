@@ -1040,6 +1040,7 @@ export interface CrawlOptions {
   ignoreQueryParameters?: boolean;
   deduplicateSimilarURLs?: boolean;
   limit?: number | null;
+  stopOnContent?: string[] | null;
   crawlEntireDomain?: boolean;
   allowExternalLinks?: boolean;
   allowSubdomains?: boolean;

@@ -597,6 +597,7 @@ class FirecrawlClient:
         ignore_sitemap: Optional[bool] = None,
         ignore_query_parameters: bool = False,
         limit: Optional[int] = None,
+        stop_on_content: Optional[List[str]] = None,
         crawl_entire_domain: bool = False,
         allow_external_links: bool = False,
         allow_subdomains: bool = False,
@@ -648,6 +649,7 @@ class FirecrawlClient:
             ignore_sitemap: Deprecated alias for sitemap ("skip" when true, "include" when false)
             ignore_query_parameters: Ignore URL parameters
             limit: Maximum pages to crawl
+            stop_on_content: Stop following links from pages whose visible content contains any of these phrases
             crawl_entire_domain: Follow parent directory links
             allow_external_links: Follow external domain links
             allow_subdomains: Follow subdomains
@@ -720,6 +722,7 @@ class FirecrawlClient:
             "max_discovery_depth": max_discovery_depth,
             "ignore_query_parameters": ignore_query_parameters,
             "limit": limit,
+            "stop_on_content": stop_on_content,
             "crawl_entire_domain": crawl_entire_domain,
             "allow_external_links": allow_external_links,
             "allow_subdomains": allow_subdomains,
@@ -758,6 +761,7 @@ class FirecrawlClient:
         ignore_sitemap: Optional[bool] = None,
         ignore_query_parameters: bool = False,
         limit: Optional[int] = None,
+        stop_on_content: Optional[List[str]] = None,
         crawl_entire_domain: bool = False,
         allow_external_links: bool = False,
         allow_subdomains: bool = False,
@@ -807,6 +811,7 @@ class FirecrawlClient:
             ignore_sitemap: Deprecated alias for sitemap ("skip" when true, "include" when false)
             ignore_query_parameters: Ignore URL parameters
             limit: Maximum pages to crawl
+            stop_on_content: Stop following links from pages whose visible content contains any of these phrases
             crawl_entire_domain: Follow parent directory links
             allow_external_links: Follow external domain links
             allow_subdomains: Follow subdomains
@@ -877,6 +882,7 @@ class FirecrawlClient:
             "max_discovery_depth": max_discovery_depth,
             "ignore_query_parameters": ignore_query_parameters,
             "limit": limit,
+            "stop_on_content": stop_on_content,
             "crawl_entire_domain": crawl_entire_domain,
             "allow_external_links": allow_external_links,
             "allow_subdomains": allow_subdomains,
