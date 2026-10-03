@@ -12,13 +12,13 @@ import {
   numeric,
   timestamp,
   date,
-  bytea,
   check,
   foreignKey,
   index,
   primaryKey,
   unique,
 } from "drizzle-orm/pg-core";
+import { bytea } from "./columns";
 
 const ts = (name: string) =>
   timestamp(name, { withTimezone: true, mode: "string" });
