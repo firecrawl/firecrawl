@@ -61,7 +61,10 @@ import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
-import { WebCrawler } from "../../scraper/WebScraper/crawler";
+import {
+  isRobotsDenialReason,
+  WebCrawler,
+} from "../../scraper/WebScraper/crawler";
 import {
   calculateCreditsToBeBilled,
   calculateThreatScanCredits,
@@ -648,7 +651,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
             // Store robots blocked URLs in Redis set
             for (const [url, reason] of links.denialReasons) {
-              if (reason === "URL blocked by robots.txt") {
+              if (isRobotsDenialReason(reason)) {
                 await recordRobotsBlocked(job.data.crawl_id, url);
               }
             }
@@ -805,10 +808,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             );
             if (filterResult.links.length === 0) {
               const url = doc.metadata.url ?? doc.metadata.sourceURL!;
+              const denialReason = filterResult.denialReasons.get(url);
               const reason =
-                filterResult.denialReasons.get(url) ||
+                denialReason ||
                 `The source URL ("${url}") you provided as the starting point for this crawl is not allowed by your own crawl configuration. This can happen if your includePaths, excludePaths, maxDepth, or other filters exclude the starting URL itself. Please check your crawl configuration to ensure the starting URL is allowed.`;
-              throw new CrawlDenialError(reason);
+              throw new CrawlDenialError(reason, {
+                robots: isRobotsDenialReason(denialReason),
+              });
             }
           }
         }
@@ -1051,7 +1057,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         job.data.crawl_id &&
         job.data.crawlerOptions !== null &&
         error instanceof CrawlDenialError &&
-        error.reason === "URL blocked by robots.txt"
+        error.robots
       ) {
         await recordRobotsBlocked(job.data.crawl_id, job.data.url);
       }
