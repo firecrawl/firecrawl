@@ -330,3 +330,35 @@ def test_ws_watcher_uses_correct_ws_uri(monkeypatch, kind):
     assert captured_uri["uri"] is not None
     expected = "ws://localhost/v2/crawl/jid" if kind == "crawl" else "ws://localhost/v2/batch/scrape/jid"
     assert captured_uri["uri"] == expected
+
+
+class SilentWebSocket:
+    async def recv(self):
+        await asyncio.Event().wait()
+
+
+def test_ws_watcher_stops_polling_after_timeout(monkeypatch):
+    import websockets
+    from firecrawl.v2.types import CrawlJob
+
+    monkeypatch.setattr(websockets, "connect", lambda uri, *a, **kw: FakeConnect(SilentWebSocket()))
+
+    class PollingClient(DummyClient):
+        def __init__(self):
+            super().__init__()
+            self.polls = 0
+
+        def get_crawl_status(self, job_id):
+            self.polls += 1
+            return CrawlJob(status="scraping", completed=0, total=1, credits_used=0, expires_at=None, next=None, data=[])
+
+    client = PollingClient()
+    watcher = Watcher(client, job_id="jid", kind="crawl", poll_interval=1, timeout=1)
+
+    watcher.start()
+    watcher._thread.join(timeout=4)
+    finished = not watcher._thread.is_alive()
+    watcher.stop()
+
+    assert finished, "watcher kept running after its timeout elapsed"
+    assert client.polls <= 3

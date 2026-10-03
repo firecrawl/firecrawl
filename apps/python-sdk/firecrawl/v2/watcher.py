@@ -98,7 +98,9 @@ class Watcher:
                 while not self._stop.is_set():
                     # Use short recv timeouts to allow HTTP polling fallback
                     if deadline is not None:
-                        remaining = max(0.0, deadline - asyncio.get_event_loop().time())
+                        remaining = deadline - asyncio.get_event_loop().time()
+                        if remaining <= 0:
+                            break
                         timeout = min(self._poll_interval or remaining, remaining)
                     else:
                         timeout = self._poll_interval or 5
