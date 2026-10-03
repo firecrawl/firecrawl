@@ -1,5 +1,9 @@
 import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import { hasFormatOfType } from "./format-utils";
+import {
+  resolveSearchCostPerTenResults,
+  searchCreditsForResults,
+} from "./search-credits";
 
 export function projectScrapeCredits(
   options: ScrapeOptions,
@@ -60,9 +64,14 @@ export function projectScrapeCredits(
 function projectSearchCredits(
   limit: number,
   enterprise: ("default" | "anon" | "zdr")[] | undefined,
+  flags: TeamFlags,
 ): number {
-  const creditsPerTenResults = enterprise?.includes("zdr") ? 10 : 2;
-  return Math.ceil(limit / 10) * creditsPerTenResults;
+  // The projection quotes the requested limit, not the returned count.
+  const costPerTenResults = resolveSearchCostPerTenResults(
+    flags,
+    !!enterprise?.includes("zdr"),
+  );
+  return searchCreditsForResults(limit, costPerTenResults);
 }
 
 export function projectSearchTotalCredits(
@@ -74,7 +83,11 @@ export function projectSearchTotalCredits(
   flags: TeamFlags,
   zeroDataRetention: boolean,
 ): number {
-  const searchCredits = projectSearchCredits(params.limit, params.enterprise);
+  const searchCredits = projectSearchCredits(
+    params.limit,
+    params.enterprise,
+    flags,
+  );
   const shouldScrape =
     params.scrapeOptions?.formats && params.scrapeOptions.formats.length > 0;
   if (!shouldScrape || !params.scrapeOptions) return searchCredits;

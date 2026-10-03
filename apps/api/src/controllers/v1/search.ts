@@ -379,7 +379,9 @@ export async function searchController(
           query: undefined,
           scrapeOptions: undefined,
         },
-        credits_cost: result.searchCredits,
+        // Whole-number record of the charge. The credits_cost column is
+        // integer; the charge in Autumn keeps the exact decimal.
+        credits_cost: Math.round(result.searchCredits),
         zeroDataRetention,
       },
       false,
