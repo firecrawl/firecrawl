@@ -18,8 +18,9 @@ const enabled =
   TEST_PRODUCTION &&
   config.KEYLESS_FEEDBACK_ENABLED &&
   !!config.KEYLESS_PROXY_SECRET &&
-  config.KEYLESS_REQUESTS_PER_DAY !== undefined &&
-  config.KEYLESS_CREDITS_PER_DAY !== undefined;
+  // The retry test also creates a second scrape with the same caller identity.
+  (config.KEYLESS_REQUESTS_PER_DAY ?? 0) >= 2 &&
+  (config.KEYLESS_CREDITS_PER_DAY ?? 0) >= 2;
 
 describeIf(enabled)("keyless feedback", () => {
   // Unique-per-run forwarded IP inside TEST-NET-3 (RFC 5737): keyless request
