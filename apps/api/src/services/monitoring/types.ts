@@ -4,6 +4,7 @@ import {
   URL as urlSchema,
   type ScrapeOptions,
 } from "../../controllers/v2/types";
+import { integrationSchema } from "../../utils/integration";
 import { createWebhookSchema } from "../webhook/schema";
 import { parseMonitorScheduleText } from "./cron";
 
@@ -198,6 +199,14 @@ const createMonitorBaseSchema = z.strictObject({
   goal: z.string().max(2000).nullish(),
   judgeEnabled: z.boolean().optional(),
   origin: z.string().optional().prefault("api"),
+  // Declared for the same reason as `origin` above (see 4d2f303e): clients
+  // tag requests with `integration`, every other v2 request schema accepts
+  // it, and this schema is strict -- so omitting it 400s the whole request.
+  // No .transform(val => val || null) as the sibling v2 schemas carry: they
+  // read the value, this one discards it, and the transform fires even on an
+  // absent key -- which through .partial() would materialize `integration: null`
+  // on every PATCH and defeat the "Update body cannot be empty" guard below.
+  integration: integrationSchema.optional(),
 });
 
 function requireGoalForSearchTargets(
