@@ -417,6 +417,7 @@ export async function batchScrapeController(
         v1: true,
         webhook: req.body.webhook,
         requestId: req.body.__agentInterop?.requestId ?? undefined,
+        origin: req.body.origin,
       };
 
   if (req.body.appendToId) {
