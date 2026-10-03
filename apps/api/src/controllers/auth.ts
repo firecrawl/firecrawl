@@ -49,6 +49,14 @@ import {
 } from "../services/oauth-token-introspection";
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
+import {
+  looksLikeJwt,
+  VercelJwksUnavailableError,
+} from "../lib/vercel-marketplace-oidc";
+import {
+  resolveVercelOidcToken,
+  type VercelOidcResolution,
+} from "../services/vercel-marketplace-oidc";
 import { autumnService } from "../services/autumn/autumn.service";
 import { ReplyError } from "ioredis";
 
@@ -903,6 +911,62 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
+    rateLimiter = await buildAuthenticatedRateLimiter(
+      teamId,
+      chunk.org_id,
+      mode,
+      chunk.flags,
+      minRateMultiplier,
+    );
+  } else if (config.VERCEL_MARKETPLACE_INTEGRATION_ID && looksLikeJwt(token)) {
+    // Vercel Marketplace OIDC resource token. It resolves to the API key issued
+    // for the resource, so per-key behavior and billing stay on the key path.
+    let resolution: VercelOidcResolution;
+    try {
+      resolution = await resolveVercelOidcToken(
+        token,
+        config.VERCEL_MARKETPLACE_INTEGRATION_ID,
+      );
+    } catch (error) {
+      if (error instanceof VercelJwksUnavailableError) {
+        return {
+          success: false,
+          error: "Vercel authentication is temporarily unavailable",
+          status: 503,
+        };
+      }
+      throw error;
+    }
+    if (!resolution.ok) {
+      return {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      };
+    }
+
+    chunk = await getACUC(
+      resolution.apiKey,
+      false,
+      true,
+      RateLimiterMode.Scrape,
+      "general",
+    );
+    if (chunk === null || chunk.team_id !== resolution.teamId) {
+      logger.warn("Vercel OIDC token rejected", {
+        reason: chunk === null ? "key_not_found" : "team_mismatch",
+        installationId: resolution.installationId,
+        resourceId: resolution.resourceId,
+      });
+      return {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      };
+    }
+
+    teamId = chunk.team_id;
+    subscriptionData = { team_id: teamId };
     rateLimiter = await buildAuthenticatedRateLimiter(
       teamId,
       chunk.org_id,
