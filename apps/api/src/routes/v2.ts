@@ -15,6 +15,10 @@ import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import {
+  keylessWorldIdDeviceController,
+  keylessWorldIdTokenController,
+} from "../controllers/v2/keyless-world-id";
+import {
   parseController,
   parseMultipartPayloadMiddleware,
 } from "../controllers/v2/parse";
@@ -181,6 +185,11 @@ v2Router.use(requestTimingMiddleware("v2"));
 // Internal: trusted-proxy (hosted MCP) keyless eligibility probe. Secret-gated
 // inside the controller; no auth middleware.
 v2Router.get("/keyless/eligibility", wrap(keylessEligibilityController));
+
+// World ID verification for the keyless tier: a device flow that ends in a
+// credential for the x-firecrawl-world-id header. 404 unless configured.
+v2Router.post("/keyless/world-id/device", wrap(keylessWorldIdDeviceController));
+v2Router.post("/keyless/world-id/token", wrap(keylessWorldIdTokenController));
 
 registerMcpActionLogReadRoute(
   v2Router,
