@@ -42,7 +42,11 @@ export function isRetryableError(err: any): boolean {
   // If it's an SdkError with a status code, check if it's retryable
   if (err instanceof SdkError || (err && typeof err === 'object' && 'status' in err)) {
     const status = err.status;
-    // 4xx errors are client errors and shouldn't be retried
+    // 408 (request timeout) and 429 (rate limit) are transient; the job is still running
+    if (status === 408 || status === 429) {
+      return true;
+    }
+    // Other 4xx errors are client errors and shouldn't be retried
     if (status && status >= 400 && status < 500) {
       return false; // Don't retry client errors (401, 404, etc.)
     }
