@@ -284,6 +284,7 @@ v2Router.post(
   countryCheck,
   checkCreditsMiddleware(),
   blocklistMiddleware,
+  idempotencyMiddleware,
   wrap(batchScrapeController),
 );
 
