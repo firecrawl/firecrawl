@@ -15,6 +15,7 @@ from .types import (
     WebhookConfig,
     AgentWebhookConfig,
     AgentExchangeOptions,
+    AgentOptions,
     MonitorWebhookConfig,
     SearchRequest,
     SearchData,
@@ -709,6 +710,7 @@ class AsyncFirecrawlClient:
         poll_interval: int = 2,
         timeout: Optional[int] = None,
         integration: Optional[str] = None,
+        agent: Optional[AgentOptions] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
     ):
         """Extract structured data and wait until completion (async).
@@ -732,6 +734,7 @@ class AsyncFirecrawlClient:
             poll_interval=poll_interval,
             timeout=timeout,
             integration=integration,
+            agent=agent,
             threat_protection=threat_protection,
         )
 
@@ -758,6 +761,7 @@ class AsyncFirecrawlClient:
         scrape_options: Optional['ScrapeOptions'] = None,
         ignore_invalid_urls: Optional[bool] = None,
         integration: Optional[str] = None,
+        agent: Optional[AgentOptions] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
     ):
         """Start an extract job (non-blocking, async).
@@ -779,6 +783,7 @@ class AsyncFirecrawlClient:
             scrape_options=scrape_options,
             ignore_invalid_urls=ignore_invalid_urls,
             integration=integration,
+            agent=agent,
             threat_protection=threat_protection,
         )
 
