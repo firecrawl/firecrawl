@@ -88,6 +88,14 @@ describe("operational job access", () => {
     await expect(getScrapeJobAccess(JOB_ID)).resolves.toBeNull();
   });
 
+  it("answers not found for an id that is not a UUIDv7, without reading", async () => {
+    await expect(
+      getScrapeJobAccess("817f931c-89b5-472d-977c-b7061ac3ce1c"),
+    ).resolves.toBeNull();
+    await expect(getCrawlJobAccess("not-a-uuid")).resolves.toBeNull();
+    expect(readApiJobAccess).not.toHaveBeenCalled();
+  });
+
   it("rethrows a failed Bigtable read instead of reporting a missing job", async () => {
     readApiJobAccess.mockRejectedValue(new Error("Bigtable unavailable"));
     await expect(getScrapeJobAccess(JOB_ID)).rejects.toThrow(

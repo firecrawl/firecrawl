@@ -2,17 +2,20 @@
 # generate.exs — Auto-generates the Firecrawl Elixir SDK from the OpenAPI spec.
 #
 # Usage:
-#   mix run generate.exs
+#   mix run generate.exs                                    # fetch the latest spec
+#   FIRECRAWL_OPENAPI_SPEC=openapi.json mix run generate.exs  # offline, from the vendored copy
 #
 # This script:
 # 1. Fetches the Firecrawl v2 OpenAPI JSON spec
 # 2. Parses all endpoints and generates Elixir wrapper functions with NimbleOptions validation
-# 3. Writes lib/firecrawl.ex
-# 4. Bumps the patch version in mix.exs if the generated code changed
+# 3. If the code changed, writes lib/firecrawl.ex (keeping its HAND-WRITTEN region
+#    verbatim) and saves the spec it came from as openapi.json
+# 4. Bumps the version in mix.exs if the generated code changed
 
 defmodule Firecrawl.Generator do
   @openapi_url "https://raw.githubusercontent.com/firecrawl/firecrawl-docs/main/api-reference/v2-openapi.json"
   @output_file "lib/firecrawl.ex"
+  @spec_file "openapi.json"
   @mix_file "mix.exs"
 
   # Operations to exclude from the generated client.
@@ -23,25 +26,50 @@ defmodule Firecrawl.Generator do
     "getHistoricalTokenUsage"
   ])
 
+  # Routes implemented in the HAND-WRITTEN region of lib/firecrawl.ex, so a spec
+  # entry for them never generates a second definition.
+  @hand_written_routes MapSet.new([
+    {"get", "/parse/formats"},
+    {"get", "/agent/{jobId}/trace"},
+    {"get", "/search/research/papers"},
+    {"get", "/search/research/papers/{id}"},
+    {"get", "/search/research/papers/{id}/similar"},
+    {"get", "/search/research/github"},
+    {"post", "/monitor"},
+    {"get", "/monitor"},
+    {"get", "/monitor/{monitorId}"},
+    {"patch", "/monitor/{monitorId}"},
+    {"delete", "/monitor/{monitorId}"},
+    {"post", "/monitor/{monitorId}/run"},
+    {"get", "/monitor/{monitorId}/checks"},
+    {"get", "/monitor/{monitorId}/checks/{checkId}"}
+  ])
+
+  @hand_written_begin "  # --- BEGIN HAND-WRITTEN ---"
+  @hand_written_end "  # --- END HAND-WRITTEN ---"
+
+  # NimbleOptions types that deliberately differ from what the spec implies,
+  # keyed by {function name, JSON property}.
+  @type_overrides %{
+    {"start_agent", "effort"} => ~S|{:in, ["low", "medium", "high"]}|
+  }
+
   # The method key becomes the Req function name in generated code, a position
   # no escaping can protect, so anything else stops generation outright.
   @http_methods ~w(get post put patch delete head options)
 
   def run do
     IO.puts("Fetching OpenAPI spec...")
-    {:ok, spec} = fetch_spec()
+    {:ok, raw_spec} = fetch_spec()
+    spec = Jason.decode!(raw_spec)
+
+    old_code = File.read!(@output_file)
 
     IO.puts("Generating client code...")
-    code = generate_module(spec)
-
-    old_code =
-      if File.exists?(@output_file) do
-        File.read!(@output_file)
-      else
-        ""
-      end
+    code = generate_module(spec, hand_written_region(old_code))
 
     if code != old_code do
+      File.write!(@spec_file, raw_spec)
       File.write!(@output_file, code)
       IO.puts("Wrote #{@output_file}")
 
@@ -58,17 +86,15 @@ defmodule Firecrawl.Generator do
     # Set FIRECRAWL_OPENAPI_SPEC to a local file to generate without the network.
     case System.get_env("FIRECRAWL_OPENAPI_SPEC") do
       nil -> fetch_remote_spec()
-      path -> {:ok, path |> File.read!() |> Jason.decode!()}
+      path -> {:ok, File.read!(path)}
     end
   end
 
+  # The body is kept raw so openapi.json stays byte-identical to the published spec.
   defp fetch_remote_spec do
-    case Req.get(@openapi_url) do
-      {:ok, %Req.Response{status: 200, body: body}} when is_map(body) ->
-        {:ok, body}
-
+    case Req.get(@openapi_url, decode_body: false) do
       {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
-        {:ok, Jason.decode!(body)}
+        {:ok, body}
 
       {:ok, %Req.Response{status: status}} ->
         {:error, "HTTP #{status}"}
@@ -82,7 +108,15 @@ defmodule Firecrawl.Generator do
   # Module template
   # ---------------------------------------------------------------------------
 
-  defp generate_module(spec) do
+  # Returns the HAND-WRITTEN region of `source`, markers included.
+  def hand_written_region(source) do
+    case String.split(source, [@hand_written_begin, @hand_written_end]) do
+      [_before, inner, _after] -> @hand_written_begin <> inner <> @hand_written_end
+      _ -> raise "#{@output_file} must contain exactly one HAND-WRITTEN region"
+    end
+  end
+
+  def generate_module(spec, hand_written) do
     base_url =
       case get_in(spec, ["servers"]) do
         [%{"url" => url} | _] -> url
@@ -107,18 +141,28 @@ defmodule Firecrawl.Generator do
           {method, path, operation, path_level_params}
         end)
       end)
-      |> Enum.reject(fn {_method, _path, op, _} ->
-        MapSet.member?(@skip_operations, Map.get(op, "operationId", ""))
+      |> Enum.reject(fn {method, path, op, _} ->
+        MapSet.member?(@skip_operations, Map.get(op, "operationId", "")) or
+          MapSet.member?(@hand_written_routes, {method, path})
       end)
       |> Enum.sort_by(fn {_method, _path, op, _} -> Map.get(op, "operationId", "") end)
       |> Enum.map(&generate_function(&1, spec))
       |> Enum.join("\n")
 
+    clashes =
+      MapSet.intersection(extract_public_functions(functions), extract_public_functions(hand_written))
+
+    if MapSet.size(clashes) > 0 do
+      raise "generated functions clash with the HAND-WRITTEN region: " <>
+              Enum.join(clashes, ", ") <> ". Add their routes to @hand_written_routes."
+    end
+
     bt = <<96>>
-    headers_line = ~S'        headers = if api_key, do: [{"authorization", "Bearer #{api_key}"}], else: []'
+    headers_line = ~S'    headers = if api_key, do: [{"authorization", "Bearer #{api_key}"}], else: []'
 
     """
-    # This file is auto-generated by generate.exs — DO NOT EDIT MANUALLY.
+    # This file is generated by generate.exs from openapi.json. Edit by hand only
+    # inside the HAND-WRITTEN region, which regeneration keeps verbatim.
     # Re-generate with: mix run generate.exs
 
     defmodule Firecrawl do
@@ -172,9 +216,9 @@ defmodule Firecrawl.Generator do
             Application.get_env(:firecrawl, :api_key)
           end)
 
-        # A nil/empty key is allowed: scrape, search, and interact fall back to
-        # the keyless free tier (rate-limited per IP). Other endpoints return 401
-        # from the API until a key is provided.
+        # A nil/empty key is allowed: scrape, search, and interact fall back to the
+        # keyless free tier (rate-limited per IP). Other endpoints return 401 from the
+        # API until a key is provided.
         api_key =
           case api_key do
             key when is_binary(key) ->
@@ -212,6 +256,8 @@ defmodule Firecrawl.Generator do
           json_key = Map.fetch!(key_mapping, k)
           {json_key, to_json_value(v)}
         end)
+        # Identify the SDK so the API can grant the keyless free tier; harmless
+        # telemetry on keyed requests.
         |> Map.put_new("origin", @sdk_origin)
       end
 
@@ -242,6 +288,31 @@ defmodule Firecrawl.Generator do
         Enum.join([first | Enum.map(rest, &String.capitalize/1)])
       end
 
+      defp fetch_file_field(file, key) do
+        case Keyword.fetch(file, key) do
+          {:ok, _value} = ok -> ok
+          :error -> {:error, %ArgumentError{message: "missing required file field: \#{key}"}}
+        end
+      end
+
+      defp validate_filename(filename) do
+        if is_binary(filename) and filename != "" do
+          :ok
+        else
+          {:error, %ArgumentError{message: "filename cannot be empty"}}
+        end
+      end
+
+      defp validate_data(data) do
+        if is_nil(data) do
+          {:error, %ArgumentError{message: "file data cannot be empty"}}
+        else
+          :ok
+        end
+      end
+
+    #{hand_written}
+
     #{functions}end
     """
   end
@@ -257,7 +328,7 @@ defmodule Firecrawl.Generator do
     tag = operation |> Map.get("tags", []) |> List.first() || ""
 
     op_params = Map.get(operation, "parameters", [])
-    all_params = path_level_params ++ op_params
+    all_params = Enum.map(path_level_params ++ op_params, &resolve_if_ref(&1, spec))
 
     path_params =
       all_params
@@ -481,8 +552,6 @@ defmodule Firecrawl.Generator do
     req_method = String.to_atom(method)
     fn_name = if bang?, do: "#{func_name}!", else: func_name
     req_fn = if bang?, do: "#{req_method}!", else: "#{req_method}"
-    options_field = meta.options_field
-    file_field = meta.file_field
 
     sig =
       if has_options? do
@@ -492,57 +561,63 @@ defmodule Firecrawl.Generator do
       end
 
     options_part_text =
-      cond do
-        has_options? and not is_nil(options_field) ->
-          "{#{inspect(options_field)}, Jason.encode!(to_body(params, @#{func_name}_key_mapping))}, "
-
-        true ->
-          ""
+      if has_options? and not is_nil(meta.options_field) do
+        "{#{inspect(meta.options_field)}, Jason.encode!(to_body(params, @#{func_name}_key_mapping))}, "
+      else
+        ""
       end
 
-    file_part_text = "{#{inspect(file_field)}, file_part}"
+    indent = if bang?, do: "    ", else: "      "
 
-    indent = if not bang? and has_options?, do: "      ", else: "    "
-
-    core_lines = [
-      "#{indent}filename = Keyword.fetch!(file, :filename)",
-      "#{indent}data = Keyword.fetch!(file, :data)",
-      "#{indent}content_type = Keyword.get(file, :content_type)",
-      "",
-      "#{indent}if not is_binary(filename) or filename == \"\" do",
-      "#{indent}  raise ArgumentError, \"filename cannot be empty\"",
-      "#{indent}end",
-      "",
-      "#{indent}if is_nil(data) do",
-      "#{indent}  raise ArgumentError, \"file data cannot be empty\"",
-      "#{indent}end",
-      "",
+    send_lines = [
       "#{indent}file_part =",
       "#{indent}  case content_type do",
       "#{indent}    nil -> {data, filename: filename}",
       "#{indent}    ct -> {data, filename: filename, content_type: ct}",
       "#{indent}  end",
       "",
-      "#{indent}multipart = [#{options_part_text}#{file_part_text}]",
+      "#{indent}multipart = [#{options_part_text}{#{inspect(meta.file_field)}, file_part}]",
       "",
       "#{indent}Req.#{req_fn}(client(opts), url: \"#{escape_string_literal(path)}\", form_multipart: multipart)"
     ]
 
-    core = Enum.join(core_lines, "\n")
+    lines =
+      if bang? do
+        validate = if has_options?, do: ["    params = NimbleOptions.validate!(params, @#{func_name}_schema)"], else: []
 
-    body =
-      cond do
-        bang? and has_options? ->
-          "    params = NimbleOptions.validate!(params, @#{func_name}_schema)\n#{core}\n  end\n"
+        validate ++
+          [
+            "    filename = Keyword.fetch!(file, :filename)",
+            "    data = Keyword.fetch!(file, :data)",
+            "    content_type = Keyword.get(file, :content_type)",
+            "",
+            "    if not is_binary(filename) or filename == \"\" do",
+            "      raise ArgumentError, \"filename cannot be empty\"",
+            "    end",
+            "",
+            "    if is_nil(data) do",
+            "      raise ArgumentError, \"file data cannot be empty\"",
+            "    end",
+            ""
+          ] ++ send_lines ++ ["  end"]
+      else
+        validate =
+          if has_options?, do: ["{:ok, params} <- NimbleOptions.validate(params, @#{func_name}_schema)"], else: []
 
-        not bang? and has_options? ->
-          "    with {:ok, params} <- NimbleOptions.validate(params, @#{func_name}_schema) do\n#{core}\n    end\n  end\n"
+        clauses =
+          validate ++
+            [
+              "{:ok, filename} <- fetch_file_field(file, :filename)",
+              ":ok <- validate_filename(filename)",
+              "{:ok, data} <- fetch_file_field(file, :data)",
+              ":ok <- validate_data(data)"
+            ]
 
-        true ->
-          "#{core}\n  end\n"
+        ["    with #{Enum.join(clauses, ",\n         ")} do", "      content_type = Keyword.get(file, :content_type)", ""] ++
+          send_lines ++ ["    end", "  end"]
       end
 
-    {sig, body}
+    {sig, Enum.join(lines, "\n") <> "\n"}
   end
 
   defp build_multipart_typespec(func_name, has_options?, bang?) do
@@ -691,7 +766,12 @@ defmodule Firecrawl.Generator do
         required = name in required_keys
         doc = Map.get(prop_schema, "description", "")
 
-        parts = openapi_to_nimble_parts(name, prop_schema)
+        parts =
+          case Map.fetch(@type_overrides, {func_name, name}) do
+            {:ok, type} -> ["type: #{type}"]
+            :error -> openapi_to_nimble_parts(name, prop_schema)
+          end
+
         parts = if required, do: parts ++ ["required: true"], else: parts
         parts = if doc != "", do: parts ++ ["doc: #{inspect(doc)}"], else: parts
 
@@ -1074,13 +1154,18 @@ defmodule Firecrawl.Generator do
     end
   end
 
-  defp build_elixir_path(path, []), do: escape_string_literal(path)
-
   defp build_elixir_path(path, path_params) do
-    Enum.reduce(path_params, escape_string_literal(path), fn param, acc ->
-      snake = to_snake_case(param)
-      String.replace(acc, "{#{param}}", "\#{#{snake}}")
-    end)
+    elixir_path =
+      Enum.reduce(path_params, escape_string_literal(path), fn param, acc ->
+        snake = to_snake_case(param)
+        String.replace(acc, "{#{param}}", "\#{#{snake}}")
+      end)
+
+    if Regex.match?(~r/(?<!#)\{[^}]*\}/, elixir_path) do
+      raise ArgumentError, "unresolved path parameter in #{inspect(path)}"
+    end
+
+    elixir_path
   end
 
   # ---------------------------------------------------------------------------
@@ -1114,7 +1199,7 @@ defmodule Firecrawl.Generator do
   end
 
   defp extract_public_functions(code) do
-    Regex.scan(~r/^\s+def\s+([a-z_][a-z0-9_]*!?)\(/, code, capture: :all_but_first)
+    Regex.scan(~r/^ +def +([a-z_][a-z0-9_]*!?)\(/m, code, capture: :all_but_first)
     |> List.flatten()
     |> MapSet.new()
   end

@@ -3,6 +3,7 @@ import { config } from "../../config";
 import {
   checkKeylessEligibility,
   keylessSignupUrlForIp,
+  reportKeylessPromptShown,
 } from "../../lib/keyless";
 import {
   type KeylessPromptReason,
@@ -52,8 +53,12 @@ export async function keylessEligibilityController(
         : undefined;
   // A tier that is off or a limiter that is down is not a prompt about this
   // identity, so it gets the regular signup link.
-  const signupUrl = reason
-    ? keylessSignupUrlForIp(ip, surface, reason).url
-    : keylessFallbackSignupUrl(surface);
+  let signupUrl = keylessFallbackSignupUrl(surface);
+  if (reason) {
+    const link = keylessSignupUrlForIp(ip, surface, reason);
+    signupUrl = link.url;
+    // The hosted MCP relays this link as the prompt; this check answers 200.
+    reportKeylessPromptShown(ip, surface, reason, 200, link.signupRef);
+  }
   res.status(200).json({ ...result, signupUrl });
 }

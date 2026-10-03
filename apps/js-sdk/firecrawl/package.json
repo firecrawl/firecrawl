@@ -1,6 +1,6 @@
 {
   "name": "@mendable/firecrawl-js",
-  "version": "4.42.1",
+  "version": "4.42.4",
   "description": "JavaScript SDK for the Firecrawl API: web scraping, crawling, web search, and scientific literature search over a research paper index of PubMed, bioRxiv, medRxiv and arXiv abstracts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,7 +17,7 @@
     "build-and-publish": "pnpm run build && pnpm publish --access public",
     "publish-beta": "pnpm run build && pnpm publish --access public --tag beta",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --verbose src/__tests__/e2e/v2/*.test.ts --detectOpenHandles",
-    "test:unit": "NODE_OPTIONS=--experimental-vm-modules jest --verbose src/__tests__/unit/v2/*.test.ts"
+    "test:unit": "NODE_OPTIONS=--experimental-vm-modules jest --verbose src/__tests__/unit"
   },
   "repository": {
     "type": "git",

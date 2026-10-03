@@ -98,7 +98,16 @@ export async function agentStatusController(
     success: true,
     status: agent.status === "success" ? "completed" : agent.status,
     error: agent.error,
-    data: agent.data,
+    data: agent.status === "success" ? agent.data : undefined,
+    // Checkpoints are internal while a job is running; only expose a partial
+    // when the run has stopped without a completed result.
+    ...(agent.status === "failed"
+      ? {
+          partial: agent.partial,
+          partialSchemaValid: agent.partialSchemaValid,
+          stopReason: agent.stopReason,
+        }
+      : {}),
     model,
     effort,
     threadId: thread.threadId,

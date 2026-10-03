@@ -233,6 +233,44 @@ describe("logSearch", () => {
     );
   });
 
+  it("stores optional task context with the search options", async () => {
+    const options = {
+      query: "React memo docs",
+      objective: "Find official rerender guidance",
+      clientModel: "claude-sonnet-4-6",
+    };
+
+    await logSearch(makeSearch({ query: options.query, options }));
+
+    expect(values.mock.calls[0][0].options).toMatchObject(options);
+    const published = JSON.parse(
+      publishMessage.mock.calls[0][0].data.toString(),
+    );
+    expect(published.options).toMatchObject(options);
+  });
+
+  it("does not retain task context for ZDR searches", async () => {
+    await logSearch(
+      makeSearch({
+        options: {
+          query: "React memo docs",
+          objective: "Find official rerender guidance",
+          clientModel: "claude-sonnet-4-6",
+          enterprise: ["zdr"],
+        },
+        zeroDataRetention: true,
+      }),
+    );
+
+    expect(values.mock.calls[0][0].options).not.toHaveProperty("objective");
+    expect(values.mock.calls[0][0].options).not.toHaveProperty("clientModel");
+    const published = JSON.parse(
+      publishMessage.mock.calls[0][0].data.toString(),
+    );
+    expect(published.options).not.toHaveProperty("objective");
+    expect(published.options).not.toHaveProperty("clientModel");
+  });
+
   it("fails the log call on a serialization failure before touching PostgreSQL", async () => {
     const search = makeSearch({ options: { unsupported: 1n } });
 

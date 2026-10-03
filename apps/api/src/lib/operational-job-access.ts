@@ -1,3 +1,4 @@
+import { isUuidV7Id } from "./bigtable-row-key";
 import { logger } from "./logger";
 import {
   readApiJobAccess,
@@ -24,6 +25,8 @@ async function resolveOperationalJobAccess(params: {
   id: string;
   kinds: readonly ApiJobKind[];
 }): Promise<OperationalJobAccess | null> {
+  // An id that is not a UUIDv7 names no row: not found, not an outage.
+  if (!isUuidV7Id(params.id)) return null;
   let access: ApiJobAccess | null;
   try {
     access = await readApiJobAccess(params.id);

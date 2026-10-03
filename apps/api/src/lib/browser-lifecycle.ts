@@ -44,9 +44,56 @@ import {
   logKeylessCreditUsage,
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
 } from "./keyless";
-import { logger } from "./logger";
+import { logger as rootLogger } from "./logger";
+import { getScrapeZDR } from "./zdr-helpers";
+import { withZeroDataRetention } from "./otel-tracer";
 import { redlock } from "../services/redlock";
 import { redisRateLimitClient } from "../services/rate-limiter";
+
+const logger = rootLogger;
+
+export class BrowserSessionError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "BrowserSessionError";
+  }
+}
+
+/** Returns the effective session policy and rejects disallowed ZDR requests. */
+export function getBrowserZDR(
+  req: RequestWithAuth<any, any, any>,
+  session?: BrowserSessionRow,
+  inherited = false,
+): boolean {
+  const mode = getScrapeZDR(req.acuc?.flags);
+  if (
+    req.body?.zeroDataRetention === true &&
+    mode === "disabled" &&
+    !session?.zero_data_retention &&
+    !inherited
+  ) {
+    throw new BrowserSessionError(
+      403,
+      "Zero Data Retention is not enabled for your team.",
+    );
+  }
+  const enabled =
+    mode === "forced" ||
+    req.body?.zeroDataRetention === true ||
+    inherited ||
+    session?.zero_data_retention === true;
+  // A running browser may already have recorded or saved customer content.
+  if (enabled && session && !session.zero_data_retention) {
+    throw new BrowserSessionError(
+      409,
+      "Create a new ZDR browser session to continue.",
+    );
+  }
+  return enabled;
+}
 
 export function browserSessionLinks(session: BrowserSessionRow) {
   return {
@@ -63,9 +110,9 @@ export function browserSessionLinks(session: BrowserSessionRow) {
  */
 export function invalidAgentInteropError(
   req: RequestWithAuth<any, any, any>,
-): HangarError | null {
+): BrowserSessionError | null {
   return req.auth.agentInterop === "invalid"
-    ? new HangarError(403, "Invalid agent interop.")
+    ? new BrowserSessionError(403, "Invalid agent interop.")
     : null;
 }
 
@@ -76,6 +123,7 @@ export async function createBrowserSession(
     activityTtl: number;
     streamWebView: boolean;
     recordSession: boolean;
+    zeroDataRetention?: boolean;
     profile?: { name: string; saveChanges: boolean };
     scrapeId?: string;
     shouldBill?: boolean;
@@ -83,6 +131,25 @@ export async function createBrowserSession(
     initialize?: (browserId: string) => Promise<void>;
   },
 ) {
+  const zeroDataRetention =
+    getBrowserZDR(req) || options.zeroDataRetention === true;
+  if (zeroDataRetention && (options.recordSession || options.profile)) {
+    throw new BrowserSessionError(
+      400,
+      "Recordings and saved profiles are not supported with Zero Data Retention.",
+    );
+  }
+  return withZeroDataRetention(zeroDataRetention, () =>
+    createBrowserSessionInternal(req, options, zeroDataRetention),
+  );
+}
+
+async function createBrowserSessionInternal(
+  req: RequestWithAuth<any, any, any>,
+  options: Parameters<typeof createBrowserSession>[1],
+  zeroDataRetention: boolean,
+) {
+  const logger = rootLogger.child({ zeroDataRetention });
   if (!config.HANGAR_URL)
     throw new HangarError(
       503,
@@ -117,7 +184,7 @@ export async function createBrowserSession(
       },
     });
     if (credit !== null && !credit.allowed)
-      throw new HangarError(
+      throw new BrowserSessionError(
         402,
         `Insufficient credits for a ${options.ttl}s browser session (requires ~${estimatedCredits} credits).`,
       );
@@ -133,7 +200,7 @@ export async function createBrowserSession(
         limit,
       ))
     )
-      throw new HangarError(
+      throw new BrowserSessionError(
         429,
         `You have reached the maximum number of concurrent jobs (${limit}).`,
       );
@@ -144,7 +211,7 @@ export async function createBrowserSession(
         estimatedCredits,
       ))
     )
-      throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
+      throw new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
     const browser = await createHangarBrowser(id, req.auth.team_id, options);
     browserId = browser.id;
     if (options.initialize) await options.initialize(browser.id);
@@ -158,18 +225,19 @@ export async function createBrowserSession(
         target_hint: "Browser session",
         origin: req.body?.origin ?? "api",
         integration: req.body?.integration ?? null,
-        zeroDataRetention: false,
+        zeroDataRetention,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
     const session = await insertBrowserSession({
       id,
       team_id: req.auth.team_id,
       request_id: options.requestId ?? id,
+      zero_data_retention: zeroDataRetention,
       should_bill: shouldBill,
       scrape_id: options.scrapeId,
       browser_id: browser.id,
       workspace_id: "",
-      context_id: browser.playlist_url ?? "",
+      context_id: zeroDataRetention ? "" : (browser.playlist_url ?? ""),
       cdp_url: browser.cdp_url,
       cdp_path: browser.view_url ?? "",
       cdp_interactive_path: browser.control_url ?? "",
@@ -210,6 +278,18 @@ export async function settleBrowserSession(
   session: BrowserSessionRow,
   browser: HangarBrowser,
 ) {
+  return withZeroDataRetention(session.zero_data_retention, () =>
+    settleBrowserSessionInternal(session, browser),
+  );
+}
+
+async function settleBrowserSessionInternal(
+  session: BrowserSessionRow,
+  browser: HangarBrowser,
+) {
+  const logger = rootLogger.child({
+    zeroDataRetention: session.zero_data_retention,
+  });
   if (browser.status !== "stopped" && browser.status !== "failed") return;
   if (
     !Number.isFinite(browser.ended_at) ||
@@ -311,7 +391,7 @@ export async function reserveBrowserPromptCredits(
   req: RequestWithAuth<any, any, any>,
   session: BrowserSessionRow,
 ) {
-  const closed = new HangarError(
+  const closed = new BrowserSessionError(
     410,
     "Browser session is no longer accepting prompts.",
   );
@@ -339,7 +419,7 @@ export async function reserveBrowserPromptCredits(
       },
     });
     if (credit !== null && !credit.allowed)
-      throw new HangarError(
+      throw new BrowserSessionError(
         402,
         "Insufficient credits for a browser prompt session.",
       );
@@ -355,12 +435,18 @@ export async function reserveBrowserPromptCredits(
       current.should_bill &&
       !(await updateKeylessBrowserCredits(current.team_id, current.id, credits))
     )
-      throw new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
+      throw new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE);
     await markBrowserSessionUsedPrompt(current.id);
   });
 }
 
 export async function stopBrowserSession(session: BrowserSessionRow) {
+  return withZeroDataRetention(session.zero_data_retention, () =>
+    stopBrowserSessionInternal(session),
+  );
+}
+
+async function stopBrowserSessionInternal(session: BrowserSessionRow) {
   if (session.status === "destroyed") {
     return {
       success: true,
@@ -427,45 +513,51 @@ export async function reconcileBrowserSessions() {
         const cursor = await redisRateLimitClient.hgetall(scanKey);
         const { sessions, through } = await listUnsettledHangarSessions(cursor);
         const results = await Promise.allSettled(
-          sessions.map(async session => {
-            const key = `browser:reconcile:${session.id}`;
-            const state = await redisRateLimitClient.hgetall(key);
-            if (Number(state.next) > Date.now() || signal.aborted) return;
-            let failures = 0;
-            try {
-              // The persisted receipt lets quota reconciliation retry independently
-              // of Hangar availability and recording/session metadata retention.
-              if (session.credits_used !== null) {
-                await finalizeBrowserSession(session, session.credits_used);
-              } else {
-                await settleBrowserSession(
-                  session,
-                  await getHangarBrowser(session.browser_id, 0, 5000),
+          sessions.map(session =>
+            withZeroDataRetention(session.zero_data_retention, async () => {
+              const logger = rootLogger.child({
+                zeroDataRetention: session.zero_data_retention,
+              });
+              const key = `browser:reconcile:${session.id}`;
+              const state = await redisRateLimitClient.hgetall(key);
+              if (Number(state.next) > Date.now() || signal.aborted) return;
+              let failures = 0;
+              try {
+                // The persisted receipt lets quota reconciliation retry independently
+                // of Hangar availability and recording/session metadata retention.
+                if (session.credits_used !== null) {
+                  await finalizeBrowserSession(session, session.credits_used);
+                } else {
+                  await settleBrowserSession(
+                    session,
+                    await getHangarBrowser(session.browser_id, 0, 5000),
+                  );
+                }
+              } catch (error) {
+                failures = Math.min(Number(state.failures ?? 0) + 1, 5);
+                // Repeat failures during an outage are expected. Only the
+                // first one per session is an error.
+                logger[failures > 1 ? "warn" : "error"](
+                  "Failed to reconcile Hangar session",
+                  {
+                    sessionId: session.id,
+                    error,
+                  },
                 );
               }
-            } catch (error) {
-              failures = Math.min(Number(state.failures ?? 0) + 1, 5);
-              // Repeat failures during an outage are expected; only the
-              // first one per session is an error.
-              logger[failures > 1 ? "warn" : "error"](
-                "Failed to reconcile Hangar session",
-                {
-                  sessionId: session.id,
-                  error,
-                },
-              );
-            }
-            await redisRateLimitClient.hset(key, {
-              failures,
-              next: Date.now() + Math.min(300_000, 30_000 * 2 ** failures),
-            });
-            await redisRateLimitClient.expire(key, 2 * 86400);
-          }),
+              await redisRateLimitClient.hset(key, {
+                failures,
+                next: Date.now() + Math.min(300_000, 30_000 * 2 ** failures),
+              });
+              await redisRateLimitClient.expire(key, 2 * 86400);
+            }),
+          ),
         );
         results.forEach((result, index) => {
           if (result.status === "rejected")
             logger.error("Failed to update browser reconciliation state", {
               sessionId: sessions[index].id,
+              zeroDataRetention: sessions[index].zero_data_retention,
               error: result.reason,
             });
         });

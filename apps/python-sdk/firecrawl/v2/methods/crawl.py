@@ -2,6 +2,7 @@
 Crawling functionality for Firecrawl v2 API.
 """
 
+import re
 import time
 from typing import Optional, Dict, Any, List
 from ..types import (
@@ -11,6 +12,7 @@ from ..types import (
     WebhookConfig, CrawlErrorsResponse, ActiveCrawlsResponse, ActiveCrawl, PaginationConfig
 )
 from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
+from ..utils.error_handler import CrawlJobTimeoutError
 from ..utils.normalize import normalize_document_input
 
 
@@ -129,8 +131,18 @@ def _parse_crawl_status_response(response_data: Dict[str, Any]) -> Dict[str, Any
         "credits_used": response_data.get("creditsUsed", 0),
         "expires_at": response_data.get("expiresAt"),
         "next": response_data.get("next"),
+        "warning": response_data.get("warning"),
         "data": _parse_crawl_documents(response_data.get("data", [])),
     }
+
+
+_CRAWL_JOB_ID_IN_URL = re.compile(r"/v2/crawl/([^/?#]+)")
+
+
+def _job_id_from_next_url(next_url: str) -> Optional[str]:
+    """Return the crawl job id from a status page URL, if the URL contains one."""
+    match = _CRAWL_JOB_ID_IN_URL.search(next_url or "")
+    return match.group(1) if match else None
 
 
 def start_crawl(client: HttpClient, request: CrawlRequest) -> CrawlResponse:
@@ -223,12 +235,14 @@ def get_crawl_status(
 
     # Create CrawlJob with current status and data
     return CrawlJob(
+        id=job_id,
         status=payload["status"],
         completed=payload["completed"],
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
         next=payload["next"] if not auto_paginate else None,
+        warning=payload["warning"],
         data=documents,
     )
 
@@ -262,12 +276,14 @@ def get_crawl_status_page(
     payload = _parse_crawl_status_response(response_data)
 
     return CrawlJob(
+        id=_job_id_from_next_url(next_url),
         status=payload["status"],
         completed=payload["completed"],
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
         next=payload["next"],
+        warning=payload["warning"],
         data=payload["data"],
     )
 
@@ -393,7 +409,8 @@ def wait_for_crawl_completion(
         
     Raises:
         Exception: If the job fails
-        TimeoutError: If timeout is reached
+        CrawlJobTimeoutError: If timeout is reached (a ``TimeoutError`` subclass
+            that carries ``job_id`` and ``timeout``)
     """
     start_time = time.monotonic()
     
@@ -410,7 +427,7 @@ def wait_for_crawl_completion(
         
         # Check timeout
         if timeout is not None and (time.monotonic() - start_time) > timeout:
-            raise TimeoutError(f"Crawl job {job_id} did not complete within {timeout} seconds")
+            raise CrawlJobTimeoutError(job_id, timeout)
         
         # Wait before next poll
         time.sleep(poll_interval)
@@ -441,7 +458,8 @@ def crawl(
     Raises:
         ValueError: If request is invalid
         Exception: If the crawl fails to start or complete
-        TimeoutError: If timeout is reached
+        CrawlJobTimeoutError: If timeout is reached (a ``TimeoutError`` subclass
+            that carries ``job_id`` and ``timeout``)
     """
     # Start the crawl
     crawl_job = start_crawl(client, request)

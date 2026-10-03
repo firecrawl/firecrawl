@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable, Union, Literal, BinaryIO
 from .types import (
     ClientConfig,
+    ParseFormat,
     ParseOptions,
     ScrapeOptions,
     Document,
@@ -468,6 +469,16 @@ class FirecrawlClient:
             content_type=content_type,
         )
 
+    def get_parse_formats(self) -> List[ParseFormat]:
+        """
+        List the file formats the parse endpoint accepts.
+
+        Returns:
+            List of ParseFormat entries. ``available`` is False for formats
+            that are known but disabled on this deployment.
+        """
+        return parse_module.get_parse_formats(self.http_client)
+
 
     def search(
         self,
@@ -907,7 +918,8 @@ class FirecrawlClient:
             CrawlJob in a terminal state ("completed", "failed", or "cancelled")
 
         Raises:
-            TimeoutError: If the job does not finish within timeout
+            CrawlJobTimeoutError: If the job does not finish within timeout (a
+                ``TimeoutError`` subclass that carries ``job_id`` and ``timeout``)
         """
         return crawl_module.wait_for_crawl_completion(
             self.http_client,

@@ -10,6 +10,7 @@ const STATE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_ERROR_LENGTH = 16_384;
 
 type ScrapeJobState = {
+  zeroDataRetention?: boolean;
   status: "completed" | "failed";
   requestId: string;
   completedAtMs: number;
@@ -65,6 +66,8 @@ function parseScrapeState(value: Buffer | string): ScrapeJobState {
       typeof candidate.requestId === "string" &&
       isFiniteNumber(candidate.completedAtMs) &&
       isFiniteNumber(candidate.creditsBilled) &&
+      (candidate.zeroDataRetention === undefined ||
+        typeof candidate.zeroDataRetention === "boolean") &&
       (candidate.error === undefined || typeof candidate.error === "string") &&
       (candidate.replay === undefined ||
         (typeof candidate.replay === "object" &&

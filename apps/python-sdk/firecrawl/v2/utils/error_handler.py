@@ -77,6 +77,25 @@ class RequestTimeoutError(FirecrawlError):
     pass
 
 
+class CrawlJobTimeoutError(TimeoutError):
+    """Raised when a crawl job does not finish within the wait timeout.
+
+    Subclasses the built-in ``TimeoutError``, so ``except TimeoutError`` still
+    catches it. The ``job_id`` attribute lets callers keep using the job, for
+    example to check its status later or to cancel it.
+    """
+
+    def __init__(self, job_id: str, timeout: float):
+        super().__init__(f"Crawl job {job_id} did not complete within {timeout} seconds")
+        self.job_id = job_id
+        self.timeout = timeout
+
+    def __reduce__(self):
+        # self.args holds only the message, so rebuild from the constructor
+        # arguments. This keeps pickle and copy.deepcopy working.
+        return (type(self), (self.job_id, self.timeout))
+
+
 class RateLimitError(FirecrawlError):
     """Raised when the rate limit is exceeded (429)."""
     pass
