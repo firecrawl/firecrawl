@@ -1,4 +1,4 @@
-import { type AgentEffort, type AgentExchangeOptions, type AgentListOptions, type AgentListResponse, type AgentMode, type AgentResponse, type AgentSnapshotResponse, type AgentStatusResponse, type AgentThreadResponse, type AgentTraceResponse, type AgentWebhookConfig, type AuditMetadata, type ThreatProtectionOptions } from "../types";
+import { JobTimeoutError, type AgentEffort, type AgentExchangeOptions, type AgentListOptions, type AgentListResponse, type AgentMode, type AgentResponse, type AgentSnapshotResponse, type AgentStatusResponse, type AgentThreadResponse, type AgentTraceResponse, type AgentWebhookConfig, type AuditMetadata, type ThreatProtectionOptions } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
 import { isZodSchema, zodSchemaToJsonSchema } from "../../utils/zodSchemaToJson";
@@ -90,7 +90,9 @@ export async function waitAgent(
   while (true) {
     const status = await getAgentStatus(http, jobId);
     if (["completed", "failed", "cancelled"].includes(status.status || "")) return status;
-    if (timeout != null && Date.now() - start > timeout * 1000) return status;
+    if (timeout != null && Date.now() - start > timeout * 1000) {
+      throw new JobTimeoutError(jobId, timeout, "agent");
+    }
     await new Promise((r) => setTimeout(r, Math.max(1000, pollInterval * 1000)));
   }
 }

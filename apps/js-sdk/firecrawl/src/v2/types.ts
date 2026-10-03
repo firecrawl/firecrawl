@@ -2055,9 +2055,9 @@ export class JobTimeoutError extends SdkError {
   constructor(
     jobId: string,
     timeoutSeconds: number,
-    jobType: "batch" | "crawl" = "batch",
+    jobType: "batch" | "crawl" | "agent" = "batch",
   ) {
-    const jobTypeLabel = jobType === "batch" ? "batch scrape" : "crawl";
+    const jobTypeLabel = jobType === "batch" ? "batch scrape" : jobType;
     super(
       `${jobTypeLabel.charAt(0).toUpperCase() + jobTypeLabel.slice(1)} job ${jobId} did not complete within ${timeoutSeconds} seconds`,
       undefined,
