@@ -1,5 +1,7 @@
 //! Firecrawl API v2 client.
 
+use std::time::Duration;
+
 use reqwest::Response;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -8,6 +10,8 @@ use crate::error::FirecrawlError;
 
 pub(crate) const API_VERSION: &str = "/v2";
 const CLOUD_API_URL: &str = "https://api.firecrawl.dev";
+/// Default per-request HTTP timeout: 300000ms, matching the JS SDK's `timeoutMs` default.
+const DEFAULT_TIMEOUT: Duration = Duration::from_millis(300_000);
 
 /// Firecrawl API v2 client.
 ///
@@ -93,11 +97,40 @@ impl Client {
         // back to the keyless free tier (rate-limited per IP). Other methods
         // return 401 from the API until a key is provided.
 
+        let client = reqwest::Client::builder()
+            .timeout(DEFAULT_TIMEOUT)
+            .build()
+            .map_err(|e| FirecrawlError::Misuse(format!("failed to build HTTP client: {e}")))?;
+
         Ok(Client {
             api_key,
             api_url: url,
-            client: reqwest::Client::new(),
+            client,
         })
+    }
+
+    /// Overrides the per-request HTTP timeout (default: 5 minutes, matching the JS and Go SDKs).
+    ///
+    /// This bounds how long the underlying HTTP request may run; it's independent of the
+    /// server-side `timeout` scrape option, which bounds how long the server spends scraping.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use firecrawl::Client;
+    /// use std::time::Duration;
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = Client::new("your-api-key")?.with_timeout(Duration::from_secs(60))?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_timeout(mut self, timeout: Duration) -> Result<Self, FirecrawlError> {
+        self.client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .map_err(|e| FirecrawlError::Misuse(format!("failed to build HTTP client: {e}")))?;
+        Ok(self)
     }
 
     /// Prepares headers for API requests.
@@ -287,6 +320,60 @@ mod tests {
         // Self-hosted URL normalization
         let client = Client::new_selfhosted("http://localhost:3000/", None::<&str>).unwrap();
         assert_eq!(client.api_url, "http://localhost:3000");
+    }
+
+    #[tokio::test]
+    async fn test_with_timeout_cuts_off_a_hung_connection() {
+        // A listener that accepts the connection but never writes a response, simulating
+        // a stalled server. Without a timeout this would hang the test (and the caller)
+        // forever.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await; // never respond
+        });
+
+        let client = Client::new_selfhosted(format!("http://{addr}"), None::<&str>)
+            .unwrap()
+            .with_timeout(Duration::from_millis(200))
+            .unwrap();
+
+        let elapsed = std::time::Instant::now();
+        let err = client
+            .scrape("https://example.com", None)
+            .await
+            .unwrap_err();
+        assert!(
+            elapsed.elapsed() < Duration::from_secs(5),
+            "did not time out promptly"
+        );
+
+        match err {
+            FirecrawlError::HttpError(_, e) => assert!(e.is_timeout(), "{e:?}"),
+            other => panic!("expected a timeout HttpError, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_with_timeout_still_allows_normal_requests() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/v2/scrape")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"success":true,"data":{"markdown":"hi"}}"#)
+            .create_async()
+            .await;
+
+        let client = Client::new_selfhosted(server.url(), None::<&str>)
+            .unwrap()
+            .with_timeout(Duration::from_secs(10))
+            .unwrap();
+
+        let doc = client.scrape("https://example.com", None).await.unwrap();
+        assert_eq!(doc.markdown.as_deref(), Some("hi"));
+        mock.assert();
     }
 
     #[test]
