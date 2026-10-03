@@ -352,6 +352,11 @@ const configSchema = z.object({
   // (~3 × ~0.5GB) well under the 8G limit while being far above typical demand
   // (per-pod average concurrency is ~0.02).
   PDF_EXTRACTION_CONCURRENCY: z.coerce.number().int().positive().default(3),
+  // Team concurrency limit used when Autumn billing is not configured, which is
+  // always the case on a self-hosted deployment. Every self-hosted request runs
+  // as the one "bypass" team, so this caps concurrent scrapes for the whole
+  // instance. Defaults to 2, the historical fallback.
+  DEFAULT_CONCURRENCY_LIMIT: z.coerce.number().int().positive().default(2),
 
   // Search Services
   SEARXNG_ENDPOINT: z.string().optional(),

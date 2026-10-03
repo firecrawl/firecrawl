@@ -21,9 +21,7 @@ import {
 import { autumnService } from "../services/autumn/autumn.service";
 import { orgIdForTeam } from "./team-org";
 import { reportPipelineError } from "./redis-pipeline";
-
-// Fallback when Autumn can't give us a concurrency value.
-const DEFAULT_CONCURRENCY_LIMIT = 2;
+import { config } from "../config";
 
 /**
  * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
@@ -34,9 +32,11 @@ export const HOBBY_CONCURRENCY_LIMIT = 5;
 
 /**
  * Returns the team's effective concurrency limit from Autumn's CONCURRENCY
- * balance. Autumn is authoritative; when the entity is missing we fall back to
- * the low default of 2. When Autumn errors, getConcurrencyLimit already returns
- * a high fail-open value, so that carries through here.
+ * balance. Autumn is authoritative; when the entity is missing (or Autumn is
+ * not configured, as on self-hosted deployments) we fall back to
+ * DEFAULT_CONCURRENCY_LIMIT (default 2). When Autumn errors,
+ * getConcurrencyLimit already returns a high fail-open value, so that carries
+ * through here.
  */
 export async function getEffectiveConcurrencyLimit(
   teamId: string,
@@ -46,7 +46,7 @@ export async function getEffectiveConcurrencyLimit(
   orgId: string | null,
 ): Promise<number> {
   const autumnValue = await autumnService.getConcurrencyLimit(teamId, orgId);
-  return autumnValue ?? DEFAULT_CONCURRENCY_LIMIT;
+  return autumnValue ?? config.DEFAULT_CONCURRENCY_LIMIT;
 }
 
 const constructKey = constructConcurrencyLimitKey;
