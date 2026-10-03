@@ -4,11 +4,12 @@ module Firecrawl
   module Models
     # Status response for monitoring agent tasks.
     class AgentStatusResponse
-      attr_reader :status, :data, :credits_used, :expires_at, :effort
+      attr_reader :status, :data, :credits_used, :expires_at, :effort, :error
 
       def initialize(raw)
         @status = raw["status"]
         @data = raw["data"]
+        @error = raw["error"]
         @credits_used = raw["creditsUsed"]
         @expires_at = raw["expiresAt"]
         # The effort the job ran with; only present for runs that specified it.

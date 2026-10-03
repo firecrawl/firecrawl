@@ -462,7 +462,16 @@ module Firecrawl
       raise ArgumentError, "Agent options are required" if options.nil?
 
       raw = @http.post("/v2/agent", options.to_h)
-      Models::AgentResponse.new(raw)
+      response = Models::AgentResponse.new(raw)
+      if response.success != true
+        reason = response.error.to_s.strip
+        reason = "response was unsuccessful" if reason.empty?
+        raise FirecrawlError, "Agent start failed: #{reason}"
+      end
+      if !response.id.is_a?(String) || response.id.strip.empty?
+        raise FirecrawlError, "Agent start did not return a job ID"
+      end
+      response
     end
 
     # Gets the status of an agent task.
@@ -498,12 +507,14 @@ module Firecrawl
     # @return [Models::AgentStatusResponse]
     def agent(options, poll_interval: DEFAULT_POLL_INTERVAL, timeout: DEFAULT_JOB_TIMEOUT)
       start = start_agent(options)
-      raise FirecrawlError, "Agent start did not return a job ID" if start.id.nil?
 
       deadline = Time.now + timeout
       while Time.now < deadline
         status = get_agent_status(start.id)
-        return status if status.done?
+        if status.done?
+          raise AgentFailedError.new(status, start.id) unless status.status == "completed"
+          return status
+        end
 
         sleep(poll_interval)
       end

@@ -13,6 +13,18 @@ module Firecrawl
     end
   end
 
+  # Raised when a polled agent task fails or is cancelled.
+  class AgentFailedError < FirecrawlError
+    attr_reader :response, :job_id
+
+    def initialize(response, job_id)
+      @response = response
+      @job_id = job_id
+      reason = response.error.is_a?(String) && !response.error.empty? ? ": #{response.error}" : ""
+      super("Agent #{job_id} #{response.status}#{reason}")
+    end
+  end
+
   # Raised on 401 Unauthorized responses.
   class AuthenticationError < FirecrawlError
     def initialize(message = nil, error_code: nil, details: nil)

@@ -659,6 +659,52 @@ class ClientTest < Minitest::Test
     assert_equal({ "result" => "found" }, status.data)
   end
 
+  def test_agent_rejects_failed_or_cancelled_status_with_reason_and_partial_data
+    %w[failed cancelled].each do |status|
+      stub_request(:post, "#{BASE_URL}/v2/agent")
+        .to_return(status: 200, body: JSON.generate(success: true, id: "agent-1"), headers: { "Content-Type" => "application/json" })
+      stub_request(:get, "#{BASE_URL}/v2/agent/agent-1")
+        .to_return(status: 200, body: JSON.generate(status: status, error: "task stopped", data: { partial: true }), headers: { "Content-Type" => "application/json" })
+
+      options = Firecrawl::Models::AgentOptions.new(prompt: "Find pricing")
+      error = assert_raises(Firecrawl::AgentFailedError) { @client.agent(options, poll_interval: 0, timeout: 10) }
+      assert_equal "agent-1", error.job_id
+      assert_equal status, error.response.status
+      assert_equal({ "partial" => true }, error.response.data)
+      assert_includes error.message, "task stopped"
+      WebMock.reset!
+    end
+  end
+
+  def test_agent_rejects_unsuccessful_start_before_polling
+    stub_request(:post, "#{BASE_URL}/v2/agent")
+      .to_return(status: 200, body: JSON.generate(success: false, id: "phantom", error: "quota exceeded"), headers: { "Content-Type" => "application/json" })
+
+    options = Firecrawl::Models::AgentOptions.new(prompt: "Find pricing")
+    error = assert_raises(Firecrawl::FirecrawlError) { @client.agent(options, poll_interval: 0, timeout: 10) }
+    assert_includes error.message, "quota exceeded"
+    assert_not_requested :get, "#{BASE_URL}/v2/agent/phantom"
+  end
+
+  def test_start_agent_rejects_failed_and_missing_ids_directly
+    options = Firecrawl::Models::AgentOptions.new(prompt: "Find pricing")
+    [
+      [{ success: false, id: "phantom", error: "quota exceeded" }, "quota exceeded"],
+      [{ success: false, id: "phantom" }, "unsuccessful"],
+      [{ id: "phantom" }, "unsuccessful"],
+      [{ success: "true", id: "phantom" }, "unsuccessful"],
+      [{ success: false, id: "phantom", error: "" }, "unsuccessful"],
+      [{ success: true }, "job ID"],
+      [{ success: true, id: "  " }, "job ID"],
+    ].each do |body, expected|
+      stub_request(:post, "#{BASE_URL}/v2/agent")
+        .to_return(status: 200, body: JSON.generate(body), headers: { "Content-Type" => "application/json" })
+      error = assert_raises(Firecrawl::FirecrawlError) { @client.start_agent(options) }
+      assert_includes error.message, expected
+      WebMock.reset!
+    end
+  end
+
   def test_agent_options_require_prompt
     assert_raises(ArgumentError) { Firecrawl::Models::AgentOptions.new(prompt: "") }
     assert_raises(ArgumentError) { Firecrawl::Models::AgentOptions.new }
