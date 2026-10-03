@@ -1,5 +1,14 @@
 ## CHANGELOG
 
+## [2.21.2] - 2026-10-02
+
+### Added
+
+- Added `Client::get_parse_formats` for `GET /v2/parse/formats`, returning the
+  upload formats `parse` accepts as `ParseFormatInfo` entries (`format`,
+  `kind`, `extensions`, `mime_types`, `available`). `ParseFormatKind` falls
+  back to `Unknown` for kinds this release does not know about.
+
 ## [2.21.1] - 2026-09-30
 
 ### Security

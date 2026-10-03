@@ -362,6 +362,7 @@ export async function batchScrapeController(
         zeroDataRetention,
         v1: true,
         webhook: req.body.webhook,
+        origin: req.body.origin,
       };
 
   if (req.body.appendToId && (!sc || sc.team_id !== req.auth.team_id)) {

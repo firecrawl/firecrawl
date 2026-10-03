@@ -153,6 +153,17 @@ $doc = $client->parse($file, ParseOptions::with(
 echo $doc->getMarkdown();
 ```
 
+List the file formats parse accepts on the deployment you are calling.
+Image formats report `isAvailable() === false` when image OCR is disabled.
+
+```php
+foreach ($client->getParseFormats() as $format) {
+    echo $format->getFormat() . ' (' . $format->getKind() . '): '
+        . implode(', ', $format->getExtensions())
+        . ($format->isAvailable() ? '' : ' [unavailable]') . "\n";
+}
+```
+
 ### Crawl
 
 ```php

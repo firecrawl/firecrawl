@@ -88,6 +88,13 @@ All params are passed as keyword lists with snake_case keys. Invalid keys, missi
   formats: ["markdown"]
 )
 
+# List the file formats parse_file accepts on this deployment
+{:ok, formats} = Firecrawl.get_parse_formats()
+
+for %Firecrawl.ParseFormat{format: format, kind: kind, mime_types: mime_types, available: true} <- formats do
+  IO.puts("#{format} (#{kind}): #{Enum.join(mime_types, ", ")}")
+end
+
 # Self-hosted instance
 {:ok, response} = Firecrawl.scrape_and_extract_from_url(
   [url: "https://example.com"],
@@ -105,7 +112,7 @@ response = Firecrawl.scrape_and_extract_from_url!(url: "https://example.com")
 
 ## Regenerating from the OpenAPI Spec
 
-The entire client is auto-generated from the Firecrawl OpenAPI specification. To regenerate after spec changes:
+The client is generated from the Firecrawl OpenAPI specification. To regenerate after spec changes:
 
 ```bash
 mix run generate.exs
@@ -114,13 +121,21 @@ mix run generate.exs
 This will:
 
 1. Fetch the latest OpenAPI JSON from GitHub
-2. Generate all API wrapper functions in `lib/firecrawl.ex`
+2. Generate all API wrapper functions in `lib/firecrawl.ex` and, if the code changed, save the spec it came from as `openapi.json`
 3. Bump the version in `mix.exs` using semver (only if the generated code changed):
    - **Major** bump if public functions were removed (breaking change)
    - **Minor** bump if new public functions were added
    - **Patch** bump for any other changes (signatures, docs, etc.)
 
-Re-running when nothing changed is a no-op — the version is not bumped.
+Re-running when nothing changed is a no-op, and the version is not bumped.
+
+To regenerate without the network, from the vendored spec:
+
+```bash
+FIRECRAWL_OPENAPI_SPEC=openapi.json mix run generate.exs
+```
+
+Hand-written functions live between the `BEGIN HAND-WRITTEN` and `END HAND-WRITTEN` markers in `lib/firecrawl.ex`. The generator copies that region verbatim and skips the spec routes listed in `@hand_written_routes`, so edit code there rather than in generated functions. `mix test` fails if `lib/firecrawl.ex` differs from what the generator produces from `openapi.json`.
 
 ## License
 

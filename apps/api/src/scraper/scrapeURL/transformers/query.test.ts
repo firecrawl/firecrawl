@@ -209,7 +209,10 @@ describe("performQuery freeform", () => {
     );
 
     const [gemini, mini] = calls();
-    expect(gemini.model.modelId).toBe("gemini-2.5-flash-lite");
+    expect(gemini.model.modelId).toBe("gemini-3.5-flash-lite");
+    expect(gemini.providerOptions).toEqual({
+      google: { thinkingConfig: { thinkingLevel: "minimal" } },
+    });
     expect(gemini.prompt).toContain(markdown);
     expect(mini.model.modelId).toBe("gpt-4o-mini");
     // The page is trimmed to exactly 80% of gpt-4o-mini's window; the rest of

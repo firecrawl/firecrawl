@@ -16,6 +16,7 @@ from ...utils.error_handler import handle_response_error
 from ...utils.validation import prepare_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.normalize import normalize_document_input
+from ..crawl import _job_id_from_next_url
 import time
 
 
@@ -87,6 +88,7 @@ def _parse_crawl_status_response(body: Dict[str, Any]) -> Dict[str, Any]:
         "credits_used": body.get("creditsUsed", 0),
         "expires_at": body.get("expiresAt"),
         "next": body.get("next"),
+        "warning": body.get("warning"),
         "data": _parse_crawl_documents(body.get("data", [])),
     }
 
@@ -160,12 +162,14 @@ async def get_crawl_status(
         )
 
     return CrawlJob(
+        id=job_id,
         status=payload["status"],
         completed=payload["completed"],
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
         next=payload["next"] if not auto_paginate else None,
+        warning=payload["warning"],
         data=documents,
     )
 
@@ -196,12 +200,14 @@ async def get_crawl_status_page(
     body = response.json()
     payload = _parse_crawl_status_response(body)
     return CrawlJob(
+        id=_job_id_from_next_url(next_url),
         status=payload["status"],
         completed=payload["completed"],
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
         next=payload["next"],
+        warning=payload["warning"],
         data=payload["data"],
     )
 

@@ -24,6 +24,7 @@ import {
   parseUploadRefPayloadMiddleware,
   parseUploadUrlController,
 } from "../controllers/v2/parse-upload";
+import { parseFormatsController } from "../controllers/v2/parse-formats";
 import { batchScrapeController } from "../controllers/v2/batch-scrape";
 import { crawlController } from "../controllers/v2/crawl";
 import { crawlParamsPreviewController } from "../controllers/v2/crawl-params-preview";
@@ -211,6 +212,12 @@ v2Router.post(
   "/feedback",
   authMiddleware(RateLimiterMode.Account),
   wrap(feedbackController),
+);
+
+v2Router.get(
+  "/parse/formats",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(parseFormatsController),
 );
 
 v2Router.post(

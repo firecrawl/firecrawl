@@ -1,4 +1,5 @@
 import { generateText } from "ai";
+import type { GoogleLanguageModelOptions } from "@ai-sdk/google";
 import { encoding_for_model } from "@dqbd/tiktoken";
 import { Document, FormatObject } from "../../../controllers/v2/types";
 import { Meta } from "..";
@@ -35,6 +36,15 @@ const DIRECT_QUOTE_MODEL = {
 };
 // Room for the system prompt, the query, and the model's reasoning and answer.
 const DIRECT_QUOTE_RESERVED_TOKENS = 16_384;
+
+const FREEFORM_GEMINI_MODEL = "gemini-3.5-flash-lite";
+
+// The Vertex provider falls back to the "google" key, so this covers both.
+const FREEFORM_PROVIDER_OPTIONS = {
+  google: {
+    thinkingConfig: { thinkingLevel: "minimal" },
+  } satisfies GoogleLanguageModelOptions,
+};
 
 // o200k_base, which gpt-4o-mini uses and gpt-oss's o200k_harmony extends; a
 // close enough estimate for Gemini to stay inside its much larger window.
@@ -296,19 +306,16 @@ ${escapePromptTags(fitted.text)}
 
   const modelChain = [
     {
-      name: "gemini-2.5-flash-lite",
-      model: getModel(
-        "gemini-2.5-flash-lite",
-        hasVertex() ? "vertex" : "google",
-      ),
+      name: FREEFORM_GEMINI_MODEL,
+      model: getModel(FREEFORM_GEMINI_MODEL, hasVertex() ? "vertex" : "google"),
     },
     {
       name: "gpt-4o-mini",
       model: getModel("gpt-4o-mini", "openai"),
     },
     {
-      name: "gemini-2.5-flash-lite",
-      model: getModel("gemini-2.5-flash-lite", "vertex"),
+      name: FREEFORM_GEMINI_MODEL,
+      model: getModel(FREEFORM_GEMINI_MODEL, "vertex"),
     },
   ];
 
@@ -320,6 +327,7 @@ ${escapePromptTags(fitted.text)}
         model,
         system: querySystemPrompt,
         prompt: queryPrompt,
+        providerOptions: FREEFORM_PROVIDER_OPTIONS,
         experimental_telemetry: {
           isEnabled: true,
           functionId: "performQuery/freeform",

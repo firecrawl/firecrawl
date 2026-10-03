@@ -175,18 +175,18 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
       scrapeTimeout,
     );
 
-    it(
-      "redirects a retired spark-1 preset to spark-2",
-      async () => {
+    it.each(["spark-1-pro", "spark-1-mini"])(
+      "redirects the deprecated %s alias to spark-2",
+      async model => {
         const response = await agentRaw({
           urls: [TEST_SUITE_WEBSITE],
           prompt: "What does this page offer?",
-          model: "spark-1-pro",
+          model,
         });
 
         if (response.statusCode !== 200) {
           console.warn(
-            "Agent request with model spark-1-pro did not succeed",
+            `Agent request with model ${model} did not succeed`,
             JSON.stringify(response.body, null, 2),
           );
         }
