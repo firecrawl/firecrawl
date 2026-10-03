@@ -160,6 +160,9 @@ config:
   NUQ_DATABASE_URL_LISTEN: ""
   NUQ_RABBITMQ_URL: ""
   OPENAI_BASE_URL: ""
+  # "auto" detects endpoint and structured-output support on first use.
+  OPENAI_API_MODE: "auto"
+  OPENAI_STRUCTURED_OUTPUT_MODE: "auto"
   MODEL_NAME: ""
   MODEL_EMBEDDING_NAME: ""
   OLLAMA_BASE_URL: ""
