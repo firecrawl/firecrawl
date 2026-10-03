@@ -66,7 +66,7 @@ func (c *Client) ScrapeAlexandria(ctx context.Context, calls []AlexandriaCall, o
 	if !regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`).MatchString(requestID) {
 		return nil, &FirecrawlError{Message: "invalid request ID"}
 	}
-	raw, err := c.http.post(ctx, "/v2/scrape", body, map[string]string{"x-request-id": requestID})
+	raw, err := c.http.postWithRetries(ctx, "/v2/scrape", body, map[string]string{"x-request-id": requestID})
 	if err != nil {
 		return nil, &AlexandriaExecutionError{RequestID: requestID, Err: err}
 	}
