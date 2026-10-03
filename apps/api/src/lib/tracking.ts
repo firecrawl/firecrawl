@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { chInsert } from "./clickhouse-client";
+import type { AgentHintId } from "./agent-hints";
 import type { SearchV2Response } from "./entities";
 import type { MonitorTarget } from "../services/monitoring/types";
 
@@ -345,6 +346,44 @@ export async function trackSearchResults(
       result_index: index,
       has_scrape_formats: opts.hasScrapeFormats,
       created_at,
+    })),
+  );
+}
+
+// =========================================
+// Agent hint emission tracking
+// =========================================
+
+interface TrackAgentHintsParams {
+  hintIds: AgentHintId[];
+  endpoint: string;
+  jobId: string | null;
+  teamId: string;
+  zeroDataRetention: boolean;
+  emittedAt?: Date;
+}
+
+/**
+ * One row per hint emitted, so a hint can be joined to what the agent did next.
+ * Records the rule id only: the wording is a copy edit away and carries no
+ * analysable meaning, and result URLs stay out of this table.
+ */
+export async function trackAgentHints(
+  opts: TrackAgentHintsParams,
+): Promise<void> {
+  if (opts.zeroDataRetention) return;
+  if (opts.hintIds.length === 0) return;
+
+  const emitted_at = (opts.emittedAt ?? new Date()).toISOString();
+
+  await chInsert(
+    "agent_hint_emissions",
+    opts.hintIds.map(hintId => ({
+      hint_id: hintId,
+      endpoint: opts.endpoint,
+      job_id: opts.jobId ?? "",
+      team_id: opts.teamId,
+      emitted_at,
     })),
   );
 }
