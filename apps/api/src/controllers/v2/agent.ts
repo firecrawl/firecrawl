@@ -1,5 +1,4 @@
 import { v7 as uuidv7 } from "uuid";
-import { AGENT_REQUEST_CREDITS_SHARDS } from "../../lib/request-credits-store";
 import { Response } from "express";
 import {
   AgentRequest,
@@ -8,10 +7,8 @@ import {
   agentRequestSchema,
 } from "./types";
 import { logger as _logger } from "../../lib/logger";
-import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
-import { agentConsumeFreeRequestIfLeft } from "../../db/rpc";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   checkUrlsAgainstThreatPolicy,
@@ -22,6 +19,7 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { fetchAgentThread, threadErrorFor } from "./agent-thread";
+import { launchAgentJob } from "../../lib/agent-launch";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
@@ -179,72 +177,19 @@ export async function agentController(
     }
   }
 
-  // If maxCredits > 2500, skip free request consumption — this is always a paid request
-  const highCreditRequest =
-    req.body.maxCredits !== undefined && req.body.maxCredits > 2500;
-
-  let freeRequest: any;
-
-  if (config.USE_DB_AUTHENTICATION && !highCreditRequest) {
-    freeRequest = await agentConsumeFreeRequestIfLeft(req.auth.team_id);
-  }
-
-  const isFreeRequest = highCreditRequest
-    ? false
-    : config.USE_DB_AUTHENTICATION
-      ? !!freeRequest?.[0]?.consumed
-      : true;
-
-  await logRequest({
-    id: agentId,
-    kind: "agent",
-    api_version: "v2",
-    external_request_id: externalRequestId(req),
-    team_id: req.auth.team_id,
-    origin: req.body.origin ?? "api",
-    integration: req.body.integration,
-    target_hint: req.body.urls?.[0] ?? req.body.prompt ?? "",
-    zeroDataRetention: false, // not supported for agent
-    api_key_id: req.acuc?.api_key_id ?? null,
-    creditsShards: AGENT_REQUEST_CREDITS_SHARDS,
+  const launched = await launchAgentJob({
+    agentId,
+    teamId: req.auth.team_id,
+    apiKey: req.acuc!.api_key,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    externalRequestId: externalRequestId(req),
+    request: req.body,
   });
 
-  const passthrough = await fetch(
-    config.EXTRACT_V3_BETA_URL + "/internal/extracts",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
-      },
-      body: JSON.stringify({
-        id: agentId,
-        urls: req.body.urls,
-        schema: req.body.schema,
-        prompt: req.body.prompt,
-        apiKey: req.acuc!.api_key,
-        apiKeyId: req.acuc!.api_key_id ?? undefined,
-        teamId: req.auth.team_id,
-        isFreeRequest,
-        maxCredits: req.body.maxCredits ?? undefined,
-        strictConstrainToURLs: req.body.strictConstrainToURLs ?? undefined,
-        webhook: req.body.webhook ?? undefined,
-        model: req.body.model,
-        effort: req.body.effort,
-        auditMetadata: req.body.auditMetadata,
-        threadId: req.body.threadId,
-        mode: req.body.mode,
-        exchange: req.body.exchange,
-      }),
-    },
-  );
-
-  if (passthrough.status !== 200) {
-    const text = await passthrough.text();
-
+  if (!launched.ok) {
     logger.error("Failed to passthrough agent request.", {
-      status: passthrough.status,
-      text,
+      status: launched.status,
+      text: launched.text,
     });
 
     // TODO: should we try to insert a failed agent row here, since a request is already created? - Mogery
@@ -255,21 +200,12 @@ export async function agentController(
     });
   }
 
-  // The agent service mints the thread id, so the response body is the only
-  // place it exists at this point.
-  const result = (await passthrough.json().catch(() => null)) as {
-    threadId?: unknown;
-    threadTurn?: unknown;
-  } | null;
-
   return res.status(200).json({
     success: true,
     id: agentId,
-    ...(typeof result?.threadId === "string"
-      ? { threadId: result.threadId }
-      : {}),
-    ...(typeof result?.threadTurn === "number"
-      ? { threadTurn: result.threadTurn }
+    ...(launched.threadId !== undefined ? { threadId: launched.threadId } : {}),
+    ...(launched.threadTurn !== undefined
+      ? { threadTurn: launched.threadTurn }
       : {}),
   });
 }

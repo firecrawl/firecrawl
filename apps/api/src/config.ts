@@ -515,6 +515,11 @@ const configSchema = z.object({
   // 32-byte key (hex or base64) used to AES-256-GCM encrypt stored bot tokens.
   // If unset, tokens are stored with a `plain:` prefix (self-hosted only).
   SLACK_TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  // Answer @-mentions and DMs to the bot with an agent run billed to the
+  // linked team. Also requests the extra scopes this needs at install time, so
+  // turn it on only after the Slack app declares them and subscribes to the
+  // app_mention and message.im events.
+  SLACK_AGENT_ENABLED: z.stringbool().default(false),
   ALLOW_LOCAL_WEBHOOKS: z.stringbool().optional(),
   WEBHOOK_USE_RABBITMQ: z.stringbool().optional(),
 
