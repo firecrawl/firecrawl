@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { shutdownTracing } from "../otel";
 import { logger } from "../lib/logger";
-import { zdrcleaner } from "../lib/zdrcleaner";
+import { cleanZdrRequest, sendZdrHeartbeat } from "../lib/zdrcleaner";
+import { consumeZdrCleanupJobs, shutdownZdrQueue } from "../lib/zdr-queue";
 
 let isShuttingDown = false;
 
@@ -16,10 +17,16 @@ process.on("SIGTERM", () => {
 });
 
 (async () => {
+  await consumeZdrCleanupJobs(job => cleanZdrRequest(job.requestId));
+
+  // Cleanup is driven entirely by the delayed RabbitMQ queue; this loop only
+  // keeps the liveness heartbeat going while the consumer runs.
   while (!isShuttingDown) {
-    await zdrcleaner();
+    await sendZdrHeartbeat();
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
+  await shutdownZdrQueue();
   await shutdownTracing();
   logger.info("zdr-worker exiting");
   process.exit(0);

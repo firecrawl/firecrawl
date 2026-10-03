@@ -88,20 +88,6 @@ export function billTeam7(params: {
   );
 }
 
-// `database` is a parameter because callers split between the primary and the
-// read replica: status controllers (informational `creditsUsed`) read from the
-// replica, while crawl finalization (crawl-logic) reads its own recent billing
-// writes and must stay on the primary.
-export function creditsBilledByCrawlId(
-  database: DB,
-  i_crawl_id: string,
-): Promise<{ credits_billed: number }[]> {
-  return execRows(
-    database,
-    sql`select * from credits_billed_by_crawl_id_2(i_crawl_id => ${i_crawl_id})`,
-  );
-}
-
 export function diffGetLastScrape(
   i_team_id: string,
   i_url: string,
@@ -110,15 +96,6 @@ export function diffGetLastScrape(
   return execRows(
     db,
     sql`select * from diff_get_last_scrape_v7(i_team_id => ${i_team_id}, i_url => ${i_url}, i_tag => ${i_tag})`,
-  );
-}
-
-export function getZdrCleanupBatch(
-  p_limit: number,
-): Promise<{ request_id: string; ids: string[] }[]> {
-  return execRows(
-    db,
-    sql`select * from get_zdr_cleanup_batch_2(p_limit => ${p_limit})`,
   );
 }
 

@@ -15,9 +15,11 @@ import {
   ProxySelectionError,
   SSLError,
   SiteError,
+  SiteRestrictionError,
   UnsupportedFileError,
 } from "../../error";
 import { Meta } from "../..";
+import type { ResolvedSafeMode } from "../../../../lib/safe-mode";
 
 import { config } from "../../../../config";
 
@@ -57,7 +59,32 @@ export type FireEngineScrapeRequestCommon = {
   maxAge?: number;
   saveScrapeResultToGCS?: boolean;
   zeroDataRetention?: boolean;
+
+  behaviorOverrides?: {
+    disableSiteHandling?: boolean;
+    exposeWebdriver?: boolean;
+    useHeadlessUserAgent?: boolean;
+    disablePlatformSelection?: boolean;
+    disableCountrySelection?: boolean;
+    disableAutomaticReferrer?: boolean;
+  };
 };
+
+export function safeModeParams(
+  safeMode: ResolvedSafeMode | undefined,
+): Pick<FireEngineScrapeRequestCommon, "behaviorOverrides"> {
+  if (!safeMode) return {};
+  return {
+    behaviorOverrides: {
+      disableSiteHandling: safeMode.disableSiteHandling,
+      exposeWebdriver: safeMode.exposeWebdriver,
+      useHeadlessUserAgent: safeMode.useHeadlessUserAgent,
+      disablePlatformSelection: safeMode.disablePlatformSelection,
+      disableCountrySelection: safeMode.disableCountrySelection,
+      disableAutomaticReferrer: safeMode.disableAutomaticReferrer,
+    },
+  };
+}
 
 export type FireEngineScrapeRequestChromeCDP = {
   engine: "chrome-cdp";
@@ -71,7 +98,7 @@ export type FireEngineScrapeRequestChromeCDP = {
   forceNonRender?: boolean;
   mobile?: boolean;
   disableSmartWaitCache?: boolean;
-  persistentStorage?: { uniqueId: string };
+  profile?: { owner: string; name: string };
 };
 
 export type FireEngineScrapeRequestTLSClient = {
@@ -85,7 +112,6 @@ const successSchema = z.object({
 
   timeTaken: z.number(),
   content: z.string(),
-  json: z.unknown().optional(),
   url: z.string().optional(),
 
   pageStatusCode: z.number(),
@@ -180,6 +206,7 @@ const processingSchema = z.object({
 const failedSchema = z.object({
   error: z.string(),
   retryWithStealth: z.boolean().optional(),
+  failureReason: z.literal("site_protection").optional(),
 });
 
 export const fireEngineURL =
@@ -241,6 +268,12 @@ export async function fireEngineScrape<
     logger.debug("Scrape job failed", {
       status,
     });
+    if (
+      failedParse.data.failureReason === "site_protection" &&
+      meta.internalOptions.safeMode?.disableSiteHandling
+    ) {
+      throw new SiteRestrictionError();
+    }
     if (
       failedParse.data.retryWithStealth &&
       meta.options.proxy === "auto" &&

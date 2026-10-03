@@ -2,6 +2,9 @@ import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
 
 export type ErrorCodes =
   | "THIRD_PARTY_DATA_TERMS_REQUIRED"
+  | "THIRD_PARTY_DATA_NOT_FOUND"
+  | "THIRD_PARTY_DATA_NOT_ENABLED"
+  | "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED"
   | "SCRAPE_TIMEOUT"
   | "MAP_TIMEOUT"
   | "UNKNOWN_ERROR"
@@ -43,6 +46,8 @@ export type ErrorCodes =
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST"
   | "CONCURRENCY_QUEUE_TIMEOUT"
+  | "SAFE_MODE_BLOCKED"
+  | "SCRAPE_SITE_RESTRICTION_BLOCKED"
   // Threat protection (enterprise domain risk blocking). Lowercase by design:
   // this is the documented, user-facing error code for the feature.
   | "unsafe_domain_blocked"

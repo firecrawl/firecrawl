@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union, Callable, Literal, BinaryIO
 from .types import (
+    ParseFormat,
     ParseOptions,
     ScrapeOptions,
     CrawlRequest,
@@ -20,6 +21,9 @@ from .types import (
     DeveloperSearchResponse,
     DeveloperSearchType,
     SourceOption,
+    FindToolsData,
+    AlexandriaCall,
+    AlexandriaScrapeData,
     CrawlResponse,
     CrawlJob,
     CrawlParamsRequest,
@@ -53,6 +57,7 @@ from .types import (
 )
 from .utils.http_client import HttpClient
 from .utils.http_client_async import AsyncHttpClient
+from .utils.error_handler import CrawlJobTimeoutError
 
 from .methods.aio import scrape as async_scrape  # type: ignore[attr-defined]
 from .methods.aio import parse as async_parse  # type: ignore[attr-defined]
@@ -91,6 +96,7 @@ class AsyncFirecrawlClient:
         timeout: Optional[float] = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
+        origin: Optional[str] = None,
     ):
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
@@ -102,6 +108,7 @@ class AsyncFirecrawlClient:
             timeout=timeout,
             max_retries=max_retries,
             backoff_factor=backoff_factor,
+            origin=origin,
         )
         self.async_http_client = AsyncHttpClient(
             api_key,
@@ -109,20 +116,63 @@ class AsyncFirecrawlClient:
             timeout=timeout,
             max_retries=max_retries,
             backoff_factor=backoff_factor,
+            origin=origin,
         )
 
     # Scrape
     async def scrape(
         self,
-        url: str,
+        url: Optional[str] = None,
         *,
         auto_resume: Optional[bool] = None,
+        alexandria: Optional[Union[AlexandriaCall, Dict[str, Any], List[Union[AlexandriaCall, Dict[str, Any]]]]] = None,
+        request_id: Optional[str] = None,
         **kwargs,
     ):
+        if alexandria is not None:
+            kwargs = {k: v for k, v in kwargs.items() if v is not None}
+            if url is not None or auto_resume is not None or set(kwargs) - {"timeout", "integration"}:
+                raise ValueError("alexandria cannot be combined with URL scrape options")
+            return await self.scrape_alexandria(alexandria, request_id=request_id, **kwargs)
+        if request_id is not None:
+            raise ValueError("request_id requires alexandria")
         options = ScrapeOptions(**{k: v for k, v in kwargs.items() if v is not None}) if kwargs else None
         return await async_scrape.scrape(
             self.async_http_client, url, options, auto_resume=auto_resume
         )
+
+    async def scrape_alexandria(
+        self,
+        calls: Union[AlexandriaCall, Dict[str, Any], List[Union[AlexandriaCall, Dict[str, Any]]]],
+        *,
+        timeout: Optional[int] = None,
+        integration: Optional[str] = None,
+        request_id: Optional[str] = None,
+    ) -> AlexandriaScrapeData:
+        """Execute up to 10 Alexandria capabilities in one request."""
+        return await async_scrape.scrape_alexandria(
+            self.async_http_client, calls, timeout=timeout, integration=integration, request_id=request_id
+        )
+
+    async def find_tools(self, **options) -> FindToolsData:
+        """Explore providers and contracts without executing discovered tools.
+
+        Filter by urls, providers, categories, groups, or capabilities. Use level
+        (providers/groups/tools), expand, limit, and offset to control disclosure.
+        Follow a returned next request with scrape(alexandria=next).
+        """
+        result = await self.scrape_alexandria({"provider": "firecrawl", "capability": "find-tools", "options": options})
+        item = result.alexandria[0]
+        if item.error:
+            from .utils.error_handler import FirecrawlError
+            raise FirecrawlError(
+                item.error.message,
+                item.error.status,
+                request_id=result.request_id,
+                code=item.error.code,
+                charge_id=item.error.charge_id,
+            )
+        return FindToolsData(**item.data)
 
     # Research paper index (/v2/search/research)
     @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
@@ -255,6 +305,10 @@ class AsyncFirecrawlClient:
             content_type=content_type,
         )
 
+    async def get_parse_formats(self) -> List[ParseFormat]:
+        """List the file formats the parse endpoint accepts."""
+        return await async_parse.get_parse_formats(self.async_http_client)
+
 
     # Search
     async def search(
@@ -343,7 +397,8 @@ class AsyncFirecrawlClient:
             CrawlJob: The final status of the crawl job when it reaches a terminal state.
 
         Raises:
-            TimeoutError: If the crawl does not reach a terminal state within the specified timeout.
+            CrawlJobTimeoutError: If the crawl does not reach a terminal state within the specified
+                timeout. It is a ``TimeoutError`` subclass that carries ``job_id`` and ``timeout``.
 
         Terminal states:
             - "completed": The crawl finished successfully.
@@ -360,7 +415,7 @@ class AsyncFirecrawlClient:
             if status.status in ["completed", "failed", "cancelled"]:
                 return status
             if timeout and (time.monotonic() - start) > timeout:
-                raise TimeoutError("Crawl wait timed out")
+                raise CrawlJobTimeoutError(job_id, timeout)
             await asyncio.sleep(poll_interval)
 
     async def crawl(self, **kwargs) -> CrawlJob:

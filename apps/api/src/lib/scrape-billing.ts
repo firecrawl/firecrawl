@@ -28,7 +28,8 @@ const redactPIIPdfPageCostBonus = 4;
 // scope — a scrape and its same-URL re-check share one fee, while a crawl of
 // N pages bills N scans (each page job is its own scope). Verdicts are never
 // reused across requests (no verdict cache — ZDR). Local-only decisions
-// (whitelist/blacklist/blocked-tld, mode off, provider failure) never bill.
+// (whitelist/blacklist/blocked-tld, modes off / manual-only, provider
+// failure) never bill.
 const threatScanCost = 2;
 
 /**
@@ -59,6 +60,31 @@ export function calculateThreatScanCredits(
     credits += threatScanCost;
   }
   return credits;
+}
+
+/**
+ * Whether the prompt injection guard gave this scrape's content a verdict, and
+ * so whether its fee bills. The guard writes one cost-tracking record per
+ * chunk it attempted and fails open on a chunk it could not classify
+ * (verdict "none"): a scan that left any chunk unscanned does not bill. A
+ * detection is a verdict for the whole page even if a concurrent chunk failed,
+ * since it blocked the extraction.
+ */
+function promptInjectionGuardGaveVerdict(
+  costTrackingJSON: ReturnType<typeof CostTracking.prototype.toJSON>,
+): boolean {
+  const guardCalls = (costTrackingJSON.calls ?? []).filter(
+    call =>
+      call.metadata?.module === "scrapeURL" &&
+      call.metadata?.method === "checkForPromptInjection",
+  );
+  if (guardCalls.some(call => call.metadata.verdict === "injection")) {
+    return true;
+  }
+  return (
+    guardCalls.length > 0 &&
+    guardCalls.every(call => call.metadata.verdict === "clean")
+  );
 }
 
 export async function calculateCreditsToBeBilled(
@@ -114,12 +140,10 @@ export async function calculateCreditsToBeBilled(
       creditsToBeBilled = 1;
     }
 
-    const promptInjectionGuardRan = costTrackingJSON.calls?.some(
-      call =>
-        call.metadata?.module === "scrapeURL" &&
-        call.metadata?.method === "checkForPromptInjection",
-    );
-    if (creditsToBeBilled === 0 && promptInjectionGuardRan) {
+    if (
+      creditsToBeBilled === 0 &&
+      promptInjectionGuardGaveVerdict(costTrackingJSON)
+    ) {
       creditsToBeBilled = 5;
     }
 
@@ -129,15 +153,13 @@ export async function calculateCreditsToBeBilled(
     return creditsToBeBilled + threatScanCredits;
   }
 
+  // An Exchange access is priced by its provider in place of the base
+  // credit; format surcharges (json, question, ...) still apply on top.
   const exchangeCredits = getExchangeSuccessCredits({
     exchange,
     statusCode: document.metadata?.statusCode,
   });
-  if (exchangeCredits !== null) {
-    return exchangeCredits + threatScanCredits;
-  }
-
-  let creditsToBeBilled = 1; // Assuming 1 credit per document
+  let creditsToBeBilled = exchangeCredits ?? 1;
 
   if (options.lockdown) {
     creditsToBeBilled += 4;
@@ -156,15 +178,11 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += jsonCostBonus;
   }
 
-  if (hasFormatOfType(options.formats, "json")?.checkPromptInjection) {
-    const promptInjectionGuardRan = costTrackingJSON.calls?.some(
-      call =>
-        call.metadata?.module === "scrapeURL" &&
-        call.metadata?.method === "checkForPromptInjection",
-    );
-    if (promptInjectionGuardRan) {
-      creditsToBeBilled += 4;
-    }
+  if (
+    hasFormatOfType(options.formats, "json")?.checkPromptInjection &&
+    promptInjectionGuardGaveVerdict(costTrackingJSON)
+  ) {
+    creditsToBeBilled += 4;
   }
 
   if (hasFormatOfType(options.formats, "deterministicJson")) {
@@ -182,7 +200,9 @@ export async function calculateCreditsToBeBilled(
     internalOptions.v1Agent?.model === "fire-1" ||
     internalOptions.v1JSONAgent?.model?.toLowerCase() === "fire-1"
   ) {
-    creditsToBeBilled = Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
+    creditsToBeBilled =
+      (exchangeCredits ?? 0) +
+      Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
   }
 
   const hasQuestionFormat =
@@ -238,7 +258,10 @@ export async function calculateCreditsToBeBilled(
     document.metadata?.url,
     document.metadata?.sourceURL,
   ].filter((u): u is string => !!u);
-  if (urlsToCheck.some(u => isUrlBlocked(u, null) && !isUrlBlocked(u, flags))) {
+  if (
+    exchangeCredits === null &&
+    urlsToCheck.some(u => isUrlBlocked(u, null) && !isUrlBlocked(u, flags))
+  ) {
     creditsToBeBilled += unblockedDomainCostBonus;
   }
 

@@ -71,12 +71,15 @@ class V2Proxy:
 
         if client_instance:
             self.scrape = client_instance.scrape
+            self.scrape_alexandria = client_instance.scrape_alexandria
+            self.find_tools = client_instance.find_tools
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
             self.stop_interactive_browser = client_instance.stop_interactive_browser
             self.scrape_execute = self.interact
             self.delete_scrape_browser = self.stop_interaction
             self.parse = client_instance.parse
+            self.get_parse_formats = client_instance.get_parse_formats
             self.search = client_instance.search
             self.developer_search = client_instance.developer_search
             self.crawl = client_instance.crawl
@@ -161,12 +164,15 @@ class AsyncV2Proxy:
 
         if client_instance:
             self.scrape = client_instance.scrape
+            self.scrape_alexandria = client_instance.scrape_alexandria
+            self.find_tools = client_instance.find_tools
             self.interact = client_instance.interact
             self.stop_interaction = client_instance.stop_interaction
             self.stop_interactive_browser = client_instance.stop_interactive_browser
             self.scrape_execute = self.interact
             self.delete_scrape_browser = self.stop_interaction
             self.parse = client_instance.parse
+            self.get_parse_formats = client_instance.get_parse_formats
             self.search = client_instance.search
             self.developer_search = client_instance.developer_search
             self.crawl = client_instance.crawl
@@ -243,6 +249,7 @@ class Firecrawl:
         timeout: float = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
+        origin: str = None,
     ):
         """Initialize the unified client.
 
@@ -252,6 +259,8 @@ class Firecrawl:
             timeout: Default request timeout in seconds for all HTTP requests
             max_retries: Maximum number of retries for failed requests (default: 3)
             backoff_factor: Exponential backoff factor for retries (default: 0.5)
+            origin: Attribution string stamped into API request payloads
+                (defaults to ``python-sdk@<version>``)
         """
         self.api_key = api_key
         self.api_url = api_url
@@ -264,6 +273,7 @@ class Firecrawl:
             timeout=timeout,
             max_retries=max_retries,
             backoff_factor=backoff_factor,
+            origin=origin,
         ) if V2FirecrawlClient else None
         
         # Create version-specific proxies
@@ -271,12 +281,15 @@ class Firecrawl:
         self.v2 = V2Proxy(self._v2_client)
         
         self.scrape = self._v2_client.scrape
+        self.scrape_alexandria = self._v2_client.scrape_alexandria
+        self.find_tools = self._v2_client.find_tools
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction
         self.stop_interactive_browser = self._v2_client.stop_interactive_browser
         self.scrape_execute = self.interact
         self.delete_scrape_browser = self.stop_interaction
         self.parse = self._v2_client.parse
+        self.get_parse_formats = self._v2_client.get_parse_formats
         self.search = self._v2_client.search
         self.developer_search = self._v2_client.developer_search
         self.map = self._v2_client.map
@@ -291,6 +304,7 @@ class Firecrawl:
 
         self.crawl = self._v2_client.crawl
         self.start_crawl = self._v2_client.start_crawl
+        self.wait_crawl = self._v2_client.wait_crawl
         self.crawl_params_preview = self._v2_client.crawl_params_preview
         self.get_crawl_status = self._v2_client.get_crawl_status
         self.get_crawl_status_page = self._v2_client.get_crawl_status_page
@@ -389,6 +403,7 @@ class AsyncFirecrawl:
         timeout: float = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
+        origin: str = None,
     ):
         self.api_key = api_key
         self.api_url = api_url
@@ -401,6 +416,7 @@ class AsyncFirecrawl:
             timeout=timeout,
             max_retries=max_retries,
             backoff_factor=backoff_factor,
+            origin=origin,
         ) if AsyncFirecrawlClient else None
         
         # Create version-specific proxies
@@ -410,12 +426,15 @@ class AsyncFirecrawl:
         # Expose v2 async surface directly on the top-level client for ergonomic access
         # Keep method names aligned with the sync client
         self.scrape = self._v2_client.scrape
+        self.scrape_alexandria = self._v2_client.scrape_alexandria
+        self.find_tools = self._v2_client.find_tools
         self.interact = self._v2_client.interact
         self.stop_interaction = self._v2_client.stop_interaction
         self.stop_interactive_browser = self._v2_client.stop_interactive_browser
         self.scrape_execute = self.interact
         self.delete_scrape_browser = self.stop_interaction
         self.parse = self._v2_client.parse
+        self.get_parse_formats = self._v2_client.get_parse_formats
         self.search = self._v2_client.search
         self.developer_search = self._v2_client.developer_search
         self.map = self._v2_client.map
@@ -429,6 +448,7 @@ class AsyncFirecrawl:
         self.get_monitor_check = self._v2_client.get_monitor_check
 
         self.start_crawl = self._v2_client.start_crawl
+        self.wait_crawl = self._v2_client.wait_crawl
         self.get_crawl_status = self._v2_client.get_crawl_status
         self.get_crawl_status_page = self._v2_client.get_crawl_status_page
         self.cancel_crawl = self._v2_client.cancel_crawl

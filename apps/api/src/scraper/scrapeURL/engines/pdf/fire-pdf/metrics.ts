@@ -1,5 +1,23 @@
 import { Counter, Histogram } from "prom-client";
 
+export const firePdfCacheEventsTotal = new Counter({
+  name: "firecrawl_fire_pdf_cache_events_total",
+  help: "fire-pdf content-cache events by outcome: hit, stale, miss, bypass_refresh, bypass_refresh_denied, lookup_error, write, write_failed, refused_write",
+  labelNames: ["event", "variant"],
+});
+
+export const firePdfCacheRefusedWritesTotal = new Counter({
+  name: "firecrawl_fire_pdf_cache_refused_writes_total",
+  help: "fire-pdf results not written to the content cache, by reason; reasons: failed_pages, degraded_pages, missing_quality, malformed_provenance",
+  labelNames: ["reason"],
+});
+
+export type CacheRefusedReason =
+  | "failed_pages"
+  | "degraded_pages"
+  | "missing_quality"
+  | "malformed_provenance";
+
 export const firePdfAsyncSubmittedTotal = new Counter({
   name: "firecrawl_fire_pdf_async_submitted_total",
   help: "Count of POST /jobs requests successfully submitted to fire-pdf async",
@@ -16,6 +34,31 @@ export const firePdfAsyncFallbackTotal = new Counter({
   name: "firecrawl_fire_pdf_async_fallback_total",
   help: "Count of requests that left fire-pdf async processing",
   labelNames: ["reason"],
+});
+
+export const firePdfRouteDecisionsTotal = new Counter({
+  name: "firecrawl_fire_pdf_route_decisions_total",
+  help: "Transport chosen for a request's first FirePDF attempt: path=sync (POST /ocr) or async (POST /jobs), by routing reason",
+  labelNames: ["source_kind", "path", "reason", "features", "zdr"],
+});
+
+export const firePdfRouteRemainingSeconds = new Histogram({
+  name: "firecrawl_fire_pdf_route_remaining_seconds",
+  help: "Caller time left on the scrape when the FirePDF transport was chosen",
+  labelNames: ["source_kind", "path"],
+  buckets: [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300, 600],
+});
+
+export const firePdfAsyncSubmit503Total = new Counter({
+  name: "firecrawl_fire_pdf_async_submit_503_total",
+  help: "fire-pdf POST /jobs 503s that ended the async attempt, by the error code in the response body (unattributed when the body carried none)",
+  labelNames: ["code"],
+});
+
+export const firePdfAsyncLongPollTotal = new Counter({
+  name: "firecrawl_fire_pdf_async_long_poll_total",
+  help: "GET /jobs/:id requests sent with wait_ms, by outcome: terminal (answered with a terminal status), held (non-terminal after holding), not_held (non-terminal answered early; followed by a pause, and by scheduled polling after repeated early answers)",
+  labelNames: ["outcome"],
 });
 
 export const firePdfAsyncTotalDurationSeconds = new Histogram({
@@ -50,6 +93,7 @@ export type SubmitRetryTrigger =
 export type AbandonedPhase = "submit" | "poll" | "result";
 
 export type FallbackReason =
+  | "http_400"
   | "http_401"
   | "http_404"
   | "http_410"

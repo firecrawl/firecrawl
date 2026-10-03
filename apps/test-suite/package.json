@@ -8,6 +8,6 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "artillery": "^2.0.33"
+    "artillery": "^2.0.34"
   }
 }

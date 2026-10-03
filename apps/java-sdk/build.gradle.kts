@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.firecrawl"
-version = "1.18.0"
+version = "1.18.2"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_11

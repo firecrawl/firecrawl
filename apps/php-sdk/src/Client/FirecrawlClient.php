@@ -32,6 +32,7 @@ use Firecrawl\Models\Monitor;
 use Firecrawl\Models\MonitorCheck;
 use Firecrawl\Models\MonitorCheckDetail;
 use Firecrawl\Models\ParseFile;
+use Firecrawl\Models\ParseFormat;
 use Firecrawl\Models\ParseOptions;
 use Firecrawl\Models\ScrapeOptions;
 use Firecrawl\Models\SearchData;
@@ -257,6 +258,21 @@ final class FirecrawlClient
         );
 
         return Document::fromArray($response['data'] ?? $response);
+    }
+
+    /**
+     * List the file formats the parse endpoint accepts on this deployment.
+     *
+     * @return list<ParseFormat>
+     */
+    public function getParseFormats(): array
+    {
+        $response = $this->http->get('/v2/parse/formats');
+
+        return array_values(array_map(
+            static fn (array $item): ParseFormat => ParseFormat::fromArray($item),
+            array_filter($response['data']['formats'] ?? [], 'is_array'),
+        ));
     }
 
     // ================================================================

@@ -31,9 +31,14 @@ export async function deleteJobPriority(team_id, job_id) {
 
 export async function getJobPriority({
   team_id,
+  org_id,
   basePriority = 10,
 }: {
   team_id: string;
+  /** The team's org, from the ACUC the caller already holds. Required so a
+   * caller cannot silently omit it and fall back to the high fail-open
+   * limits; pass null only when the caller genuinely has no org. */
+  org_id: string | null;
   basePriority?: number;
   from_extract?: boolean;
 }): Promise<number> {
@@ -48,7 +53,12 @@ export async function getJobPriority({
     const setLength = await redisEvictConnection.scard(setKey);
 
     // Plan priority is inferred from the team's Autumn rate-limit multiplier.
-    const multiplier = await autumnService.getRateLimitMultiplier(team_id);
+    // The org is threaded in by the caller: this runs once per discovered link
+    // inside a crawl, so it must not do an ACUC lookup of its own.
+    const multiplier = await autumnService.getRateLimitMultiplier(
+      team_id,
+      org_id,
+    );
     const { bucketLimit, planModifier } =
       inferPlanPriorityFromMultiplier(multiplier);
 

@@ -4,14 +4,14 @@ import { rewriteUrl } from "../../scraper/scrapeURL/lib/rewriteUrl";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface ScrapeContextRow {
+interface ScrapeContextRow {
   id: string;
   team_id: string;
   url: string | null;
   options: unknown;
 }
 
-type ReplayAction =
+export type ReplayAction =
   | { type: "wait"; milliseconds?: number; selector?: string }
   | { type: "click"; selector: string; all?: boolean }
   | { type: "write"; text: string }
@@ -20,7 +20,7 @@ type ReplayAction =
   | { type: "executeJavascript"; script: string }
   | { type: "screenshot" | "pdf" | "scrape" };
 
-interface ScrapeReplayContext {
+export interface ScrapeReplayContext {
   targetUrl: string;
   waitForMs: number;
   actions: ReplayAction[];
@@ -346,7 +346,7 @@ for (let i = 0; i < replay.actions.length; i += 1) {
         break;
       case "executeJavascript": {
         const wrapped = \`(async () => { \${action.script} })()\`;
-        await page.evaluate(script => (0, eval)(script), wrapped);
+        await page.evaluate(script => (0, eval)(script), wrapped, undefined, false);
         break;
       }
       case "screenshot":

@@ -121,6 +121,32 @@ export class SSLError extends TransportableError {
   }
 }
 
+type ExchangeRefusalCode =
+  | "THIRD_PARTY_DATA_NOT_FOUND"
+  | "THIRD_PARTY_DATA_NOT_ENABLED"
+  | "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED";
+
+// A definitive answer from the Exchange about this URL: the provider holds no
+// record for it, or the team is not entitled to the provider. Another attempt
+// cannot change it, so it surfaces as-is instead of as an engine failure.
+export class ExchangeRefusedError extends TransportableError {
+  constructor(code: ExchangeRefusalCode, message: string) {
+    super(code, message);
+  }
+
+  static deserialize(
+    code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ExchangeRefusedError(
+      code as ExchangeRefusalCode,
+      data.message,
+    );
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class SiteError extends TransportableError {
   constructor(public errorCode: string) {
     const errorExplanations: Record<string, string> = {
@@ -198,6 +224,30 @@ export class ProxySelectionError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ProxySelectionError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class SiteRestrictionError extends TransportableError {
+  constructor() {
+    super(
+      "SCRAPE_SITE_RESTRICTION_BLOCKED",
+      "This site restricts automated access to the requested content. Safe Mode is enabled for your organization, so the site's restriction is returned instead of being worked around.",
+    );
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+    };
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new SiteRestrictionError();
     x.stack = data.stack;
     return x;
   }

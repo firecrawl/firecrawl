@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable, Union, Literal, BinaryIO
 from .types import (
     ClientConfig,
+    ParseFormat,
     ParseOptions,
     ScrapeOptions,
     Document,
@@ -18,11 +19,15 @@ from .types import (
     DeveloperSearchType,
     SourceOption,
     CategoryOption,
+    FindToolsData,
+    AlexandriaCall,
+    AlexandriaScrapeData,
     CrawlRequest,
     CrawlResponse,
     CrawlJob,
     CrawlParamsRequest,
     PDFParser,
+    ImageParser,
     CrawlParamsData,
     WebhookConfig,
     AgentWebhookConfig,
@@ -112,7 +117,8 @@ class FirecrawlClient:
         api_url: str = "https://api.firecrawl.dev",
         timeout: Optional[float] = None,
         max_retries: int = 3,
-        backoff_factor: float = 0.5
+        backoff_factor: float = 0.5,
+        origin: Optional[str] = None,
     ):
         """
         Initialize the Firecrawl client.
@@ -123,6 +129,8 @@ class FirecrawlClient:
             timeout: Request timeout in seconds
             max_retries: Maximum number of retries for failed requests
             backoff_factor: Exponential backoff factor for retries (e.g. 0.5 means wait 0.5s, then 1s, then 2s between retries)
+            origin: Attribution string stamped into API request payloads
+                (defaults to ``python-sdk@<version>``)
         """
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
@@ -146,13 +154,16 @@ class FirecrawlClient:
             timeout=timeout,
             max_retries=max_retries,
             backoff_factor=backoff_factor,
+            origin=origin,
         )
     
     def scrape(
         self,
-        url: str,
+        url: Optional[str] = None,
         *,
         auto_resume: Optional[bool] = None,
+        alexandria: Optional[Union[AlexandriaCall, Dict[str, Any], List[Union[AlexandriaCall, Dict[str, Any]]]]] = None,
+        request_id: Optional[str] = None,
         formats: Optional[List['FormatOption']] = None,
         headers: Optional[Dict[str, str]] = None,
         include_tags: Optional[List[str]] = None,
@@ -161,7 +172,7 @@ class FirecrawlClient:
         timeout: Optional[int] = None,
         wait_for: Optional[int] = None,
         mobile: Optional[bool] = None,
-        parsers: Optional[Union[List[str], List[Union[str, PDFParser]]]] = None,
+        parsers: Optional[Union[List[str], List[Union[str, PDFParser, ImageParser]]]] = None,
         actions: Optional[List[Union['WaitAction', 'ScreenshotAction', 'ClickAction', 'WriteAction', 'PressAction', 'ScrollAction', 'ScrapeAction', 'ExecuteJavascriptAction', 'PDFAction']]] = None,
         location: Optional['Location'] = None,
         skip_tls_verification: Optional[bool] = None,
@@ -177,7 +188,9 @@ class FirecrawlClient:
         profile: Optional[Dict[str, Any]] = None,
         audit_metadata: Optional[AuditMetadata] = None,
         integration: Optional[str] = None,
-    ) -> Document:
+        domain_tools: Optional[bool] = None,
+        tool_detail: Optional[Literal["compact", "summary", "full"]] = None,
+    ) -> Union[Document, AlexandriaScrapeData]:
         """
         Scrape a single URL and return the document.
         Args:
@@ -204,6 +217,7 @@ class FirecrawlClient:
             lockdown: Serve only previously cached results; never make outbound requests. Returns 404 SCRAPE_LOCKDOWN_CACHE_MISS on cache miss.
             threat_protection: Enterprise per-request override of the team's threat protection policy
             profile: Browser profile for persistent state (e.g. {"name": "my-profile", "saveChanges": True})
+            tool_detail: "compact" returns provider, capability and description; "summary" (default) adds metadata; "full" includes contracts when domain discovery is enabled.
             audit_metadata: Metadata to include in SIEM logging events
         Returns:
             Document
@@ -234,9 +248,60 @@ class FirecrawlClient:
                 profile=profile,
                 audit_metadata=audit_metadata,
                 integration=integration,
+                domain_tools=domain_tools,
+                tool_detail=tool_detail,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration, domain_tools, tool_detail]) else None
+        if alexandria is not None:
+            if url is not None or auto_resume is not None or (options and set(options.model_dump(exclude_none=True, exclude_unset=True)) - {"timeout", "integration"}):
+                raise ValueError("alexandria cannot be combined with URL scrape options")
+            return self.scrape_alexandria(alexandria, timeout=timeout, integration=integration, request_id=request_id)
+        if request_id is not None:
+            raise ValueError("request_id requires alexandria")
         return scrape_module.scrape(self.http_client, url, options, auto_resume=auto_resume)
+
+    def scrape_alexandria(
+        self,
+        calls: Union[AlexandriaCall, Dict[str, Any], List[Union[AlexandriaCall, Dict[str, Any]]]],
+        *,
+        timeout: Optional[int] = None,
+        integration: Optional[str] = None,
+        request_id: Optional[str] = None,
+    ) -> AlexandriaScrapeData:
+        """
+        Execute up to 10 Alexandria capabilities in one request.
+
+        Args:
+            calls: Alexandria calls, each with provider, capability and optional options
+            timeout: Request timeout in milliseconds
+            integration: Integration tag for the request
+
+        Returns:
+            AlexandriaScrapeData with one result (or error) per call and the total credits cost
+        """
+        return scrape_module.scrape_alexandria(
+            self.http_client, calls, timeout=timeout, integration=integration, request_id=request_id
+        )
+
+    def find_tools(self, **options) -> FindToolsData:
+        """Explore providers and contracts without executing discovered tools.
+
+        Filter by urls, providers, categories, groups, or capabilities. Use level
+        (providers/groups/tools), expand, limit, and offset to control disclosure.
+        Follow a returned next request with scrape(alexandria=next).
+        """
+        result = self.scrape_alexandria({"provider": "firecrawl", "capability": "find-tools", "options": options})
+        item = result.alexandria[0]
+        if item.error:
+            from .utils.error_handler import FirecrawlError
+            raise FirecrawlError(
+                item.error.message,
+                item.error.status,
+                request_id=result.request_id,
+                code=item.error.code,
+                charge_id=item.error.charge_id,
+            )
+        return FindToolsData(**item.data)
 
     # Research paper index (/v2/search/research)
     @doc(CLIENT_SEARCH_PAPERS_DOC)
@@ -404,12 +469,24 @@ class FirecrawlClient:
             content_type=content_type,
         )
 
+    def get_parse_formats(self) -> List[ParseFormat]:
+        """
+        List the file formats the parse endpoint accepts.
+
+        Returns:
+            List of ParseFormat entries. ``available`` is False for formats
+            that are known but disabled on this deployment.
+        """
+        return parse_module.get_parse_formats(self.http_client)
+
 
     def search(
         self,
         query: str,
         *,
         sources: Optional[List[SourceOption]] = None,
+        domain_tools: Optional[bool] = None,
+        tool_detail: Optional[Literal["compact", "summary", "full"]] = None,
         categories: Optional[List[CategoryOption]] = None,
         include_domains: Optional[List[str]] = None,
         exclude_domains: Optional[List[str]] = None,
@@ -430,6 +507,7 @@ class FirecrawlClient:
 
         Args:
             query: Search query string
+            tool_detail: "compact" (default) returns provider, capability and description; "summary" adds metadata and a follow-up request; "full" includes contracts.
             limit: Maximum number of results to return (default: 5)
             tbs: Time-based search filter
             location: Location string for search
@@ -450,6 +528,8 @@ class FirecrawlClient:
         request = SearchRequest(
             query=query,
             sources=sources,
+            domain_tools=domain_tools,
+            tool_detail=tool_detail,
             categories=categories,
             include_domains=include_domains,
             exclude_domains=exclude_domains,
@@ -532,7 +612,7 @@ class FirecrawlClient:
         only_main_content: Optional[bool] = None,
         wait_for: Optional[int] = None,
         mobile: Optional[bool] = None,
-        parsers: Optional[Union[List[str], List[Union[str, PDFParser]]]] = None,
+        parsers: Optional[Union[List[str], List[Union[str, PDFParser, ImageParser]]]] = None,
         actions: Optional[List[Union['WaitAction', 'ScreenshotAction', 'ClickAction', 'WriteAction', 'PressAction', 'ScrollAction', 'ScrapeAction', 'ExecuteJavascriptAction', 'PDFAction']]] = None,
         location: Optional['Location'] = None,
         skip_tls_verification: Optional[bool] = None,
@@ -694,7 +774,7 @@ class FirecrawlClient:
         timeout: Optional[int] = None,
         wait_for: Optional[int] = None,
         mobile: Optional[bool] = None,
-        parsers: Optional[Union[List[str], List[Union[str, PDFParser]]]] = None,
+        parsers: Optional[Union[List[str], List[Union[str, PDFParser, ImageParser]]]] = None,
         actions: Optional[List[Union['WaitAction', 'ScreenshotAction', 'ClickAction', 'WriteAction', 'PressAction', 'ScrollAction', 'ScrapeAction', 'ExecuteJavascriptAction', 'PDFAction']]] = None,
         location: Optional['Location'] = None,
         skip_tls_verification: Optional[bool] = None,
@@ -816,7 +896,39 @@ class FirecrawlClient:
         request = CrawlRequest(**request_kwargs)
 
         return crawl_module.start_crawl(self.http_client, request)
-    
+
+    def wait_crawl(
+        self,
+        job_id: str,
+        poll_interval: int = 2,
+        timeout: Optional[int] = None,
+        *,
+        request_timeout: Optional[float] = None,
+    ) -> CrawlJob:
+        """
+        Poll a crawl job until it reaches a terminal state.
+
+        Args:
+            job_id: ID of the crawl job
+            poll_interval: Seconds between status checks
+            timeout: Maximum seconds to wait for the whole job (None waits indefinitely)
+            request_timeout: Optional timeout (in seconds) for each status request
+
+        Returns:
+            CrawlJob in a terminal state ("completed", "failed", or "cancelled")
+
+        Raises:
+            CrawlJobTimeoutError: If the job does not finish within timeout (a
+                ``TimeoutError`` subclass that carries ``job_id`` and ``timeout``)
+        """
+        return crawl_module.wait_for_crawl_completion(
+            self.http_client,
+            job_id,
+            poll_interval=poll_interval,
+            timeout=timeout,
+            request_timeout=request_timeout,
+        )
+
     def get_crawl_status(
         self,
         job_id: str,
@@ -1215,7 +1327,7 @@ class FirecrawlClient:
         timeout: Optional[int] = None,
         wait_for: Optional[int] = None,
         mobile: Optional[bool] = None,
-        parsers: Optional[Union[List[str], List[Union[str, PDFParser]]]] = None,
+        parsers: Optional[Union[List[str], List[Union[str, PDFParser, ImageParser]]]] = None,
         actions: Optional[List[Union['WaitAction', 'ScreenshotAction', 'ClickAction', 'WriteAction', 'PressAction', 'ScrollAction', 'ScrapeAction', 'ExecuteJavascriptAction', 'PDFAction']]] = None,
         location: Optional['Location'] = None,
         skip_tls_verification: Optional[bool] = None,
@@ -1419,7 +1531,7 @@ class FirecrawlClient:
             schema: Target JSON schema for the output (dict or Pydantic BaseModel)
             integration: Integration tag/name
             max_credits: Maximum credits to use (optional)
-            model: Model to use for the agent ("spark-1-pro" (default), "spark-1-mini", or "spark-2")
+            model: Model to use for the agent ("spark-2", the default; "spark-1-pro" and "spark-1-mini" are deprecated and run spark-2)
             effort: Reasoning effort for the agent ("low", "medium", or "high")
             webhook: Webhook URL or configuration for notifications
             threat_protection: Enterprise per-request override of the team's
@@ -1479,7 +1591,7 @@ class FirecrawlClient:
             poll_interval: Seconds between status checks
             timeout: Maximum seconds to wait (None for no timeout)
             max_credits: Maximum credits to use (optional)
-            model: Model to use for the agent ("spark-1-pro" (default), "spark-1-mini", or "spark-2")
+            model: Model to use for the agent ("spark-2", the default; "spark-1-pro" and "spark-1-mini" are deprecated and run spark-2)
             effort: Reasoning effort for the agent ("low", "medium", or "high")
             webhook: Webhook URL or configuration for notifications
             threat_protection: Enterprise per-request override of the team's
@@ -1728,7 +1840,7 @@ class FirecrawlClient:
         timeout: Optional[int] = None,
         wait_for: Optional[int] = None,
         mobile: Optional[bool] = None,
-        parsers: Optional[Union[List[str], List[Union[str, PDFParser]]]] = None,
+        parsers: Optional[Union[List[str], List[Union[str, PDFParser, ImageParser]]]] = None,
         actions: Optional[List[Union['WaitAction', 'ScreenshotAction', 'ClickAction', 'WriteAction', 'PressAction', 'ScrollAction', 'ScrapeAction', 'ExecuteJavascriptAction', 'PDFAction']]] = None,
         location: Optional['Location'] = None,
         skip_tls_verification: Optional[bool] = None,

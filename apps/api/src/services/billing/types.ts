@@ -31,6 +31,14 @@ export type BillingMetadata = {
    * per-request UUID, which dedupes only firebill's own retries.
    */
   chargeId?: string;
+  /**
+   * The caller's own id for the operation, from its `External-Request-Id`
+   * header — the value `logRequest` records. Carried on the charge so
+   * firebill can report the operation to the partner without looking the
+   * request up in ClickHouse, which lands a few seconds after the charge.
+   * Unset when the caller sent no header or the charge has no request.
+   */
+  externalRequestId?: string | null;
 };
 
 export function resolveBillingMetadata({
@@ -64,3 +72,22 @@ export function toAutumnBillingProperties(
   }
   return props;
 }
+
+/**
+ * Payload of a `bill_team` job on the billing queue. `org_id` is required so a
+ * new producer cannot omit it; the consumer still tolerates its absence, which
+ * is all that a job enqueued by the previous deploy can be.
+ */
+export type BillTeamJobData = {
+  team_id: string;
+  org_id: string | null;
+  credits: number;
+  billing?: BillingMetadata;
+  endpoint?: BillingEndpoint;
+  is_extract: boolean;
+  timestamp: string;
+  originating_job_id?: string;
+  api_key_id: number | null;
+  autumnTrackInRequest: boolean;
+  exchangeAccessEventId?: string;
+};

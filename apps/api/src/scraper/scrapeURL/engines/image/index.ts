@@ -5,6 +5,7 @@ import { EngineUnsuccessfulError, UnsupportedFileError } from "../../error";
 import { readFile, stat, unlink } from "node:fs/promises";
 import { useFireEngine } from "../fire-engine/available";
 import { scrapePDFWithFirePDF } from "../pdf/firePDF";
+import { recordFirePdfRoute } from "../pdf/fire-pdf/routing";
 import { FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE } from "../pdf/types";
 import {
   imageExtensionFromUrlPath,
@@ -17,9 +18,10 @@ import {
  * (PNG/JPEG/JPEG 2000/TIFF/GIF/BMP), finds no text layer, and runs the same
  * layout + OCR path a scanned PDF page takes.
  *
- * OCR is on by default and opt-out per request (a `parsers` list without
- * `image`; a parse upload of an image always counts), and rolled out per
- * team (imageOcr flag); both are folded into `meta.imageOcrEnabled`. The pdf
+ * Image OCR is off until the deployment enables it (`IMAGE_OCR_ENABLED`,
+ * default false). Once it is on, every request gets it unless it opts out
+ * per request (a `parsers` list without `image`; a parse upload of an image
+ * always counts); both conditions are folded into `meta.imageOcrEnabled`. The pdf
  * parser's options (mode, maxPages, pages, blocks, pageMarkers) are not
  * consulted: an image has no text layer to fall back on, so every admitted
  * image is OCR'd. A caller who wants the bytes instead uses the `rawBase64`
@@ -58,10 +60,10 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     // Requests already identified as images (a browser handoff, the image
-    // flag, a forceEngine pin, or an image-extension URL) resolve the
-    // per-team gate up front. Anything else is a waterfall tail that has to
-    // sniff its bytes first, so an ordinary failed page never pays for a
-    // team lookup here.
+    // flag, a forceEngine pin, or an image-extension URL) consult the gate
+    // up front. Anything else is a waterfall tail that has to sniff its
+    // bytes first, so an ordinary failed page is rejected on its bytes, not
+    // on the gate.
     const knownImage =
       meta.imagePrefetch != null ||
       meta.featureFlags.has("image") ||
@@ -70,7 +72,7 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
         new URL(meta.rewrittenUrl ?? meta.url).pathname,
       ) !== null;
     if (knownImage && !(await meta.imageOcrEnabled())) {
-      // Opted out (parsers without image) or no team flag: the request gets
+      // Opted out (parsers without image) or switched off: the request gets
       // the unsupported-file error the URL path has always produced, whose
       // message names the parser.
       throw new UnsupportedFileError(
@@ -132,12 +134,19 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     // A tail request whose bytes turned out to be an image: consult the gate
-    // now that the lookup is warranted.
+    // now that it is warranted.
     if (!knownImage && !(await meta.imageOcrEnabled())) {
       throw new UnsupportedFileError(contentType);
     }
 
     const base64Content = buffer.toString("base64");
+
+    recordFirePdfRoute(meta, {
+      sourceKind: "image",
+      path: "sync",
+      reason: "no_async_route",
+      features: "none",
+    });
 
     let result: Awaited<ReturnType<typeof scrapePDFWithFirePDF>>;
     try {
@@ -152,6 +161,10 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
         undefined,
         1,
         "ocr",
+        false,
+        false,
+        false,
+        "image",
       );
     } catch (error) {
       // FirePDF answers 400 when it cannot open the bytes (truncated or

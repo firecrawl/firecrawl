@@ -1290,20 +1290,55 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     return job;
   }
 
-  public async getCrawlJobsForListing(
+  public async getGroupJobs(
     groupId: string,
-    limit: number,
-    offset: number,
+    status: "completed" | "failed",
+    limit?: number,
+    offset = 0,
     logger: Logger = _logger,
   ): Promise<NuQFdbJob<JobData, JobReturnValue>[]> {
     const ks = this.ks;
+    if (status === "failed") {
+      const r = ks.groupJobRange(groupId);
+      const ids: string[] = [];
+      const target = limit === undefined ? Infinity : offset + limit;
+      let begin: Buffer | FdbKeySelector = r.begin;
+
+      while (ids.length < target) {
+        const rows = await this.db.doTn(async tn =>
+          tn.snapshot().getRangeAll(begin as any, r.end, { limit: 500 }),
+        );
+        for (const [key, value] of rows) {
+          const groupJob = decodeJson<GroupJobIndexValue>(value as Buffer);
+          if (groupJob?.m === 1 && groupJob.s === "failed") {
+            ids.push(ks.unpackId(key as Buffer));
+            if (ids.length === target) break;
+          }
+        }
+        if (rows.length < 500 || ids.length === target) break;
+        begin = {
+          key: rows[rows.length - 1][0] as Buffer,
+          orEqual: true,
+          offset: 1,
+          _isKeySelector: true,
+        };
+      }
+
+      return (await this.getJobs(ids.slice(offset), logger)).filter(
+        job => job.status === "failed",
+      );
+    }
+
     const ids = await this.db.doTn(async tn => {
       const r = ks.groupDoneRange(groupId);
-      const rows = await tn
-        .snapshot()
-        .getRangeAll(r.begin, r.end, { limit: offset + limit });
+      const rows =
+        limit === undefined
+          ? await tn.snapshot().getRangeAll(r.begin, r.end)
+          : await tn
+              .snapshot()
+              .getRangeAll(r.begin, r.end, { limit: offset + limit });
       return rows
-        .slice(offset)
+        .slice(offset, limit === undefined ? undefined : offset + limit)
         .map(([, value]) => (value as Buffer).toString("utf8"));
     });
     const jobs = await this.getJobs(ids, logger);

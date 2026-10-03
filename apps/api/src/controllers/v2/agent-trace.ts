@@ -1,7 +1,7 @@
 import { Response } from "express";
 import { config } from "../../config";
 import { listActiveBrowserSessionsForRequest } from "../../lib/browser-sessions";
-import { supabaseGetAgentRequestByIdDirect } from "../../lib/supabase-jobs";
+import { getAgentJobAccess } from "../../lib/operational-job-access";
 import { AgentTraceResponse, RequestWithAuth } from "./types";
 
 const AGENT_BROWSER_VIEWPORT = { width: 1280, height: 720 } as const;
@@ -10,11 +10,13 @@ export async function agentTraceController(
   req: RequestWithAuth<{ jobId: string }, AgentTraceResponse, any>,
   res: Response<AgentTraceResponse>,
 ) {
-  const agentRequest = await supabaseGetAgentRequestByIdDirect(
-    req.params.jobId,
-  );
+  const access = await getAgentJobAccess(req.params.jobId);
 
-  if (!agentRequest || agentRequest.team_id !== req.auth.team_id) {
+  if (
+    !access ||
+    access.expiresAtMs <= Date.now() ||
+    access.teamId !== req.auth.team_id
+  ) {
     return res.status(404).json({
       success: false,
       error: "Agent job not found",

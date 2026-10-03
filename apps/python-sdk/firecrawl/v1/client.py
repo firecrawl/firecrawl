@@ -24,6 +24,8 @@ import websockets
 import aiohttp
 import asyncio
 
+from ..v2.utils.api_origin import pin_to_api_origin
+
 logger : logging.Logger = logging.getLogger("firecrawl")
 
 def get_version():
@@ -249,6 +251,7 @@ class V1BatchScrapeStatusResponse(pydantic.BaseModel):
     expiresAt: datetime
     next: Optional[str] = None
     data: List[V1FirecrawlDocument]
+    error: Optional[str] = None
 
 class V1CrawlParams(pydantic.BaseModel):
     """Parameters for crawling operations."""
@@ -295,6 +298,9 @@ class V1CrawlError(pydantic.BaseModel):
     url: str
     code: Optional[str] = None
     error: str
+    # Set when the page needs provider terms accepted first:
+    # {"type": "accept_terms", "terms", "version", "url"}.
+    requiresAction: Optional[Dict[str, Any]] = None
 
 class V1CrawlErrorsResponse(pydantic.BaseModel):
     """Response from crawl/batch scrape error monitoring."""
@@ -1167,7 +1173,7 @@ class V1FirecrawlApp:
                             logger.warning("Expected 'next' URL is missing.")
                             break
                         try:
-                            status_response = self._get_request(next_url, headers)
+                            status_response = self._get_request(pin_to_api_origin(self.api_url, next_url), headers)
                             if status_response.status_code != 200:
                                 logger.error(f"Failed to fetch next page: {status_response.status_code}")
                                 break
@@ -1573,7 +1579,7 @@ class V1FirecrawlApp:
                 id = response.json().get('id')
             except:
                 raise Exception(f'Failed to parse Firecrawl response as JSON.')
-            return self._monitor_job_status(id, headers, poll_interval)
+            return self._monitor_job_status(id, headers, poll_interval, 'batch_scrape')
         else:
             self._handle_error(response, 'start batch scrape job')
 
@@ -1890,7 +1896,7 @@ class V1FirecrawlApp:
                             logger.warning("Expected 'next' URL is missing.")
                             break
                         try:
-                            status_response = self._get_request(next_url, headers)
+                            status_response = self._get_request(pin_to_api_origin(self.api_url, next_url), headers)
                             if status_response.status_code != 200:
                                 logger.error(f"Failed to fetch next page: {status_response.status_code}")
                                 break
@@ -2505,24 +2511,29 @@ class V1FirecrawlApp:
             self,
             id: str,
             headers: Dict[str, str],
-            poll_interval: int) -> V1CrawlStatusResponse:
+            poll_interval: int,
+            job_type: Literal["crawl", "batch_scrape"] = "crawl") -> Union[V1CrawlStatusResponse, V1BatchScrapeStatusResponse]:
         """
-        Monitor the status of a crawl job until completion.
+        Monitor the status of a crawl or batch scrape job until completion.
 
         Args:
-            id (str): The ID of the crawl job.
+            id (str): The ID of the job.
             headers (Dict[str, str]): The headers to include in the status check requests.
             poll_interval (int): Seconds between status checks.
+            job_type (str): "crawl" or "batch_scrape"; selects the status endpoint and response type.
 
         Returns:
-            CrawlStatusResponse: The crawl results if the job is completed successfully.
+            V1CrawlStatusResponse or V1BatchScrapeStatusResponse: The job results if the job is completed successfully.
 
         Raises:
             Exception: If the job fails or an error occurs during status checks.
         """
-        while True:
-            api_url = f'{self.api_url}/v1/crawl/{id}'
+        is_batch = job_type == "batch_scrape"
+        api_url = f'{self.api_url}/v1/batch/scrape/{id}' if is_batch else f'{self.api_url}/v1/crawl/{id}'
+        label = 'Batch scrape' if is_batch else 'Crawl'
+        response_model = V1BatchScrapeStatusResponse if is_batch else V1CrawlStatusResponse
 
+        while True:
             status_response = self._get_request(api_url, headers)
             if status_response.status_code == 200:
                 try:
@@ -2532,26 +2543,26 @@ class V1FirecrawlApp:
                 if status_data['status'] == 'completed':
                     if 'data' in status_data:
                         data = status_data['data']
-                        while 'next' in status_data:
+                        while status_data.get('next'):
                             if len(status_data['data']) == 0:
                                 break
-                            status_response = self._get_request(status_data['next'], headers)
+                            status_response = self._get_request(pin_to_api_origin(self.api_url, status_data['next']), headers)
                             try:
                                 status_data = status_response.json()
                             except:
                                 raise Exception(f'Failed to parse Firecrawl response as JSON.')
                             data.extend(status_data.get('data', []))
                         status_data['data'] = data
-                        return V1CrawlStatusResponse(**status_data)
+                        return response_model(**status_data)
                     else:
-                        raise Exception('Crawl job completed but no data was returned')
+                        raise Exception(f'{label} job completed but no data was returned')
                 elif status_data['status'] in ['active', 'paused', 'pending', 'queued', 'waiting', 'scraping']:
                     poll_interval=max(poll_interval,2)
                     time.sleep(poll_interval)  # Wait for the specified interval before checking again
                 else:
-                    raise Exception(f'Crawl job failed or was stopped. Status: {status_data["status"]}')
+                    raise Exception(f'{label} job failed or was stopped. Status: {status_data["status"]}')
             else:
-                self._handle_error(status_response, 'check crawl status')
+                self._handle_error(status_response, f'check {label.lower()} status')
 
     def _handle_error(
             self,
@@ -3879,7 +3890,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                 id = response.get('id')
             except:
                 raise Exception(f'Failed to parse Firecrawl response as JSON.')
-            return await self._async_monitor_job_status(id, headers, poll_interval)
+            return await self._async_monitor_job_status(id, headers, poll_interval, 'batch_scrape')
         else:
             self._handle_error(response, 'start batch scrape job')
 
@@ -4301,7 +4312,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                     if not next_url:
                         logger.warning("Expected 'next' URL is missing.")
                         break
-                    next_data = await self._async_get_request(next_url, headers)
+                    next_data = await self._async_get_request(pin_to_api_origin(self.api_url, next_url), headers)
                     data.extend(next_data.get('data', []))
                     status_data = next_data
                 status_data['data'] = data
@@ -4324,26 +4335,34 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
 
         return response
 
-    async def _async_monitor_job_status(self, id: str, headers: Dict[str, str], poll_interval: int = 2) -> V1CrawlStatusResponse:
+    async def _async_monitor_job_status(
+            self,
+            id: str,
+            headers: Dict[str, str],
+            poll_interval: int = 2,
+            job_type: Literal["crawl", "batch_scrape"] = "crawl") -> Union[V1CrawlStatusResponse, V1BatchScrapeStatusResponse]:
         """
-        Monitor the status of an asynchronous job until completion.
+        Monitor the status of an asynchronous crawl or batch scrape job until completion.
 
         Args:
             id (str): The ID of the job to monitor
             headers (Dict[str, str]): Headers to include in status check requests
             poll_interval (int): Seconds between status checks (default: 2)
+            job_type (str): "crawl" or "batch_scrape"; selects the status endpoint and response type (default: "crawl")
 
         Returns:
-            V1CrawlStatusResponse: The job results if completed successfully
+            V1CrawlStatusResponse or V1BatchScrapeStatusResponse: The job results if completed successfully
 
         Raises:
             Exception: If the job fails or an error occurs during status checks
         """
+        is_batch = job_type == "batch_scrape"
+        api_url = f'{self.api_url}/v1/batch/scrape/{id}' if is_batch else f'{self.api_url}/v1/crawl/{id}'
+        label = 'Batch scrape' if is_batch else 'Crawl'
+        response_model = V1BatchScrapeStatusResponse if is_batch else V1CrawlStatusResponse
+
         while True:
-            status_data = await self._async_get_request(
-                f'{self.api_url}/v1/crawl/{id}',
-                headers
-            )
+            status_data = await self._async_get_request(api_url, headers)
 
             if status_data.get('status') == 'completed':
                 if 'data' in status_data:
@@ -4355,17 +4374,17 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                         if not next_url:
                             logger.warning("Expected 'next' URL is missing.")
                             break
-                        next_data = await self._async_get_request(next_url, headers)
+                        next_data = await self._async_get_request(pin_to_api_origin(self.api_url, next_url), headers)
                         data.extend(next_data.get('data', []))
                         status_data = next_data
                     status_data['data'] = data
-                    return V1CrawlStatusResponse(**status_data)
+                    return response_model(**status_data)
                 else:
-                    raise Exception('Job completed but no data was returned')
+                    raise Exception(f'{label} job completed but no data was returned')
             elif status_data.get('status') in ['active', 'paused', 'pending', 'queued', 'waiting', 'scraping']:
                 await asyncio.sleep(max(poll_interval, 2))
             else:
-                raise Exception(f'Job failed or was stopped. Status: {status_data["status"]}')
+                raise Exception(f'{label} job failed or was stopped. Status: {status_data["status"]}')
 
     async def map_url(
         self,
@@ -4589,30 +4608,22 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                     if not next_url:
                         logger.warning("Expected 'next' URL is missing.")
                         break
-                    next_data = await self._async_get_request(next_url, headers)
+                    next_data = await self._async_get_request(pin_to_api_origin(self.api_url, next_url), headers)
                     data.extend(next_data.get('data', []))
                     status_data = next_data
                 status_data['data'] = data
 
-        response = V1BatchScrapeStatusResponse(
+        return V1BatchScrapeStatusResponse(
+            success=False if 'error' in status_data else True,
             status=status_data.get('status'),
             total=status_data.get('total'),
             completed=status_data.get('completed'),
             creditsUsed=status_data.get('creditsUsed'),
             expiresAt=status_data.get('expiresAt'),
-            data=status_data.get('data')
+            data=status_data.get('data'),
+            next=status_data.get('next'),
+            error=status_data.get('error'),
         )
-
-        if 'error' in status_data:
-            response['error'] = status_data['error']
-
-        if 'next' in status_data:
-            response['next'] = status_data['next']
-
-        return {
-            'success': False if 'error' in status_data else True,
-            **response
-        }
 
     async def check_batch_scrape_errors(self, id: str) -> V1CrawlErrorsResponse:
         """

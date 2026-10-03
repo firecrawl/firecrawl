@@ -46,17 +46,24 @@ import {
 } from "../../lib/image-formats";
 import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import {
+  HTML_CONTENT_TYPES,
+  HTML_EXTENSIONS,
+  listParseFormats,
+  PDF_CONTENT_TYPES,
+  PDF_EXTENSIONS,
+} from "../../lib/parse-formats";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
-const BASE_PARSE_FILE_TYPES =
-  ".html, .htm, .xhtml, .pdf, .docx, .doc, .docm, .odt, .ods, .odp, .rtf, .xlsx, .xls, .xlsm, .xlsb, .pptx, .ppt, .pptm, .epub, .csv";
 
 /** Image uploads are OCR'd through FirePDF, so they are only advertised as
  * supported for teams with image OCR enabled (matching
  * detectUploadedFileKind). */
 export function getSupportedParseFileTypes(imageOcrEnabled: boolean): string {
-  if (!imageOcrEnabled) return BASE_PARSE_FILE_TYPES;
-  return `${BASE_PARSE_FILE_TYPES}, ${[...IMAGE_EXTENSIONS].sort().join(", ")}`;
+  return listParseFormats(imageOcrEnabled)
+    .filter(format => format.available)
+    .flatMap(format => format.extensions)
+    .join(", ");
 }
 
 export function detectUploadedFileKind(
@@ -68,9 +75,10 @@ export function detectUploadedFileKind(
   const normalizedType = contentType?.toLowerCase() ?? "";
 
   const isPdf =
-    extension === ".pdf" ||
-    normalizedType === "application/pdf" ||
-    normalizedType.startsWith("application/pdf;");
+    PDF_EXTENSIONS.includes(extension) ||
+    PDF_CONTENT_TYPES.some(
+      type => normalizedType === type || normalizedType.startsWith(`${type};`),
+    );
 
   if (isPdf) {
     return "pdf";
@@ -84,8 +92,8 @@ export function detectUploadedFileKind(
     return "document";
   }
 
-  // Image uploads are OCR'd through FirePDF for teams with the imageOcr
-  // flag; for everyone else they stay unsupported.
+  // Image uploads are OCR'd through FirePDF where the deployment has image
+  // OCR on (lib/image-ocr-gate.ts); otherwise they stay unsupported.
   const isImage =
     imageOcrEnabled &&
     (IMAGE_EXTENSIONS.has(extension) ||
@@ -96,11 +104,8 @@ export function detectUploadedFileKind(
   }
 
   const isHtml =
-    extension === ".html" ||
-    extension === ".htm" ||
-    extension === ".xhtml" ||
-    normalizedType.includes("text/html") ||
-    normalizedType.includes("application/xhtml+xml");
+    HTML_EXTENSIONS.includes(extension) ||
+    HTML_CONTENT_TYPES.some(type => normalizedType.includes(type));
 
   if (isHtml) {
     return "html";
@@ -258,11 +263,7 @@ export function parseMultipartPayloadMiddleware(
     }
   }
 
-  // authMiddleware runs before this middleware, so the team's flags are
-  // available to decide whether image uploads are accepted.
-  const imageOcrEnabled = isImageOcrEnabled(
-    (req as unknown as RequestWithAuth).acuc?.flags,
-  );
+  const imageOcrEnabled = isImageOcrEnabled();
   const kind = detectUploadedFileKind(
     file.originalname || "",
     file.mimetype,
@@ -360,6 +361,7 @@ export async function parseController(
         });
         return res.status(403).json({
           success: false,
+          code: permissions.code,
           error: permissions.error,
         });
       }
@@ -367,9 +369,12 @@ export async function parseController(
       const zeroDataRetention =
         getScrapeZDR(req.acuc?.flags) === "forced" ||
         (req.body.zeroDataRetention ?? false);
-      const billing: BillingMetadata = req.body.__agentInterop
-        ? { endpoint: "agent" as const, jobId }
-        : { endpoint: "parse" as const, jobId };
+      const billing: BillingMetadata = {
+        ...(req.body.__agentInterop
+          ? { endpoint: "agent" as const, jobId }
+          : { endpoint: "parse" as const, jobId }),
+        externalRequestId: externalRequestId(req),
+      };
 
       if (
         req.body.__agentInterop &&
@@ -414,7 +419,7 @@ export async function parseController(
           applyAgentAuthDiscoveryHeader(res);
           return res
             .status(429)
-            .json(await keylessLimitBody(req.auth.team_id, "v2_parse"));
+            .json(await keylessLimitBody(req.auth.team_id, "v2_parse", req));
         }
         reservedKeylessCredits = projectedKeylessCredits;
       }
@@ -485,7 +490,7 @@ export async function parseController(
 
         const baseConcurrency = await getEffectiveConcurrencyLimit(
           req.auth.team_id,
-          req.acuc?.org_id,
+          req.acuc?.org_id ?? null,
         );
         const concurrency = boostConcurrency
           ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
@@ -500,6 +505,7 @@ export async function parseController(
           async limited => {
             const jobPriority = await getJobPriority({
               team_id: req.auth.team_id,
+              org_id: req.acuc?.org_id ?? null,
               basePriority: 10,
             });
 

@@ -3,6 +3,7 @@ import {
   getPDFMode,
   getPDFPageMarkdown,
   getPDFPageMarkers,
+  getPDFRefresh,
   scrapeOptions,
   shouldParseImages,
   shouldParsePDF,
@@ -109,5 +110,22 @@ describe("image parser", () => {
       scrapeOptions.safeParse({ parsers: [{ type: "image", mode: "ocr" }] })
         .success,
     ).toBe(false);
+  });
+});
+
+describe("pdf parser refresh option", () => {
+  it("is off unless the pdf parser object sets it", () => {
+    expect(getPDFRefresh(undefined)).toBe(false);
+    expect(getPDFRefresh(["pdf"])).toBe(false);
+    expect(getPDFRefresh([{ type: "pdf" }])).toBe(false);
+    expect(getPDFRefresh([{ type: "pdf", refresh: false }])).toBe(false);
+    expect(getPDFRefresh([{ type: "pdf", refresh: true }])).toBe(true);
+  });
+
+  it("parses through the strict schema", () => {
+    expect(parsePdfParser({ type: "pdf", refresh: true })).toMatchObject({
+      type: "pdf",
+      refresh: true,
+    });
   });
 });

@@ -4,8 +4,9 @@ import {
   interact as interactMethod,
   stopInteraction as stopInteractionMethod,
 } from "./methods/scrape";
-import { parse as parseMethod } from "./methods/parse";
+import { parse as parseMethod, getParseFormats } from "./methods/parse";
 import { search } from "./methods/search";
+import { scrapeAlexandria, findTools } from "./methods/tools";
 import { developerSearch as developerSearchMethod } from "./methods/developer";
 import { map as mapMethod } from "./methods/map";
 import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
@@ -47,7 +48,12 @@ import {
 } from "./methods/monitor";
 import type {
   Document,
+  AlexandriaScrapeRequest,
+  FindToolsOptions,
+  FindToolsData,
+  AlexandriaScrapeData,
   ParseFile,
+  ParseFormatInfo,
   ParseOptions,
   ScrapeOptions,
   SearchData,
@@ -171,11 +177,42 @@ export class FirecrawlClient {
    */
   async scrape<Opts extends ScrapeOptions>(
     url: string,
-    options: Opts
+    options: Opts,
   ): Promise<Omit<Document, "json"> & { json?: InferredJsonFromOptions<Opts> }>;
   async scrape(url: string, options?: ScrapeCallOptions): Promise<Document>;
-  async scrape(url: string, options?: ScrapeCallOptions): Promise<Document> {
-    return scrape(this.http, url, options);
+  async scrape(request: AlexandriaScrapeRequest): Promise<AlexandriaScrapeData>;
+  async scrape(
+    url: string | AlexandriaScrapeRequest,
+    options?: ScrapeCallOptions,
+  ): Promise<Document | AlexandriaScrapeData> {
+    if (typeof url === "string") return scrape(this.http, url, options);
+    if (
+      !url ||
+      options !== undefined ||
+      Object.keys(url).some(
+        (key) =>
+          ![
+            "alexandria",
+            "requestId",
+            "timeout",
+            "integration",
+            "origin",
+          ].includes(key),
+      )
+    ) {
+      throw new Error("Provide an alexandria request without URL scrape options");
+    }
+    const { alexandria, ...opts } = url;
+    return scrapeAlexandria(
+      this.http,
+      Array.isArray(alexandria) ? alexandria : [alexandria],
+      opts,
+    );
+  }
+
+  /** Explore the catalogue without executing the tools it returns. */
+  async findTools(options?: FindToolsOptions): Promise<FindToolsData> {
+    return findTools(this.http, options);
   }
   /**
    * Interact with the browser session associated with a scrape job.
@@ -235,6 +272,14 @@ export class FirecrawlClient {
   async parse(file: ParseFile, options?: ParseOptions): Promise<Document>;
   async parse(file: ParseFile, options?: ParseOptions): Promise<Document> {
     return parseMethod(this.http, file, options);
+  }
+
+  /**
+   * List the file formats the parse endpoint accepts on this deployment.
+   * @returns Formats with their kind, extensions, MIME types, and availability.
+   */
+  async getParseFormats(): Promise<ParseFormatInfo[]> {
+    return getParseFormats(this.http);
   }
 
   // Search

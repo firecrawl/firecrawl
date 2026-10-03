@@ -47,7 +47,8 @@ export interface ThreatCheckContext {
 //   2. request-scoped dedup (ctx.dedup) → a URL already checked within
 //      this request/job reuses the same in-flight decision
 //   3. local-only rules (whitelist/blacklist/blocked-tld, evaluated against
-//      the URL's host) → decide without a provider call (no billing)
+//      the URL's host) → decide without a provider call (no billing);
+//      mode "manual-only" stops here and default-allows everything else
 //   4. "zscaler" mode only: the tenant's synced custom-list rules (custom
 //      categories, keywords, customer category additions — urlLookup never
 //      returns those) → a decisive match skips the provider call
@@ -97,7 +98,7 @@ const PROVIDER_ATTEMPTS = 2; // 1 initial + 1 retry
  */
 async function fetchProviderVerdict(
   url: string,
-  mode: Exclude<ThreatProtectionMode, "off">,
+  mode: Exclude<ThreatProtectionMode, "off" | "manual-only">,
   policy: ThreatProtectionPolicy,
 ): Promise<RawVerdict> {
   const attempts = mode === "zscaler" ? 1 : PROVIDER_ATTEMPTS;
@@ -165,7 +166,7 @@ async function checkUrlFresh(
     }
   }
 
-  if (ctx.localRulesOnly) {
+  if (ctx.localRulesOnly || policy.mode === "manual-only") {
     return {
       allowed: true,
       rule: "default-allow",
@@ -181,7 +182,7 @@ async function checkUrlFresh(
   try {
     verdict = await fetchProviderVerdict(
       canonicalUrl,
-      policy.mode as Exclude<ThreatProtectionMode, "off">,
+      policy.mode as Exclude<ThreatProtectionMode, "off" | "manual-only">,
       policy,
     );
   } catch {

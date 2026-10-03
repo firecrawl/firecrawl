@@ -185,6 +185,13 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
       expect(res.body.error).toContain('"off"');
     });
 
+    it('PUT rejects mode "manual-only" with 403', async () => {
+      const res = await putConfigRaw({ mode: "manual-only" }, identity);
+      expect(res.statusCode).toBe(403);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain("enforced");
+    });
+
     it('PUT accepts mode "normal" with 200 (forced teams may tighten config)', async () => {
       const res = await putConfigRaw({ mode: "normal" }, identity);
       expect(res.statusCode).toBe(200);

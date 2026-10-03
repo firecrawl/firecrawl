@@ -8,6 +8,7 @@ import { getAdjustedMaxDepth } from "../scraper/WebScraper/utils/maxDepthUtils";
 import type { Logger } from "winston";
 import { withSpan, setSpanAttributes } from "./otel-tracer";
 import { getScrapeZDR, getIgnoreRobots } from "./zdr-helpers";
+import { resolveSafeMode } from "./safe-mode";
 import {
   firstPipelineError,
   reportPipelineError,
@@ -36,6 +37,9 @@ export type StoredCrawl = {
   v1?: boolean;
   webhook?: WebhookConfig;
   requestId?: string;
+  // The request's `origin`; dashboard-started jobs get an in-app notification
+  // when they finish.
+  origin?: string;
 };
 
 export async function saveCrawl(id: string, crawl: StoredCrawl) {
@@ -979,6 +983,15 @@ export function crawlToCrawler(
   newBase?: string,
   crawlerOptions?: any,
 ): WebCrawler {
+  // Resolve the crawl's Safe Mode once (honoring a stored request bypass) to
+  // drive both lockdown and the robots override below.
+  const crawlerSafeMode = sc.internalOptions?.safeModeBypassed
+    ? undefined
+    : resolveSafeMode(
+        sc.internalOptions?.teamFlags ?? teamFlags,
+        undefined,
+        sc.originUrl ?? undefined,
+      ).safeMode;
   const crawler = new WebCrawler({
     jobId: id,
     initialUrl: sc.originUrl!,
@@ -1000,10 +1013,12 @@ export function crawlToCrawler(
     allowExternalContentLinks:
       sc.crawlerOptions?.allowExternalContentLinks ?? false,
     allowSubdomains: sc.crawlerOptions?.allowSubdomains ?? false,
+    // Safe Mode enforceRobots overrides even a team's forced ignore-robots.
     ignoreRobotsTxt:
-      getIgnoreRobots(teamFlags) === "forced" ||
-      (getIgnoreRobots(teamFlags) === "allowed" &&
-        (sc.crawlerOptions?.ignoreRobotsTxt ?? false)),
+      !crawlerSafeMode?.enforceRobots &&
+      (getIgnoreRobots(teamFlags) === "forced" ||
+        (getIgnoreRobots(teamFlags) === "allowed" &&
+          (sc.crawlerOptions?.ignoreRobotsTxt ?? false))),
     regexOnFullURL: sc.crawlerOptions?.regexOnFullURL ?? false,
     maxDiscoveryDepth: sc.crawlerOptions?.maxDiscoveryDepth,
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,
@@ -1012,6 +1027,8 @@ export function crawlToCrawler(
     location: sc.scrapeOptions?.location,
     headers: sc.scrapeOptions?.headers,
     robotsUserAgent: sc.crawlerOptions?.robotsUserAgent,
+    // Safe Mode lockdown: skip robots/sitemap discovery (outbound to target).
+    lockdown: crawlerSafeMode?.lockdown ?? false,
   });
 
   if (sc.robots !== undefined) {
