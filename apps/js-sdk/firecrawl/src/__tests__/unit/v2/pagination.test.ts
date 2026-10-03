@@ -16,6 +16,39 @@ describe("JS SDK v2 pagination", () => {
     expect(res.next).toBe("https://api/next");
   });
 
+  test("crawl: preserves API warning and timing with and without pagination", async () => {
+    const first = {
+      status: 200,
+      data: {
+        success: true,
+        status: "completed",
+        completed: 1,
+        total: 2,
+        next: "https://api/n1",
+        data: [{ markdown: "a" }],
+        warning: "Robots.txt blocked some URLs",
+        createdAt: "2026-09-27T12:00:00Z",
+        completedAt: "2026-09-27T12:00:03Z",
+        duration: 3,
+      },
+    };
+    const http = makeHttp(url =>
+      url.includes("/v2/crawl/")
+        ? first
+        : { status: 200, data: { success: true, next: null, data: [] } },
+    );
+
+    for (const pagination of [{ autoPaginate: false }, undefined]) {
+      const result = await getCrawlStatus(http, "job1", pagination);
+      expect(result).toMatchObject({
+        warning: first.data.warning,
+        createdAt: first.data.createdAt,
+        completedAt: first.data.completedAt,
+        duration: 3,
+      });
+    }
+  });
+
   test("crawl: default autoPaginate aggregates and nulls next", async () => {
     const first = { status: 200, data: { success: true, status: "completed", completed: 1, total: 3, next: "https://api/n1", data: [{ markdown: "a" }] } };
     const second = { status: 200, data: { success: true, next: "https://api/n2", data: [{ markdown: "b" }] } };
@@ -129,5 +162,4 @@ describe("JS SDK v2 pagination", () => {
     }
   });
 });
-
 
