@@ -45,3 +45,11 @@ curl -X POST http://localhost:3000/scrape \
 ## USING WITH FIRECRAWL
 
 Add `PLAYWRIGHT_MICROSERVICE_URL=http://localhost:3003/scrape` to `/apps/api/.env` to configure the API to use this Playwright microservice for scraping operations.
+
+Private scrape targets are blocked by default, including when local DNS cannot resolve a
+hostname that an upstream `PROXY_SERVER` could resolve. On trusted self-hosted deployments,
+set `ALLOW_PRIVATE_IP_SCRAPING=true` on **both** the API and Playwright service to permit
+them. Docker Compose forwards this variable to both services. This bypasses scrape-target
+SSRF protection, so keep it disabled if untrusted users can submit scrape URLs. The older
+`ALLOW_LOCAL_WEBHOOKS=true` setting also permits private scrape targets for backward
+compatibility, but the new flag does not permit local webhook destinations.

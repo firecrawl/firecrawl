@@ -91,7 +91,10 @@ function createBaseAgent(skipTlsVerification: boolean) {
   );
 }
 
-function attachSecurityCheck(agent: undici.Dispatcher) {
+function attachSecurityCheck(
+  agent: undici.Dispatcher,
+  allowPrivateTarget: () => boolean,
+) {
   agent.on("connect", (_, targets) => {
     const client: undici.Client = targets.slice(-1)[0] as undici.Client;
     const socketSymbol = Object.getOwnPropertySymbols(client).find(
@@ -102,36 +105,57 @@ function attachSecurityCheck(agent: undici.Dispatcher) {
     if (
       socket.remoteAddress &&
       isIPPrivate(socket.remoteAddress) &&
-      config.ALLOW_LOCAL_WEBHOOKS !== true
+      !allowPrivateTarget()
     ) {
       socket.destroy(new InsecureConnectionError());
     }
   });
 }
 
-function makeSecureDispatcher(skipTlsVerification: boolean) {
+function makeSecureDispatcher(
+  skipTlsVerification: boolean,
+  allowPrivateScrapingTargets: boolean,
+) {
   const agent = createBaseAgent(skipTlsVerification);
-  attachSecurityCheck(agent);
+  attachSecurityCheck(
+    agent,
+    () =>
+      (allowPrivateScrapingTargets &&
+        config.ALLOW_PRIVATE_IP_SCRAPING === true) ||
+      config.ALLOW_LOCAL_WEBHOOKS === true,
+  );
   return agent;
 }
 
 // Dispatcher WITHOUT cookie handling (for webhooks - avoids empty cookie header bug)
 function makeSecureDispatcherNoCookies(skipTlsVerification: boolean) {
   const agent = createBaseAgent(skipTlsVerification);
-  attachSecurityCheck(agent);
+  attachSecurityCheck(agent, () => config.ALLOW_LOCAL_WEBHOOKS === true);
   return agent;
 }
 
-const secureDispatcher = makeSecureDispatcher(false);
-const secureDispatcherSkipTlsVerification = makeSecureDispatcher(true);
+const secureDispatcher = makeSecureDispatcher(false, false);
+const secureDispatcherSkipTlsVerification = makeSecureDispatcher(true, false);
+const secureScrapingDispatcher = makeSecureDispatcher(false, true);
+const secureScrapingDispatcherSkipTlsVerification = makeSecureDispatcher(
+  true,
+  true,
+);
 const secureDispatcherNoCookies = makeSecureDispatcherNoCookies(false);
 const secureDispatcherNoCookiesSkipTlsVerification =
   makeSecureDispatcherNoCookies(true);
 
-export const getSecureDispatcher = (skipTlsVerification: boolean = false) => {
-  const dispatcher = skipTlsVerification
-    ? secureDispatcherSkipTlsVerification
-    : secureDispatcher;
+export const getSecureDispatcher = (
+  skipTlsVerification: boolean = false,
+  allowPrivateScrapingTargets: boolean = false,
+) => {
+  const dispatcher = allowPrivateScrapingTargets
+    ? skipTlsVerification
+      ? secureScrapingDispatcherSkipTlsVerification
+      : secureScrapingDispatcher
+    : skipTlsVerification
+      ? secureDispatcherSkipTlsVerification
+      : secureDispatcher;
 
   return dispatcher.compose(cookie({ jar: new CookieJar() }));
 };
