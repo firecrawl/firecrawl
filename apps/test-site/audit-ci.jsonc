@@ -1,4 +1,13 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true
+    "low": true,
+    "allowlist": [
+        // GHSA-ch52-4w7c-c8xp (http-cache-semantics):
+        // Latest published http-cache-semantics is 4.2.0; advisory requires
+        // >=4.2.1, which is not on npm. Same-major astro 7.x still resolves
+        // 4.2.0. Cannot override to a non-existent version.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2026-10-17.
+        "GHSA-ch52-4w7c-c8xp"
+    ]
 }
