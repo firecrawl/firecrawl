@@ -302,6 +302,23 @@ describe("/v2/parse", () => {
   );
 
   it(
+    "rejects empty local upload-ref files",
+    async () => {
+      enableLocalUploadRefAdapter();
+      const init = await mintRequiredUploadRef(identity);
+
+      const upload = await uploadToMintedTarget(init, "");
+      expect(upload.status).toBe(400);
+      expect(await upload.json()).toMatchObject({
+        success: false,
+        code: "BAD_REQUEST",
+        error: "Uploaded file must not be empty.",
+      });
+    },
+    scrapeTimeout,
+  );
+
+  it(
     "limits each team to 10 unparsed upload refs from the last 24 hours",
     async () => {
       enableLocalUploadRefAdapter();
