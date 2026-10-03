@@ -48,3 +48,70 @@ describe("parseMarkdown", () => {
     }
   });
 });
+
+describe("parseMarkdown Go parser timeout", () => {
+  afterEach(() => {
+    vi.doUnmock("koffi");
+    vi.doUnmock("fs/promises");
+    vi.doUnmock("../../config");
+    vi.resetModules();
+  });
+
+  // Re-imports the module with the Go parser enabled and its FFI call replaced.
+  async function loadWithGoParser(
+    timeoutMs: number,
+    goAsync: (
+      html: string,
+      cb: (err: Error | null, res?: string) => void,
+    ) => void,
+  ) {
+    vi.resetModules();
+    vi.doMock("koffi", () => ({
+      default: {
+        load: () => ({
+          func: () => ({ async: goAsync }),
+        }),
+        disposable: () => "CString:mock",
+      },
+    }));
+    vi.doMock("fs/promises", async importOriginal => {
+      const orig = await importOriginal<typeof import("fs/promises")>();
+      return { ...orig, stat: async () => ({}) as any };
+    });
+    vi.doMock("../../config", async importOriginal => {
+      const orig = await importOriginal<typeof import("../../config")>();
+      return {
+        ...orig,
+        config: {
+          ...orig.config,
+          USE_GO_MARKDOWN_PARSER: true,
+          HTML_TO_MARKDOWN_SERVICE_URL: undefined,
+          HTML_TO_MARKDOWN_TIMEOUT_MS: timeoutMs,
+        },
+      };
+    });
+    return await import("../html-to-markdown.js");
+  }
+
+  it("falls back to turndown instead of hanging when the Go conversion never completes", async () => {
+    const { parseMarkdown: parseWithHangingGo } = await loadWithGoParser(
+      200,
+      () => {
+        // never invoke the callback, simulating a hung native conversion
+      },
+    );
+    await expect(parseWithHangingGo("<p>Hello, world!</p>")).resolves.toBe(
+      "Hello, world!",
+    );
+  });
+
+  it("returns the Go parser result when conversion completes within the timeout", async () => {
+    const { parseMarkdown: parseWithFastGo } = await loadWithGoParser(
+      5000,
+      (_html, cb) => cb(null, "go parser output"),
+    );
+    await expect(parseWithFastGo("<p>Hello, world!</p>")).resolves.toBe(
+      "go parser output",
+    );
+  });
+});
