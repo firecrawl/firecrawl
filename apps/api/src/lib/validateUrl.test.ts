@@ -47,6 +47,45 @@ describe("isSameDomain", () => {
     );
     expect(result).toBe(true);
   });
+
+  it("should return false for different domains with multi-part TLDs", () => {
+    const result1 = isSameDomain(
+      "https://example.co.uk",
+      "https://attacker.co.uk",
+    );
+    expect(result1).toBe(false);
+
+    const result2 = isSameDomain(
+      "https://example.com.au",
+      "https://different.com.au",
+    );
+    expect(result2).toBe(false);
+  });
+
+  it("should return true for subdomains on multi-part TLDs", () => {
+    const result = isSameDomain(
+      "https://sub.example.co.uk",
+      "https://example.co.uk",
+    );
+    expect(result).toBe(true);
+  });
+
+  it("should return false for different IP addresses", () => {
+    const result = isSameDomain(
+      "http://192.168.1.1",
+      "http://10.0.1.1",
+    );
+    expect(result).toBe(false);
+  });
+
+  it("should return true for identical IP addresses or localhost", () => {
+    expect(isSameDomain("http://192.168.1.1:3000", "http://192.168.1.1:8080")).toBe(true);
+    expect(isSameDomain("http://localhost:3000", "http://localhost:8080")).toBe(true);
+  });
+
+  it("should return true when domain label itself is www on a multi-part TLD", () => {
+    expect(isSameDomain("https://www.co.uk", "https://sub.www.co.uk")).toBe(true);
+  });
 });
 
 describe("isSameSubdomain", () => {
