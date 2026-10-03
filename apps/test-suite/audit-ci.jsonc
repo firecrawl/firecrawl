@@ -8,6 +8,25 @@
         // Do not override across majors without compatibility approval.
         // Owner: team-engineering-reviewers. Tracking: create internal ticket.
         // Expires: 2026-10-08.
-        "GHSA-8cw4-87c7-c6xx"
+        "GHSA-8cw4-87c7-c6xx",
+        // GHSA-vfj7-8cjw-p6xm (braces):
+        // braces@3.0.4 (the first patched release, >=3.0.4) does not yet exist on
+        // npm; the latest published version is 3.0.3 which is now flagged as
+        // vulnerable (vulnerable_versions: <=3.0.3). Usage reaches braces only via
+        // artillery → chokidar (devDependency load-testing tool) — not reachable
+        // at production runtime. Cannot upgrade until upstream publishes braces@3.0.4.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2027-01-03.
+        "GHSA-vfj7-8cjw-p6xm",
+        // GHSA-ch52-4w7c-c8xp (http-cache-semantics):
+        // http-cache-semantics@4.2.1 (the first patched release, >=4.2.1) does not
+        // yet exist on npm; the latest published version is 4.2.0 which is flagged
+        // as vulnerable (vulnerable_versions: <=4.2.0). Usage reaches it only via
+        // artillery → got → cacheable-request (devDependency load-testing tool) —
+        // not reachable at production runtime. Cannot upgrade until upstream
+        // publishes http-cache-semantics@4.2.1.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2027-01-03.
+        "GHSA-ch52-4w7c-c8xp"
     ]
 }
