@@ -39,7 +39,7 @@ import {
 
 const PREVIEW_TEAM_ID = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
 const POSTGRES_UNIQUE_VIOLATION = "23505";
-const LOOKUP_RACE_RETRY_MS = 250;
+export const LOOKUP_RACE_RETRY_MS = 250;
 const ZDR_FEEDBACK_ID = "00000000-0000-0000-0000-000000000000";
 
 function isPreviewTeam(teamId: string): boolean {
@@ -118,20 +118,27 @@ function validateAccess(
   return null;
 }
 
-async function lookupJobWithRetry(
-  options: FeedbackRecordOptions,
+export async function lookupJobWithRetry(
+  options: Pick<FeedbackRecordOptions, "endpoint" | "jobId" | "notFoundCode">,
   dbTeamId: string,
   logger: FeedbackLogger,
+  lookupOptions?: { requireOptions: boolean },
 ): Promise<FeedbackJobRow | FeedbackRecordResult> {
+  // Authenticated lookups keep their existing call; only keyless lookups pass options.
+  const lookup = () =>
+    lookupOptions
+      ? lookupFeedbackJob(
+          options.endpoint,
+          options.jobId,
+          dbTeamId,
+          lookupOptions,
+        )
+      : lookupFeedbackJob(options.endpoint, options.jobId, dbTeamId);
   try {
-    let job = await lookupFeedbackJob(
-      options.endpoint,
-      options.jobId,
-      dbTeamId,
-    );
+    let job = await lookup();
     if (!job) {
       await new Promise(resolve => setTimeout(resolve, LOOKUP_RACE_RETRY_MS));
-      job = await lookupFeedbackJob(options.endpoint, options.jobId, dbTeamId);
+      job = await lookup();
     }
 
     if (!job) {

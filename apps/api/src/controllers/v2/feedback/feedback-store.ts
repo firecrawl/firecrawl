@@ -37,7 +37,43 @@ export async function lookupFeedbackJob(
   endpoint: EndpointFeedbackEndpoint,
   jobId: string,
   dbTeamId: string,
+  { requireOptions = false }: { requireOptions?: boolean } = {},
 ): Promise<FeedbackJobRow | null> {
+  if (requireOptions) {
+    // Compact records omit the options keyless validation requires. Read the
+    // PostgreSQL primary so replica lag cannot hide a newly completed job.
+    const table = {
+      search: schema.searches,
+      scrape: schema.scrapes,
+      parse: schema.parses,
+      map: schema.maps,
+    }[endpoint] as any;
+    const [row] = await db
+      .select({
+        id: table.id,
+        request_id: table.request_id,
+        team_id: table.team_id,
+        credits_cost: table.credits_cost,
+        created_at: table.created_at,
+        options: table.options,
+        ...(endpoint === "map" ? {} : { is_successful: table.is_successful }),
+      })
+      .from(table)
+      .where(and(eq(table.id, jobId), eq(table.team_id, dbTeamId)))
+      .limit(1);
+    if (!row) return null;
+    return {
+      endpoint,
+      id: row.id,
+      request_id: row.request_id ?? null,
+      team_id: row.team_id,
+      credits_cost: row.credits_cost ?? 0,
+      created_at: row.created_at,
+      is_successful: endpoint === "map" ? true : (row.is_successful ?? null),
+      options: row.options ?? null,
+    };
+  }
+
   let job;
   try {
     job = await readFeedbackJob(jobId);
