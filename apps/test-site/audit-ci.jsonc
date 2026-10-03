@@ -1,4 +1,17 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true
+    "low": true,
+    "allowlist": [
+        // GHSA-ch52-4w7c-c8xp (http-cache-semantics):
+        // http-cache-semantics@4.2.1 (the first patched release, >=4.2.1) does not
+        // yet exist on npm; the latest published version is 4.2.0 which is flagged
+        // as vulnerable (vulnerable_versions: <=4.2.0). Usage reaches it only via
+        // astro → http-cache-semantics and @astrojs/mdx → astro (build/dev-server
+        // tool only; the production output is static HTML with no runtime server) —
+        // not reachable at production runtime of the deployed site. Cannot upgrade
+        // until upstream publishes http-cache-semantics@4.2.1.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2027-01-03.
+        "GHSA-ch52-4w7c-c8xp"
+    ]
 }

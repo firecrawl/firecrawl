@@ -16,6 +16,18 @@
         "GHSA-mwp4-54f8-5fhr",
         "GHSA-rpw4-54j3-4h4q",
         "GHSA-j6r3-76f7-8jcv",
-        "GHSA-h3mg-xc3c-68pw"
+        "GHSA-h3mg-xc3c-68pw",
+        // GHSA-vfj7-8cjw-p6xm (braces):
+        // braces@3.0.4 (the first patched release, >=3.0.4) does not yet exist on
+        // npm; the latest published version is 3.0.3 which is now flagged as
+        // vulnerable (vulnerable_versions: <=3.0.3). All braces usages in this
+        // package reach it only via devDependencies (knip → fast-glob → micromatch,
+        // lint-staged → micromatch) — not reachable at production runtime. An
+        // attacker would need to control glob patterns during local developer builds
+        // to trigger the stack-exhaustion. Cannot upgrade until upstream publishes
+        // braces@3.0.4.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2027-01-03.
+        "GHSA-vfj7-8cjw-p6xm"
     ]
 }

@@ -1,4 +1,16 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true
+    "low": true,
+    "allowlist": [
+        // GHSA-vfj7-8cjw-p6xm (braces):
+        // braces@3.0.4 (the first patched release, >=3.0.4) does not yet exist on
+        // npm; the latest published version is 3.0.3 which is now flagged as
+        // vulnerable (vulnerable_versions: <=3.0.3). All braces usages here reach
+        // it only via build-tool devDependencies (tailwindcss → chokidar/fast-glob/
+        // micromatch, tailwindcss-animate → tailwindcss) — not reachable at
+        // production runtime. Cannot upgrade until upstream publishes braces@3.0.4.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2027-01-03.
+        "GHSA-vfj7-8cjw-p6xm"
+    ]
 }
