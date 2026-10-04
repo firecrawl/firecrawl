@@ -1,4 +1,13 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true
+    "low": true,
+    "allowlist": [
+        // GHSA-vfj7-8cjw-p6xm (braces):
+        // Latest published braces is 3.0.3; advisory range is <=3.0.3 and
+        // no 3.0.4+ exists on npm. Same-major jest 30.x still resolves
+        // 3.0.3 via micromatch. Cannot override to a non-existent version.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2026-10-17.
+        "GHSA-vfj7-8cjw-p6xm"
+    ]
 }
