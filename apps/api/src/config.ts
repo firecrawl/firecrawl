@@ -90,6 +90,15 @@ const configSchema = z.object({
     v => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z.string().trim().optional(),
   ),
+  // Optional external agent hints provider. Inert unless the URL is set; see
+  // AGENT_HINTS.md for the request/response contract.
+  AGENT_HINTS_PROVIDER_URL: emptyStringAsUndefined(z.string().url()),
+  AGENT_HINTS_PROVIDER_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  AGENT_HINTS_PROVIDER_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50),
   RESEARCH_PROXY_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   LABS_SEARCH_URL: z.string().url().optional(),

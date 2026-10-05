@@ -35,3 +35,53 @@ Static feedback instructions do not belong in response hints. Adapters that expo
 ## Validation
 
 The focused selector tests exercise excerpt detection, source-page failures, error suppression, the low-credit threshold, and combined hints. Express route fixtures exercise response preservation, opt-in, opt-out, low-credit delivery, and responses without a useful next step. Hosted snips cover a completed scrape, map opt-out, and validation failure through the actual API. The snips use the harness and existing test service; they are not a live paid API smoke test.
+
+## Optional external provider
+
+A deployment can supply additional response guidance from a separate HTTP service. This is disabled unless `AGENT_HINTS_PROVIDER_URL` is set; with it unset, responses are unchanged.
+
+| Variable                          | Default | Purpose                                            |
+| --------------------------------- | ------- | -------------------------------------------------- |
+| `AGENT_HINTS_PROVIDER_URL`        | unset   | Provider endpoint. Empty means unset.              |
+| `AGENT_HINTS_PROVIDER_SECRET`     | unset   | Sent as `Authorization: Bearer <secret>` when set. |
+| `AGENT_HINTS_PROVIDER_TIMEOUT_MS` | `50`    | Per-lookup timeout.                                |
+
+For hint-enabled requests with an authenticated team, the API starts a lookup right after authentication and continues without waiting. Provider hints are included only if the lookup has already finished (or is cached) when the response is sent, so the provider never adds latency. An answer that arrives after the response was sent, but within the timeout, is cached for the next request.
+
+Request:
+
+```http
+POST {AGENT_HINTS_PROVIDER_URL}
+Authorization: Bearer {AGENT_HINTS_PROVIDER_SECRET}
+Content-Type: application/json
+
+{
+  "version": 1,
+  "team_id": "string",
+  "org_id": "string | null",
+  "api_key_id": "number | null",
+  "endpoint": "search | scrape | parse | map",
+  "surface": "api | mcp | cli",
+  "keyless": false
+}
+```
+
+No request or response content, URLs, queries, IP addresses, or API keys are sent.
+
+Response (`200` only):
+
+```json
+{
+  "hints": [
+    { "id": "string, at most 64 chars", "text": "string, at most 500 chars" }
+  ],
+  "ttl_seconds": 60
+}
+```
+
+- Any other status, a timeout, a network error, or a body without a `hints` array means no provider hints, cached for 30 seconds. Requests never fail because of the provider.
+- `ttl_seconds` defaults to 60 and is clamped to 0–600. Unknown fields are ignored.
+- Each hint is trimmed and has control characters replaced; hints with a missing or oversized `id` or `text` are dropped.
+- Provider hints follow the deterministic hints and never replace them. Exact duplicates are dropped, at most two provider hints are added, and the total is capped at three.
+- Results are cached in memory per process, keyed by team, endpoint, and surface, with one lookup in flight per key and at most 10,000 entries. Different API processes may serve different provider hints until their entries expire.
+- Served provider hint IDs are logged; they are not added to the response. Lookups are counted in `firecrawl_agent_hints_provider_requests_total{outcome="hit|miss|timeout|error|disabled"}`.
