@@ -3,7 +3,12 @@ import { Request, Response } from "express";
 import { autumnService } from "../../services/autumn/autumn.service";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode, AuthResponse } from "../../types";
-import { TeamFlags, toLegacyDocument, url as urlSchema } from "../v1/types";
+import {
+  AuthCreditUsageChunk,
+  TeamFlags,
+  toLegacyDocument,
+  url as urlSchema,
+} from "../v1/types";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist"; // Import the isUrlBlocked function
 import {
   defaultPageOptions,
@@ -47,6 +52,7 @@ async function scrapeHelper(
   flags: TeamFlags,
   org_id: string | null,
   apiKeyId: number | null,
+  acuc: AuthCreditUsageChunk | null,
 ): Promise<{
   success: boolean;
   error?: string;
@@ -119,7 +125,7 @@ async function scrapeHelper(
       apiKeyId,
     },
     jobId,
-    await getJobPriority({ team_id, basePriority: 10 }),
+    await getJobPriority({ team_id, acuc, basePriority: 10 }),
     false,
     true,
   );
@@ -325,6 +331,7 @@ export async function scrapeController(req: Request, res: Response) {
       chunk?.flags ?? null,
       chunk?.org_id ?? null,
       chunk?.api_key_id ?? null,
+      chunk,
     );
 
     let doc = result.data;

@@ -15,6 +15,7 @@ import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { getJobPriority } from "../../lib/job-priority";
 import {
   fromLegacyScrapeOptions,
+  AuthCreditUsageChunk,
   TeamFlags,
   toLegacyDocument,
 } from "../v1/types";
@@ -43,6 +44,7 @@ async function searchHelper(
   flags: TeamFlags,
   org_id: string | null,
   api_key_id: number | null,
+  acuc: AuthCreditUsageChunk | null,
 ): Promise<{
   success: boolean;
   error?: string;
@@ -129,6 +131,7 @@ async function searchHelper(
 
   const jobPriority = await getJobPriority({
     team_id,
+    acuc,
     basePriority: 20,
   });
   const billing = {
@@ -303,6 +306,7 @@ export async function searchController(req: Request, res: Response) {
       chunk?.flags ?? null,
       chunk?.org_id ?? null,
       chunk?.api_key_id ?? null,
+      chunk,
     );
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - startTime) / 1000;

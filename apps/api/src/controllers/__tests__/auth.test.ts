@@ -1392,10 +1392,13 @@ describe("authenticateUser", () => {
       vi.mocked(redlock.using).mockImplementation(
         async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
       );
-      vi.mocked(authCreditUsageChunk).mockResolvedValue([keyRow] as never);
-      vi.mocked(authCreditUsageChunkFromTeam).mockResolvedValue([
-        keyRow,
-      ] as never);
+      // Fresh rows: the build fills the limits onto the row it gets.
+      vi.mocked(authCreditUsageChunk).mockImplementation(
+        async () => [{ ...keyRow }] as never,
+      );
+      vi.mocked(authCreditUsageChunkFromTeam).mockImplementation(
+        async () => [{ ...keyRow }] as never,
+      );
     });
 
     it("builds the key ACUC with the team's limits and caches it for the full TTL", async () => {
