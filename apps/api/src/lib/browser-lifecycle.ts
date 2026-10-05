@@ -163,7 +163,6 @@ async function createBrowserSessionInternal(
     : 0;
   const teamLimit = await getEffectiveConcurrencyLimit(
     req.auth.team_id,
-    req.acuc?.org_id ?? null,
     req.acuc,
   );
   // An agent run opens browsers against the team's own slots, so a free team

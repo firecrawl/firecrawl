@@ -28,7 +28,7 @@ import { isKeylessIpSuspicious } from "../lib/spur";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
 import { checkIpRestriction } from "../lib/ip-restriction";
 import { checkKeyEndpointRestriction } from "../lib/key-restriction";
-import { deleteKey, getValue, replaceValue, setValue } from "../services/redis";
+import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
 import { db, dbRr } from "../db/connection";
 import {
@@ -37,7 +37,11 @@ import {
   AuthCreditUsageChunkRow,
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
-import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
+import {
+  AuthCreditUsageChunk,
+  AuthCreditUsageChunkFromTeam,
+  TeamFlags,
+} from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
   OAuthIntrospectionUnavailableError,
@@ -47,11 +51,27 @@ import type { OAuthIntrospectionResponse } from "../services/oauth-token-introsp
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
 import {
   autumnService,
-  type EntityLimitsCache,
+  type TeamLimits,
 } from "../services/autumn/autumn.service";
+import { orgIdFromAcuc } from "../lib/team-org";
 import { ReplyError } from "ioredis";
 
 const ACUC_TTL_SECONDS = 600;
+// A chunk built on the fail-open Autumn fallback is cached only briefly, so a
+// transient Autumn error never pins those limits for the full TTL.
+const ACUC_FALLBACK_TTL_SECONDS = 60;
+
+/** Puts the team's Autumn limits on a chunk to be cached; returns its TTL. */
+async function fillTeamLimits(
+  chunk: AuthCreditUsageChunkFromTeam,
+): Promise<number> {
+  const { limits, failed } = await autumnService.getTeamLimits(
+    chunk.team_id,
+    chunk.org_id,
+  );
+  Object.assign(chunk, limits);
+  return failed ? ACUC_FALLBACK_TTL_SECONDS : ACUC_TTL_SECONDS;
+}
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -66,6 +86,7 @@ async function setCachedACUC(
     | null
     | ((acuc: AuthCreditUsageChunk) => AuthCreditUsageChunk | null),
   credentialPurpose: "general" | "hosted_mcp_oauth" = "general",
+  ttl = ACUC_TTL_SECONDS,
 ) {
   const cacheKeyACUC = `acuc_${credentialPurpose}_${api_key}_${is_extract ? "extract" : "scrape"}`;
   const redLockKey = `lock_${cacheKeyACUC}`;
@@ -88,12 +109,7 @@ async function setCachedACUC(
         throw signal.error;
       }
 
-      await setValue(
-        cacheKeyACUC,
-        JSON.stringify(acuc),
-        ACUC_TTL_SECONDS,
-        true,
-      );
+      await setValue(cacheKeyACUC, JSON.stringify(acuc), ttl, true);
     });
   } catch (error) {
     logger.error("Error updating cached ACUC", {
@@ -263,21 +279,14 @@ async function getACUC(
           ? null
           : (data[0] as any);
 
-    if (chunk) {
-      chunk.is_extract = isExtract;
-    }
+    if (chunk === null) return null;
+
+    chunk.is_extract = isExtract;
 
     // NOTE: Should we cache null chunks? - mogery
-    if (chunk !== null && useCache) {
-      const limits = await autumnService.getKnownEntityLimits(
-        chunk.team_id,
-        chunk.org_id,
-        acucEntityLimitsCache(),
-      );
-      // Limits copied from the team's ACUC keep their own fetched_at, so the
-      // copy can never outlive the team's answer.
-      chunk.autumn_limits = limits && { fetched_at: Date.now(), ...limits };
-      setCachedACUC(api_key, isExtract, chunk, credentialPurpose);
+    if (useCache) {
+      const ttl = await fillTeamLimits(chunk);
+      setCachedACUC(api_key, isExtract, chunk, credentialPurpose, ttl);
     }
 
     return chunk;
@@ -293,8 +302,9 @@ async function setCachedACUCTeam(
     | AuthCreditUsageChunkFromTeam
     | null
     | ((
-        acuc: AuthCreditUsageChunkFromTeam | null,
+        acuc: AuthCreditUsageChunkFromTeam,
       ) => AuthCreditUsageChunkFromTeam | null),
+  ttl = ACUC_TTL_SECONDS,
 ) {
   const cacheKeyACUC = `acuc_team_${team_id}_${is_extract ? "extract" : "scrape"}`;
   const redLockKey = `lock_${cacheKeyACUC}`;
@@ -302,32 +312,22 @@ async function setCachedACUCTeam(
   try {
     await redlock.using([redLockKey], 10000, {}, async signal => {
       if (typeof acuc === "function") {
-        const updated = acuc(
-          JSON.parse((await getValue(cacheKeyACUC)) ?? "null"),
-        );
+        acuc = acuc(JSON.parse((await getValue(cacheKeyACUC)) ?? "null"));
 
-        if (signal.aborted) {
-          throw signal.error;
-        }
+        if (acuc === null) {
+          if (signal.aborted) {
+            throw signal.error;
+          }
 
-        // An update patches the live entry and keeps its expiry, so it can
-        // neither extend the entry's life nor recreate one cleared meanwhile.
-        if (updated !== null) {
-          await replaceValue(cacheKeyACUC, JSON.stringify(updated));
+          return;
         }
-        return;
       }
 
       if (signal.aborted) {
         throw signal.error;
       }
 
-      await setValue(
-        cacheKeyACUC,
-        JSON.stringify(acuc),
-        ACUC_TTL_SECONDS,
-        true,
-      );
+      await setValue(cacheKeyACUC, JSON.stringify(acuc), ttl, true);
     });
   } catch (error) {
     logger.error("Error updating cached ACUC", {
@@ -443,62 +443,49 @@ export async function getACUCTeam(
           ? null
           : (data[0] as any);
 
+    if (chunk === null) return null;
+
     // NOTE: Should we cache null chunks? - mogery
-    if (chunk !== null && useCache) {
-      setCachedACUCTeam(team_id, isExtract, chunk);
+    if (useCache) {
+      const ttl = await fillTeamLimits(chunk);
+      setCachedACUCTeam(team_id, isExtract, chunk, ttl);
     }
 
-    return chunk ? { ...chunk, is_extract: isExtract } : null;
+    return { ...chunk, is_extract: isExtract };
   } else {
     return null;
   }
 }
 
 /**
- * Keeps a team's Autumn limits in its ACUC, so they share the ACUC's Redis TTL
- * and reset-acuc clears them. Reads the chunk in hand when it carries them,
- * else the team's chunk; a live read fills the team's chunk when it was built
- * without them. Limits older than the ACUC TTL count as missing.
+ * The team's Autumn limits off its ACUC: the chunk in hand when it carries
+ * them (uncached chunks don't), else the team's. A chunk cached before the
+ * limits existed gets a live read, not written back.
  */
-export function acucEntityLimitsCache(
+export async function getACUCTeamLimits(
+  teamId: string,
   acuc?: AuthCreditUsageChunkFromTeam | null,
-): EntityLimitsCache {
-  const limitsOf = (
-    chunk: AuthCreditUsageChunkFromTeam | null | undefined,
-    teamId: string,
-    orgId: string,
-  ) => {
-    const limits = chunk?.autumn_limits;
-    return chunk?.team_id === teamId &&
-      chunk.org_id === orgId &&
-      limits &&
-      Date.now() - limits.fetched_at < ACUC_TTL_SECONDS * 1000
-      ? limits
-      : undefined;
-  };
-
-  return {
-    async get(teamId, orgId) {
-      const inHand = limitsOf(acuc, teamId, orgId);
-      if (inHand) return inHand;
-      try {
-        return limitsOf(await getACUCTeam(teamId), teamId, orgId);
-      } catch (error) {
-        logger.warn("Failed to read Autumn limits from the team's ACUC", {
-          teamId,
-          error,
-        });
-        return undefined;
-      }
-    },
-    set(teamId, orgId, limits) {
-      void setCachedACUCTeam(teamId, false, cached =>
-        cached?.org_id === orgId && !limitsOf(cached, teamId, orgId)
-          ? { ...cached, autumn_limits: { ...limits, fetched_at: Date.now() } }
-          : null,
-      );
-    },
-  };
+): Promise<TeamLimits> {
+  let chunk = acuc;
+  if (chunk?.limits_known === undefined) {
+    const teamChunk = await getACUCTeam(teamId).catch(error => {
+      logger.warn("Failed to read the team's ACUC for its limits", {
+        teamId,
+        error,
+      });
+      return null;
+    });
+    chunk = teamChunk ?? acuc;
+  }
+  if (chunk?.limits_known !== undefined) {
+    return {
+      concurrency_limit: chunk.concurrency_limit ?? null,
+      rate_limit_multiplier: chunk.rate_limit_multiplier ?? 1,
+      limits_known: chunk.limits_known,
+    };
+  }
+  return (await autumnService.getTeamLimits(teamId, orgIdFromAcuc(chunk)))
+    .limits;
 }
 
 export async function clearACUC(api_key: string): Promise<void> {
@@ -786,20 +773,17 @@ export async function authenticateUser(
  * replaces the whole computation.
  */
 async function buildAuthenticatedRateLimiter(
+  teamId: string,
   chunk: AuthCreditUsageChunk,
   mode: RateLimiterMode,
+  flags: TeamFlags,
   minMultiplier?: number,
 ): Promise<RateLimiterRedis> {
-  const flags = chunk.flags;
   let multiplier: number;
   if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
     multiplier = 1;
   } else {
-    multiplier = await autumnService.getRateLimitMultiplier(
-      chunk.team_id,
-      chunk.org_id ?? null,
-      acucEntityLimitsCache(chunk),
-    );
+    multiplier = (await getACUCTeamLimits(teamId, chunk)).rate_limit_multiplier;
     if (minMultiplier !== undefined) {
       multiplier = Math.max(multiplier, minMultiplier);
     }
@@ -903,8 +887,10 @@ async function supaAuthenticateUser(
     teamId = chunk.team_id;
     subscriptionData = { team_id: teamId };
     rateLimiter = await buildAuthenticatedRateLimiter(
+      teamId,
       chunk,
       mode,
+      chunk.flags,
       minRateMultiplier,
     );
   } else if (token.startsWith("fco_")) {
@@ -971,8 +957,10 @@ async function supaAuthenticateUser(
       team_id: teamId,
     };
     rateLimiter = await buildAuthenticatedRateLimiter(
+      teamId,
       chunk,
       mode,
+      chunk.flags,
       minRateMultiplier,
     );
   } else {
@@ -1018,8 +1006,10 @@ async function supaAuthenticateUser(
       team_id: teamId,
     };
     rateLimiter = await buildAuthenticatedRateLimiter(
+      teamId,
       chunk,
       mode,
+      chunk.flags,
       minRateMultiplier,
     );
   }

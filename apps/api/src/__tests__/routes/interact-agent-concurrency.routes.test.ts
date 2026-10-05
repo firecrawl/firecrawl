@@ -54,11 +54,15 @@ vi.mock("../../services/autumn/autumn.service", async importOriginal => {
   return {
     ...actual,
     autumnService: {
-      getRateLimitMultiplier: vi.fn().mockResolvedValue(1),
-      getKnownRateLimitMultiplier: vi.fn().mockResolvedValue(1),
-      getKnownEntityLimits: vi.fn().mockResolvedValue(undefined),
       // Free plan: Autumn grants CONCURRENCY 2.
-      getConcurrencyLimit: vi.fn().mockResolvedValue(2),
+      getTeamLimits: vi.fn().mockResolvedValue({
+        limits: {
+          concurrency_limit: 2,
+          rate_limit_multiplier: 1,
+          limits_known: true,
+        },
+        failed: false,
+      }),
       checkCredits: vi.fn().mockResolvedValue(null),
     },
   };

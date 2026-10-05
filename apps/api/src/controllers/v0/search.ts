@@ -129,7 +129,6 @@ async function searchHelper(
 
   const jobPriority = await getJobPriority({
     team_id,
-    org_id,
     basePriority: 20,
   });
   const billing = {

@@ -29,7 +29,6 @@ vi.mock("../../../lib/logger", () => {
 
 vi.mock("../../../services/autumn/autumn.service", () => ({
   autumnService: {
-    getConcurrencyLimit: vi.fn(async () => mocks.teamConcurrency),
     checkCredits: vi.fn(async () => null),
   },
 }));
@@ -145,7 +144,14 @@ function makeReq(interop: Interop) {
       team_id: TEAM_ID,
       agentInterop: agentInteropStatus({ body, headers }),
     },
-    acuc: { org_id: "org-1", api_key_id: null, flags: null },
+    acuc: {
+      org_id: "org-1",
+      api_key_id: null,
+      flags: null,
+      concurrency_limit: mocks.teamConcurrency,
+      rate_limit_multiplier: 1,
+      limits_known: true,
+    },
   };
 }
 

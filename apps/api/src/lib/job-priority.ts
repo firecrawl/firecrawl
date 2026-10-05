@@ -1,7 +1,6 @@
 import { redisEvictConnection } from "../services/redis";
 import { logger } from "./logger";
-import { autumnService } from "../services/autumn/autumn.service";
-import { acucEntityLimitsCache } from "../controllers/auth";
+import { getACUCTeamLimits } from "../controllers/auth";
 import type { AuthCreditUsageChunkFromTeam } from "../controllers/v1/types";
 import { inferPlanPriorityFromMultiplier } from "../services/rate-limiter";
 
@@ -33,17 +32,12 @@ export async function deleteJobPriority(team_id, job_id) {
 
 export async function getJobPriority({
   team_id,
-  org_id,
   acuc,
   basePriority = 10,
 }: {
   team_id: string;
-  /** The team's org, from the ACUC the caller already holds. Required so a
-   * caller cannot silently omit it and fall back to the high fail-open
-   * limits; pass null only when the caller genuinely has no org. */
-  org_id: string | null;
-  /** The team's ACUC, when the caller holds one: its cached limits save a
-   * read of the team's ACUC on every call. */
+  /** The team's ACUC, when the caller holds one. Pass it on hot loops, which
+   * would otherwise read the team's ACUC once per call. */
   acuc?: AuthCreditUsageChunkFromTeam | null;
   basePriority?: number;
   from_extract?: boolean;
@@ -59,14 +53,8 @@ export async function getJobPriority({
     const setLength = await redisEvictConnection.scard(setKey);
 
     // Plan priority is inferred from the team's Autumn rate-limit multiplier.
-    // The org and ACUC are threaded in by the caller: this runs once per
-    // discovered link inside a crawl, so it must not do an ACUC lookup of its
-    // own when the caller holds one.
-    const multiplier = await autumnService.getRateLimitMultiplier(
-      team_id,
-      org_id,
-      acucEntityLimitsCache(acuc),
-    );
+    const multiplier = (await getACUCTeamLimits(team_id, acuc))
+      .rate_limit_multiplier;
     const { bucketLimit, planModifier } =
       inferPlanPriorityFromMultiplier(multiplier);
 

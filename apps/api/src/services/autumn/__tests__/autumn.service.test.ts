@@ -114,7 +114,6 @@ vi.mock("../../../config", () => ({
 import {
   AutumnService,
   BoundedMap,
-  type EntityLimits,
   BoundedSet,
   featureIdForBillingEndpoint,
 } from "../autumn.service";
@@ -131,24 +130,6 @@ function makeService() {
   return new AutumnService();
 }
 
-// Stands in for the ACUC-backed cache: keyed like the ACUC (team, checked
-// against the org it was read for).
-function makeLimitsCache() {
-  const entries = new Map<string, EntityLimits>();
-  const key = (teamId: string, orgId: string) => `${orgId}:${teamId}`;
-  return {
-    entries,
-    get: vi.fn(async (teamId: string, orgId: string) =>
-      entries.get(key(teamId, orgId)),
-    ),
-    set: vi.fn((teamId: string, orgId: string, limits: EntityLimits) => {
-      entries.set(key(teamId, orgId), limits);
-    }),
-  };
-}
-
-let limitsCache = makeLimitsCache();
-
 function makeEntity(usage: number) {
   return { balances: { CREDITS: { usage } } };
 }
@@ -159,7 +140,6 @@ function makeEntity(usage: number) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  limitsCache = makeLimitsCache();
   state.autumnClientRef = mockAutumnClient;
   state.configRef = {};
   mockCheck.mockResolvedValue({
@@ -767,12 +747,20 @@ describe("featureIdForBillingEndpoint", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getEntityLimits fallback behavior (concurrency + rate-limit multiplier)
+// getTeamLimits (concurrency + rate-limit multiplier)
 // ---------------------------------------------------------------------------
 
-describe("entity limits fallback", () => {
+describe("getTeamLimits", () => {
+  const fallback = {
+    limits: {
+      concurrency_limit: 200,
+      rate_limit_multiplier: 2500,
+      limits_known: false,
+    },
+    failed: true,
+  };
+
   it("returns the Autumn values on the happy path", async () => {
-    const svc = makeService();
     mockEntityGet.mockResolvedValue({
       balances: {
         CONCURRENCY: { remaining: 7 },
@@ -780,188 +768,85 @@ describe("entity limits fallback", () => {
       },
     });
 
-    expect(await svc.getConcurrencyLimit("team-1", "org-1", limitsCache)).toBe(
-      7,
+    expect(await makeService().getTeamLimits("team-1", "org-1")).toEqual({
+      limits: {
+        concurrency_limit: 7,
+        rate_limit_multiplier: 25,
+        limits_known: true,
+      },
+      failed: false,
+    });
+    expect(mockEntityGet).toHaveBeenCalledWith({
+      customerId: "org-1",
+      entityId: "team-1",
+    });
+  });
+
+  it.each([
+    [
+      "the entity is missing (404)",
+      () => mockEntityGet.mockRejectedValue({ statusCode: 404 }),
+    ],
+    [
+      "the balances are absent",
+      () => mockEntityGet.mockResolvedValue({ balances: {} }),
+    ],
+  ])("falls back LOW when %s, as a real answer", async (_case, arrange) => {
+    arrange();
+
+    expect(await makeService().getTeamLimits("team-1", "org-1")).toEqual({
+      limits: {
+        concurrency_limit: null,
+        rate_limit_multiplier: 1,
+        limits_known: true,
+      },
+      failed: false,
+    });
+  });
+
+  it.each([
+    ["Autumn errors (not a 404)", { statusCode: 500 }],
+    ["Autumn throws a non-HTTP error", new Error("ECONNREFUSED")],
+  ])("fails OPEN and marks the answer failed when %s", async (_case, error) => {
+    mockEntityGet.mockRejectedValue(error);
+
+    expect(await makeService().getTeamLimits("team-1", "org-1")).toEqual(
+      fallback,
     );
-    expect(
-      await svc.getRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBe(25);
   });
 
-  it("falls back LOW (null / multiplier 1) when the entity is missing (404)", async () => {
-    const svc = makeService();
-    mockEntityGet.mockRejectedValue({ statusCode: 404 });
-
-    expect(
-      await svc.getConcurrencyLimit("team-1", "org-1", limitsCache),
-    ).toBeNull();
-    expect(
-      await svc.getRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBe(1);
+  it("fails OPEN without asking Autumn when there is no org", async () => {
+    expect(await makeService().getTeamLimits("team-1", null)).toEqual(fallback);
+    expect(mockEntityGet).not.toHaveBeenCalled();
   });
 
-  it("falls back LOW when the entity exists but the balances are absent", async () => {
-    const svc = makeService();
-    mockEntityGet.mockResolvedValue({ balances: {} });
-
-    expect(
-      await svc.getConcurrencyLimit("team-1", "org-1", limitsCache),
-    ).toBeNull();
-    expect(
-      await svc.getRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBe(1);
-  });
-
-  it("fails OPEN with high limits when Autumn errors (not a 404)", async () => {
-    const svc = makeService();
-    mockEntityGet.mockRejectedValue({ statusCode: 500 });
-
-    expect(await svc.getConcurrencyLimit("team-1", "org-1", limitsCache)).toBe(
-      200,
-    );
-    expect(
-      await svc.getRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBe(2500);
-  });
-
-  it("fails OPEN when Autumn throws a non-HTTP error", async () => {
-    const svc = makeService();
-    mockEntityGet.mockRejectedValue(new Error("ECONNREFUSED"));
-
-    expect(await svc.getConcurrencyLimit("team-1", "org-1", limitsCache)).toBe(
-      200,
-    );
-    expect(
-      await svc.getRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBe(2500);
-  });
-
-  it("does NOT cache the error fail-open value — retries Autumn next call", async () => {
+  it("reads Autumn on every call, keeping no cache of its own", async () => {
     const svc = makeService();
     mockEntityGet.mockRejectedValueOnce({ statusCode: 500 });
-    expect(await svc.getConcurrencyLimit("team-1", "org-1", limitsCache)).toBe(
-      200,
-    );
+    expect((await svc.getTeamLimits("team-1", "org-1")).failed).toBe(true);
 
-    // Autumn recovers on the next call; the earlier error must not be pinned.
     mockEntityGet.mockResolvedValue({
       balances: { CONCURRENCY: { remaining: 3 }, rate_limits: { granted: 10 } },
     });
-    expect(await svc.getConcurrencyLimit("team-1", "org-1", limitsCache)).toBe(
-      3,
-    );
-    expect(
-      await svc.getRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBe(10);
-  });
-  it("caches only Autumn's answers, never the fail-open fallback", async () => {
-    const svc = makeService();
-    mockEntityGet.mockRejectedValueOnce({ statusCode: 500 });
-    expect(await svc.getConcurrencyLimit("team-1", "org-1", limitsCache)).toBe(
-      200,
-    );
-    expect(await svc.getConcurrencyLimit("team-1", null, limitsCache)).toBe(
-      200,
-    );
-    expect(limitsCache.set).not.toHaveBeenCalled();
-
-    mockEntityGet.mockRejectedValueOnce({ statusCode: 404 });
-    expect(
-      await svc.getConcurrencyLimit("team-1", "org-1", limitsCache),
-    ).toBeNull();
-    expect(limitsCache.set).toHaveBeenCalledWith("team-1", "org-1", {
-      concurrency: null,
-      rateLimitMultiplier: null,
+    expect((await svc.getTeamLimits("team-1", "org-1")).limits).toEqual({
+      concurrency_limit: 3,
+      rate_limit_multiplier: 10,
+      limits_known: true,
     });
-
-    mockEntityGet.mockResolvedValueOnce({
-      balances: { CONCURRENCY: { remaining: 7 }, rate_limits: { granted: 25 } },
-    });
-    expect(await svc.getConcurrencyLimit("team-2", "org-1", limitsCache)).toBe(
-      7,
-    );
-    expect(limitsCache.set).toHaveBeenCalledWith("team-2", "org-1", {
-      concurrency: 7,
-      rateLimitMultiplier: 25,
-    });
-  });
-
-  it("answers from the cache without calling Autumn", async () => {
-    const svc = makeService();
-    limitsCache.entries.set("org-1:team-1", {
-      concurrency: 9,
-      rateLimitMultiplier: 50,
-    });
-
-    expect(await svc.getConcurrencyLimit("team-1", "org-1", limitsCache)).toBe(
-      9,
-    );
-    expect(
-      await svc.getRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBe(50);
-    expect(
-      await svc.getKnownRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBe(50);
-    expect(mockEntityGet).not.toHaveBeenCalled();
-    expect(limitsCache.set).not.toHaveBeenCalled();
-  });
-
-  it("consults no cache for a preview team or a team without an org", async () => {
-    const svc = makeService();
-
-    expect(
-      await svc.getConcurrencyLimit("preview_x", "org-1", limitsCache),
-    ).toBeNull();
-    expect(await svc.getConcurrencyLimit("team-1", null, limitsCache)).toBe(
-      200,
-    );
-    expect(limitsCache.get).not.toHaveBeenCalled();
-    expect(mockEntityGet).not.toHaveBeenCalled();
-  });
-
-  it("getKnownEntityLimits answers from the cache, else Autumn, and only when Autumn did", async () => {
-    const svc = makeService();
-    limitsCache.entries.set("org-1:team-1", {
-      concurrency: 9,
-      rateLimitMultiplier: 50,
-    });
-    expect(
-      await svc.getKnownEntityLimits("team-1", "org-1", limitsCache),
-    ).toEqual({ concurrency: 9, rateLimitMultiplier: 50 });
-    expect(mockEntityGet).not.toHaveBeenCalled();
-
-    mockEntityGet.mockResolvedValueOnce({
-      balances: { CONCURRENCY: { remaining: 7 }, rate_limits: { granted: 25 } },
-    });
-    expect(
-      await svc.getKnownEntityLimits("team-2", "org-1", limitsCache),
-    ).toEqual({ concurrency: 7, rateLimitMultiplier: 25 });
-    expect(limitsCache.set).toHaveBeenCalledWith("team-2", "org-1", {
-      concurrency: 7,
-      rateLimitMultiplier: 25,
-    });
-
-    mockEntityGet.mockRejectedValueOnce({ statusCode: 404 });
-    expect(
-      await svc.getKnownEntityLimits("team-3", "org-1", limitsCache),
-    ).toEqual({ concurrency: null, rateLimitMultiplier: null });
-
-    mockEntityGet.mockRejectedValueOnce({ statusCode: 500 });
-    expect(
-      await svc.getKnownEntityLimits("team-4", "org-1", limitsCache),
-    ).toBeUndefined();
-    expect(
-      await svc.getKnownEntityLimits("team-4", null, limitsCache),
-    ).toBeUndefined();
-    expect(
-      await svc.getKnownEntityLimits("preview_x", "org-1", limitsCache),
-    ).toBeUndefined();
+    await svc.getTeamLimits("team-1", "org-1");
     expect(mockEntityGet).toHaveBeenCalledTimes(3);
-    expect(limitsCache.set).not.toHaveBeenCalledWith(
-      "team-4",
-      expect.anything(),
-      expect.anything(),
-    );
+  });
+
+  it("answers unknown, low limits for a preview team without asking Autumn", async () => {
+    expect(await makeService().getTeamLimits("preview_x", "org-1")).toEqual({
+      limits: {
+        concurrency_limit: null,
+        rate_limit_multiplier: 1,
+        limits_known: false,
+      },
+      failed: false,
+    });
+    expect(mockEntityGet).not.toHaveBeenCalled();
   });
 });
 
@@ -2447,93 +2332,4 @@ describe("provisioning by route", () => {
       });
     },
   );
-});
-
-describe("getKnownRateLimitMultiplier (fail-closed plan reads)", () => {
-  it("isolates cached entitlements by organization while sharing reads within an organization", async () => {
-    const svc = makeService();
-    mockEntityGet
-      .mockResolvedValueOnce({ balances: { rate_limits: { granted: 25 } } })
-      .mockResolvedValueOnce({ balances: { rate_limits: { granted: 1 } } });
-    expect(
-      await svc.getRateLimitMultiplier("team-1", "org-a", limitsCache),
-    ).toBe(25);
-    expect(
-      await svc.getKnownRateLimitMultiplier("team-1", "org-b", limitsCache),
-    ).toBe(1);
-    expect(
-      await svc.getKnownRateLimitMultiplier("team-1", "org-a", limitsCache),
-    ).toBe(25);
-    expect(
-      await svc.getRateLimitMultiplier("team-1", "org-b", limitsCache),
-    ).toBe(1);
-    expect(mockEntityGet).toHaveBeenCalledTimes(2);
-    expect(mockEntityGet).toHaveBeenNthCalledWith(1, {
-      customerId: "org-a",
-      entityId: "team-1",
-    });
-    expect(mockEntityGet).toHaveBeenNthCalledWith(2, {
-      customerId: "org-b",
-      entityId: "team-1",
-    });
-  });
-
-  it("refuses a missing organization even after caching a paid entitlement", async () => {
-    const svc = makeService();
-    mockEntityGet.mockResolvedValue({
-      balances: { rate_limits: { granted: 25 } },
-    });
-    expect(
-      await svc.getKnownRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBe(25);
-    expect(
-      await svc.getKnownRateLimitMultiplier("team-1", null, limitsCache),
-    ).toBeNull();
-    expect(mockEntityGet).toHaveBeenCalledTimes(1);
-  });
-
-  it("answers the entitled multiplier, and 1 when the entity is missing or has no balance", async () => {
-    const svc = makeService();
-    mockEntityGet.mockResolvedValue({
-      balances: { rate_limits: { granted: 25 } },
-    });
-    expect(
-      await svc.getKnownRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBe(25);
-
-    const missing = makeService();
-    mockEntityGet.mockRejectedValue({ statusCode: 404 });
-    expect(
-      await missing.getKnownRateLimitMultiplier("team-2", "org-1", limitsCache),
-    ).toBe(1);
-
-    const bare = makeService();
-    mockEntityGet.mockResolvedValue({ balances: {} });
-    expect(
-      await bare.getKnownRateLimitMultiplier("team-3", "org-1", limitsCache),
-    ).toBe(1);
-  });
-
-  it("answers null, never the fail-open fallback, when Autumn errors, when there is no org, or for a preview team", async () => {
-    const svc = makeService();
-    mockEntityGet.mockRejectedValue({ statusCode: 500 });
-    expect(
-      await svc.getKnownRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBeNull();
-    // The throttling read still fails open on the same outage: the two callers
-    // want opposite failure directions from one entity read.
-    expect(
-      await svc.getRateLimitMultiplier("team-1", "org-1", limitsCache),
-    ).toBe(2500);
-
-    mockEntityGet.mockResolvedValue({
-      balances: { rate_limits: { granted: 25 } },
-    });
-    expect(
-      await svc.getKnownRateLimitMultiplier("team-4", null, limitsCache),
-    ).toBeNull();
-    expect(
-      await svc.getKnownRateLimitMultiplier("preview_x", "org-1", limitsCache),
-    ).toBeNull();
-  });
 });

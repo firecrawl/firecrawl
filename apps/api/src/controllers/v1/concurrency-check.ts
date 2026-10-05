@@ -19,9 +19,6 @@ export async function concurrencyCheckController(
     concurrency: activeJobsOfTeam,
     maxConcurrency: await getEffectiveConcurrencyLimit(
       req.auth.team_id,
-      // acuc is optional on the v1 request; null is the same org-less answer
-      // the limit already gave when it could not name one.
-      req.acuc?.org_id ?? null,
       req.acuc,
     ),
   });

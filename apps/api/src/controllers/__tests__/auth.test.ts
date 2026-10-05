@@ -1,11 +1,10 @@
 import { vi } from "vitest";
 import { createHmac } from "node:crypto";
 import {
-  acucEntityLimitsCache,
   authenticateUser,
   clearACUC,
-  clearACUCTeam,
   getACUCTeam,
+  getACUCTeamLimits,
 } from "../auth";
 import { config } from "../../config";
 import { RateLimiterMode } from "../../types";
@@ -14,12 +13,7 @@ import {
   authCreditUsageChunkFromTeam,
 } from "../../db/rpc";
 import { redlock } from "../../services/redlock";
-import {
-  deleteKey,
-  getValue,
-  replaceValue,
-  setValue,
-} from "../../services/redis";
+import { deleteKey, getValue, setValue } from "../../services/redis";
 import {
   getAutumnRateLimiter,
   getRateLimiter,
@@ -52,7 +46,6 @@ vi.mock("uuid", async importOriginal => ({
 vi.mock("../../services/redis", () => ({
   getValue: vi.fn(),
   setValue: vi.fn(),
-  replaceValue: vi.fn(),
   deleteKey: vi.fn(),
 }));
 
@@ -109,14 +102,24 @@ vi.mock("../../lib/spur", () => ({
 
 vi.mock("../../services/autumn/autumn.service", () => ({
   autumnService: {
-    getRateLimitMultiplier: vi.fn(),
-    getKnownEntityLimits: vi.fn(),
+    getTeamLimits: vi.fn(),
   },
 }));
 
 vi.mock("../../services/agent-sponsor", () => ({
   getAgentSponsorStatus: vi.fn(),
 }));
+
+function mockMultiplier(rate_limit_multiplier: number) {
+  vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+    limits: {
+      concurrency_limit: null,
+      rate_limit_multiplier,
+      limits_known: true,
+    },
+    failed: false,
+  });
+}
 
 describe("authenticateUser", () => {
   const originalUseDbAuth = config.USE_DB_AUTHENTICATION;
@@ -133,7 +136,7 @@ describe("authenticateUser", () => {
 
   beforeEach(() => {
     vi.mocked(isKeylessConfigured).mockReturnValue(false);
-    vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+    mockMultiplier(1);
     vi.mocked(getAutumnRateLimiter).mockReturnValue({
       consume: vi.fn().mockResolvedValue(undefined),
     } as never);
@@ -505,7 +508,7 @@ describe("authenticateUser", () => {
     vi.mocked(redlock.using).mockImplementation(
       async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
     );
-    vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+    mockMultiplier(1);
     const consume = vi.fn().mockResolvedValue(undefined);
     vi.mocked(getAutumnRateLimiter).mockReturnValue({ consume } as never);
 
@@ -542,7 +545,7 @@ describe("authenticateUser", () => {
         flags: null,
       },
     ]);
-    vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+    mockMultiplier(1);
     vi.mocked(getAutumnRateLimiter).mockReturnValue({
       consume: vi.fn().mockResolvedValue(undefined),
     } as never);
@@ -564,7 +567,11 @@ describe("authenticateUser", () => {
       "11111111-1111-1111-8111-111111111111",
       "hosted_mcp_oauth",
     );
-    expect(getValue).not.toHaveBeenCalled();
+    // The team's limits may come from the team ACUC, but the credential's
+    // own ACUC is never read from or written to Redis.
+    expect(getValue).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^acuc_(general|hosted_mcp_oauth)_/),
+    );
     expect(setValue).not.toHaveBeenCalled();
   });
 
@@ -769,7 +776,7 @@ describe("authenticateUser", () => {
     vi.mocked(redlock.using).mockImplementation(
       async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
     );
-    vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(50);
+    mockMultiplier(50);
 
     const auth = await authenticateUser(
       {
@@ -783,9 +790,8 @@ describe("authenticateUser", () => {
     );
 
     expect(auth.success).toBe(true);
-    // The override replaces the whole base × multiplier computation, so the
-    // Autumn multiplier is never fetched and a neutral 1 is passed instead.
-    expect(autumnService.getRateLimitMultiplier).not.toHaveBeenCalled();
+    // The override replaces the whole base × multiplier computation, so a
+    // neutral 1 is passed instead of the team's multiplier.
     expect(getAutumnRateLimiter).toHaveBeenCalledWith(
       RateLimiterMode.Scrape,
       1,
@@ -809,7 +815,7 @@ describe("authenticateUser", () => {
     vi.mocked(redlock.using).mockImplementation(
       async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
     );
-    vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(50);
+    mockMultiplier(50);
 
     const auth = await authenticateUser(
       {
@@ -823,7 +829,7 @@ describe("authenticateUser", () => {
     );
 
     expect(auth.success).toBe(true);
-    expect(autumnService.getRateLimitMultiplier).toHaveBeenCalledTimes(1);
+    expect(autumnService.getTeamLimits).toHaveBeenCalledTimes(1);
     expect(getAutumnRateLimiter).toHaveBeenCalledWith(
       RateLimiterMode.Scrape,
       50,
@@ -860,7 +866,7 @@ describe("authenticateUser", () => {
     });
 
     it("floors a free team's multiplier at hobby for a trusted agent request", async () => {
-      vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+      mockMultiplier(1);
 
       const auth = await authenticateUser(
         agentRequest("agent-secret"),
@@ -877,7 +883,7 @@ describe("authenticateUser", () => {
     });
 
     it("leaves a paid plan's multiplier alone for a trusted agent request", async () => {
-      vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(50);
+      mockMultiplier(50);
 
       await authenticateUser(
         agentRequest("agent-secret"),
@@ -893,7 +899,7 @@ describe("authenticateUser", () => {
     });
 
     it("does not floor the multiplier when the agent interop secret is wrong", async () => {
-      vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+      mockMultiplier(1);
 
       await authenticateUser(
         agentRequest("not-the-secret"),
@@ -910,7 +916,7 @@ describe("authenticateUser", () => {
 
     it("does not floor the multiplier when no agent interop secret is configured", async () => {
       config.AGENT_INTEROP_SECRET = undefined;
-      vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+      mockMultiplier(1);
 
       await authenticateUser(
         agentRequest("agent-secret"),
@@ -936,7 +942,7 @@ describe("authenticateUser", () => {
           flags: overrideFlags,
         },
       ]);
-      vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+      mockMultiplier(1);
 
       await authenticateUser(
         agentRequest("agent-secret"),
@@ -945,8 +951,7 @@ describe("authenticateUser", () => {
       );
 
       // The override replaces the whole base × multiplier computation, so the
-      // floor never applies and the Autumn multiplier is never fetched.
-      expect(autumnService.getRateLimitMultiplier).not.toHaveBeenCalled();
+      // floor never applies.
       expect(getAutumnRateLimiter).toHaveBeenCalledWith(
         RateLimiterMode.Scrape,
         1,
@@ -1074,10 +1079,9 @@ describe("authenticateUser", () => {
         allow,
       );
 
-      expect(autumnService.getRateLimitMultiplier).toHaveBeenCalledWith(
+      expect(autumnService.getTeamLimits).toHaveBeenCalledWith(
         "team-mcp",
         "org-mcp",
-        expect.anything(),
       );
       expect(consume).toHaveBeenCalledWith("team-mcp");
     });
@@ -1226,10 +1230,9 @@ describe("authenticateUser", () => {
       );
       if (!auth.success) throw new Error("expected fallback auth to succeed");
       expect(auth.chunk?.team_id).toBe("team-mcp");
-      expect(autumnService.getRateLimitMultiplier).toHaveBeenCalledWith(
+      expect(autumnService.getTeamLimits).toHaveBeenCalledWith(
         "team-mcp",
         "org-mcp",
-        expect.anything(),
       );
       expect(consume).toHaveBeenCalledWith("team-mcp");
       expect(JSON.stringify(auth)).not.toContain("attacker-team");
@@ -1359,10 +1362,25 @@ describe("authenticateUser", () => {
     );
   });
 
-  describe("Autumn limits in the ACUC", () => {
+  describe("Autumn limits on the ACUC", () => {
     const apiKey = "00000000-0000-4000-8000-000000000000";
-    const limits = { concurrency: 7, rateLimitMultiplier: 25 };
-    const cachedLimits = { ...limits, fetched_at: Date.now() };
+    const keyRow = {
+      api_key: apiKey,
+      api_key_id: 1,
+      team_id: "team-1",
+      org_id: "org-1",
+      flags: null,
+    };
+    const known = {
+      concurrency_limit: 7,
+      rate_limit_multiplier: 25,
+      limits_known: true,
+    };
+    const fallback = {
+      concurrency_limit: 200,
+      rate_limit_multiplier: 2500,
+      limits_known: false,
+    };
     const authRequest = {
       headers: { authorization: `Bearer ${apiKey}` },
       socket: { remoteAddress: "127.0.0.1" },
@@ -1370,33 +1388,21 @@ describe("authenticateUser", () => {
 
     beforeEach(() => {
       config.USE_DB_AUTHENTICATION = true;
+      vi.mocked(getValue).mockResolvedValue(null);
       vi.mocked(redlock.using).mockImplementation(
         async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
       );
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([keyRow] as never);
+      vi.mocked(authCreditUsageChunkFromTeam).mockResolvedValue([
+        keyRow,
+      ] as never);
     });
 
-    function teamChunk(extra: Record<string, unknown> = {}) {
-      return JSON.stringify({
-        api_key_id: 1,
-        team_id: "team-1",
-        org_id: "org-1",
-        flags: null,
-        ...extra,
+    it("builds the key ACUC with the team's limits and caches it for the full TTL", async () => {
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+        limits: known,
+        failed: false,
       });
-    }
-
-    it("stores the limits Autumn answered with in a freshly built ACUC", async () => {
-      vi.mocked(getValue).mockResolvedValue(null);
-      vi.mocked(authCreditUsageChunk).mockResolvedValue([
-        {
-          api_key: apiKey,
-          api_key_id: 1,
-          team_id: "team-1",
-          org_id: "org-1",
-          flags: null,
-        },
-      ] as never);
-      vi.mocked(autumnService.getKnownEntityLimits).mockResolvedValue(limits);
 
       const auth = await authenticateUser(
         authRequest,
@@ -1405,206 +1411,119 @@ describe("authenticateUser", () => {
       );
 
       expect(auth.success).toBe(true);
-      expect(autumnService.getKnownEntityLimits).toHaveBeenCalledWith(
+      expect(autumnService.getTeamLimits).toHaveBeenCalledTimes(1);
+      expect(autumnService.getTeamLimits).toHaveBeenCalledWith(
         "team-1",
         "org-1",
-        expect.anything(),
+      );
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        25,
+        null,
       );
       await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
-      expect(JSON.parse(vi.mocked(setValue).mock.calls[0][1])).toMatchObject({
-        team_id: "team-1",
-        autumn_limits: { ...limits, fetched_at: expect.any(Number) },
+      const [key, value, ttl] = vi.mocked(setValue).mock.calls[0];
+      expect(key).toBe(`acuc_general_${apiKey}_scrape`);
+      expect(JSON.parse(value)).toMatchObject(known);
+      expect(ttl).toBe(600);
+    });
+
+    it("serves the fail-open limits but caches them only briefly when Autumn fails", async () => {
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+        limits: fallback,
+        failed: true,
       });
-
-      // The rate limiter reads the multiplier from that chunk, not from Autumn.
-      const cache = vi.mocked(autumnService.getRateLimitMultiplier).mock
-        .calls[0][2];
-      vi.mocked(getValue).mockClear();
-      await expect(cache.get("team-1", "org-1")).resolves.toMatchObject(limits);
-      expect(getValue).not.toHaveBeenCalled();
-    });
-
-    it("caches the ACUC without limits when Autumn could not answer", async () => {
-      vi.mocked(getValue).mockResolvedValue(null);
-      vi.mocked(authCreditUsageChunk).mockResolvedValue([
-        {
-          api_key: apiKey,
-          api_key_id: 1,
-          team_id: "team-1",
-          org_id: "org-1",
-          flags: null,
-        },
-      ] as never);
-      vi.mocked(autumnService.getKnownEntityLimits).mockResolvedValue(
-        undefined,
-      );
-
-      const auth = await authenticateUser(
-        authRequest,
-        {},
-        RateLimiterMode.Scrape,
-      );
-
-      expect(auth.success).toBe(true);
-      await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
-      expect(
-        JSON.parse(vi.mocked(setValue).mock.calls[0][1]),
-      ).not.toHaveProperty("autumn_limits");
-    });
-
-    it("never asks Autumn while building an ACUC it does not cache", async () => {
-      config.MCP_DELEGATED_CREDENTIAL_SECRET = "mcp-delegation-secret";
-      vi.mocked(authCreditUsageChunk).mockResolvedValue([
-        {
-          api_key: apiKey,
-          api_key_id: 1,
-          team_id: "team-1",
-          org_id: "org-1",
-          flags: null,
-        },
-      ] as never);
-
-      const auth = await authenticateUser(
-        {
-          headers: {
-            authorization: `Bearer ${signDelegation()}`,
-          },
-          socket: { remoteAddress: "127.0.0.1" },
-        },
-        {},
-        RateLimiterMode.Scrape,
-      );
-
-      expect(auth.success).toBe(true);
-      expect(autumnService.getKnownEntityLimits).not.toHaveBeenCalled();
-    });
-
-    it("reads the team's ACUC when the chunk in hand predates the limits", async () => {
-      vi.mocked(getValue).mockResolvedValue(
-        teamChunk({ autumn_limits: cachedLimits }),
-      );
-      const oldChunk = JSON.parse(teamChunk({ api_key: apiKey }));
-
-      await expect(
-        acucEntityLimitsCache(oldChunk).get("team-1", "org-1"),
-      ).resolves.toEqual(cachedLimits);
-      expect(getValue).toHaveBeenCalledWith("acuc_team_team-1_scrape");
-    });
-
-    it("reports nothing cached when no ACUC carries the limits yet", async () => {
-      vi.mocked(getValue).mockResolvedValue(teamChunk());
-
-      await expect(
-        acucEntityLimitsCache().get("team-1", "org-1"),
-      ).resolves.toBeUndefined();
-    });
-
-    it("keeps the fetch time of limits copied from the team's ACUC", async () => {
-      const copied = { ...limits, fetched_at: Date.now() - 300_000 };
-      vi.mocked(getValue).mockResolvedValue(null);
-      vi.mocked(authCreditUsageChunk).mockResolvedValue([
-        {
-          api_key: apiKey,
-          api_key_id: 1,
-          team_id: "team-1",
-          org_id: "org-1",
-          flags: null,
-        },
-      ] as never);
-      vi.mocked(autumnService.getKnownEntityLimits).mockResolvedValue(copied);
 
       await authenticateUser(authRequest, {}, RateLimiterMode.Scrape);
 
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        2500,
+        null,
+      );
       await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
-      expect(
-        JSON.parse(vi.mocked(setValue).mock.calls[0][1]).autumn_limits,
-      ).toEqual(copied);
+      const [, value, ttl] = vi.mocked(setValue).mock.calls[0];
+      expect(JSON.parse(value)).toMatchObject(fallback);
+      expect(ttl).toBe(60);
     });
 
-    it("treats limits older than the ACUC TTL as missing", async () => {
-      const oldChunk = JSON.parse(
-        teamChunk({
-          api_key: apiKey,
-          autumn_limits: { ...limits, fetched_at: Date.now() - 601_000 },
-        }),
-      );
-      vi.mocked(getValue).mockResolvedValue(teamChunk());
-
-      await expect(
-        acucEntityLimitsCache(oldChunk).get("team-1", "org-1"),
-      ).resolves.toBeUndefined();
-    });
-
-    it("ignores limits cached for another org", async () => {
+    it("reads the limits off a cached ACUC without asking Autumn", async () => {
       vi.mocked(getValue).mockResolvedValue(
-        teamChunk({ autumn_limits: cachedLimits }),
+        JSON.stringify({ ...keyRow, ...known }),
       );
 
-      await expect(
-        acucEntityLimitsCache().get("team-1", "org-2"),
-      ).resolves.toBeUndefined();
-    });
+      await authenticateUser(authRequest, {}, RateLimiterMode.Scrape);
 
-    it("reports nothing cached when the team's ACUC cannot be read", async () => {
-      vi.mocked(getValue).mockResolvedValue(null);
-      vi.mocked(authCreditUsageChunkFromTeam).mockRejectedValue(
-        new Error("db down"),
+      expect(autumnService.getTeamLimits).not.toHaveBeenCalled();
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        25,
+        null,
       );
-
-      await expect(
-        acucEntityLimitsCache().get("team-1", "org-1"),
-      ).resolves.toBeUndefined();
-      expect(authCreditUsageChunkFromTeam).toHaveBeenCalledTimes(5);
-      vi.mocked(authCreditUsageChunkFromTeam).mockReset();
     });
 
-    it("fills the team's ACUC in place, keeping its expiry", async () => {
-      vi.mocked(getValue).mockResolvedValue(teamChunk());
+    it("does one live read for a cached ACUC that predates the limits, writing nothing back", async () => {
+      vi.mocked(getValue).mockResolvedValue(JSON.stringify(keyRow));
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+        limits: known,
+        failed: false,
+      });
 
-      acucEntityLimitsCache().set("team-1", "org-1", limits);
+      await authenticateUser(authRequest, {}, RateLimiterMode.Scrape);
 
-      await vi.waitFor(() => expect(replaceValue).toHaveBeenCalled());
-      const [key, value] = vi.mocked(replaceValue).mock.calls[0];
+      expect(autumnService.getTeamLimits).toHaveBeenCalledTimes(1);
+      expect(autumnService.getTeamLimits).toHaveBeenCalledWith(
+        "team-1",
+        "org-1",
+      );
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        25,
+        null,
+      );
+      expect(setValue).not.toHaveBeenCalled();
+    });
+
+    it("builds the team ACUC with the limits, briefly cached on failure", async () => {
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+        limits: fallback,
+        failed: true,
+      });
+
+      await expect(getACUCTeam("team-1")).resolves.toMatchObject(fallback);
+
+      await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
+      const [key, value, ttl] = vi.mocked(setValue).mock.calls[0];
       expect(key).toBe("acuc_team_team-1_scrape");
-      expect(JSON.parse(value)).toMatchObject({
-        team_id: "team-1",
-        autumn_limits: { ...limits, fetched_at: expect.any(Number) },
-      });
-      expect(setValue).not.toHaveBeenCalled();
+      expect(JSON.parse(value)).toMatchObject(fallback);
+      expect(ttl).toBe(60);
     });
 
-    it.each([
-      ["the team's ACUC is not cached", null],
-      [
-        "the ACUC already has limits",
-        teamChunk({ autumn_limits: cachedLimits }),
-      ],
-      ["the ACUC belongs to another org", teamChunk({ org_id: "org-2" })],
-    ])("leaves the team's ACUC alone when %s", async (_case, cached) => {
-      vi.mocked(getValue).mockResolvedValue(cached);
+    it("never asks Autumn while building an ACUC it does not cache", async () => {
+      await getACUCTeam("team-1", false, false);
 
-      acucEntityLimitsCache().set("team-1", "org-1", {
-        concurrency: 1,
-        rateLimitMultiplier: 1,
-      });
-
-      await vi.waitFor(() => expect(redlock.using).toHaveBeenCalled());
-      await new Promise(resolve => setImmediate(resolve));
-      expect(replaceValue).not.toHaveBeenCalled();
-      expect(setValue).not.toHaveBeenCalled();
+      expect(autumnService.getTeamLimits).not.toHaveBeenCalled();
     });
-  });
 
-  it("clears every team ACUC entry, which carries its Autumn limits", async () => {
-    await clearACUCTeam("team-1");
+    it("prefers the limits on the chunk in hand over the team's ACUC", async () => {
+      await expect(
+        getACUCTeamLimits("team-1", { ...keyRow, ...known }),
+      ).resolves.toEqual(known);
 
-    expect(vi.mocked(deleteKey).mock.calls.map(([key]) => key)).toEqual(
-      expect.arrayContaining([
-        "acuc_team_team-1_extract",
-        "acuc_team_team-1_scrape",
-        "acuc_team_team-1",
-      ]),
-    );
+      expect(getValue).not.toHaveBeenCalled();
+      expect(autumnService.getTeamLimits).not.toHaveBeenCalled();
+    });
+
+    it("reads the team's ACUC when the chunk in hand carries no limits", async () => {
+      vi.mocked(getValue).mockResolvedValue(
+        JSON.stringify({ ...keyRow, ...known }),
+      );
+
+      await expect(getACUCTeamLimits("team-1", keyRow)).resolves.toEqual(known);
+
+      expect(getValue).toHaveBeenCalledWith("acuc_team_team-1_scrape");
+      expect(autumnService.getTeamLimits).not.toHaveBeenCalled();
+    });
   });
 
   it("clears purpose-qualified and legacy ACUC cache entries", async () => {

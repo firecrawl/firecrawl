@@ -282,11 +282,7 @@ export async function crawlController(
       req.body.maxConcurrency !== undefined
         ? Math.min(
             req.body.maxConcurrency,
-            await getEffectiveConcurrencyLimit(
-              req.auth.team_id,
-              req.acuc?.org_id ?? null,
-              req.acuc,
-            ),
+            await getEffectiveConcurrencyLimit(req.auth.team_id, req.acuc),
           )
         : undefined,
     zeroDataRetention,
