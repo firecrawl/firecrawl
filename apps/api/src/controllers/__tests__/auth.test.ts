@@ -101,6 +101,7 @@ vi.mock("../../lib/spur", () => ({
 }));
 
 vi.mock("../../services/autumn/autumn.service", () => ({
+  FAIL_OPEN_RATE_LIMIT_MULTIPLIER: 2500,
   autumnService: {
     getTeamLimits: vi.fn(),
   },
