@@ -1338,10 +1338,10 @@ export type AuthCreditUsageChunk = {
   // appended on JS-side
   is_extract?: boolean;
 
-  // The team's Autumn limits, stored only when Autumn answered. Absent on
-  // entries cached before this field existed or built while Autumn was
-  // failing; readers treat that as "not cached yet".
-  autumn_limits?: EntityLimits;
+  // The team's Autumn limits, stored only when Autumn answered, with the time
+  // Autumn gave them. Absent on entries cached before this field existed or
+  // built while Autumn was failing; readers treat that as "not cached yet".
+  autumn_limits?: EntityLimits & { fetched_at: number };
 
   // Agent signup: populated when the key is agent-provisioned
   _agentSponsor?: {

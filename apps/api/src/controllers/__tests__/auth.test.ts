@@ -1362,6 +1362,7 @@ describe("authenticateUser", () => {
   describe("Autumn limits in the ACUC", () => {
     const apiKey = "00000000-0000-4000-8000-000000000000";
     const limits = { concurrency: 7, rateLimitMultiplier: 25 };
+    const cachedLimits = { ...limits, fetched_at: Date.now() };
     const authRequest = {
       headers: { authorization: `Bearer ${apiKey}` },
       socket: { remoteAddress: "127.0.0.1" },
@@ -1412,14 +1413,14 @@ describe("authenticateUser", () => {
       await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
       expect(JSON.parse(vi.mocked(setValue).mock.calls[0][1])).toMatchObject({
         team_id: "team-1",
-        autumn_limits: limits,
+        autumn_limits: { ...limits, fetched_at: expect.any(Number) },
       });
 
       // The rate limiter reads the multiplier from that chunk, not from Autumn.
       const cache = vi.mocked(autumnService.getRateLimitMultiplier).mock
         .calls[0][2];
       vi.mocked(getValue).mockClear();
-      await expect(cache.get("team-1", "org-1")).resolves.toEqual(limits);
+      await expect(cache.get("team-1", "org-1")).resolves.toMatchObject(limits);
       expect(getValue).not.toHaveBeenCalled();
     });
 
@@ -1480,13 +1481,13 @@ describe("authenticateUser", () => {
 
     it("reads the team's ACUC when the chunk in hand predates the limits", async () => {
       vi.mocked(getValue).mockResolvedValue(
-        teamChunk({ autumn_limits: limits }),
+        teamChunk({ autumn_limits: cachedLimits }),
       );
       const oldChunk = JSON.parse(teamChunk({ api_key: apiKey }));
 
       await expect(
         acucEntityLimitsCache(oldChunk).get("team-1", "org-1"),
-      ).resolves.toEqual(limits);
+      ).resolves.toEqual(cachedLimits);
       expect(getValue).toHaveBeenCalledWith("acuc_team_team-1_scrape");
     });
 
@@ -1498,9 +1499,45 @@ describe("authenticateUser", () => {
       ).resolves.toBeUndefined();
     });
 
+    it("keeps the fetch time of limits copied from the team's ACUC", async () => {
+      const copied = { ...limits, fetched_at: Date.now() - 300_000 };
+      vi.mocked(getValue).mockResolvedValue(null);
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([
+        {
+          api_key: apiKey,
+          api_key_id: 1,
+          team_id: "team-1",
+          org_id: "org-1",
+          flags: null,
+        },
+      ] as never);
+      vi.mocked(autumnService.getKnownEntityLimits).mockResolvedValue(copied);
+
+      await authenticateUser(authRequest, {}, RateLimiterMode.Scrape);
+
+      await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
+      expect(
+        JSON.parse(vi.mocked(setValue).mock.calls[0][1]).autumn_limits,
+      ).toEqual(copied);
+    });
+
+    it("treats limits older than the ACUC TTL as missing", async () => {
+      const oldChunk = JSON.parse(
+        teamChunk({
+          api_key: apiKey,
+          autumn_limits: { ...limits, fetched_at: Date.now() - 601_000 },
+        }),
+      );
+      vi.mocked(getValue).mockResolvedValue(teamChunk());
+
+      await expect(
+        acucEntityLimitsCache(oldChunk).get("team-1", "org-1"),
+      ).resolves.toBeUndefined();
+    });
+
     it("ignores limits cached for another org", async () => {
       vi.mocked(getValue).mockResolvedValue(
-        teamChunk({ autumn_limits: limits }),
+        teamChunk({ autumn_limits: cachedLimits }),
       );
 
       await expect(
@@ -1531,14 +1568,17 @@ describe("authenticateUser", () => {
       expect(key).toBe("acuc_team_team-1_scrape");
       expect(JSON.parse(value)).toMatchObject({
         team_id: "team-1",
-        autumn_limits: limits,
+        autumn_limits: { ...limits, fetched_at: expect.any(Number) },
       });
       expect(setValue).not.toHaveBeenCalled();
     });
 
     it.each([
       ["the team's ACUC is not cached", null],
-      ["the ACUC already has limits", teamChunk({ autumn_limits: limits })],
+      [
+        "the ACUC already has limits",
+        teamChunk({ autumn_limits: cachedLimits }),
+      ],
       ["the ACUC belongs to another org", teamChunk({ org_id: "org-2" })],
     ])("leaves the team's ACUC alone when %s", async (_case, cached) => {
       vi.mocked(getValue).mockResolvedValue(cached);

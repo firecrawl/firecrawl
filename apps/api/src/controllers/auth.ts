@@ -51,6 +51,8 @@ import {
 } from "../services/autumn/autumn.service";
 import { ReplyError } from "ioredis";
 
+const ACUC_TTL_SECONDS = 600;
+
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
   return isValidUuid(potentialUuid);
@@ -86,8 +88,12 @@ async function setCachedACUC(
         throw signal.error;
       }
 
-      // Cache for 10 minutes. - mogery
-      await setValue(cacheKeyACUC, JSON.stringify(acuc), 600, true);
+      await setValue(
+        cacheKeyACUC,
+        JSON.stringify(acuc),
+        ACUC_TTL_SECONDS,
+        true,
+      );
     });
   } catch (error) {
     logger.error("Error updating cached ACUC", {
@@ -263,11 +269,14 @@ async function getACUC(
 
     // NOTE: Should we cache null chunks? - mogery
     if (chunk !== null && useCache) {
-      chunk.autumn_limits = await autumnService.getKnownEntityLimits(
+      const limits = await autumnService.getKnownEntityLimits(
         chunk.team_id,
         chunk.org_id,
         acucEntityLimitsCache(),
       );
+      // Limits copied from the team's ACUC keep their own fetched_at, so the
+      // copy can never outlive the team's answer.
+      chunk.autumn_limits = limits && { fetched_at: Date.now(), ...limits };
       setCachedACUC(api_key, isExtract, chunk, credentialPurpose);
     }
 
@@ -313,8 +322,12 @@ async function setCachedACUCTeam(
         throw signal.error;
       }
 
-      // Cache for 10 minutes. - mogery
-      await setValue(cacheKeyACUC, JSON.stringify(acuc), 600, true);
+      await setValue(
+        cacheKeyACUC,
+        JSON.stringify(acuc),
+        ACUC_TTL_SECONDS,
+        true,
+      );
     });
   } catch (error) {
     logger.error("Error updating cached ACUC", {
@@ -445,7 +458,7 @@ export async function getACUCTeam(
  * Keeps a team's Autumn limits in its ACUC, so they share the ACUC's Redis TTL
  * and reset-acuc clears them. Reads the chunk in hand when it carries them,
  * else the team's chunk; a live read fills the team's chunk when it was built
- * without them.
+ * without them. Limits older than the ACUC TTL count as missing.
  */
 export function acucEntityLimitsCache(
   acuc?: AuthCreditUsageChunkFromTeam | null,
@@ -454,10 +467,15 @@ export function acucEntityLimitsCache(
     chunk: AuthCreditUsageChunkFromTeam | null | undefined,
     teamId: string,
     orgId: string,
-  ) =>
-    chunk?.team_id === teamId && chunk.org_id === orgId
-      ? chunk.autumn_limits
+  ) => {
+    const limits = chunk?.autumn_limits;
+    return chunk?.team_id === teamId &&
+      chunk.org_id === orgId &&
+      limits &&
+      Date.now() - limits.fetched_at < ACUC_TTL_SECONDS * 1000
+      ? limits
       : undefined;
+  };
 
   return {
     async get(teamId, orgId) {
@@ -475,8 +493,8 @@ export function acucEntityLimitsCache(
     },
     set(teamId, orgId, limits) {
       void setCachedACUCTeam(teamId, false, cached =>
-        cached?.org_id === orgId && !cached.autumn_limits
-          ? { ...cached, autumn_limits: limits }
+        cached?.org_id === orgId && !limitsOf(cached, teamId, orgId)
+          ? { ...cached, autumn_limits: { ...limits, fetched_at: Date.now() } }
           : null,
       );
     },
