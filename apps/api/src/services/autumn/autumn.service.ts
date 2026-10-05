@@ -828,8 +828,8 @@ export class AutumnService {
 
   /**
    * The team's limits from one uncached Autumn entity read, and its plan from
-   * a customer read made in parallel (the ACUC caches both). A 404 on either
-   * resolves to the low defaults. A team is on a paid plan when its org has an
+   * a customer read made in parallel (the ACUC caches both). An entity 404
+   * gives the low default limits; a customer 404 gives no paid plan. A team is on a paid plan when its org has an
    * active, non-add-on subscription to a plan outside FREE_PLAN_IDS. Throws
    * when Autumn errors or the team has no org.
    */

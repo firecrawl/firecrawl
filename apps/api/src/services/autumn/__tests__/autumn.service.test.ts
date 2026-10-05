@@ -843,16 +843,28 @@ describe("getTeamLimits", () => {
       "the balances are absent",
       () => mockEntityGet.mockResolvedValue({ balances: {} }),
     ],
-    [
-      "the customer is missing (404)",
-      () => mockCustomerGet.mockRejectedValue({ statusCode: 404 }),
-    ],
   ])("resolves to the low defaults when %s", async (_case, arrange) => {
     arrange();
 
     expect(await makeService().getTeamLimits("team-1", "org-1")).toEqual(
       lowDefaults,
     );
+  });
+
+  it("keeps the entity's limits but reports no paid plan when the customer is missing (404)", async () => {
+    mockEntityGet.mockResolvedValue({
+      balances: {
+        CONCURRENCY: { remaining: 7 },
+        rate_limits: { granted: 25 },
+      },
+    });
+    mockCustomerGet.mockRejectedValue({ statusCode: 404 });
+
+    expect(await makeService().getTeamLimits("team-1", "org-1")).toEqual({
+      concurrency_limit: 7,
+      rate_limit_multiplier: 25,
+      is_paid_plan: false,
+    });
   });
 
   it.each([
