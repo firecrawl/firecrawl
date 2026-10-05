@@ -13,7 +13,6 @@ import {
 import {
   addCrawlJobs,
   finishCrawlKickoff,
-  getCrawl,
   lockURLs,
   markCrawlActive,
   saveCrawl,
@@ -55,6 +54,7 @@ import {
   initializeRequestCredits,
   requestCreditsShards,
 } from "../../lib/request-credits-store";
+import { validateBatchAppend } from "../../lib/batch-append";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -65,6 +65,20 @@ export async function batchScrapeController(
     req.body = batchScrapeRequestSchemaNoURLValidation.parse(req.body);
   } else {
     req.body = batchScrapeRequestSchema.parse(req.body);
+  }
+
+  let appendCrawl: StoredCrawl | undefined;
+  if (req.body.appendToId) {
+    const append = await validateBatchAppend(
+      req.body.appendToId,
+      req.auth.team_id,
+    );
+    if ("error" in append) {
+      return res
+        .status(append.status)
+        .json({ success: false, error: append.error });
+    }
+    appendCrawl = append.crawl;
   }
 
   // Batch has many URLs; per-URL allowlist is applied at the scrapeURL backstop.
@@ -390,7 +404,7 @@ export async function batchScrapeController(
   }
 
   const sc: StoredCrawl = req.body.appendToId
-    ? ((await getCrawl(req.body.appendToId)) as StoredCrawl)
+    ? appendCrawl!
     : {
         crawlerOptions: null,
         scrapeOptions: req.body,
@@ -421,12 +435,6 @@ export async function batchScrapeController(
       };
 
   if (req.body.appendToId) {
-    if (!sc || sc.team_id !== req.auth.team_id) {
-      return res.status(404).json({
-        success: false,
-        error: "Job not found",
-      });
-    }
     // Refresh Safe Mode + threat-protection context so appended jobs enforce
     // the team's current policy, not whatever was stored when the batch was
     // first created.
@@ -492,6 +500,17 @@ export async function batchScrapeController(
     },
     priority: jobPriority,
   }));
+
+  // Request preparation can outlast the original batch. Recheck before adding
+  // any URL/job bookkeeping; this is a precondition check, not an enqueue lock.
+  if (req.body.appendToId) {
+    const append = await validateBatchAppend(id, req.auth.team_id);
+    if ("error" in append) {
+      return res
+        .status(append.status)
+        .json({ success: false, error: append.error });
+    }
+  }
 
   await finishCrawlKickoff(id);
 
