@@ -964,7 +964,7 @@ async function supaAuthenticateUser(
   // Banned teams are rejected here, where the mcp / OAuth / API-key paths
   // converge. Ban enforcement used to rely on auth_credit_usage_chunk zeroing
   // the rate_limits payload, but authenticated limiting now derives from Autumn
-  // and never reads that field, so bans went unenforced. auth_chunk_1 surfaces
+  // and never reads that field, so bans went unenforced. auth_chunk_2 surfaces
   // teams.banned as is_banned and we deny it explicitly.
   if (chunk?.is_banned) {
     return {

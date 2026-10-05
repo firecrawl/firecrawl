@@ -981,7 +981,7 @@ describe("authenticateUser", () => {
       vi.mocked(redlock.using).mockImplementation(
         async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
       );
-      // Mirrors auth_chunk_1: a row only when the key's purpose matches.
+      // Mirrors auth_chunk_2: a row only when the key's purpose matches.
       vi.mocked(authCreditUsageChunk).mockImplementation(
         async (_db, key, purpose = "general") =>
           key === managedKey && purpose === "hosted_mcp_oauth"
