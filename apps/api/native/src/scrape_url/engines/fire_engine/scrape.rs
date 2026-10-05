@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use url::Url;
@@ -13,7 +12,7 @@ use super::super::super::{
   raw_page::ScrapeActionContent,
 };
 
-use super::{FireEngine, file::FireEngineScrapeFile};
+use super::{FireEngine, client, file::FireEngineScrapeFile};
 
 #[derive(Debug, Serialize)]
 pub enum FireEngineScrapeRequestEngine {
@@ -71,8 +70,34 @@ pub struct FireEngineScrapeRequest<'a> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum FireEngineCompletedState {
+  Completed,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum FireEngineProcessingState {
+  Delayed,
+  Active,
+  Waiting,
+  WaitingChildren,
+  Unknown,
+  Prioritized,
+  Pending,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum FireEngineFailedState {
+  Failed,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FireEngineScrapeCompleted {
+  state: Option<FireEngineCompletedState>,
+
   /// Only `Some` if we are deferring deletion.
   pub job_id: Option<String>,
 
@@ -103,6 +128,8 @@ pub struct FireEngineScrapeCompleted {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FireEngineScrapeProcessing {
+  state: Option<FireEngineProcessingState>,
+
   pub job_id: String,
 
   // yeah sure we don't read this but we still need it for untagged to work properly
@@ -113,17 +140,31 @@ pub struct FireEngineScrapeProcessing {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FireEngineScrapeFailed {
+  state: Option<FireEngineFailedState>,
+
   pub error: String,
   #[serde(default)]
   pub retry_with_stealth: bool,
 }
 
+/// Response of both `POST /scrape` and `GET /scrape/:id`. Only the poll sends
+/// `state`; when present it must belong to the variant being parsed.
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum FireEngineScrapeResponse {
   Completed(FireEngineScrapeCompleted),
   Processing(FireEngineScrapeProcessing),
   Failed(FireEngineScrapeFailed),
+}
+
+impl FireEngineScrapeResponse {
+  pub fn has_state(&self) -> bool {
+    match self {
+      Self::Completed(x) => x.state.is_some(),
+      Self::Processing(x) => x.state.is_some(),
+      Self::Failed(x) => x.state.is_some(),
+    }
+  }
 }
 
 impl FireEngine {
@@ -142,9 +183,8 @@ impl FireEngine {
     &self,
     request: FireEngineScrapeRequest<'a>,
   ) -> Result<FireEngineScrapeResponse, ScrapeURLError> {
-    let client = Client::new(); // TODO: should we cache this
     // TODO: retries may be good here
-    let res = client
+    let res = client()?
       .post(format!("{}/scrape", self.url))
       .json(&request)
       .send()

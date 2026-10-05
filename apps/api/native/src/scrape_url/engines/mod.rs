@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use regex::Regex;
 
 use self::{fetch::FetchEngine, fire_engine::FireEngine, playwright::PlaywrightEngine};
@@ -8,6 +10,7 @@ use super::{
   error::ScrapeURLError,
   feature_flags::ConstFeatureFlags,
   meta::Meta,
+  options::ProxyMode,
   raw_page::{RawPageResult, ScrapeProxy, raw_page_span, record_raw_page},
 };
 
@@ -50,6 +53,11 @@ impl EngineKind {
       EngineKind::FireEngine(_) => fire_engine::FireEngine::FEATURES,
       EngineKind::Playwright(_) => playwright::PlaywrightEngine::FEATURES,
     }
+  }
+
+  /// Only fire-engine can route through enhanced proxies; the others ignore the proxy.
+  pub fn supports_enhanced_proxy(&self) -> bool {
+    matches!(self, EngineKind::FireEngine(_))
   }
 
   pub fn special_regex(&self) -> Option<&'static Regex> {
@@ -99,6 +107,18 @@ impl EngineKind {
   }
 }
 
+/// Returns the client stored in `cell`, building it on first use. A failed build
+/// is returned as an error and retried on the next call.
+fn shared_client(
+  cell: &'static OnceLock<reqwest::Client>,
+) -> Result<&'static reqwest::Client, reqwest::Error> {
+  if let Some(client) = cell.get() {
+    return Ok(client);
+  }
+  let client = reqwest::Client::builder().build()?;
+  Ok(cell.get_or_init(|| client))
+}
+
 pub async fn get_main_engine() -> EngineKind {
   if let Some(fire_engine) = FireEngine::get().await {
     fire_engine
@@ -119,6 +139,27 @@ impl<T> EngineOutcome<T> {
     match self {
       Self::Scraped(x) => EngineOutcome::Scraped(f(x)),
       Self::ProxyElevationNeeded => EngineOutcome::ProxyElevationNeeded,
+    }
+  }
+}
+
+/// Whether a basic-proxy attempt in `auto` mode should be retried once with
+/// enhanced proxies: the engine asked for it, or the page status (401/403/429)
+/// suggests the basic proxy was inadequate and the engine can switch proxies.
+pub fn should_elevate_proxy(
+  mode: ProxyMode,
+  attempted: ScrapeProxy,
+  engine_supports_enhanced: bool,
+  outcome: &EngineOutcome<RawPageResult>,
+) -> bool {
+  if mode != ProxyMode::Auto || attempted != ScrapeProxy::Basic {
+    return false;
+  }
+
+  match outcome {
+    EngineOutcome::ProxyElevationNeeded => true,
+    EngineOutcome::Scraped(result) => {
+      engine_supports_enhanced && matches!(result.status_code, 401 | 403 | 429)
     }
   }
 }

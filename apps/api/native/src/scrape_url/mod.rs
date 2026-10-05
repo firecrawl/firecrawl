@@ -7,11 +7,11 @@ use url::Url;
 
 use self::{
   document::{Document, DocumentMetadataCacheState},
-  engines::{EngineOutcome, get_main_engine},
+  engines::{EngineOutcome, get_main_engine, should_elevate_proxy},
   error::ScrapeURLError,
   index::{Index, should_use_index},
   meta::Meta,
-  options::{InternalOptions, ProxyMode, ScrapeOptions},
+  options::{InternalOptions, ScrapeOptions},
   raw_page::{RawPage, RawPageSource, ScrapeProxy},
   transformers::execute_tranformers,
 };
@@ -91,7 +91,19 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
     None => {
       let main_engine = get_main_engine().await;
 
-      match main_engine.scrape(&meta, discrete_proxy).await? {
+      let mut outcome = main_engine.scrape(&meta, discrete_proxy).await?;
+
+      if should_elevate_proxy(
+        meta.options.proxy,
+        discrete_proxy,
+        main_engine.supports_enhanced_proxy(),
+        &outcome,
+      ) {
+        tracing::info!("Retrying main engine with enhanced proxies");
+        outcome = main_engine.scrape(&meta, ScrapeProxy::Enhanced).await?;
+      }
+
+      match outcome {
         EngineOutcome::Scraped(result) => RawPage {
           source: RawPageSource::Engine(
             main_engine,
@@ -100,30 +112,6 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
           result,
           index_attempted: should_use_index,
         },
-
-        // If basic proxy failed due to proxy error, and proxy mode is auto,
-        // retry the main engine with enhanced proxies.
-        EngineOutcome::ProxyElevationNeeded
-          if meta.options.proxy == ProxyMode::Auto
-            && discrete_proxy == ScrapeProxy::Basic =>
-        {
-          match main_engine
-            .scrape(&meta, ScrapeProxy::Enhanced)
-            .await?
-          {
-            EngineOutcome::Scraped(result) => RawPage {
-              source: RawPageSource::Engine(
-                main_engine,
-                HashSet::new(), // TODO
-              ),
-              result,
-              index_attempted: should_use_index,
-            },
-            EngineOutcome::ProxyElevationNeeded => {
-              return Err(ScrapeURLError::ReliableRetrievalError(meta.options.proxy));
-            }
-          }
-        }
         EngineOutcome::ProxyElevationNeeded => {
           return Err(ScrapeURLError::ReliableRetrievalError(meta.options.proxy));
         }

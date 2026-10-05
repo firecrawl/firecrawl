@@ -1,4 +1,7 @@
-use std::{sync::LazyLock, time::Duration};
+use std::{
+  sync::{LazyLock, OnceLock},
+  time::Duration,
+};
 
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -6,7 +9,6 @@ use tracing::{Instrument, instrument};
 
 use self::{
   actions::{FireEngineActionResultCookie, FireEngineActionResultKind},
-  check_status::FireEngineScrapeStatus,
   scrape::{
     FireEnginePersistentStorage, FireEngineScrapeRequest, FireEngineScrapeRequestEngine,
     FireEngineScrapeResponse,
@@ -40,6 +42,12 @@ static FIRE_ENGINE_BETA_URL: LazyLock<Option<String>> = LazyLock::new(|| {
     None
   }
 });
+
+static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn client() -> Result<&'static reqwest::Client, reqwest::Error> {
+  super::shared_client(&CLIENT)
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct FireEngine {
@@ -166,11 +174,11 @@ impl FireEngine {
       FireEngineScrapeResponse::Completed(x) => (x.job_id.clone(), Ok(x)),
       FireEngineScrapeResponse::Processing(x) => loop {
         match self.call_check_status(&x.job_id).await? {
-          FireEngineScrapeStatus::Completed(y) => break (Some(x.job_id), Ok(y)),
-          FireEngineScrapeStatus::Processing(_) => {
+          FireEngineScrapeResponse::Completed(y) => break (Some(x.job_id), Ok(y)),
+          FireEngineScrapeResponse::Processing(_) => {
             tokio::time::sleep(Duration::from_millis(500)).await;
           }
-          FireEngineScrapeStatus::Failed(e) => break (Some(x.job_id.clone()), Err(e)),
+          FireEngineScrapeResponse::Failed(e) => break (Some(x.job_id.clone()), Err(e)),
         }
       },
       FireEngineScrapeResponse::Failed(e) => (None, Err(e)),
