@@ -13,8 +13,8 @@ import {
   cleanOldConcurrencyLimitEntries,
   getConcurrencyLimitActiveJobsCount,
   getConcurrencyQueueJobsCount,
-  getEffectiveConcurrencyLimit,
 } from "../../lib/concurrency-limit";
+import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 type QueueStatusResponse = {
   success: boolean;
@@ -77,10 +77,8 @@ export async function queueStatusController(
     jobsInQueue: activeJobsOfTeam + queuedJobsOfTeam,
     activeJobsInQueue: activeJobsOfTeam,
     waitingJobsInQueue: queuedJobsOfTeam,
-    maxConcurrency: await getEffectiveConcurrencyLimit(
-      req.auth.team_id,
-      req.acuc?.org_id ?? null,
-    ),
+    maxConcurrency:
+      req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit,
 
     mostRecentSuccess: mostRecentSuccess
       ? new Date(mostRecentSuccess).toISOString()

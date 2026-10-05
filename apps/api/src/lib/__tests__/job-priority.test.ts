@@ -1,11 +1,8 @@
 import type { Mock } from "vitest";
 import { vi } from "vitest";
 
-// Hermetic: job-priority talks to services/redis (not queue-service) and to
-// Autumn, so both are stubbed here. controllers/auth is stubbed too and
-// asserted never to be called — the org is the caller's to pass, because
-// getJobPriority runs once per discovered link inside a crawl and must not
-// turn into a Redis GET per link.
+// Hermetic: job-priority talks to services/redis (not queue-service) and reads
+// the team's limits off its ACUC, so both are stubbed here.
 vi.mock("../../services/redis", () => ({
   redisEvictConnection: {
     sadd: vi.fn(),
@@ -15,14 +12,12 @@ vi.mock("../../services/redis", () => ({
   },
 }));
 
-vi.mock("../../services/autumn/autumn.service", () => ({
-  autumnService: {
-    getRateLimitMultiplier: vi.fn(),
-  },
-}));
-
 vi.mock("../../controllers/auth", () => ({
   getACUCTeam: vi.fn(),
+}));
+
+vi.mock("../../services/autumn/autumn.service", () => ({
+  DEFAULT_TEAM_LIMITS: { concurrency_limit: 2, rate_limit_multiplier: 1 },
 }));
 
 import {
@@ -31,11 +26,15 @@ import {
   deleteJobPriority,
 } from "../job-priority";
 import { redisEvictConnection } from "../../services/redis";
-import { autumnService } from "../../services/autumn/autumn.service";
 import { getACUCTeam } from "../../controllers/auth";
 import {} from "../../types";
 
-const getRateLimitMultiplier = autumnService.getRateLimitMultiplier as Mock;
+function mockMultiplier(rate_limit_multiplier: number) {
+  vi.mocked(getACUCTeam).mockResolvedValue({
+    team_id: "team1",
+    rate_limit_multiplier,
+  } as never);
+}
 
 // Multipliers that land on the plan tiers the priority cases below assume.
 const STANDARD_MULTIPLIER = 50;
@@ -43,7 +42,7 @@ const HOBBY_MULTIPLIER = 10;
 const FREE_MULTIPLIER = 1;
 
 beforeEach(() => {
-  getRateLimitMultiplier.mockResolvedValue(FREE_MULTIPLIER);
+  mockMultiplier(FREE_MULTIPLIER);
 });
 
 describe("Job Priority Tests", () => {
@@ -77,36 +76,36 @@ describe("Job Priority Tests", () => {
 
   test("getJobPriority should return correct priority based on plan and set length", async () => {
     const team_id = "team1";
-    getRateLimitMultiplier.mockResolvedValue(STANDARD_MULTIPLIER);
+    mockMultiplier(STANDARD_MULTIPLIER);
     (redisEvictConnection.scard as Mock).mockResolvedValue(150);
 
-    const priority = await getJobPriority({ team_id, org_id: null });
+    const priority = await getJobPriority({ team_id });
     expect(priority).toBe(10);
 
     (redisEvictConnection.scard as Mock).mockResolvedValue(250);
-    const priorityExceeded = await getJobPriority({ team_id, org_id: null });
+    const priorityExceeded = await getJobPriority({ team_id });
     expect(priorityExceeded).toBe(20); // basePriority + Math.ceil((250 - 200) * 0.2)
   });
 
   test("getJobPriority should handle different plans correctly", async () => {
     const team_id = "team1";
 
-    getRateLimitMultiplier.mockResolvedValue(HOBBY_MULTIPLIER);
+    mockMultiplier(HOBBY_MULTIPLIER);
     (redisEvictConnection.scard as Mock).mockResolvedValue(50);
-    let priority = await getJobPriority({ team_id, org_id: null });
+    let priority = await getJobPriority({ team_id });
     expect(priority).toBe(10);
 
     (redisEvictConnection.scard as Mock).mockResolvedValue(150);
-    priority = await getJobPriority({ team_id, org_id: null });
+    priority = await getJobPriority({ team_id });
     expect(priority).toBe(25); // basePriority + Math.ceil((150 - 100) * 0.3)
 
-    getRateLimitMultiplier.mockResolvedValue(FREE_MULTIPLIER);
+    mockMultiplier(FREE_MULTIPLIER);
     (redisEvictConnection.scard as Mock).mockResolvedValue(25);
-    priority = await getJobPriority({ team_id, org_id: null });
+    priority = await getJobPriority({ team_id });
     expect(priority).toBe(10);
 
     (redisEvictConnection.scard as Mock).mockResolvedValue(60);
-    priority = await getJobPriority({ team_id, org_id: null });
+    priority = await getJobPriority({ team_id });
     expect(priority).toBe(28); // basePriority + Math.ceil((60 - 25) * 0.5)
   });
 
@@ -165,25 +164,24 @@ describe("Job Priority Tests", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Where the org comes from: the caller, and nowhere else.
+// Where the multiplier comes from: the caller's ACUC when it holds one.
 // ---------------------------------------------------------------------------
 
-describe("the org the caller supplies", () => {
-  it("goes straight to the rate-limit multiplier, with no ACUC lookup", async () => {
-    (redisEvictConnection.scard as Mock).mockResolvedValue(1);
+describe("the ACUC the caller supplies", () => {
+  it("reads the multiplier off the ACUC the caller holds", async () => {
+    // 2500 lands on the top tier: no penalty at this set size.
+    (redisEvictConnection.scard as Mock).mockResolvedValue(250);
+    const acuc = { team_id: "team1", rate_limit_multiplier: 2500 } as never;
 
-    await getJobPriority({ team_id: "team1", org_id: "org-1" });
-
-    expect(getRateLimitMultiplier).toHaveBeenCalledWith("team1", "org-1");
+    expect(await getJobPriority({ team_id: "team1", acuc })).toBe(10);
     expect(getACUCTeam).not.toHaveBeenCalled();
   });
 
-  it("passes a null org through as the caller gave it", async () => {
+  it("reads the team's ACUC when the caller holds none", async () => {
     (redisEvictConnection.scard as Mock).mockResolvedValue(1);
 
-    await getJobPriority({ team_id: "team1", org_id: null });
+    await getJobPriority({ team_id: "team1" });
 
-    expect(getRateLimitMultiplier).toHaveBeenCalledWith("team1", null);
-    expect(getACUCTeam).not.toHaveBeenCalled();
+    expect(getACUCTeam).toHaveBeenCalledWith("team1");
   });
 });

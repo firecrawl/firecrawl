@@ -3,7 +3,11 @@ import { Request, Response } from "express";
 import { autumnService } from "../../services/autumn/autumn.service";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode, AuthResponse } from "../../types";
-import { TeamFlags, toLegacyDocument, url as urlSchema } from "../v1/types";
+import {
+  AuthCreditUsageChunk,
+  toLegacyDocument,
+  url as urlSchema,
+} from "../v1/types";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist"; // Import the isUrlBlocked function
 import {
   defaultPageOptions,
@@ -44,9 +48,7 @@ async function scrapeHelper(
   pageOptions: PageOptions,
   extractorOptions: ExtractorOptions,
   timeout: number,
-  flags: TeamFlags,
-  org_id: string | null,
-  apiKeyId: number | null,
+  acuc: AuthCreditUsageChunk | null,
 ): Promise<{
   success: boolean;
   error?: string;
@@ -73,9 +75,9 @@ async function scrapeHelper(
   }
 
   if (
-    isUrlBlocked(url, flags, {
+    isUrlBlocked(url, acuc?.flags ?? null, {
       team_id,
-      org_id,
+      org_id: acuc?.org_id ?? null,
       origin: req.body?.origin ?? null,
     })
   ) {
@@ -94,7 +96,7 @@ async function scrapeHelper(
     team_id,
   );
 
-  internalOptions.orgId = org_id;
+  internalOptions.orgId = acuc?.org_id ?? null;
   internalOptions.saveScrapeResultToGCS = process.env
     .GCS_FIRE_ENGINE_BUCKET_NAME
     ? true
@@ -116,10 +118,10 @@ async function scrapeHelper(
       },
       startTime: Date.now(),
       zeroDataRetention: false, // not supported on v0
-      apiKeyId,
+      apiKeyId: acuc?.api_key_id ?? null,
     },
     jobId,
-    await getJobPriority({ team_id, org_id, basePriority: 10 }),
+    await getJobPriority({ team_id, acuc, basePriority: 10 }),
     false,
     true,
   );
@@ -322,9 +324,7 @@ export async function scrapeController(req: Request, res: Response) {
       pageOptions,
       extractorOptions,
       timeout,
-      chunk?.flags ?? null,
-      chunk?.org_id ?? null,
-      chunk?.api_key_id ?? null,
+      chunk,
     );
 
     let doc = result.data;
