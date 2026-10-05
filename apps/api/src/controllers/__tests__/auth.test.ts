@@ -110,7 +110,7 @@ vi.mock("../../lib/spur", () => ({
 vi.mock("../../services/autumn/autumn.service", () => ({
   autumnService: {
     getRateLimitMultiplier: vi.fn(),
-    fetchKnownEntityLimits: vi.fn(),
+    getKnownEntityLimits: vi.fn(),
   },
 }));
 
@@ -1395,7 +1395,7 @@ describe("authenticateUser", () => {
           flags: null,
         },
       ] as never);
-      vi.mocked(autumnService.fetchKnownEntityLimits).mockResolvedValue(limits);
+      vi.mocked(autumnService.getKnownEntityLimits).mockResolvedValue(limits);
 
       const auth = await authenticateUser(
         authRequest,
@@ -1404,9 +1404,10 @@ describe("authenticateUser", () => {
       );
 
       expect(auth.success).toBe(true);
-      expect(autumnService.fetchKnownEntityLimits).toHaveBeenCalledWith(
+      expect(autumnService.getKnownEntityLimits).toHaveBeenCalledWith(
         "team-1",
         "org-1",
+        expect.anything(),
       );
       await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
       expect(JSON.parse(vi.mocked(setValue).mock.calls[0][1])).toMatchObject({
@@ -1433,7 +1434,7 @@ describe("authenticateUser", () => {
           flags: null,
         },
       ] as never);
-      vi.mocked(autumnService.fetchKnownEntityLimits).mockResolvedValue(
+      vi.mocked(autumnService.getKnownEntityLimits).mockResolvedValue(
         undefined,
       );
 
@@ -1474,7 +1475,7 @@ describe("authenticateUser", () => {
       );
 
       expect(auth.success).toBe(true);
-      expect(autumnService.fetchKnownEntityLimits).not.toHaveBeenCalled();
+      expect(autumnService.getKnownEntityLimits).not.toHaveBeenCalled();
     });
 
     it("reads the team's ACUC when the chunk in hand predates the limits", async () => {
@@ -1509,13 +1510,15 @@ describe("authenticateUser", () => {
 
     it("reports nothing cached when the team's ACUC cannot be read", async () => {
       vi.mocked(getValue).mockResolvedValue(null);
-      vi.mocked(authCreditUsageChunkFromTeam).mockRejectedValueOnce(
+      vi.mocked(authCreditUsageChunkFromTeam).mockRejectedValue(
         new Error("db down"),
       );
 
       await expect(
         acucEntityLimitsCache().get("team-1", "org-1"),
       ).resolves.toBeUndefined();
+      expect(authCreditUsageChunkFromTeam).toHaveBeenCalledTimes(5);
+      vi.mocked(authCreditUsageChunkFromTeam).mockReset();
     });
 
     it("fills the team's ACUC in place, keeping its expiry", async () => {

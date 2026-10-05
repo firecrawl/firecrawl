@@ -263,9 +263,10 @@ async function getACUC(
 
     // NOTE: Should we cache null chunks? - mogery
     if (chunk !== null && useCache) {
-      chunk.autumn_limits = await autumnService.fetchKnownEntityLimits(
+      chunk.autumn_limits = await autumnService.getKnownEntityLimits(
         chunk.team_id,
         chunk.org_id,
+        acucEntityLimitsCache(),
       );
       setCachedACUC(api_key, isExtract, chunk, credentialPurpose);
     }

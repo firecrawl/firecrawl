@@ -919,33 +919,49 @@ describe("entity limits fallback", () => {
     expect(mockEntityGet).not.toHaveBeenCalled();
   });
 
-  it("fetchKnownEntityLimits reads Autumn live and answers only when Autumn did", async () => {
+  it("getKnownEntityLimits answers from the cache, else Autumn, and only when Autumn did", async () => {
     const svc = makeService();
     limitsCache.entries.set("org-1:team-1", {
       concurrency: 9,
       rateLimitMultiplier: 50,
     });
+    expect(
+      await svc.getKnownEntityLimits("team-1", "org-1", limitsCache),
+    ).toEqual({ concurrency: 9, rateLimitMultiplier: 50 });
+    expect(mockEntityGet).not.toHaveBeenCalled();
+
     mockEntityGet.mockResolvedValueOnce({
       balances: { CONCURRENCY: { remaining: 7 }, rate_limits: { granted: 25 } },
     });
-    expect(await svc.fetchKnownEntityLimits("team-1", "org-1")).toEqual({
+    expect(
+      await svc.getKnownEntityLimits("team-2", "org-1", limitsCache),
+    ).toEqual({ concurrency: 7, rateLimitMultiplier: 25 });
+    expect(limitsCache.set).toHaveBeenCalledWith("team-2", "org-1", {
       concurrency: 7,
       rateLimitMultiplier: 25,
     });
 
     mockEntityGet.mockRejectedValueOnce({ statusCode: 404 });
-    expect(await svc.fetchKnownEntityLimits("team-1", "org-1")).toEqual({
-      concurrency: null,
-      rateLimitMultiplier: null,
-    });
+    expect(
+      await svc.getKnownEntityLimits("team-3", "org-1", limitsCache),
+    ).toEqual({ concurrency: null, rateLimitMultiplier: null });
 
     mockEntityGet.mockRejectedValueOnce({ statusCode: 500 });
-    expect(await svc.fetchKnownEntityLimits("team-1", "org-1")).toBeUndefined();
-    expect(await svc.fetchKnownEntityLimits("team-1", null)).toBeUndefined();
     expect(
-      await svc.fetchKnownEntityLimits("preview_x", "org-1"),
+      await svc.getKnownEntityLimits("team-4", "org-1", limitsCache),
+    ).toBeUndefined();
+    expect(
+      await svc.getKnownEntityLimits("team-4", null, limitsCache),
+    ).toBeUndefined();
+    expect(
+      await svc.getKnownEntityLimits("preview_x", "org-1", limitsCache),
     ).toBeUndefined();
     expect(mockEntityGet).toHaveBeenCalledTimes(3);
+    expect(limitsCache.set).not.toHaveBeenCalledWith(
+      "team-4",
+      expect.anything(),
+      expect.anything(),
+    );
   });
 });
 

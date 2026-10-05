@@ -192,6 +192,11 @@ describe("the org the caller supplies", () => {
     await getJobPriority({ team_id: "team1", org_id: "org-1", acuc });
 
     expect(acucEntityLimitsCache).toHaveBeenCalledWith(acuc);
+    expect(getRateLimitMultiplier).toHaveBeenCalledWith(
+      "team1",
+      "org-1",
+      teamLimitsCache,
+    );
     expect(getACUCTeam).not.toHaveBeenCalled();
   });
 

@@ -909,15 +909,16 @@ export class AutumnService {
   }
 
   /**
-   * A live, uncached entity read for building a cache entry: the limits when
-   * Autumn answered (an entity, or a 404), undefined otherwise, so a failed
-   * read is never stored.
+   * The team's limits for building a cache entry: the limits when Autumn
+   * answered (an entity, or a 404), undefined otherwise, so a failed read is
+   * never stored.
    */
-  async fetchKnownEntityLimits(
+  async getKnownEntityLimits(
     teamId: string,
     orgId: string | null,
+    cache: EntityLimitsCache,
   ): Promise<EntityLimits | undefined> {
-    const read = await this.readEntityLimits(teamId, orgId);
+    const read = await this.readEntityLimits(teamId, orgId, cache);
     return read.outcome === "known" ? read.limits : undefined;
   }
 
@@ -931,7 +932,7 @@ export class AutumnService {
   private async readEntityLimits(
     teamId: string,
     orgId: string | null,
-    cache?: EntityLimitsCache,
+    cache: EntityLimitsCache,
   ): Promise<
     | { outcome: "unconfigured" }
     | { outcome: "no_org" }
@@ -944,7 +945,7 @@ export class AutumnService {
 
     if (!orgId) return { outcome: "no_org" };
 
-    const cached = await cache?.get(teamId, orgId);
+    const cached = await cache.get(teamId, orgId);
     if (cached) return { outcome: "known", limits: cached };
 
     let limits: EntityLimits;
@@ -977,7 +978,7 @@ export class AutumnService {
       limits = { concurrency: null, rateLimitMultiplier: null };
     }
 
-    cache?.set(teamId, orgId, limits);
+    cache.set(teamId, orgId, limits);
     return { outcome: "known", limits };
   }
 
