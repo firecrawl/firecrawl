@@ -21,6 +21,7 @@ use super::super::{
   formats::FormatKind,
   meta::Meta,
   options::ProxyMode,
+  parsers::fire_engine_pdf_max_size,
   raw_page::{
     JavascriptActionContent, RawPageActions, RawPageContent, RawPageResult, ScrapeProxy,
   },
@@ -181,12 +182,7 @@ impl FireEngine {
           name: &profile.name,
         }),
 
-      // pdf_max_size: if file::file_offload_available().await && true {
-      //   Some(meta.file_size_limit())
-      // } else {
-      //   None
-      // },
-      pdf_max_size: None, // TODO
+      pdf_max_size: fire_engine_pdf_max_size(meta),
     };
 
     let scrape = self.call_scrape(request).await?;

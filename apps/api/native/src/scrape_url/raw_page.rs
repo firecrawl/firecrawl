@@ -90,10 +90,10 @@ pub struct BytesOffloaded {
   pub gcs_uri: String,
 
   /// SHA-256 hash of file
-  pub sha256: String,
+  pub sha256: Option<String>,
 
   /// File size in bytes
-  pub size_bytes: usize,
+  pub size_bytes: Option<usize>,
 }
 
 pub enum RawPageContent {
@@ -189,7 +189,7 @@ pub fn record_raw_page(span: &tracing::Span, result: &RawPageResult) {
       span.record("page.content.kind", "bytes_offloaded");
       span.record("page.content.num_bytes", x.size_bytes);
       span.record("page.content.gcs_uri", x.gcs_uri.as_str());
-      span.record("page.content.sha256", x.sha256.as_str());
+      span.record("page.content.sha256", x.sha256.as_deref());
     }
     RawPageContent::ChromeRenderedDOM(x) => {
       span.record("page.content.kind", "chrome_rendered_dom");

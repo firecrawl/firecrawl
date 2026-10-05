@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use super::{options::ProxyMode, transformers::TransformerError};
+use super::{options::ProxyMode, parsers::FirePdfError, transformers::TransformerError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScrapeURLError {
@@ -17,6 +17,13 @@ pub enum ScrapeURLError {
 
   #[error("PDF requires OCR, but the requested mode only supports text-based PDFs")]
   PDFOCRRequiredError(pdf_inspector::PdfType),
+
+  #[error(
+    "The PDF has {page_count} pages, which requires more processing time than your current timeout allows. PDF processing time scales with page count - larger PDFs need longer timeouts. To successfully scrape this PDF, increase the timeout parameter in your scrape request to at least {min_timeout}ms ({} seconds). For very large PDFs, consider using a timeout of {} seconds or more to account for network variability.",
+    .min_timeout.div_ceil(1000),
+    (.min_timeout * 3).div_ceil(2000)
+  )]
+  PDFInsufficientTimeError { page_count: u32, min_timeout: u64 },
 
   #[error("page failed to load in the browser with error code {code}")]
   SiteError { code: String },
@@ -112,6 +119,9 @@ pub enum ScrapeURLError {
 
   #[error(transparent)]
   Transformer(#[from] TransformerError),
+
+  #[error(transparent)]
+  FirePDF(#[from] FirePdfError),
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -224,6 +234,28 @@ impl ScrapeURLError {
         ScrapeErrorPayload::Panic { message }
       }
       Self::Internal(_)
+      Self::CrawlDenialError { .. } => "CRAWL_DENIAL",
+      Self::LockdownMissError => "SCRAPE_LOCKDOWN_CACHE_MISS",
+      Self::AgentIndexOnlyError => "AGENT_INDEX_ONLY",
+      Self::PDFOCRRequiredError(_) => "SCRAPE_PDF_OCR_REQUIRED",
+      Self::PDFInsufficientTimeError { .. } => "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR",
+      Self::SiteError { .. } => "SCRAPE_SITE_ERROR",
+      Self::SSLError { .. } => "SCRAPE_SSL_ERROR",
+      Self::DNSResolutionError { .. } => "SCRAPE_DNS_RESOLUTION_ERROR",
+      Self::UnsupportedFileError { .. } => "SCRAPE_UNSUPPORTED_FILE_ERROR",
+      Self::ActionError { .. } => "SCRAPE_ACTION_ERROR",
+      Self::ProxySelectionError => "SCRAPE_PROXY_SELECTION_ERROR",
+      Self::Transformer(TransformerError::JsonContentTooLarge) => "SCRAPE_JSON_CONTENT_TOO_LARGE",
+      Self::NoEnginesLeftError { .. } => "SCRAPE_ALL_ENGINES_FAILED",
+      Self::ActionsNotSupportedError => "SCRAPE_ACTIONS_NOT_SUPPORTED",
+      Self::ReliableRetrievalError(_)
+      | Self::InsecureConnectionError
+      | Self::InvalidURLError
+      | Self::PDFFetchFailed
+      | Self::PageLoadFailed
+      | Self::UnclassifiedEngineError { .. }
+      | Self::EngineUnavailable { .. }
+      | Self::Internal(_)
       | Self::Wreq(_)
       | Self::Reqwest(_)
       | Self::Json(_)
@@ -238,6 +270,8 @@ impl ScrapeURLError {
       | Self::Transformer(_) => ScrapeErrorPayload::Unknown {
         message: unknown_error_message(&message),
       },
+      | Self::Transformer(_)
+      | Self::FirePDF(_) => "UNKNOWN_ERROR",
     }
   }
 
@@ -356,6 +390,57 @@ impl ScrapeErrorPayload {
     let payload: Value = serde_json::from_str(payload).ok()?;
     if payload.get("code").and_then(Value::as_str) != Some(code) {
       return None;
+    let mut map = serializer.serialize_map(None)?;
+    match self {
+      Self::CrawlDenialError { reason } => {
+        map.serialize_entry("reason", reason)?;
+      }
+      Self::SSLError {
+        skip_tls_verification,
+      } => {
+        map.serialize_entry("skipTlsVerification", skip_tls_verification)?;
+      }
+      Self::SiteError { code } => {
+        map.serialize_entry("errorCode", code)?;
+      }
+      Self::DNSResolutionError { hostname } => {
+        map.serialize_entry("hostname", hostname)?;
+      }
+      Self::UnsupportedFileError { reason } => {
+        map.serialize_entry("reason", reason)?;
+      }
+      Self::ActionError { error } => {
+        map.serialize_entry("errorCode", error)?;
+      }
+      Self::PDFOCRRequiredError(pdf_type) => {
+        map.serialize_entry("pdfType", pdf_type_name(pdf_type))?;
+      }
+      Self::PDFInsufficientTimeError {
+        page_count,
+        min_timeout,
+      } => {
+        map.serialize_entry("pageCount", page_count)?;
+        map.serialize_entry("minTimeout", min_timeout)?;
+      }
+      Self::LockdownMissError | Self::AgentIndexOnlyError | Self::ProxySelectionError => {}
+      Self::NoEnginesLeftError { fallback_list } => {
+        map.serialize_entry("fallbackList", fallback_list)?;
+      }
+      Self::ActionsNotSupportedError => {
+        map.serialize_entry(
+          "message",
+          "Actions are not supported by any available engines. Actions require Fire Engine (fire-engine) to be enabled.",
+        )?;
+      }
+      Self::Transformer(TransformerError::JsonContentTooLarge) => {
+        map.serialize_entry(
+          "message",
+          "The scraped page content is too large for JSON extraction, so extraction was aborted.",
+        )?;
+      }
+      e => {
+        map.serialize_entry("message", &unknown_error_message(&e.to_string()))?;
+      }
     }
     serde_json::from_value(payload).ok()
   }
