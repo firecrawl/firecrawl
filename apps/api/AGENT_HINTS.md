@@ -57,7 +57,7 @@ Content-Type: application/json
 
 {
   "version": 1,
-  "team_id": "string",
+  "team_id": "string (keyless callers: keyless_<64 hex chars>)",
   "org_id": "string | null",
   "api_key_id": "number | null",
   "endpoint": "search | scrape | parse | map",
@@ -66,7 +66,7 @@ Content-Type: application/json
 }
 ```
 
-No request or response content, URLs, queries, IP addresses, or API keys are sent.
+No request or response content, URLs, queries, IP addresses, or API keys are sent. Keyless callers have no account team, so `team_id` is a stable pseudonym instead: `keyless_` followed by the hex HMAC-SHA256 of the internal keyless team ID, keyed by `AGENT_HINTS_PROVIDER_SECRET`. Without a secret it is a plain SHA-256, which is easier to reverse, so configure a secret when the provider must not be able to recover client addresses.
 
 Response (`200` only):
 

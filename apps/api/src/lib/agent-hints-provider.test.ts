@@ -1,3 +1,4 @@
+import { createHash, createHmac } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { config } from "../config";
@@ -5,6 +6,7 @@ import {
   agentHintsProviderRequestsTotal,
   getProviderHints,
   mergeAgentHints,
+  providerTeamId,
   type AgentHintsProviderContext,
 } from "./agent-hints-provider";
 
@@ -141,6 +143,56 @@ describe("external agent hints provider", () => {
     });
     expect(JSON.stringify(body)).not.toContain('api_key"');
     expect(headers.authorization).toBe("Bearer shared-secret");
+  });
+
+  it.each([
+    {
+      name: "keyed by the secret when one is configured",
+      secret: "shared-secret",
+      ip: "203.0.113.8",
+      digest: (teamId: string) =>
+        createHmac("sha256", "shared-secret").update(teamId).digest("hex"),
+    },
+    {
+      name: "hashed when no secret is configured",
+      secret: undefined,
+      ip: "203.0.113.9",
+      digest: (teamId: string) =>
+        createHash("sha256").update(teamId).digest("hex"),
+    },
+  ])(
+    "never sends a raw keyless team ID or IP: pseudonym $name",
+    async ({ secret, ip, digest }) => {
+      config.AGENT_HINTS_PROVIDER_SECRET = secret;
+      const teamId = `preview_keyless_${ip}`;
+      await settle(
+        getProviderHints(
+          context({ teamId, orgId: null, apiKeyId: 0, keyless: true }),
+        ),
+      );
+      expect(requests).toHaveLength(1);
+      const { body } = requests[0];
+      expect(body.team_id).toBe(`keyless_${digest(teamId)}`);
+      expect(body.keyless).toBe(true);
+      for (const value of Object.values(body)) {
+        expect(String(value)).not.toContain(ip);
+        expect(String(value)).not.toContain("preview_keyless_");
+      }
+      expect(JSON.stringify(body)).not.toContain(ip);
+    },
+  );
+
+  it("gives a keyless team the same pseudonym on every lookup", async () => {
+    const teamId = "preview_keyless_198.51.100.4";
+    await settle(getProviderHints(context({ teamId, endpoint: "scrape" })));
+    await settle(getProviderHints(context({ teamId, endpoint: "search" })));
+    expect(requests).toHaveLength(2);
+    expect(requests[0].body.team_id).toBe(requests[1].body.team_id);
+    expect(requests[0].body.team_id).toMatch(/^keyless_[0-9a-f]{64}$/);
+  });
+
+  it("sends account team IDs unchanged", () => {
+    expect(providerTeamId("team-uuid")).toBe("team-uuid");
   });
 
   it("omits the authorization header when no secret is configured", async () => {

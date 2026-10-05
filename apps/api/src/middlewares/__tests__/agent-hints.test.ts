@@ -446,6 +446,28 @@ describe("agent hints provider middleware", () => {
     expect(body).not.toContain("fc-secret-key");
   });
 
+  it("does not send a keyless caller's team ID or IP", async () => {
+    const fetchSpy = mockProvider();
+    const ip = `192.0.2.${++teamCounter}`;
+    await request(
+      providerAppFor(
+        { team_id: `preview_keyless_${ip}`, org_id: null },
+        { api_key: "", api_key_id: 0 },
+      ),
+    )
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    expect(body.keyless).toBe(true);
+    expect(body.team_id).toMatch(/^keyless_[0-9a-f]{64}$/);
+    for (const value of Object.values(body)) {
+      expect(String(value)).not.toContain(ip);
+      expect(String(value)).not.toContain("preview_keyless_");
+    }
+  });
+
   it("does not wait for a slow provider and serves its hints from cache afterwards", async () => {
     const fetchSpy = mockProvider(1000);
     const app = providerAppFor({ team_id: `team-${++teamCounter}` });

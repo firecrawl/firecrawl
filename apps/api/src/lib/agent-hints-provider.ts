@@ -1,3 +1,4 @@
+import { createHash, createHmac } from "node:crypto";
 import { Counter } from "prom-client";
 import { z } from "zod";
 import { config } from "../config";
@@ -48,6 +49,20 @@ const responseSchema = z.object({
   ttl_seconds: z.number().finite().optional().catch(undefined),
 });
 
+/**
+ * Keyless team IDs identify a client address, so the provider receives a
+ * stable pseudonym instead: HMAC-SHA256 keyed by the provider secret when one
+ * is configured, otherwise SHA-256.
+ */
+export function providerTeamId(teamId: string): string {
+  if (!teamId.startsWith("preview_keyless_")) return teamId;
+  const secret = config.AGENT_HINTS_PROVIDER_SECRET;
+  const digest = secret
+    ? createHmac("sha256", secret).update(teamId).digest("hex")
+    : createHash("sha256").update(teamId).digest("hex");
+  return `keyless_${digest}`;
+}
+
 type CacheEntry = { holder: ProviderHintsHolder; expiresAt: number };
 const cache = new Map<string, CacheEntry>();
 
@@ -84,7 +99,7 @@ async function fetchProviderHints(
       },
       body: JSON.stringify({
         version: 1,
-        team_id: context.teamId,
+        team_id: providerTeamId(context.teamId),
         org_id: context.orgId,
         api_key_id: context.apiKeyId,
         endpoint: context.endpoint,
