@@ -133,10 +133,7 @@ export async function authorizeProviders(
   // licence forbids. Internal teams that bypass credit checks are not
   // customers and pass.
   if (gated.length > 0 && flags?.bypassCreditChecks !== true) {
-    const limits = await getACUCTeamLimits(teamId);
-    const multiplier = limits.limits_known
-      ? limits.rate_limit_multiplier
-      : null;
+    const multiplier = (await getACUCTeamLimits(teamId)).rate_limit_multiplier;
     if (multiplier === null)
       return refusal(
         503,

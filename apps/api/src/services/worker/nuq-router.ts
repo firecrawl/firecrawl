@@ -3,6 +3,7 @@ import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import { RateLimiterMode, ScrapeJobData } from "../../types";
 import { getACUCTeam, getACUCTeamLimits } from "../../controllers/auth";
+import { FAIL_OPEN_CONCURRENCY_LIMIT } from "../autumn/autumn.service";
 import { redisEvictConnection } from "../../services/redis";
 import { isSelfHosted } from "../../lib/deployment";
 import { getApiKeyConcurrencyLimit } from "../../lib/api-key-concurrency";
@@ -266,9 +267,9 @@ export async function fdbEnqueueScrapeJobs(
 }> {
   let teamLimit: number | null = null;
   if (!isSelfHosted()) {
-    const autumnLimit = (await getACUCTeamLimits(teamId)).concurrency_limit;
-    // fdbForced: leave unlimited (null) when Autumn has no concurrency value.
-    teamLimit = fdbForced() ? autumnLimit : (autumnLimit ?? 2);
+    teamLimit =
+      (await getACUCTeamLimits(teamId)).concurrency_limit ??
+      FAIL_OPEN_CONCURRENCY_LIMIT;
   }
 
   const queueCap =

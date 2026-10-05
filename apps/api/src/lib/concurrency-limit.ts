@@ -19,11 +19,9 @@ import {
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
 import { getACUCTeamLimits } from "../controllers/auth";
+import { FAIL_OPEN_CONCURRENCY_LIMIT } from "../services/autumn/autumn.service";
 import type { AuthCreditUsageChunkFromTeam } from "../controllers/v1/types";
 import { reportPipelineError } from "./redis-pipeline";
-
-// Fallback when Autumn can't give us a concurrency value.
-const DEFAULT_CONCURRENCY_LIMIT = 2;
 
 /**
  * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
@@ -33,9 +31,9 @@ const DEFAULT_CONCURRENCY_LIMIT = 2;
 export const HOBBY_CONCURRENCY_LIMIT = 5;
 
 /**
- * Returns the team's effective concurrency limit from its ACUC (Autumn's
- * CONCURRENCY balance), or the low default of 2 when the team has none. Pass
- * the request's ACUC when the caller holds one.
+ * Returns the team's concurrency limit from its ACUC, failing open when
+ * Autumn could not verify it. Pass the request's ACUC when the caller holds
+ * one.
  */
 export async function getEffectiveConcurrencyLimit(
   teamId: string,
@@ -43,7 +41,7 @@ export async function getEffectiveConcurrencyLimit(
 ): Promise<number> {
   return (
     (await getACUCTeamLimits(teamId, acuc)).concurrency_limit ??
-    DEFAULT_CONCURRENCY_LIMIT
+    FAIL_OPEN_CONCURRENCY_LIMIT
   );
 }
 

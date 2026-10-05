@@ -3,23 +3,14 @@ vi.mock("../../config", () => ({
   config: { USE_DB_AUTHENTICATION: true, FIRECRAWL_DASHBOARD_URL: "https://d" },
 }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
-// The plan read: a multiplier when Autumn answered, null when it could not.
+// The plan read: the multiplier, null when Autumn could not verify it.
 vi.mock("../../controllers/auth", () => ({
-  getACUCTeamLimits: async (teamId: string) => {
-    const multiplier = await mocks.multiplier(teamId);
-    return multiplier === null
-      ? {
-          concurrency_limit: 200,
-          rate_limit_multiplier: 2500,
-          limits_known: false,
-        }
-      : {
-          concurrency_limit: null,
-          rate_limit_multiplier: multiplier,
-          limits_known: true,
-        };
-  },
+  getACUCTeamLimits: async (teamId: string) => ({
+    concurrency_limit: null,
+    rate_limit_multiplier: await mocks.multiplier(teamId),
+  }),
 }));
+
 import { authorizeProviders } from "./access";
 
 const calls = [

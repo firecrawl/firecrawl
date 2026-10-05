@@ -751,14 +751,8 @@ describe("featureIdForBillingEndpoint", () => {
 // ---------------------------------------------------------------------------
 
 describe("getTeamLimits", () => {
-  const fallback = {
-    limits: {
-      concurrency_limit: 200,
-      rate_limit_multiplier: 2500,
-      limits_known: false,
-    },
-    failed: true,
-  };
+  const unverified = { concurrency_limit: null, rate_limit_multiplier: null };
+  const lowDefaults = { concurrency_limit: 2, rate_limit_multiplier: 1 };
 
   it("returns the Autumn values on the happy path", async () => {
     mockEntityGet.mockResolvedValue({
@@ -769,12 +763,8 @@ describe("getTeamLimits", () => {
     });
 
     expect(await makeService().getTeamLimits("team-1", "org-1")).toEqual({
-      limits: {
-        concurrency_limit: 7,
-        rate_limit_multiplier: 25,
-        limits_known: true,
-      },
-      failed: false,
+      concurrency_limit: 7,
+      rate_limit_multiplier: 25,
     });
     expect(mockEntityGet).toHaveBeenCalledWith({
       customerId: "org-1",
@@ -791,61 +781,52 @@ describe("getTeamLimits", () => {
       "the balances are absent",
       () => mockEntityGet.mockResolvedValue({ balances: {} }),
     ],
-  ])("falls back LOW when %s, as a real answer", async (_case, arrange) => {
+  ])("resolves to the low defaults when %s", async (_case, arrange) => {
     arrange();
 
-    expect(await makeService().getTeamLimits("team-1", "org-1")).toEqual({
-      limits: {
-        concurrency_limit: null,
-        rate_limit_multiplier: 1,
-        limits_known: true,
-      },
-      failed: false,
-    });
+    expect(await makeService().getTeamLimits("team-1", "org-1")).toEqual(
+      lowDefaults,
+    );
   });
 
   it.each([
     ["Autumn errors (not a 404)", { statusCode: 500 }],
     ["Autumn throws a non-HTTP error", new Error("ECONNREFUSED")],
-  ])("fails OPEN and marks the answer failed when %s", async (_case, error) => {
+  ])("answers null (unverified) when %s", async (_case, error) => {
     mockEntityGet.mockRejectedValue(error);
 
     expect(await makeService().getTeamLimits("team-1", "org-1")).toEqual(
-      fallback,
+      unverified,
     );
   });
 
-  it("fails OPEN without asking Autumn when there is no org", async () => {
-    expect(await makeService().getTeamLimits("team-1", null)).toEqual(fallback);
+  it("answers null without asking Autumn when there is no org", async () => {
+    expect(await makeService().getTeamLimits("team-1", null)).toEqual(
+      unverified,
+    );
     expect(mockEntityGet).not.toHaveBeenCalled();
   });
 
   it("reads Autumn on every call, keeping no cache of its own", async () => {
     const svc = makeService();
     mockEntityGet.mockRejectedValueOnce({ statusCode: 500 });
-    expect((await svc.getTeamLimits("team-1", "org-1")).failed).toBe(true);
+    expect(await svc.getTeamLimits("team-1", "org-1")).toEqual(unverified);
 
     mockEntityGet.mockResolvedValue({
       balances: { CONCURRENCY: { remaining: 3 }, rate_limits: { granted: 10 } },
     });
-    expect((await svc.getTeamLimits("team-1", "org-1")).limits).toEqual({
+    expect(await svc.getTeamLimits("team-1", "org-1")).toEqual({
       concurrency_limit: 3,
       rate_limit_multiplier: 10,
-      limits_known: true,
     });
     await svc.getTeamLimits("team-1", "org-1");
     expect(mockEntityGet).toHaveBeenCalledTimes(3);
   });
 
-  it("answers unknown, low limits for a preview team without asking Autumn", async () => {
-    expect(await makeService().getTeamLimits("preview_x", "org-1")).toEqual({
-      limits: {
-        concurrency_limit: null,
-        rate_limit_multiplier: 1,
-        limits_known: false,
-      },
-      failed: false,
-    });
+  it("answers the low defaults for a preview team without asking Autumn", async () => {
+    expect(await makeService().getTeamLimits("preview_x", "org-1")).toEqual(
+      lowDefaults,
+    );
     expect(mockEntityGet).not.toHaveBeenCalled();
   });
 });

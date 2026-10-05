@@ -29,7 +29,6 @@ function mockMultiplier(rate_limit_multiplier: number) {
   vi.mocked(getACUCTeamLimits).mockResolvedValue({
     concurrency_limit: null,
     rate_limit_multiplier,
-    limits_known: true,
   });
 }
 
@@ -172,6 +171,17 @@ describe("the ACUC the caller supplies", () => {
     await getJobPriority({ team_id: "team1", acuc });
 
     expect(getACUCTeamLimits).toHaveBeenCalledWith("team1", acuc);
+  });
+
+  it("fails open on an unverified multiplier", async () => {
+    vi.mocked(getACUCTeamLimits).mockResolvedValue({
+      concurrency_limit: null,
+      rate_limit_multiplier: null,
+    });
+    // 2500 lands on the top tier: no penalty at this set size.
+    (redisEvictConnection.scard as Mock).mockResolvedValue(250);
+
+    expect(await getJobPriority({ team_id: "team1" })).toBe(10);
   });
 
   it("falls back to the team's ACUC when the caller holds none", async () => {

@@ -37,11 +37,7 @@ import {
   AuthCreditUsageChunkRow,
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
-import {
-  AuthCreditUsageChunk,
-  AuthCreditUsageChunkFromTeam,
-  TeamFlags,
-} from "./v1/types";
+import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
   OAuthIntrospectionUnavailableError,
@@ -51,26 +47,25 @@ import type { OAuthIntrospectionResponse } from "../services/oauth-token-introsp
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
 import {
   autumnService,
+  FAIL_OPEN_RATE_LIMIT_MULTIPLIER,
   type TeamLimits,
 } from "../services/autumn/autumn.service";
 import { orgIdFromAcuc } from "../lib/team-org";
 import { ReplyError } from "ioredis";
 
 const ACUC_TTL_SECONDS = 600;
-// A chunk built on the fail-open Autumn fallback is cached only briefly, so a
-// transient Autumn error never pins those limits for the full TTL.
-const ACUC_FALLBACK_TTL_SECONDS = 60;
+// A chunk whose limits Autumn could not verify (null) is cached only briefly,
+// so a transient Autumn error is retried within a minute.
+const ACUC_UNVERIFIED_TTL_SECONDS = 60;
 
-/** Puts the team's Autumn limits on a chunk to be cached; returns its TTL. */
-async function fillTeamLimits(
-  chunk: AuthCreditUsageChunkFromTeam,
-): Promise<number> {
-  const { limits, failed } = await autumnService.getTeamLimits(
-    chunk.team_id,
-    chunk.org_id,
-  );
-  Object.assign(chunk, limits);
-  return failed ? ACUC_FALLBACK_TTL_SECONDS : ACUC_TTL_SECONDS;
+/** The chunk with the team's Autumn limits added, as a new object. */
+async function withTeamLimits<T extends AuthCreditUsageChunkFromTeam>(
+  chunk: T,
+): Promise<T> {
+  return {
+    ...chunk,
+    ...(await autumnService.getTeamLimits(chunk.team_id, chunk.org_id)),
+  };
 }
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
@@ -279,14 +274,19 @@ async function getACUC(
           ? null
           : (data[0] as any);
 
-    if (chunk === null) return null;
-
-    chunk.is_extract = isExtract;
+    if (chunk) {
+      chunk.is_extract = isExtract;
+    }
 
     // NOTE: Should we cache null chunks? - mogery
-    if (useCache) {
-      const ttl = await fillTeamLimits(chunk);
-      setCachedACUC(api_key, isExtract, chunk, credentialPurpose, ttl);
+    if (chunk !== null && useCache) {
+      const built = await withTeamLimits(chunk);
+      const ttl =
+        built.rate_limit_multiplier === null
+          ? ACUC_UNVERIFIED_TTL_SECONDS
+          : ACUC_TTL_SECONDS;
+      setCachedACUC(api_key, isExtract, built, credentialPurpose, ttl);
+      return built;
     }
 
     return chunk;
@@ -443,49 +443,65 @@ export async function getACUCTeam(
           ? null
           : (data[0] as any);
 
-    if (chunk === null) return null;
-
     // NOTE: Should we cache null chunks? - mogery
-    if (useCache) {
-      const ttl = await fillTeamLimits(chunk);
-      setCachedACUCTeam(team_id, isExtract, chunk, ttl);
+    if (chunk !== null && useCache) {
+      const built = await withTeamLimits(chunk);
+      const ttl =
+        built.rate_limit_multiplier === null
+          ? ACUC_UNVERIFIED_TTL_SECONDS
+          : ACUC_TTL_SECONDS;
+      setCachedACUCTeam(team_id, isExtract, built, ttl);
+      return { ...built, is_extract: isExtract };
     }
 
-    return { ...chunk, is_extract: isExtract };
+    return chunk ? { ...chunk, is_extract: isExtract } : null;
   } else {
     return null;
   }
 }
 
+/** The limits a chunk carries, or undefined for one cached without them. */
+function limitsOn(
+  chunk: AuthCreditUsageChunkFromTeam | null | undefined,
+): TeamLimits | undefined {
+  if (
+    chunk?.concurrency_limit === undefined ||
+    chunk.rate_limit_multiplier === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    concurrency_limit: chunk.concurrency_limit,
+    rate_limit_multiplier: chunk.rate_limit_multiplier,
+  };
+}
+
 /**
  * The team's Autumn limits off its ACUC: the chunk in hand when it carries
  * them (uncached chunks don't), else the team's. A chunk cached before the
- * limits existed gets a live read, not written back.
+ * limits existed gets a live read, not written back. null means unverified.
  */
 export async function getACUCTeamLimits(
   teamId: string,
   acuc?: AuthCreditUsageChunkFromTeam | null,
 ): Promise<TeamLimits> {
-  let chunk = acuc;
-  if (chunk?.limits_known === undefined) {
-    const teamChunk = await getACUCTeam(teamId).catch(error => {
-      logger.warn("Failed to read the team's ACUC for its limits", {
-        teamId,
-        error,
-      });
-      return null;
+  const inHand = limitsOn(acuc);
+  if (inHand) return inHand;
+
+  const teamChunk = await getACUCTeam(teamId).catch(error => {
+    logger.warn("Failed to read the team's ACUC for its limits", {
+      teamId,
+      error,
     });
-    chunk = teamChunk ?? acuc;
-  }
-  if (chunk?.limits_known !== undefined) {
-    return {
-      concurrency_limit: chunk.concurrency_limit ?? null,
-      rate_limit_multiplier: chunk.rate_limit_multiplier ?? 1,
-      limits_known: chunk.limits_known,
-    };
-  }
-  return (await autumnService.getTeamLimits(teamId, orgIdFromAcuc(chunk)))
-    .limits;
+    return null;
+  });
+  return (
+    limitsOn(teamChunk) ??
+    (await autumnService.getTeamLimits(
+      teamId,
+      orgIdFromAcuc(teamChunk ?? acuc),
+    ))
+  );
 }
 
 export async function clearACUC(api_key: string): Promise<void> {
@@ -773,17 +789,18 @@ export async function authenticateUser(
  * replaces the whole computation.
  */
 async function buildAuthenticatedRateLimiter(
-  teamId: string,
   chunk: AuthCreditUsageChunk,
   mode: RateLimiterMode,
-  flags: TeamFlags,
   minMultiplier?: number,
 ): Promise<RateLimiterRedis> {
+  const flags = chunk.flags;
   let multiplier: number;
   if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
     multiplier = 1;
   } else {
-    multiplier = (await getACUCTeamLimits(teamId, chunk)).rate_limit_multiplier;
+    multiplier =
+      (await getACUCTeamLimits(chunk.team_id, chunk)).rate_limit_multiplier ??
+      FAIL_OPEN_RATE_LIMIT_MULTIPLIER;
     if (minMultiplier !== undefined) {
       multiplier = Math.max(multiplier, minMultiplier);
     }
@@ -887,10 +904,8 @@ async function supaAuthenticateUser(
     teamId = chunk.team_id;
     subscriptionData = { team_id: teamId };
     rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
       chunk,
       mode,
-      chunk.flags,
       minRateMultiplier,
     );
   } else if (token.startsWith("fco_")) {
@@ -957,10 +972,8 @@ async function supaAuthenticateUser(
       team_id: teamId,
     };
     rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
       chunk,
       mode,
-      chunk.flags,
       minRateMultiplier,
     );
   } else {
@@ -1006,10 +1019,8 @@ async function supaAuthenticateUser(
       team_id: teamId,
     };
     rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
       chunk,
       mode,
-      chunk.flags,
       minRateMultiplier,
     );
   }

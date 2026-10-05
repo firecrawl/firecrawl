@@ -43,12 +43,8 @@ vi.mock("../../services/autumn/autumn.service", async importOriginal => {
     ...actual,
     autumnService: {
       getTeamLimits: vi.fn().mockResolvedValue({
-        limits: {
-          concurrency_limit: null,
-          rate_limit_multiplier: 1,
-          limits_known: true,
-        },
-        failed: false,
+        concurrency_limit: 2,
+        rate_limit_multiplier: 1,
       }),
     },
   };

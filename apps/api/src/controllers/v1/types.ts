@@ -1337,11 +1337,11 @@ export type AuthCreditUsageChunk = {
   // appended on JS-side
   is_extract?: boolean;
 
-  // The team's Autumn limits (TeamLimits), filled when the chunk is built.
-  // Absent on chunks cached before they existed and on the mock chunks.
+  // The team's Autumn limits (TeamLimits), filled when the chunk is built;
+  // null means Autumn could not verify them. Undefined on chunks cached
+  // before they existed and on the mock chunks.
   concurrency_limit?: number | null;
-  rate_limit_multiplier?: number;
-  limits_known?: boolean;
+  rate_limit_multiplier?: number | null;
 
   // Agent signup: populated when the key is agent-provisioned
   _agentSponsor?: {

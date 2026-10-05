@@ -112,12 +112,8 @@ vi.mock("../../services/agent-sponsor", () => ({
 
 function mockMultiplier(rate_limit_multiplier: number) {
   vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
-    limits: {
-      concurrency_limit: null,
-      rate_limit_multiplier,
-      limits_known: true,
-    },
-    failed: false,
+    concurrency_limit: 2,
+    rate_limit_multiplier,
   });
 }
 
@@ -1371,16 +1367,8 @@ describe("authenticateUser", () => {
       org_id: "org-1",
       flags: null,
     };
-    const known = {
-      concurrency_limit: 7,
-      rate_limit_multiplier: 25,
-      limits_known: true,
-    };
-    const fallback = {
-      concurrency_limit: 200,
-      rate_limit_multiplier: 2500,
-      limits_known: false,
-    };
+    const known = { concurrency_limit: 7, rate_limit_multiplier: 25 };
+    const unverified = { concurrency_limit: null, rate_limit_multiplier: null };
     const authRequest = {
       headers: { authorization: `Bearer ${apiKey}` },
       socket: { remoteAddress: "127.0.0.1" },
@@ -1392,7 +1380,6 @@ describe("authenticateUser", () => {
       vi.mocked(redlock.using).mockImplementation(
         async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
       );
-      // Fresh rows: the build fills the limits onto the row it gets.
       vi.mocked(authCreditUsageChunk).mockImplementation(
         async () => [{ ...keyRow }] as never,
       );
@@ -1402,10 +1389,7 @@ describe("authenticateUser", () => {
     });
 
     it("builds the key ACUC with the team's limits and caches it for the full TTL", async () => {
-      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
-        limits: known,
-        failed: false,
-      });
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue(known);
 
       const auth = await authenticateUser(
         authRequest,
@@ -1431,11 +1415,8 @@ describe("authenticateUser", () => {
       expect(ttl).toBe(600);
     });
 
-    it("serves the fail-open limits but caches them only briefly when Autumn fails", async () => {
-      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
-        limits: fallback,
-        failed: true,
-      });
+    it("fails the rate limiter open but caches the chunk only briefly when Autumn fails", async () => {
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue(unverified);
 
       await authenticateUser(authRequest, {}, RateLimiterMode.Scrape);
 
@@ -1446,7 +1427,7 @@ describe("authenticateUser", () => {
       );
       await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
       const [, value, ttl] = vi.mocked(setValue).mock.calls[0];
-      expect(JSON.parse(value)).toMatchObject(fallback);
+      expect(JSON.parse(value)).toMatchObject(unverified);
       expect(ttl).toBe(60);
     });
 
@@ -1467,10 +1448,7 @@ describe("authenticateUser", () => {
 
     it("does one live read for a cached ACUC that predates the limits, writing nothing back", async () => {
       vi.mocked(getValue).mockResolvedValue(JSON.stringify(keyRow));
-      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
-        limits: known,
-        failed: false,
-      });
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue(known);
 
       await authenticateUser(authRequest, {}, RateLimiterMode.Scrape);
 
@@ -1487,19 +1465,40 @@ describe("authenticateUser", () => {
       expect(setValue).not.toHaveBeenCalled();
     });
 
-    it("builds the team ACUC with the limits, briefly cached on failure", async () => {
-      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
-        limits: fallback,
-        failed: true,
-      });
+    it("builds the team ACUC with unverified limits cached only briefly", async () => {
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue(unverified);
 
-      await expect(getACUCTeam("team-1")).resolves.toMatchObject(fallback);
+      await expect(getACUCTeam("team-1")).resolves.toMatchObject(unverified);
 
       await vi.waitFor(() => expect(setValue).toHaveBeenCalled());
       const [key, value, ttl] = vi.mocked(setValue).mock.calls[0];
       expect(key).toBe("acuc_team_team-1_scrape");
-      expect(JSON.parse(value)).toMatchObject(fallback);
+      expect(JSON.parse(value)).toMatchObject(unverified);
       expect(ttl).toBe(60);
+    });
+
+    it("builds a new chunk instead of mutating the row it read", async () => {
+      const row = { ...keyRow };
+      vi.mocked(authCreditUsageChunkFromTeam).mockResolvedValue([row] as never);
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue(known);
+
+      await expect(getACUCTeam("team-1")).resolves.toMatchObject(known);
+      expect(row).toEqual(keyRow);
+    });
+
+    it("serves cached unverified limits as null, failing the limiter open without asking Autumn", async () => {
+      vi.mocked(getValue).mockResolvedValue(
+        JSON.stringify({ ...keyRow, ...unverified }),
+      );
+
+      await authenticateUser(authRequest, {}, RateLimiterMode.Scrape);
+
+      expect(autumnService.getTeamLimits).not.toHaveBeenCalled();
+      expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+        RateLimiterMode.Scrape,
+        2500,
+        null,
+      );
     });
 
     it("never asks Autumn while building an ACUC it does not cache", async () => {

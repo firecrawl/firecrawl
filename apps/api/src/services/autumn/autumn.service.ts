@@ -64,14 +64,25 @@ export function featureIdForBillingEndpoint(endpoint?: string): string {
 }
 
 /**
- * A team's Autumn-derived limits, as cached on its ACUC. `limits_known` is
- * true only when Autumn answered for the team (an entity, or a 404).
+ * A team's Autumn-derived limits, as cached on its ACUC. null means Autumn
+ * could not answer (an error, or no org): unverified, and only that.
  */
 export type TeamLimits = {
   concurrency_limit: number | null;
-  rate_limit_multiplier: number;
-  limits_known: boolean;
+  rate_limit_multiplier: number | null;
 };
+
+/** Limits for a team with no elevated entitlement (a 404 or no balance). */
+const DEFAULT_CONCURRENCY_LIMIT = 2;
+const DEFAULT_RATE_LIMIT_MULTIPLIER = 1;
+
+/**
+ * Fail-open limits for an unverified (null) team limit, so a billing-API
+ * outage doesn't throttle real customers to the low defaults. Generous but
+ * bounded: the concurrency queue cap still applies.
+ */
+export const FAIL_OPEN_CONCURRENCY_LIMIT = 200;
+export const FAIL_OPEN_RATE_LIMIT_MULTIPLIER = 2500;
 
 const AUTUMN_DEFAULT_PLAN_ID = "free";
 /**
@@ -820,72 +831,41 @@ export class AutumnService {
     }
   }
 
-  // Fail-open fallbacks used ONLY when Autumn itself errors (network / 5xx /
-  // unexpected exception) so a billing-API outage doesn't throttle real
-  // customers down to the low defaults. A 404 or an absent balance is NOT an
-  // error — it legitimately means the team has no elevated entitlement, so
-  // those keep falling back low (concurrency 2, multiplier 1). These values are
-  // intentionally generous but bounded (the concurrency queue cap still
-  // applies).
-  private static readonly ERROR_FALLBACK_CONCURRENCY = 200;
-  private static readonly ERROR_FALLBACK_RATE_MULTIPLIER = 2500;
-
   /**
-   * Fetches the team's Autumn entity, uncached (the ACUC caches the result),
-   * and derives both the CONCURRENCY limit and the rate-limit multiplier from
-   * it. Each team has its own Autumn entity, so the balances are per-team.
-   *
-   * A missing entity (404) or an absent balance means "no elevated
-   * entitlement": concurrency null (callers default low) and multiplier 1.
-   * When Autumn errors or the caller can name no org, it fails OPEN on the high
-   * ERROR_FALLBACK_* limits and sets `failed`, so callers can avoid caching
-   * that answer for long.
+   * The team's limits from one uncached Autumn entity read (the ACUC caches
+   * them). A missing entity (404) or an absent balance resolves to the low
+   * defaults; an Autumn error or a missing org resolves to null.
    */
   async getTeamLimits(
     teamId: string,
     orgId: string | null,
-  ): Promise<{ limits: TeamLimits; failed: boolean }> {
+  ): Promise<TeamLimits> {
     const read = await this.readEntityLimits(teamId, orgId);
     switch (read.outcome) {
       case "unconfigured":
         return {
-          limits: {
-            concurrency_limit: null,
-            rate_limit_multiplier: 1,
-            limits_known: false,
-          },
-          failed: false,
+          concurrency_limit: DEFAULT_CONCURRENCY_LIMIT,
+          rate_limit_multiplier: DEFAULT_RATE_LIMIT_MULTIPLIER,
         };
       case "known":
         return {
-          limits: {
-            concurrency_limit: read.concurrency,
-            rate_limit_multiplier: read.rateLimitMultiplier ?? 1,
-            limits_known: true,
-          },
-          failed: false,
+          concurrency_limit: read.concurrency ?? DEFAULT_CONCURRENCY_LIMIT,
+          rate_limit_multiplier:
+            read.rateLimitMultiplier ?? DEFAULT_RATE_LIMIT_MULTIPLIER,
         };
       case "no_org":
-        logger.error(
-          "Autumn getTeamLimits has no org for the team, falling back to high limits",
-          { teamId },
-        );
+        logger.error("Autumn getTeamLimits has no org for the team", {
+          teamId,
+        });
         break;
       case "error":
         logger.error(
-          "Autumn getTeamLimits failed — billing API may be unavailable, falling back to high limits",
+          "Autumn getTeamLimits failed, billing API may be unavailable",
           { teamId, error: read.error },
         );
         break;
     }
-    return {
-      limits: {
-        concurrency_limit: AutumnService.ERROR_FALLBACK_CONCURRENCY,
-        rate_limit_multiplier: AutumnService.ERROR_FALLBACK_RATE_MULTIPLIER,
-        limits_known: false,
-      },
-      failed: true,
-    };
+    return { concurrency_limit: null, rate_limit_multiplier: null };
   }
 
   /**
