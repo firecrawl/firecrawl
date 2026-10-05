@@ -122,6 +122,7 @@
     "ioredis": "^5.6.1",
     "ipaddr.js": "^2.2.0",
     "joplin-turndown-plugin-gfm": "^1.0.12",
+    "jose": "^6.2.12",
     "jsdom": "^29.1.1",
     "jsonrepair": "^3.14.0",
     "koffi": "^2.9.0",
