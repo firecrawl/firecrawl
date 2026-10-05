@@ -80,7 +80,7 @@ impl Display for ScrapeProxy {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::Basic => f.write_str("basic"),
-      Self::Enhanced => f.write_str("enhanced"),
+      Self::Enhanced => f.write_str("stealth"),
     }
   }
 }

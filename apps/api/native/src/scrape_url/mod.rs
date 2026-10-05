@@ -11,6 +11,7 @@ use self::{
   error::ScrapeURLError,
   feature_flags::FeatureFlag,
   engines::{EngineOutcome, get_main_engine},
+  engines::{EngineOutcome, get_main_engine, should_elevate_proxy},
   error::{ScrapeErrorPayload, ScrapeURLError},
   index::{Index, should_use_index},
   meta::Meta,
@@ -231,8 +232,10 @@ pub async fn scrape_url(
 
   let result = catch_panic(scrape_url_task(id, url, team_id, options, internal_options)).await;
 
-  if let Err(e @ ScrapeURLError::Panic(_)) = &result {
-    tracing::error!(error = %e);
+  // The payload is left out: it may carry request data, and this runs outside
+  // the scrape span that zero data retention filters on.
+  if let Err(ScrapeURLError::Panic(_)) = &result {
+    tracing::error!("scrape_url task panicked");
   }
 
   result.map_err(napi_error)

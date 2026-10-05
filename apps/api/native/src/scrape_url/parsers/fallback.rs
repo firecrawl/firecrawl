@@ -4,7 +4,6 @@ use base64::Engine;
 use bytes::Bytes;
 use encoding_rs::{Encoding, UTF_8};
 use mime::Mime;
-use regex::regex;
 
 use crate::_get_inner_json;
 
@@ -16,8 +15,6 @@ use super::super::{
 };
 
 fn deduce_encoding(content: &Bytes, content_type: &str) -> &'static Encoding {
-  let lossy_text = String::from_utf8_lossy(content.as_ref());
-
   {
     if let Some(content_type_charset) = Mime::from_str(content_type)
       .ok()
@@ -25,10 +22,9 @@ fn deduce_encoding(content: &Bytes, content_type: &str) -> &'static Encoding {
     {
       Encoding::for_label(content_type_charset.as_bytes())
     } else if let Some(meta_charset) =
-      regex!(r#"(?i)<meta[\s/][^>]*?charset\s*=\s*["']?([^"'>;,\s/]+)"#)
-        .captures(&lossy_text)
+      regex::bytes::regex!(r#"(?i-u)<meta[\s/][^>]*?charset\s*=\s*["']?([^"'>;,\s/]+)"#)
+        .captures(content.as_ref())
         .and_then(|x| x.get(1))
-        .map(|x| x.as_str())
     {
       Encoding::for_label(meta_charset.as_bytes())
     } else {

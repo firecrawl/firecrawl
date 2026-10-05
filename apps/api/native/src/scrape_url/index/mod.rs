@@ -58,7 +58,7 @@ fn normalize_url_for_index(mut url: Url) -> Url {
   if let Some(last_seg) = last_seg
     && (last_seg == "index.html"
       || last_seg == "index.php"
-      || last_seg == "index.html"
+      || last_seg == "index.htm"
       || last_seg == "index.shtml"
       || last_seg == "index.xml"
       || last_seg.is_empty())

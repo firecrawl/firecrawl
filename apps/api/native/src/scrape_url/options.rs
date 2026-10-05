@@ -14,7 +14,7 @@ use super::{
 pub enum ProxyMode {
   Basic,
 
-  #[serde(alias = "stealth")]
+  #[serde(rename = "stealth", alias = "enhanced")]
   Enhanced,
 
   #[default]

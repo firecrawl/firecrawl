@@ -182,7 +182,7 @@ impl ScrapeURLError {
       Self::LockdownMissError => ScrapeErrorPayload::LockdownCacheMiss,
       Self::AgentIndexOnlyError => ScrapeErrorPayload::AgentIndexOnly,
       Self::PDFOCRRequiredError(pdf_type) => ScrapeErrorPayload::PdfOcrRequired {
-        pdf_type: pdf_type_name(pdf_type).to_string(),
+        pdf_type: (*pdf_type).into(),
       },
       Self::SiteError { code } => ScrapeErrorPayload::SiteError {
         error_code: code.clone(),
@@ -234,6 +234,9 @@ impl ScrapeURLError {
         message,
       },
       Self::Panic(_) => ScrapeErrorPayload::Panic { message },
+      Self::Transformer(TransformerError::Join(e)) if e.is_panic() => {
+        ScrapeErrorPayload::Panic { message }
+      }
       Self::Internal(_)
       | Self::Wreq(_)
       | Self::Reqwest(_)
@@ -329,10 +332,7 @@ pub enum ScrapeErrorPayload {
   AgentIndexOnly,
 
   #[serde(rename = "SCRAPE_PDF_OCR_REQUIRED", rename_all = "camelCase")]
-  PdfOcrRequired {
-    #[ts(type = "\"TextBased\" | \"Scanned\" | \"ImageBased\" | \"Mixed\"")]
-    pdf_type: String,
-  },
+  PdfOcrRequired { pdf_type: PdfType },
 
   #[serde(rename = "SCRAPE_SITE_ERROR", rename_all = "camelCase")]
   SiteError { error_code: String },
@@ -410,12 +410,23 @@ impl ScrapeErrorPayload {
   }
 }
 
-fn pdf_type_name(pdf_type: &pdf_inspector::PdfType) -> &'static str {
-  match pdf_type {
-    pdf_inspector::PdfType::TextBased => "TextBased",
-    pdf_inspector::PdfType::Scanned => "Scanned",
-    pdf_inspector::PdfType::ImageBased => "ImageBased",
-    pdf_inspector::PdfType::Mixed => "Mixed",
+/// PDF classification carried by `SCRAPE_PDF_OCR_REQUIRED`.
+#[derive(Debug, PartialEq, Serialize, Deserialize, TS)]
+pub enum PdfType {
+  TextBased,
+  Scanned,
+  ImageBased,
+  Mixed,
+}
+
+impl From<pdf_inspector::PdfType> for PdfType {
+  fn from(pdf_type: pdf_inspector::PdfType) -> Self {
+    match pdf_type {
+      pdf_inspector::PdfType::TextBased => Self::TextBased,
+      pdf_inspector::PdfType::Scanned => Self::Scanned,
+      pdf_inspector::PdfType::ImageBased => Self::ImageBased,
+      pdf_inspector::PdfType::Mixed => Self::Mixed,
+    }
   }
 }
 
