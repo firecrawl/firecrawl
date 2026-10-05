@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::LazyLock};
+use std::{
+  collections::HashMap,
+  sync::{LazyLock, OnceLock},
+};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -12,7 +15,7 @@ use super::super::{
 };
 use super::{Engine, EngineOutcome};
 
-static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 static PLAYWRIGHT_MICROSERVICE_URL: LazyLock<Option<String>> = LazyLock::new(|| {
   if let Some(url) = std::env::var("PLAYWRIGHT_MICROSERVICE_URL").ok()
@@ -63,7 +66,7 @@ impl Engine for PlaywrightEngine {
     meta: &Meta,
     _proxy: ScrapeProxy,
   ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError> {
-    let res = CLIENT
+    let res = super::shared_client(&CLIENT)?
       .post(self.url)
       .json(&PlaywrightRequest {
         url: meta.get_url(),

@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use regex::Regex;
 
 use self::{fetch::FetchEngine, fire_engine::FireEngine, playwright::PlaywrightEngine};
@@ -105,6 +107,18 @@ impl EngineKind {
   }
 }
 
+/// Returns the client stored in `cell`, building it on first use. A failed build
+/// is returned as an error and retried on the next call.
+fn shared_client(
+  cell: &'static OnceLock<reqwest::Client>,
+) -> Result<&'static reqwest::Client, reqwest::Error> {
+  if let Some(client) = cell.get() {
+    return Ok(client);
+  }
+  let client = reqwest::Client::builder().build()?;
+  Ok(cell.get_or_init(|| client))
+}
+
 pub async fn get_main_engine() -> EngineKind {
   if let Some(fire_engine) = FireEngine::get().await {
     fire_engine
@@ -152,14 +166,14 @@ pub fn should_elevate_proxy(
 
 #[cfg(test)]
 mod tests {
-  use url::Url;
+  use url_macro::url;
 
   use super::super::raw_page::RawPageContent;
   use super::*;
 
   fn scraped(status_code: u16) -> EngineOutcome<RawPageResult> {
     EngineOutcome::Scraped(RawPageResult {
-      url: Url::parse("https://example.com/").unwrap(),
+      url: url!("https://example.com/"),
       status_code,
       content: RawPageContent::ChromeRenderedDOM(String::new()),
       screenshot: None,

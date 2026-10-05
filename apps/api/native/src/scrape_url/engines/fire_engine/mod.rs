@@ -1,7 +1,9 @@
-use std::{sync::LazyLock, time::Duration};
+use std::{
+  sync::{LazyLock, OnceLock},
+  time::Duration,
+};
 
 use regex::Regex;
-use reqwest::Client;
 use sha2::{Digest, Sha256};
 use tracing::{Instrument, instrument};
 
@@ -41,7 +43,11 @@ static FIRE_ENGINE_BETA_URL: LazyLock<Option<String>> = LazyLock::new(|| {
   }
 });
 
-static CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
+static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn client() -> Result<&'static reqwest::Client, reqwest::Error> {
+  super::shared_client(&CLIENT)
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct FireEngine {

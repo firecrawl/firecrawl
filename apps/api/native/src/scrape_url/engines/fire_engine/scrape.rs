@@ -12,7 +12,7 @@ use super::super::super::{
   raw_page::ScrapeActionContent,
 };
 
-use super::{CLIENT, FireEngine, file::FireEngineScrapeFile};
+use super::{FireEngine, client, file::FireEngineScrapeFile};
 
 #[derive(Debug, Serialize)]
 pub enum FireEngineScrapeRequestEngine {
@@ -96,7 +96,6 @@ enum FireEngineFailedState {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FireEngineScrapeCompleted {
-  #[allow(dead_code)] // only read to pick the variant
   state: Option<FireEngineCompletedState>,
 
   /// Only `Some` if we are deferring deletion.
@@ -129,7 +128,6 @@ pub struct FireEngineScrapeCompleted {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FireEngineScrapeProcessing {
-  #[allow(dead_code)] // only read to pick the variant
   state: Option<FireEngineProcessingState>,
 
   pub job_id: String,
@@ -142,7 +140,6 @@ pub struct FireEngineScrapeProcessing {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FireEngineScrapeFailed {
-  #[allow(dead_code)] // only read to pick the variant
   state: Option<FireEngineFailedState>,
 
   pub error: String,
@@ -158,6 +155,16 @@ pub enum FireEngineScrapeResponse {
   Completed(FireEngineScrapeCompleted),
   Processing(FireEngineScrapeProcessing),
   Failed(FireEngineScrapeFailed),
+}
+
+impl FireEngineScrapeResponse {
+  pub fn has_state(&self) -> bool {
+    match self {
+      Self::Completed(x) => x.state.is_some(),
+      Self::Processing(x) => x.state.is_some(),
+      Self::Failed(x) => x.state.is_some(),
+    }
+  }
 }
 
 impl FireEngine {
@@ -177,7 +184,7 @@ impl FireEngine {
     request: FireEngineScrapeRequest<'a>,
   ) -> Result<FireEngineScrapeResponse, ScrapeURLError> {
     // TODO: retries may be good here
-    let res = CLIENT
+    let res = client()?
       .post(format!("{}/scrape", self.url))
       .json(&request)
       .send()
@@ -218,31 +225,34 @@ mod tests {
   use super::super::{actions::FireEngineActionResultKind, file::FireEngineScrapeFileContent};
   use super::*;
 
+  type TestResult = Result<(), String>;
+
   fn parse(value: serde_json::Value) -> Result<FireEngineScrapeResponse, serde_json::Error> {
     serde_json::from_slice(value.to_string().as_bytes())
   }
 
-  fn completed(value: serde_json::Value) -> FireEngineScrapeCompleted {
-    match parse(value) {
-      Ok(FireEngineScrapeResponse::Completed(x)) => x,
-      Ok(_) => panic!("parsed as a different variant"),
-      Err(e) => panic!("failed to parse: {e}"),
+  fn parse_ok(value: serde_json::Value) -> Result<FireEngineScrapeResponse, String> {
+    parse(value).map_err(|e| format!("failed to parse: {e}"))
+  }
+
+  fn completed(value: serde_json::Value) -> Result<FireEngineScrapeCompleted, String> {
+    match parse_ok(value)? {
+      FireEngineScrapeResponse::Completed(x) => Ok(x),
+      _ => Err("expected a completed response".to_string()),
     }
   }
 
-  fn processing(value: serde_json::Value) -> FireEngineScrapeProcessing {
-    match parse(value) {
-      Ok(FireEngineScrapeResponse::Processing(x)) => x,
-      Ok(_) => panic!("parsed as a different variant"),
-      Err(e) => panic!("failed to parse: {e}"),
+  fn processing(value: serde_json::Value) -> Result<FireEngineScrapeProcessing, String> {
+    match parse_ok(value)? {
+      FireEngineScrapeResponse::Processing(x) => Ok(x),
+      _ => Err("expected a processing response".to_string()),
     }
   }
 
-  fn failed(value: serde_json::Value) -> FireEngineScrapeFailed {
-    match parse(value) {
-      Ok(FireEngineScrapeResponse::Failed(x)) => x,
-      Ok(_) => panic!("parsed as a different variant"),
-      Err(e) => panic!("failed to parse: {e}"),
+  fn failed(value: serde_json::Value) -> Result<FireEngineScrapeFailed, String> {
+    match parse_ok(value)? {
+      FireEngineScrapeResponse::Failed(x) => Ok(x),
+      _ => Err("expected a failed response".to_string()),
     }
   }
 
@@ -279,7 +289,7 @@ mod tests {
   }
 
   #[test]
-  fn scrape_completed_page_with_actions() {
+  fn scrape_completed_page_with_actions() -> TestResult {
     let x = completed(json!({
       "jobId": "job-id",
       "timeTaken": 1.5,
@@ -307,7 +317,7 @@ mod tests {
       "usedMobileProxy": false,
       "youtubeTranscriptContent": { "any": "thing" },
       "timezone": "Europe/Budapest",
-    }));
+    }))?;
 
     assert_eq!(x.job_id.as_deref(), Some("job-id"));
     assert_eq!(x.page_status_code, 403);
@@ -320,41 +330,44 @@ mod tests {
     assert_eq!(x.action_content.len(), 1);
     assert_eq!(x.action_results.len(), 6);
     assert!(matches!(
-      x.action_results[5].kind,
-      FireEngineActionResultKind::GetCookies { ref cookies } if cookies.len() == 1
+      x.action_results.get(5).map(|r| &r.kind),
+      Some(FireEngineActionResultKind::GetCookies { cookies }) if cookies.len() == 1
     ));
     assert!(x.file.is_none());
     assert!(!x.used_mobile_proxy);
     assert_eq!(x.timezone.as_deref(), Some("Europe/Budapest"));
+    Ok(())
   }
 
   #[test]
-  fn scrape_completed_minimal() {
-    let x = completed(json!({ "content": "<p>hi</p>", "pageStatusCode": 200 }));
+  fn scrape_completed_minimal() -> TestResult {
+    let x = completed(json!({ "content": "<p>hi</p>", "pageStatusCode": 200 }))?;
     assert!(x.job_id.is_none());
     assert!(x.response_headers.is_empty());
     assert!(x.screenshots.is_empty());
     assert!(x.action_results.is_empty());
+    Ok(())
   }
 
   #[test]
-  fn scrape_completed_with_gcs_handoff() {
-    let x = completed(handoff_completed());
-    let file = x.file.expect("file");
+  fn scrape_completed_with_gcs_handoff() -> TestResult {
+    let x = completed(handoff_completed())?;
+    assert!(x.used_mobile_proxy);
+    let file = x.file.ok_or("missing file")?;
     assert_eq!(file.name, "report.pdf");
     assert!(matches!(
       file.content,
       FireEngineScrapeFileContent::Offloaded { ref gcs_uri, size_bytes: 59163826, .. }
         if gcs_uri == "gs://fire-engine-handoff/pdf-handoff/0f1e2d3c-job.pdf"
     ));
-    assert!(x.used_mobile_proxy);
+    Ok(())
   }
 
   #[test]
-  fn scrape_completed_with_inline_file() {
+  fn scrape_completed_with_inline_file() -> TestResult {
     let mut value = handoff_completed();
     value["file"] = json!({ "name": "report.pdf", "content": "JVBERi0=" });
-    let x = completed(value);
+    let x = completed(value)?;
     assert!(matches!(
       x.file.map(|f| f.content),
       Some(FireEngineScrapeFileContent::Base64 { ref content }) if content == "JVBERi0="
@@ -362,27 +375,30 @@ mod tests {
 
     let mut value = handoff_completed();
     value["file"] = serde_json::Value::Null;
-    assert!(completed(value).file.is_none());
+    assert!(completed(value)?.file.is_none());
+    Ok(())
   }
 
   #[test]
-  fn scrape_processing() {
-    let x = processing(json!({ "jobId": "job-id", "processing": true }));
+  fn scrape_processing() -> TestResult {
+    let x = processing(json!({ "jobId": "job-id", "processing": true }))?;
     assert_eq!(x.job_id, "job-id");
+    Ok(())
   }
 
   #[test]
-  fn scrape_failed() {
-    let x = failed(site_protection_failure());
+  fn scrape_failed() -> TestResult {
+    let x = failed(site_protection_failure())?;
     assert_eq!(x.error, "Site protection detected");
     assert!(x.retry_with_stealth);
 
-    let x = failed(json!({ "error": "Chrome error: net::ERR_CERT_DATE_INVALID" }));
+    let x = failed(json!({ "error": "Chrome error: net::ERR_CERT_DATE_INVALID" }))?;
     assert!(!x.retry_with_stealth);
+    Ok(())
   }
 
   #[test]
-  fn check_status_completed() {
+  fn check_status_completed() -> TestResult {
     let x = completed(json!({
       "jobId": "job-id",
       "state": "completed",
@@ -395,7 +411,7 @@ mod tests {
       "actionResults": [],
       "file": null,
       "usedMobileProxy": true,
-    }));
+    }))?;
     assert_eq!(x.job_id.as_deref(), Some("job-id"));
     assert!(x.used_mobile_proxy);
 
@@ -403,11 +419,12 @@ mod tests {
     value["jobId"] = json!("job-id");
     value["state"] = json!("completed");
     value["processing"] = json!(false);
-    assert!(completed(value).file.is_some());
+    assert!(completed(value)?.file.is_some());
+    Ok(())
   }
 
   #[test]
-  fn check_status_processing_in_every_state() {
+  fn check_status_processing_in_every_state() -> TestResult {
     for state in [
       "delayed",
       "active",
@@ -417,18 +434,19 @@ mod tests {
       "prioritized",
       "pending",
     ] {
-      let x = processing(json!({ "jobId": "job-id", "state": state, "processing": true }));
+      let x = processing(json!({ "jobId": "job-id", "state": state, "processing": true }))?;
       assert_eq!(x.job_id, "job-id");
     }
+    Ok(())
   }
 
   #[test]
-  fn check_status_failed() {
+  fn check_status_failed() -> TestResult {
     let mut value = site_protection_failure();
     value["jobId"] = json!("job-id");
     value["state"] = json!("failed");
     value["processing"] = json!(false);
-    let x = failed(value);
+    let x = failed(value)?;
     assert_eq!(x.error, "Site protection detected");
     assert!(x.retry_with_stealth);
 
@@ -437,8 +455,27 @@ mod tests {
       "state": "failed",
       "processing": false,
       "error": "Dns resolution error for hostname: nope.invalid",
-    }));
+    }))?;
     assert!(!x.retry_with_stealth);
+    Ok(())
+  }
+
+  #[test]
+  fn has_state_only_for_poll_bodies() -> TestResult {
+    assert!(!parse_ok(handoff_completed())?.has_state());
+    assert!(!parse_ok(json!({ "jobId": "job-id", "processing": true }))?.has_state());
+    assert!(!parse_ok(site_protection_failure())?.has_state());
+
+    let mut value = handoff_completed();
+    value["state"] = json!("completed");
+    assert!(parse_ok(value)?.has_state());
+    assert!(
+      parse_ok(json!({ "jobId": "job-id", "state": "waiting", "processing": true }))?.has_state()
+    );
+    let mut value = site_protection_failure();
+    value["state"] = json!("failed");
+    assert!(parse_ok(value)?.has_state());
+    Ok(())
   }
 
   #[test]
