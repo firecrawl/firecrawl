@@ -23,4 +23,7 @@ def legal_regulatory_search(
     response = client.post(ENDPOINT, request.model_dump(exclude_none=True))
     if response.status_code != 200:
         handle_response_error(response, "search legal and regulatory sources")
-    return LegalRegulatorySearchResponse.model_validate(response.json())
+    response_data = response.json()
+    if not response_data.get("success"):
+        handle_response_error(response, "search legal and regulatory sources")
+    return LegalRegulatorySearchResponse.model_validate(response_data)
