@@ -6,7 +6,7 @@ from ..types import LegalRegulatorySearchRequest, LegalRegulatorySearchResponse
 from ..utils import HttpClient, handle_response_error
 
 
-ENDPOINT = "/v2/search/legal-regulatory"
+ENDPOINT = "/v2/search/gov"
 
 
 def legal_regulatory_search(
