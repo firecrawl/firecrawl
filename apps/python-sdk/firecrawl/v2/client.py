@@ -17,6 +17,7 @@ from .types import (
     SearchData,
     DeveloperSearchResponse,
     DeveloperSearchType,
+    LegalRegulatorySearchResponse,
     SourceOption,
     CategoryOption,
     FindToolsData,
@@ -69,6 +70,7 @@ from .methods import crawl as crawl_module
 from .methods import batch as batch_module
 from .methods import search as search_module
 from .methods import developer as developer_module
+from .methods import legal_regulatory as legal_regulatory_module
 from .methods import map as map_module
 from .methods import batch as batch_methods
 from .methods import usage as usage_methods
@@ -583,6 +585,16 @@ class FirecrawlClient:
             archived=archived,
             fork=fork,
             skills=skills,
+        )
+
+    def legal_regulatory_search(
+        self,
+        query: str,
+        k: Optional[int] = None,
+    ) -> LegalRegulatorySearchResponse:
+        """Search the Legal and Regulatory Index of US primary law and regulatory material."""
+        return legal_regulatory_module.legal_regulatory_search(
+            self.http_client, query, k=k
         )
     
     def crawl(

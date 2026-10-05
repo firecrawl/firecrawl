@@ -8,6 +8,7 @@ import { parse as parseMethod, getParseFormats } from "./methods/parse";
 import { search } from "./methods/search";
 import { scrapeAlexandria, findTools } from "./methods/tools";
 import { developerSearch as developerSearchMethod } from "./methods/developer";
+import { legalRegulatorySearch as legalRegulatorySearchMethod } from "./methods/legalRegulatory";
 import { map as mapMethod } from "./methods/map";
 import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
 import {
@@ -60,6 +61,8 @@ import type {
   SearchRequest,
   DeveloperSearchOptions,
   DeveloperSearchResponse,
+  LegalRegulatorySearchOptions,
+  LegalRegulatorySearchResponse,
   EndpointFeedbackRequest,
   FeedbackResponse,
   SearchFeedbackRequest,
@@ -304,6 +307,17 @@ export class FirecrawlClient {
     options: DeveloperSearchOptions = {},
   ): Promise<DeveloperSearchResponse> {
     return developerSearchMethod(this.http, query, options);
+  }
+
+  /**
+   * Search the Legal and Regulatory Index: primary law and regulatory material
+   * from US federal, state, and local government sources.
+   */
+  async legalRegulatorySearch(
+    query: string,
+    options: LegalRegulatorySearchOptions = {},
+  ): Promise<LegalRegulatorySearchResponse> {
+    return legalRegulatorySearchMethod(this.http, query, options);
   }
 
   /**
