@@ -268,7 +268,7 @@ export async function fdbEnqueueScrapeJobs(
   let teamLimit: number | null = null;
   if (!isSelfHosted()) {
     teamLimit =
-      (await getACUCTeam(teamId))?.concurrency_limit ??
+      (await getACUCTeam(teamId).catch(() => null))?.concurrency_limit ??
       DEFAULT_TEAM_LIMITS.concurrency_limit;
   }
 

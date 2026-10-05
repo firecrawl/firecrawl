@@ -331,8 +331,8 @@ export async function concurrentJobDone(job: NuQJob<any>) {
 
     // Once per call, not once per job promoted below.
     const maxTeamConcurrency =
-      (await getACUCTeam(job.data.team_id))?.concurrency_limit ??
-      DEFAULT_TEAM_LIMITS.concurrency_limit;
+      (await getACUCTeam(job.data.team_id).catch(() => null))
+        ?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
 
     let staleSkipped = 0;
     while (staleSkipped < 100) {
