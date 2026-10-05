@@ -21,7 +21,7 @@ overrides:
   bn.js@<5.2.3: '>=5.2.3'
   '@tootallnate/once@<3.0.1': '>=3.0.1'
   yauzl: ^3.2.1
-  undici: 7.30.0
+  undici: 7.29.1
   axios@>=1.0.0 <1.20.0: 1.20.0
   '@grpc/grpc-js@>=1.14.0 <2.0.0': 1.14.5
   picomatch@<4.0.4: '>=4.0.4'
@@ -200,7 +200,7 @@ importers:
         version: 1.2.0
       http-cookie-agent:
         specifier: ^7.0.1
-        version: 7.0.1(tough-cookie@4.1.4)(undici@7.30.0)
+        version: 7.0.1(tough-cookie@4.1.4)(undici@7.29.1)
       ioredis:
         specifier: ^5.6.1
         version: 5.6.1
@@ -286,8 +286,8 @@ importers:
         specifier: npm:typescript@7.0.2
         version: typescript@7.0.2
       undici:
-        specifier: 7.30.0
-        version: 7.30.0
+        specifier: 7.29.1
+        version: 7.29.1
       uuid:
         specifier: ^13.0.1
         version: 13.0.2
@@ -3172,7 +3172,7 @@ packages:
     engines: {node: '>=20.0.0'}
     peerDependencies:
       tough-cookie: ^4.0.0 || ^5.0.0
-      undici: 7.30.0
+      undici: 7.29.1
     peerDependenciesMeta:
       undici:
         optional: true
@@ -4462,8 +4462,8 @@ packages:
   undici-types@7.16.0:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
 
-  undici@7.30.0:
-    resolution: {integrity: sha512-dkrQXeHSaoamnItlYbmzG0wFYrM0ZwDxCIg0A7aKjTyyhh9svRzCNFEzV+Vm05/yehjCzjDZ31KXfGEjYSztDQ==}
+  undici@7.29.1:
+    resolution: {integrity: sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q==}
     engines: {node: '>=20.18.1'}
 
   universal-user-agent@7.0.3:
@@ -4831,7 +4831,7 @@ snapshots:
       '@ai-sdk/provider': 3.0.16
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.1.0
-      undici: 7.30.0
+      undici: 7.29.1
       zod: 4.1.12
 
   '@ai-sdk/provider-utils@4.0.57(zod@4.1.12)':
@@ -4839,7 +4839,7 @@ snapshots:
       '@ai-sdk/provider': 3.0.18
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.1.0
-      undici: 7.30.0
+      undici: 7.29.1
       zod: 4.1.12
 
   '@ai-sdk/provider@3.0.10':
@@ -7263,12 +7263,12 @@ snapshots:
       domutils: 3.1.0
       entities: 4.5.0
 
-  http-cookie-agent@7.0.1(tough-cookie@4.1.4)(undici@7.30.0):
+  http-cookie-agent@7.0.1(tough-cookie@4.1.4)(undici@7.29.1):
     dependencies:
       agent-base: 7.1.3
       tough-cookie: 4.1.4
     optionalDependencies:
-      undici: 7.30.0
+      undici: 7.29.1
 
   http-errors@2.0.0:
     dependencies:
@@ -7440,7 +7440,7 @@ snapshots:
       saxes: 6.0.0
       symbol-tree: 3.2.4
       tough-cookie: 6.0.1
-      undici: 7.30.0
+      undici: 7.29.1
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -8575,7 +8575,7 @@ snapshots:
 
   undici-types@7.16.0: {}
 
-  undici@7.30.0: {}
+  undici@7.29.1: {}
 
   universal-user-agent@7.0.3: {}
 
