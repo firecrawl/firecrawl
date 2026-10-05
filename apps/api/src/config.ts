@@ -134,14 +134,33 @@ const configSchema = z.object({
   // OIDC issuer (e.g. https://auth.world.org), the confidential client
   // registered with it, and a dedicated secret that signs the keyless
   // credentials minted after verification and pseudonymizes World ID subjects.
-  WORLD_ID_ISSUER: emptyStringAsUndefined(z.string().url()),
-  WORLD_ID_CLIENT_ID: emptyStringAsUndefined(z.string()),
-  WORLD_ID_CLIENT_SECRET: emptyStringAsUndefined(z.string()),
-  WORLD_ID_CREDENTIAL_SECRET: emptyStringAsUndefined(z.string().min(32)),
+  WORLD_ID_ISSUER: emptyStringAsUndefined(
+    z
+      .string()
+      .trim()
+      .url()
+      .refine(
+        value => value.startsWith("https://"),
+        "WORLD_ID_ISSUER must be an https URL",
+      ),
+  ),
+  WORLD_ID_CLIENT_ID: emptyStringAsUndefined(z.string().trim().min(1)),
+  WORLD_ID_CLIENT_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  WORLD_ID_CREDENTIAL_SECRET: emptyStringAsUndefined(z.string().trim().min(32)),
   // Optional comma-separated allowlist of subject hashes. When set, only these
   // verified humans are issued a credential; unset issues one to anyone who
   // verifies.
-  WORLD_ID_ALLOWED_SUBJECTS: emptyStringAsUndefined(z.string()),
+  WORLD_ID_ALLOWED_SUBJECTS: emptyStringAsUndefined(
+    z
+      .string()
+      .refine(
+        value =>
+          value
+            .split(",")
+            .every(entry => /^[A-Za-z0-9_-]{43}$/.test(entry.trim())),
+        "WORLD_ID_ALLOWED_SUBJECTS must be comma-separated subject hashes",
+      ),
+  ),
   // Optional Spur Context API token (https://docs.spur.us/context-api). When
   // set, keyless requests have their client IP checked against Spur and are
   // refused if the IP fronts anonymizing/rotating infrastructure (VPN/proxy/

@@ -66,10 +66,13 @@ export async function keylessEligibilityController(
   // identity, so it gets the regular signup link.
   let signupUrl = keylessFallbackSignupUrl(surface);
   if (reason) {
-    const link = keylessSignupUrlForIp(ip, surface, reason);
+    // A World ID caller isn't keyed on the IP, so it gets no IP-bound link
+    // or funnel report, as in auth.
+    const promptIp = worldIdSubject ? null : ip;
+    const link = keylessSignupUrlForIp(promptIp, surface, reason);
     signupUrl = link.url;
     // The hosted MCP relays this link as the prompt; this check answers 200.
-    reportKeylessPromptShown(ip, surface, reason, 200, link.signupRef);
+    reportKeylessPromptShown(promptIp, surface, reason, 200, link.signupRef);
   }
   res.status(200).json({ ...result, signupUrl });
 }

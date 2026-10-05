@@ -5,7 +5,7 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, errors, jwtVerify } from "jose";
 import { config } from "../config";
 
 // World ID verified-human keyless bucket.
@@ -275,7 +275,25 @@ export type WorldIdDevicePoll =
   | { outcome: "not_allowed"; subjectHash: string }
   | { outcome: "error"; status: number; error: string };
 
-/** Validates a World ID ID token and returns its subject hash, or null. */
+// The verification failures that mean the token itself is bad. Anything else
+// (a JWKS fetch that times out, errors or returns garbage) is the issuer being
+// unavailable and must not be reported as a rejected token.
+const TOKEN_REJECTIONS = [
+  errors.JWTClaimValidationFailed,
+  errors.JWTExpired,
+  errors.JWTInvalid,
+  errors.JWSInvalid,
+  errors.JWSSignatureVerificationFailed,
+  errors.JOSEAlgNotAllowed,
+  errors.JOSENotSupported,
+  errors.JWKSNoMatchingKey,
+  errors.JWKSMultipleMatchingKeys,
+];
+
+/**
+ * Validates a World ID ID token and returns its subject hash, or null when the
+ * token is rejected. Throws when the issuer's keys can't be fetched.
+ */
 export async function verifyWorldIdIdToken(
   idToken: string,
 ): Promise<string | null> {
@@ -290,8 +308,11 @@ export async function verifyWorldIdIdToken(
       return null;
     }
     return worldIdSubjectHash(issuer(), payload.sub);
-  } catch {
-    return null;
+  } catch (error) {
+    if (TOKEN_REJECTIONS.some(rejection => error instanceof rejection)) {
+      return null;
+    }
+    throw error;
   }
 }
 
@@ -314,7 +335,16 @@ export async function pollWorldIdDeviceFlow(
   }
 
   if (res.status === 200 && typeof res.body.id_token === "string") {
-    const subjectHash = await verifyWorldIdIdToken(res.body.id_token);
+    let subjectHash: string | null;
+    try {
+      subjectHash = await verifyWorldIdIdToken(res.body.id_token);
+    } catch {
+      return {
+        outcome: "error",
+        status: 502,
+        error: "temporarily_unavailable",
+      };
+    }
     if (!subjectHash) {
       return { outcome: "error", status: 400, error: "invalid_grant" };
     }

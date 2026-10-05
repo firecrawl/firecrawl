@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { RateLimiterRedis, RateLimiterRes } from "rate-limiter-flexible";
 import { redisRateLimitClient } from "../../services/rate-limiter";
+import { isKeylessIpEligible, normalizeKeylessIpv4 } from "../../lib/keyless";
 import {
   isWorldIdConfigured,
   pollWorldIdDeviceFlow,
@@ -8,14 +9,54 @@ import {
 } from "../../lib/world-id";
 import { keylessClientIp } from "../auth";
 
-// Starts call the World ID issuer with our client credentials, which carry a
-// per-client limit, so one caller must not be able to use it up.
-const startLimiter = new RateLimiterRedis({
-  storeClient: redisRateLimitClient,
-  keyPrefix: "keyless_world_id_start",
-  points: 10,
-  duration: 3600,
-});
+// Starts and polls call the World ID issuer with our client credentials,
+// which carry a per-client limit, so one caller must not be able to use it up.
+// Callers are keyed like the keyless tier: one bucket per canonical IPv4, and
+// one shared, larger bucket for every other address (IPv6 rotates too cheaply
+// to key on). A poll budget covers one full attempt at the issuer's 5s
+// interval over the 20 minutes a device code lives.
+const limiter = (keyPrefix: string, points: number, duration: number) =>
+  new RateLimiterRedis({
+    storeClient: redisRateLimitClient,
+    keyPrefix,
+    points,
+    duration,
+  });
+const throttles = {
+  start: {
+    ipv4: limiter("keyless_world_id_start", 10, 3600),
+    shared: limiter("keyless_world_id_start_shared", 100, 3600),
+  },
+  poll: {
+    ipv4: limiter("keyless_world_id_poll", 300, 1200),
+    shared: limiter("keyless_world_id_poll_shared", 3000, 1200),
+  },
+};
+
+/** Consumes one point for the caller; answers 429 and returns false when out. */
+async function throttle(
+  req: Request,
+  res: Response,
+  kind: keyof typeof throttles,
+): Promise<boolean> {
+  const ip = keylessClientIp(req);
+  const ipv4 = isKeylessIpEligible(ip);
+  try {
+    await (ipv4 ? throttles[kind].ipv4 : throttles[kind].shared).consume(
+      ipv4 ? normalizeKeylessIpv4(ip) : "shared",
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof RateLimiterRes) {
+      res
+        .status(429)
+        .setHeader("Retry-After", Math.ceil(error.msBeforeNext / 1000))
+        .json({ success: false, error: "slow_down" });
+      return false;
+    }
+    throw error;
+  }
+}
 
 /**
  * Start World ID verification for the keyless tier (OIDC device flow). The
@@ -31,18 +72,7 @@ export async function keylessWorldIdDeviceController(
     return;
   }
 
-  try {
-    await startLimiter.consume(keylessClientIp(req));
-  } catch (error) {
-    if (error instanceof RateLimiterRes) {
-      res
-        .status(429)
-        .setHeader("Retry-After", Math.ceil(error.msBeforeNext / 1000))
-        .json({ success: false, error: "slow_down" });
-      return;
-    }
-    throw error;
-  }
+  if (!(await throttle(req, res, "start"))) return;
 
   const start = await startWorldIdDeviceFlow();
   if (!start.ok) {
@@ -76,6 +106,8 @@ export async function keylessWorldIdTokenController(
     res.status(404).json({ success: false, error: "Not found" });
     return;
   }
+
+  if (!(await throttle(req, res, "poll"))) return;
 
   const result = await pollWorldIdDeviceFlow(req.body?.device_handle);
   switch (result.outcome) {

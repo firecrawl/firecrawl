@@ -45,10 +45,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function idToken(claims: Record<string, unknown> = {}) {
+async function idToken(claims: Record<string, unknown> = {}, iss = ISSUER) {
   return new SignJWT({ acr: ORB_ACR, amr: ["pop"], ...claims })
     .setProtectedHeader({ alg: "RS256", kid: "k1" })
-    .setIssuer(ISSUER)
+    .setIssuer(iss)
     .setAudience(CLIENT_ID)
     .setSubject("human-1")
     .setIssuedAt()
@@ -139,6 +139,33 @@ describe("World ID credential", () => {
   });
 });
 
+describe("ID token verification outages", () => {
+  it("reports an unreachable JWKS as unavailable, not a rejected token", async () => {
+    // A fresh issuer so the JWKS cache from earlier tests isn't reused.
+    const down = "https://issuer-down.test";
+    config.WORLD_ID_ISSUER = down;
+    const token = await idToken({ auth_time: 1 }, down);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        if (String(url) === `${down}/api/v1/token`) {
+          return new Response(JSON.stringify({ id_token: token }), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response("upstream down", { status: 503 });
+      }),
+    );
+    expect(
+      await pollWorldIdDeviceFlow(sealDeviceCode("device-secret")),
+    ).toEqual({
+      outcome: "error",
+      status: 502,
+      error: "temporarily_unavailable",
+    });
+  });
+});
+
 describe("device handle", () => {
   it("round-trips the device code and rejects a tampered handle", () => {
     const handle = sealDeviceCode("device-secret");
@@ -220,6 +247,11 @@ describe("device flow", () => {
       status: 400,
       error: "authorization_pending",
     });
+
+    stubIssuer({ status: 400, body: { error: "access_denied" } });
+    expect(
+      await pollWorldIdDeviceFlow(sealDeviceCode("device-secret")),
+    ).toEqual({ outcome: "error", status: 400, error: "access_denied" });
 
     expect(await pollWorldIdDeviceFlow("forged")).toEqual({
       outcome: "error",

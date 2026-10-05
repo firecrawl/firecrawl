@@ -601,6 +601,21 @@ export async function logKeylessCreditUsage(
   if (config.USE_DB_AUTHENTICATION !== true) return;
 
   keylessCreditsTotal.inc(creditsUsed);
+
+  // `keyless_credit_usage.ip` and the zero-credit line hold the raw client
+  // IP, which a World ID bucket isn't keyed on. Its usage goes to the same
+  // canonical log under the team id instead; the client IP of each World ID
+  // request is already on its `keyless/consume` line.
+  if (ip.startsWith(WORLD_ID_IDENTITY_PREFIX)) {
+    logger.info(`Keyless World ID usage team=${teamUuid}`, {
+      canonicalLog: "keyless/usage",
+      teamId: teamUuid,
+      worldId: true,
+      creditsUsed,
+    });
+    return;
+  }
+
   if (creditsUsed <= 0) {
     // TODO(firecrawl-db): switch to a `keyless_credit_usage` row once the
     // zero-credit usage migration is merged. The IP is repeated in the
