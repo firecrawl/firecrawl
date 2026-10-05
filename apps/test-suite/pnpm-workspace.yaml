@@ -34,3 +34,6 @@ overrides:
   "@grpc/grpc-js@>=1.14.0 <2.0.0": "1.14.5"
   "@opentelemetry/core@>=2.0.0 <2.8.0": "2.8.0"
   "fflate@<0.8.2": "0.8.3"
+  # GHSA-ch52-4w7c-c8xp: pin the 4.x line only. Exact 4.3.0 cannot
+  # resolve to 5.x.
+  "http-cache-semantics@>=4.0.0 <5.0.0": "4.3.0"
