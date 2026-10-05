@@ -7,7 +7,7 @@ from ...utils.error_handler import handle_response_error
 from ...utils.http_client_async import AsyncHttpClient
 
 
-ENDPOINT = "/v2/search/legal-regulatory"
+ENDPOINT = "/v2/search/gov"
 
 
 async def legal_regulatory_search(

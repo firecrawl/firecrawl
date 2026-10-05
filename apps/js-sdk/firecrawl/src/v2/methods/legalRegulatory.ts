@@ -8,7 +8,7 @@ import {
   throwForBadResponse,
 } from "../utils/errorHandler";
 
-const ENDPOINT = "/v2/search/legal-regulatory";
+const ENDPOINT = "/v2/search/gov";
 
 /** Search the Legal and Regulatory Index. */
 export async function legalRegulatorySearch(

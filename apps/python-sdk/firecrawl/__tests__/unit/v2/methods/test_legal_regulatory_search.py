@@ -37,7 +37,7 @@ def test_legal_regulatory_search_posts_query_and_k_and_parses_web_results():
     result = client.legal_regulatory_search("food labeling requirements", k=5)
 
     transport.post.assert_called_once_with(
-        "/v2/search/legal-regulatory", {"query": "food labeling requirements", "k": 5}
+        "/v2/search/gov", {"query": "food labeling requirements", "k": 5}
     )
     assert result.data.web[0].title == "21 CFR Part 101 -- Food Labeling"
     assert result.data.web[0].position == 1
@@ -52,7 +52,7 @@ def test_legal_regulatory_search_omits_k_when_not_provided():
     client.legal_regulatory_search("zoning variance")
 
     transport.post.assert_called_once_with(
-        "/v2/search/legal-regulatory", {"query": "zoning variance"}
+        "/v2/search/gov", {"query": "zoning variance"}
     )
 
 
@@ -76,6 +76,6 @@ async def test_async_legal_regulatory_search_posts_query_and_k():
     result = await client.legal_regulatory_search("food labeling requirements", k=5)
 
     transport.post.assert_awaited_once_with(
-        "/v2/search/legal-regulatory", {"query": "food labeling requirements", "k": 5}
+        "/v2/search/gov", {"query": "food labeling requirements", "k": 5}
     )
     assert result.data.web[0].url.startswith("https://www.ecfr.gov/")

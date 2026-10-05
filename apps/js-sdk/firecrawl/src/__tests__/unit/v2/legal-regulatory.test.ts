@@ -36,7 +36,7 @@ describe("legalRegulatorySearch", () => {
       { k: 5 },
     );
 
-    expect(http.post).toHaveBeenCalledWith("/v2/search/legal-regulatory", {
+    expect(http.post).toHaveBeenCalledWith("/v2/search/gov", {
       query: "food labeling requirements",
       k: 5,
     });
@@ -50,7 +50,7 @@ describe("legalRegulatorySearch", () => {
 
     await clientWith(http).legalRegulatorySearch("zoning variance");
 
-    expect(http.post).toHaveBeenCalledWith("/v2/search/legal-regulatory", {
+    expect(http.post).toHaveBeenCalledWith("/v2/search/gov", {
       query: "zoning variance",
     });
   });
