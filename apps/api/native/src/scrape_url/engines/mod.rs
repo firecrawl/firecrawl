@@ -8,6 +8,7 @@ use super::{
   error::ScrapeURLError,
   feature_flags::ConstFeatureFlags,
   meta::Meta,
+  options::ProxyMode,
   raw_page::{RawPageResult, ScrapeProxy, raw_page_span, record_raw_page},
 };
 
@@ -50,6 +51,11 @@ impl EngineKind {
       EngineKind::FireEngine(_) => fire_engine::FireEngine::FEATURES,
       EngineKind::Playwright(_) => playwright::PlaywrightEngine::FEATURES,
     }
+  }
+
+  /// Only fire-engine can route through enhanced proxies; the others ignore the proxy.
+  pub fn supports_enhanced_proxy(&self) -> bool {
+    matches!(self, EngineKind::FireEngine(_))
   }
 
   pub fn special_regex(&self) -> Option<&'static Regex> {
@@ -119,6 +125,128 @@ impl<T> EngineOutcome<T> {
     match self {
       Self::Scraped(x) => EngineOutcome::Scraped(f(x)),
       Self::ProxyElevationNeeded => EngineOutcome::ProxyElevationNeeded,
+    }
+  }
+}
+
+/// Whether a basic-proxy attempt in `auto` mode should be retried once with
+/// enhanced proxies: the engine asked for it, or the page status (401/403/429)
+/// suggests the basic proxy was inadequate and the engine can switch proxies.
+pub fn should_elevate_proxy(
+  mode: ProxyMode,
+  attempted: ScrapeProxy,
+  engine_supports_enhanced: bool,
+  outcome: &EngineOutcome<RawPageResult>,
+) -> bool {
+  if mode != ProxyMode::Auto || attempted != ScrapeProxy::Basic {
+    return false;
+  }
+
+  match outcome {
+    EngineOutcome::ProxyElevationNeeded => true,
+    EngineOutcome::Scraped(result) => {
+      engine_supports_enhanced && matches!(result.status_code, 401 | 403 | 429)
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use url::Url;
+
+  use super::super::raw_page::RawPageContent;
+  use super::*;
+
+  fn scraped(status_code: u16) -> EngineOutcome<RawPageResult> {
+    EngineOutcome::Scraped(RawPageResult {
+      url: Url::parse("https://example.com/").unwrap(),
+      status_code,
+      content: RawPageContent::ChromeRenderedDOM(String::new()),
+      screenshot: None,
+      actions: None,
+      cached_at: None,
+      content_type: "text/html".to_string(),
+      proxy_used: ScrapeProxy::Basic,
+      timezone: None,
+      filename: None,
+    })
+  }
+
+  #[test]
+  fn elevates_on_proxy_block_status_in_auto_mode() {
+    for status in [401, 403, 429] {
+      assert!(should_elevate_proxy(
+        ProxyMode::Auto,
+        ScrapeProxy::Basic,
+        true,
+        &scraped(status)
+      ));
+    }
+  }
+
+  #[test]
+  fn does_not_elevate_on_other_statuses() {
+    for status in [200, 304, 400, 404, 407, 500, 503] {
+      assert!(!should_elevate_proxy(
+        ProxyMode::Auto,
+        ScrapeProxy::Basic,
+        true,
+        &scraped(status)
+      ));
+    }
+  }
+
+  #[test]
+  fn elevates_when_engine_asks_in_auto_mode() {
+    let outcome = EngineOutcome::ProxyElevationNeeded;
+    assert!(should_elevate_proxy(
+      ProxyMode::Auto,
+      ScrapeProxy::Basic,
+      true,
+      &outcome
+    ));
+  }
+
+  #[test]
+  fn never_elevates_outside_auto_mode() {
+    for mode in [ProxyMode::Basic, ProxyMode::Enhanced] {
+      for proxy in [ScrapeProxy::Basic, ScrapeProxy::Enhanced] {
+        assert!(!should_elevate_proxy(mode, proxy, true, &scraped(403)));
+        assert!(!should_elevate_proxy(
+          mode,
+          proxy,
+          true,
+          &EngineOutcome::ProxyElevationNeeded
+        ));
+      }
+    }
+  }
+
+  #[test]
+  fn elevates_at_most_once() {
+    assert!(!should_elevate_proxy(
+      ProxyMode::Auto,
+      ScrapeProxy::Enhanced,
+      true,
+      &scraped(403)
+    ));
+    assert!(!should_elevate_proxy(
+      ProxyMode::Auto,
+      ScrapeProxy::Enhanced,
+      true,
+      &EngineOutcome::ProxyElevationNeeded
+    ));
+  }
+
+  #[test]
+  fn does_not_elevate_on_status_for_engines_without_enhanced_proxies() {
+    for status in [401, 403, 429] {
+      assert!(!should_elevate_proxy(
+        ProxyMode::Auto,
+        ScrapeProxy::Basic,
+        false,
+        &scraped(status)
+      ));
     }
   }
 }

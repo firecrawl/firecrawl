@@ -12,6 +12,8 @@ use super::super::{
 };
 use super::{Engine, EngineOutcome};
 
+static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+
 static PLAYWRIGHT_MICROSERVICE_URL: LazyLock<Option<String>> = LazyLock::new(|| {
   if let Some(url) = std::env::var("PLAYWRIGHT_MICROSERVICE_URL").ok()
     && !url.is_empty()
@@ -61,9 +63,7 @@ impl Engine for PlaywrightEngine {
     meta: &Meta,
     _proxy: ScrapeProxy,
   ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError> {
-    let client = reqwest::Client::new(); // TODO: cache this maybe?
-
-    let res = client
+    let res = CLIENT
       .post(self.url)
       .json(&PlaywrightRequest {
         url: meta.get_url(),

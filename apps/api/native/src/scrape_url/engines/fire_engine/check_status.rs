@@ -1,30 +1,7 @@
-use reqwest::Client;
-use serde::Deserialize;
 use tracing::instrument;
 
 use super::super::super::error::ScrapeURLError;
-use super::{
-  FireEngine,
-  scrape::{FireEngineScrapeCompleted, FireEngineScrapeFailed, FireEngineScrapeProcessing},
-};
-
-#[derive(Deserialize)]
-#[serde(tag = "state", rename_all = "kebab-case")]
-pub enum FireEngineScrapeStatus {
-  Completed(FireEngineScrapeCompleted),
-
-  #[serde(rename = "delayed")]
-  #[serde(alias = "active")]
-  #[serde(alias = "waiting")]
-  #[serde(alias = "waiting-children")]
-  #[serde(alias = "unknown")]
-  #[serde(alias = "prioritized")]
-  #[serde(alias = "pending")]
-  #[allow(dead_code)] // while never read it's still required for parsing properly
-  Processing(FireEngineScrapeProcessing),
-
-  Failed(FireEngineScrapeFailed),
-}
+use super::{CLIENT, FireEngine, scrape::FireEngineScrapeResponse};
 
 impl FireEngine {
   #[instrument(
@@ -36,10 +13,9 @@ impl FireEngine {
   pub(super) async fn call_check_status(
     &self,
     job_id: &str,
-  ) -> Result<FireEngineScrapeStatus, ScrapeURLError> {
-    let client = Client::new(); // TODO: should we cache this
+  ) -> Result<FireEngineScrapeResponse, ScrapeURLError> {
     // TODO: retries may be good here
-    let res = client
+    let res = CLIENT
       .get(format!("{}/scrape/{}", self.url, job_id))
       .send()
       .await?;
@@ -47,14 +23,14 @@ impl FireEngine {
     // NOTE: Explicitly do not check status code here.
     // Fire-engine can send 500 for things that we want to parse.
 
-    let status = res.json::<FireEngineScrapeStatus>().await?;
+    let status = res.json::<FireEngineScrapeResponse>().await?;
 
     tracing::Span::current().record(
       "response.status",
       match &status {
-        FireEngineScrapeStatus::Completed(_) => "completed",
-        FireEngineScrapeStatus::Processing(_) => "processing",
-        FireEngineScrapeStatus::Failed(_) => "failed",
+        FireEngineScrapeResponse::Completed(_) => "completed",
+        FireEngineScrapeResponse::Processing(_) => "processing",
+        FireEngineScrapeResponse::Failed(_) => "failed",
       },
     );
 
