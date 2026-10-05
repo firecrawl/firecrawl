@@ -183,7 +183,7 @@ impl ScrapeURLError {
       Self::ProxySelectionError => ScrapeErrorPayload::ProxySelectionError,
       Self::NoEnginesLeftError { fallback_list } => ScrapeErrorPayload::AllEnginesFailed {
         fallback_list: fallback_list.iter().map(|x| x.to_string()).collect(),
-        message,
+        message: no_engines_left_message(fallback_list),
       },
       Self::ActionsNotSupportedError => ScrapeErrorPayload::ActionsNotSupported {
         message: "Actions are not supported by any available engines. Actions require Fire Engine (fire-engine) to be enabled.".to_string(),
@@ -379,6 +379,19 @@ impl From<pdf_inspector::PdfType> for PdfType {
       pdf_inspector::PdfType::Mixed => Self::Mixed,
     }
   }
+}
+
+/// Same text as TS `NoEnginesLeftError`, including its self-hosted variant.
+fn no_engines_left_message(fallback_list: &[&str]) -> String {
+  let contact = if std::env::var("USE_DB_AUTHENTICATION").as_deref() == Ok("true") {
+    "If the issue persists, contact us at help@firecrawl.com with your request ID for investigation."
+  } else {
+    "Check your server logs for more detailed error information from each engine."
+  };
+  format!(
+    "All scraping engines failed to retrieve content from this URL. Engines tried: [{}]. This usually happens when: (1) The URL is invalid or the page doesn't exist (404), (2) The website is blocking automated access, (3) The website is down or unreachable, (4) The page requires authentication. Double check the URL is correct and accessible in a browser. {contact}",
+    fallback_list.join(", ")
+  )
 }
 
 fn unknown_error_message(inner: &str) -> String {
