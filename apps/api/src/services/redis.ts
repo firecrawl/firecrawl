@@ -63,6 +63,14 @@ const getValue = async (key: string): Promise<string | null> => {
 };
 
 /**
+ * Overwrite an existing key's value without touching its TTL. Does nothing
+ * when the key no longer exists, so it never resurrects a cleared entry.
+ */
+const replaceValue = async (key: string, value: string) => {
+  await redisRateLimitClient.set(key, value, "KEEPTTL", "XX");
+};
+
+/**
  * Delete a key from Redis.
  * @param {string} key The key to delete.
  */
@@ -70,7 +78,7 @@ const deleteKey = async (key: string) => {
   await redisRateLimitClient.del(key);
 };
 
-export { setValue, getValue, deleteKey };
+export { setValue, getValue, replaceValue, deleteKey };
 
 const redisEvictURL = config.REDIS_EVICT_URL ?? config.REDIS_RATE_LIMIT_URL;
 export const redisEvictConnection = new IORedis(redisEvictURL!, {

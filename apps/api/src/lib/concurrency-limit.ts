@@ -20,6 +20,8 @@ import {
 } from "./concurrency-redis";
 import { autumnService } from "../services/autumn/autumn.service";
 import { orgIdForTeam } from "./team-org";
+import { acucEntityLimitsCache } from "../controllers/auth";
+import type { AuthCreditUsageChunkFromTeam } from "../controllers/v1/types";
 import { reportPipelineError } from "./redis-pipeline";
 
 // Fallback when Autumn can't give us a concurrency value.
@@ -44,8 +46,15 @@ export async function getEffectiveConcurrencyLimit(
    * caller cannot silently omit it and take the high fail-open limit; pass
    * null only when the team genuinely has no org. */
   orgId: string | null,
+  /** The request's ACUC, when the caller has one: its cached limits save a
+   * read of the team's ACUC. */
+  acuc?: AuthCreditUsageChunkFromTeam | null,
 ): Promise<number> {
-  const autumnValue = await autumnService.getConcurrencyLimit(teamId, orgId);
+  const autumnValue = await autumnService.getConcurrencyLimit(
+    teamId,
+    orgId,
+    acucEntityLimitsCache(acuc),
+  );
   return autumnValue ?? DEFAULT_CONCURRENCY_LIMIT;
 }
 

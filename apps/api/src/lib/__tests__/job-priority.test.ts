@@ -6,6 +6,8 @@ import { vi } from "vitest";
 // asserted never to be called — the org is the caller's to pass, because
 // getJobPriority runs once per discovered link inside a crawl and must not
 // turn into a Redis GET per link.
+const teamLimitsCache = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn() }));
+
 vi.mock("../../services/redis", () => ({
   redisEvictConnection: {
     sadd: vi.fn(),
@@ -23,6 +25,7 @@ vi.mock("../../services/autumn/autumn.service", () => ({
 
 vi.mock("../../controllers/auth", () => ({
   getACUCTeam: vi.fn(),
+  acucEntityLimitsCache: vi.fn(() => teamLimitsCache),
 }));
 
 import {
@@ -32,7 +35,7 @@ import {
 } from "../job-priority";
 import { redisEvictConnection } from "../../services/redis";
 import { autumnService } from "../../services/autumn/autumn.service";
-import { getACUCTeam } from "../../controllers/auth";
+import { acucEntityLimitsCache, getACUCTeam } from "../../controllers/auth";
 import {} from "../../types";
 
 const getRateLimitMultiplier = autumnService.getRateLimitMultiplier as Mock;
@@ -174,7 +177,21 @@ describe("the org the caller supplies", () => {
 
     await getJobPriority({ team_id: "team1", org_id: "org-1" });
 
-    expect(getRateLimitMultiplier).toHaveBeenCalledWith("team1", "org-1");
+    expect(getRateLimitMultiplier).toHaveBeenCalledWith(
+      "team1",
+      "org-1",
+      teamLimitsCache,
+    );
+    expect(getACUCTeam).not.toHaveBeenCalled();
+  });
+
+  it("reads the limits from the ACUC the caller holds", async () => {
+    (redisEvictConnection.scard as Mock).mockResolvedValue(1);
+    const acuc = { team_id: "team1", org_id: "org-1" } as never;
+
+    await getJobPriority({ team_id: "team1", org_id: "org-1", acuc });
+
+    expect(acucEntityLimitsCache).toHaveBeenCalledWith(acuc);
     expect(getACUCTeam).not.toHaveBeenCalled();
   });
 
@@ -183,7 +200,11 @@ describe("the org the caller supplies", () => {
 
     await getJobPriority({ team_id: "team1", org_id: null });
 
-    expect(getRateLimitMultiplier).toHaveBeenCalledWith("team1", null);
+    expect(getRateLimitMultiplier).toHaveBeenCalledWith(
+      "team1",
+      null,
+      teamLimitsCache,
+    );
     expect(getACUCTeam).not.toHaveBeenCalled();
   });
 });

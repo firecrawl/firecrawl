@@ -285,6 +285,7 @@ export async function crawlController(
             await getEffectiveConcurrencyLimit(
               req.auth.team_id,
               req.acuc?.org_id ?? null,
+              req.acuc,
             ),
           )
         : undefined,

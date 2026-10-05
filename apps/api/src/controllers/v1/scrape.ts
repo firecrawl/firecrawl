@@ -259,6 +259,7 @@ async function scrapeControllerInner(
       await getEffectiveConcurrencyLimit(
         req.auth.team_id,
         req.acuc?.org_id ?? null,
+        req.acuc,
       ),
       aborter.signal,
       timeout ?? 60_000,
@@ -266,6 +267,7 @@ async function scrapeControllerInner(
         const jobPriority = await getJobPriority({
           team_id: req.auth.team_id,
           org_id: req.acuc?.org_id ?? null,
+          acuc: req.acuc,
           basePriority: 10,
         });
 

@@ -330,6 +330,7 @@ export async function crawlController(
   const effectiveConcurrency = await getEffectiveConcurrencyLimit(
     req.auth.team_id,
     req.acuc?.org_id ?? null,
+    req.acuc,
   );
   const sc: StoredCrawl = {
     originUrl: req.body.url,

@@ -80,6 +80,7 @@ export async function queueStatusController(
     maxConcurrency: await getEffectiveConcurrencyLimit(
       req.auth.team_id,
       req.acuc?.org_id ?? null,
+      req.acuc,
     ),
 
     mostRecentSuccess: mostRecentSuccess

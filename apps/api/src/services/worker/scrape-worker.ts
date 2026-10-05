@@ -721,10 +721,15 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               }
             }
 
-            // Hoisted: one org resolution per job, not one per discovered link.
+            // Hoisted: one org and ACUC resolution per job, not one per
+            // discovered link.
             const crawlOrgId =
               discoveredLinks.length > 0
                 ? await orgIdForJob(sc.internalOptions?.orgId, sc.team_id)
+                : null;
+            const crawlACUC =
+              discoveredLinks.length > 0
+                ? await getACUCTeam(sc.team_id).catch(() => null)
                 : null;
 
             for (const link of discoveredLinks) {
@@ -733,6 +738,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 const jobPriority = await getJobPriority({
                   team_id: sc.team_id,
                   org_id: crawlOrgId,
+                  acuc: crawlACUC,
                   basePriority: job.data.crawl_id ? 20 : 10,
                 });
                 const jobId = uuidv7();

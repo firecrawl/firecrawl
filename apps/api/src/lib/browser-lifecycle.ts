@@ -164,6 +164,7 @@ async function createBrowserSessionInternal(
   const teamLimit = await getEffectiveConcurrencyLimit(
     req.auth.team_id,
     req.acuc?.org_id ?? null,
+    req.acuc,
   );
   // An agent run opens browsers against the team's own slots, so a free team
   // (2) is throttled by its own agent. Floor trusted agent traffic at hobby,

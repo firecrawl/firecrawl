@@ -28,6 +28,7 @@ import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
 import type { RateLimiterMode } from "../../types";
+import type { EntityLimits } from "../../services/autumn/autumn.service";
 
 type Format =
   | "markdown"
@@ -1336,6 +1337,11 @@ export type AuthCreditUsageChunk = {
 
   // appended on JS-side
   is_extract?: boolean;
+
+  // The team's Autumn limits, stored only when Autumn answered. Absent on
+  // entries cached before this field existed or built while Autumn was
+  // failing; readers treat that as "not cached yet".
+  autumn_limits?: EntityLimits;
 
   // Agent signup: populated when the key is agent-provisioned
   _agentSponsor?: {

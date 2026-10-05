@@ -11,6 +11,7 @@ import {
   type LedgerAcceptance,
 } from "./terms";
 import { autumnService } from "../autumn/autumn.service";
+import { acucEntityLimitsCache } from "../../controllers/auth";
 import { HOBBY_RATE_LIMIT_MULTIPLIER } from "../rate-limiter";
 
 const requirementsSchema = z.object({
@@ -126,8 +127,8 @@ export async function authorizeProviders(
   // do not prove payment, because a free team spends signup credits; the plan
   // does. Autumn's rate-limit multiplier is 1 on the free plan and at least the
   // hobby floor on every paid one. It comes from the entity read the rate
-  // limiter caches per team, so a warm cache costs nothing and a cold one
-  // costs the fetch the limiter would have made anyway. This gate fails
+  // limiter caches in the team's ACUC, so a warm cache costs nothing and a
+  // cold one costs the fetch the limiter would have made anyway. This gate fails
   // closed: a team whose plan cannot be known (no org to bill, a preview team,
   // an Autumn error) is refused, where the rate limiter would fail open, since
   // delivering licensed content to a possibly free team is the mistake the
@@ -137,6 +138,7 @@ export async function authorizeProviders(
     const multiplier = await autumnService.getKnownRateLimitMultiplier(
       teamId,
       orgId,
+      acucEntityLimitsCache(),
     );
     if (multiplier === null)
       return refusal(

@@ -28,7 +28,7 @@ import { isKeylessIpSuspicious } from "../lib/spur";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
 import { checkIpRestriction } from "../lib/ip-restriction";
 import { checkKeyEndpointRestriction } from "../lib/key-restriction";
-import { deleteKey, getValue, setValue } from "../services/redis";
+import { deleteKey, getValue, replaceValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
 import { db, dbRr } from "../db/connection";
 import {
@@ -37,11 +37,7 @@ import {
   AuthCreditUsageChunkRow,
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
-import {
-  AuthCreditUsageChunk,
-  AuthCreditUsageChunkFromTeam,
-  TeamFlags,
-} from "./v1/types";
+import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
   OAuthIntrospectionUnavailableError,
@@ -49,7 +45,10 @@ import {
 } from "../services/oauth-token-introspection";
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
-import { autumnService } from "../services/autumn/autumn.service";
+import {
+  autumnService,
+  type EntityLimitsCache,
+} from "../services/autumn/autumn.service";
 import { ReplyError } from "ioredis";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
@@ -264,6 +263,10 @@ async function getACUC(
 
     // NOTE: Should we cache null chunks? - mogery
     if (chunk !== null && useCache) {
+      chunk.autumn_limits = await autumnService.fetchKnownEntityLimits(
+        chunk.team_id,
+        chunk.org_id,
+      );
       setCachedACUC(api_key, isExtract, chunk, credentialPurpose);
     }
 
@@ -280,7 +283,7 @@ async function setCachedACUCTeam(
     | AuthCreditUsageChunkFromTeam
     | null
     | ((
-        acuc: AuthCreditUsageChunkFromTeam,
+        acuc: AuthCreditUsageChunkFromTeam | null,
       ) => AuthCreditUsageChunkFromTeam | null),
 ) {
   const cacheKeyACUC = `acuc_team_${team_id}_${is_extract ? "extract" : "scrape"}`;
@@ -289,15 +292,20 @@ async function setCachedACUCTeam(
   try {
     await redlock.using([redLockKey], 10000, {}, async signal => {
       if (typeof acuc === "function") {
-        acuc = acuc(JSON.parse((await getValue(cacheKeyACUC)) ?? "null"));
+        const updated = acuc(
+          JSON.parse((await getValue(cacheKeyACUC)) ?? "null"),
+        );
 
-        if (acuc === null) {
-          if (signal.aborted) {
-            throw signal.error;
-          }
-
-          return;
+        if (signal.aborted) {
+          throw signal.error;
         }
+
+        // An update patches the live entry and keeps its expiry, so it can
+        // neither extend the entry's life nor recreate one cleared meanwhile.
+        if (updated !== null) {
+          await replaceValue(cacheKeyACUC, JSON.stringify(updated));
+        }
+        return;
       }
 
       if (signal.aborted) {
@@ -430,6 +438,48 @@ export async function getACUCTeam(
   } else {
     return null;
   }
+}
+
+/**
+ * Keeps a team's Autumn limits in its ACUC, so they share the ACUC's Redis TTL
+ * and reset-acuc clears them. Reads the chunk in hand when it carries them,
+ * else the team's chunk; a live read fills the team's chunk when it was built
+ * without them.
+ */
+export function acucEntityLimitsCache(
+  acuc?: AuthCreditUsageChunkFromTeam | null,
+): EntityLimitsCache {
+  const limitsOf = (
+    chunk: AuthCreditUsageChunkFromTeam | null | undefined,
+    teamId: string,
+    orgId: string,
+  ) =>
+    chunk?.team_id === teamId && chunk.org_id === orgId
+      ? chunk.autumn_limits
+      : undefined;
+
+  return {
+    async get(teamId, orgId) {
+      const inHand = limitsOf(acuc, teamId, orgId);
+      if (inHand) return inHand;
+      try {
+        return limitsOf(await getACUCTeam(teamId), teamId, orgId);
+      } catch (error) {
+        logger.warn("Failed to read Autumn limits from the team's ACUC", {
+          teamId,
+          error,
+        });
+        return undefined;
+      }
+    },
+    set(teamId, orgId, limits) {
+      void setCachedACUCTeam(teamId, false, cached =>
+        cached?.org_id === orgId && !cached.autumn_limits
+          ? { ...cached, autumn_limits: limits }
+          : null,
+      );
+    },
+  };
 }
 
 export async function clearACUC(api_key: string): Promise<void> {
@@ -717,19 +767,19 @@ export async function authenticateUser(
  * replaces the whole computation.
  */
 async function buildAuthenticatedRateLimiter(
-  teamId: string,
-  orgId: string | null | undefined,
+  chunk: AuthCreditUsageChunk,
   mode: RateLimiterMode,
-  flags: TeamFlags,
   minMultiplier?: number,
 ): Promise<RateLimiterRedis> {
+  const flags = chunk.flags;
   let multiplier: number;
   if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
     multiplier = 1;
   } else {
     multiplier = await autumnService.getRateLimitMultiplier(
-      teamId,
-      orgId ?? null,
+      chunk.team_id,
+      chunk.org_id ?? null,
+      acucEntityLimitsCache(chunk),
     );
     if (minMultiplier !== undefined) {
       multiplier = Math.max(multiplier, minMultiplier);
@@ -834,10 +884,8 @@ async function supaAuthenticateUser(
     teamId = chunk.team_id;
     subscriptionData = { team_id: teamId };
     rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
+      chunk,
       mode,
-      chunk.flags,
       minRateMultiplier,
     );
   } else if (token.startsWith("fco_")) {
@@ -904,10 +952,8 @@ async function supaAuthenticateUser(
       team_id: teamId,
     };
     rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
+      chunk,
       mode,
-      chunk.flags,
       minRateMultiplier,
     );
   } else {
@@ -953,10 +999,8 @@ async function supaAuthenticateUser(
       team_id: teamId,
     };
     rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
+      chunk,
       mode,
-      chunk.flags,
       minRateMultiplier,
     );
   }

@@ -44,6 +44,7 @@ vi.mock("../../services/autumn/autumn.service", async importOriginal => {
     autumnService: {
       getRateLimitMultiplier: vi.fn().mockResolvedValue(1),
       getKnownRateLimitMultiplier: vi.fn().mockResolvedValue(1),
+      fetchKnownEntityLimits: vi.fn().mockResolvedValue(undefined),
     },
   };
 });

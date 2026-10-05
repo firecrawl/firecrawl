@@ -63,6 +63,22 @@ export function featureIdForBillingEndpoint(endpoint?: string): string {
   return endpoint === "search" ? SEARCH_CREDITS_FEATURE_ID : CREDITS_FEATURE_ID;
 }
 
+/** A team's limits as derived from its Autumn entity. */
+export type EntityLimits = {
+  concurrency: number | null;
+  rateLimitMultiplier: number | null;
+};
+
+/**
+ * Where the limits getters keep a team's known limits between requests. The
+ * caller supplies it (the ACUC layer, see acucEntityLimitsCache), so this
+ * service stays free of any cache of its own. get must not throw.
+ */
+export type EntityLimitsCache = {
+  get(teamId: string, orgId: string): Promise<EntityLimits | undefined>;
+  set(teamId: string, orgId: string, limits: EntityLimits): void;
+};
+
 const AUTUMN_DEFAULT_PLAN_ID = "free";
 /**
  * Size-bounded Map with FIFO eviction. When the map is at capacity the oldest
@@ -810,21 +826,6 @@ export class AutumnService {
     }
   }
 
-  // Cache the team's entity-derived limits briefly so concurrency enforcement
-  // and rate-limit gating on every scrape/crawl/browser request don't fan out
-  // to Autumn each time. Both the CONCURRENCY limit and the rate-limit
-  // multiplier come from a single entity.get, so one cache entry (and one
-  // Autumn round-trip per organization/team per TTL window) serves both callers.
-  private entityLimitsCache = new BoundedMap<
-    string,
-    {
-      concurrency: number | null;
-      rateLimitMultiplier: number | null;
-      expiresAt: number;
-    }
-  >(50_000);
-  private static readonly ENTITY_LIMITS_TTL_MS = 60_000;
-
   // Fail-open fallbacks used ONLY when Autumn itself errors (network / 5xx /
   // unexpected exception) so a billing-API outage doesn't throttle real
   // customers down to the low defaults. A 404 or an absent balance is NOT an
@@ -851,25 +852,18 @@ export class AutumnService {
   private async getEntityLimits(
     teamId: string,
     orgId: string | null,
-  ): Promise<{
-    concurrency: number | null;
-    rateLimitMultiplier: number | null;
-  }> {
-    const read = await this.readEntityLimits(teamId, orgId);
+    cache: EntityLimitsCache,
+  ): Promise<EntityLimits> {
+    const read = await this.readEntityLimits(teamId, orgId, cache);
     switch (read.outcome) {
       case "unconfigured":
         return { concurrency: null, rateLimitMultiplier: null };
       case "known":
-        return {
-          concurrency: read.concurrency,
-          rateLimitMultiplier: read.rateLimitMultiplier,
-        };
+        return read.limits;
       case "no_org":
         // No org means no Autumn entity to ask about. Fail OPEN on the high
         // limits, the same answer this method already gives when it cannot
-        // reach Autumn — and the same one the service's own org lookup
-        // produced by throwing into the catch below. Not cached, for the same
-        // reason.
+        // reach Autumn. Not cached, for the same reason.
         logger.error(
           "Autumn getEntityLimits has no org for the team, falling back to high limits",
           { teamId },
@@ -881,9 +875,8 @@ export class AutumnService {
       case "error":
         // Any other failure means we couldn't reach Autumn / it errored. Fail
         // OPEN with high limits rather than throttling the team to the low
-        // defaults. Deliberately not cached, so we retry Autumn on the next
-        // request instead of pinning the team to the fallback for the TTL
-        // window.
+        // defaults. Never cached, so the next request retries Autumn instead
+        // of pinning the team to the fallback.
         logger.error(
           "Autumn getEntityLimits failed — billing API may be unavailable, falling back to high limits",
           { teamId, error: read.error },
@@ -907,31 +900,43 @@ export class AutumnService {
   async getKnownRateLimitMultiplier(
     teamId: string,
     orgId: string | null,
+    cache: EntityLimitsCache,
   ): Promise<number | null> {
-    if (!orgId) return null;
-    const read = await this.readEntityLimits(teamId, orgId);
-    return read.outcome === "known" ? (read.rateLimitMultiplier ?? 1) : null;
+    const read = await this.readEntityLimits(teamId, orgId, cache);
+    return read.outcome === "known"
+      ? (read.limits.rateLimitMultiplier ?? 1)
+      : null;
   }
 
   /**
-   * One entity read behind both getEntityLimits and
-   * getKnownRateLimitMultiplier. It reports what happened rather than picking
-   * a fallback, so each caller can fail in its own direction. Only "known" is
-   * an answer (an entity, or a 404 meaning no elevated entitlement) and only
-   * "known" is cached; the other outcomes are retried on the next request.
+   * A live, uncached entity read for building a cache entry: the limits when
+   * Autumn answered (an entity, or a 404), undefined otherwise, so a failed
+   * read is never stored.
+   */
+  async fetchKnownEntityLimits(
+    teamId: string,
+    orgId: string | null,
+  ): Promise<EntityLimits | undefined> {
+    const read = await this.readEntityLimits(teamId, orgId);
+    return read.outcome === "known" ? read.limits : undefined;
+  }
+
+  /**
+   * One entity read behind every limits getter. It reports what happened
+   * rather than picking a fallback, so each caller can fail in its own
+   * direction. Only "known" is an answer (an entity, or a 404 meaning no
+   * elevated entitlement), and only "known" is read from or written to the
+   * cache; the other outcomes are retried on the next request.
    */
   private async readEntityLimits(
     teamId: string,
     orgId: string | null,
+    cache?: EntityLimitsCache,
   ): Promise<
     | { outcome: "unconfigured" }
     | { outcome: "no_org" }
     | { outcome: "error"; error: unknown }
-    | {
-        outcome: "known";
-        concurrency: number | null;
-        rateLimitMultiplier: number | null;
-      }
+    | { outcome: "known"; limits: EntityLimits }
   > {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
       return { outcome: "unconfigured" };
@@ -939,29 +944,10 @@ export class AutumnService {
 
     if (!orgId) return { outcome: "no_org" };
 
-    const cacheKey = `${orgId}:${teamId}`;
-    const now = Date.now();
-    const cached = this.entityLimitsCache.get(cacheKey);
-    if (cached && cached.expiresAt > now) {
-      return {
-        outcome: "known",
-        concurrency: cached.concurrency,
-        rateLimitMultiplier: cached.rateLimitMultiplier,
-      };
-    }
+    const cached = await cache?.get(teamId, orgId);
+    if (cached) return { outcome: "known", limits: cached };
 
-    const store = (
-      concurrency: number | null,
-      rateLimitMultiplier: number | null,
-    ) => {
-      this.entityLimitsCache.set(cacheKey, {
-        concurrency,
-        rateLimitMultiplier,
-        expiresAt: now + AutumnService.ENTITY_LIMITS_TTL_MS,
-      });
-      return { outcome: "known" as const, concurrency, rateLimitMultiplier };
-    };
-
+    let limits: EntityLimits;
     try {
       const entity: any = await autumnClient.entities.get({
         customerId: orgId,
@@ -969,26 +955,30 @@ export class AutumnService {
       });
       const balances = entity?.balances ?? {};
 
-      // CONCURRENCY: use `remaining` (the post-drain effective per-team cap;
-      // `granted` would surface the pre-drain inherited customer total).
-      const concurrency = sanitizeBalanceValue(
-        balances[CONCURRENCY_FEATURE_ID]?.remaining,
-      );
-
-      // rate_limits: a static per-plan multiplier that is never consumed, so
-      // read `granted` (the entitled amount) rather than `remaining`.
-      const rateLimitMultiplier = sanitizeBalanceValue(
-        balances[RATE_LIMIT_FEATURE_ID]?.granted,
-      );
-
-      return store(concurrency, rateLimitMultiplier);
+      limits = {
+        // CONCURRENCY: use `remaining` (the post-drain effective per-team cap;
+        // `granted` would surface the pre-drain inherited customer total).
+        concurrency: sanitizeBalanceValue(
+          balances[CONCURRENCY_FEATURE_ID]?.remaining,
+        ),
+        // rate_limits: a static per-plan multiplier that is never consumed, so
+        // read `granted` (the entitled amount) rather than `remaining`.
+        rateLimitMultiplier: sanitizeBalanceValue(
+          balances[RATE_LIMIT_FEATURE_ID]?.granted,
+        ),
+      };
     } catch (error) {
       // 404 = the entity genuinely doesn't exist in Autumn (not an error):
       // fall back low, and cache it so we don't re-query for a team we know is
       // absent.
-      if (this.getErrorStatus(error) === 404) return store(null, null);
-      return { outcome: "error", error };
+      if (this.getErrorStatus(error) !== 404) {
+        return { outcome: "error", error };
+      }
+      limits = { concurrency: null, rateLimitMultiplier: null };
     }
+
+    cache?.set(teamId, orgId, limits);
+    return { outcome: "known", limits };
   }
 
   /**
@@ -1001,8 +991,9 @@ export class AutumnService {
   async getConcurrencyLimit(
     teamId: string,
     orgId: string | null,
+    cache: EntityLimitsCache,
   ): Promise<number | null> {
-    return (await this.getEntityLimits(teamId, orgId)).concurrency;
+    return (await this.getEntityLimits(teamId, orgId, cache)).concurrency;
   }
 
   /**
@@ -1016,8 +1007,12 @@ export class AutumnService {
   async getRateLimitMultiplier(
     teamId: string,
     orgId: string | null,
+    cache: EntityLimitsCache,
   ): Promise<number> {
-    return (await this.getEntityLimits(teamId, orgId)).rateLimitMultiplier ?? 1;
+    return (
+      (await this.getEntityLimits(teamId, orgId, cache)).rateLimitMultiplier ??
+      1
+    );
   }
 
   /**

@@ -1,10 +1,17 @@
-const mocks = vi.hoisted(() => ({ request: vi.fn(), multiplier: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  request: vi.fn(),
+  multiplier: vi.fn(),
+  limitsCache: { get: vi.fn(), set: vi.fn() },
+}));
 vi.mock("../../config", () => ({
   config: { USE_DB_AUTHENTICATION: true, FIRECRAWL_DASHBOARD_URL: "https://d" },
 }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
 vi.mock("../autumn/autumn.service", () => ({
   autumnService: { getKnownRateLimitMultiplier: mocks.multiplier },
+}));
+vi.mock("../../controllers/auth", () => ({
+  acucEntityLimitsCache: () => mocks.limitsCache,
 }));
 import { authorizeProviders } from "./access";
 
@@ -366,7 +373,11 @@ describe("paid-plan-only capabilities", () => {
     expect(String((denied?.body as { error: string }).error)).toContain(
       "benzinga/news/wiims",
     );
-    expect(mocks.multiplier).toHaveBeenCalledWith("team", "org");
+    expect(mocks.multiplier).toHaveBeenCalledWith(
+      "team",
+      "org",
+      mocks.limitsCache,
+    );
     // One requirements read, and nothing else: no quote, no execution.
     expect(mocks.request).toHaveBeenCalledTimes(1);
   });
@@ -448,6 +459,10 @@ it("fails closed when the plan cannot be known: no org, a preview team or an Aut
   expect(denied?.body).toEqual(
     expect.objectContaining({ code: "plan_verification_unavailable" }),
   );
-  expect(mocks.multiplier).toHaveBeenCalledWith("team", null);
+  expect(mocks.multiplier).toHaveBeenCalledWith(
+    "team",
+    null,
+    mocks.limitsCache,
+  );
   expect(mocks.request).toHaveBeenCalledTimes(1);
 });
