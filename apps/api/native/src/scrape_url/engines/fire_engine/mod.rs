@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{sync::LazyLock, time::Duration};
 
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -96,7 +96,7 @@ impl FireEngine {
     // TODO: Branding
 
     if meta.options.formats.contains(FormatKind::Audio)
-      || meta.options.formats.contains(FormatKind::Audio)
+      || meta.options.formats.contains(FormatKind::Video)
       || get_cookies
     {
       actions.push(InternalAction {
@@ -167,7 +167,9 @@ impl FireEngine {
       FireEngineScrapeResponse::Processing(x) => loop {
         match self.call_check_status(&x.job_id).await? {
           FireEngineScrapeStatus::Completed(y) => break (Some(x.job_id), Ok(y)),
-          FireEngineScrapeStatus::Processing(_) => {}
+          FireEngineScrapeStatus::Processing(_) => {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+          }
           FireEngineScrapeStatus::Failed(e) => break (Some(x.job_id.clone()), Err(e)),
         }
       },
