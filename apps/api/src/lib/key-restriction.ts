@@ -112,7 +112,7 @@ const ENDPOINT_GROUPS: [string[], string][] = [
   [["map"], "map"],
   [["search", "research"], "research"],
   [["search", "developer"], "research"],
-  [["search", "legal-regulatory"], "research"],
+  [["search", "gov"], "research"],
   [["search"], "search"],
   [["extract"], "extract"],
   [["agent"], "agent"],

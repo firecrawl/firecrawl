@@ -94,7 +94,7 @@ describe("classifyEndpoint", () => {
   });
 
   it("groups legal and regulatory search with research", () => {
-    expect(classifyEndpoint("/v2/search/legal-regulatory")).toMatchObject({
+    expect(classifyEndpoint("/v2/search/gov")).toMatchObject({
       group: "research",
     });
   });

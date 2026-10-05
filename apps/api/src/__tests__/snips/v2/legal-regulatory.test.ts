@@ -3,7 +3,7 @@ import { describeIf } from "../lib";
 import { idmux, researchPostRaw, researchRaw } from "./lib";
 
 const HAS_LEGAL_REGULATORY = !!config.LEGAL_REGULATORY_SEARCH_URL;
-const PATH = "/v2/search/legal-regulatory";
+const PATH = "/v2/search/gov";
 
 describeIf(HAS_LEGAL_REGULATORY)("Legal and Regulatory Search API", () => {
   it("serves a search as web results", async () => {

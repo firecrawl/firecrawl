@@ -108,7 +108,7 @@ beforeEach(() => {
   );
 });
 
-describe("/v2/search/legal-regulatory", () => {
+describe("/v2/search/gov", () => {
   it.each(["GET", "POST"] as const)(
     "serves a %s request and bills per ten results",
     async method => {
