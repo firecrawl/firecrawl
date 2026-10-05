@@ -8,11 +8,8 @@ use url::Url;
 use self::{
   document::{Document, DocumentMetadataCacheState},
   engines::{EngineOutcome, check_engine_support, get_main_engine, should_elevate_proxy},
-  error::ScrapeURLError,
-  feature_flags::FeatureFlag,
-  engines::{EngineOutcome, get_main_engine},
-  engines::{EngineOutcome, get_main_engine, should_elevate_proxy},
   error::{ScrapeErrorPayload, ScrapeURLError},
+  feature_flags::FeatureFlag,
   index::{Index, should_use_index},
   meta::Meta,
   options::{InternalOptions, ScrapeOptions},

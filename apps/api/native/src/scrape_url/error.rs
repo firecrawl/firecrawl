@@ -155,27 +155,6 @@ impl ScrapeURLError {
   pub fn payload(&self) -> ScrapeErrorPayload {
     let message = self.to_string();
     match self {
-      Self::CrawlDenialError { .. } => "CRAWL_DENIAL",
-      Self::LockdownMissError => "SCRAPE_LOCKDOWN_CACHE_MISS",
-      Self::AgentIndexOnlyError => "AGENT_INDEX_ONLY",
-      Self::PDFOCRRequiredError(_) => "SCRAPE_PDF_OCR_REQUIRED",
-      Self::SiteError { .. } => "SCRAPE_SITE_ERROR",
-      Self::SSLError { .. } => "SCRAPE_SSL_ERROR",
-      Self::DNSResolutionError { .. } => "SCRAPE_DNS_RESOLUTION_ERROR",
-      Self::UnsupportedFileError { .. } => "SCRAPE_UNSUPPORTED_FILE_ERROR",
-      Self::ActionError { .. } => "SCRAPE_ACTION_ERROR",
-      Self::ProxySelectionError => "SCRAPE_PROXY_SELECTION_ERROR",
-      Self::Transformer(TransformerError::JsonContentTooLarge) => "SCRAPE_JSON_CONTENT_TOO_LARGE",
-      Self::NoEnginesLeftError { .. } => "SCRAPE_ALL_ENGINES_FAILED",
-      Self::ActionsNotSupportedError => "SCRAPE_ACTIONS_NOT_SUPPORTED",
-      Self::ReliableRetrievalError(_)
-      | Self::InsecureConnectionError
-      | Self::InvalidURLError
-      | Self::PDFFetchFailed
-      | Self::PageLoadFailed
-      | Self::UnclassifiedEngineError { .. }
-      | Self::EngineUnavailable { .. }
-      | Self::Internal(_)
       Self::CrawlDenialError { reason } => ScrapeErrorPayload::CrawlDenial {
         reason: reason.clone(),
       },
@@ -202,6 +181,13 @@ impl ScrapeURLError {
         error_code: error.clone(),
       },
       Self::ProxySelectionError => ScrapeErrorPayload::ProxySelectionError,
+      Self::NoEnginesLeftError { fallback_list } => ScrapeErrorPayload::AllEnginesFailed {
+        fallback_list: fallback_list.iter().map(|x| x.to_string()).collect(),
+        message,
+      },
+      Self::ActionsNotSupportedError => ScrapeErrorPayload::ActionsNotSupported {
+        message: "Actions are not supported by any available engines. Actions require Fire Engine (fire-engine) to be enabled.".to_string(),
+      },
       Self::Transformer(TransformerError::JsonContentTooLarge) => {
         ScrapeErrorPayload::JsonContentTooLarge { message }
       }
@@ -281,50 +267,6 @@ pub enum ScrapeErrorPayload {
   #[serde(rename = "CRAWL_DENIAL")]
   CrawlDenial { reason: String },
 
-    let mut map = serializer.serialize_map(None)?;
-    match self {
-      Self::CrawlDenialError { reason } => {
-        map.serialize_entry("reason", reason)?;
-      }
-      Self::SSLError {
-        skip_tls_verification,
-      } => {
-        map.serialize_entry("skipTlsVerification", skip_tls_verification)?;
-      }
-      Self::SiteError { code } => {
-        map.serialize_entry("errorCode", code)?;
-      }
-      Self::DNSResolutionError { hostname } => {
-        map.serialize_entry("hostname", hostname)?;
-      }
-      Self::UnsupportedFileError { reason } => {
-        map.serialize_entry("reason", reason)?;
-      }
-      Self::ActionError { error } => {
-        map.serialize_entry("errorCode", error)?;
-      }
-      Self::PDFOCRRequiredError(pdf_type) => {
-        map.serialize_entry("pdfType", pdf_type_name(pdf_type))?;
-      }
-      Self::LockdownMissError | Self::AgentIndexOnlyError | Self::ProxySelectionError => {}
-      Self::NoEnginesLeftError { fallback_list } => {
-        map.serialize_entry("fallbackList", fallback_list)?;
-      }
-      Self::ActionsNotSupportedError => {
-        map.serialize_entry(
-          "message",
-          "Actions are not supported by any available engines. Actions require Fire Engine (fire-engine) to be enabled.",
-        )?;
-      }
-      Self::Transformer(TransformerError::JsonContentTooLarge) => {
-        map.serialize_entry(
-          "message",
-          "The scraped page content is too large for JSON extraction, so extraction was aborted.",
-        )?;
-      }
-      e => {
-        map.serialize_entry("message", &unknown_error_message(&e.to_string()))?;
-      }
   #[serde(rename = "SCRAPE_LOCKDOWN_CACHE_MISS")]
   LockdownCacheMiss,
 
@@ -351,6 +293,15 @@ pub enum ScrapeErrorPayload {
 
   #[serde(rename = "SCRAPE_PROXY_SELECTION_ERROR")]
   ProxySelectionError,
+
+  #[serde(rename = "SCRAPE_ALL_ENGINES_FAILED", rename_all = "camelCase")]
+  AllEnginesFailed {
+    fallback_list: Vec<String>,
+    message: String,
+  },
+
+  #[serde(rename = "SCRAPE_ACTIONS_NOT_SUPPORTED")]
+  ActionsNotSupported { message: String },
 
   #[serde(rename = "SCRAPE_JSON_CONTENT_TOO_LARGE")]
   JsonContentTooLarge { message: String },
