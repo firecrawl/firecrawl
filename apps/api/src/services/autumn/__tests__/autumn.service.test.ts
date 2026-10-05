@@ -751,7 +751,6 @@ describe("featureIdForBillingEndpoint", () => {
 // ---------------------------------------------------------------------------
 
 describe("getTeamLimits", () => {
-  const unverified = { concurrency_limit: null, rate_limit_multiplier: null };
   const lowDefaults = { concurrency_limit: 2, rate_limit_multiplier: 1 };
 
   it("returns the Autumn values on the happy path", async () => {
@@ -792,35 +791,27 @@ describe("getTeamLimits", () => {
   it.each([
     ["Autumn errors (not a 404)", { statusCode: 500 }],
     ["Autumn throws a non-HTTP error", new Error("ECONNREFUSED")],
-  ])("answers null (unverified) when %s", async (_case, error) => {
+  ])("throws when %s", async (_case, error) => {
     mockEntityGet.mockRejectedValue(error);
 
-    expect(await makeService().getTeamLimits("team-1", "org-1")).toEqual(
-      unverified,
-    );
+    await expect(
+      makeService().getTeamLimits("team-1", "org-1"),
+    ).rejects.toBeDefined();
   });
 
-  it("answers null without asking Autumn when there is no org", async () => {
-    expect(await makeService().getTeamLimits("team-1", null)).toEqual(
-      unverified,
-    );
+  it("throws without asking Autumn when there is no org", async () => {
+    await expect(makeService().getTeamLimits("team-1", null)).rejects.toThrow();
     expect(mockEntityGet).not.toHaveBeenCalled();
   });
 
   it("reads Autumn on every call, keeping no cache of its own", async () => {
     const svc = makeService();
-    mockEntityGet.mockRejectedValueOnce({ statusCode: 500 });
-    expect(await svc.getTeamLimits("team-1", "org-1")).toEqual(unverified);
-
     mockEntityGet.mockResolvedValue({
       balances: { CONCURRENCY: { remaining: 3 }, rate_limits: { granted: 10 } },
     });
-    expect(await svc.getTeamLimits("team-1", "org-1")).toEqual({
-      concurrency_limit: 3,
-      rate_limit_multiplier: 10,
-    });
     await svc.getTeamLimits("team-1", "org-1");
-    expect(mockEntityGet).toHaveBeenCalledTimes(3);
+    await svc.getTeamLimits("team-1", "org-1");
+    expect(mockEntityGet).toHaveBeenCalledTimes(2);
   });
 
   it("answers the low defaults for a preview team without asking Autumn", async () => {

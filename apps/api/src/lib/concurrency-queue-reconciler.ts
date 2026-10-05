@@ -5,7 +5,6 @@ import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
 import { type ScrapeJobData } from "../types";
 import {
   getConcurrencyLimitActiveJobs,
-  getEffectiveConcurrencyLimit,
   getNextConcurrentJob,
   MAX_BACKLOG_TIMEOUT_MS,
   pushConcurrencyLimitActiveJob,
@@ -16,6 +15,8 @@ import {
 } from "./concurrency-limit";
 import { getCrawl } from "./crawl-redis";
 import { logger as _logger } from "./logger";
+import { getACUCTeam } from "../controllers/auth";
+import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
 
 interface ReconcileOptions {
   teamId?: string;
@@ -111,7 +112,9 @@ async function reconcileTeam(
   // TODO: gate crawl + extract against one combined pool (sum of both active
   // counts vs the single limit) instead of applying the same limit to each
   // type independently.
-  const teamConcurrency = await getEffectiveConcurrencyLimit(ownerId);
+  const teamConcurrency =
+    (await getACUCTeam(ownerId))?.concurrency_limit ??
+    DEFAULT_TEAM_LIMITS.concurrency_limit;
   const maxCrawlConcurrency = teamConcurrency;
   const maxExtractConcurrency = teamConcurrency;
 
@@ -208,7 +211,9 @@ async function drainQueue(
   // TODO: gate crawl + extract against one combined pool (sum of both active
   // counts vs the single limit) instead of applying the same limit to each
   // type independently.
-  const teamConcurrency = await getEffectiveConcurrencyLimit(ownerId);
+  const teamConcurrency =
+    (await getACUCTeam(ownerId))?.concurrency_limit ??
+    DEFAULT_TEAM_LIMITS.concurrency_limit;
   const maxCrawlConcurrency = teamConcurrency;
   const maxExtractConcurrency = teamConcurrency;
 

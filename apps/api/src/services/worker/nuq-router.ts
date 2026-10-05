@@ -2,8 +2,8 @@ import { Logger } from "winston";
 import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import { RateLimiterMode, ScrapeJobData } from "../../types";
-import { getACUCTeam, getACUCTeamLimits } from "../../controllers/auth";
-import { FAIL_OPEN_CONCURRENCY_LIMIT } from "../autumn/autumn.service";
+import { getACUCTeam } from "../../controllers/auth";
+import { DEFAULT_TEAM_LIMITS } from "../autumn/autumn.service";
 import { redisEvictConnection } from "../../services/redis";
 import { isSelfHosted } from "../../lib/deployment";
 import { getApiKeyConcurrencyLimit } from "../../lib/api-key-concurrency";
@@ -268,8 +268,8 @@ export async function fdbEnqueueScrapeJobs(
   let teamLimit: number | null = null;
   if (!isSelfHosted()) {
     teamLimit =
-      (await getACUCTeamLimits(teamId)).concurrency_limit ??
-      FAIL_OPEN_CONCURRENCY_LIMIT;
+      (await getACUCTeam(teamId))?.concurrency_limit ??
+      DEFAULT_TEAM_LIMITS.concurrency_limit;
   }
 
   const queueCap =

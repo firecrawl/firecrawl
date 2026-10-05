@@ -13,7 +13,11 @@ vi.mock("../../services/redis", () => ({
 }));
 
 vi.mock("../../controllers/auth", () => ({
-  getACUCTeamLimits: vi.fn(),
+  getACUCTeam: vi.fn(),
+}));
+
+vi.mock("../../services/autumn/autumn.service", () => ({
+  DEFAULT_TEAM_LIMITS: { concurrency_limit: 2, rate_limit_multiplier: 1 },
 }));
 
 import {
@@ -22,14 +26,14 @@ import {
   deleteJobPriority,
 } from "../job-priority";
 import { redisEvictConnection } from "../../services/redis";
-import { getACUCTeamLimits } from "../../controllers/auth";
+import { getACUCTeam } from "../../controllers/auth";
 import {} from "../../types";
 
 function mockMultiplier(rate_limit_multiplier: number) {
-  vi.mocked(getACUCTeamLimits).mockResolvedValue({
-    concurrency_limit: null,
+  vi.mocked(getACUCTeam).mockResolvedValue({
+    team_id: "team1",
     rate_limit_multiplier,
-  });
+  } as never);
 }
 
 // Multipliers that land on the plan tiers the priority cases below assume.
@@ -160,35 +164,24 @@ describe("Job Priority Tests", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Where the limits come from: the caller's ACUC when it holds one.
+// Where the multiplier comes from: the caller's ACUC when it holds one.
 // ---------------------------------------------------------------------------
 
 describe("the ACUC the caller supplies", () => {
   it("reads the multiplier off the ACUC the caller holds", async () => {
-    (redisEvictConnection.scard as Mock).mockResolvedValue(1);
-    const acuc = { team_id: "team1", org_id: "org-1" } as never;
-
-    await getJobPriority({ team_id: "team1", acuc });
-
-    expect(getACUCTeamLimits).toHaveBeenCalledWith("team1", acuc);
-  });
-
-  it("fails open on an unverified multiplier", async () => {
-    vi.mocked(getACUCTeamLimits).mockResolvedValue({
-      concurrency_limit: null,
-      rate_limit_multiplier: null,
-    });
     // 2500 lands on the top tier: no penalty at this set size.
     (redisEvictConnection.scard as Mock).mockResolvedValue(250);
+    const acuc = { team_id: "team1", rate_limit_multiplier: 2500 } as never;
 
-    expect(await getJobPriority({ team_id: "team1" })).toBe(10);
+    expect(await getJobPriority({ team_id: "team1", acuc })).toBe(10);
+    expect(getACUCTeam).not.toHaveBeenCalled();
   });
 
-  it("falls back to the team's ACUC when the caller holds none", async () => {
+  it("reads the team's ACUC when the caller holds none", async () => {
     (redisEvictConnection.scard as Mock).mockResolvedValue(1);
 
     await getJobPriority({ team_id: "team1" });
 
-    expect(getACUCTeamLimits).toHaveBeenCalledWith("team1", undefined);
+    expect(getACUCTeam).toHaveBeenCalledWith("team1");
   });
 });

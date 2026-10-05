@@ -10,7 +10,8 @@ import {
   matchesAcceptance,
   type LedgerAcceptance,
 } from "./terms";
-import { getACUCTeamLimits } from "../../controllers/auth";
+import { getACUCTeam } from "../../controllers/auth";
+import { DEFAULT_TEAM_LIMITS } from "../autumn/autumn.service";
 import { HOBBY_RATE_LIMIT_MULTIPLIER } from "../rate-limiter";
 
 const requirementsSchema = z.object({
@@ -121,25 +122,12 @@ export async function authorizeProviders(
   const gated = calls.filter(call =>
     paidPlanOnly.has(`${call.provider}/${call.capability}`),
   );
-  // A licence that permits the payload only in response to a paid request
-  // (Benzinga Schedule C.4: full text, WIIM, analyst ratings). Credits alone
-  // do not prove payment, because a free team spends signup credits; the plan
-  // does. Autumn's rate-limit multiplier is 1 on the free plan and at least the
-  // hobby floor on every paid one. It comes from the team's ACUC, which caches
-  // the same Autumn read the rate limiter uses. This gate fails
-  // closed: a team whose plan cannot be known (no org to bill, a preview team,
-  // an Autumn error) is refused, where the rate limiter would fail open, since
-  // delivering licensed content to a possibly free team is the mistake the
-  // licence forbids. Internal teams that bypass credit checks are not
-  // customers and pass.
+  // Licensed payloads that may only answer a paid request: refuse teams whose
+  // ACUC multiplier is below the hobby floor. Credit-check bypass teams pass.
   if (gated.length > 0 && flags?.bypassCreditChecks !== true) {
-    const multiplier = (await getACUCTeamLimits(teamId)).rate_limit_multiplier;
-    if (multiplier === null)
-      return refusal(
-        503,
-        "Your plan could not be verified for a paid-plan-only capability. No provider was executed.",
-        { code: "plan_verification_unavailable" },
-      );
+    const multiplier =
+      (await getACUCTeam(teamId))?.rate_limit_multiplier ??
+      DEFAULT_TEAM_LIMITS.rate_limit_multiplier;
     if (multiplier < HOBBY_RATE_LIMIT_MULTIPLIER) {
       const addresses = [
         ...new Set(gated.map(call => `${call.provider}/${call.capability}`)),

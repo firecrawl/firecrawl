@@ -63,26 +63,17 @@ export function featureIdForBillingEndpoint(endpoint?: string): string {
   return endpoint === "search" ? SEARCH_CREDITS_FEATURE_ID : CREDITS_FEATURE_ID;
 }
 
-/**
- * A team's Autumn-derived limits, as cached on its ACUC. null means Autumn
- * could not answer (an error, or no org): unverified, and only that.
- */
+/** A team's Autumn-derived limits, as cached on its ACUC. */
 export type TeamLimits = {
-  concurrency_limit: number | null;
-  rate_limit_multiplier: number | null;
+  concurrency_limit: number;
+  rate_limit_multiplier: number;
 };
 
 /** Limits for a team with no elevated entitlement (a 404 or no balance). */
-const DEFAULT_CONCURRENCY_LIMIT = 2;
-const DEFAULT_RATE_LIMIT_MULTIPLIER = 1;
-
-/**
- * Fail-open limits for an unverified (null) team limit, so a billing-API
- * outage doesn't throttle real customers to the low defaults. Generous but
- * bounded: the concurrency queue cap still applies.
- */
-export const FAIL_OPEN_CONCURRENCY_LIMIT = 200;
-export const FAIL_OPEN_RATE_LIMIT_MULTIPLIER = 2500;
+export const DEFAULT_TEAM_LIMITS: TeamLimits = {
+  concurrency_limit: 2,
+  rate_limit_multiplier: 1,
+};
 
 const AUTUMN_DEFAULT_PLAN_ID = "free";
 /**
@@ -834,95 +825,41 @@ export class AutumnService {
   /**
    * The team's limits from one uncached Autumn entity read (the ACUC caches
    * them). A missing entity (404) or an absent balance resolves to the low
-   * defaults; an Autumn error or a missing org resolves to null.
+   * defaults. Throws when Autumn errors or the team has no org.
    */
   async getTeamLimits(
     teamId: string,
     orgId: string | null,
   ): Promise<TeamLimits> {
-    const read = await this.readEntityLimits(teamId, orgId);
-    switch (read.outcome) {
-      case "unconfigured":
-        return {
-          concurrency_limit: DEFAULT_CONCURRENCY_LIMIT,
-          rate_limit_multiplier: DEFAULT_RATE_LIMIT_MULTIPLIER,
-        };
-      case "known":
-        return {
-          concurrency_limit: read.concurrency ?? DEFAULT_CONCURRENCY_LIMIT,
-          rate_limit_multiplier:
-            read.rateLimitMultiplier ?? DEFAULT_RATE_LIMIT_MULTIPLIER,
-        };
-      case "no_org":
-        logger.error("Autumn getTeamLimits has no org for the team", {
-          teamId,
-        });
-        break;
-      case "error":
-        logger.error(
-          "Autumn getTeamLimits failed, billing API may be unavailable",
-          { teamId, error: read.error },
-        );
-        break;
-    }
-    return { concurrency_limit: null, rate_limit_multiplier: null };
-  }
-
-  /**
-   * One uncached entity read. It reports what happened rather than picking a
-   * fallback; only "known" is an answer (an entity, or a 404 meaning no
-   * elevated entitlement).
-   */
-  private async readEntityLimits(
-    teamId: string,
-    orgId: string | null,
-  ): Promise<
-    | { outcome: "unconfigured" }
-    | { outcome: "no_org" }
-    | { outcome: "error"; error: unknown }
-    | {
-        outcome: "known";
-        concurrency: number | null;
-        rateLimitMultiplier: number | null;
-      }
-  > {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
-      return { outcome: "unconfigured" };
+      return DEFAULT_TEAM_LIMITS;
     }
+    if (!orgId) throw new Error("The team has no org to read limits for");
 
-    if (!orgId) return { outcome: "no_org" };
-
+    let balances: Record<string, any> = {};
     try {
       const entity: any = await autumnClient.entities.get({
         customerId: orgId,
         entityId: teamId,
       });
-      const balances = entity?.balances ?? {};
-
-      return {
-        outcome: "known",
-        // CONCURRENCY: use `remaining` (the post-drain effective per-team cap;
-        // `granted` would surface the pre-drain inherited customer total).
-        concurrency: sanitizeBalanceValue(
-          balances[CONCURRENCY_FEATURE_ID]?.remaining,
-        ),
-        // rate_limits: a static per-plan multiplier that is never consumed, so
-        // read `granted` (the entitled amount) rather than `remaining`.
-        rateLimitMultiplier: sanitizeBalanceValue(
-          balances[RATE_LIMIT_FEATURE_ID]?.granted,
-        ),
-      };
+      balances = entity?.balances ?? {};
     } catch (error) {
       // 404 = the entity genuinely doesn't exist in Autumn (not an error).
-      if (this.getErrorStatus(error) === 404) {
-        return {
-          outcome: "known",
-          concurrency: null,
-          rateLimitMultiplier: null,
-        };
-      }
-      return { outcome: "error", error };
+      if (this.getErrorStatus(error) !== 404) throw error;
     }
+
+    return {
+      // CONCURRENCY: use `remaining` (the post-drain effective per-team cap;
+      // `granted` would surface the pre-drain inherited customer total).
+      concurrency_limit:
+        sanitizeBalanceValue(balances[CONCURRENCY_FEATURE_ID]?.remaining) ??
+        DEFAULT_TEAM_LIMITS.concurrency_limit,
+      // rate_limits: a static per-plan multiplier that is never consumed, so
+      // read `granted` (the entitled amount) rather than `remaining`.
+      rate_limit_multiplier:
+        sanitizeBalanceValue(balances[RATE_LIMIT_FEATURE_ID]?.granted) ??
+        DEFAULT_TEAM_LIMITS.rate_limit_multiplier,
+    };
   }
 
   /**

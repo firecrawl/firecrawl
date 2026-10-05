@@ -45,9 +45,7 @@ vi.mock("../../../lib/request-credits-store", () => ({
   requestCreditsShards: vi.fn().mockReturnValue(1),
 }));
 
-vi.mock("../../../lib/concurrency-limit", () => ({
-  getEffectiveConcurrencyLimit: vi.fn().mockResolvedValue(10),
-}));
+vi.mock("../../../lib/concurrency-limit", () => ({}));
 
 vi.mock("../../../lib/crawl-redis", () => ({
   crawlToCrawler: vi.fn(() => ({

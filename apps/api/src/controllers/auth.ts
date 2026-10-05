@@ -47,24 +47,51 @@ import type { OAuthIntrospectionResponse } from "../services/oauth-token-introsp
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
 import {
   autumnService,
-  FAIL_OPEN_RATE_LIMIT_MULTIPLIER,
+  DEFAULT_TEAM_LIMITS,
   type TeamLimits,
 } from "../services/autumn/autumn.service";
-import { orgIdFromAcuc } from "../lib/team-org";
 import { ReplyError } from "ioredis";
 
 const ACUC_TTL_SECONDS = 600;
-// A chunk whose limits Autumn could not verify (null) is cached only briefly,
-// so a transient Autumn error is retried within a minute.
-const ACUC_UNVERIFIED_TTL_SECONDS = 60;
+// A chunk built on the fail-open limits is cached only briefly, so a
+// transient Autumn error is retried within a minute.
+const ACUC_FAIL_OPEN_TTL_SECONDS = 60;
+// When Autumn can't answer, fail open rather than throttle real teams to the
+// low defaults. Generous but bounded: the concurrency queue cap still applies.
+const FAIL_OPEN_LIMITS: TeamLimits = {
+  concurrency_limit: 200,
+  rate_limit_multiplier: 2500,
+};
 
-/** The chunk with the team's Autumn limits added, as a new object. */
-async function withTeamLimits<T extends AuthCreditUsageChunkFromTeam>(
+/** The team's effective limits, and how long a chunk carrying them may live. */
+async function readTeamLimits(
+  teamId: string,
+  orgId: string | null,
+): Promise<{ limits: TeamLimits; ttl: number }> {
+  try {
+    return {
+      limits: await autumnService.getTeamLimits(teamId, orgId),
+      ttl: ACUC_TTL_SECONDS,
+    };
+  } catch (error) {
+    logger.error("Autumn limits unavailable, failing open", { teamId, error });
+    return { limits: FAIL_OPEN_LIMITS, ttl: ACUC_FAIL_OPEN_TTL_SECONDS };
+  }
+}
+
+/** A cached chunk, with live limits when it predates them (not written back). */
+async function withLimits<T extends AuthCreditUsageChunkFromTeam>(
   chunk: T,
 ): Promise<T> {
+  if (
+    chunk.concurrency_limit !== undefined &&
+    chunk.rate_limit_multiplier !== undefined
+  ) {
+    return chunk;
+  }
   return {
     ...chunk,
-    ...(await autumnService.getTeamLimits(chunk.team_id, chunk.org_id)),
+    ...(await readTeamLimits(chunk.team_id, chunk.org_id)).limits,
   };
 }
 
@@ -124,6 +151,7 @@ const mockPreviewACUC: (
   flags: null,
   is_banned: false,
   is_extract,
+  ...DEFAULT_TEAM_LIMITS,
 });
 
 const mockACUC: () => AuthCreditUsageChunk = () => ({
@@ -134,6 +162,7 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
   flags: null,
   is_banned: false,
   is_extract: false,
+  ...DEFAULT_TEAM_LIMITS,
 });
 
 /**
@@ -222,7 +251,7 @@ async function getACUC(
     }
     if (cachedACUC !== null) {
       try {
-        return JSON.parse(cachedACUC);
+        return await withLimits(JSON.parse(cachedACUC));
       } catch (error) {
         logger.warn("Ignoring malformed ACUC cache entry", {
           error,
@@ -274,22 +303,27 @@ async function getACUC(
           ? null
           : (data[0] as any);
 
-    if (chunk) {
-      chunk.is_extract = isExtract;
-    }
+    if (chunk === null) return null;
 
     // NOTE: Should we cache null chunks? - mogery
-    if (chunk !== null && useCache) {
-      const built = await withTeamLimits(chunk);
-      const ttl =
-        built.rate_limit_multiplier === null
-          ? ACUC_UNVERIFIED_TTL_SECONDS
-          : ACUC_TTL_SECONDS;
+    if (useCache) {
+      const { limits, ttl } = await readTeamLimits(chunk.team_id, chunk.org_id);
+      const built = { ...chunk, is_extract: isExtract, ...limits };
       setCachedACUC(api_key, isExtract, built, credentialPurpose, ttl);
       return built;
     }
 
-    return chunk;
+    // An uncached chunk (a hosted MCP credential) takes the team ACUC's
+    // limits, so authenticating it per request never costs an Autumn read.
+    const team = await getACUCTeam(chunk.team_id).catch(() => null);
+    const limits =
+      team ?? (await readTeamLimits(chunk.team_id, chunk.org_id)).limits;
+    return {
+      ...chunk,
+      is_extract: isExtract,
+      concurrency_limit: limits.concurrency_limit,
+      rate_limit_multiplier: limits.rate_limit_multiplier,
+    };
   } else {
     return null;
   }
@@ -390,7 +424,7 @@ export async function getACUCTeam(
       // A corrupt entry is a miss, not a failure: callers that fall back to a
       // null org on a throw would otherwise take the high fail-open limits.
       try {
-        return JSON.parse(cachedACUC);
+        return await withLimits(JSON.parse(cachedACUC));
       } catch (error) {
         logger.warn("Ignoring malformed ACUC cache entry", {
           cacheKey: cacheKeyACUC,
@@ -443,65 +477,20 @@ export async function getACUCTeam(
           ? null
           : (data[0] as any);
 
+    if (chunk === null) return null;
+
+    const { limits, ttl } = await readTeamLimits(chunk.team_id, chunk.org_id);
+    const built = { ...chunk, ...limits };
+
     // NOTE: Should we cache null chunks? - mogery
-    if (chunk !== null && useCache) {
-      const built = await withTeamLimits(chunk);
-      const ttl =
-        built.rate_limit_multiplier === null
-          ? ACUC_UNVERIFIED_TTL_SECONDS
-          : ACUC_TTL_SECONDS;
+    if (useCache) {
       setCachedACUCTeam(team_id, isExtract, built, ttl);
-      return { ...built, is_extract: isExtract };
     }
 
-    return chunk ? { ...chunk, is_extract: isExtract } : null;
+    return { ...built, is_extract: isExtract };
   } else {
     return null;
   }
-}
-
-/** The limits a chunk carries, or undefined for one cached without them. */
-function limitsOn(
-  chunk: AuthCreditUsageChunkFromTeam | null | undefined,
-): TeamLimits | undefined {
-  if (
-    chunk?.concurrency_limit === undefined ||
-    chunk.rate_limit_multiplier === undefined
-  ) {
-    return undefined;
-  }
-  return {
-    concurrency_limit: chunk.concurrency_limit,
-    rate_limit_multiplier: chunk.rate_limit_multiplier,
-  };
-}
-
-/**
- * The team's Autumn limits off its ACUC: the chunk in hand when it carries
- * them (uncached chunks don't), else the team's. A chunk cached before the
- * limits existed gets a live read, not written back. null means unverified.
- */
-export async function getACUCTeamLimits(
-  teamId: string,
-  acuc?: AuthCreditUsageChunkFromTeam | null,
-): Promise<TeamLimits> {
-  const inHand = limitsOn(acuc);
-  if (inHand) return inHand;
-
-  const teamChunk = await getACUCTeam(teamId).catch(error => {
-    logger.warn("Failed to read the team's ACUC for its limits", {
-      teamId,
-      error,
-    });
-    return null;
-  });
-  return (
-    limitsOn(teamChunk) ??
-    (await autumnService.getTeamLimits(
-      teamId,
-      orgIdFromAcuc(teamChunk ?? acuc),
-    ))
-  );
 }
 
 export async function clearACUC(api_key: string): Promise<void> {
@@ -798,9 +787,7 @@ async function buildAuthenticatedRateLimiter(
   if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
     multiplier = 1;
   } else {
-    multiplier =
-      (await getACUCTeamLimits(chunk.team_id, chunk)).rate_limit_multiplier ??
-      FAIL_OPEN_RATE_LIMIT_MULTIPLIER;
+    multiplier = chunk.rate_limit_multiplier;
     if (minMultiplier !== undefined) {
       multiplier = Math.max(multiplier, minMultiplier);
     }

@@ -3,14 +3,14 @@ vi.mock("../../config", () => ({
   config: { USE_DB_AUTHENTICATION: true, FIRECRAWL_DASHBOARD_URL: "https://d" },
 }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
-// The plan read: the multiplier, null when Autumn could not verify it.
 vi.mock("../../controllers/auth", () => ({
-  getACUCTeamLimits: async (teamId: string) => ({
-    concurrency_limit: null,
+  getACUCTeam: async (teamId: string) => ({
     rate_limit_multiplier: await mocks.multiplier(teamId),
   }),
 }));
-
+vi.mock("../autumn/autumn.service", () => ({
+  DEFAULT_TEAM_LIMITS: { concurrency_limit: 2, rate_limit_multiplier: 1 },
+}));
 import { authorizeProviders } from "./access";
 
 const calls = [
@@ -417,42 +417,4 @@ describe("paid-plan-only capabilities", () => {
       expect.objectContaining({ code: "paid_plan_required" }),
     );
   });
-});
-
-it("fails closed when the plan cannot be known: no org, a preview team or an Autumn error", async () => {
-  mocks.request.mockResolvedValue({
-    status: 200,
-    body: {
-      providers: [
-        {
-          provider: "benzinga",
-          required: true,
-          terms: { key: "benzinga", version: "C-1" },
-          paidPlanOnlyCapabilities: ["news/wiims"],
-        },
-      ],
-    },
-  });
-  const enabled = {
-    organizationDataSourceAccess: {
-      benzinga: {
-        status: "enabled",
-        termsKey: "benzinga",
-        termsVersion: "C-1",
-      },
-    },
-  };
-  const wiim = [
-    { provider: "benzinga", capability: "news/wiims", options: {} },
-  ];
-  // The service answers null for every "cannot know" case; the gate never
-  // treats that as paid.
-  mocks.multiplier.mockResolvedValue(null);
-  const denied = await authorizeProviders("team", wiim, enabled, null);
-  expect(denied?.status).toBe(503);
-  expect(denied?.body).toEqual(
-    expect.objectContaining({ code: "plan_verification_unavailable" }),
-  );
-  expect(mocks.multiplier).toHaveBeenCalledWith("team");
-  expect(mocks.request).toHaveBeenCalledTimes(1);
 });

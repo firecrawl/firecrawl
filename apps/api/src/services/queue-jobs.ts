@@ -5,7 +5,6 @@ import {
   getConcurrencyLimitActiveJobs,
   getConcurrencyQueueJobsCount,
   getCrawlConcurrencyLimitActiveJobs,
-  getEffectiveConcurrencyLimit,
   getTeamQueueLimit,
   MAX_BACKLOG_TIMEOUT_MS,
   pushConcurrencyLimitActiveJob,
@@ -19,6 +18,8 @@ import { sendNotificationWithCustomDays } from "./notification/email_notificatio
 import { shouldSendConcurrencyLimitNotification } from "./notification/notification-check";
 import { getJobFromGCS, removeJobFromGCS } from "../lib/gcs-jobs";
 import { Document } from "../controllers/v1/types";
+import { getACUCTeam } from "../controllers/auth";
+import { DEFAULT_TEAM_LIMITS } from "./autumn/autumn.service";
 import { getCrawl } from "../lib/crawl-redis";
 import { Logger } from "winston";
 import { ScrapeJobTimeoutError, TransportableError } from "../lib/error";
@@ -398,9 +399,9 @@ async function addScrapeJobRaw(
       }
     }
 
-    maxConcurrency = await getEffectiveConcurrencyLimit(
-      webScraperOptions.team_id,
-    );
+    maxConcurrency =
+      (await getACUCTeam(webScraperOptions.team_id))?.concurrency_limit ??
+      DEFAULT_TEAM_LIMITS.concurrency_limit;
 
     if (concurrencyLimited === null) {
       const now = Date.now();
@@ -693,7 +694,9 @@ export async function addScrapeJobs(
       addToCQ = jobsForcedToCQ;
     } else {
       const now = Date.now();
-      maxConcurrency = await getEffectiveConcurrencyLimit(teamId);
+      maxConcurrency =
+        (await getACUCTeam(teamId))?.concurrency_limit ??
+        DEFAULT_TEAM_LIMITS.concurrency_limit;
       await cleanOldConcurrencyLimitEntries(teamId, now);
 
       currentActiveConcurrency = (

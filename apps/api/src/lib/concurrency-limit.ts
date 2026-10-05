@@ -18,9 +18,8 @@ import {
   pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
-import { getACUCTeamLimits } from "../controllers/auth";
-import { FAIL_OPEN_CONCURRENCY_LIMIT } from "../services/autumn/autumn.service";
-import type { AuthCreditUsageChunkFromTeam } from "../controllers/v1/types";
+import { getACUCTeam } from "../controllers/auth";
+import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
 import { reportPipelineError } from "./redis-pipeline";
 
 /**
@@ -29,21 +28,6 @@ import { reportPipelineError } from "./redis-pipeline";
  * services/rate-limiter.ts; change both if the hobby plan changes.
  */
 export const HOBBY_CONCURRENCY_LIMIT = 5;
-
-/**
- * Returns the team's concurrency limit from its ACUC, failing open when
- * Autumn could not verify it. Pass the request's ACUC when the caller holds
- * one.
- */
-export async function getEffectiveConcurrencyLimit(
-  teamId: string,
-  acuc?: AuthCreditUsageChunkFromTeam | null,
-): Promise<number> {
-  return (
-    (await getACUCTeamLimits(teamId, acuc)).concurrency_limit ??
-    FAIL_OPEN_CONCURRENCY_LIMIT
-  );
-}
 
 const constructKey = constructConcurrencyLimitKey;
 const constructQueueKey = (team_id: string) =>
@@ -346,9 +330,9 @@ export async function concurrentJobDone(job: NuQJob<any>) {
     }
 
     // Once per call, not once per job promoted below.
-    const maxTeamConcurrency = await getEffectiveConcurrencyLimit(
-      job.data.team_id,
-    );
+    const maxTeamConcurrency =
+      (await getACUCTeam(job.data.team_id))?.concurrency_limit ??
+      DEFAULT_TEAM_LIMITS.concurrency_limit;
 
     let staleSkipped = 0;
     while (staleSkipped < 100) {

@@ -50,7 +50,7 @@ import { parseHostname } from "../../lib/url-utils";
 import { getJobPriority } from "../../lib/job-priority";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
-import { getACUCTeam, getACUCTeamLimits } from "../../controllers/auth";
+import { getACUCTeam } from "../../controllers/auth";
 import { orgIdForTeam } from "../../lib/team-org";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { CustomError } from "../../lib/custom-error";
@@ -720,16 +720,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               }
             }
 
-            // Hoisted: one ACUC and limits read per job, not one per
-            // discovered link, even for an ACUC cached without the limits.
-            const teamACUC =
+            // Hoisted: one ACUC read per job, not one per discovered link.
+            const crawlACUC =
               discoveredLinks.length > 0
                 ? await getACUCTeam(sc.team_id).catch(() => null)
                 : null;
-            const crawlACUC = teamACUC && {
-              ...teamACUC,
-              ...(await getACUCTeamLimits(sc.team_id, teamACUC)),
-            };
 
             for (const link of discoveredLinks) {
               if (await lockURL(job.data.crawl_id, sc, link)) {
