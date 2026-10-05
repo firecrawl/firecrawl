@@ -8,7 +8,7 @@ use opentelemetry::trace::{
   Link, SpanKind, TraceContextExt, TraceId, TraceState, TracerProvider as _,
 };
 use opentelemetry::{Context, KeyValue, Value};
-use opentelemetry_otlp::{Protocol, SpanExporter, WithExportConfig};
+use opentelemetry_otlp::{Protocol, RetryPolicy, SpanExporter, WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::trace::{Sampler, SamplingDecision, SamplingResult, ShouldSample};
 use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
 use tracing::field::{Field, Visit};
@@ -149,6 +149,8 @@ pub fn init_telemetry() {
       .with_http()
       .with_protocol(Protocol::HttpBinary)
       .with_endpoint(&endpoint)
+      // Retries would block every scrape's flush for ~1s while the collector is down.
+      .with_retry_policy(RetryPolicy::disabled())
       .build()
     {
       Ok(exporter) => exporter,

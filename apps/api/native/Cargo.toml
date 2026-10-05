@@ -16,9 +16,7 @@ anydoc = "0.2.2"
 bytes = "1.12.1"
 chrono = { version = "0.4", features = ["serde"] }
 encoding_rs = "0.8"
-# otel feature disabled: genai 0.7.0-beta.23's otel module fails to compile
-# (non-exhaustive match on Error::ClientBuildFail in otel/error.rs)
-genai = "0.7.0-beta.23"
+genai = { version = "=0.7.0-rc.2", features = ["otel"] }
 hex = "0.4"
 kinded-macro = { path = "kinded-macro" }
 kuchikiki = "0.8.2"
@@ -53,10 +51,10 @@ tokio = { version = "1.48.0", features = ["macros", "time"] }
 tinyvec = ">=1.12, <1.13"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "fmt", "env-filter"] }
-tracing-opentelemetry = "0.33"
-opentelemetry = "0.32"
-opentelemetry_sdk = "0.32"
-opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "http-proto", "reqwest-blocking-client"] }
+tracing-opentelemetry = "0.34"
+opentelemetry = "0.33"
+opentelemetry_sdk = "0.33"
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["trace", "http-proto", "reqwest-blocking-client"] }
 wreq = { version = "6.0.0-rc", features = ["cookies", "gzip", "brotli", "zstd", "deflate", "webpki-roots"] }
 wreq-util = "3.0.0-rc"
 google-cloud-storage = "1.17.0"
