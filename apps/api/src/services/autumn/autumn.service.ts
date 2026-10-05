@@ -63,19 +63,23 @@ export function featureIdForBillingEndpoint(endpoint?: string): string {
   return endpoint === "search" ? SEARCH_CREDITS_FEATURE_ID : CREDITS_FEATURE_ID;
 }
 
-/** A team's Autumn-derived limits, as cached on its ACUC. */
+/** A team's Autumn-derived limits and plan, as cached on its ACUC. */
 export type TeamLimits = {
   concurrency_limit: number;
   rate_limit_multiplier: number;
+  is_paid_plan: boolean;
 };
 
 /** Limits for a team with no elevated entitlement (a 404 or no balance). */
 export const DEFAULT_TEAM_LIMITS: TeamLimits = {
   concurrency_limit: 2,
   rate_limit_multiplier: 1,
+  is_paid_plan: false,
 };
 
 const AUTUMN_DEFAULT_PLAN_ID = "free";
+// Mirrors FREE_PLAN_IDS in firecrawl-web's utils/autumn/pick-largest.ts.
+const FREE_PLAN_IDS = new Set([AUTUMN_DEFAULT_PLAN_ID, "free_1_5k"]);
 /**
  * Size-bounded Map with FIFO eviction. When the map is at capacity the oldest
  * inserted entry is removed before inserting the new one, keeping memory usage
@@ -823,9 +827,11 @@ export class AutumnService {
   }
 
   /**
-   * The team's limits from one uncached Autumn entity read (the ACUC caches
-   * them). A missing entity (404) or an absent balance resolves to the low
-   * defaults. Throws when Autumn errors or the team has no org.
+   * The team's limits from one uncached Autumn entity read, and its plan from
+   * a customer read made in parallel (the ACUC caches both). A 404 on either
+   * resolves to the low defaults. A team is on a paid plan when its org has an
+   * active, non-add-on subscription to a plan outside FREE_PLAN_IDS. Throws
+   * when Autumn errors or the team has no org.
    */
   async getTeamLimits(
     teamId: string,
@@ -836,17 +842,17 @@ export class AutumnService {
     }
     if (!orgId) throw new Error("The team has no org to read limits for");
 
-    let balances: Record<string, any> = {};
-    try {
-      const entity: any = await autumnClient.entities.get({
-        customerId: orgId,
-        entityId: teamId,
-      });
-      balances = entity?.balances ?? {};
-    } catch (error) {
-      // 404 = the entity genuinely doesn't exist in Autumn (not an error).
-      if (this.getErrorStatus(error) !== 404) throw error;
-    }
+    const nullOn404 = (error: unknown) => {
+      if (this.getErrorStatus(error) === 404) return null;
+      throw error;
+    };
+    const [entity, customer] = await Promise.all([
+      autumnClient.entities
+        .get({ customerId: orgId, entityId: teamId })
+        .catch(nullOn404),
+      autumnClient.customers.get({ customerId: orgId }).catch(nullOn404),
+    ]);
+    const balances: Record<string, any> = entity?.balances ?? {};
 
     return {
       // CONCURRENCY: use `remaining` (the post-drain effective per-team cap;
@@ -859,6 +865,12 @@ export class AutumnService {
       rate_limit_multiplier:
         sanitizeBalanceValue(balances[RATE_LIMIT_FEATURE_ID]?.granted) ??
         DEFAULT_TEAM_LIMITS.rate_limit_multiplier,
+      is_paid_plan: (customer?.subscriptions ?? []).some(
+        subscription =>
+          subscription.status === "active" &&
+          !subscription.addOn &&
+          !FREE_PLAN_IDS.has(subscription.planId),
+      ),
     };
   }
 

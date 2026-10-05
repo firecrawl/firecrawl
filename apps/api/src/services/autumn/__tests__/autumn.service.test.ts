@@ -21,6 +21,7 @@ const {
   mockCheck,
   mockFinalize,
   mockGetOrCreate,
+  mockCustomerGet,
   mockEntityGet,
   mockEntityCreate,
   mockAutumnClient,
@@ -39,11 +40,12 @@ const {
   const mockGetOrCreate = vi
     .fn<(args: any) => Promise<unknown>>()
     .mockResolvedValue({ id: "org-1" });
+  const mockCustomerGet = vi.fn<(args: any) => Promise<unknown>>();
   const mockEntityGet = vi.fn<(args: any) => Promise<unknown>>();
   const mockEntityCreate = vi.fn<(args: any) => Promise<unknown>>();
 
   const mockAutumnClient = {
-    customers: { getOrCreate: mockGetOrCreate },
+    customers: { getOrCreate: mockGetOrCreate, get: mockCustomerGet },
     entities: { get: mockEntityGet, create: mockEntityCreate },
     balances: { finalize: mockFinalize },
     check: mockCheck,
@@ -72,6 +74,7 @@ const {
     mockCheck,
     mockFinalize,
     mockGetOrCreate,
+    mockCustomerGet,
     mockEntityGet,
     mockEntityCreate,
     mockAutumnClient,
@@ -150,6 +153,7 @@ beforeEach(() => {
   mockFinalize.mockResolvedValue(undefined);
   mockEntityGet.mockResolvedValue(makeEntity(0));
   mockEntityCreate.mockResolvedValue({ id: "team-1" });
+  mockCustomerGet.mockResolvedValue({ subscriptions: [] });
 });
 
 // ---------------------------------------------------------------------------
@@ -751,7 +755,17 @@ describe("featureIdForBillingEndpoint", () => {
 // ---------------------------------------------------------------------------
 
 describe("getTeamLimits", () => {
-  const lowDefaults = { concurrency_limit: 2, rate_limit_multiplier: 1 };
+  const lowDefaults = {
+    concurrency_limit: 2,
+    rate_limit_multiplier: 1,
+    is_paid_plan: false,
+  };
+  const subscription = (planId: string, overrides: object = {}) => ({
+    planId,
+    status: "active",
+    addOn: false,
+    ...overrides,
+  });
 
   it("returns the Autumn values on the happy path", async () => {
     mockEntityGet.mockResolvedValue({
@@ -760,15 +774,64 @@ describe("getTeamLimits", () => {
         rate_limits: { granted: 25 },
       },
     });
+    mockCustomerGet.mockResolvedValue({
+      subscriptions: [subscription("hobby")],
+    });
 
     expect(await makeService().getTeamLimits("team-1", "org-1")).toEqual({
       concurrency_limit: 7,
       rate_limit_multiplier: 25,
+      is_paid_plan: true,
     });
     expect(mockEntityGet).toHaveBeenCalledWith({
       customerId: "org-1",
       entityId: "team-1",
     });
+    expect(mockCustomerGet).toHaveBeenCalledWith({ customerId: "org-1" });
+  });
+
+  it("starts the customer read without waiting for the entity read", async () => {
+    let resolveEntity: (entity: unknown) => void = () => {};
+    mockEntityGet.mockReturnValue(
+      new Promise(resolve => {
+        resolveEntity = resolve;
+      }),
+    );
+
+    const pending = makeService().getTeamLimits("team-1", "org-1");
+    expect(mockCustomerGet).toHaveBeenCalledTimes(1);
+    resolveEntity({ balances: {} });
+    expect(await pending).toEqual(lowDefaults);
+  });
+
+  it.each([
+    ["a priced plan", [subscription("standard")], true],
+    ["a legacy plan", [subscription("legacy_standard")], true],
+    ["an enterprise plan", [subscription("enterprise_10m")], true],
+    ["the free plan", [subscription("free")], false],
+    ["the free-boost plan", [subscription("free_1_5k")], false],
+    [
+      "free plus the pay-as-you-go add-on",
+      [subscription("free"), subscription("pay_as_you_go", { addOn: true })],
+      false,
+    ],
+    [
+      "only a paid add-on",
+      [subscription("credit_pack_1k", { addOn: true })],
+      false,
+    ],
+    [
+      "free with a paid plan only scheduled",
+      [subscription("free"), subscription("hobby", { status: "scheduled" })],
+      false,
+    ],
+    ["no subscriptions", [], false],
+  ])("is_paid_plan for %s is %s", async (_case, subscriptions, expected) => {
+    mockCustomerGet.mockResolvedValue({ subscriptions });
+
+    const limits = await makeService().getTeamLimits("team-1", "org-1");
+
+    expect(limits.is_paid_plan).toBe(expected);
   });
 
   it.each([
@@ -780,6 +843,10 @@ describe("getTeamLimits", () => {
       "the balances are absent",
       () => mockEntityGet.mockResolvedValue({ balances: {} }),
     ],
+    [
+      "the customer is missing (404)",
+      () => mockCustomerGet.mockRejectedValue({ statusCode: 404 }),
+    ],
   ])("resolves to the low defaults when %s", async (_case, arrange) => {
     arrange();
 
@@ -789,10 +856,19 @@ describe("getTeamLimits", () => {
   });
 
   it.each([
-    ["Autumn errors (not a 404)", { statusCode: 500 }],
-    ["Autumn throws a non-HTTP error", new Error("ECONNREFUSED")],
-  ])("throws when %s", async (_case, error) => {
-    mockEntityGet.mockRejectedValue(error);
+    ["the entity read errors (not a 404)", mockEntityGet, { statusCode: 500 }],
+    [
+      "the entity read throws a non-HTTP error",
+      mockEntityGet,
+      new Error("ECONNREFUSED"),
+    ],
+    [
+      "the customer read errors (not a 404)",
+      mockCustomerGet,
+      { statusCode: 500 },
+    ],
+  ])("throws when %s", async (_case, read, error) => {
+    read.mockRejectedValue(error);
 
     await expect(
       makeService().getTeamLimits("team-1", "org-1"),
@@ -802,6 +878,7 @@ describe("getTeamLimits", () => {
   it("throws without asking Autumn when there is no org", async () => {
     await expect(makeService().getTeamLimits("team-1", null)).rejects.toThrow();
     expect(mockEntityGet).not.toHaveBeenCalled();
+    expect(mockCustomerGet).not.toHaveBeenCalled();
   });
 
   it("reads Autumn on every call, keeping no cache of its own", async () => {
@@ -812,6 +889,7 @@ describe("getTeamLimits", () => {
     await svc.getTeamLimits("team-1", "org-1");
     await svc.getTeamLimits("team-1", "org-1");
     expect(mockEntityGet).toHaveBeenCalledTimes(2);
+    expect(mockCustomerGet).toHaveBeenCalledTimes(2);
   });
 
   it("answers the low defaults for a preview team without asking Autumn", async () => {
@@ -819,6 +897,7 @@ describe("getTeamLimits", () => {
       lowDefaults,
     );
     expect(mockEntityGet).not.toHaveBeenCalled();
+    expect(mockCustomerGet).not.toHaveBeenCalled();
   });
 });
 

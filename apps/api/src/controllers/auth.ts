@@ -56,11 +56,13 @@ const ACUC_TTL_SECONDS = 600;
 // A chunk built on the fail-open limits is cached only briefly, so a
 // transient Autumn error is retried within a minute.
 const ACUC_FAIL_OPEN_TTL_SECONDS = 60;
-// When Autumn can't answer, fail open rather than throttle real teams to the
-// low defaults. Generous but bounded: the concurrency queue cap still applies.
+// When Autumn can't answer, fail open rather than throttle or gate real teams
+// on the low defaults. Generous but bounded: the concurrency queue cap still
+// applies.
 const FAIL_OPEN_LIMITS: TeamLimits = {
   concurrency_limit: 200,
   rate_limit_multiplier: 2500,
+  is_paid_plan: true,
 };
 
 /** The team's effective limits, and how long a chunk carrying them may live. */
@@ -85,7 +87,8 @@ async function withLimits<T extends AuthCreditUsageChunkFromTeam>(
 ): Promise<T> {
   if (
     chunk.concurrency_limit !== undefined &&
-    chunk.rate_limit_multiplier !== undefined
+    chunk.rate_limit_multiplier !== undefined &&
+    chunk.is_paid_plan !== undefined
   ) {
     return chunk;
   }
@@ -323,6 +326,7 @@ async function getACUC(
       is_extract: isExtract,
       concurrency_limit: limits.concurrency_limit,
       rate_limit_multiplier: limits.rate_limit_multiplier,
+      is_paid_plan: limits.is_paid_plan,
     };
   } else {
     return null;

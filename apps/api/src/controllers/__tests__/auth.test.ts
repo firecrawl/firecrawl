@@ -96,7 +96,11 @@ vi.mock("../../lib/spur", () => ({
 }));
 
 vi.mock("../../services/autumn/autumn.service", () => ({
-  DEFAULT_TEAM_LIMITS: { concurrency_limit: 2, rate_limit_multiplier: 1 },
+  DEFAULT_TEAM_LIMITS: {
+    concurrency_limit: 2,
+    rate_limit_multiplier: 1,
+    is_paid_plan: false,
+  },
   autumnService: {
     getTeamLimits: vi.fn(),
   },
@@ -110,6 +114,7 @@ function mockMultiplier(rate_limit_multiplier: number) {
   vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
     concurrency_limit: 2,
     rate_limit_multiplier,
+    is_paid_plan: false,
   });
 }
 
@@ -1363,8 +1368,16 @@ describe("authenticateUser", () => {
       org_id: "org-1",
       flags: null,
     };
-    const known = { concurrency_limit: 7, rate_limit_multiplier: 25 };
-    const failOpen = { concurrency_limit: 200, rate_limit_multiplier: 2500 };
+    const known = {
+      concurrency_limit: 7,
+      rate_limit_multiplier: 25,
+      is_paid_plan: false,
+    };
+    const failOpen = {
+      concurrency_limit: 200,
+      rate_limit_multiplier: 2500,
+      is_paid_plan: true,
+    };
     const authRequest = {
       headers: { authorization: `Bearer ${apiKey}` },
       socket: { remoteAddress: "127.0.0.1" },
@@ -1452,6 +1465,25 @@ describe("authenticateUser", () => {
 
       expect(autumnService.getTeamLimits).toHaveBeenCalledTimes(1);
       expect(setValue).not.toHaveBeenCalled();
+    });
+
+    it("fills a cached ACUC that predates is_paid_plan with one live read", async () => {
+      vi.mocked(getValue).mockResolvedValue(
+        JSON.stringify({
+          ...keyRow,
+          concurrency_limit: 7,
+          rate_limit_multiplier: 25,
+        }),
+      );
+      vi.mocked(autumnService.getTeamLimits).mockResolvedValue({
+        ...known,
+        is_paid_plan: true,
+      });
+
+      await expect(getACUCTeam("team-1")).resolves.toMatchObject({
+        is_paid_plan: true,
+      });
+      expect(autumnService.getTeamLimits).toHaveBeenCalledTimes(1);
     });
 
     it("builds the team ACUC with the fail-open limits cached only briefly", async () => {
