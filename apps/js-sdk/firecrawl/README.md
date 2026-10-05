@@ -236,6 +236,23 @@ console.log(evidence.repos); // indexed-status echoes for requested repos
 `archived`, `fork`, and `skills: 'only'`. Supplying both `repos` and `sources`
 OR-combines GitHub-backed and documentation results.
 
+### Legal and regulatory search
+
+Use `legalRegulatorySearch` to search the Legal and Regulatory Index: primary
+law and regulatory material from US federal, state, and local government
+sources, including statutes, regulations, codes, court opinions, and other
+government publications. Results come back in the ordinary web-result shape.
+
+```js
+const law = await app.legalRegulatorySearch('food labeling requirements', {
+  k: 5,
+});
+
+for (const result of law.data.web) {
+  console.log(result.position, result.title, result.url);
+}
+```
+
 ### Research / paper search
 
 Use `app.research` to search Firecrawl's research paper index: ~43M paper

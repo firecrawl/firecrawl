@@ -2412,6 +2412,22 @@ class DeveloperSearchResponse(BaseModel):
     sources: Optional[List[DeveloperSearchSourceStatus]] = None
 
 
+class LegalRegulatorySearchRequest(BaseModel):
+    """Request for the Legal and Regulatory Index search endpoint."""
+
+    query: str
+    k: Optional[int] = Field(default=None, ge=1, le=100)
+
+
+class LegalRegulatorySearchData(BaseModel):
+    web: List[SearchResultWeb]
+
+
+class LegalRegulatorySearchResponse(BaseModel):
+    success: bool
+    data: LegalRegulatorySearchData
+
+
 class SearchRequest(BaseModel):
     """Request for search operations."""
 

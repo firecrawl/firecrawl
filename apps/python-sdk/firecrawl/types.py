@@ -69,6 +69,9 @@ from .v2.types import (
     DeveloperSearchRepoStatus,
     DeveloperSearchSourceStatus,
     DeveloperSearchResponse,
+    LegalRegulatorySearchRequest,
+    LegalRegulatorySearchData,
+    LegalRegulatorySearchResponse,
     
     # Action types
     WaitAction,
@@ -169,6 +172,9 @@ __all__ = [
     'DeveloperSearchRepoStatus',
     'DeveloperSearchSourceStatus',
     'DeveloperSearchResponse',
+    'LegalRegulatorySearchRequest',
+    'LegalRegulatorySearchData',
+    'LegalRegulatorySearchResponse',
     
     # Action types
     'WaitAction',

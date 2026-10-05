@@ -806,6 +806,16 @@ export interface DeveloperSearchResponse {
   sources?: DeveloperSearchSourceStatus[];
 }
 
+export interface LegalRegulatorySearchOptions {
+  /** Total ranked results, 1–100 (default 10). */
+  k?: number;
+}
+
+export interface LegalRegulatorySearchResponse {
+  success: boolean;
+  data: { web: SearchResultWeb[] };
+}
+
 export interface SearchResultWeb {
   url: string;
   title?: string;
