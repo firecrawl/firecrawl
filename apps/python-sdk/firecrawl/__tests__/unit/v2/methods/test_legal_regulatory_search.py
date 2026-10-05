@@ -4,6 +4,7 @@ import pytest
 
 from firecrawl.v2.client import FirecrawlClient
 from firecrawl.v2.client_async import AsyncFirecrawlClient
+from firecrawl.v2.utils.error_handler import FirecrawlError
 
 
 RESPONSE = {
@@ -21,10 +22,13 @@ RESPONSE = {
 }
 
 
-def _response():
+FAILED = {"success": False, "error": "Search failed"}
+
+
+def _response(body=RESPONSE):
     response = Mock()
     response.status_code = 200
-    response.json.return_value = RESPONSE
+    response.json.return_value = body
     return response
 
 
@@ -79,3 +83,24 @@ async def test_async_legal_regulatory_search_posts_query_and_k():
         "/v2/search/gov", {"query": "food labeling requirements", "k": 5}
     )
     assert result.data.web[0].url.startswith("https://www.ecfr.gov/")
+
+
+def test_legal_regulatory_search_raises_on_unsuccessful_body():
+    transport = Mock()
+    transport.post.return_value = _response(FAILED)
+    client = FirecrawlClient.__new__(FirecrawlClient)
+    client.http_client = transport
+
+    with pytest.raises(FirecrawlError, match="Search failed"):
+        client.legal_regulatory_search("zoning variance")
+
+
+@pytest.mark.asyncio
+async def test_async_legal_regulatory_search_raises_on_unsuccessful_body():
+    transport = Mock()
+    transport.post = AsyncMock(return_value=_response(FAILED))
+    client = AsyncFirecrawlClient.__new__(AsyncFirecrawlClient)
+    client.async_http_client = transport
+
+    with pytest.raises(FirecrawlError, match="Search failed"):
+        await client.legal_regulatory_search("zoning variance")
