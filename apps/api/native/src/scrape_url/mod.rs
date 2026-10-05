@@ -7,8 +7,9 @@ use url::Url;
 
 use self::{
   document::{Document, DocumentMetadataCacheState},
-  engines::{EngineOutcome, get_main_engine, should_elevate_proxy},
+  engines::{EngineOutcome, check_engine_support, get_main_engine, should_elevate_proxy},
   error::ScrapeURLError,
+  feature_flags::FeatureFlag,
   index::{Index, should_use_index},
   meta::Meta,
   options::{InternalOptions, ScrapeOptions},
@@ -34,7 +35,7 @@ mod rewrite_url;
 mod robots;
 mod transformers;
 
-async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
+async fn _scrape_url(mut meta: Meta) -> Result<Document, ScrapeURLError> {
   tracing::info!("scrapeURL entered");
 
   if let Some(rewritten_url) = meta.rewritten_url.as_ref() {
@@ -82,7 +83,7 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
     }
   };
 
-  let page = match index_page {
+  let mut page = match index_page {
     Some(index_page) => index_page,
     None if meta.options.lockdown => return Err(ScrapeURLError::LockdownMissError),
     None if meta.internal_options.agent_index_only => {
@@ -90,6 +91,13 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
     }
     None => {
       let main_engine = get_main_engine().await;
+
+      check_engine_support(
+        !meta.options.actions.is_empty(),
+        meta.options.profile.is_some(),
+        main_engine.get_features().contains(FeatureFlag::Actions),
+        main_engine.supports_profile(),
+      )?;
 
       let mut outcome = main_engine.scrape(&meta, discrete_proxy).await?;
 
@@ -118,6 +126,8 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
       }
     }
   };
+
+  meta.audio_cookies = std::mem::take(&mut page.result.audio_cookies);
 
   let cached_at = page.result.cached_at;
   let mut document = parsers::parse_engine_result(&meta, page.result).await?;

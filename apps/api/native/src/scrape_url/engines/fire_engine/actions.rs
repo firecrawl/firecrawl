@@ -1,17 +1,13 @@
 use serde::Deserialize;
 use url::Url;
 
+use super::super::super::raw_page::BrowserCookie;
+
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum FireEngineActionResultScrape {
   Html { html: String },
   Accessibility { accessibility: String },
-}
-
-#[derive(Deserialize)]
-pub struct FireEngineActionResultCookie {
-  pub name: String,
-  pub value: String,
 }
 
 #[derive(Deserialize)]
@@ -32,7 +28,7 @@ pub enum FireEngineActionResultKind {
     link: Url,
   },
   GetCookies {
-    cookies: Vec<FireEngineActionResultCookie>,
+    cookies: Vec<BrowserCookie>,
   },
 }
 

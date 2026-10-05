@@ -22,9 +22,9 @@ pub enum FireEngineScrapeRequestEngine {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FireEnginePersistentStorage {
-  pub unique_id: String,
+pub struct FireEngineProfile<'a> {
+  pub owner: &'a str,
+  pub name: &'a str,
 }
 
 #[derive(Debug, Serialize)]
@@ -49,6 +49,7 @@ pub struct FireEngineScrapeRequest<'a> {
   pub mobile: bool,
 
   /// Opt out of render-engine routing (blockMedia: false usually forces it).
+  #[serde(rename = "forceNonRender")]
   pub force_non_renderer: bool,
 
   pub mobile_proxy: bool,
@@ -66,7 +67,7 @@ pub struct FireEngineScrapeRequest<'a> {
   pub zero_data_retention: bool,
   pub disable_smart_wait_cache: bool,
   #[serde(skip_serializing_if = "Option::is_none")]
-  pub persistent_storage: Option<FireEnginePersistentStorage>,
+  pub profile: Option<FireEngineProfile<'a>>,
 }
 
 #[derive(Deserialize)]

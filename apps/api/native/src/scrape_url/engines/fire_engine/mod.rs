@@ -4,13 +4,13 @@ use std::{
 };
 
 use regex::Regex;
-use sha2::{Digest, Sha256};
 use tracing::{Instrument, instrument};
+use url::Url;
 
 use self::{
-  actions::{FireEngineActionResultCookie, FireEngineActionResultKind},
+  actions::FireEngineActionResultKind,
   scrape::{
-    FireEnginePersistentStorage, FireEngineScrapeRequest, FireEngineScrapeRequestEngine,
+    FireEngineProfile, FireEngineScrapeRequest, FireEngineScrapeRequestEngine,
     FireEngineScrapeResponse,
   },
 };
@@ -54,9 +54,26 @@ pub struct FireEngine {
   url: &'static String,
 }
 
-pub struct FireEngineScrape {
-  pub result: RawPageResult,
-  pub audio_cookies: Vec<FireEngineActionResultCookie>,
+/// Whether `url` is a YouTube video page, which needs media and cookies for the
+/// YouTube transformer.
+fn is_youtube_video_url(url: &Url) -> bool {
+  let Some(host) = url.host_str() else {
+    return false;
+  };
+
+  if host == "youtube.com" || host.ends_with(".youtube.com") {
+    let is_watch = url.path() == "/watch"
+      && url
+        .query_pairs()
+        .find(|(key, _)| key == "v")
+        .is_some_and(|(_, value)| !value.is_empty());
+    let segments: Vec<&str> = url.path().split('/').filter(|x| !x.is_empty()).collect();
+    is_watch || (segments.len() == 2 && segments[0] == "live")
+  } else if host == "youtu.be" {
+    url.path() != "/"
+  } else {
+    false
+  }
 }
 
 impl FireEngine {
@@ -71,7 +88,10 @@ impl FireEngine {
     meta: &Meta,
     proxy: ScrapeProxy,
     get_cookies: bool,
-  ) -> Result<EngineOutcome<FireEngineScrape>, ScrapeURLError> {
+  ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError> {
+    let youtube =
+      !meta.options.formats.contains(FormatKind::RawBase64) && is_youtube_video_url(meta.get_url());
+
     let mut actions: Vec<InternalAction> = Vec::new();
 
     // Transform waitFor option into an action
@@ -105,6 +125,7 @@ impl FireEngine {
 
     if meta.options.formats.contains(FormatKind::Audio)
       || meta.options.formats.contains(FormatKind::Video)
+      || youtube
       || get_cookies
     {
       actions.push(InternalAction {
@@ -135,9 +156,9 @@ impl FireEngine {
       save_scrape_result_to_gcs: false,
       zero_data_retention: meta.internal_options.zero_data_retention,
 
-      // Branding needs media to be loaded
+      // Branding and YouTube need media to be loaded
       // Note: what's up with the discrepancy of Audio + Video being present on force_non_renderer vs missing here? - Mogery
-      block_media: !meta.options.formats.contains(FormatKind::Branding), // TODO: youtube postprocessor? maybe? not sure if it needs media anymore
+      block_media: !meta.options.formats.contains(FormatKind::Branding) && !youtube,
 
       // Branding needs media to be loaded, but not rendered.
       // On f-e, if you unblock media, it will also force it to be rendered.
@@ -146,19 +167,19 @@ impl FireEngine {
         && actions.iter().all(|x| x.is_renderless_safe())
         // && !meta.options.formats.contains(FormatKind::Screenshot) // NOTE: redundant check, screenshot gets mapped into actions - Mogery
         && !meta.options.formats.contains(FormatKind::Audio)
-        && !meta.options.formats.contains(FormatKind::Video), // TODO: also youtube post processor
+        && !meta.options.formats.contains(FormatKind::Video)
+        && !youtube,
 
       actions,
 
-      persistent_storage: meta.options.profile.as_ref().map(|profile| {
-        FireEnginePersistentStorage {
-          unique_id: format!(
-            "{}_{}",
-            hex::encode(&Sha256::digest(&meta.team_id)[..8]),
-            profile.name
-          ),
-        }
-      }),
+      profile: meta
+        .options
+        .profile
+        .as_ref()
+        .map(|profile| FireEngineProfile {
+          owner: &meta.team_id,
+          name: &profile.name,
+        }),
 
       // pdf_max_size: if file::file_offload_available().await && true {
       //   Some(meta.file_size_limit())
@@ -263,87 +284,85 @@ impl FireEngine {
 
     let mut screenshots_iter = result.screenshots.into_iter();
 
-    Ok(EngineOutcome::Scraped(FireEngineScrape {
-      result: RawPageResult {
-        url: result.url.unwrap_or_else(|| meta.get_url().to_owned()),
+    Ok(EngineOutcome::Scraped(RawPageResult {
+      url: result.url.unwrap_or_else(|| meta.get_url().to_owned()),
 
-        filename: result.file.as_ref().map(|x| x.name.to_owned()),
-        content: if let Some(file) = result.file {
-          file.content.try_into()?
-        } else {
-          RawPageContent::ChromeRenderedDOM(result.content)
-        },
-        status_code: result.page_status_code,
-
-        content_type: result
-          .response_headers
-          .into_iter()
-          .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-          .map_or_else(|| "application/octet-stream".to_string(), |(_, v)| v),
-
-        screenshot: if meta.options.formats.contains(FormatKind::Screenshot)
-          && let Some(screenshot) = screenshots_iter.next()
-        {
-          Some(screenshot.to_owned())
-        } else {
-          None
-        },
-
-        actions: if had_actions {
-          Some(RawPageActions {
-            screenshots: screenshots_iter.collect(),
-            scrapes: result.action_content,
-            javascript_returns: result
-              .action_results
-              .iter()
-              .filter_map(|x| match &x.kind {
-                FireEngineActionResultKind::ExecuteJavascript {
-                  r#return: raw_return,
-                } => Some(
-                  match serde_json::from_str::<serde_json::Value>(raw_return) {
-                    Ok(value) => {
-                      match serde_json::from_value::<JavascriptActionContent>(value.clone()) {
-                        Ok(x) => x,
-                        Err(_) => JavascriptActionContent {
-                          r#type: "unknown".to_string(),
-                          value,
-                        },
-                      }
-                    }
-                    Err(e) => {
-                      tracing::warn!("failed to parse executeJavascript return: {e}");
-                      JavascriptActionContent {
-                        r#type: "unknown".to_string(),
-                        value: serde_json::Value::String(raw_return.clone()),
-                      }
-                    }
-                  },
-                ),
-                _ => None,
-              })
-              .collect(),
-            pdfs: result
-              .action_results
-              .iter()
-              .filter_map(|x| match &x.kind {
-                FireEngineActionResultKind::Pdf { link } => Some(link.to_owned()),
-                _ => None,
-              })
-              .collect(),
-          })
-        } else {
-          None
-        },
-
-        proxy_used: if result.used_mobile_proxy {
-          ScrapeProxy::Enhanced
-        } else {
-          ScrapeProxy::Basic
-        },
-        timezone: result.timezone,
-
-        cached_at: None,
+      filename: result.file.as_ref().map(|x| x.name.to_owned()),
+      content: if let Some(file) = result.file {
+        file.content.try_into()?
+      } else {
+        RawPageContent::ChromeRenderedDOM(result.content)
       },
+      status_code: result.page_status_code,
+
+      content_type: result
+        .response_headers
+        .into_iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        .map_or_else(|| "application/octet-stream".to_string(), |(_, v)| v),
+
+      screenshot: if meta.options.formats.contains(FormatKind::Screenshot)
+        && let Some(screenshot) = screenshots_iter.next()
+      {
+        Some(screenshot.to_owned())
+      } else {
+        None
+      },
+
+      actions: if had_actions {
+        Some(RawPageActions {
+          screenshots: screenshots_iter.collect(),
+          scrapes: result.action_content,
+          javascript_returns: result
+            .action_results
+            .iter()
+            .filter_map(|x| match &x.kind {
+              FireEngineActionResultKind::ExecuteJavascript {
+                r#return: raw_return,
+              } => Some(
+                match serde_json::from_str::<serde_json::Value>(raw_return) {
+                  Ok(value) => {
+                    match serde_json::from_value::<JavascriptActionContent>(value.clone()) {
+                      Ok(x) => x,
+                      Err(_) => JavascriptActionContent {
+                        r#type: "unknown".to_string(),
+                        value,
+                      },
+                    }
+                  }
+                  Err(e) => {
+                    tracing::warn!(error = %e, "failed to parse executeJavascript return");
+                    JavascriptActionContent {
+                      r#type: "unknown".to_string(),
+                      value: serde_json::Value::String(raw_return.clone()),
+                    }
+                  }
+                },
+              ),
+              _ => None,
+            })
+            .collect(),
+          pdfs: result
+            .action_results
+            .iter()
+            .filter_map(|x| match &x.kind {
+              FireEngineActionResultKind::Pdf { link } => Some(link.to_owned()),
+              _ => None,
+            })
+            .collect(),
+        })
+      } else {
+        None
+      },
+
+      proxy_used: if result.used_mobile_proxy {
+        ScrapeProxy::Enhanced
+      } else {
+        ScrapeProxy::Basic
+      },
+      timezone: result.timezone,
+
+      cached_at: None,
 
       audio_cookies: result
         .action_results
@@ -385,9 +404,6 @@ impl Engine for FireEngine {
     meta: &Meta,
     proxy: ScrapeProxy,
   ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError> {
-    self
-      .do_scrape(meta, proxy, false)
-      .await
-      .map(|x| x.map(|scrape| scrape.result))
+    self.do_scrape(meta, proxy, false).await
   }
 }

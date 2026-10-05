@@ -60,6 +60,11 @@ impl EngineKind {
     matches!(self, EngineKind::FireEngine(_))
   }
 
+  /// Only fire-engine can load a browser profile; the others fetch anonymously.
+  pub fn supports_profile(&self) -> bool {
+    matches!(self, EngineKind::FireEngine(_))
+  }
+
   pub fn special_regex(&self) -> Option<&'static Regex> {
     match self {
       EngineKind::Fetch(_) => fetch::FetchEngine::SPECIAL_REGEX,
@@ -134,15 +139,6 @@ pub enum EngineOutcome<T> {
   ProxyElevationNeeded,
 }
 
-impl<T> EngineOutcome<T> {
-  pub fn map<U>(self, f: impl FnOnce(T) -> U) -> EngineOutcome<U> {
-    match self {
-      Self::Scraped(x) => EngineOutcome::Scraped(f(x)),
-      Self::ProxyElevationNeeded => EngineOutcome::ProxyElevationNeeded,
-    }
-  }
-}
-
 /// Whether a basic-proxy attempt in `auto` mode should be retried once with
 /// enhanced proxies: the engine asked for it, or the page status (401/403/429)
 /// suggests the basic proxy was inadequate and the engine can switch proxies.
@@ -162,4 +158,26 @@ pub fn should_elevate_proxy(
       engine_supports_enhanced && matches!(result.status_code, 401 | 403 | 429)
     }
   }
+}
+
+/// Rejects a scrape the main engine can't serve, with the errors main returns.
+/// Actions need an engine that runs them, and a profile must never fall back to
+/// an engine that fetches anonymously.
+pub fn check_engine_support(
+  has_actions: bool,
+  has_profile: bool,
+  engine_supports_actions: bool,
+  engine_supports_profile: bool,
+) -> Result<(), ScrapeURLError> {
+  if has_actions && !engine_supports_actions {
+    return Err(ScrapeURLError::ActionsNotSupportedError);
+  }
+
+  if has_profile && !engine_supports_profile {
+    return Err(ScrapeURLError::NoEnginesLeftError {
+      fallback_list: Vec::new(),
+    });
+  }
+
+  Ok(())
 }

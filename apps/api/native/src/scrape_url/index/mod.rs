@@ -403,6 +403,7 @@ impl Index {
         proxy_used: doc.proxy_used,
         timezone: None,
         filename: None,
+        audio_cookies: Vec::new(),
       }))
     } else {
       if let IndexEntrySource::Cache(index_cache) = source {
