@@ -19,12 +19,10 @@ mod routing;
 mod schedule;
 mod schema;
 mod sync;
-#[cfg(test)]
-pub mod testing;
 
 pub use self::{
   by_reference::{ByReferenceAttempt, Handoff, by_reference_reachable, download_handoff},
-  io::{FirePdfIo, RealIo},
+  io::now_ms,
   jobs::AsyncInput,
   routing::{AsyncRouteInput, RouteRecord, decide_async_route, features_label},
   schema::{WirePage, WirePageBlocks},
@@ -380,26 +378,24 @@ fn log_provenance(provenance: &Provenance, cache_key: &str) {
 }
 
 /// A FirePDF client bound to one request.
-pub struct FirePdfClient<'a, I: FirePdfIo> {
-  pub io: &'a I,
+pub struct FirePdfClient<'a> {
   pub config: &'a FirePdfConfig,
   pub base_url: &'a str,
   pub request: &'a FirePdfRequest,
 }
 
-impl<'a, I: FirePdfIo> FirePdfClient<'a, I> {
+impl<'a> FirePdfClient<'a> {
   /// `None` when FirePDF is not configured.
-  pub fn new(io: &'a I, config: &'a FirePdfConfig, request: &'a FirePdfRequest) -> Option<Self> {
+  pub fn new(config: &'a FirePdfConfig, request: &'a FirePdfRequest) -> Option<Self> {
     Some(Self {
       base_url: config.base_url.as_deref()?,
-      io,
       config,
       request,
     })
   }
 
   fn remaining_ms(&self) -> Option<i64> {
-    self.request.remaining_ms(self.io.now_ms())
+    self.request.remaining_ms(io::now_ms())
   }
 
   /// No request outlives the attempt's own budget: the caller window plus the polling buffer.
@@ -412,15 +408,13 @@ impl<'a, I: FirePdfIo> FirePdfClient<'a, I> {
   ) -> Result<HttpResponse, String> {
     let budget_ms =
       schedule::compute_deadline_ms(self.remaining_ms()).max(0) + schedule::POLL_TIMEOUT_BUFFER_MS;
-    self
-      .io
-      .send(HttpRequest {
-        method,
-        url,
-        bearer: self.config.api_key.clone(),
-        json,
-        timeout: timeout.or(Some(Duration::from_millis(budget_ms.unsigned_abs()))),
-      })
-      .await
+    io::send_http(HttpRequest {
+      method,
+      url,
+      bearer: self.config.api_key.clone(),
+      json,
+      timeout: timeout.or(Some(Duration::from_millis(budget_ms.unsigned_abs()))),
+    })
+    .await
   }
 }

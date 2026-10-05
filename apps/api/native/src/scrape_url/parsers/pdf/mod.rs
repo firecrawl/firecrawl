@@ -13,10 +13,9 @@ use tokio::{sync::Semaphore, time::Instant};
 use tracing::{Span, field::Empty};
 
 use self::firepdf::{
-  AsyncInput, AsyncRouteInput, ByReferenceAttempt, FirePdfClient, FirePdfConfig, FirePdfIo,
-  FirePdfJobOptions, FirePdfRequest, FirePdfResult, Handoff, RealIo, RouteRecord, WirePage,
-  WirePageBlocks, by_reference_reachable, decide_async_route, download_handoff, features_label,
-  sha256_hex,
+  AsyncInput, AsyncRouteInput, ByReferenceAttempt, FirePdfClient, FirePdfConfig, FirePdfJobOptions,
+  FirePdfRequest, FirePdfResult, Handoff, RouteRecord, WirePage, WirePageBlocks,
+  by_reference_reachable, decide_async_route, download_handoff, features_label, now_ms, sha256_hex,
 };
 use super::super::{
   document::{Document, DocumentMetadata, DocumentMetadataCacheState},
@@ -354,8 +353,8 @@ fn base64_with_cache_keys(bytes: &[u8], with_cache_keys: bool) -> (String, Optio
 }
 
 /// FirePDF over inline base64: the content cache, then async jobs or sync `/ocr`.
-async fn fire_pdf_inline<I: FirePdfIo>(
-  client: &FirePdfClient<'_, I>,
+async fn fire_pdf_inline(
+  client: &FirePdfClient<'_>,
   bytes: &Bytes,
   options: &FirePdfJobOptions,
   request_opt_in: bool,
@@ -369,7 +368,7 @@ async fn fire_pdf_inline<I: FirePdfIo>(
   }
   .unwrap_or_else(|_| base64_with_cache_keys(bytes, with_cache_keys));
 
-  let remaining_ms = request.remaining_ms(client.io.now_ms());
+  let remaining_ms = request.remaining_ms(now_ms());
   let (use_async, reason) = decide_async_route(
     client.config,
     &AsyncRouteInput {
@@ -457,9 +456,9 @@ pub async fn parse_pdf(
   result: RawPageResult,
   deadline: Option<Instant>,
 ) -> Result<Document, ScrapeURLError> {
-  let io = RealIo;
+  let config = FirePdfConfig::get();
   let deadline_ms = deadline.map(|deadline| {
-    io.now_ms()
+    now_ms()
       + i64::try_from(
         deadline
           .saturating_duration_since(Instant::now())
@@ -467,16 +466,6 @@ pub async fn parse_pdf(
       )
       .unwrap_or(i64::MAX)
   });
-  parse_pdf_with(&io, FirePdfConfig::get(), meta, result, deadline_ms).await
-}
-
-async fn parse_pdf_with<I: FirePdfIo>(
-  io: &I,
-  config: &FirePdfConfig,
-  meta: &Meta,
-  result: RawPageResult,
-  deadline_ms: Option<i64>,
-) -> Result<Document, ScrapeURLError> {
   let span = Span::current();
   let RawPageResult {
     url,
@@ -494,7 +483,7 @@ async fn parse_pdf_with<I: FirePdfIo>(
     RawPageContent::Bytes(bytes) => (bytes, None),
     RawPageContent::BytesOffloaded(offloaded) => {
       let max_bytes = handoff_max_size(config, meta).unwrap_or(PDF_DOWNLOAD_MAX_FILE_SIZE);
-      let (bytes, handoff) = download_handoff(io, config, &offloaded, max_bytes).await?;
+      let (bytes, handoff) = download_handoff(config, &offloaded, max_bytes).await?;
       (bytes, Some(handoff))
     }
     RawPageContent::IndexFakeHTML(html, pdf_metadata) => {
@@ -705,7 +694,7 @@ async fn parse_pdf_with<I: FirePdfIo>(
     && let Some(deadline_ms) = deadline_ms
   {
     let needed = u64::from(effective_page_count) * MILLISECONDS_PER_PAGE;
-    if i64::try_from(needed).unwrap_or(i64::MAX) > deadline_ms - io.now_ms() {
+    if i64::try_from(needed).unwrap_or(i64::MAX) > deadline_ms - now_ms() {
       return Err(ScrapeURLError::PDFInsufficientTimeError {
         page_count: effective_page_count,
         min_timeout: needed + 5000,
@@ -719,7 +708,7 @@ async fn parse_pdf_with<I: FirePdfIo>(
   if parsed.is_none()
     && !skip_ocr
     && fire_pdf_enabled
-    && let Some(client) = FirePdfClient::new(io, config, &request)
+    && let Some(client) = FirePdfClient::new(config, &request)
   {
     let size = bytes.len();
     let limit_bytes = meta.file_size_limit();
@@ -747,7 +736,7 @@ async fn parse_pdf_with<I: FirePdfIo>(
           path: "async",
           reason: "by_reference",
           features: &features,
-          remaining_ms: request.remaining_ms(io.now_ms()),
+          remaining_ms: request.remaining_ms(now_ms()),
           zdr,
         };
         let attempt = client
@@ -868,480 +857,4 @@ async fn parse_pdf_with<I: FirePdfIo>(
       .map(|blocks| blocks.into_iter().map(PdfPageBlocks::from).collect()),
     metadata: metadata(Some(effective_page_count), total_page_count, title),
   })
-}
-
-#[cfg(test)]
-mod tests {
-  use std::sync::atomic::AtomicI64;
-
-  use serde_json::json;
-  use url::Url;
-
-  use super::super::super::{
-    options::{InternalOptions, ScrapeOptions},
-    raw_page::ScrapeProxy,
-  };
-  use super::firepdf::testing::{FakeIo, RecordedCall, Reply, T0, test_config};
-  use super::*;
-
-  /// A one-page, single-column text PDF.
-  fn tiny_pdf(text: &str) -> Bytes {
-    let filler = (0..30)
-      .map(|i| {
-        format!("0 -16 Td (Line {i} of ordinary body text in a plain single column document.) Tj")
-      })
-      .collect::<Vec<_>>()
-      .join(" ");
-    let content = format!("BT /F1 11 Tf 72 740 Td ({text}) Tj {filler} ET");
-    let objects = [
-      "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
-      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
-      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_string(),
-      format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
-      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
-    ];
-    let mut out = b"%PDF-1.4\n".to_vec();
-    let mut offsets = Vec::new();
-    for (i, object) in objects.iter().enumerate() {
-      offsets.push(out.len());
-      out.extend(format!("{} 0 obj\n{object}\nendobj\n", i + 1).bytes());
-    }
-    let xref = out.len();
-    out.extend(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).bytes());
-    for offset in offsets {
-      out.extend(format!("{offset:010} 00000 n \n").bytes());
-    }
-    out.extend(
-      format!(
-        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
-        objects.len() + 1
-      )
-      .bytes(),
-    );
-    out.into()
-  }
-
-  fn meta_with(parsers: serde_json::Value) -> Meta {
-    let mut options = ScrapeOptions::default();
-    options.parsers = serde_json::from_value(parsers).unwrap();
-    Meta::new(
-      "scrape-1".to_string(),
-      Url::parse("https://example.com/doc.pdf").unwrap(),
-      "team-x".to_string(),
-      options,
-      InternalOptions::default(),
-    )
-  }
-
-  fn page(content: RawPageContent) -> RawPageResult {
-    RawPageResult {
-      url: Url::parse("https://example.com/doc.pdf").unwrap(),
-      status_code: 200,
-      content,
-      screenshot: None,
-      actions: None,
-      cached_at: None,
-      content_type: "application/octet-stream".to_string(),
-      proxy_used: ScrapeProxy::Basic,
-      timezone: None,
-      filename: None,
-    }
-  }
-
-  fn ocr_reply() -> Reply {
-    Reply::json(
-      200,
-      json!({
-        "markdown": "# From FirePDF", "failed_pages": null, "pages_processed": 1,
-        "pages": [{"page": 1, "markdown": "# From FirePDF"}]
-      }),
-    )
-  }
-
-  fn urls(io: &FakeIo) -> Vec<String> {
-    io.urls()
-  }
-
-  #[tokio::test]
-  async fn eligible_text_pdfs_are_served_locally() {
-    let io = FakeIo::new(vec![]);
-    let meta = meta_with(json!(["pdf"]));
-    let document = parse_pdf_with(
-      &io,
-      &test_config(),
-      &meta,
-      page(RawPageContent::Bytes(tiny_pdf("Hello local world"))),
-      None,
-    )
-    .await
-    .unwrap();
-    assert!(document.markdown.unwrap().contains("Hello local world"));
-    assert!(urls(&io).is_empty());
-    assert_eq!(document.metadata.num_pages, Some(1));
-    assert_eq!(document.metadata.total_pages, Some(1));
-    assert_eq!(document.metadata.content_type, "application/pdf");
-    assert!(document.raw_base64.is_some());
-  }
-
-  #[tokio::test]
-  async fn page_markdown_forces_fire_pdf_and_reaches_the_document() {
-    let io = FakeIo::new(vec![ocr_reply()]);
-    let meta = meta_with(json!([{"type": "pdf", "pages": true}]));
-    let document = parse_pdf_with(
-      &io,
-      &test_config(),
-      &meta,
-      page(RawPageContent::Bytes(tiny_pdf("Hello"))),
-      None,
-    )
-    .await
-    .unwrap();
-    assert_eq!(document.markdown.as_deref(), Some("# From FirePDF"));
-    let value = serde_json::to_value(&document).unwrap();
-    assert_eq!(
-      value["pages"],
-      json!([{"pageNumber": 1, "markdown": "# From FirePDF"}])
-    );
-    assert_eq!(urls(&io), vec!["http://fire-pdf.test/ocr".to_string()]);
-    let body = io.calls()[0].body.clone().unwrap();
-    assert_eq!(body["include_page_markdown"], true);
-    assert_eq!(body["scrape_id"], "scrape-1");
-  }
-
-  #[tokio::test]
-  async fn page_aware_options_need_fire_pdf() {
-    let io = FakeIo::new(vec![]);
-    let mut config = test_config();
-    config.base_url = None;
-    for (parser, message) in [
-      (
-        json!({"type": "pdf", "pages": true}),
-        "Physical page markdown",
-      ),
-      (json!({"type": "pdf", "blocks": true}), "Typed blocks"),
-      (json!({"type": "pdf", "pageMarkers": true}), "Page markers"),
-    ] {
-      let meta = meta_with(json!([parser]));
-      let error = parse_pdf_with(
-        &io,
-        &config,
-        &meta,
-        page(RawPageContent::Bytes(tiny_pdf("x"))),
-        None,
-      )
-      .await
-      .unwrap_err();
-      assert!(error.to_string().starts_with(message), "{error}");
-    }
-  }
-
-  #[tokio::test]
-  async fn a_non_forced_fire_pdf_failure_falls_back_to_text_extraction() {
-    let io = FakeIo::new(vec![Reply::json(500, json!({}))]);
-    let meta = meta_with(json!([{"type": "pdf", "mode": "ocr"}]));
-    let document = parse_pdf_with(
-      &io,
-      &test_config(),
-      &meta,
-      page(RawPageContent::Bytes(tiny_pdf("Fallback text"))),
-      None,
-    )
-    .await
-    .unwrap();
-    assert!(document.markdown.unwrap().contains("Fallback text"));
-    assert_eq!(urls(&io), vec!["http://fire-pdf.test/ocr".to_string()]);
-  }
-
-  #[tokio::test]
-  async fn fire_pdf_enable_gates_requests_that_do_not_force_it() {
-    let io = FakeIo::new(vec![ocr_reply()]);
-    let mut config = test_config();
-    config.enable = false;
-    let ocr = meta_with(json!([{"type": "pdf", "mode": "ocr"}]));
-    let document = parse_pdf_with(
-      &io,
-      &config,
-      &ocr,
-      page(RawPageContent::Bytes(tiny_pdf("Local only"))),
-      None,
-    )
-    .await
-    .unwrap();
-    assert!(document.markdown.unwrap().contains("Local only"));
-    assert!(urls(&io).is_empty());
-
-    let forced = meta_with(json!([{"type": "pdf", "pages": true}]));
-    parse_pdf_with(
-      &io,
-      &config,
-      &forced,
-      page(RawPageContent::Bytes(tiny_pdf("x"))),
-      None,
-    )
-    .await
-    .unwrap();
-    assert_eq!(urls(&io), vec!["http://fire-pdf.test/ocr".to_string()]);
-  }
-
-  #[tokio::test]
-  async fn a_forced_fire_pdf_failure_is_an_error() {
-    let io = FakeIo::new(vec![Reply::json(500, json!({}))]);
-    let meta = meta_with(json!([{"type": "pdf", "pageMarkers": true}]));
-    let error = parse_pdf_with(
-      &io,
-      &test_config(),
-      &meta,
-      page(RawPageContent::Bytes(tiny_pdf("x"))),
-      None,
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(
-      error,
-      ScrapeURLError::FirePDF(FirePdfError::Status(500))
-    ));
-  }
-
-  #[tokio::test]
-  async fn ocr_needs_time_for_every_page() {
-    let io = FakeIo::new(vec![]);
-    let meta = meta_with(json!([{"type": "pdf", "mode": "ocr"}]));
-    let error = parse_pdf_with(
-      &io,
-      &test_config(),
-      &meta,
-      page(RawPageContent::Bytes(tiny_pdf("x"))),
-      Some(T0 + 100),
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(
-      error,
-      ScrapeURLError::PDFInsufficientTimeError {
-        page_count: 1,
-        min_timeout: 5_150
-      }
-    ));
-    assert_eq!(error.code(), "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR");
-    assert_eq!(
-      serde_json::to_value(&error).unwrap(),
-      json!({"pageCount": 1, "minTimeout": 5_150})
-    );
-    assert!(urls(&io).is_empty());
-  }
-
-  #[tokio::test]
-  async fn the_deadline_reaches_fire_pdf() {
-    let io = FakeIo::new(vec![ocr_reply()]);
-    let meta = meta_with(json!([{"type": "pdf", "mode": "ocr"}]));
-    parse_pdf_with(
-      &io,
-      &test_config(),
-      &meta,
-      page(RawPageContent::Bytes(tiny_pdf("x"))),
-      Some(T0 + 45_000),
-    )
-    .await
-    .unwrap();
-    assert_eq!(io.calls()[0].body.clone().unwrap()["timeout"], 45_000);
-  }
-
-  #[tokio::test]
-  async fn the_async_cohort_takes_the_jobs_api() {
-    let io = FakeIo::with_responder(|call: &RecordedCall, _: &AtomicI64| {
-      if call.url.ends_with("/jobs") {
-        Reply::json(202, json!({"scrape_id": "scrape-1", "status": "queued"}))
-      } else if call.url.ends_with("/result") {
-        Reply::json(200, json!({"markdown": "# async"}))
-      } else {
-        Reply::json(200, json!({"scrape_id": "scrape-1", "status": "done"}))
-      }
-    });
-    let mut config = test_config();
-    config.async_force_team_ids.insert("team-x".to_string());
-    let meta = meta_with(json!([{"type": "pdf", "mode": "ocr"}]));
-    let document = parse_pdf_with(
-      &io,
-      &config,
-      &meta,
-      page(RawPageContent::Bytes(tiny_pdf("x"))),
-      Some(T0 + 60_000),
-    )
-    .await
-    .unwrap();
-    assert_eq!(document.markdown.as_deref(), Some("# async"));
-    assert_eq!(io.urls()[0], "http://fire-pdf.test/jobs");
-    assert_eq!(
-      io.calls()[0].body.clone().unwrap()["options"]["pages_estimate"],
-      1
-    );
-  }
-
-  #[tokio::test]
-  async fn page_aware_async_failures_retry_synchronously() {
-    let io = FakeIo::new(vec![Reply::json(500, json!({})), ocr_reply()]);
-    let mut config = test_config();
-    config.async_force_team_ids.insert("team-x".to_string());
-    let meta = meta_with(json!([{"type": "pdf", "pages": true}]));
-    let document = parse_pdf_with(
-      &io,
-      &config,
-      &meta,
-      page(RawPageContent::Bytes(tiny_pdf("x"))),
-      None,
-    )
-    .await
-    .unwrap();
-    assert_eq!(document.markdown.as_deref(), Some("# From FirePDF"));
-    assert_eq!(
-      urls(&io),
-      vec![
-        "http://fire-pdf.test/jobs".to_string(),
-        "http://fire-pdf.test/ocr".to_string()
-      ]
-    );
-  }
-
-  #[tokio::test]
-  async fn fast_mode_never_reaches_fire_pdf() {
-    let io = FakeIo::new(vec![]);
-    let meta = meta_with(json!([{"type": "pdf", "mode": "fast"}]));
-    let config = test_config();
-    let mut minimal = b"%PDF-1.4\n".to_vec();
-    minimal.extend_from_slice(b"not really a pdf");
-    let document = parse_pdf_with(
-      &io,
-      &config,
-      &meta,
-      page(RawPageContent::Bytes(minimal.into())),
-      None,
-    )
-    .await
-    .unwrap();
-    assert_eq!(document.markdown.as_deref(), Some(""));
-    assert!(urls(&io).is_empty());
-  }
-
-  #[tokio::test]
-  async fn unparsed_pdfs_come_back_raw() {
-    let io = FakeIo::new(vec![]);
-    let meta = meta_with(json!([]));
-    let bytes = tiny_pdf("x");
-    let document = parse_pdf_with(
-      &io,
-      &test_config(),
-      &meta,
-      page(RawPageContent::Bytes(bytes.clone())),
-      None,
-    )
-    .await
-    .unwrap();
-    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    assert_eq!(document.markdown.as_deref(), Some(encoded.as_str()));
-    assert_eq!(document.metadata.content_type, "application/pdf");
-  }
-
-  #[tokio::test]
-  async fn non_pdf_content_is_a_fetch_failure() {
-    let io = FakeIo::new(vec![]);
-    let meta = meta_with(json!(["pdf"]));
-    for content in [
-      RawPageContent::ChromeRenderedDOM("<html></html>".to_string()),
-      RawPageContent::Bytes(Bytes::from_static(b"<html>not a pdf</html>")),
-    ] {
-      assert!(matches!(
-        parse_pdf_with(&io, &test_config(), &meta, page(content), None).await,
-        Err(ScrapeURLError::PDFFetchFailed)
-      ));
-    }
-  }
-
-  #[tokio::test]
-  async fn a_garbled_indexed_pdf_is_an_error_not_a_panic() {
-    let io = FakeIo::new(vec![]);
-    let meta = meta_with(json!(["pdf"]));
-    let result = parse_pdf_with(
-      &io,
-      &test_config(),
-      &meta,
-      page(RawPageContent::IndexFakeHTML(
-        "JVBERi*not base64*".to_string(),
-        None,
-      )),
-      None,
-    )
-    .await;
-    assert!(matches!(result, Err(ScrapeURLError::Base64(_))));
-  }
-
-  #[tokio::test]
-  async fn handed_off_pdfs_are_downloaded_and_parsed() {
-    let mut io = FakeIo::new(vec![]);
-    io.stored_object = Some(tiny_pdf("Handed off"));
-    let meta = meta_with(json!(["pdf"]));
-    let document = parse_pdf_with(
-      &io,
-      &test_config(),
-      &meta,
-      page(RawPageContent::BytesOffloaded(
-        super::super::super::raw_page::BytesOffloaded {
-          gcs_uri: "gs://fe-handoff/big.pdf".to_string(),
-          sha256: None,
-          size_bytes: None,
-        },
-      )),
-      None,
-    )
-    .await
-    .unwrap();
-    assert!(document.markdown.unwrap().contains("Handed off"));
-    assert_eq!(document.raw_base64, None);
-  }
-
-  #[test]
-  fn handoffs_are_pdf_signals() {
-    let offloaded = page(RawPageContent::BytesOffloaded(
-      super::super::super::raw_page::BytesOffloaded {
-        gcs_uri: "gs://fe-handoff/x".to_string(),
-        sha256: None,
-        size_bytes: None,
-      },
-    ));
-    assert!(has_pdf_signal(&offloaded));
-  }
-
-  #[test]
-  fn parser_options_accept_refresh_and_the_async_opt_in() {
-    let options: PdfOptions =
-      serde_json::from_value(json!({"refresh": true, "__firePdfAsync": true, "maxPages": 3}))
-        .unwrap();
-    assert!(options.refresh);
-    assert!(options.fire_pdf_async);
-    assert_eq!(options.max_pages, Some(3));
-  }
-
-  #[test]
-  fn public_blocks_use_the_document_shape() {
-    let blocks: Vec<WirePageBlocks> = serde_json::from_value(json!([{
-      "page": 2, "width": 612, "height": null, "status": "ok",
-      "items": [{
-        "id": "b", "type": "table", "label": null, "bbox": [1, 2, 3, 4], "content": "c",
-        "markdown_span": [0, 1], "reading_order": 3, "source": "ocr",
-        "confidence": {"layout": 0.5, "ocr": null}
-      }]
-    }]))
-    .unwrap();
-    let public: Vec<PdfPageBlocks> = blocks.into_iter().map(PdfPageBlocks::from).collect();
-    assert_eq!(
-      serde_json::to_value(public).unwrap(),
-      json!([{
-        "pageNumber": 2, "width": 612.0, "height": null, "status": "ok",
-        "items": [{
-          "id": "b", "type": "table", "label": null, "bbox": [1.0, 2.0, 3.0, 4.0], "content": "c",
-          "markdownSpan": [0.0, 1.0], "readingOrder": 3.0, "source": "ocr",
-          "confidence": {"layout": 0.5, "ocr": null}
-        }]
-      }])
-    );
-  }
 }

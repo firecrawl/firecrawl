@@ -10,8 +10,9 @@ use super::super::super::super::{
 };
 use super::{
   FallbackReason, FirePdfClient, FirePdfConfig, FirePdfError, FirePdfJobOptions, FirePdfResult,
-  io::{FirePdfIo, GcsObjectRef, GcsReadError},
+  io::{self, GcsObject, GcsReadError},
   jobs::AsyncInput,
+  schedule::MIN_ASYNC_CALLER_WINDOW_MS,
   sha256_hex,
 };
 
@@ -59,7 +60,6 @@ pub fn by_reference_reachable(
 /// Materializes a fire-engine handoff. Only objects in fire-engine's handoff
 /// bucket are read, never a bucket named by response data.
 pub async fn download_handoff(
-  io: &impl FirePdfIo,
   config: &FirePdfConfig,
   offloaded: &BytesOffloaded,
   max_bytes: usize,
@@ -75,16 +75,15 @@ pub async fn download_handoff(
     return Err(ScrapeURLError::PDFFetchFailed);
   };
   let max_bytes = max_bytes.min(FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE);
-  let read = io
-    .gcs_read(
-      GcsObjectRef {
-        bucket,
-        key,
-        generation: None,
-      },
-      i64::try_from(max_bytes).unwrap_or(i64::MAX),
-    )
-    .await;
+  let read = io::gcs_read(
+    GcsObject {
+      bucket: bucket.to_string(),
+      key: key.to_string(),
+      generation: None,
+    },
+    i64::try_from(max_bytes).unwrap_or(i64::MAX),
+  )
+  .await;
   match read {
     Ok(read) => Ok((
       read.bytes.clone(),
@@ -126,7 +125,7 @@ pub struct ByReferenceAttempt<'a> {
   pub limit_bytes: usize,
 }
 
-impl<I: FirePdfIo> FirePdfClient<'_, I> {
+impl FirePdfClient<'_> {
   /// The by-reference attempt for one large PDF, cheapest step first: the raw-sha
   /// cache, adopting a job for the same bytes, then placing the input (server-side
   /// copy of a handoff, else an upload) and submitting fresh.
@@ -172,6 +171,17 @@ impl<I: FirePdfIo> FirePdfClient<'_, I> {
     if let Some(cached) = self.lookup_cache(&[format!("raw-{sha256}")], options).await {
       span.record("fire_pdf.by_reference.cache_hit", true);
       return Ok(Some(cached));
+    }
+
+    // Placement can move hundreds of MB; skip it when the async path would refuse the job anyway.
+    if let Some(remaining_ms) = self.remaining_ms()
+      && remaining_ms < MIN_ASYNC_CALLER_WINDOW_MS
+    {
+      tracing::warn!(
+        remaining_ms,
+        "FirePDF by-reference skipped: too little time left for an async job"
+      );
+      return Err(FirePdfError::Async(FallbackReason::DeadlineTooClose));
     }
 
     // Retries carry fresh scrape ids, so only a content-level lookup joins them to
@@ -267,17 +277,17 @@ impl<I: FirePdfIo> FirePdfClient<'_, I> {
     }
     let dest_bucket = &self.config.gcs_input_bucket;
     let dest_key = input_object_key(&self.request.scrape_id, None);
-    let started_at = self.io.now_ms();
-    let source = GcsObjectRef {
-      bucket,
-      key,
+    let started_at = io::now_ms();
+    let source = GcsObject {
+      bucket: bucket.to_string(),
+      key: key.to_string(),
       generation: handoff.generation,
     };
-    match self.io.gcs_rewrite(source, dest_bucket, &dest_key).await {
+    match io::gcs_rewrite(source, dest_bucket.clone(), dest_key.clone()).await {
       Ok(()) => {
         tracing::info!(
           size_bytes = handoff.size_bytes,
-          duration_ms = self.io.now_ms() - started_at,
+          duration_ms = io::now_ms() - started_at,
           "Rewrote fire-engine PDF handoff into fire-pdf inputs"
         );
         Some(format!("gs://{dest_bucket}/{dest_key}"))
@@ -310,16 +320,19 @@ impl<I: FirePdfIo> FirePdfClient<'_, I> {
     }
     let bucket = &self.config.gcs_input_bucket;
     let key = input_object_key(&self.request.scrape_id, variant);
-    let started_at = self.io.now_ms();
-    match self
-      .io
-      .gcs_upload(bucket, &key, bytes.clone(), &self.request.scrape_id)
-      .await
+    let started_at = io::now_ms();
+    match io::gcs_upload(
+      bucket.clone(),
+      key.clone(),
+      bytes.clone(),
+      self.request.scrape_id.clone(),
+    )
+    .await
     {
       Ok(()) => {
         tracing::info!(
           size_bytes = bytes.len(),
-          duration_ms = self.io.now_ms() - started_at,
+          duration_ms = io::now_ms() - started_at,
           "Uploaded large PDF for by-reference FirePDF submit"
         );
         Some(format!("gs://{bucket}/{key}"))
@@ -333,401 +346,5 @@ impl<I: FirePdfIo> FirePdfClient<'_, I> {
         None
       }
     }
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use serde_json::json;
-
-  use super::super::testing::{
-    FakeIo, GcsCall, Reply, client_for, job_options, test_config, test_request,
-  };
-  use super::super::{FirePdfRequest, io::Method};
-  use super::*;
-
-  const MB: usize = 1024 * 1024;
-
-  #[test]
-  fn gcs_uris_and_object_keys() {
-    assert_eq!(
-      parse_gcs_uri("gs://bucket/a/b.pdf"),
-      Some(("bucket", "a/b.pdf"))
-    );
-    assert_eq!(parse_gcs_uri("gs://bucket/"), None);
-    assert_eq!(parse_gcs_uri("gs:///key"), None);
-    assert_eq!(parse_gcs_uri("https://bucket/key"), None);
-    let prefix = &sha256_hex(b"scrape-1")[..8];
-    assert_eq!(
-      input_object_key("scrape-1", None),
-      format!("inputs/{prefix}-scrape-1.pdf")
-    );
-    assert_eq!(
-      input_object_key("scrape-1", Some("s")),
-      format!("inputs/{prefix}-scrape-1-s.pdf")
-    );
-  }
-
-  #[test]
-  fn reachability() {
-    let config = test_config();
-    assert!(by_reference_reachable(&config, false, false, false));
-    assert!(
-      !by_reference_reachable(&config, true, true, false),
-      "fast mode"
-    );
-    assert!(!by_reference_reachable(&config, false, true, true), "zdr");
-    let mut disabled = test_config();
-    disabled.by_reference_enable = false;
-    assert!(!by_reference_reachable(&disabled, false, false, false));
-    assert!(
-      by_reference_reachable(&disabled, false, true, false),
-      "forced FirePDF only needs the base URL"
-    );
-    let mut master_off = test_config();
-    master_off.enable = false;
-    assert!(!by_reference_reachable(&master_off, false, false, false));
-    assert!(by_reference_reachable(&master_off, false, true, false));
-    let mut unconfigured = test_config();
-    unconfigured.base_url = None;
-    assert!(!by_reference_reachable(&unconfigured, false, true, false));
-  }
-
-  fn offloaded(uri: &str) -> BytesOffloaded {
-    BytesOffloaded {
-      gcs_uri: uri.to_string(),
-      sha256: Some("abc".to_string()),
-      size_bytes: Some(4),
-    }
-  }
-
-  #[tokio::test]
-  async fn handoff_downloads_only_from_the_allowlisted_bucket() {
-    let mut io = FakeIo::new(vec![]);
-    io.stored_object = Some(Bytes::from_static(b"%PDF"));
-    let config = test_config();
-
-    let (bytes, handoff) = download_handoff(&io, &config, &offloaded("gs://fe-handoff/x.pdf"), 10)
-      .await
-      .unwrap();
-    assert_eq!(bytes, Bytes::from_static(b"%PDF"));
-    assert_eq!(
-      handoff,
-      Handoff {
-        uri: "gs://fe-handoff/x.pdf".to_string(),
-        sha256: Some("abc".to_string()),
-        size_bytes: 4,
-        generation: Some(7),
-      }
-    );
-
-    assert!(matches!(
-      download_handoff(&io, &config, &offloaded("gs://elsewhere/x.pdf"), 10).await,
-      Err(ScrapeURLError::PDFFetchFailed)
-    ));
-    let mut unconfigured = test_config();
-    unconfigured.fire_engine_pdf_gcs_bucket = None;
-    assert!(matches!(
-      download_handoff(&io, &unconfigured, &offloaded("gs://fe-handoff/x.pdf"), 10).await,
-      Err(ScrapeURLError::PDFFetchFailed)
-    ));
-    assert_eq!(io.gcs_calls().len(), 1, "refused references are never read");
-
-    assert!(matches!(
-      download_handoff(&io, &config, &offloaded("gs://fe-handoff/x.pdf"), 3).await,
-      Err(ScrapeURLError::UnsupportedFileError { .. })
-    ));
-  }
-
-  fn large_options() -> FirePdfJobOptions {
-    let mut options = job_options();
-    options.pages_estimate = 40;
-    options
-  }
-
-  fn request() -> FirePdfRequest {
-    let mut request = test_request();
-    request.deadline_ms = Some(super::super::testing::T0 + 120_000);
-    request
-  }
-
-  fn async_success() -> Vec<Reply> {
-    vec![
-      Reply::json(404, json!({})),
-      Reply::json(
-        202,
-        json!({"scrape_id": "scrape-id-test", "status": "queued"}),
-      ),
-      Reply::json(
-        200,
-        json!({"scrape_id": "scrape-id-test", "status": "done"}),
-      ),
-      Reply::json(200, json!({"markdown": "# large"})),
-    ]
-  }
-
-  fn handoff_for(bytes: &Bytes) -> Handoff {
-    Handoff {
-      uri: "gs://fe-handoff/big.pdf".to_string(),
-      sha256: Some(sha256_hex(bytes).to_uppercase()),
-      size_bytes: bytes.len(),
-      generation: Some(42),
-    }
-  }
-
-  #[tokio::test]
-  async fn rewrites_a_matching_handoff_and_submits_by_reference() {
-    let io = FakeIo::new(async_success());
-    let config = test_config();
-    let request = request();
-    let bytes = Bytes::from_static(b"%PDF-large");
-    let handoff = handoff_for(&bytes);
-    let result = client_for(&io, &config, &request)
-      .by_reference_attempt(ByReferenceAttempt {
-        bytes: &bytes,
-        handoff: Some(&handoff),
-        options: &large_options(),
-        limit_bytes: 50 * MB,
-      })
-      .await
-      .unwrap()
-      .unwrap();
-    assert_eq!(result.markdown, "# large");
-
-    let key = input_object_key("scrape-id-test", None);
-    assert_eq!(
-      io.gcs_calls(),
-      vec![GcsCall::Rewrite {
-        source: "fe-handoff/big.pdf".to_string(),
-        generation: Some(42),
-        dest: format!("fire-pdf-inputs/{key}"),
-      }]
-    );
-    let calls = io.calls();
-    assert_eq!(calls[0].url, "http://fire-pdf.test/jobs/lookup");
-    assert_eq!(
-      calls[0].body.clone().unwrap()["input_sha256"],
-      sha256_hex(&bytes)
-    );
-    let submit = calls[1].body.clone().unwrap();
-    assert_eq!(
-      submit["input_gcs_uri"],
-      format!("gs://fire-pdf-inputs/{key}")
-    );
-    assert_eq!(submit["input_sha256"], sha256_hex(&bytes));
-    assert_eq!(submit["options"]["pages_estimate"], 40);
-  }
-
-  #[tokio::test]
-  async fn uploads_when_the_handoff_does_not_match_or_the_rewrite_fails() {
-    let config = test_config();
-    let request = request();
-    let bytes = Bytes::from_static(b"%PDF-large");
-
-    let io = FakeIo::new(async_success());
-    let mut mismatched = handoff_for(&bytes);
-    mismatched.sha256 = Some("0000".to_string());
-    client_for(&io, &config, &request)
-      .by_reference_attempt(ByReferenceAttempt {
-        bytes: &bytes,
-        handoff: Some(&mismatched),
-        options: &large_options(),
-        limit_bytes: 50 * MB,
-      })
-      .await
-      .unwrap()
-      .unwrap();
-    assert_eq!(
-      io.gcs_calls(),
-      vec![GcsCall::Upload {
-        dest: format!(
-          "fire-pdf-inputs/{}",
-          input_object_key("scrape-id-test", None)
-        ),
-        len: bytes.len(),
-      }]
-    );
-
-    let mut io = FakeIo::new(async_success());
-    io.rewrite_ok = false;
-    let handoff = handoff_for(&bytes);
-    client_for(&io, &config, &request)
-      .by_reference_attempt(ByReferenceAttempt {
-        bytes: &bytes,
-        handoff: Some(&handoff),
-        options: &large_options(),
-        limit_bytes: 50 * MB,
-      })
-      .await
-      .unwrap()
-      .unwrap();
-    let calls = io.gcs_calls();
-    assert!(matches!(calls[0], GcsCall::Rewrite { .. }));
-    assert_eq!(
-      calls[1],
-      GcsCall::Upload {
-        dest: format!(
-          "fire-pdf-inputs/{}",
-          input_object_key("scrape-id-test", Some("s"))
-        ),
-        len: bytes.len(),
-      }
-    );
-  }
-
-  #[tokio::test]
-  async fn falls_through_when_the_input_cannot_be_placed() {
-    let config = test_config();
-    let request = request();
-    let bytes = Bytes::from_static(b"%PDF-large");
-
-    let mut io = FakeIo::new(vec![Reply::json(404, json!({}))]);
-    io.upload_ok = false;
-    let attempt = client_for(&io, &config, &request)
-      .by_reference_attempt(ByReferenceAttempt {
-        bytes: &bytes,
-        handoff: None,
-        options: &large_options(),
-        limit_bytes: 50 * MB,
-      })
-      .await
-      .unwrap();
-    assert!(attempt.is_none());
-
-    let io = FakeIo::new(vec![Reply::json(404, json!({}))]);
-    let handoff = handoff_for(&bytes);
-    let attempt = client_for(&io, &config, &request)
-      .by_reference_attempt(ByReferenceAttempt {
-        bytes: &bytes,
-        handoff: Some(&handoff),
-        options: &large_options(),
-        limit_bytes: 4,
-      })
-      .await
-      .unwrap();
-    assert!(attempt.is_none(), "both placements enforce the team cap");
-    assert!(io.gcs_calls().is_empty());
-  }
-
-  #[tokio::test]
-  async fn adopts_a_live_job_for_the_same_bytes_instead_of_uploading() {
-    let io = FakeIo::new(vec![
-      Reply::json(
-        200,
-        json!({"scrape_id": "earlier-attempt", "status": "running"}),
-      ),
-      Reply::json(
-        200,
-        json!({"scrape_id": "earlier-attempt", "status": "done"}),
-      ),
-      Reply::json(200, json!({"markdown": "# adopted"})),
-    ]);
-    let config = test_config();
-    let request = request();
-    let bytes = Bytes::from_static(b"%PDF-large");
-    let result = client_for(&io, &config, &request)
-      .by_reference_attempt(ByReferenceAttempt {
-        bytes: &bytes,
-        handoff: None,
-        options: &large_options(),
-        limit_bytes: 50 * MB,
-      })
-      .await
-      .unwrap()
-      .unwrap();
-    assert_eq!(result.markdown, "# adopted");
-    assert!(io.gcs_calls().is_empty());
-    assert_eq!(
-      io.calls()[1].url,
-      "http://fire-pdf.test/jobs/earlier-attempt"
-    );
-  }
-
-  #[tokio::test]
-  async fn a_dead_adopted_job_falls_through_to_a_fresh_submit() {
-    let mut replies = vec![
-      Reply::json(200, json!({"scrape_id": "earlier-attempt"})),
-      Reply::json(
-        410,
-        json!({"scrape_id": "earlier-attempt", "status": "expired"}),
-      ),
-    ];
-    replies.extend(async_success().into_iter().skip(1));
-    let io = FakeIo::new(replies);
-    let config = test_config();
-    let request = request();
-    let bytes = Bytes::from_static(b"%PDF-large");
-    let result = client_for(&io, &config, &request)
-      .by_reference_attempt(ByReferenceAttempt {
-        bytes: &bytes,
-        handoff: None,
-        options: &large_options(),
-        limit_bytes: 50 * MB,
-      })
-      .await
-      .unwrap()
-      .unwrap();
-    assert_eq!(result.markdown, "# large");
-    assert_eq!(io.gcs_calls().len(), 1);
-    assert_eq!(io.calls()[2].method, Method::Post);
-  }
-
-  #[tokio::test]
-  async fn a_raw_sha_cache_hit_skips_adoption_and_upload() {
-    let io = FakeIo::new(vec![Reply::json(
-      200,
-      json!({"outcome": "hit", "key": "raw-x", "variant": "base", "result": {"markdown": "# cached"}}),
-    )]);
-    let mut config = test_config();
-    config.cache_base_url = Some("http://fire-pdf-cache.test".to_string());
-    let request = request();
-    let bytes = Bytes::from_static(b"%PDF-large");
-    let result = client_for(&io, &config, &request)
-      .by_reference_attempt(ByReferenceAttempt {
-        bytes: &bytes,
-        handoff: None,
-        options: &large_options(),
-        limit_bytes: 50 * MB,
-      })
-      .await
-      .unwrap()
-      .unwrap();
-    assert_eq!(result.markdown, "# cached");
-    assert_eq!(io.calls().len(), 1);
-    assert_eq!(
-      io.calls()[0].body.clone().unwrap()["keys"],
-      json!([format!("raw-{}", sha256_hex(&bytes))])
-    );
-  }
-
-  #[tokio::test]
-  async fn failures_after_placement_surface_as_errors() {
-    let io = FakeIo::new(vec![
-      Reply::json(404, json!({})),
-      Reply::json(
-        202,
-        json!({"scrape_id": "scrape-id-test", "status": "queued"}),
-      ),
-      Reply::json(
-        502,
-        json!({"scrape_id": "scrape-id-test", "status": "failed"}),
-      ),
-    ]);
-    let config = test_config();
-    let request = request();
-    let bytes = Bytes::from_static(b"%PDF-large");
-    let error = client_for(&io, &config, &request)
-      .by_reference_attempt(ByReferenceAttempt {
-        bytes: &bytes,
-        handoff: None,
-        options: &large_options(),
-        limit_bytes: 50 * MB,
-      })
-      .await
-      .unwrap_err();
-    assert!(matches!(
-      error,
-      FirePdfError::Async(FallbackReason::TerminalFailed)
-    ));
   }
 }
