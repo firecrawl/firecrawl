@@ -47,3 +47,21 @@ export async function fetchResearchUpstream(options: {
     dispatcher,
   });
 }
+
+export async function fetchLegalRegulatoryUpstream(options: {
+  query: string;
+  k?: number;
+  headers: Record<string, string>;
+  timeoutMs: number;
+}) {
+  const url = config.LEGAL_REGULATORY_SEARCH_URL;
+  if (!url) return null;
+
+  return fetch(url, {
+    method: "POST",
+    headers: { ...options.headers, "content-type": "application/json" },
+    body: JSON.stringify({ query: options.query, top_k: options.k }),
+    signal: AbortSignal.timeout(options.timeoutMs),
+    dispatcher,
+  });
+}

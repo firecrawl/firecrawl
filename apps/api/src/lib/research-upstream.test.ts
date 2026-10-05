@@ -11,10 +11,16 @@ vi.mock("undici", () => ({
 }));
 
 vi.mock("../config", () => ({
-  config: { RESEARCH_PROXY_URL: "https://research.test/" },
+  config: {
+    RESEARCH_PROXY_URL: "https://research.test/",
+    LEGAL_REGULATORY_SEARCH_URL: "https://legal.test/search",
+  },
 }));
 
-import { fetchResearchUpstream } from "./research-upstream";
+import {
+  fetchLegalRegulatoryUpstream,
+  fetchResearchUpstream,
+} from "./research-upstream";
 
 beforeEach(() => {
   mocks.fetch.mockReset();
@@ -65,5 +71,48 @@ describe("fetchResearchUpstream", () => {
 
   it("limits connection setup without dispatcher headers or body timeouts", () => {
     expect(mocks.agent).toHaveBeenCalledWith({ connectTimeout: 10_000 });
+  });
+});
+
+describe("fetchLegalRegulatoryUpstream", () => {
+  it("posts the query and result count to the index", async () => {
+    const signal = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(signal);
+
+    await fetchLegalRegulatoryUpstream({
+      query: "food labeling rules",
+      k: 5,
+      headers: { "x-request-id": "abc" },
+      timeoutMs: 15_000,
+    });
+
+    expect(timeout).toHaveBeenCalledWith(15_000);
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      "https://legal.test/search",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "x-request-id": "abc",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ query: "food labeling rules", top_k: 5 }),
+        signal,
+      }),
+    );
+  });
+
+  it("leaves the result count to the index when k is omitted", async () => {
+    await fetchLegalRegulatoryUpstream({
+      query: "food labeling rules",
+      headers: {},
+      timeoutMs: 15_000,
+    });
+
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({ query: "food labeling rules" }),
+      }),
+    );
   });
 });

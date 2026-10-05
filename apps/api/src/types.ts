@@ -159,6 +159,7 @@ export enum RateLimiterMode {
   SupportDocsSearch = "supportDocsSearch",
   Research = "research",
   DeveloperSearch = "developerSearch",
+  LegalRegulatorySearch = "legalRegulatorySearch",
   Labs = "labs",
   Exchange = "exchange",
   ExchangeDiscover = "exchangeDiscover",

@@ -90,6 +90,7 @@ import {
 import { supportProxyController } from "../controllers/v2/support-proxy";
 import {
   createDeveloperRouter,
+  createLegalRegulatoryRouter,
   createResearchRouter,
 } from "../controllers/v2/research-proxy";
 import {
@@ -731,5 +732,15 @@ if (config.RESEARCH_PROXY_URL) {
     "/developer",
     authMiddleware(RateLimiterMode.DeveloperSearch),
     createDeveloperRouter(),
+  );
+}
+
+if (config.LEGAL_REGULATORY_SEARCH_URL) {
+  v2Router.use(
+    "/search/legal-regulatory",
+    authMiddleware(RateLimiterMode.LegalRegulatorySearch, {
+      allowKeyless: true,
+    }),
+    createLegalRegulatoryRouter(),
   );
 }
