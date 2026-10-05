@@ -138,15 +138,12 @@ describe("logKeylessCreditUsage", () => {
     await logKeylessCreditUsage(team, 3);
 
     expect(dbInsert).not.toHaveBeenCalled();
-    expect(info).toHaveBeenCalledWith(
-      expect.stringContaining("Keyless World ID usage"),
-      {
-        canonicalLog: "keyless/usage",
-        teamId: keylessTeamUuid(team),
-        worldId: true,
-        creditsUsed: 3,
-      },
-    );
+    expect(info).toHaveBeenCalledWith("Keyless World ID usage", {
+      canonicalLog: "keyless/usage",
+      teamId: keylessTeamUuid(team),
+      worldId: true,
+      creditsUsed: 3,
+    });
   });
 
   it("swallows insert failures so the request is unaffected", async () => {

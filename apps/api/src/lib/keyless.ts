@@ -607,7 +607,7 @@ export async function logKeylessCreditUsage(
   // canonical log under the team id instead; the client IP of each World ID
   // request is already on its `keyless/consume` line.
   if (ip.startsWith(WORLD_ID_IDENTITY_PREFIX)) {
-    logger.info(`Keyless World ID usage team=${teamUuid}`, {
+    logger.info("Keyless World ID usage", {
       canonicalLog: "keyless/usage",
       teamId: teamUuid,
       worldId: true,
