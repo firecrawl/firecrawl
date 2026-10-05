@@ -5,6 +5,7 @@ use url::Url;
 use super::feature_flags::FeatureFlag;
 use super::feature_flags::build_feature_flags;
 use super::options::{InternalOptions, ScrapeOptions};
+use super::raw_page::BrowserCookie;
 use super::rewrite_url::rewrite_url;
 
 pub struct Meta {
@@ -20,7 +21,8 @@ pub struct Meta {
   // cost_tracking:
   // winner_engine:
   // abort_handle:
-  // audio_cookies:
+  /// Cookies the engine returned, for the YouTube, audio and video transformers.
+  pub audio_cookies: Vec<BrowserCookie>,
   // warnings:
 }
 
@@ -55,6 +57,7 @@ impl Meta {
       feature_flags: build_feature_flags(&options, &internal_options),
       options,
       internal_options,
+      audio_cookies: Vec::new(),
     }
   }
 

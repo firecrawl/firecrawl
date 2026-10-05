@@ -43,6 +43,17 @@ struct PlaywrightResponse {
   content: String,
   page_status_code: u16,
   content_type: Option<String>,
+  /// Where the browser landed. Older services don't send it.
+  url: Option<String>,
+}
+
+/// The landed URL if it is a valid http(s) URL (not about:blank or chrome-error),
+/// otherwise the requested one.
+fn landed_url(reported: Option<&str>, requested: &Url) -> Url {
+  reported
+    .and_then(|x| Url::parse(x).ok())
+    .filter(|x| matches!(x.scheme(), "http" | "https"))
+    .unwrap_or_else(|| requested.clone())
 }
 
 pub struct PlaywrightEngine {
@@ -89,7 +100,7 @@ impl Engine for PlaywrightEngine {
     let body: PlaywrightResponse = res.json().await?;
 
     Ok(EngineOutcome::Scraped(RawPageResult {
-      url: meta.get_url().clone(), // TODO: improve redirect following
+      url: landed_url(body.url.as_deref(), meta.get_url()),
       content: RawPageContent::ChromeRenderedDOM(body.content), // TODO: improve binary file handling
       status_code: body.page_status_code,
       content_type: body
@@ -101,6 +112,7 @@ impl Engine for PlaywrightEngine {
       cached_at: None,
       timezone: None,
       filename: None,
+      audio_cookies: Vec::new(),
     }))
   }
 }

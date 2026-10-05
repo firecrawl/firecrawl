@@ -98,6 +98,16 @@ pub enum RawPageContent {
   GeneratedMarkdown(String),
 }
 
+/// A cookie from fire-engine's getCookies action. Fields beyond name and value
+/// are kept so consumers can pass the cookie on unchanged.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BrowserCookie {
+  pub name: String,
+  pub value: String,
+  #[serde(flatten)]
+  pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
 pub struct RawPageResult {
   pub url: Url,
   pub status_code: u16,
@@ -108,7 +118,8 @@ pub struct RawPageResult {
   pub cached_at: Option<DateTime<Utc>>,
   pub content_type: String, // CFR rework TODO
   // pub youtube_transcript_content:
-  // pub audio_cookies:
+  /// Moved into `Meta::audio_cookies` before the transformers run.
+  pub audio_cookies: Vec<BrowserCookie>,
   pub proxy_used: ScrapeProxy,
   pub timezone: Option<String>,
   pub filename: Option<String>,

@@ -53,10 +53,11 @@ fn is_ip_private(addr: IpAddr) -> bool {
   }
 }
 
-/// Checks if a literal-IP URL is private or not
-pub fn guard_url_with_ip_host(uri: &wreq::Uri) -> Result<(), GuardError> {
-  let host = url::Host::parse(uri.host().ok_or(GuardError::InvalidUrl)?)
-    .map_err(|_| GuardError::InvalidUrl)?;
+/// Rejects a private literal-IP host. Hostnames are checked by `GuardedResolver`,
+/// which never sees literal IPs.
+pub fn guard_ip_host(host: Option<&str>) -> Result<(), GuardError> {
+  let host =
+    url::Host::parse(host.ok_or(GuardError::InvalidUrl)?).map_err(|_| GuardError::InvalidUrl)?;
   let ip = match host {
     url::Host::Ipv4(v4) => Some(IpAddr::V4(v4)),
     url::Host::Ipv6(v6) => Some(IpAddr::V6(v6)),
@@ -104,7 +105,7 @@ fn safe_wreq_builder(skip_tls_verification: bool, cookies: bool) -> wreq::Client
     .redirect(wreq::redirect::Policy::custom(|attempt| {
       if attempt.previous.len() >= 20 {
         attempt.error("too many redirects") // TODO: proper error
-      } else if let Some(e) = guard_url_with_ip_host(&attempt.uri).err() {
+      } else if let Some(e) = guard_ip_host(attempt.uri.host()).err() {
         // also guard against SSRF via direct IP filtering
         attempt.error(e)
       } else {
@@ -147,6 +148,8 @@ impl Engine for FetchEngine {
     meta: &Meta,
     proxy: ScrapeProxy,
   ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError> {
+    guard_ip_host(meta.get_url().host_str())?;
+
     // Not sure how safe or performant it is to construct a new wreq every turn? - mogery
     let client = safe_wreq_builder(meta.options.should_skip_tls_verification(), true);
 
@@ -181,6 +184,7 @@ impl Engine for FetchEngine {
       timezone: None,
       filename: None, // TODO: get out of header maybe?
       cached_at: None,
+      audio_cookies: Vec::new(),
     }))
   }
 }

@@ -56,6 +56,12 @@ pub enum ScrapeURLError {
   #[error("{engine} returned status {status}")]
   EngineUnavailable { engine: &'static str, status: u16 },
 
+  #[error("all scraping engines failed to retrieve content from this URL")]
+  NoEnginesLeftError { fallback_list: Vec<&'static str> },
+
+  #[error("actions are not supported by any available engines")]
+  ActionsNotSupportedError,
+
   #[error("{0}")]
   Internal(String),
 
@@ -147,6 +153,8 @@ impl ScrapeURLError {
       Self::ActionError { .. } => "SCRAPE_ACTION_ERROR",
       Self::ProxySelectionError => "SCRAPE_PROXY_SELECTION_ERROR",
       Self::Transformer(TransformerError::JsonContentTooLarge) => "SCRAPE_JSON_CONTENT_TOO_LARGE",
+      Self::NoEnginesLeftError { .. } => "SCRAPE_ALL_ENGINES_FAILED",
+      Self::ActionsNotSupportedError => "SCRAPE_ACTIONS_NOT_SUPPORTED",
       Self::ReliableRetrievalError(_)
       | Self::InsecureConnectionError
       | Self::InvalidURLError
@@ -209,6 +217,15 @@ impl Serialize for ScrapeURLError {
         map.serialize_entry("pdfType", pdf_type_name(pdf_type))?;
       }
       Self::LockdownMissError | Self::AgentIndexOnlyError | Self::ProxySelectionError => {}
+      Self::NoEnginesLeftError { fallback_list } => {
+        map.serialize_entry("fallbackList", fallback_list)?;
+      }
+      Self::ActionsNotSupportedError => {
+        map.serialize_entry(
+          "message",
+          "Actions are not supported by any available engines. Actions require Fire Engine (fire-engine) to be enabled.",
+        )?;
+      }
       Self::Transformer(TransformerError::JsonContentTooLarge) => {
         map.serialize_entry(
           "message",
