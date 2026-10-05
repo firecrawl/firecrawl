@@ -8,6 +8,13 @@
         // Do not override across majors without compatibility approval.
         // Owner: team-engineering-reviewers. Tracking: create internal ticket.
         // Expires: 2026-10-08.
-        "GHSA-8cw4-87c7-c6xx"
+        "GHSA-8cw4-87c7-c6xx",
+        // GHSA-vfj7-8cjw-p6xm (braces):
+        // Latest published braces is 3.0.3; advisory range is <=3.0.3 and
+        // no 3.0.4+ exists on npm. artillery 2.x still resolves 3.0.3 via
+        // chokidar 3.x. Cannot override to a non-existent version.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2026-10-17.
+        "GHSA-vfj7-8cjw-p6xm"
     ]
 }
