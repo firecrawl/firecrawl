@@ -1,4 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use ts_rs::TS;
 
 use super::{options::ProxyMode, transformers::TransformerError};
 
@@ -34,7 +36,6 @@ pub enum ScrapeURLError {
   #[error("proxy selection failed")]
   ProxySelectionError,
 
-  // TODO: give these real codes on the JS side; they surface as UNKNOWN_ERROR until then
   #[error("reliable retrieval failed with proxy mode {0:?}")]
   ReliableRetrievalError(ProxyMode),
 
@@ -61,6 +62,17 @@ pub enum ScrapeURLError {
 
   #[error("actions are not supported by any available engines")]
   ActionsNotSupportedError,
+  #[error("{0} is not supported yet")]
+  NotSupported(&'static str),
+
+  #[error("invalid {argument}: {error}")]
+  InvalidInput {
+    argument: &'static str,
+    error: String,
+  },
+
+  #[error("scrape panicked: {0}")]
+  Panic(String),
 
   #[error("{0}")]
   Internal(String),
@@ -140,7 +152,8 @@ impl From<wreq::Error> for ScrapeURLError {
 }
 
 impl ScrapeURLError {
-  pub fn code(&self) -> &'static str {
+  pub fn payload(&self) -> ScrapeErrorPayload {
+    let message = self.to_string();
     match self {
       Self::CrawlDenialError { .. } => "CRAWL_DENIAL",
       Self::LockdownMissError => "SCRAPE_LOCKDOWN_CACHE_MISS",
@@ -163,6 +176,65 @@ impl ScrapeURLError {
       | Self::UnclassifiedEngineError { .. }
       | Self::EngineUnavailable { .. }
       | Self::Internal(_)
+      Self::CrawlDenialError { reason } => ScrapeErrorPayload::CrawlDenial {
+        reason: reason.clone(),
+      },
+      Self::LockdownMissError => ScrapeErrorPayload::LockdownCacheMiss,
+      Self::AgentIndexOnlyError => ScrapeErrorPayload::AgentIndexOnly,
+      Self::PDFOCRRequiredError(pdf_type) => ScrapeErrorPayload::PdfOcrRequired {
+        pdf_type: pdf_type_name(pdf_type).to_string(),
+      },
+      Self::SiteError { code } => ScrapeErrorPayload::SiteError {
+        error_code: code.clone(),
+      },
+      Self::SSLError {
+        skip_tls_verification,
+      } => ScrapeErrorPayload::SslError {
+        skip_tls_verification: *skip_tls_verification,
+      },
+      Self::DNSResolutionError { hostname } => ScrapeErrorPayload::DnsResolutionError {
+        hostname: hostname.clone(),
+      },
+      Self::UnsupportedFileError { reason } => ScrapeErrorPayload::UnsupportedFileError {
+        reason: reason.clone(),
+      },
+      Self::ActionError { error } => ScrapeErrorPayload::ActionError {
+        error_code: error.clone(),
+      },
+      Self::ProxySelectionError => ScrapeErrorPayload::ProxySelectionError,
+      Self::Transformer(TransformerError::JsonContentTooLarge) => {
+        ScrapeErrorPayload::JsonContentTooLarge { message }
+      }
+      Self::ReliableRetrievalError(proxy) => ScrapeErrorPayload::ReliableRetrievalError {
+        proxy: *proxy,
+        message,
+      },
+      Self::InsecureConnectionError => ScrapeErrorPayload::InsecureConnectionError { message },
+      Self::InvalidURLError => ScrapeErrorPayload::InvalidUrlError { message },
+      Self::PDFFetchFailed => ScrapeErrorPayload::PdfFetchFailed { message },
+      Self::PageLoadFailed => ScrapeErrorPayload::PageLoadFailed { message },
+      Self::UnclassifiedEngineError { engine, error } => {
+        ScrapeErrorPayload::UnclassifiedEngineError {
+          engine: engine.to_string(),
+          error: error.clone(),
+          message,
+        }
+      }
+      Self::EngineUnavailable { engine, status } => ScrapeErrorPayload::EngineUnavailable {
+        engine: engine.to_string(),
+        status: *status,
+        message,
+      },
+      Self::NotSupported(feature) => ScrapeErrorPayload::NotSupported {
+        feature: feature.to_string(),
+        message,
+      },
+      Self::InvalidInput { argument, .. } => ScrapeErrorPayload::InvalidInput {
+        argument: argument.to_string(),
+        message,
+      },
+      Self::Panic(_) => ScrapeErrorPayload::Panic { message },
+      Self::Internal(_)
       | Self::Wreq(_)
       | Self::Reqwest(_)
       | Self::Json(_)
@@ -174,22 +246,37 @@ impl ScrapeURLError {
       | Self::Redis(_)
       | Self::Sqlx(_)
       | Self::Gcs(_)
-      | Self::Transformer(_) => "UNKNOWN_ERROR",
+      | Self::Transformer(_) => ScrapeErrorPayload::Unknown {
+        message: unknown_error_message(&message),
+      },
     }
   }
 
+  /// `CODE|{payload}`, the format TS `deserializeTransportableError` reads.
   pub fn to_transport_string(&self) -> String {
-    let payload = serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string());
-    format!("{}|{}", self.code(), payload)
+    let payload = serde_json::to_value(self.payload()).unwrap_or_else(|e| {
+      serde_json::json!({
+        "code": "UNKNOWN_ERROR",
+        "message": unknown_error_message(&e.to_string()),
+      })
+    });
+    let code = payload
+      .get("code")
+      .and_then(Value::as_str)
+      .unwrap_or("UNKNOWN_ERROR");
+    format!("{code}|{payload}")
   }
 }
 
-impl Serialize for ScrapeURLError {
-  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-  where
-    S: serde::Serializer,
-  {
-    use serde::ser::SerializeMap;
+/// Structured payload of a rejected `scrapeUrl` promise, discriminated by
+/// `code`. Codes shared with TS `error.ts` carry the fields its `deserialize`
+/// reads; the Rust-specific codes below them also carry a `message`.
+#[derive(Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "code")]
+#[ts(rename = "ScrapeError")]
+pub enum ScrapeErrorPayload {
+  #[serde(rename = "CRAWL_DENIAL")]
+  CrawlDenial { reason: String },
 
     let mut map = serializer.serialize_map(None)?;
     match self {
@@ -235,8 +322,91 @@ impl Serialize for ScrapeURLError {
       e => {
         map.serialize_entry("message", &unknown_error_message(&e.to_string()))?;
       }
+  #[serde(rename = "SCRAPE_LOCKDOWN_CACHE_MISS")]
+  LockdownCacheMiss,
+
+  #[serde(rename = "AGENT_INDEX_ONLY")]
+  AgentIndexOnly,
+
+  #[serde(rename = "SCRAPE_PDF_OCR_REQUIRED", rename_all = "camelCase")]
+  PdfOcrRequired {
+    #[ts(type = "\"TextBased\" | \"Scanned\" | \"ImageBased\" | \"Mixed\"")]
+    pdf_type: String,
+  },
+
+  #[serde(rename = "SCRAPE_SITE_ERROR", rename_all = "camelCase")]
+  SiteError { error_code: String },
+
+  #[serde(rename = "SCRAPE_SSL_ERROR", rename_all = "camelCase")]
+  SslError { skip_tls_verification: bool },
+
+  #[serde(rename = "SCRAPE_DNS_RESOLUTION_ERROR")]
+  DnsResolutionError { hostname: String },
+
+  #[serde(rename = "SCRAPE_UNSUPPORTED_FILE_ERROR")]
+  UnsupportedFileError { reason: String },
+
+  #[serde(rename = "SCRAPE_ACTION_ERROR", rename_all = "camelCase")]
+  ActionError { error_code: String },
+
+  #[serde(rename = "SCRAPE_PROXY_SELECTION_ERROR")]
+  ProxySelectionError,
+
+  #[serde(rename = "SCRAPE_JSON_CONTENT_TOO_LARGE")]
+  JsonContentTooLarge { message: String },
+
+  #[serde(rename = "UNKNOWN_ERROR")]
+  Unknown { message: String },
+
+  #[serde(rename = "SCRAPE_RELIABLE_RETRIEVAL_ERROR")]
+  ReliableRetrievalError { proxy: ProxyMode, message: String },
+
+  #[serde(rename = "SCRAPE_INSECURE_CONNECTION_ERROR")]
+  InsecureConnectionError { message: String },
+
+  #[serde(rename = "SCRAPE_INVALID_URL_ERROR")]
+  InvalidUrlError { message: String },
+
+  #[serde(rename = "SCRAPE_PDF_FETCH_FAILED")]
+  PdfFetchFailed { message: String },
+
+  #[serde(rename = "SCRAPE_PAGE_LOAD_FAILED")]
+  PageLoadFailed { message: String },
+
+  #[serde(rename = "SCRAPE_UNCLASSIFIED_ENGINE_ERROR")]
+  UnclassifiedEngineError {
+    engine: String,
+    error: String,
+    message: String,
+  },
+
+  #[serde(rename = "SCRAPE_ENGINE_UNAVAILABLE")]
+  EngineUnavailable {
+    engine: String,
+    status: u16,
+    message: String,
+  },
+
+  #[serde(rename = "SCRAPE_NOT_SUPPORTED")]
+  NotSupported { feature: String, message: String },
+
+  #[serde(rename = "SCRAPE_INVALID_INPUT")]
+  InvalidInput { argument: String, message: String },
+
+  #[serde(rename = "SCRAPE_PANIC")]
+  Panic { message: String },
+}
+
+impl ScrapeErrorPayload {
+  /// Inverse of [`ScrapeURLError::to_transport_string`]. `None` for anything
+  /// that is not a well-formed `scrapeUrl` error.
+  pub fn from_transport_string(transport: &str) -> Option<Self> {
+    let (code, payload) = transport.split_once('|')?;
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    if payload.get("code").and_then(Value::as_str) != Some(code) {
+      return None;
     }
-    map.end()
+    serde_json::from_value(payload).ok()
   }
 }
 

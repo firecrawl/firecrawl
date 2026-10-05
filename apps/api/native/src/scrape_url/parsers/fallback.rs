@@ -25,7 +25,7 @@ fn deduce_encoding(content: &Bytes, content_type: &str) -> &'static Encoding {
     {
       Encoding::for_label(content_type_charset.as_bytes())
     } else if let Some(meta_charset) =
-      regex!(r#"(?i-u)<meta[\s/][^>]*?charset\s*=\s*["']?([^"'>;,\s/]+)"#)
+      regex!(r#"(?i)<meta[\s/][^>]*?charset\s*=\s*["']?([^"'>;,\s/]+)"#)
         .captures(&lossy_text)
         .and_then(|x| x.get(1))
         .map(|x| x.as_str())
@@ -87,11 +87,11 @@ pub fn parse_fallback(meta: &Meta, result: RawPageResult) -> Result<Document, Sc
     RawPageContent::GeneratedMarkdown(md) => (
       base64::engine::general_purpose::STANDARD.encode(&md),
       markdown::to_html_with_options(&md, &markdown::Options::gfm())
-        .expect("this error is impossible"),
+        .map_err(|e| ScrapeURLError::Internal(e.to_string()))?,
       Some(md),
     ),
-    RawPageContent::BytesOffloaded(offloaded) => {
-      unimplemented!() // TODO
+    RawPageContent::BytesOffloaded(_) => {
+      return Err(ScrapeURLError::NotSupported("parsing an offloaded page"));
     }
   };
 

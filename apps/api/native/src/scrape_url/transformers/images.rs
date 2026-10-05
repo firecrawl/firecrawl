@@ -28,9 +28,8 @@ pub async fn derive_images_from_html(
   let url = meta.get_url().to_string();
   let html = html.clone();
   let images = task::spawn_blocking(move || _extract_images(&html, &url))
-    .await
-    .unwrap()
-    .unwrap(); // TODO: error handling
+    .await?
+    .map_err(|e| TransformerError::HtmlProcessing(e.to_string()))?;
 
   document.images = Some(images);
   Ok(document)

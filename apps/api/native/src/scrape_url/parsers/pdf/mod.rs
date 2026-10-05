@@ -5,6 +5,7 @@ use bytes::Bytes;
 use pdf_inspector::{PdfProcessResult, PdfType, process_pdf_mem_with_options};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
+use ts_rs::TS;
 
 use self::firepdf::FirePDF;
 use super::super::{
@@ -16,7 +17,7 @@ use super::super::{
 
 mod firepdf;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum PdfMode {
   #[default]
@@ -26,13 +27,13 @@ pub enum PdfMode {
   Ocr,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 pub struct PdfBlockItemConfidence {
   pub layout: Option<u64>, // TODO: wtf is this type
   pub ocr: Option<u64>,    // TODO: wtf is this type
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PdfBlockItem {
   pub id: String,
@@ -46,26 +47,30 @@ pub struct PdfBlockItem {
   pub confidence: PdfBlockItemConfidence,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 pub struct PdfPage {
   pub page: u32,
   pub markdown: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(optional_fields = nullable)]
 pub struct PdfOptions {
   #[serde(default)]
+  #[ts(as = "Option<_>", optional)]
   pub mode: PdfMode,
 
   pub max_pages: Option<u32>,
 
   /// Include physical per-page markdown alongside document markdown.
   #[serde(default)]
+  #[ts(as = "Option<_>", optional)]
   pub pages: bool,
 
   /// Include per-page types layout blocks (bounding boxes, block types, reading order) alongside document markdown.
   #[serde(default)]
+  #[ts(as = "Option<_>", optional)]
   pub blocks: bool,
 
   /// Join PDF pages in `document.markdown` with `\n\n---\n\n<!-- page N -->\n\n` where N is the 1-based physical page
@@ -73,6 +78,7 @@ pub struct PdfOptions {
   /// skip pages merged by cross-page stitching — callers that need every physical page should use `pages: true` instead.
   /// No new response field.
   #[serde(default)]
+  #[ts(as = "Option<_>", optional)]
   pub page_markers: bool,
 }
 

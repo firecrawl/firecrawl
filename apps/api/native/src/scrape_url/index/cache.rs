@@ -27,7 +27,7 @@ impl Debug for IndexCache {
 
 impl IndexEntryVariant {
   fn to_redis_hash(&self) -> String {
-    let payload = serde_json::to_string(&Value::Array(vec![
+    let payload = Value::Array(vec![
       Value::String(hex::encode(&self.url_hash)),
       Value::Bool(self.is_mobile),
       Value::Bool(self.block_ads),
@@ -48,8 +48,8 @@ impl IndexEntryVariant {
       } else {
         Value::Null
       },
-    ]))
-    .unwrap();
+    ])
+    .to_string();
 
     hex::encode(Sha256::digest(payload))
   }

@@ -29,9 +29,8 @@ pub async fn derive_links_from_html(
   // TODO: fix exchange logic
 
   let links = tokio::task::spawn_blocking(move || _extract_links(&html))
-    .await
-    .unwrap()
-    .unwrap(); // TODO: error handling
+    .await?
+    .map_err(|e| TransformerError::HtmlProcessing(e.to_string()))?;
 
   document.links = Some(links);
 

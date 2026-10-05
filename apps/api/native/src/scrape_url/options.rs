@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Display};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use super::{
   actions::Action,
@@ -8,7 +9,7 @@ use super::{
   parsers::Parsers,
 };
 
-#[derive(Debug, PartialEq, Eq, Deserialize, Default, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize, Default, Clone, Copy, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum ProxyMode {
   Basic,
@@ -79,9 +80,10 @@ impl ScrapeOptionsLocationCountry {
   }
 }
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default, TS)]
 pub struct ScrapeOptionsLocation {
   #[serde(default)]
+  #[ts(as = "Option<String>", optional)]
   pub country: ScrapeOptionsLocationCountry,
 
   #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -92,45 +94,59 @@ fn save_changes_default() -> bool {
   true
 }
 
-#[derive(Deserialize, Serialize, Default)]
+#[derive(Deserialize, Serialize, Default, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct ScrapeOptionsProfile {
   // len 1-128
   pub name: String,
 
   #[serde(default = "save_changes_default")]
+  #[ts(as = "Option<_>", optional)]
   pub save_changes: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(optional_fields = nullable)]
 pub struct ScrapeOptions {
   pub formats: Formats,
+  #[serde(default)]
+  #[ts(as = "Option<_>", optional)]
   pub headers: HashMap<String, String>,
+  #[serde(default)]
+  #[ts(as = "Option<_>", optional)]
   pub include_tags: Vec<String>,
+  #[serde(default)]
+  #[ts(as = "Option<_>", optional)]
   pub exclude_tags: Vec<String>,
   pub only_main_content: bool,
   pub only_clean_content: bool,
   pub timeout: Option<u64>,
 
-  /// Never read this directly, always use .effective_wait_for() -> u32
+  // Never read this directly, always use .effective_wait_for() -> u32
   wait_for: Option<i32>,
 
   pub mobile: bool,
+  #[serde(default)]
+  #[ts(as = "Option<_>", optional)]
   pub parsers: Parsers,
 
   #[serde(default)]
+  #[ts(as = "Option<_>", optional)]
   pub actions: Vec<Action>,
 
-  // #[serde(default)]
+  #[serde(default)]
+  #[ts(as = "Option<_>", optional)]
   pub location: ScrapeOptionsLocation,
 
-  /// Never read this directly, always use .should_skip_tls_verification() -> bool
+  // Never read this directly, always use .should_skip_tls_verification() -> bool
   skip_tls_verification: Option<bool>,
 
   pub remove_base64_images: bool,
   // fast_mode: bool, // candidate for removal
   // use_mock: bool, // candidate for removal
   pub block_ads: bool,
+  #[ts(type = "\"basic\" | \"stealth\" | \"enhanced\" | \"auto\"")]
   pub proxy: ProxyMode,
   pub max_age: Option<i32>,
   pub min_age: Option<i32>,
@@ -144,13 +160,16 @@ pub struct ScrapeOptions {
 
   #[serde(rename = "__searchPreviewToken")]
   pub __search_preview_token: Option<String>,
-  #[serde(rename = "__experimental_omce")]
+  #[serde(rename = "__experimental_omce", default)]
+  #[ts(as = "Option<_>", optional)]
   pub __experimental_omce: bool,
   #[serde(rename = "__experimental_omceDomain")]
   pub __experiemntal_omce_domain: Option<String>,
-  #[serde(rename = "__experimental_engpicker")]
+  #[serde(rename = "__experimental_engpicker", default)]
+  #[ts(as = "Option<_>", optional)]
   pub __experiemntal_engpicker: bool,
-  #[serde(rename = "__forceFirePDF")]
+  #[serde(rename = "__forceFirePDF", default)]
+  #[ts(as = "Option<_>", optional)]
   pub __force_fire_pdf: bool,
 }
 
@@ -212,23 +231,35 @@ impl ScrapeOptions {
   }
 }
 
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Deserialize, Default, TS)]
+#[serde(rename_all = "camelCase", default)]
+#[ts(optional_fields = nullable)]
 pub struct InternalOptions {
   pub crawl_id: Option<String>,
   pub priority: Option<u32>, // passed to fire-engine
   // force_engine: // candidate for removal
   // atsv: // candidate for removal
+  #[ts(as = "Option<_>", optional)]
   pub v0_crawl_only_urls: bool,
+  #[serde(rename = "v0DisableJsDom")]
+  #[ts(as = "Option<_>", optional)]
   pub v0_disable_jsdom: bool,
+  #[ts(as = "Option<_>", optional)]
   pub disable_smart_wait_cache: bool, // passed to fire-engine
+  #[ts(as = "Option<_>", optional)]
   pub is_background_index: bool,
   // external_abort: // TODO
+  #[ts(as = "Option<_>", optional)]
   pub url_invisible_in_current_crawl: bool,
+  #[serde(rename = "unnormalizedSourceURL")]
   pub unnormalized_source_url: Option<String>,
 
+  #[serde(rename = "saveScrapeResultToGCS")]
+  #[ts(as = "Option<_>", optional)]
   pub save_scrape_result_to_gcs: bool, // passed to fire-engine
+  #[ts(as = "Option<_>", optional)]
   pub bypass_billing: bool,
+  #[ts(as = "Option<_>", optional)]
   pub zero_data_retention: bool,
   // team_flags: Option<TeamFlags>, // TODO
 
@@ -236,7 +267,9 @@ pub struct InternalOptions {
   // v1_json_agent:
   // v1_json_system_prompt: String
   // v1_original_format: extract | json
+  #[ts(as = "Option<_>", optional)]
   pub agent_index_only: bool, // pre-confirmation agent key: serve from index only, never touch web/Fire Engine // CFR
   // is_parse:
+  #[ts(as = "Option<_>", optional)]
   pub is_pre_crawl: bool, // whether this scrape is part of a precrawl job
 }

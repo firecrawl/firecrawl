@@ -10,6 +10,8 @@ use self::{
   engines::{EngineOutcome, check_engine_support, get_main_engine, should_elevate_proxy},
   error::ScrapeURLError,
   feature_flags::FeatureFlag,
+  engines::{EngineOutcome, get_main_engine},
+  error::{ScrapeErrorPayload, ScrapeURLError},
   index::{Index, should_use_index},
   meta::Meta,
   options::{InternalOptions, ScrapeOptions},
@@ -34,6 +36,9 @@ mod raw_page;
 mod rewrite_url;
 mod robots;
 mod transformers;
+mod ts_bindings;
+
+pub use self::ts_bindings::render_scrape_url_ts_bindings;
 
 async fn _scrape_url(mut meta: Meta) -> Result<Document, ScrapeURLError> {
   tracing::info!("scrapeURL entered");
@@ -179,36 +184,76 @@ fn napi_error(e: ScrapeURLError) -> napi::Error {
   napi::Error::new(napi::Status::GenericFailure, e.to_transport_string())
 }
 
-// wrapper that lets us avoid exposing Meta in JS-land
-#[napi]
+fn parse_input<T: serde::de::DeserializeOwned>(
+  argument: &'static str,
+  value: serde_json::Value,
+) -> Result<T, ScrapeURLError> {
+  serde_path_to_error::deserialize(value).map_err(|e| ScrapeURLError::InvalidInput {
+    argument,
+    error: e.to_string(),
+  })
+}
+
+/// Runs `fut` as its own task, so a panic inside it surfaces as
+/// [`ScrapeURLError::Panic`] instead of an untyped rejection.
+async fn catch_panic<T: Send + 'static>(
+  fut: impl Future<Output = Result<T, ScrapeURLError>> + Send + 'static,
+) -> Result<T, ScrapeURLError> {
+  match tokio::spawn(fut).await {
+    Ok(result) => result,
+    Err(e) => Err(ScrapeURLError::Panic(match e.try_into_panic() {
+      Ok(payload) => payload
+        .downcast_ref::<&str>()
+        .map(|x| x.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "non-string panic payload".to_string()),
+      Err(e) => e.to_string(),
+    })),
+  }
+}
+
+/// Scrapes `url`. A rejection's message is `CODE|{json}`; decode it with
+/// `decodeScrapeUrlError`.
+#[napi(
+  ts_args_type = "id: string, url: string, teamId: string, options: ScrapeUrl.ScrapeOptions, internalOptions: ScrapeUrl.InternalOptions",
+  ts_return_type = "Promise<ScrapeUrl.Document>"
+)]
 pub async fn scrape_url(
   id: String,
   url: String,
   team_id: String,
-  options: serde_json::Map<String, serde_json::Value>,
-  internal_options: serde_json::Map<String, serde_json::Value>,
+  options: serde_json::Value,
+  internal_options: serde_json::Value,
   // cost_tracking: // TODO:
-) -> Result<serde_json::Map<String, serde_json::Value>, napi::Error> {
-  ensure_crypto_provider();
-  crate::telemetry::init_telemetry();
-  // Flushes on scope exit AND on panic unwind, so even a panicking scrape
-  // exports the spans it produced before the process tears down.
+) -> Result<serde_json::Value, napi::Error> {
+  // Flushes after the scrape task ends, including when it panicked.
   let _flush = crate::telemetry::FlushGuard;
 
-  let options_raw = serde_json::Value::Object(options);
-  let internal_options_raw = serde_json::Value::Object(internal_options);
-  let options_json = options_raw.to_string();
-  let internal_options_json = internal_options_raw.to_string();
+  let result = catch_panic(scrape_url_task(id, url, team_id, options, internal_options)).await;
 
-  let options: ScrapeOptions = serde_json::from_value(options_raw)
-    .map_err(ScrapeURLError::from)
-    .map_err(napi_error)?;
-  let internal_options: InternalOptions = serde_json::from_value(internal_options_raw)
-    .map_err(ScrapeURLError::from)
-    .map_err(napi_error)?;
-  let url = Url::parse(&url)
-    .map_err(|_| ScrapeURLError::InvalidURLError)
-    .map_err(napi_error)?;
+  if let Err(e @ ScrapeURLError::Panic(_)) = &result {
+    tracing::error!(error = %e);
+  }
+
+  result.map_err(napi_error)
+}
+
+async fn scrape_url_task(
+  id: String,
+  url: String,
+  team_id: String,
+  options: serde_json::Value,
+  internal_options: serde_json::Value,
+) -> Result<serde_json::Value, ScrapeURLError> {
+  ensure_crypto_provider();
+  crate::telemetry::init_telemetry();
+
+  let options_json = options.to_string();
+  let internal_options_json = internal_options.to_string();
+
+  let options: ScrapeOptions = parse_input("options", options)?;
+  let internal_options: InternalOptions = parse_input("internalOptions", internal_options)?;
+  let url = Url::parse(&url).map_err(|_| ScrapeURLError::InvalidURLError)?;
 
   let meta = Meta::new(id, url, team_id, options, internal_options);
 
@@ -230,16 +275,12 @@ pub async fn scrape_url(
     span.in_scope(|| tracing::error!(error = %e));
   }
 
-  match result {
-    Ok(x) => Ok(
-      match serde_json::to_value(x)
-        .map_err(ScrapeURLError::from)
-        .map_err(napi_error)?
-      {
-        serde_json::Value::Object(x) => x,
-        _ => unreachable!(),
-      },
-    ),
-    Err(e) => Err(napi_error(e)),
-  }
+  Ok(serde_json::to_value(result?)?)
+}
+
+/// Decodes the message of a `scrapeUrl` rejection into its typed payload.
+/// Returns null for errors that did not come from `scrapeUrl`.
+#[napi(catch_unwind, ts_return_type = "ScrapeUrl.ScrapeError | null")]
+pub fn decode_scrape_url_error(message: String) -> Option<serde_json::Value> {
+  ScrapeErrorPayload::from_transport_string(&message).and_then(|x| serde_json::to_value(x).ok())
 }

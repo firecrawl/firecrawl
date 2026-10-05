@@ -12,10 +12,11 @@ mod document;
 mod fallback;
 mod pdf;
 
-#[kinded(noun = "parser", default = [Pdf])]
+#[kinded(noun = "parser", default = [Pdf, Image])]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Parser {
   Pdf(pdf::PdfOptions),
+  Image,
 }
 
 pub type Parsers = KindedSet<Parser>;
