@@ -177,16 +177,29 @@ function validateTimeZone(timeZone: string): void {
   }
 }
 
+// One formatter per zone: constructing Intl.DateTimeFormat is the expensive
+// part, and the next-run search below calls this hundreds of times.
+const zonedFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function zonedFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = zonedFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      minute: "2-digit",
+      hour: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+      weekday: "short",
+    });
+    zonedFormatters.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
 function getZonedParts(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    minute: "2-digit",
-    hour: "2-digit",
-    day: "2-digit",
-    month: "2-digit",
-    weekday: "short",
-  }).formatToParts(date);
+  const parts = zonedFormatter(timeZone).formatToParts(date);
 
   const values = Object.fromEntries(
     parts
@@ -203,17 +216,61 @@ function getZonedParts(date: Date, timeZone: string) {
   };
 }
 
-function matches(date: Date, cron: CronSpec, timeZone: string): boolean {
-  const zoned = getZonedParts(date, timeZone);
+type ZonedParts = ReturnType<typeof getZonedParts>;
+
+function dayMatches(zoned: ZonedParts, cron: CronSpec): boolean {
   return (
-    cron.minutes.has(zoned.minutes) &&
-    cron.hours.has(zoned.hours) &&
     cron.daysOfMonth.has(zoned.daysOfMonth) &&
     cron.months.has(zoned.months) &&
     cron.daysOfWeek.has(zoned.daysOfWeek)
   );
 }
 
+/**
+ * Minutes to advance from `zoned` so the search lands on the next instant
+ * that could match, re-reading the zoned wall clock after every jump.
+ *
+ * Jumps always land on a local hour boundary (or an exact matching minute),
+ * so a DST transition in between can only move the landing point to another
+ * hour boundary, which the next iteration re-evaluates; no existing local
+ * minute is skipped. A mismatching day is left in two hops (to 23:00, then to
+ * the next hour) rather than one so the landing point is the next day's
+ * 00:00 and never some later minute of it.
+ */
+function minutesToNextCandidate(zoned: ZonedParts, cron: CronSpec): number {
+  const localMinutes = zoned.hours * 60 + zoned.minutes;
+  if (!dayMatches(zoned, cron)) {
+    return localMinutes < 23 * 60 ? 23 * 60 - localMinutes : 60 - zoned.minutes;
+  }
+  if (!cron.hours.has(zoned.hours)) {
+    return 60 - zoned.minutes;
+  }
+  let nextMinute = Infinity;
+  for (const minute of cron.minutes) {
+    if (minute > zoned.minutes && minute < nextMinute) nextMinute = minute;
+  }
+  return nextMinute === Infinity
+    ? 60 - zoned.minutes
+    : nextMinute - zoned.minutes;
+}
+
+function matches(zoned: ZonedParts, cron: CronSpec): boolean {
+  return (
+    cron.minutes.has(zoned.minutes) &&
+    cron.hours.has(zoned.hours) &&
+    dayMatches(zoned, cron)
+  );
+}
+
+/**
+ * First instant strictly after `from` (at minute precision) matching the cron
+ * in `timeZone`, or an error when none falls within the next year.
+ *
+ * The search advances by local days, hours and minutes instead of stepping
+ * every minute: a yearly cron used to cost ~500k `Intl` formats (tens of
+ * seconds on the event loop, enough to fail the liveness probe); it now
+ * costs a few hundred.
+ */
 export function getNextMonitorRunAt(
   cronExpression: string,
   from = new Date(),
@@ -225,11 +282,15 @@ export function getNextMonitorRunAt(
   candidate.setUTCSeconds(0, 0);
   candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
 
-  for (let i = 0; i < SEARCH_LIMIT_MINUTES; i++) {
-    if (matches(candidate, cron, timeZone)) {
+  let advanced = 0;
+  while (advanced < SEARCH_LIMIT_MINUTES) {
+    const zoned = getZonedParts(candidate, timeZone);
+    if (matches(zoned, cron)) {
       return new Date(candidate);
     }
-    candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
+    const step = Math.max(1, minutesToNextCandidate(zoned, cron));
+    candidate.setUTCMinutes(candidate.getUTCMinutes() + step);
+    advanced += step;
   }
 
   throw new Error("Cron expression did not produce a run within one year");
