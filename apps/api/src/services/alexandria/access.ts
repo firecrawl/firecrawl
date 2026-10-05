@@ -11,8 +11,6 @@ import {
   type LedgerAcceptance,
 } from "./terms";
 import { getACUCTeam } from "../../controllers/auth";
-import { DEFAULT_TEAM_LIMITS } from "../autumn/autumn.service";
-import { HOBBY_RATE_LIMIT_MULTIPLIER } from "../rate-limiter";
 
 const requirementsSchema = z.object({
   providers: z.array(
@@ -122,13 +120,10 @@ export async function authorizeProviders(
   const gated = calls.filter(call =>
     paidPlanOnly.has(`${call.provider}/${call.capability}`),
   );
-  // Licensed payloads that may only answer a paid request: refuse teams whose
-  // ACUC multiplier is below the hobby floor. Credit-check bypass teams pass.
+  // Licensed payloads that may only answer a paid request: refuse teams that
+  // aren't on a paid plan. Credit-check bypass teams pass.
   if (gated.length > 0 && flags?.bypassCreditChecks !== true) {
-    const multiplier =
-      (await getACUCTeam(teamId))?.rate_limit_multiplier ??
-      DEFAULT_TEAM_LIMITS.rate_limit_multiplier;
-    if (multiplier < HOBBY_RATE_LIMIT_MULTIPLIER) {
+    if (!(await getACUCTeam(teamId))?.is_paid_plan) {
       const addresses = [
         ...new Set(gated.map(call => `${call.provider}/${call.capability}`)),
       ].join(", ");
