@@ -32,6 +32,16 @@ Selection reads only request/response fields and billing state already in memory
 
 Static feedback instructions do not belong in response hints. Adapters that expose a feedback tool should document its contract in the relevant tool descriptions, where the guidance is available before invocation and can reference the adapter's actual feedback tool and identifiers.
 
+## Hint ids and emission records
+
+Every rule has a stable id in `AGENT_HINT_IDS` (`src/lib/agent-hints.ts`). The id is the key and the hint string is data hanging off it, so a copy edit to the wording keeps the id. An id is never reused or renumbered: a retired rule keeps its id out of service.
+
+`buildAgentHintRecords` returns `{ id, text }` for each hint. `buildAgentHints` returns the wording only, and the response envelope is unchanged.
+
+When a hint fires, the middleware writes one row per hint to the ClickHouse table `agent_hint_emissions` through `trackAgentHints` (`src/lib/tracking.ts`), the same path the scrape and search trackers use. A row carries the hint id, the endpoint, the job id from the same response, the team id, and the time. It carries no hint text and no result URLs. The job id lets an analyst join a hint to the calls the agent made next.
+
+The write is fire-and-forget and runs after the hints are built, so it cannot change or delay the response. A zero-data-retention request writes no row. The table DDL is `clickhouse/agent_hint_emissions.sql`.
+
 ## Validation
 
 The focused selector tests exercise excerpt detection, source-page failures, error suppression, the low-credit threshold, and combined hints. Express route fixtures exercise response preservation, opt-in, opt-out, low-credit delivery, and responses without a useful next step. Hosted snips cover a completed scrape, map opt-out, and validation failure through the actual API. The snips use the harness and existing test service; they are not a live paid API smoke test.

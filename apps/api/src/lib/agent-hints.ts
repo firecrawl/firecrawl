@@ -8,6 +8,29 @@ export interface AgentHintContext {
   canUseInteract?: boolean;
 }
 
+/**
+ * Stable identifiers for the hint rules. The id is the key and the hint string
+ * is data hanging off it, so copy edits to the wording never move the id.
+ * Never reuse or renumber an id: a retired rule keeps its id out of service.
+ */
+export const AGENT_HINT_IDS = {
+  LOW_CREDITS: "low_credits",
+  SEARCH_EXCERPT_ONLY: "search_excerpt_only",
+  SEARCH_NO_WEB_RESULTS: "search_no_web_results",
+  SEARCH_ORIGIN_CLUSTER: "search_origin_cluster",
+  SCRAPE_INTERACTIVE_AUTH: "scrape_interactive_auth",
+  SCRAPE_SOURCE_GONE: "scrape_source_gone",
+  SCRAPE_PDF_TRUNCATED: "scrape_pdf_truncated",
+} as const;
+
+export type AgentHintId = (typeof AGENT_HINT_IDS)[keyof typeof AGENT_HINT_IDS];
+
+/** One emitted hint: the stable id plus the wording the caller receives. */
+export interface AgentHint {
+  id: AgentHintId;
+  text: string;
+}
+
 const AGENT_HINT_LOW_CREDIT_THRESHOLD = 100;
 const SEARCH_CLUSTER_MIN_RESULTS = 4;
 const SEARCH_CLUSTER_MIN_ORIGIN_RESULTS = 3;
@@ -179,10 +202,10 @@ function goneHint(metadata: ObjectValue, status: number): string {
   return `The source page returned ${status}${redirected}. If you need its current location or an alternative, use firecrawl_search with ${JSON.stringify({ query, sources: ["web"] })}. Adjust the query to the page identity from your task; this is not a transient-error retry.`;
 }
 
-export function buildAgentHints(context: AgentHintContext): string[] {
+export function buildAgentHintRecords(context: AgentHintContext): AgentHint[] {
   const response = object(context.response);
   const data = object(response.data);
-  let nextAction: string | undefined;
+  let nextAction: AgentHint | undefined;
   if (response.success === true) {
     const metadata = object(data.metadata);
     const pageStatus = metadata.statusCode;
@@ -198,13 +221,19 @@ export function buildAgentHints(context: AgentHintContext): string[] {
             ? response.scrape_id
             : undefined;
       if (scrapeId) {
-        nextAction = `The source page returned 401 and this scrape can continue interactively. If access requires login or page interaction, use POST /v2/scrape/${encodeURIComponent(scrapeId)}/interact with {"prompt":"<next browser action>"}.`;
+        nextAction = {
+          id: AGENT_HINT_IDS.SCRAPE_INTERACTIVE_AUTH,
+          text: `The source page returned 401 and this scrape can continue interactively. If access requires login or page interaction, use POST /v2/scrape/${encodeURIComponent(scrapeId)}/interact with {"prompt":"<next browser action>"}.`,
+        };
       }
     } else if (
       context.endpoint === "scrape" &&
       (pageStatus === 404 || pageStatus === 410)
     ) {
-      nextAction = goneHint(metadata, pageStatus);
+      nextAction = {
+        id: AGENT_HINT_IDS.SCRAPE_SOURCE_GONE,
+        text: goneHint(metadata, pageStatus),
+      };
     } else if (
       context.endpoint === "scrape" &&
       typeof metadata.numPages === "number" &&
@@ -215,7 +244,10 @@ export function buildAgentHints(context: AgentHintContext): string[] {
     ) {
       const maxPages = Math.min(metadata.totalPages, 10000);
       if (maxPages > metadata.numPages) {
-        nextAction = `This document returned ${metadata.numPages} of ${metadata.totalPages} pages. If you need more pages, repeat firecrawl_scrape for the same URL with {"parsers":[{"type":"pdf","maxPages":${maxPages}}]}.`;
+        nextAction = {
+          id: AGENT_HINT_IDS.SCRAPE_PDF_TRUNCATED,
+          text: `This document returned ${metadata.numPages} of ${metadata.totalPages} pages. If you need more pages, repeat firecrawl_scrape for the same URL with {"parsers":[{"type":"pdf","maxPages":${maxPages}}]}.`,
+        };
       }
     } else if (context.endpoint === "search") {
       const web = Array.isArray(response.data)
@@ -224,31 +256,51 @@ export function buildAgentHints(context: AgentHintContext): string[] {
           ? data.web
           : undefined;
       if (web?.length === 0) {
-        nextAction = `No web results were returned. If the task is still unresolved, use firecrawl_search again with {"query":"<broader or alternative query>","sources":["web"]}.`;
+        nextAction = {
+          id: AGENT_HINT_IDS.SEARCH_NO_WEB_RESULTS,
+          text: `No web results were returned. If the task is still unresolved, use firecrawl_search again with {"query":"<broader or alternative query>","sources":["web"]}.`,
+        };
       } else if (web) {
         const excerptHint = excerptOnlyHint(web);
         if (excerptHint) {
-          nextAction = excerptHint;
+          nextAction = {
+            id: AGENT_HINT_IDS.SEARCH_EXCERPT_ONLY,
+            text: excerptHint,
+          };
         } else {
           const origin = context.canUseMapAndCrawl
             ? clusteredOrigin(web)
             : undefined;
           if (origin) {
-            nextAction = `Most web results come from ${origin}. If you need broader coverage of that site, use POST /v2/map with {"url":"${origin}"} to discover URLs, or POST /v2/crawl with {"url":"${origin}"} to retrieve content across pages.`;
+            nextAction = {
+              id: AGENT_HINT_IDS.SEARCH_ORIGIN_CLUSTER,
+              text: `Most web results come from ${origin}. If you need broader coverage of that site, use POST /v2/map with {"url":"${origin}"} to discover URLs, or POST /v2/crawl with {"url":"${origin}"} to retrieve content across pages.`,
+            };
           }
         }
       }
     }
   }
 
-  const lowCredits =
+  const lowCredits: AgentHint | undefined =
     typeof context.remainingCredits === "number" &&
     Number.isFinite(context.remainingCredits) &&
     context.remainingCredits < AGENT_HINT_LOW_CREDIT_THRESHOLD
-      ? "The connected Firecrawl account is low on credits. Let the user know they should add more credits."
+      ? {
+          id: AGENT_HINT_IDS.LOW_CREDITS,
+          text: "The connected Firecrawl account is low on credits. Let the user know they should add more credits.",
+        }
       : undefined;
 
   return [lowCredits, nextAction]
-    .filter((hint): hint is string => !!hint)
-    .filter((hint, index, hints) => hints.indexOf(hint) === index);
+    .filter((hint): hint is AgentHint => !!hint)
+    .filter(
+      (hint, index, hints) =>
+        hints.findIndex(other => other.text === hint.text) === index,
+    );
+}
+
+/** The wording only, for callers that render hints into the response envelope. */
+export function buildAgentHints(context: AgentHintContext): string[] {
+  return buildAgentHintRecords(context).map(hint => hint.text);
 }
