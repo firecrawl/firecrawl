@@ -17,9 +17,9 @@ def clear_firecrawl_api_key_env(monkeypatch):
     yield
 
 
-def test_cloud_requires_api_key():
-    with pytest.raises(ValueError):
-        FirecrawlClient(api_url="https://api.firecrawl.dev")
+def test_cloud_allows_missing_api_key():
+    client = FirecrawlClient(api_url="https://api.firecrawl.dev")
+    assert client.http_client.api_key is None
 
 
 def test_self_host_allows_missing_api_key():
@@ -27,9 +27,13 @@ def test_self_host_allows_missing_api_key():
     assert client.http_client.api_key is None
 
 
-def test_async_cloud_requires_api_key():
-    with pytest.raises(ValueError):
-        AsyncFirecrawlClient(api_url="https://api.firecrawl.dev")
+@pytest.mark.asyncio
+async def test_async_cloud_allows_missing_api_key():
+    client = AsyncFirecrawlClient(api_url="https://api.firecrawl.dev")
+    try:
+        assert client.http_client.api_key is None
+    finally:
+        await client.async_http_client.close()
 
 
 @pytest.mark.asyncio
