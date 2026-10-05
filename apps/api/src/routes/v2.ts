@@ -735,7 +735,7 @@ if (config.RESEARCH_PROXY_URL) {
   );
 }
 
-if (config.LEGAL_REGULATORY_SEARCH_URL) {
+if (config.SEARCH_PLATFORM_URL) {
   v2Router.use(
     "/search/gov",
     authMiddleware(RateLimiterMode.LegalRegulatorySearch, {

@@ -155,17 +155,32 @@ describe("/v2/search/gov", () => {
     expect(billTeam).not.toHaveBeenCalled();
   });
 
-  it.each([
-    [{ query: "" }],
-    [{ query: "rules", k: "101" }],
-    [{ query: "rules", magic: "true" }],
-  ])("rejects invalid input %j before the upstream call", async input => {
-    const res = makeRes();
-    await handler("get")(makeReq("GET", input), res);
-    await flush();
+  describe.each(["GET", "POST"] as const)("on %s", method => {
+    const route = method === "GET" ? "get" : "post";
 
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(mocks.fetchLegalRegulatoryUpstream).not.toHaveBeenCalled();
+    it.each([
+      [{ query: "" }],
+      [{ query: "rules", k: "101" }],
+      [{ query: "rules", magic: "true" }],
+    ])("rejects invalid input %j before the upstream call", async input => {
+      const res = makeRes();
+      await handler(route)(makeReq(method, input), res);
+      await flush();
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mocks.fetchLegalRegulatoryUpstream).not.toHaveBeenCalled();
+    });
+
+    it("maps an upstream timeout to 504", async () => {
+      mocks.fetchLegalRegulatoryUpstream.mockRejectedValue(
+        new DOMException("timed out", "TimeoutError"),
+      );
+      const res = makeRes();
+      await handler(route)(makeReq(method, { query: "zoning variance" }), res);
+      await flush();
+
+      expect(res.status).toHaveBeenCalledWith(504);
+    });
   });
 
   it("serves a keyless caller and charges the keyless budget", async () => {
@@ -178,16 +193,5 @@ describe("/v2/search/gov", () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mocks.chargeKeylessCredits).toHaveBeenCalledWith(KEYLESS_TEAM_ID, 2);
-  });
-
-  it("maps an upstream timeout to 504", async () => {
-    mocks.fetchLegalRegulatoryUpstream.mockRejectedValue(
-      new DOMException("timed out", "TimeoutError"),
-    );
-    const res = makeRes();
-    await handler("get")(makeReq("GET", { query: "zoning variance" }), res);
-    await flush();
-
-    expect(res.status).toHaveBeenCalledWith(504);
   });
 });

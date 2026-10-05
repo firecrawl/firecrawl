@@ -2,7 +2,7 @@ import { config } from "../../../config";
 import { describeIf } from "../lib";
 import { idmux, researchPostRaw, researchRaw } from "./lib";
 
-const HAS_LEGAL_REGULATORY = !!config.LEGAL_REGULATORY_SEARCH_URL;
+const HAS_LEGAL_REGULATORY = !!config.SEARCH_PLATFORM_URL;
 const PATH = "/v2/search/gov";
 
 describeIf(HAS_LEGAL_REGULATORY)("Legal and Regulatory Search API", () => {
@@ -21,6 +21,7 @@ describeIf(HAS_LEGAL_REGULATORY)("Legal and Regulatory Search API", () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
     expect(Array.isArray(res.body.data.web)).toBe(true);
+    expect(res.body.data.web.length).toBeGreaterThan(0);
     expect(res.body.data.web.length).toBeLessThanOrEqual(3);
     for (const result of res.body.data.web) {
       expect(typeof result.url).toBe("string");

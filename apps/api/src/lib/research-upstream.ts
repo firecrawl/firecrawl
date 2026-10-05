@@ -54,10 +54,10 @@ export async function fetchLegalRegulatoryUpstream(options: {
   headers: Record<string, string>;
   timeoutMs: number;
 }) {
-  const url = config.LEGAL_REGULATORY_SEARCH_URL;
-  if (!url) return null;
+  const base = config.SEARCH_PLATFORM_URL;
+  if (!base) return null;
 
-  return fetch(url, {
+  return fetch(base.replace(/\/+$/, "") + "/api/v1/gov-search", {
     method: "POST",
     headers: { ...options.headers, "content-type": "application/json" },
     body: JSON.stringify({ query: options.query, top_k: options.k }),

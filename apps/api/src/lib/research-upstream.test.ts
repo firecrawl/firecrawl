@@ -13,7 +13,7 @@ vi.mock("undici", () => ({
 vi.mock("../config", () => ({
   config: {
     RESEARCH_PROXY_URL: "https://research.test/",
-    LEGAL_REGULATORY_SEARCH_URL: "https://legal.test/search",
+    SEARCH_PLATFORM_URL: "https://platform.test/",
   },
 }));
 
@@ -88,7 +88,7 @@ describe("fetchLegalRegulatoryUpstream", () => {
 
     expect(timeout).toHaveBeenCalledWith(15_000);
     expect(mocks.fetch).toHaveBeenCalledWith(
-      "https://legal.test/search",
+      "https://platform.test/api/v1/gov-search",
       expect.objectContaining({
         method: "POST",
         headers: {
