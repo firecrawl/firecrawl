@@ -146,7 +146,7 @@ impl FirePdfClient<'_> {
     match copied {
       Ok(()) => Some(format!("gs://{dest_bucket}/{dest_key}")),
       Err(error) => {
-        tracing::error!(error = %error);
+        tracing::error!(error = %error, "handoff rewrite failed");
         None
       }
     }
@@ -190,7 +190,7 @@ impl FirePdfClient<'_> {
     match uploaded {
       Ok(()) => Some(format!("gs://{bucket}/{key}")),
       Err(error) => {
-        tracing::error!(error = %error);
+        tracing::error!(error = %error, "input upload failed");
         None
       }
     }

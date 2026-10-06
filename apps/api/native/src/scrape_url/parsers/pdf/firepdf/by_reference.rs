@@ -128,7 +128,7 @@ impl FirePdfClient<'_> {
       ) => Err(error),
       Err(error) => {
         span.record("fire_pdf.adoption_failed", true);
-        tracing::error!(error = %error);
+        tracing::error!(error = %error, "adopted job failed; submitting fresh");
         Ok(None)
       }
     }

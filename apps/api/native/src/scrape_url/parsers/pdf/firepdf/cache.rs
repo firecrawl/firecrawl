@@ -73,7 +73,7 @@ impl FirePdfClient<'_> {
       Ok(answer) => answer,
       Err(error) => {
         record("lookup_error", &own_variant);
-        tracing::error!(error = %error);
+        tracing::error!(error = %error, "cache lookup failed");
         return None;
       }
     };

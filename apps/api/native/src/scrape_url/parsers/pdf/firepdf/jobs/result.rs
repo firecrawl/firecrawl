@@ -73,7 +73,7 @@ async fn send_cancel(request: HttpRequest) {
         tracing::error!(http.status = response.status, "cancellation not accepted");
       }
     }
-    Err(error) => tracing::error!(error = %error),
+    Err(error) => tracing::error!(error = %error, "cancellation failed"),
   }
 }
 

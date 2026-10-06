@@ -83,7 +83,7 @@ pub async fn fire_pdf_inline(
   {
     Err(error) if options.page_markdown || options.blocks || options.page_markers => {
       span.record("fire_pdf.sync_retry", true);
-      tracing::error!(error = %error);
+      tracing::error!(error = %error, "FirePDF async failed; retrying sync");
       client.ocr_sync(&pdf_b64, options).await
     }
     result => result,

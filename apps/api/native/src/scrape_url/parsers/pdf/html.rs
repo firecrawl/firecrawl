@@ -32,7 +32,7 @@ pub async fn markdown_to_html(markdown: String) -> (String, String) {
     Ok(html) => html,
     Err(error) => {
       Span::current().record("fell_back", true);
-      tracing::error!(error = %error);
+      tracing::error!(error = %error, "markdown rendering failed; using escaped fallback");
       format!("<pre>{}</pre>", escape_html(&markdown))
     }
   };

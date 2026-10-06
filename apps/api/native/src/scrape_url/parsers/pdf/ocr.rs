@@ -182,7 +182,7 @@ async fn inline(
     Err(error) if input.force_fire_pdf => Err(error.into()),
     Err(error) => {
       span.record("fire_pdf.fell_back", true);
-      tracing::error!(error = %error);
+      tracing::error!(error = %error, "FirePDF inline failed; falling back");
       Ok(None)
     }
   }

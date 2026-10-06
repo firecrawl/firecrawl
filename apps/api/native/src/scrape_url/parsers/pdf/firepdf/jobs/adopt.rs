@@ -48,7 +48,7 @@ impl FirePdfClient<'_> {
       Ok(response) => response,
       Err(error) => {
         span.record("fire_pdf.adoption", "error");
-        tracing::error!(error = %error);
+        tracing::error!(error = %error, "adoption lookup failed");
         return None;
       }
     };
