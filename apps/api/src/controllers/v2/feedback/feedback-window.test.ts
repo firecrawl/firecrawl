@@ -28,6 +28,13 @@ vi.mock("../../../db/connection", () => ({
 vi.mock("./refund-totals", () => ({
   sumCreditsRefundedToday: fixture.refundedToday,
 }));
+vi.mock("./alexandria-refund", () => ({
+  refundAlexandriaFeedback: async () => ({
+    creditsRefunded: 1,
+    creditsRefundedToday: 1,
+    dailyRefundCap: 10,
+  }),
+}));
 vi.mock("../../../services/autumn/autumn.service", () => ({
   SEARCH_CREDITS_FEATURE_ID: "SEARCH_CREDITS",
   featureIdForBillingEndpoint: (endpoint: string) =>
@@ -192,7 +199,9 @@ it.each(stores)(
     expect(response.body).toEqual({
       success: true,
       feedbackId: expect.any(String),
-      creditsRefunded: 0,
+      creditsRefunded: 1,
+      creditsRefundedToday: 1,
+      dailyRefundCap: 10,
     });
     expect(fixture.lookup).not.toHaveBeenCalled();
     expect(fixture.insert).not.toHaveBeenCalled();

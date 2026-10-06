@@ -4,6 +4,7 @@ import { describeIf, TEST_API_URL, TEST_PRODUCTION } from "../lib";
 import { idmux, Identity } from "./lib";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
+import { config } from "../../../config";
 
 const feedbackRows = async (feedbackId: string) => {
   const [[parent], providers, capabilities] = await Promise.all([
@@ -55,10 +56,16 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
     identity = await idmux({ name: "alexandria-feedback", credits: 1000 });
   });
 
-  it("records the minimum session feedback without any search or scrape job", async () => {
+  // Billing confirms refunds, so environments without it report 0 credits.
+  it("records the minimum session feedback without any search or scrape job and reports its refund", async () => {
     const response = await submit(body);
     expect(response.statusCode).toBe(200);
-    expect(response.body).toMatchObject({ success: true, creditsRefunded: 0 });
+    expect(response.body).toMatchObject({
+      success: true,
+      creditsRefundedToday: expect.any(Number),
+      dailyRefundCap: expect.any(Number),
+    });
+    expect([0, 1]).toContain(response.body.creditsRefunded);
     expect(response.body.feedbackId).toEqual(expect.any(String));
     try {
       const { parent, providers, capabilities } = await feedbackRows(
@@ -76,6 +83,14 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
         origin: "api",
         integration: null,
         schema_version: 2,
+        credits_refunded: response.body.creditsRefunded,
+      });
+      expect(parent.refund_policy).toMatchObject({
+        endpoint: "alexandria",
+        matchedReason:
+          response.body.creditsRefunded === 1
+            ? "alexandria_feedback"
+            : "refund_not_confirmed",
       });
       expect(providers).toEqual([]);
       expect(capabilities).toEqual([]);
@@ -155,6 +170,54 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
       );
     } finally {
       await deleteFeedback(feedbackId);
+    }
+  });
+
+  it("stops refunding a website at its daily cap", async () => {
+    const websiteCap = config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS;
+    const website = {
+      url: "https://www.usaspending.gov/search",
+      requestedFunctionality: "List federal awards by recipient.",
+    };
+    const responses: request.Response[] = [];
+    try {
+      for (let i = 0; i <= websiteCap; i++) {
+        responses.push(await submit({ ...body, requestedWebsite: website }));
+      }
+      for (const response of responses) {
+        expect(response.statusCode).toBe(200);
+      }
+      const last = responses.at(-1)!;
+      expect(last.body).toMatchObject({ success: true, creditsRefunded: 0 });
+      const first = responses[0].body;
+      if (first.creditsRefunded === 1) {
+        // The team cap and earlier refunds today can stop refunds before the
+        // website cap does.
+        const teamRemaining =
+          first.dailyRefundCap - (first.creditsRefundedToday - 1);
+        const refunded = Math.min(websiteCap, teamRemaining);
+        expect(responses.map(r => r.body.creditsRefunded)).toEqual([
+          ...Array(refunded).fill(1),
+          ...Array(websiteCap + 1 - refunded).fill(0),
+        ]);
+        if (websiteCap <= teamRemaining) {
+          expect(last.body.websiteCapReached).toBe(true);
+        }
+        if (teamRemaining <= websiteCap) {
+          expect(last.body.dailyCapReached).toBe(true);
+        } else {
+          expect(last.body.warning).toContain("www.usaspending.gov");
+        }
+      }
+      const { parent } = await feedbackRows(last.body.feedbackId);
+      expect(parent.credits_refunded).toBe(0);
+    } finally {
+      await Promise.all(
+        responses
+          .map(response => response.body.feedbackId)
+          .filter(Boolean)
+          .map(deleteFeedback),
+      );
     }
   });
 
