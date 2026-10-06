@@ -112,6 +112,7 @@ const configSchema = z.object({
     .positive()
     .default(50),
   RESEARCH_PROXY_URL: z.string().url().optional(),
+  SEARCH_PLATFORM_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
