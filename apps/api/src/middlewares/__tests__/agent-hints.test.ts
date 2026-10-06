@@ -279,7 +279,11 @@ describe("agent hint response middleware with an external provider", () => {
   it("appends settled provider hints after deterministic hints", async () => {
     const response = await request(
       holderAppFor(
-        { settled: true, hints: [{ id: "p1", text: "Provider hint." }] },
+        {
+          settled: true,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules: [],
+        },
         EXCERPT_BODY,
       ),
     )
@@ -295,7 +299,11 @@ describe("agent hint response middleware with an external provider", () => {
     const body = { success: true, data: {} };
     const response = await request(
       holderAppFor(
-        { settled: true, hints: [{ id: "p1", text: "Provider hint." }] },
+        {
+          settled: true,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules: [],
+        },
         body,
       ),
     )
@@ -309,7 +317,11 @@ describe("agent hint response middleware with an external provider", () => {
     const body = { success: true, data: {} };
     const response = await request(
       holderAppFor(
-        { settled: false, hints: [{ id: "p1", text: "Provider hint." }] },
+        {
+          settled: false,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules: [],
+        },
         body,
       ),
     )
@@ -323,7 +335,11 @@ describe("agent hint response middleware with an external provider", () => {
     const body = { success: false, error: "Bad URL", code: "BAD_REQUEST" };
     const response = await request(
       holderAppFor(
-        { settled: true, hints: [{ id: "p1", text: "Provider hint." }] },
+        {
+          settled: true,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules: [],
+        },
         body,
       ),
     )
@@ -337,13 +353,87 @@ describe("agent hint response middleware with an external provider", () => {
     const body = { success: true, data: {} };
     const response = await request(
       holderAppFor(
-        { settled: true, hints: [{ id: "p1", text: "Provider hint." }] },
+        {
+          settled: true,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules: [],
+        },
         body,
       ),
     )
       .post("/")
       .send({});
     expect(response.body).toEqual(body);
+  });
+});
+
+describe("agent hint response middleware with provider rules", () => {
+  const rules = [
+    {
+      id: "results",
+      group: "next",
+      when: [
+        { signal: "success", op: "eq" as const, value: true },
+        { signal: "excerpt_count", op: "gt" as const, value: 0 },
+      ],
+      text: "Rule: {excerpt_count} of {result_count}.",
+    },
+    {
+      id: "credits",
+      when: [{ signal: "remaining_credits", op: "lt" as const, value: 10 }],
+      text: "Rule: credits {remaining_credits}.",
+    },
+  ];
+
+  it("serves rule hints instead of the built-in hints when rules are present", async () => {
+    const response = await request(
+      holderAppFor(
+        {
+          settled: true,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules,
+        },
+        EXCERPT_BODY,
+      ),
+    )
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.body.agent_hints).toEqual([
+      "Rule: 1 of 1.",
+      "Provider hint.",
+    ]);
+  });
+
+  it("evaluates rules on failure envelopes but adds no provider hints there", async () => {
+    const app = express();
+    app.use(express.json());
+    app.post("/", agentHintsMiddleware("scrape"), (req, res) => {
+      (req as any).auth = { team_id: "account-team" };
+      res.locals.agentCreditsRemaining = 3;
+      res.locals.agentHintsProvider = {
+        settled: true,
+        hints: [{ id: "p1", text: "Provider hint." }],
+        rules,
+      };
+      res.status(400).json({ success: false, error: "Bad request" });
+    });
+    const response = await request(app)
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.body.agent_hints).toEqual(["Rule: credits 3."]);
+  });
+
+  it("uses the built-in hints while the provider has not answered", async () => {
+    const response = await request(
+      holderAppFor({ settled: false, hints: [], rules: [] }, EXCERPT_BODY),
+    )
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.body.agent_hints).toHaveLength(1);
+    expect(response.body.agent_hints[0]).toContain("firecrawl_scrape");
   });
 });
 
@@ -449,7 +539,7 @@ describe("agent hints provider middleware", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const body = String(fetchSpy.mock.calls[0][1]?.body);
     expect(JSON.parse(body)).toEqual({
-      version: 1,
+      version: 2,
       team_id: teamId,
       org_id: "org-1",
       api_key_id: 7,

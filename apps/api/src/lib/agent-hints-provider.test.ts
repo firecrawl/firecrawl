@@ -110,7 +110,7 @@ describe("external agent hints provider", () => {
 
   it("returns an unsettled holder immediately and fills it once the provider answers", async () => {
     const holder = getProviderHints(context());
-    expect(holder).toEqual({ settled: false, hints: [] });
+    expect(holder).toEqual({ settled: false, hints: [], rules: [] });
     await settle(holder);
     expect(holder!.hints).toEqual([{ id: "h1", text: "Provider hint." }]);
   });
@@ -136,7 +136,7 @@ describe("external agent hints provider", () => {
       ].sort(),
     );
     expect(body).toEqual({
-      version: 1,
+      version: 2,
       team_id: "team-contract",
       org_id: "org-1",
       api_key_id: 42,
@@ -365,6 +365,69 @@ describe("external agent hints provider", () => {
       { id: "ok", text: "Line one line two" },
       { id: "max", text: "y".repeat(500) },
     ]);
+  });
+
+  it("parses provider rules and drops malformed ones whole", async () => {
+    handler = reply(200, {
+      hints: [],
+      rules: [
+        {
+          id: "r1",
+          group: "g",
+          when: [
+            { signal: "endpoint", op: "eq", value: "scrape" },
+            { signal: "page_status", op: "in", value: [404, 410] },
+          ],
+          text: "  Rule one {page_status}.\n",
+        },
+        { id: "no-when", text: "Always." },
+        {
+          id: "bad-op",
+          when: [{ signal: "endpoint", op: "matches", value: "s" }],
+          text: "Dropped.",
+        },
+        {
+          id: "bad-value",
+          when: [{ signal: "remaining_credits", op: "lt", value: "100" }],
+          text: "Dropped.",
+        },
+        {
+          id: "bad-signal",
+          when: [{ signal: "Endpoint", op: "eq", value: "scrape" }],
+          text: "Dropped.",
+        },
+        { id: "bad-group", group: "", when: [], text: "Dropped." },
+        { id: "long-text", when: [], text: "z".repeat(501) },
+        "not a rule",
+      ],
+      ttl_seconds: 60,
+    });
+    const holder = getProviderHints(context());
+    await settle(holder);
+    expect(holder!.rules).toEqual([
+      {
+        id: "r1",
+        group: "g",
+        when: [
+          { signal: "endpoint", op: "eq", value: "scrape" },
+          { signal: "page_status", op: "in", value: [404, 410] },
+        ],
+        text: "Rule one {page_status}.",
+      },
+      { id: "no-when", when: [], text: "Always." },
+    ]);
+  });
+
+  it("treats a non-array rules field as no rules", async () => {
+    handler = reply(200, {
+      hints: [{ id: "h1", text: "Provider hint." }],
+      rules: { id: "r1" },
+      ttl_seconds: 60,
+    });
+    const holder = getProviderHints(context());
+    await settle(holder);
+    expect(holder!.hints).toEqual([{ id: "h1", text: "Provider hint." }]);
+    expect(holder!.rules).toEqual([]);
   });
 
   it("bounds the cache and evicts the oldest entry first", async () => {

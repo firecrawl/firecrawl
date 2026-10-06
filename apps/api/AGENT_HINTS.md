@@ -18,7 +18,9 @@ The accompanying JavaScript and Python SDK changes preserve `agent_hints` alongs
 
 Raw HTTP and ordinary SDK callers receive no hints unless their adapter explicitly sets the header above. This change does not add a client-wide SDK hint option. The SDK release must precede upgrading pinned CLI/MCP dependencies for their keyed SDK paths to retain the field.
 
-## Initial rules
+## Built-in rules
+
+These rules apply when no provider rules are available (no provider configured, the lookup has not finished, or the provider returned no rules). When a provider supplies rules, they replace this list; see [Response guidance rules](#response-guidance-rules).
 
 - Search excerpts: offer Scrape when a web result has no markdown, HTML, or raw HTML. Inspect actual output per result, not the requested scrape setting. The hint names the excerpt-only results by 1-based position and URL (at most three, then a count of the rest), so the agent can choose which to scrape.
 - Empty web search: offer another Search with a broader or alternative query only when a web result collection is explicitly present and empty.
@@ -38,7 +40,7 @@ The focused selector tests exercise excerpt detection, source-page failures, err
 
 ## Optional external provider
 
-A deployment can supply additional response guidance from a separate HTTP service. This is disabled unless `AGENT_HINTS_PROVIDER_URL` is set; with it unset, responses are unchanged.
+A deployment can supply response guidance from a separate HTTP service: finished hints and response guidance rules. This is disabled unless `AGENT_HINTS_PROVIDER_URL` is set; with it unset, responses use the built-in rules only.
 
 | Variable                             | Default            | Purpose                                                                               |
 | ------------------------------------ | ------------------ | ------------------------------------------------------------------------------------- |
@@ -47,7 +49,7 @@ A deployment can supply additional response guidance from a separate HTTP servic
 | `AGENT_HINTS_PROVIDER_TIMEOUT_MS`    | `50`               | Per-lookup timeout.                                                                   |
 | `AGENT_HINTS_PROVIDER_PSEUDONYM_KEY` | per-process random | Keys the keyless `team_id` pseudonym (at least 32 chars). Never sent to the provider. |
 
-For hint-enabled requests with an authenticated team, the API starts a lookup right after authentication and continues without waiting. Provider hints are included only if the lookup has already finished (or is cached) when the response is sent, so the provider never adds latency. An answer that arrives after the response was sent, but within the timeout, is cached for the next request.
+For hint-enabled requests with an authenticated team, the API starts a lookup right after authentication and continues without waiting. Provider hints and rules are used only if the lookup has already finished (or is cached) when the response is sent, so the provider never adds latency. An answer that arrives after the response was sent, but within the timeout, is cached for the next request.
 
 Request:
 
@@ -57,7 +59,7 @@ Authorization: Bearer {AGENT_HINTS_PROVIDER_SECRET}
 Content-Type: application/json
 
 {
-  "version": 1,
+  "version": 2,
   "team_id": "string (keyless callers: keyless_<64 hex chars>)",
   "org_id": "string | null",
   "api_key_id": "number | null",
@@ -76,13 +78,62 @@ Response (`200` only):
   "hints": [
     { "id": "string, at most 64 chars", "text": "string, at most 500 chars" }
   ],
+  "rules": [
+    {
+      "id": "string, at most 64 chars",
+      "group": "optional string, at most 64 chars",
+      "when": [{ "signal": "page_status", "op": "eq", "value": 404 }],
+      "text": "string with {signal} placeholders, at most 500 chars"
+    }
+  ],
   "ttl_seconds": 60
 }
 ```
 
+`rules` is optional; version 1 providers that return only `hints` keep working.
+
 - Any other status, a timeout, a network error, a body larger than 64 KiB, or a body without a `hints` array means no provider hints, cached for 30 seconds. Requests never fail because of the provider.
 - `ttl_seconds` defaults to 60 and is clamped to 0–600. Unknown fields are ignored.
 - Each hint is trimmed and has control characters replaced; hints with a missing or oversized `id` or `text` are dropped.
-- Provider hints are added only to successful (`success: true`) responses. They follow the deterministic hints and never replace them. Exact duplicates are dropped, at most two provider hints are added, and the total is capped at three.
+- Provider hints are added only to successful (`success: true`) responses. They follow the rule hints (provider rules, or the built-in rules when there are none) and never replace them. Exact duplicates are dropped, at most two provider hints are added, and the total is capped at three.
 - Results are cached in memory per process, keyed by team, endpoint, and surface, with one lookup in flight per key and at most 10,000 entries. Different API processes may serve different provider hints until their entries expire.
 - Served provider hint IDs are logged with the same `team_id` the provider receives; they are not added to the response. Lookups are counted in `firecrawl_agent_hints_provider_requests_total{outcome="hit|miss|timeout|error|disabled"}`.
+
+## Response guidance rules
+
+A provider can return `rules` instead of finished text. The API evaluates them locally against [signals](#signals) computed from its own response and request state, so response content, URLs and origins never leave the API; the provider only receives the request fields above.
+
+- Rules are evaluated in order. A rule fires when every condition in `when` holds; an empty `when` always holds.
+- Conditions compare one signal to a value with `eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `in` (value is a list), or `exists` (value is a boolean). A condition on an absent signal holds only for `exists: false`. Comparison operators never match list signals, and `lt`/`lte`/`gt`/`gte` only match numbers.
+- Rules sharing a `group` are alternatives: the first rule in the group whose conditions hold is the group's rule, and the rest of the group is skipped. If that rule's text needs a signal that is absent, the group emits nothing.
+- `text` may contain `{signal}` placeholders. List signals render joined with `, `, and also accept `{signal:first=N}` (the first N items) and `{signal:remaining=N}` (the number of items after the first N). A rule whose text references an absent signal emits nothing. Text without a matching placeholder pattern, such as JSON `{"url": ...}`, is left as is.
+- Rendered texts are deduplicated and capped at three, in rule order. They are evaluated for every response that reaches the hint middleware, including failure envelopes, so rules that only apply to successful responses should include `{ "signal": "success", "op": "eq", "value": true }`.
+- Each rule is validated on receipt: invalid ids, groups, text, or any malformed condition drop that rule as a whole. At most 32 rules, 16 conditions per rule and 32 values per `in` list are kept.
+
+### Signals
+
+| Signal                       | Type        | Present when                                                                                                                        |
+| ---------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `endpoint`                   | string      | Always: `search`, `scrape`, `parse` or `map`.                                                                                       |
+| `success`                    | boolean     | Always: the response envelope has `success: true`.                                                                                  |
+| `can_use_map_and_crawl`      | boolean     | Always: the caller is an account team.                                                                                              |
+| `can_use_interact`           | boolean     | Always: database authentication is enabled.                                                                                         |
+| `remaining_credits`          | number      | The billing preflight reported a finite remaining balance.                                                                          |
+| `page_status`                | number      | `data.metadata.statusCode` is a number.                                                                                             |
+| `scrape_id`                  | string      | `data.metadata.scrapeId` or top-level `scrape_id` is a non-empty string; URL-path encoded.                                          |
+| `page_redirect_from`         | string      | `metadata.sourceURL` and `metadata.url` are different http(s) URLs of at most 200 characters; the source, JSON-quoted.              |
+| `page_redirect_to`           | string      | As above; the final URL, JSON-quoted.                                                                                               |
+| `page_host`                  | string      | The final (or else source) URL is http(s); its hostname.                                                                            |
+| `page_path_words`            | string      | Words from the last two path segments of that URL, with file extensions and numeric or opaque ids dropped; absent when none remain. |
+| `document_pages_returned`    | number      | `metadata.numPages` is a finite number.                                                                                             |
+| `document_pages_total`       | number      | `metadata.totalPages` is a finite number.                                                                                           |
+| `document_max_pages`         | number      | Both page counts are present: the total, capped at the PDF parser maximum of 10,000.                                                |
+| `document_pages_requestable` | number      | Both page counts are present: `document_max_pages` minus `document_pages_returned`.                                                 |
+| `result_count`               | number      | A web result collection (`data` array or `data.web`) is present.                                                                    |
+| `excerpt_count`              | number      | Web results are present: results with a string `url` and no `markdown`, `html` or `rawHtml`.                                        |
+| `excerpt_share`              | number      | At least one web result: `excerpt_count / result_count`.                                                                            |
+| `excerpt_results`            | string list | Web results are present: each excerpt as `#<position>` plus its JSON-quoted URL when it is http(s) and at most 200 characters.      |
+| `origin_result_count`        | number      | Web results are present: results with a valid http(s) URL.                                                                          |
+| `top_origin`                 | string      | At least one valid result URL: the origin with the most results (earliest on ties).                                                 |
+| `top_origin_count`           | number      | As above: that origin's result count.                                                                                               |
+| `top_origin_share`           | number      | As above: `top_origin_count / origin_result_count`.                                                                                 |

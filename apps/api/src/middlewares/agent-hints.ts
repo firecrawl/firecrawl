@@ -1,7 +1,12 @@
 import type { Request, RequestHandler } from "express";
 import { config } from "../config";
 import type { RequestWithMaybeAuth } from "../controllers/v1/types";
-import { buildAgentHints, type AgentHintEndpoint } from "../lib/agent-hints";
+import { evaluateAgentHintRules } from "../lib/agent-hint-rules";
+import {
+  computeAgentHintSignals,
+  type AgentHintEndpoint,
+} from "../lib/agent-hint-signals";
+import { buildAgentHints } from "../lib/agent-hints";
 import {
   getProviderHints,
   mergeAgentHints,
@@ -28,14 +33,18 @@ export function agentHintsMiddleware(
       const teamId = (req as RequestWithMaybeAuth).auth?.team_id;
       const provider: ProviderHintsHolder | undefined =
         res.locals.agentHintsProvider;
+      const context = {
+        endpoint,
+        response: body,
+        remainingCredits: res.locals.agentCreditsRemaining,
+        canUseMapAndCrawl: !!teamId && !teamId.startsWith("preview_keyless_"),
+        canUseInteract: config.USE_DB_AUTHENTICATION === true,
+      };
+      const rules = provider?.settled ? provider.rules : [];
       const { hints, providerHintIds } = mergeAgentHints(
-        buildAgentHints({
-          endpoint,
-          response: body,
-          remainingCredits: res.locals.agentCreditsRemaining,
-          canUseMapAndCrawl: !!teamId && !teamId.startsWith("preview_keyless_"),
-          canUseInteract: config.USE_DB_AUTHENTICATION === true,
-        }),
+        rules.length > 0
+          ? evaluateAgentHintRules(rules, computeAgentHintSignals(context))
+          : buildAgentHints(context),
         provider?.settled && body.success === true ? provider.hints : [],
       );
       if (providerHintIds.length > 0) {
