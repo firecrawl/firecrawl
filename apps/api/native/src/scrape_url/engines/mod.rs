@@ -120,8 +120,13 @@ fn shared_client(
   if let Some(client) = cell.get() {
     return Ok(client);
   }
-  let client = reqwest::Client::builder().build()?;
+  let client = build_shared_client()?;
   Ok(cell.get_or_init(|| client))
+}
+
+#[tracing::instrument(name = "engines::build_shared_client", err)]
+fn build_shared_client() -> Result<reqwest::Client, reqwest::Error> {
+  reqwest::Client::builder().build()
 }
 
 pub async fn get_main_engine() -> EngineKind {
@@ -139,24 +144,29 @@ pub enum EngineOutcome<T> {
   ProxyElevationNeeded,
 }
 
-/// Whether a basic-proxy attempt in `auto` mode should be retried once with
-/// enhanced proxies: the engine asked for it, or the page status (401/403/429)
-/// suggests the basic proxy was inadequate and the engine can switch proxies.
+/// Why a basic-proxy attempt in `auto` mode should be retried once with
+/// enhanced proxies, or `None` if it shouldn't: the engine asked for it, or the
+/// page status (401/403/429) suggests the basic proxy was inadequate and the
+/// engine can switch proxies.
 pub fn should_elevate_proxy(
   mode: ProxyMode,
   attempted: ScrapeProxy,
   engine_supports_enhanced: bool,
   outcome: &EngineOutcome<RawPageResult>,
-) -> bool {
+) -> Option<&'static str> {
   if mode != ProxyMode::Auto || attempted != ScrapeProxy::Basic {
-    return false;
+    return None;
   }
 
   match outcome {
-    EngineOutcome::ProxyElevationNeeded => true,
-    EngineOutcome::Scraped(result) => {
-      engine_supports_enhanced && matches!(result.status_code, 401 | 403 | 429)
-    }
+    EngineOutcome::ProxyElevationNeeded => Some("engine_requested"),
+    EngineOutcome::Scraped(_) if !engine_supports_enhanced => None,
+    EngineOutcome::Scraped(result) => match result.status_code {
+      401 => Some("status_401"),
+      403 => Some("status_403"),
+      429 => Some("status_429"),
+      _ => None,
+    },
   }
 }
 

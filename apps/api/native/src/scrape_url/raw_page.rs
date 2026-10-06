@@ -158,6 +158,7 @@ macro_rules! raw_page_span {
       page.actions.scrapes = tracing::field::Empty,
       page.actions.javascript_returns = tracing::field::Empty,
       page.actions.pdfs = tracing::field::Empty,
+      page.audio_cookies = tracing::field::Empty,
     )
   };
 }
@@ -219,5 +220,7 @@ pub fn record_raw_page(span: &tracing::Span, result: &RawPageResult) {
     );
     span.record("page.actions.pdfs", actions.pdfs.len());
   }
+
+  span.record("page.audio_cookies", result.audio_cookies.len());
 }
 
