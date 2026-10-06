@@ -771,6 +771,7 @@ async function logScrapeInternal(
               ...(scrape.options.profile
                 ? { profile: scrape.options.profile }
                 : {}),
+              ...(scrape.options.blockAds === false ? { blockAds: false } : {}),
               ...(typeof (scrape.options as any).origin === "string"
                 ? { origin: (scrape.options as any).origin }
                 : {}),

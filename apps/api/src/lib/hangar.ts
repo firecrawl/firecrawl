@@ -111,6 +111,7 @@ export async function createHangarBrowser(
     activityTtl: number;
     streamWebView: boolean;
     recordSession: boolean;
+    blockAds?: boolean;
     profile?: { name: string; saveChanges: boolean };
   },
 ): Promise<HangarCreated> {
@@ -124,6 +125,7 @@ export async function createHangarBrowser(
     },
     recording: { enabled: options.recordSession },
     execution: { enabled: true },
+    ...(options.blockAds === false ? { ad_blocking: { enabled: false } } : {}),
     ...(options.profile
       ? {
           profile: {

@@ -18,6 +18,7 @@ type ScrapeJobState = {
   error?: string;
   replay?: ScrapeReplayContext;
   profile?: { name: string; saveChanges: boolean };
+  blockAds?: boolean;
   origin?: string;
 };
 
@@ -80,6 +81,8 @@ function parseScrapeState(value: Buffer | string): ScrapeJobState {
           candidate.profile !== null &&
           typeof (candidate.profile as any).name === "string" &&
           typeof (candidate.profile as any).saveChanges === "boolean")) &&
+      (candidate.blockAds === undefined ||
+        typeof candidate.blockAds === "boolean") &&
       (candidate.origin === undefined || typeof candidate.origin === "string"),
     "scrape state",
   );

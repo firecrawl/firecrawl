@@ -552,6 +552,57 @@ describe("scrapeInteractController", () => {
   });
 
   it.each([
+    [{ blockAds: false }, false],
+    [{}, undefined],
+  ])(
+    "forwards the scrape's blockAds setting (%o) to the interact browser",
+    async (stored, expected) => {
+      config.USE_DB_AUTHENTICATION = true;
+      vi.mocked(readScrapeJobState).mockResolvedValueOnce({
+        status: "completed",
+        requestId: "scrape-123",
+        completedAtMs: Date.now(),
+        creditsBilled: 1,
+        replay: { targetUrl: "https://example.com", waitForMs: 0, actions: [] },
+        ...stored,
+      } as any);
+      const executed = {
+        stdout: "https://example.com",
+        result: "",
+        stderr: "",
+        exitCode: 0,
+        killed: false,
+      };
+      vi.mocked(createHangarBrowser).mockResolvedValue({
+        id: "br_session",
+        status: "running",
+        max_expires_at: 700,
+        cdp_url: "wss://hangar.example/cdp?token=cdp",
+      } as any);
+      vi.mocked(executeHangarBrowser).mockResolvedValue(executed);
+      vi.mocked(insertBrowserSession).mockImplementation(
+        async row => row as any,
+      );
+      vi.mocked(executeCodeViaBrowserSession).mockResolvedValue(executed);
+      await scrapeInteractController(
+        {
+          params: { jobId: "scrape-123" },
+          body: { code: "console.log('ok')" },
+          headers: {},
+          auth: { team_id: "team-123" },
+          acuc: {},
+        } as any,
+        buildRes(),
+      );
+      expect(createHangarBrowser).toHaveBeenCalledWith(
+        expect.any(String),
+        "team-123",
+        expect.objectContaining({ blockAds: expected }),
+      );
+    },
+  );
+
+  it.each([
     browserExecuteController,
     browserDeleteController,
     browserReplayController,

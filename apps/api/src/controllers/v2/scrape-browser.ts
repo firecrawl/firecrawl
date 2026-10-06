@@ -264,17 +264,17 @@ async function scrapeInteractInternal(
           "Replay context is unavailable. Supply url or an existingSessionId to continue without retained scrape context.",
       });
     }
-    const profile =
-      state?.profile ??
-      (nuqJob?.data.mode === "single_urls"
-        ? nuqJob.data.scrapeOptions.profile
-        : undefined);
+    const scrapeOptions =
+      nuqJob?.data.mode === "single_urls"
+        ? nuqJob.data.scrapeOptions
+        : undefined;
     const created = await createSessionForScrape(
       req,
       scrapeId,
       replayContext,
       logger,
-      profile,
+      state?.profile ?? scrapeOptions?.profile,
+      state?.blockAds ?? scrapeOptions?.blockAds,
       zeroDataRetention,
     );
     if (created.error === true) {
@@ -471,6 +471,7 @@ async function createSessionForScrape(
   >,
   logger: typeof _logger,
   profile: { name: string; saveChanges: boolean } | undefined,
+  blockAds: boolean | undefined,
   zeroDataRetention: boolean,
 ) {
   try {
@@ -478,6 +479,7 @@ async function createSessionForScrape(
       ...browserCreateRequestSchema.parse({}),
       scrapeId,
       profile,
+      blockAds,
       zeroDataRetention,
       initialize: async browserId => {
         const replay = await executeHangarBrowser(browserId, {
