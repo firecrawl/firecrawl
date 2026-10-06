@@ -271,6 +271,26 @@ defmodule FirecrawlTest do
     assert {:ok, _} = Firecrawl.start_agent([prompt: "find pricing", exchange: [toolkits: ["apollo"]]], opts)
     assert_receive {:body, body}
     assert body == %{"prompt" => "find pricing", "exchange" => %{"toolkits" => ["apollo"]}, "origin" => origin}
+
+    assert {:ok, _} = Firecrawl.start_agent([prompt: "find pricing", exchange: []], opts)
+    assert_receive {:body, body}
+    assert body == %{"prompt" => "find pricing", "exchange" => %{}, "origin" => origin}
+  end
+
+  test "start_agent rejects unknown or incomplete exchange keys before sending" do
+    opts = [api_key: "test-key", adapter: wire_body_adapter(self())]
+
+    assert {:error, %NimbleOptions.ValidationError{message: msg}} =
+             Firecrawl.start_agent([prompt: "find leads", exchange: [max_call: 5]], opts)
+
+    assert msg =~ "unknown options [:max_call]"
+
+    assert {:error, %NimbleOptions.ValidationError{message: msg}} =
+             Firecrawl.start_agent([prompt: "find leads", exchange: [approve: [call_ids: ["c1"]]]], opts)
+
+    assert msg =~ "required :approval_id option not found"
+
+    refute_received {:body, _}
   end
 
   test "get_agent_trace hits /v2/agent/:id/trace" do

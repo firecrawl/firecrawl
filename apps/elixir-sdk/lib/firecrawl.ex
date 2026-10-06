@@ -89,13 +89,19 @@ defmodule Firecrawl do
 
   defp to_body(validated_params, key_mapping) do
     validated_params
-    |> Map.new(fn {k, v} ->
-      json_key = Map.fetch!(key_mapping, k)
-      {json_key, to_json_value(v)}
-    end)
+    |> to_json_object(key_mapping)
     # Identify the SDK so the API can grant the keyless free tier; harmless
     # telemetry on keyed requests.
     |> Map.put_new("origin", @sdk_origin)
+  end
+
+  defp to_json_object(params, key_mapping) do
+    Map.new(params, fn {k, v} ->
+      case Map.fetch!(key_mapping, k) do
+        {json_key, nested_mapping} -> {json_key, to_json_object(v, nested_mapping)}
+        json_key -> {json_key, to_json_value(v)}
+      end
+    end)
   end
 
   defp to_query(validated_params, key_mapping) do
@@ -1798,7 +1804,7 @@ defmodule Firecrawl do
     url: [type: :string, required: true, doc: "The base URL to start crawling from"]
   ])
 
-  @map_urls_key_mapping %{audit_metadata: "auditMetadata", ignore_cache: "ignoreCache", ignore_query_parameters: "ignoreQueryParameters", include_subdomains: "includeSubdomains", limit: "limit", location: "location", search: "search", sitemap: "sitemap", threat_protection: "threatProtection", timeout: "timeout", url: "url"}
+  @map_urls_key_mapping %{audit_metadata: {"auditMetadata", %{username: "username"}}, ignore_cache: "ignoreCache", ignore_query_parameters: "ignoreQueryParameters", include_subdomains: "includeSubdomains", limit: "limit", location: "location", search: "search", sitemap: "sitemap", threat_protection: "threatProtection", timeout: "timeout", url: "url"}
 
   @doc """
   Map multiple URLs based on options
@@ -1854,7 +1860,7 @@ defmodule Firecrawl do
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this parse. To enable this feature, please contact help@firecrawl.dev"]
   ])
 
-  @parse_file_key_mapping %{audit_metadata: "auditMetadata", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", integration: "integration", only_main_content: "onlyMainContent", origin: "origin", parsers: "parsers", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", timeout: "timeout", zero_data_retention: "zeroDataRetention"}
+  @parse_file_key_mapping %{audit_metadata: {"auditMetadata", %{username: "username"}}, block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", integration: "integration", only_main_content: "onlyMainContent", origin: "origin", parsers: "parsers", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", timeout: "timeout", zero_data_retention: "zeroDataRetention"}
 
   @doc """
   Upload and parse a file
@@ -1967,7 +1973,7 @@ defmodule Firecrawl do
     domain_tools: [type: :boolean, doc: "When true on an ordinary URL scrape, `data.tools` lists tool contracts matched to the scraped page's domain (same `DiscoveredTool` shape as search). Requires the team's Alexandria access to be enabled and no zero data retention (403 otherwise). Free."]
   ])
 
-  @scrape_and_extract_from_url_key_mapping %{url: "url", actions: "actions", audit_metadata: "auditMetadata", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", lockdown: "lockdown", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_clean_content: "onlyCleanContent", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", threat_protection: "threatProtection", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention", alexandria: "alexandria", domain_tools: "domainTools"}
+  @scrape_and_extract_from_url_key_mapping %{url: "url", actions: "actions", audit_metadata: {"auditMetadata", %{username: "username"}}, block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", lockdown: "lockdown", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_clean_content: "onlyCleanContent", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", threat_protection: "threatProtection", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention", alexandria: "alexandria", domain_tools: "domainTools"}
 
   @doc """
   Scrape a single URL and optionally extract information using an LLM
@@ -2036,7 +2042,7 @@ defmodule Firecrawl do
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this batch scrape. To enable this feature, please contact help@firecrawl.dev"]
   ])
 
-  @scrape_and_extract_from_urls_key_mapping %{ignore_invalid_urls: "ignoreInvalidURLs", max_concurrency: "maxConcurrency", urls: "urls", webhook: "webhook", actions: "actions", audit_metadata: "auditMetadata", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", lockdown: "lockdown", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_clean_content: "onlyCleanContent", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", threat_protection: "threatProtection", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
+  @scrape_and_extract_from_urls_key_mapping %{ignore_invalid_urls: "ignoreInvalidURLs", max_concurrency: "maxConcurrency", urls: "urls", webhook: "webhook", actions: "actions", audit_metadata: {"auditMetadata", %{username: "username"}}, block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", lockdown: "lockdown", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_clean_content: "onlyCleanContent", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", threat_protection: "threatProtection", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
 
   @doc """
   Scrape multiple URLs and optionally extract information using an LLM
@@ -2175,7 +2181,7 @@ defmodule Firecrawl do
   @start_agent_schema NimbleOptions.new!([
     audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution included with SIEM logging events when SIEM Logging is enabled for the organization."],
     effort: [type: {:in, ["low", "medium", "high"]}, doc: "Reasoning budget for the agent task. Every run executes on spark-2, so effort can be sent with or without model."],
-    exchange: [type: :keyword_list, doc: "Let the agent call your team's [Alexandria](https://docs.firecrawl.dev/features/alexandria) data providers during the run. Without this object the run uses the web only (a follow-up turn inherits the previous turn's settings). See [Use your connected Alexandria tools](https://docs.firecrawl.dev/features/agent#use-your-connected-alexandria-tools)."],
+    exchange: [type: :keyword_list, keys: [approve: [type: :keyword_list, keys: [always: [type: :boolean], approval_id: [type: :string, required: true], call_ids: [type: {:list, :string}]]], decline: [type: :keyword_list, keys: [approval_id: [type: :string, required: true]]], enabled: [type: :boolean], max_calls: [type: :integer], on_terms_required: [type: {:or, [{:in, [:skip, :ask]}, :string]}], require_approval: [type: :boolean], toolkits: [type: {:list, :string}]], doc: "Let the agent call your team's [Alexandria](https://docs.firecrawl.dev/features/alexandria) data providers during the run. Without this object the run uses the web only (a follow-up turn inherits the previous turn's settings). See [Use your connected Alexandria tools](https://docs.firecrawl.dev/features/agent#use-your-connected-alexandria-tools)."],
     max_credits: [type: {:or, [:integer, :float]}, doc: "Maximum credits to spend on this agent task. Defaults to 2500 if not set. Values above 2,500 are always billed as paid requests."],
     mode: [type: {:or, [{:in, [:extract, :chat]}, :string]}, doc: "`extract` returns the complete structured result in `data` every turn. `chat` lets a follow-up that asks for no new data get a short reply in `message` instead of a re-run. `exchange.requireApproval` needs `chat` on the same request. Omitted on a follow-up turn keeps the thread's mode."],
     model: [type: {:or, [{:in, [:"spark-2", :"spark-1-mini", :"spark-1-pro"]}, :string]}, doc: "The model to use for the agent task. spark-2 is the default and the model every run executes on. The Spark 1 model names remain accepted for backwards compatibility but are deprecated and route to spark-2."],
@@ -2188,7 +2194,7 @@ defmodule Firecrawl do
     webhook: [type: :keyword_list, doc: "A webhook specification object. Subscribes to agent lifecycle events (agent.started, agent.action, agent.completed, agent.failed, agent.cancelled)."]
   ])
 
-  @start_agent_key_mapping %{audit_metadata: "auditMetadata", effort: "effort", exchange: "exchange", max_credits: "maxCredits", mode: "mode", model: "model", prompt: "prompt", schema: "schema", strict_constrain_to_urls: "strictConstrainToURLs", thread_id: "threadId", threat_protection: "threatProtection", urls: "urls", webhook: "webhook"}
+  @start_agent_key_mapping %{audit_metadata: {"auditMetadata", %{username: "username"}}, effort: "effort", exchange: {"exchange", %{approve: {"approve", %{always: "always", approval_id: "approvalId", call_ids: "callIds"}}, decline: {"decline", %{approval_id: "approvalId"}}, enabled: "enabled", max_calls: "maxCalls", on_terms_required: "onTermsRequired", require_approval: "requireApproval", toolkits: "toolkits"}}, max_credits: "maxCredits", mode: "mode", model: "model", prompt: "prompt", schema: "schema", strict_constrain_to_urls: "strictConstrainToURLs", thread_id: "threadId", threat_protection: "threatProtection", urls: "urls", webhook: "webhook"}
 
   @doc """
   Start an agent task for agentic data extraction
