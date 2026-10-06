@@ -18,8 +18,7 @@ import {
   type MonitorRow,
 } from "../../monitoring/types";
 import { getTeamBalance } from "../../autumn/usage";
-import { autumnService } from "../../autumn/autumn.service";
-import { orgIdForTeam } from "../../../lib/team-org";
+import { getACUCTeam } from "../../../controllers/auth";
 import { getCombinedTeamActiveCount } from "../../worker/nuq-router";
 import type { SlackInstallationRow } from "./types";
 import { escapeSlackText, slackLink } from "./messages";
@@ -478,8 +477,8 @@ async function accountResponse(
   const teamId = installation.team_id;
   const [balance, concurrencyLimit, activeJobs] = await Promise.all([
     getTeamBalance(teamId).catch(() => null),
-    orgIdForTeam(teamId)
-      .then(orgId => autumnService.getConcurrencyLimit(teamId, orgId))
+    getACUCTeam(teamId)
+      .then(acuc => acuc?.concurrency_limit ?? null)
       .catch(() => null),
     getCombinedTeamActiveCount(teamId).catch(() => null),
   ]);

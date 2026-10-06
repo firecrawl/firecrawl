@@ -1,4 +1,10 @@
-import { describeIf, TEST_PRODUCTION, TEST_SUITE_WEBSITE } from "../lib";
+import request from "supertest";
+import {
+  describeIf,
+  TEST_API_URL,
+  TEST_PRODUCTION,
+  TEST_SUITE_WEBSITE,
+} from "../lib";
 import {
   batchScrapeWithConcurrencyTracking,
   crawlWithConcurrencyTracking,
@@ -9,6 +15,29 @@ const accountConcurrencyLimit = 20;
 
 describeIf(TEST_PRODUCTION)("Concurrency queue and limit", () => {
   const base = TEST_SUITE_WEBSITE;
+
+  it.concurrent(
+    "reports the team's limit from a cold and a warm ACUC alike",
+    async () => {
+      const identity = await idmux({
+        name: "concurrency/reports the team's limit from a cold and a warm ACUC alike",
+        concurrency: accountConcurrencyLimit,
+        credits: 100,
+      });
+
+      const maxConcurrency = async () => {
+        const res = await request(TEST_API_URL)
+          .get("/v2/team/queue-status")
+          .set("Authorization", `Bearer ${identity.apiKey}`);
+        expect(res.statusCode).toBe(200);
+        return res.body.maxConcurrency;
+      };
+
+      expect(await maxConcurrency()).toBe(accountConcurrencyLimit);
+      expect(await maxConcurrency()).toBe(accountConcurrencyLimit);
+    },
+    60000,
+  );
 
   it.concurrent(
     "crawl utilizes full concurrency limit and doesn't go over",

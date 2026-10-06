@@ -6,3 +6,6 @@ overrides:
   "qs@<6.16.0": ">=6.16.0 <7.0.0"
   "esbuild@>=0.17.0 <0.28.1": "0.28.1"
   "ip-address@>=10.0.0 <10.7.2": "10.7.2"
+  # GHSA-jqcg-44mw-7w3h: pin the 2.x line only. Exact 2.0.8 cannot
+  # resolve to 3.x.
+  "proxy-addr@>=2.0.0 <2.0.8": "2.0.8"

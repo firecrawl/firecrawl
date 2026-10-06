@@ -34,7 +34,6 @@ import {
 } from "../../lib/keyless";
 import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
-import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import path from "node:path";
 import {
   DOCUMENT_EXTENSIONS,
@@ -53,6 +52,7 @@ import {
   PDF_CONTENT_TYPES,
   PDF_EXTENSIONS,
 } from "../../lib/parse-formats";
+import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -488,10 +488,8 @@ export async function parseController(
         }
         req.on("close", () => aborter.abort());
 
-        const baseConcurrency = await getEffectiveConcurrencyLimit(
-          req.auth.team_id,
-          req.acuc?.org_id ?? null,
-        );
+        const baseConcurrency =
+          req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
         const concurrency = boostConcurrency
           ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
           : baseConcurrency;
@@ -505,7 +503,7 @@ export async function parseController(
           async limited => {
             const jobPriority = await getJobPriority({
               team_id: req.auth.team_id,
-              org_id: req.acuc?.org_id ?? null,
+              acuc: req.acuc,
               basePriority: 10,
             });
 

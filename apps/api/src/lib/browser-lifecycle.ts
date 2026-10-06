@@ -26,15 +26,15 @@ import {
   BROWSER_CREDITS_PER_HOUR,
   INTERACT_CREDITS_PER_HOUR,
 } from "./browser-billing";
-import {
-  getEffectiveConcurrencyLimit,
-  HOBBY_CONCURRENCY_LIMIT,
-} from "./concurrency-limit";
+import { HOBBY_CONCURRENCY_LIMIT } from "./concurrency-limit";
 import {
   reserveExternalSlot,
   mirrorExternalSlotRelease,
 } from "../services/worker/nuq-router";
-import { autumnService } from "../services/autumn/autumn.service";
+import {
+  autumnService,
+  DEFAULT_TEAM_LIMITS,
+} from "../services/autumn/autumn.service";
 import { billTeam } from "../services/billing/credit_billing";
 import { orgIdForTeam } from "./team-org";
 import { logRequest } from "../services/logging/log_job";
@@ -161,10 +161,8 @@ async function createBrowserSessionInternal(
   const estimatedCredits = shouldBill
     ? calculateBrowserSessionCredits(options.ttl * 1000)
     : 0;
-  const teamLimit = await getEffectiveConcurrencyLimit(
-    req.auth.team_id,
-    req.acuc?.org_id ?? null,
-  );
+  const teamLimit =
+    req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
   // An agent run opens browsers against the team's own slots, so a free team
   // (2) is throttled by its own agent. Floor trusted agent traffic at hobby,
   // as the rate limiter does; plans at or above hobby are unchanged.

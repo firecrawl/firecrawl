@@ -52,7 +52,6 @@ export async function scrapeDocument(
     const jobId = uuidv7();
     const jobPriority = await getJobPriority({
       team_id: options.teamId,
-      org_id: options.orgId ?? null,
       basePriority: 10,
     });
 

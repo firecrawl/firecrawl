@@ -20,4 +20,7 @@ overrides:
   "postcss@>=8.0.0 <8.5.26": "8.5.26"
   "nanoid@>=3.0.0 <3.3.18": "3.3.18"
   "postcss-selector-parser@>=6.1.0 <6.1.3": "6.1.4"
+  # GHSA-68fv-2mgg-jv7q: pin the 1.x line only. Exact 1.2.2 cannot
+  # resolve to 2.x.
+  "source-map-js@>=1.0.0 <1.2.2": "1.2.2"
   "browserslist@<=4.28.6": ">=4.28.7 <5.0.0"
