@@ -162,7 +162,10 @@ def handle_response_error(response: requests.Response, action: str) -> None:
 
     error_class = ERROR_CODE_CLASSES.get(code)
     if error_class is not None:
-        raise error_class(f"Failed to {action}. {error_message}", response.status_code, response, code=code, charge_id=charge_id, **hints)
+        message = f"Failed to {action}. {error_message}"
+        if error_details != 'No additional error details provided.':
+            message = f"{message} - {error_details}"
+        raise error_class(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
 
     if response.status_code == 400:
         message = f"Bad Request: Failed to {action}. {error_message} - {error_details}"
