@@ -758,6 +758,7 @@ async function logScrapeInternal(
             options: scrape.options,
           }).context;
       const written = await writeScrapeJobState(scrape.id, {
+        ...(scrape.zeroDataRetention ? { zeroDataRetention: true } : {}),
         status: scrape.is_successful ? "completed" : "failed",
         requestId: scrape.request_id,
         completedAtMs: Date.now(),

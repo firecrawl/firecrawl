@@ -42,8 +42,10 @@ vi.mock("../../services/autumn/autumn.service", async importOriginal => {
   return {
     ...actual,
     autumnService: {
-      getRateLimitMultiplier: vi.fn().mockResolvedValue(1),
-      getKnownRateLimitMultiplier: vi.fn().mockResolvedValue(1),
+      getTeamLimits: vi.fn().mockResolvedValue({
+        concurrency_limit: 2,
+        rate_limit_multiplier: 1,
+      }),
     },
   };
 });
@@ -90,7 +92,7 @@ function managedRow(flags: Record<string, unknown> | null = null) {
   };
 }
 
-// auth_chunk_1 answers only when the key's purpose matches the lookup's.
+// auth_chunk_2 answers only when the key's purpose matches the lookup's.
 function keyResolvesAs(flags?: Record<string, unknown>) {
   mocks.authChunk.mockImplementation(
     async (_db: unknown, key: string, purpose = "general") =>

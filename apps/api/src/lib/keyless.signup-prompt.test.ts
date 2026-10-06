@@ -23,6 +23,7 @@ import { config } from "../config";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import { browserError } from "../controllers/v2/browser";
 import { HangarError } from "./hangar";
+import { BrowserSessionError } from "./browser-lifecycle";
 import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   checkKeylessEligibility,
@@ -178,11 +179,15 @@ describe("reportKeylessPromptShown", () => {
 describe("browserError", () => {
   it("replaces the keyless browser limit text with the caller's own link", () => {
     const res = fakeRes();
-    browserError(res, new HangarError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE), {
-      auth: { team_id: "preview_keyless_203.0.113.8" },
-      body: { origin: "cli" },
-      headers: {},
-    } as any);
+    browserError(
+      res,
+      new BrowserSessionError(429, KEYLESS_FREE_TIER_LIMIT_MESSAGE),
+      {
+        auth: { team_id: "preview_keyless_203.0.113.8" },
+        body: { origin: "cli" },
+        headers: {},
+      } as any,
+    );
 
     expect(res.status).toHaveBeenCalledWith(429);
     const body = res.json.mock.calls[0][0];

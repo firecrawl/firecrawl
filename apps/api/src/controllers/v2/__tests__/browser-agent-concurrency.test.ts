@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 const SECRET = "agent-secret";
 
 const mocks = vi.hoisted(() => ({
-  teamConcurrency: null as number | null,
+  teamConcurrency: 2,
   held: new Set<string>(),
   reserveExternalSlot: vi.fn(),
 }));
@@ -29,7 +29,6 @@ vi.mock("../../../lib/logger", () => {
 
 vi.mock("../../../services/autumn/autumn.service", () => ({
   autumnService: {
-    getConcurrencyLimit: vi.fn(async () => mocks.teamConcurrency),
     checkCredits: vi.fn(async () => null),
   },
 }));
@@ -145,7 +144,13 @@ function makeReq(interop: Interop) {
       team_id: TEAM_ID,
       agentInterop: agentInteropStatus({ body, headers }),
     },
-    acuc: { org_id: "org-1", api_key_id: null, flags: null },
+    acuc: {
+      org_id: "org-1",
+      api_key_id: null,
+      flags: null,
+      concurrency_limit: mocks.teamConcurrency,
+      rate_limit_multiplier: 1,
+    },
   };
 }
 
@@ -166,7 +171,7 @@ describe("browser create concurrency for trusted agent requests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.held.clear();
-    mocks.teamConcurrency = null;
+    mocks.teamConcurrency = FREE_LIMIT;
     mocks.reserveExternalSlot.mockImplementation(
       async (_team: string, id: string, _ttl: number, limit: number) => {
         if (mocks.held.size >= limit) return false;

@@ -11,6 +11,7 @@ type BrowserSessionStatus = "active" | "destroyed" | "error";
 
 export interface BrowserSessionRow {
   id: string;
+  zero_data_retention: boolean;
   team_id: string;
   request_id: string | null;
   should_bill: boolean;

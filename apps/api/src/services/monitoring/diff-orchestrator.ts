@@ -267,6 +267,9 @@ async function runJudge(args: {
       jsonDiff: args.jsonDiff,
       markdownDiff: args.markdownDiff,
       labels: args.labels,
+      // Monitors are refused for zero data retention teams and their scrapes
+      // run with ZDR off, so the judge call is traced like them.
+      zeroDataRetention: false,
     });
   } catch (error) {
     rootLogger.error("Judge call failed", { error });

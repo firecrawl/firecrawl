@@ -1,5 +1,5 @@
 from ...utils.http_client_async import AsyncHttpClient
-from ...utils.error_handler import handle_response_error
+from ...utils.error_handler import FirecrawlError, handle_response_error
 from ...types import ConcurrencyCheck, CreditUsage, TokenUsage, CreditUsageHistoricalResponse, TokenUsageHistoricalResponse, QueueStatusResponse
 
 
@@ -9,7 +9,7 @@ async def get_concurrency(client: AsyncHttpClient) -> ConcurrencyCheck:
         handle_response_error(resp, "get concurrency")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     data = body.get("data", body)
     return ConcurrencyCheck(
         concurrency=data.get("concurrency"),
@@ -23,7 +23,7 @@ async def get_credit_usage(client: AsyncHttpClient) -> CreditUsage:
         handle_response_error(resp, "get credit usage")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     data = body.get("data", body)
     return CreditUsage(
         remaining_credits=data.get("remainingCredits", data.get("remaining_credits", 0)),
@@ -39,7 +39,7 @@ async def get_token_usage(client: AsyncHttpClient) -> TokenUsage:
         handle_response_error(resp, "get token usage")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     data = body.get("data", body)
     return TokenUsage(
         remaining_tokens=data.get("remainingTokens", data.get("remaining_tokens", 0)),
@@ -55,7 +55,7 @@ async def get_queue_status(client: AsyncHttpClient) -> QueueStatusResponse:
         handle_response_error(resp, "get queue status")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     data = body.get("data", body)
     return QueueStatusResponse(
         jobs_in_queue=data.get("jobsInQueue", 0),
@@ -73,7 +73,7 @@ async def get_credit_usage_historical(client: AsyncHttpClient, by_api_key: bool 
         handle_response_error(resp, "get credit usage historical")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     return CreditUsageHistoricalResponse(**body)
 
 
@@ -84,6 +84,6 @@ async def get_token_usage_historical(client: AsyncHttpClient, by_api_key: bool =
         handle_response_error(resp, "get token usage historical")
     body = resp.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error"))
+        raise FirecrawlError(body.get("error", "Unknown error"))
     return TokenUsageHistoricalResponse(**body)
 
