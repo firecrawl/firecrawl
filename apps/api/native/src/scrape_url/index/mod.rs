@@ -434,6 +434,7 @@ pub fn should_use_index(meta: &Meta) -> bool {
   };
 
   !meta.options.formats.contains(FormatKind::ChangeTracking)
+    && !meta.options.formats.contains(FormatKind::RawBase64)
     && !meta.options.formats.contains(FormatKind::Branding)
     && !has_custom_pdf_settings
     && !has_custom_screenshot_settings

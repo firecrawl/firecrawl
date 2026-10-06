@@ -15,13 +15,13 @@ export declare namespace ScrapeUrl {
   export type ChangeTrackingMode = "json" | "git-diff";
   export type ChangeTrackingOptions = { prompt?: string | null, schema?: JsonValue | null, modes?: Array<ChangeTrackingMode>, tag?: string | null, };
   export type DeterministicJsonOptions = { prompt?: string | null, schema?: JsonValue | null, };
-  export type Document = { markdown?: string, html?: string, rawHtml?: string, rawBase64?: string, links?: Array<string>, images?: Array<string>, screenshot?: string, audio?: string, video?: string, json?: JsonValue, summary?: string, answer?: string, highlights?: string, pages?: Array<PdfPage>, blocks?: Array<PdfBlockItem>, warning?: string, attributes?: Array<DocumentAttribute>, actions?: RawPageActions, metadata: DocumentMetadata, };
+  export type Document = { markdown?: string, html?: string, rawHtml?: string, rawBase64?: string, links?: Array<string>, images?: Array<string>, screenshot?: string, audio?: string, video?: string, extract?: JsonValue, json?: JsonValue, summary?: string, answer?: string, highlights?: string, pages?: Array<PdfPage>, blocks?: Array<PdfBlockItem>, warning?: string, attributes?: Array<DocumentAttribute>, actions?: RawPageActions, metadata: DocumentMetadata, };
   export type DocumentAttribute = { selector: string, attribute: string, values: Array<string>, };
-  export type DocumentMetadata = { title?: string, scrapeId: string, sourceURL: string, url: string, statusCode: number, numPages?: number, totalPages?: number, contentType: string, timezone?: string, proxyUsed: ScrapeProxy, cacheState: DocumentMetadataCacheState, cachedAt?: string, indexId?: string, creditsUsed?: number, concurrencyLimited: boolean, concurrencyQueueDurationMs?: number, } & ({ [key in string]: number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null });
+  export type DocumentMetadata = { title?: string, scrapeId: string, sourceURL: string, url: string, statusCode: number, numPages?: number, totalPages?: number, contentType: string, timezone?: string, proxyUsed: ScrapeProxy, cacheState: DocumentMetadataCacheState, cachedAt?: string, indexId?: string, creditsUsed?: number, concurrencyLimited: boolean, concurrencyQueueDurationMs?: number, postprocessorsUsed?: Array<string>, } & ({ [key in string]: number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null });
   export type DocumentMetadataCacheState = "hit" | "miss";
   export type Format = "markdown" | { type: "markdown" } | "html" | { type: "html" } | "rawHtml" | { type: "rawHtml" } | "rawBase64" | { type: "rawBase64" } | "links" | { type: "links" } | "images" | { type: "images" } | "summary" | { type: "summary" } | "json" | ({ type: "json" } & JsonOptions) | "deterministicJson" | ({ type: "deterministicJson" } & DeterministicJsonOptions) | "changeTracking" | ({ type: "changeTracking" } & ChangeTrackingOptions) | "screenshot" | ({ type: "screenshot" } & ScreenshotOptions) | ({ type: "attributes" } & AttributesOptions) | "branding" | ({ type: "branding" } & BrandingOptions) | "product" | { type: "product" } | "menu" | { type: "menu" } | ({ type: "question" } & QuestionOptions) | ({ type: "highlights" } & HighlightsOptions) | ({ type: "query" } & QueryOptions) | "audio" | { type: "audio" } | "video" | { type: "video" };
   export type HighlightsOptions = { query: string, };
-  export type InternalOptions = { crawlId?: string | null, priority?: number | null, v0CrawlOnlyUrls?: boolean, v0DisableJsDom?: boolean, disableSmartWaitCache?: boolean, isBackgroundIndex?: boolean, urlInvisibleInCurrentCrawl?: boolean, unnormalizedSourceURL?: string | null, saveScrapeResultToGCS?: boolean, bypassBilling?: boolean, zeroDataRetention?: boolean, agentIndexOnly?: boolean, isPreCrawl?: boolean, };
+  export type InternalOptions = { crawlId?: string | null, priority?: number | null, v0CrawlOnlyUrls?: boolean, v0DisableJsDom?: boolean, disableSmartWaitCache?: boolean, isBackgroundIndex?: boolean, urlInvisibleInCurrentCrawl?: boolean, unnormalizedSourceURL?: string | null, saveScrapeResultToGCS?: boolean, bypassBilling?: boolean, zeroDataRetention?: boolean, v1OriginalFormat?: V1OriginalFormat | null, agentIndexOnly?: boolean, isPreCrawl?: boolean, };
   export type JavascriptActionContent = { type: string, value: JsonValue, };
   export type JsonOptions = { prompt?: string | null, schema?: JsonValue | null, checkPromptInjection?: boolean | null, };
   export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
@@ -68,5 +68,9 @@ export declare namespace ScrapeUrl {
   export type ScrapeProxy = "basic" | "stealth";
   export type ScreenshotOptions = { fullPage?: boolean, quality?: number | null, viewport?: ScreenshotOptionsViewport | null, };
   export type ScreenshotOptionsViewport = { width: number, height: number, };
+  /**
+   * The format a v1 request asked for; extracted data is kept under that field name.
+   */
+  export type V1OriginalFormat = "extract" | "json";
   export type ScrapeErrorCode = ScrapeError["code"];
 }
