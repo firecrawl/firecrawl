@@ -9,6 +9,7 @@ use std::{
 use bytes::Bytes;
 use google_cloud_storage::client::{Storage, StorageControl};
 use tokio::sync::OnceCell;
+use tracing::{Instrument, Span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
@@ -100,7 +101,7 @@ where
       self.0.abort();
     }
   }
-  let task = tokio::spawn(async move { Box::pin(make()).await });
+  let task = tokio::spawn(async move { Box::pin(make()).await }.instrument(Span::current()));
   let _abort = AbortOnDrop(task.abort_handle());
   task.await.map_err(|e| e.to_string())
 }

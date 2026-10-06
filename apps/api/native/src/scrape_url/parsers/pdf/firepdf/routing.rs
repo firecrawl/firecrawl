@@ -112,32 +112,18 @@ pub fn features_label(page_markdown: bool, blocks: bool, page_markers: bool) -> 
 /// The transport a request's first FirePDF attempt took.
 pub struct RouteRecord<'a> {
   pub path: &'static str,
-  /// An async route reason, `by_reference`, or `no_async_route`.
+  /// An async route reason, or `by_reference`.
   pub reason: &'static str,
   pub features: &'a str,
   pub remaining_ms: Option<i64>,
-  pub zdr: bool,
 }
 
 impl RouteRecord<'_> {
-  /// Records the decision on `span` (declared by the pdf parser). Labels only, so it is ZDR-safe.
+  /// Records the decision on `span`, which declares the `fire_pdf.route.*` fields. Labels only, so it is ZDR-safe.
   pub fn record(&self, span: &tracing::Span) {
     span.record("fire_pdf.route.path", self.path);
     span.record("fire_pdf.route.reason", self.reason);
     span.record("fire_pdf.route.features", self.features);
     span.record("fire_pdf.route.remaining_ms", self.remaining_ms);
-    tracing::info!(
-      path = self.path,
-      reason = self.reason,
-      features = self.features,
-      remaining_ms = self.remaining_ms,
-      zdr = self.zdr,
-      "Routing FirePDF request to {}",
-      if self.path == "sync" {
-        "sync /ocr"
-      } else {
-        "async jobs"
-      }
-    );
   }
 }
