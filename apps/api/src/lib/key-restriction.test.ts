@@ -93,7 +93,7 @@ describe("classifyEndpoint", () => {
     });
   });
 
-  it("groups legal and regulatory search with research", () => {
+  it("groups government search with research", () => {
     expect(classifyEndpoint("/v2/search/gov")).toMatchObject({
       group: "research",
     });
