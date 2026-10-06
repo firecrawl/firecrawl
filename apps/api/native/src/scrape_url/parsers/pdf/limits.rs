@@ -95,7 +95,7 @@ pub fn ensure_ocr_time(
     return Ok(());
   };
   let needed = u64::from(page_count) * MILLISECONDS_PER_PAGE;
-  if i64::try_from(needed).unwrap_or(i64::MAX) > deadline_ms - now_ms {
+  if i64::try_from(needed).unwrap_or(i64::MAX) > deadline_ms.saturating_sub(now_ms) {
     return Err(ScrapeURLError::PDFInsufficientTimeError {
       page_count,
       min_timeout: needed + 5000,

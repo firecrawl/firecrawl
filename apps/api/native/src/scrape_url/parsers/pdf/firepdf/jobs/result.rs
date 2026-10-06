@@ -60,17 +60,20 @@ impl Drop for AbandonGuard {
       "FirePdfClient::cancel_job",
       http.status = Empty,
     );
-    handle.spawn(
-      async move {
-        match io::send_http(request).await {
-          Ok(response) => {
-            Span::current().record("http.status", response.status);
-          }
-          Err(error) => tracing::error!(error = %error),
-        }
+    handle.spawn(send_cancel(request).instrument(cancel_span));
+  }
+}
+
+/// fire-pdf accepts a cancel with 200, or 404 when the job is already gone.
+async fn send_cancel(request: HttpRequest) {
+  match io::send_http(request).await {
+    Ok(response) => {
+      Span::current().record("http.status", response.status);
+      if response.status != 200 && response.status != 404 {
+        tracing::error!(http.status = response.status, "cancellation not accepted");
       }
-      .instrument(cancel_span),
-    );
+    }
+    Err(error) => tracing::error!(error = %error),
   }
 }
 
@@ -131,14 +134,6 @@ impl FirePdfClient<'_> {
   /// Best-effort cleanup after abandoning an accepted job.
   #[tracing::instrument(name = "FirePdfClient::cancel_job", skip_all, fields(http.status = Empty))]
   pub(super) async fn cancel_job(&self, scrape_id: &str) {
-    match io::send_http(self.cancel_request(scrape_id)).await {
-      Ok(response) => {
-        Span::current().record("http.status", response.status);
-        if response.status != 200 && response.status != 404 {
-          tracing::error!(http.status = response.status, "cancellation not accepted");
-        }
-      }
-      Err(error) => tracing::error!(error = %error),
-    }
+    send_cancel(self.cancel_request(scrape_id)).await;
   }
 }
