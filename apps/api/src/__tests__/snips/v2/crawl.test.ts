@@ -82,6 +82,36 @@ describe("Crawl tests", () => {
   );
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "retains a matching page without discovering its outgoing links",
+    async () => {
+      const results = await crawl(
+        {
+          url: base,
+          limit: 10,
+          sitemap: "skip",
+          stopOnContent: ["  FIRECRAWL\nTEST   SITE  "],
+        },
+        identity,
+      );
+
+      expect(results.success).toBe(true);
+      if (results.success) {
+        expect(results.data).toHaveLength(1);
+        expect(results.completed).toBe(1);
+        expect(results.data[0].markdown).toContain("Firecrawl Test Site");
+        expect(
+          normalizeUrlForCompare(
+            results.data[0].metadata.url ??
+              results.data[0].metadata.sourceURL ??
+              base,
+          ),
+        ).toBe(normalizeUrlForCompare(base));
+      }
+    },
+    10 * scrapeTimeout,
+  );
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works with sitemap: only",
     async () => {
       const results = await crawl(
