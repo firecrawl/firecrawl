@@ -4,6 +4,8 @@ import pytest
 
 from firecrawl.v2.client import FirecrawlClient
 from firecrawl.v2.client_async import AsyncFirecrawlClient
+from firecrawl.v2.methods.search import search
+from firecrawl.v2.types import SearchRequest
 from firecrawl.v2.utils.error_handler import FirecrawlError
 
 
@@ -32,32 +34,24 @@ def _response(body=RESPONSE):
     return response
 
 
-def test_legal_regulatory_search_posts_query_and_k_and_parses_web_results():
+@pytest.mark.parametrize(
+    "kwargs, body",
+    [
+        ({"k": 5}, {"query": "food labeling requirements", "k": 5}),
+        ({}, {"query": "food labeling requirements"}),
+    ],
+)
+def test_legal_regulatory_search_posts_body_and_parses_web_results(kwargs, body):
     transport = Mock()
     transport.post.return_value = _response()
     client = FirecrawlClient.__new__(FirecrawlClient)
     client.http_client = transport
 
-    result = client.legal_regulatory_search("food labeling requirements", k=5)
+    result = client.legal_regulatory_search("food labeling requirements", **kwargs)
 
-    transport.post.assert_called_once_with(
-        "/v2/search/gov", {"query": "food labeling requirements", "k": 5}
-    )
+    transport.post.assert_called_once_with("/v2/search/gov", body)
     assert result.data.web[0].title == "21 CFR Part 101 -- Food Labeling"
     assert result.data.web[0].position == 1
-
-
-def test_legal_regulatory_search_omits_k_when_not_provided():
-    transport = Mock()
-    transport.post.return_value = _response()
-    client = FirecrawlClient.__new__(FirecrawlClient)
-    client.http_client = transport
-
-    client.legal_regulatory_search("zoning variance")
-
-    transport.post.assert_called_once_with(
-        "/v2/search/gov", {"query": "zoning variance"}
-    )
 
 
 def test_legal_regulatory_search_rejects_empty_query():
@@ -104,3 +98,15 @@ async def test_async_legal_regulatory_search_raises_on_unsuccessful_body():
 
     with pytest.raises(FirecrawlError, match="Search failed"):
         await client.legal_regulatory_search("zoning variance")
+
+
+def test_search_gov_category_is_forwarded_and_parsed_inside_web():
+    web = [{**RESPONSE["data"]["web"][0], "category": "gov"}]
+    client = Mock()
+    client.post.return_value = _response({"success": True, "data": {"web": web}})
+
+    result = search(client, SearchRequest(query="zoning variance", categories=["gov"]))
+
+    assert client.post.call_args.args[1]["categories"] == [{"type": "gov"}]
+    assert result.web[0].category == "gov"
+    assert not hasattr(result, "gov")

@@ -1,5 +1,6 @@
 import { describe, expect, jest, test } from "@jest/globals";
 import { FirecrawlClient } from "../../../v2/client";
+import { search } from "../../../v2/methods/search";
 import { SdkError } from "../../../v2/types";
 
 const response = {
@@ -26,33 +27,21 @@ function clientWith(http: any) {
 }
 
 describe("legalRegulatorySearch", () => {
-  test("posts query and k and returns web results", async () => {
+  test.each([
+    [{ k: 5 }, { query: "food labeling requirements", k: 5 }],
+    [undefined, { query: "food labeling requirements" }],
+  ])("posts %p and returns web results", async (options, body) => {
     const http = {
       post: jest.fn(async () => ({ status: 200, data: response })),
     } as any;
 
     const result = await clientWith(http).legalRegulatorySearch(
       "food labeling requirements",
-      { k: 5 },
+      options,
     );
 
-    expect(http.post).toHaveBeenCalledWith("/v2/search/gov", {
-      query: "food labeling requirements",
-      k: 5,
-    });
+    expect(http.post).toHaveBeenCalledWith("/v2/search/gov", body);
     expect(result).toEqual(response);
-  });
-
-  test("omits k when not provided", async () => {
-    const http = {
-      post: jest.fn(async () => ({ status: 200, data: response })),
-    } as any;
-
-    await clientWith(http).legalRegulatorySearch("zoning variance");
-
-    expect(http.post).toHaveBeenCalledWith("/v2/search/gov", {
-      query: "zoning variance",
-    });
   });
 
   test("rejects an empty query", async () => {
@@ -91,5 +80,29 @@ describe("legalRegulatorySearch", () => {
     await expect(
       clientWith(http).legalRegulatorySearch("network failure"),
     ).rejects.toBeInstanceOf(SdkError);
+  });
+});
+
+describe("search gov category", () => {
+  test("forwards the gov category and returns results inside web", async () => {
+    const web = [{ ...response.data.web[0], category: "gov" }];
+    const http = {
+      post: jest.fn(async () => ({
+        status: 200,
+        data: { success: true, data: { web } },
+      })),
+    } as any;
+
+    const result = await search(http, {
+      query: "zoning variance",
+      categories: [{ type: "gov" }],
+    });
+
+    expect(http.post).toHaveBeenCalledWith(
+      "/v2/search",
+      { query: "zoning variance", categories: [{ type: "gov" }] },
+      {},
+    );
+    expect(result.web).toEqual(web);
   });
 });
