@@ -592,7 +592,7 @@ class FirecrawlClient:
         query: str,
         k: Optional[int] = None,
     ) -> LegalRegulatorySearchResponse:
-        """Search the Legal and Regulatory Index of US primary law and regulatory material."""
+        """Search the Government Index of US primary law and regulatory material."""
         return legal_regulatory_module.legal_regulatory_search(
             self.http_client, query, k=k
         )

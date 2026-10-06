@@ -236,9 +236,9 @@ console.log(evidence.repos); // indexed-status echoes for requested repos
 `archived`, `fork`, and `skills: 'only'`. Supplying both `repos` and `sources`
 OR-combines GitHub-backed and documentation results.
 
-### Legal and regulatory search
+### Government search
 
-Use `legalRegulatorySearch` to search the Legal and Regulatory Index: primary
+Use `legalRegulatorySearch` to search the Firecrawl Government Index: primary
 law and regulatory material from US federal, state, and local government
 sources, including statutes, regulations, codes, court opinions, and other
 government publications. Results come back in the ordinary web-result shape.
