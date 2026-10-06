@@ -369,8 +369,7 @@ export async function retrieveProviders(input: {
       body: { requests: input.calls },
       timeoutMs: remaining(),
       requestId: id,
-      ...((loadsSavedResult || usesSql || usesEnrichment) &&
-      input.resultAuthorization
+      ...(input.resultAuthorization
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
       ...(termsIdentity ? { termsIdentity } : {}),
