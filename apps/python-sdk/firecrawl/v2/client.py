@@ -17,7 +17,7 @@ from .types import (
     SearchData,
     DeveloperSearchResponse,
     DeveloperSearchType,
-    LegalRegulatorySearchResponse,
+    GovSearchResponse,
     SourceOption,
     CategoryOption,
     FindToolsData,
@@ -70,7 +70,7 @@ from .methods import crawl as crawl_module
 from .methods import batch as batch_module
 from .methods import search as search_module
 from .methods import developer as developer_module
-from .methods import legal_regulatory as legal_regulatory_module
+from .methods import gov as gov_module
 from .methods import map as map_module
 from .methods import batch as batch_methods
 from .methods import usage as usage_methods
@@ -587,13 +587,13 @@ class FirecrawlClient:
             skills=skills,
         )
 
-    def legal_regulatory_search(
+    def gov_search(
         self,
         query: str,
         k: Optional[int] = None,
-    ) -> LegalRegulatorySearchResponse:
+    ) -> GovSearchResponse:
         """Search the Government Index of US primary law and regulatory material."""
-        return legal_regulatory_module.legal_regulatory_search(
+        return gov_module.gov_search(
             self.http_client, query, k=k
         )
     

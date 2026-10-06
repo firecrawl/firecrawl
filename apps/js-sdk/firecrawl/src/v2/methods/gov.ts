@@ -1,7 +1,4 @@
-import type {
-  LegalRegulatorySearchOptions,
-  LegalRegulatorySearchResponse,
-} from "../types";
+import type { GovSearchOptions, GovSearchResponse } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import {
   normalizeAxiosError,
@@ -11,15 +8,15 @@ import {
 const ENDPOINT = "/v2/search/gov";
 
 /** Search the Government Index. */
-export async function legalRegulatorySearch(
+export async function govSearch(
   http: HttpClient,
   query: string,
-  options: LegalRegulatorySearchOptions = {},
-): Promise<LegalRegulatorySearchResponse> {
+  options: GovSearchOptions = {},
+): Promise<GovSearchResponse> {
   if (!query || !query.trim()) throw new Error("query cannot be empty");
 
   try {
-    const response = await http.post<LegalRegulatorySearchResponse>(ENDPOINT, {
+    const response = await http.post<GovSearchResponse>(ENDPOINT, {
       query,
       ...(options.k !== undefined ? { k: options.k } : {}),
     });

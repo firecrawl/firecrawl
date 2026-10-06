@@ -806,12 +806,12 @@ export interface DeveloperSearchResponse {
   sources?: DeveloperSearchSourceStatus[];
 }
 
-export interface LegalRegulatorySearchOptions {
+export interface GovSearchOptions {
   /** Total ranked results, 1–100 (default 10). */
   k?: number;
 }
 
-export interface LegalRegulatorySearchResponse {
+export interface GovSearchResponse {
   success: boolean;
   data: { web: SearchResultWeb[] };
 }

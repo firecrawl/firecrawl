@@ -39,37 +39,37 @@ def _response(body=RESPONSE):
         ({}, {"query": "food labeling requirements"}),
     ],
 )
-def test_legal_regulatory_search_posts_body_and_parses_web_results(kwargs, body):
+def test_gov_search_posts_body_and_parses_web_results(kwargs, body):
     transport = Mock()
     transport.post.return_value = _response()
     client = FirecrawlClient.__new__(FirecrawlClient)
     client.http_client = transport
 
-    result = client.legal_regulatory_search("food labeling requirements", **kwargs)
+    result = client.gov_search("food labeling requirements", **kwargs)
 
     transport.post.assert_called_once_with("/v2/search/gov", body)
     assert result.data.web[0].title == "21 CFR Part 101 -- Food Labeling"
     assert result.data.web[0].position == 1
 
 
-def test_legal_regulatory_search_rejects_empty_query():
+def test_gov_search_rejects_empty_query():
     transport = Mock()
     client = FirecrawlClient.__new__(FirecrawlClient)
     client.http_client = transport
 
     with pytest.raises(ValueError, match="query cannot be empty"):
-        client.legal_regulatory_search("  ")
+        client.gov_search("  ")
     transport.post.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_async_legal_regulatory_search_posts_query_and_k():
+async def test_async_gov_search_posts_query_and_k():
     transport = Mock()
     transport.post = AsyncMock(return_value=_response())
     client = AsyncFirecrawlClient.__new__(AsyncFirecrawlClient)
     client.async_http_client = transport
 
-    result = await client.legal_regulatory_search("food labeling requirements", k=5)
+    result = await client.gov_search("food labeling requirements", k=5)
 
     transport.post.assert_awaited_once_with(
         "/v2/search/gov", {"query": "food labeling requirements", "k": 5}
@@ -77,11 +77,11 @@ async def test_async_legal_regulatory_search_posts_query_and_k():
     assert result.data.web[0].url.startswith("https://www.ecfr.gov/")
 
 
-def test_legal_regulatory_search_raises_on_unsuccessful_body():
+def test_gov_search_raises_on_unsuccessful_body():
     transport = Mock()
     transport.post.return_value = _response(FAILED)
     client = FirecrawlClient.__new__(FirecrawlClient)
     client.http_client = transport
 
     with pytest.raises(FirecrawlError, match="Search failed"):
-        client.legal_regulatory_search("zoning variance")
+        client.gov_search("zoning variance")

@@ -238,7 +238,7 @@ OR-combines GitHub-backed and documentation results.
 
 ### Government search
 
-Use `legalRegulatorySearch` to search the Firecrawl Government Index: primary
+Use `govSearch` to search the Firecrawl Government Index: primary
 law and regulatory material from US federal, state, and local government
 sources, including statutes, regulations, codes, court opinions, and other
 government publications. Results come back in the ordinary web-result shape.
@@ -247,7 +247,7 @@ returns index results inside `.web`; like `developer`, it cannot be combined
 with other categories.
 
 ```js
-const law = await app.legalRegulatorySearch('food labeling requirements', {
+const law = await app.govSearch('food labeling requirements', {
   k: 5,
 });
 

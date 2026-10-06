@@ -2414,20 +2414,20 @@ class DeveloperSearchResponse(BaseModel):
     sources: Optional[List[DeveloperSearchSourceStatus]] = None
 
 
-class LegalRegulatorySearchRequest(BaseModel):
+class GovSearchRequest(BaseModel):
     """Request for the Government Index search endpoint."""
 
     query: str
     k: Optional[int] = Field(default=None, ge=1, le=100)
 
 
-class LegalRegulatorySearchData(BaseModel):
+class GovSearchData(BaseModel):
     web: List[SearchResultWeb]
 
 
-class LegalRegulatorySearchResponse(BaseModel):
+class GovSearchResponse(BaseModel):
     success: bool
-    data: LegalRegulatorySearchData
+    data: GovSearchData
 
 
 class SearchRequest(BaseModel):
