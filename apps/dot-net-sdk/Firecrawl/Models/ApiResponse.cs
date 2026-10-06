@@ -12,4 +12,10 @@ internal class ApiResponse<T>
 
     [JsonPropertyName("data")]
     public T? Data { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+
+    [JsonPropertyName("code")]
+    public string? Code { get; set; }
 }
