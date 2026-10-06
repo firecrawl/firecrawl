@@ -1,6 +1,6 @@
 use tracing::instrument;
 
-use super::{document::Document, llm::LlmError, meta::Meta};
+use super::{document::Document, formats::FormatKind, llm::LlmError, meta::Meta};
 
 macro_rules! generate_execute_tranformers {
     ($($f:path),+ $(,)?) => {
@@ -9,6 +9,10 @@ macro_rules! generate_execute_tranformers {
           meta: &Meta,
           mut document: Document,
         ) -> Result<Document, TransformerError> {
+          // rawBase64 is the untouched response body, so skip straight to coercion.
+          if meta.options.formats.contains(FormatKind::RawBase64) {
+            return coerce_fields_to_formats(meta, document).await;
+          }
           $( document = $f(&meta, document).await?; )+
           Ok(document)
         }
@@ -16,20 +20,27 @@ macro_rules! generate_execute_tranformers {
 }
 
 use attributes::derive_attributes_from_html;
+use base64_images::remove_base64_images;
+use coerce::coerce_fields_to_formats;
 use html::derive_html_from_raw_html;
 use images::derive_images_from_html;
 use json::perform_llm_extract;
 use links::derive_links_from_html;
 use markdown::derive_markdown_from_html;
 use metadata::derive_metadata_from_raw_html;
+use youtube::fetch_youtube;
+pub(super) use youtube::is_youtube_video_url;
 
 mod attributes;
+mod base64_images;
+mod coerce;
 mod html;
 mod images;
 mod json;
 mod links;
 mod markdown;
 mod metadata;
+mod youtube;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransformerError {
@@ -56,6 +67,7 @@ pub enum TransformerError {
 }
 
 generate_execute_tranformers!(
+  fetch_youtube,
   derive_html_from_raw_html,
   derive_markdown_from_html,
   // TODO: perform_clean_content
@@ -74,9 +86,9 @@ generate_execute_tranformers!(
   // TODO: perform_query
   derive_attributes_from_html,
   // TODO: perform_agent
-  // TODO: remove_base64_images
+  remove_base64_images,
   // TODO: derive_diff
   // TODO: fetch_audio
   // TODO: fetch_video
-  // TODO: coerce_fields_to_formats // TODO: deal with raw_base64 format here
+  coerce_fields_to_formats,
 );

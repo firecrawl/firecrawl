@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use base64::Engine;
 use bytes::Bytes;
 
 use super::super::{
@@ -78,12 +77,13 @@ pub fn parse_document(meta: &Meta, result: RawPageResult) -> Result<Document, Sc
         markdown: Some(markdown),
         html: None,
         raw_html: Some(html),
-        raw_base64: Some(base64::engine::general_purpose::STANDARD.encode(bytes.as_ref())),
+        raw_base64: None,
         links: None,
         images: None,
         screenshot: result.screenshot,
         audio: None,
         video: None,
+        extract: None,
         json: None,
         summary: None,
         answer: None,
@@ -109,6 +109,7 @@ pub fn parse_document(meta: &Meta, result: RawPageResult) -> Result<Document, Sc
           credits_used: None,                            // TODO:
           concurrency_limited: false,                    // TODO:
           concurrency_queue_duration_ms: None,           // TODO:
+          postprocessors_used: None,
           total_pages: None,
           extra: HashMap::new(),
         },
@@ -121,13 +122,14 @@ pub fn parse_document(meta: &Meta, result: RawPageResult) -> Result<Document, Sc
       Ok(Document {
         markdown: None,
         html: None,
-        raw_base64: Some(base64::engine::general_purpose::STANDARD.encode(&html)),
+        raw_base64: None,
         raw_html: Some(html),
         links: None,
         images: None,
         screenshot: result.screenshot,
         audio: None,
         video: None,
+        extract: None,
         json: None,
         summary: None,
         answer: None,
@@ -153,6 +155,7 @@ pub fn parse_document(meta: &Meta, result: RawPageResult) -> Result<Document, Sc
           credits_used: None,                            // TODO:
           concurrency_limited: false,                    // TODO:
           concurrency_queue_duration_ms: None,           // TODO:
+          postprocessors_used: None,
           total_pages: None,
           extra: HashMap::new(),
         },

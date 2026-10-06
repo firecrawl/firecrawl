@@ -54,6 +54,7 @@ pub struct DocumentMetadata {
   pub credits_used: Option<u64>,
   pub concurrency_limited: bool,
   pub concurrency_queue_duration_ms: Option<u64>,
+  pub postprocessors_used: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -78,7 +79,7 @@ pub struct Document {
   pub audio: Option<String>,
   pub video: Option<String>,
   // videos:
-  // extract:
+  pub extract: Option<Value>,
   pub json: Option<Value>,
   pub summary: Option<String>,
   pub answer: Option<String>,

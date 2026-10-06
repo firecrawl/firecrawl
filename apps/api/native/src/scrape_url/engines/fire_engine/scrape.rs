@@ -22,6 +22,12 @@ pub enum FireEngineScrapeRequestEngine {
 }
 
 #[derive(Debug, Serialize)]
+pub enum FireEngineScrapeRequestFormat {
+  #[serde(rename = "rawBase64")]
+  RawBase64,
+}
+
+#[derive(Debug, Serialize)]
 pub struct FireEngineProfile<'a> {
   pub owner: &'a str,
   pub name: &'a str,
@@ -31,6 +37,9 @@ pub struct FireEngineProfile<'a> {
 #[serde(rename_all = "camelCase")]
 pub struct FireEngineScrapeRequest<'a> {
   pub engine: FireEngineScrapeRequestEngine,
+  /// Returns the original response body in `file` instead of the rendered page.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub format: Option<FireEngineScrapeRequestFormat>,
   pub url: &'a Url,
 
   #[serde(skip_serializing_if = "HashMap::is_empty")]

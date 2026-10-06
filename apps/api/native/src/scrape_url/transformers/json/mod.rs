@@ -6,6 +6,7 @@ use super::super::{
   document::Document,
   llm::{self, LlmError},
   meta::Meta,
+  options::V1OriginalFormat,
 };
 use super::TransformerError;
 
@@ -208,14 +209,20 @@ pub async fn perform_llm_extract(
     Err(e) => return Err(e),
   };
 
-  match extract {
-    Some(extract) => document.json = Some(extract),
+  let extract = match extract {
+    Some(extract) => extract,
     None => {
       if document.warning.is_none() {
         document.append_warning("JSON extraction did not produce a result.");
       }
-      document.json = Some(Value::Null);
+      Value::Null
     }
+  };
+
+  if meta.internal_options.v1_original_format == Some(V1OriginalFormat::Extract) {
+    document.extract = Some(extract);
+  } else {
+    document.json = Some(extract);
   }
 
   Ok(document)
