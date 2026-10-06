@@ -201,7 +201,7 @@ async function searchControllerInner(
       : wantsGovCategory(categories)
         ? {
             endpoint: "/v2/search/gov",
-            table: "legal_regulatory_searches" as const,
+            table: "gov_searches" as const,
           }
         : null;
 

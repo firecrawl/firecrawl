@@ -676,7 +676,7 @@ async function handleKeylessAuth(
         ? "research"
         : mode === RateLimiterMode.DeveloperSearch
           ? "developer"
-          : mode === RateLimiterMode.LegalRegulatorySearch
+          : mode === RateLimiterMode.GovSearch
             ? "gov"
             : mode === RateLimiterMode.BrowserExecute
               ? "interact"

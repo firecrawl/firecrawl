@@ -48,7 +48,7 @@ export async function fetchResearchUpstream(options: {
   });
 }
 
-export async function fetchLegalRegulatoryUpstream(options: {
+export async function fetchGovUpstream(options: {
   query: string;
   k?: number;
   headers: Record<string, string>;

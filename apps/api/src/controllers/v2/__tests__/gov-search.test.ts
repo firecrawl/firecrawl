@@ -3,7 +3,7 @@ import { vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   logRequest: vi.fn(),
   logResearchEndpoint: vi.fn(),
-  fetchLegalRegulatoryUpstream: vi.fn(),
+  fetchGovUpstream: vi.fn(),
   chargeKeylessCredits: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -14,7 +14,7 @@ vi.mock("../../../services/logging/log_job", () => ({
 
 vi.mock("../../../lib/research-upstream", () => ({
   fetchResearchUpstream: vi.fn(),
-  fetchLegalRegulatoryUpstream: mocks.fetchLegalRegulatoryUpstream,
+  fetchGovUpstream: mocks.fetchGovUpstream,
 }));
 
 vi.mock("../../../services/billing/credit_billing", () => ({
@@ -36,7 +36,7 @@ vi.mock("../../../lib/logger", () => ({
   },
 }));
 
-import { createLegalRegulatoryRouter } from "../research-proxy";
+import { createGovRouter } from "../research-proxy";
 import { billTeam } from "../../../services/billing/credit_billing";
 import { keylessTeamId } from "../../../lib/keyless";
 
@@ -46,7 +46,7 @@ const KEYLESS_TEAM_ID = keylessTeamId("203.0.113.7");
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function handler(method: "get" | "post") {
-  const router: any = createLegalRegulatoryRouter();
+  const router: any = createGovRouter();
   const layer = router.stack.find(
     (l: any) => l.route?.path === "/" && l.route?.methods?.[method],
   );
@@ -103,9 +103,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.logRequest.mockResolvedValue(undefined);
   mocks.logResearchEndpoint.mockResolvedValue(undefined);
-  mocks.fetchLegalRegulatoryUpstream.mockResolvedValue(
-    upstreamWith([WEB_RESULT]),
-  );
+  mocks.fetchGovUpstream.mockResolvedValue(upstreamWith([WEB_RESULT]));
 });
 
 describe("/v2/search/gov", () => {
@@ -119,7 +117,7 @@ describe("/v2/search/gov", () => {
       );
       await flush();
 
-      expect(mocks.fetchLegalRegulatoryUpstream).toHaveBeenCalledWith(
+      expect(mocks.fetchGovUpstream).toHaveBeenCalledWith(
         expect.objectContaining({ query: "food labeling rules", k: 5 }),
       );
       expect(res.status).toHaveBeenCalledWith(200);
@@ -136,7 +134,7 @@ describe("/v2/search/gov", () => {
       );
       expect(mocks.logResearchEndpoint).toHaveBeenCalledWith(
         expect.objectContaining({
-          table: "legal_regulatory_searches",
+          table: "gov_searches",
           num_results: 1,
           credits_cost: 2,
           is_successful: true,
@@ -168,7 +166,7 @@ describe("/v2/search/gov", () => {
   });
 
   it("passes an upstream error through without billing", async () => {
-    mocks.fetchLegalRegulatoryUpstream.mockResolvedValue({
+    mocks.fetchGovUpstream.mockResolvedValue({
       ok: false,
       status: 500,
       headers: new Headers(),
@@ -191,7 +189,7 @@ describe("/v2/search/gov", () => {
   });
 
   it("does not bill an empty result", async () => {
-    mocks.fetchLegalRegulatoryUpstream.mockResolvedValue(upstreamWith([]));
+    mocks.fetchGovUpstream.mockResolvedValue(upstreamWith([]));
     const res = makeRes();
     await handler("get")(makeReq("GET", { query: "nothing here" }), res);
     await flush();
@@ -216,12 +214,12 @@ describe("/v2/search/gov", () => {
       await flush();
 
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(mocks.fetchLegalRegulatoryUpstream).not.toHaveBeenCalled();
+      expect(mocks.fetchGovUpstream).not.toHaveBeenCalled();
     },
   );
 
   it("maps an upstream timeout to 504", async () => {
-    mocks.fetchLegalRegulatoryUpstream.mockRejectedValue(
+    mocks.fetchGovUpstream.mockRejectedValue(
       new DOMException("timed out", "TimeoutError"),
     );
     const res = makeRes();

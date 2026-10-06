@@ -4,7 +4,7 @@ import { z } from "zod";
 import { v7 as uuidv7 } from "uuid";
 import { logger as rootLogger } from "../../lib/logger";
 import {
-  fetchLegalRegulatoryUpstream,
+  fetchGovUpstream,
   fetchResearchUpstream,
 } from "../../lib/research-upstream";
 import { chargeKeylessCredits } from "../../lib/keyless";
@@ -28,7 +28,7 @@ const SEARCH_CREDITS_PER_TEN_RESULTS = 2;
 const ZDR_SEARCH_CREDITS_PER_TEN_RESULTS = 10;
 
 const DEVELOPER_SEARCH_TIMEOUT_MS = 15_000;
-const LEGAL_REGULATORY_SEARCH_TIMEOUT_MS = 15_000;
+const GOV_SEARCH_TIMEOUT_MS = 15_000;
 const PAPER_SEARCH_TIMEOUT_MS = 30_000;
 const PAPER_INSPECT_TIMEOUT_MS = 5_000;
 const SIMILAR_PAPERS_TIMEOUT_MS = 10_000;
@@ -142,7 +142,7 @@ const DEVELOPER_SEARCH_QUERY_KEYS = [
   "skills",
 ];
 
-const legalRegulatorySearchSchema = z.strictObject({
+const govSearchSchema = z.strictObject({
   query: z.string().min(1),
   k: kSchema(100),
   ...commonQuery,
@@ -600,22 +600,22 @@ export function createDeveloperRouter(options: { root?: boolean } = {}) {
   return router;
 }
 
-export function createLegalRegulatoryRouter() {
+export function createGovRouter() {
   const router = express.Router();
 
   const controller = wrap(
-    createResearchController(legalRegulatorySearchSchema, [], {
-      kind: "legal_regulatory_search",
-      table: "legal_regulatory_searches",
-      action: "searchLegalRegulatory",
+    createResearchController(govSearchSchema, [], {
+      kind: "gov_search",
+      table: "gov_searches",
+      action: "searchGov",
       targetHint: params => String(params.query),
       billAs: "search",
       fetchUpstream: (params, headers) =>
-        fetchLegalRegulatoryUpstream({
+        fetchGovUpstream({
           query: params.query,
           k: params.k,
           headers,
-          timeoutMs: LEGAL_REGULATORY_SEARCH_TIMEOUT_MS,
+          timeoutMs: GOV_SEARCH_TIMEOUT_MS,
         }),
     }),
   );

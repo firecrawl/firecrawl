@@ -1,6 +1,6 @@
 import type { Logger } from "winston";
 import type { WebSearchResult } from "../lib/entities";
-import { fetchLegalRegulatoryUpstream } from "../lib/research-upstream";
+import { fetchGovUpstream } from "../lib/research-upstream";
 import { hasCategory, type CategoryOption } from "../lib/search-query-builder";
 
 export function wantsGovCategory(categories?: CategoryOption[]): boolean {
@@ -12,7 +12,7 @@ export async function searchGovCategory(
   logger: Logger,
 ): Promise<WebSearchResult[]> {
   try {
-    const upstream = await fetchLegalRegulatoryUpstream({
+    const upstream = await fetchGovUpstream({
       query: options.query,
       k: options.limit,
       headers: { "firecrawl-team-id": options.teamId },

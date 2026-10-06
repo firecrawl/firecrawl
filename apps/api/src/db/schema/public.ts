@@ -227,9 +227,7 @@ export const research_github_searches = researchEndpointTable(
 
 export const code_searches = researchEndpointTable("code_searches");
 
-export const legal_regulatory_searches = researchEndpointTable(
-  "legal_regulatory_searches",
-);
+export const gov_searches = researchEndpointTable("gov_searches");
 
 export const deterministic_json_scripts = pgTable(
   "deterministic_json_scripts",

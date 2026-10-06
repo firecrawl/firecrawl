@@ -2,13 +2,13 @@ import { config } from "../../../config";
 import { describeIf } from "../lib";
 import { idmux, researchRaw } from "./lib";
 
-const HAS_LEGAL_REGULATORY = !!config.SEARCH_PLATFORM_URL;
+const HAS_GOV = !!config.SEARCH_PLATFORM_URL;
 const PATH = "/v2/search/gov";
 
-describeIf(HAS_LEGAL_REGULATORY)("Government Index Search API", () => {
+describeIf(HAS_GOV)("Government Index Search API", () => {
   it("serves a search as web results", async () => {
     const identity = await idmux({
-      name: "legal-regulatory/get",
+      name: "gov/get",
       credits: 100,
     });
 

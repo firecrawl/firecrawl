@@ -93,7 +93,7 @@ import {
 import { supportProxyController } from "../controllers/v2/support-proxy";
 import {
   createDeveloperRouter,
-  createLegalRegulatoryRouter,
+  createGovRouter,
   createResearchRouter,
 } from "../controllers/v2/research-proxy";
 import {
@@ -745,9 +745,9 @@ if (config.RESEARCH_PROXY_URL) {
 if (config.SEARCH_PLATFORM_URL) {
   v2Router.use(
     "/search/gov",
-    authMiddleware(RateLimiterMode.LegalRegulatorySearch, {
+    authMiddleware(RateLimiterMode.GovSearch, {
       allowKeyless: true,
     }),
-    createLegalRegulatoryRouter(),
+    createGovRouter(),
   );
 }
