@@ -260,7 +260,7 @@ OR-combines GitHub-backed and documentation results.
 
 ### Government search
 
-Use `legal_regulatory_search` to search the Firecrawl Government Index: primary
+Use `gov_search` to search the Firecrawl Government Index: primary
 law and regulatory material from US federal, state, and local government
 sources, including statutes, regulations, codes, court opinions, and other
 government publications. Results come back in the ordinary web-result shape.
@@ -269,7 +269,7 @@ index results inside `.web`; like `developer`, it cannot be combined with other
 categories.
 
 ```python
-law = firecrawl.legal_regulatory_search("food labeling requirements", k=5)
+law = firecrawl.gov_search("food labeling requirements", k=5)
 
 for result in law.data.web:
     print(result.position, result.title, result.url)

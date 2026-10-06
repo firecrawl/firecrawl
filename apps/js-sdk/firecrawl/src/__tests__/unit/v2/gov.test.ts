@@ -24,7 +24,7 @@ function clientWith(http: any) {
   return client;
 }
 
-describe("legalRegulatorySearch", () => {
+describe("govSearch", () => {
   test.each([
     [{ k: 5 }, { query: "food labeling requirements", k: 5 }],
     [undefined, { query: "food labeling requirements" }],
@@ -33,7 +33,7 @@ describe("legalRegulatorySearch", () => {
       post: jest.fn(async () => ({ status: 200, data: response })),
     } as any;
 
-    const result = await clientWith(http).legalRegulatorySearch(
+    const result = await clientWith(http).govSearch(
       "food labeling requirements",
       options,
     );
@@ -45,9 +45,9 @@ describe("legalRegulatorySearch", () => {
   test("rejects an empty query", async () => {
     const http = { post: jest.fn() } as any;
 
-    await expect(
-      clientWith(http).legalRegulatorySearch("  "),
-    ).rejects.toThrow("query cannot be empty");
+    await expect(clientWith(http).govSearch("  ")).rejects.toThrow(
+      "query cannot be empty",
+    );
     expect(http.post).not.toHaveBeenCalled();
   });
 
@@ -59,8 +59,8 @@ describe("legalRegulatorySearch", () => {
       })),
     } as any;
 
-    await expect(
-      clientWith(http).legalRegulatorySearch("zoning variance"),
-    ).rejects.toThrow("Search failed");
+    await expect(clientWith(http).govSearch("zoning variance")).rejects.toThrow(
+      "Search failed",
+    );
   });
 });

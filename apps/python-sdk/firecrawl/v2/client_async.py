@@ -20,7 +20,7 @@ from .types import (
     SearchData,
     DeveloperSearchResponse,
     DeveloperSearchType,
-    LegalRegulatorySearchResponse,
+    GovSearchResponse,
     SourceOption,
     FindToolsData,
     AlexandriaCall,
@@ -66,7 +66,7 @@ from .methods.aio import batch as async_batch  # type: ignore[attr-defined]
 from .methods.aio import crawl as async_crawl  # type: ignore[attr-defined]
 from .methods.aio import search as async_search  # type: ignore[attr-defined]
 from .methods.aio import developer as async_developer  # type: ignore[attr-defined]
-from .methods.aio import legal_regulatory as async_legal_regulatory  # type: ignore[attr-defined]
+from .methods.aio import gov as async_gov  # type: ignore[attr-defined]
 from .methods.aio import map as async_map # type: ignore[attr-defined]
 from .methods.aio import usage as async_usage # type: ignore[attr-defined]
 from .methods.aio import extract as async_extract  # type: ignore[attr-defined]
@@ -358,13 +358,13 @@ class AsyncFirecrawlClient:
             skills=skills,
         )
 
-    async def legal_regulatory_search(
+    async def gov_search(
         self,
         query: str,
         k: Optional[int] = None,
-    ) -> LegalRegulatorySearchResponse:
+    ) -> GovSearchResponse:
         """Search the Government Index of US primary law and regulatory material."""
-        return await async_legal_regulatory.legal_regulatory_search(
+        return await async_gov.gov_search(
             self.async_http_client, query, k=k
         )
 
