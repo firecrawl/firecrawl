@@ -264,6 +264,8 @@ Use `legal_regulatory_search` to search the Legal and Regulatory Index: primary
 law and regulatory material from US federal, state, and local government
 sources, including statutes, regulations, codes, court opinions, and other
 government publications. Results come back in the ordinary web-result shape.
+Generic `search(categories=["gov"])` returns index results inside `.web`;
+like `developer`, it cannot be combined with other categories.
 
 ```python
 law = firecrawl.legal_regulatory_search("food labeling requirements", k=5)

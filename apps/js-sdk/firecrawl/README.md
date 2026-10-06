@@ -191,7 +191,7 @@ const scraped = await app.search('firecrawl changelog', {
 ```
 
 Results are grouped by source: `.web`, `.news` and `.images`. Developer
-category results are served inside `.web`.
+and gov category results are served inside `.web`.
 
 Use `categories` to narrow web search to a kind of site:
 
@@ -242,6 +242,8 @@ Use `legalRegulatorySearch` to search the Legal and Regulatory Index: primary
 law and regulatory material from US federal, state, and local government
 sources, including statutes, regulations, codes, court opinions, and other
 government publications. Results come back in the ordinary web-result shape.
+Generic `search(..., { categories: ['gov'] })` returns index results inside
+`.web`; like `developer`, it cannot be combined with other categories.
 
 ```js
 const law = await app.legalRegulatorySearch('food labeling requirements', {
