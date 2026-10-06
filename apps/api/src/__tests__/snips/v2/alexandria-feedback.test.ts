@@ -55,15 +55,16 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
     identity = await idmux({ name: "alexandria-feedback", credits: 1000 });
   });
 
-  it("records the minimum session feedback without any search or scrape job and refunds 1 credit", async () => {
+  // Billing confirms refunds, so environments without it report 0 credits.
+  it("records the minimum session feedback without any search or scrape job and reports its refund", async () => {
     const response = await submit(body);
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject({
       success: true,
-      creditsRefunded: 1,
       creditsRefundedToday: expect.any(Number),
       dailyRefundCap: expect.any(Number),
     });
+    expect([0, 1]).toContain(response.body.creditsRefunded);
     expect(response.body.feedbackId).toEqual(expect.any(String));
     try {
       const { parent, providers, capabilities } = await feedbackRows(
@@ -81,7 +82,14 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
         origin: "api",
         integration: null,
         schema_version: 2,
-        credits_refunded: 1,
+        credits_refunded: response.body.creditsRefunded,
+      });
+      expect(parent.refund_policy).toMatchObject({
+        endpoint: "alexandria",
+        matchedReason:
+          response.body.creditsRefunded === 1
+            ? "alexandria_feedback"
+            : "refund_not_confirmed",
       });
       expect(providers).toEqual([]);
       expect(capabilities).toEqual([]);
@@ -173,14 +181,12 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
     const second = await submit({ ...body, requestedWebsite: website });
     try {
       expect(first.statusCode).toBe(200);
-      expect(first.body.creditsRefunded).toBe(1);
       expect(second.statusCode).toBe(200);
-      expect(second.body).toMatchObject({
-        success: true,
-        creditsRefunded: 0,
-        alreadySubmitted: true,
-      });
-      expect(second.body.warning).toContain("www.usaspending.gov");
+      expect(second.body).toMatchObject({ success: true, creditsRefunded: 0 });
+      if (first.body.creditsRefunded === 1) {
+        expect(second.body.alreadySubmitted).toBe(true);
+        expect(second.body.warning).toContain("www.usaspending.gov");
+      }
       const { parent } = await feedbackRows(second.body.feedbackId);
       expect(parent.credits_refunded).toBe(0);
     } finally {

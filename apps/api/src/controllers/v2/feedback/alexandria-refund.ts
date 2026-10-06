@@ -1,4 +1,4 @@
-import { and, eq, gt, gte } from "drizzle-orm";
+import { and, eq, gt, gte, sql } from "drizzle-orm";
 import { config } from "../../../config";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
@@ -12,12 +12,15 @@ import type { FeedbackRating, RefundPolicySnapshot } from "./internal-types";
 const REFUND_CREDITS = 1;
 const REFUNDABLE_RATINGS: FeedbackRating[] = ["good", "partial", "bad"];
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 type RefundOutcome =
   | "alexandria_feedback"
   | "refunds_disabled"
   | "refund_totals_unavailable"
   | "host_already_refunded_today"
-  | "daily_cap_reached";
+  | "daily_cap_reached"
+  | "refund_not_confirmed";
 
 type AlexandriaRefundResult = {
   creditsRefunded: number;
@@ -49,12 +52,23 @@ function policyFor(outcome: RefundOutcome): RefundPolicySnapshot {
   };
 }
 
-/** Today's refunded Alexandria feedback for the team, read from the primary. */
+function refundWrite(feedbackId: string, outcome: RefundOutcome) {
+  return {
+    values: {
+      credits_refunded: outcome === "alexandria_feedback" ? REFUND_CREDITS : 0,
+      refund_policy: policyFor(outcome),
+      updated_at: new Date().toISOString(),
+    },
+    where: eq(schema.alexandria_feedback.id, feedbackId),
+  };
+}
+
 async function refundsToday(
+  tx: Tx,
   teamId: string,
   now: Date,
 ): Promise<{ total: number; hosts: Set<string> }> {
-  const rows = await db
+  const rows = await tx
     .select({
       requested_host: schema.alexandria_feedback.requested_host,
       credits_refunded: schema.alexandria_feedback.credits_refunded,
@@ -79,9 +93,41 @@ async function refundsToday(
 }
 
 /**
+ * Decides the refund and, when it is granted, reserves it on the feedback row.
+ * The per-team lock serializes concurrent submissions so the daily cap and the
+ * one-refund-per-host rule hold.
+ */
+async function reserveRefund(params: {
+  feedbackId: string;
+  teamId: string;
+  host: string;
+  dailyRefundCap: number;
+  now: Date;
+}): Promise<{ outcome: RefundOutcome; refundedTodayBefore: number }> {
+  const { feedbackId, teamId, host, dailyRefundCap, now } = params;
+  return db.transaction(async tx => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`alexandria_feedback_refund:${teamId}`}, 0))`,
+    );
+    const today = await refundsToday(tx, teamId, now);
+    const outcome: RefundOutcome = today.hosts.has(host)
+      ? "host_already_refunded_today"
+      : today.total + REFUND_CREDITS > dailyRefundCap
+        ? "daily_cap_reached"
+        : "alexandria_feedback";
+    const write = refundWrite(feedbackId, outcome);
+    await tx
+      .update(schema.alexandria_feedback)
+      .set(write.values)
+      .where(write.where);
+    return { outcome, refundedTodayBefore: today.total };
+  });
+}
+
+/**
  * Refunds 1 credit for a recorded Alexandria feedback row: at most once per
  * team, requested host, and UTC day, within ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS.
- * Never throws; a failed refund leaves the feedback recorded with 0 credits.
+ * Reports a refund only when billing confirms it. Never throws.
  */
 export async function refundAlexandriaFeedback(params: {
   feedbackId: string;
@@ -102,39 +148,52 @@ export async function refundAlexandriaFeedback(params: {
     teamId,
   });
 
-  let refundedTodayBefore = 0;
+  const persist = async (outcome: RefundOutcome) => {
+    const write = refundWrite(feedbackId, outcome);
+    try {
+      await db
+        .update(schema.alexandria_feedback)
+        .set(write.values)
+        .where(write.where);
+    } catch (error) {
+      logger.warn("Failed to persist Alexandria feedback refund details", {
+        error,
+        refundPolicy: outcome,
+      });
+    }
+  };
+
   let outcome: RefundOutcome;
+  let refundedTodayBefore = 0;
   if (!config.FEEDBACK_REFUND_ENABLED) {
     outcome = "refunds_disabled";
+    await persist(outcome);
   } else {
     try {
-      const today = await refundsToday(teamId, now);
-      refundedTodayBefore = today.total;
-      if (today.hosts.has(host)) outcome = "host_already_refunded_today";
-      else if (refundedTodayBefore + REFUND_CREDITS > dailyRefundCap) {
-        outcome = "daily_cap_reached";
-      } else outcome = "alexandria_feedback";
+      ({ outcome, refundedTodayBefore } = await reserveRefund({
+        feedbackId,
+        teamId,
+        host,
+        dailyRefundCap,
+        now,
+      }));
     } catch (error) {
-      logger.warn("Failed to read Alexandria feedback refunds; no refund", {
+      logger.warn("Failed to reserve Alexandria feedback refund; no refund", {
         error,
       });
       outcome = "refund_totals_unavailable";
+      await persist(outcome);
     }
   }
 
-  let creditsRefunded = 0;
   if (outcome === "alexandria_feedback") {
-    creditsRefunded = REFUND_CREDITS;
-    if (!orgId) {
-      logger.error("Feedback refund skipped: no org for the team");
-    } else {
-      // Keyed by host and day so concurrent submissions for one website
-      // cannot both credit the team.
-      await autumnService.refundCredits({
+    const confirmed =
+      orgId !== null &&
+      (await autumnService.refundCredits({
         teamId,
         orgId,
         value: REFUND_CREDITS,
-        idempotencyKey: `fc:refund:alexandria-feedback:${teamId}:${now.toISOString().slice(0, 10)}:${host}`,
+        idempotencyKey: `fc:refund:alexandria-feedback:${feedbackId}`,
         featureId: CREDITS_FEATURE_ID,
         properties: {
           source: "feedback",
@@ -143,25 +202,18 @@ export async function refundAlexandriaFeedback(params: {
           rating,
           refundPolicy: outcome,
         },
+      }));
+    if (!confirmed) {
+      logger.warn("Alexandria feedback refund not confirmed by billing", {
+        hasOrg: orgId !== null,
       });
+      outcome = "refund_not_confirmed";
+      await persist(outcome);
     }
   }
 
-  try {
-    await db
-      .update(schema.alexandria_feedback)
-      .set({
-        credits_refunded: creditsRefunded,
-        refund_policy: policyFor(outcome),
-      })
-      .where(eq(schema.alexandria_feedback.id, feedbackId));
-  } catch (error) {
-    logger.warn("Failed to persist Alexandria feedback refund details", {
-      error,
-      creditsRefunded,
-    });
-  }
-
+  const creditsRefunded =
+    outcome === "alexandria_feedback" ? REFUND_CREDITS : 0;
   const creditsRefundedToday = refundedTodayBefore + creditsRefunded;
   const dailyCapReached =
     outcome === "daily_cap_reached" ||

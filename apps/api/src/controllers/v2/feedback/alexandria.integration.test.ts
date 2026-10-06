@@ -13,6 +13,10 @@ vi.mock("./record", () => ({
     throw new Error("Alexandria must not enter the job/refund path");
   },
 }));
+vi.mock("../../../services/autumn/autumn.service", () => ({
+  CREDITS_FEATURE_ID: "CREDITS",
+  autumnService: { refundCredits: async () => true },
+}));
 
 // Opt in with a local PostgreSQL database. Each run owns an isolated schema
 // holding a copy of the Alexandria feedback tables, including constraints.
@@ -140,10 +144,14 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
       alreadySubmitted: true,
     });
     const { rows } = await pool.query(
-      "SELECT * FROM alexandria_feedback WHERE team_id = $1 ORDER BY created_at",
+      "SELECT * FROM alexandria_feedback WHERE team_id = $1 ORDER BY credits_refunded DESC",
       [teamId],
     );
     expect(rows).toHaveLength(2);
+    expect(rows.map(row => row.id)).toEqual([
+      first.body.feedbackId,
+      second.body.feedbackId,
+    ]);
     expect(rows.map(row => row.credits_refunded)).toEqual([1, 0]);
     expect(rows.map(row => row.refund_policy.matchedReason)).toEqual([
       "alexandria_feedback",
