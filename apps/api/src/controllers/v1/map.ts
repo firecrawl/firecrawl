@@ -145,12 +145,13 @@ export async function getMapResults({
 
   // Lockdown (index-only) is cache-only, which implies zero data retention.
   const zeroDataRetention = getScrapeZDR(flags) === "forced" || indexOnly;
+   const hasSearch = crawlerOptions.search !== undefined && crawlerOptions.search !== '';
 
   const sc: StoredCrawl = {
     originUrl: url,
     crawlerOptions: {
       ...crawlerOptions,
-      limit: crawlerOptions.sitemapOnly ? 10000000 : limit,
+      limit: (crawlerOptions.sitemapOnly || hasSearch) ? 10000000 : limit,
       scrapeOptions: undefined,
     },
     scrapeOptions: scrapeOptions.parse({
@@ -288,6 +289,11 @@ export async function getMapResults({
       .flat()
       .filter(result => result !== null && result !== undefined);
 
+  if (search) {
+      const searchQuery = search.toLowerCase();
+      links = performCosineSimilarity(links, searchQuery);
+    }
+
     const minumumCutoff = Math.min(MAX_MAP_LIMIT, limit);
     if (mapResults.length > minumumCutoff) {
       mapResults = mapResults.slice(0, minumumCutoff);
@@ -309,11 +315,7 @@ export async function getMapResults({
     }
 
     // Perform cosine similarity between the search query and the list of links
-    if (search) {
-      const searchQuery = search.toLowerCase();
-      links = performCosineSimilarity(links, searchQuery);
-    }
-
+ 
     links = links
       .map(x => {
         try {
