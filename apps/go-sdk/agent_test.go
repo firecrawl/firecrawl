@@ -467,12 +467,12 @@ func TestStartAgentSendsExchangeThreadAndMode(t *testing.T) {
 		Mode:     String("chat"),
 		Exchange: &AgentExchangeOptions{
 			Enabled:         Bool(true),
-			Toolkits:        []string{"acme-markets", "acme-companies"},
+			Toolkits:        &[]string{"acme-markets", "acme-companies"},
 			MaxCalls:        Int(5),
 			RequireApproval: Bool(true),
 			Approve: &AgentExchangeApprove{
 				ApprovalID: "22222222-2222-4222-8222-222222222222",
-				CallIDs:    []string{"call-1", "call-2"},
+				CallIDs:    &[]string{"call-1", "call-2"},
 				Always:     Bool(false),
 			},
 			Decline:         &AgentExchangeDecline{ApprovalID: "33333333-3333-4333-8333-333333333333"},
@@ -536,12 +536,25 @@ func TestStartAgentOmitsUnsetExchangeFields(t *testing.T) {
 			opts: &AgentOptions{
 				Prompt: "find pricing",
 				Exchange: &AgentExchangeOptions{
-					Enabled:  Bool(true),
-					Toolkits: []string{},
-					Approve:  &AgentExchangeApprove{ApprovalID: "22222222-2222-4222-8222-222222222222"},
+					Enabled: Bool(true),
+					Approve: &AgentExchangeApprove{ApprovalID: "22222222-2222-4222-8222-222222222222"},
 				},
 			},
 			want: `{"prompt":"find pricing","exchange":{"enabled":true,"approve":{"approvalId":"22222222-2222-4222-8222-222222222222"}}}`,
+		},
+		{
+			name: "explicit empty lists",
+			opts: &AgentOptions{
+				Prompt: "find pricing",
+				Exchange: &AgentExchangeOptions{
+					Toolkits: &[]string{},
+					Approve: &AgentExchangeApprove{
+						ApprovalID: "22222222-2222-4222-8222-222222222222",
+						CallIDs:    &[]string{},
+					},
+				},
+			},
+			want: `{"prompt":"find pricing","exchange":{"toolkits":[],"approve":{"approvalId":"22222222-2222-4222-8222-222222222222","callIds":[]}}}`,
 		},
 	}
 

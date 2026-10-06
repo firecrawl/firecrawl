@@ -301,7 +301,7 @@ status, err = client.Agent(ctx, &firecrawl.AgentOptions{
 	Prompt: "Summarize the latest earnings for AAPL",
 	Exchange: &firecrawl.AgentExchangeOptions{
 		Enabled:  firecrawl.Bool(true),
-		Toolkits: []string{"your-provider-slug"},
+		Toolkits: &[]string{"your-provider-slug"},
 	},
 })
 ```

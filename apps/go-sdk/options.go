@@ -209,10 +209,10 @@ type AgentOptions struct {
 // optional and the server owns the defaults.
 type AgentExchangeOptions struct {
 	Enabled *bool `json:"enabled,omitempty"`
-	// Toolkits pins up to 5 provider slugs. Empty means every provider the
-	// team can use.
-	Toolkits []string `json:"toolkits,omitempty"`
-	MaxCalls *int     `json:"maxCalls,omitempty"`
+	// Toolkits pins up to 5 provider slugs. An empty list means every provider
+	// the team can use; nil inherits the previous turn's pin.
+	Toolkits *[]string `json:"toolkits,omitempty"`
+	MaxCalls *int      `json:"maxCalls,omitempty"`
 	// RequireApproval ends the turn with a PendingApproval before a paid
 	// provider call. It needs Mode "chat" on the same request.
 	RequireApproval *bool `json:"requireApproval,omitempty"`
@@ -227,9 +227,11 @@ type AgentExchangeOptions struct {
 // AgentExchangeApprove approves a pending approval. CallIDs and Always are
 // ignored on a terms approval.
 type AgentExchangeApprove struct {
-	ApprovalID string   `json:"approvalId"`
-	CallIDs    []string `json:"callIds,omitempty"`
-	Always     *bool    `json:"always,omitempty"`
+	ApprovalID string `json:"approvalId"`
+	// CallIDs approves a subset of the pending calls. Nil approves all of
+	// them; an empty list approves none.
+	CallIDs *[]string `json:"callIds,omitempty"`
+	Always  *bool     `json:"always,omitempty"`
 }
 
 // AgentExchangeDecline declines a pending approval.
