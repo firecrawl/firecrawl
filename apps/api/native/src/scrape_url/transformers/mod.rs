@@ -39,6 +39,9 @@ pub enum TransformerError {
   #[error("html-to-markdown conversion failed: {0}")]
   MarkdownConversion(String),
 
+  #[error("html processing failed: {0}")]
+  HtmlProcessing(String),
+
   #[error(transparent)]
   Reqwest(#[from] reqwest::Error),
 

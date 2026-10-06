@@ -24,6 +24,7 @@
   ],
   "napi": {
     "binaryName": "firecrawl-rs",
+    "dtsHeaderFile": "scrape-url.d.ts",
     "targets": [
       "x86_64-pc-windows-msvc",
       "x86_64-apple-darwin",
@@ -46,6 +47,7 @@
     "format:prettier": "prettier . -w",
     "format:toml": "taplo format",
     "format:rs": "cargo fmt",
+    "ts-bindings": "cargo run --example ts_bindings",
     "lint": "oxlint .",
     "prepublishOnly": "napi prepublish -t npm",
     "version": "napi version",

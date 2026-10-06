@@ -3,6 +3,7 @@ use std::fmt::Display;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use url::Url;
 
 use super::{
@@ -38,35 +39,40 @@ pub struct RawPage {
   pub index_attempted: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, TS)]
 pub struct ScrapeActionContent {
   pub url: String,
   pub html: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, TS)]
 pub struct JavascriptActionContent {
   pub r#type: String,
   pub value: serde_json::Value,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct RawPageActions {
   #[serde(skip_serializing_if = "Vec::is_empty")]
+  #[ts(as = "Option<_>", optional)]
   pub screenshots: Vec<Url>,
   #[serde(skip_serializing_if = "Vec::is_empty")]
+  #[ts(as = "Option<_>", optional)]
   pub scrapes: Vec<ScrapeActionContent>,
   #[serde(skip_serializing_if = "Vec::is_empty")]
+  #[ts(as = "Option<_>", optional)]
   pub javascript_returns: Vec<JavascriptActionContent>,
   #[serde(skip_serializing_if = "Vec::is_empty")]
+  #[ts(as = "Option<_>", optional)]
   pub pdfs: Vec<Url>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum ScrapeProxy {
   Basic,
-  #[serde(alias = "stealth")]
+  #[serde(rename = "stealth", alias = "enhanced")]
   Enhanced,
 }
 
@@ -74,7 +80,7 @@ impl Display for ScrapeProxy {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::Basic => f.write_str("basic"),
-      Self::Enhanced => f.write_str("enhanced"),
+      Self::Enhanced => f.write_str("stealth"),
     }
   }
 }

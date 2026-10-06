@@ -97,7 +97,10 @@ impl wreq::dns::Resolve for GuardedResolver {
   }
 }
 
-fn safe_wreq_builder(skip_tls_verification: bool, cookies: bool) -> wreq::Client {
+fn safe_wreq_builder(
+  skip_tls_verification: bool,
+  cookies: bool,
+) -> Result<wreq::Client, wreq::Error> {
   let mut builder = wreq::Client::builder()
     .emulation(wreq_util::Emulation::Chrome137)
     .tls_cert_verification(!skip_tls_verification)
@@ -119,7 +122,7 @@ fn safe_wreq_builder(skip_tls_verification: bool, cookies: bool) -> wreq::Client
     builder = builder.cookie_store(true);
   }
 
-  builder.build().expect("failed to build client")
+  builder.build()
 }
 
 impl FetchEngine {
@@ -151,7 +154,7 @@ impl Engine for FetchEngine {
     guard_ip_host(meta.get_url().host_str())?;
 
     // Not sure how safe or performant it is to construct a new wreq every turn? - mogery
-    let client = safe_wreq_builder(meta.options.should_skip_tls_verification(), true);
+    let client = safe_wreq_builder(meta.options.should_skip_tls_verification(), true)?;
 
     let mut headers = HeaderMap::with_capacity(meta.options.headers.len());
     for (name, value) in &meta.options.headers {

@@ -48,9 +48,8 @@ pub async fn _derive_html_from_raw_html(
       omce_signatures: None, // TODO: omce support
     })
   })
-  .await
-  .unwrap()
-  .unwrap(); // TODO: error handling
+  .await?
+  .map_err(|e| TransformerError::HtmlProcessing(e.to_string()))?;
 
   Ok(html)
 }

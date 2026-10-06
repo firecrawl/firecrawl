@@ -10,8 +10,8 @@ use syn::{
 };
 
 /// Turns an enum into a `Kinded` tagged union: derives its discriminant enum,
-/// implements `Kinded` and `Deserialize`, and hangs typed option accessors off
-/// its `KindedSet`.
+/// implements `Kinded`, `Deserialize` and `ts_rs::TS`, and hangs typed option
+/// accessors off its `KindedSet`.
 ///
 /// ```ignore
 /// #[kinded(noun = "format", default = [Markdown])]
@@ -117,20 +117,26 @@ fn expand(args: Punctuated<Meta, Token![,]>, item: ItemEnum) -> Result<TokenStre
 
   let mut units: Vec<Ident> = Vec::new();
   let mut options: Vec<Options> = Vec::new();
+  let mut ts_members: Vec<TokenStream2> = Vec::new();
 
   for variant in &item.variants {
-    match &variant.fields {
-      Fields::Unit => units.push(variant.ident.clone()),
+    let ident = &variant.ident;
 
-      Fields::Unnamed(fields) if fields.unnamed.len() == 1 => options.push(Options {
-        variant: variant.ident.clone(),
-        ty: fields.unnamed[0].ty.clone(),
-        accessor: format_ident!(
-          "{}",
-          snake_case(&variant.ident.to_string()),
-          span = variant.ident.span()
-        ),
-      }),
+    match &variant.fields {
+      Fields::Unit => {
+        units.push(ident.clone());
+        ts_members.push(quote!((#kind::#ident, None)));
+      }
+
+      Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+        let ty = &fields.unnamed[0].ty;
+        ts_members.push(quote!((#kind::#ident, Some(<#ty as ::ts_rs::TS>::name(cfg)))));
+        options.push(Options {
+          variant: ident.clone(),
+          ty: ty.clone(),
+          accessor: format_ident!("{}", snake_case(&ident.to_string()), span = ident.span()),
+        });
+      }
 
       _ => {
         return Err(Error::new_spanned(
@@ -210,6 +216,38 @@ fn expand(args: Punctuated<Meta, Token![,]>, item: ItemEnum) -> Result<TokenStre
 
       fn default_members() -> Vec<Self> {
         vec![#(#default_members),*]
+      }
+    }
+
+    impl ::ts_rs::TS for #name {
+      type WithoutGenerics = Self;
+      type OptionInnerType = Self;
+
+      fn name(_: &::ts_rs::Config) -> String {
+        stringify!(#name).to_owned()
+      }
+
+      fn inline(cfg: &::ts_rs::Config) -> String {
+        crate::scrape_url::kinded::ts_union::<Self>(vec![#(#ts_members),*])
+      }
+
+      fn decl(cfg: &::ts_rs::Config) -> String {
+        format!("type {} = {};", stringify!(#name), <Self as ::ts_rs::TS>::inline(cfg))
+      }
+
+      fn decl_concrete(cfg: &::ts_rs::Config) -> String {
+        <Self as ::ts_rs::TS>::decl(cfg)
+      }
+
+      fn visit_dependencies(v: &mut impl ::ts_rs::TypeVisitor)
+      where
+        Self: 'static,
+      {
+        #(v.visit::<#option_types>();)*
+      }
+
+      fn output_path() -> Option<::std::path::PathBuf> {
+        Some(::std::path::PathBuf::from(concat!(stringify!(#name), ".ts")))
       }
     }
 

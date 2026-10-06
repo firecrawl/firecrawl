@@ -60,9 +60,8 @@ pub async fn derive_attributes_from_html(
     let _guard = parent.enter();
     _extract_attributes(&html, &opts.into())
   })
-  .await
-  .unwrap()
-  .unwrap(); // TODO: error handling
+  .await?
+  .map_err(|e| TransformerError::HtmlProcessing(e.to_string()))?;
 
   document.attributes = Some(attributes.into_iter().map(|x| x.into()).collect());
 

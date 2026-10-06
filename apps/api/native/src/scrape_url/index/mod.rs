@@ -26,6 +26,8 @@ mod gcs;
 
 const DEFAULT_MAX_AGE: i32 = 2 * 24 * 60 * 60 * 1000;
 
+/// Mirrors TS `normalizeURLForIndex`. Like the WHATWG URL setters it ports,
+/// a change the URL can't take is skipped instead of failing.
 fn normalize_url_for_index(mut url: Url) -> Url {
   if url
     .fragment()
@@ -35,16 +37,18 @@ fn normalize_url_for_index(mut url: Url) -> Url {
     url.set_fragment(None);
   }
 
-  url.set_scheme("https").unwrap();
+  let _ = url.set_scheme("https");
 
   if url.port().map(|x| x == 80 || x == 443).unwrap_or(false) {
-    url.set_port(None).unwrap();
+    let _ = url.set_port(None);
   }
 
-  if let Some(host) = url.host_str().map(|x| x.to_string())
-    && host.starts_with("www.")
+  if let Some(host) = url
+    .host_str()
+    .and_then(|x| x.strip_prefix("www."))
+    .map(str::to_string)
   {
-    url.set_host(Some(&host[4..])).unwrap();
+    let _ = url.set_host(Some(&host));
   }
 
   let last_seg: Option<String> = url
@@ -54,12 +58,13 @@ fn normalize_url_for_index(mut url: Url) -> Url {
   if let Some(last_seg) = last_seg
     && (last_seg == "index.html"
       || last_seg == "index.php"
-      || last_seg == "index.html"
+      || last_seg == "index.htm"
       || last_seg == "index.shtml"
       || last_seg == "index.xml"
       || last_seg.is_empty())
+    && let Ok(mut segments) = url.path_segments_mut()
   {
-    url.path_segments_mut().unwrap().pop();
+    segments.pop();
   }
 
   url
@@ -244,7 +249,7 @@ impl Index {
         (max_age, MaxAgeSource::Explicit)
       } else {
         let domain_splits_hash: Vec<Vec<u8>> =
-          generate_domain_splits(normalized_url.host_str().unwrap())
+          generate_domain_splits(normalized_url.host_str().unwrap_or_default())
             .into_iter()
             .map(hash_url)
             .collect();

@@ -25,14 +25,14 @@ impl GoogleDocLink {
   pub fn scrape_url(&self) -> Url {
     match self {
       Self::Document { id } => {
-        let mut x: Url = url!("https://docs.google.com/document/d/");
-        x.path_segments_mut().unwrap().push(id).push("export");
+        let mut x: Url = url!("https://docs.google.com/");
+        x.set_path(&format!("/document/d/{id}/export"));
         x.query_pairs_mut().append_pair("format", "html");
         x
       }
       Self::Presentation { id } => {
-        let mut x: Url = url!("https://docs.google.com/presentation/d/");
-        x.path_segments_mut().unwrap().push(id).push("export");
+        let mut x: Url = url!("https://docs.google.com/");
+        x.set_path(&format!("/presentation/d/{id}/export"));
         x.query_pairs_mut().append_pair("format", "html");
         x
       }
@@ -44,12 +44,8 @@ impl GoogleDocLink {
         x
       }
       Self::Spreadsheets { id, gid } => {
-        let mut x: Url = url!("https://docs.google.com/spreadsheets/d/");
-        x.path_segments_mut()
-          .unwrap()
-          .push(id)
-          .push("gviz")
-          .push("tq");
+        let mut x: Url = url!("https://docs.google.com/");
+        x.set_path(&format!("/spreadsheets/d/{id}/gviz/tq"));
         x.query_pairs_mut().append_pair("tqx", "out:html");
         if let Some(gid) = gid {
           x.query_pairs_mut().append_pair("gid", gid);

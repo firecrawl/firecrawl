@@ -66,9 +66,13 @@ pub fn parse_document(meta: &Meta, result: RawPageResult) -> Result<Document, Sc
           .and_then(anydoc::Format::from_extension)
       });
 
-      let markdown = anydoc::to_markdown_bytes(bytes.as_ref(), format).unwrap();
+      let markdown = anydoc::to_markdown_bytes(bytes.as_ref(), format).map_err(|e| {
+        ScrapeURLError::UnsupportedFileError {
+          reason: format!("failed to convert document: {e}"),
+        }
+      })?;
       let html = markdown::to_html_with_options(&markdown, &markdown::Options::gfm())
-        .expect("this error is impossible, since GFM cannot error");
+        .map_err(|e| ScrapeURLError::Internal(e.to_string()))?;
 
       Ok(Document {
         markdown: Some(markdown),
@@ -110,9 +114,9 @@ pub fn parse_document(meta: &Meta, result: RawPageResult) -> Result<Document, Sc
         },
       })
     }
-    RawPageContent::BytesOffloaded(offloaded) => {
-      unimplemented!() // TODO:
-    }
+    RawPageContent::BytesOffloaded(_) => Err(ScrapeURLError::NotSupported(
+      "parsing an offloaded document",
+    )),
     RawPageContent::IndexFakeHTML(html, _) => {
       Ok(Document {
         markdown: None,
@@ -154,6 +158,8 @@ pub fn parse_document(meta: &Meta, result: RawPageResult) -> Result<Document, Sc
         },
       })
     }
-    _ => unreachable!(),
+    RawPageContent::ChromeRenderedDOM(_) | RawPageContent::GeneratedMarkdown(_) => Err(
+      ScrapeURLError::NotSupported("parsing a rendered page as a document"),
+    ),
   }
 }

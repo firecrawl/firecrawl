@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use super::formats::ScreenshotOptionsViewport;
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum ActionScrollDirection {
   Up,
@@ -15,7 +16,7 @@ fn default_scale() -> f64 {
   1.
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, TS)]
 pub enum ActionPdfFormat {
   A0,
   A1,
@@ -40,20 +41,30 @@ pub enum WaitAction {
   Milliseconds { milliseconds: i32 },
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[derive(Debug, Serialize, Deserialize, Clone, TS)]
+#[serde(
+  tag = "type",
+  rename_all = "camelCase",
+  rename_all_fields = "camelCase"
+)]
 pub enum Action {
-  Wait(WaitAction),
+  // Exactly one key is accepted; the TS type is looser to match the zod output.
+  Wait(#[ts(type = "{ milliseconds?: number, selector?: string }")] WaitAction),
   Click {
     selector: String,
     #[serde(default)]
+    #[ts(as = "Option<_>", optional)]
     all: bool,
   },
   Screenshot {
+    #[serde(default)]
+    #[ts(as = "Option<_>", optional)]
     full_page: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     quality: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     viewport: Option<ScreenshotOptionsViewport>,
   },
   Write {
@@ -64,8 +75,10 @@ pub enum Action {
   },
   Scroll {
     #[serde(default)]
+    #[ts(as = "Option<_>", optional)]
     direction: ActionScrollDirection,
 
+    #[ts(optional = nullable)]
     selector: Option<String>,
   },
   Scrape,
@@ -74,16 +87,20 @@ pub enum Action {
   },
   Pdf {
     #[serde(default)]
+    #[ts(as = "Option<_>", optional)]
     landscape: bool,
 
     #[serde(default = "default_scale")]
+    #[ts(as = "Option<_>", optional)]
     scale: f64,
 
     #[serde(default)]
+    #[ts(as = "Option<_>", optional)]
     format: ActionPdfFormat,
   },
 
   #[serde(skip_deserializing)] // internal only
+  #[ts(skip)]
   GetCookies,
 }
 

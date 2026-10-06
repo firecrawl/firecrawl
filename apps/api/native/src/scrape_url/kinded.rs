@@ -159,8 +159,60 @@ impl<'de, T: Kinded + Deserialize<'de>> Deserialize<'de> for KindedSet<T> {
   }
 }
 
+/// TypeScript union for a [`Kinded`] enum, given each kind and the TS name of
+/// its options struct, if it has one. A kind also accepts its bare name when
+/// its options deserialize from an empty object.
+pub fn ts_union<T: Kinded>(members: Vec<(T::Kind, Option<String>)>) -> String {
+  members
+    .into_iter()
+    .flat_map(|(kind, options)| {
+      let bare = T::from_kind_with_options(kind, serde_json::Map::new())
+        .is_ok()
+        .then(|| format!("\"{kind}\""));
+      let object = match options {
+        Some(options) => format!("({{ type: \"{kind}\" }} & {options})"),
+        None => format!("{{ type: \"{kind}\" }}"),
+      };
+      bare.into_iter().chain(std::iter::once(object))
+    })
+    .collect::<Vec<_>>()
+    .join(" | ")
+}
+
+impl<T: Kinded + ts_rs::TS> ts_rs::TS for KindedSet<T> {
+  type WithoutGenerics = Vec<ts_rs::Dummy>;
+  type OptionInnerType = Self;
+
+  fn ident(cfg: &ts_rs::Config) -> String {
+    <Vec<T> as ts_rs::TS>::ident(cfg)
+  }
+
+  fn name(cfg: &ts_rs::Config) -> String {
+    <Vec<T> as ts_rs::TS>::name(cfg)
+  }
+
+  fn inline(cfg: &ts_rs::Config) -> String {
+    <Vec<T> as ts_rs::TS>::inline(cfg)
+  }
+
+  fn visit_dependencies(v: &mut impl ts_rs::TypeVisitor)
+  where
+    Self: 'static,
+  {
+    <Vec<T> as ts_rs::TS>::visit_dependencies(v);
+  }
+
+  fn visit_generics(v: &mut impl ts_rs::TypeVisitor)
+  where
+    Self: 'static,
+  {
+    <Vec<T> as ts_rs::TS>::visit_generics(v);
+  }
+}
+
 /// Derives everything a [`Kinded`] enum needs -- its discriminant enum, the
-/// [`Kinded`] and [`Deserialize`] impls, and the typed option accessors on its
-/// [`KindedSet`]. Unit variants are kinds without options; single-field tuple
-/// variants are kinds with options, reachable as `.snake_case_name()`.
+/// [`Kinded`], [`Deserialize`] and `ts_rs::TS` impls, and the typed option
+/// accessors on its [`KindedSet`]. Unit variants are kinds without options;
+/// single-field tuple variants are kinds with options, reachable as
+/// `.snake_case_name()`.
 pub(crate) use kinded_macro::kinded;

@@ -36,7 +36,7 @@ pub struct IndexDocument {
   pub url: Url,
   pub html: String,
   #[serde(skip_serializing_if = "Option::is_none")]
-  pub json: Option<String>,
+  pub json: Option<serde_json::Value>,
   pub status_code: u16,
   // pub error: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -98,7 +98,7 @@ impl IndexGcs {
       Err(e) => return Err(e.into()),
     };
 
-    let mut contents = Vec::with_capacity(resp.object().size as usize);
+    let mut contents = Vec::with_capacity(usize::try_from(resp.object().size).unwrap_or_default());
     while let Some(chunk) = resp.next().await {
       contents.extend_from_slice(&chunk?);
     }

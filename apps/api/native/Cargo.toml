@@ -9,7 +9,7 @@ name = "firecrawl_rs"
 version = "0.1.0"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anydoc = "0.2.2"
@@ -44,7 +44,7 @@ thiserror = "2"
 url = { version = "2.5.7", features = ["serde"] }
 uuid = { version = "1", features = ["serde"] }
 url-macro = "0.2.4"
-tokio = { version = "1.48.0", features = ["macros", "time"] }
+tokio = { version = "1.48.0", features = ["macros", "time", "rt"] }
 # Transitive dep (pdf-inspector -> unicode-normalization -> tinyvec). Pinned because
 # tinyvec 1.13.0 fails to compile (https://github.com/Lokathor/tinyvec/issues/225)
 # and Cargo.lock is not committed, so fresh builds would otherwise pick it up.
@@ -61,6 +61,9 @@ google-cloud-storage = "1.17.0"
 base64 = "0.23.1"
 markdown = "1.0.0"
 rust_iso3166 = { version = "0.2.0", features = ["serde"] }
+ts-rs = { version = "12.0.1", features = ["serde-json-impl", "chrono-impl", "url-impl", "no-serde-warnings"] }
+serde_path_to_error = "0.1.20"
+serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 
 [build-dependencies]
 napi-build = "2"

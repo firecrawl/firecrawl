@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::Value;
+use serde_with::skip_serializing_none;
+use ts_rs::TS;
 use url::Url;
 
 use super::{
@@ -9,7 +11,7 @@ use super::{
 };
 use std::{collections::HashMap, fmt::Display};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum DocumentMetadataCacheState {
   Hit,
@@ -25,11 +27,19 @@ impl Display for DocumentMetadataCacheState {
   }
 }
 
-#[derive(Debug, Serialize)]
+#[skip_serializing_none]
+#[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(optional_fields)]
 pub struct DocumentMetadata {
+  /// Tags extracted from the page. Serialized first so declared fields win a
+  /// clash, like TS spreading them before the engine's metadata.
+  #[serde(flatten)]
+  pub extra: HashMap<String, Value>,
+
   pub title: Option<String>,
   pub scrape_id: String,
+  #[serde(rename = "sourceURL")]
   pub source_url: String,
   pub url: Url,
   pub status_code: u16,
@@ -44,19 +54,19 @@ pub struct DocumentMetadata {
   pub credits_used: Option<u64>,
   pub concurrency_limited: bool,
   pub concurrency_queue_duration_ms: Option<u64>,
-
-  pub extra: HashMap<String, Value>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct DocumentAttribute {
   pub selector: String,
   pub attribute: String,
   pub values: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[skip_serializing_none]
+#[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(optional_fields)]
 pub struct Document {
   pub markdown: Option<String>,
   pub html: Option<String>,

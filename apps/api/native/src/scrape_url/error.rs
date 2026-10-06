@@ -1,4 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use ts_rs::TS;
 
 use super::{options::ProxyMode, transformers::TransformerError};
 
@@ -34,7 +36,6 @@ pub enum ScrapeURLError {
   #[error("proxy selection failed")]
   ProxySelectionError,
 
-  // TODO: give these real codes on the JS side; they surface as UNKNOWN_ERROR until then
   #[error("reliable retrieval failed with proxy mode {0:?}")]
   ReliableRetrievalError(ProxyMode),
 
@@ -61,6 +62,17 @@ pub enum ScrapeURLError {
 
   #[error("actions are not supported by any available engines")]
   ActionsNotSupportedError,
+  #[error("{0} is not supported yet")]
+  NotSupported(&'static str),
+
+  #[error("invalid {argument}: {error}")]
+  InvalidInput {
+    argument: &'static str,
+    error: String,
+  },
+
+  #[error("scrape panicked: {0}")]
+  Panic(String),
 
   #[error("{0}")]
   Internal(String),
@@ -140,29 +152,78 @@ impl From<wreq::Error> for ScrapeURLError {
 }
 
 impl ScrapeURLError {
-  pub fn code(&self) -> &'static str {
+  pub fn payload(&self) -> ScrapeErrorPayload {
+    let message = self.to_string();
     match self {
-      Self::CrawlDenialError { .. } => "CRAWL_DENIAL",
-      Self::LockdownMissError => "SCRAPE_LOCKDOWN_CACHE_MISS",
-      Self::AgentIndexOnlyError => "AGENT_INDEX_ONLY",
-      Self::PDFOCRRequiredError(_) => "SCRAPE_PDF_OCR_REQUIRED",
-      Self::SiteError { .. } => "SCRAPE_SITE_ERROR",
-      Self::SSLError { .. } => "SCRAPE_SSL_ERROR",
-      Self::DNSResolutionError { .. } => "SCRAPE_DNS_RESOLUTION_ERROR",
-      Self::UnsupportedFileError { .. } => "SCRAPE_UNSUPPORTED_FILE_ERROR",
-      Self::ActionError { .. } => "SCRAPE_ACTION_ERROR",
-      Self::ProxySelectionError => "SCRAPE_PROXY_SELECTION_ERROR",
-      Self::Transformer(TransformerError::JsonContentTooLarge) => "SCRAPE_JSON_CONTENT_TOO_LARGE",
-      Self::NoEnginesLeftError { .. } => "SCRAPE_ALL_ENGINES_FAILED",
-      Self::ActionsNotSupportedError => "SCRAPE_ACTIONS_NOT_SUPPORTED",
-      Self::ReliableRetrievalError(_)
-      | Self::InsecureConnectionError
-      | Self::InvalidURLError
-      | Self::PDFFetchFailed
-      | Self::PageLoadFailed
-      | Self::UnclassifiedEngineError { .. }
-      | Self::EngineUnavailable { .. }
-      | Self::Internal(_)
+      Self::CrawlDenialError { reason } => ScrapeErrorPayload::CrawlDenial {
+        reason: reason.clone(),
+      },
+      Self::LockdownMissError => ScrapeErrorPayload::LockdownCacheMiss,
+      Self::AgentIndexOnlyError => ScrapeErrorPayload::AgentIndexOnly,
+      Self::PDFOCRRequiredError(pdf_type) => ScrapeErrorPayload::PdfOcrRequired {
+        pdf_type: (*pdf_type).into(),
+      },
+      Self::SiteError { code } => ScrapeErrorPayload::SiteError {
+        error_code: code.clone(),
+      },
+      Self::SSLError {
+        skip_tls_verification,
+      } => ScrapeErrorPayload::SslError {
+        skip_tls_verification: *skip_tls_verification,
+      },
+      Self::DNSResolutionError { hostname } => ScrapeErrorPayload::DnsResolutionError {
+        hostname: hostname.clone(),
+      },
+      Self::UnsupportedFileError { reason } => ScrapeErrorPayload::UnsupportedFileError {
+        reason: reason.clone(),
+      },
+      Self::ActionError { error } => ScrapeErrorPayload::ActionError {
+        error_code: error.clone(),
+      },
+      Self::ProxySelectionError => ScrapeErrorPayload::ProxySelectionError,
+      Self::NoEnginesLeftError { fallback_list } => ScrapeErrorPayload::AllEnginesFailed {
+        fallback_list: fallback_list.iter().map(|x| x.to_string()).collect(),
+        message: no_engines_left_message(fallback_list),
+      },
+      Self::ActionsNotSupportedError => ScrapeErrorPayload::ActionsNotSupported {
+        message: "Actions are not supported by any available engines. Actions require Fire Engine (fire-engine) to be enabled.".to_string(),
+      },
+      Self::Transformer(TransformerError::JsonContentTooLarge) => {
+        ScrapeErrorPayload::JsonContentTooLarge { message }
+      }
+      Self::ReliableRetrievalError(proxy) => ScrapeErrorPayload::ReliableRetrievalError {
+        proxy: *proxy,
+        message,
+      },
+      Self::InsecureConnectionError => ScrapeErrorPayload::InsecureConnectionError { message },
+      Self::InvalidURLError => ScrapeErrorPayload::InvalidUrlError { message },
+      Self::PDFFetchFailed => ScrapeErrorPayload::PdfFetchFailed { message },
+      Self::PageLoadFailed => ScrapeErrorPayload::PageLoadFailed { message },
+      Self::UnclassifiedEngineError { engine, error } => {
+        ScrapeErrorPayload::UnclassifiedEngineError {
+          engine: engine.to_string(),
+          error: error.clone(),
+          message,
+        }
+      }
+      Self::EngineUnavailable { engine, status } => ScrapeErrorPayload::EngineUnavailable {
+        engine: engine.to_string(),
+        status: *status,
+        message,
+      },
+      Self::NotSupported(feature) => ScrapeErrorPayload::NotSupported {
+        feature: feature.to_string(),
+        message,
+      },
+      Self::InvalidInput { argument, .. } => ScrapeErrorPayload::InvalidInput {
+        argument: argument.to_string(),
+        message,
+      },
+      Self::Panic(_) => ScrapeErrorPayload::Panic { message },
+      Self::Transformer(TransformerError::Join(e)) if e.is_panic() => {
+        ScrapeErrorPayload::Panic { message }
+      }
+      Self::Internal(_)
       | Self::Wreq(_)
       | Self::Reqwest(_)
       | Self::Json(_)
@@ -174,79 +235,163 @@ impl ScrapeURLError {
       | Self::Redis(_)
       | Self::Sqlx(_)
       | Self::Gcs(_)
-      | Self::Transformer(_) => "UNKNOWN_ERROR",
+      | Self::Transformer(_) => ScrapeErrorPayload::Unknown {
+        message: unknown_error_message(&message),
+      },
     }
   }
 
+  /// `CODE|{payload}`, the format TS `deserializeTransportableError` reads.
   pub fn to_transport_string(&self) -> String {
-    let payload = serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string());
-    format!("{}|{}", self.code(), payload)
+    let payload = serde_json::to_value(self.payload()).unwrap_or_else(|e| {
+      serde_json::json!({
+        "code": "UNKNOWN_ERROR",
+        "message": unknown_error_message(&e.to_string()),
+      })
+    });
+    let code = payload
+      .get("code")
+      .and_then(Value::as_str)
+      .unwrap_or("UNKNOWN_ERROR");
+    format!("{code}|{payload}")
   }
 }
 
-impl Serialize for ScrapeURLError {
-  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-  where
-    S: serde::Serializer,
-  {
-    use serde::ser::SerializeMap;
+/// Structured payload of a rejected `scrapeUrl` promise, discriminated by
+/// `code`. Codes shared with TS `error.ts` carry the fields its `deserialize`
+/// reads; the Rust-specific codes below them also carry a `message`.
+#[derive(Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "code")]
+#[ts(rename = "ScrapeError")]
+pub enum ScrapeErrorPayload {
+  #[serde(rename = "CRAWL_DENIAL")]
+  CrawlDenial { reason: String },
 
-    let mut map = serializer.serialize_map(None)?;
-    match self {
-      Self::CrawlDenialError { reason } => {
-        map.serialize_entry("reason", reason)?;
-      }
-      Self::SSLError {
-        skip_tls_verification,
-      } => {
-        map.serialize_entry("skipTlsVerification", skip_tls_verification)?;
-      }
-      Self::SiteError { code } => {
-        map.serialize_entry("errorCode", code)?;
-      }
-      Self::DNSResolutionError { hostname } => {
-        map.serialize_entry("hostname", hostname)?;
-      }
-      Self::UnsupportedFileError { reason } => {
-        map.serialize_entry("reason", reason)?;
-      }
-      Self::ActionError { error } => {
-        map.serialize_entry("errorCode", error)?;
-      }
-      Self::PDFOCRRequiredError(pdf_type) => {
-        map.serialize_entry("pdfType", pdf_type_name(pdf_type))?;
-      }
-      Self::LockdownMissError | Self::AgentIndexOnlyError | Self::ProxySelectionError => {}
-      Self::NoEnginesLeftError { fallback_list } => {
-        map.serialize_entry("fallbackList", fallback_list)?;
-      }
-      Self::ActionsNotSupportedError => {
-        map.serialize_entry(
-          "message",
-          "Actions are not supported by any available engines. Actions require Fire Engine (fire-engine) to be enabled.",
-        )?;
-      }
-      Self::Transformer(TransformerError::JsonContentTooLarge) => {
-        map.serialize_entry(
-          "message",
-          "The scraped page content is too large for JSON extraction, so extraction was aborted.",
-        )?;
-      }
-      e => {
-        map.serialize_entry("message", &unknown_error_message(&e.to_string()))?;
-      }
+  #[serde(rename = "SCRAPE_LOCKDOWN_CACHE_MISS")]
+  LockdownCacheMiss,
+
+  #[serde(rename = "AGENT_INDEX_ONLY")]
+  AgentIndexOnly,
+
+  #[serde(rename = "SCRAPE_PDF_OCR_REQUIRED", rename_all = "camelCase")]
+  PdfOcrRequired { pdf_type: PdfType },
+
+  #[serde(rename = "SCRAPE_SITE_ERROR", rename_all = "camelCase")]
+  SiteError { error_code: String },
+
+  #[serde(rename = "SCRAPE_SSL_ERROR", rename_all = "camelCase")]
+  SslError { skip_tls_verification: bool },
+
+  #[serde(rename = "SCRAPE_DNS_RESOLUTION_ERROR")]
+  DnsResolutionError { hostname: String },
+
+  #[serde(rename = "SCRAPE_UNSUPPORTED_FILE_ERROR")]
+  UnsupportedFileError { reason: String },
+
+  #[serde(rename = "SCRAPE_ACTION_ERROR", rename_all = "camelCase")]
+  ActionError { error_code: String },
+
+  #[serde(rename = "SCRAPE_PROXY_SELECTION_ERROR")]
+  ProxySelectionError,
+
+  #[serde(rename = "SCRAPE_ALL_ENGINES_FAILED", rename_all = "camelCase")]
+  AllEnginesFailed {
+    fallback_list: Vec<String>,
+    message: String,
+  },
+
+  #[serde(rename = "SCRAPE_ACTIONS_NOT_SUPPORTED")]
+  ActionsNotSupported { message: String },
+
+  #[serde(rename = "SCRAPE_JSON_CONTENT_TOO_LARGE")]
+  JsonContentTooLarge { message: String },
+
+  #[serde(rename = "UNKNOWN_ERROR")]
+  Unknown { message: String },
+
+  #[serde(rename = "SCRAPE_RELIABLE_RETRIEVAL_ERROR")]
+  ReliableRetrievalError { proxy: ProxyMode, message: String },
+
+  #[serde(rename = "SCRAPE_INSECURE_CONNECTION_ERROR")]
+  InsecureConnectionError { message: String },
+
+  #[serde(rename = "SCRAPE_INVALID_URL_ERROR")]
+  InvalidUrlError { message: String },
+
+  #[serde(rename = "SCRAPE_PDF_FETCH_FAILED")]
+  PdfFetchFailed { message: String },
+
+  #[serde(rename = "SCRAPE_PAGE_LOAD_FAILED")]
+  PageLoadFailed { message: String },
+
+  #[serde(rename = "SCRAPE_UNCLASSIFIED_ENGINE_ERROR")]
+  UnclassifiedEngineError {
+    engine: String,
+    error: String,
+    message: String,
+  },
+
+  #[serde(rename = "SCRAPE_ENGINE_UNAVAILABLE")]
+  EngineUnavailable {
+    engine: String,
+    status: u16,
+    message: String,
+  },
+
+  #[serde(rename = "SCRAPE_NOT_SUPPORTED")]
+  NotSupported { feature: String, message: String },
+
+  #[serde(rename = "SCRAPE_INVALID_INPUT")]
+  InvalidInput { argument: String, message: String },
+
+  #[serde(rename = "SCRAPE_PANIC")]
+  Panic { message: String },
+}
+
+impl ScrapeErrorPayload {
+  /// Inverse of [`ScrapeURLError::to_transport_string`]. `None` for anything
+  /// that is not a well-formed `scrapeUrl` error.
+  pub fn from_transport_string(transport: &str) -> Option<Self> {
+    let (code, payload) = transport.split_once('|')?;
+    let payload: Value = serde_json::from_str(payload).ok()?;
+    if payload.get("code").and_then(Value::as_str) != Some(code) {
+      return None;
     }
-    map.end()
+    serde_json::from_value(payload).ok()
   }
 }
 
-fn pdf_type_name(pdf_type: &pdf_inspector::PdfType) -> &'static str {
-  match pdf_type {
-    pdf_inspector::PdfType::TextBased => "TextBased",
-    pdf_inspector::PdfType::Scanned => "Scanned",
-    pdf_inspector::PdfType::ImageBased => "ImageBased",
-    pdf_inspector::PdfType::Mixed => "Mixed",
+/// PDF classification carried by `SCRAPE_PDF_OCR_REQUIRED`.
+#[derive(Debug, PartialEq, Serialize, Deserialize, TS)]
+pub enum PdfType {
+  TextBased,
+  Scanned,
+  ImageBased,
+  Mixed,
+}
+
+impl From<pdf_inspector::PdfType> for PdfType {
+  fn from(pdf_type: pdf_inspector::PdfType) -> Self {
+    match pdf_type {
+      pdf_inspector::PdfType::TextBased => Self::TextBased,
+      pdf_inspector::PdfType::Scanned => Self::Scanned,
+      pdf_inspector::PdfType::ImageBased => Self::ImageBased,
+      pdf_inspector::PdfType::Mixed => Self::Mixed,
+    }
   }
+}
+
+/// Same text as TS `NoEnginesLeftError`, including its self-hosted variant.
+fn no_engines_left_message(fallback_list: &[&str]) -> String {
+  let contact = if std::env::var("USE_DB_AUTHENTICATION").as_deref() == Ok("true") {
+    "If the issue persists, contact us at help@firecrawl.com with your request ID for investigation."
+  } else {
+    "Check your server logs for more detailed error information from each engine."
+  };
+  format!(
+    "All scraping engines failed to retrieve content from this URL. Engines tried: [{}]. This usually happens when: (1) The URL is invalid or the page doesn't exist (404), (2) The website is blocking automated access, (3) The website is down or unreachable, (4) The page requires authentication. Double check the URL is correct and accessible in a browser. {contact}",
+    fallback_list.join(", ")
+  )
 }
 
 fn unknown_error_message(inner: &str) -> String {
