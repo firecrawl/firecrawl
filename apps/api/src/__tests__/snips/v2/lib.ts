@@ -350,6 +350,7 @@ export async function browserCreateRaw(
     activityTtl?: number;
     recordSession?: boolean;
     streamWebView?: boolean;
+    blockAds?: boolean;
     profile?: { name: string; saveChanges?: boolean };
   },
   identity: Identity,

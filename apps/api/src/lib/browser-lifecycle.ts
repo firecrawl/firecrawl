@@ -124,6 +124,7 @@ export async function createBrowserSession(
     streamWebView: boolean;
     recordSession: boolean;
     zeroDataRetention?: boolean;
+    blockAds: boolean;
     profile?: { name: string; saveChanges: boolean };
     scrapeId?: string;
     shouldBill?: boolean;
