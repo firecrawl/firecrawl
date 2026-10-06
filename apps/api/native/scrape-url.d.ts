@@ -15,13 +15,17 @@ export declare namespace ScrapeUrl {
   export type ChangeTrackingMode = "json" | "git-diff";
   export type ChangeTrackingOptions = { prompt?: string | null, schema?: JsonValue | null, modes?: Array<ChangeTrackingMode>, tag?: string | null, };
   export type DeterministicJsonOptions = { prompt?: string | null, schema?: JsonValue | null, };
-  export type Document = { markdown?: string, html?: string, rawHtml?: string, rawBase64?: string, links?: Array<string>, images?: Array<string>, screenshot?: string, audio?: string, video?: string, json?: JsonValue, summary?: string, answer?: string, highlights?: string, pages?: Array<PdfPage>, blocks?: Array<PdfBlockItem>, warning?: string, attributes?: Array<DocumentAttribute>, actions?: RawPageActions, metadata: DocumentMetadata, };
+  export type Document = { markdown?: string, html?: string, rawHtml?: string, rawBase64?: string, links?: Array<string>, images?: Array<string>, screenshot?: string, audio?: string, video?: string, json?: JsonValue, summary?: string, answer?: string, highlights?: string, pages?: Array<PdfPage>, blocks?: Array<PdfPageBlocks>, warning?: string, attributes?: Array<DocumentAttribute>, actions?: RawPageActions, metadata: DocumentMetadata, };
   export type DocumentAttribute = { selector: string, attribute: string, values: Array<string>, };
   export type DocumentMetadata = { title?: string, scrapeId: string, sourceURL: string, url: string, statusCode: number, numPages?: number, totalPages?: number, contentType: string, timezone?: string, proxyUsed: ScrapeProxy, cacheState: DocumentMetadataCacheState, cachedAt?: string, indexId?: string, creditsUsed?: number, concurrencyLimited: boolean, concurrencyQueueDurationMs?: number, } & ({ [key in string]: number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null });
   export type DocumentMetadataCacheState = "hit" | "miss";
   export type Format = "markdown" | { type: "markdown" } | "html" | { type: "html" } | "rawHtml" | { type: "rawHtml" } | "rawBase64" | { type: "rawBase64" } | "links" | { type: "links" } | "images" | { type: "images" } | "summary" | { type: "summary" } | "json" | ({ type: "json" } & JsonOptions) | "deterministicJson" | ({ type: "deterministicJson" } & DeterministicJsonOptions) | "changeTracking" | ({ type: "changeTracking" } & ChangeTrackingOptions) | "screenshot" | ({ type: "screenshot" } & ScreenshotOptions) | ({ type: "attributes" } & AttributesOptions) | "branding" | ({ type: "branding" } & BrandingOptions) | "product" | { type: "product" } | "menu" | { type: "menu" } | ({ type: "question" } & QuestionOptions) | ({ type: "highlights" } & HighlightsOptions) | ({ type: "query" } & QueryOptions) | "audio" | { type: "audio" } | "video" | { type: "video" };
   export type HighlightsOptions = { query: string, };
-  export type InternalOptions = { crawlId?: string | null, priority?: number | null, v0CrawlOnlyUrls?: boolean, v0DisableJsDom?: boolean, disableSmartWaitCache?: boolean, isBackgroundIndex?: boolean, urlInvisibleInCurrentCrawl?: boolean, unnormalizedSourceURL?: string | null, saveScrapeResultToGCS?: boolean, bypassBilling?: boolean, zeroDataRetention?: boolean, agentIndexOnly?: boolean, isPreCrawl?: boolean, };
+  export type InternalOptions = { crawlId?: string | null, priority?: number | null, v0CrawlOnlyUrls?: boolean, v0DisableJsDom?: boolean, disableSmartWaitCache?: boolean, isBackgroundIndex?: boolean, urlInvisibleInCurrentCrawl?: boolean, unnormalizedSourceURL?: string | null, saveScrapeResultToGCS?: boolean, bypassBilling?: boolean, zeroDataRetention?: boolean, teamFlags?: TeamFlags | null, 
+  /**
+   * The team's sold concurrency, snapshotted at request acceptance.
+   */
+  teamConcurrency?: number | null, agentIndexOnly?: boolean, isPreCrawl?: boolean, };
   export type JavascriptActionContent = { type: string, value: JsonValue, };
   export type JsonOptions = { prompt?: string | null, schema?: JsonValue | null, checkPromptInjection?: boolean | null, };
   export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
@@ -44,8 +48,27 @@ export declare namespace ScrapeUrl {
    * skip pages merged by cross-page stitching — callers that need every physical page should use `pages: true` instead.
    * No new response field.
    */
-  pageMarkers?: boolean, };
-  export type PdfPage = { page: number, markdown: string, };
+  pageMarkers?: boolean, 
+  /**
+   * Skip the cached conversion for this document and parse it again; the fresh result replaces the cache entry.
+   */
+  refresh?: boolean, 
+  /**
+   * Experimental opt-in to fire-pdf's async jobs, honored only where the deployment allows request overrides.
+   */
+  __firePdfAsync?: boolean, };
+  /**
+   * One physical page of markdown, as surfaced on `Document.pages`.
+   */
+  export type PdfPage = { 
+  /**
+   * 1-based physical page number.
+   */
+  pageNumber: number, markdown: string, };
+  /**
+   * Typed layout blocks of one page, as surfaced on `Document.blocks`.
+   */
+  export type PdfPageBlocks = { pageNumber: number, width: number | null, height: number | null, status: string, items: Array<PdfBlockItem>, };
   /**
    * PDF classification carried by `SCRAPE_PDF_OCR_REQUIRED`.
    */
@@ -61,12 +84,20 @@ export declare namespace ScrapeUrl {
    * `code`. Codes shared with TS `error.ts` carry the fields its `deserialize`
    * reads; the Rust-specific codes below them also carry a `message`.
    */
-  export type ScrapeError = { "code": "CRAWL_DENIAL", reason: string, } | { "code": "SCRAPE_LOCKDOWN_CACHE_MISS" } | { "code": "AGENT_INDEX_ONLY" } | { "code": "SCRAPE_PDF_OCR_REQUIRED", pdfType: PdfType, } | { "code": "SCRAPE_SITE_ERROR", errorCode: string, } | { "code": "SCRAPE_SSL_ERROR", skipTlsVerification: boolean, } | { "code": "SCRAPE_DNS_RESOLUTION_ERROR", hostname: string, } | { "code": "SCRAPE_UNSUPPORTED_FILE_ERROR", reason: string, } | { "code": "SCRAPE_ACTION_ERROR", errorCode: string, } | { "code": "SCRAPE_PROXY_SELECTION_ERROR" } | { "code": "SCRAPE_ALL_ENGINES_FAILED", fallbackList: Array<string>, message: string, } | { "code": "SCRAPE_ACTIONS_NOT_SUPPORTED", message: string, } | { "code": "SCRAPE_JSON_CONTENT_TOO_LARGE", message: string, } | { "code": "UNKNOWN_ERROR", message: string, } | { "code": "SCRAPE_RELIABLE_RETRIEVAL_ERROR", proxy: ProxyMode, message: string, } | { "code": "SCRAPE_INSECURE_CONNECTION_ERROR", message: string, } | { "code": "SCRAPE_INVALID_URL_ERROR", message: string, } | { "code": "SCRAPE_PDF_FETCH_FAILED", message: string, } | { "code": "SCRAPE_PAGE_LOAD_FAILED", message: string, } | { "code": "SCRAPE_UNCLASSIFIED_ENGINE_ERROR", engine: string, error: string, message: string, } | { "code": "SCRAPE_ENGINE_UNAVAILABLE", engine: string, status: number, message: string, } | { "code": "SCRAPE_NOT_SUPPORTED", feature: string, message: string, } | { "code": "SCRAPE_INVALID_INPUT", argument: string, message: string, } | { "code": "SCRAPE_PANIC", message: string, };
+  export type ScrapeError = { "code": "CRAWL_DENIAL", reason: string, } | { "code": "SCRAPE_LOCKDOWN_CACHE_MISS" } | { "code": "AGENT_INDEX_ONLY" } | { "code": "SCRAPE_PDF_OCR_REQUIRED", pdfType: PdfType, } | { "code": "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR", pageCount: number, minTimeout: number, } | { "code": "SCRAPE_SITE_ERROR", errorCode: string, } | { "code": "SCRAPE_SSL_ERROR", skipTlsVerification: boolean, } | { "code": "SCRAPE_DNS_RESOLUTION_ERROR", hostname: string, } | { "code": "SCRAPE_UNSUPPORTED_FILE_ERROR", reason: string, } | { "code": "SCRAPE_ACTION_ERROR", errorCode: string, } | { "code": "SCRAPE_PROXY_SELECTION_ERROR" } | { "code": "SCRAPE_ALL_ENGINES_FAILED", fallbackList: Array<string>, message: string, } | { "code": "SCRAPE_ACTIONS_NOT_SUPPORTED", message: string, } | { "code": "SCRAPE_JSON_CONTENT_TOO_LARGE", message: string, } | { "code": "UNKNOWN_ERROR", message: string, } | { "code": "SCRAPE_RELIABLE_RETRIEVAL_ERROR", proxy: ProxyMode, message: string, } | { "code": "SCRAPE_INSECURE_CONNECTION_ERROR", message: string, } | { "code": "SCRAPE_INVALID_URL_ERROR", message: string, } | { "code": "SCRAPE_PDF_FETCH_FAILED", message: string, } | { "code": "SCRAPE_PAGE_LOAD_FAILED", message: string, } | { "code": "SCRAPE_UNCLASSIFIED_ENGINE_ERROR", engine: string, error: string, message: string, } | { "code": "SCRAPE_ENGINE_UNAVAILABLE", engine: string, status: number, message: string, } | { "code": "SCRAPE_NOT_SUPPORTED", feature: string, message: string, } | { "code": "SCRAPE_INVALID_INPUT", argument: string, message: string, } | { "code": "SCRAPE_PANIC", message: string, };
   export type ScrapeOptions = { formats: Array<Format>, headers?: { [key in string]: string }, includeTags?: Array<string>, excludeTags?: Array<string>, onlyMainContent: boolean, onlyCleanContent: boolean, timeout?: number | null, waitFor?: number | null, mobile: boolean, parsers?: Array<Parser>, actions?: Array<Action>, location?: ScrapeOptionsLocation, skipTlsVerification?: boolean | null, removeBase64Images: boolean, blockAds: boolean, proxy: "basic" | "stealth" | "enhanced" | "auto", maxAge?: number | null, minAge?: number | null, storeInCache: boolean, lockdown: boolean, profile?: ScrapeOptionsProfile | null, __searchPreviewToken?: string | null, __experimental_omce?: boolean, __experimental_omceDomain?: string | null, __experimental_engpicker?: boolean, __forceFirePDF?: boolean, };
   export type ScrapeOptionsLocation = { country?: string, languages?: Array<string>, };
   export type ScrapeOptionsProfile = { name: string, saveChanges?: boolean, };
   export type ScrapeProxy = "basic" | "stealth";
   export type ScreenshotOptions = { fullPage?: boolean, quality?: number | null, viewport?: ScreenshotOptionsViewport | null, };
   export type ScreenshotOptionsViewport = { width: number, height: number, };
+  /**
+   * Per-team flags snapshotted from the account at request acceptance.
+   */
+  export type TeamFlags = { 
+  /**
+   * Grants the privileged large-PDF size cap.
+   */
+  largePdfs?: boolean | null, };
   export type ScrapeErrorCode = ScrapeError["code"];
 }

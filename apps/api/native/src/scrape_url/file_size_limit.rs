@@ -3,9 +3,8 @@ use std::{collections::HashSet, sync::LazyLock};
 use super::meta::Meta;
 
 static PDF_BY_REFERENCE_MAX_BYTES_DEFAULT: LazyLock<usize> = LazyLock::new(|| {
-  if let Some(n) = std::env::var("PDF_BY_REFERENCE_MAX_BYTES_DEFAULT").ok()
-    && !n.is_empty()
-    && let Ok(n) = n.parse::<usize>()
+  if let Ok(n) = std::env::var("PDF_BY_REFERENCE_MAX_BYTES_DEFAULT")
+    && let Ok(n) = n.trim().parse::<usize>()
   {
     n
   } else {
@@ -14,34 +13,46 @@ static PDF_BY_REFERENCE_MAX_BYTES_DEFAULT: LazyLock<usize> = LazyLock::new(|| {
 });
 
 static PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED: LazyLock<usize> = LazyLock::new(|| {
-  if let Some(n) = std::env::var("PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED").ok()
-    && !n.is_empty()
-    && let Ok(n) = n.parse::<usize>()
+  if let Ok(n) = std::env::var("PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED")
+    && let Ok(n) = n.trim().parse::<usize>()
   {
     n
   } else {
-    200 * 1024 * 1024
+    256 * 1024 * 1024
   }
 });
 
 static PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: LazyLock<HashSet<String>> = LazyLock::new(|| {
-  if let Some(s) = std::env::var("PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS").ok() {
-    s.split(",").map(|x| x.to_string()).collect()
-  } else {
-    HashSet::with_capacity(0)
-  }
+  std::env::var("PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS")
+    .map(|s| {
+      s.split(',')
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+        .map(str::to_string)
+        .collect()
+    })
+    .unwrap_or_default()
 });
 
-const FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE: usize = 256 * 1024 * 1024;
+/// The architectural ceiling for any PDF: fire-pdf's by-reference input limit.
+pub const FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE: usize = 256 * 1024 * 1024;
 
 impl Meta {
+  /// The team's large-PDF byte limit: the privileged cap for teams with the `largePdfs`
+  /// flag or on the env allowlist, the default cap otherwise. Every acquisition path
+  /// (fire-engine's `pdfMaxSize`, the handoff download, the by-reference placements) enforces it.
   pub fn file_size_limit(&self) -> usize {
-    let raw = if PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS.contains(&self.team_id) {
+    let privileged = self
+      .internal_options
+      .team_flags
+      .as_ref()
+      .is_some_and(|flags| flags.large_pdfs == Some(true))
+      || (!self.team_id.is_empty() && PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS.contains(&self.team_id));
+    let raw = if privileged {
       *PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED
     } else {
       *PDF_BY_REFERENCE_MAX_BYTES_DEFAULT
     };
-
-    raw.max(1).min(FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE)
+    raw.clamp(1, FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE)
   }
 }

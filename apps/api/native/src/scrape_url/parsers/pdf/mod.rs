@@ -1,158 +1,47 @@
-use std::fmt::Display;
+use tokio::time::Instant;
+use tracing::{Span, field::Empty};
 
-use base64::Engine;
-use bytes::Bytes;
-use pdf_inspector::{PdfProcessResult, PdfType, process_pdf_mem_with_options};
-use serde::{Deserialize, Serialize};
-use tracing::warn;
-use ts_rs::TS;
-
-use self::firepdf::FirePDF;
+use self::{
+  detect::{pdf_binary_match, pdf_content_type_match, pdf_file_extension_match},
+  firepdf::{FirePdfConfig, now_ms},
+  limits::ensure_ocr_time,
+  local::{run_local_pass, text_fallback},
+  ocr::{OcrInput, ensure_configured, run_ocr},
+  output::{PageInfo, PdfFacts, indexed_document, parsed_document, raw_document},
+  source::{PdfSource, load_pdf},
+};
 use super::super::{
-  document::{Document, DocumentMetadata, DocumentMetadataCacheState},
+  document::Document,
   error::ScrapeURLError,
   meta::Meta,
   raw_page::{RawPageContent, RawPageResult},
 };
 
+mod detect;
 mod firepdf;
+mod html;
+mod inline;
+mod inspector;
+mod limits;
+mod local;
+mod ocr;
+mod output;
+mod source;
+mod types;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub enum PdfMode {
-  #[default]
-  Auto,
-
-  Fast,
-  Ocr,
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-pub struct PdfBlockItemConfidence {
-  pub layout: Option<u64>, // TODO: wtf is this type
-  pub ocr: Option<u64>,    // TODO: wtf is this type
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct PdfBlockItem {
-  pub id: String,
-  pub r#type: String,
-  pub label: Option<String>,
-  pub bbox: Option<(i64, i64, i64, i64)>, // TODO: wtf is this type
-  pub content: String,
-  pub markdown_span: Option<(usize, usize)>, // TODO: wtf is this type
-  pub reading_order: u64,                    // TODO: wtf is this type
-  pub source: Option<String>,
-  pub confidence: PdfBlockItemConfidence,
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-pub struct PdfPage {
-  pub page: u32,
-  pub markdown: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(optional_fields = nullable)]
-pub struct PdfOptions {
-  #[serde(default)]
-  #[ts(as = "Option<_>", optional)]
-  pub mode: PdfMode,
-
-  pub max_pages: Option<u32>,
-
-  /// Include physical per-page markdown alongside document markdown.
-  #[serde(default)]
-  #[ts(as = "Option<_>", optional)]
-  pub pages: bool,
-
-  /// Include per-page types layout blocks (bounding boxes, block types, reading order) alongside document markdown.
-  #[serde(default)]
-  #[ts(as = "Option<_>", optional)]
-  pub blocks: bool,
-
-  /// Join PDF pages in `document.markdown` with `\n\n---\n\n<!-- page N -->\n\n` where N is the 1-based physical page
-  /// of the content that follows. Markers appear between pages only (no leading marker for page 1), and numbering may
-  /// skip pages merged by cross-page stitching — callers that need every physical page should use `pages: true` instead.
-  /// No new response field.
-  #[serde(default)]
-  #[ts(as = "Option<_>", optional)]
-  pub page_markers: bool,
-}
-
-enum Eligibility {
-  Eligible,
-  IneligibleType(PdfType),
-  IneligibleConfidence(f32),
-  IneligibleComplexity,
-  IneligibleEmptyMarkdown,
-}
-
-impl Eligibility {
-  fn new(res: &PdfProcessResult) -> Self {
-    if res.pdf_type != PdfType::TextBased {
-      Self::IneligibleType(res.pdf_type)
-    } else if res.confidence < 0.95 {
-      Self::IneligibleConfidence(res.confidence)
-    } else if res.layout.is_complex {
-      Self::IneligibleComplexity
-    } else if let Some(markdown) = res.markdown.as_ref() {
-      if markdown.is_empty() {
-        Self::IneligibleEmptyMarkdown
-      } else {
-        Self::Eligible
-      }
-    } else {
-      Self::IneligibleEmptyMarkdown
-    }
-  }
-
-  fn is_eligible(&self) -> bool {
-    matches!(self, Eligibility::Eligible)
-  }
-}
-
-impl Display for Eligibility {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Eligibility::Eligible => f.write_str("<eligible>"),
-      Eligibility::IneligibleType(typ) => write!(f, "pdfType={:?}", typ),
-      Eligibility::IneligibleConfidence(conf) => write!(f, "confidence={}", conf),
-      Eligibility::IneligibleComplexity => f.write_str("complex layout (tables/columns)"),
-      Eligibility::IneligibleEmptyMarkdown => {
-        f.write_str("empty markdown (unexpected for TextBased)")
-      }
-    }
-  }
-}
-
-fn pdf_content_type_match(content_type: &str) -> bool {
-  let normalized = content_type.to_lowercase();
-
-  normalized == "application/pdf" || normalized.starts_with("application/pdf;")
-}
-
-fn pdf_binary_match(bytes: &Bytes) -> bool {
-  bytes[..usize::min(bytes.len(), 1024)]
-    .windows(4)
-    .any(|w| w == b"%PDF")
-}
-
-fn pdf_base64_match(base64: &str) -> bool {
-  base64.starts_with("JVBERi")
-}
-
-fn pdf_file_extension_match(filename: &str) -> bool {
-  filename.ends_with(".pdf")
-}
+pub use self::{
+  firepdf::FirePdfError,
+  limits::fire_engine_pdf_max_size,
+  types::{PdfOptions, PdfPage, PdfPageBlocks},
+};
 
 pub fn has_pdf_signal(result: &RawPageResult) -> bool {
   let is_pdf_content_type = pdf_content_type_match(&result.content_type);
 
   let is_pdf_binary = match &result.content {
     RawPageContent::Bytes(bytes) => pdf_binary_match(bytes),
+    // fire-engine only hands off verified PDFs.
+    RawPageContent::BytesOffloaded(_) => true,
     _ => false,
   };
 
@@ -165,251 +54,99 @@ pub fn has_pdf_signal(result: &RawPageResult) -> bool {
   is_pdf_content_type || is_pdf_binary || is_pdf_file_extension
 }
 
-struct PdfResult {
-  markdown: String,
-  html: String,
-  title: Option<String>,
-  pages: Option<Vec<PdfPage>>,
-  blocks: Option<Vec<PdfBlockItem>>,
-  page_count: u32,
-  pages_processed: u32,
+/// The scrape deadline on the epoch-millisecond clock fire-pdf's deadline contract uses.
+fn deadline_epoch_ms(deadline: Instant) -> i64 {
+  let remaining = deadline
+    .saturating_duration_since(Instant::now())
+    .as_millis();
+  now_ms().saturating_add(i64::try_from(remaining).unwrap_or(i64::MAX))
 }
 
-#[tracing::instrument(name = "parsers::pdf::parse_pdf", skip_all, err)]
+/// Parses a PDF: pdf-inspector serves the text PDFs it handles confidently, FirePDF
+/// handles the rest, and text extraction is the last resort. `deadline` is the
+/// scrape deadline; it sizes fire-pdf's budgets and the insufficient-time check.
+#[tracing::instrument(
+  name = "parsers::pdf::parse_pdf",
+  skip_all,
+  fields(
+    pdf.file_size_bytes = Empty,
+    pdf.handed_off = Empty,
+    pdf.engine = Empty,
+    pdf.num_pages = Empty,
+    pdf.total_pages = Empty,
+  ),
+  err
+)]
 pub async fn parse_pdf(
   meta: &Meta,
   result: RawPageResult,
+  deadline: Option<Instant>,
 ) -> Result<Document, ScrapeURLError> {
-  let bytes = match result.content {
-    RawPageContent::Bytes(x) => x,
-    RawPageContent::IndexFakeHTML(html, pdf_metadata) => {
-      if pdf_base64_match(&html) && pdf_metadata.is_none() {
-        // An undecoded PDF got dumped into the index. Simply run it through our pipeline.
-        base64::engine::general_purpose::STANDARD
-          .decode(&html)
-          .unwrap() // TODO: error handling
-          .into()
-      } else {
-        // This PDF got decoded and the decoded version got saved to the index.
-        // Let's serve it as a done document.
-        return Ok(Document {
-          markdown: None,
-          raw_base64: Some(base64::engine::general_purpose::STANDARD.encode(&html)), // TODO: THIS IS FAKE RAW
-          raw_html: Some(html),
-          html: None,
-          links: None,
-          images: None,
-          screenshot: result.screenshot,
-          audio: None,
-          video: None,
-          json: None,
-          summary: None,
-          answer: None,
-          highlights: None,
-          attributes: None,
-          actions: result.actions,
-          pages: None,
-          blocks: None,
-          warning: None,
-          metadata: DocumentMetadata {
-            scrape_id: meta.id.clone(),
-            source_url: meta.source_url(),
-            url: result.url,
-            status_code: result.status_code,
-            content_type: result.content_type,
-            timezone: result.timezone,
-            proxy_used: result.proxy_used,
-            cache_state: DocumentMetadataCacheState::Miss,
-            cached_at: None,
-            index_id: None,
-            credits_used: None,
-            concurrency_limited: false,
-            concurrency_queue_duration_ms: None,
-            num_pages: pdf_metadata.as_ref().map(|x| x.num_pages),
-            total_pages: pdf_metadata.as_ref().and_then(|x| x.total_pages),
-            title: pdf_metadata.and_then(|x| x.title),
-            extra: Default::default(),
-          },
-        });
-      }
+  let span = Span::current();
+  let config = FirePdfConfig::get();
+  let deadline_ms = deadline.map(deadline_epoch_ms);
+  let (page, content) = PageInfo::split(result);
+
+  let (bytes, handoff) = match load_pdf(config, meta, content).await? {
+    PdfSource::Bytes { bytes, handoff } => (bytes, handoff),
+    PdfSource::Indexed { html, pdf_metadata } => {
+      span.record("pdf.engine", "index");
+      return Ok(indexed_document(meta, page, html, pdf_metadata));
     }
-    RawPageContent::BytesOffloaded(offloaded) => {
-      unimplemented!() // TODO:
-    }
-    _ => unreachable!(),
   };
+  span.record("pdf.file_size_bytes", bytes.len());
+  span.record("pdf.handed_off", handoff.is_some());
 
-  if let Some(parser) = meta.options.parsers.pdf() {
-    if pdf_binary_match(&bytes) {
-      let force_fire_pdf =
-        meta.options.__force_fire_pdf || parser.pages || parser.blocks || parser.page_markers;
-
-      if force_fire_pdf && FirePDF::get().is_none() {
-        panic!("Page markers are unavailable because FirePDF is not configured") // TODO:
-      }
-
-      let mut res: Option<PdfResult> = {
-        let process = process_pdf_mem_with_options(
-          &bytes,
-          match parser.max_pages {
-            Some(n) if n > 0 => pdf_inspector::PdfOptions::new().pages(1..=n),
-            _ => pdf_inspector::PdfOptions::new(),
-          },
-        )
-        .unwrap();
-
-        let elig = Eligibility::new(&process);
-
-        // TODO: SHADOW STUFF
-        // let chars_per_page = process.markdown.as_ref().map(|x| x.len()).unwrap_or(0) as f64
-        //   / f64::max(process.page_count as f64, 1.);
-        // let shadow_eligible = process.markdown.is_some()
-        //   // && PDF_SHADOW_COMPARISON_ENABLE.is_some() // TODO:
-        //   && (process.pdf_type == PdfType::TextBased
-        //     || (process.pdf_type == PdfType::Mixed && chars_per_page >= 200.));
-
-        if parser.mode == PdfMode::Fast
-          && (process.pdf_type == PdfType::Scanned || process.pdf_type == PdfType::ImageBased)
-        {
-          Err(ScrapeURLError::PDFOCRRequiredError(process.pdf_type))
-        } else if elig.is_eligible()
-          && let Some(markdown) = process.markdown.as_ref()
-        {
-          Ok(Some(PdfResult {
-            html: markdown::to_html_with_options(markdown, &markdown::Options::gfm())
-              .expect("this cannot error"),
-            markdown: markdown.clone(),
-            title: process.title.clone(),
-            pages: None,
-            blocks: None,
-            page_count: process.page_count,
-            pages_processed: if let Some(max_pages) = parser.max_pages {
-              process.page_count.min(max_pages)
-            } else {
-              process.page_count
-            },
-          }))
-        } else {
-          Ok(None)
-        }
-      }?;
-
-      // if result.is_none() && effective_page_count > 0 && effective_page_count * 150
-      // TODO: timeout check
-
-      let skip_ocr = parser.mode == PdfMode::Fast && !force_fire_pdf;
-      if res.is_none()
-        && !skip_ocr
-        && let Some(fire_pdf) = FirePDF::get()
-      {
-        if bytes.len() >= 30 * 1024 * 1024 {
-          warn!(
-            file_size_bytes = bytes.len(),
-            max_size_bytes = 30 * 1024 * 124,
-            "PDF skipped by Fire PDF: exceeds size cap"
-          );
-        }
-
-        res = Some(fire_pdf.process().await);
-      }
-
-      // i hate this - Mogery
-      let res = if let Some(res) = res {
-        res
-      } else {
-        PdfResult {
-          markdown: "".to_string(),
-          html: "".to_string(),
-          title: None,
-          blocks: None,
-          pages: None,
-          page_count: 0,
-          pages_processed: 0,
-        }
-      };
-
-      Ok(Document {
-        markdown: Some(res.markdown),
-        raw_html: Some(res.html),
-        raw_base64: Some(base64::engine::general_purpose::STANDARD.encode(bytes.as_ref())),
-        html: None,
-        links: None,
-        images: None,
-        screenshot: None,
-        audio: None,
-        video: None,
-        json: None,
-        summary: None,
-        answer: None,
-        highlights: None,
-        attributes: None,
-        actions: result.actions,
-        warning: None,
-        pages: res.pages,
-        blocks: res.blocks,
-        metadata: DocumentMetadata {
-          scrape_id: meta.id.clone(),
-          source_url: meta.source_url(),
-          url: result.url,
-          status_code: result.status_code,
-          content_type: result.content_type,
-          timezone: result.timezone,
-          proxy_used: result.proxy_used,
-          cache_state: DocumentMetadataCacheState::Miss,
-          cached_at: None,
-          index_id: None,
-          credits_used: None,
-          concurrency_limited: false,
-          concurrency_queue_duration_ms: None,
-          title: res.title,
-          num_pages: Some(res.pages_processed),
-          total_pages: Some(res.page_count),
-          extra: Default::default(),
-        },
-      })
-    } else {
-      Err(ScrapeURLError::PDFFetchFailed)
-    }
-  } else {
-    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
-    Ok(Document {
-      markdown: Some(encoded.clone()),
-      raw_html: Some(encoded.clone()),
-      raw_base64: Some(encoded.clone()),
-      html: Some(encoded),
-      links: None,
-      images: None,
-      screenshot: result.screenshot,
-      audio: None,
-      video: None,
-      json: None,
-      summary: None,
-      answer: None,
-      highlights: None,
-      attributes: None,
-      actions: result.actions,
-      pages: None,
-      blocks: None,
-      warning: None,
-      metadata: DocumentMetadata {
-        scrape_id: meta.id.clone(),
-        source_url: meta.source_url(),
-        url: result.url,
-        status_code: result.status_code,
-        content_type: result.content_type,
-        timezone: result.timezone,
-        proxy_used: result.proxy_used,
-        cache_state: DocumentMetadataCacheState::Miss,
-        cached_at: None,
-        index_id: None,
-        credits_used: None,
-        concurrency_limited: false,
-        concurrency_queue_duration_ms: None,
-        title: None,
-        num_pages: None,
-        total_pages: None,
-        extra: Default::default(),
-      },
-    })
+  let Some(parser) = meta.options.parsers.pdf() else {
+    span.record("pdf.engine", "raw");
+    return raw_document(meta, page, &bytes);
+  };
+  ensure_configured(config, parser)?;
+  if !pdf_binary_match(&bytes) {
+    return Err(ScrapeURLError::PDFFetchFailed);
   }
+
+  let force_requested = meta.options.__force_fire_pdf || parser.page_aware();
+  let force_fire_pdf = force_requested && config.base_url.is_some();
+  let mut local = run_local_pass(&bytes, parser, force_fire_pdf).await?;
+  let mut engine = "pdf-inspector";
+
+  if local.parsed.is_none() {
+    ensure_ocr_time(local.effective_page_count, deadline_ms, now_ms())?;
+    let input = OcrInput {
+      bytes: &bytes,
+      handoff: handoff.as_ref(),
+      parser,
+      force_requested,
+      force_fire_pdf,
+      pages_estimate: local.effective_page_count,
+      deadline_ms,
+    };
+    if let Some(result) = run_ocr(config, meta, input).await? {
+      engine = "fire-pdf";
+      // Never shrink a count the local pass established; fire-pdf may have been capped.
+      local.effective_page_count = local.effective_page_count.max(result.pages_processed);
+      local.parsed = Some(result.into());
+    }
+  }
+
+  let facts = PdfFacts {
+    num_pages: Some(local.effective_page_count),
+    total_pages: local.total_page_count,
+    title: local.title.take(),
+  };
+  let parsed = match local.parsed.take() {
+    Some(parsed) => parsed,
+    None => {
+      engine = "text-fallback";
+      text_fallback(&bytes, parser, local, force_fire_pdf).await
+    }
+  };
+  span.record("pdf.engine", engine);
+  span.record("pdf.num_pages", facts.num_pages);
+  span.record("pdf.total_pages", facts.total_pages);
+  let handed_off = handoff.is_some();
+  Ok(parsed_document(
+    meta, page, parser, parsed, &bytes, handed_off, facts,
+  ))
 }

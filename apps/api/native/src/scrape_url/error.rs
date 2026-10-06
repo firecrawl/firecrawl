@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use super::{options::ProxyMode, transformers::TransformerError};
+use super::{options::ProxyMode, parsers::FirePdfError, transformers::TransformerError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScrapeURLError {
@@ -17,6 +17,13 @@ pub enum ScrapeURLError {
 
   #[error("PDF requires OCR, but the requested mode only supports text-based PDFs")]
   PDFOCRRequiredError(pdf_inspector::PdfType),
+
+  #[error(
+    "The PDF has {page_count} pages, which requires more processing time than your current timeout allows. PDF processing time scales with page count - larger PDFs need longer timeouts. To successfully scrape this PDF, increase the timeout parameter in your scrape request to at least {min_timeout}ms ({} seconds). For very large PDFs, consider using a timeout of {} seconds or more to account for network variability.",
+    .min_timeout.div_ceil(1000),
+    (.min_timeout * 3).div_ceil(2000)
+  )]
+  PDFInsufficientTimeError { page_count: u32, min_timeout: u64 },
 
   #[error("page failed to load in the browser with error code {code}")]
   SiteError { code: String },
@@ -112,6 +119,9 @@ pub enum ScrapeURLError {
 
   #[error(transparent)]
   Transformer(#[from] TransformerError),
+
+  #[error(transparent)]
+  FirePDF(#[from] FirePdfError),
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -162,6 +172,13 @@ impl ScrapeURLError {
       Self::AgentIndexOnlyError => ScrapeErrorPayload::AgentIndexOnly,
       Self::PDFOCRRequiredError(pdf_type) => ScrapeErrorPayload::PdfOcrRequired {
         pdf_type: (*pdf_type).into(),
+      },
+      Self::PDFInsufficientTimeError {
+        page_count,
+        min_timeout,
+      } => ScrapeErrorPayload::PdfInsufficientTime {
+        page_count: *page_count,
+        min_timeout: *min_timeout,
       },
       Self::SiteError { code } => ScrapeErrorPayload::SiteError {
         error_code: code.clone(),
@@ -235,7 +252,8 @@ impl ScrapeURLError {
       | Self::Redis(_)
       | Self::Sqlx(_)
       | Self::Gcs(_)
-      | Self::Transformer(_) => ScrapeErrorPayload::Unknown {
+      | Self::Transformer(_)
+      | Self::FirePDF(_) => ScrapeErrorPayload::Unknown {
         message: unknown_error_message(&message),
       },
     }
@@ -275,6 +293,9 @@ pub enum ScrapeErrorPayload {
 
   #[serde(rename = "SCRAPE_PDF_OCR_REQUIRED", rename_all = "camelCase")]
   PdfOcrRequired { pdf_type: PdfType },
+
+  #[serde(rename = "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR", rename_all = "camelCase")]
+  PdfInsufficientTime { page_count: u32, min_timeout: u64 },
 
   #[serde(rename = "SCRAPE_SITE_ERROR", rename_all = "camelCase")]
   SiteError { error_code: String },

@@ -14,10 +14,12 @@ pub enum FireEngineScrapeFileContent {
     gcs_uri: String,
 
     /// SHA-256 hash of file
-    sha256: String,
+    #[serde(default)]
+    sha256: Option<String>,
 
     /// File size in bytes
-    size_bytes: usize,
+    #[serde(default)]
+    size_bytes: Option<usize>,
   },
 }
 
