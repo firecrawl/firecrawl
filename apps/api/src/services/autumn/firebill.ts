@@ -398,6 +398,7 @@ async function firebillAttempt(
     value,
     properties,
     idempotencyKey,
+    externalRequestId,
   }: TrackParams,
 ): Promise<AttemptResult> {
   const url = firebillUrl(path);
@@ -422,6 +423,12 @@ async function firebillAttempt(
         // than charged twice. Omitted → firebill mints a per-request UUID,
         // which dedupes only its own retries.
         ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
+        // The partner's own operation id. With it on the charge, firebill
+        // reports the operation without looking the request up in
+        // ClickHouse, which lands seconds after the charge.
+        ...(externalRequestId
+          ? { external_request_id: externalRequestId }
+          : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
     });

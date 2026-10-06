@@ -97,6 +97,13 @@ doc = firecrawl.parse(
 print(doc.markdown)
 ```
 
+To see which file formats `parse` accepts, call `get_parse_formats` (also available on `AsyncFirecrawl`). Each entry has `format`, `kind` (`"document"` or `"image"`), `extensions`, `mime_types`, and `available`, which is `False` when a format is disabled on the deployment.
+
+```python
+for f in firecrawl.get_parse_formats():
+  print(f.format, f.kind, f.extensions, f.mime_types, f.available)
+```
+
 ### Crawling a Website
 
 To crawl a website, use the `crawl` method. It takes the starting URL and optional parameters as arguments. You can control depth, limits, formats, and more.
@@ -109,6 +116,17 @@ crawl_status = firecrawl.crawl(
   poll_interval=30
 )
 print(crawl_status)
+```
+
+The result is a `CrawlJob`. It includes the job `id` and any `warning` from the API, so you can use the job after the crawl ends, for example with `get_crawl_errors(crawl_status.id)`. If the crawl does not finish within `timeout`, the SDK raises `CrawlJobTimeoutError`. It is a `TimeoutError` subclass with a `job_id` attribute, so you can check or cancel the job later.
+
+```python
+from firecrawl import CrawlJobTimeoutError
+
+try:
+  crawl_status = firecrawl.crawl('https://firecrawl.dev', limit=100, timeout=120)
+except CrawlJobTimeoutError as e:
+  firecrawl.cancel_crawl(e.job_id)
 ```
 
 ### Asynchronous Crawling

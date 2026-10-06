@@ -136,6 +136,7 @@ export async function extractController(
         req.acuc?.api_key_id ?? null,
         {
           endpoint: "extract",
+          externalRequestId: externalRequestId(req),
           jobId: extractId,
           // Suffixed: the extract's MAIN charge (fire-0) uses the bare
           // extractId — a shared key would collapse the two into one charge.
@@ -219,6 +220,7 @@ export async function extractController(
   await addExtractJobToQueue(extractId, {
     ...jobData,
     apiKeyId: req.acuc?.api_key_id ?? undefined,
+    externalRequestId: externalRequestId(req),
   });
 
   return res.status(200).json({

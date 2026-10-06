@@ -21,6 +21,8 @@ export interface DeepResearchServiceOptions {
   formats: string[];
   jsonOptions: ExtractOptions;
   apiKeyId: number | null;
+  /** The caller's External-Request-Id, carried on the charge for firebill. */
+  externalRequestId?: string | null;
 }
 
 export async function performDeepResearch(options: DeepResearchServiceOptions) {
@@ -431,7 +433,12 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
       orgIdFromAcuc(acuc),
       credits_billed,
       apiKeyId,
-      { endpoint: "deep_research", jobId: researchId, chargeId: researchId },
+      {
+        endpoint: "deep_research",
+        jobId: researchId,
+        chargeId: researchId,
+        externalRequestId: options.externalRequestId ?? null,
+      },
       logger,
     ).catch(error => {
       logger.error(

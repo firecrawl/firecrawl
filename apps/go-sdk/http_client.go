@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -61,9 +62,45 @@ func (h *httpClient) get(ctx context.Context, path string) (json.RawMessage, err
 	return h.doJSON(ctx, "GET", url, nil, nil)
 }
 
-// getAbsolute sends a GET request to an absolute URL (for pagination cursors).
+// getAbsolute sends a GET request to a pagination cursor URL, pinned to the
+// API origin by pinToAPIOrigin.
 func (h *httpClient) getAbsolute(ctx context.Context, absoluteURL string) (json.RawMessage, error) {
-	return h.doJSON(ctx, "GET", absoluteURL, nil, nil)
+	pinned, err := pinToAPIOrigin(h.baseURL, absoluteURL)
+	if err != nil {
+		return nil, &FirecrawlError{Message: err.Error()}
+	}
+	return h.doJSON(ctx, "GET", pinned, nil, nil)
+}
+
+// pinToAPIOrigin rewrites an absolute or protocol-relative URL onto apiURL's
+// scheme and host, keeping its path and query, so credentials never leave the
+// API origin. Relative URLs are resolved against apiURL. It returns an error if
+// apiURL is not an absolute URL.
+func pinToAPIOrigin(apiURL, rawURL string) (string, error) {
+	base, err := url.Parse(apiURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return "", fmt.Errorf("api_url must be an absolute URL, got %q", apiURL)
+	}
+	ref, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid pagination URL %q: %v", rawURL, err)
+	}
+	ref.Fragment = ""
+	ref.RawFragment = ""
+	if ref.Scheme == "" && ref.Host == "" {
+		if !strings.HasSuffix(base.Path, "/") {
+			base.Path += "/"
+			if base.RawPath != "" {
+				base.RawPath += "/"
+			}
+		}
+		return base.ResolveReference(ref).String(), nil
+	}
+	pinned := url.URL{Scheme: base.Scheme, Host: base.Host, Path: ref.Path, RawPath: ref.RawPath, RawQuery: ref.RawQuery}
+	if pinned.Path == "" {
+		pinned.Path = "/"
+	}
+	return pinned.String(), nil
 }
 
 // delete sends a DELETE request.

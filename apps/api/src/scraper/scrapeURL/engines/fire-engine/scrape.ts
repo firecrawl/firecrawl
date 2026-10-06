@@ -98,7 +98,7 @@ export type FireEngineScrapeRequestChromeCDP = {
   forceNonRender?: boolean;
   mobile?: boolean;
   disableSmartWaitCache?: boolean;
-  persistentStorage?: { uniqueId: string };
+  profile?: { owner: string; name: string };
 };
 
 export type FireEngineScrapeRequestTLSClient = {
@@ -112,7 +112,6 @@ const successSchema = z.object({
 
   timeTaken: z.number(),
   content: z.string(),
-  json: z.unknown().optional(),
   url: z.string().optional(),
 
   pageStatusCode: z.number(),

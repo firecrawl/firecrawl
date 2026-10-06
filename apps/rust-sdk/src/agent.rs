@@ -36,7 +36,7 @@ pub struct AgentOptions {
     /// Strictly constrain the agent to the provided URLs.
     pub strict_constrain_to_urls: Option<bool>,
 
-    /// Agent model to use. Defaults to `spark-1-pro` server-side when unset.
+    /// Agent model to use. Defaults to `spark-2` server-side when unset.
     pub model: Option<AgentModel>,
 
     /// Reasoning effort for the agent task. Every level runs spark-2.
@@ -726,7 +726,7 @@ impl Client {
     ///                 }
     ///             }
     ///         })),
-    ///         model: Some(AgentModel::Spark1Pro),
+    ///         model: Some(AgentModel::Spark2),
     ///         poll_interval: Some(3000),
     ///         timeout: Some(300),
     ///         ..Default::default()

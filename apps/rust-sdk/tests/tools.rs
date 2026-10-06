@@ -164,3 +164,28 @@ async fn unified_contracts_and_execution_identity() {
     }
     invalid.assert_async().await;
 }
+
+#[test]
+fn compact_discovery_models() {
+    let compact = json!({"provider":"p","capability":"search","description":"Find records"});
+    let tool: firecrawl::DiscoveredTool = serde_json::from_value(compact).unwrap();
+    assert!(tool.name.is_none());
+    assert!(tool.credits_cost.is_none());
+    assert!(tool.per_record.is_none());
+    let search = SearchOptions {
+        tool_detail: Some(firecrawl::ToolDetail::Compact),
+        ..Default::default()
+    };
+    assert_eq!(
+        serde_json::to_value(search).unwrap()["toolDetail"],
+        "compact"
+    );
+    let scrape = firecrawl::ScrapeOptions {
+        tool_detail: Some(firecrawl::ToolDetail::Compact),
+        ..Default::default()
+    };
+    assert_eq!(
+        serde_json::to_value(scrape).unwrap()["toolDetail"],
+        "compact"
+    );
+}

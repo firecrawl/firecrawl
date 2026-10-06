@@ -33,6 +33,7 @@ import { createWebhookSender, WebhookEvent } from "../webhook";
 import { sendMonitorPageWebhook } from "./results";
 import { sendMonitoringEmailSummary } from "../notification/monitoring_email";
 import { sendMonitoringSlackSummary } from "../notification/monitoring_slack";
+import { recordMonitorInAppNotification } from "../notification/monitoring_in_app";
 import {
   bulkUpsertMonitorPages,
   calculateMonitorCheckActualCredits,
@@ -80,6 +81,7 @@ import {
   reconstructKnownState,
   searchStatusToPageStatus,
 } from "./search/persist";
+import { requestCreditsShards } from "../../lib/request-credits-store";
 
 const logger = _logger.child({ module: "monitoring-runner" });
 export { isMonitorCheckStale, MONITOR_CHECK_STALE_TIMEOUT_MS };
@@ -438,13 +440,31 @@ async function sendNotifications(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
   pages: PageResult[];
-}): Promise<{ webhook?: unknown; email?: unknown; slack?: unknown }> {
+}): Promise<{
+  webhook?: unknown;
+  email?: unknown;
+  slack?: unknown;
+  inApp?: unknown;
+}> {
   const payload = {
     monitorId: params.monitor.id,
     checkId: params.check.id,
     status: params.check.status,
     summary: toSummaryObject(params.check),
   };
+
+  const nonSamePages = params.pages.filter(page => page.status !== "same");
+
+  // Never throws, and goes first so a failing channel below cannot skip it.
+  const inAppStatus = await recordMonitorInAppNotification({
+    monitor: params.monitor,
+    check: params.check,
+    pages: nonSamePages.map(page => ({
+      url: page.url,
+      status: page.status,
+      judgment: page.judgment ?? null,
+    })),
+  });
 
   let webhookStatus: unknown = { attempted: false };
   if (params.monitor.webhook) {
@@ -478,7 +498,6 @@ async function sendNotifications(params: {
     }
   }
 
-  const nonSamePages = params.pages.filter(page => page.status !== "same");
   // Pull diff text for up to 5 meaningful changed pages so the email leads with
   // the diff. Errors swallowed per-page so one GCS hiccup doesn't drop the alert.
   const diffEligible = nonSamePages
@@ -546,6 +565,7 @@ async function sendNotifications(params: {
     webhook: webhookStatus,
     email: emailStatus,
     slack: slackStatus,
+    inApp: inAppStatus,
   };
 }
 
@@ -646,6 +666,9 @@ async function enqueueMonitorCrawlTarget(params: {
     target_hint: body.url,
     zeroDataRetention: false,
     api_key_id: null,
+    creditsShards: requestCreditsShards(
+      body.limit ?? MONITOR_CHECK_PAGE_SCAN_LIMIT,
+    ),
   });
 
   const crawlerOptions = {

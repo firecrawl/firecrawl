@@ -5,6 +5,7 @@ import { EngineUnsuccessfulError, UnsupportedFileError } from "../../error";
 import { readFile, stat, unlink } from "node:fs/promises";
 import { useFireEngine } from "../fire-engine/available";
 import { scrapePDFWithFirePDF } from "../pdf/firePDF";
+import { recordFirePdfRoute } from "../pdf/fire-pdf/routing";
 import { FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE } from "../pdf/types";
 import {
   imageExtensionFromUrlPath,
@@ -139,6 +140,13 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     const base64Content = buffer.toString("base64");
+
+    recordFirePdfRoute(meta, {
+      sourceKind: "image",
+      path: "sync",
+      reason: "no_async_route",
+      features: "none",
+    });
 
     let result: Awaited<ReturnType<typeof scrapePDFWithFirePDF>>;
     try {

@@ -9,7 +9,7 @@ import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
-import { logRequest } from "../../services/logging/log_job";
+import { logProviderScrape, logRequest } from "../../services/logging/log_job";
 import {
   callsSchema,
   callSchema,
@@ -30,8 +30,8 @@ const providerScrapeSchema = z.strictObject({
     .number()
     .int()
     .positive()
-    .default(50000)
-    .transform(value => Math.min(value, 50000)),
+    .default(120_000)
+    .transform(value => Math.min(value, 120_000)),
   origin: z.string().default("api"),
   integration: z.string().nullable().optional(),
   __agentInterop: z
@@ -119,14 +119,18 @@ export async function providerScrapeController(
       .status(503)
       .json({ success: false, error: "This endpoint is not available." });
 
+  const target = `alexandria:${body.alexandria.map(call => `${call.provider}/${call.capability}`).join(",")}`;
+  const startedAt = Date.now();
   let result;
   try {
     result = await retrieveProviders({
       teamId: req.auth.team_id,
       orgId: orgIdFromAcuc(req.acuc),
       apiKeyId: req.acuc.api_key_id ?? null,
+      apiKeyIdText: req.acuc.api_key_id_text ?? null,
       flags: req.acuc.flags,
       calls: body.alexandria,
+      resultAuthorization: req.get("authorization"),
       requestId,
       scrapeId: uuidv7(),
       timeoutMs: body.timeout,
@@ -142,25 +146,71 @@ export async function providerScrapeController(
       error: "Provider request unavailable. Retry with the same x-request-id.",
     });
   }
-  if (result.executed && !body.__agentInterop)
-    void logRequest({
-      id: result.scrapeId,
-      kind: "scrape",
-      api_version: "v2",
-      external_request_id: externalRequestId(req),
-      team_id: req.auth.team_id,
-      api_key_id: req.acuc.api_key_id ?? null,
-      origin: body.origin,
-      integration: body.integration ?? null,
-      target_hint: `alexandria:${body.alexandria.map(call => `${call.provider}/${call.capability}`).join(",")}`,
-      zeroDataRetention: false,
-      jobAccess: false,
-    }).catch(error =>
-      logger.warn("Provider request logging failed", {
+  const timeTaken = (Date.now() - startedAt) / 1000;
+  if (result.executed && !body.__agentInterop) {
+    const apiKeyId = req.acuc.api_key_id ?? null;
+    const served = answerSchema.safeParse(result.body);
+    const failure = result.body as {
+      error?: unknown;
+      creditsCost?: unknown;
+    } | null;
+    const successful =
+      result.status === 200 &&
+      served.success &&
+      served.data.results.every(item => !item.error);
+    const error = served.success
+      ? served.data.results.find(item => item.error)?.error?.message
+      : typeof failure?.error === "string"
+        ? failure.error
+        : undefined;
+    const credits = served.success
+      ? served.data.creditsCost
+      : failure?.creditsCost;
+    // Preserve parent/child ordering without delaying the provider response.
+    void (async () => {
+      await logRequest({
+        id: result.scrapeId,
+        kind: "alexandria",
+        api_version: "v2",
+        external_request_id: externalRequestId(req),
+        team_id: req.auth.team_id,
+        api_key_id: apiKeyId,
+        origin: body.origin,
+        integration: body.integration ?? null,
+        target_hint: target,
+        zeroDataRetention: false,
+        jobAccess: false,
+      });
+      await logProviderScrape({
+        id: result.scrapeId,
+        request_id: result.scrapeId,
+        target,
+        team_id: req.auth.team_id,
+        options: {
+          alexandria: body.alexandria.map(({ provider, capability }) => ({
+            provider,
+            capability,
+          })),
+        },
+        time_taken: timeTaken,
+        credits_cost:
+          typeof credits === "number" &&
+          Number.isFinite(credits) &&
+          credits >= 0
+            ? credits
+            : 0,
+        is_successful: successful,
+        error: successful
+          ? undefined
+          : (error ?? `Provider request failed (${result.status}).`),
+      });
+    })().catch(error =>
+      logger.warn("Provider activity logging failed", {
         error,
         scrapeId: result.scrapeId,
       }),
     );
+  }
 
   if (result.status !== 200) return res.status(result.status).json(result.body);
   const answer = answerSchema.parse(result.body);

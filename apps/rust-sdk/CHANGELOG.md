@@ -1,5 +1,22 @@
 ## CHANGELOG
 
+## [2.21.2] - 2026-10-02
+
+### Added
+
+- Added `Client::get_parse_formats` for `GET /v2/parse/formats`, returning the
+  upload formats `parse` accepts as `ParseFormatInfo` entries (`format`,
+  `kind`, `extensions`, `mime_types`, `available`). `ParseFormatKind` falls
+  back to `Unknown` for kinds this release does not know about.
+
+## [2.21.1] - 2026-09-30
+
+### Security
+
+- Pagination `next` URLs followed by `get_crawl_status`,
+  `get_batch_scrape_status`, and `get_monitor_check` are now pinned to the
+  configured API origin, so the API key is never sent to another host.
+
 ## [2.19.0] - 2026-09-08
 
 ### Added

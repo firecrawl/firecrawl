@@ -149,6 +149,72 @@ describe("V2 Types Validation", () => {
       expect(result.timeout).toBe(60000); // Should be transformed from 30000
     });
 
+    it("should reject JSON schemas structured outputs cannot express", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        formats: [
+          {
+            type: "json",
+            schema: {
+              type: "object",
+              properties: { events: { type: "array" } },
+            },
+          },
+        ],
+      };
+
+      const result = scrapeRequestSchema.safeParse(input);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.map(issue => issue.message)).toContain(
+        'Invalid JSON schema at "properties.events": arrays must define "items".',
+      );
+    });
+
+    it("should accept JSON schemas with capitalized types and oneOf", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        formats: [
+          {
+            type: "json",
+            schema: {
+              type: "object",
+              properties: {
+                name: { type: "String" },
+                slot: { oneOf: [{ type: "string" }, { type: "number" }] },
+              },
+            },
+          },
+        ],
+      };
+
+      expect(() => scrapeRequestSchema.parse(input)).not.toThrow();
+    });
+
+    it("should reject unsupported changeTracking schemas", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        formats: [
+          "markdown",
+          {
+            type: "changeTracking",
+            modes: ["json"],
+            schema: {
+              type: "object",
+              properties: {
+                price: { type: "object", properties: {}, allOf: [] },
+              },
+            },
+          },
+        ],
+      };
+
+      const result = scrapeRequestSchema.safeParse(input);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.map(issue => issue.message)).toContain(
+        'Invalid JSON schema at "properties.price": "allOf" is not supported for JSON extraction.',
+      );
+    });
+
     it("should accept query format without markdown", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
@@ -245,7 +311,7 @@ describe("V2 Types Validation", () => {
             schema: {
               type: "object",
               properties: {
-                changes: { type: "array" },
+                changes: { type: "array", items: { type: "string" } },
               },
             },
             modes: ["json"],
@@ -691,8 +757,8 @@ describe("V2 Types Validation", () => {
         expect(result.maxAge).toBeUndefined();
       });
 
-      // lockdown takes precedence silently at the engine layer; other options are ignored, not rejected
-      it("should accept lockdown: true alongside any other options", () => {
+      // Profiles require browser state, which a cache-only request cannot supply.
+      it("should reject profile state with lockdown", () => {
         const input: ScrapeRequestInput = {
           url: "https://example.com",
           lockdown: true,
@@ -703,8 +769,9 @@ describe("V2 Types Validation", () => {
           formats: [{ type: "markdown" }, { type: "changeTracking" }],
         };
 
-        const result = scrapeRequestSchema.parse(input);
-        expect(result.lockdown).toBe(true);
+        expect(() => scrapeRequestSchema.parse(input)).toThrow(
+          "Profiles require live browsing and cannot be used with lockdown.",
+        );
       });
     });
   });
@@ -802,6 +869,21 @@ describe("V2 Types Validation", () => {
 
       const result = extractRequestSchema.parse(input);
       expect(result.urls).toHaveLength(10);
+    });
+
+    it("should reject JSON schemas structured outputs cannot express", () => {
+      const result = extractRequestSchema.safeParse({
+        urls: ["https://example.com"],
+        schema: {
+          type: "object",
+          properties: { events: { type: "array" } },
+        },
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.map(issue => issue.message)).toContain(
+        'Invalid JSON schema at "properties.events": arrays must define "items".',
+      );
     });
 
     it("should reject invalid JSON schema", () => {
@@ -1983,7 +2065,7 @@ describe("V2 Types Validation", () => {
             schema: {
               type: "object",
               properties: {
-                changes: { type: "array" },
+                changes: { type: "array", items: { type: "string" } },
               },
             },
           },

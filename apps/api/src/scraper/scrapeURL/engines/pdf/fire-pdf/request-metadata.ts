@@ -4,6 +4,14 @@ import { hasCustomRequestContext } from "../../../lib/request-context";
 /** What we hand fire-pdf: a PDF, or a raster image wrapped as a one-page document. */
 export type FirePdfSourceKind = "pdf" | "image";
 
+/** How the document reached us: an upload to the parse endpoint, or a scrape. */
+export function firePdfRequestKind(meta: Meta): "scrape" | "parse" {
+  return meta.internalOptions.isParse === true ||
+    meta.internalOptions.uploadedFile !== undefined
+    ? "parse"
+    : "scrape";
+}
+
 export function buildFirePdfRequestMetadata(
   meta: Meta,
   sourceKind: FirePdfSourceKind = "pdf",
@@ -13,10 +21,8 @@ export function buildFirePdfRequestMetadata(
   source_kind: FirePdfSourceKind;
   url?: string;
 } {
-  const isParse =
-    meta.internalOptions.isParse === true ||
-    meta.internalOptions.uploadedFile !== undefined;
-  const source_endpoint = isParse ? "parse" : "scrape";
+  const source_endpoint = firePdfRequestKind(meta);
+  const isParse = source_endpoint === "parse";
   // Describe supplied request options without forwarding their values.
   const source_request_context = hasCustomRequestContext(meta.options)
     ? "custom"

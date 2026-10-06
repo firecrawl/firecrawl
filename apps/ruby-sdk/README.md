@@ -126,6 +126,15 @@ doc = client.parse(file,
 puts doc.markdown
 ```
 
+List the file formats the parse endpoint accepts. `available` is `false` for
+formats the deployment can't currently handle (e.g. images when OCR is off).
+
+```ruby
+client.get_parse_formats.each do |f|
+  puts "#{f.format} (#{f.kind}) #{f.extensions.join(", ")} #{f.mime_types.join(", ")} available=#{f.available}"
+end
+```
+
 ### Crawl
 
 ```ruby

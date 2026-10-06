@@ -98,7 +98,7 @@ import {
   setSpanAttributes,
 } from "../../lib/otel-tracer";
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
-import { logScrape } from "../logging/log_job";
+import { logScrape, type ScrapeStateOutcome } from "../logging/log_job";
 import { FeatureFlag } from "../../scraper/scrapeURL/engines";
 import {
   recordMonitorScrapeFailure,
@@ -113,6 +113,12 @@ import { emitScrapeActivityEvent } from "../../lib/siem-logging";
 
 configDotenv();
 
+/**
+ * How long a sync scrape waits for its Bigtable terminal state to be written
+ * before answering anyway. A write normally takes a few milliseconds.
+ */
+const SCRAPE_STATE_BARRIER_MS = 2_000;
+
 const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
 const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 
@@ -122,11 +128,10 @@ if (require.main === module) {
   warmExchangeCatalog();
 }
 
-// The org for a job's Autumn lookups. It rides the job payload, snapshotted
-// from the request ACUC at acceptance; the ACUC answers only for a job
-// enqueued without one (monitor jobs null it deliberately, since the field
-// also gates blocklist enforcement) — the same lookup getJobPriority used to
-// make for itself, now hoisted to once per job instead of once per link.
+// The org for a job's billing. It rides the job payload, snapshotted from the
+// request ACUC at acceptance; the ACUC answers only for a job enqueued without
+// one (monitor jobs null it deliberately, since the field also gates blocklist
+// enforcement).
 async function orgIdForJob(
   orgIdFromJob: string | null | undefined,
   teamId: string,
@@ -212,6 +217,9 @@ async function billScrapeJob(
               // requeue, which re-runs the job under the same id: with this key,
               // the re-run dedupes instead of double-billing (firebill route).
               idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
+              // The caller's own operation id, carried on the charge so
+              // firebill reports it without a request lookup.
+              externalRequestId: billing.externalRequestId ?? undefined,
             })
           : false;
         // On the firebill route the ledger enqueue must be idempotent by the
@@ -315,6 +323,7 @@ async function billScrapeJob(
               // Distinct from the track key: a refund is its own charge event
               // (same key would 409 as a duplicate of the track and be dropped).
               idempotencyKey: `fc:refund:${billing.endpoint}:${job.id}`,
+              externalRequestId: billing.externalRequestId ?? undefined,
             });
           }
         }
@@ -711,10 +720,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               }
             }
 
-            // Hoisted: one org resolution per job, not one per discovered link.
-            const crawlOrgId =
+            // Hoisted: one ACUC read per job, not one per discovered link.
+            const crawlACUC =
               discoveredLinks.length > 0
-                ? await orgIdForJob(sc.internalOptions?.orgId, sc.team_id)
+                ? await getACUCTeam(sc.team_id).catch(() => null)
                 : null;
 
             for (const link of discoveredLinks) {
@@ -722,7 +731,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 // This seems to work really welel
                 const jobPriority = await getJobPriority({
                   team_id: sc.team_id,
-                  org_id: crawlOrgId,
+                  acuc: crawlACUC,
                   basePriority: job.data.crawl_id ? 20 : 10,
                 });
                 const jobId = uuidv7();
@@ -931,6 +940,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
+      let stateWritten: (outcome: ScrapeStateOutcome) => void = () => {};
+      const scrapeStateWritten = new Promise<ScrapeStateOutcome>(resolve => {
+        stateWritten = resolve;
+      });
       const logScrapePromise = logScrape(
         {
           id: job.id,
@@ -952,6 +965,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           monitor_check_id: job.data.monitoring?.checkId,
         },
         false,
+        { onStateWritten: stateWritten },
+      );
+      // Release the barrier if logging dies before the state write settles.
+      logScrapePromise.then(
+        () => stateWritten("failed"),
+        () => stateWritten("failed"),
       );
 
       trackScrape({
@@ -972,10 +991,34 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       );
 
       if (job.data.skipNuq) {
-        // doesn't use GCS for result retrieval, safe to not await
+        // doesn't use GCS for result retrieval, safe to not await the rest
         logScrapePromise.catch(err =>
           logger.warn("Background scrape log failed", { error: err }),
         );
+        // ...but the terminal state must be readable before the sync response
+        // goes out: an interact call right after a fast scrape reads it for
+        // its replay context, and there is no NuQ job to fall back on. The
+        // wait is bounded so a Bigtable stall cannot hold every sync scrape.
+        let barrier: NodeJS.Timeout | undefined;
+        const outcome = await Promise.race([
+          scrapeStateWritten,
+          new Promise<"timed_out">(resolve => {
+            barrier = setTimeout(
+              () => resolve("timed_out"),
+              SCRAPE_STATE_BARRIER_MS,
+            );
+          }),
+        ]);
+        if (barrier !== undefined) clearTimeout(barrier);
+        if (outcome === "failed" || outcome === "timed_out") {
+          logger.warn(
+            "Sync scrape answered without a readable terminal state",
+            {
+              outcome,
+              barrierMs: SCRAPE_STATE_BARRIER_MS,
+            },
+          );
+        }
       } else {
         // v0 - must await because waitForJob reads from GCS
         await logScrapePromise;
@@ -1349,7 +1392,6 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       jobId,
       await getJobPriority({
         team_id: job.data.team_id,
-        org_id: await orgIdForJob(sc.internalOptions?.orgId, job.data.team_id),
         basePriority: 15,
       }),
     );
@@ -1467,10 +1509,6 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
       let jobPriority = await getJobPriority({
         team_id: job.data.team_id,
-        org_id: await orgIdForJob(
-          job.data.internalOptions?.orgId,
-          job.data.team_id,
-        ),
         basePriority: 21,
       });
       logger.debug("Using job priority " + jobPriority, { jobPriority });
@@ -1644,7 +1682,6 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
 
       const jobPriority = await getJobPriority({
         team_id: job.data.team_id,
-        org_id: await orgIdForJob(sc.internalOptions?.orgId, job.data.team_id),
         basePriority: 21,
       });
 

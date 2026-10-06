@@ -37,6 +37,9 @@ export type StoredCrawl = {
   v1?: boolean;
   webhook?: WebhookConfig;
   requestId?: string;
+  // The request's `origin`; dashboard-started jobs get an in-app notification
+  // when they finish.
+  origin?: string;
 };
 
 export async function saveCrawl(id: string, crawl: StoredCrawl) {

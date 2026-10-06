@@ -145,6 +145,24 @@ const failureCauses = async () =>
   );
 
 describe("firebillTrack", () => {
+  it("sends the caller's external request id with the charge, and no field without one", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => ok());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await firebillTrack({ ...params, externalRequestId: "partner-op-42" });
+    expect(
+      JSON.parse(fetchMock.mock.calls[0][1].body).external_request_id,
+    ).toBe("partner-op-42");
+
+    await firebillTrack(params);
+    expect(
+      Object.hasOwn(
+        JSON.parse(fetchMock.mock.calls[1][1].body),
+        "external_request_id",
+      ),
+    ).toBe(false);
+  });
+
   it("retries a refusal and reports success if the retry lands", async () => {
     const fetchMock = vi
       .fn()

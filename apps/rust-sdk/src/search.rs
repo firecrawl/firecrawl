@@ -24,6 +24,9 @@ pub struct SearchOptions {
     /// Enable Alexandria domain-tool discovery (send alongside `sources: ["alexandria"]`).
     pub domain_tools: Option<bool>,
 
+    /// Discovery response detail; defaults to compact.
+    pub tool_detail: Option<crate::types::ToolDetail>,
+
     /// Categories to filter results (github, research, pdf).
     pub categories: Option<Vec<SearchCategory>>,
 

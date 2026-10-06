@@ -3,6 +3,14 @@ import { z } from "zod";
 export const callSchema = z.strictObject({
   provider: z.string().min(1).max(200),
   capability: z.string().min(1).max(200),
+  version: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(
+      /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
+    )
+    .optional(),
   options: z.record(z.string(), z.unknown()).default({}),
 });
 export const callsSchema = z.array(callSchema).min(1).max(10);
@@ -60,7 +68,19 @@ export const toolSchema = z
       .passthrough(),
   })
   .passthrough();
-export type DiscoveredTool = z.infer<typeof toolSchema> & {
+export const toolSummarySchema = toolSchema
+  .omit({ options: true, response: true })
+  .strip()
+  .extend({
+    next: callSchema.passthrough().optional().catch(undefined),
+    attribution: z.unknown().optional(),
+    recordsPerUnit: z.number().positive().optional(),
+    zeroDataRetentionCreditsCost: credits.optional(),
+  });
+export type DetailedDiscoveredTool = (
+  | z.infer<typeof toolSchema>
+  | z.infer<typeof toolSummarySchema>
+) & {
   id: string;
   matchedBy: ("semantic" | "domain")[];
   matchedUrls: string[];
@@ -75,3 +95,9 @@ export const refusal = (
   status,
   body: { success: false, error, ...extra },
 });
+
+export type CompactDiscoveredTool = Pick<
+  z.infer<typeof toolSummarySchema>,
+  "provider" | "capability" | "description"
+>;
+export type DiscoveredTool = CompactDiscoveredTool | DetailedDiscoveredTool;

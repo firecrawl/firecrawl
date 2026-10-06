@@ -29,11 +29,15 @@ import {
   CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
-import { getThirdPartyDataTermsRequiredResponse } from "../lib/exchange";
+import { ThirdPartyDataTermsRequiredError } from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { isToolsOnlySearch } from "../search/alexandria";
 import { getScrapeZDR } from "../lib/zdr-helpers";
-import { isAgentInteropSecretValid } from "../lib/agent-interop";
+import { isLockdownZeroDataRetention } from "../lib/safe-mode";
+import {
+  agentInteropStatus,
+  isAgentInteropSecretValid,
+} from "../lib/agent-interop";
 
 export function checkCreditsMiddleware(
   _minimum?: number,
@@ -189,6 +193,11 @@ export function checkCreditsMiddleware(
         return next();
       }
 
+      // Keep the authoritative balance available to opt-in response guidance.
+      // `req.account.remainingCredits` deliberately becomes Infinity when
+      // Autumn allows overage, so it cannot carry this informational signal.
+      res.locals.agentCreditsRemaining = autumnResult.remaining;
+
       const success = autumnResult.allowed;
       // When Autumn allows the request (including overage), don't let a
       // small remaining balance clamp downstream limits (e.g. crawl).
@@ -226,7 +235,6 @@ export function checkCreditsMiddleware(
               teamId: req.auth.team_id,
               remainingCredits,
               clampedLimit,
-              request: req.body,
             });
             (req.body as any).limit = clampedLimit;
             return next();
@@ -240,7 +248,6 @@ export function checkCreditsMiddleware(
             teamId: req.auth.team_id,
             minimum,
             remainingCredits,
-            request: req.body,
             path: req.path,
           },
         );
@@ -272,6 +279,7 @@ export function authMiddleware(
   rateLimiterMode: RateLimiterMode,
   options: {
     allowKeyless?: boolean | ((req: RequestWithMaybeAuth) => boolean);
+    allowAgentManagedKey?: boolean;
   } = {},
 ): (req: RequestWithMaybeAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
@@ -310,6 +318,7 @@ export function authMiddleware(
             ...(auth.retryAfterSeconds
               ? { retry_after_seconds: auth.retryAfterSeconds }
               : {}),
+            ...(auth.signupUrl ? { signup_url: auth.signupUrl } : {}),
           });
         } else {
           return;
@@ -318,7 +327,7 @@ export function authMiddleware(
 
       const { team_id, org_id, chunk } = auth;
 
-      req.auth = { team_id, org_id };
+      req.auth = { team_id, org_id, agentInterop: agentInteropStatus(req) };
       req.acuc = chunk ?? undefined;
       next();
     })().catch(err => next(err));
@@ -354,11 +363,14 @@ export function blocklistMiddleware(
 }
 
 /**
- * Blocklist gate for single-URL scrape-shaped routes (scrape, crawl), where
- * an Exchange-eligible URL may bypass the blocklist because the exchange
- * engine can serve it. Everything else (map, search, batch scrape, monitors)
- * keeps plain blocklist behavior - batch stays out until its jobs carry the
- * access flags the worker-side recheck needs.
+ * Blocklist gate for single-URL scrape-shaped routes (scrape, crawl), where a
+ * blocklisted URL still passes when the exchange engine can serve it, and
+ * asks for the provider's terms when unaccepted terms are all that stands in
+ * the way. Unblocked URLs never consult the Exchange here: engine selection
+ * decides for them, identically on every route, and scrapes them normally
+ * when terms are missing. Everything else (map, search, batch scrape,
+ * monitors) keeps plain blocklist behavior - batch stays out until its jobs
+ * carry the access flags the worker-side recheck needs.
  */
 export function scrapeBlocklistMiddleware(
   req: RequestWithMaybeACUC<any, any, any>,
@@ -375,44 +387,53 @@ function blocklistGate(
   options: { exchange: boolean },
 ) {
   (async () => {
-    const zeroDataRetention =
-      getScrapeZDR(req.acuc?.flags) === "forced" ||
-      req.body?.zeroDataRetention === true;
-    const exchangeAccess =
-      options.exchange &&
-      typeof req.body.url === "string" &&
-      (await getExchangeAccessForRequestBody({
-        body: req.body,
-        flags: req.acuc?.flags ?? null,
-        url: req.body.url,
-        zeroDataRetention,
-      }));
-    const canUseExchange =
-      typeof exchangeAccess === "object" && exchangeAccess.allowed;
-
-    if (typeof exchangeAccess === "object" && exchangeAccess.termsRequired) {
-      if (!res.headersSent) {
-        return res
-          .status(403)
-          .json(getThirdPartyDataTermsRequiredResponse(exchangeAccess.terms));
-      }
-    }
-
     if (
-      typeof req.body.url === "string" &&
-      !canUseExchange &&
-      isUrlBlocked(req.body.url, req.acuc?.flags ?? null, {
+      typeof req.body.url !== "string" ||
+      !isUrlBlocked(req.body.url, req.acuc?.flags ?? null, {
         team_id: req.acuc?.team_id ?? null,
         org_id: req.acuc?.org_id ?? null,
         origin: typeof req.body.origin === "string" ? req.body.origin : null,
       })
     ) {
-      if (!res.headersSent) {
-        return res.status(403).json({
-          success: false,
-          error: UNSUPPORTED_SITE_MESSAGE,
-        });
+      return next();
+    }
+
+    if (options.exchange) {
+      // Safe Mode lockdown implies ZDR, which keeps the Exchange out.
+      const zeroDataRetention =
+        getScrapeZDR(req.acuc?.flags) === "forced" ||
+        req.body?.zeroDataRetention === true ||
+        isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
+      const exchangeAccess = await getExchangeAccessForRequestBody({
+        body: req.body,
+        flags: req.acuc?.flags ?? null,
+        url: req.body.url,
+        blocked: true,
+        zeroDataRetention,
+        teamId: req.acuc?.team_id ?? null,
+        orgId: req.acuc?.org_id ?? null,
+      });
+
+      if (exchangeAccess.allowed) {
+        return next();
       }
+
+      if (exchangeAccess.termsRequired && !res.headersSent) {
+        return res
+          .status(403)
+          .json(
+            new ThirdPartyDataTermsRequiredError(
+              exchangeAccess.terms,
+            ).response(),
+          );
+      }
+    }
+
+    if (!res.headersSent) {
+      return res.status(403).json({
+        success: false,
+        error: UNSUPPORTED_SITE_MESSAGE,
+      });
     }
     next();
   })().catch(err => next(err));

@@ -56,38 +56,43 @@ const baseBrandingEnhancementSchema = z.object({
     confidence: z.number().min(0).max(1),
   }),
 
-  // Brand personality
-  personality: z.object({
-    tone: z
-      .enum([
-        "professional",
-        "playful",
-        "modern",
-        "traditional",
-        "minimalist",
-        "bold",
-      ])
-      .describe("Overall brand tone"),
-    energy: z.enum(["low", "medium", "high"]).describe("Visual energy level"),
-    targetAudience: z.string().describe("Perceived target audience"),
-  }),
+  // Brand personality. Optional: gpt-4o-mini (non-strict mode) often leaves
+  // it out, and failing the whole call over it discarded the colors and fonts.
+  personality: z
+    .object({
+      tone: z
+        .enum([
+          "professional",
+          "playful",
+          "modern",
+          "traditional",
+          "minimalist",
+          "bold",
+        ])
+        .describe("Overall brand tone"),
+      energy: z.enum(["low", "medium", "high"]).describe("Visual energy level"),
+      targetAudience: z.string().describe("Perceived target audience"),
+    })
+    .optional(),
 
-  // Design system insights
-  designSystem: z.object({
-    framework: z
-      .enum([
-        "tailwind",
-        "bootstrap",
-        "material",
-        "chakra",
-        "custom",
-        "unknown",
-      ])
-      .describe("Detected CSS framework"),
-    componentLibrary: z
-      .string()
-      .describe("Detected component library (e.g., radix-ui, shadcn)"),
-  }),
+  // Design system insights. Optional for the same reason as personality.
+  designSystem: z
+    .object({
+      framework: z
+        .enum([
+          "tailwind",
+          "bootstrap",
+          "material",
+          "chakra",
+          "custom",
+          "unknown",
+        ])
+        .describe("Detected CSS framework"),
+      componentLibrary: z
+        .string()
+        .describe("Detected component library (e.g., radix-ui, shadcn)"),
+    })
+    .optional(),
 
   // Font cleaning - LLM cleans and filters font names
   cleanedFonts: z

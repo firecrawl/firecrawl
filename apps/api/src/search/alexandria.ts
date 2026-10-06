@@ -3,7 +3,9 @@ import type { Logger } from "winston";
 import { exchangeRequest } from "../services/alexandria/client";
 import {
   toolSchema,
+  toolSummarySchema,
   type DiscoveredTool,
+  type DetailedDiscoveredTool,
 } from "../services/alexandria/contracts";
 
 export const isAlexandriaSource = (source: { type: string }) =>
@@ -36,6 +38,7 @@ export function isToolsOnlySearch(
 export async function discoverTools(
   input: {
     teamId: string;
+    toolDetail?: "compact" | "summary" | "full";
     query?: string;
     urls?: string[];
     limit: number;
@@ -44,7 +47,7 @@ export async function discoverTools(
   logger: Logger,
 ): Promise<ToolDiscovery> {
   const deadline = Date.now() + Math.min(10000, input.timeoutMs);
-  const items = new Map<string, DiscoveredTool>();
+  const items = new Map<string, DetailedDiscoveredTool>();
   const selected = { semantic: new Set<string>(), domain: new Set<string>() };
   let failed = false;
   const remaining = () => {
@@ -63,7 +66,10 @@ export async function discoverTools(
         options: {
           ...options,
           level: "tools",
-          expand: ["options", "response", "examples"],
+          expand:
+            input.toolDetail === "full"
+              ? ["options", "response", "examples"]
+              : [],
           limit: Math.min(input.limit, 24),
         },
       },
@@ -74,12 +80,16 @@ export async function discoverTools(
       .object({
         success: z.literal(true),
         creditsCost: z.literal(0),
-        data: z.object({ items: z.array(toolSchema) }),
+        data: z.object({
+          items: z.array(
+            input.toolDetail === "full" ? toolSchema : toolSummarySchema,
+          ),
+        }),
       })
       .parse(result.body).data.items;
   };
   const merge = (
-    tool: z.infer<typeof toolSchema>,
+    tool: z.infer<typeof toolSchema> | z.infer<typeof toolSummarySchema>,
     source: "semantic" | "domain",
     urls: string[] = [],
   ) => {
@@ -108,81 +118,8 @@ export async function discoverTools(
   };
   if (input.query) {
     try {
-      const result = await exchangeRequest({
-        teamId: input.teamId,
-        path: `/v1/discover?q=${encodeURIComponent(input.query)}&limit=${Math.min(input.limit, 24)}`,
-        timeoutMs: remaining(),
-      });
-      if (result.status !== 200)
-        throw new Error("Semantic discovery unavailable");
-      const hits = z
-        .object({
-          capabilities: z.array(
-            z.object({
-              provider: z.string(),
-              address: z.string(),
-              cohorts: z.array(z.string()).default([]),
-            }),
-          ),
-        })
-        .parse(result.body)
-        .capabilities.slice(0, Math.min(input.limit, 24));
-      // Four concurrent contract lookups, preserving semantic rank.
-      for (let i = 0; i < hits.length; i += 4) {
-        const contracts = await Promise.all(
-          hits.slice(i, i + 4).map(async hit => {
-            try {
-              if (!hit.cohorts.length)
-                return (
-                  await lookup({
-                    providers: [hit.provider],
-                    capabilities: [hit.address],
-                  })
-                )[0];
-              const parts = [
-                hit.cohorts[0],
-                hit.provider,
-                ...hit.address.split("/"),
-              ];
-              if (
-                parts.some(part => !/^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/.test(part))
-              )
-                throw new Error("Invalid tool identifier");
-              const contract = await exchangeRequest({
-                teamId: input.teamId,
-                path: `/v1/discover/${parts.map(encodeURIComponent).join("/")}`,
-                timeoutMs: remaining(),
-              });
-              if (contract.status !== 200)
-                throw new Error("Tool contract unavailable");
-              const body = z
-                .object({
-                  label: z.string(),
-                  whenToUse: z.string(),
-                  returns: z.unknown(),
-                })
-                .passthrough()
-                .parse(contract.body);
-              const tool = toolSchema.parse({
-                ...body,
-                name: body.label,
-                description: body.whenToUse,
-                response: body.returns,
-              });
-              if (
-                tool.provider !== hit.provider ||
-                tool.capability !== hit.address
-              )
-                throw new Error("Tool identity mismatch");
-              return tool;
-            } catch {
-              failed = true;
-              return undefined;
-            }
-          }),
-        );
-        for (const tool of contracts) if (tool) merge(tool, "semantic");
-      }
+      for (const tool of await lookup({ query: input.query }))
+        merge(tool, "semantic");
     } catch (error) {
       failed = true;
       logger.warn("Semantic tool discovery unavailable", { error });
@@ -274,7 +211,15 @@ export async function discoverTools(
     }
   }
   return {
-    items: [...items.values()],
+    items: [...items.values()].map(tool =>
+      input.toolDetail === "compact"
+        ? {
+            provider: tool.provider,
+            capability: tool.capability,
+            description: tool.description,
+          }
+        : tool,
+    ),
     ...(failed
       ? { warning: "Some tool discovery results are unavailable." }
       : {}),

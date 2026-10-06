@@ -102,6 +102,13 @@ const parsed = await app.parse(
 console.log(parsed.markdown);
 ```
 
+To see which file formats `parse` accepts, call `getParseFormats`. Each entry has `format`, `kind` (for example, `document` or `image`), `extensions`, `mimeTypes`, and `available` (false when the format is not enabled on this deployment).
+
+```js
+const formats = await app.getParseFormats();
+console.log(formats.filter((f) => f.available).map((f) => f.format));
+```
+
 ### Crawling a Website
 
 To crawl a website with error handling, use the `crawl` method. It takes the starting URL and optional parameters, including limits and per‑page `scrapeOptions`.

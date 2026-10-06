@@ -81,6 +81,14 @@ export function requestCreditsShardForJob(
   );
 }
 
+/**
+ * Shard count for an agent request's credit row. An agent's job count is not
+ * known up front, and every writer that may create the row for an agent id
+ * (the agent controller, and agent-interop calls that reach the API first)
+ * must agree on it, because the row is created once and never resized.
+ */
+export const AGENT_REQUEST_CREDITS_SHARDS = 8;
+
 export function requestCreditsShards(maxJobs: number): number {
   if (!Number.isFinite(maxJobs) || maxJobs <= 0) return 8;
   if (maxJobs <= 1_000) return 8;

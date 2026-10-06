@@ -11,7 +11,7 @@ import {
   scrapeQueue,
   crawlGroup,
   crawlFinishedQueue,
-  mirrorExternalSlotAcquire,
+  reserveExternalSlot,
   mirrorExternalSlotRelease,
 } from "../../services/worker/nuq-router";
 import { scrapeQueueFdb } from "../../services/worker/nuq-fdb";
@@ -308,10 +308,10 @@ describeIf("NuQ router (forced FDB mode)", () => {
   test("external slot mirror consumes and releases FDB capacity", async () => {
     const teamId = randomUUID();
     const holder = randomUUID();
-    await mirrorExternalSlotAcquire(teamId, holder, 30_000);
+    await reserveExternalSlot(teamId, holder, 30_000, 10);
     expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(1);
     // re-acquire (heartbeat) must not double-count
-    await mirrorExternalSlotAcquire(teamId, holder, 30_000);
+    await reserveExternalSlot(teamId, holder, 30_000, 10);
     expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(1);
     await mirrorExternalSlotRelease(teamId, holder);
     expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);

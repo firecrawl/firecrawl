@@ -152,23 +152,28 @@ async function providerTermsAcceptController(req: Request, res: Response) {
 
 export const exchangeRouter = express.Router();
 
+// Discover is a flat 10,000/min catalogue read. Retrieve and records/fetch take
+// the plan's scrape-equivalent budget (base 10/min, multiplier scaled).
+// Dashboard and publisher routes below stay on the flat Labs limit.
 exchangeRouter.get(
   "/discover{/*path}",
-  authMiddleware(RateLimiterMode.Labs),
+  authMiddleware(RateLimiterMode.ExchangeDiscover, {
+    allowAgentManagedKey: true,
+  }),
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
-// Both skills routes intentionally require the exchangeRetrieve flag during preview.
+// These read-only discovery routes remain authenticated; they do not execute paid tools.
 exchangeRouter.post(
   "/skills/resolve",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
 exchangeRouter.get(
   "/skills/:id/SKILL.md",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
 // Provider agreements the web app offers for acceptance; a catalogue read, never an acceptance.
@@ -187,12 +192,28 @@ exchangeRouter.post(
 exchangeRouter.post(
   "/provider-terms/events",
   authMiddleware(RateLimiterMode.Labs),
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS)),
+  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.get(
+  "/enrichment/preferences",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+exchangeRouter.put(
+  "/enrichment/preferences",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+exchangeRouter.post(
+  "/enrichment/plan",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
 exchangeRouter.post(
   "/retrieve",
-  authMiddleware(RateLimiterMode.Labs),
+  authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
   wrap((req, res) =>
     providerScrapeController(req as RequestWithAuth<any, any, any>, res, true),
   ),
@@ -214,6 +235,18 @@ exchangeRouter.post(
   "/platform{/*path}",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.put(
+  "/platform/capacity/{*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: true })),
+);
+
+exchangeRouter.delete(
+  "/platform/capacity/buckets/{*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: true })),
 );
 
 exchangeRouter.post(
@@ -242,7 +275,7 @@ exchangeRouter.get(
 
 exchangeRouter.post(
   "/publisher/bounties",
-  authMiddleware(RateLimiterMode.Labs),
+  authMiddleware(RateLimiterMode.Labs, { allowAgentManagedKey: true }),
   bountyBlocklistMiddleware,
   wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
@@ -346,7 +379,7 @@ exchangeRouter.delete(
 
 exchangeRouter.post(
   "/records/fetch",
-  authMiddleware(RateLimiterMode.Labs),
+  authMiddleware(RateLimiterMode.Exchange),
   wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
 );
 

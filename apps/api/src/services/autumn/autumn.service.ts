@@ -63,7 +63,23 @@ export function featureIdForBillingEndpoint(endpoint?: string): string {
   return endpoint === "search" ? SEARCH_CREDITS_FEATURE_ID : CREDITS_FEATURE_ID;
 }
 
+/** A team's Autumn-derived limits and plan, as cached on its ACUC. */
+export type TeamLimits = {
+  concurrency_limit: number;
+  rate_limit_multiplier: number;
+  is_paid_plan: boolean;
+};
+
+/** Limits for a team with no elevated entitlement (a 404 or no balance). */
+export const DEFAULT_TEAM_LIMITS: TeamLimits = {
+  concurrency_limit: 2,
+  rate_limit_multiplier: 1,
+  is_paid_plan: false,
+};
+
 const AUTUMN_DEFAULT_PLAN_ID = "free";
+// Mirrors FREE_PLAN_IDS in firecrawl-web's utils/autumn/pick-largest.ts.
+const FREE_PLAN_IDS = new Set([AUTUMN_DEFAULT_PLAN_ID, "free_1_5k"]);
 /**
  * Size-bounded Map with FIFO eviction. When the map is at capacity the oldest
  * inserted entry is removed before inserting the new one, keeping memory usage
@@ -312,6 +328,7 @@ export class AutumnService {
       value,
       properties,
       idempotencyKey,
+      externalRequestId,
     }: TrackParams,
     routed: boolean,
   ): Promise<boolean> {
@@ -328,6 +345,7 @@ export class AutumnService {
         value,
         properties,
         idempotencyKey,
+        externalRequestId,
       });
     }
 
@@ -772,6 +790,7 @@ export class AutumnService {
     properties,
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
+    externalRequestId,
     orgId,
   }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
@@ -790,6 +809,7 @@ export class AutumnService {
           value,
           properties,
           idempotencyKey,
+          externalRequestId,
         },
         routed,
       );
@@ -806,159 +826,52 @@ export class AutumnService {
     }
   }
 
-  // Cache the team's entity-derived limits briefly so concurrency enforcement
-  // and rate-limit gating on every scrape/crawl/browser request don't fan out
-  // to Autumn each time. Both the CONCURRENCY limit and the rate-limit
-  // multiplier come from a single entity.get, so one cache entry (and one
-  // Autumn round-trip per team per TTL window) serves both callers.
-  private entityLimitsCache = new BoundedMap<
-    string,
-    {
-      concurrency: number | null;
-      rateLimitMultiplier: number | null;
-      expiresAt: number;
-    }
-  >(50_000);
-  private static readonly ENTITY_LIMITS_TTL_MS = 60_000;
-
-  // Fail-open fallbacks used ONLY when Autumn itself errors (network / 5xx /
-  // unexpected exception) so a billing-API outage doesn't throttle real
-  // customers down to the low defaults. A 404 or an absent balance is NOT an
-  // error — it legitimately means the team has no elevated entitlement, so
-  // those keep falling back low (concurrency 2, multiplier 1). These values are
-  // intentionally generous but bounded (the concurrency queue cap still
-  // applies).
-  private static readonly ERROR_FALLBACK_CONCURRENCY = 200;
-  private static readonly ERROR_FALLBACK_RATE_MULTIPLIER = 2500;
-
   /**
-   * Fetches the team's Autumn entity once and derives both the CONCURRENCY
-   * limit and the rate-limit multiplier from it. Each team has its own Autumn
-   * entity, so the entity balances are per-team regardless of whether the org
-   * has one or many teams.
-   *
-   * Returns nulls when Autumn is not configured, the entity is missing (404),
-   * or a balance isn't present — these mean "no elevated entitlement", so
-   * callers fall back to the low defaults. When Autumn itself errors (network /
-   * 5xx / unexpected exception), or the caller can name no org, we instead fail
-   * OPEN, returning the high ERROR_FALLBACK_* limits so a billing outage
-   * doesn't throttle real teams.
+   * The team's limits from one uncached Autumn entity read, and its plan from
+   * a customer read made in parallel (the ACUC caches both). An entity 404
+   * gives the low default limits; a customer 404 gives no paid plan. A team is on a paid plan when its org has an
+   * active, non-add-on subscription to a plan outside FREE_PLAN_IDS. Throws
+   * when Autumn errors or the team has no org.
    */
-  private async getEntityLimits(
+  async getTeamLimits(
     teamId: string,
     orgId: string | null,
-  ): Promise<{
-    concurrency: number | null;
-    rateLimitMultiplier: number | null;
-  }> {
+  ): Promise<TeamLimits> {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
-      return { concurrency: null, rateLimitMultiplier: null };
+      return DEFAULT_TEAM_LIMITS;
     }
+    if (!orgId) throw new Error("The team has no org to read limits for");
 
-    const now = Date.now();
-    const cached = this.entityLimitsCache.get(teamId);
-    if (cached && cached.expiresAt > now) {
-      return {
-        concurrency: cached.concurrency,
-        rateLimitMultiplier: cached.rateLimitMultiplier,
-      };
-    }
-
-    const store = (
-      concurrency: number | null,
-      rateLimitMultiplier: number | null,
-    ) => {
-      this.entityLimitsCache.set(teamId, {
-        concurrency,
-        rateLimitMultiplier,
-        expiresAt: now + AutumnService.ENTITY_LIMITS_TTL_MS,
-      });
-      return { concurrency, rateLimitMultiplier };
+    const nullOn404 = (error: unknown) => {
+      if (this.getErrorStatus(error) === 404) return null;
+      throw error;
     };
+    const [entity, customer] = await Promise.all([
+      autumnClient.entities
+        .get({ customerId: orgId, entityId: teamId })
+        .catch(nullOn404),
+      autumnClient.customers.get({ customerId: orgId }).catch(nullOn404),
+    ]);
+    const balances: Record<string, any> = entity?.balances ?? {};
 
-    // No org means no Autumn entity to ask about. Fail OPEN on the high
-    // limits, the same answer this method already gives when it cannot reach
-    // Autumn — and the same one the service's own org lookup produced by
-    // throwing into the catch below. Not cached, for the same reason.
-    if (!orgId) {
-      logger.error(
-        "Autumn getEntityLimits has no org for the team, falling back to high limits",
-        { teamId },
-      );
-      return {
-        concurrency: AutumnService.ERROR_FALLBACK_CONCURRENCY,
-        rateLimitMultiplier: AutumnService.ERROR_FALLBACK_RATE_MULTIPLIER,
-      };
-    }
-
-    try {
-      const entity: any = await autumnClient.entities.get({
-        customerId: orgId,
-        entityId: teamId,
-      });
-      const balances = entity?.balances ?? {};
-
+    return {
       // CONCURRENCY: use `remaining` (the post-drain effective per-team cap;
       // `granted` would surface the pre-drain inherited customer total).
-      const concurrency = sanitizeBalanceValue(
-        balances[CONCURRENCY_FEATURE_ID]?.remaining,
-      );
-
+      concurrency_limit:
+        sanitizeBalanceValue(balances[CONCURRENCY_FEATURE_ID]?.remaining) ??
+        DEFAULT_TEAM_LIMITS.concurrency_limit,
       // rate_limits: a static per-plan multiplier that is never consumed, so
       // read `granted` (the entitled amount) rather than `remaining`.
-      const rateLimitMultiplier = sanitizeBalanceValue(
-        balances[RATE_LIMIT_FEATURE_ID]?.granted,
-      );
-
-      return store(concurrency, rateLimitMultiplier);
-    } catch (error) {
-      const status = this.getErrorStatus(error);
-      // 404 = the entity genuinely doesn't exist in Autumn (not an error):
-      // fall back low, and cache it so we don't re-query for a team we know is
-      // absent.
-      if (status === 404) return store(null, null);
-      // Any other failure means we couldn't reach Autumn / it errored. Fail
-      // OPEN with high limits rather than throttling the team to the low
-      // defaults. Deliberately not cached, so we retry Autumn on the next
-      // request instead of pinning the team to the fallback for the TTL window.
-      logger.error(
-        "Autumn getEntityLimits failed — billing API may be unavailable, falling back to high limits",
-        { teamId, error },
-      );
-      return {
-        concurrency: AutumnService.ERROR_FALLBACK_CONCURRENCY,
-        rateLimitMultiplier: AutumnService.ERROR_FALLBACK_RATE_MULTIPLIER,
-      };
-    }
-  }
-
-  /**
-   * Reads the team's allowed concurrent-browser count from Autumn's
-   * entity-scoped CONCURRENCY balance. Returns null when the entity is missing
-   * or there's no balance — callers fall back to the low default via
-   * getEffectiveConcurrencyLimit. On an Autumn error it returns the high
-   * ERROR_FALLBACK_CONCURRENCY (fail open) rather than null.
-   */
-  async getConcurrencyLimit(
-    teamId: string,
-    orgId: string | null,
-  ): Promise<number | null> {
-    return (await this.getEntityLimits(teamId, orgId)).concurrency;
-  }
-
-  /**
-   * Reads the team's rate-limit multiplier from Autumn's `rate_limits` feature.
-   * Effective rate limits are `base × multiplier`. Falls back to a multiplier of
-   * 1 when the feature is missing or the entity doesn't exist, so callers don't
-   * have to; on an Autumn error it fails open with the high
-   * ERROR_FALLBACK_RATE_MULTIPLIER instead. Shares a single cached entity fetch
-   * with getConcurrencyLimit, so it adds no Autumn call.
-   */
-  async getRateLimitMultiplier(
-    teamId: string,
-    orgId: string | null,
-  ): Promise<number> {
-    return (await this.getEntityLimits(teamId, orgId)).rateLimitMultiplier ?? 1;
+      rate_limit_multiplier:
+        sanitizeBalanceValue(balances[RATE_LIMIT_FEATURE_ID]?.granted) ??
+        DEFAULT_TEAM_LIMITS.rate_limit_multiplier,
+      is_paid_plan: (customer?.subscriptions ?? []).some(
+        subscription =>
+          subscription.status === "active" &&
+          !subscription.addOn &&
+          !FREE_PLAN_IDS.has(subscription.planId),
+      ),
+    };
   }
 
   /**
@@ -970,6 +883,7 @@ export class AutumnService {
     properties,
     featureId = CREDITS_FEATURE_ID,
     idempotencyKey,
+    externalRequestId,
     orgId,
   }: TrackCreditsParams): Promise<void> {
     if (!autumnClient) return;
@@ -988,6 +902,7 @@ export class AutumnService {
           value: -value,
           properties: { ...properties, source: "autumn_refund" },
           idempotencyKey,
+          externalRequestId,
         },
         routed,
       );

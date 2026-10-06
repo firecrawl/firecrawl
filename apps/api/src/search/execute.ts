@@ -15,6 +15,7 @@ import {
   calculateScrapeCredits,
 } from "./scrape";
 import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
+import { removeExplicitResults } from "./safe-search";
 import {
   highlightsEnvReady,
   runIndexedSearchHighlights,
@@ -45,6 +46,7 @@ interface SearchOptions {
   scrapeOptions?: ScrapeOptions;
   highlights?: boolean;
   domainTools?: boolean;
+  toolDetail?: "compact" | "summary" | "full";
   timeout: number;
 }
 
@@ -202,6 +204,16 @@ export async function executeSearch(
     }
   }
 
+  // The filter shares results with TypeSafe, so zero data retention and
+  // anonymous requests skip it.
+  if (
+    options.safe &&
+    !zeroDataRetention &&
+    !options.enterprise?.some(mode => mode === "zdr" || mode === "anon")
+  ) {
+    await removeExplicitResults(searchResponse, limit, logger);
+  }
+
   if (searchResponse.web && searchResponse.web.length > 0) {
     searchResponse.web = searchResponse.web.map(result => ({
       ...result,
@@ -252,6 +264,7 @@ export async function executeSearch(
   ) {
     const discovery = await discoverTools(
       {
+        toolDetail: options.toolDetail ?? "compact",
         teamId,
         limit,
         query: wantsTools ? query : undefined,

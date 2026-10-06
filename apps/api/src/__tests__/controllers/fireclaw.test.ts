@@ -44,6 +44,7 @@ const getACUCTeamMock = getACUCTeam as MockedFunction<typeof getACUCTeam>;
 function buildReq(overrides: any = {}): any {
   return {
     body: { plays: 1 },
+    headers: {},
     auth: { team_id: "team_test", org_id: "org_test" },
     // A real org: it is what gates the Autumn credit check, so the billable
     // path is the one under test here.
@@ -114,7 +115,11 @@ describe("fireclawController credit gating (Autumn)", () => {
       "org_test",
       200,
       1,
-      expect.objectContaining({ endpoint: "fireclaw" }),
+      // No External-Request-Id header: the charge carries none.
+      expect.objectContaining({
+        endpoint: "fireclaw",
+        externalRequestId: null,
+      }),
     );
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual(
@@ -123,6 +128,28 @@ describe("fireclawController credit gating (Autumn)", () => {
         credits_billed: 200,
         plays: 2,
         remaining_credits: 4000, // from getTeamBalance
+      }),
+    );
+  });
+
+  it("carries the caller's External-Request-Id on the charge", async () => {
+    const req = buildReq({
+      body: { plays: 1 },
+      headers: { "external-request-id": "partner-op-42" },
+    });
+    const res = buildRes();
+    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 5000 });
+
+    await fireclawController(req, res);
+
+    expect(billTeamMock).toHaveBeenCalledWith(
+      "team_test",
+      "org_test",
+      100,
+      1,
+      expect.objectContaining({
+        endpoint: "fireclaw",
+        externalRequestId: "partner-op-42",
       }),
     );
   });

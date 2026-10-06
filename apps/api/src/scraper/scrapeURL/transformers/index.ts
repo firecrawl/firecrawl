@@ -340,30 +340,6 @@ async function deriveBrandingFromActions(
   return document;
 }
 
-async function performLLMExtractUnlessNativeJson(
-  meta: Meta,
-  document: Document,
-): Promise<Document> {
-  if (
-    document.json !== undefined &&
-    hasFormatOfType(meta.options.formats, "json")
-  ) {
-    if (
-      meta.internalOptions.v1OriginalFormat === "extract" &&
-      document.extract === undefined
-    ) {
-      document.extract = document.json;
-    }
-
-    meta.logger.debug(
-      "Skipping LLM JSON extraction - document already has native JSON",
-    );
-    return document;
-  }
-
-  return performLLMExtract(meta, document);
-}
-
 function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
   const hasRawHtml = hasFormatOfType(meta.options.formats, "rawHtml");
@@ -654,7 +630,7 @@ const transformerStack: Transformer[] = [
   fetchMenu,
   ...(useIndex ? [sendDocumentToIndex] : []),
   ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
-  performLLMExtractUnlessNativeJson,
+  performLLMExtract,
   performDeterministicJson,
   performSummary,
   performQuery,

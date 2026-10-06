@@ -9,6 +9,23 @@ export const MIN_DEADLINE_MS = 5_000;
 export const MAX_DEADLINE_MS = 30 * 60 * 1_000;
 export const POLL_FLOOR_MS = 1_000;
 export const POLL_CAP_MS = 5_000;
+// Long-poll (`wait_ms`). A wait shorter than LONG_POLL_MIN_WAIT_MS isn't
+// worth holding a connection for, so the last stretch before the polling
+// deadline runs on the regular schedule. A non-terminal answer that came
+// back in under LONG_POLL_HELD_FRACTION of the requested wait means the
+// server did not hold it (older build, or its wake-up path unavailable):
+// the job drops back to the regular schedule instead of re-polling at once.
+// LONG_POLL_MAX_WAIT_MS mirrors fire-pdf's default cap
+// (FIRE_PDF_JOBS_LONG_POLL_MAX_WAIT_MS): fire-pdf clamps longer waits, so
+// asking for more would only make a held answer look early. After
+// LONG_POLL_MAX_EARLY_ANSWERS early answers in a row the job stays on the
+// regular schedule; a single early answer is followed by one scheduled
+// pause, never an immediate re-poll.
+export const LONG_POLL_MIN_WAIT_MS = 1_000;
+export const LONG_POLL_MAX_WAIT_MS = 25_000;
+export const LONG_POLL_DEADLINE_SLACK_MS = 1_000;
+export const LONG_POLL_HELD_FRACTION = 0.5;
+export const LONG_POLL_MAX_EARLY_ANSWERS = 2;
 export const POLL_TIMEOUT_BUFFER_MS = 30_000;
 
 // An inline job's deadline sits this far inside the caller's window. The
@@ -195,6 +212,77 @@ export const firePdfBlockPagesSchema = z.array(
 
 export const firePdfBlocksSchema = firePdfBlockPagesSchema.optional();
 
+/**
+ * fire-pdf's provenance stamp: who produced a result and how complete it is.
+ * Stored verbatim with every cache entry so a later cache policy can judge
+ * the entry without reading its content (fire-pdf docs/cache-policy.md).
+ * `passthrough` keeps fields a newer fire-pdf adds.
+ */
+export const firePdfProvenanceSchema = z
+  .object({
+    generation: z.string(),
+    build_sha: z.string(),
+    built_at: z.string().nullable(),
+    produced_at: z.string(),
+    stages: z.array(z.string()).optional(),
+    // Page counts: the write rule reads them, so a malformed stamp must
+    // fail validation rather than pass as a healthy result. parseProvenance
+    // turns that failure into a refused cache write, never a failed scrape.
+    quality: z
+      .object({
+        total_pages: z.int().nonnegative(),
+        failed_pages: z.int().nonnegative(),
+        partial_pages: z.int().nonnegative(),
+        degraded_pages: z.int().nonnegative(),
+        ocr_pages: z.int().nonnegative(),
+      })
+      .passthrough()
+      .optional(),
+    // `passthrough` on each item too: a newer fire-pdf may add per-build
+    // fields, and the entry stores the stamp verbatim.
+    contributing_builds: z
+      .array(
+        z
+          .object({
+            generation: z.string(),
+            build_sha: z.string(),
+            built_at: z.string().nullable(),
+          })
+          .passthrough(),
+      )
+      .optional(),
+  })
+  .passthrough();
+
+export type FirePdfProvenance = z.infer<typeof firePdfProvenanceSchema>;
+
+/**
+ * The stamp is parsed apart from the document. The document is what the
+ * caller asked for; the stamp only decides what the cache may remember, so
+ * a stamp this build cannot read degrades to `malformed` (the result is
+ * served, not cached) instead of failing the response.
+ */
+type ProvenanceParse =
+  | { status: "absent" }
+  | { status: "ok"; provenance: FirePdfProvenance }
+  | { status: "malformed"; issue: string };
+
+export function parseProvenance(raw: unknown): ProvenanceParse {
+  // Only a missing field is "no stamp" (a build from before the stamp
+  // existed). fire-pdf never sends an explicit null; one is unreadable.
+  if (raw === undefined) return { status: "absent" };
+  if (raw === null) return { status: "malformed", issue: "provenance: null" };
+  const parsed = firePdfProvenanceSchema.safeParse(raw);
+  if (parsed.success) return { status: "ok", provenance: parsed.data };
+  return {
+    status: "malformed",
+    issue: parsed.error.issues
+      .slice(0, 3)
+      .map(i => `${i.path.join(".") || "<root>"}: ${i.message}`)
+      .join("; "),
+  };
+}
+
 export const resultResponseSchema = z.object({
   schema_version: z
     .union([z.literal(1), z.literal(2), z.literal(3)])
@@ -210,6 +298,9 @@ export const resultResponseSchema = z.object({
   // is the only proof the fire-pdf worker build understood the option —
   // older workers ignore unknown option keys and omit it.
   page_markers: z.literal(true).optional(),
+  // Raw on purpose: parsed separately by parseProvenance so a stamp this
+  // build does not understand never fails the scrape.
+  provenance: z.unknown().optional(),
 });
 
 export type PollResponse = z.infer<typeof pollResponseSchema>;

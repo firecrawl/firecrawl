@@ -991,8 +991,10 @@ pub enum SitemapMode {
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentModel {
+    /// Deprecated: the server runs spark-2 for this value.
     #[serde(rename = "spark-1-pro")]
     Spark1Pro,
+    /// Deprecated: the server runs spark-2 for this value.
     #[serde(rename = "spark-1-mini")]
     Spark1Mini,
     #[serde(rename = "spark-2")]
@@ -1324,10 +1326,13 @@ pub struct DiscoveredTool {
     pub id: Option<String>,
     pub provider: String,
     pub capability: String,
-    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub description: String,
-    pub credits_cost: u32,
-    pub per_record: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credits_cost: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub per_record: Option<bool>,
     #[serde(default)]
     pub options: Vec<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1360,4 +1365,12 @@ pub struct DiscoveredTool {
     pub similarity: Option<f64>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolDetail {
+    Compact,
+    Summary,
+    Full,
 }

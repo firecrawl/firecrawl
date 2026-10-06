@@ -90,6 +90,27 @@ const configSchema = z.object({
     v => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z.string().trim().optional(),
   ),
+  // Optional external agent hints provider. Inert unless the URL is set; see
+  // AGENT_HINTS.md for the request/response contract.
+  AGENT_HINTS_PROVIDER_URL: emptyStringAsUndefined(
+    z
+      .string()
+      .url()
+      .refine(value => ["http:", "https:"].includes(new URL(value).protocol), {
+        message: "AGENT_HINTS_PROVIDER_URL must be an http(s) URL",
+      }),
+  ),
+  AGENT_HINTS_PROVIDER_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Never sent to the provider. Keys the keyless team pseudonym; when unset a
+  // random per-process key is used, so pseudonyms are only stable per process.
+  AGENT_HINTS_PROVIDER_PSEUDONYM_KEY: emptyStringAsUndefined(
+    z.string().trim().min(32),
+  ),
+  AGENT_HINTS_PROVIDER_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50),
   RESEARCH_PROXY_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   LABS_SEARCH_URL: z.string().url().optional(),
@@ -110,6 +131,22 @@ const configSchema = z.object({
   // existing privacy-controlled conversion pipeline. Never use the proxy or
   // credential secrets here: this value is only an analytics pseudonymizer.
   KEYLESS_CONVERSION_HMAC_SECRET: emptyStringAsUndefined(z.string().min(32)),
+  // AES-128 keys for keyless signup link tokens (firecrawl.dev/k/<token>):
+  // comma-separated base64, 16 bytes each. The first encrypts; every key is
+  // tried to decrypt, so keep a rotated-out key listed while its links live.
+  // Must match firecrawl-web's KEYLESS_SIGNUP_LINK_KEYS. Unset sends the
+  // regular signup link.
+  KEYLESS_SIGNUP_LINK_KEYS: emptyStringAsUndefined(
+    z
+      .string()
+      .refine(
+        value =>
+          value
+            .split(",")
+            .every(key => /^[A-Za-z0-9+/]{21}[AQgw]==$/.test(key.trim())),
+        "KEYLESS_SIGNUP_LINK_KEYS must be comma-separated base64 16-byte keys",
+      ),
+  ),
   // Dedicated signer/verifier secret for short-lived MCP delegated credentials.
   // Keep separate from KEYLESS_PROXY_SECRET because delegated credentials can
   // authorize billed requests for a managed OAuth connection.
@@ -299,6 +336,9 @@ const configSchema = z.object({
   // returned. The remaining eligible traffic still runs in shadow mode.
   HIGHLIGHT_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
+  // TypeSafe (Jev): judges search results for the `safe: true` filter.
+  TYPESAFE_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
   EXCHANGE_INTERNAL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
@@ -388,6 +428,15 @@ const configSchema = z.object({
   FIRE_PDF_PERCENT: z.coerce.number().min(0).max(100).default(10),
   FIRE_PDF_BASE_URL: z.string().optional(),
   FIRE_PDF_API_KEY: z.string().optional(),
+  // Cached fire-pdf results are looked up through this service when set
+  // (POST /cache/lookup, same key as FIRE_PDF_API_KEY), and fire-pdf writes
+  // them; without it the bucket is read and written from here.
+  FIRE_PDF_CACHE_BASE_URL: z.string().optional(),
+  // `parsers: [{ type: "pdf", refresh: true }]` skips the content cache and
+  // forces a fresh parse. Per team, per minute, budgeted here or by the
+  // cache service when one is configured; beyond the budget the request is
+  // served normally. 0 disables the option.
+  FIRE_PDF_CACHE_REFRESH_PER_MINUTE: z.coerce.number().int().min(0).default(10),
   // Raster image OCR of image URLs and parse uploads through FirePDF (see
   // lib/image-ocr-gate.ts). Needs FIRE_PDF_BASE_URL.
   IMAGE_OCR_ENABLED: z.stringbool().default(false),
@@ -405,6 +454,11 @@ const configSchema = z.object({
   FIRE_PDF_ASYNC_FORCE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_DISABLE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_ALLOW_REQUEST_OVERRIDE: z.stringbool().default(false),
+  // Long-poll wait sent as `wait_ms` on GET /jobs/:id: fire-pdf holds the
+  // request until the job is terminal or the wait elapses, so completion is
+  // seen as it happens instead of at the next scheduled poll. 0 disables
+  // it; values above fire-pdf's 25s cap are clamped to it.
+  FIRE_PDF_ASYNC_WAIT_MS: z.coerce.number().int().min(0).default(0),
   // Large-PDF by-reference submits (30-256MB files uploaded to GCS and
   // handed to fire-pdf via `input_gcs_uri`). This is an explicit on/off
   // switch, not a percentage: no alternative engine exists at this size,
@@ -444,7 +498,8 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(256 * 1024 * 1024),
-  // Comma-separated team ids granted the privileged cap.
+  // Comma-separated team ids granted the privileged cap. Prefer the
+  // `largePdfs` team flag, which grants the same cap without a deploy.
   PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),
 
   // RunPod
@@ -492,6 +547,20 @@ const configSchema = z.object({
   DISABLE_BLOCKLIST: z.stringbool().optional(),
   FORCED_ENGINE_DOMAINS: z.string().optional(),
   DEBUG_BRANDING: z.stringbool().optional(),
+  // TypeSafe Jev for branding decisions (lib/branding/jev.ts); needs
+  // TYPESAFE_API_KEY. BRANDING_JEV turns it on for every team,
+  // BRANDING_JEV_TEAM_IDS (comma-separated) for listed teams, and
+  // BRANDING_JEV_ROLLOUT_PERCENT for a stable share of teams.
+  BRANDING_JEV: emptyStringAsUndefined(z.stringbool()),
+  BRANDING_JEV_TEAM_IDS: delimitedList(",").optional(),
+  BRANDING_JEV_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  BRANDING_JEV_TIMEOUT_MS: emptyStringAsUndefined(
+    z.coerce.number().int().positive(),
+  ),
+  // Rerun branding on the LLM when Jev's logo confidence is below this (0-1).
+  BRANDING_JEV_ESCALATE_BELOW: emptyStringAsUndefined(
+    z.coerce.number().min(0).max(1),
+  ),
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
@@ -591,9 +660,7 @@ const configSchema = z.object({
   WIKIPEDIA_ENTERPRISE_PASSWORD: z.string().optional(),
 
   // Browser Service
-  BROWSER_SERVICE_URL: z.string().optional(),
-  BROWSER_SERVICE_API_KEY: z.string().optional(),
-  BROWSER_SERVICE_WEBHOOK_SECRET: z.string().optional(),
+  HANGAR_URL: z.url().optional(),
 
   // Audio (avgrab)
   AVGRAB_SERVICE_URL: z.string().optional(),

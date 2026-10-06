@@ -235,6 +235,7 @@ export async function batchScrapeController(
           req.acuc?.api_key_id ?? null,
           {
             endpoint: "batch_scrape",
+            externalRequestId: externalRequestId(req),
             jobId: id,
             // Appends reuse the batch id but each append's threat scans are a
             // fresh charge — a shared key would underbill them. Appends stay
@@ -361,6 +362,7 @@ export async function batchScrapeController(
         zeroDataRetention,
         v1: true,
         webhook: req.body.webhook,
+        origin: req.body.origin,
       };
 
   if (req.body.appendToId && (!sc || sc.team_id !== req.auth.team_id)) {
@@ -401,12 +403,16 @@ export async function batchScrapeController(
     // set base to 21
     jobPriority = await getJobPriority({
       team_id: req.auth.team_id,
-      org_id: req.acuc?.org_id ?? null,
+      acuc: req.acuc,
       basePriority: 21,
     });
   }
   logger.debug("Using job priority " + jobPriority, { jobPriority });
-  const billing = { endpoint: "batch_scrape" as const, jobId: id };
+  const billing = {
+    endpoint: "batch_scrape" as const,
+    jobId: id,
+    externalRequestId: externalRequestId(req),
+  };
 
   const jobs = urls.map(x => ({
     jobId: uuidv7(),

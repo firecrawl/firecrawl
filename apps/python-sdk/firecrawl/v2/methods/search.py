@@ -4,6 +4,7 @@ Search functionality for Firecrawl v2 API.
 
 from typing import Dict, Any, Union, List, TypeVar, Type
 from ..types import SearchRequest, SearchData, Document, SearchResultWeb, SearchResultNews, SearchResultImages, DiscoveredTool
+from ..utils.agent_hints import agent_hint_metadata
 from ..utils.normalize import normalize_document_input, _map_search_result_keys
 from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
 
@@ -35,7 +36,7 @@ def search(
         if not response_data.get("success"):
             handle_response_error(response, "search")
         data = response_data.get("data", {}) or {}
-        out = SearchData(warning=response_data.get("warning"))
+        out = SearchData(warning=response_data.get("warning"), **agent_hint_metadata(response_data))
         if "web" in data:
             out.web = _transform_array(data["web"], SearchResultWeb)
         if "news" in data:

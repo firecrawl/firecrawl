@@ -3,7 +3,6 @@ import { config } from "../config";
 import { diffGetLastScrape } from "../db/rpc";
 import { getBigtableTable } from "./bigtable-client";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
-import { recordJobStorePostgresFallback } from "./job-store-fallback";
 
 // Change tracking bookkeeping. Final architecture (#4484 was the
 // transition): Bigtable is the store. Writes go to Bigtable only --
@@ -159,9 +158,6 @@ export async function changeTrackingGetLastScrape(params: {
   );
   const pgRow = pgRows[0];
   if (!pgRow) return null;
-  recordJobStorePostgresFallback("change_tracking", pgRow.o_job_id, {
-    teamId: params.team_id,
-  });
   return {
     job_id: pgRow.o_job_id,
     date_added: new Date(pgRow.o_date_added).toISOString(),

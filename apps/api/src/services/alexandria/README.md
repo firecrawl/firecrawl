@@ -1,7 +1,8 @@
 # Alexandria Search and Scrape
 
-Search discovers tools; Scrape executes them. Both require the
-`exchangeRetrieve` flag. Ordinary Search and Scrape keep their paths and billing.
+Search discovers tools; Scrape executes them. Provider execution enforces
+authentication, organization access, provider terms, and billing. Ordinary Search
+and Scrape keep their paths and billing.
 
 ```json
 {
@@ -28,18 +29,24 @@ URL matching only.
 
 An ordinary URL scrape accepts `domainTools: true` (default off) and adds
 `data.tools` matched to the page's domain in the same shape as Search. It
-needs Exchange access and no zero data retention, refused with the same 403
+requires authentication and no zero data retention, refused with the same 403
 Search returns; discovery itself is free and never fails the scrape.
 
 Scrape with `alexandria` accepts one call or up to ten and returns
 `data.alexandria` with `data.creditsCost`. `/exchange/retrieve` shares the path; its single-call
-shape relays a provider error with the Exchange's status and `code`.
+shape relays a provider error with Alexandria's status and `code`.
 
 ## Billing
 
-Inline in the request (`retrieve.ts`): authorize through the Exchange
+Inline in the request (`retrieve.ts`): authorize through Alexandria
 (`/v1/provider-terms/requirements`, which refuses unknown providers) against
-the organization's `organizationDataSourceAccess` flags, quote
+the organization's `organizationDataSourceAccess` flags, then refuse a
+free-plan team (Autumn rate-limit multiplier below the hobby floor) calling a
+capability the Exchange lists in `paidPlanOnlyCapabilities` with 403
+`paid_plan_required`, or with 503 `plan_verification_unavailable` when the plan
+cannot be known (no org, preview team, Autumn error): this read fails closed
+where the rate limiter fails open (Benzinga Schedule C.4: full text, WIIM,
+analyst ratings), quote
 (`/v1/retrieve/quote`), reserve with Autumn (`lockCredits`, lock
 `alexandria_<chargeId>`), execute `/v1/retrieve` with the budget and deadline
 headers, settle the receipt (`finalizeCreditsLock`), enqueue the ledger write
@@ -79,3 +86,13 @@ API, Redis, Exchange (`FIRE_EXCHANGE_URL`; a non-blank
 `EXCHANGE_INTERNAL_SECRET` enables the usage report) and Autumn for paid
 execution. Paid settlement is covered by mocked tests only and has not run
 against an Autumn sandbox.
+
+The caller's `Authorization` header is forwarded to Exchange on every execution
+request (`/v1/retrieve`), never on quote or authorization requests, and is never
+stored. It lets Exchange tools that call Firecrawl on the caller's behalf (the
+caller pays) authenticate upstream. Exchange decides which tools read it;
+provider integrations use their own credentials.
+
+Bash source loading (`firecrawl/bash` with `options.requestId`), SQL and enrichment
+must still be sent as single-call requests. Mixed batches are rejected before billing
+or dispatch.

@@ -31,6 +31,14 @@ export type BillingMetadata = {
    * per-request UUID, which dedupes only firebill's own retries.
    */
   chargeId?: string;
+  /**
+   * The caller's own id for the operation, from its `External-Request-Id`
+   * header — the value `logRequest` records. Carried on the charge so
+   * firebill can report the operation to the partner without looking the
+   * request up in ClickHouse, which lands a few seconds after the charge.
+   * Unset when the caller sent no header or the charge has no request.
+   */
+  externalRequestId?: string | null;
 };
 
 export function resolveBillingMetadata({

@@ -19,6 +19,7 @@ from .v2.types import (
     AlexandriaScrapeResult,
     ExchangeSearchResult,
 )
+from .v2.utils.error_handler import CrawlJobTimeoutError
 from .v1 import (
     V1FirecrawlApp,
     AsyncV1FirecrawlApp,
@@ -27,7 +28,7 @@ from .v1 import (
     V1ChangeTrackingOptions,
 )
 
-__version__ = "4.43.0"
+__version__ = "4.46.2"
 
 # Define the logger for the Firecrawl project
 logger: logging.Logger = logging.getLogger("firecrawl")
@@ -97,6 +98,7 @@ __all__ = [
     'AlexandriaScrapeData',
     'AlexandriaScrapeResult',
     'ExchangeSearchResult',
+    'CrawlJobTimeoutError',
     'V1FirecrawlApp',
     'AsyncV1FirecrawlApp',
     'V1JsonConfig',

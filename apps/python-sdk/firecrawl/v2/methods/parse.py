@@ -5,9 +5,10 @@ Parse (multipart upload) functionality for Firecrawl v2 API.
 import json
 import mimetypes
 from pathlib import Path
-from typing import Optional, Dict, Any, BinaryIO, Union, Tuple
+from typing import Optional, Dict, Any, BinaryIO, List, Union, Tuple
 
-from ..types import Document, ParseOptions
+from ..types import Document, ParseFormat, ParseOptions
+from ..utils.agent_hints import agent_hint_metadata
 from ..utils.normalize import normalize_document_input
 from ..utils import HttpClient, handle_response_error, prepare_scrape_options, validate_scrape_options
 from ..utils.get_version import get_version
@@ -60,6 +61,7 @@ def _validate_parse_options_payload(options_payload: Dict[str, Any]) -> None:
 
 def _prepare_parse_options_payload(
     options: Optional[ParseOptions],
+    origin: Optional[str] = None,
 ) -> Dict[str, Any]:
     request_data: Dict[str, Any] = {}
 
@@ -75,7 +77,7 @@ def _prepare_parse_options_payload(
             opts.pop("lockdown", None)
             request_data.update(opts)
 
-    request_data["origin"] = request_data.get("origin") or f"python-sdk@{version}"
+    request_data["origin"] = request_data.get("origin") or origin or f"python-sdk@{version}"
     return request_data
 
 
@@ -125,8 +127,9 @@ def _prepare_parse_request(
     *,
     filename: Optional[str] = None,
     content_type: Optional[str] = None,
+    origin: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Tuple[str, bytes, str]]]:
-    request_data = _prepare_parse_options_payload(options)
+    request_data = _prepare_parse_options_payload(options, origin)
     multipart_fields = {"options": json.dumps(request_data)}
     multipart_files = _prepare_file_payload(
         file,
@@ -149,6 +152,7 @@ def parse(
         options,
         filename=filename,
         content_type=content_type,
+        origin=client.origin,
     )
 
     response = client.post_multipart("/v2/parse", data=fields, files=files)
@@ -157,8 +161,19 @@ def parse(
 
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        handle_response_error(response, "parse")
 
     document_data = body.get("data", {})
-    normalized = normalize_document_input(document_data)
+    normalized = {**normalize_document_input(document_data), **agent_hint_metadata(body)}
     return Document(**normalized)
+
+
+def get_parse_formats(client: HttpClient) -> List[ParseFormat]:
+    resp = client.get("/v2/parse/formats")
+    if not resp.ok:
+        handle_response_error(resp, "get parse formats")
+    body = resp.json()
+    if not body.get("success"):
+        handle_response_error(resp, "get parse formats")
+    data = body.get("data") or {}
+    return [ParseFormat.model_validate(item) for item in data.get("formats") or []]

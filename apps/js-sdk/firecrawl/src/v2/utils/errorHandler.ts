@@ -1,11 +1,12 @@
 import { type AxiosError, type AxiosResponse } from "axios";
 import { SdkError, JobTimeoutError, parseRequiresAction } from "../types";
+import { agentHintMetadata } from "./agentHints";
 
 export function throwForBadResponse(resp: AxiosResponse, action: string): never {
   const status = resp.status;
   const body = resp.data || {};
   const msg = body?.error || body?.message || `Request failed (${status}) while trying to ${action}`;
-  throw new SdkError(
+  throw Object.assign(new SdkError(
     msg,
     status,
     body?.code,
@@ -13,7 +14,7 @@ export function throwForBadResponse(resp: AxiosResponse, action: string): never 
     undefined,
     body?.chargeId,
     parseRequiresAction(body?.requiresAction),
-  );
+  ), agentHintMetadata(body));
 }
 
 export function normalizeAxiosError(err: AxiosError, action: string): never {
@@ -21,7 +22,7 @@ export function normalizeAxiosError(err: AxiosError, action: string): never {
   const body: any = err.response?.data;
   const message = body?.error || err.message || `Request failed${status ? ` (${status})` : ""} while trying to ${action}`;
   const code = (body?.code as string) || err.code;
-  throw new SdkError(
+  throw Object.assign(new SdkError(
     message,
     status,
     code,
@@ -29,7 +30,7 @@ export function normalizeAxiosError(err: AxiosError, action: string): never {
     undefined,
     body?.chargeId,
     parseRequiresAction(body?.requiresAction),
-  );
+  ), agentHintMetadata(body));
 }
 
 export function isRetryableError(err: any): boolean {
@@ -64,4 +65,3 @@ export function isRetryableError(err: any): boolean {
   // Default: retry on unknown errors (safer than not retrying)
   return true;
 }
-

@@ -19,6 +19,8 @@ interface GenerateLLMsTextServiceOptions {
   generationId: string;
   teamId: string;
   apiKeyId: number | null;
+  /** The caller's External-Request-Id, carried on the charge for firebill. */
+  externalRequestId?: string | null;
   url: string;
   maxUrls: number;
   showFullText: boolean;
@@ -284,7 +286,12 @@ export async function performGenerateLlmsTxt(
       orgIdFromAcuc(acuc),
       urls.length,
       apiKeyId,
-      { endpoint: "llms_txt", jobId: generationId, chargeId: generationId },
+      {
+        endpoint: "llms_txt",
+        jobId: generationId,
+        chargeId: generationId,
+        externalRequestId: options.externalRequestId ?? null,
+      },
       logger,
     ).catch(error => {
       logger.error(`Failed to bill team ${teamId} for ${urls.length} urls`, {

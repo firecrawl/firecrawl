@@ -48,6 +48,7 @@ import {
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import { requestCreditsShards } from "../../lib/request-credits-store";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -93,6 +94,9 @@ export async function crawlController(req: Request, res: Response) {
       api_key_id: chunk?.api_key_id ?? null,
       jobAccessExpiresAt: new Date(
         Date.now() + (chunk?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      ),
+      creditsShards: requestCreditsShards(
+        req.body?.crawlerOptions?.limit ?? defaultCrawlerOptions.limit,
       ),
     });
 
@@ -295,10 +299,14 @@ export async function crawlController(req: Request, res: Response) {
 
           let jobPriority = await getJobPriority({
             team_id,
-            org_id: orgId,
+            acuc: chunk,
             basePriority: 21,
           });
-          const billing = { endpoint: "crawl" as const, jobId: id };
+          const billing = {
+            endpoint: "crawl" as const,
+            jobId: id,
+            externalRequestId: externalRequestId(req),
+          };
           const jobs = urls.map(url => {
             const uuid = uuidv7();
             return {
@@ -355,13 +363,17 @@ export async function crawlController(req: Request, res: Response) {
           team_id,
           origin: req.body.origin ?? defaultOrigin,
           integration: req.body.integration,
-          billing: { endpoint: "crawl", jobId: id },
+          billing: {
+            endpoint: "crawl",
+            jobId: id,
+            externalRequestId: externalRequestId(req),
+          },
           crawl_id: id,
           zeroDataRetention: false, // not supported on v0
           apiKeyId: chunk?.api_key_id ?? null,
         },
         jobId,
-        await getJobPriority({ team_id, org_id: orgId, basePriority: 15 }),
+        await getJobPriority({ team_id, acuc: chunk, basePriority: 15 }),
       );
       await addCrawlJob(id, jobId, logger);
     }

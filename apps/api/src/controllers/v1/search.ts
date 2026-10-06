@@ -264,7 +264,7 @@ export async function searchController(
         applyAgentAuthDiscoveryHeader(res);
         return res
           .status(429)
-          .json(await keylessLimitBody(req.auth.team_id, "v1_search"));
+          .json(await keylessLimitBody(req.auth.team_id, "v1_search", req));
       }
       reservedKeylessCredits = projectedKeylessCredits;
     }
@@ -336,7 +336,12 @@ export async function searchController(
         req.acuc?.org_id ?? null,
         result.searchCredits,
         req.acuc?.api_key_id ?? null,
-        { endpoint: "search", jobId, chargeId: jobId },
+        {
+          endpoint: "search",
+          jobId,
+          chargeId: jobId,
+          externalRequestId: externalRequestId(req),
+        },
       ).catch(error => {
         logger.error(
           `Failed to bill team ${req.auth.team_id} for ${result.searchCredits} credits: ${error}`,

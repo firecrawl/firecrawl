@@ -5,11 +5,14 @@ import { EngineScrapeResult } from ".";
 import { config } from "../../../config";
 import {
   getExchangeRequestLogContext,
+  getEnrichmentSettingsUrl,
   getExchangeResponseLogContext,
+  ThirdPartyDataTermsRequiredError,
 } from "../../../lib/exchange";
 import { setSpanAttributes, withSpan } from "../../../lib/otel-tracer";
 import { robustFetch } from "../lib/fetch";
-import { EngineError } from "../error";
+import { safeMarkdownToHtml } from "./pdf/markdownToHtml";
+import { EngineError, ExchangeRefusedError } from "../error";
 
 const exchangeScrapeResponseSchema = z.union([
   z
@@ -32,7 +35,6 @@ const exchangeScrapeResponseSchema = z.union([
             .optional(),
           metadata: z.record(z.string(), z.unknown()).optional(),
           markdown: z.string().optional(),
-          json: z.unknown().optional(),
         })
         .passthrough(),
     })
@@ -44,11 +46,56 @@ const exchangeScrapeResponseSchema = z.union([
         .object({
           code: z.string().optional(),
           message: z.string().optional(),
+          terms: z.object({ key: z.string(), version: z.string() }).optional(),
         })
         .passthrough()
         .optional(),
     })
     .passthrough(),
+]);
+
+// Exchange refusals that describe the request itself. Any other failure is an
+// engine failure. Enrichment refusals point at the settings that fix them.
+const EXCHANGE_REFUSALS = new Map<
+  string,
+  {
+    code: ConstructorParameters<typeof ExchangeRefusedError>[0];
+    message: string;
+    enrichmentSettings?: true;
+  }
+>([
+  [
+    "record_not_found",
+    {
+      code: "THIRD_PARTY_DATA_NOT_FOUND",
+      message:
+        "The third-party data provider for this URL has no record for it.",
+    },
+  ],
+  [
+    "provider_not_enabled",
+    {
+      code: "THIRD_PARTY_DATA_NOT_ENABLED",
+      message:
+        "The third-party data provider for this URL is not enabled for this team.",
+    },
+  ],
+  [
+    "enrichment_not_enabled",
+    {
+      code: "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
+      message: "Enrichment is not enabled for this kind of profile.",
+      enrichmentSettings: true,
+    },
+  ],
+  [
+    "enrichment_unavailable",
+    {
+      code: "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
+      message: "None of the team's enrichment providers can serve this URL.",
+      enrichmentSettings: true,
+    },
+  ],
 ]);
 
 export function exchangeMaxReasonableTime(meta: Meta): number {
@@ -63,15 +110,21 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-// Exchange responses carry no page HTML; synthesize a minimal head so the
-// metadata transformer can populate the document's title and description.
-function buildMetadataHtml(title?: string, description?: string): string {
-  const titleTag = title === undefined ? "" : `<title>${escapeHtml(title)}</title>`;
+// Exchange responses carry no page HTML. Render the markdown into a page so
+// the regular transformers derive html, rawHtml, links, images and metadata
+// from it the way they do for any other page.
+function buildPageHtml(
+  body: string,
+  title?: string,
+  description?: string,
+): string {
+  const titleTag =
+    title === undefined ? "" : `<title>${escapeHtml(title)}</title>`;
   const descriptionTag =
     description === undefined
       ? ""
       : `<meta name="description" content="${escapeHtml(description)}">`;
-  return `<!DOCTYPE html><html><head>${titleTag}${descriptionTag}</head><body></body></html>`;
+  return `<!DOCTYPE html><html><head>${titleTag}${descriptionTag}</head><body>${body}</body></html>`;
 }
 
 export async function scrapeURLWithExchange(
@@ -105,10 +158,26 @@ export async function scrapeURLWithExchange(
           requestId: meta.id,
           teamId: meta.internalOptions.teamId,
           url,
-          formats: ["markdown", "json"],
+          // Named so the Exchange serves the provider whose access was checked
+          // when several claim the URL.
+          ...(meta.exchangeProviderId === undefined
+            ? {}
+            : { provider: meta.exchangeProviderId }),
+          formats: ["markdown"],
           ...(meta.options.maxAge === undefined
             ? {}
             : { maxAge: meta.options.maxAge }),
+          // Enrichment checks each provider step's terms against these rows
+          // and the Exchange's own ledger for the organization.
+          ...(meta.internalOptions.orgId
+            ? { organizationId: meta.internalOptions.orgId }
+            : {}),
+          ...(meta.internalOptions.teamFlags?.organizationDataSourceAccess
+            ? {
+                organizationDataSourceAccess:
+                  meta.internalOptions.teamFlags.organizationDataSourceAccess,
+              }
+            : {}),
         },
         logger: logger.child({ method: "exchangeScrape/robustFetch" }),
         tryCount: 2,
@@ -126,6 +195,26 @@ export async function scrapeURLWithExchange(
           errorCode: response.error?.code,
           durationMs: Date.now() - startTime,
         });
+        if (
+          response.error?.code === "third_party_data_terms_required" &&
+          response.error.terms !== undefined
+        ) {
+          // Only enrichment checks terms inside the Exchange, so the step can
+          // also be turned off in the team's enrichment settings.
+          throw new ThirdPartyDataTermsRequiredError(response.error.terms, {
+            enrichment: true,
+          });
+        }
+        const refusal = EXCHANGE_REFUSALS.get(response.error?.code ?? "");
+        if (refusal !== undefined) {
+          const message = response.error?.message || refusal.message;
+          throw new ExchangeRefusedError(
+            refusal.code,
+            refusal.enrichmentSettings
+              ? `${message} An organization admin can choose enrichment providers at ${getEnrichmentSettingsUrl()}`
+              : message,
+          );
+        }
         throw new EngineError("Exchange request failed");
       }
 
@@ -152,11 +241,15 @@ export async function scrapeURLWithExchange(
         "exchange.duration_ms": Date.now() - startTime,
       });
 
+      const markdown = response.data.markdown ?? "";
       return {
         url: response.data.url ?? url,
-        html: buildMetadataHtml(response.data.title, response.data.description),
-        markdown: response.data.markdown,
-        json: response.data.json,
+        html: buildPageHtml(
+          await safeMarkdownToHtml(markdown, meta.logger, meta.id),
+          response.data.title,
+          response.data.description,
+        ),
+        markdown,
         statusCode: 200,
         contentType: "text/markdown",
         proxyUsed: "basic",

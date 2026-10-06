@@ -4,6 +4,7 @@ Mapping functionality for Firecrawl v2 API.
 
 from typing import Optional, Dict, Any
 from ..types import MapOptions, MapData, LinkResult
+from ..utils.agent_hints import agent_hint_metadata
 from ..utils import HttpClient, handle_response_error
 
 
@@ -57,7 +58,7 @@ def map(client: HttpClient, url: str, options: Optional[MapOptions] = None) -> M
 
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        handle_response_error(response, "map")
 
     # shouldnt return inside data?
     # data = body.get("data", {})
@@ -87,4 +88,4 @@ def map(client: HttpClient, url: str, options: Optional[MapOptions] = None) -> M
         elif isinstance(item, str):
             result_links.append(LinkResult(url=item))
 
-    return MapData(links=result_links)
+    return MapData(links=result_links, **agent_hint_metadata(body))

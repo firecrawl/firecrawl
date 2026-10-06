@@ -34,7 +34,6 @@ const successSchema = z.object({
 
   // timeTaken: z.number(),
   content: z.string(),
-  json: z.unknown().optional(),
   url: z.string().optional(),
 
   pageStatusCode: z.number(),

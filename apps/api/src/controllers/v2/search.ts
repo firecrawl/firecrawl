@@ -281,9 +281,12 @@ async function searchControllerInner(
 
     const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
     const agentRequestId = req.body.__agentInterop?.requestId ?? null;
-    const billing: BillingMetadata = req.body.__agentInterop
-      ? { endpoint: "agent" as const, jobId }
-      : { endpoint: "search" as const, jobId };
+    const billing: BillingMetadata = {
+      ...(req.body.__agentInterop
+        ? { endpoint: "agent" as const, jobId }
+        : { endpoint: "search" as const, jobId }),
+      externalRequestId: externalRequestId(req),
+    };
 
     logger = logger.child({
       version: "v2",
@@ -344,6 +347,9 @@ async function searchControllerInner(
         zeroDataRetention,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
+      // The rejection is surfaced where the promise is awaited below; this
+      // only stops it counting as unhandled until then.
+      logRequestPromise.catch(() => {});
     }
 
     const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
@@ -359,6 +365,17 @@ async function searchControllerInner(
             zeroDataRetention,
           )
         : 0;
+    // The request must be on record before anything is reserved, runs, or
+    // bills. A failed log fails the request here, ahead of the keyless
+    // reservation and the search, so there is nothing to refund or unbill.
+    const logStart = Date.now();
+    await logRequestPromise;
+    const waited = Date.now() - logStart;
+    if (waited >= 5)
+      logger.warn("Had to wait for log request promise to complete", {
+        timeMs: waited,
+      });
+
     if (projectedKeylessCredits > 0) {
       const reservation = await reserveKeylessCredits(
         req.auth.team_id,
@@ -368,7 +385,7 @@ async function searchControllerInner(
         applyAgentAuthDiscoveryHeader(res);
         return res
           .status(429)
-          .json(await keylessLimitBody(req.auth.team_id, "v2_search"));
+          .json(await keylessLimitBody(req.auth.team_id, "v2_search", req));
       }
       reservedKeylessCredits = projectedKeylessCredits;
     }
@@ -391,6 +408,7 @@ async function searchControllerInner(
         scrapeOptions: req.body.scrapeOptions,
         highlights: req.body.highlights,
         domainTools: req.body.domainTools,
+        toolDetail: req.body.toolDetail,
         timeout: req.body.timeout,
       },
       {
@@ -444,15 +462,6 @@ async function searchControllerInner(
 
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
-
-    // Wait for the parent log before inserting the child search log.
-    const logStart = Date.now();
-    await logRequestPromise;
-    const waited = Date.now() - logStart;
-    if (waited >= 5)
-      logger.warn("Had to wait for log request promise to complete", {
-        timeMs: waited,
-      });
 
     logSearch(
       {

@@ -18,29 +18,16 @@ import {
   pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
-import { autumnService } from "../services/autumn/autumn.service";
-import { orgIdForTeam } from "./team-org";
+import { getACUCTeam } from "../controllers/auth";
+import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
 import { reportPipelineError } from "./redis-pipeline";
 
-// Fallback when Autumn can't give us a concurrency value.
-const DEFAULT_CONCURRENCY_LIMIT = 2;
-
 /**
- * Returns the team's effective concurrency limit from Autumn's CONCURRENCY
- * balance. Autumn is authoritative; when the entity is missing we fall back to
- * the low default of 2. When Autumn errors, getConcurrencyLimit already returns
- * a high fail-open value, so that carries through here.
+ * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
+ * autumn.config.ts). Pairs with HOBBY_RATE_LIMIT_MULTIPLIER in
+ * services/rate-limiter.ts; change both if the hobby plan changes.
  */
-export async function getEffectiveConcurrencyLimit(
-  teamId: string,
-  /** The team's org, from the ACUC the caller already holds. Required so a
-   * caller cannot silently omit it and take the high fail-open limit; pass
-   * null only when the team genuinely has no org. */
-  orgId: string | null,
-): Promise<number> {
-  const autumnValue = await autumnService.getConcurrencyLimit(teamId, orgId);
-  return autumnValue ?? DEFAULT_CONCURRENCY_LIMIT;
-}
+export const HOBBY_CONCURRENCY_LIMIT = 5;
 
 const constructKey = constructConcurrencyLimitKey;
 const constructQueueKey = (team_id: string) =>
@@ -342,13 +329,10 @@ export async function concurrentJobDone(job: NuQJob<any>) {
       await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
     }
 
-    // The org rides the job payload; the ACUC answers for a job enqueued
-    // without one (monitor jobs null the field deliberately). Once per call,
-    // not once per job promoted below.
-    const maxTeamConcurrency = await getEffectiveConcurrencyLimit(
-      job.data.team_id,
-      job.data.internalOptions?.orgId ?? (await orgIdForTeam(job.data.team_id)),
-    );
+    // Once per call, not once per job promoted below.
+    const maxTeamConcurrency =
+      (await getACUCTeam(job.data.team_id).catch(() => null))
+        ?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
 
     let staleSkipped = 0;
     while (staleSkipped < 100) {

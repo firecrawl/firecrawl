@@ -26,6 +26,12 @@ export type TrackParams = {
   value: number;
   properties?: Record<string, unknown>;
   /**
+   * The partner's own operation id (the caller's `External-Request-Id`).
+   * firebill route only: sent as `external_request_id`, so firebill reports
+   * the operation under it without a lookup. Opaque, forwarded verbatim.
+   */
+  externalRequestId?: string | null;
+  /**
    * Stable per-charge identity, honored on the firebill route only (the
    * direct Autumn SDK does not expose its Idempotency-Key header). When set,
    * a caller retry — or a requeued job re-billing the same work — dedupes
@@ -114,6 +120,8 @@ export type TrackCreditsParams = {
   featureId?: string;
   /** See TrackParams.idempotencyKey. */
   idempotencyKey?: string;
+  /** See TrackParams.externalRequestId. */
+  externalRequestId?: string | null;
   /**
    * The team's org — the Autumn customer this usage bills against. The service
    * never looks it up: callers hold it already (a request's ACUC, a job's

@@ -7,7 +7,8 @@ import type { PDFProcessorResult } from "../types";
 import { safeMarkdownToHtml } from "../markdownToHtml";
 import { scrapePDFWithFirePDF } from "../firePDF";
 import { cancelJob } from "./cancel";
-import { tryGetCached, maybeSaveResult } from "./cache";
+import { maybeSaveResult, provenanceFromResponse, tryGetCached } from "./cache";
+import { resolvePdfCacheKey } from "../../../../../lib/gcs-pdf-cache";
 import {
   firePdfAsyncAbandonedTotal,
   firePdfAsyncTotalDurationSeconds,
@@ -18,7 +19,7 @@ import { fetchResult } from "./result";
 import type { FirePdfByReferenceInput } from "./by-reference";
 import type { FirePdfAdoptedJobInput } from "./lookup";
 import { FIRE_PDF_ASYNC_MIN_REMAINING_MS } from "./routing";
-import { POLL_FLOOR_MS, POLL_TIMEOUT_BUFFER_MS } from "./schema";
+import { POLL_TIMEOUT_BUFFER_MS } from "./schema";
 import { submitJob, SubmitJobMayHaveBeenAcceptedError } from "./submit";
 import {
   computeByReferenceDeadlineMs,
@@ -96,9 +97,10 @@ export async function scrapePDFWithFirePDFAsync(
   // Cache addressing: inline submits keep the historical key (sha256 of
   // the base64 payload); by-reference submits use a `raw-` prefixed key
   // over the raw-byte sha, so repeat scrapes of the same large document
-  // don't reprocess it. The two keyspaces are deliberately distinct — an
-  // inline and a by-reference parse of the same document do not share
-  // entries. The LOOKUP for by-reference happens at the call site BEFORE
+  // don't reprocess it. On the direct-bucket path the two keyspaces are
+  // distinct — an inline and a by-reference parse of the same document do
+  // not share entries; the cache service is asked with both keys. The
+  // LOOKUP for by-reference happens at the call site BEFORE
   // the input object is uploaded (a hit must skip the 30-256MB transfer,
   // which has already happened by the time this function runs); only the
   // inline path looks up here. Both paths save here.
@@ -217,7 +219,7 @@ export async function scrapePDFWithFirePDFAsync(
 
   try {
     let alreadyDone = false;
-    let initialDelay: number = POLL_FLOOR_MS;
+    let initialDelay: number | undefined;
     if (wireInput === null) {
       meta.logger.info("FirePDF async adopting existing job", {
         scrapeId: meta.id,
@@ -254,7 +256,7 @@ export async function scrapePDFWithFirePDFAsync(
       });
       submissionAccepted = true;
       alreadyDone = submit.alreadyDone;
-      initialDelay = submit.retryAfterMs ?? POLL_FLOOR_MS;
+      initialDelay = submit.retryAfterMs;
       if (byReference && !alreadyDone && meta.largePdfProcessing) {
         // The job now exists server-side and (per the cancel policy
         // above) will keep running if this scrape is abandoned — record
@@ -282,6 +284,8 @@ export async function scrapePDFWithFirePDFAsync(
           baseUrl,
           scrapeId: jobScrapeId,
           initialDelay,
+          pagesEstimate: pagesProcessed,
+          longPollWaitMs: config.FIRE_PDF_ASYNC_WAIT_MS,
           pollingDeadline,
           meta,
           fetchImpl,
@@ -403,6 +407,12 @@ export async function scrapePDFWithFirePDFAsync(
   const durationMs = now() - overallStartedAt;
   firePdfAsyncTotalDurationSeconds.observe(durationMs / 1000);
 
+  const cacheKey = resolvePdfCacheKey(cacheInput);
+  const provenance = provenanceFromResponse(fetched.provenance, meta.logger, {
+    scrapeId: meta.id,
+    cacheKey,
+  });
+
   meta.logger.info("FirePDF async completed", {
     scrapeId: meta.id,
     durationMs,
@@ -413,6 +423,11 @@ export async function scrapePDFWithFirePDFAsync(
     failedPages: fetched.failed_pages,
     partialPages: fetched.partial_pages,
     pollCount: polled.pollCount,
+    // The content-cache key and the producer, so a report can be turned
+    // into keys to purge and a result can be tied to a fire-pdf build.
+    cacheKey,
+    generation: provenance?.generation ?? "unknown",
+    buildSha: provenance?.build_sha ?? "unknown",
   });
 
   const processorResult: PDFProcessorResult & { markdown: string } = {
@@ -432,6 +447,8 @@ export async function scrapePDFWithFirePDFAsync(
     includeBlocks,
     pageMarkers,
     result: processorResult,
+    provenance,
+    failedPages: fetched.failed_pages,
   });
 
   return processorResult;

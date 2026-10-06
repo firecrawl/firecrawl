@@ -299,6 +299,20 @@ public class FirecrawlClient
         return response.Data ?? throw new FirecrawlException("Parse response contained no data");
     }
 
+    /// <summary>
+    /// Lists the file formats accepted by <c>/v2/parse</c>, including whether
+    /// each one is currently available on this deployment.
+    /// </summary>
+    public async Task<List<ParseFormat>> GetParseFormatsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.GetAsync<ApiResponse<ParseFormatsData>>(
+            "/v2/parse/formats", cancellationToken);
+
+        return response.Data?.Formats
+            ?? throw new FirecrawlException("Parse formats response contained no data");
+    }
+
     // ================================================================
     // MAP
     // ================================================================
@@ -741,7 +755,7 @@ public class FirecrawlClient
     // INTERNAL UTILITIES
     // ================================================================
 
-    private const string SdkOrigin = "dotnet-sdk@1.14.0";
+    private const string SdkOrigin = "dotnet-sdk@1.14.1";
 
     private static Dictionary<string, object> BuildBody(object? options)
     {

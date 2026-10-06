@@ -8,6 +8,7 @@ import {
   type SearchResultImages,
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
+import { agentHintMetadata } from "../utils/agentHints";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import {
   throwForBadResponse,
@@ -27,6 +28,7 @@ function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     query: req.query,
   };
+  if (req.toolDetail != null) payload.toolDetail = req.toolDetail;
   if (req.domainTools != null) payload.domainTools = req.domainTools;
   if (req.sources) payload.sources = req.sources;
   if (req.categories) payload.categories = req.categories;
@@ -100,7 +102,7 @@ export async function search(
       throwForBadResponse(res, "search");
     }
     const data = (res.data.data || {}) as Record<string, any>;
-    const out: SearchData = {};
+    const out: SearchData = { ...agentHintMetadata(res.data) };
     if (res.data.warning) out.warning = res.data.warning;
     if (data.web) out.web = transformArray<SearchResultWeb>(data.web);
     if (data.news) out.news = transformArray<SearchResultNews>(data.news);

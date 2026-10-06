@@ -835,6 +835,86 @@ class ClientTest < Minitest::Test
   end
 
   # ================================================================
+  # PARSE FORMATS
+  # ================================================================
+
+  def test_get_parse_formats
+    stub_request(:get, "#{BASE_URL}/v2/parse/formats")
+      .with(headers: { "Authorization" => "Bearer #{API_KEY}" })
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, data: { formats: [
+          { format: "pdf", kind: "document", extensions: [".pdf"], mimeTypes: ["application/pdf"], available: true },
+          { format: "png", kind: "image", extensions: [".png"], mimeTypes: ["image/png"], available: false },
+        ] }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    formats = @client.get_parse_formats
+
+    assert_requested :get, "#{BASE_URL}/v2/parse/formats", times: 1
+    assert_equal 2, formats.size
+    pdf, png = formats
+    assert_instance_of Firecrawl::Models::ParseFormat, pdf
+    assert_equal "pdf", pdf.format
+    assert_equal Firecrawl::Models::ParseFormat::KIND_DOCUMENT, pdf.kind
+    assert pdf.document?
+    refute pdf.image?
+    assert_equal [".pdf"], pdf.extensions
+    assert_equal ["application/pdf"], pdf.mime_types
+    assert_equal true, pdf.available
+    assert_equal "png", png.format
+    assert png.image?
+    assert_equal ["image/png"], png.mime_types
+    assert_equal false, png.available
+  end
+
+  def test_get_parse_formats_tolerates_unknown_kind_and_fields
+    stub_request(:get, "#{BASE_URL}/v2/parse/formats")
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, data: { formats: [
+          { format: "mp4", kind: "video", extensions: [".mp4"], mimeTypes: ["video/mp4"], available: true, maxSizeMb: 50 },
+        ] }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    format = @client.get_parse_formats.first
+    assert_equal "mp4", format.format
+    assert_equal "video", format.kind
+    refute format.document?
+    refute format.image?
+    assert_equal ["video/mp4"], format.mime_types
+    assert_equal true, format.available
+  end
+
+  def test_get_parse_formats_authentication_error
+    stub_request(:get, "#{BASE_URL}/v2/parse/formats")
+      .to_return(
+        status: 401,
+        body: JSON.generate(error: "Invalid API key"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    error = assert_raises(Firecrawl::AuthenticationError) { @client.get_parse_formats }
+    assert_equal 401, error.status_code
+  end
+
+  def test_get_parse_formats_server_error
+    client = Firecrawl::Client.new(api_key: API_KEY, max_retries: 0, backoff_factor: 0.0)
+    stub_request(:get, "#{BASE_URL}/v2/parse/formats")
+      .to_return(
+        status: 500,
+        body: JSON.generate(error: "Internal server error"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    error = assert_raises(Firecrawl::FirecrawlError) { client.get_parse_formats }
+    assert_equal 500, error.status_code
+    assert_equal "Internal server error", error.message
+  end
+
+  # ================================================================
   # ERROR HANDLING
   # ================================================================
 

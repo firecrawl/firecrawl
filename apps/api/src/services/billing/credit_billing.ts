@@ -52,6 +52,7 @@ export async function billTeam(
           idempotencyKey: billing.chargeId
             ? `fc:track:${billing.endpoint}:${billing.chargeId}`
             : undefined,
+          externalRequestId: billing.externalRequestId ?? undefined,
         });
       } else if (team_id !== "preview" && !team_id.startsWith("preview_")) {
         // Preview teams are never tracked anyway; a real team arriving without
@@ -95,6 +96,7 @@ export async function billTeam(
             idempotencyKey: billing.chargeId
               ? `fc:refund:${billing.endpoint}:${billing.chargeId}`
               : undefined,
+            externalRequestId: billing.externalRequestId ?? undefined,
           });
         }
       }

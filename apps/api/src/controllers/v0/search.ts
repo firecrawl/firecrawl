@@ -15,7 +15,7 @@ import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { getJobPriority } from "../../lib/job-priority";
 import {
   fromLegacyScrapeOptions,
-  TeamFlags,
+  AuthCreditUsageChunk,
   toLegacyDocument,
 } from "../v1/types";
 import { fromV0Combo } from "../v2/types";
@@ -40,15 +40,16 @@ async function searchHelper(
   crawlerOptions: any,
   pageOptions: PageOptions,
   searchOptions: SearchOptions,
-  flags: TeamFlags,
-  org_id: string | null,
-  api_key_id: number | null,
+  acuc: AuthCreditUsageChunk | null,
 ): Promise<{
   success: boolean;
   error?: string;
   data?: any;
   returnCode: number;
 }> {
+  const flags = acuc?.flags ?? null;
+  const org_id = acuc?.org_id ?? null;
+  const api_key_id = acuc?.api_key_id ?? null;
   const query = req.body.query;
   const advanced = false;
   if (!query) {
@@ -95,7 +96,12 @@ async function searchHelper(
       org_id,
       searchCredits,
       api_key_id,
-      { endpoint: "search", jobId, chargeId: jobId },
+      {
+        endpoint: "search",
+        jobId,
+        chargeId: jobId,
+        externalRequestId: externalRequestId(req),
+      },
       logger,
     ).catch(error => {
       logger.error(
@@ -124,10 +130,14 @@ async function searchHelper(
 
   const jobPriority = await getJobPriority({
     team_id,
-    org_id,
+    acuc,
     basePriority: 20,
   });
-  const billing = { endpoint: "search" as const, jobId };
+  const billing = {
+    endpoint: "search" as const,
+    jobId,
+    externalRequestId: externalRequestId(req),
+  };
 
   // filter out social media links
 
@@ -292,9 +302,7 @@ export async function searchController(req: Request, res: Response) {
       crawlerOptions,
       pageOptions,
       searchOptions,
-      chunk?.flags ?? null,
-      chunk?.org_id ?? null,
-      chunk?.api_key_id ?? null,
+      chunk,
     );
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - startTime) / 1000;

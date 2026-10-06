@@ -35,8 +35,9 @@ describe("Scrape browser interact replay", () => {
   }, 10000 + scrapeTimeout);
 
   const canRunReplayHappyPath =
+    !TEST_SELF_HOST &&
     ALLOW_TEST_SUITE_WEBSITE &&
-    !!config.BROWSER_SERVICE_URL &&
+    !!config.HANGAR_URL &&
     (TEST_PRODUCTION || HAS_FIRE_ENGINE);
 
   itIf(canRunReplayHappyPath)(
@@ -73,7 +74,7 @@ describe("Scrape browser interact replay", () => {
             language: "node",
             timeout: 60,
             code: `
-              const replayMarker = await page.evaluate(() => window.__firecrawlReplayMarker ?? null);
+              const replayMarker = await page.evaluate(() => window.__firecrawlReplayMarker ?? null, undefined, undefined, false);
               console.log(replayMarker ?? "missing-marker");
             `,
           },
@@ -83,8 +84,18 @@ describe("Scrape browser interact replay", () => {
         expect(executeResponse.statusCode).toBe(200);
         expect(executeResponse.body.success).toBe(true);
         expect(executeResponse.body.stdout).toContain(marker);
-        expect(typeof executeResponse.body.cdpUrl).toBe("string");
-        expect(executeResponse.body.cdpUrl.length).toBeGreaterThan(0);
+        expect(executeResponse.body.cdpUrl).toMatch(/^wss?:\/\//);
+        const readonlyView = new URL(executeResponse.body.liveViewUrl);
+        const interactiveView = new URL(
+          executeResponse.body.interactiveLiveViewUrl,
+        );
+        expect(readonlyView.pathname).toBe("/live");
+        expect(interactiveView.origin + interactiveView.pathname).toBe(
+          readonlyView.origin + readonlyView.pathname,
+        );
+        expect(readonlyView.hash).not.toBe("");
+        expect(interactiveView.hash).not.toBe("");
+        expect(interactiveView.hash).not.toBe(readonlyView.hash);
       } finally {
         if (scrapeId) {
           await scrapeStopInteractiveBrowserRaw(scrapeId, identity);
