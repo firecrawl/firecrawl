@@ -910,7 +910,7 @@ class ClientTest < Minitest::Test
 
   def test_get_agent_status_with_exchange_and_pending_calls_approval
     approval_id = "0199aaaa-0000-7000-8000-000000000000"
-    stub_request(:get, "#{BASE_URL}/v2/agent/agent-exchange")
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-calls")
       .to_return(
         status: 200,
         body: JSON.generate(
@@ -927,7 +927,7 @@ class ClientTest < Minitest::Test
             enabled: true,
             toolkits: ["apollo"],
             requireApproval: true,
-            onTermsRequired: "ask",
+            onTermsRequired: "skip",
             paidCalls: 0,
             creditsUsed: nil,
             skippedProviders: [
@@ -936,6 +936,88 @@ class ClientTest < Minitest::Test
                 name: "Clearbit",
                 capability: "company/enrich",
                 adds: "company size",
+                reason: "terms_required",
+                version: "F-1.0.0",
+                termsUrl: "https://www.firecrawl.dev/app/alexandria/clearbit",
+              },
+            ],
+          },
+          pendingApproval: {
+            id: approval_id,
+            kind: "calls",
+            reason: "Apollo charges per lookup.",
+            calls: [
+              {
+                id: "call-1",
+                provider: "apollo",
+                capability: "people/match",
+                input: { domain: "example.com" },
+                more: [{ domain: "example.org" }],
+                creditsEstimate: 3,
+              },
+            ],
+            resolution: nil,
+          }
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    status = @client.get_agent_status("agent-calls")
+
+    assert_equal "0199bbbb-0000-7000-8000-000000000000", status.thread_id
+    assert_equal 1, status.thread_turn
+    assert_equal "chat", status.mode
+    assert_equal "Apollo can verify these emails for about 3 credits.", status.message
+
+    exchange = status.exchange
+    assert_instance_of Firecrawl::Models::AgentExchangeSummary, exchange
+    assert_equal true, exchange.enabled
+    assert_equal ["apollo"], exchange.toolkits
+    assert_equal true, exchange.require_approval
+    assert_equal "skip", exchange.on_terms_required
+    assert_equal 0, exchange.paid_calls
+    assert_nil exchange.credits_used
+    assert_nil exchange.requires_action
+    skipped = exchange.skipped_providers.first
+    assert_equal "clearbit", skipped.provider
+    assert_equal "terms_required", skipped.reason
+    assert_equal "F-1.0.0", skipped.version
+    assert_equal "https://www.firecrawl.dev/app/alexandria/clearbit", skipped.terms_url
+
+    pending = status.pending_approval
+    assert_instance_of Firecrawl::Models::AgentPendingApproval, pending
+    assert_equal approval_id, pending.id
+    assert_equal "calls", pending.kind
+    assert_equal "Apollo charges per lookup.", pending.reason
+    assert_nil pending.terms
+    assert_nil pending.resolution
+    call = pending.calls.first
+    assert_equal "call-1", call.id
+    assert_equal "apollo", call.provider
+    assert_equal "people/match", call.capability
+    assert_equal({ "domain" => "example.com" }, call.input)
+    assert_equal [{ "domain" => "example.org" }], call.more
+    assert_equal 3, call.credits_estimate
+  end
+
+  def test_get_agent_status_with_terms_required_action
+    approval_id = "0199aaaa-0000-7000-8000-000000000000"
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-terms")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          status: "completed",
+          expiresAt: "2026-09-02T00:00:00.000Z",
+          exchange: {
+            enabled: true,
+            onTermsRequired: "ask",
+            paidCalls: 0,
+            creditsUsed: nil,
+            skippedProviders: [
+              {
+                provider: "clearbit",
+                name: "Clearbit",
                 reason: "terms_required",
                 version: "F-1.0.0",
                 termsUrl: "https://www.firecrawl.dev/app/alexandria/clearbit",
@@ -963,49 +1045,37 @@ class ClientTest < Minitest::Test
           },
           pendingApproval: {
             id: approval_id,
-            kind: "calls",
-            reason: "Apollo charges per lookup.",
-            calls: [
+            kind: "terms",
+            reason: "Clearbit could add company size.",
+            calls: [],
+            terms: [
               {
-                id: "call-1",
-                provider: "apollo",
-                capability: "people/match",
-                input: { domain: "example.com" },
-                more: [{ domain: "example.org" }],
-                creditsEstimate: 3,
+                provider: "clearbit",
+                name: "Clearbit",
+                version: "F-1.0.0",
+                digest: nil,
+                url: "https://www.firecrawl.dev/app/alexandria/clearbit",
               },
             ],
-            resolution: nil,
+            resolution: {
+              approved: true,
+              callIds: [],
+              always: false,
+              byRunId: "agent-turn-2",
+            },
           }
         ),
         headers: { "Content-Type" => "application/json" }
       )
 
-    status = @client.get_agent_status("agent-exchange")
+    status = @client.get_agent_status("agent-terms")
 
-    assert_equal "0199bbbb-0000-7000-8000-000000000000", status.thread_id
-    assert_equal 1, status.thread_turn
-    assert_equal "chat", status.mode
-    assert_equal "Apollo can verify these emails for about 3 credits.", status.message
-
-    exchange = status.exchange
-    assert_instance_of Firecrawl::Models::AgentExchangeSummary, exchange
-    assert_equal true, exchange.enabled
-    assert_equal ["apollo"], exchange.toolkits
-    assert_equal true, exchange.require_approval
-    assert_equal "ask", exchange.on_terms_required
-    assert_equal 0, exchange.paid_calls
-    assert_nil exchange.credits_used
-    skipped = exchange.skipped_providers.first
-    assert_equal "clearbit", skipped.provider
-    assert_equal "terms_required", skipped.reason
-    assert_equal "F-1.0.0", skipped.version
-    assert_equal "https://www.firecrawl.dev/app/alexandria/clearbit", skipped.terms_url
-    action = exchange.requires_action
+    action = status.exchange.requires_action
     assert_equal "accept_terms", action.type
     assert_equal approval_id, action.approval_id
     provider = action.providers.first
     assert_equal "clearbit", provider.provider
+    assert_equal "F-1.0.0", provider.version
     assert_nil provider.digest
     assert_equal "https://www.firecrawl.dev/app/alexandria/clearbit", provider.url
     assert_equal "terms/show", provider.show["capability"]
@@ -1013,19 +1083,12 @@ class ClientTest < Minitest::Test
     assert_equal true, provider.accept["options"]["confirmed"]
 
     pending = status.pending_approval
-    assert_instance_of Firecrawl::Models::AgentPendingApproval, pending
-    assert_equal approval_id, pending.id
-    assert_equal "calls", pending.kind
-    assert_equal "Apollo charges per lookup.", pending.reason
-    assert_nil pending.terms
-    assert_nil pending.resolution
-    call = pending.calls.first
-    assert_equal "call-1", call.id
-    assert_equal "apollo", call.provider
-    assert_equal "people/match", call.capability
-    assert_equal({ "domain" => "example.com" }, call.input)
-    assert_equal [{ "domain" => "example.org" }], call.more
-    assert_equal 3, call.credits_estimate
+    assert_equal "terms", pending.kind
+    assert_equal [], pending.calls
+    assert_equal "clearbit", pending.terms.first.provider
+    assert_nil pending.terms.first.digest
+    assert_equal true, pending.resolution.approved
+    assert_equal "agent-turn-2", pending.resolution.by_run_id
   end
 
   # ================================================================
