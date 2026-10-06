@@ -1,4 +1,7 @@
-use std::{sync::LazyLock, time::Duration};
+use std::{
+  sync::{LazyLock, OnceLock},
+  time::Duration,
+};
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -6,13 +9,17 @@ use serde_json::Value;
 use tracing::{Span, instrument};
 use url::Url;
 
-use super::super::{document::Document, meta::Meta, raw_page::BrowserCookie};
+use super::super::{
+  document::Document, engines::shared_client, meta::Meta, raw_page::BrowserCookie,
+};
 use super::TransformerError;
 
 const NAME: &str = "youtube";
 
 // Best-effort enrichment: bound the avgrab call so a slow extraction can't eat the scrape budget.
 const METADATA_FETCH_TIMEOUT: Duration = Duration::from_secs(45);
+
+static CLIENT: OnceLock<Client> = OnceLock::new();
 
 static AVGRAB_SERVICE_URL: LazyLock<Option<String>> = LazyLock::new(|| {
   if let Some(url) = std::env::var("AVGRAB_SERVICE_URL").ok()
@@ -180,10 +187,9 @@ async fn fetch_metadata(
   let transcript_language = transcript_language(meta);
   span.record("avgrab.transcript_language", transcript_language.as_str());
 
-  let response = Client::builder()
-    .timeout(METADATA_FETCH_TIMEOUT)
-    .build()?
+  let response = shared_client(&CLIENT)?
     .post(format!("{service_url}/metadata"))
+    .timeout(METADATA_FETCH_TIMEOUT)
     .json(&YouTubeMetadataRequest {
       url: source_url,
       transcript_language,

@@ -114,7 +114,7 @@ impl EngineKind {
 
 /// Returns the client stored in `cell`, building it on first use. A failed build
 /// is returned as an error and retried on the next call.
-fn shared_client(
+pub(super) fn shared_client(
   cell: &'static OnceLock<reqwest::Client>,
 ) -> Result<&'static reqwest::Client, reqwest::Error> {
   if let Some(client) = cell.get() {
