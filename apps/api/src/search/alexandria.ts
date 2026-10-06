@@ -29,7 +29,10 @@ export function isToolsOnlySearch(
   if (!sources.every(source => typeOf(source) === "alexandria")) return false;
   if (
     Array.isArray(categories) &&
-    categories.some(category => typeOf(category) === "developer")
+    categories.some(category => {
+      const type = typeOf(category);
+      return type === "developer" || type === "gov";
+    })
   )
     return false;
   return true;

@@ -87,8 +87,12 @@ API, Redis, Exchange (`FIRE_EXCHANGE_URL`; a non-blank
 execution. Paid settlement is covered by mocked tests only and has not run
 against an Autumn sandbox.
 
-Bash source loading (`firecrawl/bash` with `options.requestId`) must be sent as a
-single-call request. Mixed batches are rejected before billing or dispatch because
-caller authorization is request-scoped. Workspace reuse (`options.workspaceId`)
-does not forward the caller credential. Exchange consumes the forwarded credential
-only in its Bash saved-scrape reader; provider integrations use their own credentials.
+The caller's `Authorization` header is forwarded to Exchange on every execution
+request (`/v1/retrieve`), never on quote or authorization requests, and is never
+stored. It lets Exchange tools that call Firecrawl on the caller's behalf (the
+caller pays) authenticate upstream. Exchange decides which tools read it;
+provider integrations use their own credentials.
+
+Bash source loading (`firecrawl/bash` with `options.requestId`), SQL and enrichment
+must still be sent as single-call requests. Mixed batches are rejected before billing
+or dispatch.

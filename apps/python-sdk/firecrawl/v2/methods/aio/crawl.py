@@ -12,10 +12,11 @@ from ...types import (
     ActiveCrawl,
     PaginationConfig,
 )
-from ...utils.error_handler import handle_response_error
+from ...utils.error_handler import FirecrawlError, handle_response_error
 from ...utils.validation import prepare_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.normalize import normalize_document_input
+from ..crawl import _job_id_from_next_url
 import time
 
 
@@ -78,7 +79,7 @@ def _parse_crawl_documents(data_list: Optional[List[Any]]) -> List[Document]:
 
 def _parse_crawl_status_response(body: Dict[str, Any]) -> Dict[str, Any]:
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
 
     return {
         "status": body.get("status"),
@@ -87,6 +88,7 @@ def _parse_crawl_status_response(body: Dict[str, Any]) -> Dict[str, Any]:
         "credits_used": body.get("creditsUsed", 0),
         "expires_at": body.get("expiresAt"),
         "next": body.get("next"),
+        "warning": body.get("warning"),
         "data": _parse_crawl_documents(body.get("data", [])),
     }
 
@@ -113,7 +115,7 @@ async def start_crawl(client: AsyncHttpClient, request: CrawlRequest) -> CrawlRe
     body = response.json()
     if body.get("success"):
         return CrawlResponse(id=body.get("id"), url=body.get("url"))
-    raise Exception(body.get("error", "Unknown error occurred"))
+    raise FirecrawlError(body.get("error", "Unknown error occurred"))
 
 
 async def get_crawl_status(
@@ -160,12 +162,14 @@ async def get_crawl_status(
         )
 
     return CrawlJob(
+        id=job_id,
         status=payload["status"],
         completed=payload["completed"],
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
         next=payload["next"] if not auto_paginate else None,
+        warning=payload["warning"],
         data=documents,
     )
 
@@ -196,12 +200,14 @@ async def get_crawl_status_page(
     body = response.json()
     payload = _parse_crawl_status_response(body)
     return CrawlJob(
+        id=_job_id_from_next_url(next_url),
         status=payload["status"],
         completed=payload["completed"],
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
         next=payload["next"],
+        warning=payload["warning"],
         data=payload["data"],
     )
 
@@ -326,7 +332,7 @@ async def crawl_params_preview(client: AsyncHttpClient, request: CrawlParamsRequ
         handle_response_error(response, "crawl params preview")
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
     params_data = body.get("data", {})
     converted: Dict[str, Any] = {}
     mapping = {
@@ -400,7 +406,7 @@ async def get_active_crawls(client: AsyncHttpClient) -> ActiveCrawlsResponse:
         handle_response_error(response, "get active crawls")
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
     crawls_in = body.get("crawls", [])
     normalized = []
     for c in crawls_in:

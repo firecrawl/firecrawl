@@ -21,6 +21,7 @@ import {
   keylessSignupUrlForIp,
   keylessTeamId,
   normalizeKeylessIpv4,
+  reportKeylessPromptShown,
 } from "../lib/keyless";
 import { keylessSignupSurface } from "../lib/keyless-signup-link";
 import { isKeylessIpSuspicious } from "../lib/spur";
@@ -36,11 +37,7 @@ import {
   AuthCreditUsageChunkRow,
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
-import {
-  AuthCreditUsageChunk,
-  AuthCreditUsageChunkFromTeam,
-  TeamFlags,
-} from "./v1/types";
+import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
   OAuthIntrospectionUnavailableError,
@@ -48,8 +45,58 @@ import {
 } from "../services/oauth-token-introspection";
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
-import { autumnService } from "../services/autumn/autumn.service";
+import {
+  autumnService,
+  DEFAULT_TEAM_LIMITS,
+  type TeamLimits,
+} from "../services/autumn/autumn.service";
 import { ReplyError } from "ioredis";
+
+const ACUC_TTL_SECONDS = 600;
+// A chunk built on the fail-open limits is cached only briefly, so a
+// transient Autumn error is retried within a minute.
+const ACUC_FAIL_OPEN_TTL_SECONDS = 60;
+// When Autumn can't answer, fail open rather than throttle or gate real teams
+// on the low defaults. Generous but bounded: the concurrency queue cap still
+// applies.
+const FAIL_OPEN_LIMITS: TeamLimits = {
+  concurrency_limit: 200,
+  rate_limit_multiplier: 2500,
+  is_paid_plan: true,
+};
+
+/** The team's effective limits, and how long a chunk carrying them may live. */
+async function readTeamLimits(
+  teamId: string,
+  orgId: string | null,
+): Promise<{ limits: TeamLimits; ttl: number }> {
+  try {
+    return {
+      limits: await autumnService.getTeamLimits(teamId, orgId),
+      ttl: ACUC_TTL_SECONDS,
+    };
+  } catch (error) {
+    logger.error("Autumn limits unavailable, failing open", { teamId, error });
+    return { limits: FAIL_OPEN_LIMITS, ttl: ACUC_FAIL_OPEN_TTL_SECONDS };
+  }
+}
+
+/** A cached chunk, with live limits when it predates them (not written back). */
+async function withLimits<T extends AuthCreditUsageChunkFromTeam>(
+  chunk: T,
+): Promise<T> {
+  if (
+    chunk.concurrency_limit !== undefined &&
+    chunk.rate_limit_multiplier !== undefined &&
+    chunk.is_paid_plan !== undefined
+  ) {
+    return chunk;
+  }
+  return {
+    ...chunk,
+    ...(await readTeamLimits(chunk.team_id, chunk.org_id)).limits,
+  };
+}
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -64,6 +111,7 @@ async function setCachedACUC(
     | null
     | ((acuc: AuthCreditUsageChunk) => AuthCreditUsageChunk | null),
   credentialPurpose: "general" | "hosted_mcp_oauth" = "general",
+  ttl = ACUC_TTL_SECONDS,
 ) {
   const cacheKeyACUC = `acuc_${credentialPurpose}_${api_key}_${is_extract ? "extract" : "scrape"}`;
   const redLockKey = `lock_${cacheKeyACUC}`;
@@ -86,8 +134,7 @@ async function setCachedACUC(
         throw signal.error;
       }
 
-      // Cache for 10 minutes. - mogery
-      await setValue(cacheKeyACUC, JSON.stringify(acuc), 600, true);
+      await setValue(cacheKeyACUC, JSON.stringify(acuc), ttl, true);
     });
   } catch (error) {
     logger.error("Error updating cached ACUC", {
@@ -107,6 +154,7 @@ const mockPreviewACUC: (
   flags: null,
   is_banned: false,
   is_extract,
+  ...DEFAULT_TEAM_LIMITS,
 });
 
 const mockACUC: () => AuthCreditUsageChunk = () => ({
@@ -117,6 +165,7 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
   flags: null,
   is_banned: false,
   is_extract: false,
+  ...DEFAULT_TEAM_LIMITS,
 });
 
 /**
@@ -205,7 +254,7 @@ async function getACUC(
     }
     if (cachedACUC !== null) {
       try {
-        return JSON.parse(cachedACUC);
+        return await withLimits(JSON.parse(cachedACUC));
       } catch (error) {
         logger.warn("Ignoring malformed ACUC cache entry", {
           error,
@@ -257,16 +306,28 @@ async function getACUC(
           ? null
           : (data[0] as any);
 
-    if (chunk) {
-      chunk.is_extract = isExtract;
-    }
+    if (chunk === null) return null;
 
     // NOTE: Should we cache null chunks? - mogery
-    if (chunk !== null && useCache) {
-      setCachedACUC(api_key, isExtract, chunk, credentialPurpose);
+    if (useCache) {
+      const { limits, ttl } = await readTeamLimits(chunk.team_id, chunk.org_id);
+      const built = { ...chunk, is_extract: isExtract, ...limits };
+      setCachedACUC(api_key, isExtract, built, credentialPurpose, ttl);
+      return built;
     }
 
-    return chunk;
+    // An uncached chunk (a hosted MCP credential) takes the team ACUC's
+    // limits, so authenticating it per request never costs an Autumn read.
+    const team = await getACUCTeam(chunk.team_id).catch(() => null);
+    const limits =
+      team ?? (await readTeamLimits(chunk.team_id, chunk.org_id)).limits;
+    return {
+      ...chunk,
+      is_extract: isExtract,
+      concurrency_limit: limits.concurrency_limit,
+      rate_limit_multiplier: limits.rate_limit_multiplier,
+      is_paid_plan: limits.is_paid_plan,
+    };
   } else {
     return null;
   }
@@ -281,6 +342,7 @@ async function setCachedACUCTeam(
     | ((
         acuc: AuthCreditUsageChunkFromTeam,
       ) => AuthCreditUsageChunkFromTeam | null),
+  ttl = ACUC_TTL_SECONDS,
 ) {
   const cacheKeyACUC = `acuc_team_${team_id}_${is_extract ? "extract" : "scrape"}`;
   const redLockKey = `lock_${cacheKeyACUC}`;
@@ -303,8 +365,7 @@ async function setCachedACUCTeam(
         throw signal.error;
       }
 
-      // Cache for 10 minutes. - mogery
-      await setValue(cacheKeyACUC, JSON.stringify(acuc), 600, true);
+      await setValue(cacheKeyACUC, JSON.stringify(acuc), ttl, true);
     });
   } catch (error) {
     logger.error("Error updating cached ACUC", {
@@ -367,7 +428,7 @@ export async function getACUCTeam(
       // A corrupt entry is a miss, not a failure: callers that fall back to a
       // null org on a throw would otherwise take the high fail-open limits.
       try {
-        return JSON.parse(cachedACUC);
+        return await withLimits(JSON.parse(cachedACUC));
       } catch (error) {
         logger.warn("Ignoring malformed ACUC cache entry", {
           cacheKey: cacheKeyACUC,
@@ -420,12 +481,17 @@ export async function getACUCTeam(
           ? null
           : (data[0] as any);
 
+    if (chunk === null) return null;
+
+    const { limits, ttl } = await readTeamLimits(chunk.team_id, chunk.org_id);
+    const built = { ...chunk, ...limits };
+
     // NOTE: Should we cache null chunks? - mogery
-    if (chunk !== null && useCache) {
-      setCachedACUCTeam(team_id, isExtract, chunk);
+    if (useCache) {
+      setCachedACUCTeam(team_id, isExtract, built, ttl);
     }
 
-    return chunk ? { ...chunk, is_extract: isExtract } : null;
+    return { ...built, is_extract: isExtract };
   } else {
     return null;
   }
@@ -524,10 +590,19 @@ async function handleKeylessAuth(
   // Configured, but this endpoint isn't part of the keyless tier: tell the user
   // they need a key (with the signup nudge) rather than a bare "Unauthorized".
   if (!allowKeyless) {
-    const { url } = keylessSignupUrlForIp(
-      keylessClientIp(req),
-      keylessSignupSurface(req),
+    const ip = keylessClientIp(req);
+    const surface = keylessSignupSurface(req);
+    const { url, signupRef } = keylessSignupUrlForIp(
+      ip,
+      surface,
       "unsupported_endpoint",
+    );
+    reportKeylessPromptShown(
+      ip,
+      surface,
+      "unsupported_endpoint",
+      401,
+      signupRef,
     );
     return {
       success: false,
@@ -567,6 +642,13 @@ async function handleKeylessAuth(
       signupSurface,
       "suspicious_ip",
     );
+    reportKeylessPromptShown(
+      ip,
+      signupSurface,
+      "suspicious_ip",
+      403,
+      signupRef,
+    );
     logger.warn("Keyless request blocked: suspicious IP", {
       canonicalLog: "keyless/consume",
       ip,
@@ -594,9 +676,11 @@ async function handleKeylessAuth(
         ? "research"
         : mode === RateLimiterMode.DeveloperSearch
           ? "developer"
-          : mode === RateLimiterMode.BrowserExecute
-            ? "interact"
-            : "scrape";
+          : mode === RateLimiterMode.GovSearch
+            ? "gov"
+            : mode === RateLimiterMode.BrowserExecute
+              ? "interact"
+              : "scrape";
 
   let result: Awaited<ReturnType<typeof consumeKeylessRequest>>;
   try {
@@ -700,20 +784,16 @@ export async function authenticateUser(
  * replaces the whole computation.
  */
 async function buildAuthenticatedRateLimiter(
-  teamId: string,
-  orgId: string | null | undefined,
+  chunk: AuthCreditUsageChunk,
   mode: RateLimiterMode,
-  flags: TeamFlags,
   minMultiplier?: number,
 ): Promise<RateLimiterRedis> {
+  const flags = chunk.flags;
   let multiplier: number;
   if (getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined) {
     multiplier = 1;
   } else {
-    multiplier = await autumnService.getRateLimitMultiplier(
-      teamId,
-      orgId ?? null,
-    );
+    multiplier = chunk.rate_limit_multiplier;
     if (minMultiplier !== undefined) {
       multiplier = Math.max(multiplier, minMultiplier);
     }
@@ -817,10 +897,8 @@ async function supaAuthenticateUser(
     teamId = chunk.team_id;
     subscriptionData = { team_id: teamId };
     rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
+      chunk,
       mode,
-      chunk.flags,
       minRateMultiplier,
     );
   } else if (token.startsWith("fco_")) {
@@ -887,10 +965,8 @@ async function supaAuthenticateUser(
       team_id: teamId,
     };
     rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
+      chunk,
       mode,
-      chunk.flags,
       minRateMultiplier,
     );
   } else {
@@ -936,10 +1012,8 @@ async function supaAuthenticateUser(
       team_id: teamId,
     };
     rateLimiter = await buildAuthenticatedRateLimiter(
-      teamId,
-      chunk.org_id,
+      chunk,
       mode,
-      chunk.flags,
       minRateMultiplier,
     );
   }
@@ -947,7 +1021,7 @@ async function supaAuthenticateUser(
   // Banned teams are rejected here, where the mcp / OAuth / API-key paths
   // converge. Ban enforcement used to rely on auth_credit_usage_chunk zeroing
   // the rate_limits payload, but authenticated limiting now derives from Autumn
-  // and never reads that field, so bans went unenforced. auth_chunk_1 surfaces
+  // and never reads that field, so bans went unenforced. auth_chunk_2 surfaces
   // teams.banned as is_banned and we deny it explicitly.
   if (chunk?.is_banned) {
     return {

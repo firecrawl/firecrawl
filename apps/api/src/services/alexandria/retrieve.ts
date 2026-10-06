@@ -369,8 +369,9 @@ export async function retrieveProviders(input: {
       body: { requests: input.calls },
       timeoutMs: remaining(),
       requestId: id,
-      ...((loadsSavedResult || usesSql || usesEnrichment) &&
-      input.resultAuthorization
+      // Sent with every execution so Exchange tools that call Firecrawl as the caller
+      // (the caller pays) can authenticate upstream. Exchange decides which tools read it.
+      ...(input.resultAuthorization
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
       ...(termsIdentity ? { termsIdentity } : {}),

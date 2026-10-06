@@ -164,6 +164,29 @@ describeIf(TEST_PRODUCTION)(
     );
 
     it.concurrent(
+      "gates the gov search category on the research group",
+      async () => {
+        const identity = await idmux({
+          name: "key-restriction/gov-category",
+          credits: 10000,
+          flags: { keyRestriction: true },
+        });
+        await seedRestriction(identity, { allowedEndpoints: ["search"] });
+
+        const withGov = await searchRaw(
+          { query: "zoning variance", categories: ["gov"] },
+          identity,
+        );
+        expect(withGov.statusCode).toBe(403);
+        expect(withGov.body.success).toBe(false);
+        expect(withGov.body.error).toContain(
+          "restricted to the following endpoints",
+        );
+      },
+      scrapeTimeout * 2,
+    );
+
+    it.concurrent(
       "does not restrict a flagged team before it configures a restriction",
       async () => {
         const identity = await idmux({

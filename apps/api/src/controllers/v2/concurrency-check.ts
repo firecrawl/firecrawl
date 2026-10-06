@@ -5,7 +5,7 @@ import {
 } from "./types";
 import { Response } from "express";
 import { getCombinedTeamActiveCount } from "../../services/worker/nuq-router";
-import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
+import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 // Basically just middleware and error wrapping
 export async function concurrencyCheckController(
@@ -24,9 +24,7 @@ export async function concurrencyCheckController(
   return res.status(200).json({
     success: true,
     concurrency: activeJobsOfTeam,
-    maxConcurrency: await getEffectiveConcurrencyLimit(
-      req.auth.team_id,
-      req.acuc.org_id,
-    ),
+    maxConcurrency:
+      req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit,
   });
 }

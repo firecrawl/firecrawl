@@ -676,6 +676,139 @@ defmodule FirecrawlTest do
     assert body["highlights"] == false
   end
 
+  defp parse_formats_adapter(parent, status, body) do
+    fn request ->
+      send(parent, {:request, request})
+
+      resp =
+        Req.Response.new(
+          status: status,
+          headers: %{"content-type" => ["application/json"]},
+          body: Jason.encode!(body)
+        )
+
+      {request, resp}
+    end
+  end
+
+  test "get_parse_formats sends GET /v2/parse/formats and returns typed formats" do
+    body = %{
+      "success" => true,
+      "data" => %{
+        "formats" => [
+          %{
+            "format" => "pdf",
+            "kind" => "document",
+            "extensions" => [".pdf"],
+            "mimeTypes" => ["application/pdf"],
+            "available" => true
+          },
+          %{
+            "format" => "png",
+            "kind" => "image",
+            "extensions" => [".png"],
+            "mimeTypes" => ["image/png"],
+            "available" => false
+          }
+        ]
+      }
+    }
+
+    assert {:ok, [pdf, png]} =
+             Firecrawl.get_parse_formats(
+               api_key: "test-key",
+               adapter: parse_formats_adapter(self(), 200, body)
+             )
+
+    assert_receive {:request, request}
+    assert request.method == :get
+    assert URI.to_string(request.url) == "https://api.firecrawl.dev/v2/parse/formats"
+    assert request.headers["authorization"] == ["Bearer test-key"]
+
+    assert pdf == %Firecrawl.ParseFormat{
+             format: "pdf",
+             kind: :document,
+             extensions: [".pdf"],
+             mime_types: ["application/pdf"],
+             available: true
+           }
+
+    assert png == %Firecrawl.ParseFormat{
+             format: "png",
+             kind: :image,
+             extensions: [".png"],
+             mime_types: ["image/png"],
+             available: false
+           }
+  end
+
+  test "get_parse_formats keeps unknown kinds as strings and ignores unknown fields" do
+    body = %{
+      "success" => true,
+      "data" => %{
+        "formats" => [
+          %{
+            "format" => "glb",
+            "kind" => "model",
+            "extensions" => [".glb"],
+            "mimeTypes" => ["model/gltf-binary"],
+            "available" => true,
+            "maxSizeBytes" => 1024
+          }
+        ]
+      }
+    }
+
+    formats =
+      Firecrawl.get_parse_formats!(
+        api_key: "test-key",
+        adapter: parse_formats_adapter(self(), 200, body)
+      )
+
+    assert [%Firecrawl.ParseFormat{format: "glb", kind: "model", mime_types: ["model/gltf-binary"]}] =
+             formats
+  end
+
+  test "get_parse_formats returns {:error, %Firecrawl.Error{}} on API errors" do
+    adapter =
+      parse_formats_adapter(self(), 401, %{"success" => false, "error" => "Unauthorized"})
+
+    assert {:error, %Firecrawl.Error{status: 401}} =
+             Firecrawl.get_parse_formats(api_key: "bad-key", adapter: adapter, retry: false)
+
+    assert_raise Firecrawl.Error, ~r/Unauthorized/, fn ->
+      Firecrawl.get_parse_formats!(api_key: "bad-key", adapter: adapter, retry: false)
+    end
+  end
+
+  test "get_parse_formats returns a non-API error for an unexpected success body" do
+    adapter = parse_formats_adapter(self(), 200, %{"success" => true, "data" => %{}})
+
+    assert {:error, %RuntimeError{message: msg}} =
+             Firecrawl.get_parse_formats(api_key: "test-key", adapter: adapter)
+
+    assert msg =~ "unexpected GET /parse/formats response (HTTP 200)"
+  end
+
+  test "get_parse_formats fills missing format and kind with empty strings" do
+    body = %{"success" => true, "data" => %{"formats" => [%{"extensions" => [".x"]}]}}
+
+    assert {:ok, [%Firecrawl.ParseFormat{format: "", kind: "", extensions: [".x"], available: false}]} =
+             Firecrawl.get_parse_formats(
+               api_key: "test-key",
+               adapter: parse_formats_adapter(self(), 200, body)
+             )
+  end
+
+  test "get_parse_formats! raises Firecrawl.Error on server errors" do
+    adapter =
+      parse_formats_adapter(self(), 500, %{"success" => false, "error" => "Internal error"})
+
+    assert_raise Firecrawl.Error, ~r/HTTP 500/, fn ->
+      Firecrawl.get_parse_formats!(api_key: "test-key", adapter: adapter, retry: false)
+    end
+  end
+
   test "all expected API functions are defined with bang variants" do
     functions = Firecrawl.__info__(:functions)
 
@@ -709,7 +842,11 @@ defmodule FirecrawlTest do
       {:list_agents, 2},
       {:list_agents!, 0},
       {:list_agents!, 1},
-      {:list_agents!, 2}
+      {:list_agents!, 2},
+      {:get_parse_formats, 0},
+      {:get_parse_formats, 1},
+      {:get_parse_formats!, 0},
+      {:get_parse_formats!, 1}
     ]
 
     for {name, arity} <- expected do

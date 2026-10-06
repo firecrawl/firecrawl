@@ -112,7 +112,7 @@ async def interact(
 
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
 
     normalized = dict(body)
     if "exitCode" in normalized and "exit_code" not in normalized:

@@ -167,7 +167,7 @@ describe("usage telemetry middleware", () => {
       MODEL_NAME: process.env.MODEL_NAME,
     };
     process.env.OPENAI_API_KEY = "test-key";
-    process.env.MODEL_NAME = "";
+    process.env.MODEL_NAME = "global-model-override";
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
         new Response(JSON.stringify(openAIResponsesBody), {
@@ -180,9 +180,12 @@ describe("usage telemetry middleware", () => {
     try {
       vi.resetModules();
       const { getModel } = await import("./generic-ai.js");
+      expect(getModel("gpt-4o-mini", "openai").modelId).toBe(
+        "global-model-override",
+      );
 
       await generateObject({
-        model: getModel("gpt-4o-mini", "openai"),
+        model: getModel("gpt-4o-mini", "openai", { ignoreModelOverride: true }),
         schema: z.object({ answer: z.string() }),
         prompt: "hello",
         experimental_telemetry: telemetry,

@@ -180,6 +180,17 @@ Document parsed = client.parse(file,
 System.out.println(parsed.getMarkdown());
 ```
 
+To see which upload types the API accepts, call `getParseFormats()`. Each entry has a `format`, a `kind` (`document` or `image`), its `extensions` and `mimeTypes`, and whether it is `available` on the current deployment (image formats need image OCR enabled).
+
+```java
+import com.firecrawl.models.ParseFormat;
+
+for (ParseFormat format : client.getParseFormats()) {
+    System.out.println(format.getFormat() + " " + format.getKind()
+        + " " + format.getExtensions() + " available=" + format.isAvailable());
+}
+```
+
 #### JSON Extraction
 
 ```java

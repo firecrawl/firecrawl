@@ -991,8 +991,10 @@ pub enum SitemapMode {
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentModel {
+    /// Deprecated: the server runs spark-2 for this value.
     #[serde(rename = "spark-1-pro")]
     Spark1Pro,
+    /// Deprecated: the server runs spark-2 for this value.
     #[serde(rename = "spark-1-mini")]
     Spark1Mini,
     #[serde(rename = "spark-2")]

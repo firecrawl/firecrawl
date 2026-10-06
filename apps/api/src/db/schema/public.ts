@@ -126,6 +126,7 @@ export const browser_session_activities = pgTable(
 
 export const browser_sessions = pgTable("browser_sessions", {
   id: uuid("id").notNull(),
+  zero_data_retention: boolean("zero_data_retention").notNull().default(false),
   team_id: text("team_id").notNull(),
   request_id: uuid("request_id"),
   should_bill: boolean("should_bill").notNull().default(true),
@@ -225,6 +226,8 @@ export const research_github_searches = researchEndpointTable(
 );
 
 export const code_searches = researchEndpointTable("code_searches");
+
+export const gov_searches = researchEndpointTable("gov_searches");
 
 export const deterministic_json_scripts = pgTable(
   "deterministic_json_scripts",

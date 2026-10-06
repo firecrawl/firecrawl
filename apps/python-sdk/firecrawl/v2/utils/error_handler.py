@@ -77,6 +77,25 @@ class RequestTimeoutError(FirecrawlError):
     pass
 
 
+class CrawlJobTimeoutError(TimeoutError):
+    """Raised when a crawl job does not finish within the wait timeout.
+
+    Subclasses the built-in ``TimeoutError``, so ``except TimeoutError`` still
+    catches it. The ``job_id`` attribute lets callers keep using the job, for
+    example to check its status later or to cancel it.
+    """
+
+    def __init__(self, job_id: str, timeout: float):
+        super().__init__(f"Crawl job {job_id} did not complete within {timeout} seconds")
+        self.job_id = job_id
+        self.timeout = timeout
+
+    def __reduce__(self):
+        # self.args holds only the message, so rebuild from the constructor
+        # arguments. This keeps pickle and copy.deepcopy working.
+        return (type(self), (self.job_id, self.timeout))
+
+
 class RateLimitError(FirecrawlError):
     """Raised when the rate limit is exceeded (429)."""
     pass
@@ -85,6 +104,22 @@ class RateLimitError(FirecrawlError):
 class InternalServerError(FirecrawlError):
     """Raised when there's an internal server error (500)."""
     pass
+
+
+class DNSResolutionError(FirecrawlError):
+    """Raised when the target URL's hostname could not be resolved (SCRAPE_DNS_RESOLUTION_ERROR)."""
+    pass
+
+
+class TLSError(FirecrawlError):
+    """Raised when a secure connection to the target site could not be established (SCRAPE_SSL_ERROR)."""
+    pass
+
+
+ERROR_CODE_CLASSES = {
+    "SCRAPE_DNS_RESOLUTION_ERROR": DNSResolutionError,
+    "SCRAPE_SSL_ERROR": TLSError,
+}
 
 
 def handle_response_error(response: requests.Response, action: str) -> None:
@@ -125,7 +160,13 @@ def handle_response_error(response: requests.Response, action: str) -> None:
             error_message = f"Server returned unreadable response with status {response.status_code}"
             error_details = "No additional details available"
 
-    # Create appropriate error message
+    error_class = ERROR_CODE_CLASSES.get(code)
+    if error_class is not None:
+        message = f"Failed to {action}. {error_message}"
+        if error_details != 'No additional error details provided.':
+            message = f"{message} - {error_details}"
+        raise error_class(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
+
     if response.status_code == 400:
         message = f"Bad Request: Failed to {action}. {error_message} - {error_details}"
         raise BadRequestError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
