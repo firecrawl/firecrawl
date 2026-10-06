@@ -77,18 +77,15 @@ describe("searchRequestSchema highlights", () => {
     { clientModel: " " },
     { clientModel: "x".repeat(129) },
     { clientModel: 42 },
-  ])(
-    "drops invalid agent task context without failing the search %j",
-    context => {
-      const result = searchRequestSchema.safeParse({
-        query: "React memo docs",
-        ...context,
-      });
+  ])("drops invalid agent task context without failing the search %j", context => {
+    const result = searchRequestSchema.safeParse({
+      query: "React memo docs",
+      ...context,
+    });
 
-      expect(result.success).toBe(true);
-      expect(result.data?.objective).toBeUndefined();
-      expect(result.data?.clientModel).toBeUndefined();
-      expect(result.data?.limit).toBe(10);
-    },
-  );
+    expect(result.success).toBe(true);
+    expect(result.data?.objective).toBeUndefined();
+    expect(result.data?.clientModel).toBeUndefined();
+    expect(result.data?.limit).toBe(10);
+  });
 });

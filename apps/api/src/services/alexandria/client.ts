@@ -18,8 +18,7 @@ export async function exchangeRequest(input: {
   resultAuthorization?: string;
   termsIdentity?: { organizationId: string; apiKeyId: string };
 }): Promise<ExchangeResponse> {
-  if (!config.FIRE_EXCHANGE_URL)
-    throw new Error("Alexandria is not configured");
+  if (!config.FIRE_EXCHANGE_URL) throw new Error("Alexandria is not configured");
   const base = config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
   const response = await fetch(base + input.path, {
     method: input.body === undefined ? "GET" : "POST",
