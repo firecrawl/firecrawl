@@ -327,8 +327,8 @@ describe("developer category code_searches ledger", () => {
   });
 });
 
-describe("gov category ledger", () => {
-  it("writes no research ledger row for a gov category search", async () => {
+describe("gov category gov_searches ledger", () => {
+  it("writes exactly one gov_searches row for a gov category search", async () => {
     const req = makeReq({ query: "zoning variance", categories: ["gov"] });
     const res = makeRes();
 
@@ -336,7 +336,12 @@ describe("gov category ledger", () => {
     await flushAsync();
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(mockLogSearch).toHaveBeenCalledTimes(1);
-    expect(mockLogResearchEndpoint).not.toHaveBeenCalled();
+    expect(mockLogResearchEndpoint).toHaveBeenCalledTimes(1);
+    const row = mockLogResearchEndpoint.mock.calls[0][0];
+    expect(row.table).toBe("gov_searches");
+    expect(row.target).toBe("zoning variance");
+    expect(row.num_results).toBe(2);
+    expect(row.options.categories).toEqual([{ type: "gov" }]);
+    expect(row.options.via).toBe("search_category");
   });
 });

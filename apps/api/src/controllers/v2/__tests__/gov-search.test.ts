@@ -3,7 +3,6 @@ import { vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   logRequest: vi.fn(),
   logResearchEndpoint: vi.fn(),
-  logSearch: vi.fn(),
   fetchGovUpstream: vi.fn(),
   chargeKeylessCredits: vi.fn().mockResolvedValue(undefined),
 }));
@@ -11,7 +10,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../../services/logging/log_job", () => ({
   logRequest: mocks.logRequest,
   logResearchEndpoint: mocks.logResearchEndpoint,
-  logSearch: mocks.logSearch,
 }));
 
 vi.mock("../../../lib/research-upstream", () => ({
@@ -105,7 +103,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.logRequest.mockResolvedValue(undefined);
   mocks.logResearchEndpoint.mockResolvedValue(undefined);
-  mocks.logSearch.mockResolvedValue(undefined);
   mocks.fetchGovUpstream.mockResolvedValue(upstreamWith([WEB_RESULT]));
 });
 
@@ -135,31 +132,14 @@ describe("/v2/search/gov", () => {
         7,
         expect.objectContaining({ endpoint: "search" }),
       );
-      expect(mocks.logRequest).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: "search", api_version: "v2" }),
+      expect(mocks.logResearchEndpoint).toHaveBeenCalledWith(
+        expect.objectContaining({
+          table: "gov_searches",
+          num_results: 1,
+          credits_cost: 2,
+          is_successful: true,
+        }),
       );
-      const jobId = mocks.logRequest.mock.calls[0][0].id;
-      expect(mocks.logSearch).toHaveBeenCalledWith({
-        id: jobId,
-        request_id: jobId,
-        query: "food labeling rules",
-        team_id: TEAM_ID,
-        options: {
-          origin: "api",
-          integration: null,
-          api_version: "v2",
-          k: 5,
-          via: "gov_endpoint",
-        },
-        time_taken: expect.any(Number),
-        credits_cost: 2,
-        is_successful: true,
-        error: undefined,
-        num_results: 1,
-        results: { web: [WEB_RESULT] },
-        zeroDataRetention: false,
-      });
-      expect(mocks.logResearchEndpoint).not.toHaveBeenCalled();
     },
   );
 
@@ -180,10 +160,7 @@ describe("/v2/search/gov", () => {
       7,
       expect.objectContaining({ endpoint: "search" }),
     );
-    expect(mocks.logRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "search", zeroDataRetention: true }),
-    );
-    expect(mocks.logSearch).toHaveBeenCalledWith(
+    expect(mocks.logResearchEndpoint).toHaveBeenCalledWith(
       expect.objectContaining({ credits_cost: 10, zeroDataRetention: true }),
     );
   });
@@ -202,12 +179,11 @@ describe("/v2/search/gov", () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(billTeam).not.toHaveBeenCalled();
-    expect(mocks.logSearch).toHaveBeenCalledWith(
+    expect(mocks.logResearchEndpoint).toHaveBeenCalledWith(
       expect.objectContaining({
         is_successful: false,
         credits_cost: 0,
         error: "index unavailable",
-        results: null,
       }),
     );
   });

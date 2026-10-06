@@ -194,18 +194,20 @@ async function searchControllerInner(
     }
 
     const categories = req.body.categories as CategoryOption[];
-    const wantsDeveloper = wantsDeveloperCategory(categories);
     // Index categories reach the same upstream as their dedicated endpoint, so
-    // they share its key restriction.
-    const indexEndpoint = wantsDeveloper
-      ? "/v2/developer/search"
+    // they share its key restriction and its request ledger.
+    const indexCategory = wantsDeveloperCategory(categories)
+      ? { endpoint: "/v2/developer/search", table: "code_searches" as const }
       : wantsGovCategory(categories)
-        ? "/v2/search/gov"
+        ? {
+            endpoint: "/v2/search/gov",
+            table: "gov_searches" as const,
+          }
         : null;
 
-    if (indexEndpoint) {
+    if (indexCategory) {
       const indexRestriction = await checkKeyEndpointRestriction(
-        indexEndpoint,
+        indexCategory.endpoint,
         req.acuc?.api_key_id,
         req.acuc?.flags ?? null,
       );
@@ -496,9 +498,9 @@ async function searchControllerInner(
       logger.error("Failed to log search", { error, jobId });
     });
 
-    if (wantsDeveloper) {
+    if (indexCategory) {
       logResearchEndpoint({
-        table: "code_searches",
+        table: indexCategory.table,
         id: uuidv7(),
         request_id: agentRequestId ?? jobId,
         team_id: req.auth.team_id,
@@ -519,7 +521,7 @@ async function searchControllerInner(
         is_successful: true,
         zeroDataRetention,
       }).catch(ledgerError => {
-        logger.warn("Failed to log developer category usage", {
+        logger.warn("Failed to log index category usage", {
           error: ledgerError,
         });
       });
