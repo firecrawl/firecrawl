@@ -97,6 +97,16 @@ describe("getNextMonitorRunAt", () => {
     ["0 0 * * *", "2027-03-28T00:30:00Z", "Europe/London"],
     // Southern hemisphere DST end (2027-04-04 03:00 -> 02:00 local).
     ["30 2 * * *", "2027-04-03T12:00:00Z", "Australia/Sydney"],
+    // Two-hour spring-forward (Antarctica/Troll, 2027-03-28 01:00 UTC): a
+    // 23 h jump in UTC would land at 02:00 local the next day (Monday 03-29).
+    ["0 0 * * 1", "2027-03-28T00:00:00Z", "Antarctica/Troll"],
+    ["0 0 * * *", "2027-03-27T12:00:00Z", "Antarctica/Troll"],
+    ["30 23 * * *", "2027-03-27T22:00:00Z", "Antarctica/Troll"],
+    ["0 2 * * *", "2027-03-27T12:00:00Z", "Antarctica/Troll"],
+    ["30 1 * * *", "2027-03-27T12:00:00Z", "Antarctica/Troll"],
+    // Half-hour DST shift (Australia/Lord_Howe, 2027-04-04 02:00 -> 01:30).
+    ["0 2 * * *", "2027-04-03T12:00:00Z", "Australia/Lord_Howe"],
+    ["45 1 * * *", "2027-04-03T12:00:00Z", "Australia/Lord_Howe"],
     // Zones that shift at local midnight.
     ["0 0 * * *", "2027-03-27T12:00:00Z", "Asia/Beirut"],
     ["30 0 * * *", "2027-04-03T12:00:00Z", "America/Santiago"],
