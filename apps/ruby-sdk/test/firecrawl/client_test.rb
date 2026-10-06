@@ -802,6 +802,297 @@ class ClientTest < Minitest::Test
     assert_equal "https://api.firecrawl.dev/v2/agent?before=1756600000000", response.next
   end
 
+  def test_start_agent_with_exchange_thread_and_mode
+    thread_id = "0199bbbb-0000-7000-8000-000000000000"
+    approval_id = "0199aaaa-0000-7000-8000-000000000000"
+    body = nil
+    stub_request(:post, "#{BASE_URL}/v2/agent")
+      .with { |req| body = JSON.parse(req.body) }
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-turn-2", threadId: thread_id, threadTurn: 2),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::AgentOptions.new(
+      prompt: "Go ahead",
+      thread_id: thread_id,
+      mode: "chat",
+      exchange: Firecrawl::Models::AgentExchangeOptions.new(
+        enabled: true,
+        toolkits: ["apollo", "clearbit"],
+        max_calls: 4,
+        require_approval: true,
+        approve: Firecrawl::Models::AgentExchangeOptions::Approve.new(
+          approval_id: approval_id,
+          call_ids: ["call-1"],
+          always: false
+        ),
+        on_terms_required: "ask"
+      )
+    )
+    response = @client.start_agent(options)
+
+    assert_equal(
+      {
+        "prompt" => "Go ahead",
+        "threadId" => thread_id,
+        "mode" => "chat",
+        "exchange" => {
+          "enabled" => true,
+          "toolkits" => ["apollo", "clearbit"],
+          "maxCalls" => 4,
+          "requireApproval" => true,
+          "approve" => { "approvalId" => approval_id, "callIds" => ["call-1"], "always" => false },
+          "onTermsRequired" => "ask",
+        },
+      },
+      body
+    )
+    assert_equal "agent-turn-2", response.id
+    assert_equal thread_id, response.thread_id
+    assert_equal 2, response.thread_turn
+  end
+
+  def test_agent_with_exchange_decline
+    approval_id = "0199aaaa-0000-7000-8000-000000000000"
+    body = nil
+    stub_request(:post, "#{BASE_URL}/v2/agent")
+      .with { |req| body = JSON.parse(req.body) }
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-decline"),
+        headers: { "Content-Type" => "application/json" }
+      )
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-decline")
+      .to_return(
+        status: 200,
+        body: JSON.generate(status: "completed", mode: "chat", message: "Skipped the paid lookup."),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::AgentOptions.new(
+      prompt: "No thanks",
+      thread_id: "0199bbbb-0000-7000-8000-000000000000",
+      mode: "chat",
+      exchange: Firecrawl::Models::AgentExchangeOptions.new(
+        decline: Firecrawl::Models::AgentExchangeOptions::Decline.new(approval_id: approval_id)
+      )
+    )
+    status = @client.agent(options, poll_interval: 0, timeout: 10)
+
+    assert_equal({ "decline" => { "approvalId" => approval_id } }, body["exchange"])
+    assert_equal "chat", status.mode
+    assert_equal "Skipped the paid lookup.", status.message
+  end
+
+  def test_start_agent_omits_unset_thread_and_exchange_fields
+    body = nil
+    stub_request(:post, "#{BASE_URL}/v2/agent")
+      .with { |req| body = JSON.parse(req.body) }
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-plain"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    response = @client.start_agent(Firecrawl::Models::AgentOptions.new(prompt: "Find pricing info"))
+
+    assert_equal({ "prompt" => "Find pricing info" }, body)
+    assert_nil response.thread_id
+    assert_nil response.thread_turn
+    assert_equal({ "enabled" => true }, Firecrawl::Models::AgentExchangeOptions.new(enabled: true).to_h)
+    assert_equal(
+      { "approvalId" => "a-1" },
+      Firecrawl::Models::AgentExchangeOptions::Approve.new(approval_id: "a-1").to_h
+    )
+  end
+
+  def test_get_agent_status_with_exchange_and_pending_calls_approval
+    approval_id = "0199aaaa-0000-7000-8000-000000000000"
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-calls")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          status: "completed",
+          expiresAt: "2026-09-02T00:00:00.000Z",
+          threadId: "0199bbbb-0000-7000-8000-000000000000",
+          threadTurn: 1,
+          mode: "chat",
+          message: "Apollo can verify these emails for about 3 credits.",
+          suggestions: [{ label: "Approve", prompt: "Go ahead" }],
+          unknownField: "ignored",
+          exchange: {
+            enabled: true,
+            toolkits: ["apollo"],
+            requireApproval: true,
+            onTermsRequired: "skip",
+            paidCalls: 0,
+            creditsUsed: nil,
+            skippedProviders: [
+              {
+                provider: "clearbit",
+                name: "Clearbit",
+                capability: "company/enrich",
+                adds: "company size",
+                reason: "terms_required",
+                version: "F-1.0.0",
+                termsUrl: "https://www.firecrawl.dev/app/alexandria/clearbit",
+              },
+            ],
+          },
+          pendingApproval: {
+            id: approval_id,
+            kind: "calls",
+            reason: "Apollo charges per lookup.",
+            calls: [
+              {
+                id: "call-1",
+                provider: "apollo",
+                capability: "people/match",
+                input: { domain: "example.com" },
+                more: [{ domain: "example.org" }],
+                creditsEstimate: 3,
+              },
+            ],
+            resolution: {
+              approved: true,
+              callIds: ["call-1"],
+              always: false,
+              byRunId: "agent-turn-2",
+            },
+          }
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    status = @client.get_agent_status("agent-calls")
+
+    assert_equal "0199bbbb-0000-7000-8000-000000000000", status.thread_id
+    assert_equal 1, status.thread_turn
+    assert_equal "chat", status.mode
+    assert_equal "Apollo can verify these emails for about 3 credits.", status.message
+
+    exchange = status.exchange
+    assert_instance_of Firecrawl::Models::AgentExchangeSummary, exchange
+    assert_equal true, exchange.enabled
+    assert_equal ["apollo"], exchange.toolkits
+    assert_equal true, exchange.require_approval
+    assert_equal "skip", exchange.on_terms_required
+    assert_equal 0, exchange.paid_calls
+    assert_nil exchange.credits_used
+    assert_nil exchange.requires_action
+    skipped = exchange.skipped_providers.first
+    assert_equal "clearbit", skipped.provider
+    assert_equal "terms_required", skipped.reason
+    assert_equal "F-1.0.0", skipped.version
+    assert_equal "https://www.firecrawl.dev/app/alexandria/clearbit", skipped.terms_url
+
+    pending = status.pending_approval
+    assert_instance_of Firecrawl::Models::AgentPendingApproval, pending
+    assert_equal approval_id, pending.id
+    assert_equal "calls", pending.kind
+    assert_equal "Apollo charges per lookup.", pending.reason
+    assert_nil pending.terms
+    assert_equal true, pending.resolution.approved
+    assert_equal ["call-1"], pending.resolution.call_ids
+    assert_equal false, pending.resolution.always
+    assert_equal "agent-turn-2", pending.resolution.by_run_id
+    call = pending.calls.first
+    assert_equal "call-1", call.id
+    assert_equal "apollo", call.provider
+    assert_equal "people/match", call.capability
+    assert_equal({ "domain" => "example.com" }, call.input)
+    assert_equal [{ "domain" => "example.org" }], call.more
+    assert_equal 3, call.credits_estimate
+  end
+
+  def test_get_agent_status_with_terms_required_action
+    approval_id = "0199aaaa-0000-7000-8000-000000000000"
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-terms")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          status: "completed",
+          expiresAt: "2026-09-02T00:00:00.000Z",
+          exchange: {
+            enabled: true,
+            onTermsRequired: "ask",
+            paidCalls: 0,
+            creditsUsed: nil,
+            skippedProviders: [
+              {
+                provider: "clearbit",
+                name: "Clearbit",
+                reason: "terms_required",
+                version: "F-1.0.0",
+                termsUrl: "https://www.firecrawl.dev/app/alexandria/clearbit",
+              },
+            ],
+            requiresAction: {
+              type: "accept_terms",
+              approvalId: approval_id,
+              providers: [
+                {
+                  provider: "clearbit",
+                  name: "Clearbit",
+                  version: "F-1.0.0",
+                  digest: nil,
+                  url: "https://www.firecrawl.dev/app/alexandria/clearbit",
+                  show: { provider: "firecrawl", capability: "terms/show", options: { provider: "clearbit" } },
+                  accept: {
+                    provider: "firecrawl",
+                    capability: "terms/accept",
+                    options: { provider: "clearbit", version: "F-1.0.0", digest: nil, confirmed: true },
+                  },
+                },
+              ],
+            },
+          },
+          pendingApproval: {
+            id: approval_id,
+            kind: "terms",
+            reason: "Clearbit could add company size.",
+            calls: [],
+            terms: [
+              {
+                provider: "clearbit",
+                name: "Clearbit",
+                version: "F-1.0.0",
+                digest: nil,
+                url: "https://www.firecrawl.dev/app/alexandria/clearbit",
+              },
+            ],
+            resolution: nil,
+          }
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    status = @client.get_agent_status("agent-terms")
+
+    action = status.exchange.requires_action
+    assert_equal "accept_terms", action.type
+    assert_equal approval_id, action.approval_id
+    provider = action.providers.first
+    assert_equal "clearbit", provider.provider
+    assert_equal "F-1.0.0", provider.version
+    assert_nil provider.digest
+    assert_equal "https://www.firecrawl.dev/app/alexandria/clearbit", provider.url
+    assert_equal "terms/show", provider.show["capability"]
+    assert_equal "terms/accept", provider.accept["capability"]
+    assert_equal true, provider.accept["options"]["confirmed"]
+
+    pending = status.pending_approval
+    assert_equal "terms", pending.kind
+    assert_equal [], pending.calls
+    assert_equal "clearbit", pending.terms.first.provider
+    assert_nil pending.terms.first.digest
+    assert_nil pending.resolution
+  end
+
   # ================================================================
   # USAGE & METRICS
   # ================================================================
