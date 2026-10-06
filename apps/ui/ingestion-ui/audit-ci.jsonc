@@ -8,6 +8,13 @@
         // resolves 3.0.3 via chokidar/micromatch. Cannot override to a
         // non-existent version. Owner: team-engineering-reviewers.
         // Tracking: create internal ticket. Expires: 2026-10-17.
-        "GHSA-vfj7-8cjw-p6xm"
+        "GHSA-vfj7-8cjw-p6xm",
+        // GHSA-rj75-hqrm-r3gf (postcss-selector-parser):
+        // tailwindcss 3.x resolves the 6.x line; latest 6.x is 6.1.4
+        // and the patched release is 7.1.6+. Do not override across
+        // majors without compatibility approval.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2026-10-20.
+        "GHSA-rj75-hqrm-r3gf"
     ]
 }
