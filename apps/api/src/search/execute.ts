@@ -282,12 +282,17 @@ export async function executeSearch(
 
   const isZDR = options.enterprise?.includes("zdr");
   const creditsPerTenResults = isZDR ? 10 : 2;
+  // Gov index results are free; developer index results bill like web results.
+  const billableResultsCount =
+    indexCategorySearch === searchGovCategory
+      ? totalResultsCount - indexResultsCount
+      : totalResultsCount;
   // Threat protection scan fees ride on the search credits: they are part of
   // serving the search itself (every result domain is scanned before
   // filtering), so they bill against the same feature and show up in the
   // request's creditsUsed.
   const searchCredits =
-    Math.ceil(totalResultsCount / 10) * creditsPerTenResults +
+    Math.ceil(billableResultsCount / 10) * creditsPerTenResults +
     threatScanCredits;
   let scrapeCredits = 0;
 

@@ -344,4 +344,16 @@ describe("gov category gov_searches ledger", () => {
     expect(row.options.categories).toEqual([{ type: "gov" }]);
     expect(row.options.via).toBe("search_category");
   });
+
+  it("reserves no keyless credits for a gov category search", async () => {
+    mockProjectSearchTotalCredits.mockReturnValue(2);
+    mockReserveKeylessCredits.mockResolvedValue({ ok: false });
+    const req = makeReq({ query: "zoning variance", categories: ["gov"] });
+    const res = makeRes();
+
+    await searchController(req, res);
+
+    expect(mockReserveKeylessCredits).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
 });

@@ -367,7 +367,10 @@ async function searchControllerInner(
 
     const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
     const projectedKeylessCredits =
-      !isSearchPreview && shouldBill && !toolsOnly
+      !isSearchPreview &&
+      shouldBill &&
+      !toolsOnly &&
+      !wantsGovCategory(categories)
         ? projectSearchTotalCredits(
             {
               limit: req.body.limit,

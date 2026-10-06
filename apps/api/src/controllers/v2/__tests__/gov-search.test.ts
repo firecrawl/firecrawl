@@ -108,7 +108,7 @@ beforeEach(() => {
 
 describe("/v2/search/gov", () => {
   it.each(["GET", "POST"] as const)(
-    "serves a %s request and bills per ten results",
+    "serves a %s request for free",
     async method => {
       const res = makeRes();
       await handler(method === "GET" ? "get" : "post")(
@@ -125,25 +125,19 @@ describe("/v2/search/gov", () => {
         success: true,
         data: { web: [WEB_RESULT] },
       });
-      expect(billTeam).toHaveBeenCalledWith(
-        TEAM_ID,
-        null,
-        2,
-        7,
-        expect.objectContaining({ endpoint: "search" }),
-      );
+      expect(billTeam).not.toHaveBeenCalled();
       expect(mocks.logResearchEndpoint).toHaveBeenCalledWith(
         expect.objectContaining({
           table: "gov_searches",
           num_results: 1,
-          credits_cost: 2,
+          credits_cost: 0,
           is_successful: true,
         }),
       );
     },
   );
 
-  it("bills at the zero data retention rate and marks the logs", async () => {
+  it("stays free under zero data retention and marks the logs", async () => {
     const res = makeRes();
     await handler("get")(
       makeReq("GET", { query: "food labeling rules" }, TEAM_ID, {
@@ -153,15 +147,9 @@ describe("/v2/search/gov", () => {
     );
     await flush();
 
-    expect(billTeam).toHaveBeenCalledWith(
-      TEAM_ID,
-      null,
-      10,
-      7,
-      expect.objectContaining({ endpoint: "search" }),
-    );
+    expect(billTeam).not.toHaveBeenCalled();
     expect(mocks.logResearchEndpoint).toHaveBeenCalledWith(
-      expect.objectContaining({ credits_cost: 10, zeroDataRetention: true }),
+      expect.objectContaining({ credits_cost: 0, zeroDataRetention: true }),
     );
   });
 
@@ -186,16 +174,6 @@ describe("/v2/search/gov", () => {
         error: "index unavailable",
       }),
     );
-  });
-
-  it("does not bill an empty result", async () => {
-    mocks.fetchGovUpstream.mockResolvedValue(upstreamWith([]));
-    const res = makeRes();
-    await handler("get")(makeReq("GET", { query: "nothing here" }), res);
-    await flush();
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(billTeam).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -229,7 +207,7 @@ describe("/v2/search/gov", () => {
     expect(res.status).toHaveBeenCalledWith(504);
   });
 
-  it("serves a keyless caller and charges the keyless budget", async () => {
+  it("serves a keyless caller and records zero keyless credits", async () => {
     const res = makeRes();
     await handler("get")(
       makeReq("GET", { query: "zoning variance" }, KEYLESS_TEAM_ID, null),
@@ -238,6 +216,6 @@ describe("/v2/search/gov", () => {
     await flush();
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(mocks.chargeKeylessCredits).toHaveBeenCalledWith(KEYLESS_TEAM_ID, 2);
+    expect(mocks.chargeKeylessCredits).toHaveBeenCalledWith(KEYLESS_TEAM_ID, 0);
   });
 });

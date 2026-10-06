@@ -295,6 +295,6 @@ describe("executeSearch gov category", () => {
     );
     expect(result.response).toEqual({ web: [govResult] });
     expect(result.indexResultsCount).toBe(1);
-    expect(result.searchCredits).toBe(2);
+    expect(result.searchCredits).toBe(0);
   });
 });
