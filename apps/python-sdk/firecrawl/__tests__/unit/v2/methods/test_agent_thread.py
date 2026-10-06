@@ -361,7 +361,9 @@ class TestTopLevelClientsExposeGetAgentThread:
         response.json.return_value = sync_client.get.return_value.json.return_value
         firecrawl._v2_client.async_http_client.get = AsyncMock(return_value=response)
 
-        result = asyncio.run(firecrawl.get_agent_thread("thread-1"))
+        result = asyncio.run(firecrawl.get_agent_thread("thread-1", include_data=True))
 
-        firecrawl._v2_client.async_http_client.get.assert_awaited_once()
+        firecrawl._v2_client.async_http_client.get.assert_awaited_once_with(
+            "/v2/agent/threads/thread-1?includeData=true"
+        )
         assert result.thread.id == "thread-1"
