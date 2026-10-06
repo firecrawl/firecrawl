@@ -272,7 +272,7 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
                 "alexandria:activity:team-mcp",
                 "1",
                 "EX",
-                config.SEARCH_FEEDBACK_MAX_AGE_SEC,
+                config.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
               ],
             ]
           : [],

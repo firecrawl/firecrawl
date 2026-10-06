@@ -22,13 +22,24 @@ beforeEach(() => {
   mocks.set.mockResolvedValue("OK");
 });
 
-it("opens a feedback window as long as the search feedback window", async () => {
-  await recordAlexandriaActivity(teamId);
+it("opens the Alexandria window, independent of the search feedback window", async () => {
+  const original = {
+    alexandria: config.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
+    search: config.SEARCH_FEEDBACK_MAX_AGE_SEC,
+  };
+  config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1500;
+  config.SEARCH_FEEDBACK_MAX_AGE_SEC = 90;
+  try {
+    await recordAlexandriaActivity(teamId);
+  } finally {
+    config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = original.alexandria;
+    config.SEARCH_FEEDBACK_MAX_AGE_SEC = original.search;
+  }
   expect(mocks.set).toHaveBeenCalledExactlyOnceWith(
     `alexandria:activity:${teamId}`,
     "1",
     "EX",
-    config.SEARCH_FEEDBACK_MAX_AGE_SEC,
+    1500,
   );
 });
 
