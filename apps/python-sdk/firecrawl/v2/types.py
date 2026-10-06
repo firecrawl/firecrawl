@@ -635,6 +635,8 @@ class Category(BaseModel):
     - "pdf": Filter results to PDF files (adds filetype:pdf to search)
     - "developer": Developer-index results (issues, pull requests, READMEs and
       documentation) served in `web`; cannot be combined with other categories
+    - "gov": Legal and regulatory results served in `web`; cannot be combined
+      with other categories
 
     .. warning::
        ``categories=["research"]`` is **not** Firecrawl's research paper index.
