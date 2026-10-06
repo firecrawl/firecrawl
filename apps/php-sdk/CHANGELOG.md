@@ -5,6 +5,17 @@ All notable changes to the Firecrawl PHP SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.2] - 2026-10-06
+
+### Added
+- `exchange` option on `AgentOptions` (`AgentExchangeOptions`, with
+  `AgentExchangeApproval` and `AgentExchangeDecline` for answering a pending
+  approval) so agent runs can use Exchange data providers, plus `threadId` and
+  `mode` to continue a thread in extract or chat mode. Unset fields are not sent.
+- `AgentResponse::getThreadId()`/`getThreadTurn()`, and thread ID, turn, mode,
+  chat `message`, `pendingApproval` and the `exchange` run summary on
+  `AgentStatusResponse`.
+
 ## [1.16.1] - 2026-10-02
 
 ### Added
