@@ -256,6 +256,9 @@ describe("Jev branding shadow", () => {
         "branding.shadow.outcome": "jev_failed",
       }),
     );
+    // Logged by enhanceBrandingWithJev in shadow mode. A rejected call is
+    // handled there, so the shadow's own catch ("Jev branding shadow failed")
+    // never runs.
     expect(warn).toHaveBeenCalledWith(
       "Jev branding shadow call failed",
       expect.anything(),
