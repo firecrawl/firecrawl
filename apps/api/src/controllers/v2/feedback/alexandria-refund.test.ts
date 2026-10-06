@@ -64,6 +64,7 @@ const now = new Date("2026-10-06T18:00:00.000Z");
 const original = {
   enabled: config.FEEDBACK_REFUND_ENABLED,
   cap: config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
+  websiteCap: config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS,
 };
 const refund = (overrides: { orgId?: string | null; url?: string } = {}) =>
   refundAlexandriaFeedback({
@@ -81,6 +82,7 @@ beforeEach(() => {
   mocks.events.length = 0;
   config.FEEDBACK_REFUND_ENABLED = true;
   config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS = 10;
+  config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = 3;
   mocks.lock.mockResolvedValue(undefined);
   mocks.todayRows.mockResolvedValue([]);
   mocks.update.mockResolvedValue(undefined);
@@ -89,6 +91,7 @@ beforeEach(() => {
 afterAll(() => {
   config.FEEDBACK_REFUND_ENABLED = original.enabled;
   config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS = original.cap;
+  config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = original.websiteCap;
 });
 
 it("reserves the refund under a per-team lock before billing, then reports it", async () => {
@@ -141,24 +144,56 @@ it("reserves the refund under a per-team lock before billing, then reports it", 
   });
 });
 
-it("does not refund a second feedback for the same website on the same UTC day", async () => {
+it("keeps refunding the same website until its daily cap", async () => {
   mocks.todayRows.mockResolvedValue([
+    { requested_host: "sam.gov", credits_refunded: 1 },
+    { requested_host: "data.gov", credits_refunded: 1 },
+  ]);
+  await expect(refund()).resolves.toEqual({
+    creditsRefunded: 1,
+    creditsRefundedToday: 3,
+    dailyRefundCap: 10,
+  });
+});
+
+it("flags the website cap on the refund that fills it", async () => {
+  mocks.todayRows.mockResolvedValue([
+    { requested_host: "sam.gov", credits_refunded: 1 },
+    { requested_host: "sam.gov", credits_refunded: 1 },
+  ]);
+  const result = await refund();
+  expect(result).toMatchObject({
+    creditsRefunded: 1,
+    websiteCapReached: true,
+    warning: expect.stringContaining("sam.gov"),
+  });
+  expect(result.dailyCapReached).toBeUndefined();
+});
+
+it("stops refunding a website at its daily cap, while other websites still refund", async () => {
+  mocks.todayRows.mockResolvedValue([
+    { requested_host: "sam.gov", credits_refunded: 1 },
+    { requested_host: "sam.gov", credits_refunded: 1 },
     { requested_host: "sam.gov", credits_refunded: 1 },
   ]);
   const result = await refund({ url: "https://user@sam.gov:443/other" });
   expect(result).toMatchObject({
     creditsRefunded: 0,
-    creditsRefundedToday: 1,
-    alreadySubmitted: true,
+    creditsRefundedToday: 3,
+    websiteCapReached: true,
     warning: expect.stringContaining("sam.gov"),
   });
+  expect(result.dailyCapReached).toBeUndefined();
   expect(mocks.events).toEqual(["tx:lock", "tx:select", "tx:update:0"]);
   expect(persisted()).toMatchObject({
     credits_refunded: 0,
-    refund_policy: {
-      mode: "none",
-      matchedReason: "host_already_refunded_today",
-    },
+    refund_policy: { mode: "none", matchedReason: "website_cap_reached" },
+  });
+
+  mocks.events.length = 0;
+  await expect(refund({ url: "https://data.gov" })).resolves.toMatchObject({
+    creditsRefunded: 1,
+    creditsRefundedToday: 4,
   });
 });
 

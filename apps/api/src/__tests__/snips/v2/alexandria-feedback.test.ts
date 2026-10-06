@@ -4,6 +4,7 @@ import { describeIf, TEST_API_URL, TEST_PRODUCTION } from "../lib";
 import { idmux, Identity } from "./lib";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
+import { config } from "../../../config";
 
 const feedbackRows = async (feedbackId: string) => {
   const [[parent], providers, capabilities] = await Promise.all([
@@ -172,26 +173,34 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
     }
   });
 
-  it("refunds at most once per website per UTC day", async () => {
+  it("stops refunding a website at its daily cap", async () => {
+    const websiteCap = config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS;
     const website = {
       url: "https://www.usaspending.gov/search",
       requestedFunctionality: "List federal awards by recipient.",
     };
-    const first = await submit({ ...body, requestedWebsite: website });
-    const second = await submit({ ...body, requestedWebsite: website });
+    const responses: request.Response[] = [];
     try {
-      expect(first.statusCode).toBe(200);
-      expect(second.statusCode).toBe(200);
-      expect(second.body).toMatchObject({ success: true, creditsRefunded: 0 });
-      if (first.body.creditsRefunded === 1) {
-        expect(second.body.alreadySubmitted).toBe(true);
-        expect(second.body.warning).toContain("www.usaspending.gov");
+      for (let i = 0; i <= websiteCap; i++) {
+        responses.push(await submit({ ...body, requestedWebsite: website }));
       }
-      const { parent } = await feedbackRows(second.body.feedbackId);
+      for (const response of responses) {
+        expect(response.statusCode).toBe(200);
+      }
+      const last = responses.at(-1)!;
+      expect(last.body).toMatchObject({ success: true, creditsRefunded: 0 });
+      if (responses[0].body.creditsRefunded === 1) {
+        expect(responses.slice(0, -1).map(r => r.body.creditsRefunded)).toEqual(
+          Array(websiteCap).fill(1),
+        );
+        expect(last.body.websiteCapReached).toBe(true);
+        expect(last.body.warning).toContain("www.usaspending.gov");
+      }
+      const { parent } = await feedbackRows(last.body.feedbackId);
       expect(parent.credits_refunded).toBe(0);
     } finally {
       await Promise.all(
-        [first, second]
+        responses
           .map(response => response.body.feedbackId)
           .filter(Boolean)
           .map(deleteFeedback),

@@ -18,7 +18,7 @@ type RefundOutcome =
   | "alexandria_feedback"
   | "refunds_disabled"
   | "refund_totals_unavailable"
-  | "host_already_refunded_today"
+  | "website_cap_reached"
   | "daily_cap_reached"
   | "refund_not_confirmed";
 
@@ -26,8 +26,8 @@ type AlexandriaRefundResult = {
   creditsRefunded: number;
   creditsRefundedToday: number;
   dailyRefundCap: number;
-  alreadySubmitted?: boolean;
   dailyCapReached?: boolean;
+  websiteCapReached?: boolean;
   warning?: string;
 };
 
@@ -67,7 +67,7 @@ async function refundsToday(
   tx: Tx,
   teamId: string,
   now: Date,
-): Promise<{ total: number; hosts: Set<string> }> {
+): Promise<{ total: number; byHost: Map<string, number> }> {
   const rows = await tx
     .select({
       requested_host: schema.alexandria_feedback.requested_host,
@@ -84,50 +84,64 @@ async function refundsToday(
         gt(schema.alexandria_feedback.credits_refunded, 0),
       ),
     );
-  return {
-    total: rows.reduce((sum, row) => sum + (row.credits_refunded ?? 0), 0),
-    hosts: new Set(
-      rows.flatMap(row => (row.requested_host ? [row.requested_host] : [])),
-    ),
-  };
+  let total = 0;
+  const byHost = new Map<string, number>();
+  for (const row of rows) {
+    const credits = row.credits_refunded ?? 0;
+    total += credits;
+    if (row.requested_host) {
+      byHost.set(
+        row.requested_host,
+        (byHost.get(row.requested_host) ?? 0) + credits,
+      );
+    }
+  }
+  return { total, byHost };
 }
 
 /**
  * Decides the refund and, when it is granted, reserves it on the feedback row.
- * The per-team lock serializes concurrent submissions so the daily cap and the
- * one-refund-per-host rule hold.
+ * The per-team lock serializes concurrent submissions so both daily caps hold.
  */
 async function reserveRefund(params: {
   feedbackId: string;
   teamId: string;
   host: string;
   dailyRefundCap: number;
+  websiteRefundCap: number;
   now: Date;
-}): Promise<{ outcome: RefundOutcome; refundedTodayBefore: number }> {
-  const { feedbackId, teamId, host, dailyRefundCap, now } = params;
+}): Promise<{
+  outcome: RefundOutcome;
+  refundedTodayBefore: number;
+  websiteRefundedBefore: number;
+}> {
+  const { feedbackId, teamId, host, dailyRefundCap, websiteRefundCap, now } =
+    params;
   return db.transaction(async tx => {
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${`alexandria_feedback_refund:${teamId}`}, 0))`,
     );
     const today = await refundsToday(tx, teamId, now);
-    const outcome: RefundOutcome = today.hosts.has(host)
-      ? "host_already_refunded_today"
-      : today.total + REFUND_CREDITS > dailyRefundCap
+    const websiteRefundedBefore = today.byHost.get(host) ?? 0;
+    const outcome: RefundOutcome =
+      today.total + REFUND_CREDITS > dailyRefundCap
         ? "daily_cap_reached"
-        : "alexandria_feedback";
+        : websiteRefundedBefore + REFUND_CREDITS > websiteRefundCap
+          ? "website_cap_reached"
+          : "alexandria_feedback";
     const write = refundWrite(feedbackId, outcome);
     await tx
       .update(schema.alexandria_feedback)
       .set(write.values)
       .where(write.where);
-    return { outcome, refundedTodayBefore: today.total };
+    return { outcome, refundedTodayBefore: today.total, websiteRefundedBefore };
   });
 }
 
 /**
- * Refunds 1 credit for a recorded Alexandria feedback row: at most once per
- * team, requested host, and UTC day, within ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS.
- * Reports a refund only when billing confirms it. Never throws.
+ * Refunds 1 credit for a recorded Alexandria feedback row, within the team's
+ * daily cap and the per-website daily cap (both per UTC day). Reports a refund
+ * only when billing confirms it. Never throws.
  */
 export async function refundAlexandriaFeedback(params: {
   feedbackId: string;
@@ -140,6 +154,7 @@ export async function refundAlexandriaFeedback(params: {
   const { feedbackId, teamId, orgId, rating } = params;
   const now = params.now ?? new Date();
   const dailyRefundCap = config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS;
+  const websiteRefundCap = config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS;
   const host = new URL(params.requestedUrl).hostname.toLowerCase();
   const logger = _logger.child({
     module: "api/v2",
@@ -165,18 +180,21 @@ export async function refundAlexandriaFeedback(params: {
 
   let outcome: RefundOutcome;
   let refundedTodayBefore = 0;
+  let websiteRefundedBefore = 0;
   if (!config.FEEDBACK_REFUND_ENABLED) {
     outcome = "refunds_disabled";
     await persist(outcome);
   } else {
     try {
-      ({ outcome, refundedTodayBefore } = await reserveRefund({
-        feedbackId,
-        teamId,
-        host,
-        dailyRefundCap,
-        now,
-      }));
+      ({ outcome, refundedTodayBefore, websiteRefundedBefore } =
+        await reserveRefund({
+          feedbackId,
+          teamId,
+          host,
+          dailyRefundCap,
+          websiteRefundCap,
+          now,
+        }));
     } catch (error) {
       logger.warn("Failed to reserve Alexandria feedback refund; no refund", {
         error,
@@ -218,26 +236,31 @@ export async function refundAlexandriaFeedback(params: {
   const dailyCapReached =
     outcome === "daily_cap_reached" ||
     (dailyRefundCap > 0 && creditsRefundedToday >= dailyRefundCap);
+  const websiteCapReached =
+    outcome === "website_cap_reached" ||
+    (websiteRefundCap > 0 &&
+      websiteRefundedBefore + creditsRefunded >= websiteRefundCap);
   logger.info("Alexandria feedback refund processed", {
     creditsRefunded,
     refundPolicy: outcome,
     creditsRefundedToday,
     dailyRefundCap,
+    websiteRefundCap,
   });
 
   return {
     creditsRefunded,
     creditsRefundedToday,
     dailyRefundCap,
-    ...(outcome === "host_already_refunded_today"
+    ...(dailyCapReached ? { dailyCapReached: true } : {}),
+    ...(websiteCapReached ? { websiteCapReached: true } : {}),
+    ...(dailyCapReached
       ? {
-          alreadySubmitted: true,
-          warning: `Alexandria feedback for ${host} was already refunded today (UTC). Feedback was recorded; no additional refund issued.`,
+          warning: `Daily Alexandria feedback refund cap of ${dailyRefundCap} credits reached for this team (UTC day). Feedback was recorded; further Alexandria feedback today will not refund credits.`,
         }
-      : dailyCapReached
+      : websiteCapReached
         ? {
-            dailyCapReached: true,
-            warning: `Daily Alexandria feedback refund cap of ${dailyRefundCap} credits reached for this team (UTC day). Feedback was recorded; further Alexandria feedback today will not refund credits.`,
+            warning: `Daily refund cap of ${websiteRefundCap} credits reached for Alexandria feedback about ${host} (UTC day). Feedback was recorded; further feedback about this website today will not refund credits.`,
           }
         : {}),
   };

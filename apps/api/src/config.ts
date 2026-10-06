@@ -226,6 +226,11 @@ const configSchema = z.object({
     .number()
     .int()
     .nonnegative()
+    .default(100),
+  ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
     .default(10),
 
   // OAuth token introspection

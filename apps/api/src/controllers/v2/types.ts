@@ -2953,6 +2953,7 @@ export type EndpointFeedbackResponse =
       creditsRefunded: number;
       alreadySubmitted?: boolean;
       dailyCapReached?: boolean;
+      websiteCapReached?: boolean;
       creditsRefundedToday?: number;
       dailyRefundCap?: number;
       warning?: string;

@@ -129,8 +129,16 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
   });
 
   it("persists the minimum payload and independent sessions without inventing job IDs", async () => {
-    const first = await submit(minimal);
-    const second = await submit(minimal);
+    const websiteCap = config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS;
+    config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = 1;
+    let first: request.Response;
+    let second: request.Response;
+    try {
+      first = await submit(minimal);
+      second = await submit(minimal);
+    } finally {
+      config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = websiteCap;
+    }
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(second.body.feedbackId).not.toBe(first.body.feedbackId);
@@ -141,7 +149,7 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
     expect(second.body).toMatchObject({
       creditsRefunded: 0,
       creditsRefundedToday: 1,
-      alreadySubmitted: true,
+      websiteCapReached: true,
     });
     const { rows } = await pool.query(
       "SELECT * FROM alexandria_feedback WHERE team_id = $1 ORDER BY credits_refunded DESC",
@@ -155,7 +163,7 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
     expect(rows.map(row => row.credits_refunded)).toEqual([1, 0]);
     expect(rows.map(row => row.refund_policy.matchedReason)).toEqual([
       "alexandria_feedback",
-      "host_already_refunded_today",
+      "website_cap_reached",
     ]);
     for (const row of rows) {
       expect(row).toMatchObject({
