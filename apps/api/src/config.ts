@@ -90,6 +90,27 @@ const configSchema = z.object({
     v => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z.string().trim().optional(),
   ),
+  // Optional external agent hints provider. Inert unless the URL is set; see
+  // AGENT_HINTS.md for the request/response contract.
+  AGENT_HINTS_PROVIDER_URL: emptyStringAsUndefined(
+    z
+      .string()
+      .url()
+      .refine(value => ["http:", "https:"].includes(new URL(value).protocol), {
+        message: "AGENT_HINTS_PROVIDER_URL must be an http(s) URL",
+      }),
+  ),
+  AGENT_HINTS_PROVIDER_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Never sent to the provider. Keys the keyless team pseudonym; when unset a
+  // random per-process key is used, so pseudonyms are only stable per process.
+  AGENT_HINTS_PROVIDER_PSEUDONYM_KEY: emptyStringAsUndefined(
+    z.string().trim().min(32),
+  ),
+  AGENT_HINTS_PROVIDER_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50),
   RESEARCH_PROXY_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   LABS_SEARCH_URL: z.string().url().optional(),
