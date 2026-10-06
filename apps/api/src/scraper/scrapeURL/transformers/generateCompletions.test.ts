@@ -211,4 +211,34 @@ describe("generateCompletions telemetry metadata", () => {
       scrapeId: "test-scrape",
     });
   });
+
+  it("adds the requesting feature's span metadata without overriding the job ids", async () => {
+    await generateCompletions({
+      logger: noopLogger,
+      options: {},
+      markdown: "page",
+      costTrackingOptions: { costTracking: new CostTracking(), metadata: {} },
+      metadata: {
+        teamId: "test-team",
+        functionId: "monitor/searchJudge",
+        scrapeId: "test-scrape",
+        telemetry: {
+          teamId: "other-team",
+          jobId: "test-check",
+          jobKind: "monitor",
+          feature: "monitor_search_judge",
+        },
+      },
+    });
+
+    const telemetry = lastCall().experimental_telemetry;
+    expect(telemetry.functionId).toBe("monitor/searchJudge");
+    expect(telemetry.metadata).toMatchObject({
+      teamId: "test-team",
+      scrapeId: "test-scrape",
+      jobId: "test-check",
+      jobKind: "monitor",
+      feature: "monitor_search_judge",
+    });
+  });
 });

@@ -636,6 +636,11 @@ export type InternalOptions = {
   v1JSONSystemPrompt?: string;
   v1OriginalFormat?: "extract" | "json"; // Track original v1 format for backward compatibility
 
+  /** Attributes the JSON extraction's LLM calls to the feature that asked for
+   * the scrape (e.g. a search monitor's judge): replaces the functionId root
+   * and adds span metadata. */
+  llmTelemetry?: { functionId: string; metadata: Record<string, string> };
+
   isPreCrawl?: boolean; // Whether this scrape is part of a precrawl job
   agentIndexOnly?: boolean; // Pre-confirmation agent key: serve from index only, never touch web/Fire Engine
   isParse?: boolean; // Whether this scrape originated from /v2/parse
