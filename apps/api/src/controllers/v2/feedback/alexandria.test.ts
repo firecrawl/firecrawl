@@ -10,10 +10,14 @@ const mocks = vi.hoisted(() => ({
   insert: vi.fn(),
   recordEndpointFeedback: vi.fn(),
   refundAlexandriaFeedback: vi.fn(),
+  hasRecentAlexandriaActivity: vi.fn(),
   logError: vi.fn(),
 }));
 vi.mock("./alexandria-refund", () => ({
   refundAlexandriaFeedback: mocks.refundAlexandriaFeedback,
+}));
+vi.mock("../../../lib/alexandria-activity", () => ({
+  hasRecentAlexandriaActivity: mocks.hasRecentAlexandriaActivity,
 }));
 vi.mock("../../../db/connection", () => ({
   db: { transaction: mocks.transaction },
@@ -78,6 +82,7 @@ beforeEach(() => {
     async (run: (tx: unknown) => Promise<void>) => run(tx),
   );
   mocks.insert.mockResolvedValue(undefined);
+  mocks.hasRecentAlexandriaActivity.mockResolvedValue(true);
   mocks.refundAlexandriaFeedback.mockResolvedValue({
     creditsRefunded: 1,
     creditsRefundedToday: 1,
@@ -624,6 +629,41 @@ it("returns the refund outcome, including cap and duplicate warnings", async () 
     feedbackId: expect.any(String),
     ...outcome,
   });
+});
+
+it("rejects feedback outside the window after the team's last Alexandria call", async () => {
+  mocks.hasRecentAlexandriaActivity.mockResolvedValue(false);
+  const response = await submit(minimal);
+  expect(response.status).toBe(409);
+  expect(response.body).toEqual({
+    success: false,
+    feedbackErrorCode: "FEEDBACK_WINDOW_EXPIRED",
+    error: `Alexandria feedback must be submitted within ${config.SEARCH_FEEDBACK_MAX_AGE_SEC} seconds of an Alexandria search, discovery, or execution.`,
+  });
+  expect(mocks.hasRecentAlexandriaActivity).toHaveBeenCalledWith(teamId);
+  expect(mocks.transaction).not.toHaveBeenCalled();
+  expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
+});
+
+it("fails closed when the feedback window cannot be checked", async () => {
+  const error = new Error("redis down");
+  mocks.hasRecentAlexandriaActivity.mockRejectedValue(error);
+  const response = await submit(minimal);
+  expect(response.status).toBe(500);
+  expect(response.body.feedbackErrorCode).toBe("INTERNAL");
+  expect(mocks.logError).toHaveBeenCalledWith(
+    "Failed to check the Alexandria feedback window",
+    { error, teamId },
+  );
+  expect(mocks.transaction).not.toHaveBeenCalled();
+  expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
+});
+
+it("validates the body before checking the window", async () => {
+  mocks.hasRecentAlexandriaActivity.mockResolvedValue(false);
+  const response = await submit({ ...minimal, rationale: undefined });
+  expect(response.status).toBe(400);
+  expect(mocks.hasRecentAlexandriaActivity).not.toHaveBeenCalled();
 });
 
 it("honors team opt-out", async () => {

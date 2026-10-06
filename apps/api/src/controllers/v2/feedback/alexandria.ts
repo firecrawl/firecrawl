@@ -3,6 +3,7 @@ import { DrizzleQueryError } from "drizzle-orm/errors";
 import { config } from "../../../config";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
+import { hasRecentAlexandriaActivity } from "../../../lib/alexandria-activity";
 import { logger } from "../../../lib/logger";
 import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
 import type { RequestWithAuth, EndpointFeedbackErrorCode } from "../types";
@@ -64,6 +65,24 @@ export async function recordAlexandriaFeedback(
         dailyRefundCap: config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
       },
     };
+  }
+
+  let withinWindow: boolean;
+  try {
+    withinWindow = await hasRecentAlexandriaActivity(teamId);
+  } catch (error) {
+    logger.error("Failed to check the Alexandria feedback window", {
+      error,
+      teamId,
+    });
+    return failure(500, "INTERNAL", "Failed to check the feedback window.");
+  }
+  if (!withinWindow) {
+    return failure(
+      409,
+      "FEEDBACK_WINDOW_EXPIRED",
+      `Alexandria feedback must be submitted within ${config.SEARCH_FEEDBACK_MAX_AGE_SEC} seconds of an Alexandria search, discovery, or execution.`,
+    );
   }
 
   const feedbackId = uuidv7();

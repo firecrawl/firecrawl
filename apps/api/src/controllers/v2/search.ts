@@ -55,6 +55,7 @@ import { wantsGovCategory } from "../../search/gov";
 import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { applyNotice, type Notice } from "../../lib/deprecations";
+import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 
 const RESEARCH_CATEGORY_NOTICE: Notice = {
   message:
@@ -548,6 +549,7 @@ async function searchControllerInner(
       scrapeful: result.shouldScrape,
     });
 
+    if (result.response.tools) markAlexandriaActivity(req.auth.team_id);
     return res.status(200).json({
       success: true,
       data: result.response,
