@@ -7,10 +7,9 @@ use base64::Engine;
 use bytes::Bytes;
 use pdf_inspector::{PdfProcessResult, PdfType};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
-use ts_rs::TS;
 use tokio::{sync::Semaphore, time::Instant};
 use tracing::{Span, field::Empty};
+use ts_rs::TS;
 
 use self::firepdf::{
   AsyncInput, AsyncRouteInput, ByReferenceAttempt, FirePdfClient, FirePdfConfig, FirePdfJobOptions,
@@ -26,7 +25,6 @@ use super::super::{
 
 mod firepdf;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, TS)]
 pub use self::firepdf::FirePdfError;
 
 /// Above this, FirePDF submits go by GCS reference instead of inline base64.
@@ -38,7 +36,7 @@ const PDF_DOWNLOAD_MAX_FILE_SIZE: usize = 50 * 1024 * 1024;
 /// OCR time budget per page.
 const MILLISECONDS_PER_PAGE: u64 = 150;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum PdfMode {
   #[default]
@@ -48,9 +46,8 @@ pub enum PdfMode {
   Ocr,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
 /// One physical page of markdown, as surfaced on `Document.pages`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PdfPage {
   /// 1-based physical page number.
@@ -58,7 +55,7 @@ pub struct PdfPage {
   pub markdown: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 pub struct PdfBlockItemConfidence {
   pub layout: Option<f64>,
   pub ocr: Option<f64>,
@@ -78,12 +75,8 @@ pub struct PdfBlockItem {
   pub confidence: PdfBlockItemConfidence,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-pub struct PdfPage {
-  pub page: u32,
-  pub markdown: String,
 /// Typed layout blocks of one page, as surfaced on `Document.blocks`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PdfPageBlocks {
   pub page_number: u32,
@@ -161,10 +154,12 @@ pub struct PdfOptions {
 
   /// Skip the cached conversion for this document and parse it again; the fresh result replaces the cache entry.
   #[serde(default)]
+  #[ts(as = "Option<_>", optional)]
   pub refresh: bool,
 
   /// Experimental opt-in to fire-pdf's async jobs, honored only where the deployment allows request overrides.
   #[serde(default, rename = "__firePdfAsync")]
+  #[ts(as = "Option<_>", optional)]
   pub fire_pdf_async: bool,
 }
 

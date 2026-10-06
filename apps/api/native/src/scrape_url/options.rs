@@ -231,19 +231,18 @@ impl ScrapeOptions {
   }
 }
 
+/// Per-team flags snapshotted from the account at request acceptance.
 #[derive(Deserialize, Default, TS)]
 #[serde(rename_all = "camelCase", default)]
 #[ts(optional_fields = nullable)]
-/// Per-team flags snapshotted from the account at request acceptance.
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
 pub struct TeamFlags {
   /// Grants the privileged large-PDF size cap.
   pub large_pdfs: Option<bool>,
 }
 
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Deserialize, Default, TS)]
+#[serde(rename_all = "camelCase", default)]
+#[ts(optional_fields = nullable)]
 pub struct InternalOptions {
   pub crawl_id: Option<String>,
   pub priority: Option<u32>, // passed to fire-engine

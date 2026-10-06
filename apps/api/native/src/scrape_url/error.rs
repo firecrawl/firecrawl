@@ -173,6 +173,13 @@ impl ScrapeURLError {
       Self::PDFOCRRequiredError(pdf_type) => ScrapeErrorPayload::PdfOcrRequired {
         pdf_type: (*pdf_type).into(),
       },
+      Self::PDFInsufficientTimeError {
+        page_count,
+        min_timeout,
+      } => ScrapeErrorPayload::PdfInsufficientTime {
+        page_count: *page_count,
+        min_timeout: *min_timeout,
+      },
       Self::SiteError { code } => ScrapeErrorPayload::SiteError {
         error_code: code.clone(),
       },
@@ -234,28 +241,6 @@ impl ScrapeURLError {
         ScrapeErrorPayload::Panic { message }
       }
       Self::Internal(_)
-      Self::CrawlDenialError { .. } => "CRAWL_DENIAL",
-      Self::LockdownMissError => "SCRAPE_LOCKDOWN_CACHE_MISS",
-      Self::AgentIndexOnlyError => "AGENT_INDEX_ONLY",
-      Self::PDFOCRRequiredError(_) => "SCRAPE_PDF_OCR_REQUIRED",
-      Self::PDFInsufficientTimeError { .. } => "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR",
-      Self::SiteError { .. } => "SCRAPE_SITE_ERROR",
-      Self::SSLError { .. } => "SCRAPE_SSL_ERROR",
-      Self::DNSResolutionError { .. } => "SCRAPE_DNS_RESOLUTION_ERROR",
-      Self::UnsupportedFileError { .. } => "SCRAPE_UNSUPPORTED_FILE_ERROR",
-      Self::ActionError { .. } => "SCRAPE_ACTION_ERROR",
-      Self::ProxySelectionError => "SCRAPE_PROXY_SELECTION_ERROR",
-      Self::Transformer(TransformerError::JsonContentTooLarge) => "SCRAPE_JSON_CONTENT_TOO_LARGE",
-      Self::NoEnginesLeftError { .. } => "SCRAPE_ALL_ENGINES_FAILED",
-      Self::ActionsNotSupportedError => "SCRAPE_ACTIONS_NOT_SUPPORTED",
-      Self::ReliableRetrievalError(_)
-      | Self::InsecureConnectionError
-      | Self::InvalidURLError
-      | Self::PDFFetchFailed
-      | Self::PageLoadFailed
-      | Self::UnclassifiedEngineError { .. }
-      | Self::EngineUnavailable { .. }
-      | Self::Internal(_)
       | Self::Wreq(_)
       | Self::Reqwest(_)
       | Self::Json(_)
@@ -267,11 +252,10 @@ impl ScrapeURLError {
       | Self::Redis(_)
       | Self::Sqlx(_)
       | Self::Gcs(_)
-      | Self::Transformer(_) => ScrapeErrorPayload::Unknown {
+      | Self::Transformer(_)
+      | Self::FirePDF(_) => ScrapeErrorPayload::Unknown {
         message: unknown_error_message(&message),
       },
-      | Self::Transformer(_)
-      | Self::FirePDF(_) => "UNKNOWN_ERROR",
     }
   }
 
@@ -309,6 +293,9 @@ pub enum ScrapeErrorPayload {
 
   #[serde(rename = "SCRAPE_PDF_OCR_REQUIRED", rename_all = "camelCase")]
   PdfOcrRequired { pdf_type: PdfType },
+
+  #[serde(rename = "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR", rename_all = "camelCase")]
+  PdfInsufficientTime { page_count: u32, min_timeout: u64 },
 
   #[serde(rename = "SCRAPE_SITE_ERROR", rename_all = "camelCase")]
   SiteError { error_code: String },
@@ -390,57 +377,6 @@ impl ScrapeErrorPayload {
     let payload: Value = serde_json::from_str(payload).ok()?;
     if payload.get("code").and_then(Value::as_str) != Some(code) {
       return None;
-    let mut map = serializer.serialize_map(None)?;
-    match self {
-      Self::CrawlDenialError { reason } => {
-        map.serialize_entry("reason", reason)?;
-      }
-      Self::SSLError {
-        skip_tls_verification,
-      } => {
-        map.serialize_entry("skipTlsVerification", skip_tls_verification)?;
-      }
-      Self::SiteError { code } => {
-        map.serialize_entry("errorCode", code)?;
-      }
-      Self::DNSResolutionError { hostname } => {
-        map.serialize_entry("hostname", hostname)?;
-      }
-      Self::UnsupportedFileError { reason } => {
-        map.serialize_entry("reason", reason)?;
-      }
-      Self::ActionError { error } => {
-        map.serialize_entry("errorCode", error)?;
-      }
-      Self::PDFOCRRequiredError(pdf_type) => {
-        map.serialize_entry("pdfType", pdf_type_name(pdf_type))?;
-      }
-      Self::PDFInsufficientTimeError {
-        page_count,
-        min_timeout,
-      } => {
-        map.serialize_entry("pageCount", page_count)?;
-        map.serialize_entry("minTimeout", min_timeout)?;
-      }
-      Self::LockdownMissError | Self::AgentIndexOnlyError | Self::ProxySelectionError => {}
-      Self::NoEnginesLeftError { fallback_list } => {
-        map.serialize_entry("fallbackList", fallback_list)?;
-      }
-      Self::ActionsNotSupportedError => {
-        map.serialize_entry(
-          "message",
-          "Actions are not supported by any available engines. Actions require Fire Engine (fire-engine) to be enabled.",
-        )?;
-      }
-      Self::Transformer(TransformerError::JsonContentTooLarge) => {
-        map.serialize_entry(
-          "message",
-          "The scraped page content is too large for JSON extraction, so extraction was aborted.",
-        )?;
-      }
-      e => {
-        map.serialize_entry("message", &unknown_error_message(&e.to_string()))?;
-      }
     }
     serde_json::from_value(payload).ok()
   }
