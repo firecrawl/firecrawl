@@ -44,6 +44,7 @@ export const browserCreateRequestSchema = z.object({
   recordSession: z.boolean().default(false),
   zeroDataRetention: z.boolean().optional(),
   integration: integrationSchema.optional().transform(value => value || null),
+  blockAds: z.boolean().default(true),
   profile: z
     .object({
       name: browserProfileNameSchema,

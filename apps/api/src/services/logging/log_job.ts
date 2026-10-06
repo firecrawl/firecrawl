@@ -39,6 +39,7 @@ import {
   writeScrapeJobState,
 } from "../../lib/job-state-store";
 import { buildReplayContextFromScrape } from "../../lib/scrape-interact/scrape-replay";
+import { browserOptionsFromScrape } from "../../lib/browser-options";
 import {
   initializeRequestCredits,
   recordRequestCredits,
@@ -770,9 +771,7 @@ async function logScrapeInternal(
           : {
               ...(scrape.error ? { error: scrape.error } : {}),
               ...(replay ? { replay } : {}),
-              ...(scrape.options.profile
-                ? { profile: scrape.options.profile }
-                : {}),
+              browser: browserOptionsFromScrape(scrape.options),
               ...(typeof (scrape.options as any).origin === "string"
                 ? { origin: (scrape.options as any).origin }
                 : {}),
