@@ -52,8 +52,35 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
       .set("Authorization", `Bearer ${apiKey}`)
       .send(payload);
 
+  // Any Alexandria call opens the feedback window, even if the catalogue
+  // upstream is unavailable in this environment.
+  const openWindow = (apiKey = identity.apiKey) =>
+    request(TEST_API_URL)
+      .get("/exchange/discover")
+      .set("Authorization", `Bearer ${apiKey}`);
+
   beforeAll(async () => {
     identity = await idmux({ name: "alexandria-feedback", credits: 1000 });
+  });
+
+  beforeEach(async () => {
+    await openWindow();
+  });
+
+  it("rejects feedback from a team with no recent Alexandria call", async () => {
+    const fresh = await idmux({
+      name: "alexandria-feedback-no-window",
+      credits: 100,
+    });
+    const response = await submit(body, fresh.apiKey);
+    expect(response.statusCode).toBe(409);
+    expect(response.body.feedbackErrorCode).toBe("FEEDBACK_WINDOW_EXPIRED");
+
+    await openWindow(fresh.apiKey);
+    const accepted = await submit(body, fresh.apiKey);
+    expect(accepted.statusCode).toBe(200);
+    if (accepted.body.feedbackId)
+      await deleteFeedback(accepted.body.feedbackId);
   });
 
   // Billing confirms refunds, so environments without it report 0 credits.

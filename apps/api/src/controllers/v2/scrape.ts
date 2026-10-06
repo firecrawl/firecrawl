@@ -51,6 +51,7 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
@@ -759,6 +760,7 @@ export async function scrapeController(
               return undefined;
             })
           : undefined;
+      if (tools) markAlexandriaActivity(req.auth.team_id);
 
       return res.status(200).json({
         success: true,

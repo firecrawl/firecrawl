@@ -5,9 +5,10 @@ import {
   acceptProviderTerms,
   acceptTermsSchema,
 } from "../services/alexandria/terms";
-import express, { Request, Response } from "express";
+import express, { NextFunction, Request, Response } from "express";
 import { Agent, fetch } from "undici";
 import { config } from "../config";
+import { markAlexandriaActivity } from "../lib/alexandria-activity";
 import { logger as rootLogger } from "../lib/logger";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
@@ -160,6 +161,12 @@ exchangeRouter.get(
   authMiddleware(RateLimiterMode.ExchangeDiscover, {
     allowAgentManagedKey: true,
   }),
+  (req: Request, _res: Response, next: NextFunction) => {
+    markAlexandriaActivity(
+      (req as RequestWithAuth<any, any, any>).auth.team_id,
+    );
+    next();
+  },
   wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
