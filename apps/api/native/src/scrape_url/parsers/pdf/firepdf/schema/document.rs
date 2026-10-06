@@ -10,11 +10,14 @@ pub struct WirePage {
   pub markdown: String,
 }
 
-/// Typed layout blocks of one page (fire-pdf docs/blocks-schema.md).
+/// Typed layout blocks of one page (fire-pdf docs/blocks-schema.md). Nullable
+/// fields must still be present, as in main's wire schema.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct WirePageBlocks {
   pub page: u32,
+  #[serde(deserialize_with = "Option::deserialize")]
   pub width: Option<f64>,
+  #[serde(deserialize_with = "Option::deserialize")]
   pub height: Option<f64>,
   /// Documented values are ok | partial | failed; kept open.
   pub status: String,
@@ -25,18 +28,24 @@ pub struct WirePageBlocks {
 pub struct WireBlockItem {
   pub id: String,
   pub r#type: String,
+  #[serde(deserialize_with = "Option::deserialize")]
   pub label: Option<String>,
+  #[serde(deserialize_with = "Option::deserialize")]
   pub bbox: Option<[f64; 4]>,
   pub content: String,
+  #[serde(deserialize_with = "Option::deserialize")]
   pub markdown_span: Option<[f64; 2]>,
   pub reading_order: f64,
+  #[serde(deserialize_with = "Option::deserialize")]
   pub source: Option<String>,
   pub confidence: WireBlockConfidence,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct WireBlockConfidence {
+  #[serde(deserialize_with = "Option::deserialize")]
   pub layout: Option<f64>,
+  #[serde(deserialize_with = "Option::deserialize")]
   pub ocr: Option<f64>,
 }
 

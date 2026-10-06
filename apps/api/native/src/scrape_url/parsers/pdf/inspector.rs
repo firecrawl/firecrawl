@@ -17,7 +17,8 @@ static PDF_EXTRACTION_PERMITS: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
     .ok()
     .and_then(|x| x.trim().parse::<usize>().ok())
     .filter(|x| *x > 0)
-    .unwrap_or(3);
+    .unwrap_or(3)
+    .min(Semaphore::MAX_PERMITS);
   Arc::new(Semaphore::new(permits))
 });
 

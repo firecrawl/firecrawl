@@ -16,11 +16,19 @@ fn env_bool(name: &str, default: bool) -> bool {
   }
 }
 
+/// A percentage in `[0, 100]`. An invalid value disables the cohort, and is reported,
+/// because TS rejects it at boot and Rust has no boot-time validation.
 fn env_percent(name: &str) -> f64 {
-  env_string(name)
-    .and_then(|x| x.trim().parse::<f64>().ok())
-    .filter(|x| (0.0..=100.0).contains(x))
-    .unwrap_or(0.0)
+  let Some(raw) = env_string(name) else {
+    return 0.0;
+  };
+  match raw.trim().parse::<f64>() {
+    Ok(x) if (0.0..=100.0).contains(&x) => x,
+    _ => {
+      tracing::error!(error = %format_args!("{name}={raw:?} is not a percentage in [0, 100]; using 0"));
+      0.0
+    }
+  }
 }
 
 fn env_team_ids(name: &str) -> HashSet<String> {

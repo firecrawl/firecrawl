@@ -12,8 +12,8 @@ struct ProvenanceStamp {
   _produced_at: String,
   #[serde(default, rename = "stages")]
   _stages: Option<Vec<String>>,
-  #[serde(default, rename = "quality")]
-  _quality: Option<ProvenanceQuality>,
+  #[serde(default)]
+  quality: Option<ProvenanceQuality>,
   #[serde(default, rename = "contributing_builds")]
   _contributing_builds: Option<Vec<ProvenanceBuild>>,
 }
@@ -49,6 +49,8 @@ pub enum Provenance {
   Stamped {
     generation: String,
     build_sha: String,
+    /// Without page counts the stamp says nothing about completeness.
+    has_quality: bool,
   },
   Malformed(String),
 }
@@ -62,6 +64,7 @@ impl Provenance {
         Ok(stamp) => Self::Stamped {
           generation: stamp.generation,
           build_sha: stamp.build_sha,
+          has_quality: stamp.quality.is_some(),
         },
         Err(e) => Self::Malformed(e.to_string()),
       },
@@ -78,8 +81,14 @@ impl Provenance {
       Self::Stamped {
         generation,
         build_sha,
+        has_quality,
       } => {
-        span.record("fire_pdf.provenance", "stamped");
+        let status = if *has_quality {
+          "stamped"
+        } else {
+          "missing_quality"
+        };
+        span.record("fire_pdf.provenance", status);
         span.record("fire_pdf.generation", generation.as_str());
         span.record("fire_pdf.build_sha", build_sha.as_str());
       }
