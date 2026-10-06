@@ -258,6 +258,23 @@ print(evidence.repos)  # indexed-status echoes for requested repos
 `archived`, `fork`, and `skills="only"`. Supplying both `repos` and `sources`
 OR-combines GitHub-backed and documentation results.
 
+### Government search
+
+Use `gov_search` to search the Firecrawl Government Index: primary
+law and regulatory material from US federal, state, and local government
+sources, including statutes, regulations, codes, court opinions, and other
+government publications. Results come back in the ordinary web-result shape.
+Generic `search("food labeling requirements", categories=["gov"])` returns
+index results inside `.web`; like `developer`, it cannot be combined with other
+categories.
+
+```python
+law = firecrawl.gov_search("food labeling requirements", k=5)
+
+for result in law.data.web:
+    print(result.position, result.title, result.url)
+```
+
 ### Research / paper search
 
 Use `search_papers` to search Firecrawl's research paper index: ~43M paper

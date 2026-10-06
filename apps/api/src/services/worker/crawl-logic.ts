@@ -11,6 +11,10 @@ import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
 import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
+import {
+  createInAppNotification,
+  isDashboardOrigin,
+} from "../notification/in_app";
 
 /**
  * How often, and how long apart, finalization re-reads the ClickHouse credits
@@ -220,6 +224,29 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
           cancelled: sc.cancelled ?? false,
         },
         false,
+      );
+    }
+
+    // The origin is client-supplied, so this only scopes which of the caller's
+    // own jobs reach their team's feed. Runs with no successful page are not
+    // reported as completed.
+    if (
+      !sc.cancelled &&
+      num_docs > 0 &&
+      isDashboardOrigin(sc.origin ?? data?.origin)
+    ) {
+      const isCrawl = sc.crawlerOptions !== null;
+      await createInAppNotification(
+        teamId,
+        isCrawl ? "crawlCompleted" : "batchScrapeCompleted",
+        {
+          jobId: crawlId,
+          url: isCrawl && !zeroDataRetention ? (sc.originUrl ?? null) : null,
+          completed: num_docs,
+          creditsUsed: credits_billed,
+          link: `/app/logs?q=${encodeURIComponent(crawlId)}`,
+        },
+        { dedupeKey: crawlId },
       );
     }
 

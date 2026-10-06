@@ -50,7 +50,7 @@ import {
 import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
+import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -256,16 +256,13 @@ async function scrapeControllerInner(
     doc = await teamConcurrencySemaphore.withSemaphore(
       req.auth.team_id,
       jobId,
-      await getEffectiveConcurrencyLimit(
-        req.auth.team_id,
-        req.acuc?.org_id ?? null,
-      ),
+      req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit,
       aborter.signal,
       timeout ?? 60_000,
       async limited => {
         const jobPriority = await getJobPriority({
           team_id: req.auth.team_id,
-          org_id: req.acuc?.org_id ?? null,
+          acuc: req.acuc,
           basePriority: 10,
         });
 

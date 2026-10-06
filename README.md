@@ -39,7 +39,7 @@
 
 # **🔥 Firecrawl**
 
-**Supercharge your AI agents with data from the web and beyond. 🔥** Search, scrape, and access more sources through our web data API. Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
+**Supercharge your AI agents with data from the web and beyond. Building the library for superintelligence. 🔥** Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
 
 _Pst. Hey, you, join our stargazers :)_
 

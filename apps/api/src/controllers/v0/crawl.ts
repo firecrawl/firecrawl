@@ -299,7 +299,7 @@ export async function crawlController(req: Request, res: Response) {
 
           let jobPriority = await getJobPriority({
             team_id,
-            org_id: orgId,
+            acuc: chunk,
             basePriority: 21,
           });
           const billing = {
@@ -373,7 +373,7 @@ export async function crawlController(req: Request, res: Response) {
           apiKeyId: chunk?.api_key_id ?? null,
         },
         jobId,
-        await getJobPriority({ team_id, org_id: orgId, basePriority: 15 }),
+        await getJobPriority({ team_id, acuc: chunk, basePriority: 15 }),
       );
       await addCrawlJob(id, jobId, logger);
     }

@@ -21,6 +21,8 @@ import {
 } from "../../lib/browser-sessions";
 import {
   createBrowserSession,
+  getBrowserZDR,
+  BrowserSessionError,
   browserSessionLinks,
   stopBrowserSession,
   settleBrowserSession,
@@ -33,12 +35,14 @@ import {
 } from "../../lib/hangar";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
+import { withZeroDataRetention } from "../../lib/otel-tracer";
 
 export const browserCreateRequestSchema = z.object({
   ttl: z.number().int().min(30).max(3600).default(600),
   activityTtl: z.number().int().min(10).max(3600).default(300),
   streamWebView: z.boolean().default(true),
   recordSession: z.boolean().default(false),
+  zeroDataRetention: z.boolean().optional(),
   integration: integrationSchema.optional().transform(value => value || null),
   profile: z
     .object({
@@ -76,7 +80,7 @@ export function browserError(
   // Keyless browser budget exhaustion: give the caller its own signup link.
   if (
     req &&
-    error instanceof HangarError &&
+    error instanceof BrowserSessionError &&
     error.status === 429 &&
     error.message === KEYLESS_FREE_TIER_LIMIT_MESSAGE
   ) {
@@ -87,12 +91,11 @@ export function browserError(
       signup_url: prompt.signup_url,
     });
   }
-  return res.status(error instanceof HangarError ? error.status : 502).json({
+  const knownError =
+    error instanceof BrowserSessionError || error instanceof HangarError;
+  return res.status(knownError ? error.status : 502).json({
     success: false,
-    error:
-      error instanceof HangarError
-        ? error.message
-        : "Browser operation failed.",
+    error: knownError ? error.message : "Browser operation failed.",
   });
 }
 
@@ -168,23 +171,26 @@ export async function browserExecuteController(
       .status(410)
       .json({ success: false, error: "Browser session has been destroyed." });
   try {
-    updateBrowserSessionActivity(session.id).catch(() => {});
-    const result = await executeHangarBrowser(session.browser_id, body);
-    enqueueBrowserSessionActivity({
-      team_id: req.auth.team_id,
-      session_id: session.id,
-      source: "browser",
-      language: body.language,
-      timeout: body.timeout,
-      exit_code: result.exitCode,
-      killed: result.killed,
-    });
-    return res.json({
-      success: true,
-      ...result,
-      ...(result.exitCode !== 0 || result.killed
-        ? { error: result.stderr || "Execution failed" }
-        : {}),
+    const zeroDataRetention = getBrowserZDR(req, session);
+    return await withZeroDataRetention(zeroDataRetention, async () => {
+      updateBrowserSessionActivity(session.id).catch(() => {});
+      const result = await executeHangarBrowser(session.browser_id, body);
+      enqueueBrowserSessionActivity({
+        team_id: req.auth.team_id,
+        session_id: session.id,
+        source: "browser",
+        language: body.language,
+        timeout: body.timeout,
+        exit_code: result.exitCode,
+        killed: result.killed,
+      });
+      return res.json({
+        success: true,
+        ...result,
+        ...(result.exitCode !== 0 || result.killed
+          ? { error: result.stderr || "Execution failed" }
+          : {}),
+      });
     });
   } catch (error) {
     return browserError(res, error, req);

@@ -106,6 +106,22 @@ class InternalServerError(FirecrawlError):
     pass
 
 
+class DNSResolutionError(FirecrawlError):
+    """Raised when the target URL's hostname could not be resolved (SCRAPE_DNS_RESOLUTION_ERROR)."""
+    pass
+
+
+class TLSError(FirecrawlError):
+    """Raised when a secure connection to the target site could not be established (SCRAPE_SSL_ERROR)."""
+    pass
+
+
+ERROR_CODE_CLASSES = {
+    "SCRAPE_DNS_RESOLUTION_ERROR": DNSResolutionError,
+    "SCRAPE_SSL_ERROR": TLSError,
+}
+
+
 def handle_response_error(response: requests.Response, action: str) -> None:
     """
     Handle API response errors and raise appropriate exceptions.
@@ -144,7 +160,13 @@ def handle_response_error(response: requests.Response, action: str) -> None:
             error_message = f"Server returned unreadable response with status {response.status_code}"
             error_details = "No additional details available"
 
-    # Create appropriate error message
+    error_class = ERROR_CODE_CLASSES.get(code)
+    if error_class is not None:
+        message = f"Failed to {action}. {error_message}"
+        if error_details != 'No additional error details provided.':
+            message = f"{message} - {error_details}"
+        raise error_class(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
+
     if response.status_code == 400:
         message = f"Bad Request: Failed to {action}. {error_message} - {error_details}"
         raise BadRequestError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)

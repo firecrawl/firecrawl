@@ -46,6 +46,7 @@ describe("research category notice", () => {
     [["github"]],
     [["pdf"]],
     [["developer"]],
+    [["gov"]],
     ["research"],
     [[null, 7]],
   ])("stays silent for %j", async categories => {

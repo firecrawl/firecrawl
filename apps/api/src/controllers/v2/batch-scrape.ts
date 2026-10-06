@@ -417,6 +417,7 @@ export async function batchScrapeController(
         v1: true,
         webhook: req.body.webhook,
         requestId: req.body.__agentInterop?.requestId ?? undefined,
+        origin: req.body.origin,
       };
 
   if (req.body.appendToId) {
@@ -458,7 +459,7 @@ export async function batchScrapeController(
     // set base to 21
     jobPriority = await getJobPriority({
       team_id: req.auth.team_id,
-      org_id: req.acuc?.org_id ?? null,
+      acuc: req.acuc,
       basePriority: 21,
     });
   }

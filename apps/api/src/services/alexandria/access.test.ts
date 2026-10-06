@@ -1,11 +1,9 @@
-const mocks = vi.hoisted(() => ({ request: vi.fn(), multiplier: vi.fn() }));
+const mocks = vi.hoisted(() => ({ request: vi.fn(), team: vi.fn() }));
 vi.mock("../../config", () => ({
   config: { USE_DB_AUTHENTICATION: true, FIRECRAWL_DASHBOARD_URL: "https://d" },
 }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
-vi.mock("../autumn/autumn.service", () => ({
-  autumnService: { getKnownRateLimitMultiplier: mocks.multiplier },
-}));
+vi.mock("../../controllers/auth", () => ({ getACUCTeam: mocks.team }));
 import { authorizeProviders } from "./access";
 
 const calls = [
@@ -357,7 +355,7 @@ describe("paid-plan-only capabilities", () => {
     mocks.request.mockResolvedValue(
       requirements(["news/wiims", "news/search"]),
     );
-    mocks.multiplier.mockResolvedValue(1);
+    mocks.team.mockResolvedValue({ is_paid_plan: false });
     const denied = await authorizeProviders("team", wiim, enabled, "org");
     expect(denied?.status).toBe(403);
     expect(denied?.body).toEqual(
@@ -366,28 +364,37 @@ describe("paid-plan-only capabilities", () => {
     expect(String((denied?.body as { error: string }).error)).toContain(
       "benzinga/news/wiims",
     );
-    expect(mocks.multiplier).toHaveBeenCalledWith("team", "org");
+    expect(mocks.team).toHaveBeenCalledWith("team");
     // One requirements read, and nothing else: no quote, no execution.
     expect(mocks.request).toHaveBeenCalledTimes(1);
   });
 
   it("admits a paid-plan team, and does not consult the plan for an ungated capability", async () => {
     mocks.request.mockResolvedValue(requirements(["news/wiims"]));
-    mocks.multiplier.mockResolvedValue(10);
+    mocks.team.mockResolvedValue({ is_paid_plan: true });
     expect(
       await authorizeProviders("team", wiim, enabled, "org"),
     ).toBeUndefined();
-    mocks.multiplier.mockClear();
-    mocks.multiplier.mockResolvedValue(1);
+    mocks.team.mockClear();
+    mocks.team.mockResolvedValue({ is_paid_plan: false });
     expect(
       await authorizeProviders("team", pressReleases, enabled, "org"),
     ).toBeUndefined();
-    expect(mocks.multiplier).not.toHaveBeenCalled();
+    expect(mocks.team).not.toHaveBeenCalled();
+  });
+
+  it("refuses a team with no ACUC", async () => {
+    mocks.request.mockResolvedValue(requirements(["news/wiims"]));
+    mocks.team.mockResolvedValue(null);
+    const denied = await authorizeProviders("team", wiim, enabled, "org");
+    expect(denied?.body).toEqual(
+      expect.objectContaining({ code: "paid_plan_required" }),
+    );
   });
 
   it("lets a team that bypasses credit checks through, and treats a missing field as ungated", async () => {
     mocks.request.mockResolvedValue(requirements(["news/wiims"]));
-    mocks.multiplier.mockResolvedValue(1);
+    mocks.team.mockResolvedValue({ is_paid_plan: false });
     expect(
       await authorizeProviders(
         "team",
@@ -405,49 +412,11 @@ describe("paid-plan-only capabilities", () => {
 
   it("still requires the agreement first: an unaccepted paid team is refused on terms, not plan", async () => {
     mocks.request.mockResolvedValue(requirements(["news/wiims"]));
-    mocks.multiplier.mockResolvedValue(10);
+    mocks.team.mockResolvedValue({ is_paid_plan: true });
     const denied = await authorizeProviders("team", wiim, {}, null);
     expect(denied?.status).toBe(403);
     expect(denied?.body).not.toEqual(
       expect.objectContaining({ code: "paid_plan_required" }),
     );
   });
-});
-
-it("fails closed when the plan cannot be known: no org, a preview team or an Autumn error", async () => {
-  mocks.request.mockResolvedValue({
-    status: 200,
-    body: {
-      providers: [
-        {
-          provider: "benzinga",
-          required: true,
-          terms: { key: "benzinga", version: "C-1" },
-          paidPlanOnlyCapabilities: ["news/wiims"],
-        },
-      ],
-    },
-  });
-  const enabled = {
-    organizationDataSourceAccess: {
-      benzinga: {
-        status: "enabled",
-        termsKey: "benzinga",
-        termsVersion: "C-1",
-      },
-    },
-  };
-  const wiim = [
-    { provider: "benzinga", capability: "news/wiims", options: {} },
-  ];
-  // The service answers null for every "cannot know" case; the gate never
-  // treats that as paid.
-  mocks.multiplier.mockResolvedValue(null);
-  const denied = await authorizeProviders("team", wiim, enabled, null);
-  expect(denied?.status).toBe(503);
-  expect(denied?.body).toEqual(
-    expect.objectContaining({ code: "plan_verification_unavailable" }),
-  );
-  expect(mocks.multiplier).toHaveBeenCalledWith("team", null);
-  expect(mocks.request).toHaveBeenCalledTimes(1);
 });

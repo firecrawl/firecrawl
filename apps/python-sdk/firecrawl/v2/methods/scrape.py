@@ -225,7 +225,7 @@ def interact(
 
     payload = response.json()
     if not payload.get("success"):
-        raise Exception(payload.get("error", "Unknown error occurred"))
+        raise FirecrawlError(payload.get("error", "Unknown error occurred"))
 
     normalized = dict(payload)
     if "exitCode" in normalized and "exit_code" not in normalized:
