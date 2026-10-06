@@ -20,6 +20,7 @@ from .types import (
     SearchData,
     DeveloperSearchResponse,
     DeveloperSearchType,
+    GovSearchResponse,
     SourceOption,
     FindToolsData,
     AlexandriaCall,
@@ -65,6 +66,7 @@ from .methods.aio import batch as async_batch  # type: ignore[attr-defined]
 from .methods.aio import crawl as async_crawl  # type: ignore[attr-defined]
 from .methods.aio import search as async_search  # type: ignore[attr-defined]
 from .methods.aio import developer as async_developer  # type: ignore[attr-defined]
+from .methods.aio import gov as async_gov  # type: ignore[attr-defined]
 from .methods.aio import map as async_map # type: ignore[attr-defined]
 from .methods.aio import usage as async_usage # type: ignore[attr-defined]
 from .methods.aio import extract as async_extract  # type: ignore[attr-defined]
@@ -354,6 +356,16 @@ class AsyncFirecrawlClient:
             archived=archived,
             fork=fork,
             skills=skills,
+        )
+
+    async def gov_search(
+        self,
+        query: str,
+        k: Optional[int] = None,
+    ) -> GovSearchResponse:
+        """Search the Government Index of US primary law and regulatory material."""
+        return await async_gov.gov_search(
+            self.async_http_client, query, k=k
         )
 
     async def start_crawl(self, url: str, **kwargs) -> CrawlResponse:
@@ -937,6 +949,7 @@ class AsyncFirecrawlClient:
         ttl: Optional[int] = None,
         activity_ttl: Optional[int] = None,
         stream_web_view: Optional[bool] = None,
+        block_ads: Optional[bool] = None,
         profile: Optional[Dict[str, Any]] = None,
     ):
         """Create a new browser session.
@@ -945,6 +958,7 @@ class AsyncFirecrawlClient:
             ttl: Total time-to-live in seconds (30-3600, default 300)
             activity_ttl: Inactivity TTL in seconds (10-3600)
             stream_web_view: Whether to enable webview streaming
+            block_ads: Block ads, trackers and cookie notices (default ``True``)
             profile: Profile config with ``name`` (str) and
                 optional ``save_changes`` (bool, default ``True``)
 
@@ -956,6 +970,7 @@ class AsyncFirecrawlClient:
             ttl=ttl,
             activity_ttl=activity_ttl,
             stream_web_view=stream_web_view,
+            block_ads=block_ads,
             profile=profile,
         )
 

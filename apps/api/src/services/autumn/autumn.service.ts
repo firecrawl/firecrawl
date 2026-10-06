@@ -876,6 +876,7 @@ export class AutumnService {
 
   /**
    * Reverses a prior trackCredits call by tracking a negative usage event.
+   * Never throws; resolves true only when billing accepted the refund.
    */
   async refundCredits({
     teamId,
@@ -885,16 +886,16 @@ export class AutumnService {
     idempotencyKey,
     externalRequestId,
     orgId,
-  }: TrackCreditsParams): Promise<void> {
-    if (!autumnClient) return;
-    if (this.isPreviewTeam(teamId)) return;
+  }: TrackCreditsParams): Promise<boolean> {
+    if (!autumnClient) return false;
+    if (this.isPreviewTeam(teamId)) return false;
 
     try {
       const { customerId, routed } = await this.resolveBillingRoute(
         teamId,
         orgId,
       );
-      await this.track(
+      return await this.track(
         {
           customerId,
           entityId: teamId,
@@ -911,6 +912,7 @@ export class AutumnService {
         "Autumn refundCredits failed — billing API may be unavailable",
         { teamId, value, error },
       );
+      return false;
     }
   }
 }

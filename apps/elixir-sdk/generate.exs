@@ -252,13 +252,19 @@ defmodule Firecrawl.Generator do
 
       defp to_body(validated_params, key_mapping) do
         validated_params
-        |> Map.new(fn {k, v} ->
-          json_key = Map.fetch!(key_mapping, k)
-          {json_key, to_json_value(v)}
-        end)
+        |> to_json_object(key_mapping)
         # Identify the SDK so the API can grant the keyless free tier; harmless
         # telemetry on keyed requests.
         |> Map.put_new("origin", @sdk_origin)
+      end
+
+      defp to_json_object(params, key_mapping) do
+        Map.new(params, fn {k, v} ->
+          case Map.fetch!(key_mapping, k) do
+            {json_key, nested_mapping} -> {json_key, to_json_object(v, nested_mapping)}
+            json_key -> {json_key, to_json_value(v)}
+          end
+        end)
       end
 
       defp to_query(validated_params, key_mapping) do
@@ -769,7 +775,7 @@ defmodule Firecrawl.Generator do
         parts =
           case Map.fetch(@type_overrides, {func_name, name}) do
             {:ok, type} -> ["type: #{type}"]
-            :error -> openapi_to_nimble_parts(name, prop_schema)
+            :error -> openapi_to_nimble_parts(prop_schema)
           end
 
         parts = if required, do: parts ++ ["required: true"], else: parts
@@ -783,15 +789,24 @@ defmodule Firecrawl.Generator do
   end
 
   defp generate_key_mapping(func_name, properties) do
+    "  @#{func_name}_key_mapping #{key_mapping(properties)}\n"
+  end
+
+  # A closed object maps to {json_key, nested_mapping}, so to_body sends its exact
+  # wire names and an empty keyword list as {}.
+  defp key_mapping(properties) do
     mappings =
       properties
-      |> Enum.map(fn {name, _} ->
-        snake = to_snake_case(name)
-        "#{snake}: #{inspect(name)}"
+      |> Enum.map(fn
+        {name, %{"type" => "object", "properties" => nested, "additionalProperties" => false}} ->
+          "#{to_snake_case(name)}: {#{inspect(name)}, #{key_mapping(nested)}}"
+
+        {name, _} ->
+          "#{to_snake_case(name)}: #{inspect(name)}"
       end)
       |> Enum.join(", ")
 
-    "  @#{func_name}_key_mapping %{#{mappings}}\n"
+    "%{#{mappings}}"
   end
 
   # ---------------------------------------------------------------------------
@@ -837,16 +852,17 @@ defmodule Firecrawl.Generator do
   # OpenAPI → NimbleOptions type mapping
   # ---------------------------------------------------------------------------
 
+  # A closed object (additionalProperties: false) validates its keys, so a typo
+  # fails locally instead of at the API.
   defp openapi_to_nimble_parts(
-         "auditMetadata",
-         %{"type" => "object", "properties" => properties} = schema
+         %{"type" => "object", "properties" => properties, "additionalProperties" => false} = schema
        ) do
     required = Map.get(schema, "required", [])
 
     keys =
       properties
       |> Enum.map(fn {name, property_schema} ->
-        parts = ["type: #{openapi_to_nimble_type(property_schema)}"]
+        parts = openapi_to_nimble_parts(property_schema)
         parts = if name in required, do: parts ++ ["required: true"], else: parts
         "#{to_snake_case(name)}: [#{Enum.join(parts, ", ")}]"
       end)
@@ -855,7 +871,7 @@ defmodule Firecrawl.Generator do
     ["type: :keyword_list", "keys: [#{keys}]"]
   end
 
-  defp openapi_to_nimble_parts(_name, schema) do
+  defp openapi_to_nimble_parts(schema) do
     ["type: #{openapi_to_nimble_type(schema)}"]
   end
 

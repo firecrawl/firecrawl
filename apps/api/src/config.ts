@@ -112,6 +112,7 @@ const configSchema = z.object({
     .positive()
     .default(50),
   RESEARCH_PROXY_URL: z.string().url().optional(),
+  SEARCH_PLATFORM_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
@@ -221,6 +222,21 @@ const configSchema = z.object({
   FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
   FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
   FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),
+  ALEXANDRIA_FEEDBACK_WINDOW_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1200),
+  ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(100),
+  ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(10),
 
   // OAuth token introspection
   OAUTH_INTROSPECT_URL: z.string().optional(),

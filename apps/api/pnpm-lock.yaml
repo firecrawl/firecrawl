@@ -43,7 +43,7 @@ overrides:
   follow-redirects@<1.16.0: '>=1.16.0 <2.0.0'
   uuid@<11.1.1: 11.1.1
   js-cookie@<3.0.7: 3.0.7
-  shell-quote@<=1.8.4: 1.10.0
+  shell-quote@<1.11.0: 1.11.0
   esbuild@>=0.17.0 <0.28.1: 0.28.1
   query-string@>=9.0.0 <10.0.0: '>=9.5.0 <10.0.0'
   '@ai-sdk/provider-utils@>=4.0.0 <4.0.33': 4.0.51
@@ -4174,8 +4174,8 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  shell-quote@1.10.0:
-    resolution: {integrity: sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA==}
+  shell-quote@1.11.0:
+    resolution: {integrity: sha512-JdxDPD0DBTyu08pq0kPC0xSNet/qsU07qT6IsX1AS8oO2ICNRY4ldNa8OAI6PuwAH8tG3lxEhbqmyp4Dw4036g==}
     engines: {node: '>= 0.4'}
 
   side-channel-list@1.0.1:
@@ -7775,7 +7775,7 @@ snapshots:
       picomatch: 4.0.4
       pidtree: 0.6.0
       read-package-json-fast: 4.0.0
-      shell-quote: 1.10.0
+      shell-quote: 1.11.0
       which: 5.0.0
 
   nth-check@2.1.1:
@@ -8269,7 +8269,7 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  shell-quote@1.10.0: {}
+  shell-quote@1.11.0: {}
 
   side-channel-list@1.0.1:
     dependencies:

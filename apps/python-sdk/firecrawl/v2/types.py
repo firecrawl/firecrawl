@@ -622,8 +622,8 @@ SourceOption = Union[str, Source]
 class Category(BaseModel):
     """Configuration for a search category.
 
-    Categories narrow ordinary **web search**. They do not switch `search()` to
-    a different index.
+    Most categories narrow ordinary **web search**; "developer" and "gov" switch
+    `search()` to their own index.
 
     Supported categories:
     - "github": Restrict web results to github.com (a `site:` filter)
@@ -635,6 +635,8 @@ class Category(BaseModel):
     - "pdf": Filter results to PDF files (adds filetype:pdf to search)
     - "developer": Developer-index results (issues, pull requests, READMEs and
       documentation) served in `web`; cannot be combined with other categories
+    - "gov": Government Index results served in `web`; cannot be combined
+      with other categories
 
     .. warning::
        ``categories=["research"]`` is **not** Firecrawl's research paper index.
@@ -2410,6 +2412,22 @@ class DeveloperSearchResponse(BaseModel):
     results: List[DeveloperSearchResult]
     repos: Optional[List[DeveloperSearchRepoStatus]] = None
     sources: Optional[List[DeveloperSearchSourceStatus]] = None
+
+
+class GovSearchRequest(BaseModel):
+    """Request for the Government Index search endpoint."""
+
+    query: str
+    k: Optional[int] = Field(default=None, ge=1, le=100)
+
+
+class GovSearchData(BaseModel):
+    web: List[SearchResultWeb]
+
+
+class GovSearchResponse(BaseModel):
+    success: bool
+    data: GovSearchData
 
 
 class SearchRequest(BaseModel):

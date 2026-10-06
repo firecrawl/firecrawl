@@ -8,6 +8,7 @@ import { parse as parseMethod, getParseFormats } from "./methods/parse";
 import { search } from "./methods/search";
 import { scrapeAlexandria, findTools } from "./methods/tools";
 import { developerSearch as developerSearchMethod } from "./methods/developer";
+import { govSearch as govSearchMethod } from "./methods/gov";
 import { map as mapMethod } from "./methods/map";
 import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
 import {
@@ -60,6 +61,8 @@ import type {
   SearchRequest,
   DeveloperSearchOptions,
   DeveloperSearchResponse,
+  GovSearchOptions,
+  GovSearchResponse,
   EndpointFeedbackRequest,
   FeedbackResponse,
   SearchFeedbackRequest,
@@ -304,6 +307,17 @@ export class FirecrawlClient {
     options: DeveloperSearchOptions = {},
   ): Promise<DeveloperSearchResponse> {
     return developerSearchMethod(this.http, query, options);
+  }
+
+  /**
+   * Search the Government Index: primary law and regulatory material
+   * from US federal, state, and local government sources.
+   */
+  async govSearch(
+    query: string,
+    options: GovSearchOptions = {},
+  ): Promise<GovSearchResponse> {
+    return govSearchMethod(this.http, query, options);
   }
 
   /**
@@ -627,7 +641,7 @@ export class FirecrawlClient {
   // Browser
   /**
    * Create a new browser session.
-   * @param args Session options (ttl, activityTtl, streamWebView, profile).
+   * @param args Session options (ttl, activityTtl, streamWebView, blockAds, profile).
    * @returns Session id, CDP URL, live view URL, and expiration time.
    */
   async browser(

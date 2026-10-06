@@ -93,6 +93,12 @@ describe("classifyEndpoint", () => {
     });
   });
 
+  it("groups government search with research", () => {
+    expect(classifyEndpoint("/v2/search/gov")).toMatchObject({
+      group: "research",
+    });
+  });
+
   it("marks account/metadata endpoints as always allowed", () => {
     expect(classifyEndpoint("/v2/team/credit-usage")).toMatchObject({
       alwaysAllowed: true,

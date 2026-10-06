@@ -2444,6 +2444,10 @@ const developerCategoryOptions = z.strictObject({
   type: z.literal("developer"),
 });
 
+const govCategoryOptions = z.strictObject({
+  type: z.literal("gov"),
+});
+
 const developerCategoryAliases = new Set([
   "repo",
   "code",
@@ -2529,13 +2533,14 @@ export const searchRequestSchema = z
       .preprocess(
         normalizeDeveloperCategoryAliases,
         z.union([
-          z.array(z.enum(["github", "research", "pdf", "developer"])),
+          z.array(z.enum(["github", "research", "pdf", "developer", "gov"])),
           z.array(
             z.union([
               githubCategoryOptions,
               researchCategoryOptions,
               pdfCategoryOptions,
               developerCategoryOptions,
+              govCategoryOptions,
             ]),
           ),
         ]),
@@ -2615,6 +2620,10 @@ export const searchRequestSchema = z
     const categories = x.categories ?? [];
     return !hasCategory(categories, "developer") || categories.length === 1;
   }, "the developer category cannot be combined with other categories")
+  .refine(x => {
+    const categories = x.categories ?? [];
+    return !hasCategory(categories, "gov") || categories.length === 1;
+  }, "the gov category cannot be combined with other categories")
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const country =
@@ -2681,6 +2690,10 @@ export const searchRequestSchema = z
             case "developer":
               return {
                 type: "developer" as const,
+              };
+            case "gov":
+              return {
+                type: "gov" as const,
               };
             default:
               return { type: c as any };
@@ -2940,6 +2953,7 @@ export type EndpointFeedbackResponse =
       creditsRefunded: number;
       alreadySubmitted?: boolean;
       dailyCapReached?: boolean;
+      websiteCapReached?: boolean;
       creditsRefundedToday?: number;
       dailyRefundCap?: number;
       warning?: string;

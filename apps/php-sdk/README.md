@@ -255,6 +255,21 @@ $result = $client->agent(AgentOptions::with(
 echo $result->getData();
 ```
 
+To let the agent use Exchange data providers connected to your team, pass
+`exchange`. Omit `toolkits` to allow every provider the team can use.
+
+```php
+use Firecrawl\Models\AgentExchangeOptions;
+
+$result = $client->agent(AgentOptions::with(
+    prompt: 'Find the company behind example.com and its funding history',
+    exchange: AgentExchangeOptions::with(
+        enabled: true,
+        toolkits: ['provider-slug'],
+    ),
+));
+```
+
 ### Browser Sessions
 
 ```php

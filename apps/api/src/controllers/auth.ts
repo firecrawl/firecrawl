@@ -676,9 +676,11 @@ async function handleKeylessAuth(
         ? "research"
         : mode === RateLimiterMode.DeveloperSearch
           ? "developer"
-          : mode === RateLimiterMode.BrowserExecute
-            ? "interact"
-            : "scrape";
+          : mode === RateLimiterMode.GovSearch
+            ? "gov"
+            : mode === RateLimiterMode.BrowserExecute
+              ? "interact"
+              : "scrape";
 
   let result: Awaited<ReturnType<typeof consumeKeylessRequest>>;
   try {
