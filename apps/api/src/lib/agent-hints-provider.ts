@@ -1,4 +1,4 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { Counter } from "prom-client";
 import { z } from "zod";
 import { config } from "../config";
@@ -34,6 +34,7 @@ const MAX_CACHE_ENTRIES = 10_000;
 const MAX_HINT_ID_LENGTH = 64;
 const MAX_HINT_TEXT_LENGTH = 500;
 const MAX_STORED_HINTS = 10;
+const MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_PROVIDER_HINTS = 2;
 const MAX_TOTAL_HINTS = 3;
 
@@ -49,18 +50,45 @@ const responseSchema = z.object({
   ttl_seconds: z.number().finite().optional().catch(undefined),
 });
 
+const processPseudonymKey = randomBytes(32);
+
 /**
  * Keyless team IDs identify a client address, so the provider receives a
- * stable pseudonym instead: HMAC-SHA256 keyed by the provider secret when one
- * is configured, otherwise SHA-256.
+ * pseudonym instead: HMAC-SHA256 keyed by AGENT_HINTS_PROVIDER_PSEUDONYM_KEY,
+ * which is never sent to the provider, or by a random per-process key.
  */
 export function providerTeamId(teamId: string): string {
   if (!teamId.startsWith("preview_keyless_")) return teamId;
-  const secret = config.AGENT_HINTS_PROVIDER_SECRET;
-  const digest = secret
-    ? createHmac("sha256", secret).update(teamId).digest("hex")
-    : createHash("sha256").update(teamId).digest("hex");
+  const digest = createHmac(
+    "sha256",
+    config.AGENT_HINTS_PROVIDER_PSEUDONYM_KEY ?? processPseudonymKey,
+  )
+    .update(teamId)
+    .digest("hex");
   return `keyless_${digest}`;
+}
+
+async function readJsonBody(response: Response): Promise<unknown> {
+  const declared = Number(response.headers.get("content-length"));
+  if (declared > MAX_RESPONSE_BYTES) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("Response body too large");
+  }
+  if (!response.body) throw new Error("Missing response body");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_RESPONSE_BYTES) {
+      await reader.cancel().catch(() => {});
+      throw new Error("Response body too large");
+    }
+    chunks.push(value);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
 type CacheEntry = { holder: ProviderHintsHolder; expiresAt: number };
@@ -112,7 +140,7 @@ async function fetchProviderHints(
       await response.body?.cancel().catch(() => {});
       throw new Error(`Unexpected status ${response.status}`);
     }
-    const parsed = responseSchema.safeParse(await response.json());
+    const parsed = responseSchema.safeParse(await readJsonBody(response));
     if (!parsed.success) throw new Error("Malformed response body");
     const ttlSeconds = Math.min(
       Math.max(parsed.data.ttl_seconds ?? DEFAULT_TTL_SECONDS, 0),

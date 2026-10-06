@@ -56,6 +56,7 @@ describe("external agent hints provider", () => {
   const original = {
     url: config.AGENT_HINTS_PROVIDER_URL,
     secret: config.AGENT_HINTS_PROVIDER_SECRET,
+    pseudonymKey: config.AGENT_HINTS_PROVIDER_PSEUDONYM_KEY,
     timeout: config.AGENT_HINTS_PROVIDER_TIMEOUT_MS,
   };
 
@@ -78,6 +79,7 @@ describe("external agent hints provider", () => {
     await new Promise(resolve => server.close(resolve));
     config.AGENT_HINTS_PROVIDER_URL = original.url;
     config.AGENT_HINTS_PROVIDER_SECRET = original.secret;
+    config.AGENT_HINTS_PROVIDER_PSEUDONYM_KEY = original.pseudonymKey;
     config.AGENT_HINTS_PROVIDER_TIMEOUT_MS = original.timeout;
   });
 
@@ -89,6 +91,7 @@ describe("external agent hints provider", () => {
     });
     config.AGENT_HINTS_PROVIDER_URL = providerUrl;
     config.AGENT_HINTS_PROVIDER_SECRET = undefined;
+    config.AGENT_HINTS_PROVIDER_PSEUDONYM_KEY = undefined;
     config.AGENT_HINTS_PROVIDER_TIMEOUT_MS = 500;
   });
 
@@ -147,23 +150,20 @@ describe("external agent hints provider", () => {
 
   it.each([
     {
-      name: "keyed by the secret when one is configured",
-      secret: "shared-secret",
+      name: "keyed by the configured pseudonym key",
+      pseudonymKey: "k".repeat(32),
       ip: "203.0.113.8",
-      digest: (teamId: string) =>
-        createHmac("sha256", "shared-secret").update(teamId).digest("hex"),
     },
     {
-      name: "hashed when no secret is configured",
-      secret: undefined,
+      name: "keyed by a per-process key when none is configured",
+      pseudonymKey: undefined,
       ip: "203.0.113.9",
-      digest: (teamId: string) =>
-        createHash("sha256").update(teamId).digest("hex"),
     },
   ])(
     "never sends a raw keyless team ID or IP: pseudonym $name",
-    async ({ secret, ip, digest }) => {
-      config.AGENT_HINTS_PROVIDER_SECRET = secret;
+    async ({ pseudonymKey, ip }) => {
+      config.AGENT_HINTS_PROVIDER_SECRET = "shared-secret";
+      config.AGENT_HINTS_PROVIDER_PSEUDONYM_KEY = pseudonymKey;
       const teamId = `preview_keyless_${ip}`;
       await settle(
         getProviderHints(
@@ -172,20 +172,34 @@ describe("external agent hints provider", () => {
       );
       expect(requests).toHaveLength(1);
       const { body } = requests[0];
-      expect(body.team_id).toBe(`keyless_${digest(teamId)}`);
+      expect(body.team_id).toMatch(/^keyless_[0-9a-f]{64}$/);
       expect(body.keyless).toBe(true);
       for (const value of Object.values(body)) {
         expect(String(value)).not.toContain(ip);
         expect(String(value)).not.toContain("preview_keyless_");
       }
       expect(JSON.stringify(body)).not.toContain(ip);
+      const guessable = [
+        createHash("sha256").update(teamId).digest("hex"),
+        createHmac("sha256", "shared-secret").update(teamId).digest("hex"),
+      ];
+      expect(guessable.map(d => `keyless_${d}`)).not.toContain(body.team_id);
+      if (pseudonymKey) {
+        expect(body.team_id).toBe(
+          `keyless_${createHmac("sha256", pseudonymKey).update(teamId).digest("hex")}`,
+        );
+      }
     },
   );
 
   it("gives a keyless team the same pseudonym on every lookup", async () => {
     const teamId = "preview_keyless_198.51.100.4";
-    await settle(getProviderHints(context({ teamId, endpoint: "scrape" })));
-    await settle(getProviderHints(context({ teamId, endpoint: "search" })));
+    await settle(
+      getProviderHints(context({ teamId, endpoint: "scrape", keyless: true })),
+    );
+    await settle(
+      getProviderHints(context({ teamId, endpoint: "search", keyless: true })),
+    );
     expect(requests).toHaveLength(2);
     expect(requests[0].body.team_id).toBe(requests[1].body.team_id);
     expect(requests[0].body.team_id).toMatch(/^keyless_[0-9a-f]{64}$/);
@@ -287,6 +301,37 @@ describe("external agent hints provider", () => {
       const refetched = getProviderHints(ctx);
       expect(refetched).not.toBe(holder);
       await settle(refetched);
+    },
+  );
+
+  it.each([
+    {
+      name: "declared",
+      handler: ((_b, _r, res) => {
+        res.writeHead(200, {
+          "content-type": "application/json",
+          "content-length": String(1024 * 1024),
+        });
+        res.end();
+      }) as Handler,
+    },
+    {
+      name: "streamed",
+      handler: ((_b, _r, res) => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.write(`{"hints":[{"id":"big","text":"${"x".repeat(80 * 1024)}`);
+        res.end('"}]}');
+      }) as Handler,
+    },
+  ])(
+    "fails open on an oversized $name response body",
+    async ({ handler: oversized }) => {
+      handler = oversized;
+      const before = await counter("error");
+      const holder = getProviderHints(context());
+      await settle(holder);
+      expect(holder!.hints).toEqual([]);
+      expect(await counter("error")).toBe(before + 1);
     },
   );
 

@@ -40,11 +40,12 @@ The focused selector tests exercise excerpt detection, source-page failures, err
 
 A deployment can supply additional response guidance from a separate HTTP service. This is disabled unless `AGENT_HINTS_PROVIDER_URL` is set; with it unset, responses are unchanged.
 
-| Variable                          | Default | Purpose                                            |
-| --------------------------------- | ------- | -------------------------------------------------- |
-| `AGENT_HINTS_PROVIDER_URL`        | unset   | Provider endpoint. Empty means unset.              |
-| `AGENT_HINTS_PROVIDER_SECRET`     | unset   | Sent as `Authorization: Bearer <secret>` when set. |
-| `AGENT_HINTS_PROVIDER_TIMEOUT_MS` | `50`    | Per-lookup timeout.                                |
+| Variable                             | Default            | Purpose                                                                               |
+| ------------------------------------ | ------------------ | ------------------------------------------------------------------------------------- |
+| `AGENT_HINTS_PROVIDER_URL`           | unset              | Provider endpoint (http or https). Empty means unset.                                 |
+| `AGENT_HINTS_PROVIDER_SECRET`        | unset              | Sent as `Authorization: Bearer <secret>` when set.                                    |
+| `AGENT_HINTS_PROVIDER_TIMEOUT_MS`    | `50`               | Per-lookup timeout.                                                                   |
+| `AGENT_HINTS_PROVIDER_PSEUDONYM_KEY` | per-process random | Keys the keyless `team_id` pseudonym (at least 32 chars). Never sent to the provider. |
 
 For hint-enabled requests with an authenticated team, the API starts a lookup right after authentication and continues without waiting. Provider hints are included only if the lookup has already finished (or is cached) when the response is sent, so the provider never adds latency. An answer that arrives after the response was sent, but within the timeout, is cached for the next request.
 
@@ -66,7 +67,7 @@ Content-Type: application/json
 }
 ```
 
-No request or response content, URLs, queries, IP addresses, or API keys are sent. Keyless callers have no account team, so `team_id` is a stable pseudonym instead: `keyless_` followed by the hex HMAC-SHA256 of the internal keyless team ID, keyed by `AGENT_HINTS_PROVIDER_SECRET`. Without a secret it is a plain SHA-256, which is easier to reverse, so configure a secret when the provider must not be able to recover client addresses.
+No request or response content, URLs, queries, IP addresses, or API keys are sent. Keyless callers have no account team, so `team_id` is a pseudonym instead: `keyless_` followed by the hex HMAC-SHA256 of the internal keyless team ID, keyed by `AGENT_HINTS_PROVIDER_PSEUDONYM_KEY`. That key is separate from `AGENT_HINTS_PROVIDER_SECRET` and is never sent, so the provider cannot recompute pseudonyms from client addresses. Set it to the same value on every API process for pseudonyms that are stable across processes; when unset, each process uses a random key, so pseudonyms are stable only within a process.
 
 Response (`200` only):
 
@@ -79,9 +80,9 @@ Response (`200` only):
 }
 ```
 
-- Any other status, a timeout, a network error, or a body without a `hints` array means no provider hints, cached for 30 seconds. Requests never fail because of the provider.
+- Any other status, a timeout, a network error, a body larger than 64 KiB, or a body without a `hints` array means no provider hints, cached for 30 seconds. Requests never fail because of the provider.
 - `ttl_seconds` defaults to 60 and is clamped to 0–600. Unknown fields are ignored.
 - Each hint is trimmed and has control characters replaced; hints with a missing or oversized `id` or `text` are dropped.
-- Provider hints follow the deterministic hints and never replace them. Exact duplicates are dropped, at most two provider hints are added, and the total is capped at three.
+- Provider hints are added only to successful (`success: true`) responses. They follow the deterministic hints and never replace them. Exact duplicates are dropped, at most two provider hints are added, and the total is capped at three.
 - Results are cached in memory per process, keyed by team, endpoint, and surface, with one lookup in flight per key and at most 10,000 entries. Different API processes may serve different provider hints until their entries expire.
-- Served provider hint IDs are logged; they are not added to the response. Lookups are counted in `firecrawl_agent_hints_provider_requests_total{outcome="hit|miss|timeout|error|disabled"}`.
+- Served provider hint IDs are logged with the same `team_id` the provider receives; they are not added to the response. Lookups are counted in `firecrawl_agent_hints_provider_requests_total{outcome="hit|miss|timeout|error|disabled"}`.

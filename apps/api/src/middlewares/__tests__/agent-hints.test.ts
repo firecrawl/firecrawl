@@ -319,6 +319,20 @@ describe("agent hint response middleware with an external provider", () => {
     expect(response.body).toEqual(body);
   });
 
+  it("does not add provider hints to a failure envelope", async () => {
+    const body = { success: false, error: "Bad URL", code: "BAD_REQUEST" };
+    const response = await request(
+      holderAppFor(
+        { settled: true, hints: [{ id: "p1", text: "Provider hint." }] },
+        body,
+      ),
+    )
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.body).toEqual(body);
+  });
+
   it("does not add provider hints without the opt-in header", async () => {
     const body = { success: true, data: {} };
     const response = await request(
@@ -362,9 +376,9 @@ describe("agent hints provider middleware", () => {
     return app;
   }
 
-  function mockProvider(delayMs = 0) {
+  function mockProvider(gate?: Promise<void>) {
     return vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      await gate;
       return new Response(
         JSON.stringify({
           hints: [{ id: "p1", text: "Provider hint." }],
@@ -468,18 +482,21 @@ describe("agent hints provider middleware", () => {
     }
   });
 
-  it("does not wait for a slow provider and serves its hints from cache afterwards", async () => {
-    const fetchSpy = mockProvider(1000);
+  it("does not wait for a pending provider and serves its hints from cache afterwards", async () => {
+    let release!: () => void;
+    const fetchSpy = mockProvider(
+      new Promise<void>(resolve => (release = resolve)),
+    );
     const app = providerAppFor({ team_id: `team-${++teamCounter}` });
 
-    const started = Date.now();
     const first = await request(app)
       .post("/")
       .set("X-Firecrawl-Agent-Hints", "true")
       .send({});
-    expect(Date.now() - started).toBeLessThan(500);
     expect(first.body).toEqual({ success: true, data: {} });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
 
+    release();
     await vi.waitFor(
       async () => {
         const second = await request(app)
@@ -488,7 +505,7 @@ describe("agent hints provider middleware", () => {
           .send({});
         expect(second.body.agent_hints).toEqual(["Provider hint."]);
       },
-      { timeout: 3000, interval: 100 },
+      { timeout: 3000, interval: 50 },
     );
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });

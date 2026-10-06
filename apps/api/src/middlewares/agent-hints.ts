@@ -5,6 +5,7 @@ import { buildAgentHints, type AgentHintEndpoint } from "../lib/agent-hints";
 import {
   getProviderHints,
   mergeAgentHints,
+  providerTeamId,
   type ProviderHintsHolder,
 } from "../lib/agent-hints-provider";
 import { keylessSignupSurface } from "../lib/keyless-signup-link";
@@ -35,13 +36,13 @@ export function agentHintsMiddleware(
           canUseMapAndCrawl: !!teamId && !teamId.startsWith("preview_keyless_"),
           canUseInteract: config.USE_DB_AUTHENTICATION === true,
         }),
-        provider?.settled ? provider.hints : [],
+        provider?.settled && body.success === true ? provider.hints : [],
       );
       if (providerHintIds.length > 0) {
         logger.info("Served external agent hints", {
           module: "agent-hints-provider",
           endpoint,
-          team_id: teamId,
+          team_id: teamId ? providerTeamId(teamId) : undefined,
           hint_ids: providerHintIds,
         });
       }
