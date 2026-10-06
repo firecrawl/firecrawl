@@ -5,6 +5,7 @@ import { calculateCost } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostLimitExceededError } from "../cost-tracking";
 import { BrandingEnhancement, getBrandingEnhancementSchema } from "./schema";
 import { enhanceBrandingWithJev, isJevBrandingEnabled } from "./jev";
+import { shadowJev, shouldShadowJev } from "./jev-shadow";
 import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
 import { getModel } from "../generic-ai";
@@ -107,7 +108,8 @@ export async function enhanceBrandingWithLLM(
 ): Promise<BrandingEnhancement> {
   const logger = input.logger;
 
-  if (isJevBrandingEnabled(input)) {
+  const triedJev = isJevBrandingEnabled(input);
+  if (triedJev) {
     const jev = await enhanceBrandingWithJev(input);
     const escalateBelow = config.BRANDING_JEV_ESCALATE_BELOW;
     const unsureOfLogo =
@@ -284,12 +286,16 @@ export async function enhanceBrandingWithLLM(
     }
 
     // When there are no logo candidates, do not pass logoSelection so downstream treats it as "none"
-    const resultObject = result.object as BrandingEnhancement;
-    if (!hasLogoCandidates && resultObject?.logoSelection != null) {
-      const { logoSelection: _, ...rest } = resultObject;
-      return rest as BrandingEnhancement;
+    let answer = result.object as BrandingEnhancement;
+    if (!hasLogoCandidates && answer?.logoSelection != null) {
+      const { logoSelection: _, ...rest } = answer;
+      answer = rest as BrandingEnhancement;
     }
-    return resultObject;
+    // Requests that already went to Jev have nothing to compare against.
+    if (!triedJev && answer && shouldShadowJev(input)) {
+      void shadowJev(input, answer, modelId);
+    }
+    return answer;
   } catch (error) {
     if (error instanceof CostLimitExceededError) {
       throw error;
