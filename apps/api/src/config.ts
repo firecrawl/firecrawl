@@ -561,6 +561,10 @@ const configSchema = z.object({
   BRANDING_JEV_ESCALATE_BELOW: emptyStringAsUndefined(
     z.coerce.number().min(0).max(1),
   ),
+  // Share of LLM-answered branding requests (0-100) that also ask Jev in the
+  // background and record how its answer compares (lib/branding/jev-shadow.ts).
+  // Customers always get the LLM's answer.
+  BRANDING_JEV_SHADOW_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
