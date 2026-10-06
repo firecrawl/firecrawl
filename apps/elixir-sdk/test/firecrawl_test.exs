@@ -192,6 +192,87 @@ defmodule FirecrawlTest do
              Firecrawl.start_agent(prompt: "test", effort: "ultra")
   end
 
+  # Sends the request body as decoded from the bytes put on the wire.
+  defp wire_body_adapter(parent) do
+    fn request ->
+      send(parent, {:body, request.body |> IO.iodata_to_binary() |> Jason.decode!()})
+      {request, Req.Response.new(status: 200, body: "")}
+    end
+  end
+
+  test "start_agent and start_agent! send thread_id, mode and exchange with camelCase keys at every level" do
+    opts = [api_key: "test-key", adapter: wire_body_adapter(self())]
+    thread_id = "6f1c2a4e-0d8b-4c1e-9a57-3b2f8e9d1c40"
+    origin = "elixir-sdk@" <> Mix.Project.config()[:version]
+
+    assert {:ok, %Req.Response{status: 200}} =
+             Firecrawl.start_agent(
+               [
+                 prompt: "find leads",
+                 thread_id: thread_id,
+                 mode: :chat,
+                 exchange: [
+                   enabled: true,
+                   toolkits: ["apollo"],
+                   max_calls: 5,
+                   require_approval: true,
+                   approve: [approval_id: "approval-1", call_ids: ["c1"], always: true],
+                   on_terms_required: :ask
+                 ]
+               ],
+               opts
+             )
+
+    assert_receive {:body, body}
+
+    assert body == %{
+             "prompt" => "find leads",
+             "threadId" => thread_id,
+             "mode" => "chat",
+             "exchange" => %{
+               "enabled" => true,
+               "toolkits" => ["apollo"],
+               "maxCalls" => 5,
+               "requireApproval" => true,
+               "approve" => %{"approvalId" => "approval-1", "callIds" => ["c1"], "always" => true},
+               "onTermsRequired" => "ask"
+             },
+             "origin" => origin
+           }
+
+    assert %Req.Response{status: 200} =
+             Firecrawl.start_agent!(
+               [
+                 prompt: "skip that",
+                 thread_id: thread_id,
+                 exchange: [decline: [approval_id: "approval-2"]]
+               ],
+               opts
+             )
+
+    assert_receive {:body, body}
+
+    assert body == %{
+             "prompt" => "skip that",
+             "threadId" => thread_id,
+             "exchange" => %{"decline" => %{"approvalId" => "approval-2"}},
+             "origin" => origin
+           }
+  end
+
+  test "start_agent leaves omitted thread, mode and exchange fields out of the body" do
+    opts = [api_key: "test-key", adapter: wire_body_adapter(self())]
+    origin = "elixir-sdk@" <> Mix.Project.config()[:version]
+
+    assert {:ok, _} = Firecrawl.start_agent([prompt: "find pricing"], opts)
+    assert_receive {:body, body}
+    assert body == %{"prompt" => "find pricing", "origin" => origin}
+
+    assert {:ok, _} = Firecrawl.start_agent([prompt: "find pricing", exchange: [toolkits: ["apollo"]]], opts)
+    assert_receive {:body, body}
+    assert body == %{"prompt" => "find pricing", "exchange" => %{"toolkits" => ["apollo"]}, "origin" => origin}
+  end
+
   test "get_agent_trace hits /v2/agent/:id/trace" do
     parent = self()
 
