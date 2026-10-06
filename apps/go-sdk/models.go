@@ -661,6 +661,11 @@ type AgentResponse struct {
 	Success bool   `json:"success"`
 	ID      string `json:"id,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// ThreadID is the thread this run belongs to. Pass it back in
+	// AgentOptions.ThreadID to continue the conversation.
+	ThreadID string `json:"threadId,omitempty"`
+	// ThreadTurn is the 1-based position of this run in its thread.
+	ThreadTurn int `json:"threadTurn,omitempty"`
 }
 
 // AgentStatusResponse represents the status and results of an agent task.
@@ -673,11 +678,121 @@ type AgentStatusResponse struct {
 	Effort      string      `json:"effort,omitempty"`
 	ExpiresAt   string      `json:"expiresAt,omitempty"`
 	CreditsUsed *int        `json:"creditsUsed,omitempty"`
+	ThreadID    string      `json:"threadId,omitempty"`
+	ThreadTurn  int         `json:"threadTurn,omitempty"`
+	Mode        string      `json:"mode,omitempty"`
+	// Message is the text reply. Chat-mode runs answer here instead of in Data.
+	Message         string                `json:"message,omitempty"`
+	Suggestions     []AgentSuggestion     `json:"suggestions,omitempty"`
+	PendingApproval *AgentPendingApproval `json:"pendingApproval,omitempty"`
+	Exchange        *AgentExchangeSummary `json:"exchange,omitempty"`
 }
 
 // IsDone returns true if the agent task has finished.
 func (a *AgentStatusResponse) IsDone() bool {
 	return a.Status == "completed" || a.Status == "failed" || a.Status == "cancelled"
+}
+
+// AgentSuggestion is a follow-up the agent offers for the next turn.
+type AgentSuggestion struct {
+	Label  string `json:"label"`
+	Prompt string `json:"prompt"`
+}
+
+// AgentExchangeSummary reports what a run did with Exchange. Toolkits and
+// RequireApproval are what the run resolved to after thread inheritance.
+type AgentExchangeSummary struct {
+	Enabled         bool     `json:"enabled"`
+	Toolkits        []string `json:"toolkits,omitempty"`
+	RequireApproval bool     `json:"requireApproval,omitempty"`
+	OnTermsRequired string   `json:"onTermsRequired,omitempty"`
+	PaidCalls       int      `json:"paidCalls"`
+	// CreditsUsed is nil when unknown.
+	CreditsUsed *int `json:"creditsUsed"`
+	// SkippedProviders lists providers that would have helped but were not
+	// used because their data terms are not accepted.
+	SkippedProviders []AgentSkippedProvider `json:"skippedProviders,omitempty"`
+	// RequiresAction is set in "ask" mode when a terms offer ended the turn.
+	RequiresAction *AgentTermsRequiredAction `json:"requiresAction,omitempty"`
+}
+
+// AgentSkippedProvider is a provider a run did not use because its data terms
+// are not accepted.
+type AgentSkippedProvider struct {
+	Provider   string `json:"provider"`
+	Name       string `json:"name"`
+	Capability string `json:"capability,omitempty"`
+	Adds       string `json:"adds,omitempty"`
+	Reason     string `json:"reason"`
+	Version    string `json:"version"`
+	TermsURL   string `json:"termsUrl"`
+}
+
+// AgentTermsRequiredAction lists the Exchange calls that show and accept
+// providers' data terms. Run Accept with ScrapeAlexandria only after the user
+// has explicitly agreed, then continue the thread with Exchange.Approve.
+type AgentTermsRequiredAction struct {
+	Type       string                     `json:"type"`
+	ApprovalID string                     `json:"approvalId"`
+	Providers  []AgentTermsActionProvider `json:"providers"`
+}
+
+// AgentTermsActionProvider is one provider whose data terms can be accepted.
+type AgentTermsActionProvider struct {
+	Provider   string `json:"provider"`
+	Name       string `json:"name"`
+	Capability string `json:"capability,omitempty"`
+	Adds       string `json:"adds,omitempty"`
+	Version    string `json:"version"`
+	// Digest is empty when the catalog published none; Show returns it.
+	Digest string         `json:"digest"`
+	URL    string         `json:"url"`
+	Show   AlexandriaCall `json:"show"`
+	Accept AlexandriaCall `json:"accept"`
+}
+
+// AgentPendingApproval is set when a turn ended waiting for the caller. Kind
+// "terms" asks to accept the providers in Terms and leaves Calls empty; any
+// other Kind, including empty, asks to allow or refuse Calls.
+type AgentPendingApproval struct {
+	ID         string                          `json:"id"`
+	Kind       string                          `json:"kind,omitempty"`
+	Reason     string                          `json:"reason"`
+	Calls      []AgentPendingApprovalCall      `json:"calls"`
+	Terms      []AgentTermsGate                `json:"terms,omitempty"`
+	Resolution *AgentPendingApprovalResolution `json:"resolution"`
+}
+
+// AgentPendingApprovalCall is a paid provider call held back for approval.
+type AgentPendingApprovalCall struct {
+	ID              string                   `json:"id"`
+	Provider        string                   `json:"provider"`
+	Capability      string                   `json:"capability"`
+	Input           map[string]interface{}   `json:"input"`
+	More            []map[string]interface{} `json:"more,omitempty"`
+	CreditsEstimate *int                     `json:"creditsEstimate"`
+}
+
+// AgentTermsGate is a provider in a terms pending approval.
+type AgentTermsGate struct {
+	Provider   string `json:"provider"`
+	Name       string `json:"name"`
+	Logo       string `json:"logo,omitempty"`
+	Capability string `json:"capability,omitempty"`
+	Adds       string `json:"adds,omitempty"`
+	Version    string `json:"version"`
+	// Digest is empty when the catalog published none.
+	Digest string `json:"digest"`
+	URL    string `json:"url"`
+}
+
+// AgentPendingApprovalResolution records how a later turn answered a pending
+// approval.
+type AgentPendingApprovalResolution struct {
+	Approved bool     `json:"approved"`
+	CallIDs  []string `json:"callIds"`
+	Always   bool     `json:"always"`
+	ByRunID  string   `json:"byRunId"`
 }
 
 // AgentTraceResponse is returned when fetching the event trace of an agent task.
