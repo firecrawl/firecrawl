@@ -36,9 +36,9 @@ import { checkUrl } from "../../lib/threat-protection";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
-import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { requestCreditsShards } from "../../lib/request-credits-store";
+import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -282,10 +282,8 @@ export async function crawlController(
       req.body.maxConcurrency !== undefined
         ? Math.min(
             req.body.maxConcurrency,
-            await getEffectiveConcurrencyLimit(
-              req.auth.team_id,
-              req.acuc?.org_id ?? null,
-            ),
+            req.acuc?.concurrency_limit ??
+              DEFAULT_TEAM_LIMITS.concurrency_limit,
           )
         : undefined,
     zeroDataRetention,

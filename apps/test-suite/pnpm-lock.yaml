@@ -15,7 +15,7 @@ overrides:
   moment@>=2.0.0 <2.31.0: 2.31.0
   js-yaml@>=3.0.0 <3.15.2: 3.15.2
   js-yaml@>=4.0.0 <4.3.2: 4.3.2
-  joi@>=17.0.0 <17.13.6: 17.13.7
+  joi@>=17.0.0 <17.13.8: 17.13.8
   ws@>=7.0.0 <7.5.11: 7.5.11
   ws@>=8.0.0 <8.21.0: 8.21.0
   form-data@>=4.0.0 <4.0.6: 4.0.6
@@ -1333,8 +1333,8 @@ packages:
     resolution: {integrity: sha512-9FzQjJ7MATs1tSpnco1K6ayiYE3figslrXA72G2HQ/n76RzvYlofyi5QM+iX4YRs/pu3yzxlVQSST23+dMDknw==}
     engines: {node: '>= 0.6.0'}
 
-  joi@17.13.7:
-    resolution: {integrity: sha512-MF80Dm5Y2veNy8QWVx9Bj3ui4mo7+VPSPsR1M+oaHXV0Gx6zGX9a2F+OZG3Blby9tOlzU9Rs5FUimlEhbKtfnQ==}
+  joi@17.13.8:
+    resolution: {integrity: sha512-iPKOGmiRw1jxf/JOPwxmCcUQAOdF359mdzYiP2DJ+TMX0YK2zjK3D+zYOaGjpumWxOFF/l2xVWjRVK5bGSLdEw==}
 
   js-yaml@3.15.2:
     resolution: {integrity: sha512-6EuL879VkRA+1Cz578mKMiKvjPNEuk6+r1JaFzoSWejZmtf7xWbIyw1e3KkxlkzTIt9Taw6JBhEppG7utc1P+w==}
@@ -2926,7 +2926,7 @@ snapshots:
       hpagent: 0.1.2
       https-proxy-agent: 5.0.1
       jmespath: 0.16.0
-      joi: 17.13.7
+      joi: 17.13.8
       js-yaml: 3.15.2
       jsonpath-plus: 10.4.0
       jsonwebtoken: 9.0.3
@@ -3546,7 +3546,7 @@ snapshots:
 
   jmespath@0.16.0: {}
 
-  joi@17.13.7:
+  joi@17.13.8:
     dependencies:
       '@hapi/hoek': 9.3.0
       '@hapi/topo': 5.1.0

@@ -7,6 +7,7 @@ import { processJobInternal } from "./scrape-worker";
 import { NuQJob } from "./nuq";
 import { register } from "prom-client";
 import Express from "express";
+import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
 import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
 import { shutdownPubSubLogging } from "../logging/log_job";
@@ -74,6 +75,7 @@ export async function runNuqWorker(options: {
   let shutdownStartedAt: number | undefined;
 
   const app = Express();
+  startNodeRuntimeMetrics();
 
   app.get("/metrics", async (_, res) => {
     const localMetrics = options.metrics ? await options.metrics() : "";

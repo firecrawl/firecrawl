@@ -23,6 +23,12 @@
         // 3.0.3 via fast-glob/micromatch. Cannot override to a
         // non-existent version. Owner: team-engineering-reviewers.
         // Tracking: create internal ticket. Expires: 2026-10-17.
-        "GHSA-vfj7-8cjw-p6xm"
+        "GHSA-vfj7-8cjw-p6xm",
+        // GHSA-hp3w-g68c-fv3c (sprintf-js):
+        // Advisory asks for >=1.1.4; latest published sprintf-js is
+        // 1.1.3. Cannot override to a non-existent version.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2026-10-20.
+        "GHSA-hp3w-g68c-fv3c"
     ]
 }

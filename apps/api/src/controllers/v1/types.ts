@@ -1337,6 +1337,12 @@ export type AuthCreditUsageChunk = {
   // appended on JS-side
   is_extract?: boolean;
 
+  // The team's effective Autumn limits and plan, always set by
+  // getACUC/getACUCTeam.
+  concurrency_limit: number;
+  rate_limit_multiplier: number;
+  is_paid_plan: boolean;
+
   // Agent signup: populated when the key is agent-provisioned
   _agentSponsor?: {
     status: "pending" | "verified" | "blocked";
