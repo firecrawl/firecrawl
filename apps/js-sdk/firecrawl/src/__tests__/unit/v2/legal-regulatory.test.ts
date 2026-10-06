@@ -64,6 +64,19 @@ describe("legalRegulatorySearch", () => {
     expect(http.post).not.toHaveBeenCalled();
   });
 
+  test("throws on an unsuccessful response body", async () => {
+    const http = {
+      post: jest.fn(async () => ({
+        status: 200,
+        data: { success: false, error: "Search failed" },
+      })),
+    } as any;
+
+    await expect(
+      clientWith(http).legalRegulatorySearch("zoning variance"),
+    ).rejects.toThrow("Search failed");
+  });
+
   test("normalizes transport errors to SdkError", async () => {
     const http = {
       post: jest.fn(async () => {
