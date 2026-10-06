@@ -264,6 +264,13 @@ class AgentMockTest {
     }
 
     @Test
+    void testApproveAndDeclineRequireApprovalId() {
+        assertThrows(NullPointerException.class, () -> new AgentExchangeOptions.Approve(null));
+        assertThrows(NullPointerException.class, () -> new AgentExchangeOptions.Approve(null, List.of("call-1"), true));
+        assertThrows(NullPointerException.class, () -> new AgentExchangeOptions.Decline(null));
+    }
+
+    @Test
     void testAgentParsesExchangeSummaryAndPendingApproval() throws IOException {
         AgentStatusResponse status = client.agent(
                 AgentOptions.builder()

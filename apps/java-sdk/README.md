@@ -375,7 +375,9 @@ AgentStatusResponse result = client.agent(
             .build())
         .build());
 
-System.out.println(result.getExchange().getPaidCalls());
+if (result.getExchange() != null) {
+    System.out.println("Paid provider calls: " + result.getExchange().getPaidCalls());
+}
 ```
 
 ### Usage & Metrics

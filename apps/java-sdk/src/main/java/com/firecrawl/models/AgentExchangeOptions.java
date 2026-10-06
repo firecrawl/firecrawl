@@ -2,6 +2,7 @@ package com.firecrawl.models;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Exchange (Alexandria data provider) settings for an agent run. Every field is
@@ -52,7 +53,7 @@ public class AgentExchangeOptions {
          * @param always  stop asking for approval for the rest of the thread. Ignored on a terms approval.
          */
         public Approve(String approvalId, List<String> callIds, Boolean always) {
-            this.approvalId = approvalId;
+            this.approvalId = Objects.requireNonNull(approvalId, "approvalId");
             this.callIds = callIds;
             this.always = always;
         }
@@ -67,7 +68,7 @@ public class AgentExchangeOptions {
     public static final class Decline {
         private final String approvalId;
 
-        public Decline(String approvalId) { this.approvalId = approvalId; }
+        public Decline(String approvalId) { this.approvalId = Objects.requireNonNull(approvalId, "approvalId"); }
 
         public String getApprovalId() { return approvalId; }
     }
