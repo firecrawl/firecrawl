@@ -94,6 +94,7 @@ async fn _scrape_url(mut meta: Meta) -> Result<Document, ScrapeURLError> {
     }
     None => {
       let main_engine = get_main_engine().await;
+      Span::current().record("engine", main_engine.get_name());
 
       check_engine_support(
         !meta.options.actions.is_empty(),
@@ -104,13 +105,16 @@ async fn _scrape_url(mut meta: Meta) -> Result<Document, ScrapeURLError> {
 
       let mut outcome = main_engine.scrape(&meta, discrete_proxy).await?;
 
-      if should_elevate_proxy(
+      let elevation_reason = should_elevate_proxy(
         meta.options.proxy,
         discrete_proxy,
         main_engine.supports_enhanced_proxy(),
         &outcome,
-      ) {
-        tracing::info!("Retrying main engine with enhanced proxies");
+      );
+      Span::current().record("proxy_elevated", elevation_reason.is_some());
+
+      if let Some(reason) = elevation_reason {
+        Span::current().record("proxy_elevation_reason", reason);
         outcome = main_engine.scrape(&meta, ScrapeProxy::Enhanced).await?;
       }
 
@@ -186,9 +190,14 @@ fn parse_input<T: serde::de::DeserializeOwned>(
   argument: &'static str,
   value: serde_json::Value,
 ) -> Result<T, ScrapeURLError> {
-  serde_path_to_error::deserialize(value).map_err(|e| ScrapeURLError::InvalidInput {
-    argument,
-    error: e.to_string(),
+  serde_path_to_error::deserialize(value).map_err(|e| {
+    let span = Span::current();
+    span.record("input.argument", argument);
+    span.record("input.path", e.path().to_string());
+    ScrapeURLError::InvalidInput {
+      argument,
+      error: e.to_string(),
+    }
   })
 }
 
@@ -224,15 +233,51 @@ pub async fn scrape_url(
   internal_options: serde_json::Value,
   // cost_tracking: // TODO:
 ) -> Result<serde_json::Value, napi::Error> {
-  // Flushes after the scrape task ends, including when it panicked.
+  // Flushes after the scrape span closes, including when the scrape panicked.
   let _flush = crate::telemetry::FlushGuard;
 
-  let result = catch_panic(scrape_url_task(id, url, team_id, options, internal_options)).await;
+  ensure_crypto_provider();
+  crate::telemetry::init_telemetry();
 
-  // The payload is left out: it may carry request data, and this runs outside
-  // the scrape span that zero data retention filters on.
-  if let Err(ScrapeURLError::Panic(_)) = &result {
-    tracing::error!("scrape_url task panicked");
+  // Read before parsing so the sampler drops a ZDR scrape even when its input
+  // is invalid. Any value but `false` counts as ZDR.
+  let zero_data_retention = internal_options
+    .get("zeroDataRetention")
+    .is_some_and(|x| x != &serde_json::Value::Bool(false));
+
+  let span = tracing::info_span!(
+    "scrape_url",
+    scrape_id = id.as_str(),
+    scrape_url = Empty,
+    zero_data_retention,
+    team_id = team_id.as_str(),
+    features = Empty,
+    options = options.to_string(),
+    internal_options = internal_options.to_string(),
+    rewritten_url = Empty,
+    engine = Empty,
+    proxy_elevated = Empty,
+    proxy_elevation_reason = Empty,
+    input.argument = Empty,
+    input.path = Empty,
+    error.code = Empty,
+    panicked = Empty,
+  );
+
+  let result = catch_panic(
+    scrape_url_task(id, url, team_id, options, internal_options).instrument(span.clone()),
+  )
+  .await;
+
+  if let Err(e) = &result {
+    let transport = e.to_transport_string();
+    let code = transport.split_once('|').map_or("", |(code, _)| code);
+    span.record("error.code", code);
+    if code == "SCRAPE_PANIC" {
+      span.record("panicked", true);
+    }
+    // The ZDR layer vetoes this event, so a ZDR panic's payload never leaves.
+    span.in_scope(|| tracing::error!(error = %e));
   }
 
   result.map_err(napi_error)
@@ -245,37 +290,26 @@ async fn scrape_url_task(
   options: serde_json::Value,
   internal_options: serde_json::Value,
 ) -> Result<serde_json::Value, ScrapeURLError> {
-  ensure_crypto_provider();
-  crate::telemetry::init_telemetry();
-
-  let options_json = options.to_string();
-  let internal_options_json = internal_options.to_string();
-
   let options: ScrapeOptions = parse_input("options", options)?;
   let internal_options: InternalOptions = parse_input("internalOptions", internal_options)?;
   let url = Url::parse(&url).map_err(|_| ScrapeURLError::InvalidURLError)?;
 
   let meta = Meta::new(id, url, team_id, options, internal_options);
 
-  let span = tracing::info_span!(
-    "scrape_url",
-    scrape_id = meta.id.as_str(),
-    scrape_url = meta.url.as_str(),
-    zero_data_retention = meta.internal_options.zero_data_retention,
-    team_id = meta.team_id.as_str(),
-    features = meta.feature_flags.iter().cloned().map(|x| x.to_string()).collect::<Vec<String>>().join(","),
-    options = options_json,
-    internal_options = internal_options_json,
-    rewritten_url = Empty,
+  let span = Span::current();
+  span.record("scrape_url", meta.url.as_str());
+  span.record(
+    "features",
+    meta
+      .feature_flags
+      .iter()
+      .cloned()
+      .map(|x| x.to_string())
+      .collect::<Vec<String>>()
+      .join(","),
   );
 
-  let result = _scrape_url(meta).instrument(span.clone()).await;
-
-  if let Err(e) = &result {
-    span.in_scope(|| tracing::error!(error = %e));
-  }
-
-  Ok(serde_json::to_value(result?)?)
+  Ok(serde_json::to_value(_scrape_url(meta).await?)?)
 }
 
 /// Decodes the message of a `scrapeUrl` rejection into its typed payload.

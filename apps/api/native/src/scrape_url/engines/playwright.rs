@@ -48,12 +48,21 @@ struct PlaywrightResponse {
 }
 
 /// The landed URL if it is a valid http(s) URL (not about:blank or chrome-error),
-/// otherwise the requested one.
+/// otherwise the requested one. Records which, and why, as `landed_url`.
 fn landed_url(reported: Option<&str>, requested: &Url) -> Url {
-  reported
-    .and_then(|x| Url::parse(x).ok())
-    .filter(|x| matches!(x.scheme(), "http" | "https"))
-    .unwrap_or_else(|| requested.clone())
+  let landed = match reported.map(Url::parse) {
+    None => Err("missing"),
+    Some(Err(_)) => Err("unparseable"),
+    Some(Ok(x)) if !matches!(x.scheme(), "http" | "https") => Err("non_http"),
+    Some(Ok(x)) => Ok(x),
+  };
+  tracing::Span::current().record(
+    "landed_url",
+    landed
+      .as_ref()
+      .map_or_else(|reason| *reason, |_| "reported"),
+  );
+  landed.unwrap_or_else(|_| requested.clone())
 }
 
 pub struct PlaywrightEngine {
@@ -71,7 +80,12 @@ impl Engine for PlaywrightEngine {
       .map(|url| super::EngineKind::Playwright(Self { url }))
   }
 
-  #[tracing::instrument(name = "PlaywrightEngine::scrape", skip_all, err)]
+  #[tracing::instrument(
+    name = "PlaywrightEngine::scrape",
+    skip_all,
+    fields(landed_url = tracing::field::Empty),
+    err
+  )]
   async fn scrape(
     &self,
     meta: &Meta,

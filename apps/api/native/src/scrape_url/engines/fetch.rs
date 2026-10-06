@@ -97,6 +97,7 @@ impl wreq::dns::Resolve for GuardedResolver {
   }
 }
 
+#[tracing::instrument(name = "engines::fetch::safe_wreq_builder", err)]
 fn safe_wreq_builder(
   skip_tls_verification: bool,
   cookies: bool,
@@ -143,7 +144,10 @@ impl Engine for FetchEngine {
   #[tracing::instrument(
     name = "FetchEngine::scrape",
     skip_all,
-    fields(skip_tls_verification = meta.options.should_skip_tls_verification()),
+    fields(
+      skip_tls_verification = meta.options.should_skip_tls_verification(),
+      rejected_by = tracing::field::Empty,
+    ),
     err
   )]
   async fn scrape(
@@ -151,7 +155,9 @@ impl Engine for FetchEngine {
     meta: &Meta,
     proxy: ScrapeProxy,
   ) -> Result<EngineOutcome<RawPageResult>, ScrapeURLError> {
-    guard_ip_host(meta.get_url().host_str())?;
+    guard_ip_host(meta.get_url().host_str()).inspect_err(|_| {
+      tracing::Span::current().record("rejected_by", "literal_ip_guard");
+    })?;
 
     // Not sure how safe or performant it is to construct a new wreq every turn? - mogery
     let client = safe_wreq_builder(meta.options.should_skip_tls_verification(), true)?;
