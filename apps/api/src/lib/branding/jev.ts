@@ -766,6 +766,7 @@ function mapJevAnswers(
  */
 export async function enhanceBrandingWithJev(
   input: BrandingLLMInput,
+  options: { shadow?: boolean } = {},
 ): Promise<JevBrandingResult | null> {
   const typesafe = getTypeSafeClient();
   if (!typesafe) return null;
@@ -802,6 +803,7 @@ export async function enhanceBrandingWithJev(
         attributes: {
           feature: "branding",
           "branding.jev.questions": Object.keys(request.questions).length,
+          ...(options.shadow ? { "branding.jev.shadow": true } : {}),
           ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
         },
       },
@@ -837,6 +839,7 @@ export async function enhanceBrandingWithJev(
   }
   input.logger.info("Jev branding call", {
     model: response.model,
+    shadow: options.shadow === true,
     elapsedMs: Date.now() - started,
     inputTokens,
     questions: Object.keys(request.questions).length,
