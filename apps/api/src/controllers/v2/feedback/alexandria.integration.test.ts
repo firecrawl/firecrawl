@@ -32,7 +32,10 @@ CREATE TABLE alexandria_feedback (
   origin text,
   integration text,
   schema_version integer NOT NULL DEFAULT 2,
-  created_at timestamptz NOT NULL DEFAULT now()
+  credits_refunded integer NOT NULL DEFAULT 0 CHECK (credits_refunded >= 0),
+  refund_policy jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE alexandria_feedback_providers (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -127,11 +130,25 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(second.body.feedbackId).not.toBe(first.body.feedbackId);
+    expect(first.body).toMatchObject({
+      creditsRefunded: 1,
+      creditsRefundedToday: 1,
+    });
+    expect(second.body).toMatchObject({
+      creditsRefunded: 0,
+      creditsRefundedToday: 1,
+      alreadySubmitted: true,
+    });
     const { rows } = await pool.query(
-      "SELECT * FROM alexandria_feedback WHERE team_id = $1",
+      "SELECT * FROM alexandria_feedback WHERE team_id = $1 ORDER BY created_at",
       [teamId],
     );
     expect(rows).toHaveLength(2);
+    expect(rows.map(row => row.credits_refunded)).toEqual([1, 0]);
+    expect(rows.map(row => row.refund_policy.matchedReason)).toEqual([
+      "alexandria_feedback",
+      "host_already_refunded_today",
+    ]);
     for (const row of rows) {
       expect(row).toMatchObject({
         team_id: teamId,

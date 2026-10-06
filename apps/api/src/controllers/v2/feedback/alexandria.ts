@@ -8,6 +8,7 @@ import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
 import type { RequestWithAuth, EndpointFeedbackErrorCode } from "../types";
 import type { FeedbackRecordResult } from "./internal-types";
 import type { AlexandriaFeedbackRequest } from "./alexandria-schema";
+import { refundAlexandriaFeedback } from "./alexandria-refund";
 
 const failure = (
   status: number,
@@ -59,6 +60,8 @@ export async function recordAlexandriaFeedback(
         success: true,
         feedbackId: "00000000-0000-0000-0000-000000000000",
         creditsRefunded: 0,
+        creditsRefundedToday: 0,
+        dailyRefundCap: config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
       },
     };
   }
@@ -126,8 +129,15 @@ export async function recordAlexandriaFeedback(
     });
     return failure(500, "INTERNAL", "Failed to record feedback.");
   }
+  const refund = await refundAlexandriaFeedback({
+    feedbackId,
+    teamId,
+    orgId: req.acuc?.org_id ?? null,
+    rating: body.rating,
+    requestedUrl: body.requestedWebsite.url,
+  });
   return {
     status: 200,
-    body: { success: true, feedbackId, creditsRefunded: 0 },
+    body: { success: true, feedbackId, ...refund },
   };
 }
