@@ -83,8 +83,8 @@ public class FirecrawlClient
             "/v2/scrape", body, cancellationToken: cancellationToken);
 
         // Some scrape failures (e.g. SCRAPE_DNS_RESOLUTION_ERROR) arrive as HTTP 200 with success: false.
-        if (response.Data is null && response.Error is not null)
-            throw new FirecrawlException(response.Error, 200, response.Code, null);
+        if (!response.Success && response.Error is not null)
+            throw new FirecrawlException(response.Error, 200, response.Code, response.Details);
 
         return response.Data ?? throw new FirecrawlException("Scrape response contained no data");
     }

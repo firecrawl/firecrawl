@@ -24,11 +24,15 @@ class ScrapeErrorMockTest {
     private HttpServer server;
     private FirecrawlClient client;
     private final AtomicReference<String> responseBody = new AtomicReference<>();
+    private final AtomicReference<String> lastMethod = new AtomicReference<>();
+    private final AtomicReference<String> lastPath = new AtomicReference<>();
 
     @BeforeEach
     void setup() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
+            lastMethod.set(exchange.getRequestMethod());
+            lastPath.set(exchange.getRequestURI().getPath());
             byte[] bytes = responseBody.get().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, bytes.length);
@@ -57,6 +61,8 @@ class ScrapeErrorMockTest {
         FirecrawlException e = assertThrows(FirecrawlException.class,
                 () -> client.scrape("https://nonexistent.example"));
 
+        assertEquals("POST", lastMethod.get());
+        assertEquals("/v2/scrape", lastPath.get());
         assertEquals(200, e.getStatusCode());
         assertEquals("SCRAPE_DNS_RESOLUTION_ERROR", e.getErrorCode());
         assertEquals("DNS resolution failed for hostname \"nonexistent.example\".", e.getMessage());
@@ -68,6 +74,8 @@ class ScrapeErrorMockTest {
 
         Document doc = client.scrape("https://example.com");
 
+        assertEquals("POST", lastMethod.get());
+        assertEquals("/v2/scrape", lastPath.get());
         assertEquals("# Hello", doc.getMarkdown());
     }
 }

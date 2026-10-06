@@ -18,4 +18,7 @@ internal class ApiResponse<T>
 
     [JsonPropertyName("code")]
     public string? Code { get; set; }
+
+    [JsonPropertyName("details")]
+    public object? Details { get; set; }
 }
