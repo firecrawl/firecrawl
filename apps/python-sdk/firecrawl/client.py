@@ -82,6 +82,7 @@ class V2Proxy:
             self.get_parse_formats = client_instance.get_parse_formats
             self.search = client_instance.search
             self.developer_search = client_instance.developer_search
+            self.gov_search = client_instance.gov_search
             self.crawl = client_instance.crawl
             self.start_crawl = client_instance.start_crawl
             self.get_crawl_status = client_instance.get_crawl_status
@@ -175,6 +176,7 @@ class AsyncV2Proxy:
             self.get_parse_formats = client_instance.get_parse_formats
             self.search = client_instance.search
             self.developer_search = client_instance.developer_search
+            self.gov_search = client_instance.gov_search
             self.crawl = client_instance.crawl
             self.start_crawl = client_instance.start_crawl
             self.wait_crawl = client_instance.wait_crawl
@@ -292,6 +294,7 @@ class Firecrawl:
         self.get_parse_formats = self._v2_client.get_parse_formats
         self.search = self._v2_client.search
         self.developer_search = self._v2_client.developer_search
+        self.gov_search = self._v2_client.gov_search
         self.map = self._v2_client.map
         self.create_monitor = self._v2_client.create_monitor
         self.list_monitors = self._v2_client.list_monitors
@@ -437,6 +440,7 @@ class AsyncFirecrawl:
         self.get_parse_formats = self._v2_client.get_parse_formats
         self.search = self._v2_client.search
         self.developer_search = self._v2_client.developer_search
+        self.gov_search = self._v2_client.gov_search
         self.map = self._v2_client.map
         self.create_monitor = self._v2_client.create_monitor
         self.list_monitors = self._v2_client.list_monitors

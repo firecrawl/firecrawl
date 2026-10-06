@@ -64,7 +64,8 @@ overrides:
   "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0"
   "uuid@<11.1.1": "11.1.1"
   "js-cookie@<3.0.7": "3.0.7"
-  "shell-quote@<=1.8.4": "1.10.0"
+  # GHSA-pqg4-j6r4-53mv: fixed in 1.11.0.
+  "shell-quote@<1.11.0": "1.11.0"
   "esbuild@>=0.17.0 <0.28.1": "0.28.1"
   "query-string@>=9.0.0 <10.0.0": ">=9.5.0 <10.0.0"
   # GHSA-866g-f22w-33x8: pin the 4.x line only. Exact 4.0.51 cannot
