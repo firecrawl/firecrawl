@@ -363,7 +363,7 @@ class AsyncFirecrawlClient:
         query: str,
         k: Optional[int] = None,
     ) -> LegalRegulatorySearchResponse:
-        """Search the Legal and Regulatory Index of US primary law and regulatory material."""
+        """Search the Government Index of US primary law and regulatory material."""
         return await async_legal_regulatory.legal_regulatory_search(
             self.async_http_client, query, k=k
         )

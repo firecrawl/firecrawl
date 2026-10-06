@@ -983,7 +983,7 @@ export interface AlexandriaOptions {
  * - `pdf` — restrict results to PDFs (adds `filetype:pdf`).
  * - `developer` — developer-index results (issues, pull requests, READMEs and
  *   documentation) served in `web`; cannot be combined with other categories.
- * - `gov` — legal and regulatory results served in `web`; cannot be combined
+ * - `gov` — Government Index results served in `web`; cannot be combined
  *   with other categories.
  *
  * ⚠️ `categories: ["research"]` is **not** Firecrawl's research paper index.

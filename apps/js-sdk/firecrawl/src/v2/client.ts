@@ -310,7 +310,7 @@ export class FirecrawlClient {
   }
 
   /**
-   * Search the Legal and Regulatory Index: primary law and regulatory material
+   * Search the Government Index: primary law and regulatory material
    * from US federal, state, and local government sources.
    */
   async legalRegulatorySearch(

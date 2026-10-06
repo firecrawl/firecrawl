@@ -635,7 +635,7 @@ class Category(BaseModel):
     - "pdf": Filter results to PDF files (adds filetype:pdf to search)
     - "developer": Developer-index results (issues, pull requests, READMEs and
       documentation) served in `web`; cannot be combined with other categories
-    - "gov": Legal and regulatory results served in `web`; cannot be combined
+    - "gov": Government Index results served in `web`; cannot be combined
       with other categories
 
     .. warning::
@@ -2415,7 +2415,7 @@ class DeveloperSearchResponse(BaseModel):
 
 
 class LegalRegulatorySearchRequest(BaseModel):
-    """Request for the Legal and Regulatory Index search endpoint."""
+    """Request for the Government Index search endpoint."""
 
     query: str
     k: Optional[int] = Field(default=None, ge=1, le=100)

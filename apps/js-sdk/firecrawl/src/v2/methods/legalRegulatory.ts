@@ -10,7 +10,7 @@ import {
 
 const ENDPOINT = "/v2/search/gov";
 
-/** Search the Legal and Regulatory Index. */
+/** Search the Government Index. */
 export async function legalRegulatorySearch(
   http: HttpClient,
   query: string,
@@ -25,12 +25,12 @@ export async function legalRegulatorySearch(
     });
 
     if (response.status !== 200 || !response.data?.success) {
-      throwForBadResponse(response, "search legal and regulatory sources");
+      throwForBadResponse(response, "search the Government Index");
     }
     return response.data;
   } catch (error: any) {
     if (error?.isAxiosError) {
-      return normalizeAxiosError(error, "search legal and regulatory sources");
+      return normalizeAxiosError(error, "search the Government Index");
     }
     throw error;
   }
