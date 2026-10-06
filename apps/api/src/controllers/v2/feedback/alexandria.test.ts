@@ -646,10 +646,15 @@ it("rejects feedback outside the window after the team's last Alexandria call", 
 });
 
 it("fails closed when the feedback window cannot be checked", async () => {
-  mocks.hasRecentAlexandriaActivity.mockRejectedValue(new Error("redis down"));
+  const error = new Error("redis down");
+  mocks.hasRecentAlexandriaActivity.mockRejectedValue(error);
   const response = await submit(minimal);
   expect(response.status).toBe(500);
   expect(response.body.feedbackErrorCode).toBe("INTERNAL");
+  expect(mocks.logError).toHaveBeenCalledWith(
+    "Failed to check the Alexandria feedback window",
+    { error, teamId },
+  );
   expect(mocks.transaction).not.toHaveBeenCalled();
   expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
 });

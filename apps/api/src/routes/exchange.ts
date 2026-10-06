@@ -5,10 +5,10 @@ import {
   acceptProviderTerms,
   acceptTermsSchema,
 } from "../services/alexandria/terms";
-import express, { NextFunction, Request, Response } from "express";
+import express, { Request, Response } from "express";
 import { Agent, fetch } from "undici";
 import { config } from "../config";
-import { markAlexandriaActivity } from "../lib/alexandria-activity";
+import { recordAlexandriaActivity } from "../lib/alexandria-activity";
 import { logger as rootLogger } from "../lib/logger";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
@@ -44,7 +44,10 @@ function upstreamBase(): string | null {
 
 function exchangeProxy(
   timeout: number,
-  options: { requiresRetrieveFlag?: boolean } = {},
+  options: {
+    requiresRetrieveFlag?: boolean;
+    opensFeedbackWindow?: boolean;
+  } = {},
 ) {
   const requiresRetrieveFlag = options.requiresRetrieveFlag !== false;
   const dispatcher = dispatcherFor(timeout);
@@ -98,6 +101,10 @@ function exchangeProxy(
       }
 
       const text = await upstream.text();
+      // Awaited so feedback sent right after this response sees the window.
+      if (options.opensFeedbackWindow && upstream.ok) {
+        await recordAlexandriaActivity(authedReq.auth.team_id);
+      }
       let body: unknown;
       try {
         body = text ? JSON.parse(text) : null;
@@ -161,13 +168,12 @@ exchangeRouter.get(
   authMiddleware(RateLimiterMode.ExchangeDiscover, {
     allowAgentManagedKey: true,
   }),
-  (req: Request, _res: Response, next: NextFunction) => {
-    markAlexandriaActivity(
-      (req as RequestWithAuth<any, any, any>).auth.team_id,
-    );
-    next();
-  },
-  wrap(exchangeProxy(DISCOVER_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+  wrap(
+    exchangeProxy(DISCOVER_TIMEOUT_MS, {
+      requiresRetrieveFlag: false,
+      opensFeedbackWindow: true,
+    }),
+  ),
 );
 
 // These read-only discovery routes remain authenticated; they do not execute paid tools.

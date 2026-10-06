@@ -70,8 +70,11 @@ export async function recordAlexandriaFeedback(
   let withinWindow: boolean;
   try {
     withinWindow = await hasRecentAlexandriaActivity(teamId);
-  } catch {
-    logger.error("Failed to check the Alexandria feedback window", { teamId });
+  } catch (error) {
+    logger.error("Failed to check the Alexandria feedback window", {
+      error,
+      teamId,
+    });
     return failure(500, "INTERNAL", "Failed to check the feedback window.");
   }
   if (!withinWindow) {

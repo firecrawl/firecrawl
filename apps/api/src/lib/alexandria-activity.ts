@@ -6,14 +6,24 @@ const activityKey = (teamId: string) => `alexandria:activity:${teamId}`;
 
 /**
  * Opens (or extends) the team's Alexandria feedback window, which lasts as long
- * as the search feedback window. Fire-and-forget: never throws or delays.
+ * as the search feedback window. Never rejects; a failed write is only logged.
  */
-export function markAlexandriaActivity(teamId: string): void {
-  redisRateLimitClient
-    .set(activityKey(teamId), "1", "EX", config.SEARCH_FEEDBACK_MAX_AGE_SEC)
-    .catch(error =>
-      logger.warn("Failed to record Alexandria activity", { error, teamId }),
+export async function recordAlexandriaActivity(teamId: string): Promise<void> {
+  try {
+    await redisRateLimitClient.set(
+      activityKey(teamId),
+      "1",
+      "EX",
+      config.SEARCH_FEEDBACK_MAX_AGE_SEC,
     );
+  } catch (error) {
+    logger.warn("Failed to record Alexandria activity", { error, teamId });
+  }
+}
+
+/** Fire-and-forget form of recordAlexandriaActivity for latency-sensitive paths. */
+export function markAlexandriaActivity(teamId: string): void {
+  void recordAlexandriaActivity(teamId);
 }
 
 /** Whether the team used Alexandria within the feedback window. */
