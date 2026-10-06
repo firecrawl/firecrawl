@@ -333,7 +333,7 @@ pub async fn parse_pdf(
       Ok(Document {
         markdown: Some(res.markdown),
         raw_html: Some(res.html),
-        raw_base64: None,
+        raw_base64: Some(base64::engine::general_purpose::STANDARD.encode(bytes.as_ref())),
         html: None,
         links: None,
         images: None,
@@ -379,7 +379,7 @@ pub async fn parse_pdf(
     Ok(Document {
       markdown: Some(encoded.clone()),
       raw_html: Some(encoded.clone()),
-      raw_base64: None,
+      raw_base64: Some(encoded.clone()),
       html: Some(encoded),
       links: None,
       images: None,

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use base64::Engine;
 use bytes::Bytes;
 
 use super::super::{
@@ -77,7 +78,7 @@ pub fn parse_document(meta: &Meta, result: RawPageResult) -> Result<Document, Sc
         markdown: Some(markdown),
         html: None,
         raw_html: Some(html),
-        raw_base64: None,
+        raw_base64: Some(base64::engine::general_purpose::STANDARD.encode(bytes.as_ref())),
         links: None,
         images: None,
         screenshot: result.screenshot,
