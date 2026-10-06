@@ -246,6 +246,7 @@ describe("Jev branding shadow", () => {
 
   it("records a failed Jev call without affecting the response", async () => {
     mocks.systemOne.mockReset().mockRejectedValue(new Error("rate limited"));
+    const warn = vi.spyOn(logger, "warn");
 
     const result = await enhanceBrandingWithLLM(input(new CostTracking()));
 
@@ -254,6 +255,10 @@ describe("Jev branding shadow", () => {
       expect(shadowOutcome()).toEqual({
         "branding.shadow.outcome": "jev_failed",
       }),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      "Jev branding shadow call failed",
+      expect.anything(),
     );
   });
 
@@ -302,5 +307,37 @@ describe("comparing branding answers", () => {
     expect(result.color_background_agree).toBe(true);
     expect(result.button_primary_agree).toBe(false);
     expect(result.button_secondary_agree).toBe(false);
+  });
+
+  it("compares fonts after merge, which keeps the page's fonts when an answer has none", () => {
+    const noFonts: BrandingEnhancement = {
+      ...structuredClone(LLM_ANSWER),
+      cleanedFonts: [],
+    };
+
+    const result = compareBrandingAnswers(request, noFonts, LLM_ANSWER);
+
+    expect(result.fonts_overlap).toBe(1);
+  });
+
+  it("treats buttons that differ only in shape as different", () => {
+    const shaped = input(new CostTracking());
+    shaped.buttons = [
+      { ...shaped.buttons![0], borderRadius: "4px" },
+      shaped.buttons![1],
+      {
+        ...shaped.buttons![0],
+        index: 2,
+        text: "Start free trial",
+        borderRadius: "999px",
+      },
+    ];
+    const pill: BrandingEnhancement = structuredClone(LLM_ANSWER);
+    pill.buttonClassification.primaryButtonIndex = 2;
+
+    const result = compareBrandingAnswers(shaped, LLM_ANSWER, pill);
+
+    expect(result.button_primary_agree).toBe(false);
+    expect(result.button_secondary_agree).toBe(true);
   });
 });

@@ -809,10 +809,15 @@ export async function enhanceBrandingWithJev(
       },
     );
   } catch (error) {
-    input.logger.warn("Jev branding call failed, falling back to LLM", {
-      error,
-      elapsedMs: Date.now() - started,
-    });
+    input.logger.warn(
+      options.shadow
+        ? "Jev branding shadow call failed"
+        : "Jev branding call failed, falling back to LLM",
+      {
+        error,
+        elapsedMs: Date.now() - started,
+      },
+    );
     return null;
   }
 
@@ -831,10 +836,15 @@ export async function enhanceBrandingWithJev(
     result = mapJevAnswers(request, response);
   } catch (error) {
     // A successful call whose answers don't have the expected shape.
-    input.logger.warn("Jev branding answers unusable, falling back to LLM", {
-      error,
-      model: response.model,
-    });
+    input.logger.warn(
+      options.shadow
+        ? "Jev branding shadow answers unusable"
+        : "Jev branding answers unusable, falling back to LLM",
+      {
+        error,
+        model: response.model,
+      },
+    );
     return null;
   }
   input.logger.info("Jev branding call", {

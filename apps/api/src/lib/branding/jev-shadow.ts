@@ -44,20 +44,29 @@ function sameColor(a?: string, b?: string): boolean {
 
 const COLOR_ROLES = ["primary", "accent", "background", "textPrimary"] as const;
 
-function sameButton(
-  a?: { background?: string; textColor?: string },
-  b?: { background?: string; textColor?: string },
-): boolean {
+type ButtonStyle = NonNullable<
+  NonNullable<BrandingProfile["components"]>["buttonPrimary"]
+>;
+
+// Everything the response carries for a button.
+function sameButton(a?: ButtonStyle, b?: ButtonStyle): boolean {
   if (!a && !b) return true;
   if (!a || !b) return false;
+  const sameText = (x?: string, y?: string) => (x || "none") === (y || "none");
   return (
-    sameColor(a.background, b.background) && sameColor(a.textColor, b.textColor)
+    sameColor(a.background, b.background) &&
+    sameColor(a.textColor, b.textColor) &&
+    sameColor(a.borderColor, b.borderColor) &&
+    sameText(a.borderRadius, b.borderRadius) &&
+    sameText(a.shadow, b.shadow)
   );
 }
 
-function fontOverlap(a: BrandingEnhancement, b: BrandingEnhancement): number {
-  const names = (e: BrandingEnhancement) =>
-    new Set((e.cleanedFonts ?? []).map(f => f.family.toLowerCase()));
+// Merge keeps the page's own fonts when an answer cleans none, so compare the
+// merged profiles, not the raw answers.
+function fontOverlap(a: BrandingProfile, b: BrandingProfile): number {
+  const names = (p: BrandingProfile) =>
+    new Set((p.fonts ?? []).map(f => f.family.toLowerCase()));
   const x = names(a);
   const y = names(b);
   const union = new Set([...x, ...y]);
@@ -104,7 +113,7 @@ export function compareBrandingAnswers(
       b.colors?.[role],
     );
   }
-  result.fonts_overlap = fontOverlap(llm, jev);
+  result.fonts_overlap = fontOverlap(a, b);
 
   const flags = Object.values(result).filter(
     (v): v is boolean => typeof v === "boolean",
