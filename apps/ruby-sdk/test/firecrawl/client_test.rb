@@ -956,7 +956,12 @@ class ClientTest < Minitest::Test
                 creditsEstimate: 3,
               },
             ],
-            resolution: nil,
+            resolution: {
+              approved: true,
+              callIds: ["call-1"],
+              always: false,
+              byRunId: "agent-turn-2",
+            },
           }
         ),
         headers: { "Content-Type" => "application/json" }
@@ -990,7 +995,10 @@ class ClientTest < Minitest::Test
     assert_equal "calls", pending.kind
     assert_equal "Apollo charges per lookup.", pending.reason
     assert_nil pending.terms
-    assert_nil pending.resolution
+    assert_equal true, pending.resolution.approved
+    assert_equal ["call-1"], pending.resolution.call_ids
+    assert_equal false, pending.resolution.always
+    assert_equal "agent-turn-2", pending.resolution.by_run_id
     call = pending.calls.first
     assert_equal "call-1", call.id
     assert_equal "apollo", call.provider
@@ -1057,12 +1065,7 @@ class ClientTest < Minitest::Test
                 url: "https://www.firecrawl.dev/app/alexandria/clearbit",
               },
             ],
-            resolution: {
-              approved: true,
-              callIds: [],
-              always: false,
-              byRunId: "agent-turn-2",
-            },
+            resolution: nil,
           }
         ),
         headers: { "Content-Type" => "application/json" }
@@ -1087,8 +1090,7 @@ class ClientTest < Minitest::Test
     assert_equal [], pending.calls
     assert_equal "clearbit", pending.terms.first.provider
     assert_nil pending.terms.first.digest
-    assert_equal true, pending.resolution.approved
-    assert_equal "agent-turn-2", pending.resolution.by_run_id
+    assert_nil pending.resolution
   end
 
   # ================================================================
