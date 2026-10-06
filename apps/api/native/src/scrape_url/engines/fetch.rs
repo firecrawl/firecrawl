@@ -171,7 +171,19 @@ impl Engine for FetchEngine {
       .get(meta.get_url().as_str())
       .headers(headers)
       .send()
-      .await?;
+      .await
+      .map_err(|e| {
+        let guard = if e.is_redirect() {
+          "redirect_ip_guard"
+        } else {
+          "dns_guard"
+        };
+        let e = ScrapeURLError::from(e);
+        if matches!(e, ScrapeURLError::InsecureConnectionError) {
+          tracing::Span::current().record("rejected_by", guard);
+        }
+        e
+      })?;
 
     let url = Url::parse(&res.uri().to_string())?;
     let status_code = res.status().as_u16();

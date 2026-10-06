@@ -273,7 +273,7 @@ pub async fn scrape_url(
     let transport = e.to_transport_string();
     let code = transport.split_once('|').map_or("", |(code, _)| code);
     span.record("error.code", code);
-    if code == "SCRAPE_PANIC" {
+    if matches!(e.payload(), ScrapeErrorPayload::Panic { .. }) {
       span.record("panicked", true);
     }
     // The ZDR layer vetoes this event, so a ZDR panic's payload never leaves.
