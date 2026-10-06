@@ -1,6 +1,7 @@
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   searchDeveloperCategory: vi.fn(),
+  searchGovCategory: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
   discoverTools: vi.fn(),
   removeExplicitResults: vi.fn(),
@@ -21,6 +22,15 @@ vi.mock("./developer", () => ({
         : category.type === "developer",
     ),
   searchDeveloperCategory: mocks.searchDeveloperCategory,
+}));
+vi.mock("./gov", () => ({
+  wantsGovCategory: (categories?: Array<string | { type: string }>) =>
+    (categories ?? []).some(category =>
+      typeof category === "string"
+        ? category === "gov"
+        : category.type === "gov",
+    ),
+  searchGovCategory: mocks.searchGovCategory,
 }));
 vi.mock("./scrape", () => ({
   getItemsToScrape: vi.fn(() => []),
@@ -192,7 +202,7 @@ describe("executeSearch developer category", () => {
     expect(mocks.search).not.toHaveBeenCalled();
     expect(result.response).toEqual({ web: [developerResult] });
     expect(result.response).not.toHaveProperty("developer");
-    expect(result.developerResultsCount).toBe(1);
+    expect(result.indexResultsCount).toBe(1);
   });
 
   it("filters blocked developer results via threat protection and renumbers", async () => {
@@ -256,5 +266,57 @@ describe("executeSearch developer category", () => {
       categories: ["developer"],
     });
     expect(sole.success).toBe(true);
+  });
+});
+
+describe("executeSearch gov category", () => {
+  const govResult = {
+    url: "https://www.ecfr.gov/current/title-21/part-101",
+    title: "21 CFR Part 101",
+    description: "Food labeling",
+    position: 1,
+    category: "gov",
+  };
+
+  it("returns sole gov-category results in web without running SERP", async () => {
+    mocks.searchGovCategory.mockResolvedValue([govResult]);
+
+    const result = await executeSearch(
+      options([{ type: "gov" }]),
+      context,
+      logger,
+    );
+
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(mocks.searchDeveloperCategory).not.toHaveBeenCalled();
+    expect(mocks.searchGovCategory).toHaveBeenCalledWith(
+      { query: "retries", limit: 10, teamId: "team-1", timeout: 1_000 },
+      logger,
+    );
+    expect(result.response).toEqual({ web: [govResult] });
+    expect(result.indexResultsCount).toBe(1);
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("rejects gov combined with other categories at the schema", () => {
+    const mixed = searchRequestSchema.safeParse({
+      query: "zoning",
+      categories: ["gov", "pdf"],
+    });
+    expect(mixed.success).toBe(false);
+    if (!mixed.success) {
+      expect(JSON.stringify(mixed.error.issues)).toContain(
+        "the gov category cannot be combined",
+      );
+    }
+
+    const sole = searchRequestSchema.safeParse({
+      query: "zoning",
+      categories: ["gov"],
+    });
+    expect(sole.success).toBe(true);
+    if (sole.success) {
+      expect(sole.data.categories).toEqual([{ type: "gov" }]);
+    }
   });
 });

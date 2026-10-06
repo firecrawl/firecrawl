@@ -1503,6 +1503,34 @@ describe("V2 Types Validation", () => {
       ).toThrow();
     });
 
+    it("should accept the gov category on its own and reject params or mixing", () => {
+      expect(
+        searchRequestSchema.parse({ query: "test", categories: ["gov"] })
+          .categories,
+      ).toEqual([{ type: "gov" }]);
+
+      expect(
+        searchRequestSchema.parse({
+          query: "test",
+          categories: [{ type: "gov" }],
+        }).categories,
+      ).toEqual([{ type: "gov" }]);
+
+      expect(() =>
+        searchRequestSchema.parse({
+          query: "test",
+          categories: [{ type: "gov", sites: ["ecfr.gov"] }],
+        }),
+      ).toThrow();
+
+      expect(() =>
+        searchRequestSchema.parse({
+          query: "test",
+          categories: ["gov", "pdf"],
+        }),
+      ).toThrow();
+    });
+
     it("should normalize every developer category alias to developer", () => {
       const aliases = [
         "repo",
