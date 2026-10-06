@@ -241,6 +241,10 @@ export async function executePromptViaBrowserAgent(
   stepTimeout: number,
   logger: typeof _logger,
   trace?: BrowserAgentTraceContext,
+  options?: {
+    /** The caller selected the tab just before this call, with no step between. */
+    tabSelected?: boolean;
+  },
 ): Promise<AgentResult> {
   const zeroDataRetention = trace?.zeroDataRetention === true;
   const debugLog = new AgentDebugLog(browserId, zeroDataRetention);
@@ -250,7 +254,9 @@ export async function executePromptViaBrowserAgent(
   debugLog.add(`Prompt:  ${prompt}\n`);
   logger.info("Agent debug log", { path: debugLog.getPath() });
 
-  await selectBrowserAgentTab(browserId);
+  // Each selection costs two sequential Hangar executions. A session that was
+  // initialized in this request already has the replay tab selected.
+  if (!options?.tabSelected) await selectBrowserAgentTab(browserId);
 
   const [initialSnapshot, initialUrl] = await Promise.all([
     takeSnapshot(browserId),

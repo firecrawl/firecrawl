@@ -231,6 +231,8 @@ async function scrapeInteractInternal(
   // --- Ensure a browser session exists (create + replay if needed) ---
 
   let session = storedSession;
+  // Initialization selects the replay tab, so the first prompt can skip it.
+  let tabSelected = false;
 
   if (!session && req.body.existingSessionId) {
     const existing = await withZeroDataRetention(true, () =>
@@ -286,6 +288,7 @@ async function scrapeInteractInternal(
       return res.status(created.status).json(created.body);
     }
     session = created.session;
+    tabSelected = true;
 
     logger = logger.child({
       sessionId: session.id,
@@ -361,6 +364,7 @@ async function scrapeInteractInternal(
             zeroDataRetention,
             ...traceScrapeContext,
           },
+          { tabSelected },
         );
       } catch (err) {
         logger.error("Agent loop failed", { error: err });
