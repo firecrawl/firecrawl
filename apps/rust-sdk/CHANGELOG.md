@@ -1,5 +1,18 @@
 ## CHANGELOG
 
+## [2.21.3] - 2026-10-06
+
+### Added
+
+- Added `AgentOptions::exchange` (`AgentExchangeOptions`) so agent runs can use
+  the team's Exchange (Alexandria) data providers, including `approve` and
+  `decline` answers to a pending approval. Added `AgentOptions::thread_id` and
+  `AgentOptions::mode` (`AgentMode`) to continue a thread and run in chat mode.
+- `AgentResponse` now carries `thread_id` and `thread_turn`.
+  `AgentStatusResponse` now carries `thread_id`, `thread_turn`, `mode`,
+  `message`, `pending_approval` (`AgentPendingApproval`), and `exchange`
+  (`AgentExchangeSummary`).
+
 ## [2.21.2] - 2026-10-02
 
 ### Added
