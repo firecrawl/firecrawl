@@ -13,6 +13,7 @@ vi.mock("../lib/extractSmartScrape", async importOriginal => {
   };
 });
 import { performLLMExtract, removeDefaultProperty } from "./llmExtract";
+import { extractData } from "../lib/extractSmartScrape";
 import { trimToTokenLimit } from "./llmExtract";
 import { performSummary } from "./llmExtract";
 import { performCleanContent } from "./llmExtract";
@@ -350,6 +351,93 @@ describe("performCleanContent", () => {
 
     expect(result.markdown).toBe("Some content");
     expect(result.warning).toBeUndefined();
+  });
+});
+
+function makeJsonMeta(internalOptions: Record<string, unknown> = {}) {
+  return {
+    options: {
+      formats: [
+        {
+          type: "json",
+          schema: {
+            type: "object",
+            properties: { rows: { type: "array" } },
+          },
+        },
+      ],
+    },
+    internalOptions: {
+      zeroDataRetention: false,
+      teamId: "test-team",
+      ...internalOptions,
+    },
+    logger: {
+      child: vi.fn(() => ({
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      })),
+      debug: vi.fn(),
+      info: vi.fn(),
+    },
+    costTracking: {},
+    id: "test-id",
+    url: "https://example.com",
+  } as any;
+}
+
+describe("performLLMExtract telemetry attribution", () => {
+  beforeEach(() => {
+    (extractData as Mock).mockClear();
+  });
+
+  function extractDataArgs() {
+    const calls = (extractData as Mock).mock.calls;
+    expect(calls).toHaveLength(1);
+    return calls[0][0];
+  }
+
+  it("traces plain JSON extraction as performLLMExtract", async () => {
+    await performLLMExtract(makeJsonMeta(), {
+      markdown: "# page",
+      metadata: {},
+    } as any);
+
+    const args = extractDataArgs();
+    expect(args.extractOptions.metadata).toEqual({
+      teamId: "test-team",
+      functionId: "performLLMExtract",
+      scrapeId: "test-id",
+      telemetry: undefined,
+    });
+    expect(args.metadata.functionId).toBe("performLLMExtract");
+  });
+
+  it("traces the extraction as the requesting feature when set", async () => {
+    const metadata = {
+      teamId: "test-team",
+      monitorId: "test-monitor",
+      jobId: "test-check",
+      jobKind: "monitor",
+      feature: "monitor_search_judge",
+    };
+    await performLLMExtract(
+      makeJsonMeta({
+        llmTelemetry: { functionId: "monitor/searchJudge", metadata },
+      }),
+      { markdown: "# page", metadata: {} } as any,
+    );
+
+    const args = extractDataArgs();
+    expect(args.extractOptions.metadata).toEqual({
+      teamId: "test-team",
+      functionId: "monitor/searchJudge",
+      scrapeId: "test-id",
+      telemetry: metadata,
+    });
+    expect(args.metadata.functionId).toBe("monitor/searchJudge");
   });
 });
 

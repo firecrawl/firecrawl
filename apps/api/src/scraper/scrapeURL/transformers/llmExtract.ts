@@ -393,6 +393,8 @@ export type GenerateCompletionsOptions = {
     deepResearchId?: string;
     llmsTxtId?: string;
     crawlId?: string;
+    /** Extra span metadata from the feature that requested the call. */
+    telemetry?: Record<string, string>;
   };
   /**
    * Turns off AI SDK telemetry for the call. Also on whenever the caller runs
@@ -405,6 +407,7 @@ export type GenerateCompletionsOptions = {
 // Span metadata that ties each call to the job that made it.
 function telemetryMetadata(metadata: GenerateCompletionsOptions["metadata"]) {
   return {
+    ...metadata.telemetry,
     teamId: metadata.teamId,
     ...(metadata.extractId
       ? {
@@ -1026,6 +1029,8 @@ export async function performLLMExtract(
     // let generationOptions = { ...originalOptions }; // Start with original options
 
     const modelSelection = selectModelForSchema(jsonFormat.schema);
+    const llmFunctionId =
+      meta.internalOptions.llmTelemetry?.functionId ?? "performLLMExtract";
 
     const generationOptions: GenerateCompletionsOptions = {
       logger: meta.logger.child({
@@ -1045,8 +1050,9 @@ export async function performLLMExtract(
       },
       metadata: {
         teamId: meta.internalOptions.teamId,
-        functionId: "performLLMExtract",
+        functionId: llmFunctionId,
         scrapeId: meta.id,
+        telemetry: meta.internalOptions.llmTelemetry?.metadata,
       },
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
     };
@@ -1059,7 +1065,7 @@ export async function performLLMExtract(
         scrapeId: meta.id,
         metadata: {
           teamId: meta.internalOptions.teamId,
-          functionId: "performLLMExtract",
+          functionId: llmFunctionId,
         },
       });
 
