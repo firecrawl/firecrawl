@@ -27,8 +27,8 @@ it("opens the Alexandria window, independent of the search feedback window", asy
     alexandria: config.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
     search: config.SEARCH_FEEDBACK_MAX_AGE_SEC,
   };
-  config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1200;
-  config.SEARCH_FEEDBACK_MAX_AGE_SEC = 120;
+  config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1500;
+  config.SEARCH_FEEDBACK_MAX_AGE_SEC = 90;
   try {
     await recordAlexandriaActivity(teamId);
   } finally {
@@ -39,7 +39,7 @@ it("opens the Alexandria window, independent of the search feedback window", asy
     `alexandria:activity:${teamId}`,
     "1",
     "EX",
-    1200,
+    1500,
   );
 });
 
