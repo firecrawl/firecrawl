@@ -638,7 +638,7 @@ it("rejects feedback outside the window after the team's last Alexandria call", 
   expect(response.body).toEqual({
     success: false,
     feedbackErrorCode: "FEEDBACK_WINDOW_EXPIRED",
-    error: `Alexandria feedback must be submitted within ${config.SEARCH_FEEDBACK_MAX_AGE_SEC} seconds of an Alexandria search, discovery, or execution.`,
+    error: `Alexandria feedback must be submitted within ${config.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution.`,
   });
   expect(mocks.hasRecentAlexandriaActivity).toHaveBeenCalledWith(teamId);
   expect(mocks.transaction).not.toHaveBeenCalled();

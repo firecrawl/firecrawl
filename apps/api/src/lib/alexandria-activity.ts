@@ -5,8 +5,8 @@ import { logger } from "./logger";
 const activityKey = (teamId: string) => `alexandria:activity:${teamId}`;
 
 /**
- * Opens (or extends) the team's Alexandria feedback window, which lasts as long
- * as the search feedback window. Never rejects; a failed write is only logged.
+ * Opens (or extends) the team's Alexandria feedback window for
+ * ALEXANDRIA_FEEDBACK_WINDOW_SEC. Never rejects; a failed write is only logged.
  */
 export async function recordAlexandriaActivity(teamId: string): Promise<void> {
   try {
@@ -14,7 +14,7 @@ export async function recordAlexandriaActivity(teamId: string): Promise<void> {
       activityKey(teamId),
       "1",
       "EX",
-      config.SEARCH_FEEDBACK_MAX_AGE_SEC,
+      config.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
     );
   } catch (error) {
     logger.warn("Failed to record Alexandria activity", { error, teamId });
