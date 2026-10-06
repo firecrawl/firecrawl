@@ -197,10 +197,12 @@ impl FirePdfClient<'_> {
     let attempt = self
       .drive_steps(plan, options, &mut guard, &mut progress)
       .await;
-    guard.disarm();
 
     let (error, maybe_accepted) = match attempt {
-      Ok(done) => return Ok(done),
+      Ok(done) => {
+        guard.disarm();
+        return Ok(done);
+      }
       Err(failure) => failure,
     };
     let job_already_terminal =
@@ -212,6 +214,8 @@ impl FirePdfClient<'_> {
     {
       self.cancel_job(plan.job_scrape_id).await;
     }
+    // Disarmed after the cancel, so a drop while it is in flight hands the cancel to the guard.
+    guard.disarm();
     Err(error)
   }
 

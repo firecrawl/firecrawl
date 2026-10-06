@@ -35,6 +35,10 @@ impl FirePdfClient<'_> {
       team_id: (!team_id.is_empty()).then_some(team_id.as_str()),
       options: options.wire(),
     })
+    .map_err(|error| {
+      span.record("fire_pdf.adoption", "error");
+      tracing::error!(error = %error, "adoption lookup request build failed");
+    })
     .ok()?;
     let response = match self
       .send(
