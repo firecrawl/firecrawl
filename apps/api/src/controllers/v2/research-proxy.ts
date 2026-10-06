@@ -233,7 +233,7 @@ function creditsFor(
 ) {
   // Make certain research index accesses free (AI/ML & life-sciences indices).
   // Research paper endpoints should have no credit cost. Explicit exceptions
-  // remain billable: GitHub search and developer/code search.
+  // remain billable: GitHub search, developer/code search and gov search.
   const freeResearchKinds = new Set([
     "research_paper_search",
     "research_related_papers",

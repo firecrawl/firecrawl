@@ -145,6 +145,51 @@ describe("/v2/search/gov", () => {
     },
   );
 
+  it("bills at the zero data retention rate and marks the logs", async () => {
+    const res = makeRes();
+    await handler("get")(
+      makeReq("GET", { query: "food labeling rules" }, TEAM_ID, {
+        searchZDR: "forced-zdr",
+      }),
+      res,
+    );
+    await flush();
+
+    expect(billTeam).toHaveBeenCalledWith(
+      TEAM_ID,
+      null,
+      10,
+      7,
+      expect.objectContaining({ endpoint: "search" }),
+    );
+    expect(mocks.logResearchEndpoint).toHaveBeenCalledWith(
+      expect.objectContaining({ credits_cost: 10, zeroDataRetention: true }),
+    );
+  });
+
+  it("passes an upstream error through without billing", async () => {
+    mocks.fetchLegalRegulatoryUpstream.mockResolvedValue({
+      ok: false,
+      status: 500,
+      headers: new Headers(),
+      text: async () =>
+        JSON.stringify({ success: false, error: "index unavailable" }),
+    });
+    const res = makeRes();
+    await handler("get")(makeReq("GET", { query: "zoning variance" }), res);
+    await flush();
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(billTeam).not.toHaveBeenCalled();
+    expect(mocks.logResearchEndpoint).toHaveBeenCalledWith(
+      expect.objectContaining({
+        is_successful: false,
+        credits_cost: 0,
+        error: "index unavailable",
+      }),
+    );
+  });
+
   it("does not bill an empty result", async () => {
     mocks.fetchLegalRegulatoryUpstream.mockResolvedValue(upstreamWith([]));
     const res = makeRes();
