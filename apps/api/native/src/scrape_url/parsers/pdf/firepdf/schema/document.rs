@@ -93,11 +93,15 @@ fn deserialize_present<'de, D: Deserializer<'de>>(
   Value::deserialize(deserializer).map(Some)
 }
 
-/// Any JSON number as a page count.
+/// A JSON number as a page count; anything that is not a whole `u32` counts as absent.
 pub(super) fn deserialize_count<'de, D: Deserializer<'de>>(
   deserializer: D,
 ) -> Result<Option<u32>, D::Error> {
-  Ok(Option::<f64>::deserialize(deserializer)?.map(|n| n as u32))
+  Ok(
+    Option::<f64>::deserialize(deserializer)?
+      .filter(|n| n.fract() == 0.0 && (0.0..=f64::from(u32::MAX)).contains(n))
+      .map(|n| n as u32),
+  )
 }
 
 /// Any JSON number as milliseconds.

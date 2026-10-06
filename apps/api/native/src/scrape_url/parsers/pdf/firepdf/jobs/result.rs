@@ -135,7 +135,7 @@ impl FirePdfClient<'_> {
       Ok(response) => {
         Span::current().record("http.status", response.status);
         if response.status != 200 && response.status != 404 {
-          tracing::error!(error = %format_args!("cancellation not accepted: status {}", response.status));
+          tracing::error!(http.status = response.status, "cancellation not accepted");
         }
       }
       Err(error) => tracing::error!(error = %error),

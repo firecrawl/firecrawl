@@ -49,7 +49,7 @@ impl FirePdfRequest {
       team_concurrency: meta
         .internal_options
         .team_concurrency
-        .filter(|x| x.is_finite() && *x > 0.0)
+        .filter(|x| *x > 0.0 && x.fract() == 0.0)
         .map(|x| x as u64),
       zdr: meta.internal_options.zero_data_retention,
       url: meta.get_url().to_string(),
@@ -157,9 +157,10 @@ impl FirePdfResult {
     page_markdown: Option<Vec<WirePage>>,
     blocks: Option<Vec<WirePageBlocks>>,
   ) -> Self {
+    let (markdown, html) = markdown_to_html(markdown).await;
     Self {
-      html: markdown_to_html(&markdown).await,
       markdown,
+      html,
       pages_processed,
       page_markdown,
       blocks,

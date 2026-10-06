@@ -25,7 +25,7 @@ fn env_percent(name: &str) -> f64 {
   match raw.trim().parse::<f64>() {
     Ok(x) if (0.0..=100.0).contains(&x) => x,
     _ => {
-      tracing::error!(error = %format_args!("{name}={raw:?} is not a percentage in [0, 100]; using 0"));
+      tracing::error!(variable = name, value = %raw, "not a percentage in [0, 100]; using 0");
       0.0
     }
   }

@@ -65,9 +65,10 @@ pub struct Parsed {
 
 impl Parsed {
   pub async fn from_markdown(markdown: String) -> Self {
+    let (markdown, html) = markdown_to_html(markdown).await;
     Self {
-      html: markdown_to_html(&markdown).await,
       markdown,
+      html,
       pages: None,
       blocks: None,
     }

@@ -59,7 +59,7 @@ impl FirePdfClient<'_> {
     }
     if response.status != 200 {
       span.record("fire_pdf.adoption", "error");
-      tracing::error!(error = %format_args!("unexpected status {}", response.status));
+      tracing::error!(http.status = response.status, "unexpected adoption lookup status");
       return None;
     }
     let json = response.json_or_empty();
