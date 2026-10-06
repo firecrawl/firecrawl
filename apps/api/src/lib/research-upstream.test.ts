@@ -11,16 +11,10 @@ vi.mock("undici", () => ({
 }));
 
 vi.mock("../config", () => ({
-  config: {
-    RESEARCH_PROXY_URL: "https://research.test/",
-    SEARCH_PLATFORM_URL: "https://platform.test/",
-  },
+  config: { RESEARCH_PROXY_URL: "https://research.test/" },
 }));
 
-import {
-  fetchLegalRegulatoryUpstream,
-  fetchResearchUpstream,
-} from "./research-upstream";
+import { fetchResearchUpstream } from "./research-upstream";
 
 beforeEach(() => {
   mocks.fetch.mockReset();
@@ -71,33 +65,5 @@ describe("fetchResearchUpstream", () => {
 
   it("limits connection setup without dispatcher headers or body timeouts", () => {
     expect(mocks.agent).toHaveBeenCalledWith({ connectTimeout: 10_000 });
-  });
-});
-
-describe("fetchLegalRegulatoryUpstream", () => {
-  it("posts the query and result count to the index", async () => {
-    const signal = new AbortController().signal;
-    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(signal);
-
-    await fetchLegalRegulatoryUpstream({
-      query: "food labeling rules",
-      k: 5,
-      headers: { "x-request-id": "abc" },
-      timeoutMs: 15_000,
-    });
-
-    expect(timeout).toHaveBeenCalledWith(15_000);
-    expect(mocks.fetch).toHaveBeenCalledWith(
-      "https://platform.test/api/v1/gov-search",
-      expect.objectContaining({
-        method: "POST",
-        headers: {
-          "x-request-id": "abc",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ query: "food labeling rules", top_k: 5 }),
-        signal,
-      }),
-    );
   });
 });

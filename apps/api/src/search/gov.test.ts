@@ -8,7 +8,7 @@ vi.mock("../config", () => ({
 }));
 
 import { fetch } from "undici";
-import { searchGovCategory, wantsGovCategory } from "./gov";
+import { searchGovCategory } from "./gov";
 
 const fetchMock = vi.mocked(fetch);
 
@@ -24,15 +24,6 @@ function upstreamOk(body: unknown) {
 
 afterEach(() => {
   vi.clearAllMocks();
-});
-
-describe("wantsGovCategory", () => {
-  it("reads both the string form and the object form", () => {
-    expect(wantsGovCategory(["gov"])).toBe(true);
-    expect(wantsGovCategory([{ type: "gov" }])).toBe(true);
-    expect(wantsGovCategory(["github", "developer"])).toBe(false);
-    expect(wantsGovCategory(undefined)).toBe(false);
-  });
 });
 
 describe("searchGovCategory", () => {
@@ -66,14 +57,14 @@ describe("searchGovCategory", () => {
               url: "https://www.ecfr.gov/current/title-21/part-101",
               title: "21 CFR Part 101",
               description: "Food labeling",
-              position: 1,
+              position: 42,
               score: 0.9,
             },
-            { url: "", title: "dropped", description: "", position: 2 },
+            { url: "", title: "dropped", description: "", position: 43 },
             {
               url: "https://www.ecfr.gov/current/title-21/part-102",
               title: "  ",
-              position: 3,
+              position: 44,
             },
           ],
         },

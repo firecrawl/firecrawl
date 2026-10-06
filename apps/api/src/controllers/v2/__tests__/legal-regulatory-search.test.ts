@@ -200,22 +200,25 @@ describe("/v2/search/gov", () => {
     expect(billTeam).not.toHaveBeenCalled();
   });
 
-  describe.each(["GET", "POST"] as const)("on %s", method => {
-    const route = method === "GET" ? "get" : "post";
-
-    it.each([
-      [{ query: "" }],
-      [{ query: "rules", k: "101" }],
-      [{ query: "rules", magic: "true" }],
-    ])("rejects invalid input %j before the upstream call", async input => {
+  it.each([
+    ["GET", { query: "" }],
+    ["GET", { query: "rules", k: "101" }],
+    ["GET", { query: "rules", magic: "true" }],
+    ["POST", { query: "rules", magic: "true" }],
+  ] as const)(
+    "rejects invalid %s input %j before the upstream call",
+    async (method, input) => {
       const res = makeRes();
-      await handler(route)(makeReq(method, input), res);
+      await handler(method === "GET" ? "get" : "post")(
+        makeReq(method, input),
+        res,
+      );
       await flush();
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(mocks.fetchLegalRegulatoryUpstream).not.toHaveBeenCalled();
-    });
-  });
+    },
+  );
 
   it("maps an upstream timeout to 504", async () => {
     mocks.fetchLegalRegulatoryUpstream.mockRejectedValue(

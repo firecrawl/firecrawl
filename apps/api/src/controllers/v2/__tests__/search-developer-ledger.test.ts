@@ -186,23 +186,6 @@ describe("developer category code_searches ledger", () => {
     expect(row.request_id).toBe(res.json.mock.calls[0][0].id);
   });
 
-  it("writes exactly one legal_regulatory_searches row for a gov category search", async () => {
-    const req = makeReq({ query: "zoning variance", categories: ["gov"] });
-    const res = makeRes();
-
-    await searchController(req, res);
-    await flushAsync();
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(mockLogResearchEndpoint).toHaveBeenCalledTimes(1);
-    const row = mockLogResearchEndpoint.mock.calls[0][0];
-    expect(row.table).toBe("legal_regulatory_searches");
-    expect(row.target).toBe("zoning variance");
-    expect(row.num_results).toBe(2);
-    expect(row.options.categories).toEqual([{ type: "gov" }]);
-    expect(row.options.via).toBe("search_category");
-  });
-
   it("counts alias category inputs the same as developer", async () => {
     for (const alias of ["repo", "code", "docs", "developer_index"]) {
       mockLogResearchEndpoint.mockClear();
@@ -341,5 +324,24 @@ describe("developer category code_searches ledger", () => {
       { type: "developer" },
     ]);
     expect(res.status).not.toHaveBeenCalledWith(403);
+  });
+});
+
+describe("gov category legal_regulatory_searches ledger", () => {
+  it("writes exactly one legal_regulatory_searches row for a gov category search", async () => {
+    const req = makeReq({ query: "zoning variance", categories: ["gov"] });
+    const res = makeRes();
+
+    await searchController(req, res);
+    await flushAsync();
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockLogResearchEndpoint).toHaveBeenCalledTimes(1);
+    const row = mockLogResearchEndpoint.mock.calls[0][0];
+    expect(row.table).toBe("legal_regulatory_searches");
+    expect(row.target).toBe("zoning variance");
+    expect(row.num_results).toBe(2);
+    expect(row.options.categories).toEqual([{ type: "gov" }]);
+    expect(row.options.via).toBe("search_category");
   });
 });

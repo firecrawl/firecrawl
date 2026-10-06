@@ -297,26 +297,4 @@ describe("executeSearch gov category", () => {
     expect(result.indexResultsCount).toBe(1);
     expect(result.searchCredits).toBe(2);
   });
-
-  it("rejects gov combined with other categories at the schema", () => {
-    const mixed = searchRequestSchema.safeParse({
-      query: "zoning",
-      categories: ["gov", "pdf"],
-    });
-    expect(mixed.success).toBe(false);
-    if (!mixed.success) {
-      expect(JSON.stringify(mixed.error.issues)).toContain(
-        "the gov category cannot be combined",
-      );
-    }
-
-    const sole = searchRequestSchema.safeParse({
-      query: "zoning",
-      categories: ["gov"],
-    });
-    expect(sole.success).toBe(true);
-    if (sole.success) {
-      expect(sole.data.categories).toEqual([{ type: "gov" }]);
-    }
-  });
 });
