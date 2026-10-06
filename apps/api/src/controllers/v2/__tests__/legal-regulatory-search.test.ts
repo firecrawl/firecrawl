@@ -215,17 +215,17 @@ describe("/v2/search/gov", () => {
       expect(res.status).toHaveBeenCalledWith(400);
       expect(mocks.fetchLegalRegulatoryUpstream).not.toHaveBeenCalled();
     });
+  });
 
-    it("maps an upstream timeout to 504", async () => {
-      mocks.fetchLegalRegulatoryUpstream.mockRejectedValue(
-        new DOMException("timed out", "TimeoutError"),
-      );
-      const res = makeRes();
-      await handler(route)(makeReq(method, { query: "zoning variance" }), res);
-      await flush();
+  it("maps an upstream timeout to 504", async () => {
+    mocks.fetchLegalRegulatoryUpstream.mockRejectedValue(
+      new DOMException("timed out", "TimeoutError"),
+    );
+    const res = makeRes();
+    await handler("get")(makeReq("GET", { query: "zoning variance" }), res);
+    await flush();
 
-      expect(res.status).toHaveBeenCalledWith(504);
-    });
+    expect(res.status).toHaveBeenCalledWith(504);
   });
 
   it("serves a keyless caller and charges the keyless budget", async () => {

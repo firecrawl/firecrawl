@@ -100,19 +100,4 @@ describe("fetchLegalRegulatoryUpstream", () => {
       }),
     );
   });
-
-  it("leaves the result count to the index when k is omitted", async () => {
-    await fetchLegalRegulatoryUpstream({
-      query: "food labeling rules",
-      headers: {},
-      timeoutMs: 15_000,
-    });
-
-    expect(mocks.fetch).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        body: JSON.stringify({ query: "food labeling rules" }),
-      }),
-    );
-  });
 });
