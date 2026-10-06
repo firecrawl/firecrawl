@@ -189,12 +189,25 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
       }
       const last = responses.at(-1)!;
       expect(last.body).toMatchObject({ success: true, creditsRefunded: 0 });
-      if (responses[0].body.creditsRefunded === 1) {
-        expect(responses.slice(0, -1).map(r => r.body.creditsRefunded)).toEqual(
-          Array(websiteCap).fill(1),
-        );
-        expect(last.body.websiteCapReached).toBe(true);
-        expect(last.body.warning).toContain("www.usaspending.gov");
+      const first = responses[0].body;
+      if (first.creditsRefunded === 1) {
+        // The team cap and earlier refunds today can stop refunds before the
+        // website cap does.
+        const teamRemaining =
+          first.dailyRefundCap - (first.creditsRefundedToday - 1);
+        const refunded = Math.min(websiteCap, teamRemaining);
+        expect(responses.map(r => r.body.creditsRefunded)).toEqual([
+          ...Array(refunded).fill(1),
+          ...Array(websiteCap + 1 - refunded).fill(0),
+        ]);
+        if (websiteCap <= teamRemaining) {
+          expect(last.body.websiteCapReached).toBe(true);
+        }
+        if (teamRemaining <= websiteCap) {
+          expect(last.body.dailyCapReached).toBe(true);
+        } else {
+          expect(last.body.warning).toContain("www.usaspending.gov");
+        }
       }
       const { parent } = await feedbackRows(last.body.feedbackId);
       expect(parent.credits_refunded).toBe(0);
