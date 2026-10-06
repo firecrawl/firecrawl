@@ -13,6 +13,7 @@ import { getEffectiveSearchForcedKind } from "../../lib/safe-mode";
 import {
   logRequest,
   logResearchEndpoint,
+  logSearch,
 } from "../../services/logging/log_job";
 import type {
   ResearchRequestKind,
@@ -148,9 +149,11 @@ const govSearchSchema = z.strictObject({
   ...commonQuery,
 });
 
+type ResearchEndpointLog =
+  | { kind: ResearchRequestKind; table: ResearchTableName }
+  | { kind: "search"; via: string };
+
 type ResearchEndpointConfig = {
-  kind: ResearchRequestKind;
-  table: ResearchTableName;
   action: string;
   targetHint: (
     params: Record<string, any>,
@@ -158,20 +161,21 @@ type ResearchEndpointConfig = {
   ) => string;
   timeoutMs?: number;
   billAs: "scrape" | "search";
-} & (
-  | {
-      upstreamPath: (
-        params: Record<string, any>,
-        req: RequestWithAuth<any, any, any>,
-      ) => string;
-    }
-  | {
-      fetchUpstream: (
-        params: Record<string, any>,
-        headers: Record<string, string>,
-      ) => ReturnType<typeof fetchResearchUpstream>;
-    }
-);
+} & ResearchEndpointLog &
+  (
+    | {
+        upstreamPath: (
+          params: Record<string, any>,
+          req: RequestWithAuth<any, any, any>,
+        ) => string;
+      }
+    | {
+        fetchUpstream: (
+          params: Record<string, any>,
+          headers: Record<string, string>,
+        ) => ReturnType<typeof fetchResearchUpstream>;
+      }
+  );
 
 type ResearchController = (req: Request, res: Response) => Promise<any>;
 type ResearchQueryParams = Record<string, any> & {
@@ -441,23 +445,49 @@ function createResearchController(
       // path, so nothing extra is charged.
       chargeKeylessCredits(authedReq.auth.team_id, credits).catch(() => {});
 
-      logResearchEndpoint({
-        table: endpoint.table,
-        id: jobId,
-        request_id: jobId,
-        team_id: authedReq.auth.team_id,
-        target: targetHint,
-        options: params,
-        response: responseBody,
-        num_results: resultCount(responseBody),
-        time_taken: timeTaken,
-        credits_cost: statusCode >= 200 && statusCode < 300 ? credits : 0,
-        is_successful: statusCode >= 200 && statusCode < 300,
-        error,
-        zeroDataRetention,
-      }).catch(logError => {
-        logger.warn("Research endpoint log failed", { error: logError });
-      });
+      const isSuccessful = statusCode >= 200 && statusCode < 300;
+      if (endpoint.kind === "search") {
+        logSearch({
+          id: jobId,
+          request_id: jobId,
+          query: targetHint,
+          team_id: authedReq.auth.team_id,
+          options: {
+            origin: requestOrigin(params, req),
+            integration: params.integration ?? null,
+            api_version: "v2",
+            k: params.k,
+            via: endpoint.via,
+          },
+          time_taken: timeTaken,
+          credits_cost: isSuccessful ? credits : 0,
+          is_successful: isSuccessful,
+          error,
+          num_results: resultCount(responseBody),
+          results: responseBody?.data ?? null,
+          zeroDataRetention,
+        }).catch(logError => {
+          logger.warn("Search log failed", { error: logError });
+        });
+      } else {
+        logResearchEndpoint({
+          table: endpoint.table,
+          id: jobId,
+          request_id: jobId,
+          team_id: authedReq.auth.team_id,
+          target: targetHint,
+          options: params,
+          response: responseBody,
+          num_results: resultCount(responseBody),
+          time_taken: timeTaken,
+          credits_cost: isSuccessful ? credits : 0,
+          is_successful: isSuccessful,
+          error,
+          zeroDataRetention,
+        }).catch(logError => {
+          logger.warn("Research endpoint log failed", { error: logError });
+        });
+      }
     }
   };
 }
@@ -605,8 +635,8 @@ export function createGovRouter() {
 
   const controller = wrap(
     createResearchController(govSearchSchema, [], {
-      kind: "gov_search",
-      table: "gov_searches",
+      kind: "search",
+      via: "gov_endpoint",
       action: "searchGov",
       targetHint: params => String(params.query),
       billAs: "search",
