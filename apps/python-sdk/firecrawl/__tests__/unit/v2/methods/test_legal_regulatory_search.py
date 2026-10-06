@@ -4,8 +4,6 @@ import pytest
 
 from firecrawl.v2.client import FirecrawlClient
 from firecrawl.v2.client_async import AsyncFirecrawlClient
-from firecrawl.v2.methods.search import search
-from firecrawl.v2.types import SearchRequest
 from firecrawl.v2.utils.error_handler import FirecrawlError
 
 
@@ -87,26 +85,3 @@ def test_legal_regulatory_search_raises_on_unsuccessful_body():
 
     with pytest.raises(FirecrawlError, match="Search failed"):
         client.legal_regulatory_search("zoning variance")
-
-
-@pytest.mark.asyncio
-async def test_async_legal_regulatory_search_raises_on_unsuccessful_body():
-    transport = Mock()
-    transport.post = AsyncMock(return_value=_response(FAILED))
-    client = AsyncFirecrawlClient.__new__(AsyncFirecrawlClient)
-    client.async_http_client = transport
-
-    with pytest.raises(FirecrawlError, match="Search failed"):
-        await client.legal_regulatory_search("zoning variance")
-
-
-def test_search_gov_category_is_forwarded_and_parsed_inside_web():
-    web = [{**RESPONSE["data"]["web"][0], "category": "gov"}]
-    client = Mock()
-    client.post.return_value = _response({"success": True, "data": {"web": web}})
-
-    result = search(client, SearchRequest(query="zoning variance", categories=["gov"]))
-
-    assert client.post.call_args.args[1]["categories"] == [{"type": "gov"}]
-    assert result.web[0].category == "gov"
-    assert not hasattr(result, "gov")

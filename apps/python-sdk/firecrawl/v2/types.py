@@ -622,8 +622,8 @@ SourceOption = Union[str, Source]
 class Category(BaseModel):
     """Configuration for a search category.
 
-    Categories narrow ordinary **web search**. They do not switch `search()` to
-    a different index.
+    Most categories narrow ordinary **web search**; "developer" and "gov" switch
+    `search()` to their own index.
 
     Supported categories:
     - "github": Restrict web results to github.com (a `site:` filter)

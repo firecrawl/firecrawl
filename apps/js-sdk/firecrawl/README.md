@@ -242,8 +242,9 @@ Use `legalRegulatorySearch` to search the Legal and Regulatory Index: primary
 law and regulatory material from US federal, state, and local government
 sources, including statutes, regulations, codes, court opinions, and other
 government publications. Results come back in the ordinary web-result shape.
-Generic `search(..., { categories: ['gov'] })` returns index results inside
-`.web`; like `developer`, it cannot be combined with other categories.
+Generic `search('food labeling requirements', { categories: ['gov'] })`
+returns index results inside `.web`; like `developer`, it cannot be combined
+with other categories.
 
 ```js
 const law = await app.legalRegulatorySearch('food labeling requirements', {
