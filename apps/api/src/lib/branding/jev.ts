@@ -311,6 +311,8 @@ type JevRequest = {
   buttonCount: number;
   /** Background + text color per button, to group look-alike buttons. */
   buttonStyles: string[];
+  /** Raw background per button: merge drops a secondary that matches the primary's. */
+  buttonBackgrounds: string[];
 };
 
 export function buildJevRequest(input: BrandingLLMInput): JevRequest {
@@ -563,6 +565,7 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     logoCount: logos.length,
     buttonCount: buttons.length,
     buttonStyles: buttons.map(buttonStyle),
+    buttonBackgrounds: buttons.map(b => b.background),
   };
 }
 
@@ -623,15 +626,24 @@ function mapJevAnswers(
   const { answers } = response;
   const tag = `jev ${response.model}`;
 
-  // Buttons: secondary must differ from primary.
+  // Buttons: the secondary must not share the primary's background, or merge
+  // drops it. Skip every look-alike, not just the primary itself.
   const primaryButton = choiceOf(answers, "primary_button");
   const secondaryButton = choiceOf(answers, "secondary_button");
   const primaryButtonIndex = indexOf(primaryButton?.choice, "button");
+  const primaryBackground = request.buttonBackgrounds[primaryButtonIndex];
+  const looksLikePrimary = (option: string) =>
+    option === primaryButton?.choice ||
+    (primaryBackground !== undefined &&
+      request.buttonBackgrounds[indexOf(option, "button")] ===
+        primaryBackground);
   let secondaryOption = secondaryButton?.choice;
-  if (secondaryButton && secondaryOption === primaryButton?.choice) {
+  if (secondaryButton && secondaryOption && looksLikePrimary(secondaryOption)) {
     secondaryOption = bestExcluding(
       secondaryButton,
-      new Set([primaryButton!.choice]),
+      new Set(
+        Object.keys(secondaryButton.probabilities).filter(looksLikePrimary),
+      ),
     );
   }
 
