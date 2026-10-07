@@ -85,6 +85,29 @@ def test_retry_id_and_errors(monkeypatch):
     assert len(sent)==3
 
 
+@pytest.mark.asyncio
+async def test_async_alexandria_retry_reuses_request_id(monkeypatch):
+    sent = []
+    replies = iter([
+        httpx.Response(502, json={}),
+        httpx.Response(200, json={'success': True, 'data': DATA}),
+    ])
+
+    async def post(url, **kwargs):
+        sent.append(kwargs)
+        return next(replies)
+
+    client = AsyncFirecrawl(api_key='fc-test', max_retries=2, backoff_factor=0)
+    try:
+        monkeypatch.setattr(client._v2_client.async_http_client._client, 'post', post)
+        await client.scrape(alexandria=NEXT, request_id='retry-async-1')
+        assert [call['headers']['x-request-id'] for call in sent] == [
+            'retry-async-1', 'retry-async-1'
+        ]
+    finally:
+        await client._v2_client.async_http_client.close()
+
+
 @pytest.mark.parametrize('async_client', [False, True])
 @pytest.mark.asyncio
 async def test_execution_failure_preserves_cause_and_retry_identity(async_client, monkeypatch):
