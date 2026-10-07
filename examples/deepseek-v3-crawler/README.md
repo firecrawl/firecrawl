@@ -4,7 +4,7 @@ This script uses the DeepSeek V3 large language model (via Hugging Face's Infere
 
 ## Prerequisites
 
-- Python 3.8+
+- Python 3.10+
 - A FireCrawl API key (get one at [FireCrawl's website](https://firecrawl.app))
 - A Hugging Face API key with access to inference API
 
