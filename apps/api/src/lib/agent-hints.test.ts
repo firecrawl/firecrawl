@@ -488,9 +488,10 @@ describe("deterministic agent hints", () => {
           data: { metadata: { statusCode: 200, sourceURL, url } },
         },
       });
+    // The requested URL decides, even when the final URL is a different query.
     const google = scrapeOf(
       "https://www.google.com/search?q=best+web+scraper",
-      "https://www.google.com/search?q=best+web+scraper&sei=abc",
+      "https://www.google.com/search?q=other+query&sei=abc",
     ).join(" ");
     expect(google).toContain("Google search results page");
     expect(google).toContain(

@@ -46,7 +46,11 @@ function engineAndQuery(url: URL): SerpPage | null {
     return page("Bing", path === "/search", "q");
   }
   if (domain === "duckduckgo.com") {
-    return page("DuckDuckGo", true, "q");
+    return page(
+      "DuckDuckGo",
+      path === "/" || path === "/html" || path === "/lite",
+      "q",
+    );
   }
   if (host === "search.brave.com") {
     return page("Brave", path === "/search", "q");
@@ -55,7 +59,8 @@ function engineAndQuery(url: URL): SerpPage | null {
     domainWithoutSuffix === "yahoo" &&
     (subdomain === "search" || subdomain.endsWith(".search"))
   ) {
-    return page("Yahoo", path.startsWith("/search"), "p", "q");
+    // Yahoo appends tracking after a semicolon: /search;_ylt=...
+    return page("Yahoo", /^\/search(?:[/;]|$)/.test(path), "p", "q");
   }
   if (domain === "baidu.com" && bareOrWww) {
     return page("Baidu", path === "/s", "wd", "word");

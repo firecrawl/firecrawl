@@ -117,6 +117,24 @@ describe("agent hint signals", () => {
     expect(pageOf("https://www.bing.com/maps?q=paris")).not.toHaveProperty(
       "page_serp_engine",
     );
+    // A results page that redirected to a consent page still was one.
+    expect(
+      signalsFor({
+        endpoint: "scrape",
+        response: {
+          success: true,
+          data: {
+            metadata: {
+              sourceURL: "https://www.google.com/search?q=firecrawl",
+              url: "https://consent.google.com/m?continue=x",
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      page_serp_engine: "Google",
+      page_serp_query: '"firecrawl"',
+    });
   });
 
   it("reports document page counts with the requestable remainder", () => {

@@ -26,6 +26,8 @@ describe("detectSerpPage", () => {
     ["https://search.brave.com/search?q=firecrawl", "Brave"],
     ["https://search.yahoo.com/search?p=firecrawl", "Yahoo"],
     ["https://search.yahoo.co.jp/search?p=firecrawl", "Yahoo"],
+    ["https://search.yahoo.com/search;_ylt=abc?p=firecrawl", "Yahoo"],
+    ["https://lite.duckduckgo.com/lite/?q=firecrawl", "DuckDuckGo"],
     ["https://www.baidu.com/s?wd=firecrawl", "Baidu"],
     ["https://yandex.ru/search/?text=firecrawl", "Yandex"],
     ["https://www.ecosia.org/search?q=firecrawl", "Ecosia"],
@@ -55,6 +57,8 @@ describe("detectSerpPage", () => {
     "https://www.bing.com/maps?q=paris",
     "https://duckduckgo.com/about",
     "https://www.baidu.com/s",
+    "https://duckduckgo.com/about?q=firecrawl",
+    "https://search.yahoo.com/searchfoo?p=firecrawl",
     // Look-alike hosts
     "https://google.example.com/search?q=firecrawl",
     "https://notgoogle.com/search?q=firecrawl",
