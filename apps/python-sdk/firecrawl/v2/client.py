@@ -1192,7 +1192,8 @@ class FirecrawlClient:
             crawl_id: The ID of the crawl job to cancel
             
         Returns:
-            bool: True if the crawl was cancelled, False otherwise
+            bool: True if the crawl was cancelled. False if the crawl was not
+            cancelled, for example because it already completed.
         """
         return crawl_module.cancel_crawl(self.http_client, crawl_id)
 

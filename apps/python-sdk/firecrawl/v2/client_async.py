@@ -86,6 +86,17 @@ from .methods.research_docs import (
 from .client import _SCRAPE_OPTION_KEYS
 from .watcher_async import AsyncWatcher
 
+# Maximum seconds to wait for the cancel request that async crawl() sends when
+# its caller is cancelled.
+_ABANDONED_CRAWL_CANCEL_TIMEOUT = 10.0
+
+
+def _consume_task_outcome(task: "asyncio.Future[Any]") -> None:
+    """Mark a finished task's exception as read, so asyncio does not log it."""
+    if not task.cancelled():
+        task.exception()
+
+
 class AsyncFirecrawlClient:
     @staticmethod
     def _is_cloud_service(url: str) -> bool:
@@ -431,7 +442,27 @@ class AsyncFirecrawlClient:
             await asyncio.sleep(poll_interval)
 
     async def crawl(self, **kwargs) -> CrawlJob:
-        # wrapper combining start and wait
+        """
+        Start a crawl job and wait for it to complete.
+
+        Takes the same arguments as ``start_crawl``, plus ``poll_interval``,
+        ``timeout`` and ``request_timeout`` (see ``wait_crawl``).
+
+        Returns:
+            CrawlJob: The final status of the crawl job.
+
+        Raises:
+            CrawlJobTimeoutError: If the crawl does not reach a terminal state within
+                ``timeout``. The crawl keeps running, and the error carries ``job_id``.
+            asyncio.CancelledError: If the task that awaits this call is cancelled
+                (``Task.cancel()``; ``asyncio.timeout`` and ``asyncio.wait_for``
+                turn this into ``TimeoutError`` for their caller). If
+                ``start_crawl`` already returned the job id, the SDK first sends a
+                best-effort ``cancel_crawl`` for the job, so the crawl does not keep
+                running and use credits. A cancellation before the id arrives sends
+                no cancel. To keep control of the job, use ``start_crawl`` and
+                ``wait_crawl`` instead.
+        """
         resp = await self.start_crawl(
             **{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout", "request_timeout")}
         )
@@ -439,12 +470,38 @@ class AsyncFirecrawlClient:
         timeout = kwargs.get("timeout")
         request_timeout = kwargs.get("request_timeout")
         effective_request_timeout = request_timeout if request_timeout is not None else timeout
-        return await self.wait_crawl(
-            resp.id,
-            poll_interval=poll_interval,
-            timeout=timeout,
-            request_timeout=effective_request_timeout,
+        try:
+            return await self.wait_crawl(
+                resp.id,
+                poll_interval=poll_interval,
+                timeout=timeout,
+                request_timeout=effective_request_timeout,
+            )
+        except asyncio.CancelledError:
+            # The caller can never receive this job's result, so stop the crawl.
+            await self._cancel_abandoned_crawl(resp.id)
+            raise
+
+    async def _cancel_abandoned_crawl(self, job_id: str) -> None:
+        """Send a best-effort cancel for a crawl whose waiter was cancelled.
+
+        The cancel runs in a shielded task, so a second cancellation of the
+        caller does not stop the request. Errors are ignored, so they never
+        replace the caller's ``CancelledError``.
+        """
+        cancel_task = asyncio.ensure_future(
+            asyncio.wait_for(
+                async_crawl.cancel_crawl(self.async_http_client, job_id),
+                timeout=_ABANDONED_CRAWL_CANCEL_TIMEOUT,
+            )
         )
+        # If the caller is cancelled again, nothing awaits cancel_task. Read its
+        # outcome when it finishes, so asyncio does not log an unretrieved error.
+        cancel_task.add_done_callback(_consume_task_outcome)
+        try:
+            await asyncio.shield(cancel_task)
+        except (Exception, asyncio.CancelledError):
+            pass
 
     async def get_crawl_status(
         self,
@@ -499,6 +556,16 @@ class AsyncFirecrawlClient:
         )
 
     async def cancel_crawl(self, job_id: str) -> bool:
+        """
+        Cancel a crawl job.
+
+        Args:
+            job_id: The ID of the crawl job to cancel
+
+        Returns:
+            bool: True if the crawl was cancelled. False if the crawl was not
+            cancelled, for example because it already completed.
+        """
         return await async_crawl.cancel_crawl(self.async_http_client, job_id)
 
     async def crawl_params_preview(self, url: str, prompt: str) -> CrawlParamsData:
