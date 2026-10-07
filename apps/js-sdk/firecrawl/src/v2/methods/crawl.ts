@@ -224,7 +224,8 @@ export async function waitForCrawlCompletion(
 /**
  * Start a crawl and wait for it to finish. When `signal` aborts, polling stops,
  * the job gets a best-effort cancel request, and the promise rejects with the
- * abort reason. A signal that is already aborted rejects before any request.
+ * abort reason at once, without waiting for the cancel. A signal that is already
+ * aborted rejects before any request.
  */
 export async function crawl(
   http: HttpClient,
@@ -238,13 +239,7 @@ export async function crawl(
   try {
     return await waitForCrawlCompletion(http, started.id, pollInterval, timeout, signal);
   } catch (err) {
-    if (signal?.aborted) {
-      try {
-        await cancelCrawl(http, started.id);
-      } catch {
-        // Best effort: the caller asked to stop, so report the abort, not this.
-      }
-    }
+    if (signal?.aborted) cancelCrawl(http, started.id).catch(() => {});
     throw err;
   }
 }

@@ -37,6 +37,9 @@ function makeClient(route: (req: Sent) => Reply) {
   return { client, sent };
 }
 
+// The cancel runs in the background, so let its request reach the adapter.
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
 const running: Reply = { status: 200, data: { success: true, status: "scraping", completed: 0, total: 1, data: [] } };
 const started: Reply = { status: 200, data: { success: true, id: JOB_ID, url: "https://example.com" } };
 
@@ -84,6 +87,7 @@ describe("v2 crawl with an AbortSignal", () => {
     expect(Date.now() - t0).toBeLessThan(5000);
     expect(err).toBe(controller.signal.reason);
     expect((err as Error).name).toBe("AbortError");
+    await flush();
     expect(sent.map((r) => r.method)).toEqual(["post", "get", "delete"]);
     expect(sent[2]!.path).toBe(`/v2/crawl/${JOB_ID}`);
   });
@@ -99,7 +103,27 @@ describe("v2 crawl with an AbortSignal", () => {
     });
 
     await expect(client.crawl("https://example.com", { pollInterval: 30, signal: controller.signal })).rejects.toBe(reason);
+    await flush();
     expect(sent.some((r) => r.method === "delete")).toBe(true);
+  });
+
+  test("a hanging cancel does not delay the rejection", async () => {
+    const controller = new AbortController();
+    const client = new FirecrawlClient({ apiKey: "fc-test", apiUrl: API_URL });
+    const methods: string[] = [];
+    (client as any).http.instance.defaults.adapter = (async (config) => {
+      methods.push(config.method!);
+      if (config.method === "delete") return new Promise(() => {});
+      if (config.method === "get") setTimeout(() => controller.abort(), 10);
+      const data = config.method === "post" ? started.data : running.data;
+      return { data, status: 200, statusText: "OK", headers: {}, config };
+    }) as AxiosAdapter;
+
+    await expect(client.crawl("https://example.com", { pollInterval: 30, signal: controller.signal })).rejects.toBe(
+      controller.signal.reason,
+    );
+    await flush();
+    expect(methods).toEqual(["post", "get", "delete"]);
   });
 
   test("abort while the start request is in flight cancels the job once the id arrives", async () => {
@@ -116,6 +140,7 @@ describe("v2 crawl with an AbortSignal", () => {
     const err = await client.crawl("https://example.com", { signal: controller.signal }).catch((e) => e);
     expect(err).toBe(controller.signal.reason);
     expect((err as Error).name).toBe("AbortError");
+    await flush();
     expect(sent.map((r) => r.method)).toEqual(["post", "delete"]);
   });
 
