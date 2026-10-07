@@ -317,7 +317,7 @@ describe("Exchange routing", () => {
       expect(error).toBeInstanceOf(scrapeErrors.ExchangeRefusedError);
       expect(error.code).toBe("THIRD_PARTY_DATA_UNSUPPORTED_URL");
       expect(error.message).not.toContain("canonical Exchange URL");
-      expect(error.message).toContain("linkedin.com/in/<handle>");
+      expect(error.message).toContain("record's own page");
     });
 
     it("reports a provider the team lacks as THIRD_PARTY_DATA_NOT_ENABLED", async () => {

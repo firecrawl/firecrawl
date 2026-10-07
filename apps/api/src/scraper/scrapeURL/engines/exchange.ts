@@ -88,7 +88,7 @@ const EXCHANGE_REFUSALS = new Map<
     {
       code: "THIRD_PARTY_DATA_UNSUPPORTED_URL",
       message:
-        "The third-party data provider for this site does not serve this URL. It serves a record's own page, such as linkedin.com/in/<handle> or linkedin.com/company/<slug>, not the sub-pages under it.",
+        "The third-party data provider for this site does not serve this URL. Request a record's own page, such as a profile page itself, rather than a sub-page or listing under it.",
       ignoreExchangeMessage: true,
     },
   ],
