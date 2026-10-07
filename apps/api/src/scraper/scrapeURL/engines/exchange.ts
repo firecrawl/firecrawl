@@ -18,13 +18,15 @@ import { EngineError, ExchangeRefusedError } from "../error";
 // provider it tried, in order.
 const exchangeEnrichmentSchema = z.object({
   source: z.object({ provider: z.string() }),
-  steps: z.array(
-    z.object({
-      provider: z.string(),
-      status: z.string(),
-      creditsCost: z.number().optional(),
-    }),
-  ),
+  steps: z
+    .array(
+      z.object({
+        provider: z.string(),
+        status: z.string(),
+        creditsCost: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .min(1),
 });
 
 const exchangeScrapeResponseSchema = z.union([

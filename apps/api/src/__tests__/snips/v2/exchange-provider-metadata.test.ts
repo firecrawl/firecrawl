@@ -157,6 +157,19 @@ describe("Exchange provider metadata", () => {
         { enrichment: { status: "matched", steps: [] } },
       ],
       [
+        "an empty waterfall",
+        { enrichment: { source: { provider: "globex" }, steps: [] } },
+      ],
+      [
+        "a negative step cost",
+        {
+          enrichment: {
+            source: { provider: "globex" },
+            steps: [{ provider: "globex", status: "matched", creditsCost: -1 }],
+          },
+        },
+      ],
+      [
         "missing a step status",
         {
           enrichment: {
