@@ -280,10 +280,8 @@ describe("Exchange routing", () => {
         markdown: "# Example Person",
         statusCode: 200,
         exchange: {
-          handled: true,
-          creditsCost: 12,
           accessEventId: "access-1",
-          integrationId: "acme",
+          provider: { id: "acme", creditsCost: 12 },
         },
       });
     });

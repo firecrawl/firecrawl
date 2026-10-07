@@ -2,7 +2,7 @@ import { fetch } from "undici";
 import { z } from "zod";
 
 import { config } from "../config";
-import type { FormatObject } from "../controllers/v2/types";
+import type { DocumentProvider, FormatObject } from "../controllers/v2/types";
 import { hasLedgerAcceptance } from "../services/alexandria/terms";
 import { type ErrorCodes, TransportableError } from "./error";
 import { logger as rootLogger } from "./logger";
@@ -50,10 +50,8 @@ type RouteInput = {
 };
 
 export type ExchangeScrapeMetadata = {
-  handled: true;
-  creditsCost: number;
   accessEventId?: string;
-  integrationId?: string;
+  provider: DocumentProvider;
 };
 
 type ExchangeTerms = {
@@ -719,7 +717,7 @@ export function getExchangeSuccessCredits(input: {
   exchange?: ExchangeScrapeMetadata;
   statusCode?: number | null;
 }): number | null {
-  if (input.exchange?.handled !== true) {
+  if (input.exchange === undefined) {
     return null;
   }
 
@@ -732,7 +730,7 @@ export function getExchangeSuccessCredits(input: {
     return null;
   }
 
-  return input.exchange.creditsCost;
+  return input.exchange.provider.creditsCost;
 }
 
 const EXCHANGE_BILLING_TIMEOUT_MS = 5_000;

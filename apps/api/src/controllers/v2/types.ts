@@ -1436,6 +1436,14 @@ export const mapRequestSchema = strictWithMessage(
 export type MapRequest = z.infer<typeof mapRequestSchema>;
 export type MapRequestInput = z.input<typeof mapRequestSchema>;
 
+/** The third-party provider that served an Exchange scrape, what the access
+ * cost, and every provider tried for it in order. */
+export type DocumentProvider = {
+  id: string;
+  creditsCost: number;
+  steps: { provider: string; status: string; creditsCost?: number }[];
+};
+
 export type Document = {
   title?: string;
   description?: string;
@@ -1552,6 +1560,7 @@ export type Document = {
     indexId?: string; // ID used to store the document in the index (GCS)
     concurrencyLimited?: boolean;
     concurrencyQueueDurationMs?: number;
+    provider?: DocumentProvider;
     // [key: string]: string | string[] | number | { smartScrape: number; other: number; total: number } | undefined;
   };
   serpResults?: {
