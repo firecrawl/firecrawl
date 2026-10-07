@@ -566,6 +566,20 @@ describe("branding with Jev", () => {
     withSpan.mockRestore();
   });
 
+  it("tags the Jev span with the team so spend can be attributed", async () => {
+    respondWith(jevResponse());
+    const withSpan = vi.spyOn(tracer, "withSpan");
+
+    await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+
+    const call = withSpan.mock.calls.find(c => c[0] === "typesafe.systemone");
+    expect(call?.[2]?.attributes).toMatchObject({
+      feature: "branding",
+      teamId: "team-jev",
+    });
+    withSpan.mockRestore();
+  });
+
   it("keeps a listed team on the LLM unless the request asks for fast", async () => {
     for (const mode of [undefined, "auto", "standard"] as const) {
       await enhanceBrandingWithLLM({ ...baseInput(new CostTracking()), mode });
