@@ -200,7 +200,7 @@ describe("Exchange routing", () => {
         options: { actions: [{ type: "wait", milliseconds: 1000 }] },
         option: "`actions`",
       },
-      { options: { zeroDataRetention: true }, option: "`zeroDataRetention`" },
+      { options: { zeroDataRetention: true }, option: "zero data retention" },
       { options: { redactPII: true }, option: "`redactPII`" },
     ])(
       "names $option when it keeps the provider out of a blocked URL",
@@ -269,10 +269,27 @@ describe("Exchange routing", () => {
     });
 
     it("fails closed for a blocked URL the Exchange cannot serve", async () => {
+      exchange.setExchangeProvidersForTest([]);
+
+      await expect(
+        buildFallbackList(buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS)),
+      ).resolves.toEqual([]);
+    });
+
+    it("names the option that keeps the provider out of a blocked URL", async () => {
       const meta = buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS);
       meta.options.actions = [{ type: "wait", milliseconds: 1000 }];
 
-      await expect(buildFallbackList(meta)).resolves.toEqual([]);
+      const error = await buildFallbackList(meta).catch(e => e);
+
+      expect(error).toBeInstanceOf(
+        exchange.ThirdPartyDataUnsupportedOptionError,
+      );
+      expect(error.response()).toEqual(
+        new exchange.ThirdPartyDataUnsupportedOptionError(
+          "`actions`",
+        ).response(),
+      );
     });
   });
 

@@ -20,6 +20,7 @@ import {
   resolveExchangeProvider,
   setExchangeProvidersForTest,
   ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
 } from "./exchange";
 
 vi.mock("undici", () => ({
@@ -947,6 +948,18 @@ describe("Exchange terms acceptance", () => {
       flags: revokedFlags,
     });
     expect(access.allowed).toBe(true);
+  });
+
+  it("carries the unsupported-option response through the worker queue", () => {
+    const original = new ThirdPartyDataUnsupportedOptionError("`actions`");
+    const error = deserializeTransportableError(
+      serializeTransportableError(original),
+    );
+
+    expect(error).toBeInstanceOf(ThirdPartyDataUnsupportedOptionError);
+    expect((error as ThirdPartyDataUnsupportedOptionError).response()).toEqual(
+      original.response(),
+    );
   });
 
   it("carries the terms-required response through the worker queue", () => {

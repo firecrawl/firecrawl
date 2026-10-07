@@ -543,8 +543,9 @@ function isExchangeEligibleRequest(input: RouteInput): boolean {
 
 /** Names the request option that keeps the Exchange from serving the URL, or null when there is none. */
 function getUnsupportedExchangeOption(input: RouteInput): string | null {
+  // Named in plain words: a team policy can force it as well as the request.
   if (input.zeroDataRetention) {
-    return "`zeroDataRetention`";
+    return "zero data retention";
   }
 
   if (input.lockdown) {
@@ -734,16 +735,19 @@ export class ThirdPartyDataTermsRequiredError extends TransportableError {
 }
 
 /**
- * A provider serves the URL and nothing else may, but the request sets an
- * option the provider's data can't honor. Raised before any job exists.
+ * A provider serves the URL and nothing else may, but the request uses an
+ * option the provider's data can't honor.
  */
 export class ThirdPartyDataUnsupportedOptionError extends TransportableError {
+  public readonly option: string;
+
   constructor(option: string) {
     super(
       "THIRD_PARTY_DATA_UNSUPPORTED_OPTION",
-      `A third-party data provider serves this URL, and its data can't be combined with ${option}. Send the request without ${option} to get the provider's record.`,
+      `A third-party data provider serves this URL, but not to requests that use ${option}.`,
     );
     this.name = "ThirdPartyDataUnsupportedOptionError";
+    this.option = option;
   }
 
   response() {
@@ -752,6 +756,22 @@ export class ThirdPartyDataUnsupportedOptionError extends TransportableError {
       code: "THIRD_PARTY_DATA_UNSUPPORTED_OPTION" as const,
       error: this.message,
     };
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+      option: this.option,
+    };
+  }
+
+  static deserialize(
+    _code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ThirdPartyDataUnsupportedOptionError(data.option);
+    x.stack = data.stack;
+    return x;
   }
 }
 

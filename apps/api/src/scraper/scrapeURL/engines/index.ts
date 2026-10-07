@@ -46,6 +46,7 @@ import { hasCustomRequestContext } from "../lib/request-context";
 import {
   getExchangeAccessForRequest,
   ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
   type ExchangeScrapeMetadata,
 } from "../../../lib/exchange";
 
@@ -726,10 +727,15 @@ export async function buildFallbackList(meta: Meta): Promise<
     // or batch scrape) for the Exchange; if it can no longer serve it (catalog
     // changed, service down), fail closed rather than letting normal engines
     // scrape a blocklisted site. Unblocked URLs whose provider wants
-    // unaccepted terms fall through and scrape normally.
+    // unaccepted terms or rejects an option fall through and scrape normally.
     if (blocked) {
       if (exchangeAccess.termsRequired) {
         throw new ThirdPartyDataTermsRequiredError(exchangeAccess.terms);
+      }
+      if (exchangeAccess.unsupportedOption !== undefined) {
+        throw new ThirdPartyDataUnsupportedOptionError(
+          exchangeAccess.unsupportedOption,
+        );
       }
       return [];
     }
