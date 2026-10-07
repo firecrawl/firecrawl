@@ -1434,7 +1434,7 @@ export async function scrapeURL(
                     "scrape.blocked_by_robots": true,
                   });
                   throw new CrawlDenialError("URL blocked by robots.txt", {
-                    robots: true,
+                    robotsBlockedUrl: urlToCheck,
                   });
                 }
               } catch (error) {

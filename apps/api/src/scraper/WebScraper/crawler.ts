@@ -37,7 +37,8 @@ interface FilterResult {
   denialReason?: string;
 }
 
-enum DenialReason {
+/** @public filterLinks also reads the members by key, which knip cannot see. */
+export enum DenialReason {
   DEPTH_LIMIT = "This URL exceeds the maximum crawl depth you configured. The URL's depth (number of path segments) is greater than the maxDepth parameter. To crawl this URL, increase the maxDepth value in your crawl request.",
   EXCLUDE_PATTERN = "This URL's path matches one of the regex patterns you provided in the excludePaths parameter. URLs matching excludePaths are intentionally skipped during crawling. If this URL should be crawled, adjust your excludePaths patterns.",
   INCLUDE_PATTERN = "This URL's path does not match any of the regex patterns you provided in the includePaths parameter. When includePaths is specified, only URLs matching at least one pattern are crawled. If this URL should be crawled, add a matching pattern to includePaths or remove the includePaths restriction.",
@@ -51,14 +52,11 @@ enum DenialReason {
   NON_WEB_PROTOCOL = "This URL uses a non-web protocol (such as mailto:, tel:, ftp:, ssh:, file:, or telnet:) that Firecrawl cannot scrape. Firecrawl only supports HTTP and HTTPS protocols.",
 }
 
-/** True when a filterLinks denial reason is the robots.txt denial. */
-export function isRobotsDenialReason(reason: string | undefined): boolean {
-  return reason === DenialReason.ROBOTS_TXT;
-}
-
 interface FilterLinksResult {
   links: string[];
   denialReasons: Map<string, string>;
+  /** The links robots.txt disallows. */
+  robotsBlocked: string[];
 }
 
 export class WebCrawler {
@@ -199,12 +197,16 @@ export class WebCrawler {
           `This URL was not crawled because the maximum discovery depth (${this.maxDiscoveryDepth}) has been reached. Discovery depth counts how many 'hops' from the starting URL a page is. To crawl more pages, increase the maxDiscoveryDepth value in your crawl request.`,
         );
       });
-      return { links: [], denialReasons };
+      return { links: [], denialReasons, robotsBlocked: [] };
     }
 
     // If the initial URL is a sitemap.xml, skip filtering
     if (this.initialUrl.endsWith("sitemap.xml") && fromMap) {
-      return { links: sitemapLinks.slice(0, limit), denialReasons };
+      return {
+        links: sitemapLinks.slice(0, limit),
+        denialReasons,
+        robotsBlocked: [],
+      };
     }
 
     try {
@@ -301,6 +303,9 @@ export class WebCrawler {
       return {
         links: res.links,
         denialReasons: fancyDenialReasons,
+        robotsBlocked: Object.keys(res.denialReasons).filter(
+          link => res.denialReasons[link] === "ROBOTS_TXT",
+        ),
       };
     } catch (error) {
       this.logger.error("Error filtering links in Rust, falling back to JS", {
@@ -433,12 +438,8 @@ export class WebCrawler {
           }
         }
 
-        const isAllowed = this.isRobotsAllowed(
-          link,
-          this.ignoreRobotsTxt || skipRobots,
-        );
         // Check if the link is disallowed by robots.txt
-        if (!isAllowed) {
+        if (!skipRobots && !this.isRobotsAllowed(link)) {
           this.logger.debug(`Link disallowed by robots.txt: ${link}`, {
             method: "filterLinks",
             link,
@@ -469,7 +470,13 @@ export class WebCrawler {
       })
       .slice(0, limit);
 
-    return { links: filteredLinks, denialReasons };
+    return {
+      links: filteredLinks,
+      denialReasons,
+      robotsBlocked: [...denialReasons.keys()].filter(
+        link => denialReasons.get(link) === DenialReason.ROBOTS_TXT,
+      ),
+    };
   }
 
   public async getRobotsTxt(
@@ -844,17 +851,16 @@ export class WebCrawler {
     return await this.extractLinksFromHTMLCheerio(html, url);
   }
 
-  private isRobotsAllowed(
-    url: string,
-    ignoreRobotsTxt: boolean = false,
-  ): boolean {
-    return ignoreRobotsTxt
-      ? true
-      : isUrlAllowedByRobots(
-          url,
-          this.robots,
-          this.robotsUserAgent ? [this.robotsUserAgent] : undefined,
-        );
+  /** Checks the crawl's robots.txt, honoring ignoreRobotsTxt. */
+  public isRobotsAllowed(url: string): boolean {
+    return (
+      this.ignoreRobotsTxt ||
+      isUrlAllowedByRobots(
+        url,
+        this.robots,
+        this.robotsUserAgent ? [this.robotsUserAgent] : undefined,
+      )
+    );
   }
 
   public isFile(url: string): boolean {

@@ -4,35 +4,53 @@ import {
   deserializeTransportableError,
   serializeTransportableError,
 } from "../../../lib/error-serde";
-import { isRobotsDenialReason, WebCrawler } from "../crawler";
+import { DenialReason, WebCrawler } from "../crawler";
 
 const BASE = "https://example.com";
 const BLOCKED = BASE + "/blocked/page";
 const EXCLUDED = BASE + "/excluded/page";
 
-function makeCrawler() {
+function makeCrawler(ignoreRobotsTxt = false) {
   const crawler = new WebCrawler({
     jobId: "robots-denial-test",
     initialUrl: BASE + "/",
     excludes: ["^/excluded"],
+    ignoreRobotsTxt,
   });
   crawler.importRobotsTxt("User-agent: *\nDisallow: /blocked\nAllow: /\n");
   return crawler;
 }
 
 describe("robots.txt denials", () => {
-  it("flags only the robots.txt denial in filterLinks", async () => {
-    const { links, denialReasons } = await makeCrawler().filterLinks(
-      [BASE + "/ok", BLOCKED, EXCLUDED],
+  it("lists only the robots.txt denials in filterLinks", async () => {
+    const { links, denialReasons, robotsBlocked } =
+      await makeCrawler().filterLinks(
+        [BASE + "/ok", BLOCKED, EXCLUDED],
+        10,
+        10,
+      );
+
+    expect(links).toEqual([BASE + "/ok"]);
+    expect(robotsBlocked).toEqual([BLOCKED]);
+    expect(denialReasons.get(BLOCKED)).toBe(DenialReason.ROBOTS_TXT);
+    expect(denialReasons.get(EXCLUDED)).toBeDefined();
+  });
+
+  it("lists no robots.txt denials when robots.txt is ignored", async () => {
+    const { links, robotsBlocked } = await makeCrawler(true).filterLinks(
+      [BASE + "/ok", BLOCKED],
       10,
       10,
     );
 
-    expect(links).toEqual([BASE + "/ok"]);
-    expect(isRobotsDenialReason(denialReasons.get(BLOCKED))).toBe(true);
-    expect(denialReasons.get(EXCLUDED)).toBeDefined();
-    expect(isRobotsDenialReason(denialReasons.get(EXCLUDED))).toBe(false);
-    expect(isRobotsDenialReason(undefined)).toBe(false);
+    expect(links).toEqual([BASE + "/ok", BLOCKED]);
+    expect(robotsBlocked).toEqual([]);
+  });
+
+  it("checks a single URL against robots.txt unless robots.txt is ignored", () => {
+    expect(makeCrawler().isRobotsAllowed(BASE + "/ok")).toBe(true);
+    expect(makeCrawler().isRobotsAllowed(BLOCKED)).toBe(false);
+    expect(makeCrawler(true).isRobotsAllowed(BLOCKED)).toBe(true);
   });
 
   it("keeps robots.txt-blocked links during extraction so filterLinks can report them", async () => {
@@ -45,10 +63,10 @@ describe("robots.txt denials", () => {
     expect(extracted).toContain(BLOCKED);
   });
 
-  it("keeps the robots marker on CrawlDenialError through serialization", () => {
+  it("keeps the robots.txt-blocked URL on CrawlDenialError through serialization", () => {
     const robots = deserializeTransportableError(
       serializeTransportableError(
-        new CrawlDenialError("blocked", { robots: true }),
+        new CrawlDenialError("blocked", { robotsBlockedUrl: BLOCKED }),
       ),
     );
     const other = deserializeTransportableError(
@@ -56,8 +74,8 @@ describe("robots.txt denials", () => {
     );
 
     expect(robots).toBeInstanceOf(CrawlDenialError);
-    expect((robots as CrawlDenialError).robots).toBe(true);
+    expect((robots as CrawlDenialError).robotsBlockedUrl).toBe(BLOCKED);
     expect((robots as CrawlDenialError).reason).toBe("blocked");
-    expect((other as CrawlDenialError).robots).toBe(false);
+    expect((other as CrawlDenialError).robotsBlockedUrl).toBeNull();
   });
 });
