@@ -258,6 +258,68 @@ describe("Exchange routing", () => {
       );
     });
 
+    it("serves the Exchange's markdown for a supported URL", async () => {
+      mocks.robustFetch.mockResolvedValue({
+        success: true,
+        accessEventId: "access-1",
+        creditsCost: 12,
+        data: {
+          url: BLOCKED_URL,
+          title: "Example Person",
+          markdown: "# Example Person",
+          source: { provider: "acme" },
+        },
+      });
+
+      const result = await scrapeURLWithExchange(
+        buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS),
+      );
+
+      expect(result).toMatchObject({
+        url: BLOCKED_URL,
+        markdown: "# Example Person",
+        statusCode: 200,
+        exchange: {
+          handled: true,
+          creditsCost: 12,
+          accessEventId: "access-1",
+          integrationId: "acme",
+        },
+      });
+    });
+
+    it("reports a provider's missing record as THIRD_PARTY_DATA_NOT_FOUND", async () => {
+      mocks.robustFetch.mockResolvedValue(
+        failure("not_found", "No matching profile was found."),
+      );
+
+      const error = await scrapeURLWithExchange(
+        buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS),
+      ).catch(e => e);
+
+      expect(error).toBeInstanceOf(scrapeErrors.ExchangeRefusedError);
+      expect(error.code).toBe("THIRD_PARTY_DATA_NOT_FOUND");
+      expect(error.message).toBe("No matching profile was found.");
+    });
+
+    it("reports a URL the provider does not serve as THIRD_PARTY_DATA_UNSUPPORTED_URL", async () => {
+      mocks.robustFetch.mockResolvedValue(
+        failure(
+          "invalid_exchange_url",
+          "Expected a canonical Exchange URL or supported source URL.",
+        ),
+      );
+
+      const error = await scrapeURLWithExchange(
+        buildStubMeta(`${BLOCKED_URL}/details/experience/`, ACCEPTED_FLAGS),
+      ).catch(e => e);
+
+      expect(error).toBeInstanceOf(scrapeErrors.ExchangeRefusedError);
+      expect(error.code).toBe("THIRD_PARTY_DATA_UNSUPPORTED_URL");
+      expect(error.message).not.toContain("canonical Exchange URL");
+      expect(error.message).toContain("record's own page");
+    });
+
     it("reports a provider the team lacks as THIRD_PARTY_DATA_NOT_ENABLED", async () => {
       mocks.robustFetch.mockResolvedValue(
         failure(

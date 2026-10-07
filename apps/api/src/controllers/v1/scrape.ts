@@ -431,6 +431,14 @@ async function scrapeControllerInner(
         });
       }
 
+      if (e.code === "THIRD_PARTY_DATA_UNSUPPORTED_URL") {
+        return res.status(400).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
       return res.status(timeoutErr ? 408 : 500).json({
         success: false,
         code: e.code,

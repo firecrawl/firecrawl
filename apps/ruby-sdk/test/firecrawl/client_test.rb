@@ -186,6 +186,20 @@ class ClientTest < Minitest::Test
     assert_raises(ArgumentError) { @client.scrape(nil) }
   end
 
+  def test_scrape_raises_on_success_false
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: false, code: "SCRAPE_DNS_RESOLUTION_ERROR", error: "DNS resolution failed for hostname \"nonexistent.example\"."),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    error = assert_raises(Firecrawl::FirecrawlError) { @client.scrape("https://nonexistent.example") }
+    assert_equal 200, error.status_code
+    assert_equal "SCRAPE_DNS_RESOLUTION_ERROR", error.error_code
+    assert_equal "DNS resolution failed for hostname \"nonexistent.example\".", error.message
+  end
+
   def test_scrape_with_product_format
     stub_request(:post, "#{BASE_URL}/v2/scrape")
       .to_return(
