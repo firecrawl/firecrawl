@@ -19,8 +19,8 @@ import type {
  *   cannot apply, emits nothing.
  * - A condition on an absent signal holds only for `exists` with `false`.
  */
-export type AgentHintRuleScalar = string | number | boolean;
-export type AgentHintRuleOp =
+type AgentHintRuleScalar = string | number | boolean;
+type AgentHintRuleOp =
   | "eq"
   | "ne"
   | "lt"
@@ -48,7 +48,7 @@ const MAX_NAME_LENGTH = 64;
 const MAX_STRING_VALUE_LENGTH = 200;
 const MAX_RULE_TEXT_LENGTH = 500;
 const MAX_LIST_ARGUMENT = 100;
-export const MAX_RULE_HINTS = 3;
+const MAX_RULE_HINTS = 3;
 
 const SIGNAL_NAME = /^[a-z][a-z0-9_]*$/;
 const PLACEHOLDER = /\{([a-z][a-z0-9_]*)(?::(first|remaining)=(\d+))?\}/g;

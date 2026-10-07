@@ -27,7 +27,7 @@ overrides:
   "bn.js@<5.2.3": ">=5.2.3"
   "@tootallnate/once@<3.0.1": ">=3.0.1"
   yauzl: "^3.2.1"
-  undici: "7.29.1"
+  undici: "7.30.0"
   # GHSA-vh66-26gq-q6x8 / GHSA-9fr6-4gfg-395g / GHSA-c29m-xwm3-cm6r /
   # GHSA-mghh-pgcx-3jjj / GHSA-x97p-jq2g-jp4f / GHSA-3pq3-5fj3-cg6v /
   # GHSA-542g-h47m-68v8 / GHSA-j8rh-479h-cp32 / GHSA-4hqw-qxg8-jxx2 /

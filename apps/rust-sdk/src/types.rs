@@ -4,7 +4,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::serde_helpers::deserialize_string_or_array;
+use crate::serde_helpers::{deserialize_or_none, deserialize_string_or_array};
 
 /// Available output formats for scraping operations.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -636,6 +636,33 @@ pub struct DocumentMetadata {
     pub cached_at: Option<String>,
     pub credits_used: Option<u32>,
     pub concurrency_limited: Option<bool>,
+    /// The third-party provider that served an Exchange scrape. `None` for
+    /// any other scrape.
+    #[serde(default, deserialize_with = "deserialize_or_none")]
+    pub provider: Option<ScrapeProvider>,
+}
+
+/// The third-party provider that served an Exchange scrape, what the access
+/// cost in credits, and every provider tried for it in order.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeProvider {
+    /// The provider that returned the data.
+    pub id: String,
+    pub credits_cost: u32,
+    pub steps: Vec<ScrapeProviderStep>,
+}
+
+/// One provider tried for an Exchange scrape.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeProviderStep {
+    pub provider: String,
+    /// `matched`, `not_found` or `error`.
+    pub status: String,
+    pub credits_cost: Option<u32>,
 }
 
 /// Extracted attribute result.
@@ -1263,6 +1290,63 @@ mod tests {
         assert_eq!(meta.og_image, Some("https://img.jpg".to_string()));
         assert_eq!(meta.language, Some("en".to_string()));
         assert_eq!(meta.keywords, Some("rust, sdk, firecrawl".to_string()));
+    }
+
+    #[test]
+    fn test_document_metadata_provider() {
+        let json = json!({
+            "metadata": {
+                "sourceURL": "https://profiles.example/in/example-person",
+                "statusCode": 200,
+                "provider": {
+                    "id": "globex",
+                    "creditsCost": 30,
+                    "steps": [
+                        { "provider": "acme", "status": "not_found", "creditsCost": 10 },
+                        { "provider": "globex", "status": "matched", "creditsCost": 20 },
+                        { "provider": "initech", "status": "error" }
+                    ]
+                }
+            }
+        });
+        let doc: Document = serde_json::from_value(json).unwrap();
+        let provider = doc.metadata.unwrap().provider.unwrap();
+        assert_eq!(provider.id, "globex");
+        assert_eq!(provider.credits_cost, 30);
+        assert_eq!(
+            provider.steps,
+            vec![
+                ScrapeProviderStep {
+                    provider: "acme".to_string(),
+                    status: "not_found".to_string(),
+                    credits_cost: Some(10),
+                },
+                ScrapeProviderStep {
+                    provider: "globex".to_string(),
+                    status: "matched".to_string(),
+                    credits_cost: Some(20),
+                },
+                ScrapeProviderStep {
+                    provider: "initech".to_string(),
+                    status: "error".to_string(),
+                    credits_cost: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_document_metadata_provider_absent_or_other_shape() {
+        for metadata in [
+            json!({ "statusCode": 200 }),
+            json!({ "statusCode": 200, "provider": "Example Provider" }),
+            json!({ "statusCode": 200, "provider": ["a", "b"] }),
+        ] {
+            let doc: Document = serde_json::from_value(json!({ "metadata": metadata })).unwrap();
+            let meta = doc.metadata.unwrap();
+            assert_eq!(meta.status_code, Some(200));
+            assert_eq!(meta.provider, None);
+        }
     }
 
     #[test]
