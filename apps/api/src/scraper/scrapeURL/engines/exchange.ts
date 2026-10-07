@@ -62,6 +62,9 @@ const EXCHANGE_REFUSALS = new Map<
     code: ConstructorParameters<typeof ExchangeRefusedError>[0];
     message: string;
     enrichmentSettings?: true;
+    // Set when the Exchange's message describes its own URL contract, which
+    // means nothing to a scrape caller.
+    ignoreExchangeMessage?: true;
   }
 >([
   [
@@ -70,6 +73,23 @@ const EXCHANGE_REFUSALS = new Map<
       code: "THIRD_PARTY_DATA_NOT_FOUND",
       message:
         "The third-party data provider for this URL has no record for it.",
+    },
+  ],
+  [
+    "not_found",
+    {
+      code: "THIRD_PARTY_DATA_NOT_FOUND",
+      message:
+        "The third-party data provider for this URL has no record for it.",
+    },
+  ],
+  [
+    "invalid_exchange_url",
+    {
+      code: "THIRD_PARTY_DATA_UNSUPPORTED_URL",
+      message:
+        "The third-party data provider for this site does not serve this URL. Request a record's own page, such as a profile page itself, rather than a sub-page or listing under it.",
+      ignoreExchangeMessage: true,
     },
   ],
   [
@@ -207,7 +227,9 @@ export async function scrapeURLWithExchange(
         }
         const refusal = EXCHANGE_REFUSALS.get(response.error?.code ?? "");
         if (refusal !== undefined) {
-          const message = response.error?.message || refusal.message;
+          const message = refusal.ignoreExchangeMessage
+            ? refusal.message
+            : response.error?.message || refusal.message;
           throw new ExchangeRefusedError(
             refusal.code,
             refusal.enrichmentSettings
