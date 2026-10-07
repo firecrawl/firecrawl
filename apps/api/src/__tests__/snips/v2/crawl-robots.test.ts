@@ -4,13 +4,7 @@ import {
   concurrentIf,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import request, {
-  crawl,
-  Identity,
-  idmux,
-  scrapeTimeout,
-  TEST_API_URL,
-} from "./lib";
+import { crawl, crawlErrors, Identity, idmux, scrapeTimeout } from "./lib";
 
 // The test site's robots.txt disallows /robots-test/blocked/. The
 // /robots-test/ page is allowed and links to the blocked page.
@@ -27,16 +21,6 @@ beforeAll(async () => {
   });
 }, 10000);
 
-async function robotsBlocked(crawlId: string): Promise<string[]> {
-  const res = await request(TEST_API_URL)
-    .get("/v2/crawl/" + crawlId + "/errors")
-    .set("Authorization", `Bearer ${identity.apiKey}`)
-    .send();
-  expect(res.statusCode).toBe(200);
-  expect(Array.isArray(res.body.robotsBlocked)).toBe(true);
-  return res.body.robotsBlocked;
-}
-
 const isBlockedUrl = (url: string) => url.includes("/robots-test/blocked");
 
 describe("Crawl robots.txt reporting", () => {
@@ -52,7 +36,11 @@ describe("Crawl robots.txt reporting", () => {
       expect(results.status).not.toBe("scraping");
       expect(results.warning).toContain("robots.txt");
       expect(results.warning).toContain("robotsBlocked");
-      expect((await robotsBlocked(results.id)).some(isBlockedUrl)).toBe(true);
+      expect(
+        (await crawlErrors(results.id, identity)).robotsBlocked.some(
+          isBlockedUrl,
+        ),
+      ).toBe(true);
     },
     5 * scrapeTimeout,
   );
@@ -67,7 +55,11 @@ describe("Crawl robots.txt reporting", () => {
       );
       expect(results.warning).toContain("robots.txt");
       expect(results.warning).toContain("robotsBlocked");
-      expect((await robotsBlocked(results.id)).some(isBlockedUrl)).toBe(true);
+      expect(
+        (await crawlErrors(results.id, identity)).robotsBlocked.some(
+          isBlockedUrl,
+        ),
+      ).toBe(true);
     },
     5 * scrapeTimeout,
   );
@@ -81,7 +73,9 @@ describe("Crawl robots.txt reporting", () => {
       );
 
       expect(results.warning ?? "").not.toContain("robots.txt");
-      expect(await robotsBlocked(results.id)).toEqual([]);
+      expect((await crawlErrors(results.id, identity)).robotsBlocked).toEqual(
+        [],
+      );
     },
     5 * scrapeTimeout,
   );

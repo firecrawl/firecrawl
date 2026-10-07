@@ -503,7 +503,7 @@ export async function asyncCrawlWaitForFinish(
   return x.body;
 }
 
-async function crawlErrors(
+export async function crawlErrors(
   id: string,
   identity: Identity,
 ): Promise<Exclude<CrawlErrorsResponse, ErrorResponse>> {

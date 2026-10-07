@@ -648,12 +648,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               linksLength: links.links.length,
             });
 
-            // Store robots blocked URLs in Redis set
-            for (const [url, reason] of links.denialReasons) {
-              if (isRobotsDenialReason(reason)) {
-                await recordRobotsBlocked(job.data.crawl_id, url);
-              }
-            }
+            await recordRobotsBlocked(
+              job.data.crawl_id,
+              [...links.denialReasons]
+                .filter(([, reason]) => isRobotsDenialReason(reason))
+                .map(([url]) => url),
+            );
 
             // Threat protection: silently skip blocked discovered links
             // (cross-domain links included) — the crawl continues. Skipped
@@ -1058,7 +1058,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         error instanceof CrawlDenialError &&
         error.robots
       ) {
-        await recordRobotsBlocked(job.data.crawl_id, job.data.url);
+        await recordRobotsBlocked(job.data.crawl_id, [job.data.url]);
       }
     } catch (e) {
       logger.debug("Failed to record top-level robots block", { e });

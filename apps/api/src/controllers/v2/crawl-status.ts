@@ -336,10 +336,9 @@ export async function crawlStatusController(
   // Check for robots.txt blocked URLs and add warning if found
   let warning: string | undefined;
   try {
-    const robotsBlocked = await redisEvictConnection.smembers(
+    const rbCount = await redisEvictConnection.scard(
       "crawl:" + req.params.jobId + ":robots_blocked",
     );
-    const rbCount = robotsBlocked?.length ?? 0;
     // Emit as separate simple logs so no meta is lost in sinks
     const statusNow = outputBulkA.status ?? "scraping";
     if (rbCount > 0 && statusNow !== "scraping") {
