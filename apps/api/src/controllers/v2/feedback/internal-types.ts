@@ -62,7 +62,7 @@ export type FeedbackRecordResult = {
 export type RefundPolicySnapshot = {
   version: "feedback_refund_v1";
   enabled: boolean;
-  endpoint: EndpointFeedbackEndpoint;
+  endpoint: EndpointFeedbackEndpoint | "alexandria";
   mode: "none" | "flat" | "percentage_with_cap";
   refundableRatings: FeedbackRating[];
   matchedReason: string;

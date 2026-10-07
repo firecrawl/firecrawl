@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/firecrawl/firecrawl/apps/go-sdk/option"
 )
@@ -95,5 +96,25 @@ func TestToolDiscoveryAndExecution(t *testing.T) {
 	<-bodiesReceived // Search request.
 	if _, ok := (<-bodiesReceived)["requestId"]; ok {
 		t.Fatal("requestId leaked into body")
+	}
+}
+
+func TestAlexandriaTransportTimeout(t *testing.T) {
+	ms := func(v int) *int { return &v }
+	cases := []struct {
+		name    string
+		timeout *int
+		want    time.Duration
+	}{
+		{"default", nil, 150 * time.Second},
+		{"1000", ms(1000), 31 * time.Second},
+		{"100000", ms(100000), 130 * time.Second},
+		{"120000", ms(120000), 150 * time.Second},
+		{"300000", ms(300000), 150 * time.Second},
+	}
+	for _, tc := range cases {
+		if got := alexandriaTransportTimeout(tc.timeout); got != tc.want {
+			t.Errorf("timeout %s: got %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

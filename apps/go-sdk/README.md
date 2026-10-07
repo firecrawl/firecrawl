@@ -175,6 +175,16 @@ doc, err := client.Parse(ctx, file, &firecrawl.ParseOptions{
 fmt.Println(doc.Markdown)
 ```
 
+List the input formats the parse endpoint accepts. `Available` is `false` when
+a format is supported but disabled on the deployment (for example, image OCR).
+
+```go
+formats, err := client.GetParseFormats(ctx)
+for _, f := range formats {
+	fmt.Println(f.Format, f.Kind, f.Extensions, f.MimeTypes, f.Available)
+}
+```
+
 ### Crawl
 
 Crawl a website and get content from multiple pages.
@@ -285,6 +295,15 @@ resp, err := client.StartAgent(ctx, &firecrawl.AgentOptions{
 })
 status, err := client.GetAgentStatus(ctx, resp.ID)
 _, err = client.CancelAgent(ctx, resp.ID)
+
+// Let the agent use Exchange data providers connected to your team
+status, err = client.Agent(ctx, &firecrawl.AgentOptions{
+	Prompt: "Summarize the latest earnings for AAPL",
+	Exchange: &firecrawl.AgentExchangeOptions{
+		Enabled:  firecrawl.Bool(true),
+		Toolkits: &[]string{"your-provider-slug"},
+	},
+})
 ```
 
 ### Browser

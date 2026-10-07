@@ -180,6 +180,17 @@ Document parsed = client.parse(file,
 System.out.println(parsed.getMarkdown());
 ```
 
+To see which upload types the API accepts, call `getParseFormats()`. Each entry has a `format`, a `kind` (`document` or `image`), its `extensions` and `mimeTypes`, and whether it is `available` on the current deployment (image formats need image OCR enabled).
+
+```java
+import com.firecrawl.models.ParseFormat;
+
+for (ParseFormat format : client.getParseFormats()) {
+    System.out.println(format.getFormat() + " " + format.getKind()
+        + " " + format.getExtensions() + " available=" + format.isAvailable());
+}
+```
+
 #### JSON Extraction
 
 ```java
@@ -350,6 +361,23 @@ AgentStatusResponse result = client.agent(
         .build());
 
 System.out.println(result.getData());
+```
+
+To let the agent use the Exchange (Alexandria) data providers connected to your team, pass `exchange`. `toolkits` pins up to 5 providers by slug; omit it to allow all of them.
+
+```java
+AgentStatusResponse result = client.agent(
+    AgentOptions.builder()
+        .prompt("Find the head of engineering at example.com")
+        .exchange(AgentExchangeOptions.builder()
+            .enabled(true)
+            .toolkits(List.of("provider-slug"))
+            .build())
+        .build());
+
+if (result.getExchange() != null) {
+    System.out.println("Paid provider calls: " + result.getExchange().getPaidCalls());
+}
 ```
 
 ### Usage & Metrics

@@ -21,6 +21,7 @@ use Firecrawl\Models\CreditUsage;
 use Firecrawl\Models\Document;
 use Firecrawl\Models\MapData;
 use Firecrawl\Models\MapOptions;
+use Firecrawl\Models\ParseFormat;
 use Firecrawl\Models\ScrapeOptions;
 use Firecrawl\Models\SearchData;
 use Firecrawl\Models\SearchOptions;
@@ -46,6 +47,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static BrowserListResponse listBrowsers(?string $status = null)
  * @method static ConcurrencyCheck getConcurrency()
  * @method static CreditUsage getCreditUsage()
+ * @method static list<ParseFormat> getParseFormats()
  *
  * @see FirecrawlClient
  */

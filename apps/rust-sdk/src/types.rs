@@ -1030,6 +1030,79 @@ pub enum AgentEffort {
     Unknown,
 }
 
+/// Agent conversation mode. The server defaults to `Extract`.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentMode {
+    Extract,
+    /// Answers in `AgentStatusResponse::message` instead of `data`.
+    Chat,
+    /// Read-only catch-all, same rationale as `AgentModel::Unknown`. Do not
+    /// send it in a request.
+    #[serde(other)]
+    Unknown,
+}
+
+/// What the agent does when a provider needs data terms the team has not
+/// accepted. Gated providers are never called in either mode.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentOnTermsRequired {
+    /// Answer without the gated providers and list them in
+    /// `AgentExchangeSummary::skipped_providers`. The server default.
+    Skip,
+    /// Also end the turn with a `terms` pending approval.
+    Ask,
+    /// Read-only catch-all, same rationale as `AgentModel::Unknown`. Do not
+    /// send it in a request.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Exchange (Alexandria data provider) settings for an agent run, forwarded
+/// as-is: the server owns every default and limit. On a follow-up turn,
+/// omitting it inherits the previous turn's settings.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExchangeOptions {
+    /// Defaults to true server-side once exchange options are sent.
+    pub enabled: Option<bool>,
+    /// Provider slugs to pin, at most 5. Omitted or empty allows every
+    /// provider the team can use.
+    pub toolkits: Option<Vec<String>>,
+    /// Maximum provider calls per turn, 1 to 30.
+    pub max_calls: Option<u32>,
+    /// End the turn with a pending approval before any paid provider call.
+    /// Requires `AgentMode::Chat` on every turn of the thread.
+    pub require_approval: Option<bool>,
+    /// Answers the previous turn's pending approval. Requires a thread id.
+    pub approve: Option<AgentExchangeApprove>,
+    /// Refuses the previous turn's pending approval. Requires a thread id.
+    pub decline: Option<AgentExchangeDecline>,
+    pub on_terms_required: Option<AgentOnTermsRequired>,
+}
+
+/// Approves a pending approval. A `terms` approval is accepted as a whole, so
+/// `call_ids` and `always` are ignored on it.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExchangeApprove {
+    pub approval_id: String,
+    /// Calls to allow. Omitted allows every pending call.
+    pub call_ids: Option<Vec<String>>,
+    /// Also stop requiring approval for the rest of the thread.
+    pub always: Option<bool>,
+}
+
+/// Declines a pending approval.
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExchangeDecline {
+    pub approval_id: String,
+}
+
 /// Search source types.
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]

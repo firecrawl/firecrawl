@@ -153,6 +153,17 @@ $doc = $client->parse($file, ParseOptions::with(
 echo $doc->getMarkdown();
 ```
 
+List the file formats parse accepts on the deployment you are calling.
+Image formats report `isAvailable() === false` when image OCR is disabled.
+
+```php
+foreach ($client->getParseFormats() as $format) {
+    echo $format->getFormat() . ' (' . $format->getKind() . '): '
+        . implode(', ', $format->getExtensions())
+        . ($format->isAvailable() ? '' : ' [unavailable]') . "\n";
+}
+```
+
 ### Crawl
 
 ```php
@@ -242,6 +253,21 @@ $result = $client->agent(AgentOptions::with(
 ));
 
 echo $result->getData();
+```
+
+To let the agent use Exchange data providers connected to your team, pass
+`exchange`. Omit `toolkits` to allow every provider the team can use.
+
+```php
+use Firecrawl\Models\AgentExchangeOptions;
+
+$result = $client->agent(AgentOptions::with(
+    prompt: 'Find the company behind example.com and its funding history',
+    exchange: AgentExchangeOptions::with(
+        enabled: true,
+        toolkits: ['provider-slug'],
+    ),
+));
 ```
 
 ### Browser Sessions

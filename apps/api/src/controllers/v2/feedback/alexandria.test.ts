@@ -9,7 +9,15 @@ const mocks = vi.hoisted(() => ({
   // Receives (tableName, rows[]) for every insert issued inside the transaction.
   insert: vi.fn(),
   recordEndpointFeedback: vi.fn(),
+  refundAlexandriaFeedback: vi.fn(),
+  hasRecentAlexandriaActivity: vi.fn(),
   logError: vi.fn(),
+}));
+vi.mock("./alexandria-refund", () => ({
+  refundAlexandriaFeedback: mocks.refundAlexandriaFeedback,
+}));
+vi.mock("../../../lib/alexandria-activity", () => ({
+  hasRecentAlexandriaActivity: mocks.hasRecentAlexandriaActivity,
 }));
 vi.mock("../../../db/connection", () => ({
   db: { transaction: mocks.transaction },
@@ -58,7 +66,7 @@ app.use(express.json());
 app.use((req, _res, next) => {
   Object.assign(req, {
     auth: { team_id: authTeam },
-    acuc: { api_key_id: 42, flags },
+    acuc: { api_key_id: 42, org_id: "org-1", flags },
   });
   next();
 });
@@ -74,23 +82,38 @@ beforeEach(() => {
     async (run: (tx: unknown) => Promise<void>) => run(tx),
   );
   mocks.insert.mockResolvedValue(undefined);
+  mocks.hasRecentAlexandriaActivity.mockResolvedValue(true);
+  mocks.refundAlexandriaFeedback.mockResolvedValue({
+    creditsRefunded: 1,
+    creditsRefundedToday: 1,
+    dailyRefundCap: 10,
+  });
 });
 afterAll(() => {
   config.USE_DB_AUTHENTICATION = originalDbAuthentication;
 });
 
 it.each(["good", "partial", "bad"])(
-  "records a %s session without job lookup or refund",
+  "records a %s session without job lookup and refunds it",
   async rating => {
     const response = await submit({ ...minimal, rating });
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       success: true,
       feedbackId: expect.any(String),
-      creditsRefunded: 0,
+      creditsRefunded: 1,
+      creditsRefundedToday: 1,
+      dailyRefundCap: 10,
     });
     expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.refundAlexandriaFeedback).toHaveBeenCalledExactlyOnceWith({
+      feedbackId: response.body.feedbackId,
+      teamId,
+      orgId: "org-1",
+      rating,
+      requestedUrl: minimal.requestedWebsite.url,
+    });
     expect(parentRows()).toEqual([
       {
         id: response.body.feedbackId,
@@ -585,7 +608,62 @@ it.each([
   const response = await submit(minimal);
   expect(response.status).toBe(200);
   expect(response.body.feedbackId).toBe("00000000-0000-0000-0000-000000000000");
+  expect(response.body.creditsRefunded).toBe(0);
   expect(mocks.transaction).not.toHaveBeenCalled();
+  expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
+});
+
+it("returns the refund outcome, including cap and duplicate warnings", async () => {
+  const outcome = {
+    creditsRefunded: 0,
+    creditsRefundedToday: 10,
+    dailyRefundCap: 10,
+    dailyCapReached: true,
+    warning: "Daily Alexandria feedback refund cap reached.",
+  };
+  mocks.refundAlexandriaFeedback.mockResolvedValueOnce(outcome);
+  const response = await submit(minimal);
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual({
+    success: true,
+    feedbackId: expect.any(String),
+    ...outcome,
+  });
+});
+
+it("rejects feedback outside the window after the team's last Alexandria call", async () => {
+  mocks.hasRecentAlexandriaActivity.mockResolvedValue(false);
+  const response = await submit(minimal);
+  expect(response.status).toBe(409);
+  expect(response.body).toEqual({
+    success: false,
+    feedbackErrorCode: "FEEDBACK_WINDOW_EXPIRED",
+    error: `Alexandria feedback must be submitted within ${config.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution.`,
+  });
+  expect(mocks.hasRecentAlexandriaActivity).toHaveBeenCalledWith(teamId);
+  expect(mocks.transaction).not.toHaveBeenCalled();
+  expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
+});
+
+it("fails closed when the feedback window cannot be checked", async () => {
+  const error = new Error("redis down");
+  mocks.hasRecentAlexandriaActivity.mockRejectedValue(error);
+  const response = await submit(minimal);
+  expect(response.status).toBe(500);
+  expect(response.body.feedbackErrorCode).toBe("INTERNAL");
+  expect(mocks.logError).toHaveBeenCalledWith(
+    "Failed to check the Alexandria feedback window",
+    { error, teamId },
+  );
+  expect(mocks.transaction).not.toHaveBeenCalled();
+  expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
+});
+
+it("validates the body before checking the window", async () => {
+  mocks.hasRecentAlexandriaActivity.mockResolvedValue(false);
+  const response = await submit({ ...minimal, rationale: undefined });
+  expect(response.status).toBe(400);
+  expect(mocks.hasRecentAlexandriaActivity).not.toHaveBeenCalled();
 });
 
 it("honors team opt-out", async () => {
@@ -594,6 +672,7 @@ it("honors team opt-out", async () => {
   expect(response.status).toBe(403);
   expect(response.body.feedbackErrorCode).toBe("TEAM_OPTED_OUT");
   expect(mocks.transaction).not.toHaveBeenCalled();
+  expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
 });
 
 it.each(["preview", "preview_example", "preview_keyless_example"])(
@@ -644,6 +723,7 @@ it.each([
   );
   expect(JSON.stringify(mocks.logError.mock.calls)).not.toContain("sensitive");
   expect(mocks.recordEndpointFeedback).not.toHaveBeenCalled();
+  expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
 });
 
 it.each(["search", "scrape", "parse", "map"])(

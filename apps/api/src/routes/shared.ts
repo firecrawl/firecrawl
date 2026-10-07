@@ -235,7 +235,6 @@ export function checkCreditsMiddleware(
               teamId: req.auth.team_id,
               remainingCredits,
               clampedLimit,
-              request: req.body,
             });
             (req.body as any).limit = clampedLimit;
             return next();
@@ -249,7 +248,6 @@ export function checkCreditsMiddleware(
             teamId: req.auth.team_id,
             minimum,
             remainingCredits,
-            request: req.body,
             path: req.path,
           },
         );

@@ -136,7 +136,7 @@ def _validate_search_request(request: SearchRequest) -> SearchRequest:
     
     # Validate categories (if provided)
     if request.categories is not None:
-        valid_categories = {"github", "research", "pdf", "developer"}
+        valid_categories = {"github", "research", "pdf", "developer", "gov"}
         for category in request.categories:
             if isinstance(category, str):
                 if category not in valid_categories:

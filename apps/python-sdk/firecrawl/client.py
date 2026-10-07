@@ -79,8 +79,10 @@ class V2Proxy:
             self.scrape_execute = self.interact
             self.delete_scrape_browser = self.stop_interaction
             self.parse = client_instance.parse
+            self.get_parse_formats = client_instance.get_parse_formats
             self.search = client_instance.search
             self.developer_search = client_instance.developer_search
+            self.gov_search = client_instance.gov_search
             self.crawl = client_instance.crawl
             self.start_crawl = client_instance.start_crawl
             self.get_crawl_status = client_instance.get_crawl_status
@@ -171,8 +173,10 @@ class AsyncV2Proxy:
             self.scrape_execute = self.interact
             self.delete_scrape_browser = self.stop_interaction
             self.parse = client_instance.parse
+            self.get_parse_formats = client_instance.get_parse_formats
             self.search = client_instance.search
             self.developer_search = client_instance.developer_search
+            self.gov_search = client_instance.gov_search
             self.crawl = client_instance.crawl
             self.start_crawl = client_instance.start_crawl
             self.wait_crawl = client_instance.wait_crawl
@@ -287,8 +291,10 @@ class Firecrawl:
         self.scrape_execute = self.interact
         self.delete_scrape_browser = self.stop_interaction
         self.parse = self._v2_client.parse
+        self.get_parse_formats = self._v2_client.get_parse_formats
         self.search = self._v2_client.search
         self.developer_search = self._v2_client.developer_search
+        self.gov_search = self._v2_client.gov_search
         self.map = self._v2_client.map
         self.create_monitor = self._v2_client.create_monitor
         self.list_monitors = self._v2_client.list_monitors
@@ -327,6 +333,7 @@ class Firecrawl:
         self.list_agents = self._v2_client.list_agents
         self.get_agent_trace = self._v2_client.get_agent_trace
         self.get_agent_snapshot = self._v2_client.get_agent_snapshot
+        self.get_agent_thread = self._v2_client.get_agent_thread
         self.agent = self._v2_client.agent
 
         self.get_concurrency = self._v2_client.get_concurrency
@@ -431,8 +438,10 @@ class AsyncFirecrawl:
         self.scrape_execute = self.interact
         self.delete_scrape_browser = self.stop_interaction
         self.parse = self._v2_client.parse
+        self.get_parse_formats = self._v2_client.get_parse_formats
         self.search = self._v2_client.search
         self.developer_search = self._v2_client.developer_search
+        self.gov_search = self._v2_client.gov_search
         self.map = self._v2_client.map
         self.create_monitor = self._v2_client.create_monitor
         self.list_monitors = self._v2_client.list_monitors
@@ -470,6 +479,7 @@ class AsyncFirecrawl:
         self.list_agents = self._v2_client.list_agents
         self.get_agent_trace = self._v2_client.get_agent_trace
         self.get_agent_snapshot = self._v2_client.get_agent_snapshot
+        self.get_agent_thread = self._v2_client.get_agent_thread
         self.agent = self._v2_client.agent
 
         self.get_concurrency = self._v2_client.get_concurrency

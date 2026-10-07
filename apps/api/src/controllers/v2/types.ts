@@ -1812,6 +1812,11 @@ export type AgentStatusResponse =
       status: "processing" | "completed" | "failed";
       error?: string;
       data?: any;
+      /** Best-effort JSON on a failed run; `data` remains completed-only. */
+      partial?: unknown;
+      /** Only present when the caller supplied a JSON Schema. */
+      partialSchemaValid?: boolean;
+      stopReason?: "credit_limit_reached";
       model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
       effort?: "low" | "medium" | "high";
       expiresAt: string;
@@ -1846,6 +1851,9 @@ type AgentThreadRun = {
   message: string | null;
   // Only present when the request asked for includeData.
   data?: unknown;
+  partial?: unknown;
+  partialSchemaValid?: boolean;
+  stopReason?: "credit_limit_reached";
   suggestions?: AgentSuggestion[] | null;
   pendingApproval?: AgentPendingApproval | null;
   exchange?: AgentExchangeSummary | null;
@@ -2436,6 +2444,10 @@ const developerCategoryOptions = z.strictObject({
   type: z.literal("developer"),
 });
 
+const govCategoryOptions = z.strictObject({
+  type: z.literal("gov"),
+});
+
 const developerCategoryAliases = new Set([
   "repo",
   "code",
@@ -2494,6 +2506,8 @@ const searchDomainSchema = z
 export const searchRequestSchema = z
   .strictObject({
     query: z.string(),
+    objective: z.string().trim().min(1).max(5000).optional().catch(undefined),
+    clientModel: z.string().trim().min(1).max(128).optional().catch(undefined),
     limit: z.int().positive().finite().max(100).optional().prefault(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),
@@ -2519,13 +2533,14 @@ export const searchRequestSchema = z
       .preprocess(
         normalizeDeveloperCategoryAliases,
         z.union([
-          z.array(z.enum(["github", "research", "pdf", "developer"])),
+          z.array(z.enum(["github", "research", "pdf", "developer", "gov"])),
           z.array(
             z.union([
               githubCategoryOptions,
               researchCategoryOptions,
               pdfCategoryOptions,
               developerCategoryOptions,
+              govCategoryOptions,
             ]),
           ),
         ]),
@@ -2605,6 +2620,10 @@ export const searchRequestSchema = z
     const categories = x.categories ?? [];
     return !hasCategory(categories, "developer") || categories.length === 1;
   }, "the developer category cannot be combined with other categories")
+  .refine(x => {
+    const categories = x.categories ?? [];
+    return !hasCategory(categories, "gov") || categories.length === 1;
+  }, "the gov category cannot be combined with other categories")
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const country =
@@ -2671,6 +2690,10 @@ export const searchRequestSchema = z
             case "developer":
               return {
                 type: "developer" as const,
+              };
+            case "gov":
+              return {
+                type: "gov" as const,
               };
             default:
               return { type: c as any };
@@ -2930,6 +2953,7 @@ export type EndpointFeedbackResponse =
       creditsRefunded: number;
       alreadySubmitted?: boolean;
       dailyCapReached?: boolean;
+      websiteCapReached?: boolean;
       creditsRefundedToday?: number;
       dailyRefundCap?: number;
       warning?: string;

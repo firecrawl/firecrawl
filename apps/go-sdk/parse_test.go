@@ -3,6 +3,7 @@ package firecrawl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -191,5 +192,124 @@ func TestDocumentUnmarshalsMenu(t *testing.T) {
 	}
 	if !items[0].Availability.InStock {
 		t.Errorf("item availability inStock = false, want true")
+	}
+}
+
+func TestGetParseFormats(t *testing.T) {
+	authCh := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v2/parse/formats" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		authCh <- r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"formats":[
+			{"format":"pdf","kind":"document","extensions":[".pdf"],"mimeTypes":["application/pdf"],"available":true},
+			{"format":"png","kind":"image","extensions":[".png"],"mimeTypes":["image/png"],"available":false},
+			{"format":"mp3","kind":"audio","extensions":[".mp3"],"mimeTypes":["audio/mpeg"],"available":true,"maxSizeBytes":1024}
+		]}}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(option.WithAPIKey("fc-test"), option.WithAPIURL(server.URL))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	formats, err := client.GetParseFormats(context.Background())
+	if err != nil {
+		t.Fatalf("GetParseFormats: %v", err)
+	}
+	if gotAuth := <-authCh; gotAuth != "Bearer fc-test" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer fc-test")
+	}
+	if len(formats) != 3 {
+		t.Fatalf("formats = %d, want 3", len(formats))
+	}
+
+	pdf := formats[0]
+	if pdf.Format != "pdf" || pdf.Kind != ParseFormatKindDocument || !pdf.Available {
+		t.Errorf("pdf = %+v", pdf)
+	}
+	if len(pdf.Extensions) != 1 || pdf.Extensions[0] != ".pdf" {
+		t.Errorf("pdf extensions = %v", pdf.Extensions)
+	}
+	if len(pdf.MimeTypes) != 1 || pdf.MimeTypes[0] != "application/pdf" {
+		t.Errorf("pdf mimeTypes = %v", pdf.MimeTypes)
+	}
+
+	png := formats[1]
+	if png.Kind != ParseFormatKindImage || png.Available {
+		t.Errorf("png = %+v", png)
+	}
+
+	unknown := formats[2]
+	if unknown.Kind != ParseFormatKind("audio") || unknown.Format != "mp3" || unknown.MimeTypes[0] != "audio/mpeg" {
+		t.Errorf("unknown kind entry = %+v", unknown)
+	}
+}
+
+func TestGetParseFormatsReturnsAuthenticationError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"success":false,"error":"Unauthorized: Invalid token"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(option.WithAPIKey("fc-bad"), option.WithAPIURL(server.URL))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	formats, err := client.GetParseFormats(context.Background())
+	if formats != nil {
+		t.Errorf("formats = %v, want nil", formats)
+	}
+	var authErr *AuthenticationError
+	if !errors.As(err, &authErr) {
+		t.Fatalf("err = %T %v, want *AuthenticationError", err, err)
+	}
+	if authErr.StatusCode != http.StatusUnauthorized || authErr.Message != "Unauthorized: Invalid token" {
+		t.Errorf("authErr = %+v", authErr.FirecrawlError)
+	}
+}
+
+func TestGetParseFormatsReturnsServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"success":false,"error":"boom"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(option.WithAPIKey("fc-test"), option.WithAPIURL(server.URL), option.WithMaxRetries(0))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	_, err = client.GetParseFormats(context.Background())
+	var fcErr *FirecrawlError
+	if !errors.As(err, &fcErr) || fcErr.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("err = %T %v, want *FirecrawlError with status 500", err, err)
+	}
+}
+
+func TestGetParseFormatsRejectsMissingFormats(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":null}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(option.WithAPIKey("fc-test"), option.WithAPIURL(server.URL))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	_, err = client.GetParseFormats(context.Background())
+	var fcErr *FirecrawlError
+	if !errors.As(err, &fcErr) {
+		t.Fatalf("err = %T %v, want *FirecrawlError", err, err)
 	}
 }

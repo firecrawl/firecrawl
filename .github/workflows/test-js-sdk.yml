@@ -32,11 +32,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         working-directory: ./apps/js-sdk/firecrawl
-      - name: Run next URL pinning unit tests
-        run: pnpm exec jest --verbose src/__tests__/unit/v1/next-url-pinning.test.ts src/__tests__/unit/v2/next-url-pinning.test.ts
+      - name: Run unit tests
+        run: pnpm run test:unit
         working-directory: ./apps/js-sdk/firecrawl
-        env:
-          NODE_OPTIONS: --experimental-vm-modules
 
   test:
     name: Run tests
