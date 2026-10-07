@@ -90,8 +90,7 @@ const configSchema = z.object({
     v => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z.string().trim().optional(),
   ),
-  // Optional external agent hints provider. Inert unless the URL is set; see
-  // AGENT_HINTS.md for the request/response contract.
+  // Optional external agent hints provider. Inert unless the URL is set.
   AGENT_HINTS_PROVIDER_URL: emptyStringAsUndefined(
     z
       .string()
