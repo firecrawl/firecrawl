@@ -34,8 +34,8 @@ describe("Crawl robots.txt reporting", () => {
       );
 
       expect(results.status).not.toBe("scraping");
-      expect(results.warning).toContain("robots.txt");
-      expect(results.warning).toContain("robotsBlocked");
+      expect(results.warning ?? "").toContain("robots.txt");
+      expect(results.warning ?? "").toContain("robotsBlocked");
       expect(
         (await crawlErrors(results.id, identity)).robotsBlocked.some(
           isBlockedUrl,

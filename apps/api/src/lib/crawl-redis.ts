@@ -80,10 +80,12 @@ export async function saveCrawl(id: string, crawl: StoredCrawl) {
 
 export async function recordRobotsBlocked(crawlId: string, urls: string[]) {
   if (urls.length === 0) return;
-  await redisEvictConnection.sadd(
-    "crawl:" + crawlId + ":robots_blocked",
-    ...urls,
-  );
+  for (let i = 0; i < urls.length; i += REDIS_COMMAND_ARG_CHUNK_SIZE) {
+    await redisEvictConnection.sadd(
+      "crawl:" + crawlId + ":robots_blocked",
+      ...urls.slice(i, i + REDIS_COMMAND_ARG_CHUNK_SIZE),
+    );
+  }
   await redisEvictConnection.expire(
     "crawl:" + crawlId + ":robots_blocked",
     24 * 60 * 60,
