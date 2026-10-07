@@ -77,6 +77,30 @@ def test_async_client_extract_accepts_agent_option():
     assert http.posts[0][1]["agent"] == {"model": "FIRE-1"}
 
 
+def test_async_client_blocking_extract_forwards_agent_option():
+    http = FakeAsyncHttpClient(
+        FakeResponse(
+            200,
+            {
+                "success": True,
+                "id": "job-1",
+                "status": "completed",
+                "data": {"title": "x"},
+            },
+        )
+    )
+    client = AsyncFirecrawlClient(api_key="fc-test", api_url="https://api.firecrawl.dev")
+    client.async_http_client = http
+    result = asyncio.run(
+        client.extract(
+            ["https://example.com"], prompt="p", agent=AgentOptions(model="FIRE-1")
+        )
+    )
+    assert http.posts[0][1]["agent"] == {"model": "FIRE-1"}
+    assert result.status == "completed"
+    assert result.data == {"title": "x"}
+
+
 def test_start_extract_raises_on_api_error():
     client = FakeAsyncHttpClient(
         FakeResponse(402, {"success": False, "error": "Insufficient credits"})
