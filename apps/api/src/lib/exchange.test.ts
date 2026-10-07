@@ -557,21 +557,27 @@ describe("Exchange routing", () => {
 
     expect(
       getExchangeSuccessCredits({
-        exchange: { handled: true, creditsCost: 12 },
+        exchange: {
+          provider: { id: "acme", creditsCost: 12, steps: [] },
+        },
         statusCode: 200,
       }),
     ).toBe(12);
 
     expect(
       getExchangeSuccessCredits({
-        exchange: { handled: true, creditsCost: 0 },
+        exchange: {
+          provider: { id: "acme", creditsCost: 0, steps: [] },
+        },
         statusCode: 304,
       }),
     ).toBe(0);
 
     expect(
       getExchangeSuccessCredits({
-        exchange: { handled: true, creditsCost: 12 },
+        exchange: {
+          provider: { id: "acme", creditsCost: 12, steps: [] },
+        },
         statusCode: 404,
       }),
     ).toBeNull();

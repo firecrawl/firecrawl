@@ -32,7 +32,7 @@ describe("calculateCreditsToBeBilled", () => {
       {} as any,
       undefined,
       undefined,
-      { handled: true, creditsCost: 12 },
+      { provider: { id: "acme", creditsCost: 12, steps: [] } },
     );
 
     expect(credits).toBe(12);
@@ -60,7 +60,7 @@ describe("calculateCreditsToBeBilled", () => {
       {} as any,
       undefined,
       undefined,
-      { handled: true, creditsCost: 12 },
+      { provider: { id: "acme", creditsCost: 12, steps: [] } },
     );
 
     expect(credits).toBe(16);
