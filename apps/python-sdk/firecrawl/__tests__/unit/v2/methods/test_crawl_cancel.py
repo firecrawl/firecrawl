@@ -4,6 +4,8 @@ cancelling its job when the caller's task is cancelled.
 """
 
 import asyncio
+import gc
+import time
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -183,12 +185,52 @@ class TestAsyncCrawlCancellation:
         with patch.object(client_async_module, "_ABANDONED_CRAWL_CANCEL_TIMEOUT", 0.01):
             task = asyncio.ensure_future(client.crawl(url="https://example.com"))
             await polling.wait()
+            started = time.monotonic()
             task.cancel()
 
             with pytest.raises(asyncio.CancelledError):
                 await asyncio.wait_for(task, timeout=5)
+            elapsed = time.monotonic() - started
 
         client.async_http_client.delete.assert_awaited_once()
+        assert elapsed < 1.0
+
+    @pytest.mark.asyncio
+    async def test_second_cancel_does_not_leave_an_unretrieved_error(self):
+        client, polling = _client_with_blocking_wait()
+        deleting = asyncio.Event()
+
+        async def failing_delete(*args, **kwargs):
+            deleting.set()
+            await asyncio.sleep(0.05)
+            raise RuntimeError("network down")
+
+        client.async_http_client.delete.side_effect = failing_delete
+
+        loop = asyncio.get_running_loop()
+        reported = []
+        previous_handler = loop.get_exception_handler()
+        loop.set_exception_handler(lambda _loop, context: reported.append(context))
+        try:
+            task = asyncio.ensure_future(client.crawl(url="https://example.com"))
+            await polling.wait()
+            task.cancel()
+            await deleting.wait()
+            task.cancel()
+
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            del task
+
+            # Let the background cancel fail, then collect it.
+            await asyncio.sleep(0.2)
+            gc.collect()
+            await asyncio.sleep(0)
+        finally:
+            loop.set_exception_handler(previous_handler)
+
+        client.async_http_client.delete.assert_awaited_once()
+        assert reported == []
 
     @pytest.mark.asyncio
     async def test_cancel_before_start_returns_sends_nothing(self):

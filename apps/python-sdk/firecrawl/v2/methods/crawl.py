@@ -376,7 +376,8 @@ def cancel_crawl(client: HttpClient, job_id: str) -> bool:
         cancelled, for example because it already completed (HTTP 409).
         
     Raises:
-        FirecrawlError: If the cancellation fails for any other reason
+        FirecrawlError: If the API returns any other error status
+        requests.RequestException: If the request fails before a response arrives
     """
     response = client.delete(f"/v2/crawl/{job_id}")
     

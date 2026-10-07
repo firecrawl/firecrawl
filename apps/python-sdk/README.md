@@ -129,7 +129,7 @@ except CrawlJobTimeoutError as e:
   firecrawl.cancel_crawl(e.job_id)
 ```
 
-With `AsyncFirecrawl`, if you cancel the task that awaits `crawl()` (for example with `asyncio.timeout` or `asyncio.wait_for`), the SDK sends a best-effort cancel for the crawl and then re-raises `asyncio.CancelledError`. To keep the crawl running after you stop waiting, use `start_crawl` and `wait_crawl`.
+With `AsyncFirecrawl`, you can stop waiting for `crawl()` with `Task.cancel()`, `asyncio.timeout` or `asyncio.wait_for`. If the crawl already has a job id, the SDK then sends a best-effort cancel for it. If the cancellation comes before `start_crawl` returns the id, the SDK sends no cancel, and the crawl can keep running. After the cancel, `Task.cancel()` gives you `asyncio.CancelledError`. `asyncio.timeout` and `asyncio.wait_for` give you `TimeoutError`. To keep the crawl running after you stop waiting, use `start_crawl` and `wait_crawl`.
 
 ### Asynchronous Crawling
 

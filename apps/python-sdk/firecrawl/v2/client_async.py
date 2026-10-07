@@ -91,6 +91,12 @@ from .watcher_async import AsyncWatcher
 _ABANDONED_CRAWL_CANCEL_TIMEOUT = 10.0
 
 
+def _consume_task_outcome(task: "asyncio.Future[Any]") -> None:
+    """Mark a finished task's exception as read, so asyncio does not log it."""
+    if not task.cancelled():
+        task.exception()
+
+
 class AsyncFirecrawlClient:
     @staticmethod
     def _is_cloud_service(url: str) -> bool:
@@ -449,11 +455,13 @@ class AsyncFirecrawlClient:
             CrawlJobTimeoutError: If the crawl does not reach a terminal state within
                 ``timeout``. The crawl keeps running, and the error carries ``job_id``.
             asyncio.CancelledError: If the task that awaits this call is cancelled
-                (for example by ``asyncio.timeout``, ``asyncio.wait_for`` or
-                ``Task.cancel()``). Before it re-raises the error, the SDK sends a
-                best-effort ``cancel_crawl`` for the started job, so the crawl does
-                not keep running and use credits. To keep control of the job, use
-                ``start_crawl`` and ``wait_crawl`` instead.
+                (``Task.cancel()``; ``asyncio.timeout`` and ``asyncio.wait_for``
+                turn this into ``TimeoutError`` for their caller). If
+                ``start_crawl`` already returned the job id, the SDK first sends a
+                best-effort ``cancel_crawl`` for the job, so the crawl does not keep
+                running and use credits. A cancellation before the id arrives sends
+                no cancel. To keep control of the job, use ``start_crawl`` and
+                ``wait_crawl`` instead.
         """
         resp = await self.start_crawl(
             **{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout", "request_timeout")}
@@ -487,6 +495,9 @@ class AsyncFirecrawlClient:
                 timeout=_ABANDONED_CRAWL_CANCEL_TIMEOUT,
             )
         )
+        # If the caller is cancelled again, nothing awaits cancel_task. Read its
+        # outcome when it finishes, so asyncio does not log an unretrieved error.
+        cancel_task.add_done_callback(_consume_task_outcome)
         try:
             await asyncio.shield(cancel_task)
         except (Exception, asyncio.CancelledError):
