@@ -48,7 +48,7 @@ export const AGENT_HINTS_PROVIDER_CONTRACT_VERSION = 2;
 // Fixed labels only: never put team IDs or provider-supplied values here.
 export const agentHintsProviderRequestsTotal = new Counter({
   name: "firecrawl_agent_hints_provider_requests_total",
-  help: "External agent hints provider lookups by outcome: hit (served from cache or joined an in-flight fetch), miss (fetch started), timeout, error, disabled (no provider configured)",
+  help: "External agent hints provider lookups by outcome: hit (served from cache or joined an in-flight fetch), miss (fetch started), timeout, error, disabled (no provider configured); eval_error counts responses whose hint computation failed and were sent without hints",
   labelNames: ["outcome"],
 });
 
@@ -150,13 +150,18 @@ async function fetchProviderHints(
     }
     const parsed = responseSchema.safeParse(await readJsonBody(response));
     if (!parsed.success) throw new Error("Malformed response body");
+    const rules =
+      parsed.data.rules === undefined
+        ? []
+        : parseAgentHintRules(parsed.data.rules);
+    if (!rules) throw new Error("Malformed rules");
     const ttlSeconds = Math.min(
       Math.max(parsed.data.ttl_seconds ?? DEFAULT_TTL_SECONDS, 0),
       MAX_TTL_SECONDS,
     );
     return {
       hints: sanitizeHints(parsed.data.hints),
-      rules: parseAgentHintRules(parsed.data.rules),
+      rules,
       ttlMs: ttlSeconds * 1000,
     };
   } catch (error) {

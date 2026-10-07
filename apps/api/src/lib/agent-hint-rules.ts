@@ -130,16 +130,19 @@ function parseRule(raw: unknown): AgentHintRule | undefined {
 }
 
 /**
- * Keeps the first valid rules in order. A rule with any malformed condition
- * is dropped as a whole, since ignoring one condition would widen the rule.
+ * Validates a rule set as a whole: returns undefined unless it is an array of
+ * at most MAX_RULES rules that are all valid. Dropping individual rules could
+ * change which rule in a group applies, so a partially valid set is rejected.
  */
-export function parseAgentHintRules(values: unknown): AgentHintRule[] {
-  if (!Array.isArray(values)) return [];
+export function parseAgentHintRules(
+  values: unknown,
+): AgentHintRule[] | undefined {
+  if (!Array.isArray(values) || values.length > MAX_RULES) return undefined;
   const rules: AgentHintRule[] = [];
   for (const value of values) {
-    if (rules.length >= MAX_RULES) break;
     const rule = parseRule(value);
-    if (rule) rules.push(rule);
+    if (!rule) return undefined;
+    rules.push(rule);
   }
   return rules;
 }

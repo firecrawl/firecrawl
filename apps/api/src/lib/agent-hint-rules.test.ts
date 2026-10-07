@@ -194,35 +194,60 @@ describe("agent hint rule matcher", () => {
 });
 
 describe("agent hint rule parsing", () => {
-  it("keeps valid rules in order and caps their number", () => {
-    const raw = Array.from({ length: 40 }, (_, i) => ({
+  it("accepts a valid rule set in order", () => {
+    const raw = Array.from({ length: 32 }, (_, i) => ({
       id: `r${i}`,
       when: [],
       text: `Rule ${i}.`,
     }));
     const rules = parseAgentHintRules(raw);
     expect(rules).toHaveLength(32);
-    expect(rules[0]).toEqual({ id: "r0", when: [], text: "Rule 0." });
+    expect(rules![0]).toEqual({ id: "r0", when: [], text: "Rule 0." });
   });
 
-  it("returns no rules for anything but an array", () => {
-    expect(parseAgentHintRules(undefined)).toEqual([]);
-    expect(parseAgentHintRules({ id: "r" })).toEqual([]);
+  it("rejects more than 32 rules", () => {
+    const raw = Array.from({ length: 33 }, (_, i) => ({
+      id: `r${i}`,
+      when: [],
+      text: "x",
+    }));
+    expect(parseAgentHintRules(raw)).toBeUndefined();
   });
 
-  it("drops rules with too many conditions or oversized in lists", () => {
-    const condition = { signal: "s", op: "eq", value: 1 };
+  it("rejects anything but an array", () => {
+    expect(parseAgentHintRules(undefined)).toBeUndefined();
+    expect(parseAgentHintRules({ id: "r" })).toBeUndefined();
+  });
+
+  it.each([
+    [
+      "too many conditions",
+      Array(17).fill({ signal: "s", op: "eq", value: 1 }),
+    ],
+    [
+      "an oversized in list",
+      [{ signal: "s", op: "in", value: Array(33).fill(1) }],
+    ],
+    ["a non-finite number", [{ signal: "s", op: "gt", value: NaN }]],
+    ["an unknown operator", [{ signal: "s", op: "matches", value: "x" }]],
+  ])("rejects the whole set when one rule has %s", (_name, when) => {
     expect(
       parseAgentHintRules([
-        { id: "many", when: Array(17).fill(condition), text: "x" },
+        { id: "ok", when: [], text: "x" },
+        { id: "bad", when, text: "x" },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("accepts 16 conditions", () => {
+    expect(
+      parseAgentHintRules([
         {
-          id: "wide",
-          when: [{ signal: "s", op: "in", value: Array(33).fill(1) }],
+          id: "ok",
+          when: Array(16).fill({ signal: "s", op: "eq", value: 1 }),
           text: "x",
         },
-        { id: "nan", when: [{ signal: "s", op: "gt", value: NaN }], text: "x" },
-        { id: "ok", when: Array(16).fill(condition), text: "x" },
-      ]).map(r => r.id),
-    ).toEqual(["ok"]);
+      ]),
+    ).toHaveLength(1);
   });
 });
