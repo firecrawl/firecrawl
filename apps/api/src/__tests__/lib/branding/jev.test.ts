@@ -466,6 +466,40 @@ describe("branding with Jev", () => {
     expect(result.buttonClassification.confidence).toBeCloseTo(0.48);
   });
 
+  it("skips a secondary button that looks like the primary, since merge would drop it", async () => {
+    const input = baseInput(new CostTracking());
+    input.buttons.push({
+      ...input.buttons[0],
+      index: 2,
+      text: "Start free trial",
+    });
+    respondWith(
+      jevResponse({
+        secondary_button: {
+          type: "choice",
+          choice: "button_2",
+          probabilities: {
+            button_0: 0.1,
+            button_1: 0.3,
+            button_2: 0.55,
+            none: 0.05,
+          },
+          confidence: 0.5,
+        },
+      }),
+    );
+
+    const result = await enhanceBrandingWithLLM(input);
+
+    expect(result.buttonClassification.secondaryButtonIndex).toBe(1);
+    const merged = mergeBrandingResults(
+      input.jsAnalysis,
+      result,
+      input.buttons,
+    );
+    expect(merged.components?.buttonSecondary?.background).toBe("transparent");
+  });
+
   it("falls back to the LLM when the TypeSafe API errors", async () => {
     mocks.systemOne.mockRejectedValueOnce(new Error("invalid api key"));
     const costTracking = new CostTracking();

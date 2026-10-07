@@ -13,6 +13,9 @@ vi.mock("./record", () => ({
     throw new Error("Alexandria must not enter the job/refund path");
   },
 }));
+vi.mock("../../../lib/alexandria-activity", () => ({
+  hasRecentAlexandriaActivity: async () => true,
+}));
 vi.mock("../../../services/autumn/autumn.service", () => ({
   CREDITS_FEATURE_ID: "CREDITS",
   autumnService: { refundCredits: async () => true },

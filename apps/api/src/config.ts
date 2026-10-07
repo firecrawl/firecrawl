@@ -90,8 +90,7 @@ const configSchema = z.object({
     v => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z.string().trim().optional(),
   ),
-  // Optional external agent hints provider. Inert unless the URL is set; see
-  // AGENT_HINTS.md for the request/response contract.
+  // Optional external agent hints provider. Inert unless the URL is set.
   AGENT_HINTS_PROVIDER_URL: emptyStringAsUndefined(
     z
       .string()
@@ -222,6 +221,11 @@ const configSchema = z.object({
   FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
   FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
   FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),
+  ALEXANDRIA_FEEDBACK_WINDOW_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1200),
   ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
     .number()
     .int()

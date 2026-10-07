@@ -1,11 +1,49 @@
 import express from "express";
 import request from "supertest";
 import { config } from "../../config";
-import type { ProviderHintsHolder } from "../../lib/agent-hints-provider";
+import { evaluateAgentHintRules } from "../../lib/agent-hint-rules";
+import { computeAgentHintSignals } from "../../lib/agent-hint-signals";
+import { buildAgentHints } from "../../lib/agent-hints";
+import {
+  agentHintsProviderRequestsTotal,
+  getProviderHints,
+  type ProviderHintsHolder,
+} from "../../lib/agent-hints-provider";
 import {
   agentHintsMiddleware,
   agentHintsProviderMiddleware,
 } from "../agent-hints";
+
+vi.mock("../../lib/agent-hint-rules", async importOriginal => {
+  const actual =
+    await importOriginal<typeof import("../../lib/agent-hint-rules")>();
+  return {
+    ...actual,
+    evaluateAgentHintRules: vi.fn(actual.evaluateAgentHintRules),
+  };
+});
+vi.mock("../../lib/agent-hint-signals", async importOriginal => {
+  const actual =
+    await importOriginal<typeof import("../../lib/agent-hint-signals")>();
+  return {
+    ...actual,
+    computeAgentHintSignals: vi.fn(actual.computeAgentHintSignals),
+  };
+});
+vi.mock("../../lib/agent-hints", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../lib/agent-hints")>();
+  return { ...actual, buildAgentHints: vi.fn(actual.buildAgentHints) };
+});
+vi.mock("../../lib/agent-hints-provider", async importOriginal => {
+  const actual =
+    await importOriginal<typeof import("../../lib/agent-hints-provider")>();
+  return { ...actual, getProviderHints: vi.fn(actual.getProviderHints) };
+});
+
+async function evalErrors(): Promise<number> {
+  const metric = await agentHintsProviderRequestsTotal.get();
+  return metric.values.find(v => v.labels.outcome === "eval_error")?.value ?? 0;
+}
 
 function appFor(
   {
@@ -279,7 +317,11 @@ describe("agent hint response middleware with an external provider", () => {
   it("appends settled provider hints after deterministic hints", async () => {
     const response = await request(
       holderAppFor(
-        { settled: true, hints: [{ id: "p1", text: "Provider hint." }] },
+        {
+          settled: true,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules: [],
+        },
         EXCERPT_BODY,
       ),
     )
@@ -295,7 +337,11 @@ describe("agent hint response middleware with an external provider", () => {
     const body = { success: true, data: {} };
     const response = await request(
       holderAppFor(
-        { settled: true, hints: [{ id: "p1", text: "Provider hint." }] },
+        {
+          settled: true,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules: [],
+        },
         body,
       ),
     )
@@ -309,7 +355,11 @@ describe("agent hint response middleware with an external provider", () => {
     const body = { success: true, data: {} };
     const response = await request(
       holderAppFor(
-        { settled: false, hints: [{ id: "p1", text: "Provider hint." }] },
+        {
+          settled: false,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules: [],
+        },
         body,
       ),
     )
@@ -323,7 +373,11 @@ describe("agent hint response middleware with an external provider", () => {
     const body = { success: false, error: "Bad URL", code: "BAD_REQUEST" };
     const response = await request(
       holderAppFor(
-        { settled: true, hints: [{ id: "p1", text: "Provider hint." }] },
+        {
+          settled: true,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules: [],
+        },
         body,
       ),
     )
@@ -337,13 +391,162 @@ describe("agent hint response middleware with an external provider", () => {
     const body = { success: true, data: {} };
     const response = await request(
       holderAppFor(
-        { settled: true, hints: [{ id: "p1", text: "Provider hint." }] },
+        {
+          settled: true,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules: [],
+        },
         body,
       ),
     )
       .post("/")
       .send({});
     expect(response.body).toEqual(body);
+  });
+});
+
+describe("agent hint response middleware with provider rules", () => {
+  const rules = [
+    {
+      id: "results",
+      group: "next",
+      when: [
+        { signal: "success", op: "eq" as const, value: true },
+        { signal: "excerpt_count", op: "gt" as const, value: 0 },
+      ],
+      text: "Rule: {excerpt_count} of {result_count}.",
+    },
+    {
+      id: "credits",
+      when: [{ signal: "remaining_credits", op: "lt" as const, value: 10 }],
+      text: "Rule: credits {remaining_credits}.",
+    },
+  ];
+
+  it("serves rule hints instead of the built-in hints when rules are present", async () => {
+    const response = await request(
+      holderAppFor(
+        {
+          settled: true,
+          hints: [{ id: "p1", text: "Provider hint." }],
+          rules,
+        },
+        EXCERPT_BODY,
+      ),
+    )
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.body.agent_hints).toEqual([
+      "Rule: 1 of 1.",
+      "Provider hint.",
+    ]);
+  });
+
+  it("evaluates rules on failure envelopes but adds no provider hints there", async () => {
+    const app = express();
+    app.use(express.json());
+    app.post("/", agentHintsMiddleware("scrape"), (req, res) => {
+      (req as any).auth = { team_id: "account-team" };
+      res.locals.agentCreditsRemaining = 3;
+      res.locals.agentHintsProvider = {
+        settled: true,
+        hints: [{ id: "p1", text: "Provider hint." }],
+        rules,
+      };
+      res.status(400).json({ success: false, error: "Bad request" });
+    });
+    const response = await request(app)
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.body.agent_hints).toEqual(["Rule: credits 3."]);
+  });
+
+  it("uses the built-in hints while the provider has not answered", async () => {
+    const response = await request(
+      holderAppFor({ settled: false, hints: [], rules: [] }, EXCERPT_BODY),
+    )
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.body.agent_hints).toHaveLength(1);
+    expect(response.body.agent_hints[0]).toContain("firecrawl_scrape");
+  });
+});
+
+describe("agent hint failures never change the response", () => {
+  const RULES = [
+    {
+      id: "results",
+      when: [{ signal: "excerpt_count", op: "gt" as const, value: 0 }],
+      text: "Rule: {excerpt_count}.",
+    },
+  ];
+  const boom = () => {
+    throw new Error("boom");
+  };
+
+  afterEach(() => {
+    vi.mocked(evaluateAgentHintRules).mockClear();
+  });
+
+  it.each([
+    [
+      "the matcher",
+      () => vi.mocked(evaluateAgentHintRules).mockImplementationOnce(boom),
+      RULES,
+    ],
+    [
+      "signal computation",
+      () => vi.mocked(computeAgentHintSignals).mockImplementationOnce(boom),
+      RULES,
+    ],
+    [
+      "the built-in hints",
+      () => vi.mocked(buildAgentHints).mockImplementationOnce(boom),
+      [],
+    ],
+  ])(
+    "sends the original body with status 200 when %s throws",
+    async (_name, arm, rules) => {
+      arm();
+      const before = await evalErrors();
+      const response = await request(
+        holderAppFor({ settled: true, hints: [], rules }, EXCERPT_BODY),
+      )
+        .post("/")
+        .set("X-Firecrawl-Agent-Hints", "true")
+        .send({});
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toEqual(EXCERPT_BODY);
+      expect(await evalErrors()).toBe(before + 1);
+    },
+  );
+
+  it("still responds when the provider lookup cannot start", async () => {
+    vi.mocked(getProviderHints).mockImplementationOnce(boom);
+    const app = express();
+    app.use(express.json());
+    app.post(
+      "/",
+      agentHintsMiddleware("search"),
+      (req, _res, next) => {
+        (req as any).auth = { team_id: "account-team" };
+        next();
+      },
+      agentHintsProviderMiddleware("search"),
+      (_req, res) => {
+        res.json(EXCERPT_BODY);
+      },
+    );
+    const response = await request(app)
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.statusCode).toBe(200);
+    expect(response.body.agent_hints).toHaveLength(1);
+    expect(response.body.agent_hints[0]).toContain("firecrawl_scrape");
   });
 });
 
@@ -416,6 +619,50 @@ describe("agent hints provider middleware", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("falls back to the built-in hints when the provider sends a malformed rule set", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            hints: [{ id: "p1", text: "Provider hint." }],
+            rules: [
+              { id: "ok", when: [], text: "Rule hint." },
+              { id: "bad", when: [{ signal: "s", op: "nope" }], text: "x" },
+            ],
+            ttl_seconds: 60,
+          }),
+          { status: 200 },
+        ),
+    );
+    const body = { success: true, data: { metadata: { statusCode: 404 } } };
+    const app = express();
+    app.use(express.json());
+    app.post(
+      "/",
+      agentHintsMiddleware("scrape"),
+      (req, _res, next) => {
+        (req as any).auth = { team_id: `team-${++teamCounter}` };
+        next();
+      },
+      agentHintsProviderMiddleware("scrape"),
+      async (_req, res) => {
+        await vi.waitFor(() =>
+          expect(res.locals.agentHintsProvider?.settled).toBe(true),
+        );
+        res.json(body);
+      },
+    );
+    const response = await request(app)
+      .post("/")
+      .set("X-Firecrawl-Agent-Hints", "true")
+      .send({});
+    expect(response.statusCode).toBe(200);
+    expect(response.body.agent_hints).toHaveLength(1);
+    expect(response.body.agent_hints[0]).toContain("firecrawl_search");
+    expect(JSON.stringify(response.body)).not.toContain("Rule hint.");
+    expect(JSON.stringify(response.body)).not.toContain("Provider hint.");
+  });
+
   it("does not call the provider without the opt-in header", async () => {
     const fetchSpy = mockProvider();
     await request(providerAppFor({ team_id: `team-${++teamCounter}` }))
@@ -449,7 +696,7 @@ describe("agent hints provider middleware", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const body = String(fetchSpy.mock.calls[0][1]?.body);
     expect(JSON.parse(body)).toEqual({
-      version: 1,
+      version: 2,
       team_id: teamId,
       org_id: "org-1",
       api_key_id: 7,

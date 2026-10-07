@@ -333,6 +333,7 @@ class Firecrawl:
         self.list_agents = self._v2_client.list_agents
         self.get_agent_trace = self._v2_client.get_agent_trace
         self.get_agent_snapshot = self._v2_client.get_agent_snapshot
+        self.get_agent_thread = self._v2_client.get_agent_thread
         self.agent = self._v2_client.agent
 
         self.get_concurrency = self._v2_client.get_concurrency
@@ -478,6 +479,7 @@ class AsyncFirecrawl:
         self.list_agents = self._v2_client.list_agents
         self.get_agent_trace = self._v2_client.get_agent_trace
         self.get_agent_snapshot = self._v2_client.get_agent_snapshot
+        self.get_agent_thread = self._v2_client.get_agent_thread
         self.agent = self._v2_client.agent
 
         self.get_concurrency = self._v2_client.get_concurrency

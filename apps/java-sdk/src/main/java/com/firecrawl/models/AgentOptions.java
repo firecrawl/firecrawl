@@ -21,6 +21,9 @@ public class AgentOptions {
     private String effort;
     private WebhookConfig webhook;
     private AuditMetadata auditMetadata;
+    private String threadId;
+    private String mode;
+    private AgentExchangeOptions exchange;
 
     private AgentOptions() {}
 
@@ -35,6 +38,9 @@ public class AgentOptions {
     public WebhookConfig getWebhook() { return webhook; }
     @JsonProperty("auditMetadata")
     public AuditMetadata getAuditMetadata() { return auditMetadata; }
+    public String getThreadId() { return threadId; }
+    public String getMode() { return mode; }
+    public AgentExchangeOptions getExchange() { return exchange; }
 
     public static Builder builder() { return new Builder(); }
 
@@ -49,6 +55,9 @@ public class AgentOptions {
         private String effort;
         private WebhookConfig webhook;
         private AuditMetadata auditMetadata;
+        private String threadId;
+        private String mode;
+        private AgentExchangeOptions exchange;
 
         private Builder() {}
 
@@ -72,6 +81,12 @@ public class AgentOptions {
         public Builder webhook(WebhookConfig webhook) { this.webhook = webhook; return this; }
         /** User attribution to include with SIEM logging events. */
         public Builder auditMetadata(AuditMetadata auditMetadata) { this.auditMetadata = auditMetadata; return this; }
+        /** Run as the next turn of this thread. Omitted starts a new thread. */
+        public Builder threadId(String threadId) { this.threadId = threadId; return this; }
+        /** Run mode: "extract" (server default) or "chat". */
+        public Builder mode(String mode) { this.mode = mode; return this; }
+        /** Exchange (Alexandria data provider) settings. Omitted on a follow-up turn inherits the previous turn's. */
+        public Builder exchange(AgentExchangeOptions exchange) { this.exchange = exchange; return this; }
 
         public AgentOptions build() {
             if (prompt == null || prompt.isEmpty()) {
@@ -88,6 +103,9 @@ public class AgentOptions {
             o.effort = this.effort;
             o.webhook = this.webhook;
             o.auditMetadata = this.auditMetadata;
+            o.threadId = this.threadId;
+            o.mode = this.mode;
+            o.exchange = this.exchange;
             return o;
         }
     }
