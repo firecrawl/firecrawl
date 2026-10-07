@@ -1,11 +1,19 @@
 package com.firecrawl;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.firecrawl.client.FirecrawlClient;
+import com.firecrawl.models.AgentExchangeOptions;
+import com.firecrawl.models.AgentExchangeSummary;
 import com.firecrawl.models.AgentListItem;
 import com.firecrawl.models.AgentListResponse;
 import com.firecrawl.models.AgentOptions;
+import com.firecrawl.models.AgentPendingApproval;
+import com.firecrawl.models.AgentPendingApprovalCall;
 import com.firecrawl.models.AgentResponse;
 import com.firecrawl.models.AgentSnapshotResponse;
+import com.firecrawl.models.AgentStatusResponse;
+import com.firecrawl.models.AgentTermsActionProvider;
 import com.firecrawl.models.AgentTraceEvent;
 import com.firecrawl.models.AgentTraceResponse;
 import com.sun.net.httpserver.HttpServer;
@@ -17,6 +25,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -24,11 +34,15 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Agent endpoint tests against a local mock HTTP server.
  *
- * Verifies request serialization (effort parameter, query params) and
- * response parsing for the agent trace and snapshot endpoints without
- * requiring a live API key.
+ * Verifies request serialization (effort, thread and exchange options, query
+ * params) and response parsing for the agent status, trace and snapshot
+ * endpoints without requiring a live API key.
  */
 class AgentMockTest {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String THREAD_ID = "0199bbbb-0000-7000-8000-000000000000";
+    private static final String APPROVAL_ID = "0199aaaa-0000-7000-8000-000000000000";
 
     private HttpServer server;
     private FirecrawlClient client;
@@ -56,8 +70,52 @@ class AgentMockTest {
                         + "}]"
                         + "}");
             } else {
-                respond(exchange, 200, "{\"success\":true,\"id\":\"job-123\"}");
+                respond(exchange, 200, "{\"success\":true,\"id\":\"job-123\","
+                        + "\"threadId\":\"" + THREAD_ID + "\",\"threadTurn\":2}");
             }
+        });
+
+        server.createContext("/v2/agent/job-123", exchange -> {
+            lastRequestPath.set(exchange.getRequestURI().toString());
+            respond(exchange, 200, "{"
+                    + "\"success\":true,\"status\":\"completed\",\"model\":\"spark-2\","
+                    + "\"expiresAt\":\"2026-10-07T00:00:00.000Z\",\"creditsUsed\":12,"
+                    + "\"threadId\":\"" + THREAD_ID + "\",\"threadTurn\":2,\"mode\":\"chat\","
+                    + "\"message\":\"One paid call needs your approval.\","
+                    + "\"suggestions\":[{\"label\":\"Approve\",\"prompt\":\"Go ahead\"}],"
+                    + "\"someFutureField\":{\"nested\":true},"
+                    + "\"pendingApproval\":{\"id\":\"" + APPROVAL_ID + "\",\"kind\":\"calls\","
+                    + "  \"reason\":\"Provider A charges per lookup.\","
+                    + "  \"calls\":[{\"id\":\"call-1\",\"provider\":\"provider-a\",\"capability\":\"people/search\","
+                    + "    \"input\":{\"query\":\"example\",\"limit\":5},\"more\":[{\"query\":\"example 2\"}],"
+                    + "    \"creditsEstimate\":4,\"futureCallField\":1}],"
+                    + "  \"resolution\":null},"
+                    + "\"exchange\":{\"enabled\":true,\"toolkits\":[\"provider-a\"],\"requireApproval\":true,"
+                    + "  \"onTermsRequired\":\"ask\",\"paidCalls\":1,\"creditsUsed\":null,"
+                    + "  \"skippedProviders\":[{\"provider\":\"provider-b\",\"name\":\"Provider B\","
+                    + "    \"capability\":\"company/enrich\",\"adds\":\"verified work emails\","
+                    + "    \"reason\":\"terms_required\",\"version\":\"F-1.0.0\","
+                    + "    \"termsUrl\":\"https://www.firecrawl.dev/app/alexandria/provider-b\"}],"
+                    + "  \"requiresAction\":{\"type\":\"accept_terms\",\"approvalId\":\"" + APPROVAL_ID + "\","
+                    + "    \"providers\":[{\"provider\":\"provider-b\",\"name\":\"Provider B\",\"version\":\"F-1.0.0\","
+                    + "      \"digest\":null,\"url\":\"https://www.firecrawl.dev/app/alexandria/provider-b\","
+                    + "      \"show\":{\"provider\":\"firecrawl\",\"capability\":\"terms/show\","
+                    + "        \"options\":{\"provider\":\"provider-b\"}},"
+                    + "      \"accept\":{\"provider\":\"firecrawl\",\"capability\":\"terms/accept\","
+                    + "        \"options\":{\"provider\":\"provider-b\",\"version\":\"F-1.0.0\",\"digest\":null,\"confirmed\":true}}}]}}"
+                    + "}");
+        });
+
+        server.createContext("/v2/agent/job-terms", exchange -> {
+            lastRequestPath.set(exchange.getRequestURI().toString());
+            respond(exchange, 200, "{"
+                    + "\"success\":true,\"status\":\"completed\",\"expiresAt\":\"2026-10-07T00:00:00.000Z\","
+                    + "\"pendingApproval\":{\"id\":\"" + APPROVAL_ID + "\",\"kind\":\"terms\","
+                    + "  \"reason\":\"Provider B could add verified work emails.\",\"calls\":[],"
+                    + "  \"terms\":[{\"provider\":\"provider-b\",\"name\":\"Provider B\",\"logo\":\"https://example.com/b.png\","
+                    + "    \"version\":\"F-1.0.0\",\"digest\":\"sha256:abc\",\"url\":\"https://www.firecrawl.dev/app/alexandria/provider-b\"}],"
+                    + "  \"resolution\":{\"approved\":true,\"callIds\":[],\"always\":false,\"byRunId\":\"job-next\"}}"
+                    + "}");
         });
 
         server.createContext("/v2/agent/job-123/trace", exchange -> {
@@ -141,6 +199,162 @@ class AgentMockTest {
         String body = lastRequestBody.get();
         assertNotNull(body);
         assertFalse(body.contains("effort"), "Request body should not contain effort: " + body);
+    }
+
+    @Test
+    void testStartAgentSendsExchangeThreadAndMode() throws IOException {
+        AgentResponse response = client.startAgent(
+                AgentOptions.builder()
+                        .prompt("Continue")
+                        .threadId(THREAD_ID)
+                        .mode("chat")
+                        .exchange(AgentExchangeOptions.builder()
+                                .enabled(true)
+                                .toolkits(List.of("provider-a", "provider-b"))
+                                .maxCalls(8)
+                                .requireApproval(true)
+                                .approve(new AgentExchangeOptions.Approve(APPROVAL_ID, List.of("call-1", "call-2"), true))
+                                .decline(new AgentExchangeOptions.Decline(APPROVAL_ID))
+                                .onTermsRequired("ask")
+                                .build())
+                        .build());
+
+        assertEquals(THREAD_ID, response.getThreadId());
+        assertEquals(2, response.getThreadTurn());
+
+        JsonNode body = MAPPER.readTree(lastRequestBody.get());
+        assertEquals(THREAD_ID, body.get("threadId").asText());
+        assertEquals("chat", body.get("mode").asText());
+        assertEquals(MAPPER.readTree("{"
+                + "\"enabled\":true,"
+                + "\"toolkits\":[\"provider-a\",\"provider-b\"],"
+                + "\"maxCalls\":8,"
+                + "\"requireApproval\":true,"
+                + "\"approve\":{\"approvalId\":\"" + APPROVAL_ID + "\",\"callIds\":[\"call-1\",\"call-2\"],\"always\":true},"
+                + "\"decline\":{\"approvalId\":\"" + APPROVAL_ID + "\"},"
+                + "\"onTermsRequired\":\"ask\""
+                + "}"), body.get("exchange"));
+    }
+
+    @Test
+    void testStartAgentOmitsThreadModeAndExchangeWhenNotSet() throws IOException {
+        AgentResponse response = client.startAgent(AgentOptions.builder().prompt("Hello").build());
+
+        JsonNode body = MAPPER.readTree(lastRequestBody.get());
+        assertFalse(body.has("threadId"), "Request body should not contain threadId: " + body);
+        assertFalse(body.has("mode"), "Request body should not contain mode: " + body);
+        assertFalse(body.has("exchange"), "Request body should not contain exchange: " + body);
+        assertEquals("job-123", response.getId());
+    }
+
+    @Test
+    void testStartAgentOmitsUnsetExchangeFields() throws IOException {
+        client.startAgent(AgentOptions.builder()
+                .prompt("Continue")
+                .threadId(THREAD_ID)
+                .exchange(AgentExchangeOptions.builder()
+                        .enabled(true)
+                        .approve(new AgentExchangeOptions.Approve(APPROVAL_ID))
+                        .build())
+                .build());
+
+        JsonNode body = MAPPER.readTree(lastRequestBody.get());
+        assertEquals(MAPPER.readTree("{\"enabled\":true,\"approve\":{\"approvalId\":\"" + APPROVAL_ID + "\"}}"),
+                body.get("exchange"));
+    }
+
+    @Test
+    void testApproveAndDeclineRequireApprovalId() {
+        assertThrows(NullPointerException.class, () -> new AgentExchangeOptions.Approve(null));
+        assertThrows(NullPointerException.class, () -> new AgentExchangeOptions.Approve(null, List.of("call-1"), true));
+        assertThrows(NullPointerException.class, () -> new AgentExchangeOptions.Decline(null));
+    }
+
+    @Test
+    void testAgentParsesExchangeSummaryAndPendingApproval() throws IOException {
+        AgentStatusResponse status = client.agent(
+                AgentOptions.builder()
+                        .prompt("Find the contact at example.com")
+                        .mode("chat")
+                        .exchange(AgentExchangeOptions.builder().requireApproval(true).build())
+                        .build(),
+                1, 10);
+
+        assertEquals("{\"requireApproval\":true}",
+                MAPPER.readTree(lastRequestBody.get()).get("exchange").toString());
+        assertEquals("/v2/agent/job-123", lastRequestPath.get());
+
+        assertTrue(status.isDone());
+        assertEquals(THREAD_ID, status.getThreadId());
+        assertEquals(2, status.getThreadTurn());
+        assertEquals("chat", status.getMode());
+        assertEquals("One paid call needs your approval.", status.getMessage());
+
+        AgentPendingApproval pending = status.getPendingApproval();
+        assertNotNull(pending);
+        assertEquals(APPROVAL_ID, pending.getId());
+        assertEquals("calls", pending.getKind());
+        assertEquals("Provider A charges per lookup.", pending.getReason());
+        assertNull(pending.getTerms());
+        assertNull(pending.getResolution());
+        AgentPendingApprovalCall call = pending.getCalls().get(0);
+        assertEquals("call-1", call.getId());
+        assertEquals("provider-a", call.getProvider());
+        assertEquals("people/search", call.getCapability());
+        assertEquals("example", call.getInput().get("query"));
+        assertEquals(5, call.getInput().get("limit"));
+        assertEquals("example 2", call.getMore().get(0).get("query"));
+        assertEquals(4, call.getCreditsEstimate());
+
+        AgentExchangeSummary exchange = status.getExchange();
+        assertNotNull(exchange);
+        assertTrue(exchange.isEnabled());
+        assertEquals(List.of("provider-a"), exchange.getToolkits());
+        assertTrue(exchange.getRequireApproval());
+        assertEquals("ask", exchange.getOnTermsRequired());
+        assertEquals(1, exchange.getPaidCalls());
+        assertNull(exchange.getCreditsUsed());
+
+        assertEquals(1, exchange.getSkippedProviders().size());
+        assertEquals("provider-b", exchange.getSkippedProviders().get(0).getProvider());
+        assertEquals("Provider B", exchange.getSkippedProviders().get(0).getName());
+        assertEquals("company/enrich", exchange.getSkippedProviders().get(0).getCapability());
+        assertEquals("verified work emails", exchange.getSkippedProviders().get(0).getAdds());
+        assertEquals("terms_required", exchange.getSkippedProviders().get(0).getReason());
+        assertEquals("F-1.0.0", exchange.getSkippedProviders().get(0).getVersion());
+        assertEquals("https://www.firecrawl.dev/app/alexandria/provider-b",
+                exchange.getSkippedProviders().get(0).getTermsUrl());
+
+        assertEquals("accept_terms", exchange.getRequiresAction().getType());
+        assertEquals(APPROVAL_ID, exchange.getRequiresAction().getApprovalId());
+        AgentTermsActionProvider provider = exchange.getRequiresAction().getProviders().get(0);
+        assertEquals("provider-b", provider.getProvider());
+        assertEquals("F-1.0.0", provider.getVersion());
+        assertNull(provider.getDigest());
+        assertEquals("https://www.firecrawl.dev/app/alexandria/provider-b", provider.getUrl());
+        assertEquals("terms/show", provider.getShow().get("capability"));
+        assertEquals("terms/accept", provider.getAccept().get("capability"));
+        Map<?, ?> acceptOptions = (Map<?, ?>) provider.getAccept().get("options");
+        assertTrue(acceptOptions.containsKey("digest"));
+        assertNull(acceptOptions.get("digest"));
+        assertEquals(true, acceptOptions.get("confirmed"));
+    }
+
+    @Test
+    void testGetAgentStatusParsesTermsApproval() {
+        AgentStatusResponse status = client.getAgentStatus("job-terms");
+
+        AgentPendingApproval pending = status.getPendingApproval();
+        assertEquals("terms", pending.getKind());
+        assertTrue(pending.getCalls().isEmpty());
+        assertEquals("provider-b", pending.getTerms().get(0).getProvider());
+        assertEquals("https://example.com/b.png", pending.getTerms().get(0).getLogo());
+        assertEquals("sha256:abc", pending.getTerms().get(0).getDigest());
+        assertTrue(pending.getResolution().isApproved());
+        assertFalse(pending.getResolution().isAlways());
+        assertEquals("job-next", pending.getResolution().getByRunId());
+        assertNull(status.getExchange());
+        assertNull(status.getThreadId());
     }
 
     @Test

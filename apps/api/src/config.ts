@@ -90,7 +90,28 @@ const configSchema = z.object({
     v => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z.string().trim().optional(),
   ),
+  // Optional external agent hints provider. Inert unless the URL is set.
+  AGENT_HINTS_PROVIDER_URL: emptyStringAsUndefined(
+    z
+      .string()
+      .url()
+      .refine(value => ["http:", "https:"].includes(new URL(value).protocol), {
+        message: "AGENT_HINTS_PROVIDER_URL must be an http(s) URL",
+      }),
+  ),
+  AGENT_HINTS_PROVIDER_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Never sent to the provider. Keys the keyless team pseudonym; when unset a
+  // random per-process key is used, so pseudonyms are only stable per process.
+  AGENT_HINTS_PROVIDER_PSEUDONYM_KEY: emptyStringAsUndefined(
+    z.string().trim().min(32),
+  ),
+  AGENT_HINTS_PROVIDER_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50),
   RESEARCH_PROXY_URL: z.string().url().optional(),
+  SEARCH_PLATFORM_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
@@ -231,6 +252,21 @@ const configSchema = z.object({
   FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
   FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
   FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),
+  ALEXANDRIA_FEEDBACK_WINDOW_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1200),
+  ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(100),
+  ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(10),
 
   // OAuth token introspection
   OAUTH_INTROSPECT_URL: z.string().optional(),
@@ -571,6 +607,10 @@ const configSchema = z.object({
   BRANDING_JEV_ESCALATE_BELOW: emptyStringAsUndefined(
     z.coerce.number().min(0).max(1),
   ),
+  // Share of LLM-answered branding requests (0-100) that also ask Jev in the
+  // background and record how its answer compares (lib/branding/jev-shadow.ts).
+  // Customers always get the LLM's answer.
+  BRANDING_JEV_SHADOW_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
   // AI/ML
   MODEL_NAME: z.string().optional(),

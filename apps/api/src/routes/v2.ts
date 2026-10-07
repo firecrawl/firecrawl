@@ -1,4 +1,7 @@
-import { agentHintsMiddleware } from "../middlewares/agent-hints";
+import {
+  agentHintsMiddleware,
+  agentHintsProviderMiddleware,
+} from "../middlewares/agent-hints";
 import express from "express";
 import multer from "multer";
 import { config } from "../config";
@@ -94,6 +97,7 @@ import {
 import { supportProxyController } from "../controllers/v2/support-proxy";
 import {
   createDeveloperRouter,
+  createGovRouter,
   createResearchRouter,
 } from "../controllers/v2/research-proxy";
 import {
@@ -204,6 +208,7 @@ v2Router.post(
     allowKeyless: true,
     allowAgentManagedKey: true,
   }),
+  agentHintsProviderMiddleware("search"),
   countryCheck,
   checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
   blocklistMiddleware,
@@ -247,6 +252,7 @@ v2Router.post(
   "/parse",
   agentHintsMiddleware("parse"),
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
+  agentHintsProviderMiddleware("parse"),
   countryCheck,
   checkCreditsMiddleware(1),
   parsePayloadMiddleware,
@@ -260,6 +266,7 @@ v2Router.post(
     allowKeyless: true,
     allowAgentManagedKey: true,
   }),
+  agentHintsProviderMiddleware("scrape"),
   countryCheck,
   checkCreditsMiddleware(1),
   scrapeBlocklistMiddleware,
@@ -300,6 +307,7 @@ v2Router.post(
   "/map",
   agentHintsMiddleware("map"),
   authMiddleware(RateLimiterMode.Map),
+  agentHintsProviderMiddleware("map"),
   checkCreditsMiddleware(1),
   blocklistMiddleware,
   wrap(mapController),
@@ -740,5 +748,15 @@ if (config.RESEARCH_PROXY_URL) {
     "/developer",
     authMiddleware(RateLimiterMode.DeveloperSearch),
     createDeveloperRouter(),
+  );
+}
+
+if (config.SEARCH_PLATFORM_URL) {
+  v2Router.use(
+    "/search/gov",
+    authMiddleware(RateLimiterMode.GovSearch, {
+      allowKeyless: true,
+    }),
+    createGovRouter(),
   );
 }

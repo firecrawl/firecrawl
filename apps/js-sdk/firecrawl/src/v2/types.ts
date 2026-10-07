@@ -806,6 +806,16 @@ export interface DeveloperSearchResponse {
   sources?: DeveloperSearchSourceStatus[];
 }
 
+export interface GovSearchOptions {
+  /** Total ranked results, 1–100 (default 10). */
+  k?: number;
+}
+
+export interface GovSearchResponse {
+  success: boolean;
+  data: { web: SearchResultWeb[] };
+}
+
 export interface SearchResultWeb {
   url: string;
   title?: string;
@@ -973,6 +983,8 @@ export interface AlexandriaOptions {
  * - `pdf` — restrict results to PDFs (adds `filetype:pdf`).
  * - `developer` — developer-index results (issues, pull requests, READMEs and
  *   documentation) served in `web`; cannot be combined with other categories.
+ * - `gov` — Government Index results served in `web`; cannot be combined
+ *   with other categories.
  *
  * ⚠️ `categories: ["research"]` is **not** Firecrawl's research paper index.
  * To search papers themselves — ~43M abstracts, roughly 90% biomedical
@@ -984,7 +996,7 @@ export interface AlexandriaOptions {
  * happen to live on academic domains → `search({ categories: ["research"] })`.
  */
 export interface CategoryOption {
-  type: "github" | "research" | "pdf" | "developer";
+  type: "github" | "research" | "pdf" | "developer" | "gov";
 }
 
 export interface SearchRequest {
@@ -1006,7 +1018,7 @@ export interface SearchRequest {
    * `firecrawl.research.searchPapers()` instead.
    */
   categories?: Array<
-    "github" | "research" | "pdf" | "developer" | CategoryOption
+    "github" | "research" | "pdf" | "developer" | "gov" | CategoryOption
   >;
   includeDomains?: string[];
   excludeDomains?: string[];

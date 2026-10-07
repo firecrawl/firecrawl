@@ -9,6 +9,7 @@ const fixture = vi.hoisted(() => ({
   alexandriaInsert: vi.fn(),
   refund: vi.fn(),
   refundedToday: vi.fn(),
+  alexandriaActivity: vi.fn(),
 }));
 vi.mock("./feedback-store", () => ({
   lookupFeedbackJob: fixture.lookup,
@@ -27,6 +28,16 @@ vi.mock("../../../db/connection", () => ({
 }));
 vi.mock("./refund-totals", () => ({
   sumCreditsRefundedToday: fixture.refundedToday,
+}));
+vi.mock("../../../lib/alexandria-activity", () => ({
+  hasRecentAlexandriaActivity: fixture.alexandriaActivity,
+}));
+vi.mock("./alexandria-refund", () => ({
+  refundAlexandriaFeedback: async () => ({
+    creditsRefunded: 1,
+    creditsRefundedToday: 1,
+    dailyRefundCap: 10,
+  }),
 }));
 vi.mock("../../../services/autumn/autumn.service", () => ({
   SEARCH_CREDITS_FEATURE_ID: "SEARCH_CREDITS",
@@ -118,6 +129,7 @@ beforeEach(() => {
   fixture.insert.mockResolvedValue(null);
   fixture.alexandriaInsert.mockResolvedValue(undefined);
   fixture.refundedToday.mockResolvedValue(0);
+  fixture.alexandriaActivity.mockResolvedValue(true);
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -164,8 +176,30 @@ describe.each(routes)("%s job feedback keeps its submission window", route => {
   });
 });
 
+const alexandriaFeedback = () =>
+  request(app)
+    .post("/v2/feedback")
+    .send({
+      endpoint: "alexandria",
+      rating: "partial",
+      requestedWebsite: {
+        url: "https://example.com",
+        requestedFunctionality: "Retrieve records and their attachments.",
+      },
+      rationale: "Found record summaries but could not retrieve attachments.",
+    });
+
+it("rejects Alexandria feedback once the window after the team's last Alexandria call closes", async () => {
+  fixture.alexandriaActivity.mockResolvedValue(false);
+  const response = await alexandriaFeedback();
+  expect(response.status).toBe(409);
+  expect(response.body.feedbackErrorCode).toBe("FEEDBACK_WINDOW_EXPIRED");
+  expect(fixture.alexandriaActivity).toHaveBeenCalledWith(teamId);
+  expect(fixture.alexandriaInsert).not.toHaveBeenCalled();
+});
+
 it.each(stores)(
-  "accepts Alexandria feedback when the session's original %s search has expired",
+  "accepts Alexandria feedback within the window of a later Alexandria call after an earlier %s search expired",
   async store => {
     job("search", store, 30 * 60);
     const expiredSearch = await submit("search");
@@ -176,23 +210,15 @@ it.each(stores)(
     expect(fixture.lookup).toHaveBeenCalledTimes(1);
     fixture.lookup.mockClear();
 
-    const response = await request(app)
-      .post("/v2/feedback")
-      .send({
-        endpoint: "alexandria",
-        rating: "partial",
-        requestedWebsite: {
-          url: "https://example.com",
-          requestedFunctionality: "Retrieve records and their attachments.",
-        },
-        rationale: "Found record summaries but could not retrieve attachments.",
-      });
+    const response = await alexandriaFeedback();
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       success: true,
       feedbackId: expect.any(String),
-      creditsRefunded: 0,
+      creditsRefunded: 1,
+      creditsRefundedToday: 1,
+      dailyRefundCap: 10,
     });
     expect(fixture.lookup).not.toHaveBeenCalled();
     expect(fixture.insert).not.toHaveBeenCalled();

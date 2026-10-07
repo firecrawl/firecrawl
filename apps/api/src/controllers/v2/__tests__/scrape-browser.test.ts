@@ -122,7 +122,6 @@ vi.mock("../../../lib/browser-sessions", () => ({
 }));
 
 vi.mock("../../../lib/concurrency-limit", () => ({
-  getEffectiveConcurrencyLimit: vi.fn(async () => 10),
   getConcurrencyLimitActiveJobsCount: vi.fn(),
   pushConcurrencyLimitActiveJob: vi.fn(() => Promise.resolve()),
   removeConcurrencyLimitActiveJob: vi.fn(() => Promise.resolve()),
@@ -163,6 +162,7 @@ vi.mock("../../../services/logging/log_job", () => ({
 }));
 
 vi.mock("../../../services/autumn/autumn.service", () => ({
+  DEFAULT_TEAM_LIMITS: { concurrency_limit: 2, rate_limit_multiplier: 1 },
   autumnService: {
     checkCredits: vi.fn(async () => ({ allowed: true })),
   },

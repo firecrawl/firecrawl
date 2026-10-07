@@ -3,6 +3,8 @@ import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
 export type ErrorCodes =
   | "THIRD_PARTY_DATA_TERMS_REQUIRED"
   | "THIRD_PARTY_DATA_NOT_FOUND"
+  | "THIRD_PARTY_DATA_UNSUPPORTED_URL"
+  | "THIRD_PARTY_DATA_UNSUPPORTED_OPTION"
   | "THIRD_PARTY_DATA_NOT_ENABLED"
   | "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED"
   | "SCRAPE_TIMEOUT"
@@ -355,14 +357,22 @@ export class SitemapError extends TransportableError {
 }
 
 export class CrawlDenialError extends TransportableError {
-  constructor(public reason: string) {
+  /** True when robots.txt caused the denial. */
+  public robots: boolean;
+
+  constructor(
+    public reason: string,
+    options: { robots?: boolean } = {},
+  ) {
     super("CRAWL_DENIAL", reason);
+    this.robots = options.robots ?? false;
   }
 
   serialize() {
     return {
       ...super.serialize(),
       reason: this.reason,
+      robots: this.robots,
     };
   }
 
@@ -370,7 +380,7 @@ export class CrawlDenialError extends TransportableError {
     _: ErrorCodes,
     data: ReturnType<typeof this.prototype.serialize> & { reason: string },
   ) {
-    const x = new CrawlDenialError(data.reason);
+    const x = new CrawlDenialError(data.reason, { robots: data.robots });
     x.stack = data.stack;
     return x;
   }

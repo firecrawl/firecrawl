@@ -12,6 +12,9 @@ final class AgentOptions
      * @param string|null                $effort Reasoning budget: "low", "medium",
      *        or "high". Every level runs spark-2.
      * @param AuditMetadata|null         $auditMetadata
+     * @param string|null                $threadId Continue this thread as its next
+     *        turn. Omitted starts a new thread.
+     * @param string|null                $mode "extract" or "chat".
      */
     private function __construct(
         private readonly ?array $urls = null,
@@ -24,6 +27,9 @@ final class AgentOptions
         private readonly ?string $effort = null,
         private readonly ?WebhookConfig $webhook = null,
         private readonly ?AuditMetadata $auditMetadata = null,
+        private readonly ?string $threadId = null,
+        private readonly ?string $mode = null,
+        private readonly ?AgentExchangeOptions $exchange = null,
     ) {}
 
     /**
@@ -32,6 +38,9 @@ final class AgentOptions
      * @param string|null                $effort Reasoning budget: "low", "medium",
      *        or "high". Every level runs spark-2.
      * @param AuditMetadata|null         $auditMetadata
+     * @param string|null                $threadId Continue this thread as its next
+     *        turn. Omitted starts a new thread.
+     * @param string|null                $mode "extract" or "chat".
      */
     public static function with(
         ?array $urls = null,
@@ -44,10 +53,14 @@ final class AgentOptions
         ?string $effort = null,
         ?WebhookConfig $webhook = null,
         ?AuditMetadata $auditMetadata = null,
+        ?string $threadId = null,
+        ?string $mode = null,
+        ?AgentExchangeOptions $exchange = null,
     ): self {
         return new self(
             $urls, $prompt, $schema, $integration,
             $maxCredits, $strictConstrainToURLs, $model, $effort, $webhook, $auditMetadata,
+            $threadId, $mode, $exchange,
         );
     }
 
@@ -65,6 +78,10 @@ final class AgentOptions
             'effort' => $this->effort,
             'webhook' => $this->webhook?->toArray(),
             'auditMetadata' => $this->auditMetadata?->toArray(),
+            'threadId' => $this->threadId,
+            'mode' => $this->mode,
+            // An empty exchange still turns Exchange on, so it must encode as {} rather than [].
+            'exchange' => $this->exchange === null ? null : (object) $this->exchange->toArray(),
         ];
 
         return array_filter($fields, fn (mixed $v): bool => $v !== null);

@@ -129,6 +129,8 @@ except CrawlJobTimeoutError as e:
   firecrawl.cancel_crawl(e.job_id)
 ```
 
+With `AsyncFirecrawl`, you can stop waiting for `crawl()` with `Task.cancel()`, `asyncio.timeout` or `asyncio.wait_for`. If the crawl already has a job id, the SDK then sends a best-effort cancel for it. If the cancellation comes before `start_crawl` returns the id, the SDK sends no cancel, and the crawl can keep running. After the cancel, `Task.cancel()` gives you `asyncio.CancelledError`. `asyncio.timeout` and `asyncio.wait_for` give you `TimeoutError`. To keep the crawl running after you stop waiting, use `start_crawl` and `wait_crawl`.
+
 ### Asynchronous Crawling
 
 <Tip>Looking for async operations? Check out the [Async Class](#async-class) section below.</Tip>
@@ -181,7 +183,7 @@ if status.next:
 
 ### Cancelling a Crawl
 
-To cancel an asynchronous crawl job, use the `cancel_crawl` method. It takes the job ID of the asynchronous crawl as a parameter and returns the cancellation status.
+To cancel an asynchronous crawl job, use the `cancel_crawl` method. It takes the job ID of the asynchronous crawl as a parameter and returns the cancellation status. It returns `False` if the crawl already completed.
 
 ```python 
 cancel_crawl = firecrawl.cancel_crawl(id)
@@ -257,6 +259,23 @@ print(evidence.repos)  # indexed-status echoes for requested repos
 `developer_search` also supports `sources`, `topic`, `min_stars`, `max_stars`,
 `archived`, `fork`, and `skills="only"`. Supplying both `repos` and `sources`
 OR-combines GitHub-backed and documentation results.
+
+### Government search
+
+Use `gov_search` to search the Firecrawl Government Index: primary
+law and regulatory material from US federal, state, and local government
+sources, including statutes, regulations, codes, court opinions, and other
+government publications. Results come back in the ordinary web-result shape.
+Generic `search("food labeling requirements", categories=["gov"])` returns
+index results inside `.web`; like `developer`, it cannot be combined with other
+categories.
+
+```python
+law = firecrawl.gov_search("food labeling requirements", k=5)
+
+for result in law.data.web:
+    print(result.position, result.title, result.url)
+```
 
 ### Research / paper search
 

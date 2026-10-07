@@ -2,7 +2,7 @@ import { fetch } from "undici";
 import { z } from "zod";
 
 import { config } from "../config";
-import type { FormatObject } from "../controllers/v2/types";
+import type { DocumentProvider, FormatObject } from "../controllers/v2/types";
 import { hasLedgerAcceptance } from "../services/alexandria/terms";
 import { type ErrorCodes, TransportableError } from "./error";
 import { logger as rootLogger } from "./logger";
@@ -43,6 +43,7 @@ type RouteInput = {
   excludeTags?: unknown[];
   zeroDataRetention?: boolean;
   lockdown?: boolean;
+  redactPII?: unknown;
   flags?: {
     professionalProfileCompanyDataBeta?: boolean;
     organizationDataSourceAccess?: OrganizationDataSourceAccess | null;
@@ -50,10 +51,8 @@ type RouteInput = {
 };
 
 export type ExchangeScrapeMetadata = {
-  handled: true;
-  creditsCost: number;
   accessEventId?: string;
-  integrationId?: string;
+  provider: DocumentProvider;
 };
 
 type ExchangeTerms = {
@@ -372,18 +371,19 @@ export function isSuccessfulExchangeStatusCode(statusCode: number): boolean {
   return (statusCode >= 200 && statusCode < 300) || statusCode === 304;
 }
 
-export function isSupportedExchangeFormatRequest(
+/** Names the first requested format the Exchange can't serve, or null when it serves them all. */
+export function getUnsupportedExchangeFormat(
   formats?: FormatObject[] | unknown[],
-): boolean {
+): string | null {
   if (formats === undefined) {
-    return true;
+    return null;
   }
 
   if (!Array.isArray(formats) || formats.length === 0) {
-    return false;
+    return "`formats`";
   }
 
-  return formats.every(format => {
+  for (const format of formats) {
     const type =
       typeof format === "string"
         ? format
@@ -391,8 +391,12 @@ export function isSupportedExchangeFormatRequest(
           ? (format as { type?: unknown }).type
           : undefined;
 
-    return typeof type === "string" && SUPPORTED_FORMATS.has(type);
-  });
+    if (typeof type !== "string" || !SUPPORTED_FORMATS.has(type)) {
+      return typeof type === "string" ? `the \`${type}\` format` : "`formats`";
+    }
+  }
+
+  return null;
 }
 
 type DataSourceAccessDecision = "allowed" | "terms_required" | "not_enabled";
@@ -534,59 +538,67 @@ function isExchangeEligibleRequest(input: RouteInput): boolean {
     return false;
   }
 
-  if (!config.FIRE_EXCHANGE_URL) {
-    return false;
+  return !!config.FIRE_EXCHANGE_URL && !!input.url;
+}
+
+/** Names the request option that keeps the Exchange from serving the URL, or null when there is none. */
+function getUnsupportedExchangeOption(input: RouteInput): string | null {
+  // Named in plain words: a team policy can force it as well as the request.
+  if (input.zeroDataRetention) {
+    return "zero data retention";
   }
 
-  if (!input.url) {
-    return false;
-  }
-
-  if (input.zeroDataRetention || input.lockdown) {
-    return false;
+  if (input.lockdown) {
+    return "`lockdown`";
   }
 
   if (Array.isArray(input.actions) && input.actions.length > 0) {
-    return false;
+    return "`actions`";
   }
 
   // Profile-backed scrapes expect session-specific content, which the
   // Exchange cannot serve.
   if (input.profile !== undefined) {
-    return false;
+    return "`profile`";
+  }
+
+  // PII redaction works on page text; on a provider record it would miss the
+  // person's name in URLs and handles while still charging for it.
+  if (input.redactPII) {
+    return "`redactPII`";
   }
 
   // Rendering options only mean something for a real page. A blocked URL has
   // no page Firecrawl may render, so they are ignored there; anywhere else a
   // request that sets them keeps the normal engines.
-  if (
-    input.blocked !== true &&
-    ((input.headers !== undefined && Object.keys(input.headers).length > 0) ||
-      (input.waitFor !== undefined && input.waitFor !== 0) ||
-      input.mobile ||
-      input.location ||
-      input.blockAds === false ||
-      input.atsv === true ||
-      input.proxy === "stealth" ||
-      input.proxy === "enhanced" ||
-      (Array.isArray(input.includeTags) && input.includeTags.length > 0) ||
-      (Array.isArray(input.excludeTags) && input.excludeTags.length > 0))
-  ) {
-    return false;
+  if (input.blocked !== true) {
+    const rendering = Object.entries({
+      headers:
+        input.headers !== undefined && Object.keys(input.headers).length > 0,
+      waitFor: input.waitFor !== undefined && input.waitFor !== 0,
+      mobile: !!input.mobile,
+      location: !!input.location,
+      blockAds: input.blockAds === false,
+      atsv: input.atsv === true,
+      proxy: input.proxy === "stealth" || input.proxy === "enhanced",
+      includeTags:
+        Array.isArray(input.includeTags) && input.includeTags.length > 0,
+      excludeTags:
+        Array.isArray(input.excludeTags) && input.excludeTags.length > 0,
+    }).find(([, set]) => set);
+    if (rendering) {
+      return `\`${rendering[0]}\``;
+    }
   }
 
   // minAge requests ask for Firecrawl-cached data; the Exchange serves
   // provider data and Firecrawl never caches it, so the semantics cannot
   // be honored here.
   if (input.minAge !== undefined) {
-    return false;
+    return "`minAge`";
   }
 
-  if (!isSupportedExchangeFormatRequest(input.formats)) {
-    return false;
-  }
-
-  return true;
+  return getUnsupportedExchangeFormat(input.formats);
 }
 
 export type ExchangeAccess =
@@ -603,6 +615,8 @@ export type ExchangeAccess =
   | {
       allowed: false;
       termsRequired: false;
+      /** Set when a provider serves the URL but this request option keeps it out. */
+      unsupportedOption?: string;
     };
 
 export async function getExchangeAccessForRequest(
@@ -619,6 +633,11 @@ export async function getExchangeAccessForRequest(
     const provider = await resolveExchangeProvider(input.url, input.orgId);
     if (provider === null) {
       return { allowed: false, termsRequired: false };
+    }
+
+    const unsupportedOption = getUnsupportedExchangeOption(input);
+    if (unsupportedOption !== null) {
+      return { allowed: false, termsRequired: false, unsupportedOption };
     }
 
     const decision = await getProviderAccessDecision(provider, input);
@@ -715,11 +734,52 @@ export class ThirdPartyDataTermsRequiredError extends TransportableError {
   }
 }
 
+/**
+ * A provider serves the URL and nothing else may, but the request uses an
+ * option the provider's data can't honor.
+ */
+export class ThirdPartyDataUnsupportedOptionError extends TransportableError {
+  public readonly option: string;
+
+  constructor(option: string) {
+    super(
+      "THIRD_PARTY_DATA_UNSUPPORTED_OPTION",
+      `A third-party data provider serves this URL, but not to requests that use ${option}.`,
+    );
+    this.name = "ThirdPartyDataUnsupportedOptionError";
+    this.option = option;
+  }
+
+  response() {
+    return {
+      success: false as const,
+      code: "THIRD_PARTY_DATA_UNSUPPORTED_OPTION" as const,
+      error: this.message,
+    };
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+      option: this.option,
+    };
+  }
+
+  static deserialize(
+    _code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ThirdPartyDataUnsupportedOptionError(data.option);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export function getExchangeSuccessCredits(input: {
   exchange?: ExchangeScrapeMetadata;
   statusCode?: number | null;
 }): number | null {
-  if (input.exchange?.handled !== true) {
+  if (input.exchange === undefined) {
     return null;
   }
 
@@ -732,7 +792,7 @@ export function getExchangeSuccessCredits(input: {
     return null;
   }
 
-  return input.exchange.creditsCost;
+  return input.exchange.provider.creditsCost;
 }
 
 const EXCHANGE_BILLING_TIMEOUT_MS = 5_000;
