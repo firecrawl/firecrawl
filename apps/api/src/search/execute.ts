@@ -207,7 +207,7 @@ export async function executeSearch(
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon")
   ) {
-    await removeExplicitResults(searchResponse, limit, logger);
+    await removeExplicitResults(searchResponse, limit, logger, teamId);
   }
 
   if (searchResponse.web && searchResponse.web.length > 0) {

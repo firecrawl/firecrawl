@@ -804,6 +804,7 @@ export async function enhanceBrandingWithJev(
         setSpanAttributes(span, {
           "typesafe.model": result.model,
           "typesafe.usage.input_tokens": result.usage?.input_tokens,
+          "typesafe.usage.output_tokens": result.usage?.output_tokens,
         });
         return result as JevResponse;
       },
@@ -817,6 +818,7 @@ export async function enhanceBrandingWithJev(
           "branding.jev.questions": Object.keys(request.questions).length,
           ...(options.shadow ? { "branding.jev.shadow": true } : {}),
           ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
+          ...(input.teamId ? { teamId: input.teamId } : {}),
         },
       },
     );

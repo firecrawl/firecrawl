@@ -160,6 +160,7 @@ describe("executeSearch safe search", () => {
       expect.anything(),
       20,
       logger,
+      "team-1",
     );
     expect(result.response.web?.map(x => x.url)).toEqual(safe.map(x => x.url));
     expect(result.totalResultsCount).toBe(10);
