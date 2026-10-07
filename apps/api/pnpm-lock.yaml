@@ -51,6 +51,7 @@ overrides:
   '@opentelemetry/core@<2.9.0': 2.9.0
   '@opentelemetry/resources@<2.9.0': 2.9.0
   '@opentelemetry/sdk-metrics@<2.9.0': 2.9.0
+  geoip-country>ip-address: 10.7.3
 
 patchedDependencies:
   node-fetch@2.7.0: cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b
@@ -3229,9 +3230,9 @@ packages:
     resolution: {integrity: sha512-UxC0Yv1Y4WRJiGQxQkP0hfdL0/5/6YvdfOOClRgJ0qppSarkhneSa6UvkMkms0AkdGimSH3Ikqm+6mkMmX7vGA==}
     engines: {node: '>=12.22.0'}
 
-  ip-address@6.4.0:
-    resolution: {integrity: sha512-c5uxc2WUTuRBVHT/6r4m7HIr/DfV0bF6DvLH3iZGSK8wp8iMwwZSgIq2do0asFf8q9ECug0SE+6+1ACMe4sorA==}
-    engines: {node: '>= 0.10'}
+  ip-address@10.7.3:
+    resolution: {integrity: sha512-A1kdq/tSb5QjvKvAMgIoEvDBIgL7qaqVP/jkvSwYYRZ9iEzvPpopxp2wQfu3SuZRHtpHNxMn8Fs0bS+gf5Xmwg==}
+    engines: {node: '>= 12'}
 
   ipaddr.js@1.9.1:
     resolution: {integrity: sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g==}
@@ -3324,9 +3325,6 @@ packages:
   js-yaml@4.3.2:
     resolution: {integrity: sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==}
     hasBin: true
-
-  jsbn@1.1.0:
-    resolution: {integrity: sha512-4bYVV3aAMtDTTu4+xsDYa6sy9GyJ69/amsu9sYF2zqjiEoZA5xJi3BrfX3uY+/IekIu7MwdObdbDWpoZdBv3/A==}
 
   jsdom@29.1.1:
     resolution: {integrity: sha512-ECi4Fi2f7BdJtUKTflYRTiaMxIB0O6zfR1fX0GXpUrf6flp8QIYn1UT20YQqdSOfk2dfkCwS8LAFoJDEppNK5Q==}
@@ -3493,23 +3491,8 @@ packages:
   lodash.defaults@4.2.0:
     resolution: {integrity: sha512-qjxPLHd3r5DnsdGacqOMU6pb/avJzdh9tFX2ymgoZE27BmjXrNy/y4LoaiTeAb+O3gL8AfpJGtqfX/ae2leYYQ==}
 
-  lodash.find@4.6.0:
-    resolution: {integrity: sha512-yaRZoAV3Xq28F1iafWN1+a0rflOej93l1DQUejs3SZ41h2O9UJBoS9aueGjPDgAl4B6tPC0NuuchLKaDQQ3Isg==}
-
   lodash.isarguments@3.1.0:
     resolution: {integrity: sha512-chi4NHZlZqZD18a0imDHnZPrDeBbTtVN7GXMwuGdRH9qotxAjYs3aVLKc7zNOG9eddR5Ksd8rvFEBc9SsggPpg==}
-
-  lodash.max@4.0.1:
-    resolution: {integrity: sha512-iykTDTb7PK33HSQmKy34zv+hh4WEu7WonJPXQcgODzUbbtradtNs8RsD/GI7XV++60KaKR1xhW56N4ISqHesfQ==}
-
-  lodash.merge@4.6.2:
-    resolution: {integrity: sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==}
-
-  lodash.padstart@4.6.1:
-    resolution: {integrity: sha512-sW73O6S8+Tg66eY56DBk85aQzzUJDtpoXFBgELMd5P/SotAguo+1kYO6RuYgXxA4HJH3LFTFPASX6ET6bjfriw==}
-
-  lodash.repeat@4.1.0:
-    resolution: {integrity: sha512-eWsgQW89IewS95ZOcr15HHCX6FVDxq3f2PNUIng3fyzsPev9imFQxIYdFZ6crl8L56UR6ZlGDLcEb3RZsCSSqw==}
 
   lodash.snakecase@4.1.1:
     resolution: {integrity: sha512-QZ1d4xoBHYUeuouhEq3lk3Uq7ldgyFXGBhg04+oRLnIz8o9T65Eh+8YdroUwn846zchkA9yDsDl5CVVaV2nqYw==}
@@ -4230,9 +4213,6 @@ packages:
 
   split@0.3.3:
     resolution: {integrity: sha512-wD2AeVmxXRBoX44wAycgjVpMhvbwdI2aZjCkvfNcH1YqHQvJVa1duWc73OyVGJUc05fhFaTZeQ/PYsrmyH0JVA==}
-
-  sprintf-js@1.1.2:
-    resolution: {integrity: sha512-VE0SOVEHCk7Qc8ulkWw3ntAzXuqf7S2lvwQaDLRnUeIEaKNQJzV6BwmLKhOqT61aGhfUMrXeaBk+oDGCzvhcug==}
 
   sse4_crc32@6.0.1:
     resolution: {integrity: sha512-FUTYXpLroqytNKWIfHzlDWoy9E4tmBB/RklNMy6w3VJs+/XEYAHgbiylg4SS43iOk/9bM0BlJ2EDpFAGT66IoQ==}
@@ -7089,7 +7069,7 @@ snapshots:
     dependencies:
       async: 2.6.4
       countries-list: 3.1.1
-      ip-address: 6.4.0
+      ip-address: 10.7.3
       yauzl: 3.4.0
 
   get-caller-file@2.0.5: {}
@@ -7347,15 +7327,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  ip-address@6.4.0:
-    dependencies:
-      jsbn: 1.1.0
-      lodash.find: 4.6.0
-      lodash.max: 4.0.1
-      lodash.merge: 4.6.2
-      lodash.padstart: 4.6.1
-      lodash.repeat: 4.1.0
-      sprintf-js: 1.1.2
+  ip-address@10.7.3: {}
 
   ipaddr.js@1.9.1: {}
 
@@ -7422,8 +7394,6 @@ snapshots:
   js-yaml@4.3.2:
     dependencies:
       argparse: 2.0.1
-
-  jsbn@1.1.0: {}
 
   jsdom@29.1.1(@noble/hashes@1.8.0):
     dependencies:
@@ -7588,17 +7558,7 @@ snapshots:
 
   lodash.defaults@4.2.0: {}
 
-  lodash.find@4.6.0: {}
-
   lodash.isarguments@3.1.0: {}
-
-  lodash.max@4.0.1: {}
-
-  lodash.merge@4.6.2: {}
-
-  lodash.padstart@4.6.1: {}
-
-  lodash.repeat@4.1.0: {}
 
   lodash.snakecase@4.1.1: {}
 
@@ -8328,8 +8288,6 @@ snapshots:
   split@0.3.3:
     dependencies:
       through: 2.3.8
-
-  sprintf-js@1.1.2: {}
 
   sse4_crc32@6.0.1:
     dependencies:
