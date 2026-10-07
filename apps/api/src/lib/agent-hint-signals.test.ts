@@ -104,6 +104,21 @@ describe("agent hint signals", () => {
     expect(result).not.toHaveProperty("page_path_words");
   });
 
+  it("reports the engine and quoted query for a search results page", () => {
+    const pageOf = (sourceURL: string) =>
+      signalsFor({
+        endpoint: "scrape",
+        response: { success: true, data: { metadata: { sourceURL } } },
+      });
+    expect(pageOf("https://www.bing.com/search?q=web+scraping")).toMatchObject({
+      page_serp_engine: "Bing",
+      page_serp_query: '"web scraping"',
+    });
+    expect(pageOf("https://www.bing.com/maps?q=paris")).not.toHaveProperty(
+      "page_serp_engine",
+    );
+  });
+
   it("reports document page counts with the requestable remainder", () => {
     expect(
       signalsFor({

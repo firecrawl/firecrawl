@@ -479,6 +479,41 @@ describe("deterministic agent hints", () => {
     );
   });
 
+  it("points a scraped search results page to firecrawl_search", () => {
+    const scrapeOf = (sourceURL: string, url = sourceURL) =>
+      hints({
+        endpoint: "scrape",
+        response: {
+          success: true,
+          data: { metadata: { statusCode: 200, sourceURL, url } },
+        },
+      });
+    const google = scrapeOf(
+      "https://www.google.com/search?q=best+web+scraper",
+      "https://www.google.com/search?q=best+web+scraper&sei=abc",
+    ).join(" ");
+    expect(google).toContain("Google search results page");
+    expect(google).toContain(
+      'firecrawl_search with {"query":"best web scraper","sources":["web"]}',
+    );
+    expect(scrapeOf("https://duckduckgo.com/?q=firecrawl").join(" ")).toContain(
+      "DuckDuckGo search results page",
+    );
+    expect(scrapeOf("https://www.google.com/maps/place/Paris")).toEqual([]);
+    expect(scrapeOf("https://example.com/search?q=firecrawl")).toEqual([]);
+    expect(
+      hints({
+        endpoint: "search",
+        response: {
+          success: true,
+          data: {
+            metadata: { sourceURL: "https://www.google.com/search?q=x" },
+          },
+        },
+      }),
+    ).toEqual([]);
+  });
+
   it("does not add static feedback guidance to otherwise hint-free results", () => {
     expect(hints({ response: { success: true, data: {} } })).toEqual([]);
     expect(hints({ response: { success: false, error: "failed" } })).toEqual(

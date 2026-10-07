@@ -6,6 +6,7 @@ import {
   resultPosition,
   type AgentHintEndpoint,
 } from "./agent-hint-signals";
+import { detectSerpPage, type SerpPage } from "./serp-url";
 
 export type { AgentHintEndpoint };
 
@@ -89,6 +90,12 @@ function excerptOnlyHint(web: unknown[]): string | undefined {
   return `${subject} (${listed}${more}). If you need more than an excerpt, use firecrawl_scrape with {"url":"<one of these URLs>","formats":["markdown"]}. Retrieve only needed pages; do not re-scrape results that already contain the required content.`;
 }
 
+/** The requested URL decides: a results page that redirected elsewhere still was one. */
+function serpPageOf(metadata: ObjectValue): SerpPage | null {
+  const url = httpUrl(metadata.sourceURL) ?? httpUrl(metadata.url);
+  return url ? detectSerpPage(url.href) : null;
+}
+
 function redirectNote(source: URL, final: URL): string {
   const from = quotedUrl(source);
   const to = quotedUrl(final);
@@ -117,6 +124,7 @@ export function buildAgentHints(context: AgentHintContext): string[] {
   if (response.success === true) {
     const metadata = object(data.metadata);
     const pageStatus = metadata.statusCode;
+    const serp = context.endpoint === "scrape" ? serpPageOf(metadata) : null;
     if (
       context.endpoint === "scrape" &&
       pageStatus === 401 &&
@@ -148,6 +156,8 @@ export function buildAgentHints(context: AgentHintContext): string[] {
       if (maxPages > metadata.numPages) {
         nextAction = `This document returned ${metadata.numPages} of ${metadata.totalPages} pages. If you need more pages, repeat firecrawl_scrape for the same URL with {"parsers":[{"type":"pdf","maxPages":${maxPages}}]}.`;
       }
+    } else if (serp) {
+      nextAction = `This page is a ${serp.engine} search results page. For ranked results for this query, use firecrawl_search with ${JSON.stringify({ query: serp.query, sources: ["web"] })}; add scrapeOptions to get each result's content in the same call.`;
     } else if (context.endpoint === "search") {
       const web = Array.isArray(response.data)
         ? response.data

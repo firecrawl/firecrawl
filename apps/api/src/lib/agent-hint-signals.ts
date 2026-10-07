@@ -1,3 +1,5 @@
+import { detectSerpPage } from "./serp-url";
+
 /**
  * Facts about a hint-enabled response, computed locally from the response
  * body and request state already in memory. Provider-supplied rules are
@@ -139,6 +141,11 @@ function addPageSignals(
       signals.set("page_redirect_from", from);
       signals.set("page_redirect_to", to);
     }
+  }
+  const serp = detectSerpPage((source ?? final)?.href ?? "");
+  if (serp) {
+    signals.set("page_serp_engine", serp.engine);
+    signals.set("page_serp_query", JSON.stringify(serp.query));
   }
   const page = final ?? source;
   if (page) {

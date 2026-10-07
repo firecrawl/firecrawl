@@ -43,7 +43,7 @@ const MAX_STORED_HINTS = 10;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_PROVIDER_HINTS = 2;
 const MAX_TOTAL_HINTS = 3;
-export const AGENT_HINTS_PROVIDER_CONTRACT_VERSION = 2;
+const AGENT_HINTS_PROVIDER_CONTRACT_VERSION = 2;
 
 // Fixed labels only: never put team IDs or provider-supplied values here.
 export const agentHintsProviderRequestsTotal = new Counter({
