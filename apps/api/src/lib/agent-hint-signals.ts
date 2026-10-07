@@ -23,13 +23,13 @@ const QUERY_PATH_SEGMENTS = 2;
 
 type ObjectValue = Record<string, unknown>;
 
-export function object(value: unknown): ObjectValue {
+function object(value: unknown): ObjectValue {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as ObjectValue)
     : {};
 }
 
-export function httpUrl(value: unknown): URL | undefined {
+function httpUrl(value: unknown): URL | undefined {
   if (typeof value !== "string" || !value) return undefined;
   try {
     const parsed = new URL(value);
@@ -46,12 +46,12 @@ export function httpUrl(value: unknown): URL | undefined {
  * parsed http(s) href (whitespace and quotes percent-encoded), length-capped,
  * and JSON-quoted to mark them as data rather than instruction text.
  */
-export function quotedUrl(url: URL): string | undefined {
+function quotedUrl(url: URL): string | undefined {
   const href = url.href;
   return href.length <= HINT_URL_MAX_CHARS ? JSON.stringify(href) : undefined;
 }
 
-export function resultPosition(item: ObjectValue, index: number): number {
+function resultPosition(item: ObjectValue, index: number): number {
   const position = item.position;
   return typeof position === "number" &&
     Number.isInteger(position) &&
@@ -77,7 +77,7 @@ function isOpaqueId(segment: string): boolean {
 }
 
 /** Words from the last path segments, e.g. /payments/checkout/migration-from-legacy -> "checkout migration from legacy". */
-export function pathWords(url: URL): string {
+function pathWords(url: URL): string {
   const segments = url.pathname
     .split("/")
     .map(segment => {

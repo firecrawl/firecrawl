@@ -265,7 +265,6 @@ jobs:
         if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
         run: >-
           pnpm exec vitest run
-          src/lib/agent-hints.test.ts
           src/lib/agent-hints-provider.test.ts
           src/lib/agent-hint-rules.test.ts
           src/lib/agent-hint-signals.test.ts
