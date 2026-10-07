@@ -13,6 +13,7 @@ import { createIdempotencyKey } from "../services/idempotency/create";
 import { validateIdempotencyKey } from "../services/idempotency/validate";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { logger } from "../lib/logger";
+import { logAuthDenied } from "../lib/auth-denied-log";
 import {
   httpRequestDurationSeconds,
   getRoutePattern,
@@ -65,6 +66,7 @@ export function checkCreditsMiddleware(
         const sponsor = req.acuc._agentSponsor;
 
         if (sponsor.status === "blocked") {
+          logAuthDenied(req, 403, "agent_key_blocked", req.acuc);
           return res.status(403).json({
             success: false,
             error: "This API key has been blocked by the account holder.",
@@ -74,6 +76,7 @@ export function checkCreditsMiddleware(
         if (sponsor.status === "pending") {
           const deadline = new Date(sponsor.verification_deadline);
           if (deadline < new Date()) {
+            logAuthDenied(req, 403, "agent_key_verification_expired", req.acuc);
             return res.status(403).json({
               success: false,
               error: "sponsor_verification_expired",

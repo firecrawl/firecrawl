@@ -255,6 +255,52 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
   });
 });
 
+describe("checkCreditsMiddleware – agent-key denials", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function buildSponsoredReq(status: "blocked" | "pending") {
+    return buildReq({
+      acuc: {
+        team_id: "team_test",
+        api_key_id: 42,
+        _agentSponsor: {
+          status,
+          verification_deadline: new Date(Date.now() - 1000).toISOString(),
+          email: "owner@example.com",
+        },
+      },
+    });
+  }
+
+  it.each([
+    ["blocked", "agent_key_blocked"],
+    ["pending", "agent_key_verification_expired"],
+  ] as const)(
+    "logs a %s agent key as auth/denied before the 403",
+    async (status, reason) => {
+      const { res } = await runMiddleware(buildSponsoredReq(status));
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith("Request denied", {
+        canonicalLog: "auth/denied",
+        reason,
+        status: 403,
+        method: undefined,
+        route: "/v1/crawl",
+        teamId: "team_test",
+        apiKeyId: 42,
+      });
+      expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain(
+        "owner@example.com",
+      );
+      expect(checkCreditsMock).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe("checkCreditsMiddleware – unverified agent-key 50-credit cap", () => {
   beforeEach(() => {
     vi.clearAllMocks();
