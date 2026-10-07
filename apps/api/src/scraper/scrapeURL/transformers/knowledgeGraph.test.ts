@@ -59,6 +59,108 @@ describe("performKnowledgeGraph LLM failure/retry path", () => {
     expect(mockedGenerateObject).not.toHaveBeenCalled();
   });
 
+  it("tells the extraction model to preserve asymmetric edge direction", async () => {
+    mockedGenerateObject.mockResolvedValueOnce({
+      object: { nodes: [], edges: [] },
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+    });
+
+    await performKnowledgeGraph(makeMeta(), {
+      markdown: "Ada Lovelace was Lord Byron's daughter.",
+    } as any);
+
+    const instructions = mockedGenerateObject.mock.calls[0][0].system;
+    expect(instructions).toContain("source is the subject");
+    expect(instructions).toContain("Ada Lovelace");
+    expect(instructions).toContain("child_of");
+    expect(instructions).toContain(
+      "never Ada Lovelace -> Lord Byron: parent_of",
+    );
+  });
+
+  it("corrects parent direction only when the article infobox identifies the parent", async () => {
+    mockedGenerateObject.mockResolvedValueOnce({
+      object: {
+        nodes: [
+          { id: "ada", label: "Ada Lovelace", type: "Person" },
+          { id: "byron", label: "George Byron", type: "Person" },
+          { id: "anne", label: "Anne Isabella Milbanke", type: "Person" },
+        ],
+        edges: [
+          { source: "ada", target: "byron", relation: "parent_of" },
+          { source: "ada", target: "anne", relation: "parent_of" },
+          { source: "byron", target: "ada", relation: "parent_of" },
+        ],
+      },
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+    });
+
+    const result = await performKnowledgeGraph(makeMeta(), {
+      markdown: `Ada Lovelace
+============
+| Parents | * [George Byron, 6th Baron Byron](https://en.wikipedia.org/wiki/Lord_Byron)<br> (father)<br>* [Anne Isabella Milbanke](https://en.wikipedia.org/wiki/Lady_Byron)<br> (mother) |`,
+    } as any);
+
+    expect(result.knowledgeGraph?.edges).toEqual([
+      { source: "ada", target: "byron", relation: "child_of" },
+      { source: "ada", target: "anne", relation: "child_of" },
+      { source: "byron", target: "ada", relation: "parent_of" },
+    ]);
+  });
+
+  it("drops unsupported parent_of edges between the article subject's parents", async () => {
+    mockedGenerateObject.mockResolvedValueOnce({
+      object: {
+        nodes: [
+          { id: "ada", label: "Ada Lovelace", type: "Person" },
+          { id: "lord", label: "Lord Byron", type: "Person" },
+          {
+            id: "george",
+            label: "George Byron, 6th Baron Byron",
+            type: "Person",
+          },
+          { id: "anne", label: "Anne Isabella Milbanke", type: "Person" },
+        ],
+        edges: [
+          { source: "lord", target: "george", relation: "parent_of" },
+          { source: "lord", target: "anne", relation: "parent_of" },
+          { source: "ada", target: "lord", relation: "child_of" },
+        ],
+      },
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+    });
+
+    const result = await performKnowledgeGraph(makeMeta(), {
+      markdown: `Ada Lovelace
+============
+| Parents | * [George Byron, 6th Baron Byron](https://en.wikipedia.org/wiki/Lord_Byron "Lord Byron")<br> (father)<br>* [Anne Isabella Milbanke](https://en.wikipedia.org/wiki/Lady_Byron "Lady Byron")<br> (mother) |`,
+    } as any);
+
+    expect(result.knowledgeGraph?.edges).toEqual([
+      { source: "ada", target: "lord", relation: "child_of" },
+    ]);
+  });
+
+  it("leaves a parent_of edge untouched without source evidence", async () => {
+    const graph = {
+      nodes: [
+        { id: "parent", label: "Parent", type: "Person" },
+        { id: "child", label: "Child", type: "Person" },
+      ],
+      edges: [{ source: "parent", target: "child", relation: "parent_of" }],
+    };
+    mockedGenerateObject.mockResolvedValueOnce({
+      object: graph,
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+    });
+
+    const result = await performKnowledgeGraph(makeMeta(), {
+      markdown: "# Family story\nA parent has a child.",
+    } as any);
+
+    expect(result.knowledgeGraph?.edges).toEqual(graph.edges);
+  });
+
   it("falls back to the retry model when the primary hits a rate limit", async () => {
     const graph = {
       nodes: [{ id: "ada", label: "Ada Lovelace", type: "Person" }],
