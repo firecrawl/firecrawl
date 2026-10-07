@@ -37,7 +37,7 @@ import java.util.concurrent.ForkJoinPool;
 public class FirecrawlClient {
 
     private static final String DEFAULT_API_URL = "https://api.firecrawl.dev";
-    private static final String SDK_ORIGIN = "java-sdk@1.18.3";
+    private static final String SDK_ORIGIN = "java-sdk@1.18.4";
     private static final long DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
     private static final int DEFAULT_MAX_RETRIES = 3;
     private static final double DEFAULT_BACKOFF_FACTOR = 0.5;
@@ -103,7 +103,18 @@ public class FirecrawlClient {
             mergeOptions(body, options);
         }
         body.putIfAbsent("origin", SDK_ORIGIN);
-        return extractData(http.post("/v2/scrape", body, Map.class), Document.class);
+        Map raw = http.post("/v2/scrape", body, Map.class);
+        // Some scrape failures (e.g. SCRAPE_DNS_RESOLUTION_ERROR) arrive as HTTP 200 with success: false.
+        if (Boolean.FALSE.equals(raw.get("success"))) {
+            Object error = raw.get("error");
+            Object code = raw.get("code");
+            throw new FirecrawlException(
+                    error != null ? String.valueOf(error) : "Scrape failed",
+                    200,
+                    code != null ? String.valueOf(code) : null,
+                    raw.get("details"));
+        }
+        return extractData(raw, Document.class);
     }
 
     /**
