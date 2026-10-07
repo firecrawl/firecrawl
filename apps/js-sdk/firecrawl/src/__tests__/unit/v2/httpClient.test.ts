@@ -41,7 +41,9 @@ describe("v2 utils: HttpClient", () => {
       maxRetries: 1,
       backoffFactor: 0,
     });
-    await expect(client.get("/v2/anything")).rejects.toBeDefined();
+    await expect(client.get("/v2/anything")).rejects.toMatchObject({
+      response: { status: 502 },
+    });
     expect(state.hits).toBe(1);
   });
 });
