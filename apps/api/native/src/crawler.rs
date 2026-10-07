@@ -64,6 +64,10 @@ pub struct FilterUrlCall {
   pub robots_user_agent: Option<String>,
   pub allow_external_content_links: bool,
   pub allow_subdomains: bool,
+  /// The crawl's includePaths. Checked only when given, the same way
+  /// filter_links checks them.
+  pub includes: Option<Vec<String>>,
+  pub regex_on_full_url: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -594,6 +598,21 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     .iter()
     .filter_map(|e| compile_path_regex(e).ok())
     .collect();
+  let includes_regex: Vec<PathRegex> = data
+    .includes
+    .iter()
+    .flatten()
+    .filter_map(|i| compile_path_regex(i).ok())
+    .collect();
+  let include_target = if data.regex_on_full_url.unwrap_or(false) {
+    url_str
+  } else {
+    path
+  };
+  let matches_includes = includes_regex.is_empty()
+    || includes_regex
+      .iter()
+      .any(|r| r.is_match(include_target.as_bytes()));
 
   let robot = build_robot(
     data.ignore_robots_txt,
@@ -616,6 +635,14 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
         allowed: false,
         url: None,
         denial_reason: Some(EXCLUDE_PATTERN.to_string()),
+      });
+    }
+
+    if !matches_includes {
+      return Ok(FilterUrlResult {
+        allowed: false,
+        url: None,
+        denial_reason: Some(INCLUDE_PATTERN.to_string()),
       });
     }
 
@@ -687,6 +714,13 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
 
     if data.allow_subdomains && !is_social_media_or_email(url_str) && is_subdomain(&url, &base_url)
     {
+      if !matches_includes {
+        return Ok(FilterUrlResult {
+          allowed: false,
+          url: None,
+          denial_reason: Some(INCLUDE_PATTERN.to_string()),
+        });
+      }
       return Ok(FilterUrlResult {
         allowed: true,
         url: Some(full_url),
@@ -1299,6 +1333,8 @@ mod tests {
       robots_user_agent: None,
       allow_external_content_links: true,
       allow_subdomains: false,
+      includes: None,
+      regex_on_full_url: None,
     }
   }
 
@@ -1369,5 +1405,69 @@ mod tests {
     .unwrap();
     assert!(!result.allowed);
     assert_eq!(result.denial_reason.unwrap(), "EXTERNAL_LINK");
+  }
+  // A crawl page that redirects is kept only if the redirect target is one the
+  // crawl may visit: includePaths applies to it like to any discovered link.
+  #[test]
+  fn test_filter_url_denies_redirect_outside_include_paths() {
+    let mut call = filter_url_call(
+      "https://example.com/login",
+      "https://example.com/blog/members",
+      "https://example.com/blog/",
+    );
+    call.includes = Some(vec!["^/blog".to_string()]);
+    let result = _filter_url(call).unwrap();
+    assert!(!result.allowed);
+    assert_eq!(result.denial_reason.unwrap(), "INCLUDE_PATTERN");
+  }
+
+  #[test]
+  fn test_filter_url_allows_redirect_inside_include_paths() {
+    let mut call = filter_url_call(
+      "https://example.com/blog/new-post",
+      "https://example.com/blog/old-post",
+      "https://example.com/blog/",
+    );
+    call.includes = Some(vec!["^/blog".to_string()]);
+    assert!(_filter_url(call).unwrap().allowed);
+  }
+
+  #[test]
+  fn test_filter_url_include_paths_on_full_url() {
+    let mut call = filter_url_call(
+      "https://example.com/blog/post?lang=fr",
+      "https://example.com/blog/post",
+      "https://example.com/",
+    );
+    call.includes = Some(vec![r"lang=en".to_string()]);
+    call.regex_on_full_url = Some(true);
+    assert!(!_filter_url(call).unwrap().allowed);
+  }
+
+  #[test]
+  fn test_filter_url_include_paths_apply_to_subdomains() {
+    let mut call = filter_url_call(
+      "https://login.example.com/",
+      "https://example.com/blog/members",
+      "https://example.com/blog/",
+    );
+    call.allow_external_content_links = false;
+    call.allow_subdomains = true;
+    call.includes = Some(vec!["^/blog".to_string()]);
+    let result = _filter_url(call).unwrap();
+    assert!(!result.allowed);
+    assert_eq!(result.denial_reason.unwrap(), "INCLUDE_PATTERN");
+  }
+
+  // Without includes (link extraction), nothing changes.
+  #[test]
+  fn test_filter_url_without_includes_is_unchanged() {
+    let result = _filter_url(filter_url_call(
+      "https://example.com/login",
+      "https://example.com/blog/members",
+      "https://example.com/blog/",
+    ))
+    .unwrap();
+    assert!(result.allowed);
   }
 }
