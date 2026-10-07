@@ -82,6 +82,10 @@ public class FirecrawlClient
         var response = await _http.PostAsync<ApiResponse<Document>>(
             "/v2/scrape", body, cancellationToken: cancellationToken);
 
+        // Some scrape failures (e.g. SCRAPE_DNS_RESOLUTION_ERROR) arrive as HTTP 200 with success: false.
+        if (!response.Success && response.Error is not null)
+            throw new FirecrawlException(response.Error, 200, response.Code, response.Details);
+
         return response.Data ?? throw new FirecrawlException("Scrape response contained no data");
     }
 
@@ -755,7 +759,7 @@ public class FirecrawlClient
     // INTERNAL UTILITIES
     // ================================================================
 
-    private const string SdkOrigin = "dotnet-sdk@1.14.1";
+    private const string SdkOrigin = "dotnet-sdk@1.14.2";
 
     private static Dictionary<string, object> BuildBody(object? options)
     {

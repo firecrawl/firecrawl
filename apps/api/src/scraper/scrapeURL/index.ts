@@ -1200,6 +1200,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               }
           : {}),
         postprocessorsUsed: engineResult.postprocessorsUsed,
+        provider: engineResult.exchange?.provider,
       },
     };
 

@@ -1,5 +1,14 @@
 ## CHANGELOG
 
+## [2.21.5] - 2026-10-07
+
+### Added
+
+- `DocumentMetadata::provider` (`ScrapeProvider`) reports the third-party
+  provider that served an Exchange scrape: its `id`, the access price in
+  `credits_cost`, and every provider tried in `steps` (`ScrapeProviderStep`).
+  It is `None` for any other scrape.
+
 ## [2.21.4] - 2026-10-07
 
 ### Fixed

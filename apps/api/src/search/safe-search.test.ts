@@ -11,6 +11,7 @@ vi.mock("@typesafe-ai/sdk", async importOriginal => ({
 }));
 vi.mock("../config", () => ({ config: mocks.config }));
 
+import * as tracer from "../lib/otel-tracer";
 import { removeExplicitResults } from "./safe-search";
 
 const logger = {
@@ -206,4 +207,27 @@ it("does nothing without a TypeSafe API key", async () => {
 
   expect(mocks.systemOne).not.toHaveBeenCalled();
   expect(response.web).toHaveLength(1);
+});
+
+it("records Jev's token usage and the team on each call's span for spend tracking", async () => {
+  mocks.systemOne.mockResolvedValue({
+    model: "jev-1.13.0",
+    answers: { explicit: { type: "noul", noul: 0.1 } },
+    usage: { input_tokens: 180, output_tokens: 3 },
+  });
+  const withSpan = vi.spyOn(tracer, "withSpan");
+  const setAttributes = vi.spyOn(tracer, "setSpanAttributes");
+
+  await removeExplicitResults({ web: [web("safe1")] }, 1, logger, "team-1");
+
+  const call = withSpan.mock.calls.find(c => c[0] === "typesafe.systemone");
+  expect(call?.[2]?.attributes).toMatchObject({ teamId: "team-1" });
+  expect(setAttributes).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      "typesafe.model": "jev-1.13.0",
+      "typesafe.usage.input_tokens": 180,
+      "typesafe.usage.output_tokens": 3,
+    }),
+  );
 });

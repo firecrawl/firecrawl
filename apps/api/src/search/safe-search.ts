@@ -47,6 +47,7 @@ export async function removeExplicitResults(
   response: SearchV2Response,
   limit: number,
   logger: Logger,
+  teamId?: string,
 ): Promise<void> {
   const { web, news, images } = response;
   if (!web?.length && !news?.length && !images?.length) return;
@@ -72,12 +73,15 @@ export async function removeExplicitResults(
           return await withSpan(
             "typesafe.systemone",
             async callSpan => {
-              const { model, answers } = await typesafe.systemOne(
+              const { model, answers, usage } = await typesafe.systemOne(
                 { state: { result }, questions },
                 { signal, timeout: 2000, retry: { maxRetries: 1 } },
               );
               setSpanAttributes(callSpan, {
                 "typesafe.model": model,
+                // Read by the LLM spend dashboard to price the call.
+                "typesafe.usage.input_tokens": usage?.input_tokens,
+                "typesafe.usage.output_tokens": usage?.output_tokens,
                 "search.safe_filter.explicit_probability":
                   answers.explicit.noul,
               });
@@ -85,7 +89,10 @@ export async function removeExplicitResults(
             },
             {
               kind: SpanKind.CLIENT,
-              attributes: { "search.safe_filter.result_type": type },
+              attributes: {
+                "search.safe_filter.result_type": type,
+                ...(teamId ? { teamId } : {}),
+              },
             },
           );
         } catch (error) {
