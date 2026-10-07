@@ -119,9 +119,10 @@ describe("v2 crawl with an AbortSignal", () => {
       return { data, status: 200, statusText: "OK", headers: {}, config };
     }) as AxiosAdapter;
 
-    await expect(client.crawl("https://example.com", { pollInterval: 30, signal: controller.signal })).rejects.toBe(
-      controller.signal.reason,
-    );
+    // Read the reason after the abort: before it, signal.reason is undefined.
+    const err = await client.crawl("https://example.com", { pollInterval: 30, signal: controller.signal }).catch((e) => e);
+    expect(err).toBe(controller.signal.reason);
+    expect((err as Error).name).toBe("AbortError");
     await flush();
     expect(methods).toEqual(["post", "get", "delete"]);
   });
