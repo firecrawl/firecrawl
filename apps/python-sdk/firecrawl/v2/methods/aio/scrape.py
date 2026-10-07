@@ -8,7 +8,12 @@ from ...types import (
     AlexandriaCall,
     AlexandriaScrapeData,
 )
-from ..scrape import _alexandria_request_id, _prepare_scrape_alexandria_request, _parse_scrape_alexandria_response
+from ..scrape import (
+    _alexandria_request_id,
+    _alexandria_transport_timeout,
+    _prepare_scrape_alexandria_request,
+    _parse_scrape_alexandria_response,
+)
 from ...utils.agent_hints import agent_hint_metadata
 from ...utils.normalize import normalize_document_input
 from ...utils.error_handler import FirecrawlError, handle_response_error
@@ -66,7 +71,7 @@ async def scrape_alexandria(client: AsyncHttpClient, calls, *, timeout: Optional
     headers = {"x-request-id": request_id}
     try:
         response = await client.post("/v2/scrape", payload, headers=headers,
-                                    timeout=(min(timeout if timeout is not None else 50000, 50000) + 30000) / 1000)
+                                    timeout=_alexandria_transport_timeout(timeout))
         if response.status_code != 200 or not response.json().get("success"):
             handle_response_error(response, "scrape alexandria")
         return _parse_scrape_alexandria_response(response.json(), request_id)

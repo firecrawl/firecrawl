@@ -272,9 +272,11 @@ describe("Alexandria contracts and execution", () => {
 });
 
 test.each([
-  [undefined, 80000],
+  [undefined, 150000],
   [1000, 31000],
-  [100000, 80000],
+  [100000, 130000],
+  [120000, 150000],
+  [300000, 150000],
 ])(
   "Alexandria timeout %s allows response delivery (%s ms)",
   async (timeout, timeoutMs) => {
