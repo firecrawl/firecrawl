@@ -2,21 +2,27 @@ import { createHmac, randomBytes } from "node:crypto";
 import { Counter } from "prom-client";
 import { z } from "zod";
 import { config } from "../config";
-import type { AgentHintEndpoint } from "./agent-hints";
+import { parseAgentHintRules, type AgentHintRule } from "./agent-hint-rules";
+import type { AgentHintEndpoint } from "./agent-hint-signals";
 import type { KeylessSignupSurface } from "./keyless-signup-link";
 import { logger } from "./logger";
 
 /**
  * Optional external agent hints provider. When AGENT_HINTS_PROVIDER_URL is
  * set, hint-enabled requests ask a separate HTTP service for additional
- * guidance. The lookup starts after auth and is never awaited: the response
- * only carries provider hints that have already arrived (or are cached) by
- * the time it is sent. Every failure means "no provider hints".
+ * guidance: finished hints and response guidance rules. The lookup starts
+ * after auth and is never awaited: the response only uses provider data that
+ * has already arrived (or is cached) by the time it is sent. Every failure
+ * means "no provider hints and no rules".
  */
 export type ProviderHint = { id: string; text: string };
 
 /** Shared by every request for the same cache key; read-only for callers. */
-export type ProviderHintsHolder = { settled: boolean; hints: ProviderHint[] };
+export type ProviderHintsHolder = {
+  settled: boolean;
+  hints: ProviderHint[];
+  rules: AgentHintRule[];
+};
 
 export type AgentHintsProviderContext = {
   teamId: string;
@@ -37,16 +43,18 @@ const MAX_STORED_HINTS = 10;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_PROVIDER_HINTS = 2;
 const MAX_TOTAL_HINTS = 3;
+export const AGENT_HINTS_PROVIDER_CONTRACT_VERSION = 2;
 
 // Fixed labels only: never put team IDs or provider-supplied values here.
 export const agentHintsProviderRequestsTotal = new Counter({
   name: "firecrawl_agent_hints_provider_requests_total",
-  help: "External agent hints provider lookups by outcome: hit (served from cache or joined an in-flight fetch), miss (fetch started), timeout, error, disabled (no provider configured)",
+  help: "External agent hints provider lookups by outcome: hit (served from cache or joined an in-flight fetch), miss (fetch started), timeout, error, disabled (no provider configured); eval_error counts responses whose hint computation failed and were sent without hints",
   labelNames: ["outcome"],
 });
 
 const responseSchema = z.object({
   hints: z.array(z.unknown()),
+  rules: z.unknown().optional(),
   ttl_seconds: z.number().finite().optional().catch(undefined),
 });
 
@@ -116,7 +124,7 @@ function sanitizeHints(values: unknown[]): ProviderHint[] {
 async function fetchProviderHints(
   url: string,
   context: AgentHintsProviderContext,
-): Promise<{ hints: ProviderHint[]; ttlMs: number }> {
+): Promise<{ hints: ProviderHint[]; rules: AgentHintRule[]; ttlMs: number }> {
   const secret = config.AGENT_HINTS_PROVIDER_SECRET;
   try {
     const response = await fetch(url, {
@@ -126,7 +134,7 @@ async function fetchProviderHints(
         ...(secret ? { authorization: `Bearer ${secret}` } : {}),
       },
       body: JSON.stringify({
-        version: 1,
+        version: AGENT_HINTS_PROVIDER_CONTRACT_VERSION,
         team_id: providerTeamId(context.teamId),
         org_id: context.orgId,
         api_key_id: context.apiKeyId,
@@ -142,12 +150,18 @@ async function fetchProviderHints(
     }
     const parsed = responseSchema.safeParse(await readJsonBody(response));
     if (!parsed.success) throw new Error("Malformed response body");
+    const rules =
+      parsed.data.rules === undefined
+        ? []
+        : parseAgentHintRules(parsed.data.rules);
+    if (!rules) throw new Error("Malformed rules");
     const ttlSeconds = Math.min(
       Math.max(parsed.data.ttl_seconds ?? DEFAULT_TTL_SECONDS, 0),
       MAX_TTL_SECONDS,
     );
     return {
       hints: sanitizeHints(parsed.data.hints),
+      rules,
       ttlMs: ttlSeconds * 1000,
     };
   } catch (error) {
@@ -161,7 +175,7 @@ async function fetchProviderHints(
       timedOut,
       error: error instanceof Error ? error.message : String(error),
     });
-    return { hints: [], ttlMs: NEGATIVE_TTL_MS };
+    return { hints: [], rules: [], ttlMs: NEGATIVE_TTL_MS };
   }
 }
 
@@ -194,12 +208,13 @@ export function getProviderHints(
     if (oldest !== undefined) cache.delete(oldest);
   }
   const entry: CacheEntry = {
-    holder: { settled: false, hints: [] },
+    holder: { settled: false, hints: [], rules: [] },
     expiresAt: Infinity,
   };
   cache.set(key, entry);
-  void fetchProviderHints(url, context).then(({ hints, ttlMs }) => {
+  void fetchProviderHints(url, context).then(({ hints, rules, ttlMs }) => {
     entry.holder.hints = hints;
+    entry.holder.rules = rules;
     entry.holder.settled = true;
     entry.expiresAt = Date.now() + ttlMs;
   });
@@ -207,14 +222,14 @@ export function getProviderHints(
 }
 
 /**
- * Deterministic hints first and never dropped, then provider hints that are
- * not exact duplicates, up to the provider and total caps.
+ * Rule hints first and never dropped, then provider hints that are not exact
+ * duplicates, up to the provider and total caps.
  */
 export function mergeAgentHints(
-  deterministic: string[],
+  ruleHints: string[],
   provider: ProviderHint[],
 ): { hints: string[]; providerHintIds: string[] } {
-  const hints = [...deterministic];
+  const hints = [...ruleHints];
   const providerHintIds: string[] = [];
   for (const hint of provider) {
     if (

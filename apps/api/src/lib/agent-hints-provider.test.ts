@@ -110,7 +110,7 @@ describe("external agent hints provider", () => {
 
   it("returns an unsettled holder immediately and fills it once the provider answers", async () => {
     const holder = getProviderHints(context());
-    expect(holder).toEqual({ settled: false, hints: [] });
+    expect(holder).toEqual({ settled: false, hints: [], rules: [] });
     await settle(holder);
     expect(holder!.hints).toEqual([{ id: "h1", text: "Provider hint." }]);
   });
@@ -136,7 +136,7 @@ describe("external agent hints provider", () => {
       ].sort(),
     );
     expect(body).toEqual({
-      version: 1,
+      version: 2,
       team_id: "team-contract",
       org_id: "org-1",
       api_key_id: 42,
@@ -366,6 +366,91 @@ describe("external agent hints provider", () => {
       { id: "max", text: "y".repeat(500) },
     ]);
   });
+
+  it("parses a valid provider rule set and cleans rule text", async () => {
+    handler = reply(200, {
+      hints: [],
+      rules: [
+        {
+          id: "r1",
+          group: "g",
+          when: [
+            { signal: "endpoint", op: "eq", value: "scrape" },
+            { signal: "page_status", op: "in", value: [404, 410] },
+          ],
+          text: "  Rule one {page_status}.\n",
+        },
+        { id: "no-when", text: "Always." },
+      ],
+      ttl_seconds: 60,
+    });
+    const holder = getProviderHints(context());
+    await settle(holder);
+    expect(holder!.rules).toEqual([
+      {
+        id: "r1",
+        group: "g",
+        when: [
+          { signal: "endpoint", op: "eq", value: "scrape" },
+          { signal: "page_status", op: "in", value: [404, 410] },
+        ],
+        text: "Rule one {page_status}.",
+      },
+      { id: "no-when", when: [], text: "Always." },
+    ]);
+  });
+
+  it("treats a missing rules field as no rules", async () => {
+    const holder = getProviderHints(context());
+    await settle(holder);
+    expect(holder!.hints).toEqual([{ id: "h1", text: "Provider hint." }]);
+    expect(holder!.rules).toEqual([]);
+  });
+
+  it.each([
+    ["a non-array rules field", { id: "r1" }],
+    [
+      "one rule with an unknown operator",
+      [
+        { id: "ok", when: [], text: "Fine." },
+        {
+          id: "bad-op",
+          when: [{ signal: "endpoint", op: "matches", value: "s" }],
+          text: "Bad.",
+        },
+      ],
+    ],
+    [
+      "one rule with a string threshold",
+      [
+        {
+          id: "bad-value",
+          when: [{ signal: "remaining_credits", op: "lt", value: "100" }],
+          text: "Bad.",
+        },
+      ],
+    ],
+    ["one rule with blank text", [{ id: "blank", when: [], text: "  " }]],
+    ["a non-object rule", ["not a rule"]],
+  ])(
+    "treats %s as a failed lookup with a negative cache",
+    async (_name, rules) => {
+      handler = reply(200, {
+        hints: [{ id: "h1", text: "Provider hint." }],
+        rules,
+        ttl_seconds: 60,
+      });
+      const before = await counter("error");
+      const ctx = context();
+      const holder = getProviderHints(ctx);
+      await settle(holder);
+      expect(holder!.hints).toEqual([]);
+      expect(holder!.rules).toEqual([]);
+      expect(await counter("error")).toBe(before + 1);
+      expect(getProviderHints(ctx)).toBe(holder);
+      expect(requests).toHaveLength(1);
+    },
+  );
 
   it("bounds the cache and evicts the oldest entry first", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(

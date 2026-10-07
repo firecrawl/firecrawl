@@ -4,7 +4,10 @@
 //! to accomplish complex tasks that may require multiple page interactions.
 
 use crate::client::Client;
-use crate::types::{AgentEffort, AgentModel, AgentWebhookConfig};
+use crate::types::{
+    AgentEffort, AgentExchangeOptions, AgentMode, AgentModel, AgentOnTermsRequired,
+    AgentWebhookConfig,
+};
 use crate::{AuditMetadata, FirecrawlError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -48,6 +51,15 @@ pub struct AgentOptions {
     /// User attribution to include with SIEM logging events.
     pub audit_metadata: Option<AuditMetadata>,
 
+    /// Continue this thread as its next turn. Omitted starts a new thread.
+    pub thread_id: Option<String>,
+
+    /// Conversation mode. The server defaults to `AgentMode::Extract`.
+    pub mode: Option<AgentMode>,
+
+    /// Let the agent use the team's Exchange (Alexandria) data providers.
+    pub exchange: Option<AgentExchangeOptions>,
+
     /// Poll interval for synchronous agent execution (milliseconds).
     #[serde(skip)]
     pub poll_interval: Option<u64>,
@@ -67,6 +79,10 @@ pub struct AgentResponse {
     pub id: String,
     /// Error message if the request failed.
     pub error: Option<String>,
+    /// Thread this run belongs to; pass it back to continue the conversation.
+    pub thread_id: Option<String>,
+    /// 1-based position of this run in its thread.
+    pub thread_turn: Option<u32>,
 }
 
 /// Agent task status.
@@ -104,6 +120,156 @@ pub struct AgentStatusResponse {
     pub expires_at: Option<String>,
     /// Credits used by the agent task.
     pub credits_used: Option<u32>,
+    /// Thread this run belongs to; pass it back to continue the conversation.
+    pub thread_id: Option<String>,
+    /// 1-based position of this run in its thread.
+    pub thread_turn: Option<u32>,
+    pub mode: Option<AgentMode>,
+    /// Text reply. Chat-mode runs answer here instead of in `data`.
+    pub message: Option<String>,
+    /// Set when the turn ended waiting for the caller to answer it.
+    pub pending_approval: Option<AgentPendingApproval>,
+    /// What the run did with Exchange, when it was enabled.
+    pub exchange: Option<AgentExchangeSummary>,
+}
+
+/// A turn that ended waiting for the caller. Answer it on the next turn of
+/// the thread with `AgentExchangeOptions::approve` or `decline`.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPendingApproval {
+    pub id: String,
+    /// `None` on approvals written before terms offers existed; those are
+    /// call approvals.
+    pub kind: Option<AgentPendingApprovalKind>,
+    pub reason: String,
+    /// Paid calls waiting for approval. Always empty on a terms approval.
+    pub calls: Vec<AgentPendingApprovalCall>,
+    /// Providers whose data terms need accepting, on a terms approval.
+    pub terms: Option<Vec<AgentTermsGate>>,
+    /// How a later turn answered it, once answered.
+    pub resolution: Option<AgentPendingApprovalResolution>,
+}
+
+/// What a pending approval is waiting for.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentPendingApprovalKind {
+    Calls,
+    Terms,
+    /// A kind this SDK release does not know about.
+    #[serde(other)]
+    Unknown,
+}
+
+/// A paid provider call held back by a pending approval.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPendingApprovalCall {
+    pub id: String,
+    pub provider: String,
+    pub capability: String,
+    pub input: Value,
+    pub more: Option<Vec<Value>>,
+    pub credits_estimate: Option<u32>,
+}
+
+/// How a pending approval was answered.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPendingApprovalResolution {
+    pub approved: bool,
+    /// Calls approved. Empty on terms approvals.
+    pub call_ids: Vec<String>,
+    pub always: bool,
+    pub by_run_id: String,
+}
+
+/// A provider whose data terms the team has not accepted.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTermsGate {
+    pub provider: String,
+    pub name: String,
+    pub logo: Option<String>,
+    pub capability: Option<String>,
+    /// What it would have added, in the agent's words.
+    pub adds: Option<String>,
+    pub version: String,
+    /// `None` when the catalog published no digest.
+    pub digest: Option<String>,
+    /// Where a person accepts the terms in the dashboard.
+    pub url: String,
+}
+
+/// What a run did with Exchange. `toolkits` and `require_approval` are what
+/// the run resolved to after thread inheritance, not what it requested.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExchangeSummary {
+    pub enabled: bool,
+    pub toolkits: Option<Vec<String>>,
+    pub require_approval: Option<bool>,
+    pub on_terms_required: Option<AgentOnTermsRequired>,
+    pub paid_calls: u32,
+    pub credits_used: Option<u32>,
+    /// Gated providers that would have helped and were not used.
+    pub skipped_providers: Option<Vec<AgentSkippedProvider>>,
+    /// Set in `AgentOnTermsRequired::Ask` mode when a terms offer ended the
+    /// turn.
+    pub requires_action: Option<AgentTermsRequiredAction>,
+}
+
+/// A gated provider the run would have used but did not.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSkippedProvider {
+    pub provider: String,
+    pub name: String,
+    pub capability: Option<String>,
+    pub adds: Option<String>,
+    /// Why it was skipped, such as `terms_required`.
+    pub reason: String,
+    pub version: String,
+    /// Where a person accepts the terms in the dashboard.
+    pub terms_url: String,
+}
+
+/// The Exchange calls that view and accept gated providers' terms. Nothing
+/// runs them for you; only call `accept` after the user has agreed.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTermsRequiredAction {
+    /// Identifies the step, such as `accept_terms`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The terms pending approval to approve once the terms are accepted.
+    pub approval_id: String,
+    pub providers: Vec<AgentTermsActionProvider>,
+}
+
+/// A provider in an `AgentTermsRequiredAction`.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTermsActionProvider {
+    pub provider: String,
+    pub name: String,
+    pub capability: Option<String>,
+    pub adds: Option<String>,
+    pub version: String,
+    /// `None` when the catalog published no digest.
+    pub digest: Option<String>,
+    pub url: String,
+    /// The terms/show call, as `{provider, capability, options}`.
+    pub show: Value,
+    /// The terms/accept call, as `{provider, capability, options}`.
+    pub accept: Value,
 }
 
 /// Per-session settings attached to an agent run.
@@ -920,6 +1086,7 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{AgentExchangeApprove, AgentExchangeDecline};
     use mockito::Matcher;
     use serde_json::json;
 
@@ -1514,5 +1681,255 @@ mod tests {
 
         assert!(response.success);
         mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_start_agent_sends_thread_mode_and_exchange() -> Result<(), FirecrawlError> {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/agent")
+            .match_body(Matcher::Json(json!({
+                "prompt": "Find the CTO's work email",
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")),
+                "threadId": "0199aaaa-0000-7000-8000-000000000001",
+                "mode": "chat",
+                "exchange": {
+                    "enabled": true,
+                    "toolkits": ["acme"],
+                    "maxCalls": 4,
+                    "requireApproval": true,
+                    "approve": {
+                        "approvalId": "0199aaaa-0000-7000-8000-000000000002",
+                        "callIds": ["call-1"],
+                        "always": true
+                    },
+                    "decline": {"approvalId": "0199aaaa-0000-7000-8000-000000000003"},
+                    "onTermsRequired": "ask"
+                }
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "id": "agent-123",
+                    "threadId": "0199aaaa-0000-7000-8000-000000000001",
+                    "threadTurn": 2
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let options = AgentOptions {
+            prompt: "Find the CTO's work email".to_string(),
+            thread_id: Some("0199aaaa-0000-7000-8000-000000000001".to_string()),
+            mode: Some(AgentMode::Chat),
+            exchange: Some(AgentExchangeOptions {
+                enabled: Some(true),
+                toolkits: Some(vec!["acme".to_string()]),
+                max_calls: Some(4),
+                require_approval: Some(true),
+                approve: Some(AgentExchangeApprove {
+                    approval_id: "0199aaaa-0000-7000-8000-000000000002".to_string(),
+                    call_ids: Some(vec!["call-1".to_string()]),
+                    always: Some(true),
+                }),
+                decline: Some(AgentExchangeDecline {
+                    approval_id: "0199aaaa-0000-7000-8000-000000000003".to_string(),
+                }),
+                on_terms_required: Some(AgentOnTermsRequired::Ask),
+            }),
+            ..Default::default()
+        };
+
+        let response = client.start_agent(options).await?;
+
+        assert_eq!(
+            response.thread_id.as_deref(),
+            Some("0199aaaa-0000-7000-8000-000000000001")
+        );
+        assert_eq!(response.thread_turn, Some(2));
+        mock.assert();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_start_agent_omits_unset_exchange_fields() -> Result<(), FirecrawlError> {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/agent")
+            .match_body(Matcher::Json(json!({
+                "prompt": "Find the CTO's work email",
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")),
+                "exchange": {
+                    "approve": {"approvalId": "0199aaaa-0000-7000-8000-000000000002"}
+                }
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "id": "agent-123"}).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let options = AgentOptions {
+            prompt: "Find the CTO's work email".to_string(),
+            exchange: Some(AgentExchangeOptions {
+                approve: Some(AgentExchangeApprove {
+                    approval_id: "0199aaaa-0000-7000-8000-000000000002".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let response = client.start_agent(options).await?;
+
+        assert!(response.thread_id.is_none());
+        assert!(response.thread_turn.is_none());
+        mock.assert();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_status_with_exchange_and_pending_approval() -> Result<(), FirecrawlError>
+    {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("GET", "/v2/agent/agent-123")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "status": "completed",
+                    "model": "spark-2",
+                    "expiresAt": "2026-10-07T12:00:00.000Z",
+                    "creditsUsed": 12,
+                    "threadId": "0199aaaa-0000-7000-8000-000000000001",
+                    "threadTurn": 1,
+                    "mode": "chat",
+                    "message": "Two calls need your approval.",
+                    "suggestions": [{"label": "Approve", "prompt": "Go ahead"}],
+                    "futureField": {"ignored": true},
+                    "pendingApproval": {
+                        "id": "0199aaaa-0000-7000-8000-000000000002",
+                        "kind": "calls",
+                        "reason": "These calls cost credits.",
+                        "calls": [{
+                            "id": "call-1",
+                            "provider": "acme",
+                            "capability": "people/search",
+                            "input": {"company": "example.com", "title": "CTO"},
+                            "more": [{"company": "example.org"}],
+                            "creditsEstimate": 50
+                        }],
+                        "resolution": null
+                    },
+                    "exchange": {
+                        "enabled": true,
+                        "toolkits": ["acme"],
+                        "requireApproval": true,
+                        "onTermsRequired": "ask",
+                        "paidCalls": 0,
+                        "creditsUsed": null,
+                        "skippedProviders": [{
+                            "provider": "globex",
+                            "name": "Globex",
+                            "capability": "company/lookup",
+                            "adds": "verified company records",
+                            "reason": "terms_required",
+                            "version": "F-1.0.0",
+                            "termsUrl": "https://www.firecrawl.dev/app/alexandria/globex"
+                        }],
+                        "requiresAction": {
+                            "type": "accept_terms",
+                            "approvalId": "0199aaaa-0000-7000-8000-000000000003",
+                            "providers": [{
+                                "provider": "globex",
+                                "name": "Globex",
+                                "version": "F-1.0.0",
+                                "digest": null,
+                                "url": "https://www.firecrawl.dev/app/alexandria/globex",
+                                "show": {
+                                    "provider": "firecrawl",
+                                    "capability": "terms/show",
+                                    "options": {"provider": "globex"}
+                                },
+                                "accept": {
+                                    "provider": "firecrawl",
+                                    "capability": "terms/accept",
+                                    "options": {
+                                        "provider": "globex",
+                                        "version": "F-1.0.0",
+                                        "digest": null,
+                                        "confirmed": true
+                                    }
+                                }
+                            }]
+                        }
+                    }
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key"))?;
+        let status = client.get_agent_status("agent-123").await?;
+
+        assert_eq!(status.status, AgentStatus::Completed);
+        assert_eq!(
+            status.thread_id.as_deref(),
+            Some("0199aaaa-0000-7000-8000-000000000001")
+        );
+        assert_eq!(status.thread_turn, Some(1));
+        assert_eq!(status.mode, Some(AgentMode::Chat));
+        assert_eq!(
+            status.message.as_deref(),
+            Some("Two calls need your approval.")
+        );
+
+        let approval = status.pending_approval.ok_or_else(|| {
+            FirecrawlError::Misuse("pendingApproval did not deserialize".to_string())
+        })?;
+        assert_eq!(approval.id, "0199aaaa-0000-7000-8000-000000000002");
+        assert_eq!(approval.kind, Some(AgentPendingApprovalKind::Calls));
+        assert!(approval.terms.is_none());
+        assert!(approval.resolution.is_none());
+        assert_eq!(approval.calls.len(), 1);
+        assert_eq!(approval.calls[0].id, "call-1");
+        assert_eq!(approval.calls[0].provider, "acme");
+        assert_eq!(approval.calls[0].input["title"], "CTO");
+        assert_eq!(approval.calls[0].more.as_ref().map(Vec::len), Some(1));
+        assert_eq!(approval.calls[0].credits_estimate, Some(50));
+
+        let exchange = status
+            .exchange
+            .ok_or_else(|| FirecrawlError::Misuse("exchange did not deserialize".to_string()))?;
+        assert!(exchange.enabled);
+        assert_eq!(exchange.on_terms_required, Some(AgentOnTermsRequired::Ask));
+        assert_eq!(exchange.paid_calls, 0);
+        assert!(exchange.credits_used.is_none());
+        let skipped = exchange.skipped_providers.unwrap_or_default();
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0].reason, "terms_required");
+        assert_eq!(
+            skipped[0].terms_url,
+            "https://www.firecrawl.dev/app/alexandria/globex"
+        );
+        let action = exchange.requires_action.ok_or_else(|| {
+            FirecrawlError::Misuse("requiresAction did not deserialize".to_string())
+        })?;
+        assert_eq!(action.kind, "accept_terms");
+        assert_eq!(action.approval_id, "0199aaaa-0000-7000-8000-000000000003");
+        assert_eq!(action.providers.len(), 1);
+        assert!(action.providers[0].digest.is_none());
+        assert_eq!(action.providers[0].accept["capability"], "terms/accept");
+        mock.assert();
+        Ok(())
     }
 }

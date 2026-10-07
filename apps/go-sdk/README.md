@@ -295,6 +295,15 @@ resp, err := client.StartAgent(ctx, &firecrawl.AgentOptions{
 })
 status, err := client.GetAgentStatus(ctx, resp.ID)
 _, err = client.CancelAgent(ctx, resp.ID)
+
+// Let the agent use Exchange data providers connected to your team
+status, err = client.Agent(ctx, &firecrawl.AgentOptions{
+	Prompt: "Summarize the latest earnings for AAPL",
+	Exchange: &firecrawl.AgentExchangeOptions{
+		Enabled:  firecrawl.Bool(true),
+		Toolkits: &[]string{"your-provider-slug"},
+	},
+})
 ```
 
 ### Browser
