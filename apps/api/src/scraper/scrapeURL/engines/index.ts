@@ -709,6 +709,7 @@ export async function buildFallbackList(meta: Meta): Promise<
       excludeTags: meta.options.excludeTags,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       lockdown: meta.options.lockdown,
+      redactPII: meta.options.redactPII,
       flags: meta.internalOptions.teamFlags ?? null,
     });
     if (exchangeAccess.allowed) {

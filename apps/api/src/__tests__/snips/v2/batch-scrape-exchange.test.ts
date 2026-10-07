@@ -1,7 +1,8 @@
 /**
  * v2 batch scrape admits blocklisted URLs the Exchange can serve, the same
  * way single scrape does, and refuses the rest: with the terms error when
- * unaccepted terms are what keeps a URL out, else as an unsupported site.
+ * unaccepted terms are what keeps a URL out, with the unsupported-option
+ * error when a request option does, else as an unsupported site.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -64,6 +65,7 @@ import {
   clearExchangeProvidersForTest,
   setExchangeProvidersForTest,
   ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
 } from "../../../lib/exchange";
 import { UnsupportedSiteError } from "../../../lib/error";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../../lib/strings";
@@ -204,6 +206,32 @@ describe("v2 batch scrape of blocklisted URLs", () => {
         expect.objectContaining({
           url: BLOCKED_URL,
           error: expect.any(ThirdPartyDataTermsRequiredError),
+        }),
+      ]);
+    });
+
+    it("names the option that keeps the provider out of a blocked URL", async () => {
+      const result = await batchScrape(
+        {
+          urls: [OPEN_URL, BLOCKED_URL],
+          ignoreInvalidURLs: false,
+          redactPII: true,
+        },
+        ACCEPTED_FLAGS,
+      );
+
+      expect(result).toEqual({
+        status: 400,
+        body: new ThirdPartyDataUnsupportedOptionError(
+          "`redactPII`",
+        ).response(),
+      });
+      expect(result.body.code).toBe("THIRD_PARTY_DATA_UNSUPPORTED_OPTION");
+      expect(enqueuedJobs()).toEqual([]);
+      expect(rejectedEvents()).toEqual([
+        expect.objectContaining({
+          url: BLOCKED_URL,
+          error: expect.any(ThirdPartyDataUnsupportedOptionError),
         }),
       ]);
     });
