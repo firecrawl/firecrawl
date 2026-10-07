@@ -368,9 +368,8 @@ export function blocklistMiddleware(
  * asks for the provider's terms when unaccepted terms are all that stands in
  * the way. Unblocked URLs never consult the Exchange here: engine selection
  * decides for them, identically on every route, and scrapes them normally
- * when terms are missing. Everything else (map, search, batch scrape,
- * monitors) keeps plain blocklist behavior - batch stays out until its jobs
- * carry the access flags the worker-side recheck needs.
+ * when terms are missing. v2 batch scrape runs the same check per URL in its
+ * controller; map, search and monitors keep plain blocklist behavior.
  */
 export function scrapeBlocklistMiddleware(
   req: RequestWithMaybeACUC<any, any, any>,

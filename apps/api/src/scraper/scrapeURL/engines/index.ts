@@ -721,8 +721,8 @@ export async function buildFallbackList(meta: Meta): Promise<
       ];
     }
 
-    // A blocked URL can only have been admitted by scrapeBlocklistMiddleware
-    // for the Exchange; if the Exchange can no longer serve it (catalog
+    // A blocked URL can only have been admitted (by scrapeBlocklistMiddleware
+    // or batch scrape) for the Exchange; if it can no longer serve it (catalog
     // changed, service down), fail closed rather than letting normal engines
     // scrape a blocklisted site. Unblocked URLs whose provider wants
     // unaccepted terms fall through and scrape normally.
