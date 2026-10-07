@@ -463,6 +463,14 @@ const queryFormatWithOptions = z.strictObject({
 
 type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
 
+const knowledgeGraphFormatWithOptions = z.strictObject({
+  type: z.literal("knowledgeGraph"),
+  entityTypes: z.string().array().max(50).optional(),
+});
+type KnowledgeGraphFormatWithOptions = z.output<
+  typeof knowledgeGraphFormatWithOptions
+>;
+
 // Which engine answers branding decisions: "fast" (Jev), "standard" (the
 // LLM) or "auto" (the LLM for now). Internal for now: honored only for teams
 // listed in BRANDING_JEV_TEAM_IDS and ignored for everyone else
@@ -488,6 +496,7 @@ export type FormatObject =
   | QuestionFormatWithOptions
   | HighlightsFormatWithOptions
   | QueryFormatWithOptions
+  | KnowledgeGraphFormatWithOptions
   | z.output<typeof brandingFormatWithOptions>
   | { type: "product" }
   | { type: "menu" }
@@ -787,6 +796,7 @@ const scrapeOptionFields = z.strictObject({
           questionFormatWithOptions,
           highlightsFormatWithOptions,
           queryFormatWithOptions,
+          knowledgeGraphFormatWithOptions,
           z.strictObject({ type: z.literal("audio") }),
           z.strictObject({ type: z.literal("video") }),
         ])
@@ -1468,6 +1478,7 @@ export type Document = {
   summary?: string;
   answer?: string;
   highlights?: string;
+  knowledgeGraph?: import("../../scraper/scrapeURL/transformers/knowledgeGraphUtils").KnowledgeGraph;
   branding?: BrandingProfile;
   product?: ProductProfile;
   menu?: MenuProfile;
@@ -2602,6 +2613,7 @@ export const searchRequestSchema = z
                 questionFormatWithOptions,
                 highlightsFormatWithOptions,
                 queryFormatWithOptions,
+                knowledgeGraphFormatWithOptions,
                 screenshotFormatWithOptions,
               ])
               .array()

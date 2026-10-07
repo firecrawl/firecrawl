@@ -25,7 +25,7 @@ const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
 const providerList: Record<Provider, any> = {
   openai: createOpenAI({
     apiKey: config.OPENAI_API_KEY,
-    baseURL: config.OPENAI_BASE_URL,
+    baseURL: config.OPENAI_BASE_URL || "https://api.openai.com/v1",
   }), //OPENAI_API_KEY
   ollama: createOllama({
     baseURL: config.OLLAMA_BASE_URL,

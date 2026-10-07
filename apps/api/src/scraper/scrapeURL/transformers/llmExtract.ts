@@ -225,7 +225,7 @@ export function trimToTokenLimit(
       // The candidate fits within the token budget. If we never pre-trimmed, the
       // original text is returned untouched.
       if (numTokens <= maxTokens && !preTrimmed) {
-        return { text, numTokens };
+        return { text, numTokens, warning: previousWarning };
       }
 
       if (numTokens <= maxTokens) {

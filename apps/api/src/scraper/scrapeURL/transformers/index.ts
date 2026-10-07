@@ -13,6 +13,7 @@ import {
 } from "./llmExtract";
 import { performDeterministicJson } from "./deterministicJson";
 import { performQuery } from "./query";
+import { performKnowledgeGraph } from "./knowledgeGraph";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAgent } from "./agent";
 import { performAttributes } from "./performAttributes";
@@ -114,6 +115,10 @@ async function deriveMarkdownFromHTML(
   const hasHighlights = hasFormatOfType(meta.options.formats, "highlights");
   const hasQuery = hasFormatOfType(meta.options.formats, "query");
   const hasRedactPII = !!meta.options.redactPII;
+  const hasKnowledgeGraph = hasFormatOfType(
+    meta.options.formats,
+    "knowledgeGraph",
+  );
   if (
     !hasMarkdown &&
     !hasChangeTracking &&
@@ -123,6 +128,7 @@ async function deriveMarkdownFromHTML(
     !hasHighlights &&
     !hasQuery &&
     !hasRedactPII &&
+    !hasKnowledgeGraph &&
     !meta.options.onlyCleanContent
   ) {
     return document;
@@ -367,6 +373,10 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   );
   const hasLegacyQueryFormat = hasFormatOfType(meta.options.formats, "query");
   const hasAnswerFormat = hasQuestionFormat || hasLegacyQueryFormat;
+  const hasKnowledgeGraph = hasFormatOfType(
+    meta.options.formats,
+    "knowledgeGraph",
+  );
 
   if (!hasMarkdown && document.markdown !== undefined) {
     delete document.markdown;
@@ -511,6 +521,17 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
+  if (!hasKnowledgeGraph && document.knowledgeGraph !== undefined) {
+    meta.logger.warn(
+      "Removed knowledgeGraph from Document because it was not requested.",
+    );
+    delete document.knowledgeGraph;
+  } else if (hasKnowledgeGraph && document.knowledgeGraph === undefined) {
+    meta.logger.warn(
+      "Request had format knowledgeGraph, but no graph was produced.",
+    );
+  }
+
   if (!hasBranding && document.branding !== undefined) {
     meta.logger.warn(
       "Removed branding from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
@@ -633,6 +654,7 @@ const transformerStack: Transformer[] = [
   performDeterministicJson,
   performSummary,
   performQuery,
+  performKnowledgeGraph,
   performAttributes,
   performAgent,
   removeBase64Images,

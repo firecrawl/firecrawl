@@ -113,6 +113,13 @@ describe("trimToTokenLimit", () => {
     expect(freeCalls).toBe(1);
   });
 
+  it("preserves a previous warning without trimming", () => {
+    const text = "This is a test text";
+    const result = trimToTokenLimit(text, 1000, "gpt-4o", "Previous warning");
+    expect(result.text).toBe(text);
+    expect(result.warning).toBe("Previous warning");
+  });
+
   it("should trim to exactly maxTokens and return a byte-exact prefix", () => {
     const text = "The quick brown fox jumps over the lazy dog. ".repeat(100);
     const maxTokens = 50;

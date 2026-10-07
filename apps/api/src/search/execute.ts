@@ -24,6 +24,10 @@ import {
 } from "./highlights";
 import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
+import {
+  mergeKnowledgeGraphs,
+  type KnowledgeGraph,
+} from "../scraper/scrapeURL/transformers/knowledgeGraphUtils";
 import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
@@ -398,6 +402,19 @@ export async function executeSearch(
         typeof f === "string" ? f : f.type,
       )
     : [];
+
+  // Keep each scraped result graph and expose their deduped union at the top level.
+  if (scrapeFormats.includes("knowledgeGraph")) {
+    const graphs = [
+      ...(searchResponse.web ?? []),
+      ...(searchResponse.news ?? []),
+    ]
+      .map(result => result.knowledgeGraph)
+      .filter((graph): graph is KnowledgeGraph => graph !== undefined);
+    if (graphs.length > 0) {
+      searchResponse.knowledgeGraph = mergeKnowledgeGraphs(graphs);
+    }
+  }
 
   trackSearchRequest({
     searchId: context.jobId,
