@@ -1,5 +1,45 @@
 ## CHANGELOG
 
+## [2.21.5] - 2026-10-07
+
+### Added
+
+- `DocumentMetadata::provider` (`ScrapeProvider`) reports the third-party
+  provider that served an Exchange scrape: its `id`, the access price in
+  `credits_cost`, and every provider tried in `steps` (`ScrapeProviderStep`).
+  It is `None` for any other scrape.
+
+## [2.21.4] - 2026-10-07
+
+### Fixed
+
+- `scrape_alexandria` now waits for the API's full execution deadline. The
+  execution timeout defaults to and is capped at 120 s, the same as the API,
+  plus a 30 s margin for response delivery (150 s when no `timeout` is given).
+  Before, it used no timeout by default, or the caller's `timeout` plus 5 s.
+
+## [2.21.3] - 2026-10-06
+
+### Added
+
+- Added `AgentOptions::exchange` (`AgentExchangeOptions`) so agent runs can use
+  the team's Exchange (Alexandria) data providers, including `approve` and
+  `decline` answers to a pending approval. Added `AgentOptions::thread_id` and
+  `AgentOptions::mode` (`AgentMode`) to continue a thread and run in chat mode.
+- `AgentResponse` now carries `thread_id` and `thread_turn`.
+  `AgentStatusResponse` now carries `thread_id`, `thread_turn`, `mode`,
+  `message`, `pending_approval` (`AgentPendingApproval`), and `exchange`
+  (`AgentExchangeSummary`).
+
+## [2.21.2] - 2026-10-02
+
+### Added
+
+- Added `Client::get_parse_formats` for `GET /v2/parse/formats`, returning the
+  upload formats `parse` accepts as `ParseFormatInfo` entries (`format`,
+  `kind`, `extensions`, `mime_types`, `available`). `ParseFormatKind` falls
+  back to `Unknown` for kinds this release does not know about.
+
 ## [2.21.1] - 2026-09-30
 
 ### Security

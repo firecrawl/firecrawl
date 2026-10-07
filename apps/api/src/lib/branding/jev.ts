@@ -311,6 +311,8 @@ type JevRequest = {
   buttonCount: number;
   /** Background + text color per button, to group look-alike buttons. */
   buttonStyles: string[];
+  /** Raw background per button: merge drops a secondary that matches the primary's. */
+  buttonBackgrounds: string[];
 };
 
 export function buildJevRequest(input: BrandingLLMInput): JevRequest {
@@ -563,6 +565,7 @@ export function buildJevRequest(input: BrandingLLMInput): JevRequest {
     logoCount: logos.length,
     buttonCount: buttons.length,
     buttonStyles: buttons.map(buttonStyle),
+    buttonBackgrounds: buttons.map(b => b.background),
   };
 }
 
@@ -623,15 +626,24 @@ function mapJevAnswers(
   const { answers } = response;
   const tag = `jev ${response.model}`;
 
-  // Buttons: secondary must differ from primary.
+  // Buttons: the secondary must not share the primary's background, or merge
+  // drops it. Skip every look-alike, not just the primary itself.
   const primaryButton = choiceOf(answers, "primary_button");
   const secondaryButton = choiceOf(answers, "secondary_button");
   const primaryButtonIndex = indexOf(primaryButton?.choice, "button");
+  const primaryBackground = request.buttonBackgrounds[primaryButtonIndex];
+  const looksLikePrimary = (option: string) =>
+    option === primaryButton?.choice ||
+    (primaryBackground !== undefined &&
+      request.buttonBackgrounds[indexOf(option, "button")] ===
+        primaryBackground);
   let secondaryOption = secondaryButton?.choice;
-  if (secondaryButton && secondaryOption === primaryButton?.choice) {
+  if (secondaryButton && secondaryOption && looksLikePrimary(secondaryOption)) {
     secondaryOption = bestExcluding(
       secondaryButton,
-      new Set([primaryButton!.choice]),
+      new Set(
+        Object.keys(secondaryButton.probabilities).filter(looksLikePrimary),
+      ),
     );
   }
 
@@ -766,6 +778,7 @@ function mapJevAnswers(
  */
 export async function enhanceBrandingWithJev(
   input: BrandingLLMInput,
+  options: { shadow?: boolean } = {},
 ): Promise<JevBrandingResult | null> {
   const typesafe = getTypeSafeClient();
   if (!typesafe) return null;
@@ -791,6 +804,7 @@ export async function enhanceBrandingWithJev(
         setSpanAttributes(span, {
           "typesafe.model": result.model,
           "typesafe.usage.input_tokens": result.usage?.input_tokens,
+          "typesafe.usage.output_tokens": result.usage?.output_tokens,
         });
         return result as JevResponse;
       },
@@ -802,15 +816,22 @@ export async function enhanceBrandingWithJev(
         attributes: {
           feature: "branding",
           "branding.jev.questions": Object.keys(request.questions).length,
+          ...(options.shadow ? { "branding.jev.shadow": true } : {}),
           ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
+          ...(input.teamId ? { teamId: input.teamId } : {}),
         },
       },
     );
   } catch (error) {
-    input.logger.warn("Jev branding call failed, falling back to LLM", {
-      error,
-      elapsedMs: Date.now() - started,
-    });
+    input.logger.warn(
+      options.shadow
+        ? "Jev branding shadow call failed"
+        : "Jev branding call failed, falling back to LLM",
+      {
+        error,
+        elapsedMs: Date.now() - started,
+      },
+    );
     return null;
   }
 
@@ -829,14 +850,20 @@ export async function enhanceBrandingWithJev(
     result = mapJevAnswers(request, response);
   } catch (error) {
     // A successful call whose answers don't have the expected shape.
-    input.logger.warn("Jev branding answers unusable, falling back to LLM", {
-      error,
-      model: response.model,
-    });
+    input.logger.warn(
+      options.shadow
+        ? "Jev branding shadow answers unusable"
+        : "Jev branding answers unusable, falling back to LLM",
+      {
+        error,
+        model: response.model,
+      },
+    );
     return null;
   }
   input.logger.info("Jev branding call", {
     model: response.model,
+    shadow: options.shadow === true,
     elapsedMs: Date.now() - started,
     inputTokens,
     questions: Object.keys(request.questions).length,

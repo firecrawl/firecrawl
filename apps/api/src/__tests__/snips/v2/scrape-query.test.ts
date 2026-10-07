@@ -65,6 +65,28 @@ describe("Query format", () => {
   );
 
   concurrentIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+    "answers a query from the page content",
+    async () => {
+      const response = await scrape(
+        {
+          url: `${TEST_SUITE_WEBSITE}/product`,
+          formats: [
+            {
+              type: "query",
+              prompt: "What is the price of the Firecrawl Test Widget?",
+            },
+          ],
+        },
+        identity,
+      );
+
+      expect(response.answer).toContain("49.99");
+      expect(response.warning ?? "").not.toContain("Query generation failed");
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
     "returns both answer and markdown when formats include markdown and query",
     async () => {
       const response = await scrape(
@@ -154,6 +176,25 @@ describe("Query format", () => {
         {
           url: TEST_SUITE_WEBSITE,
           formats: [{ type: "query", prompt: longPrompt }],
+        } as any,
+        identity,
+      );
+
+      expect(response.success).toBe(false);
+      expect(response.error).toBeDefined();
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "rejects an unknown query mode",
+    async () => {
+      const response = await scrapeWithFailure(
+        {
+          url: TEST_SUITE_WEBSITE,
+          formats: [
+            { type: "query", prompt: "What is Firecrawl?", mode: "summary" },
+          ],
         } as any,
         identity,
       );

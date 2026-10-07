@@ -366,6 +366,18 @@ export type ParseOptions = Omit<
   proxy?: "basic" | "auto";
 };
 
+/** A file format accepted by the parse endpoint. */
+export interface ParseFormatInfo {
+  /** Format identifier, e.g. "pdf". */
+  format: string;
+  kind: "document" | "image" | (string & {});
+  /** File extensions including the leading dot, e.g. ".pdf". */
+  extensions: string[];
+  mimeTypes: string[];
+  /** False when the format is recognized but not enabled on this deployment. */
+  available: boolean;
+}
+
 export interface WebhookConfig {
   url: string;
   headers?: Record<string, string>;
@@ -794,6 +806,16 @@ export interface DeveloperSearchResponse {
   sources?: DeveloperSearchSourceStatus[];
 }
 
+export interface GovSearchOptions {
+  /** Total ranked results, 1–100 (default 10). */
+  k?: number;
+}
+
+export interface GovSearchResponse {
+  success: boolean;
+  data: { web: SearchResultWeb[] };
+}
+
 export interface SearchResultWeb {
   url: string;
   title?: string;
@@ -961,6 +983,8 @@ export interface AlexandriaOptions {
  * - `pdf` — restrict results to PDFs (adds `filetype:pdf`).
  * - `developer` — developer-index results (issues, pull requests, READMEs and
  *   documentation) served in `web`; cannot be combined with other categories.
+ * - `gov` — Government Index results served in `web`; cannot be combined
+ *   with other categories.
  *
  * ⚠️ `categories: ["research"]` is **not** Firecrawl's research paper index.
  * To search papers themselves — ~43M abstracts, roughly 90% biomedical
@@ -972,7 +996,7 @@ export interface AlexandriaOptions {
  * happen to live on academic domains → `search({ categories: ["research"] })`.
  */
 export interface CategoryOption {
-  type: "github" | "research" | "pdf" | "developer";
+  type: "github" | "research" | "pdf" | "developer" | "gov";
 }
 
 export interface SearchRequest {
@@ -994,7 +1018,7 @@ export interface SearchRequest {
    * `firecrawl.research.searchPapers()` instead.
    */
   categories?: Array<
-    "github" | "research" | "pdf" | "developer" | CategoryOption
+    "github" | "research" | "pdf" | "developer" | "gov" | CategoryOption
   >;
   includeDomains?: string[];
   excludeDomains?: string[];
@@ -1627,6 +1651,11 @@ export interface AgentStatusResponse {
   status: "processing" | "completed" | "failed";
   error?: string;
   data?: unknown;
+  /** Best-effort result on a failed run; never a completed `data` value. */
+  partial?: unknown;
+  /** Schema validity of `partial`, when a schema was supplied. */
+  partialSchemaValid?: boolean;
+  stopReason?: "credit_limit_reached";
   /**
    * Server-provided model name. Widened past the request-side union on
    * purpose: new models ship without an SDK release, so pinning this to known
@@ -1672,6 +1701,9 @@ export interface AgentThreadRun {
   message: string | null;
   /** Only present when the request asked for includeData. */
   data?: unknown;
+  partial?: unknown;
+  partialSchemaValid?: boolean;
+  stopReason?: "credit_limit_reached";
   suggestions?: AgentSuggestion[] | null;
   pendingApproval?: PendingApproval | null;
   exchange?: AgentExchangeSummary | null;

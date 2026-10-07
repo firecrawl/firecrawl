@@ -97,6 +97,13 @@ doc = firecrawl.parse(
 print(doc.markdown)
 ```
 
+To see which file formats `parse` accepts, call `get_parse_formats` (also available on `AsyncFirecrawl`). Each entry has `format`, `kind` (`"document"` or `"image"`), `extensions`, `mime_types`, and `available`, which is `False` when a format is disabled on the deployment.
+
+```python
+for f in firecrawl.get_parse_formats():
+  print(f.format, f.kind, f.extensions, f.mime_types, f.available)
+```
+
 ### Crawling a Website
 
 To crawl a website, use the `crawl` method. It takes the starting URL and optional parameters as arguments. You can control depth, limits, formats, and more.
@@ -250,6 +257,23 @@ print(evidence.repos)  # indexed-status echoes for requested repos
 `developer_search` also supports `sources`, `topic`, `min_stars`, `max_stars`,
 `archived`, `fork`, and `skills="only"`. Supplying both `repos` and `sources`
 OR-combines GitHub-backed and documentation results.
+
+### Government search
+
+Use `gov_search` to search the Firecrawl Government Index: primary
+law and regulatory material from US federal, state, and local government
+sources, including statutes, regulations, codes, court opinions, and other
+government publications. Results come back in the ordinary web-result shape.
+Generic `search("food labeling requirements", categories=["gov"])` returns
+index results inside `.web`; like `developer`, it cannot be combined with other
+categories.
+
+```python
+law = firecrawl.gov_search("food labeling requirements", k=5)
+
+for result in law.data.web:
+    print(result.position, result.title, result.url)
+```
 
 ### Research / paper search
 

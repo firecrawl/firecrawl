@@ -47,3 +47,21 @@ export async function fetchResearchUpstream(options: {
     dispatcher,
   });
 }
+
+export async function fetchGovUpstream(options: {
+  query: string;
+  k?: number;
+  headers: Record<string, string>;
+  timeoutMs: number;
+}) {
+  const base = config.SEARCH_PLATFORM_URL;
+  if (!base) return null;
+
+  return fetch(base.replace(/\/+$/, "") + "/api/v1/gov-search", {
+    method: "POST",
+    headers: { ...options.headers, "content-type": "application/json" },
+    body: JSON.stringify({ query: options.query, top_k: options.k }),
+    signal: AbortSignal.timeout(options.timeoutMs),
+    dispatcher,
+  });
+}

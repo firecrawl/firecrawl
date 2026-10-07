@@ -4,6 +4,7 @@ import com.firecrawl.client.FirecrawlClient;
 import com.firecrawl.errors.FirecrawlException;
 import com.firecrawl.models.*;
 import okhttp3.OkHttpClient;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -489,5 +490,22 @@ class FirecrawlClientTest {
         assertNotNull(doc.getMarkdown());
         assertFalse(doc.getMarkdown().isEmpty());
         assertTrue(doc.getMarkdown().contains("Java SDK Parse E2E"));
+    }
+
+    @Test
+    @EnabledIfEnvironmentVariable(named = "FIRECRAWL_API_KEY", matches = ".*\\S.*")
+    void testGetParseFormatsE2E() {
+        FirecrawlClient client = FirecrawlClient.fromEnv();
+        List<ParseFormat> formats;
+        try {
+            formats = client.getParseFormats();
+        } catch (FirecrawlException e) {
+            Assumptions.assumeTrue(e.getStatusCode() != 404, "GET /v2/parse/formats is not deployed yet");
+            throw e;
+        }
+
+        assertFalse(formats.isEmpty());
+        assertTrue(formats.stream().anyMatch(f ->
+                "pdf".equals(f.getFormat()) && f.getKindType() == ParseFormat.Kind.DOCUMENT));
     }
 }

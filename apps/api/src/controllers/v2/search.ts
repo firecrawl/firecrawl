@@ -51,9 +51,11 @@ import {
   formatTypesOf,
 } from "../../lib/key-restriction";
 import { wantsDeveloperCategory } from "../../search/developer";
+import { wantsGovCategory } from "../../search/gov";
 import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { applyNotice, type Notice } from "../../lib/deprecations";
+import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 
 const RESEARCH_CATEGORY_NOTICE: Notice = {
   message:
@@ -192,16 +194,28 @@ async function searchControllerInner(
       });
     }
 
-    if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
-      const developerRestriction = await checkKeyEndpointRestriction(
-        "/v2/developer/search",
+    const categories = req.body.categories as CategoryOption[];
+    // Index categories reach the same upstream as their dedicated endpoint, so
+    // they share its key restriction and its request ledger.
+    const indexCategory = wantsDeveloperCategory(categories)
+      ? { endpoint: "/v2/developer/search", table: "code_searches" as const }
+      : wantsGovCategory(categories)
+        ? {
+            endpoint: "/v2/search/gov",
+            table: "gov_searches" as const,
+          }
+        : null;
+
+    if (indexCategory) {
+      const indexRestriction = await checkKeyEndpointRestriction(
+        indexCategory.endpoint,
         req.acuc?.api_key_id,
         req.acuc?.flags ?? null,
       );
-      if (!developerRestriction.allowed) {
-        return res.status(developerRestriction.status).json({
+      if (!indexRestriction.allowed) {
+        return res.status(indexRestriction.status).json({
           success: false,
-          error: developerRestriction.error,
+          error: indexRestriction.error,
         });
       }
     }
@@ -354,7 +368,10 @@ async function searchControllerInner(
 
     const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
     const projectedKeylessCredits =
-      !isSearchPreview && shouldBill && !toolsOnly
+      !isSearchPreview &&
+      shouldBill &&
+      !toolsOnly &&
+      !wantsGovCategory(categories)
         ? projectSearchTotalCredits(
             {
               limit: req.body.limit,
@@ -485,9 +502,9 @@ async function searchControllerInner(
       logger.error("Failed to log search", { error, jobId });
     });
 
-    if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
+    if (indexCategory) {
       logResearchEndpoint({
-        table: "code_searches",
+        table: indexCategory.table,
         id: uuidv7(),
         request_id: agentRequestId ?? jobId,
         team_id: req.auth.team_id,
@@ -500,7 +517,7 @@ async function searchControllerInner(
           via: "search_category",
         },
         response: null,
-        num_results: result.developerResultsCount,
+        num_results: result.indexResultsCount,
         time_taken: timeTakenInSeconds,
         // Ensure preview-mode searches don't get a non-zero credits_cost
         // in the research ledger when preview tokens are used.
@@ -508,7 +525,7 @@ async function searchControllerInner(
         is_successful: true,
         zeroDataRetention,
       }).catch(ledgerError => {
-        logger.warn("Failed to log developer category usage", {
+        logger.warn("Failed to log index category usage", {
           error: ledgerError,
         });
       });
@@ -532,6 +549,7 @@ async function searchControllerInner(
       scrapeful: result.shouldScrape,
     });
 
+    if (result.response.tools) markAlexandriaActivity(req.auth.team_id);
     return res.status(200).json({
       success: true,
       data: result.response,

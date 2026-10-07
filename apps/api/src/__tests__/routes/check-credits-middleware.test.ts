@@ -1,5 +1,16 @@
 import type { MockedFunction } from "vitest";
 import type { NextFunction } from "express";
+import { logger } from "../../lib/logger";
+
+vi.mock("../../lib/logger", () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn().mockReturnThis(),
+  },
+}));
 
 vi.mock("../../services/autumn/autumn.service", () => ({
   autumnService: {
@@ -109,6 +120,10 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
 
     expect(res.status).toHaveBeenCalledWith(402);
     expect(res.locals.agentCreditsRemaining).toBe(0);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.not.objectContaining({ request: expect.anything() }),
+    );
   });
 
   it("adjusts crawl limit down when Autumn denies but some credits remain", async () => {
@@ -122,6 +137,10 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
     expect(res.status).not.toHaveBeenCalled();
     expect(res.locals.agentCreditsRemaining).toBe(5);
     expect(req.body.limit).toBe(5);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Adjusting limit to remaining credits",
+      expect.not.objectContaining({ request: expect.anything() }),
+    );
     expect(checkCreditsMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         value: 5,

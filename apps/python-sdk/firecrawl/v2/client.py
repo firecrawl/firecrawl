@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable, Union, Literal, BinaryIO
 from .types import (
     ClientConfig,
+    ParseFormat,
     ParseOptions,
     ScrapeOptions,
     Document,
@@ -16,6 +17,7 @@ from .types import (
     SearchData,
     DeveloperSearchResponse,
     DeveloperSearchType,
+    GovSearchResponse,
     SourceOption,
     CategoryOption,
     FindToolsData,
@@ -68,6 +70,7 @@ from .methods import crawl as crawl_module
 from .methods import batch as batch_module
 from .methods import search as search_module
 from .methods import developer as developer_module
+from .methods import gov as gov_module
 from .methods import map as map_module
 from .methods import batch as batch_methods
 from .methods import usage as usage_methods
@@ -468,6 +471,16 @@ class FirecrawlClient:
             content_type=content_type,
         )
 
+    def get_parse_formats(self) -> List[ParseFormat]:
+        """
+        List the file formats the parse endpoint accepts.
+
+        Returns:
+            List of ParseFormat entries. ``available`` is False for formats
+            that are known but disabled on this deployment.
+        """
+        return parse_module.get_parse_formats(self.http_client)
+
 
     def search(
         self,
@@ -572,6 +585,16 @@ class FirecrawlClient:
             archived=archived,
             fork=fork,
             skills=skills,
+        )
+
+    def gov_search(
+        self,
+        query: str,
+        k: Optional[int] = None,
+    ) -> GovSearchResponse:
+        """Search the Government Index of US primary law and regulatory material."""
+        return gov_module.gov_search(
+            self.http_client, query, k=k
         )
     
     def crawl(
@@ -1718,6 +1741,7 @@ class FirecrawlClient:
         ttl: Optional[int] = None,
         activity_ttl: Optional[int] = None,
         stream_web_view: Optional[bool] = None,
+        block_ads: Optional[bool] = None,
         profile: Optional[Dict[str, Any]] = None,
     ):
         """Create a new browser session.
@@ -1726,6 +1750,7 @@ class FirecrawlClient:
             ttl: Total time-to-live in seconds (30-3600, default 300)
             activity_ttl: Inactivity TTL in seconds (10-3600)
             stream_web_view: Whether to enable webview streaming
+            block_ads: Block ads, trackers and cookie notices (default ``True``)
             profile: Profile config with ``name`` (str) and
                 optional ``save_changes`` (bool, default ``True``)
 
@@ -1737,6 +1762,7 @@ class FirecrawlClient:
             ttl=ttl,
             activity_ttl=activity_ttl,
             stream_web_view=stream_web_view,
+            block_ads=block_ads,
             profile=profile,
         )
 

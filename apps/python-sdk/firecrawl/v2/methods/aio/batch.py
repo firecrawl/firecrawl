@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Any
 from ...types import ScrapeOptions, WebhookConfig, Document, BatchScrapeResponse, BatchScrapeJob, PaginationConfig
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import prepare_scrape_options
-from ...utils.error_handler import handle_response_error
+from ...utils.error_handler import FirecrawlError, handle_response_error
 from ...utils.normalize import normalize_document_input
 from ...methods.batch import validate_batch_urls
 import time
@@ -18,7 +18,7 @@ def _parse_batch_scrape_documents(data_list: Optional[List[Any]]) -> List[Docume
 
 def _parse_batch_scrape_status_response(body: Dict[str, Any]) -> Dict[str, Any]:
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
 
     return {
         "status": body.get("status"),
@@ -66,7 +66,7 @@ async def start_batch_scrape(client: AsyncHttpClient, urls: List[str], **kwargs)
         handle_response_error(response, "start batch scrape")
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
     return BatchScrapeResponse(id=body.get("id"), url=body.get("url"), invalid_urls=body.get("invalidURLs"))
 
 
@@ -238,5 +238,5 @@ async def get_batch_scrape_errors(client: AsyncHttpClient, job_id: str) -> Dict[
         handle_response_error(response, "get batch scrape errors")
     body = response.json()
     if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        raise FirecrawlError(body.get("error", "Unknown error occurred"))
     return body

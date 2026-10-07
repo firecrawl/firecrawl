@@ -197,6 +197,21 @@ var parsed = await client.ParseAsync(
     ParseFile.FromBytes("snapshot.html", html, "text/html"));
 ```
 
+#### Supported parse formats
+
+`GetParseFormatsAsync` lists the formats `/v2/parse` accepts, with their
+extensions, MIME types, and whether each is available on the deployment
+(image formats are unavailable when image OCR is disabled).
+
+```csharp
+var formats = await client.GetParseFormatsAsync();
+
+foreach (var f in formats.Where(f => f.Available))
+{
+    Console.WriteLine($"{f.Format} ({f.Kind}): {string.Join(", ", f.Extensions)}");
+}
+```
+
 ### Map (URL Discovery)
 
 ```csharp

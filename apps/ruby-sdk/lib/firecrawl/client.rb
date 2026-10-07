@@ -81,6 +81,10 @@ module Firecrawl
       body.merge!(options.to_h) if options
       body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
       raw = @http.post("/v2/scrape", body)
+      # Some scrape failures (e.g. SCRAPE_DNS_RESOLUTION_ERROR) arrive as HTTP 200 with success: false.
+      if raw["success"] == false
+        raise FirecrawlError.new(raw["error"] || "Scrape failed", status_code: 200, error_code: raw["code"], details: raw["details"])
+      end
       data = raw["data"] || raw
       Models::Document.new(data)
     end
@@ -193,6 +197,15 @@ module Firecrawl
       )
       data = raw["data"] || raw
       Models::Document.new(data)
+    end
+
+    # Lists the file formats accepted by {#parse} on this deployment.
+    #
+    # @return [Array<Models::ParseFormat>]
+    def get_parse_formats
+      raw = @http.get("/v2/parse/formats")
+      formats = (raw["data"] || {})["formats"] || []
+      formats.map { |f| Models::ParseFormat.new(f) }
     end
 
     # ================================================================

@@ -5,9 +5,9 @@ Parse (multipart upload) functionality for Firecrawl v2 API.
 import json
 import mimetypes
 from pathlib import Path
-from typing import Optional, Dict, Any, BinaryIO, Union, Tuple
+from typing import Optional, Dict, Any, BinaryIO, List, Union, Tuple
 
-from ..types import Document, ParseOptions
+from ..types import Document, ParseFormat, ParseOptions
 from ..utils.agent_hints import agent_hint_metadata
 from ..utils.normalize import normalize_document_input
 from ..utils import HttpClient, handle_response_error, prepare_scrape_options, validate_scrape_options
@@ -166,3 +166,14 @@ def parse(
     document_data = body.get("data", {})
     normalized = {**normalize_document_input(document_data), **agent_hint_metadata(body)}
     return Document(**normalized)
+
+
+def get_parse_formats(client: HttpClient) -> List[ParseFormat]:
+    resp = client.get("/v2/parse/formats")
+    if not resp.ok:
+        handle_response_error(resp, "get parse formats")
+    body = resp.json()
+    if not body.get("success"):
+        handle_response_error(resp, "get parse formats")
+    data = body.get("data") or {}
+    return [ParseFormat.model_validate(item) for item in data.get("formats") or []]

@@ -1,5 +1,15 @@
+import {
+  httpUrl,
+  object,
+  pathWords,
+  quotedUrl,
+  resultPosition,
+  type AgentHintEndpoint,
+} from "./agent-hint-signals";
+
+export type { AgentHintEndpoint };
+
 /** Deterministic guidance from state already available on the request path. */
-export type AgentHintEndpoint = "search" | "scrape" | "parse" | "map";
 export interface AgentHintContext {
   endpoint: AgentHintEndpoint;
   response: unknown;
@@ -14,11 +24,6 @@ const SEARCH_CLUSTER_MIN_ORIGIN_RESULTS = 3;
 const SEARCH_CLUSTER_MIN_SHARE = 0.75;
 
 type ObjectValue = Record<string, unknown>;
-function object(value: unknown): ObjectValue {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as ObjectValue)
-    : {};
-}
 function clusteredOrigin(web: unknown[]): string | undefined {
   const counts = new Map<string, number>();
   for (const value of web) {
@@ -48,41 +53,6 @@ function clusteredOrigin(web: unknown[]): string | undefined {
     : undefined;
 }
 const EXCERPT_URLS_SHOWN = 3;
-
-const QUERY_PATH_SEGMENTS = 2;
-
-function httpUrl(value: unknown): URL | undefined {
-  if (typeof value !== "string" || !value) return undefined;
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:"
-      ? parsed
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-const HINT_URL_MAX_CHARS = 200;
-
-/**
- * Result URLs come from third-party pages, so they are rendered only as a
- * parsed http(s) href (whitespace and quotes percent-encoded), length-capped,
- * and JSON-quoted to mark them as data rather than instruction text.
- */
-function quotedUrl(url: URL): string | undefined {
-  const href = url.href;
-  return href.length <= HINT_URL_MAX_CHARS ? JSON.stringify(href) : undefined;
-}
-
-function resultPosition(item: ObjectValue, index: number): number {
-  const position = item.position;
-  return typeof position === "number" &&
-    Number.isInteger(position) &&
-    position > 0
-    ? position
-    : index + 1;
-}
 
 /** Names the excerpt-only results by their response position so the agent can pick. */
 function excerptOnlyHint(web: unknown[]): string | undefined {
@@ -117,45 +87,6 @@ function excerptOnlyHint(web: unknown[]): string | undefined {
       ? `All ${web.length} web results are excerpts only`
       : `${excerpts.length} of ${web.length} web results are excerpts only`;
   return `${subject} (${listed}${more}). If you need more than an excerpt, use firecrawl_scrape with {"url":"<one of these URLs>","formats":["markdown"]}. Retrieve only needed pages; do not re-scrape results that already contain the required content.`;
-}
-
-/**
- * Identifier-like path segments carry no searchable meaning: numbers, hex or
- * UUID-style ids, ULIDs, and long mixed alphanumeric tokens such as
- * "W020260806515694454560".
- */
-function isOpaqueId(segment: string): boolean {
-  if (/^\d+$/.test(segment)) return true;
-  if (/^[0-9a-f-]{16,}$/i.test(segment)) return true;
-  if (/^[0-9A-HJKMNP-TV-Z]{26}$/i.test(segment)) return true;
-  return (
-    segment.length >= 12 &&
-    /^[A-Za-z0-9_]+$/.test(segment) &&
-    (segment.match(/\d/g)?.length ?? 0) >= 4
-  );
-}
-
-/** Words from the last path segments, e.g. /payments/checkout/migration-from-legacy -> "checkout migration from legacy". */
-function pathWords(url: URL): string {
-  const segments = url.pathname
-    .split("/")
-    .map(segment => {
-      try {
-        return decodeURIComponent(segment);
-      } catch {
-        return segment;
-      }
-    })
-    .map(segment => segment.replace(/\.[a-z0-9]{1,5}$/i, ""))
-    .filter(segment => segment && !isOpaqueId(segment));
-  return segments
-    .slice(-QUERY_PATH_SEGMENTS)
-    .join(" ")
-    .replace(/[-_+.]+/g, " ")
-    .replace(/[^\p{L}\p{N} ]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 80);
 }
 
 function redirectNote(source: URL, final: URL): string {

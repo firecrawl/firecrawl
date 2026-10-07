@@ -3,6 +3,7 @@ import { getBigtableTable } from "./bigtable-client";
 import { saltedUuidV7RowKey } from "./bigtable-row-key";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
 import type { ScrapeReplayContext } from "./scrape-interact/scrape-replay";
+import { type BrowserOptions, isBrowserOptions } from "./browser-options";
 
 const QUALIFIER = "v";
 const FAMILY = "s";
@@ -10,12 +11,15 @@ const STATE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_ERROR_LENGTH = 16_384;
 
 type ScrapeJobState = {
+  zeroDataRetention?: boolean;
   status: "completed" | "failed";
   requestId: string;
   completedAtMs: number;
   creditsBilled: number;
   error?: string;
   replay?: ScrapeReplayContext;
+  browser?: BrowserOptions;
+  /** Written before `browser`; unused once that state has expired. */
   profile?: { name: string; saveChanges: boolean };
   origin?: string;
 };
@@ -65,6 +69,8 @@ function parseScrapeState(value: Buffer | string): ScrapeJobState {
       typeof candidate.requestId === "string" &&
       isFiniteNumber(candidate.completedAtMs) &&
       isFiniteNumber(candidate.creditsBilled) &&
+      (candidate.zeroDataRetention === undefined ||
+        typeof candidate.zeroDataRetention === "boolean") &&
       (candidate.error === undefined || typeof candidate.error === "string") &&
       (candidate.replay === undefined ||
         (typeof candidate.replay === "object" &&
@@ -72,6 +78,8 @@ function parseScrapeState(value: Buffer | string): ScrapeJobState {
           typeof (candidate.replay as any).targetUrl === "string" &&
           isFiniteNumber((candidate.replay as any).waitForMs) &&
           Array.isArray((candidate.replay as any).actions))) &&
+      (candidate.browser === undefined ||
+        isBrowserOptions(candidate.browser)) &&
       (candidate.profile === undefined ||
         (typeof candidate.profile === "object" &&
           candidate.profile !== null &&

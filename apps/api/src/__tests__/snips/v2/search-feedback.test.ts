@@ -35,12 +35,36 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
     "records feedback and refunds 1 credit on first submission",
     async () => {
       const raw = await searchRawFull(
-        { query: "firecrawl", limit: 3 },
+        {
+          query: "firecrawl",
+          objective: "Find official Firecrawl information",
+          clientModel: "claude-sonnet-4-6",
+          limit: 3,
+        },
         identity,
       );
       expect(raw.statusCode).toBe(200);
       expect(typeof raw.body.id).toBe("string");
       expect((raw.body.data?.web ?? []).length).toBeGreaterThan(0);
+
+      let searchRow: { options: unknown } | undefined;
+      for (let attempt = 0; attempt < 20 && !searchRow; attempt++) {
+        [searchRow] = await db
+          .select({ options: schema.searches.options })
+          .from(schema.searches)
+          .where(
+            and(
+              eq(schema.searches.id, raw.body.id),
+              eq(schema.searches.team_id, identity.teamId),
+            ),
+          )
+          .limit(1);
+        if (!searchRow) await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      expect(searchRow?.options).toMatchObject({
+        objective: "Find official Firecrawl information",
+        clientModel: "claude-sonnet-4-6",
+      });
 
       const result = await searchFeedback(
         raw.body.id,
@@ -73,6 +97,12 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
       expect(result.creditsRefunded).toBe(1);
       expect(result.alreadySubmitted).toBeFalsy();
       expect(typeof result.feedbackId).toBe("string");
+      const [feedbackRow] = await db
+        .select({ searchId: schema.search_feedback.search_id })
+        .from(schema.search_feedback)
+        .where(eq(schema.search_feedback.id, result.feedbackId!))
+        .limit(1);
+      expect(feedbackRow?.searchId).toBe(raw.body.id);
     },
     90000,
   );
