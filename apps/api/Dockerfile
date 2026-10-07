@@ -8,7 +8,7 @@ ENV CI=true
 RUN corepack enable && corepack prepare pnpm@11.4.0 --activate
 
 # Build Go shared library
-FROM golang:1.24 AS go-build
+FROM golang:1.26 AS go-build
 WORKDIR /app
 COPY sharedLibs/go-html-to-md ./sharedLibs/go-html-to-md
 
