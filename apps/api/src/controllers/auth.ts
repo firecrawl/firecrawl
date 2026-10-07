@@ -28,6 +28,7 @@ import { isKeylessIpSuspicious } from "../lib/spur";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
 import { checkIpRestriction } from "../lib/ip-restriction";
 import { checkKeyEndpointRestriction } from "../lib/key-restriction";
+import { type AuthDenialReason, logAuthDenied } from "../lib/auth-denied-log";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
 import { db, dbRr } from "../db/connection";
@@ -531,6 +532,16 @@ export async function clearACUCTeam(team_id: string): Promise<void> {
   await deleteKey(`acuc_team_${team_id}`);
 }
 
+function denied(
+  req,
+  reason: AuthDenialReason,
+  response: Extract<AuthResponse, { success: false }>,
+  key?: AuthCreditUsageChunk,
+): AuthResponse {
+  logAuthDenied(req, response.status, reason, key);
+  return response;
+}
+
 // Both prompts end the sentence after the URL with a space, so a copied link
 // never picks up the period.
 function keylessEndpointNotAvailableMessage(signupUrl: string): string {
@@ -585,7 +596,9 @@ async function handleKeylessAuth(
   // The keyless tier is off unless BOTH limits are configured (even to 0). When
   // unconfigured we behave exactly as before — a generic 401 — and don't reveal
   // that the tier exists.
-  if (!isKeylessConfigured()) return unauthorized;
+  if (!isKeylessConfigured()) {
+    return denied(req, "missing_credentials", unauthorized);
+  }
 
   // Configured, but this endpoint isn't part of the keyless tier: tell the user
   // they need a key (with the signup nudge) rather than a bare "Unauthorized".
@@ -604,12 +617,12 @@ async function handleKeylessAuth(
       401,
       signupRef,
     );
-    return {
+    return denied(req, "missing_credentials", {
       success: false,
       error: keylessEndpointNotAvailableMessage(url),
       status: 401,
       signupUrl: url,
-    };
+    });
   }
 
   const origin = req.body?.origin;
@@ -625,7 +638,9 @@ async function handleKeylessAuth(
   // Only a valid IPv4 identity gets keyless: IPv6 is too cheap to rotate for a
   // per-IP cap to mean anything, and malformed/forwarded values must not be
   // usable as arbitrary limiter buckets. Anything else falls through to 401.
-  if (!isKeylessIpEligible(ip)) return unauthorized;
+  if (!isKeylessIpEligible(ip)) {
+    return denied(req, "keyless_ip_ineligible", unauthorized);
+  }
 
   // Canonicalize `::ffff:`-mapped IPv4 so a client gets one Spur cache entry,
   // one quota bucket, and one team id regardless of how the socket reported it.
@@ -658,14 +673,14 @@ async function handleKeylessAuth(
       reason: "suspicious",
       ...(signupRef ? { signupRef } : {}),
     });
-    return {
+    return denied(req, "keyless_ip_suspicious", {
       success: false,
       error: keylessSuspiciousIpMessage(url),
       status: 403,
       // Tell agents where to find the key/signup flow they now need.
       agentAuthDiscovery: true,
       signupUrl: url,
-    };
+    });
   }
 
   const teamId = keylessTeamId(ip);
@@ -697,7 +712,7 @@ async function handleKeylessAuth(
       teamId,
       error,
     });
-    return unauthorized;
+    return denied(req, "keyless_limiter_unavailable", unauthorized);
   }
   const baseLog = {
     canonicalLog: "keyless/consume",
@@ -824,11 +839,11 @@ async function supaAuthenticateUser(
   }
   const token = authHeader.split(" ")[1]; // Extract the token from "Bearer <token>"
   if (!token) {
-    return {
+    return denied(req, "malformed_authorization", {
       success: false,
       error: "Unauthorized: Token missing",
       status: 401,
-    };
+    });
   }
 
   const incomingIP = (req.headers["x-preview-ip"] ||
@@ -871,11 +886,11 @@ async function supaAuthenticateUser(
       config.MCP_DELEGATED_CREDENTIAL_SECRET,
     );
     if (!delegation) {
-      return {
+      return denied(req, "invalid_mcp_credential", {
         success: false,
         error: "Unauthorized: Invalid token",
         status: 401,
-      };
+      });
     }
 
     const resolvedApi = parseApi(delegation.api_key);
@@ -887,11 +902,11 @@ async function supaAuthenticateUser(
       "hosted_mcp_oauth",
     );
     if (chunk === null) {
-      return {
+      return denied(req, "unknown_key", {
         success: false,
         error: "Unauthorized: Invalid token",
         status: 401,
-      };
+      });
     }
 
     teamId = chunk.team_id;
@@ -917,21 +932,21 @@ async function supaAuthenticateUser(
       throw error;
     }
     if (!introspection) {
-      return {
+      return denied(req, "invalid_oauth_token", {
         success: false,
         error: "Unauthorized: Invalid or expired OAuth token",
         status: 401,
-      };
+      });
     }
     if (
       introspection.credential_purpose !== undefined &&
       introspection.credential_purpose !== "general"
     ) {
-      return {
+      return denied(req, "oauth_purpose_mismatch", {
         success: false,
         error: "Unauthorized: Invalid token",
         status: 401,
-      };
+      });
     }
 
     // Use the resolved fc- API key to get the normal ACUC chunk
@@ -945,18 +960,23 @@ async function supaAuthenticateUser(
     );
 
     if (chunk === null) {
-      return {
+      return denied(req, "unknown_key", {
         success: false,
         error: "Unauthorized: Invalid token",
         status: 401,
-      };
+      });
     }
     if (chunk.team_id !== introspection.team_id) {
-      return {
-        success: false,
-        error: "Unauthorized: Invalid token",
-        status: 401,
-      };
+      return denied(
+        req,
+        "oauth_team_mismatch",
+        {
+          success: false,
+          error: "Unauthorized: Invalid token",
+          status: 401,
+        },
+        chunk,
+      );
     }
 
     teamId = chunk.team_id;
@@ -972,11 +992,11 @@ async function supaAuthenticateUser(
   } else {
     normalizedApi = parseApi(token);
     if (!normalizedApiIsUuid(normalizedApi)) {
-      return {
+      return denied(req, "malformed_key", {
         success: false,
         error: "Unauthorized: Invalid token",
         status: 401,
-      };
+      });
     }
 
     chunk = await getACUC(normalizedApi, false, true, RateLimiterMode.Scrape);
@@ -999,11 +1019,11 @@ async function supaAuthenticateUser(
     }
 
     if (chunk === null) {
-      return {
+      return denied(req, "unknown_key", {
         success: false,
         error: "Unauthorized: Invalid token",
         status: 401,
-      };
+      });
     }
 
     teamId = chunk.team_id;
@@ -1024,12 +1044,17 @@ async function supaAuthenticateUser(
   // and never reads that field, so bans went unenforced. auth_chunk_2 surfaces
   // teams.banned as is_banned and we deny it explicitly.
   if (chunk?.is_banned) {
-    return {
-      success: false,
-      error:
-        "Unauthorized: This account has been banned. Contact support@firecrawl.com if you believe this is a mistake.",
-      status: 403,
-    };
+    return denied(
+      req,
+      "team_banned",
+      {
+        success: false,
+        error:
+          "Unauthorized: This account has been banned. Contact support@firecrawl.com if you believe this is a mistake.",
+        status: 403,
+      },
+      chunk,
+    );
   }
 
   if (chunk?.flags?.ipRestriction) {
@@ -1039,11 +1064,12 @@ async function supaAuthenticateUser(
       chunk.flags,
     );
     if (!ipCheck.allowed) {
-      return {
-        success: false,
-        error: ipCheck.error,
-        status: ipCheck.status,
-      };
+      return denied(
+        req,
+        "ip_restricted",
+        { success: false, error: ipCheck.error, status: ipCheck.status },
+        chunk,
+      );
     }
   }
 
@@ -1056,11 +1082,16 @@ async function supaAuthenticateUser(
       chunk.flags,
     );
     if (!endpointCheck.allowed) {
-      return {
-        success: false,
-        error: endpointCheck.error,
-        status: endpointCheck.status,
-      };
+      return denied(
+        req,
+        "endpoint_restricted",
+        {
+          success: false,
+          error: endpointCheck.error,
+          status: endpointCheck.status,
+        },
+        chunk,
+      );
     }
   }
 
