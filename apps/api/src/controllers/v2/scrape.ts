@@ -625,6 +625,17 @@ export async function scrapeController(
             });
           }
 
+          if (e.code === "THIRD_PARTY_DATA_UNSUPPORTED_URL") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 400,
+            });
+            return res.status(400).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           const statusCode = timeoutErr ? 408 : 500;
           setSpanAttributes(span, {
             "scrape.status_code": statusCode,

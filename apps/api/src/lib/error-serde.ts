@@ -51,6 +51,7 @@ import { ThirdPartyDataTermsRequiredError } from "./exchange";
 const errorMap: Record<ErrorCodes, any> = {
   THIRD_PARTY_DATA_TERMS_REQUIRED: ThirdPartyDataTermsRequiredError,
   THIRD_PARTY_DATA_NOT_FOUND: ExchangeRefusedError,
+  THIRD_PARTY_DATA_UNSUPPORTED_URL: ExchangeRefusedError,
   THIRD_PARTY_DATA_NOT_ENABLED: ExchangeRefusedError,
   THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED: ExchangeRefusedError,
   SAFE_MODE_BLOCKED: null,
