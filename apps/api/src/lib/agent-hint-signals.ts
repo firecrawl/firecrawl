@@ -154,7 +154,7 @@ function addPageSignals(
   if (returned !== undefined && total !== undefined) {
     const maxPages = Math.min(total, PDF_MAX_PAGES_LIMIT);
     signals.set("document_max_pages", maxPages);
-    signals.set("document_pages_requestable", maxPages - returned);
+    signals.set("document_pages_requestable", Math.max(0, maxPages - returned));
   }
 }
 

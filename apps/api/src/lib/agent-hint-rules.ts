@@ -14,8 +14,9 @@ import type {
  *   skipped.
  * - `text` may contain `{signal}` placeholders. List signals also accept
  *   `{signal:first=N}` (first N items) and `{signal:remaining=N}` (count of
- *   items after the first N). Lists render joined with ", ". A rule whose text
- *   references an absent signal emits nothing.
+ *   items after the first N), with N at most 100. Lists render joined with
+ *   ", ". A rule whose text references an absent signal, or uses a modifier it
+ *   cannot apply, emits nothing.
  * - A condition on an absent signal holds only for `exists` with `false`.
  */
 export type AgentHintRuleScalar = string | number | boolean;
@@ -50,7 +51,7 @@ const MAX_LIST_ARGUMENT = 100;
 export const MAX_RULE_HINTS = 3;
 
 const SIGNAL_NAME = /^[a-z][a-z0-9_]*$/;
-const PLACEHOLDER = /\{([a-z][a-z0-9_]*)(?::(first|remaining)=(\d{1,3}))?\}/g;
+const PLACEHOLDER = /\{([a-z][a-z0-9_]*)(?::(first|remaining)=(\d+))?\}/g;
 
 function cleanString(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== "string") return undefined;

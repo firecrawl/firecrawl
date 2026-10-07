@@ -121,6 +121,18 @@ describe("agent hint signals", () => {
     });
   });
 
+  it("never reports a negative requestable page count", () => {
+    expect(
+      signalsFor({
+        endpoint: "scrape",
+        response: {
+          success: true,
+          data: { metadata: { numPages: 12, totalPages: 5 } },
+        },
+      }),
+    ).toMatchObject({ document_pages_requestable: 0 });
+  });
+
   it("summarises web results, excerpts and origins", () => {
     expect(
       signalsFor({

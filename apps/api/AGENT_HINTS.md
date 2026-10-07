@@ -90,7 +90,7 @@ Response (`200` only):
 }
 ```
 
-`rules` is optional; version 1 providers that return only `hints` keep working.
+`rules` is optional; providers that return only `hints` keep working. Requests carry `version: 2`, so a provider that rejects versions it does not know must accept version 2 before the API is upgraded; until then its lookups fail open (no provider hints or rules).
 
 - Any other status, a timeout, a network error, a body larger than 64 KiB, or a body without a `hints` array means no provider hints, cached for 30 seconds. Requests never fail because of the provider.
 - `ttl_seconds` defaults to 60 and is clamped to 0–600. Unknown fields are ignored.
@@ -106,9 +106,9 @@ A provider can return `rules` instead of finished text. The API evaluates them l
 - Rules are evaluated in order. A rule fires when every condition in `when` holds; an empty `when` always holds.
 - Conditions compare one signal to a value with `eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `in` (value is a list), or `exists` (value is a boolean). A condition on an absent signal holds only for `exists: false`. Comparison operators never match list signals, and `lt`/`lte`/`gt`/`gte` only match numbers.
 - Rules sharing a `group` are alternatives: the first rule in the group whose conditions hold is the group's rule, and the rest of the group is skipped. If that rule's text needs a signal that is absent, the group emits nothing.
-- `text` may contain `{signal}` placeholders. List signals render joined with `, `, and also accept `{signal:first=N}` (the first N items) and `{signal:remaining=N}` (the number of items after the first N). A rule whose text references an absent signal emits nothing. Text without a matching placeholder pattern, such as JSON `{"url": ...}`, is left as is.
+- `text` may contain `{signal}` placeholders. List signals render joined with `, `, and also accept `{signal:first=N}` (the first N items) and `{signal:remaining=N}` (the number of items after the first N), where N is at most 100. A rule whose text references an absent signal, uses a modifier on a non-list signal, or uses N above 100 emits nothing. Text without a matching placeholder pattern, such as JSON `{"url": ...}`, is left as is.
 - Rendered texts are deduplicated and capped at three, in rule order. They are evaluated for every response that reaches the hint middleware, including failure envelopes, so rules that only apply to successful responses should include `{ "signal": "success", "op": "eq", "value": true }`.
-- Each rule is validated on receipt: invalid ids, groups, text, or any malformed condition drop that rule as a whole. At most 32 rules, 16 conditions per rule and 32 values per `in` list are kept.
+- Each rule is validated on receipt: an invalid id, group or text, any malformed condition, more than 16 conditions, or an `in` list of more than 32 values drops that rule as a whole. Only the first 32 valid rules are kept.
 
 ### Signals
 
@@ -128,7 +128,7 @@ A provider can return `rules` instead of finished text. The API evaluates them l
 | `document_pages_returned`    | number      | `metadata.numPages` is a finite number.                                                                                             |
 | `document_pages_total`       | number      | `metadata.totalPages` is a finite number.                                                                                           |
 | `document_max_pages`         | number      | Both page counts are present: the total, capped at the PDF parser maximum of 10,000.                                                |
-| `document_pages_requestable` | number      | Both page counts are present: `document_max_pages` minus `document_pages_returned`.                                                 |
+| `document_pages_requestable` | number      | Both page counts are present: `document_max_pages` minus `document_pages_returned`, at least 0.                                     |
 | `result_count`               | number      | A web result collection (`data` array or `data.web`) is present.                                                                    |
 | `excerpt_count`              | number      | Web results are present: results with a string `url` and no `markdown`, `html` or `rawHtml`.                                        |
 | `excerpt_share`              | number      | At least one web result: `excerpt_count / result_count`.                                                                            |

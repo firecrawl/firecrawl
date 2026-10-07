@@ -169,6 +169,16 @@ describe("agent hint rule matcher", () => {
     ).toEqual(["0"]);
   });
 
+  it("emits nothing for list counts above the limit, however many digits", () => {
+    const list = signals({ items: ["#1"] });
+    for (const text of ["{items:first=101}", "{items:remaining=1000}"]) {
+      expect(evaluateAgentHintRules([rule("r", [], text)], list)).toEqual([]);
+    }
+    expect(
+      evaluateAgentHintRules([rule("r", [], "{items:first=100}")], list),
+    ).toEqual(["#1"]);
+  });
+
   it("emits nothing for modifiers on scalar signals", () => {
     expect(
       evaluateAgentHintRules([rule("r", [], "{n:first=2}")], signals({ n: 5 })),
