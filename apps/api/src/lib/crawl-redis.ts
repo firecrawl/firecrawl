@@ -229,6 +229,16 @@ export async function addCrawlJobs(
   }
 }
 
+// Sets KEYS[1] to ARGV[1] only if the stored value is missing or smaller,
+// then refreshes the TTL (ARGV[2], in seconds). Jobs can finish out of order,
+// so a plain SET could replace a newer finish time with an older one.
+const SET_IF_GREATER_SCRIPT = `local current = tonumber(redis.call("get", KEYS[1]))
+if current == nil or tonumber(ARGV[1]) > current then
+  redis.call("set", KEYS[1], ARGV[1])
+end
+redis.call("expire", KEYS[1], ARGV[2])
+return 1`;
+
 export async function addCrawlJobDone(
   id: string,
   job_id: string,
@@ -256,10 +266,11 @@ export async function addCrawlJobDone(
       // jobs_donez_ordered only holds successful jobs, so it cannot tell when
       // a crawl ended if its last jobs failed. Keep the finish time of the
       // latest job of any outcome for the crawl status completedAt.
-      pipeline.set(
+      pipeline.eval(
+        SET_IF_GREATER_SCRIPT,
+        1,
         "crawl:" + id + ":last_job_done_at",
         now,
-        "EX",
         24 * 60 * 60,
       );
 
@@ -452,6 +463,10 @@ export async function getLastDoneJobTimestamp(
 ): Promise<number | null> {
   await redisEvictConnection.expire(
     "crawl:" + id + ":jobs_donez_ordered",
+    24 * 60 * 60,
+  );
+  await redisEvictConnection.expire(
+    "crawl:" + id + ":last_job_done_at",
     24 * 60 * 60,
   );
   const [lastAny, lastSuccess] = await Promise.all([
