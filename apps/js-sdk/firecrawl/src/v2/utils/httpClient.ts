@@ -17,6 +17,8 @@ export interface HttpClientOptions {
 export interface RequestOptions {
   headers?: Record<string, string>;
   timeoutMs?: number;
+  /** Only for mutations with server-side replay protection. */
+  retryOnBadGateway?: boolean;
 }
 
 export class HttpClient {
@@ -60,6 +62,7 @@ export class HttpClient {
 
   private async request<T = any>(
     config: AxiosRequestConfig,
+    retryOnBadGateway = false,
   ): Promise<AxiosResponse<T>> {
     const version = getVersion();
     config.headers = {
@@ -68,6 +71,11 @@ export class HttpClient {
     if (config.url) config.url = pinToApiOrigin(this.apiUrl, config.url);
 
     let lastError: any;
+    // A 502 does not prove that the upstream rejected a mutation. Replaying a
+    // scrape, crawl, or batch POST may create a second billed job. Even an
+    // idempotency key cannot recover the original response from a 409 here.
+    const canRetry =
+      config.method?.toLowerCase() === "get" || retryOnBadGateway;
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
       try {
         const cfg: AxiosRequestConfig = { ...config };
@@ -102,7 +110,7 @@ export class HttpClient {
         }
 
         const res = await this.instance.request<T>(cfg);
-        if (res.status === 502 && attempt < this.maxRetries - 1) {
+        if (canRetry && res.status === 502 && attempt < this.maxRetries - 1) {
           await this.sleep(this.backoffFactor * Math.pow(2, attempt));
           continue;
         }
@@ -110,7 +118,7 @@ export class HttpClient {
       } catch (err: any) {
         lastError = err;
         const status = err?.response?.status;
-        if (status === 502 && attempt < this.maxRetries - 1) {
+        if (canRetry && status === 502 && attempt < this.maxRetries - 1) {
           await this.sleep(this.backoffFactor * Math.pow(2, attempt));
           continue;
         }
@@ -121,7 +129,7 @@ export class HttpClient {
   }
 
   private sleep(seconds: number): Promise<void> {
-    return new Promise(r => setTimeout(r, seconds * 1000));
+    return new Promise((r) => setTimeout(r, seconds * 1000));
   }
 
   post<T = any>(
@@ -129,13 +137,16 @@ export class HttpClient {
     body: Record<string, unknown>,
     options?: RequestOptions,
   ) {
-    return this.request<T>({
-      method: "post",
-      url: endpoint,
-      data: body,
-      headers: options?.headers,
-      timeout: options?.timeoutMs,
-    });
+    return this.request<T>(
+      {
+        method: "post",
+        url: endpoint,
+        data: body,
+        headers: options?.headers,
+        timeout: options?.timeoutMs,
+      },
+      options?.retryOnBadGateway,
+    );
   }
 
   postMultipart<T = any>(
@@ -143,13 +154,16 @@ export class HttpClient {
     formData: FormData,
     options?: RequestOptions,
   ) {
-    return this.request<T>({
-      method: "post",
-      url: endpoint,
-      data: formData,
-      headers: options?.headers,
-      timeout: options?.timeoutMs,
-    });
+    return this.request<T>(
+      {
+        method: "post",
+        url: endpoint,
+        data: formData,
+        headers: options?.headers,
+        timeout: options?.timeoutMs,
+      },
+      options?.retryOnBadGateway,
+    );
   }
 
   get<T = any>(endpoint: string, headers?: Record<string, string>) {
@@ -165,13 +179,16 @@ export class HttpClient {
     body: Record<string, unknown>,
     options?: RequestOptions,
   ) {
-    return this.request<T>({
-      method: "patch",
-      url: endpoint,
-      data: body,
-      headers: options?.headers,
-      timeout: options?.timeoutMs,
-    });
+    return this.request<T>(
+      {
+        method: "patch",
+        url: endpoint,
+        data: body,
+        headers: options?.headers,
+        timeout: options?.timeoutMs,
+      },
+      options?.retryOnBadGateway,
+    );
   }
 
   prepareHeaders(idempotencyKey?: string): Record<string, string> {

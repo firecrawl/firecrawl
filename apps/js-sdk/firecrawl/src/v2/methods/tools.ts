@@ -83,6 +83,8 @@ export async function scrapeAlexandria(
       headers: { "x-request-id": requestId },
       // Allow response delivery after the API's capped execution deadline.
       timeoutMs: Math.min(opts.timeout ?? 50000, 50000) + 30000,
+      // Alexandria deduplicates this x-request-id and replays its stored result.
+      retryOnBadGateway: true,
     });
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "alexandria");
