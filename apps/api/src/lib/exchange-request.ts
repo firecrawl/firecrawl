@@ -43,6 +43,7 @@ export function getExchangeAccessForRequestBody(input: {
     excludeTags: scrapeOptions.excludeTags ?? body.pageOptions?.excludeTags,
     zeroDataRetention: input.zeroDataRetention,
     lockdown: scrapeOptions.lockdown ?? body.lockdown,
+    redactPII: scrapeOptions.redactPII,
     flags: input.flags,
   });
 }

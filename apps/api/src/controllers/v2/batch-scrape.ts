@@ -50,7 +50,10 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
-import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
+import {
+  ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
+} from "../../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../../lib/exchange-request";
 import {
   AGENT_REQUEST_CREDITS_SHARDS,
@@ -181,9 +184,14 @@ export async function batchScrapeController(
     if (exchangeAccess.allowed) {
       return null;
     }
-    return exchangeAccess.termsRequired
-      ? new ThirdPartyDataTermsRequiredError(exchangeAccess.terms)
-      : new UnsupportedSiteError();
+    if (exchangeAccess.termsRequired) {
+      return new ThirdPartyDataTermsRequiredError(exchangeAccess.terms);
+    }
+    return exchangeAccess.unsupportedOption === undefined
+      ? new UnsupportedSiteError()
+      : new ThirdPartyDataUnsupportedOptionError(
+          exchangeAccess.unsupportedOption,
+        );
   };
 
   let urls: string[] = req.body.urls;
@@ -191,7 +199,10 @@ export async function batchScrapeController(
   let invalidURLs: string[] | undefined = undefined;
   const refusedURLs: {
     url: string;
-    error: UnsupportedSiteError | ThirdPartyDataTermsRequiredError;
+    error:
+      | UnsupportedSiteError
+      | ThirdPartyDataTermsRequiredError
+      | ThirdPartyDataUnsupportedOptionError;
   }[] = [];
 
   if (req.body.ignoreInvalidURLs) {
@@ -241,16 +252,25 @@ export async function batchScrapeController(
   );
 
   if (!req.body.ignoreInvalidURLs && refusedURLs.length > 0) {
-    // Unaccepted terms are the one refusal the caller can fix, so they win.
-    const termsRequired = refusedURLs
-      .map(x => x.error)
-      .find(error => error instanceof ThirdPartyDataTermsRequiredError);
-    return res.status(403).json(
-      termsRequired?.response() ?? {
-        success: false,
-        error: UNSUPPORTED_SITE_MESSAGE,
-      },
+    // Unaccepted terms and an unsupported option are the refusals the caller
+    // can fix, so they win over an unsupported site.
+    const errors = refusedURLs.map(x => x.error);
+    const termsRequired = errors.find(
+      error => error instanceof ThirdPartyDataTermsRequiredError,
     );
+    if (termsRequired) {
+      return res.status(403).json(termsRequired.response());
+    }
+    const unsupportedOption = errors.find(
+      error => error instanceof ThirdPartyDataUnsupportedOptionError,
+    );
+    if (unsupportedOption) {
+      return res.status(400).json(unsupportedOption.response());
+    }
+    return res.status(403).json({
+      success: false,
+      error: UNSUPPORTED_SITE_MESSAGE,
+    });
   }
 
   // Threat protection: reject/report blocked URLs at enqueue time so they
