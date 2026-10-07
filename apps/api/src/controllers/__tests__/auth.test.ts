@@ -1603,6 +1603,37 @@ describe("authenticateUser", () => {
       },
     );
 
+    it("redacts the admin secret from an admin route", async () => {
+      const originalBullAuthKey = config.BULL_AUTH_KEY;
+      config.BULL_AUTH_KEY = "bull-admin-secret";
+      try {
+        await authenticateUser(
+          {
+            method: "POST",
+            baseUrl: "",
+            path: "/admin/bull-admin-secret/crawl-monitor",
+            route: { path: "/admin/bull-admin-secret/crawl-monitor" },
+            headers: { authorization: `Bearer ${unknownKey}` },
+            socket: { remoteAddress: clientIp },
+          },
+          {},
+          RateLimiterMode.Crawl,
+        );
+      } finally {
+        config.BULL_AUTH_KEY = originalBullAuthKey;
+      }
+
+      expect(deniedLines()).toEqual([
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            reason: "unknown_key",
+            route: "/admin/:bullAuthKey/crawl-monitor",
+          }),
+        }),
+      ]);
+      expect(JSON.stringify(deniedLines())).not.toContain("bull-admin-secret");
+    });
+
     it("names the team and key id of a banned team's key", async () => {
       vi.mocked(authCreditUsageChunk).mockResolvedValue([
         {
