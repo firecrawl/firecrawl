@@ -357,14 +357,22 @@ export class SitemapError extends TransportableError {
 }
 
 export class CrawlDenialError extends TransportableError {
-  constructor(public reason: string) {
+  /** True when robots.txt caused the denial. */
+  public robots: boolean;
+
+  constructor(
+    public reason: string,
+    options: { robots?: boolean } = {},
+  ) {
     super("CRAWL_DENIAL", reason);
+    this.robots = options.robots ?? false;
   }
 
   serialize() {
     return {
       ...super.serialize(),
       reason: this.reason,
+      robots: this.robots,
     };
   }
 
@@ -372,7 +380,7 @@ export class CrawlDenialError extends TransportableError {
     _: ErrorCodes,
     data: ReturnType<typeof this.prototype.serialize> & { reason: string },
   ) {
-    const x = new CrawlDenialError(data.reason);
+    const x = new CrawlDenialError(data.reason, { robots: data.robots });
     x.stack = data.stack;
     return x;
   }

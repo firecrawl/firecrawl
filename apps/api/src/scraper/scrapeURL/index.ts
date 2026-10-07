@@ -1433,7 +1433,9 @@ export async function scrapeURL(
                   setSpanAttributes(span, {
                     "scrape.blocked_by_robots": true,
                   });
-                  throw new CrawlDenialError("URL blocked by robots.txt");
+                  throw new CrawlDenialError("URL blocked by robots.txt", {
+                    robots: true,
+                  });
                 }
               } catch (error) {
                 if (error instanceof CrawlDenialError) {

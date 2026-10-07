@@ -743,7 +743,7 @@ describe("Crawl tests", () => {
       // Check specifically for robots.txt warning
       if (results.warning && results.warning.includes("robots.txt")) {
         expect(results.warning).toContain("robots.txt");
-        expect(results.warning).toContain("/scrape endpoint");
+        expect(results.warning).toContain("robotsBlocked");
       }
     },
     10 * scrapeTimeout,

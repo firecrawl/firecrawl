@@ -29,7 +29,7 @@ vi.mock("../../../services/worker/nuq-router", () => ({
 }));
 
 vi.mock("../../../services/redis", () => ({
-  redisEvictConnection: { smembers: vi.fn().mockResolvedValue([]) },
+  redisEvictConnection: { scard: vi.fn().mockResolvedValue(0) },
 }));
 
 vi.mock("../../../lib/request-credits-store", () => ({
