@@ -2,33 +2,12 @@
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
     "low": true,
     "allowlist": [
-        // GHSA-v2v4-37r5-5v8g / GHSA-mwp4-54f8-5fhr / GHSA-rpw4-54j3-4h4q /
-        // GHSA-j6r3-76f7-8jcv / GHSA-h3mg-xc3c-68pw (ip-address):
-        // geoip-country@5.x requires ip-address@^6.4.0; ip-address 6.4.0 is the
-        // latest 6.x release (no patch exists in the 6.x line). A cross-major
-        // override to 10.x would break geoip-country's API surface. Our SSRF
-        // protection is handled by ipaddr.js, not ip-address, so the isLinkLocal()
-        // inaccuracy in ip-address is not reachable through security-sensitive paths.
-        // Do not override across majors without compatibility approval.
-        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
-        // Expires: 2026-12-29.
-        "GHSA-v2v4-37r5-5v8g",
-        "GHSA-mwp4-54f8-5fhr",
-        "GHSA-rpw4-54j3-4h4q",
-        "GHSA-j6r3-76f7-8jcv",
-        "GHSA-h3mg-xc3c-68pw",
         // GHSA-vfj7-8cjw-p6xm (braces):
         // Latest published braces is 3.0.3; advisory range is <=3.0.3 and
         // no 3.0.4+ exists on npm. Same-major knip 5.x still resolves
         // 3.0.3 via fast-glob/micromatch. Cannot override to a
         // non-existent version. Owner: team-engineering-reviewers.
         // Tracking: create internal ticket. Expires: 2026-10-17.
-        "GHSA-vfj7-8cjw-p6xm",
-        // GHSA-hp3w-g68c-fv3c (sprintf-js):
-        // Advisory asks for >=1.1.4; latest published sprintf-js is
-        // 1.1.3. Cannot override to a non-existent version.
-        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
-        // Expires: 2026-10-20.
-        "GHSA-hp3w-g68c-fv3c"
+        "GHSA-vfj7-8cjw-p6xm"
     ]
 }
