@@ -44,7 +44,8 @@ module Firecrawl
 
     # JSON format for extracting structured data from page content using a schema.
     #
-    # check_prompt_injection is deprecated: use ScrapeOptions#check_prompt_injection.
+    # check_prompt_injection is deprecated: use ScrapeOptions#check_prompt_injection
+    # or ParseOptions#check_prompt_injection.
     class JsonFormat
       attr_reader :schema, :prompt, :check_prompt_injection
 

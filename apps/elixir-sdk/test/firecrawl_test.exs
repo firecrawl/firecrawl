@@ -709,6 +709,41 @@ defmodule FirecrawlTest do
     refute Map.has_key?(body, "formats")
   end
 
+  test "batch scrape maps check_prompt_injection to checkPromptInjection" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body: Jason.encode!(%{"success" => true, "id" => "batch-id"})
+      )
+
+      {request, resp}
+    end
+
+    assert {:ok, %Req.Response{status: 200}} =
+             Firecrawl.scrape_and_extract_from_urls(
+               [urls: ["https://example.com"], check_prompt_injection: true],
+               api_key: "test-key",
+               adapter: adapter
+             )
+
+    assert_receive {:request, request}
+
+    body =
+      cond do
+        is_binary(request.body) -> Jason.decode!(request.body)
+        is_map(request.body) -> request.body
+        true -> request.options[:json]
+      end
+
+    assert body["checkPromptInjection"] == true
+    assert body["urls"] == ["https://example.com"]
+  end
+
   test "request endpoints map audit_metadata to auditMetadata" do
     parent = self()
 

@@ -37,6 +37,20 @@ it('serializes ParseOptions with JSON format', function (): void {
     expect($array['redactPII'])->toBeTrue();
 });
 
+it('serializes checkPromptInjection in ParseOptions', function (): void {
+    $options = ParseOptions::with(
+        formats: [JsonFormat::with(prompt: 'Extract')],
+        checkPromptInjection: true,
+    );
+
+    expect($options->getCheckPromptInjection())->toBeTrue();
+    expect($options->toArray())->toMatchArray([
+        'checkPromptInjection' => true,
+    ]);
+    expect(array_key_exists('checkPromptInjection', $options->toArray()['formats'][0]))->toBeFalse();
+    expect(array_key_exists('checkPromptInjection', ParseOptions::with()->toArray()))->toBeFalse();
+});
+
 it('rejects unsupported parse formats', function (): void {
     ParseOptions::with(formats: ['screenshot']);
 })->throws(FirecrawlException::class);

@@ -267,7 +267,7 @@ type WebhookConfig struct {
 type JsonOptions struct {
 	Prompt string                 `json:"prompt,omitempty"`
 	Schema map[string]interface{} `json:"schema,omitempty"`
-	// Deprecated: Use ScrapeOptions.CheckPromptInjection.
+	// Deprecated: Use ScrapeOptions.CheckPromptInjection or ParseOptions.CheckPromptInjection.
 	CheckPromptInjection *bool `json:"checkPromptInjection,omitempty"`
 }
 

@@ -9333,6 +9333,11 @@
             "description": "Enable ad and cookie popup blocking.",
             "default": true
           },
+          "checkPromptInjection": {
+            "type": "boolean",
+            "description": "When enabled, scans the parsed content for prompt injection attempts before any LLM-backed format (such as json, summary or question) runs. If an injection is detected, the request fails with a 403 and error code SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check runs. If the check cannot scan all of the content, the parse continues with a warning and the check is not billed.",
+            "default": false
+          },
           "redactPII": {
             "oneOf": [
               {

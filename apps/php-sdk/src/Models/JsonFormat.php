@@ -15,8 +15,7 @@ final class JsonFormat
 
     /**
      * @param array<string, mixed>|null $schema
-     * @param bool|null                 $checkPromptInjection Deprecated: use the top-level checkPromptInjection
-     *     option on ScrapeOptions instead.
+     * @param bool|null                 $checkPromptInjection {@deprecated Use the top-level checkPromptInjection option on ScrapeOptions instead.}
      */
     public static function with(
         ?string $prompt = null,

@@ -158,7 +158,7 @@ class FirecrawlClientTest {
                 .checkPromptInjection(true)
                 .build();
 
-        assertEquals(true, mapper.convertValue(options, Map.class).get("checkPromptInjection"));
+        assertEquals(Boolean.TRUE, mapper.convertValue(options, Map.class).get("checkPromptInjection"));
         assertTrue(options.toBuilder().build().getCheckPromptInjection());
         assertFalse(mapper.convertValue(ScrapeOptions.builder().build(), Map.class).containsKey("checkPromptInjection"));
     }
@@ -405,6 +405,19 @@ class FirecrawlClientTest {
                 .build();
 
         assertTrue(options.getRedactPII());
+    }
+
+    @Test
+    void testParseOptionsSerializesCheckPromptInjection() {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        ParseOptions options = ParseOptions.builder()
+                .formats(List.of("markdown"))
+                .checkPromptInjection(true)
+                .build();
+
+        assertEquals(Boolean.TRUE, mapper.convertValue(options, Map.class).get("checkPromptInjection"));
+        assertTrue(options.toBuilder().build().getCheckPromptInjection());
+        assertFalse(mapper.convertValue(ParseOptions.builder().build(), Map.class).containsKey("checkPromptInjection"));
     }
 
     // ================================================================
