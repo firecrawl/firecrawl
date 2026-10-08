@@ -530,6 +530,50 @@ describe("authenticateUser", () => {
     expect(consume).not.toHaveBeenCalled();
   });
 
+  it("returns the per-minute reset as retryAfterSeconds on a keyed 429", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(getValue).mockResolvedValue(null);
+    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+      {
+        api_key: "00000000-0000-4000-8000-000000000000",
+        api_key_id: 1,
+        team_id: "team-limited",
+        org_id: "org-1",
+        flags: null,
+      },
+    ]);
+    vi.mocked(redlock.using).mockImplementation(
+      async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+    );
+    vi.mocked(getAutumnRateLimiter).mockReturnValue({
+      consume: vi.fn().mockRejectedValue({
+        msBeforeNext: 41_200,
+        consumedPoints: 11,
+        remainingPoints: 0,
+      }),
+    } as never);
+
+    const auth = await authenticateUser(
+      {
+        headers: {
+          authorization: "Bearer 00000000-0000-4000-8000-000000000000",
+        },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth).toEqual(
+      expect.objectContaining({
+        success: false,
+        status: 429,
+        retryAfterSeconds: 42,
+        error: expect.stringContaining("retry after 42s"),
+      }),
+    );
+  });
+
   it("accepts a signed MCP delegation through the managed credential purpose without caching", async () => {
     config.USE_DB_AUTHENTICATION = true;
     config.MCP_DELEGATED_CREDENTIAL_SECRET = "mcp-delegation-secret";
