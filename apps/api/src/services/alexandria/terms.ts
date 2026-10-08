@@ -24,6 +24,7 @@ const requirementsSchema = z.object({
     z.object({
       provider: z.string(),
       required: z.boolean(),
+      exchangeRequired: z.boolean().optional(),
       terms: z
         .object({
           key: z.string(),
@@ -184,7 +185,7 @@ export async function acceptProviderTerms(input: {
       503,
       "Provider agreements are unavailable. Nothing was accepted.",
     );
-  if (!item.required || !item.terms)
+  if (!(item.required || item.exchangeRequired) || !item.terms)
     return refusal(400, `${provider} requires no agreement.`);
   if (item.terms.version !== version || item.terms.digest !== digest)
     return refusal(

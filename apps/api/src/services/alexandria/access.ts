@@ -77,7 +77,12 @@ export async function authorizeProviders(
       const revokedByOwner =
         access.status === "disabled" &&
         access.disabledReason === "revoked_by_organization_admin";
-      if (revokedByOwner && required && item.terms && orgId !== null) {
+      if (
+        revokedByOwner &&
+        (item.required || required) &&
+        item.terms &&
+        orgId !== null
+      ) {
         ledger ??= await acceptedProviders(teamId, orgId);
         const accepted = ledger.get(item.provider);
         if (

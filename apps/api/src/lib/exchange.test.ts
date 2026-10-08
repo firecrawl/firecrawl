@@ -737,6 +737,7 @@ describe("Exchange terms acceptance", () => {
               {
                 provider: "acme",
                 required: true,
+                exchangeRequired: false,
                 terms: { ...ACME_TERMS, digest: DIGEST },
               },
             ],
@@ -771,6 +772,16 @@ describe("Exchange terms acceptance", () => {
     config.FIRE_EXCHANGE_URL = originalConfig.FIRE_EXCHANGE_URL;
     config.USE_DB_AUTHENTICATION = originalConfig.USE_DB_AUTHENTICATION;
     clearExchangeProvidersForTest();
+  });
+
+  it("still gates universal scrape when Exchange acceptance is optional", async () => {
+    ledgerAnswers([]);
+    expect(
+      await getExchangeAccessForRequest({
+        ...PROFILE_REQUEST,
+        flags: { professionalProfileCompanyDataBeta: true },
+      }),
+    ).toMatchObject({ allowed: false, termsRequired: true, terms: ACME_TERMS });
   });
 
   it("routes when the terms were accepted on the Exchange ledger", async () => {

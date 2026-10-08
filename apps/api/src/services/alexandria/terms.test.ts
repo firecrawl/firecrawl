@@ -17,37 +17,43 @@ const input = {
 
 beforeEach(() => vi.resetAllMocks());
 
-it("records explicit acceptance when Exchange terms are optional but universal scrape requires them", async () => {
-  mocks.request
-    .mockResolvedValueOnce({
-      status: 200,
-      body: {
-        providers: [
-          {
-            provider: "shopify",
-            required: true,
-            exchangeRequired: false,
-            terms,
-          },
-        ],
-      },
-    })
-    .mockResolvedValueOnce({
-      status: 201,
-      body: { id: "event", occurred_at: "2026-10-08T12:00:00Z" },
-    });
-  expect((await acceptProviderTerms(input)).status).toBe(200);
-  expect(mocks.request).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      path: "/v1/provider-terms/events",
-      body: expect.objectContaining({
-        event_type: "accepted",
-        version: terms.version,
-        text_hash: terms.digest,
+it.each([
+  [true, false],
+  [false, true],
+])(
+  "records explicit acceptance with universal requirement %s and Exchange override %s",
+  async (required, exchangeRequired) => {
+    mocks.request
+      .mockResolvedValueOnce({
+        status: 200,
+        body: {
+          providers: [
+            {
+              provider: "shopify",
+              required,
+              exchangeRequired,
+              terms,
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        status: 201,
+        body: { id: "event", occurred_at: "2026-10-08T12:00:00Z" },
+      });
+    expect((await acceptProviderTerms(input)).status).toBe(200);
+    expect(mocks.request).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        path: "/v1/provider-terms/events",
+        body: expect.objectContaining({
+          event_type: "accepted",
+          version: terms.version,
+          text_hash: terms.digest,
+        }),
       }),
-    }),
-  );
-});
+    );
+  },
+);
 
 it("still rejects stale explicit acceptance when Exchange terms are optional", async () => {
   mocks.request.mockResolvedValueOnce({
