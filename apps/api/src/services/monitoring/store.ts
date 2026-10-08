@@ -15,7 +15,11 @@ import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { monitoringClaimDueMonitors } from "../../db/rpc";
 import { config } from "../../config";
-import { getPDFMaxPages, shouldParsePDF } from "../../controllers/v2/types";
+import {
+  getPDFMaxPages,
+  liftCheckPromptInjection,
+  shouldParsePDF,
+} from "../../controllers/v2/types";
 import { isXTwitterUrl } from "../../scraper/scrapeURL/engines/x-twitter/url";
 import {
   getNextMonitorRunAt,
@@ -88,18 +92,6 @@ function hasAnyFormatOfType(formats: unknown, types: string[]): boolean {
   return types.some(type => hasFormatOfType(formats, type));
 }
 
-function requestsPromptInjectionCheck(formats: unknown): boolean {
-  if (!Array.isArray(formats)) return false;
-  return formats.some(
-    format =>
-      !!format &&
-      typeof format === "object" &&
-      formatType(format) === "json" &&
-      "checkPromptInjection" in format &&
-      format.checkPromptInjection === true,
-  );
-}
-
 function requestsJsonChangeTracking(formats: unknown): boolean {
   if (!Array.isArray(formats)) return false;
   return formats.some(format => {
@@ -140,7 +132,7 @@ function estimateBaseCreditsPerPage(
 
   // The prompt injection guard bills +4 in calculateCreditsToBeBilled. The
   // estimate cannot know whether the guard ran, so it assumes it does.
-  if (requestsPromptInjectionCheck(formats)) {
+  if (liftCheckPromptInjection(options ?? {}).checkPromptInjection === true) {
     credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 

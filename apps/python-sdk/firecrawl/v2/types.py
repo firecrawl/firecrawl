@@ -698,6 +698,7 @@ class JsonFormat(Format):
     type: Literal["json"] = "json"
     prompt: Optional[str] = None
     schema: Optional[Any] = None
+    # Deprecated: use the top-level ScrapeOptions.check_prompt_injection.
     check_prompt_injection: Optional[bool] = None
 
 
@@ -919,6 +920,11 @@ class ScrapeOptions(BaseModel):
     min_age: Optional[int] = None
     store_in_cache: Optional[bool] = None
     lockdown: Optional[bool] = None
+    # Scans the page content for prompt injection before any LLM-backed format
+    # runs. A detection fails the scrape. Adds 4 credits when the check runs.
+    check_prompt_injection: Optional[bool] = Field(
+        default=None, alias="checkPromptInjection"
+    )
     redact_pii: Optional[Union[bool, RedactPIIOptions]] = Field(
         default=None, alias="redactPII"
     )

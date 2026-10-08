@@ -570,6 +570,7 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
         "max_age": "maxAge",
         "min_age": "minAge",
         "redact_pii": "redactPII",
+        "check_prompt_injection": "checkPromptInjection",
         "threat_protection": "threatProtection",
         "audit_metadata": "auditMetadata",
     }

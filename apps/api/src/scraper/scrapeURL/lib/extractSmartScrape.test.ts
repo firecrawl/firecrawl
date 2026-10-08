@@ -48,19 +48,18 @@ describe("extractData", () => {
   });
 
   describe("prompt injection guard", () => {
-    function run(ids: { scrapeId?: string; extractId?: string }) {
+    it("leaves the page itself to the scrape-level guard", async () => {
+      (checkForPromptInjection as Mock).mockClear();
       (generateCompletions as Mock).mockResolvedValueOnce({
         extract: { ok: true },
         warning: undefined,
         totalUsage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
       });
-      return extractData({
+
+      await extractData({
         extractOptions: {
           logger: noopLogger,
-          options: {
-            schema: { type: "object", properties: {} },
-            checkPromptInjection: true,
-          },
+          options: { schema: { type: "object", properties: {} } },
           markdown: "page",
           costTrackingOptions: {
             costTracking: new CostTracking(),
@@ -70,35 +69,12 @@ describe("extractData", () => {
         } as any,
         urls: ["https://example.com"],
         useAgent: false,
-        ...ids,
-        metadata: { teamId: "test-team", functionId: "performLLMExtract" },
-      });
-    }
-
-    beforeEach(() => {
-      (checkForPromptInjection as Mock).mockClear();
-    });
-
-    it("passes the scrape id to the guard for its span metadata", async () => {
-      await run({ scrapeId: "test-scrape" });
-
-      expect(checkForPromptInjection).toHaveBeenCalledTimes(1);
-      expect(
-        (checkForPromptInjection as Mock).mock.calls[0][0].metadata,
-      ).toEqual({
-        teamId: "test-team",
-        functionId: "performLLMExtract",
+        checkPromptInjection: true,
         scrapeId: "test-scrape",
-        extractId: undefined,
+        metadata: { teamId: "test-team" },
       });
-    });
 
-    it("passes the extract id to the guard for its span metadata", async () => {
-      await run({ extractId: "test-extract" });
-
-      expect(
-        (checkForPromptInjection as Mock).mock.calls[0][0].metadata,
-      ).toMatchObject({ teamId: "test-team", extractId: "test-extract" });
+      expect(checkForPromptInjection).not.toHaveBeenCalled();
     });
   });
 

@@ -664,7 +664,7 @@ export class PromptInjectionDetectedError extends TransportableError {
     super(
       "SCRAPE_PROMPT_INJECTION_DETECTED",
       message ??
-        "The scraped page content appears to contain a prompt injection attempt, so JSON extraction was aborted for safety.",
+        "The scraped page content appears to contain a prompt injection attempt, so the scrape was aborted for safety.",
     );
   }
 
