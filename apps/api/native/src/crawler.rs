@@ -717,7 +717,52 @@ pub async fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult> {
   res.map_err(|e| Error::new(Status::GenericFailure, format!("Filter URL error: {e}")))
 }
 
+/// Sitemaps nest a handful of levels; anything deeper is malformed.
+const MAX_SITEMAP_DEPTH: usize = 32;
+
+/// roxmltree recurses once per nesting level and overflows the stack on
+/// deeply nested input, which kills the whole process instead of erroring.
+fn exceeds_element_depth(xml: &str, limit: usize) -> bool {
+  let mut depth = 0usize;
+  let mut i = 0;
+  while let Some(offset) = xml[i..].find('<') {
+    i += offset;
+    let rest = &xml[i..];
+    let end_marker = if rest.starts_with("<!--") {
+      "-->"
+    } else if rest.starts_with("<![CDATA[") {
+      "]]>"
+    } else if rest.starts_with("<?") {
+      "?>"
+    } else {
+      ">"
+    };
+    let Some(end) = rest.find(end_marker) else {
+      return false;
+    };
+    let tag = &rest[..end];
+    if end_marker == ">" {
+      if tag.starts_with("</") {
+        depth = depth.saturating_sub(1);
+      } else if !tag.starts_with("<!") && !tag.ends_with('/') {
+        depth += 1;
+        if depth > limit {
+          return true;
+        }
+      }
+    }
+    i += end + end_marker.len();
+  }
+  false
+}
+
 fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, String> {
+  if exceeds_element_depth(xml_content, MAX_SITEMAP_DEPTH) {
+    return Err(format!(
+      "XML parsing error: elements nested deeper than {MAX_SITEMAP_DEPTH} levels"
+    ));
+  }
+
   let doc = roxmltree::Document::parse_with_options(
     xml_content,
     roxmltree::ParsingOptions {
@@ -1004,6 +1049,36 @@ mod tests {
 
     let result = _parse_sitemap_xml(xml_content);
     assert!(result.is_err());
+  }
+
+  #[test]
+  fn test_parse_sitemap_xml_deeply_nested_errors_instead_of_overflowing() {
+    let xml_content = format!(
+      r#"<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{}"#,
+      "<url><loc>https://example.com/page%3C%2Floc%3E".repeat(50_000)
+    );
+
+    let result = _parse_sitemap_xml(&xml_content);
+    assert!(result.unwrap_err().contains("nested deeper than"));
+  }
+
+  #[test]
+  fn test_parse_sitemap_xml_with_extensions_comments_and_cdata() {
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!-- generated <by> a plugin -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+  <url>
+    <loc><![CDATA[https://example.com/page1]]></loc>
+    <image:image><image:loc>https://example.com/a.png</image:loc></image:image>
+    <video:video><video:title>t</video:title><video:price currency="USD">1</video:price><video:live/></video:video>
+  </url>
+  <url><loc>https://example.com/page2</loc></url>
+</urlset>"#;
+
+    let urlset = _parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
+    assert_eq!(urlset.url.len(), 2);
+    assert_eq!(urlset.url[0].loc[0], "https://example.com/page1");
+    assert_eq!(urlset.url[1].loc[0], "https://example.com/page2");
   }
 
   #[test]
