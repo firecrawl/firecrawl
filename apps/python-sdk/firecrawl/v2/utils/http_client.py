@@ -50,12 +50,14 @@ class HttpClient:
 
         if self.api_key:
             headers['Authorization'] = f'Bearer {self.api_key}'
-        
+
         if idempotency_key:
             headers['x-idempotency-key'] = idempotency_key
-            
+
+        headers['User-Agent'] = f'FireCrawl/{version}'
+
         return headers
-    
+
     def post(
         self,
         endpoint: str,
@@ -66,8 +68,9 @@ class HttpClient:
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
         """Make a POST request with retry logic."""
-        if headers is None:
-            headers = self._prepare_headers()
+        request_headers = self._prepare_headers()
+        if headers:
+            request_headers.update(headers)
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -87,7 +90,7 @@ class HttpClient:
             try:
                 response = requests.post(
                     url,
-                    headers=headers,
+                    headers=request_headers,
                     json=payload,
                     timeout=timeout
                 )
@@ -158,7 +161,7 @@ class HttpClient:
                 time.sleep(backoff_factor * (2 ** attempt))
 
         raise last_exception or Exception("Unexpected error in multipart POST request")
-    
+
     def get(
         self,
         endpoint: str,
@@ -168,8 +171,9 @@ class HttpClient:
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
         """Make a GET request with retry logic."""
-        if headers is None:
-            headers = self._prepare_headers()
+        request_headers = self._prepare_headers()
+        if headers:
+            request_headers.update(headers)
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -186,7 +190,7 @@ class HttpClient:
             try:
                 response = requests.get(
                     url,
-                    headers=headers,
+                    headers=request_headers,
                     timeout=timeout
                 )
 
@@ -205,7 +209,7 @@ class HttpClient:
 
         # This should never be reached due to the exception handling above
         raise last_exception or Exception("Unexpected error in GET request")
-    
+
     def delete(
         self,
         endpoint: str,
@@ -215,8 +219,9 @@ class HttpClient:
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
         """Make a DELETE request with retry logic."""
-        if headers is None:
-            headers = self._prepare_headers()
+        request_headers = self._prepare_headers()
+        if headers:
+            request_headers.update(headers)
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -233,7 +238,7 @@ class HttpClient:
             try:
                 response = requests.delete(
                     url,
-                    headers=headers,
+                    headers=request_headers,
                     timeout=timeout
                 )
 
@@ -263,8 +268,9 @@ class HttpClient:
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
         """Make a PATCH request with retry logic."""
-        if headers is None:
-            headers = self._prepare_headers()
+        request_headers = self._prepare_headers()
+        if headers:
+            request_headers.update(headers)
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -284,7 +290,7 @@ class HttpClient:
                 response = requests.patch(
                     url,
                     json=payload,
-                    headers=headers,
+                    headers=request_headers,
                     timeout=timeout
                 )
                 if response.status_code == 502 and attempt < num_attempts - 1:
