@@ -16,8 +16,8 @@
     "build": "tsup",
     "build-and-publish": "pnpm run build && pnpm publish --access public",
     "publish-beta": "pnpm run build && pnpm publish --access public --tag beta",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --verbose src/__tests__/e2e/v2/*.test.ts --detectOpenHandles",
-    "test:unit": "NODE_OPTIONS=--experimental-vm-modules jest --verbose src/__tests__/unit"
+    "test": "vitest run --reporter=verbose src/__tests__/e2e/v2",
+    "test:unit": "vitest run --reporter=verbose src/__tests__/unit"
   },
   "repository": {
     "type": "git",
@@ -37,18 +37,14 @@
   },
   "homepage": "https://github.com/firecrawl/firecrawl#readme",
   "devDependencies": {
-    "@jest/globals": "^30.5.2",
     "@types/dotenv": "^8.2.0",
-    "@types/jest": "^30.0.0",
-    "@types/mocha": "^10.0.6",
     "@types/node": "^20.12.12",
     "@types/uuid": "^9.0.8",
     "dotenv": "^16.4.5",
-    "jest": "^30.5.2",
-    "ts-jest": "^29.4.14",
     "tsup": "^8.5.0",
     "typescript": "^5.4.5",
-    "uuid": "^14.0.0"
+    "uuid": "^14.0.0",
+    "vitest": "^4.1.11"
   },
   "keywords": [
     "firecrawl",

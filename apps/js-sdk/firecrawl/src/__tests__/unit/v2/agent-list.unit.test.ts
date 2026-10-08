@@ -1,4 +1,4 @@
-import { describe, expect, jest, test } from "@jest/globals";
+import { describe, expect, vi, test } from "vitest";
 import { listAgents } from "../../../v2/methods/agent";
 
 describe("v2.agent listAgents unit", () => {
@@ -17,7 +17,7 @@ describe("v2.agent listAgents unit", () => {
   };
 
   test("hits GET /v2/agent without query by default", async () => {
-    const get = jest.fn().mockResolvedValue({
+    const get = vi.fn().mockResolvedValue({
       status: 200,
       data: { success: true, agents: [sampleAgent] },
     });
@@ -33,7 +33,7 @@ describe("v2.agent listAgents unit", () => {
   });
 
   test("passes before as a query param", async () => {
-    const get = jest.fn().mockResolvedValue({
+    const get = vi.fn().mockResolvedValue({
       status: 200,
       data: {
         success: true,
@@ -51,7 +51,7 @@ describe("v2.agent listAgents unit", () => {
   });
 
   test("does not auto-paginate when next is present", async () => {
-    const get = jest.fn().mockResolvedValue({
+    const get = vi.fn().mockResolvedValue({
       status: 200,
       data: {
         success: true,

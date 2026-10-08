@@ -52,7 +52,7 @@ export const RETRY_BUDGET_MS = (MAX_ATTEMPTS - 1) * MAX_WAIT_MS;
  *
  * Every caller now passes its own timeout, sized to the work it waits for.
  * This value is only a backstop for a new caller that forgets one. Without a
- * bound the poll loop runs until the jest timeout, which hides the reason.
+ * bound the poll loop runs until the test timeout, which hides the reason.
  *
  * The value stays short because it cannot know the work. It fits the smallest
  * base any suite passes to testTimeoutMs, which is 60_000 ms:
@@ -69,7 +69,7 @@ export const RETRY_BUDGET_MS = (MAX_ATTEMPTS - 1) * MAX_WAIT_MS;
 export const DEFAULT_JOB_TIMEOUT_MS = 45_000;
 
 /**
- * Jest timeout for a test that calls a wrapped client.
+ * Vitest timeout for a test that calls a wrapped client.
  *
  * Pass the base: the time the test needs when the API answers at once. The
  * result adds one retry budget on top, so a test whose single call hits the

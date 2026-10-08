@@ -1,4 +1,4 @@
-import { describe, test, expect, jest } from "@jest/globals";
+import { describe, test, expect, vi } from "vitest";
 import { scrape } from "../../../v2/methods/scrape";
 import { startBatchScrape } from "../../../v2/methods/batch";
 import { startCrawl } from "../../../v2/methods/crawl";
@@ -10,10 +10,10 @@ import { startAgent } from "../../../v2/methods/agent";
 const auditMetadata = { username: "alice@example.com" };
 
 function makeHttp(data: Record<string, unknown>) {
-  const post = jest.fn(async () => ({ status: 200, data }));
+  const post = vi.fn(async () => ({ status: 200, data }));
   return {
     post,
-    prepareHeaders: jest.fn(() => undefined),
+    prepareHeaders: vi.fn(() => undefined),
   } as any;
 }
 

@@ -1,4 +1,4 @@
-import { describe, expect, jest, test } from "@jest/globals";
+import { describe, expect, vi, test } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import Firecrawl from "../../../index";
@@ -225,7 +225,7 @@ describe("e2e rate-limit retry helper", () => {
   });
 
   test("runs the call again after a rate-limit error", async () => {
-    const scrape = jest
+    const scrape = vi
       .fn<() => Promise<string>>()
       .mockRejectedValueOnce(rateLimitError(1))
       .mockResolvedValueOnce("ok");
@@ -236,7 +236,7 @@ describe("e2e rate-limit retry helper", () => {
   }, 30_000);
 
   test("stops after the attempt bound and surfaces the error", async () => {
-    const scrape = jest
+    const scrape = vi
       .fn<() => Promise<string>>()
       .mockRejectedValue(rateLimitError(1));
     const client = withRateLimitRetry({ scrape });
@@ -246,7 +246,7 @@ describe("e2e rate-limit retry helper", () => {
   }, 30_000);
 
   test("passes other errors through without waiting", async () => {
-    const scrape = jest
+    const scrape = vi
       .fn<() => Promise<string>>()
       .mockRejectedValue(new Error("invalid url"));
     const client = withRateLimitRetry({ scrape });
@@ -257,7 +257,7 @@ describe("e2e rate-limit retry helper", () => {
 
   test("never runs a composite method again after a rate-limit error", async () => {
     for (const name of COMPOSITE_METHODS) {
-      const method = jest.fn<AsyncCall>().mockRejectedValue(rateLimitError(1));
+      const method = vi.fn<AsyncCall>().mockRejectedValue(rateLimitError(1));
       const client = withRateLimitRetry<Record<string, AsyncCall>>({
         [name]: method,
       });
@@ -273,7 +273,7 @@ describe("e2e rate-limit retry helper", () => {
   });
 
   test("returns the result of a composite method that succeeds", async () => {
-    const crawl = jest.fn<AsyncCall>().mockResolvedValue("job");
+    const crawl = vi.fn<AsyncCall>().mockResolvedValue("job");
     const client = withRateLimitRetry({ crawl });
 
     await expect(client.crawl()).resolves.toBe("job");
@@ -335,7 +335,7 @@ describe("e2e rate-limit retry helper", () => {
   });
 
   test("waitForJob polls until the job reaches a terminal state", async () => {
-    const getStatus = jest
+    const getStatus = vi
       .fn<() => Promise<{ status: string }>>()
       .mockResolvedValueOnce({ status: "scraping" })
       .mockResolvedValueOnce({ status: "scraping" })
@@ -349,7 +349,7 @@ describe("e2e rate-limit retry helper", () => {
   }, 30_000);
 
   test("waitForJob gives up when the job outlives its timeout", async () => {
-    const getStatus = jest
+    const getStatus = vi
       .fn<() => Promise<{ status: string }>>()
       .mockResolvedValue({ status: "scraping" });
 
@@ -359,7 +359,7 @@ describe("e2e rate-limit retry helper", () => {
   }, 30_000);
 
   test("waitForJob bounds a caller that passes no timeout", async () => {
-    const getStatus = jest
+    const getStatus = vi
       .fn<() => Promise<{ status: string }>>()
       .mockResolvedValue({ status: "scraping" });
 
@@ -373,15 +373,15 @@ describe("e2e rate-limit retry helper", () => {
     );
 
     // Fake timers run the whole bound without waiting for it.
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const settled = expect(waitForJob(getStatus)).rejects.toThrow(
         new RegExp(`did not finish in ${DEFAULT_JOB_TIMEOUT_MS / 1000}s`),
       );
-      await jest.advanceTimersByTimeAsync(DEFAULT_JOB_TIMEOUT_MS + 5_000);
+      await vi.advanceTimersByTimeAsync(DEFAULT_JOB_TIMEOUT_MS + 5_000);
       await settled;
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
 
     expect(getStatus).toHaveBeenCalled();
@@ -430,8 +430,8 @@ describe("e2e rate-limit retry helper", () => {
   test("every wrapped call in a test fits its budget", () => {
     // Guard for the whole class of budget faults. A test spends the retry
     // budget once per wrapped call, not once in total, so the budget has to
-    // cover the sum. Otherwise jest fires first and hides the specific
-    // message this helper exists to surface.
+    // cover the sum. Otherwise the test timeout fires first and hides the
+    // specific message this helper exists to surface.
     const dir = path.resolve(process.cwd(), "src/__tests__/e2e/v2");
     const suites = readdirSync(dir).filter(name => name.endsWith(".test.ts"));
     expect(suites.length).toBeGreaterThan(0);
@@ -464,7 +464,7 @@ describe("e2e rate-limit retry helper", () => {
         if (calls === 0) continue;
 
         // A test that calls the wrapped client needs a budget of its own.
-        // Without one jest allows 5s, which any single wait outlasts.
+        // Without one Vitest allows 5s, which any single wait outlasts.
         const budgets = body.match(/testTimeoutMs\((\d[\d_]*)\)/g);
         expect(budgets).not.toBeNull();
 
@@ -492,7 +492,7 @@ describe("e2e rate-limit retry helper", () => {
   });
 
   test("leaves values that are not promises alone", () => {
-    const watcher = jest.fn(() => ({ kind: "crawl" }));
+    const watcher = vi.fn(() => ({ kind: "crawl" }));
     const client = withRateLimitRetry({ watcher, apiUrl: "https://example.com" });
 
     expect(client.watcher()).toEqual({ kind: "crawl" });

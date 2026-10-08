@@ -1,8 +1,7 @@
 import { vi } from "vitest";
 
 // vi.mock is hoisted; anything its factories reference must be created in
-// vi.hoisted() (also hoisted). Under Jest these worked because importing `jest`
-// from @jest/globals disables jest.mock hoisting.
+// vi.hoisted() (also hoisted).
 const {
   logger,
   values,

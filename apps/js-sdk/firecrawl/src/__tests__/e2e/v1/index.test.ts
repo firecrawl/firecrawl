@@ -1,7 +1,7 @@
 import FirecrawlApp, { type CrawlParams, type CrawlResponse, type CrawlStatusResponse, type MapResponse, type ScrapeResponse } from '../../../index';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 
 dotenv.config();
 

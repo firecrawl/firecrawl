@@ -1,6 +1,7 @@
 /**
  * Unit test: a search-target monitor request is forwarded intact to the API.
  */
+import { describe, test, expect } from "vitest";
 import { createMonitor } from "../../../v2/methods/monitor";
 import type { CreateMonitorRequest, MonitorSearchTarget } from "../../../v2/types";
 
