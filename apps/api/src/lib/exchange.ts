@@ -281,6 +281,15 @@ function providerMatchesUrl(
   });
 }
 
+/** Whether a catalog provider claims the URL, read from the cached catalog: false until it first loads. */
+export function exchangeClaimsUrl(inputUrl: string): boolean {
+  return (
+    cachedProviders?.value?.some(provider =>
+      providerMatchesUrl(provider, inputUrl),
+    ) ?? false
+  );
+}
+
 // Organizations kept on the direct FullEnrich path for LinkedIn, which predates
 // enrichment preferences: they skip the enrichment provider and resolve to the
 // next claimant in the catalog.
