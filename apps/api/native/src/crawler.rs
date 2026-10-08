@@ -728,32 +728,53 @@ fn exceeds_element_depth(xml: &str, limit: usize) -> bool {
   while let Some(offset) = xml[i..].find('<') {
     i += offset;
     let rest = &xml[i..];
-    let end_marker = if rest.starts_with("<!--") {
-      "-->"
+    let skip_to = if rest.starts_with("<!--") {
+      Some("-->")
     } else if rest.starts_with("<![CDATA[") {
-      "]]>"
+      Some("]]>")
     } else if rest.starts_with("<?") {
-      "?>"
+      Some("?>")
     } else {
-      ">"
+      None
     };
-    let Some(end) = rest.find(end_marker) else {
+    if let Some(marker) = skip_to {
+      let Some(end) = rest.find(marker) else {
+        return false;
+      };
+      i += end + marker.len();
+      continue;
+    }
+
+    let Some(end) = unquoted_tag_end(rest) else {
       return false;
     };
     let tag = &rest[..end];
-    if end_marker == ">" {
-      if tag.starts_with("</") {
-        depth = depth.saturating_sub(1);
-      } else if !tag.starts_with("<!") && !tag.ends_with('/') {
-        depth += 1;
-        if depth > limit {
-          return true;
-        }
+    if tag.starts_with("</") {
+      depth = depth.saturating_sub(1);
+    } else if !tag.starts_with("<!") && !tag.ends_with('/') {
+      depth += 1;
+      if depth > limit {
+        return true;
       }
     }
-    i += end + end_marker.len();
+    i += end + 1;
   }
   false
+}
+
+/// Index of the `>` closing the tag at the start of `tag`, ignoring any inside quoted attribute values.
+fn unquoted_tag_end(tag: &str) -> Option<usize> {
+  let mut quote = None;
+  for (i, b) in tag.bytes().enumerate() {
+    match quote {
+      Some(q) if b == q => quote = None,
+      Some(_) => {}
+      None if b == b'"' || b == b'\'' => quote = Some(b),
+      None if b == b'>' => return Some(i),
+      None => {}
+    }
+  }
+  None
 }
 
 fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, String> {
@@ -1056,6 +1077,17 @@ mod tests {
     let xml_content = format!(
       r#"<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{}"#,
       "<url><loc>https://example.com/page%3C%2Floc%3E".repeat(50_000)
+    );
+
+    let result = _parse_sitemap_xml(&xml_content);
+    assert!(result.unwrap_err().contains("nested deeper than"));
+  }
+
+  #[test]
+  fn test_parse_sitemap_xml_deeply_nested_with_quoted_gt_errors() {
+    let xml_content = format!(
+      r#"<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{}"#,
+      r#"<url data="x/>" other='y>'>"#.repeat(100_000)
     );
 
     let result = _parse_sitemap_xml(&xml_content);
