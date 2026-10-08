@@ -6,7 +6,7 @@ import { z } from "zod";
 import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
 import { testTimeoutMs, withRateLimitRetry } from "./utils/rateLimit";
-import { describe, test, expect, beforeAll } from "@jest/globals";
+import { describe, test, expect, beforeAll } from "vitest";
 
 config();
 

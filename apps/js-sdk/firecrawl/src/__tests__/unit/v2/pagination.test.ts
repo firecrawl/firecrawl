@@ -1,11 +1,11 @@
-import { describe, test, expect, jest } from "@jest/globals";
+import { describe, test, expect, vi, type Mock } from "vitest";
 import { getCrawlStatus } from "../../../v2/methods/crawl";
 import { getBatchScrapeStatus } from "../../../v2/methods/batch";
 import { getMonitorCheck } from "../../../v2/methods/monitor";
 
 describe("JS SDK v2 pagination", () => {
   function makeHttp(getImpl: (url: string) => any) {
-    return { get: jest.fn(async (u: string) => getImpl(u)) } as any;
+    return { get: vi.fn(async (u: string) => getImpl(u)) } as any;
   }
 
   test("crawl: autoPaginate=false returns next", async () => {
@@ -93,7 +93,7 @@ describe("JS SDK v2 pagination", () => {
       if (url.endsWith("n1")) return p1;
       return { status: 200, data: { success: true, next: null, data: [{ markdown: "c" }] } };
     });
-    const nowSpy = jest.spyOn(Date, "now");
+    const nowSpy = vi.spyOn(Date, "now");
     try {
       nowSpy
         .mockImplementationOnce(() => 0)   // started
@@ -101,7 +101,7 @@ describe("JS SDK v2 pagination", () => {
         .mockImplementationOnce(() => 3000); // second loop check > maxWaitTime
       const res = await getCrawlStatus(http, "jobC", { autoPaginate: true, maxWaitTime: 1 });
       expect(res.data.length).toBe(2); // initial + first page
-      expect((http.get as jest.Mock).mock.calls.length).toBe(2); // initial + n1 only
+      expect((http.get as Mock).mock.calls.length).toBe(2); // initial + n1 only
     } finally {
       nowSpy.mockRestore();
     }
@@ -115,7 +115,7 @@ describe("JS SDK v2 pagination", () => {
       if (url.endsWith("b1")) return p1;
       return { status: 200, data: { success: true, next: null, data: [{ markdown: "c" }] } };
     });
-    const nowSpy = jest.spyOn(Date, "now");
+    const nowSpy = vi.spyOn(Date, "now");
     try {
       nowSpy
         .mockImplementationOnce(() => 0)   // started
@@ -123,7 +123,7 @@ describe("JS SDK v2 pagination", () => {
         .mockImplementationOnce(() => 3000); // second loop check > maxWaitTime
       const res = await getBatchScrapeStatus(http, "jobB", { autoPaginate: true, maxWaitTime: 1 });
       expect(res.data.length).toBe(2);
-      expect((http.get as jest.Mock).mock.calls.length).toBe(2);
+      expect((http.get as Mock).mock.calls.length).toBe(2);
     } finally {
       nowSpy.mockRestore();
     }

@@ -1,9 +1,8 @@
 import { vi } from "vitest";
 
 // vi.mock is hoisted above the file's static imports, so any value a factory
-// reads at build time must be created in vi.hoisted(). (Jest left jest.mock
-// un-hoisted here because `jest` was imported from @jest/globals.) The `redis`
-// stub below stays module-level: its factory only captures it lazily.
+// reads at build time must be created in vi.hoisted(). The `redis` stub below
+// stays module-level: its factory only captures it lazily.
 const {
   logger,
   withAuth,

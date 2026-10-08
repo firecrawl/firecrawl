@@ -1,22 +1,13 @@
 allowBuilds:
-  # jest-haste-map watch-mode dependency; the prebuilt platform binary is used.
-  "@parcel/watcher": false
   esbuild: true
-  unrs-resolver: true
 overrides:
   "@isaacs/brace-expansion@<=5.0.0": ">=5.0.1"
   "minimatch@<10.2.3": ">=10.2.3"
   "rollup@<4.59.0": ">=4.59.0"
   "picomatch@<4.0.4": ">=4.0.4"
-  handlebars: ">=4.7.9"
   # GHSA-q2hr-2g5m-vwhr / GHSA-qhr7-859c-m2p7 / GHSA-6j4f-fj2g-mc7p:
   # pin the 5.x line only. Exact 5.0.12 cannot resolve to 6.x.
   "brace-expansion@>=5.0.0 <5.0.12": "5.0.12"
-  "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
-  "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
-  # GHSA-hp3w-g68c-fv3c: js-yaml 3 pulls argparse@1 and sprintf-js, which has
-  # no patched release. load-nyc-config only calls js-yaml's load().
-  "@istanbuljs/load-nyc-config>js-yaml": "4.3.2"
   # GHSA-vh66-26gq-q6x8 / GHSA-9fr6-4gfg-395g / GHSA-c29m-xwm3-cm6r /
   # GHSA-mghh-pgcx-3jjj / GHSA-x97p-jq2g-jp4f / GHSA-3pq3-5fj3-cg6v /
   # GHSA-542g-h47m-68v8 / GHSA-j8rh-479h-cp32 / GHSA-4hqw-qxg8-jxx2 /
@@ -25,6 +16,4 @@ overrides:
   "axios@>=1.0.0 <1.20.0": "1.20.0"
   "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0"
   "form-data@>=4.0.0 <4.0.6": "4.0.6"
-  "@babel/core@>=7.0.0 <7.29.6": "7.29.7"
   "esbuild@>=0.17.0 <0.28.1": "0.28.1"
-  "browserslist@<=4.28.6": ">=4.28.7 <5.0.0"

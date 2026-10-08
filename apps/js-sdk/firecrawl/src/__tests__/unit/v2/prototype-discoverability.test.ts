@@ -1,3 +1,4 @@
+import { describe, it, expect } from "vitest";
 import { Firecrawl, FirecrawlClient } from "../../../index";
 
 describe("V2 prototype discoverability", () => {

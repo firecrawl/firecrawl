@@ -1,4 +1,4 @@
-import { describe, expect, jest, test } from "@jest/globals";
+import { describe, expect, vi, test } from "vitest";
 import {
   startAgent,
   getAgentTrace,
@@ -8,7 +8,7 @@ import type { AgentTraceEvent } from "../../../v2/types";
 
 describe("v2.agent unit", () => {
   test("startAgent forwards effort in request payload", async () => {
-    const post = jest.fn().mockResolvedValue({
+    const post = vi.fn().mockResolvedValue({
       status: 200,
       data: { success: true, id: "agent-job" },
     });
@@ -25,7 +25,7 @@ describe("v2.agent unit", () => {
   });
 
   test("startAgent omits effort when unset", async () => {
-    const post = jest.fn().mockResolvedValue({
+    const post = vi.fn().mockResolvedValue({
       status: 200,
       data: { success: true, id: "agent-job" },
     });
@@ -70,7 +70,7 @@ describe("v2.agent unit", () => {
         change: "partial",
       },
     };
-    const get = jest.fn().mockResolvedValue({
+    const get = vi.fn().mockResolvedValue({
       status: 200,
       data: {
         success: true,
@@ -95,7 +95,7 @@ describe("v2.agent unit", () => {
   });
 
   test("getAgentTrace appends liveView query param when requested", async () => {
-    const get = jest.fn().mockResolvedValue({
+    const get = vi.fn().mockResolvedValue({
       status: 200,
       data: {
         success: true,
@@ -122,7 +122,7 @@ describe("v2.agent unit", () => {
   });
 
   test("getAgentSnapshot hits the snapshot endpoint", async () => {
-    const get = jest.fn().mockResolvedValue({
+    const get = vi.fn().mockResolvedValue({
       status: 200,
       data: {
         success: true,

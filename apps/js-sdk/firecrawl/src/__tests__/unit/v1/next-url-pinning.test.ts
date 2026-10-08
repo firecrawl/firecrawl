@@ -1,4 +1,4 @@
-import { describe, test, expect, jest, afterEach } from "@jest/globals";
+import { describe, test, expect, vi, afterEach } from "vitest";
 import axios from "axios";
 import FirecrawlApp from "../../../v1";
 
@@ -16,7 +16,7 @@ const origins: Array<[string, string]> = [
 
 function mockGet(respond: (url: URL) => unknown) {
   const sent: Array<{ url: string; authorization: unknown }> = [];
-  jest.spyOn(axios, "get").mockImplementation(async (url: string, config?: any) => {
+  vi.spyOn(axios, "get").mockImplementation(async (url: string, config?: any) => {
     sent.push({ url, authorization: config?.headers?.Authorization });
     return { status: 200, data: respond(new URL(url)) };
   });
@@ -45,7 +45,7 @@ const lastPage = () => ({ success: true, status: "completed", data: [{ markdown:
 
 describe("v1 pins next URLs to the api_url origin", () => {
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   describe.each(origins)("%s next", (_label, origin) => {

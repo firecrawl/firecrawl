@@ -1,4 +1,4 @@
-import { describe, test, expect, jest, beforeEach, afterEach } from "@jest/globals";
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import axios from "axios";
 import FirecrawlApp from "../../../v1";
 
@@ -20,11 +20,11 @@ describe("v1 methods work without params", () => {
   beforeEach(() => {
     app = new FirecrawlApp({ apiKey: "fc-test", apiUrl: API_URL });
     posts = [];
-    jest.spyOn(axios, "post").mockImplementation(async (url: string, data?: any) => {
+    vi.spyOn(axios, "post").mockImplementation(async (url: string, data?: any) => {
       posts.push({ url, data });
       return { status: 200, data: { success: true, id: "job-1", data: [], links: [] } };
     });
-    jest.spyOn(axios, "get").mockImplementation(async () => ({
+    vi.spyOn(axios, "get").mockImplementation(async () => ({
       status: 200,
       data: { success: true, status: "completed", data: [{ markdown: "ok" }] },
     }));
@@ -32,7 +32,7 @@ describe("v1 methods work without params", () => {
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     (globalThis as any).WebSocket = originalWebSocket;
   });
 

@@ -1,10 +1,10 @@
-import { describe, expect, jest, test } from "@jest/globals";
+import { describe, expect, vi, test } from "vitest";
 import { startExtract } from "../../../v2/methods/extract";
 import type { WebhookConfig } from "../../../v2/types";
 
 describe("v2.extract unit", () => {
   test("omits discovery options from extract without mutating shared options", async () => {
-    const post = jest
+    const post = vi
       .fn()
       .mockResolvedValue({ status: 200, data: { id: "extract-job" } });
     const scrapeOptions = {
@@ -27,7 +27,7 @@ describe("v2.extract unit", () => {
     });
   });
   test("startExtract forwards string webhook in request payload", async () => {
-    const post = jest.fn().mockResolvedValue({
+    const post = vi.fn().mockResolvedValue({
       status: 200,
       data: { id: "extract-job" },
     });
@@ -46,7 +46,7 @@ describe("v2.extract unit", () => {
   });
 
   test("startExtract forwards object webhook in request payload", async () => {
-    const post = jest.fn().mockResolvedValue({
+    const post = vi.fn().mockResolvedValue({
       status: 200,
       data: { id: "extract-job" },
     });

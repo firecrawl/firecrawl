@@ -1,4 +1,4 @@
-import { describe, test, expect } from "@jest/globals";
+import { describe, test, expect } from "vitest";
 import axios, { type AxiosAdapter } from "axios";
 import { FirecrawlClient } from "../../../v2/client";
 import { HttpClient } from "../../../v2/utils/httpClient";

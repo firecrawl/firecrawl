@@ -1,12 +1,12 @@
-import { jest } from "@jest/globals";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { search } from "../../../v2/methods/search";
 
 const fakeHttp = {
-  post: jest.fn(),
+  post: vi.fn(),
 } as any;
 
 describe("SearchData .data helpful error", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => vi.clearAllMocks());
 
   it("throws with available sources when .data is accessed", async () => {
     fakeHttp.post.mockResolvedValue({

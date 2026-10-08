@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { Firecrawl, FirecrawlClient, type FirecrawlClientOptions } from '../../../index';
 
 describe('Firecrawl v2 Client Options', () => {

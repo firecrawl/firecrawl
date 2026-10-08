@@ -1,4 +1,4 @@
-import { describe, expect, jest, test } from "@jest/globals";
+import { describe, expect, vi, test } from "vitest";
 import { FirecrawlClient } from "../../../v2/client";
 
 const response = {
@@ -30,7 +30,7 @@ describe("govSearch", () => {
     [undefined, { query: "food labeling requirements" }],
   ])("posts %p and returns web results", async (options, body) => {
     const http = {
-      post: jest.fn(async () => ({ status: 200, data: response })),
+      post: vi.fn(async () => ({ status: 200, data: response })),
     } as any;
 
     const result = await clientWith(http).govSearch(
@@ -43,7 +43,7 @@ describe("govSearch", () => {
   });
 
   test("rejects an empty query", async () => {
-    const http = { post: jest.fn() } as any;
+    const http = { post: vi.fn() } as any;
 
     await expect(clientWith(http).govSearch("  ")).rejects.toThrow(
       "query cannot be empty",
@@ -53,7 +53,7 @@ describe("govSearch", () => {
 
   test("throws on an unsuccessful response body", async () => {
     const http = {
-      post: jest.fn(async () => ({
+      post: vi.fn(async () => ({
         status: 200,
         data: { success: false, error: "Search failed" },
       })),

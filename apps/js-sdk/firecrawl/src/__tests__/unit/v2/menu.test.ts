@@ -1,9 +1,9 @@
-import { describe, test, expect, jest } from "@jest/globals";
+import { describe, test, expect, vi } from "vitest";
 import { scrape } from "../../../v2/methods/scrape";
 
 describe("JS SDK v2 menu format", () => {
   function makeHttp(postImpl: (url: string, data: any) => any) {
-    return { post: jest.fn(async (u: string, d: any) => postImpl(u, d)) } as any;
+    return { post: vi.fn(async (u: string, d: any) => postImpl(u, d)) } as any;
   }
 
   test("scrape with menu format returns menu data", async () => {
