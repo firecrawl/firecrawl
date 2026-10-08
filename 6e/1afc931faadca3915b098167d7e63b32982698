@@ -1,0 +1,23 @@
+apps/api/src/__tests__/lib/branding/jev-shadow.test.ts
+  s_3002048a2ce37a::t_9b211f2d7faee3 249,259-262,311-342
+apps/api/src/lib/branding/jev.ts
+  s_3002048a2ce37a::t_37269b9a54f096 812-820,839-847
+apps/api/src/lib/branding/jev-shadow.ts
+  s_3002048a2ce37a::t_37269b9a54f096 47-52,55,57-61,65-69,116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6e1afc931faadca3915b098167d7e63b32982698",
+  "prompts": {},
+  "sessions": {
+    "s_3002048a2ce37a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fabc48ca-b328-4b9d-9e17-ee599b54f859",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

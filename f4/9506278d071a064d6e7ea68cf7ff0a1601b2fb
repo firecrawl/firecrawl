@@ -1,0 +1,37 @@
+apps/api/src/scraper/scrapeURL/transformers/generateCompletions.test.ts
+  s_6d36f817c1bff1::t_c9478106ad09e6 214-243
+apps/api/src/services/monitoring/diff-orchestrator.ts
+  s_6d36f817c1bff1::t_1d78c2e8e6e775 270-272
+apps/api/src/services/monitoring/search/tuning.ts
+  s_6d36f817c1bff1::t_86d9f26296aa04 14-32
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.test.ts
+  s_6d36f817c1bff1::t_c9478106ad09e6 16,357-441
+  s_6d36f817c1bff1::t_4a94f898491e18 442-443
+apps/api/src/services/monitoring/judgeChange.telemetry.test.ts
+  s_6d36f817c1bff1::t_a2858657580d48 131-133
+  s_6d36f817c1bff1::t_3c2e1d96e0b07f 1-130,134-271
+apps/api/src/services/monitoring/judgeChange.ts
+  s_6d36f817c1bff1::t_83df66cf60fe5f 3-4,8,89,91-93,131-143,148,164-169,188-196,225-229
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_6d36f817c1bff1::t_e7b78e6b6109c7 396-397,410,1032-1033,1053,1055,1068
+apps/api/src/scraper/scrapeURL/index.ts
+  s_6d36f817c1bff1::t_e7b78e6b6109c7 639-643
+apps/api/src/services/monitoring/runner.ts
+  s_6d36f817c1bff1::t_c14eac8b1051bb 75,279,327-335,875
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f49506278d071a064d6e7ea68cf7ff0a1601b2fb",
+  "prompts": {},
+  "sessions": {
+    "s_6d36f817c1bff1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19b49371-f886-4f4e-bd30-985c630843e3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
