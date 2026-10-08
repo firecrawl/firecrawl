@@ -1,0 +1,19 @@
+.github/workflows/test-server.yml
+  s_573633f82a2a35::t_70f9c6aca1724a 221-231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7eac9b05084e674d677bf043933c02ffb18cc1bb",
+  "prompts": {},
+  "sessions": {
+    "s_573633f82a2a35": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11c82-3971-7200-b328-f2ad51c16344",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
