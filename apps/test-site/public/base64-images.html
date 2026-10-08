@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Base64 images</title>
+  </head>
+  <body>
+    <main>
+      <table>
+        <tr>
+          <th>Feature</th>
+          <th>Pro</th>
+          <th>Team</th>
+        </tr>
+        <!-- A non-base64 SVG followed by a base64 image on the same line. -->
+        <tr>
+          <td>SSO</td>
+          <td><img alt="no" src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E" /> No</td>
+          <td><img alt="yes" src="data:image/png;base64,iVBORw0KGgo=" /> Yes</td>
+        </tr>
+      </table>
+      <!-- Kept on one line so the markdown converters keep both images on one line. -->
+      <p><img alt="icon" src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E" /> Price: 42 dollars, in stock. <img alt="logo" src="data:image/png;base64,iVBORw0KGgo=" /></p>
+      <!-- An unclosed data:image in inline code must not match a base64 image on a later line. -->
+      <p>Embed an icon with <code>![badge](data:image/svg+xml,%3Csvg%2F%3E</code> in your README.</p>
+      <p>This line must survive.</p>
+      <p><img alt="banner" src="data:image/png;base64,iVBORw0KGgo=" /></p>
+    </main>
+  </body>
+</html>
