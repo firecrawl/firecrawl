@@ -21,6 +21,7 @@ Check example.py for other usage examples.
 from pathlib import Path
 from typing import Any, Dict, Optional, List, Union, BinaryIO
 import logging
+import os
 
 
 from .v1 import V1FirecrawlApp, AsyncV1FirecrawlApp
@@ -268,7 +269,13 @@ class Firecrawl:
         self.api_url = api_url
 
         # Initialize version-specific clients
-        self._v1_client = V1FirecrawlApp(api_key=api_key, api_url=api_url) if V1FirecrawlApp else None
+        self._v1_client = (
+            V1FirecrawlApp(api_key=api_key, api_url=api_url)
+            if V1FirecrawlApp and (
+                api_key or os.getenv("FIRECRAWL_API_KEY") or "api.firecrawl.dev" not in api_url
+            )
+            else None
+        )
         self._v2_client = V2FirecrawlClient(
             api_key=api_key,
             api_url=api_url,
