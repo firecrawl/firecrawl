@@ -105,6 +105,13 @@ def test_unified_keyless_gov_search_omits_authorization(monkeypatch):
     assert kwargs["json"]["k"] == 5
 
 
+def test_unified_keyless_null_api_url_uses_configuration_validation(monkeypatch):
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="api_url"):
+        Firecrawl(api_url=None)
+
+
 @pytest.mark.parametrize("key_source", ["explicit", "environment", "self_hosted"])
 def test_unified_gov_client_preserves_legacy_access(monkeypatch, key_source):
     monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)

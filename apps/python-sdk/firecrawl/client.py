@@ -272,7 +272,9 @@ class Firecrawl:
         self._v1_client = (
             V1FirecrawlApp(api_key=api_key, api_url=api_url)
             if V1FirecrawlApp and (
-                api_key or os.getenv("FIRECRAWL_API_KEY") or "api.firecrawl.dev" not in api_url
+                api_key
+                or os.getenv("FIRECRAWL_API_KEY")
+                or (api_url and "api.firecrawl.dev" not in api_url)
             )
             else None
         )
