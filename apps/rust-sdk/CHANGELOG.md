@@ -1,5 +1,23 @@
 ## CHANGELOG
 
+## [2.21.5] - 2026-10-07
+
+### Added
+
+- `DocumentMetadata::provider` (`ScrapeProvider`) reports the third-party
+  provider that served an Exchange scrape: its `id`, the access price in
+  `credits_cost`, and every provider tried in `steps` (`ScrapeProviderStep`).
+  It is `None` for any other scrape.
+
+## [2.21.4] - 2026-10-07
+
+### Fixed
+
+- `scrape_alexandria` now waits for the API's full execution deadline. The
+  execution timeout defaults to and is capped at 120 s, the same as the API,
+  plus a 30 s margin for response delivery (150 s when no `timeout` is given).
+  Before, it used no timeout by default, or the caller's `timeout` plus 5 s.
+
 ## [2.21.3] - 2026-10-06
 
 ### Added

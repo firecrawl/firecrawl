@@ -11,7 +11,7 @@ A powerful web information extraction tool that combines Google's Gemini 2.5 Pro
 
 ## Prerequisites
 
-- Python 3.8 or higher
+- Python 3.10 or higher
 - Google API Key (Gemini)
 - Firecrawl API Key
 - SerpAPI Key

@@ -1,5 +1,9 @@
 import type { TeamFlags } from "../../../controllers/v1/types";
 import {
+  clearExchangeProvidersForTest,
+  setExchangeProvidersForTest,
+} from "../../../lib/exchange";
+import {
   hasOrgScopedBlocklist,
   initializeBlocklist,
   isUrlBlocked,
@@ -165,6 +169,47 @@ describe("isUrlBlocked", () => {
       ];
       await initializeBlocklist();
       expect(hasOrgScopedBlocklist(ORG_B)).toBe(false);
+    });
+  });
+
+  describe("allowed keywords on URLs the Exchange claims", () => {
+    beforeAll(async () => {
+      dbState.rows = [
+        {
+          org_id: null,
+          data: {
+            blocklist: ["example.com"],
+            allowedKeywords: ["about", "press"],
+          },
+        },
+      ];
+      await initializeBlocklist();
+      setExchangeProvidersForTest([
+        {
+          id: "acme",
+          routes: [
+            { domains: ["example.com"], pathPrefixes: ["/company/", "/in/"] },
+          ],
+        },
+      ]);
+    });
+
+    afterAll(() => {
+      clearExchangeProvidersForTest();
+    });
+
+    it("keeps blocking a claimed URL that contains an allowed keyword", () => {
+      expect(
+        isUrlBlocked("https://example.com/company/example-co/about/", null),
+      ).toBe(true);
+      expect(isUrlBlocked("https://example.com/in/example-presser", null)).toBe(
+        true,
+      );
+    });
+
+    it("still exempts unclaimed URLs that contain an allowed keyword", () => {
+      expect(isUrlBlocked("https://example.com/about", null)).toBe(false);
+      expect(isUrlBlocked("https://example.com/press/2026", null)).toBe(false);
     });
   });
 

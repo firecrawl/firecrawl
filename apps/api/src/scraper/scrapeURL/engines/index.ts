@@ -46,6 +46,7 @@ import { hasCustomRequestContext } from "../lib/request-context";
 import {
   getExchangeAccessForRequest,
   ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
   type ExchangeScrapeMetadata,
 } from "../../../lib/exchange";
 
@@ -709,6 +710,7 @@ export async function buildFallbackList(meta: Meta): Promise<
       excludeTags: meta.options.excludeTags,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       lockdown: meta.options.lockdown,
+      redactPII: meta.options.redactPII,
       flags: meta.internalOptions.teamFlags ?? null,
     });
     if (exchangeAccess.allowed) {
@@ -721,14 +723,19 @@ export async function buildFallbackList(meta: Meta): Promise<
       ];
     }
 
-    // A blocked URL can only have been admitted by scrapeBlocklistMiddleware
-    // for the Exchange; if the Exchange can no longer serve it (catalog
+    // A blocked URL can only have been admitted (by scrapeBlocklistMiddleware
+    // or batch scrape) for the Exchange; if it can no longer serve it (catalog
     // changed, service down), fail closed rather than letting normal engines
     // scrape a blocklisted site. Unblocked URLs whose provider wants
-    // unaccepted terms fall through and scrape normally.
+    // unaccepted terms or rejects an option fall through and scrape normally.
     if (blocked) {
       if (exchangeAccess.termsRequired) {
         throw new ThirdPartyDataTermsRequiredError(exchangeAccess.terms);
+      }
+      if (exchangeAccess.unsupportedOption !== undefined) {
+        throw new ThirdPartyDataUnsupportedOptionError(
+          exchangeAccess.unsupportedOption,
+        );
       }
       return [];
     }

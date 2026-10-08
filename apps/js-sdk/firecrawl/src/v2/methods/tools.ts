@@ -14,6 +14,10 @@ import {
 } from "../utils/errorHandler";
 
 const ALEXANDRIA_MAX_CALLS = 10;
+// Matches the API's default and maximum execution timeout for Alexandria calls.
+const ALEXANDRIA_MAX_TIMEOUT_MS = 120_000;
+// Extra time for the API to deliver a response after its execution deadline.
+const ALEXANDRIA_RESPONSE_MARGIN_MS = 30_000;
 
 function prepareAlexandriaPayload(
   calls: AlexandriaCall[],
@@ -82,7 +86,11 @@ export async function scrapeAlexandria(
     }>("/v2/scrape", payload, {
       headers: { "x-request-id": requestId },
       // Allow response delivery after the API's capped execution deadline.
-      timeoutMs: Math.min(opts.timeout ?? 50000, 50000) + 30000,
+      timeoutMs:
+        Math.min(
+          opts.timeout ?? ALEXANDRIA_MAX_TIMEOUT_MS,
+          ALEXANDRIA_MAX_TIMEOUT_MS,
+        ) + ALEXANDRIA_RESPONSE_MARGIN_MS,
     });
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "alexandria");

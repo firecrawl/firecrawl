@@ -372,13 +372,19 @@ def cancel_crawl(client: HttpClient, job_id: str) -> bool:
         job_id: ID of the crawl job to cancel
         
     Returns:
-        bool: True if the crawl was cancelled, False otherwise
+        bool: True if the crawl was cancelled. False if the crawl was not
+        cancelled, for example because it already completed (HTTP 409).
         
     Raises:
-        Exception: If the cancellation fails
+        FirecrawlError: If the API returns any other error status
+        requests.RequestException: If the request fails before a response arrives
     """
     response = client.delete(f"/v2/crawl/{job_id}")
     
+    if response.status_code == 409:
+        # The crawl already completed, so there is nothing to cancel.
+        return False
+
     if not response.ok:
         handle_response_error(response, "cancel crawl")
     

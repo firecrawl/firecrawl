@@ -5,6 +5,13 @@ All notable changes to the Firecrawl PHP SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.3] - 2026-10-06
+
+### Fixed
+- `FirecrawlException` raised for HTTP 200 responses with `success: false`
+  (e.g. `SCRAPE_DNS_RESOLUTION_ERROR`) now carries the API error code and a
+  200 status code.
+
 ## [1.16.2] - 2026-10-06
 
 ### Added

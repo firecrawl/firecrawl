@@ -28,7 +28,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.26"
           cache-dependency-path: apps/go-html-to-md-service/go.sum
 
       - name: Build

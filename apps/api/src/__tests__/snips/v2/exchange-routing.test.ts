@@ -178,12 +178,9 @@ describe("Exchange routing", () => {
     });
 
     it("blocks a blocked URL the Exchange cannot serve", async () => {
+      exchange.setExchangeProvidersForTest([]);
       const result = await runGate(
-        {
-          url: BLOCKED_URL,
-          formats: ["markdown"],
-          actions: [{ type: "wait", milliseconds: 1000 }],
-        },
+        { url: BLOCKED_URL, formats: ["markdown"] },
         ACCEPTED_FLAGS,
       );
 
@@ -192,6 +189,52 @@ describe("Exchange routing", () => {
         body: { success: false },
       });
       expect((result as any).body.code).toBeUndefined();
+    });
+
+    it.each([
+      {
+        options: { formats: ["markdown", "screenshot"] },
+        option: "the `screenshot` format",
+      },
+      {
+        options: { actions: [{ type: "wait", milliseconds: 1000 }] },
+        option: "`actions`",
+      },
+      { options: { zeroDataRetention: true }, option: "zero data retention" },
+      { options: { redactPII: true }, option: "`redactPII`" },
+    ])(
+      "names $option when it keeps the provider out of a blocked URL",
+      async ({ options, option }) => {
+        const result = await runGate(
+          { url: BLOCKED_URL, formats: ["markdown"], ...options },
+          ACCEPTED_FLAGS,
+        );
+
+        expect(result).toEqual({
+          status: 400,
+          body: new exchange.ThirdPartyDataUnsupportedOptionError(
+            option,
+          ).response(),
+        });
+        expect((result as any).body.code).toBe(
+          "THIRD_PARTY_DATA_UNSUPPORTED_OPTION",
+        );
+        expect((result as any).body.error).toContain(option);
+        expect((result as any).body.error).not.toContain("contact-sales");
+      },
+    );
+
+    it("lets a blocked URL through with formats the provider serves and redactPII off", async () => {
+      await expect(
+        runGate(
+          {
+            url: BLOCKED_URL,
+            formats: ["markdown", { type: "json", prompt: "Extract the name" }],
+            redactPII: false,
+          },
+          ACCEPTED_FLAGS,
+        ),
+      ).resolves.toEqual({ next: true });
     });
   });
 
@@ -226,10 +269,27 @@ describe("Exchange routing", () => {
     });
 
     it("fails closed for a blocked URL the Exchange cannot serve", async () => {
+      exchange.setExchangeProvidersForTest([]);
+
+      await expect(
+        buildFallbackList(buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS)),
+      ).resolves.toEqual([]);
+    });
+
+    it("names the option that keeps the provider out of a blocked URL", async () => {
       const meta = buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS);
       meta.options.actions = [{ type: "wait", milliseconds: 1000 }];
 
-      await expect(buildFallbackList(meta)).resolves.toEqual([]);
+      const error = await buildFallbackList(meta).catch(e => e);
+
+      expect(error).toBeInstanceOf(
+        exchange.ThirdPartyDataUnsupportedOptionError,
+      );
+      expect(error.response()).toEqual(
+        new exchange.ThirdPartyDataUnsupportedOptionError(
+          "`actions`",
+        ).response(),
+      );
     });
   });
 
@@ -256,6 +316,66 @@ describe("Exchange routing", () => {
       expect(error.message).toBe(
         "The requested Exchange record was not found.",
       );
+    });
+
+    it("serves the Exchange's markdown for a supported URL", async () => {
+      mocks.robustFetch.mockResolvedValue({
+        success: true,
+        accessEventId: "access-1",
+        creditsCost: 12,
+        data: {
+          url: BLOCKED_URL,
+          title: "Example Person",
+          markdown: "# Example Person",
+          source: { provider: "acme" },
+        },
+      });
+
+      const result = await scrapeURLWithExchange(
+        buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS),
+      );
+
+      expect(result).toMatchObject({
+        url: BLOCKED_URL,
+        markdown: "# Example Person",
+        statusCode: 200,
+        exchange: {
+          accessEventId: "access-1",
+          provider: { id: "acme", creditsCost: 12 },
+        },
+      });
+    });
+
+    it("reports a provider's missing record as THIRD_PARTY_DATA_NOT_FOUND", async () => {
+      mocks.robustFetch.mockResolvedValue(
+        failure("not_found", "No matching profile was found."),
+      );
+
+      const error = await scrapeURLWithExchange(
+        buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS),
+      ).catch(e => e);
+
+      expect(error).toBeInstanceOf(scrapeErrors.ExchangeRefusedError);
+      expect(error.code).toBe("THIRD_PARTY_DATA_NOT_FOUND");
+      expect(error.message).toBe("No matching profile was found.");
+    });
+
+    it("reports a URL the provider does not serve as THIRD_PARTY_DATA_UNSUPPORTED_URL", async () => {
+      mocks.robustFetch.mockResolvedValue(
+        failure(
+          "invalid_exchange_url",
+          "Expected a canonical Exchange URL or supported source URL.",
+        ),
+      );
+
+      const error = await scrapeURLWithExchange(
+        buildStubMeta(`${BLOCKED_URL}/details/experience/`, ACCEPTED_FLAGS),
+      ).catch(e => e);
+
+      expect(error).toBeInstanceOf(scrapeErrors.ExchangeRefusedError);
+      expect(error.code).toBe("THIRD_PARTY_DATA_UNSUPPORTED_URL");
+      expect(error.message).not.toContain("canonical Exchange URL");
+      expect(error.message).toContain("record's own page");
     });
 
     it("reports a provider the team lacks as THIRD_PARTY_DATA_NOT_ENABLED", async () => {
