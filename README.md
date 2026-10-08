@@ -1,3 +1,71 @@
+# Knowledge graph candidate output (this fork)
+
+> **Experimental fork addition, not part of hosted Firecrawl:** `knowledgeGraph` turns a scraped page into candidate entities and directed relationships. These are **unverified leads**, not a fact-checked knowledge base. Before using an edge as a fact, read the source page. This fork also has a companion [MCP server branch](https://github.com/beardfaceguy/firecrawl-mcp-server/tree/kg-upstream-refresh).
+
+## What's added
+
+- Opt-in `knowledgeGraph` format for scrape and crawl; full-surface search can scrape per-result graphs and returns a merged top-level graph. `knowledgeGraphOptions.entityTypes` in the MCP tool (or `entityTypes` on the API format object) limits node types to at most 50 names.
+- KG-specific `KG_MODEL` and `KG_RETRY_MODEL` environment variables. Defaults remain `gpt-4o-mini` and `gpt-4.1-mini` on OpenAI. The global `MODEL_NAME` does not override KG model selection.
+- Basic graph-integrity checks and a narrow Wikipedia-style `Parents` infobox correction. **This is not a general wiki template or factual verifier**; aliases and other relationships can still be wrong.
+
+## Install and run locally
+
+Requires Docker with Compose, enough resources to build/run the API and Playwright, and an OpenAI key with access to the selected model. Use this branch, not this fork's older default branch:
+
+```sh
+git clone https://github.com/beardfaceguy/firecrawl.git
+cd firecrawl
+git switch kg-upstream-refresh
+cat > .env <<'ENV'
+PORT=127.0.0.1:3002
+INTERNAL_PORT=3002
+USE_DB_AUTHENTICATION=false
+NUQ_BACKEND=pg
+NUM_WORKERS_PER_QUEUE=1
+CRAWL_CONCURRENT_REQUESTS=2
+MAX_CONCURRENT_JOBS=2
+BROWSER_POOL_SIZE=1
+KG_MODEL=gpt-4o-mini
+KG_RETRY_MODEL=gpt-4.1-mini
+ENV
+chmod 600 .env
+# Edit .env and add OPENAI_API_KEY=... locally; never commit or paste the key.
+docker compose up -d --build redis rabbitmq nuq-postgres playwright-service api
+curl http://127.0.0.1:3002/
+```
+
+`.env` is Git-ignored. The example binds the unauthenticated local API to loopback **only**; do not expose it publicly with `USE_DB_AUTHENTICATION=false`. Stop it with `docker compose down`. [API environment examples](apps/api/.env.example) cover additional services and production-style configuration.
+
+## Request a candidate graph
+
+The unauthenticated local API does not require an API bearer token. Request `markdown` alongside the graph when you want to inspect its source text:
+
+```sh
+curl -sS http://127.0.0.1:3002/v2/scrape \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com","formats":["markdown",{"type":"knowledgeGraph","entityTypes":["Organization","Concept"]}]}'
+```
+
+For search, pass `"scrapeOptions":{"formats":["knowledgeGraph"]}` to `POST /v2/search`; each scraped result may carry a graph and `data.knowledgeGraph` is the merged graph. For crawl, pass the same `scrapeOptions` to `POST /v2/crawl`, then poll `GET /v2/crawl/{id}` for per-page graphs. Search results depend on an available search provider; an empty result set cannot produce a merged graph. Standard hosted Firecrawl may reject this fork-only format.
+
+To use the companion MCP fork, build its [`kg-upstream-refresh` branch](https://github.com/beardfaceguy/firecrawl-mcp-server/tree/kg-upstream-refresh) with `corepack pnpm install --frozen-lockfile && corepack pnpm build`. Configure your MCP client to launch its `dist/index.js` with `FIRECRAWL_API_URL=http://127.0.0.1:3002`, `CLOUD_SERVICE=false`, and a non-secret placeholder `FIRECRAWL_API_KEY` while local API authentication is disabled. The MCP scrape tool accepts `formats: ["knowledgeGraph"]` and optional `knowledgeGraphOptions: { "entityTypes": ["Person"] }`.
+
+## Quality, model trials, and next steps
+
+The output is a **candidate graph for discovery**: use nodes and edges to find leads, then check important relationships against the page. There is no edge-level citation, source passage, confidence score, reusable site template, or guarantee of factual correctness today. A proposed phase 2 would ground each edge in source evidence, validate high-impact claims, and evaluate a diverse human-checked corpus before scaling. OpenRouter provider support is a possible later extension, not currently enabled for KG.
+
+In an exploratory trial, each model was run **once** on each of the Ada Lovelace and Marie Curie Wikipedia pages. Times include scraping; the pages were fetched fresh rather than held byte-identical. The infobox correction was active for all models, so correct parent edges alone do not measure raw model quality.
+
+| KG primary model | Ada / Marie end-to-end | Notable inspected relationship labels |
+| --- | --- | --- |
+| `gpt-4o-mini` (current default) | 10.8s / 11.8s | Reversed some child/sibling and named-after relations on Ada. |
+| `gpt-4.1` | 32.4s / 14.1s | Family labels improved, but named-after and advisor/student labels had errors or ambiguity. |
+| `gpt-5` | 86.3s / 131.7s | Inspected direction labels were more coherent; substantially slower. |
+
+This is **not** a statistically valid model ranking or a full factual audit. Exact per-request token costs were not available from the self-hosted logs. The original default was restored after the trial; change `KG_MODEL` in `.env` and recreate the API container to run your own comparison. For a credible evaluation, snapshot source pages, annotate expected edges and evidence, repeat model runs, and measure both unsupported-edge and missed-edge rates.
+
+---
+
 <h3 align="center">
   <a name="readme-top"></a>
   <img
