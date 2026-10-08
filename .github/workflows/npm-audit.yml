@@ -53,13 +53,6 @@ jobs:
           set -o pipefail
           pnpm dlx audit-ci@^7 --directory apps/js-sdk/firecrawl --config apps/js-sdk/firecrawl/audit-ci.jsonc 2>&1 | tee /tmp/audit-outputs/js-sdk-firecrawl.txt
 
-      - name: Audit Ingestion UI Packages
-        id: audit-ingestion-ui
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          pnpm dlx audit-ci@^7 --directory apps/ui/ingestion-ui --config apps/ui/ingestion-ui/audit-ci.jsonc 2>&1 | tee /tmp/audit-outputs/ingestion-ui.txt
-
       - name: Audit Test Site Packages
         id: audit-test-site
         continue-on-error: true
@@ -75,7 +68,6 @@ jobs:
             ["Playwright Service"]="playwright-service.txt"
             ["JavaScript SDK"]="js-sdk.txt"
             ["JavaScript SDK Firecrawl"]="js-sdk-firecrawl.txt"
-            ["Ingestion UI"]="ingestion-ui.txt"
             ["Test Site"]="test-site.txt"
           )
 
@@ -84,12 +76,11 @@ jobs:
             ["Playwright Service"]="${{ steps.audit-playwright-service.outcome }}"
             ["JavaScript SDK"]="${{ steps.audit-js-sdk.outcome }}"
             ["JavaScript SDK Firecrawl"]="${{ steps.audit-js-sdk-firecrawl.outcome }}"
-            ["Ingestion UI"]="${{ steps.audit-ingestion-ui.outcome }}"
             ["Test Site"]="${{ steps.audit-test-site.outcome }}"
           )
 
           FAILED=false
-          for name in "API" "Playwright Service" "JavaScript SDK" "JavaScript SDK Firecrawl" "Ingestion UI" "Test Site"; do
+          for name in "API" "Playwright Service" "JavaScript SDK" "JavaScript SDK Firecrawl" "Test Site"; do
             if [ "${AUDIT_OUTCOMES[$name]}" == "failure" ]; then
               FAILED=true
               echo ""
