@@ -783,6 +783,10 @@ fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, S
       "XML parsing error: elements nested deeper than {MAX_SITEMAP_DEPTH} levels"
     ));
   }
+  // Entity replacement text can carry nested markup the depth scan never sees.
+  if xml_content.contains("<!ENTITY") {
+    return Err("XML parsing error: entity declarations are not supported".to_string());
+  }
 
   let doc = roxmltree::Document::parse_with_options(
     xml_content,
@@ -1092,6 +1096,27 @@ mod tests {
 
     let result = _parse_sitemap_xml(&xml_content);
     assert!(result.unwrap_err().contains("nested deeper than"));
+  }
+
+  #[test]
+  fn test_parse_sitemap_xml_entity_with_nested_markup_errors() {
+    let xml_content = format!(
+      r#"<!DOCTYPE urlset [<!ENTITY e "{}">]><urlset>&e;</urlset>"#,
+      "<url>".repeat(100_000)
+    );
+
+    let result = _parse_sitemap_xml(&xml_content);
+    assert!(result.unwrap_err().contains("entity declarations"));
+  }
+
+  #[test]
+  fn test_parse_sitemap_xml_with_doctype() {
+    let xml_content = r#"<?xml version="1.0"?>
+<!DOCTYPE urlset>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/page1</loc></url></urlset>"#;
+
+    let urlset = _parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
+    assert_eq!(urlset.url[0].loc[0], "https://example.com/page1");
   }
 
   #[test]
