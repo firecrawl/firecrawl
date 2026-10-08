@@ -420,3 +420,45 @@ describe("paid-plan-only capabilities", () => {
     );
   });
 });
+
+it("allows optional Exchange terms while preserving the universal scrape requirement", async () => {
+  const response = requirement(true);
+  Object.assign(response.body.providers[0], { exchangeRequired: false });
+  mocks.request.mockResolvedValue(response);
+  expect(await authorizeProviders("team", calls, {}, "org")).toBeUndefined();
+  expect(mocks.request).toHaveBeenCalledTimes(1);
+  expect(response.body.providers[0].required).toBe(true);
+});
+
+it.each(["disabled", "suspended"])(
+  "still refuses %s access when Exchange terms are optional",
+  async status => {
+    const response = requirement(true);
+    Object.assign(response.body.providers[0], { exchangeRequired: false });
+    mocks.request.mockResolvedValue(response);
+    expect(
+      (
+        await authorizeProviders(
+          "team",
+          calls,
+          {
+            organizationDataSourceAccess: {
+              fred: { status, disabledReason: "revoked_by_organization_admin" },
+            },
+          },
+          "org",
+        )
+      )?.status,
+    ).toBe(403);
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("honors a required Exchange override", async () => {
+  const response = requirement(false);
+  Object.assign(response.body.providers[0], { exchangeRequired: true });
+  mocks.request.mockResolvedValue(response);
+  expect((await authorizeProviders("team", calls, {}))?.body).toMatchObject({
+    code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
+  });
+});
