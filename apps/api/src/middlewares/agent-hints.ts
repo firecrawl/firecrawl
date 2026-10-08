@@ -6,7 +6,6 @@ import {
   computeAgentHintSignals,
   type AgentHintEndpoint,
 } from "../lib/agent-hint-signals";
-import { buildAgentHints } from "../lib/agent-hints";
 import {
   agentHintsProviderRequestsTotal,
   getProviderHints,
@@ -41,7 +40,7 @@ function agentHintsFor(
   const { hints, providerHintIds } = mergeAgentHints(
     rules.length > 0
       ? evaluateAgentHintRules(rules, computeAgentHintSignals(context))
-      : buildAgentHints(context),
+      : [],
     provider?.settled && body.success === true ? provider.hints : [],
   );
   if (providerHintIds.length > 0) {
