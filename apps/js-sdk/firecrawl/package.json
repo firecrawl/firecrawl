@@ -37,15 +37,15 @@
   },
   "homepage": "https://github.com/firecrawl/firecrawl#readme",
   "devDependencies": {
-    "@jest/globals": "^30.2.0",
+    "@jest/globals": "^30.5.2",
     "@types/dotenv": "^8.2.0",
     "@types/jest": "^30.0.0",
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.12.12",
     "@types/uuid": "^9.0.8",
     "dotenv": "^16.4.5",
-    "jest": "^30.2.0",
-    "ts-jest": "^29.4.5",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.14",
     "tsup": "^8.5.0",
     "typescript": "^5.4.5",
     "uuid": "^14.0.0"

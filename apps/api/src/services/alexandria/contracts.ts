@@ -96,7 +96,7 @@ export const refusal = (
   body: { success: false, error, ...extra },
 });
 
-export type CompactDiscoveredTool = Pick<
+type CompactDiscoveredTool = Pick<
   z.infer<typeof toolSummarySchema>,
   "provider" | "capability" | "description"
 >;

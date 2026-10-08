@@ -19,16 +19,6 @@ const AUDITS = [
     appPath: "apps/js-sdk/firecrawl",
     outputName: "js-sdk-firecrawl",
   },
-  {
-    name: "Test Suite",
-    appPath: "apps/test-suite",
-    outputName: "test-suite",
-  },
-  {
-    name: "Ingestion UI",
-    appPath: "apps/ui/ingestion-ui",
-    outputName: "ingestion-ui",
-  },
   { name: "Test Site", appPath: "apps/test-site", outputName: "test-site" },
 ];
 
@@ -426,7 +416,6 @@ Override safety rules (important):
 
 Mandatory local verification (must match workflow commands):
 - Run exactly these commands locally (same tool/flags/targets as CI):
-  - \`pnpm dlx audit-ci@^7 --directory apps/ui/ingestion-ui --config apps/ui/ingestion-ui/audit-ci.jsonc\`
   - \`pnpm dlx audit-ci@^7 --directory apps/test-site --config apps/test-site/audit-ci.jsonc\`
 - If broader validation is needed, also run the other audit commands defined in \`.github/workflows/npm-audit.yml\`.
 - Do not claim success unless these CI-equivalent local commands pass (or a documented temporary ignore/blocked path is approved).

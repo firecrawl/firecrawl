@@ -29,7 +29,7 @@ type AgentHintRuleOp =
   | "gte"
   | "in"
   | "exists";
-export type AgentHintRuleCondition =
+type AgentHintRuleCondition =
   | { signal: string; op: "eq" | "ne"; value: AgentHintRuleScalar }
   | { signal: string; op: "lt" | "lte" | "gt" | "gte"; value: number }
   | { signal: string; op: "in"; value: AgentHintRuleScalar[] }
