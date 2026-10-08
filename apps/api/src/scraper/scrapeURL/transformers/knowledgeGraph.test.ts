@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import { generateObject } from "ai";
 import { performKnowledgeGraph } from "./knowledgeGraph";
+import { config } from "../../../config";
 
 // Only generateObject is faked; the rest of the `ai` SDK (jsonSchema,
 // NoObjectGeneratedError, etc.) stays real so generateCompletions runs its
@@ -159,6 +160,38 @@ describe("performKnowledgeGraph LLM failure/retry path", () => {
     } as any);
 
     expect(result.knowledgeGraph?.edges).toEqual(graph.edges);
+  });
+
+  it("uses KG-specific primary and retry models even with a global override", async () => {
+    const original = {
+      primary: config.KG_MODEL,
+      retry: config.KG_RETRY_MODEL,
+      global: config.MODEL_NAME,
+    };
+    try {
+      config.KG_MODEL = "gpt-4.1";
+      config.KG_RETRY_MODEL = "gpt-5";
+      config.MODEL_NAME = "global-override";
+      mockedGenerateObject
+        .mockRejectedValueOnce(new Error("rate limit exceeded"))
+        .mockResolvedValueOnce({
+          object: { nodes: [], edges: [] },
+          usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+        });
+
+      await performKnowledgeGraph(makeMeta(), {
+        markdown: "# Small page",
+      } as any);
+
+      expect(mockedGenerateObject.mock.calls[0][0].model.modelId).toBe(
+        "gpt-4.1",
+      );
+      expect(mockedGenerateObject.mock.calls[1][0].model.modelId).toBe("gpt-5");
+    } finally {
+      config.KG_MODEL = original.primary;
+      config.KG_RETRY_MODEL = original.retry;
+      config.MODEL_NAME = original.global;
+    }
   });
 
   it("falls back to the retry model when the primary hits a rate limit", async () => {

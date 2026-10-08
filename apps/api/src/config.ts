@@ -583,6 +583,8 @@ const configSchema = z.object({
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
+  KG_MODEL: z.string().trim().min(1).default("gpt-4o-mini"),
+  KG_RETRY_MODEL: z.string().trim().min(1).default("gpt-4.1-mini"),
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
