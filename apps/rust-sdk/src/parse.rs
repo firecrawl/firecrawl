@@ -497,6 +497,9 @@ mod tests {
 
         let payload = serde_json::to_value(options).unwrap();
         assert_eq!(payload["checkPromptInjection"], serde_json::json!(true));
+
+        let unset = serde_json::to_value(ParseOptions::default()).unwrap();
+        assert!(unset.get("checkPromptInjection").is_none());
     }
 
     #[test]

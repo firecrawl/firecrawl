@@ -674,6 +674,40 @@ defmodule FirecrawlTest do
     assert body["urls"] == ["https://example.com"]
   end
 
+  test "parse_file sends check_prompt_injection as checkPromptInjection only when set" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body: Jason.encode!(%{"success" => true, "data" => %{}})
+      )
+
+      {request, resp}
+    end
+
+    parse_options = fn params ->
+      assert {:ok, %Req.Response{status: 200}} =
+               Firecrawl.parse_file(
+                 [filename: "doc.html", data: "<p>hi</p>", content_type: "text/html"],
+                 params,
+                 api_key: "test-key",
+                 adapter: adapter
+               )
+
+      assert_receive {:request, request}
+      body = request.body |> Enum.to_list() |> IO.iodata_to_binary()
+      [_, options] = Regex.run(~r/name="options"\r\n\r\n(.*?)\r\n--/s, body)
+      Jason.decode!(options)
+    end
+
+    assert parse_options.(check_prompt_injection: true)["checkPromptInjection"] == true
+    refute Map.has_key?(parse_options.([]), "checkPromptInjection")
+  end
+
   test "scrape maps check_prompt_injection to checkPromptInjection" do
     parent = self()
 
