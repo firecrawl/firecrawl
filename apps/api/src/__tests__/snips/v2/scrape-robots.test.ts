@@ -48,7 +48,9 @@ describe("Scrape robots policy", () => {
       if (result.success) throw new Error("Expected a robots denial");
       expect(result.error).toBeInstanceOf(CrawlDenialError);
       expect(result.error.message).toBe("URL blocked by robots.txt");
-      expect((result.error as CrawlDenialError).robots).toBe(true);
+      expect((result.error as CrawlDenialError).robotsBlockedUrl).toBe(
+        TEST_SUITE_WEBSITE,
+      );
       expect(engines.scrapeURLWithEngine).not.toHaveBeenCalled();
     },
     scrapeTimeout,
