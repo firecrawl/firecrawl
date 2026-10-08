@@ -130,7 +130,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: 1.24
+          go-version: 1.26
           cache-dependency-path: apps/api/sharedLibs/go-html-to-md/go.sum
 
       - name: Verify go.sum is up to date (sharedLibs/go-html-to-md)
@@ -258,6 +258,17 @@ jobs:
           pnpm exec vitest run
           src/controllers/v1/__tests__/crawl-status-next.test.ts
           src/controllers/v2/__tests__/crawl-status-next.test.ts
+          --reporter=default
+        working-directory: apps/api
+
+      - name: Run agent hints regression tests
+        if: matrix.engine == 'fetch' && matrix.proxy == 'no-proxy' && matrix.nuq == 'postgres'
+        run: >-
+          pnpm exec vitest run
+          src/lib/agent-hints-provider.test.ts
+          src/lib/agent-hint-rules.test.ts
+          src/lib/agent-hint-signals.test.ts
+          src/middlewares/__tests__/agent-hints.test.ts
           --reporter=default
         working-directory: apps/api
 

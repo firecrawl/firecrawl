@@ -1,7 +1,7 @@
 import express from "express";
 import { EventEmitter } from "node:events";
 import request from "supertest";
-import { randomUUID } from "node:crypto";
+import { v7 as uuidv7 } from "uuid";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { readFeedbackJob } from "../../../lib/feedback-job-store";
@@ -14,6 +14,8 @@ const fixture = vi.hoisted(() => ({
   pool: undefined as Pool | undefined,
   refund: vi.fn(),
   readFeedbackJob: vi.fn(),
+  realReadFeedbackJob: undefined as typeof readFeedbackJob | undefined,
+  bigtableRows: new Map<string, Buffer>(),
   compactJobs: new Map<string, CompactFeedbackJob>(),
   results: new Map<string, unknown>(),
   readResult: vi.fn<(id: string) => Promise<unknown>>(),
@@ -24,10 +26,28 @@ vi.mock("../../../lib/spur", () => ({
   isKeylessIpSuspicious: async (ip: string) => ip === "203.0.113.99",
 }));
 
-vi.mock("../../../lib/feedback-job-store", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../lib/feedback-job-store")>()),
-  readFeedbackJob: fixture.readFeedbackJob,
+vi.mock("../../../lib/bigtable-client", () => ({
+  getBigtableTable: async () => ({
+    mutate: async (rows: any[]) => {
+      for (const row of rows)
+        fixture.bigtableRows.set(row.key.toString("hex"), row.data.f.v.value);
+    },
+    getRows: async ({ keys }: { keys: Buffer[] }) => [
+      [
+        ...keys.flatMap(key => {
+          const value = fixture.bigtableRows.get(key.toString("hex"));
+          return value ? [{ data: { f: { v: [{ value }] } } }] : [];
+        }),
+      ],
+    ],
+  }),
 }));
+vi.mock("../../../lib/feedback-job-store", async importOriginal => {
+  const original =
+    await importOriginal<typeof import("../../../lib/feedback-job-store")>();
+  fixture.realReadFeedbackJob = original.readFeedbackJob;
+  return { ...original, readFeedbackJob: fixture.readFeedbackJob };
+});
 vi.mock("../../../lib/gcs-jobs", async importOriginal => ({
   ...(await importOriginal<typeof import("../../../lib/gcs-jobs")>()),
   saveSearchToGCS: async (search: { id: string; results: unknown }) => {
@@ -47,7 +67,7 @@ vi.mock("../../../lib/zdr-queue", () => ({
 const databaseUrl = process.env.KEYLESS_FEEDBACK_TEST_DATABASE_URL;
 const suite = databaseUrl ? describe : describe.skip;
 suite("keyless feedback HTTP and persistence", () => {
-  const schemaName = `feedback_test_${randomUUID().replaceAll("-", "")}`;
+  const schemaName = `feedback_test_${uuidv7().replaceAll("-", "")}`;
   let app: express.Express;
   let api: typeof import("./keyless-invitation");
   let identity: typeof import("../../../lib/keyless");
@@ -57,14 +77,14 @@ suite("keyless feedback HTTP and persistence", () => {
   let config: typeof import("../../../config").config;
   const ip = "203.0.113.71";
   const secondaryIps = ["203.0.113.72", "203.0.113.73"];
-  const authenticatedTeam = randomUUID();
-  const orgId = randomUUID();
+  const authenticatedTeam = uuidv7();
+  const orgId = uuidv7();
   const authenticatedJob = (
     endpoint: "search" | "scrape" | "parse",
     succeeded = true,
     creditsBilled = 8,
   ) => {
-    const jobId = randomUUID();
+    const jobId = uuidv7();
     fixture.compactJobs.set(jobId, {
       requestId: jobId,
       teamId: authenticatedTeam,
@@ -187,7 +207,7 @@ suite("keyless feedback HTTP and persistence", () => {
     clientIp = ip,
     options: Record<string, unknown> = {},
   ) {
-    const jobId = randomUUID();
+    const jobId = uuidv7();
     const savedOptions = {
       ...options,
       query: "retry behavior",
@@ -220,6 +240,9 @@ suite("keyless feedback HTTP and persistence", () => {
     ({ config } = await import("../../../config.js"));
     config.USE_DB_AUTHENTICATION = true;
     config.PUBSUB_CREDENTIALS = undefined;
+    config.BIGTABLE_FEEDBACK_JOBS_TABLE = "feedback-test";
+    config.BIGTABLE_JOB_ACCESS_TABLE = undefined;
+    config.BIGTABLE_SCRAPE_STATE_TABLE = undefined;
     config.KEYLESS_FEEDBACK_ENABLED = true;
     config.FEEDBACK_REFUND_ENABLED = true;
     config.KEYLESS_PROXY_SECRET = "feedback-integration-secret";
@@ -233,24 +256,6 @@ suite("keyless feedback HTTP and persistence", () => {
     api = await import("./keyless-invitation.js");
     logging = await import("../../../services/logging/log_job.js");
     await vi.waitFor(() => expect(redis.status).toBe("ready"));
-    await fixture.pool.query(`CREATE TABLE requests (
-      id uuid PRIMARY KEY, kind text, api_version text, external_request_id text,
-      team_id uuid, origin text, integration text, target_hint text, dr_clean_by timestamptz,
-      api_key_id bigint, created_at timestamptz NOT NULL DEFAULT now()
-    )`);
-    await fixture.pool.query(`CREATE TABLE searches (
-      id uuid PRIMARY KEY, request_id uuid NOT NULL REFERENCES requests(id), team_id uuid NOT NULL,
-      query text, options jsonb, num_results integer, is_successful boolean,
-      error text, credits_cost integer, time_taken numeric, created_at timestamptz NOT NULL DEFAULT now()
-    )`);
-    for (const name of ["scrapes", "parses"]) {
-      await fixture.pool.query(`CREATE TABLE ${name} (
-        id uuid PRIMARY KEY, request_id uuid NOT NULL REFERENCES requests(id), team_id uuid NOT NULL,
-        url text, options jsonb, is_successful boolean, error text, credits_cost integer,
-        time_taken numeric, created_at timestamptz NOT NULL DEFAULT now(), cost_tracking jsonb,
-        pdf_num_pages integer, content_type text, monitor_id uuid, monitor_check_id uuid
-      )`);
-    }
     await fixture.pool.query(`CREATE TABLE search_feedback (
       id uuid PRIMARY KEY, search_id uuid CONSTRAINT search_feedback_search_id_unique UNIQUE,
       endpoint text NOT NULL DEFAULT 'search', job_id uuid,
@@ -268,7 +273,8 @@ suite("keyless feedback HTTP and persistence", () => {
       rating text NOT NULL, requested_url text NOT NULL, requested_functionality text NOT NULL,
       requested_host text GENERATED ALWAYS AS (lower(substring(requested_url from '^[A-Za-z][A-Za-z0-9+.-]*://(?:[^@/?#]*@)?([^/?#:]+)'))) STORED,
       rationale text NOT NULL, objective text, origin text, integration text, schema_version integer NOT NULL DEFAULT 2,
-      created_at timestamptz NOT NULL DEFAULT now()
+      credits_refunded integer NOT NULL DEFAULT 0, refund_policy jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
     )`);
     for (const name of ["providers", "capabilities"]) {
       await fixture.pool.query(`CREATE TABLE alexandria_feedback_${name} (
@@ -333,15 +339,19 @@ suite("keyless feedback HTTP and persistence", () => {
   beforeEach(async () => {
     fixture.refund.mockReset().mockResolvedValue(undefined);
     fixture.compactJobs.clear();
+    fixture.bigtableRows.clear();
     fixture.readFeedbackJob
       .mockReset()
-      .mockImplementation(async id => fixture.compactJobs.get(id) ?? null);
+      .mockImplementation(
+        async id =>
+          fixture.compactJobs.get(id) ?? fixture.realReadFeedbackJob!(id),
+      );
     fixture.results.clear();
     fixture.readResult
       .mockReset()
       .mockImplementation(async id => fixture.results.get(id) ?? null);
     await fixture.pool!.query(
-      "TRUNCATE search_feedback, alexandria_feedback, searches, scrapes, parses, requests CASCADE",
+      "TRUNCATE search_feedback, alexandria_feedback CASCADE",
     );
     await redis.del(...attemptKeys());
   });
@@ -351,6 +361,7 @@ suite("keyless feedback HTTP and persistence", () => {
         `keyless_requests:${ip}`,
         `keyless_credits:${ip}`,
         ...attemptKeys(),
+        `alexandria:activity:${authenticatedTeam}`,
       );
     }
     if (fixture.pool) {
@@ -505,7 +516,7 @@ suite("keyless feedback HTTP and persistence", () => {
   });
 
   it("ignores caller invitation opt-out headers for keyless jobs", async () => {
-    const jobId = randomUUID();
+    const jobId = uuidv7();
     const response = await request(app)
       .post(`/test/jobs/parse/${jobId}`)
       .set("x-firecrawl-no-feedback", "1")
@@ -521,7 +532,7 @@ suite("keyless feedback HTTP and persistence", () => {
       const metadata = await api.keylessFeedbackMetadata(
         { auth: { team_id: identity.keylessTeamId(ip) }, body: {} } as any,
         "scrape",
-        randomUUID(),
+        uuidv7(),
       );
       expect(metadata).toEqual({ jobId: expect.any(String) });
       expect((await submit(body("scrape", jobId))).status).toBe(503);
@@ -1017,6 +1028,11 @@ suite("keyless feedback HTTP and persistence", () => {
   it("dispatches keyless, authenticated Alexandria and authenticated job feedback through one controller", async () => {
     const keyless = await job("scrape");
     const owned = authenticatedJob("scrape");
+    const { recordAlexandriaActivity } = await import(
+      "../../../lib/alexandria-activity.js"
+    );
+    await recordAlexandriaActivity(authenticatedTeam);
+    fixture.refund.mockResolvedValue(true);
     const alexandria = {
       endpoint: "alexandria",
       rating: "partial",
@@ -1040,10 +1056,10 @@ suite("keyless feedback HTTP and persistence", () => {
     expect(keylessResponse.status).toBe(200);
     expect(keylessResponse.body.creditsRefunded).toBe(0);
     expect(alexandriaResponse.status).toBe(200);
-    expect(alexandriaResponse.body.creditsRefunded).toBe(0);
+    expect(alexandriaResponse.body.creditsRefunded).toBe(1);
     expect(jobResponse.status).toBe(200);
     expect(jobResponse.body.creditsRefunded).toBe(1);
-    expect(fixture.refund).toHaveBeenCalledTimes(1);
+    expect(fixture.refund).toHaveBeenCalledTimes(2);
     const keylessAlexandria = await submit(alexandria);
     expect(keylessAlexandria.status).toBe(403);
     expect(keylessAlexandria.body.feedbackErrorCode).toBe(
@@ -1102,43 +1118,38 @@ suite("keyless feedback HTTP and persistence", () => {
   });
   it("uses the persisted job timestamp for the feedback window", async () => {
     const { jobId } = await job("scrape");
-    await fixture.pool!.query(
-      "UPDATE scrapes SET created_at = now() - interval '24 hours 1 second' WHERE id = $1",
-      [jobId],
-    );
+    const saved = await fixture.readFeedbackJob(jobId);
+    fixture.compactJobs.set(jobId, {
+      ...saved,
+      keyless: { ...saved.keyless, createdAtMs: Date.now() - 86401000 },
+    });
     expect((await submit(body("scrape", jobId))).body.feedbackErrorCode).toBe(
       "FEEDBACK_WINDOW_EXPIRED",
     );
     expect(await fixture.db!.select().from(table)).toHaveLength(0);
   });
-  it("does not invite feedback when the PostgreSQL job copy was not saved", async () => {
-    await fixture.pool!.query(
-      "ALTER TABLE scrapes ADD CONSTRAINT reject_job_copy CHECK (false)",
-    );
-    try {
-      const { jobId, metadata } = await job("scrape");
-      expect(metadata).toEqual({ jobId });
-      expect((await submit(body("scrape", jobId))).status).toBe(404);
-    } finally {
-      await fixture.pool!.query(
-        "ALTER TABLE scrapes DROP CONSTRAINT reject_job_copy",
-      );
-    }
+  it("does not invite feedback when the Bigtable job was not saved", async () => {
+    fixture.readFeedbackJob.mockResolvedValue(null);
+    const { jobId, metadata } = await job("scrape");
+    expect(metadata).toEqual({ jobId });
+    expect((await submit(body("scrape", jobId))).status).toBe(404);
   });
   it("accepts a job timestamp slightly ahead of this host's clock", async () => {
     const { jobId } = await job("scrape");
-    await fixture.pool!.query(
-      "UPDATE scrapes SET created_at = now() + interval '2 seconds' WHERE id = $1",
-      [jobId],
-    );
+    const saved = await fixture.readFeedbackJob(jobId);
+    fixture.compactJobs.set(jobId, {
+      ...saved,
+      keyless: { ...saved.keyless, createdAtMs: Date.now() + 2000 },
+    });
     expect((await submit(body("scrape", jobId))).status).toBe(200);
   });
   it("rejects a job timestamp beyond the allowed clock skew", async () => {
     const { jobId } = await job("scrape");
-    await fixture.pool!.query(
-      "UPDATE scrapes SET created_at = now() + interval '10 minutes' WHERE id = $1",
-      [jobId],
-    );
+    const saved = await fixture.readFeedbackJob(jobId);
+    fixture.compactJobs.set(jobId, {
+      ...saved,
+      keyless: { ...saved.keyless, createdAtMs: Date.now() + 600000 },
+    });
     const response = await submit(body("scrape", jobId));
     expect(response.status).toBe(409);
     expect(response.body.feedbackErrorCode).toBe("FEEDBACK_WINDOW_EXPIRED");
@@ -1160,10 +1171,8 @@ suite("keyless feedback HTTP and persistence", () => {
   );
   it("rejects a job without saved options before reading its formats", async () => {
     const { jobId } = await job("scrape");
-    await fixture.pool!.query(
-      "UPDATE scrapes SET options = NULL WHERE id = $1",
-      [jobId],
-    );
+    const saved = await fixture.readFeedbackJob(jobId);
+    fixture.compactJobs.set(jobId, { ...saved, keyless: undefined });
     const response = await submit(body("scrape", jobId));
     expect(response.status).toBe(404);
     expect(response.body.feedbackErrorCode).toBe("JOB_NOT_FOUND");
@@ -1171,7 +1180,7 @@ suite("keyless feedback HTTP and persistence", () => {
   });
   it("retries a job that becomes visible after the first lookup", async () => {
     const store = await import("./feedback-store.js");
-    const jobId = randomUUID();
+    const jobId = uuidv7();
     const lookup = vi.spyOn(store, "lookupFeedbackJob");
     // The first lookup persists the job but reports it missing, so only the
     // retry can find the row.
@@ -1187,7 +1196,7 @@ suite("keyless feedback HTTP and persistence", () => {
     }
   });
   it("does not record feedback for a missing job", async () => {
-    expect((await submit(body("scrape", randomUUID()))).status).toBe(404);
+    expect((await submit(body("scrape", uuidv7()))).status).toBe(404);
     const { jobId } = await job("scrape");
     expect((await submit(body("scrape", jobId))).status).toBe(200);
   });
@@ -1305,25 +1314,21 @@ suite("keyless feedback HTTP and persistence", () => {
     },
   );
   it.each(["search", "scrape", "parse"] as const)(
-    "uses full PostgreSQL options for keyless %s when compact feedback records exist",
+    "accepts keyless %s using Bigtable without PostgreSQL job tables",
     async endpoint => {
       const { jobId } = await job(endpoint);
-      fixture.readFeedbackJob.mockResolvedValue({
-        requestId: jobId,
-        teamId: team(),
-        refundClass: endpoint === "scrape" ? "scrape_basic" : endpoint,
-        feedbackDeadlineMs: Date.now() + 120000,
-        succeeded: true,
-        creditsBilled: 0,
-        zeroDataRetention: false,
+      const saved = await fixture.readFeedbackJob(jobId);
+      expect(saved.keyless).toEqual({
+        createdAtMs: expect.any(Number),
+        options: {},
       });
       expect((await submit(body(endpoint, jobId))).status).toBe(200);
-      expect(fixture.readFeedbackJob).not.toHaveBeenCalled();
+      expect(fixture.readFeedbackJob).toHaveBeenCalledWith(jobId);
     },
   );
 
   it("keeps authenticated feedback on compact records without PostgreSQL job rows", async () => {
-    const jobId = randomUUID();
+    const jobId = uuidv7();
     fixture.readFeedbackJob.mockResolvedValue({
       requestId: jobId,
       teamId: authenticatedTeam,
@@ -1351,10 +1356,7 @@ suite("keyless feedback HTTP and persistence", () => {
     "does not fall back to PostgreSQL for an authenticated compact-record miss: %s",
     async state => {
       const { jobId } = await job("scrape");
-      await fixture.pool!.query(
-        "UPDATE scrapes SET team_id = $1 WHERE id = $2",
-        [authenticatedTeam, jobId],
-      );
+      fixture.readFeedbackJob.mockResolvedValue(null);
       if (state === "error")
         fixture.readFeedbackJob.mockRejectedValue(new Error("Unavailable"));
       const response = await request(app)

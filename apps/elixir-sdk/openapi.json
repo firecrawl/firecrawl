@@ -3077,6 +3077,103 @@
                   },
                   "threatProtection": {
                     "$ref": "#/components/schemas/ThreatProtectionOverride"
+                  },
+                  "threadId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Continue an existing thread: pass the `threadId` an earlier run returned, and this request runs as that thread's next turn. Omitted `urls`, `schema`, `effort`, `mode` and `exchange` settings carry over from the previous turn. Omit `threadId` to start a new thread."
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "extract",
+                      "chat"
+                    ],
+                    "default": "extract",
+                    "description": "`extract` returns the complete structured result in `data` every turn. `chat` lets a follow-up that asks for no new data get a short reply in `message` instead of a re-run. `exchange.requireApproval` needs `chat` on the same request. Omitted on a follow-up turn keeps the thread's mode."
+                  },
+                  "exchange": {
+                    "type": "object",
+                    "description": "Let the agent call your team's [Alexandria](https://docs.firecrawl.dev/features/alexandria) data providers during the run. Without this object the run uses the web only (a follow-up turn inherits the previous turn's settings). See [Use your connected Alexandria tools](https://docs.firecrawl.dev/features/agent#use-your-connected-alexandria-tools).",
+                    "additionalProperties": false,
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Let the agent call Alexandria providers. Defaults to `true` once `exchange` is sent; send `false` to turn providers off for a turn of a thread."
+                      },
+                      "toolkits": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 5,
+                        "description": "Pin up to 5 providers by slug, for example `[\"apollo\"]`. The agent then uses only those. Empty or omitted means every provider your team can use."
+                      },
+                      "maxCalls": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 30,
+                        "default": 16,
+                        "description": "Most provider calls the agent may make in this turn."
+                      },
+                      "requireApproval": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Before any paid provider call, end the turn with a `pendingApproval` of kind `calls` that you approve or decline on the next turn. Requires `mode: \"chat\"` on the same request, including on a follow-up."
+                      },
+                      "approve": {
+                        "type": "object",
+                        "description": "Answer yes to the `pendingApproval` the previous turn of this thread ended on. Needs `threadId`.",
+                        "additionalProperties": false,
+                        "properties": {
+                          "approvalId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "The `pendingApproval.id` to answer."
+                          },
+                          "callIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Run only these calls from the approval. Defaults to all of them. Ignored on a `terms` approval."
+                          },
+                          "always": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Stop asking for approval for the rest of the thread. Ignored on a `terms` approval."
+                          }
+                        },
+                        "required": [
+                          "approvalId"
+                        ]
+                      },
+                      "decline": {
+                        "type": "object",
+                        "description": "Answer no to the `pendingApproval` the previous turn of this thread ended on. Needs `threadId`. A declined `terms` offer keeps its providers out of the rest of the thread.",
+                        "additionalProperties": false,
+                        "properties": {
+                          "approvalId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "The `pendingApproval.id` to answer."
+                          }
+                        },
+                        "required": [
+                          "approvalId"
+                        ]
+                      },
+                      "onTermsRequired": {
+                        "type": "string",
+                        "enum": [
+                          "skip",
+                          "ask"
+                        ],
+                        "default": "skip",
+                        "description": "What to do when a provider the agent would use needs data terms your team has not accepted. Such providers are never called. `skip` answers with accepted providers and lists the others in `exchange.skippedProviders`; `ask` also ends the turn with a `terms` `pendingApproval` and `exchange.requiresAction`. Omitted on a follow-up turn keeps the previous turn's value. See [Data providers that need terms](https://docs.firecrawl.dev/features/agent#data-providers-that-need-terms)."
+                      }
+                    }
                   }
                 },
                 "required": [
@@ -3100,6 +3197,15 @@
                     "id": {
                       "type": "string",
                       "format": "uuid"
+                    },
+                    "threadId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "The thread this run belongs to. Pass it as `threadId` to continue the thread."
+                    },
+                    "threadTurn": {
+                      "type": "integer",
+                      "description": "This run's turn in the thread, starting at 1."
                     }
                   }
                 }
@@ -3234,7 +3340,25 @@
                     },
                     "data": {
                       "type": "object",
-                      "description": "The extracted data (only present when status is completed)"
+                      "description": "The extracted data (only present when status is completed). Never set on a failed run, including one that stopped at its credit limit."
+                    },
+                    "partial": {
+                      "description": "Best-effort JSON recovered from an incomplete run. Only present on some failed runs, such as one that reached `maxCredits`; never present while the run is processing. It may be missing rows or fields, so do not treat it as a completed result."
+                    },
+                    "partialSchemaValid": {
+                      "type": "boolean",
+                      "description": "Whether `partial` validates against the request's JSON schema. Only present when `partial` is present and the request included a `schema`."
+                    },
+                    "stopReason": {
+                      "type": "string",
+                      "enum": [
+                        "credit_limit_reached"
+                      ],
+                      "description": "Why a failed run stopped early. `credit_limit_reached` means the run hit its `maxCredits` limit. Only present when status is failed."
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "A note from the agent about the result. In `chat` mode, a follow-up that asks for no new data is answered here instead of in `data`. On a failed credit-limit stop, it may explain what is incomplete."
                     },
                     "model": {
                       "type": "string",
@@ -3265,6 +3389,43 @@
                     },
                     "creditsUsed": {
                       "type": "number"
+                    },
+                    "threadId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "The thread this run belongs to."
+                    },
+                    "threadTurn": {
+                      "type": "integer",
+                      "description": "This run's turn in the thread, starting at 1."
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "extract",
+                        "chat"
+                      ]
+                    },
+                    "suggestions": {
+                      "type": "array",
+                      "description": "Follow-ups the agent offers for the next turn of the thread.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "prompt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "pendingApproval": {
+                      "$ref": "#/components/schemas/AgentPendingApproval"
+                    },
+                    "exchange": {
+                      "$ref": "#/components/schemas/AgentExchangeSummary"
                     }
                   }
                 }
@@ -4466,6 +4627,21 @@
                         },
                         {
                           "type": "object",
+                          "title": "Gov",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "gov"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ]
+                        },
+                        {
+                          "type": "object",
                           "title": "Research",
                           "properties": {
                             "type": {
@@ -4928,6 +5104,11 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Whether to stream a live view of the browser"
+                  },
+                  "blockAds": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable ad and cookie popup blocking, as in scrape. Sessions started from a scrape with interact use the scrape's blockAds."
                   },
                   "profile": {
                     "type": "object",
@@ -6375,6 +6556,155 @@
           },
           "500": {
             "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/search/gov": {
+      "get": {
+        "summary": "Search the Government Index",
+        "operationId": "govSearch",
+        "tags": [
+          "Government"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "description": "Natural-language question or search phrase.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "k",
+            "in": "query",
+            "required": false,
+            "description": "Number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked Government Index results in the `web` group.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovSearchResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "web": [
+                      {
+                        "url": "https://www.ecfr.gov/current/title-21/chapter-I/subchapter-B/part-101",
+                        "title": "21 CFR Part 101 -- Food Labeling",
+                        "description": "Nutrition labeling of food shall be provided for all products intended for human consumption...",
+                        "position": 1
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including an unknown field"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
+          }
+        }
+      },
+      "post": {
+        "summary": "Search the Government Index",
+        "operationId": "govSearchPost",
+        "tags": [
+          "Government"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "query"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Natural-language question or search phrase."
+                  },
+                  "k": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 10,
+                    "description": "Number of results to return."
+                  }
+                }
+              },
+              "example": {
+                "query": "food labeling requirements for allergens",
+                "k": 10
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ranked Government Index results in the `web` group.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, including an unknown field"
+          },
+          "401": {
+            "description": "Invalid bearer token"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
           }
         }
       }
@@ -12383,6 +12713,42 @@
           }
         }
       },
+      "GovSearchResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "web": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "Matched snippet from the source document."
+                    },
+                    "position": {
+                      "type": "integer",
+                      "description": "1-based rank in the result list."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "EndpointFeedbackRequest": {
         "allOf": [
           {
@@ -12585,6 +12951,246 @@
               "closed"
             ],
             "description": "What to do when the classifier can't be reached: `closed` blocks the request, `open` allows it."
+          }
+        }
+      },
+      "AgentPendingApproval": {
+        "type": "object",
+        "description": "What the turn stopped to ask. Answer it on the next turn of the thread with `exchange.approve` or `exchange.decline`.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Send this as `approvalId`."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "calls",
+              "terms"
+            ],
+            "description": "`calls`: paid provider calls held back by `requireApproval`. `terms`: providers whose data terms need accepting (`onTermsRequired: \"ask\"`). Absent on items written before terms offers existed, which are `calls`."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the agent wants to make these calls."
+          },
+          "calls": {
+            "type": "array",
+            "description": "The paid calls waiting for approval. Empty on a `terms` approval.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Pass in `exchange.approve.callIds` to approve only some calls."
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "capability": {
+                  "type": "string"
+                },
+                "input": {
+                  "type": "object",
+                  "description": "The options the call would run with."
+                },
+                "more": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "description": "Further inputs the same call would run with."
+                },
+                "creditsEstimate": {
+                  "type": "number",
+                  "nullable": true,
+                  "description": "Estimated credits, or null when unknown."
+                }
+              }
+            }
+          },
+          "terms": {
+            "type": "array",
+            "description": "On a `terms` approval, the providers whose terms need accepting.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "capability": {
+                  "type": "string"
+                },
+                "adds": {
+                  "type": "string",
+                  "description": "What the provider would add."
+                },
+                "version": {
+                  "type": "string",
+                  "description": "The terms version."
+                },
+                "digest": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Null when the catalog published no digest; `terms/show` returns it."
+                },
+                "url": {
+                  "type": "string",
+                  "description": "Where a person accepts the terms in the dashboard."
+                }
+              }
+            }
+          },
+          "resolution": {
+            "type": "object",
+            "nullable": true,
+            "description": "Null until a later turn answers the approval.",
+            "properties": {
+              "approved": {
+                "type": "boolean"
+              },
+              "callIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "always": {
+                "type": "boolean"
+              },
+              "byRunId": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "AgentExchangeSummary": {
+        "type": "object",
+        "description": "What the run did with Alexandria. `toolkits` and `requireApproval` are what the run resolved to after thread inheritance.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "toolkits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Pinned providers. Empty or absent means every provider the team can use."
+          },
+          "requireApproval": {
+            "type": "boolean"
+          },
+          "onTermsRequired": {
+            "type": "string",
+            "enum": [
+              "skip",
+              "ask"
+            ]
+          },
+          "paidCalls": {
+            "type": "integer",
+            "description": "Paid provider calls the run made."
+          },
+          "creditsUsed": {
+            "type": "number",
+            "nullable": true,
+            "description": "Credits the provider calls used, or null when unknown."
+          },
+          "skippedProviders": {
+            "type": "array",
+            "description": "Providers that would have helped but need data terms your team has not accepted. Any `onTermsRequired` mode.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "capability": {
+                  "type": "string"
+                },
+                "adds": {
+                  "type": "string",
+                  "description": "What the provider would have added."
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "terms_required"
+                  ]
+                },
+                "version": {
+                  "type": "string",
+                  "description": "The terms version."
+                },
+                "termsUrl": {
+                  "type": "string",
+                  "description": "Where a person accepts the terms in the dashboard."
+                }
+              }
+            }
+          },
+          "requiresAction": {
+            "type": "object",
+            "description": "`onTermsRequired: \"ask\"` only, when a terms offer ended the turn: the calls to view and accept each provider's terms. Nothing here runs for you, and `terms/accept` must only be called after your user explicitly agrees.",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "accept_terms"
+                ]
+              },
+              "approvalId": {
+                "type": "string",
+                "description": "The `terms` `pendingApproval` to answer once the terms are accepted."
+              },
+              "providers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "provider": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "capability": {
+                      "type": "string"
+                    },
+                    "adds": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "digest": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Null when the catalog published no digest; `terms/show` returns it."
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "show": {
+                      "type": "object",
+                      "description": "The `terms/show` call, as `{ provider, capability, options }` for `/v2/scrape` `alexandria`."
+                    },
+                    "accept": {
+                      "type": "object",
+                      "description": "The `terms/accept` call, as `{ provider, capability, options }` for `/v2/scrape` `alexandria`."
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

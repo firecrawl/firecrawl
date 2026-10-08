@@ -94,7 +94,7 @@ function executeResult(overrides: Record<string, any> = {}) {
   return {
     response: { web: developerResults },
     totalResultsCount: 2,
-    developerResultsCount: 2,
+    indexResultsCount: 2,
     searchCredits: 2,
     scrapeCredits: 0,
     totalCredits: 2,
@@ -282,7 +282,7 @@ describe("developer category code_searches ledger", () => {
       executeResult({
         response: { web: [] },
         totalResultsCount: 0,
-        developerResultsCount: 0,
+        indexResultsCount: 0,
       }),
     );
     const req = makeReq({ query: "http client", categories: ["developer"] });
@@ -379,7 +379,7 @@ it.each([true, false])(
       await flushAsync();
       expect(mockLogSearch).toHaveBeenCalledTimes(1);
       expect(mockLogSearch.mock.calls[0].slice(1)).toEqual(
-        keyless ? [false, { saveResultsInBackground: true }] : [false],
+        keyless ? [{ saveResultsInBackground: true }] : [],
       );
       if (keyless) {
         expect(mockFeedbackMetadata).not.toHaveBeenCalled();
@@ -427,7 +427,6 @@ describe("keyless Search failure feedback", () => {
         credits_cost: 0,
         request_id: mockLogRequest.mock.calls[0][0].id,
       }),
-      true,
     );
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith(
@@ -459,4 +458,35 @@ describe("keyless Search failure feedback", () => {
       if (scenario !== "logging") expect(mockLogSearch).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("gov category gov_searches ledger", () => {
+  it("writes exactly one gov_searches row for a gov category search", async () => {
+    const req = makeReq({ query: "zoning variance", categories: ["gov"] });
+    const res = makeRes();
+
+    await searchController(req, res);
+    await flushAsync();
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockLogResearchEndpoint).toHaveBeenCalledTimes(1);
+    const row = mockLogResearchEndpoint.mock.calls[0][0];
+    expect(row.table).toBe("gov_searches");
+    expect(row.target).toBe("zoning variance");
+    expect(row.num_results).toBe(2);
+    expect(row.options.categories).toEqual([{ type: "gov" }]);
+    expect(row.options.via).toBe("search_category");
+  });
+
+  it("reserves no keyless credits for a gov category search", async () => {
+    mockProjectSearchTotalCredits.mockReturnValue(2);
+    mockReserveKeylessCredits.mockResolvedValue({ ok: false });
+    const req = makeReq({ query: "zoning variance", categories: ["gov"] });
+    const res = makeRes();
+
+    await searchController(req, res);
+
+    expect(mockReserveKeylessCredits).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
 });

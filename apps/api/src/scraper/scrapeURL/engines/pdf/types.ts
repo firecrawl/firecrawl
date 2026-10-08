@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { firePdfBlockPagesSchema } from "./fire-pdf/schema";
 
-export type PdfPageMarkdown = {
+type PdfPageMarkdown = {
   /** 1-based physical PDF page number returned by fire-pdf. */
   page: number;
   markdown: string;
@@ -13,7 +13,7 @@ export type PdfPageMarkdown = {
 export type FirePdfPageBlocks = z.infer<typeof firePdfBlockPagesSchema>[number];
 
 /** Public camelCase shape surfaced on `Document.blocks`. */
-export type PdfBlockItem = {
+type PdfBlockItem = {
   id: string;
   type: string;
   label: string | null;

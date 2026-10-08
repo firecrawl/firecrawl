@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { isKeylessFeedbackRestricted } from "../controllers/v2/feedback/zdr-persistence";
 import { config } from "../config";
 import type { ScrapeOptions } from "../controllers/v2/types";
 import { includesFormat } from "./format-utils";
@@ -31,7 +33,26 @@ const REFUND_CLASSES: readonly RefundClass[] = [
   "scrape_addon",
 ];
 
+// Keep only validation inputs, never queries, URLs, schemas, or document content.
+const keylessContextSchema = z.object({
+  createdAtMs: z.number().finite(),
+  options: z.object({
+    sources: z
+      .array(z.union([z.string(), z.object({ type: z.string() })]))
+      .optional(),
+    formats: z
+      .array(
+        z.union([
+          z.string(),
+          z.object({ type: z.string(), modes: z.array(z.string()).optional() }),
+        ]),
+      )
+      .optional(),
+  }),
+});
+
 type FeedbackJob = {
+  keyless?: z.infer<typeof keylessContextSchema>;
   requestId: string;
   teamId: string;
   refundClass: RefundClass;
@@ -64,6 +85,9 @@ function parseFeedbackJob(value: Buffer | string): FeedbackJob {
   // The stored shape carries a `version` for forward compatibility; the
   // in-memory job does not, matching the scrape and extract state readers.
   const { version: _, ...job } = row;
+  if (job.keyless !== undefined) {
+    job.keyless = keylessContextSchema.parse(job.keyless);
+  }
   return job as FeedbackJob;
 }
 
@@ -132,6 +156,7 @@ type FeedbackJobBase = {
   creditsBilled: number;
   zeroDataRetention: boolean;
   completedAt?: Date;
+  keylessOptions?: unknown;
 };
 
 type FeedbackJobWrite = FeedbackJobBase &
@@ -156,6 +181,15 @@ export async function writeFeedbackJob(
         "feedback.endpoint": params.endpoint,
       });
       const completedAt = params.completedAt ?? new Date();
+      const keyless =
+        params.endpoint !== "map" &&
+        !params.zeroDataRetention &&
+        !isKeylessFeedbackRestricted(params.endpoint, params.keylessOptions)
+          ? keylessContextSchema.safeParse({
+              createdAtMs: completedAt.getTime(),
+              options: params.keylessOptions,
+            })
+          : undefined;
       const feedbackWindowSec =
         params.endpoint === "search"
           ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
@@ -170,13 +204,15 @@ export async function writeFeedbackJob(
       const retainUntil = new Date(
         completedAt.getTime() +
           Math.max(
-            FEEDBACK_ROW_RETENTION_MS,
+            FEEDBACK_ROW_RETENTION_MS +
+              (keyless?.success ? FEEDBACK_ROW_RETENTION_MARGIN_MS : 0),
             feedbackWindowSec * 1000 + FEEDBACK_ROW_RETENTION_MARGIN_MS,
           ),
       );
       const value = Buffer.from(
         JSON.stringify({
           version: 1,
+          ...(keyless?.success ? { keyless: keyless.data } : {}),
           requestId: params.requestId,
           teamId: params.teamId,
           refundClass:

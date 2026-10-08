@@ -6,6 +6,7 @@ import { reconcileConcurrencyQueue } from "../../lib/concurrency-queue-reconcile
 import { repairCrawlJobDoneMarkers } from "../../lib/crawl-redis";
 import { Counter, register } from "prom-client";
 import Express from "express";
+import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
 
 const RECONCILER_INTERVAL_MS = 60 * 1000;
 
@@ -29,6 +30,7 @@ const reconcilerJobsRecoveredTotal = new Counter({
   let reconcilerInFlight = false;
 
   const app = Express();
+  startNodeRuntimeMetrics();
 
   app.get("/metrics", async (_, res) => {
     try {

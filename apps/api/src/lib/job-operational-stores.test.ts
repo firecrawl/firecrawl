@@ -265,6 +265,86 @@ describe("operational Bigtable stores", () => {
     });
   });
 
+  it.each(["search", "scrape", "parse"] as const)(
+    "round-trips minimal keyless %s context and retains it past the 24-hour window",
+    async endpoint => {
+      const completedAt = new Date("2026-10-08T12:00:00Z");
+      const options = {
+        query: "private query",
+        url: "https://example.com/private",
+        sources: [{ type: "news", privateField: "private" }],
+        formats: [
+          {
+            type: "changeTracking",
+            modes: ["json"],
+            schema: { private: true },
+          },
+        ],
+        file: "private document",
+      };
+      await writeFeedbackJob({
+        jobId: JOB_ID,
+        requestId: REQUEST_ID,
+        teamId: "keyless-team",
+        endpoint,
+        scrapeOptions: scrapeOptions.parse({}),
+        succeeded: false,
+        creditsBilled: 0,
+        zeroDataRetention: false,
+        completedAt,
+        keylessOptions: options,
+      });
+      const keyless = {
+        createdAtMs: completedAt.getTime(),
+        options: {
+          sources: [{ type: "news" }],
+          formats: [{ type: "changeTracking", modes: ["json"] }],
+        },
+      };
+      expect(writtenValue()).toMatchObject({ keyless });
+      expect(JSON.stringify(writtenValue())).not.toContain("private");
+      expect(mutate.mock.calls[0][0][0].data.f.v.timestamp).toEqual(
+        new Date(completedAt.getTime() + 25 * 60 * 60 * 1000),
+      );
+      getRows.mockResolvedValueOnce([
+        [{ data: { f: { v: [{ value: JSON.stringify(writtenValue()) }] } } }],
+      ] as any);
+      expect(await readFeedbackJob(JOB_ID)).toMatchObject({
+        keyless,
+        succeeded: false,
+      });
+    },
+  );
+
+  it.each([
+    { zeroDataRetention: true, options: {} },
+    { zeroDataRetention: false, options: { zeroDataRetention: true } },
+    { zeroDataRetention: false, options: { enterprise: ["anon"] } },
+    { zeroDataRetention: false, options: { enterprise: ["zdr"] } },
+    { zeroDataRetention: false, options: { lockdown: true } },
+    {
+      zeroDataRetention: false,
+      options: { scrapeOptions: { lockdown: true } },
+    },
+    { zeroDataRetention: false, options: null },
+    { zeroDataRetention: false, options: { sources: "invalid" } },
+  ])(
+    "omits restricted or malformed keyless context: %j",
+    async ({ zeroDataRetention, options }) => {
+      await writeFeedbackJob({
+        jobId: JOB_ID,
+        requestId: REQUEST_ID,
+        teamId: "keyless-team",
+        endpoint: "search",
+        succeeded: true,
+        creditsBilled: 0,
+        zeroDataRetention,
+        keylessOptions: options,
+      });
+      expect(writtenValue()).not.toHaveProperty("keyless");
+    },
+  );
+
   it("keeps the row past a feedback window longer than the default retention", async () => {
     const completedAt = new Date("2026-09-15T12:00:00.000Z");
     const original = mutableConfig.FEEDBACK_MAX_AGE_SEC;

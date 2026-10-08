@@ -10,6 +10,7 @@ import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
 import { orgIdFromAcuc } from "../../lib/team-org";
 import { logProviderScrape, logRequest } from "../../services/logging/log_job";
+import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import {
   callsSchema,
   callSchema,
@@ -147,6 +148,7 @@ export async function providerScrapeController(
     });
   }
   const timeTaken = (Date.now() - startedAt) / 1000;
+  markAlexandriaActivity(req.auth.team_id);
   if (result.executed && !body.__agentInterop) {
     const apiKeyId = req.acuc.api_key_id ?? null;
     const served = answerSchema.safeParse(result.body);

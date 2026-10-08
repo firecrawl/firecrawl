@@ -194,7 +194,10 @@ def test_alexandria_call_boundaries_and_result_errors(count):
 
 
 @pytest.mark.parametrize("async_client", [False, True])
-@pytest.mark.parametrize("timeout, expected", [(None, 80), (1000, 31), (100000, 80)])
+@pytest.mark.parametrize(
+    "timeout, expected",
+    [(None, 150), (1000, 31), (100000, 130), (120000, 150), (300000, 150)],
+)
 @pytest.mark.asyncio
 async def test_alexandria_transport_timeout(async_client, timeout, expected):
     from unittest.mock import AsyncMock

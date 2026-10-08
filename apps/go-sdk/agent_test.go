@@ -2,9 +2,11 @@ package firecrawl
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -436,5 +438,319 @@ func TestListAgentsSendsBefore(t *testing.T) {
 	}
 	if resp.Next != "https://api.firecrawl.dev/v2/agent?before=1756600000000" {
 		t.Errorf("next = %q", resp.Next)
+	}
+}
+
+func TestStartAgentSendsExchangeThreadAndMode(t *testing.T) {
+	captured := make(chan capturedRequest, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured <- captureRequest(r)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success":true,"id":"job-2","threadId":"11111111-1111-4111-8111-111111111111","threadTurn":2}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		option.WithAPIKey("fc-test"),
+		option.WithAPIURL(server.URL),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	resp, err := client.StartAgent(context.Background(), &AgentOptions{
+		Prompt:   "go ahead",
+		ThreadID: String("11111111-1111-4111-8111-111111111111"),
+		Mode:     String("chat"),
+		Exchange: &AgentExchangeOptions{
+			Enabled:         Bool(true),
+			Toolkits:        &[]string{"acme-markets", "acme-companies"},
+			MaxCalls:        Int(5),
+			RequireApproval: Bool(true),
+			Approve: &AgentExchangeApprove{
+				ApprovalID: "22222222-2222-4222-8222-222222222222",
+				CallIDs:    &[]string{"call-1", "call-2"},
+				Always:     Bool(false),
+			},
+			Decline:         &AgentExchangeDecline{ApprovalID: "33333333-3333-4333-8333-333333333333"},
+			OnTermsRequired: String("ask"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("StartAgent: %v", err)
+	}
+
+	req := <-captured
+	if req.method != http.MethodPost || req.path != "/v2/agent" {
+		t.Errorf("unexpected request: %s %s", req.method, req.path)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal([]byte(req.body), &body); err != nil {
+		t.Fatalf("decode body %q: %v", req.body, err)
+	}
+	var want map[string]interface{}
+	if err := json.Unmarshal([]byte(`{
+		"prompt": "go ahead",
+		"threadId": "11111111-1111-4111-8111-111111111111",
+		"mode": "chat",
+		"exchange": {
+			"enabled": true,
+			"toolkits": ["acme-markets", "acme-companies"],
+			"maxCalls": 5,
+			"requireApproval": true,
+			"approve": {
+				"approvalId": "22222222-2222-4222-8222-222222222222",
+				"callIds": ["call-1", "call-2"],
+				"always": false
+			},
+			"decline": {"approvalId": "33333333-3333-4333-8333-333333333333"},
+			"onTermsRequired": "ask"
+		}
+	}`), &want); err != nil {
+		t.Fatalf("decode want: %v", err)
+	}
+	if !reflect.DeepEqual(body, want) {
+		t.Errorf("body = %s", req.body)
+	}
+	if resp.ThreadID != "11111111-1111-4111-8111-111111111111" || resp.ThreadTurn != 2 {
+		t.Errorf("resp = %+v", resp)
+	}
+}
+
+func TestStartAgentOmitsUnsetExchangeFields(t *testing.T) {
+	tests := []struct {
+		name string
+		opts *AgentOptions
+		want string
+	}{
+		{
+			name: "no exchange",
+			opts: &AgentOptions{Prompt: "find pricing"},
+			want: `{"prompt":"find pricing"}`,
+		},
+		{
+			name: "partial exchange",
+			opts: &AgentOptions{
+				Prompt: "find pricing",
+				Exchange: &AgentExchangeOptions{
+					Enabled: Bool(true),
+					Approve: &AgentExchangeApprove{ApprovalID: "22222222-2222-4222-8222-222222222222"},
+				},
+			},
+			want: `{"prompt":"find pricing","exchange":{"enabled":true,"approve":{"approvalId":"22222222-2222-4222-8222-222222222222"}}}`,
+		},
+		{
+			name: "explicit empty lists",
+			opts: &AgentOptions{
+				Prompt: "find pricing",
+				Exchange: &AgentExchangeOptions{
+					Toolkits: &[]string{},
+					Approve: &AgentExchangeApprove{
+						ApprovalID: "22222222-2222-4222-8222-222222222222",
+						CallIDs:    &[]string{},
+					},
+				},
+			},
+			want: `{"prompt":"find pricing","exchange":{"toolkits":[],"approve":{"approvalId":"22222222-2222-4222-8222-222222222222","callIds":[]}}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			captured := make(chan capturedRequest, 1)
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				captured <- captureRequest(r)
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"success":true,"id":"job-123"}`))
+			}))
+			defer server.Close()
+
+			client, err := NewClient(
+				option.WithAPIKey("fc-test"),
+				option.WithAPIURL(server.URL),
+			)
+			if err != nil {
+				t.Fatalf("NewClient: %v", err)
+			}
+
+			if _, err := client.StartAgent(context.Background(), tt.opts); err != nil {
+				t.Fatalf("StartAgent: %v", err)
+			}
+
+			req := <-captured
+			if req.body != tt.want {
+				t.Errorf("body = %s, want %s", req.body, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetAgentStatusParsesExchangeAndPendingApproval(t *testing.T) {
+	captured := make(chan capturedRequest, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured <- captureRequest(r)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"success": true,
+			"status": "completed",
+			"expiresAt": "2026-10-07T00:00:00.000Z",
+			"creditsUsed": 12,
+			"threadId": "11111111-1111-4111-8111-111111111111",
+			"threadTurn": 1,
+			"mode": "chat",
+			"message": "Two paid lookups need your approval.",
+			"suggestions": [{"label": "Approve", "prompt": "Go ahead"}],
+			"unknownTopLevel": {"ignored": true},
+			"pendingApproval": {
+				"id": "22222222-2222-4222-8222-222222222222",
+				"kind": "calls",
+				"reason": "paid provider call",
+				"calls": [{
+					"id": "call-1",
+					"provider": "acme-markets",
+					"capability": "earnings",
+					"input": {"ticker": "AAPL"},
+					"more": [{"ticker": "MSFT"}],
+					"creditsEstimate": 10
+				}, {
+					"id": "call-2",
+					"provider": "acme-companies",
+					"capability": "company",
+					"input": {"name": "Example"},
+					"creditsEstimate": null
+				}],
+				"resolution": null,
+				"unknownNested": 1
+			},
+			"exchange": {
+				"enabled": true,
+				"toolkits": ["acme-markets"],
+				"requireApproval": true,
+				"onTermsRequired": "ask",
+				"paidCalls": 0,
+				"creditsUsed": null,
+				"skippedProviders": [{
+					"provider": "acme-funding",
+					"name": "Acme Funding",
+					"capability": "funding",
+					"adds": "funding rounds",
+					"reason": "terms_required",
+					"version": "2026-01",
+					"termsUrl": "https://example.com/terms/acme-funding"
+				}],
+				"requiresAction": {
+					"type": "accept_terms",
+					"approvalId": "33333333-3333-4333-8333-333333333333",
+					"providers": [{
+						"provider": "acme-funding",
+						"name": "Acme Funding",
+						"version": "2026-01",
+						"digest": null,
+						"url": "https://example.com/terms/acme-funding",
+						"show": {"provider": "firecrawl", "capability": "terms/show", "options": {"provider": "acme-funding"}},
+						"accept": {"provider": "firecrawl", "capability": "terms/accept", "options": {"provider": "acme-funding", "version": "2026-01", "digest": null, "confirmed": true}}
+					}]
+				}
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		option.WithAPIKey("fc-test"),
+		option.WithAPIURL(server.URL),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	status, err := client.GetAgentStatus(context.Background(), "job-1")
+	if err != nil {
+		t.Fatalf("GetAgentStatus: %v", err)
+	}
+
+	req := <-captured
+	if req.method != http.MethodGet || req.path != "/v2/agent/job-1" {
+		t.Errorf("unexpected request: %s %s", req.method, req.path)
+	}
+	if status.ThreadID != "11111111-1111-4111-8111-111111111111" || status.ThreadTurn != 1 || status.Mode != "chat" {
+		t.Errorf("thread fields = %+v", status)
+	}
+	if status.Message != "Two paid lookups need your approval." {
+		t.Errorf("message = %q", status.Message)
+	}
+	if len(status.Suggestions) != 1 || status.Suggestions[0].Prompt != "Go ahead" {
+		t.Errorf("suggestions = %+v", status.Suggestions)
+	}
+
+	pending := status.PendingApproval
+	if pending == nil {
+		t.Fatalf("pendingApproval missing")
+	}
+	if pending.ID != "22222222-2222-4222-8222-222222222222" || pending.Kind != "calls" || pending.Resolution != nil {
+		t.Errorf("pendingApproval = %+v", pending)
+	}
+	if len(pending.Calls) != 2 {
+		t.Fatalf("calls = %+v", pending.Calls)
+	}
+	first := pending.Calls[0]
+	if first.ID != "call-1" || first.Provider != "acme-markets" || first.Capability != "earnings" {
+		t.Errorf("call = %+v", first)
+	}
+	if first.Input["ticker"] != "AAPL" || len(first.More) != 1 || first.More[0]["ticker"] != "MSFT" {
+		t.Errorf("call payload = %+v", first)
+	}
+	if first.CreditsEstimate == nil || *first.CreditsEstimate != 10 {
+		t.Errorf("creditsEstimate = %v", first.CreditsEstimate)
+	}
+	if pending.Calls[1].CreditsEstimate != nil {
+		t.Errorf("null creditsEstimate = %v", *pending.Calls[1].CreditsEstimate)
+	}
+
+	exchange := status.Exchange
+	if exchange == nil {
+		t.Fatalf("exchange missing")
+	}
+	if !exchange.Enabled || !exchange.RequireApproval || exchange.OnTermsRequired != "ask" || exchange.PaidCalls != 0 || exchange.CreditsUsed != nil {
+		t.Errorf("exchange = %+v", exchange)
+	}
+	if !reflect.DeepEqual(exchange.Toolkits, []string{"acme-markets"}) {
+		t.Errorf("toolkits = %v", exchange.Toolkits)
+	}
+	wantSkipped := []AgentSkippedProvider{{
+		Provider:   "acme-funding",
+		Name:       "Acme Funding",
+		Capability: "funding",
+		Adds:       "funding rounds",
+		Reason:     "terms_required",
+		Version:    "2026-01",
+		TermsURL:   "https://example.com/terms/acme-funding",
+	}}
+	if !reflect.DeepEqual(exchange.SkippedProviders, wantSkipped) {
+		t.Errorf("skippedProviders = %+v", exchange.SkippedProviders)
+	}
+
+	action := exchange.RequiresAction
+	if action == nil || action.Type != "accept_terms" || action.ApprovalID != "33333333-3333-4333-8333-333333333333" || len(action.Providers) != 1 {
+		t.Fatalf("requiresAction = %+v", action)
+	}
+	provider := action.Providers[0]
+	if provider.Provider != "acme-funding" || provider.Version != "2026-01" || provider.Digest != "" || provider.URL != "https://example.com/terms/acme-funding" {
+		t.Errorf("provider = %+v", provider)
+	}
+	if provider.Show.Capability != "terms/show" || provider.Show.Options["provider"] != "acme-funding" {
+		t.Errorf("show = %+v", provider.Show)
+	}
+	if provider.Accept.Provider != "firecrawl" || provider.Accept.Capability != "terms/accept" || provider.Accept.Options["confirmed"] != true {
+		t.Errorf("accept = %+v", provider.Accept)
 	}
 }

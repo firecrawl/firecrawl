@@ -3,7 +3,10 @@ import { externalRequestId } from "../../lib/external-request-id";
 import { z } from "zod";
 import { v7 as uuidv7 } from "uuid";
 import { logger as rootLogger } from "../../lib/logger";
-import { fetchResearchUpstream } from "../../lib/research-upstream";
+import {
+  fetchGovUpstream,
+  fetchResearchUpstream,
+} from "../../lib/research-upstream";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getEffectiveSearchForcedKind } from "../../lib/safe-mode";
@@ -25,6 +28,7 @@ const SEARCH_CREDITS_PER_TEN_RESULTS = 2;
 const ZDR_SEARCH_CREDITS_PER_TEN_RESULTS = 10;
 
 const DEVELOPER_SEARCH_TIMEOUT_MS = 15_000;
+const GOV_SEARCH_TIMEOUT_MS = 15_000;
 const PAPER_SEARCH_TIMEOUT_MS = 30_000;
 const PAPER_INSPECT_TIMEOUT_MS = 5_000;
 const SIMILAR_PAPERS_TIMEOUT_MS = 10_000;
@@ -138,6 +142,12 @@ const DEVELOPER_SEARCH_QUERY_KEYS = [
   "skills",
 ];
 
+const govSearchSchema = z.strictObject({
+  query: z.string().min(1),
+  k: kSchema(100),
+  ...commonQuery,
+});
+
 type ResearchEndpointConfig = {
   kind: ResearchRequestKind;
   table: ResearchTableName;
@@ -146,13 +156,22 @@ type ResearchEndpointConfig = {
     params: Record<string, any>,
     req: RequestWithAuth<any, any, any>,
   ) => string;
-  upstreamPath: (
-    params: Record<string, any>,
-    req: RequestWithAuth<any, any, any>,
-  ) => string;
   timeoutMs?: number;
   billAs: "scrape" | "search";
-};
+} & (
+  | {
+      upstreamPath: (
+        params: Record<string, any>,
+        req: RequestWithAuth<any, any, any>,
+      ) => string;
+    }
+  | {
+      fetchUpstream: (
+        params: Record<string, any>,
+        headers: Record<string, string>,
+      ) => ReturnType<typeof fetchResearchUpstream>;
+    }
+);
 
 type ResearchController = (req: Request, res: Response) => Promise<any>;
 type ResearchQueryParams = Record<string, any> & {
@@ -203,7 +222,8 @@ function addLegacySnakeCaseAliases<T>(value: T): T {
 }
 
 function resultCount(body: any): number {
-  return Array.isArray(body?.results) ? body.results.length : 0;
+  if (Array.isArray(body?.results)) return body.results.length;
+  return Array.isArray(body?.data?.web) ? body.data.web.length : 0;
 }
 
 function creditsFor(
@@ -211,14 +231,16 @@ function creditsFor(
   body: any,
   req: RequestWithAuth<any, any, any>,
 ) {
-  // Make certain research index accesses free (AI/ML & life-sciences indices).
-  // Research paper endpoints should have no credit cost. Explicit exceptions
-  // remain billable: GitHub search and developer/code search.
+  // Make certain index accesses free (AI/ML & life-sciences indices and the
+  // gov index). Research paper and gov endpoints should have no credit cost.
+  // Explicit exceptions remain billable: GitHub search and developer/code
+  // search.
   const freeResearchKinds = new Set([
     "research_paper_search",
     "research_related_papers",
     "research_paper_read",
     "research_paper_inspect",
+    "gov_search",
   ]);
   if (freeResearchKinds.has(config.kind)) return 0;
 
@@ -256,10 +278,9 @@ function isResearchTimeoutError(error: unknown): boolean {
 
 async function fetchForRequest(
   req: RequestWithAuth<any, any, any>,
-  path: string,
-  params: Record<string, unknown>,
+  endpoint: ResearchEndpointConfig,
+  params: Record<string, any>,
   queryKeys: string[],
-  timeoutMs?: number,
 ) {
   const headers: Record<string, string> = {};
   for (const h of FORWARDED_REQUEST_HEADERS) {
@@ -268,12 +289,16 @@ async function fetchForRequest(
   }
   headers["firecrawl-team-id"] = req.auth.team_id;
 
+  if ("fetchUpstream" in endpoint) {
+    return endpoint.fetchUpstream(params, headers);
+  }
+
   return fetchResearchUpstream({
-    path,
+    path: endpoint.upstreamPath(params, req),
     params,
     queryKeys,
     headers,
-    timeoutMs,
+    timeoutMs: endpoint.timeoutMs,
   });
 }
 
@@ -336,10 +361,9 @@ function createResearchController(
     try {
       const upstream = await fetchForRequest(
         authedReq,
-        endpoint.upstreamPath(params, authedReq),
+        endpoint,
         params,
         queryKeys,
-        endpoint.timeoutMs,
       );
       if (!upstream) {
         statusCode = 404;
@@ -574,6 +598,32 @@ export function createDeveloperRouter(options: { root?: boolean } = {}) {
     router.get("/search", controller);
     router.post("/search", controller);
   }
+
+  return router;
+}
+
+export function createGovRouter() {
+  const router = express.Router();
+
+  const controller = wrap(
+    createResearchController(govSearchSchema, [], {
+      kind: "gov_search",
+      table: "gov_searches",
+      action: "searchGov",
+      targetHint: params => String(params.query),
+      billAs: "search",
+      fetchUpstream: (params, headers) =>
+        fetchGovUpstream({
+          query: params.query,
+          k: params.k,
+          headers,
+          timeoutMs: GOV_SEARCH_TIMEOUT_MS,
+        }),
+    }),
+  );
+
+  router.get("/", controller);
+  router.post("/", controller);
 
   return router;
 }

@@ -39,7 +39,7 @@ vi.mock("../../../lib/threat-protection/request", () => ({
 import { scrapeController } from "../scrape";
 import { parseController } from "../parse";
 import { config } from "../../../config";
-import { keylessTeamId, keylessTeamUuid } from "../../../lib/keyless";
+import { keylessTeamId } from "../../../lib/keyless";
 import { TransportableError } from "../../../lib/error";
 import { ThirdPartyDataTermsRequiredError } from "../../../lib/exchange";
 
@@ -129,12 +129,11 @@ it.each(["scrape", "parse"] as const)(
       expect.objectContaining({
         id: jobId,
         request_id: jobId,
-        team_id: keylessTeamUuid(teamId),
+        team_id: teamId,
         is_successful: false,
         credits_cost: 0,
         ...(endpoint === "parse" ? { is_parse: true } : {}),
       }),
-      true,
     );
     expect(mocks.scrapeLog.mock.calls[0][0].options).not.toHaveProperty("file");
     expect(JSON.stringify(mocks.scrapeLog.mock.calls)).not.toContain(

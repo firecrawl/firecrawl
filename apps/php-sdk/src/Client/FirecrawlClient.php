@@ -824,9 +824,14 @@ final class FirecrawlClient
         if (($response['success'] ?? null) === false) {
             $error = $response['error'] ?? null;
 
-            throw new FirecrawlException(is_string($error) && $error !== ''
-                ? $error
-                : 'The API reported the request as unsuccessful.');
+            $code = $response['code'] ?? null;
+
+            throw new FirecrawlException(
+                is_string($error) && $error !== '' ? $error : 'The API reported the request as unsuccessful.',
+                200,
+                is_string($code) ? $code : null,
+                $response['details'] ?? null,
+            );
         }
 
         return $response;

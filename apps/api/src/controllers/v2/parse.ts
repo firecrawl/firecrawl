@@ -36,7 +36,6 @@ import {
 } from "../../lib/keyless";
 import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
-import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import path from "node:path";
 import {
   DOCUMENT_EXTENSIONS,
@@ -55,6 +54,7 @@ import {
   PDF_CONTENT_TYPES,
   PDF_EXTENSIONS,
 } from "../../lib/parse-formats";
+import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -492,10 +492,8 @@ export async function parseController(
         }
         req.on("close", () => aborter.abort());
 
-        const baseConcurrency = await getEffectiveConcurrencyLimit(
-          req.auth.team_id,
-          req.acuc?.org_id ?? null,
-        );
+        const baseConcurrency =
+          req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
         const concurrency = boostConcurrency
           ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
           : baseConcurrency;
@@ -509,7 +507,7 @@ export async function parseController(
           async limited => {
             const jobPriority = await getJobPriority({
               team_id: req.auth.team_id,
-              org_id: req.acuc?.org_id ?? null,
+              acuc: req.acuc,
               basePriority: 10,
             });
 
@@ -600,26 +598,21 @@ export async function parseController(
           try {
             await logRequestPromise;
             const { file, ...options } = req.body;
-            await logScrape(
-              {
-                id: jobId,
-                request_id: agentRequestId ?? jobId,
-                team_id: keylessTeamUuid(req.auth.team_id)!,
-                url: `https://parse.firecrawl.dev/uploads/${encodeURIComponent(getSyntheticFilename(file))}`,
-                options: { ...options, maxAge: 0, storeInCache: false },
-                is_successful: false,
-                error:
-                  e instanceof TransportableError
-                    ? e.message
-                    : "Request failed",
-                time_taken: (Date.now() - controllerStartTime) / 1000,
-                credits_cost: 0,
-                skipNuq: true,
-                zeroDataRetention,
-                is_parse: true,
-              },
-              true,
-            );
+            await logScrape({
+              id: jobId,
+              request_id: agentRequestId ?? jobId,
+              team_id: req.auth.team_id,
+              url: `https://parse.firecrawl.dev/uploads/${encodeURIComponent(getSyntheticFilename(file))}`,
+              options: { ...options, maxAge: 0, storeInCache: false },
+              is_successful: false,
+              error:
+                e instanceof TransportableError ? e.message : "Request failed",
+              time_taken: (Date.now() - controllerStartTime) / 1000,
+              credits_cost: 0,
+              skipNuq: true,
+              zeroDataRetention,
+              is_parse: true,
+            });
           } catch (error) {
             logger.warn("Failed to log job before worker execution", {
               error,

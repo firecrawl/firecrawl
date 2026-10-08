@@ -42,8 +42,10 @@ vi.mock("../../services/autumn/autumn.service", async importOriginal => {
   return {
     ...actual,
     autumnService: {
-      getRateLimitMultiplier: vi.fn().mockResolvedValue(1),
-      getKnownRateLimitMultiplier: vi.fn().mockResolvedValue(1),
+      getTeamLimits: vi.fn().mockResolvedValue({
+        concurrency_limit: 2,
+        rate_limit_multiplier: 1,
+      }),
     },
   };
 });
@@ -72,6 +74,7 @@ vi.mock("undici", async importOriginal => ({
 
 import { config } from "../../config";
 import { exchangeRouter } from "../../routes/exchange";
+import { redisRateLimitClient } from "../../services/rate-limiter";
 
 const MANAGED_KEY = "22222222-2222-4222-8222-222222222222";
 const SECRET = "agent-secret";
@@ -90,7 +93,7 @@ function managedRow(flags: Record<string, unknown> | null = null) {
   };
 }
 
-// auth_chunk_1 answers only when the key's purpose matches the lookup's.
+// auth_chunk_2 answers only when the key's purpose matches the lookup's.
 function keyResolvesAs(flags?: Record<string, unknown>) {
   mocks.authChunk.mockImplementation(
     async (_db: unknown, key: string, purpose = "general") =>
@@ -247,6 +250,35 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
     }
     expect(mocks.upstreamFetch).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    [200, true],
+    [502, false],
+  ])(
+    "discover answering %i opens the Alexandria feedback window before responding: %s",
+    async (status, opens) => {
+      mocks.upstreamFetch.mockImplementation(
+        async () => new Response(JSON.stringify({ status }), { status }),
+      );
+      const response = await send("get", "/exchange/discover?q=gdp", "header");
+      expect(response.status).toBe(status);
+      const activity = vi
+        .mocked(redisRateLimitClient.set)
+        .mock.calls.filter(([key]) => key === "alexandria:activity:team-mcp");
+      expect(activity).toEqual(
+        opens
+          ? [
+              [
+                "alexandria:activity:team-mcp",
+                "1",
+                "EX",
+                config.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
+              ],
+            ]
+          : [],
+      );
+    },
+  );
 
   it.each([
     [

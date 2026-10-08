@@ -1,4 +1,6 @@
 allowBuilds:
+  # jest-haste-map watch-mode dependency; the prebuilt platform binary is used.
+  "@parcel/watcher": false
   esbuild: true
   unrs-resolver: true
 overrides:
@@ -12,6 +14,9 @@ overrides:
   "brace-expansion@>=5.0.0 <5.0.12": "5.0.12"
   "js-yaml@>=3.0.0 <3.15.2": "3.15.2"
   "js-yaml@>=4.0.0 <4.3.2": "4.3.2"
+  # GHSA-hp3w-g68c-fv3c: js-yaml 3 pulls argparse@1 and sprintf-js, which has
+  # no patched release. load-nyc-config only calls js-yaml's load().
+  "@istanbuljs/load-nyc-config>js-yaml": "4.3.2"
   # GHSA-vh66-26gq-q6x8 / GHSA-9fr6-4gfg-395g / GHSA-c29m-xwm3-cm6r /
   # GHSA-mghh-pgcx-3jjj / GHSA-x97p-jq2g-jp4f / GHSA-3pq3-5fj3-cg6v /
   # GHSA-542g-h47m-68v8 / GHSA-j8rh-479h-cp32 / GHSA-4hqw-qxg8-jxx2 /

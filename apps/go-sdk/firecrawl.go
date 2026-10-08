@@ -100,6 +100,15 @@ func (c *Client) Scrape(ctx context.Context, url string, opts *ScrapeOptions) (*
 		return nil, err
 	}
 
+	// Some scrape failures (e.g. SCRAPE_DNS_RESOLUTION_ERROR) arrive as HTTP 200 with success: false.
+	var envelope struct {
+		Success *bool `json:"success"`
+	}
+	if json.Unmarshal(raw, &envelope) == nil && envelope.Success != nil && !*envelope.Success {
+		msg, code, requiresAction := extractError(raw, 200)
+		return nil, &FirecrawlError{StatusCode: 200, ErrorCode: code, Message: msg, RequiresAction: requiresAction}
+	}
+
 	doc, err := extractDataAs[Document](raw)
 	if err != nil {
 		return nil, err

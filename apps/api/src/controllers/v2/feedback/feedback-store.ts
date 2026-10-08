@@ -39,41 +39,6 @@ export async function lookupFeedbackJob(
   dbTeamId: string,
   { requireOptions = false }: { requireOptions?: boolean } = {},
 ): Promise<FeedbackJobRow | null> {
-  if (requireOptions) {
-    // Compact records omit the options keyless validation requires. Read the
-    // PostgreSQL primary so replica lag cannot hide a newly completed job.
-    const table = {
-      search: schema.searches,
-      scrape: schema.scrapes,
-      parse: schema.parses,
-      map: schema.maps,
-    }[endpoint] as any;
-    const [row] = await db
-      .select({
-        id: table.id,
-        request_id: table.request_id,
-        team_id: table.team_id,
-        credits_cost: table.credits_cost,
-        created_at: table.created_at,
-        options: table.options,
-        ...(endpoint === "map" ? {} : { is_successful: table.is_successful }),
-      })
-      .from(table)
-      .where(and(eq(table.id, jobId), eq(table.team_id, dbTeamId)))
-      .limit(1);
-    if (!row) return null;
-    return {
-      endpoint,
-      id: row.id,
-      request_id: row.request_id ?? null,
-      team_id: row.team_id,
-      credits_cost: row.credits_cost ?? 0,
-      created_at: row.created_at,
-      is_successful: endpoint === "map" ? true : (row.is_successful ?? null),
-      options: row.options ?? null,
-    };
-  }
-
   let job;
   try {
     job = await readFeedbackJob(jobId);
@@ -90,6 +55,8 @@ export async function lookupFeedbackJob(
   const storedEndpoint = endpointForRefundClass(job.refundClass);
   if (job.teamId !== dbTeamId || storedEndpoint !== endpoint) return null;
 
+  if (requireOptions && (!job.keyless || job.zeroDataRetention)) return null;
+
   const feedbackWindowSec =
     endpoint === "search"
       ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
@@ -101,10 +68,12 @@ export async function lookupFeedbackJob(
     team_id: job.teamId,
     credits_cost: job.creditsBilled,
     created_at: new Date(
-      job.feedbackDeadlineMs - feedbackWindowSec * 1000,
+      requireOptions
+        ? job.keyless!.createdAtMs
+        : job.feedbackDeadlineMs - feedbackWindowSec * 1000,
     ).toISOString(),
     is_successful: job.succeeded,
-    options: null,
+    options: requireOptions ? job.keyless!.options : null,
     feedback_deadline_ms: job.feedbackDeadlineMs,
     refund_class: job.refundClass,
     zero_data_retention: job.zeroDataRetention,

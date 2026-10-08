@@ -72,6 +72,7 @@ import {
 import { trackMonitorCheckStartedInterest } from "./interest";
 import { runSearchTarget, type ScrapeSearchResult } from "./search/run";
 import { verdictJsonSchema } from "./search/judge";
+import { monitorTelemetryMetadata } from "./search/tuning";
 import { computeGoalVersion } from "./search/dedupe";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { getACUCTeam } from "../../controllers/auth";
@@ -275,6 +276,7 @@ export function estimateActualCredits(doc: any, options?: any): number {
 async function scrapeSearchMonitorPage(params: {
   teamId: string;
   teamFlags: TeamFlags | null;
+  monitorId: string;
   checkId: string;
   url: string;
   judgePrompt: string;
@@ -322,6 +324,15 @@ async function scrapeSearchMonitorPage(params: {
         zeroDataRetention: false,
         // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
         teamFlags: params.teamFlags ?? undefined,
+        // The JSON format is the search judge; trace it as part of the check.
+        llmTelemetry: {
+          functionId: "monitor/searchJudge",
+          metadata: monitorTelemetryMetadata("monitor_search_judge", {
+            teamId: params.teamId,
+            monitorId: params.monitorId,
+            monitorCheckId: params.checkId,
+          }),
+        },
       },
       skipNuq: true,
       origin: "monitor",
@@ -861,6 +872,7 @@ async function runMonitorSearchTarget(params: {
       scrapeSearchMonitorPage({
         teamId: monitor.team_id,
         teamFlags,
+        monitorId: monitor.id,
         checkId: check.id,
         url,
         judgePrompt,

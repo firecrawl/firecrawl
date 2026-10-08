@@ -209,31 +209,31 @@ describe("logSearch", () => {
   });
 
   it.each([false, true])(
-    "waits for the job row and saves results with background=%s",
+    "waits for the feedback record and saves results with background=%s",
     async background => {
-      const jobRow = deferred<void>();
+      const jobRow = deferred<boolean>();
       const artifact = deferred<void>();
-      values.mockReturnValueOnce(jobRow.promise);
+      writeFeedbackJob.mockReturnValueOnce(jobRow.promise);
       vi.mocked(saveSearchToGCS).mockReturnValueOnce(artifact.promise);
       const search = makeSearch({ results: { web: [] } });
       let completed = false;
       const pending = (
         background
-          ? logSearch(search, false, { saveResultsInBackground: true })
+          ? logSearch(search, { saveResultsInBackground: true })
           : logSearch(search)
       ).then(() => {
         completed = true;
       });
       try {
-        await vi.waitFor(() => expect(values).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(writeFeedbackJob).toHaveBeenCalledOnce());
         expect(completed).toBe(false);
         expect(saveSearchToGCS).not.toHaveBeenCalled();
-        jobRow.resolve();
+        jobRow.resolve(true);
         await vi.waitFor(() => expect(saveSearchToGCS).toHaveBeenCalledOnce());
         if (background) await pending;
         expect(completed).toBe(background);
       } finally {
-        jobRow.resolve();
+        jobRow.resolve(true);
         artifact.resolve();
         await pending;
       }
@@ -244,7 +244,7 @@ describe("logSearch", () => {
     const artifact = deferred<void>();
     vi.mocked(saveSearchToGCS).mockReturnValueOnce(artifact.promise);
     const search = makeSearch({ results: { web: [] } });
-    await logSearch(search, false, { saveResultsInBackground: true });
+    await logSearch(search, { saveResultsInBackground: true });
     expect(insert).toHaveBeenCalledWith(schema.searches);
     const error = new Error("Artifact storage unavailable");
     artifact.reject(error);

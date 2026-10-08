@@ -39,6 +39,7 @@ import {
   writeScrapeJobState,
 } from "../../lib/job-state-store";
 import { buildReplayContextFromScrape } from "../../lib/scrape-interact/scrape-replay";
+import { browserOptionsFromScrape } from "../../lib/browser-options";
 import {
   initializeRequestCredits,
   recordRequestCredits,
@@ -131,6 +132,7 @@ const tableMap: Record<string, PgTable> = {
   research_related_papers: schema.research_related_papers,
   research_github_searches: schema.research_github_searches,
   code_searches: schema.code_searches,
+  gov_searches: schema.gov_searches,
   extracts: schema.extracts,
   maps: schema.maps,
   llmstxts: schema.llmstxts,
@@ -512,7 +514,8 @@ type LoggedRequest = {
     | "research_paper_read"
     | "research_related_papers"
     | "research_github_search"
-    | "code_search";
+    | "code_search"
+    | "gov_search";
   api_version: string;
   team_id: string;
   origin?: string;
@@ -768,9 +771,7 @@ async function logScrapeInternal(
           : {
               ...(scrape.error ? { error: scrape.error } : {}),
               ...(replay ? { replay } : {}),
-              ...(scrape.options.profile
-                ? { profile: scrape.options.profile }
-                : {}),
+              browser: browserOptionsFromScrape(scrape.options),
               ...(typeof (scrape.options as any).origin === "string"
                 ? { origin: (scrape.options as any).origin }
                 : {}),
@@ -786,6 +787,9 @@ async function logScrapeInternal(
   }
 
   const feedbackJob = {
+    ...(config.KEYLESS_FEEDBACK_ENABLED && keylessTeamUuid(scrape.team_id)
+      ? { keylessOptions: scrape.options }
+      : {}),
     jobId: scrape.id,
     requestId: scrape.request_id,
     teamId: storedTeamId,
@@ -1105,7 +1109,6 @@ export type LoggedSearch = {
 
 export async function logSearch(
   search: LoggedSearch,
-  force: boolean = false,
   {
     saveResultsInBackground = false,
   }: { saveResultsInBackground?: boolean } = {},
@@ -1116,16 +1119,15 @@ export async function logSearch(
       table: "searches",
       id: search.id,
       requestId: search.request_id,
-      force,
+      force: false,
       zeroDataRetention: search.zeroDataRetention,
     },
-    () => logSearchInternal(search, force, saveResultsInBackground),
+    () => logSearchInternal(search, saveResultsInBackground),
   );
 }
 
 async function logSearchInternal(
   search: LoggedSearch,
-  force: boolean = false,
   saveResultsInBackground: boolean = false,
 ) {
   const logger = _logger.child({
@@ -1149,6 +1151,9 @@ async function logSearchInternal(
 
   await writeFeedbackJobSafely(
     {
+      ...(config.KEYLESS_FEEDBACK_ENABLED && keylessTeamUuid(search.team_id)
+        ? { keylessOptions: search.options }
+        : {}),
       jobId: search.id,
       requestId: search.request_id,
       teamId: storedTeamId,
@@ -1178,7 +1183,7 @@ async function logSearchInternal(
       num_results: search.num_results,
       time_taken: search.time_taken,
     },
-    force,
+    false,
     logger,
   );
 
@@ -1214,7 +1219,8 @@ export type ResearchRequestKind =
   | "research_paper_read"
   | "research_related_papers"
   | "research_github_search"
-  | "code_search";
+  | "code_search"
+  | "gov_search";
 
 export type ResearchTableName =
   | "research_paper_searches"
@@ -1222,7 +1228,8 @@ export type ResearchTableName =
   | "research_paper_reads"
   | "research_related_papers"
   | "research_github_searches"
-  | "code_searches";
+  | "code_searches"
+  | "gov_searches";
 
 type LoggedResearchEndpoint = {
   table: ResearchTableName;
