@@ -13,7 +13,7 @@ type SerpEngine =
   | "Ecosia"
   | "Startpage";
 
-export type SerpPage = { engine: SerpEngine; query: string };
+type SerpPage = { engine: SerpEngine; query: string };
 
 const MAX_QUERY_CHARS = 200;
 

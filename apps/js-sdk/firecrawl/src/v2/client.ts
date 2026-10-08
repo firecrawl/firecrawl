@@ -394,7 +394,7 @@ export class FirecrawlClient {
   /**
    * Cancel a crawl job.
    * @param jobId Crawl job id.
-   * @returns True if cancelled.
+   * @returns True if cancelled. False if the crawl was already completed (the API answers 409).
    */
   async cancelCrawl(jobId: string): Promise<boolean> {
     return cancelCrawl(this.http, jobId);
@@ -402,11 +402,14 @@ export class FirecrawlClient {
   /**
    * Convenience waiter: start a crawl and poll until it finishes.
    * @param url Root URL to crawl.
-   * @param req Crawl configuration plus waiter controls (pollInterval, timeout seconds).
+   * @param req Crawl configuration plus waiter controls (pollInterval, timeout seconds, signal).
+   * When `signal` aborts, polling stops, the job gets a best-effort cancel request,
+   * and the promise rejects with `signal.reason`.
    * @returns Final job snapshot.
    */
-  async crawl(url: string, req: CrawlOptions & { pollInterval?: number; timeout?: number } = {}): Promise<CrawlJob> {
-    return crawlWaiter(this.http, { url, ...req }, req.pollInterval, req.timeout);
+  async crawl(url: string, req: CrawlOptions & { pollInterval?: number; timeout?: number; signal?: AbortSignal } = {}): Promise<CrawlJob> {
+    const { pollInterval, timeout, signal, ...options } = req;
+    return crawlWaiter(this.http, { url, ...options }, pollInterval, timeout, signal);
   }
   /**
    * Retrieve crawl errors and robots.txt blocks.
@@ -724,7 +727,7 @@ export class FirecrawlClient {
   }
 
   /** @deprecated V1 compatibility alias for agent recovery. Prefer crawl(). */
-  async crawlUrl(url: string, req: CrawlOptions & { pollInterval?: number; timeout?: number } = {}): Promise<CrawlJob> {
+  async crawlUrl(url: string, req: CrawlOptions & { pollInterval?: number; timeout?: number; signal?: AbortSignal } = {}): Promise<CrawlJob> {
     return this.crawl(url, req);
   }
 

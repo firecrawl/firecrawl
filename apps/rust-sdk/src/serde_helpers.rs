@@ -30,6 +30,17 @@ where
     }
 }
 
+/// Reads a field as `T`, or as `None` when the value has another shape, such as
+/// a page's own meta tag of the same name.
+pub(crate) fn deserialize_or_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    Ok(Option::<Value>::deserialize(deserializer)?
+        .and_then(|value| serde_json::from_value(value).ok()))
+}
+
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;

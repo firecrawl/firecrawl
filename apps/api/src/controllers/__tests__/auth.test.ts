@@ -1535,6 +1535,207 @@ describe("authenticateUser", () => {
     });
   });
 
+  describe("auth/denied log", () => {
+    const unknownKey = "fc-3c9a0d5e7b1f4a2c8d6e9f0a1b2c3d4e";
+    const clientIp = "198.51.100.23";
+
+    const deniedLines = () =>
+      (vi.mocked(logger.warn).mock.calls as unknown as [string, any][])
+        .filter(([, meta]) => meta?.canonicalLog === "auth/denied")
+        .map(([message, meta]) => ({ message, meta }));
+
+    beforeEach(() => {
+      config.USE_DB_AUTHENTICATION = true;
+      vi.mocked(getValue).mockResolvedValue(null);
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([]);
+      vi.mocked(redlock.using).mockImplementation(
+        async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+      );
+      vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    });
+
+    it.each([
+      ["missing_credentials", {}, "Unauthorized"],
+      [
+        "malformed_authorization",
+        { authorization: "Bearer" },
+        "Unauthorized: Token missing",
+      ],
+      [
+        "malformed_key",
+        { authorization: "Bearer not-a-real-key" },
+        "Unauthorized: Invalid token",
+      ],
+      [
+        "unknown_key",
+        { authorization: `Bearer ${unknownKey}` },
+        "Unauthorized: Invalid token",
+      ],
+    ] as const)(
+      "logs one %s line and returns the same 401",
+      async (reason, headers, error) => {
+        const auth = await authenticateUser(
+          {
+            method: "POST",
+            baseUrl: "/v2",
+            path: "/scrape",
+            route: { path: "/scrape" },
+            headers,
+            socket: { remoteAddress: clientIp },
+          },
+          {},
+          RateLimiterMode.Scrape,
+        );
+
+        expect(auth).toEqual({ success: false, error, status: 401 });
+        expect(deniedLines()).toEqual([
+          {
+            message: "Request denied",
+            meta: {
+              canonicalLog: "auth/denied",
+              reason,
+              status: 401,
+              method: "POST",
+              route: "/v2/scrape",
+            },
+          },
+        ]);
+      },
+    );
+
+    it("redacts the admin secret from an admin route", async () => {
+      const originalBullAuthKey = config.BULL_AUTH_KEY;
+      config.BULL_AUTH_KEY = "bull-admin-secret";
+      try {
+        await authenticateUser(
+          {
+            method: "POST",
+            baseUrl: "",
+            path: "/admin/bull-admin-secret/crawl-monitor",
+            route: { path: "/admin/bull-admin-secret/crawl-monitor" },
+            headers: { authorization: `Bearer ${unknownKey}` },
+            socket: { remoteAddress: clientIp },
+          },
+          {},
+          RateLimiterMode.Crawl,
+        );
+      } finally {
+        config.BULL_AUTH_KEY = originalBullAuthKey;
+      }
+
+      expect(deniedLines()).toEqual([
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            reason: "unknown_key",
+            route: "/admin/:bullAuthKey/crawl-monitor",
+          }),
+        }),
+      ]);
+      expect(JSON.stringify(deniedLines())).not.toContain("bull-admin-secret");
+    });
+
+    it("names the team and key id of a banned team's key", async () => {
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([
+        {
+          api_key: "00000000-0000-4000-8000-000000000000",
+          api_key_id: 9,
+          team_id: "team-banned",
+          org_id: "org-1",
+          is_banned: true,
+          flags: null,
+        },
+      ]);
+
+      const auth = await authenticateUser(
+        {
+          headers: {
+            authorization: "Bearer 00000000-0000-4000-8000-000000000000",
+          },
+          socket: { remoteAddress: clientIp },
+        },
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      expect(auth).toEqual(expect.objectContaining({ status: 403 }));
+      expect(deniedLines()).toEqual([
+        {
+          message: "Request denied",
+          meta: {
+            canonicalLog: "auth/denied",
+            reason: "team_banned",
+            status: 403,
+            teamId: "team-banned",
+            apiKeyId: 9,
+          },
+        },
+      ]);
+    });
+
+    it("never logs the credential, the Authorization header, or the client IP", async () => {
+      await authenticateUser(
+        {
+          headers: {
+            authorization: `Bearer ${unknownKey}`,
+            "x-forwarded-for": clientIp,
+          },
+          socket: { remoteAddress: clientIp },
+          ip: clientIp,
+        },
+        {},
+        RateLimiterMode.Scrape,
+      );
+
+      const logged = JSON.stringify(deniedLines());
+      expect(deniedLines()).toHaveLength(1);
+      expect(logged).not.toContain(unknownKey.slice(3, 11));
+      expect(logged).not.toContain(unknownKey.slice(-8));
+      expect(logged).not.toContain("Bearer");
+      expect(logged).not.toContain(clientIp);
+    });
+
+    it("logs a suspicious keyless IP as denied but not a keyless quota 429", async () => {
+      vi.mocked(isKeylessConfigured).mockReturnValue(true);
+      vi.mocked(isKeylessIpSuspicious).mockResolvedValueOnce(true);
+      const keylessRequest = () => ({
+        headers: {},
+        socket: { remoteAddress: "203.0.113.8" },
+      });
+
+      const suspicious = await authenticateUser(
+        keylessRequest(),
+        {},
+        RateLimiterMode.Scrape,
+        { allowKeyless: true },
+      );
+      vi.mocked(consumeKeylessRequest).mockResolvedValue({
+        ok: false,
+        reason: "requests",
+        requestsUsed: 10,
+        creditsUsed: 2,
+      });
+      const limited = await authenticateUser(
+        keylessRequest(),
+        {},
+        RateLimiterMode.Scrape,
+        { allowKeyless: true },
+      );
+
+      expect(suspicious).toEqual(expect.objectContaining({ status: 403 }));
+      expect(limited).toEqual(expect.objectContaining({ status: 429 }));
+      expect(deniedLines()).toEqual([
+        {
+          message: "Request denied",
+          meta: {
+            canonicalLog: "auth/denied",
+            reason: "keyless_ip_suspicious",
+            status: 403,
+          },
+        },
+      ]);
+    });
+  });
+
   it("clears purpose-qualified and legacy ACUC cache entries", async () => {
     await clearACUC("api-key");
 

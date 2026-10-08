@@ -78,8 +78,14 @@ export async function saveCrawl(id: string, crawl: StoredCrawl) {
   );
 }
 
-export async function recordRobotsBlocked(crawlId: string, url: string) {
-  await redisEvictConnection.sadd("crawl:" + crawlId + ":robots_blocked", url);
+export async function recordRobotsBlocked(crawlId: string, urls: string[]) {
+  if (urls.length === 0) return;
+  for (let i = 0; i < urls.length; i += REDIS_COMMAND_ARG_CHUNK_SIZE) {
+    await redisEvictConnection.sadd(
+      "crawl:" + crawlId + ":robots_blocked",
+      ...urls.slice(i, i + REDIS_COMMAND_ARG_CHUNK_SIZE),
+    );
+  }
   await redisEvictConnection.expire(
     "crawl:" + crawlId + ":robots_blocked",
     24 * 60 * 60,
@@ -229,6 +235,16 @@ export async function addCrawlJobs(
   }
 }
 
+// Sets KEYS[1] to ARGV[1] only if the stored value is missing or smaller,
+// then refreshes the TTL (ARGV[2], in seconds). Jobs can finish out of order,
+// so a plain SET could replace a newer finish time with an older one.
+const SET_IF_GREATER_SCRIPT = `local current = tonumber(redis.call("get", KEYS[1]))
+if current == nil or tonumber(ARGV[1]) > current then
+  redis.call("set", KEYS[1], ARGV[1])
+end
+redis.call("expire", KEYS[1], ARGV[2])
+return 1`;
+
 export async function addCrawlJobDone(
   id: string,
   job_id: string,
@@ -248,16 +264,24 @@ export async function addCrawlJobDone(
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
+      const now = Date.now();
       const pipeline = redisEvictConnection.pipeline();
       pipeline.sadd("crawl:" + id + ":jobs_done", job_id);
       pipeline.expire("crawl:" + id + ":jobs_done", 24 * 60 * 60);
 
+      // jobs_donez_ordered only holds successful jobs, so it cannot tell when
+      // a crawl ended if its last jobs failed. Keep the finish time of the
+      // latest job of any outcome for the crawl status completedAt.
+      pipeline.eval(
+        SET_IF_GREATER_SCRIPT,
+        1,
+        "crawl:" + id + ":last_job_done_at",
+        now,
+        24 * 60 * 60,
+      );
+
       if (success) {
-        pipeline.zadd(
-          "crawl:" + id + ":jobs_donez_ordered",
-          Date.now(),
-          job_id,
-        );
+        pipeline.zadd("crawl:" + id + ":jobs_donez_ordered", now, job_id);
       } else {
         // in case it's already been pushed, make sure it's removed
         pipeline.zrem("crawl:" + id + ":jobs_donez_ordered", job_id);
@@ -437,6 +461,9 @@ export async function getDoneJobsOrdered(
   );
 }
 
+/// Finish time of the latest done job in the crawl, failed jobs included.
+/// Crawls that started before last_job_done_at existed only have the
+/// successful-job timestamps, so take the later of the two.
 export async function getLastDoneJobTimestamp(
   id: string,
 ): Promise<number | null> {
@@ -444,15 +471,24 @@ export async function getLastDoneJobTimestamp(
     "crawl:" + id + ":jobs_donez_ordered",
     24 * 60 * 60,
   );
-  const result = await redisEvictConnection.zrange(
-    "crawl:" + id + ":jobs_donez_ordered",
-    -1,
-    -1,
-    "WITHSCORES",
+  await redisEvictConnection.expire(
+    "crawl:" + id + ":last_job_done_at",
+    24 * 60 * 60,
   );
-  if (!result || result.length < 2) return null;
-  const score = parseInt(result[1], 10);
-  return Number.isFinite(score) ? score : null;
+  const [lastAny, lastSuccess] = await Promise.all([
+    redisEvictConnection.get("crawl:" + id + ":last_job_done_at"),
+    redisEvictConnection.zrange(
+      "crawl:" + id + ":jobs_donez_ordered",
+      -1,
+      -1,
+      "WITHSCORES",
+    ),
+  ]);
+  const candidates = [
+    lastAny !== null ? parseInt(lastAny, 10) : NaN,
+    lastSuccess && lastSuccess.length >= 2 ? parseInt(lastSuccess[1], 10) : NaN,
+  ].filter(x => Number.isFinite(x));
+  return candidates.length > 0 ? Math.max(...candidates) : null;
 }
 
 export async function getDoneJobsOrderedUntil(

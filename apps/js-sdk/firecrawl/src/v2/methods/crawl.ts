@@ -107,28 +107,94 @@ export async function getCrawlStatus(
   }
 }
 
+/**
+ * Cancel a crawl job. Resolves `false` when the API answers 409 because the
+ * crawl already finished, so there is nothing left to cancel.
+ */
 export async function cancelCrawl(http: HttpClient, jobId: string): Promise<boolean> {
   try {
     const res = await http.delete<{ status: string }>(`/v2/crawl/${jobId}`);
+    if (res.status === 409) return false;
     if (res.status !== 200) throwForBadResponse(res, "cancel crawl");
     return res.data?.status === "cancelled";
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "cancel crawl");
+    if (err?.isAxiosError) {
+      if (err.response?.status === 409) return false;
+      return normalizeAxiosError(err, "cancel crawl");
+    }
     throw err;
   }
 }
 
-export async function waitForCrawlCompletion(http: HttpClient, jobId: string, pollInterval = 2, timeout?: number): Promise<CrawlJob> {
+function abortReason(signal: AbortSignal): unknown {
+  if (signal.reason !== undefined) return signal.reason;
+  return new DOMException("This operation was aborted", "AbortError");
+}
+
+/** Reject with the abort reason as soon as `signal` aborts. */
+function raceAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) {
+    promise.catch(() => {});
+    return Promise.reject(abortReason(signal));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      promise.catch(() => {});
+      reject(abortReason(signal));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (err) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(abortReason(signal));
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortReason(signal!));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Poll a crawl until it reaches a terminal status. When `signal` aborts, polling
+ * stops and the promise rejects with the abort reason. The job is not cancelled.
+ */
+export async function waitForCrawlCompletion(
+  http: HttpClient,
+  jobId: string,
+  pollInterval = 2,
+  timeout?: number,
+  signal?: AbortSignal,
+): Promise<CrawlJob> {
   const start = Date.now();
   
   while (true) {
+    if (signal?.aborted) throw abortReason(signal);
     try {
-      const status = await getCrawlStatus(http, jobId);
+      const status = await raceAbort(getCrawlStatus(http, jobId), signal);
       
       if (["completed", "failed", "cancelled"].includes(status.status)) {
         return status;
       }
     } catch (err: any) {
+      if (signal?.aborted) throw abortReason(signal);
       // Don't retry on permanent errors (4xx) - re-throw immediately with jobId context
       if (!isRetryableError(err)) {
         // Create new error with jobId for better debugging (non-retryable errors like 404)
@@ -151,13 +217,31 @@ export async function waitForCrawlCompletion(http: HttpClient, jobId: string, po
       throw new JobTimeoutError(jobId, timeout, 'crawl');
     }
     
-    await new Promise((r) => setTimeout(r, Math.max(1000, pollInterval * 1000)));
+    await sleep(Math.max(1000, pollInterval * 1000), signal);
   }
 }
 
-export async function crawl(http: HttpClient, request: CrawlRequest, pollInterval = 2, timeout?: number): Promise<CrawlJob> {
+/**
+ * Start a crawl and wait for it to finish. When `signal` aborts, polling stops,
+ * the job gets a best-effort cancel request, and the promise rejects with the
+ * abort reason at once, without waiting for the cancel. A signal that is already
+ * aborted rejects before any request.
+ */
+export async function crawl(
+  http: HttpClient,
+  request: CrawlRequest,
+  pollInterval = 2,
+  timeout?: number,
+  signal?: AbortSignal,
+): Promise<CrawlJob> {
+  if (signal?.aborted) throw abortReason(signal);
   const started = await startCrawl(http, request);
-  return waitForCrawlCompletion(http, started.id, pollInterval, timeout);
+  try {
+    return await waitForCrawlCompletion(http, started.id, pollInterval, timeout, signal);
+  } catch (err) {
+    if (signal?.aborted) cancelCrawl(http, started.id).catch(() => {});
+    throw err;
+  }
 }
 
 export async function getCrawlErrors(http: HttpClient, crawlId: string): Promise<CrawlErrorsResponse> {

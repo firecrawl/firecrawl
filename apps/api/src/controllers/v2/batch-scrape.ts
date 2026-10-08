@@ -51,6 +51,11 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
 import {
+  ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
+} from "../../lib/exchange";
+import { getExchangeAccessForRequestBody } from "../../lib/exchange-request";
+import {
   AGENT_REQUEST_CREDITS_SHARDS,
   initializeRequestCredits,
   requestCreditsShards,
@@ -155,10 +160,50 @@ export async function batchScrapeController(
     zeroDataRetention,
   });
 
+  // A blocklisted URL is admitted when the Exchange can serve it, as on
+  // single scrape; null means the URL may be scraped.
+  const blocklistRefusal = async (url: string) => {
+    if (
+      !isUrlBlocked(url, req.acuc?.flags ?? null, {
+        team_id: req.auth.team_id,
+        org_id: req.acuc?.org_id ?? null,
+        origin: req.body.origin ?? null,
+      })
+    ) {
+      return null;
+    }
+    const exchangeAccess = await getExchangeAccessForRequestBody({
+      body: req.body,
+      flags: req.acuc?.flags ?? null,
+      url,
+      blocked: true,
+      zeroDataRetention,
+      teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
+    });
+    if (exchangeAccess.allowed) {
+      return null;
+    }
+    if (exchangeAccess.termsRequired) {
+      return new ThirdPartyDataTermsRequiredError(exchangeAccess.terms);
+    }
+    return exchangeAccess.unsupportedOption === undefined
+      ? new UnsupportedSiteError()
+      : new ThirdPartyDataUnsupportedOptionError(
+          exchangeAccess.unsupportedOption,
+        );
+  };
+
   let urls: string[] = req.body.urls;
   let unnormalizedURLs = preNormalizedBody.urls;
   let invalidURLs: string[] | undefined = undefined;
-  const locallyBlockedURLs: string[] = [];
+  const refusedURLs: {
+    url: string;
+    error:
+      | UnsupportedSiteError
+      | ThirdPartyDataTermsRequiredError
+      | ThirdPartyDataUnsupportedOptionError;
+  }[] = [];
 
   if (req.body.ignoreInvalidURLs) {
     invalidURLs = [];
@@ -169,61 +214,29 @@ export async function batchScrapeController(
     for (const u of pendingURLs) {
       try {
         const nu = urlSchema.parse(u);
-        if (
-          !isUrlBlocked(nu, req.acuc?.flags ?? null, {
-            team_id: req.auth.team_id,
-            org_id: req.acuc?.org_id ?? null,
-            origin: req.body.origin ?? null,
-          })
-        ) {
+        const refusal = await blocklistRefusal(nu);
+        if (refusal === null) {
           urls.push(nu);
           unnormalizedURLs.push(u);
         } else {
           invalidURLs.push(u);
-          locallyBlockedURLs.push(nu);
+          refusedURLs.push({ url: nu, error: refusal });
         }
       } catch (_) {
         invalidURLs.push(u);
       }
     }
   } else {
-    const blockedURLs =
-      req.body.urls?.filter((url: string) =>
-        isUrlBlocked(url, req.acuc?.flags ?? null, {
-          team_id: req.auth.team_id,
-          org_id: req.acuc?.org_id ?? null,
-          origin: req.body.origin ?? null,
-        }),
-      ) ?? [];
-    if (blockedURLs.length > 0) {
-      locallyBlockedURLs.push(...blockedURLs);
-      emitRejectedScrapeActivityEvents(
-        locallyBlockedURLs.map(url => ({
-          scrapeId: uuidv7(),
-          requestId: req.body.__agentInterop?.requestId ?? id,
-          endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
-          teamId: req.auth.team_id,
-          apiKeyId: req.acuc?.api_key_id ?? null,
-          auditMetadata: req.body.auditMetadata,
-          url,
-          error: new UnsupportedSiteError(),
-          origin: req.body.origin ?? "api",
-          integration: req.body.integration,
-          zeroDataRetention,
-        })),
-      );
-      locallyBlockedURLs.length = 0;
-      if (!res.headersSent) {
-        return res.status(403).json({
-          success: false,
-          error: UNSUPPORTED_SITE_MESSAGE,
-        });
+    for (const url of urls) {
+      const refusal = await blocklistRefusal(url);
+      if (refusal !== null) {
+        refusedURLs.push({ url, error: refusal });
       }
     }
   }
 
   emitRejectedScrapeActivityEvents(
-    locallyBlockedURLs.map(url => ({
+    refusedURLs.map(({ url, error }) => ({
       scrapeId: uuidv7(),
       requestId: req.body.__agentInterop?.requestId ?? id,
       endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
@@ -231,12 +244,34 @@ export async function batchScrapeController(
       apiKeyId: req.acuc?.api_key_id ?? null,
       auditMetadata: req.body.auditMetadata,
       url,
-      error: new UnsupportedSiteError(),
+      error,
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       zeroDataRetention,
     })),
   );
+
+  if (!req.body.ignoreInvalidURLs && refusedURLs.length > 0) {
+    // Unaccepted terms and an unsupported option are the refusals the caller
+    // can fix, so they win over an unsupported site.
+    const errors = refusedURLs.map(x => x.error);
+    const termsRequired = errors.find(
+      error => error instanceof ThirdPartyDataTermsRequiredError,
+    );
+    if (termsRequired) {
+      return res.status(403).json(termsRequired.response());
+    }
+    const unsupportedOption = errors.find(
+      error => error instanceof ThirdPartyDataUnsupportedOptionError,
+    );
+    if (unsupportedOption) {
+      return res.status(400).json(unsupportedOption.response());
+    }
+    return res.status(403).json({
+      success: false,
+      error: UNSUPPORTED_SITE_MESSAGE,
+    });
+  }
 
   // Threat protection: reject/report blocked URLs at enqueue time so they
   // never consume scrape slots. Mirrors the isUrlBlocked handling above:

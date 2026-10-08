@@ -431,7 +431,10 @@ async function scrapeControllerInner(
         });
       }
 
-      if (e.code === "THIRD_PARTY_DATA_UNSUPPORTED_URL") {
+      if (
+        e.code === "THIRD_PARTY_DATA_UNSUPPORTED_URL" ||
+        e.code === "THIRD_PARTY_DATA_UNSUPPORTED_OPTION"
+      ) {
         return res.status(400).json({
           success: false,
           code: e.code,

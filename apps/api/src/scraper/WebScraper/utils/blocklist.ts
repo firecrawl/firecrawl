@@ -5,6 +5,7 @@ import { parse } from "tldts";
 import { TeamFlags } from "../../../controllers/v1/types";
 import { db, dbRr } from "../../../db/connection";
 import * as schema from "../../../db/schema";
+import { exchangeClaimsUrl } from "../../../lib/exchange";
 
 configDotenv();
 
@@ -223,8 +224,13 @@ function findBlockedMatch(
     return null;
   }
 
-  // Check if URL contains any allowed keyword
-  if (allowedKeywords.some(keyword => allowedKeywordMatches(url, keyword))) {
+  // Check if URL contains any allowed keyword. A keyword in a URL the
+  // Exchange claims (a profile slug, or a sub-page like /about) doesn't
+  // exempt it: only the Exchange may serve those.
+  if (
+    allowedKeywords.some(keyword => allowedKeywordMatches(url, keyword)) &&
+    !exchangeClaimsUrl(url)
+  ) {
     return null;
   }
 
