@@ -59,6 +59,14 @@ export function buildSearchQuery(
   categories?: CategoryOption[],
   domainOptions: DomainFilterOptions = {},
 ): QueryBuilderResult {
+  baseQuery = baseQuery.replace(
+    /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\S+/g,
+    token =>
+      token.replace(
+        /^(-?)site\.((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})(\/[^\s]*)?$/i,
+        "$1site:$2$3",
+      ),
+  );
   const categoryMap = new Map<string, string>();
 
   const siteFilters: string[] = [];
