@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../services/rate-limiter", () => ({
-  redisRateLimitClient: { ttl: vi.fn() },
+  redisRateLimitClient: { pttl: vi.fn() },
 }));
 import { config } from "../config";
 import { logger } from "./logger";
@@ -55,7 +55,7 @@ describe("keyless conversion cohort telemetry", () => {
 
   it("adds the cohort to reservation-limit exhaustion telemetry", async () => {
     config.KEYLESS_CONVERSION_HMAC_SECRET = "b".repeat(32);
-    vi.spyOn(redisRateLimitClient, "ttl").mockResolvedValue(42);
+    vi.spyOn(redisRateLimitClient, "pttl").mockResolvedValue(41_200);
     const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
 
     await keylessLimitBody("preview_keyless_203.0.113.8", "search");
@@ -65,6 +65,7 @@ describe("keyless conversion cohort telemetry", () => {
       expect.objectContaining({
         event: "keyless_exhausted",
         reason: "credits",
+        retryAfterSeconds: 42,
         conversionCohort: keylessConversionCohort("203.0.113.8"),
       }),
     );
