@@ -14,7 +14,6 @@ apps/test-suite/node_modules/
 
 apps/test-suite/.env
 apps/test-suite/logs
-apps/test-suite/load-test-results/test-run-report.json
 
 apps/playwright-service-ts/node_modules/
 apps/playwright-service-ts/package-lock.json

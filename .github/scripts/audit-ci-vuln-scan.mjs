@@ -20,11 +20,6 @@ const AUDITS = [
     outputName: "js-sdk-firecrawl",
   },
   {
-    name: "Test Suite",
-    appPath: "apps/test-suite",
-    outputName: "test-suite",
-  },
-  {
     name: "Ingestion UI",
     appPath: "apps/ui/ingestion-ui",
     outputName: "ingestion-ui",

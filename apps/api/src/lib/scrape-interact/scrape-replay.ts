@@ -11,7 +11,7 @@ interface ScrapeContextRow {
   options: unknown;
 }
 
-export type ReplayAction =
+type ReplayAction =
   | { type: "wait"; milliseconds?: number; selector?: string }
   | { type: "click"; selector: string; all?: boolean }
   | { type: "write"; text: string }

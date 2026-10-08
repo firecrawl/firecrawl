@@ -7,8 +7,6 @@ import {
   type AgentHintEndpoint,
 } from "./agent-hint-signals";
 
-export type { AgentHintEndpoint };
-
 /** Deterministic guidance from state already available on the request path. */
 export interface AgentHintContext {
   endpoint: AgentHintEndpoint;
