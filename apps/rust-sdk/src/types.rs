@@ -334,6 +334,9 @@ pub struct JsonOptions {
     /// Extraction prompt for the LLM agent.
     pub prompt: Option<String>,
     /// Whether to check scraped content for prompt-injection attempts before extraction.
+    #[deprecated(
+        note = "use ScrapeOptions::check_prompt_injection or ParseOptions::check_prompt_injection"
+    )]
     pub check_prompt_injection: Option<bool>,
 }
 

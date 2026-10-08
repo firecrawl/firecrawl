@@ -79,6 +79,11 @@ pub struct ScrapeOptions {
     /// Lockdown mode: serve only previously cached results, never make outbound requests.
     pub lockdown: Option<bool>,
 
+    /// Scan the page content for prompt injection with any format except rawBase64,
+    /// before LLM-backed formats run. A detection fails the scrape with
+    /// SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check scans the whole page.
+    pub check_prompt_injection: Option<bool>,
+
     /// Redact personally identifiable information from returned content.
     #[serde(rename = "redactPII")]
     pub redact_pii: Option<bool>,
@@ -744,6 +749,20 @@ mod tests {
         let payload = serde_json::to_value(options).unwrap();
         assert_eq!(payload["redactPII"], json!(true));
         assert!(payload.get("formats").is_none());
+    }
+
+    #[test]
+    fn test_scrape_options_serializes_check_prompt_injection() {
+        let options = ScrapeOptions {
+            check_prompt_injection: Some(true),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(payload["checkPromptInjection"], json!(true));
+
+        let unset = serde_json::to_value(ScrapeOptions::default()).unwrap();
+        assert!(unset.get("checkPromptInjection").is_none());
     }
 
     #[test]

@@ -1844,6 +1844,7 @@ defmodule Firecrawl do
   @parse_file_schema NimbleOptions.new!([
     audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution included with SIEM logging events when SIEM Logging is enabled for the organization."],
     block_ads: [type: :boolean, doc: "Enable ad and cookie popup blocking."],
+    check_prompt_injection: [type: :boolean, doc: "When enabled, scans the parsed content for prompt injection attempts before any LLM-backed format (such as json, summary or question) runs. If an injection is detected, the request fails with a 403 and error code SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check runs. If the check cannot scan all of the content, the parse continues with a warning and the check is not billed."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
     formats: [type: {:list, :any}, doc: "Output formats supported for `/parse` uploads. Browser-rendering formats and change tracking are not supported."],
     headers: [type: :any, doc: "Headers to send when additional network requests are required."],
@@ -1860,7 +1861,7 @@ defmodule Firecrawl do
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this parse. To enable this feature, please contact help@firecrawl.dev"]
   ])
 
-  @parse_file_key_mapping %{audit_metadata: {"auditMetadata", %{username: "username"}}, block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", integration: "integration", only_main_content: "onlyMainContent", origin: "origin", parsers: "parsers", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", timeout: "timeout", zero_data_retention: "zeroDataRetention"}
+  @parse_file_key_mapping %{audit_metadata: {"auditMetadata", %{username: "username"}}, block_ads: "blockAds", check_prompt_injection: "checkPromptInjection", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", integration: "integration", only_main_content: "onlyMainContent", origin: "origin", parsers: "parsers", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", timeout: "timeout", zero_data_retention: "zeroDataRetention"}
 
   @doc """
   Upload and parse a file
@@ -1947,6 +1948,7 @@ defmodule Firecrawl do
     actions: [type: {:list, :any}, doc: "Actions to perform on the page before grabbing the content"],
     audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution included with SIEM logging events when SIEM Logging is enabled for the organization."],
     block_ads: [type: :boolean, doc: "Enables ad-blocking and cookie popup blocking."],
+    check_prompt_injection: [type: :boolean, doc: "When enabled, scans the page content for prompt injection attempts before any LLM-backed format (such as json, summary or question) runs. Works with any format except rawBase64. If an injection is detected, the request fails with a 403 and error code SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check runs. If the check cannot scan all of the content, the scrape continues with a warning and the check is not billed."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
     formats: [type: {:list, :any}, doc: "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...} }`). Some formats require specific options to be set. Example: `['markdown', { type: 'json', schema: {...} }]`."],
     headers: [type: :any, doc: "Headers to send with the request. Can be used to send cookies, user-agent, etc."],
@@ -1973,7 +1975,7 @@ defmodule Firecrawl do
     domain_tools: [type: :boolean, doc: "When true on an ordinary URL scrape, `data.tools` lists tool contracts matched to the scraped page's domain (same `DiscoveredTool` shape as search). Requires the team's Alexandria access to be enabled and no zero data retention (403 otherwise). Free."]
   ])
 
-  @scrape_and_extract_from_url_key_mapping %{url: "url", actions: "actions", audit_metadata: {"auditMetadata", %{username: "username"}}, block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", lockdown: "lockdown", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_clean_content: "onlyCleanContent", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", threat_protection: "threatProtection", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention", alexandria: "alexandria", domain_tools: "domainTools"}
+  @scrape_and_extract_from_url_key_mapping %{url: "url", actions: "actions", audit_metadata: {"auditMetadata", %{username: "username"}}, block_ads: "blockAds", check_prompt_injection: "checkPromptInjection", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", lockdown: "lockdown", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_clean_content: "onlyCleanContent", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", threat_protection: "threatProtection", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention", alexandria: "alexandria", domain_tools: "domainTools"}
 
   @doc """
   Scrape a single URL and optionally extract information using an LLM
@@ -2018,6 +2020,7 @@ defmodule Firecrawl do
     actions: [type: {:list, :any}, doc: "Actions to perform on the page before grabbing the content"],
     audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution included with SIEM logging events when SIEM Logging is enabled for the organization."],
     block_ads: [type: :boolean, doc: "Enables ad-blocking and cookie popup blocking."],
+    check_prompt_injection: [type: :boolean, doc: "When enabled, scans the page content for prompt injection attempts before any LLM-backed format (such as json, summary or question) runs. Works with any format except rawBase64. If an injection is detected, the request fails with a 403 and error code SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check runs. If the check cannot scan all of the content, the scrape continues with a warning and the check is not billed."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
     formats: [type: {:list, :any}, doc: "Output formats to include in the response. You can specify one or more formats, either as strings (e.g., `'markdown'`) or as objects with additional options (e.g., `{ type: 'json', schema: {...} }`). Some formats require specific options to be set. Example: `['markdown', { type: 'json', schema: {...} }]`."],
     headers: [type: :any, doc: "Headers to send with the request. Can be used to send cookies, user-agent, etc."],
@@ -2042,7 +2045,7 @@ defmodule Firecrawl do
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this batch scrape. To enable this feature, please contact help@firecrawl.dev"]
   ])
 
-  @scrape_and_extract_from_urls_key_mapping %{ignore_invalid_urls: "ignoreInvalidURLs", max_concurrency: "maxConcurrency", urls: "urls", webhook: "webhook", actions: "actions", audit_metadata: {"auditMetadata", %{username: "username"}}, block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", lockdown: "lockdown", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_clean_content: "onlyCleanContent", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", threat_protection: "threatProtection", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
+  @scrape_and_extract_from_urls_key_mapping %{ignore_invalid_urls: "ignoreInvalidURLs", max_concurrency: "maxConcurrency", urls: "urls", webhook: "webhook", actions: "actions", audit_metadata: {"auditMetadata", %{username: "username"}}, block_ads: "blockAds", check_prompt_injection: "checkPromptInjection", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", lockdown: "lockdown", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_clean_content: "onlyCleanContent", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", threat_protection: "threatProtection", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
 
   @doc """
   Scrape multiple URLs and optionally extract information using an LLM

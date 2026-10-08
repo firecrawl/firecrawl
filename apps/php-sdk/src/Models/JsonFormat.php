@@ -15,6 +15,7 @@ final class JsonFormat
 
     /**
      * @param array<string, mixed>|null $schema
+     * @param bool|null                 $checkPromptInjection {@deprecated Use the top-level checkPromptInjection option on ScrapeOptions instead.}
      */
     public static function with(
         ?string $prompt = null,
@@ -46,6 +47,7 @@ final class JsonFormat
         return $this->schema;
     }
 
+    /** @deprecated Use the top-level checkPromptInjection option on ScrapeOptions instead. */
     public function getCheckPromptInjection(): ?bool
     {
         return $this->checkPromptInjection;

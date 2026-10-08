@@ -1345,6 +1345,15 @@ class ClientTest < Minitest::Test
     )
   end
 
+  def test_scrape_options_to_h_check_prompt_injection
+    opts = Firecrawl::Models::ScrapeOptions.new(
+      formats: ["markdown"],
+      check_prompt_injection: true
+    )
+    assert_equal true, opts.to_h["checkPromptInjection"]
+    refute Firecrawl::Models::ScrapeOptions.new.to_h.key?("checkPromptInjection")
+  end
+
   def test_json_format_to_h_keeps_explicit_false
     format = Firecrawl::Models::JsonFormat.new(check_prompt_injection: false)
     assert_equal false, format.to_h["checkPromptInjection"]
@@ -1565,9 +1574,11 @@ class ClientTest < Minitest::Test
       only_main_content: true,
       timeout: 30000,
       proxy: "auto",
-      redact_pii: true
+      redact_pii: true,
+      check_prompt_injection: true
     )
     h = opts.to_h
+    assert_equal true, h["checkPromptInjection"]
     assert_equal ["markdown"], h["formats"]
     assert_equal true, h["onlyMainContent"]
     assert_equal 30000, h["timeout"]

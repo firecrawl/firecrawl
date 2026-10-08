@@ -3,12 +3,18 @@
 module Firecrawl
   module Models
     # Options for scraping a single URL.
+    #
+    # check_prompt_injection scans the page content for prompt injection with
+    # any format except rawBase64, before LLM-backed formats run. A detection
+    # fails the scrape with SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits
+    # when the check scans the whole page.
     class ScrapeOptions
       FIELDS = %i[
         formats headers include_tags exclude_tags only_main_content
         timeout wait_for mobile parsers actions location
         skip_tls_verification remove_base64_images block_ads proxy
-        max_age store_in_cache lockdown redact_pii integration audit_metadata
+        max_age store_in_cache lockdown check_prompt_injection redact_pii
+        integration audit_metadata
       ].freeze
 
       attr_reader(*FIELDS)
@@ -41,6 +47,7 @@ module Firecrawl
           "maxAge" => max_age,
           "storeInCache" => store_in_cache,
           "lockdown" => lockdown,
+          "checkPromptInjection" => check_prompt_injection,
           "redactPII" => redact_pii,
           "integration" => integration,
           "auditMetadata" => audit_metadata&.to_h,

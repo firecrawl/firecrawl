@@ -8924,7 +8924,8 @@
                 },
                 "checkPromptInjection": {
                   "type": "boolean",
-                  "description": "When enabled, scans the scraped page content for prompt injection attempts before running the extraction. If an injection is detected, the request fails with a 403 and error code SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check runs. Defaults to false.",
+                  "deprecated": true,
+                  "description": "Deprecated: use the top-level `checkPromptInjection` scrape option, which this value is merged into. Defaults to false.",
                   "default": false
                 }
               },
@@ -9331,6 +9332,11 @@
             "type": "boolean",
             "description": "Enable ad and cookie popup blocking.",
             "default": true
+          },
+          "checkPromptInjection": {
+            "type": "boolean",
+            "description": "When enabled, scans the parsed content for prompt injection attempts before any LLM-backed format (such as json, summary or question) runs. If an injection is detected, the request fails with a 403 and error code SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check runs. If the check cannot scan all of the content, the parse continues with a warning and the check is not billed.",
+            "default": false
           },
           "redactPII": {
             "oneOf": [
@@ -9827,6 +9833,11 @@
           "lockdown": {
             "type": "boolean",
             "description": "If true, serves the request from Firecrawl's cache only and never makes an outbound request to the target URL. Designed for compliance-constrained or air-gapped environments where the scrape request itself could leak sensitive information. On cache miss, returns a 404 with error code SCRAPE_LOCKDOWN_CACHE_MISS (the URL is never logged on miss). Lockdown requests are treated as zero data retention. Default maxAge is extended to 2 years so existing cached pages remain eligible. Billed at 5 credits on hit, 1 credit on cache miss.",
+            "default": false
+          },
+          "checkPromptInjection": {
+            "type": "boolean",
+            "description": "When enabled, scans the page content for prompt injection attempts before any LLM-backed format (such as json, summary or question) runs. Works with any format except rawBase64. If an injection is detected, the request fails with a 403 and error code SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check runs. If the check cannot scan all of the content, the scrape continues with a warning and the check is not billed.",
             "default": false
           },
           "redactPII": {

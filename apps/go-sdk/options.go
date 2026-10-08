@@ -95,6 +95,11 @@ type ScrapeOptions struct {
 	Integration         *string                  `json:"integration,omitempty"`
 	JsonOptions         *JsonOptions             `json:"jsonOptions,omitempty"`
 	DomainTools         *bool                    `json:"domainTools,omitempty"`
+	// CheckPromptInjection scans the page content for prompt injection with any
+	// format except rawBase64, before LLM-backed formats run. A detection fails
+	// the scrape with SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the
+	// check scans the whole page.
+	CheckPromptInjection *bool `json:"checkPromptInjection,omitempty"`
 }
 
 // MarshalJSON preserves string formats while allowing object formats such as QuestionFormat.
@@ -260,9 +265,10 @@ type WebhookConfig struct {
 
 // JsonOptions configures JSON extraction within formats.
 type JsonOptions struct {
-	Prompt               string                 `json:"prompt,omitempty"`
-	Schema               map[string]interface{} `json:"schema,omitempty"`
-	CheckPromptInjection *bool                  `json:"checkPromptInjection,omitempty"`
+	Prompt string                 `json:"prompt,omitempty"`
+	Schema map[string]interface{} `json:"schema,omitempty"`
+	// Deprecated: Use ScrapeOptions.CheckPromptInjection or ParseOptions.CheckPromptInjection.
+	CheckPromptInjection *bool `json:"checkPromptInjection,omitempty"`
 }
 
 // Pointer helpers for optional fields.

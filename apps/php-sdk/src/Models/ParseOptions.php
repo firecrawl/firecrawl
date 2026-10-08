@@ -45,6 +45,7 @@ final class ParseOptions
         private readonly ?bool $skipTlsVerification = null,
         private readonly ?bool $removeBase64Images = null,
         private readonly ?bool $blockAds = null,
+        private readonly ?bool $checkPromptInjection = null,
         private readonly ?string $proxy = null,
         private readonly ?string $integration = null,
         private readonly ?bool $redactPII = null,
@@ -58,6 +59,9 @@ final class ParseOptions
      * @param list<string>|null            $excludeTags
      * @param list<string|PDFParser|array<string, mixed>>|null $parsers
      * @param AuditMetadata|null           $auditMetadata
+     * @param bool|null                    $checkPromptInjection Scans the parsed content for prompt injection
+     *     before LLM-backed formats run. A detection fails the parse with SCRAPE_PROMPT_INJECTION_DETECTED.
+     *     Adds 4 credits when the check scans the whole content.
      */
     public static function with(
         ?array $formats = null,
@@ -74,6 +78,7 @@ final class ParseOptions
         ?string $integration = null,
         ?bool $redactPII = null,
         ?AuditMetadata $auditMetadata = null,
+        ?bool $checkPromptInjection = null,
     ): self {
         if ($timeout !== null && $timeout <= 0) {
             throw new FirecrawlException('timeout must be positive');
@@ -103,6 +108,7 @@ final class ParseOptions
             $skipTlsVerification,
             $removeBase64Images,
             $blockAds,
+            $checkPromptInjection,
             $proxy,
             $integration,
             $redactPII,
@@ -141,6 +147,7 @@ final class ParseOptions
             'skipTlsVerification' => $this->skipTlsVerification,
             'removeBase64Images' => $this->removeBase64Images,
             'blockAds' => $this->blockAds,
+            'checkPromptInjection' => $this->checkPromptInjection,
             'proxy' => $this->proxy,
             'integration' => $this->integration,
             'redactPII' => $this->redactPII,
@@ -232,6 +239,11 @@ final class ParseOptions
     public function getBlockAds(): ?bool
     {
         return $this->blockAds;
+    }
+
+    public function getCheckPromptInjection(): ?bool
+    {
+        return $this->checkPromptInjection;
     }
 
     public function getProxy(): ?string
