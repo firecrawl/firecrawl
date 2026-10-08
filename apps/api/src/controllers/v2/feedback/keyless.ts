@@ -236,8 +236,8 @@ async function readSavedSearchResults(jobId: string): Promise<unknown> {
       const results = await getJobFromGCS(jobId);
       if (results) return results;
     } catch {
-      // Ownership was verified in PostgreSQL; an unavailable artifact leaves
-      // the observations unverified.
+      // Ownership was verified in the feedback job record. An unavailable
+      // artifact leaves the observations unverified.
     }
   }
   return null;
