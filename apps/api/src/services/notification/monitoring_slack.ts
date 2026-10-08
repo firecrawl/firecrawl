@@ -114,6 +114,12 @@ export async function sendMonitoringSlackSummary(params: {
     checkId: params.check.id,
   });
 
+  // Monitor page URL (no checkId) — used by the "Edit goal" button.
+  const monitorUrl = buildMonitoringCheckDashboardUrl({
+    monitorId: params.monitor.id,
+    checkId: "",
+  }).replace(/\?checkId=$/, "");
+
   const slackPages: MonitorSlackPage[] = params.pages.map(page => ({
     url: page.url,
     status: page.status,
@@ -124,7 +130,9 @@ export async function sendMonitoringSlackSummary(params: {
 
   const { text, blocks } = buildMonitorAlertMessage({
     monitorName: params.monitor.name,
+    monitorGoal: params.monitor.goal,
     dashboardUrl,
+    monitorUrl,
     checkId: params.check.id,
     summary: {
       changed: params.check.changed_count,
