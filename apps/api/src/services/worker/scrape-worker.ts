@@ -47,6 +47,11 @@ import {
   addScrapeJobs,
 } from "../queue-jobs";
 import { parseHostname } from "../../lib/url-utils";
+import {
+  detectSerpPage,
+  serpScrapeWarning,
+  serpScrapeWarningEnabled,
+} from "../../lib/serp-url";
 import { getJobPriority } from "../../lib/job-priority";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
@@ -537,6 +542,26 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       doc.warning =
         "You're using the actions parameter. For a more reliable and flexible experience, try the /interact endpoint instead." +
         (doc.warning ? " " + doc.warning : "");
+    }
+
+    const billingEndpoint = job.data.billing?.endpoint;
+    if (billingEndpoint === "scrape" || billingEndpoint === "batch_scrape") {
+      const serpPage = detectSerpPage(job.data.url);
+      if (serpPage !== null) {
+        // Logged whether or not the warning is shown, so the rollout can be
+        // compared with teams outside it.
+        const warned = serpScrapeWarningEnabled(job.data.team_id);
+        logger.info("SERP scrape", {
+          serpEngine: serpPage.engine,
+          serpWarningShown: warned,
+          billingEndpoint,
+        });
+        if (warned) {
+          doc.warning =
+            serpScrapeWarning(serpPage.engine) +
+            (doc.warning ? " " + doc.warning : "");
+        }
+      }
     }
 
     const data = {

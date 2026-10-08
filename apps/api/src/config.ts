@@ -580,6 +580,18 @@ const configSchema = z.object({
   // background and record how its answer compares (lib/branding/jev-shadow.ts).
   // Customers always get the LLM's answer.
   BRANDING_JEV_SHADOW_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  // Warn scrapes of search engine results pages (google.*/search, ...) that
+  // /search returns those results directly (lib/serp-url.ts).
+  // SERP_SCRAPE_WARNING turns it on for every team, SERP_SCRAPE_WARNING_TEAM_IDS
+  // (comma-separated) for listed teams, and SERP_SCRAPE_WARNING_ROLLOUT_PERCENT
+  // for a stable share of teams.
+  SERP_SCRAPE_WARNING: emptyStringAsUndefined(z.stringbool()),
+  SERP_SCRAPE_WARNING_TEAM_IDS: delimitedList(",").optional(),
+  SERP_SCRAPE_WARNING_ROLLOUT_PERCENT: z.coerce
+    .number()
+    .min(0)
+    .max(100)
+    .default(0),
 
   // AI/ML
   MODEL_NAME: z.string().optional(),

@@ -104,6 +104,39 @@ describe("agent hint signals", () => {
     expect(result).not.toHaveProperty("page_path_words");
   });
 
+  it("reports the engine and quoted query for a search results page", () => {
+    const pageOf = (sourceURL: string) =>
+      signalsFor({
+        endpoint: "scrape",
+        response: { success: true, data: { metadata: { sourceURL } } },
+      });
+    expect(pageOf("https://www.bing.com/search?q=web+scraping")).toMatchObject({
+      page_serp_engine: "Bing",
+      page_serp_query: '"web scraping"',
+    });
+    expect(pageOf("https://www.bing.com/maps?q=paris")).not.toHaveProperty(
+      "page_serp_engine",
+    );
+    // A results page that redirected to a consent page still was one.
+    expect(
+      signalsFor({
+        endpoint: "scrape",
+        response: {
+          success: true,
+          data: {
+            metadata: {
+              sourceURL: "https://www.google.com/search?q=firecrawl",
+              url: "https://consent.google.com/m?continue=x",
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      page_serp_engine: "Google",
+      page_serp_query: '"firecrawl"',
+    });
+  });
+
   it("reports document page counts with the requestable remainder", () => {
     expect(
       signalsFor({
