@@ -1,0 +1,848 @@
+{
+  "kind": "unverified-candidate-graph",
+  "sourceURL": "https://en.wikipedia.org/wiki/Ada_Lovelace",
+  "generator": {
+    "pipeline": "Firecrawl v2 scrape knowledgeGraph",
+    "model": "gpt-5",
+    "reasoningEffort": "provider default"
+  },
+  "generatedAtUTC": "2026-10-08T06:00:55.283634+00:00",
+  "scrapeId": "01a11a18-d04d-74b2-9109-8d2aa5e8c66d",
+  "warning": null,
+  "knowledgeGraph": {
+    "nodes": [
+      {
+        "id": "ada-lovelace",
+        "label": "Ada Lovelace",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "birth_date",
+            "value": "1815-12-10"
+          },
+          {
+            "key": "death_date",
+            "value": "1852-11-27"
+          },
+          {
+            "key": "nationality",
+            "value": "English"
+          },
+          {
+            "key": "occupation",
+            "value": "mathematician"
+          },
+          {
+            "key": "occupation",
+            "value": "writer"
+          },
+          {
+            "key": "title",
+            "value": "Countess of Lovelace"
+          }
+        ]
+      },
+      {
+        "id": "charles-babbage",
+        "label": "Charles Babbage",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "mathematician"
+          }
+        ]
+      },
+      {
+        "id": "analytical-engine",
+        "label": "Analytical Engine",
+        "type": "Machine",
+        "properties": [
+          {
+            "key": "status",
+            "value": "never constructed"
+          }
+        ]
+      },
+      {
+        "id": "difference-engine",
+        "label": "Difference Engine",
+        "type": "Machine",
+        "properties": []
+      },
+      {
+        "id": "luigi-menabrea",
+        "label": "Luigi Menabrea",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "engineer"
+          }
+        ]
+      },
+      {
+        "id": "menabrea-article-1842",
+        "label": "Sketch of the Analytical Engine (1842 French transcription)",
+        "type": "Publication",
+        "properties": []
+      },
+      {
+        "id": "note-g",
+        "label": "Note G",
+        "type": "Publication",
+        "properties": [
+          {
+            "key": "description",
+            "value": "Method for calculating Bernoulli numbers on the Analytical Engine"
+          }
+        ]
+      },
+      {
+        "id": "bernoulli-numbers",
+        "label": "Bernoulli numbers",
+        "type": "Concept",
+        "properties": []
+      },
+      {
+        "id": "mary-somerville",
+        "label": "Mary Somerville",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "scientist"
+          }
+        ]
+      },
+      {
+        "id": "augustus-de-morgan",
+        "label": "Augustus De Morgan",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "mathematician"
+          }
+        ]
+      },
+      {
+        "id": "william-frend",
+        "label": "William Frend",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "social reformer"
+          }
+        ]
+      },
+      {
+        "id": "william-king-physician",
+        "label": "William King (physician)",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "physician"
+          }
+        ]
+      },
+      {
+        "id": "william-king-noel-1st-earl-of-lovelace",
+        "label": "William King-Noel, 1st Earl of Lovelace",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "nobleman"
+          }
+        ]
+      },
+      {
+        "id": "byron-king-noel-viscount-ockham",
+        "label": "Byron King-Noel, Viscount Ockham",
+        "type": "Person",
+        "properties": []
+      },
+      {
+        "id": "anne-blunt-15th-baroness-wentworth",
+        "label": "Anne Blunt, 15th Baroness Wentworth",
+        "type": "Person",
+        "properties": []
+      },
+      {
+        "id": "ralph-king-milbanke-2nd-earl-of-lovelace",
+        "label": "Ralph King-Milbanke, 2nd Earl of Lovelace",
+        "type": "Person",
+        "properties": []
+      },
+      {
+        "id": "lord-byron",
+        "label": "Lord Byron (George Gordon Byron)",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "poet"
+          }
+        ]
+      },
+      {
+        "id": "anne-isabella-milbanke",
+        "label": "Anne Isabella Milbanke (Lady Byron)",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "reformer"
+          }
+        ]
+      },
+      {
+        "id": "london",
+        "label": "London, England",
+        "type": "Location",
+        "properties": []
+      },
+      {
+        "id": "marylebone",
+        "label": "Marylebone, London",
+        "type": "Location",
+        "properties": []
+      },
+      {
+        "id": "church-of-st-mary-magdalene-hucknall",
+        "label": "Church of St Mary Magdalene, Hucknall",
+        "type": "Location",
+        "properties": []
+      },
+      {
+        "id": "mathematics",
+        "label": "Mathematics",
+        "type": "Concept",
+        "properties": []
+      },
+      {
+        "id": "computing",
+        "label": "Computing",
+        "type": "Concept",
+        "properties": []
+      },
+      {
+        "id": "music",
+        "label": "Music",
+        "type": "Concept",
+        "properties": []
+      },
+      {
+        "id": "ada-programming-language",
+        "label": "Ada (programming language)",
+        "type": "Product",
+        "properties": [
+          {
+            "key": "domain",
+            "value": "Programming language"
+          },
+          {
+            "key": "standard_number",
+            "value": "MIL-STD-1815"
+          }
+        ]
+      },
+      {
+        "id": "british-computer-society",
+        "label": "British Computer Society (BCS)",
+        "type": "Organization",
+        "properties": []
+      },
+      {
+        "id": "lovelace-medal",
+        "label": "Lovelace Medal",
+        "type": "Award",
+        "properties": []
+      },
+      {
+        "id": "ada-lovelace-day",
+        "label": "Ada Lovelace Day",
+        "type": "Event",
+        "properties": [
+          {
+            "key": "recurrence",
+            "value": "annual (second Tuesday of October)"
+          }
+        ]
+      },
+      {
+        "id": "ada-initiative",
+        "label": "Ada Initiative",
+        "type": "Organization",
+        "properties": [
+          {
+            "key": "purpose",
+            "value": "Increase involvement of women in free culture and open source"
+          }
+        ]
+      },
+      {
+        "id": "ada-lovelace-building-bristol",
+        "label": "Ada Lovelace Building (University of Bristol)",
+        "type": "Building",
+        "properties": []
+      },
+      {
+        "id": "bristol",
+        "label": "Bristol, England",
+        "type": "Location",
+        "properties": []
+      },
+      {
+        "id": "ada-byron-building-zaragoza",
+        "label": "Ada Byron Building (University of Zaragoza)",
+        "type": "Building",
+        "properties": []
+      },
+      {
+        "id": "zaragoza",
+        "label": "Zaragoza, Spain",
+        "type": "Location",
+        "properties": []
+      },
+      {
+        "id": "ada-developers-academy",
+        "label": "Ada Developers Academy",
+        "type": "Organization",
+        "properties": [
+          {
+            "key": "mission",
+            "value": "Diversify tech by training women and gender-diverse people as software developers"
+          }
+        ]
+      },
+      {
+        "id": "ada-college-national-college-for-digital-skills",
+        "label": "Ada, the National College for Digital Skills",
+        "type": "Organization",
+        "properties": [
+          {
+            "key": "focus",
+            "value": "Digital skills"
+          }
+        ]
+      },
+      {
+        "id": "nvidia",
+        "label": "Nvidia",
+        "type": "Organization",
+        "properties": []
+      },
+      {
+        "id": "ada-lovelace-microarchitecture",
+        "label": "Ada Lovelace (microarchitecture)",
+        "type": "Product",
+        "properties": [
+          {
+            "key": "domain",
+            "value": "GPU microarchitecture"
+          }
+        ]
+      },
+      {
+        "id": "cardano",
+        "label": "Cardano (blockchain platform)",
+        "type": "Organization",
+        "properties": []
+      },
+      {
+        "id": "ada-cryptocurrency",
+        "label": "ADA (cryptocurrency)",
+        "type": "Product",
+        "properties": [
+          {
+            "key": "domain",
+            "value": "Cryptocurrency"
+          }
+        ]
+      },
+      {
+        "id": "royal-mint",
+        "label": "Royal Mint",
+        "type": "Organization",
+        "properties": []
+      },
+      {
+        "id": "ada-lovelace-2-pound-coins-2023",
+        "label": "Ada Lovelace £2 coins (2023)",
+        "type": "Product",
+        "properties": []
+      },
+      {
+        "id": "etienne-millner",
+        "label": "Etienne Millner",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "sculptor"
+          }
+        ]
+      },
+      {
+        "id": "mary-millner",
+        "label": "Mary Millner",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "sculptor"
+          }
+        ]
+      },
+      {
+        "id": "ada-lovelace-statue-millbank-2022",
+        "label": "Ada Lovelace statue (Millbank, 2022)",
+        "type": "Artwork",
+        "properties": []
+      },
+      {
+        "id": "city-of-westminster",
+        "label": "City of Westminster, London",
+        "type": "Location",
+        "properties": []
+      },
+      {
+        "id": "national-portrait-gallery-london",
+        "label": "National Portrait Gallery, London",
+        "type": "Organization",
+        "properties": []
+      },
+      {
+        "id": "ada-lovelace-photographs",
+        "label": "Ada Lovelace photographs (daguerreotypes and related)",
+        "type": "Product",
+        "properties": []
+      },
+      {
+        "id": "antoine-claudet",
+        "label": "Antoine Claudet",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "photographer"
+          }
+        ]
+      },
+      {
+        "id": "henry-wyndham-phillips",
+        "label": "Henry Wyndham Phillips",
+        "type": "Person",
+        "properties": [
+          {
+            "key": "occupation",
+            "value": "painter"
+          }
+        ]
+      },
+      {
+        "id": "hinckley",
+        "label": "Hinckley, England",
+        "type": "Location",
+        "properties": []
+      },
+      {
+        "id": "north-warwickshire-and-south-leicestershire-college",
+        "label": "North Warwickshire and South Leicestershire College",
+        "type": "Organization",
+        "properties": []
+      },
+      {
+        "id": "ada-lovelace-statue-hinckley-2026",
+        "label": "Ada Lovelace statue (Hinckley, 2026)",
+        "type": "Artwork",
+        "properties": []
+      }
+    ],
+    "edges": [
+      {
+        "source": "ada-lovelace",
+        "target": "lord-byron",
+        "relation": "child_of",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "anne-isabella-milbanke",
+        "relation": "child_of",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "william-king-noel-1st-earl-of-lovelace",
+        "relation": "spouse_of",
+        "properties": [
+          {
+            "key": "marriage_year",
+            "value": "1835"
+          }
+        ]
+      },
+      {
+        "source": "byron-king-noel-viscount-ockham",
+        "target": "ada-lovelace",
+        "relation": "child_of",
+        "properties": [
+          {
+            "key": "birth_year",
+            "value": "1836"
+          }
+        ]
+      },
+      {
+        "source": "anne-blunt-15th-baroness-wentworth",
+        "target": "ada-lovelace",
+        "relation": "child_of",
+        "properties": [
+          {
+            "key": "birth_year",
+            "value": "1837"
+          }
+        ]
+      },
+      {
+        "source": "ralph-king-milbanke-2nd-earl-of-lovelace",
+        "target": "ada-lovelace",
+        "relation": "child_of",
+        "properties": [
+          {
+            "key": "birth_year",
+            "value": "1839"
+          }
+        ]
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "london",
+        "relation": "born_in",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "marylebone",
+        "relation": "died_in",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "church-of-st-mary-magdalene-hucknall",
+        "relation": "buried_at",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "mathematics",
+        "relation": "known_for",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "computing",
+        "relation": "known_for",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "charles-babbage",
+        "relation": "collaborated_with",
+        "properties": []
+      },
+      {
+        "source": "charles-babbage",
+        "target": "analytical-engine",
+        "relation": "designed",
+        "properties": []
+      },
+      {
+        "source": "charles-babbage",
+        "target": "difference-engine",
+        "relation": "designed",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "analytical-engine",
+        "relation": "wrote_about",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "menabrea-article-1842",
+        "relation": "translated",
+        "properties": [
+          {
+            "key": "years",
+            "value": "1842–1843"
+          }
+        ]
+      },
+      {
+        "source": "luigi-menabrea",
+        "target": "menabrea-article-1842",
+        "relation": "authored",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "note-g",
+        "relation": "authored",
+        "properties": []
+      },
+      {
+        "source": "note-g",
+        "target": "bernoulli-numbers",
+        "relation": "computes",
+        "properties": []
+      },
+      {
+        "source": "mary-somerville",
+        "target": "ada-lovelace",
+        "relation": "tutored",
+        "properties": []
+      },
+      {
+        "source": "augustus-de-morgan",
+        "target": "ada-lovelace",
+        "relation": "mentored",
+        "properties": []
+      },
+      {
+        "source": "william-frend",
+        "target": "ada-lovelace",
+        "relation": "tutored",
+        "properties": []
+      },
+      {
+        "source": "william-king-physician",
+        "target": "ada-lovelace",
+        "relation": "tutored",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "difference-engine",
+        "relation": "viewed_prototype_of",
+        "properties": [
+          {
+            "key": "year",
+            "value": "1833"
+          }
+        ]
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "computing",
+        "relation": "envisioned_applications_for",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace",
+        "target": "music",
+        "relation": "proposed_encoding_of",
+        "properties": []
+      },
+      {
+        "source": "ada-programming-language",
+        "target": "ada-lovelace",
+        "relation": "named_after",
+        "properties": []
+      },
+      {
+        "source": "british-computer-society",
+        "target": "lovelace-medal",
+        "relation": "awards",
+        "properties": []
+      },
+      {
+        "source": "lovelace-medal",
+        "target": "ada-lovelace",
+        "relation": "named_after",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace-day",
+        "target": "ada-lovelace",
+        "relation": "commemorates",
+        "properties": []
+      },
+      {
+        "source": "ada-initiative",
+        "target": "ada-lovelace",
+        "relation": "named_after",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace-building-bristol",
+        "target": "ada-lovelace",
+        "relation": "named_after",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace-building-bristol",
+        "target": "bristol",
+        "relation": "located_in",
+        "properties": []
+      },
+      {
+        "source": "ada-byron-building-zaragoza",
+        "target": "ada-lovelace",
+        "relation": "named_after",
+        "properties": []
+      },
+      {
+        "source": "ada-byron-building-zaragoza",
+        "target": "zaragoza",
+        "relation": "located_in",
+        "properties": []
+      },
+      {
+        "source": "ada-developers-academy",
+        "target": "ada-lovelace",
+        "relation": "named_after",
+        "properties": []
+      },
+      {
+        "source": "ada-college-national-college-for-digital-skills",
+        "target": "ada-lovelace",
+        "relation": "named_after",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace-microarchitecture",
+        "target": "ada-lovelace",
+        "relation": "named_after",
+        "properties": []
+      },
+      {
+        "source": "nvidia",
+        "target": "ada-lovelace-microarchitecture",
+        "relation": "produced",
+        "properties": [
+          {
+            "key": "year",
+            "value": "2022"
+          }
+        ]
+      },
+      {
+        "source": "ada-cryptocurrency",
+        "target": "ada-lovelace",
+        "relation": "named_after",
+        "properties": []
+      },
+      {
+        "source": "ada-cryptocurrency",
+        "target": "cardano",
+        "relation": "part_of",
+        "properties": []
+      },
+      {
+        "source": "royal-mint",
+        "target": "ada-lovelace-2-pound-coins-2023",
+        "relation": "issued",
+        "properties": [
+          {
+            "key": "year",
+            "value": "2023"
+          }
+        ]
+      },
+      {
+        "source": "ada-lovelace-2-pound-coins-2023",
+        "target": "ada-lovelace",
+        "relation": "commemorates",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace-statue-millbank-2022",
+        "target": "ada-lovelace",
+        "relation": "commemorates",
+        "properties": []
+      },
+      {
+        "source": "etienne-millner",
+        "target": "ada-lovelace-statue-millbank-2022",
+        "relation": "sculpted",
+        "properties": []
+      },
+      {
+        "source": "mary-millner",
+        "target": "ada-lovelace-statue-millbank-2022",
+        "relation": "sculpted",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace-statue-millbank-2022",
+        "target": "city-of-westminster",
+        "relation": "located_in",
+        "properties": []
+      },
+      {
+        "source": "national-portrait-gallery-london",
+        "target": "ada-lovelace-photographs",
+        "relation": "acquired",
+        "properties": [
+          {
+            "key": "year",
+            "value": "2025"
+          }
+        ]
+      },
+      {
+        "source": "antoine-claudet",
+        "target": "ada-lovelace-photographs",
+        "relation": "created",
+        "properties": [
+          {
+            "key": "circa",
+            "value": "1843"
+          }
+        ]
+      },
+      {
+        "source": "ada-lovelace-statue-hinckley-2026",
+        "target": "ada-lovelace",
+        "relation": "commemorates",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace-statue-hinckley-2026",
+        "target": "hinckley",
+        "relation": "located_in",
+        "properties": []
+      },
+      {
+        "source": "ada-lovelace-statue-hinckley-2026",
+        "target": "north-warwickshire-and-south-leicestershire-college",
+        "relation": "installed_at",
+        "properties": [
+          {
+            "key": "year",
+            "value": "2026"
+          }
+        ]
+      },
+      {
+        "source": "marylebone",
+        "target": "london",
+        "relation": "located_in",
+        "properties": []
+      },
+      {
+        "source": "city-of-westminster",
+        "target": "london",
+        "relation": "located_in",
+        "properties": []
+      }
+    ]
+  }
+}

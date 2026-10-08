@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Firecrawl knowledge graph viewer</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px system-ui, sans-serif; color: #e9eef7; background: #131923; }
+    header { padding: 16px 20px; border-bottom: 1px solid #354054; }
+    h1 { margin: 0 0 5px; font-size: 20px; }
+    p { margin: 4px 0; color: #aab8cc; }
+    main { display: grid; grid-template-columns: minmax(260px, 310px) minmax(0, 1fr) minmax(240px, 300px); height: calc(100vh - 96px); min-height: 480px; }
+    aside { padding: 18px; overflow: auto; border-right: 1px solid #354054; }
+    aside:last-child { border-left: 1px solid #354054; border-right: 0; }
+    label { display: block; margin: 12px 0 6px; font-weight: 600; }
+    textarea, input[type="search"] { width: 100%; padding: 9px; color: inherit; background: #202b3c; border: 1px solid #53627a; border-radius: 5px; }
+    textarea { min-height: 190px; resize: vertical; font: 12px ui-monospace, monospace; }
+    input[type="file"] { width: 100%; }
+    button { margin-top: 10px; padding: 9px 14px; color: #111a26; background: #80caff; border: 0; border-radius: 5px; cursor: pointer; font-weight: 700; }
+    button:hover { background: #b5e0ff; }
+    #graph { min-width: 0; background: #f8fafc; }
+    #status { margin-top: 13px; white-space: pre-wrap; }
+    #status.error { color: #ff9e9e; }
+    #details { white-space: pre-wrap; overflow-wrap: anywhere; }
+    #details h2 { font-size: 18px; }
+    #details dl { display: grid; grid-template-columns: auto 1fr; gap: 8px; }
+    #details dt { color: #aab8cc; }
+    #details dd { margin: 0; }
+    @media (max-width: 850px) {
+      main { display: flex; flex-direction: column; height: auto; }
+      aside { border-right: 0; border-bottom: 1px solid #354054; }
+      aside:last-child { border-left: 0; }
+      #graph { height: 65vh; min-height: 380px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Firecrawl knowledge graph viewer</h1>
+    <p>Open a graph JSON file or paste a scrape/search response. Data stays in this browser tab; no network connection is needed.</p>
+  </header>
+  <main>
+    <aside>
+      <label for="file">JSON file</label>
+      <input id="file" type="file" accept=".json,application/json">
+      <label for="input">Or paste JSON</label>
+      <textarea id="input" spellcheck="false" placeholder='{"nodes":[{"id":"ada","label":"Ada","type":"Person"}],"edges":[]}'></textarea>
+      <button id="render" type="button">Show graph</button>
+      <label for="search">Find a node</label>
+      <input id="search" type="search" placeholder="Name, type, or ID">
+      <div id="status" role="status">Select a file or paste JSON to begin.</div>
+    </aside>
+    <div id="graph" aria-label="Interactive graph"></div>
+    <aside id="details">Click a node or relationship to inspect its properties.</aside>
+  </main>
+  <script src="./cytoscape.min.js"></script>
+  <script>
+    'use strict';
+    const input = document.getElementById('input');
+    const status = document.getElementById('status');
+    const details = document.getElementById('details');
+    const search = document.getElementById('search');
+    let graphView;
+
+    function setStatus(message, error = false) {
+      status.textContent = message;
+      status.classList.toggle('error', error);
+    }
+
+    function extractGraph(value) {
+      const candidates = [value, value?.knowledgeGraph, value?.data?.knowledgeGraph,
+        value?.result?.knowledgeGraph];
+      const graph = candidates.find(candidate => candidate &&
+        Array.isArray(candidate.nodes) && Array.isArray(candidate.edges));
+      if (!graph) throw new Error('Expected {nodes, edges}, knowledgeGraph, or data.knowledgeGraph. For crawl results, select one page’s knowledgeGraph.');
+      return graph;
+    }
+
+    function makeElements(graph) {
+      const ids = new Set();
+      const nodes = graph.nodes.map((node, index) => {
+        if (!node || typeof node.id !== 'string' || !node.id.trim()) {
+          throw new Error(`Node ${index + 1} needs a nonempty string id.`);
+        }
+        if (ids.has(node.id)) throw new Error(`Duplicate node ID: ${node.id}`);
+        ids.add(node.id);
+        return { group: 'nodes', data: { id: node.id, label: node.label || node.id,
+          type: node.type || 'Entity', properties: node.properties || [] } };
+      });
+      const edges = graph.edges.map((edge, index) => {
+        if (!edge || !ids.has(edge.source) || !ids.has(edge.target)) {
+          throw new Error(`Edge ${index + 1} refers to a missing node.`);
+        }
+        let id = `edge-${index}`;
+        while (ids.has(id)) id = `_${id}`;
+        ids.add(id);
+        return { group: 'edges', data: { id, source: edge.source, target: edge.target,
+          relation: edge.relation || 'related_to', properties: edge.properties || [] } };
+      });
+      return nodes.concat(edges);
+    }
+
+    function showDetails(element) {
+      const data = element.data();
+      details.replaceChildren();
+      const heading = document.createElement('h2');
+      heading.textContent = element.isNode() ? data.label : data.relation;
+      details.append(heading);
+      const fields = element.isNode()
+        ? [['Type', data.type], ['ID', data.id]]
+        : [['From', graphView.getElementById(data.source).data('label')],
+           ['To', graphView.getElementById(data.target).data('label')]];
+      if (Array.isArray(data.properties)) {
+        for (const item of data.properties) {
+          if (item && typeof item.key === 'string') fields.push([item.key, String(item.value ?? '')]);
+        }
+      }
+      const list = document.createElement('dl');
+      for (const [key, value] of fields) {
+        const name = document.createElement('dt');
+        const text = document.createElement('dd');
+        name.textContent = key;
+        text.textContent = value;
+        list.append(name, text);
+      }
+      details.append(list);
+    }
+
+    function findNodes() {
+      if (!graphView) return;
+      const query = search.value.trim().toLowerCase();
+      graphView.elements().removeClass('dim');
+      if (!query) return;
+      const matches = graphView.nodes().filter(node =>
+        [node.data('label'), node.data('type'), node.id()].some(value =>
+          String(value).toLowerCase().includes(query)));
+      graphView.nodes().not(matches).addClass('dim');
+      graphView.edges().not(matches.connectedEdges()).addClass('dim');
+      if (matches.length) {
+        graphView.animate({ fit: { eles: matches, padding: 80 }, duration: 250 });
+        showDetails(matches[0]);
+      }
+      setStatus(`${matches.length} matching node(s).`);
+    }
+
+    function render() {
+      try {
+        if (!window.cytoscape) throw new Error('Graph library did not load. Check that cytoscape.min.js is next to this file.');
+        const graph = extractGraph(JSON.parse(input.value));
+        const elements = makeElements(graph);
+        if (graphView) graphView.destroy();
+        graphView = cytoscape({
+          container: document.getElementById('graph'), elements,
+          style: [
+            { selector: 'node', style: { 'background-color': '#2772af', label: 'data(label)',
+              'font-size': 11, 'text-valign': 'bottom', 'text-margin-y': 5, 'width': 25, 'height': 25 } },
+            { selector: 'edge', style: { width: 2, 'line-color': '#9ca8b7',
+              'target-arrow-shape': 'triangle', 'target-arrow-color': '#9ca8b7',
+              'curve-style': 'bezier', label: 'data(relation)', 'font-size': 9,
+              'text-background-color': '#f8fafc', 'text-background-opacity': 0.85 } },
+            { selector: '.dim', style: { opacity: 0.12 } },
+            { selector: ':selected', style: { 'background-color': '#ef8b2c', 'line-color': '#ef8b2c' } }
+          ],
+          layout: { name: 'cose', animate: false, fit: true, padding: 40 }
+        });
+        graphView.on('tap', 'node, edge', event => showDetails(event.target));
+        details.textContent = 'Click a node or relationship to inspect its properties.';
+        search.value = '';
+        setStatus(`${graph.nodes.length} nodes, ${graph.edges.length} relationships. Drag to pan; scroll to zoom.`);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    document.getElementById('render').addEventListener('click', render);
+    document.getElementById('file').addEventListener('change', async event => {
+      const file = event.target.files[0];
+      if (!file) return;
+      try { input.value = await file.text(); render(); }
+      catch (error) { setStatus(error.message, true); }
+    });
+    search.addEventListener('input', findNodes);
+  </script>
+</body>
+</html>

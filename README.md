@@ -8,6 +8,12 @@
 - KG-specific `KG_MODEL` and `KG_RETRY_MODEL` environment variables. Defaults remain `gpt-4o-mini` and `gpt-4.1-mini` on OpenAI. The global `MODEL_NAME` does not override KG model selection.
 - Basic graph-integrity checks and a narrow Wikipedia-style `Parents` infobox correction. **This is not a general wiki template or factual verifier**; aliases and other relationships can still be wrong.
 
+## Example graph and browser viewer
+
+The [Ada Lovelace candidate graph](examples/kg-generator/ada-lovelace-gpt-5.json) was generated from the [Wikipedia article](https://en.wikipedia.org/wiki/Ada_Lovelace) with `gpt-5` at its provider-default reasoning setting. It contains 52 nodes and 54 edges; those relationships are **not fact-verified**.
+
+To explore it, clone this branch, open the bundled [KG browser viewer](examples/kg-generator/firecrawl-kg-browser-viewer/index.html) as a local HTML file, choose `examples/kg-generator/ada-lovelace-gpt-5.json`, and click **Show graph**. The viewer includes Cytoscape.js locally and does not upload the JSON. GitHub shows the HTML source; open the downloaded file in your browser to use the viewer.
+
 ## Install and run locally
 
 Requires Docker with Compose, enough resources to build/run the API and Playwright, and an OpenAI key with access to the selected model. Use this branch, not this fork's older default branch:
