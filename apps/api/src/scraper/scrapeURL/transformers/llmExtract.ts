@@ -1062,6 +1062,7 @@ export async function performLLMExtract(
         extractOptions: generationOptions,
         urls: [meta.rewrittenUrl ?? meta.url],
         useAgent,
+        checkPromptInjection: meta.options.checkPromptInjection,
         scrapeId: meta.id,
         metadata: {
           teamId: meta.internalOptions.teamId,

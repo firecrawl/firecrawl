@@ -116,6 +116,25 @@ class TestPrepareScrapeOptions:
         assert result["timeout"] == 30000
         assert result["waitFor"] == 2000
 
+    def test_prepare_top_level_check_prompt_injection(self):
+        """check_prompt_injection is sent as the top-level checkPromptInjection."""
+        result = prepare_scrape_options(
+            ScrapeOptions(formats=["markdown"], check_prompt_injection=True)
+        )
+
+        assert result["checkPromptInjection"] is True
+        assert "check_prompt_injection" not in result
+
+    def test_prepare_json_format_check_prompt_injection_still_sent(self):
+        """The deprecated json-format field keeps working."""
+        result = prepare_scrape_options(
+            ScrapeOptions(
+                formats=[JsonFormat(prompt="Extract", check_prompt_injection=True)]
+            )
+        )
+
+        assert result["formats"][0]["checkPromptInjection"] is True
+
     def test_prepare_snake_case_conversion(self):
         """Test snake_case to camelCase conversion."""
         options = ScrapeOptions(

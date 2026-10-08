@@ -138,11 +138,11 @@ async function classifyChunk(
 
     if (result.object.isInjection) {
       logger.warn(
-        "Prompt injection detected in scraped content; blocking JSON extraction",
+        "Prompt injection detected in scraped content; blocking the scrape",
         { reason: result.object.reason },
       );
       throw new PromptInjectionDetectedError(
-        `The scraped page content appears to contain a prompt injection attempt, so JSON extraction was aborted for safety. Guard verdict: ${result.object.reason.slice(0, 300)}`,
+        `The scraped page content appears to contain a prompt injection attempt, so the scrape was aborted for safety. Guard verdict: ${result.object.reason.slice(0, 300)}`,
       );
     }
     return true;
@@ -183,7 +183,7 @@ export function createPromptInjectionGuardLimiter(): Semaphore {
 
 // Throws PromptInjectionDetectedError on a detection. Otherwise resolves to
 // false when the guard failed open on at least one chunk, i.e. part of the
-// content reached extraction unscanned.
+// content went unscanned.
 export async function checkForPromptInjection({
   markdown,
   logger,

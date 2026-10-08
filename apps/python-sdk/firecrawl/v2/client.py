@@ -97,7 +97,8 @@ _SCRAPE_OPTION_KEYS = frozenset({
     "only_main_content", "timeout", "wait_for", "mobile",
     "parsers", "actions", "location", "skip_tls_verification",
     "remove_base64_images", "fast_mode", "use_mock", "block_ads",
-    "proxy", "max_age", "store_in_cache", "lockdown", "threat_protection",
+    "proxy", "max_age", "store_in_cache", "lockdown", "check_prompt_injection",
+    "threat_protection",
     "profile", "audit_metadata",
 })
 
@@ -186,6 +187,7 @@ class FirecrawlClient:
         max_age: Optional[int] = None,
         store_in_cache: Optional[bool] = None,
         lockdown: Optional[bool] = None,
+        check_prompt_injection: Optional[bool] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         profile: Optional[Dict[str, Any]] = None,
         audit_metadata: Optional[AuditMetadata] = None,
@@ -217,6 +219,7 @@ class FirecrawlClient:
             max_age: Maximum age of the cache
             store_in_cache: Whether to store the result in the cache
             lockdown: Serve only previously cached results; never make outbound requests. Returns 404 SCRAPE_LOCKDOWN_CACHE_MISS on cache miss.
+            check_prompt_injection: Scan the page content for prompt injection with any format except rawBase64, before LLM-backed formats run. A detection fails the scrape. Adds 4 credits when the check scans the whole page.
             threat_protection: Enterprise per-request override of the team's threat protection policy
             profile: Browser profile for persistent state (e.g. {"name": "my-profile", "saveChanges": True})
             tool_detail: "compact" returns provider, capability and description; "summary" (default) adds metadata; "full" includes contracts when domain discovery is enabled.
@@ -246,6 +249,7 @@ class FirecrawlClient:
                 max_age=max_age,
                 store_in_cache=store_in_cache,
                 lockdown=lockdown,
+                check_prompt_injection=check_prompt_injection,
                 threat_protection=threat_protection,
                 profile=profile,
                 audit_metadata=audit_metadata,
@@ -253,7 +257,7 @@ class FirecrawlClient:
                 domain_tools=domain_tools,
                 tool_detail=tool_detail,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration, domain_tools, tool_detail]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, check_prompt_injection, threat_protection, profile, audit_metadata, integration, domain_tools, tool_detail]) else None
         if alexandria is not None:
             if url is not None or auto_resume is not None or (options and set(options.model_dump(exclude_none=True, exclude_unset=True)) - {"timeout", "integration"}):
                 raise ValueError("alexandria cannot be combined with URL scrape options")
@@ -636,6 +640,7 @@ class FirecrawlClient:
         max_age: Optional[int] = None,
         store_in_cache: Optional[bool] = None,
         lockdown: Optional[bool] = None,
+        check_prompt_injection: Optional[bool] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         profile: Optional[Dict[str, Any]] = None,
         audit_metadata: Optional[AuditMetadata] = None,
@@ -687,6 +692,7 @@ class FirecrawlClient:
             max_age: Cache max age (convenience kwarg)
             store_in_cache: Cache results (convenience kwarg)
             lockdown: Serve only cached results (convenience kwarg)
+            check_prompt_injection: Scan the page content for prompt injection with any format except rawBase64, before LLM-backed formats run. A detection fails the scrape. Adds 4 credits when the check scans the whole page.
             threat_protection: Enterprise threat protection override (convenience kwarg)
             profile: Browser profile (convenience kwarg)
             audit_metadata: Metadata to include in SIEM logging events
@@ -714,6 +720,7 @@ class FirecrawlClient:
                 remove_base64_images=remove_base64_images, fast_mode=fast_mode,
                 use_mock=use_mock, block_ads=block_ads, proxy=proxy,
                 max_age=max_age, store_in_cache=store_in_cache, lockdown=lockdown,
+                check_prompt_injection=check_prompt_injection,
                 threat_protection=threat_protection, profile=profile,
                 audit_metadata=audit_metadata,
             ).items() if v is not None}
@@ -798,6 +805,7 @@ class FirecrawlClient:
         max_age: Optional[int] = None,
         store_in_cache: Optional[bool] = None,
         lockdown: Optional[bool] = None,
+        check_prompt_injection: Optional[bool] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         profile: Optional[Dict[str, Any]] = None,
         audit_metadata: Optional[AuditMetadata] = None,
@@ -847,6 +855,7 @@ class FirecrawlClient:
             max_age: Cache max age (convenience kwarg)
             store_in_cache: Cache results (convenience kwarg)
             lockdown: Serve only cached results (convenience kwarg)
+            check_prompt_injection: Scan the page content for prompt injection with any format except rawBase64, before LLM-backed formats run. A detection fails the scrape. Adds 4 credits when the check scans the whole page.
             threat_protection: Enterprise threat protection override (convenience kwarg)
             profile: Browser profile (convenience kwarg)
             audit_metadata: Metadata to include in SIEM logging events
@@ -871,6 +880,7 @@ class FirecrawlClient:
                 remove_base64_images=remove_base64_images, fast_mode=fast_mode,
                 use_mock=use_mock, block_ads=block_ads, proxy=proxy,
                 max_age=max_age, store_in_cache=store_in_cache, lockdown=lockdown,
+                check_prompt_injection=check_prompt_injection,
                 threat_protection=threat_protection, profile=profile,
                 audit_metadata=audit_metadata,
             ).items() if v is not None}
@@ -1352,6 +1362,7 @@ class FirecrawlClient:
         max_age: Optional[int] = None,
         store_in_cache: Optional[bool] = None,
         lockdown: Optional[bool] = None,
+        check_prompt_injection: Optional[bool] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         audit_metadata: Optional[AuditMetadata] = None,
         webhook: Optional[Union[str, WebhookConfig]] = None,
@@ -1386,6 +1397,7 @@ class FirecrawlClient:
             max_age: Cache max age
             store_in_cache: Whether to store results in cache
             lockdown: Serve only previously cached results; never make outbound requests.
+            check_prompt_injection: Scan the page content for prompt injection with any format except rawBase64, before LLM-backed formats run. A detection fails the scrape. Adds 4 credits when the check scans the whole page.
             threat_protection: Enterprise per-request override of the team's threat protection policy
             audit_metadata: Metadata to include in SIEM logging events
             webhook: Webhook configuration
@@ -1421,9 +1433,10 @@ class FirecrawlClient:
                 max_age=max_age,
                 store_in_cache=store_in_cache,
                 lockdown=lockdown,
+                check_prompt_injection=check_prompt_injection,
                 threat_protection=threat_protection,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, check_prompt_injection, threat_protection]) else None
 
         return batch_module.start_batch_scrape(
             self.http_client,
@@ -1868,6 +1881,7 @@ class FirecrawlClient:
         max_age: Optional[int] = None,
         store_in_cache: Optional[bool] = None,
         lockdown: Optional[bool] = None,
+        check_prompt_injection: Optional[bool] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         audit_metadata: Optional[AuditMetadata] = None,
         webhook: Optional[Union[str, WebhookConfig]] = None,
@@ -1905,9 +1919,10 @@ class FirecrawlClient:
                 max_age=max_age,
                 store_in_cache=store_in_cache,
                 lockdown=lockdown,
+                check_prompt_injection=check_prompt_injection,
                 threat_protection=threat_protection,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, check_prompt_injection, threat_protection]) else None
 
         return batch_module.batch_scrape(
             self.http_client,
