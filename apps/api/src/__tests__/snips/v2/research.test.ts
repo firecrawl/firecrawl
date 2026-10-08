@@ -3,6 +3,7 @@ import { config } from "../../../config";
 import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
 import { creditUsage, idmux, researchRaw } from "./lib";
 import { and, desc, eq, gt } from "drizzle-orm";
+import { waitForJobLogRow } from "../job-log";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import { redisRateLimitClient } from "../../../services/rate-limiter";
@@ -262,27 +263,14 @@ describeIf(HAS_RESEARCH)("Research API", () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
 
-    const requestLog = await waitForSingleRow<{
+    const requestLog = await waitForJobLogRow<{
       origin: string | null;
       integration: string | null;
-    }>(async () => {
-      const data = await db
-        .select({
-          origin: schema.requests.origin,
-          integration: schema.requests.integration,
-        })
-        .from(schema.requests)
-        .where(
-          and(
-            eq(schema.requests.team_id, identity.teamId),
-            eq(schema.requests.kind, "research_paper_search"),
-            eq(schema.requests.target_hint, query),
-          ),
-        )
-        .orderBy(desc(schema.requests.created_at))
-        .limit(1);
-      return data[0] ?? null;
-    });
+    }>(
+      "requests",
+      "team_id = {teamId: UUID} AND kind = 'research_paper_search' AND target_hint = {query: String}",
+      { teamId: identity.teamId, query },
+    );
 
     expect(requestLog).not.toBeNull();
     expect(requestLog?.origin).toBe("mcp");

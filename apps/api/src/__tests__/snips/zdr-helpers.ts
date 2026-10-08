@@ -1,7 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { eq } from "drizzle-orm";
-import { db } from "../../db/connection";
-import * as schema from "../../db/schema";
+import { clickhouseClient } from "../../lib/clickhouse-client";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 
 type Identity = { apiKey: string; teamId: string };
@@ -87,72 +85,79 @@ export async function getLogs() {
     );
 }
 
+// The job log lives in ClickHouse, fed by ClickPipes a few seconds behind the
+// publish. Each lookup polls until the row lands. Tables are ReplacingMergeTree
+// ordered by (team_id, id); FINAL keeps the latest publication of an id and
+// the day bound prunes partitions.
+type JobRow = Record<string, unknown>;
+
+async function queryJobRows(
+  table: string,
+  where: string,
+  params: Record<string, string>,
+  expectedMin = 1,
+): Promise<JobRow[]> {
+  if (clickhouseClient === null) {
+    throw new Error("CLICKHOUSE_ANALYTICS_URL is required to read the job log");
+  }
+  let rows: JobRow[] = [];
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const result = await clickhouseClient.query({
+      query: `SELECT * FROM ${table} FINAL WHERE ${where} AND created_at >= now() - INTERVAL 1 DAY`,
+      query_params: params,
+      format: "JSONEachRow",
+    });
+    rows = await result.json<JobRow>();
+    if (rows.length >= expectedMin) break;
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  return rows;
+}
+
+// Scrape and crawl options are stored as a JSON string; ZDR rows carry none.
+function expectNoStoredContent(row: JobRow) {
+  expect(String(row.url)).not.toContain("://"); // no url stored
+  expect(row.options ?? null).toBeNull();
+}
+
 export async function expectScrapeIsCleanedUp(scrapeId: string) {
-  const scrapeData = await db
-    .select()
-    .from(schema.scrapes)
-    .where(eq(schema.scrapes.id, scrapeId))
-    .limit(1);
+  const scrapeData = await queryJobRows("scrapes", "id = {id: UUID}", {
+    id: scrapeId,
+  });
 
   expect(scrapeData).toHaveLength(1);
-
-  if (scrapeData.length === 1) {
-    const record = scrapeData[0];
-    expect(record.url).not.toContain("://"); // no url stored
-    expect(record.options).toBeNull();
-  }
+  expectNoStoredContent(scrapeData[0]);
 }
 
 export async function expectCrawlIsCleanedUp(crawlId: string) {
-  const requestData = await db
-    .select()
-    .from(schema.requests)
-    .where(eq(schema.requests.id, crawlId))
-    .limit(1);
+  const requestData = await queryJobRows("requests", "id = {id: UUID}", {
+    id: crawlId,
+  });
 
   expect(requestData).toHaveLength(1);
+  expect(requestData[0].kind).toBe("crawl");
 
-  if (requestData.length === 1) {
-    const record = requestData[0];
-    expect(record.kind).toBe("crawl");
-    expect(record.dr_clean_by).not.toBeNull();
-  }
-
-  const crawlData = await db
-    .select()
-    .from(schema.crawls)
-    .where(eq(schema.crawls.id, crawlId))
-    .limit(1);
+  const crawlData = await queryJobRows("crawls", "id = {id: UUID}", {
+    id: crawlId,
+  });
 
   expect(crawlData).toHaveLength(1);
-
-  if (crawlData.length === 1) {
-    const record = crawlData[0];
-    expect(record.url).not.toContain("://"); // no url stored
-    expect(record.options).toBeNull();
-  }
+  expectNoStoredContent(crawlData[0]);
 }
 
 export async function expectBatchScrapeIsCleanedUp(batchScrapeId: string) {
-  const requestData = await db
-    .select()
-    .from(schema.requests)
-    .where(eq(schema.requests.id, batchScrapeId))
-    .limit(1);
+  const requestData = await queryJobRows("requests", "id = {id: UUID}", {
+    id: batchScrapeId,
+  });
 
   expect(requestData).toHaveLength(1);
+  expect(requestData[0].kind).toBe("batch_scrape");
 
-  if (requestData.length === 1) {
-    const record = requestData[0];
-    expect(record.kind).toBe("batch_scrape");
-    expect(record.dr_clean_by).not.toBeNull();
-  }
-
-  const batchScrapeData = await db
-    .select()
-    .from(schema.batch_scrapes)
-    .where(eq(schema.batch_scrapes.id, batchScrapeId))
-    .limit(1);
+  const batchScrapeData = await queryJobRows(
+    "batch_scrapes",
+    "id = {id: UUID}",
+    { id: batchScrapeId },
+  );
 
   expect(batchScrapeData).toHaveLength(1);
 }
@@ -161,10 +166,12 @@ export async function expectScrapesOfRequestAreCleanedUp(
   requestId: string,
   expectedScrapeCount?: number,
 ) {
-  const scrapes = await db
-    .select()
-    .from(schema.scrapes)
-    .where(eq(schema.scrapes.request_id, requestId));
+  const scrapes = await queryJobRows(
+    "scrapes",
+    "request_id = {requestId: UUID}",
+    { requestId },
+    expectedScrapeCount ?? 1,
+  );
 
   if (expectedScrapeCount !== undefined) {
     expect(scrapes.length).toBe(expectedScrapeCount);
@@ -173,11 +180,10 @@ export async function expectScrapesOfRequestAreCleanedUp(
   }
 
   for (const scrape of scrapes) {
-    expect(scrape.url).not.toContain("://"); // no url stored
-    expect(scrape.options).toBeNull();
+    expectNoStoredContent(scrape);
 
     if (scrape.is_successful) {
-      const gcsJob = await getJobFromGCS(scrape.id);
+      const gcsJob = await getJobFromGCS(String(scrape.id));
       expect(gcsJob).not.toBeNull(); // clean up happens async on a worker after expiry
     }
   }

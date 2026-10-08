@@ -84,16 +84,6 @@ export const api_keys = pgTable(
   ],
 );
 
-export const batch_scrapes = pgTable("batch_scrapes", {
-  id: uuid("id").notNull(),
-  request_id: uuid("request_id").notNull(),
-  team_id: uuid("team_id").notNull(),
-  created_at: ts("created_at").notNull().defaultNow(),
-  num_docs: integer("num_docs").notNull(),
-  credits_cost: integer("credits_cost").notNull(),
-  cancelled: boolean("cancelled").notNull(),
-});
-
 export const blocklist = pgTable("blocklist", {
   id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
   data: jsonb("data").notNull(),
@@ -163,72 +153,6 @@ export const browser_profiles = pgTable(
   table => [primaryKey({ columns: [table.team_id, table.name] })],
 );
 
-export const crawls = pgTable("crawls", {
-  id: uuid("id").notNull(),
-  request_id: uuid("request_id").notNull(),
-  url: text("url").notNull(),
-  team_id: uuid("team_id").notNull(),
-  options: jsonb("options"),
-  created_at: ts("created_at").notNull().defaultNow(),
-  num_docs: integer("num_docs").notNull(),
-  credits_cost: integer("credits_cost").notNull(),
-  cancelled: boolean("cancelled").notNull(),
-  monitor_id: uuid("monitor_id"),
-  monitor_check_id: uuid("monitor_check_id"),
-});
-
-export const deep_researches = pgTable("deep_researches", {
-  id: uuid("id").notNull(),
-  request_id: uuid("request_id").notNull(),
-  query: text("query").notNull(),
-  team_id: uuid("team_id").notNull(),
-  created_at: ts("created_at").notNull().defaultNow(),
-  time_taken: num("time_taken").notNull(),
-  credits_cost: integer("credits_cost").notNull(),
-  cost_tracking: jsonb("cost_tracking"),
-  options: jsonb("options"),
-});
-
-const researchEndpointTable = (name: string) =>
-  pgTable(name, {
-    id: uuid("id").notNull(),
-    request_id: uuid("request_id").notNull(),
-    target: text("target").notNull(),
-    team_id: uuid("team_id").notNull(),
-    options: jsonb("options"),
-    response: jsonb("response"),
-    num_results: integer("num_results").notNull(),
-    time_taken: num("time_taken").notNull(),
-    credits_cost: integer("credits_cost").notNull(),
-    is_successful: boolean("is_successful").notNull(),
-    error: text("error"),
-    created_at: ts("created_at").notNull().defaultNow(),
-  });
-
-export const research_paper_searches = researchEndpointTable(
-  "research_paper_searches",
-);
-
-export const research_paper_inspects = researchEndpointTable(
-  "research_paper_inspects",
-);
-
-export const research_paper_reads = researchEndpointTable(
-  "research_paper_reads",
-);
-
-export const research_related_papers = researchEndpointTable(
-  "research_related_papers",
-);
-
-export const research_github_searches = researchEndpointTable(
-  "research_github_searches",
-);
-
-export const code_searches = researchEndpointTable("code_searches");
-
-export const gov_searches = researchEndpointTable("gov_searches");
-
 export const deterministic_json_scripts = pgTable(
   "deterministic_json_scripts",
   {
@@ -259,20 +183,6 @@ export const eb_sync = pgTable("eb-sync", {
   id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
   created_at: ts("created_at").notNull().defaultNow(),
   team_id: text("team_id"),
-});
-
-export const extracts = pgTable("extracts", {
-  id: uuid("id").notNull(),
-  request_id: uuid("request_id").notNull(),
-  urls: text("urls").array().notNull(),
-  options: jsonb("options"),
-  model_kind: text("model_kind").notNull(),
-  team_id: uuid("team_id").notNull(),
-  is_successful: boolean("is_successful").notNull(),
-  error: text("error"),
-  created_at: ts("created_at").notNull().defaultNow(),
-  credits_cost: integer("credits_cost").notNull(),
-  cost_tracking: jsonb("cost_tracking"),
 });
 
 export const idempotency_keys = pgTable("idempotency_keys", {
@@ -338,29 +248,6 @@ export const llm_texts = pgTable("llm_texts", {
   max_urls: integer("max_urls").notNull(),
   created_at: ts("created_at").notNull().defaultNow(),
   updated_at: ts("updated_at"),
-});
-
-export const llmstxts = pgTable("llmstxts", {
-  id: uuid("id").notNull(),
-  request_id: uuid("request_id").notNull(),
-  url: text("url").notNull(),
-  team_id: uuid("team_id").notNull(),
-  created_at: ts("created_at").notNull().defaultNow(),
-  num_urls: integer("num_urls").notNull(),
-  options: jsonb("options"),
-  cost_tracking: jsonb("cost_tracking"),
-  credits_cost: integer("credits_cost").notNull(),
-});
-
-export const maps = pgTable("maps", {
-  id: uuid("id").notNull(),
-  request_id: uuid("request_id").notNull(),
-  url: text("url").notNull(),
-  options: jsonb("options"),
-  team_id: uuid("team_id").notNull(),
-  created_at: ts("created_at").notNull().defaultNow(),
-  num_results: integer("num_results").notNull(),
-  credits_cost: integer("credits_cost").notNull(),
 });
 
 export const monitor_check_pages = pgTable("monitor_check_pages", {
@@ -506,21 +393,6 @@ export const notification_preferences = pgTable("notification_preferences", {
   unsubscribed_all: boolean("unsubscribed_all").default(false),
 });
 
-export const parses = pgTable("parses", {
-  id: uuid("id").notNull(),
-  request_id: uuid("request_id").notNull(),
-  url: text("url").notNull(),
-  is_successful: boolean("is_successful").notNull(),
-  error: text("error"),
-  time_taken: num("time_taken").notNull(),
-  team_id: uuid("team_id").notNull(),
-  options: jsonb("options"),
-  cost_tracking: jsonb("cost_tracking"),
-  pdf_num_pages: integer("pdf_num_pages"),
-  credits_cost: integer("credits_cost").notNull(),
-  created_at: ts("created_at").notNull().defaultNow(),
-});
-
 export const prices = pgTable("prices", {
   id: text("id").notNull(),
   product_id: text("product_id"),
@@ -570,20 +442,6 @@ export const products = pgTable("products", {
   type: text("type"),
 });
 
-export const requests = pgTable("requests", {
-  id: uuid("id").notNull(),
-  kind: text("kind").notNull(),
-  api_version: text("api_version").notNull(),
-  created_at: ts("created_at").notNull().defaultNow(),
-  team_id: uuid("team_id").notNull(),
-  origin: text("origin").notNull(),
-  integration: text("integration"),
-  target_hint: text("target_hint").notNull(),
-  dr_clean_by: ts("dr_clean_by"),
-  api_key_id: bigintNum("api_key_id"),
-  external_request_id: text("external_request_id"),
-});
-
 export const mcp_action_logs = pgTable(
   "mcp_action_logs",
   {
@@ -615,24 +473,6 @@ export const mcp_action_logs = pgTable(
     index("mcp_action_logs_expires_idx").on(table.expires_at),
   ],
 );
-
-export const scrapes = pgTable("scrapes", {
-  id: uuid("id").notNull(),
-  request_id: uuid("request_id").notNull(),
-  url: text("url").notNull(),
-  is_successful: boolean("is_successful").notNull(),
-  error: text("error"),
-  time_taken: num("time_taken").notNull(),
-  team_id: uuid("team_id").notNull(),
-  options: jsonb("options"),
-  cost_tracking: jsonb("cost_tracking"),
-  pdf_num_pages: integer("pdf_num_pages"),
-  credits_cost: integer("credits_cost").notNull(),
-  created_at: ts("created_at").notNull().defaultNow(),
-  monitor_id: uuid("monitor_id"),
-  monitor_check_id: uuid("monitor_check_id"),
-  content_type: text("content_type"),
-});
 
 export const search_feedback = pgTable("search_feedback", {
   id: uuid("id").notNull().defaultRandom(),
@@ -759,20 +599,6 @@ export const alexandria_feedback_capabilities = pgTable(
     ),
   ],
 );
-
-export const searches = pgTable("searches", {
-  id: uuid("id").notNull(),
-  request_id: uuid("request_id").notNull(),
-  query: text("query").notNull(),
-  team_id: uuid("team_id").notNull(),
-  options: jsonb("options"),
-  time_taken: num("time_taken").notNull(),
-  created_at: ts("created_at").notNull().defaultNow(),
-  credits_cost: integer("credits_cost").notNull(),
-  is_successful: boolean("is_successful").notNull(),
-  error: text("error"),
-  num_results: integer("num_results").notNull(),
-});
 
 export const subscriptions = pgTable("subscriptions", {
   id: text("id").notNull(),

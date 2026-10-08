@@ -480,25 +480,22 @@ async function searchControllerInner(
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
-    logSearch(
-      {
-        id: jobId,
-        request_id: agentRequestId ?? jobId,
-        query: req.body.query,
-        is_successful: true,
-        error: undefined,
-        results: result.response as any,
-        num_results: result.totalResultsCount,
-        time_taken: timeTakenInSeconds,
-        team_id: req.auth.team_id,
-        options: req.body,
-        // Don't record preview tokens as billed in the ledger — only record
-        // credits when billing is actually applied.
-        credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
-        zeroDataRetention,
-      },
-      false,
-    ).catch(error => {
+    logSearch({
+      id: jobId,
+      request_id: agentRequestId ?? jobId,
+      query: req.body.query,
+      is_successful: true,
+      error: undefined,
+      results: result.response as any,
+      num_results: result.totalResultsCount,
+      time_taken: timeTakenInSeconds,
+      team_id: req.auth.team_id,
+      options: req.body,
+      // Don't record preview tokens as billed in the ledger — only record
+      // credits when billing is actually applied.
+      credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
+      zeroDataRetention,
+    }).catch(error => {
       logger.error("Failed to log search", { error, jobId });
     });
 
