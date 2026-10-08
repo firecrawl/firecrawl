@@ -27,6 +27,10 @@ export function projectScrapeCredits(
     credits = 10;
   }
 
+  if (options.checkPromptInjection) {
+    credits += 4;
+  }
+
   if (
     hasFormatOfType(options.formats, "question") ||
     hasFormatOfType(options.formats, "query")

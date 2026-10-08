@@ -219,7 +219,7 @@ class FirecrawlClient:
             max_age: Maximum age of the cache
             store_in_cache: Whether to store the result in the cache
             lockdown: Serve only previously cached results; never make outbound requests. Returns 404 SCRAPE_LOCKDOWN_CACHE_MISS on cache miss.
-            check_prompt_injection: Scan the page content for prompt injection before LLM-backed formats run. Adds 4 credits when the check runs.
+            check_prompt_injection: Scan the page content for prompt injection before LLM-backed formats run. Adds 4 credits when the check scans the whole page.
             threat_protection: Enterprise per-request override of the team's threat protection policy
             profile: Browser profile for persistent state (e.g. {"name": "my-profile", "saveChanges": True})
             tool_detail: "compact" returns provider, capability and description; "summary" (default) adds metadata; "full" includes contracts when domain discovery is enabled.
@@ -692,7 +692,7 @@ class FirecrawlClient:
             max_age: Cache max age (convenience kwarg)
             store_in_cache: Cache results (convenience kwarg)
             lockdown: Serve only cached results (convenience kwarg)
-            check_prompt_injection: Scan the page content for prompt injection before LLM-backed formats run. Adds 4 credits when the check runs.
+            check_prompt_injection: Scan the page content for prompt injection before LLM-backed formats run. Adds 4 credits when the check scans the whole page.
             threat_protection: Enterprise threat protection override (convenience kwarg)
             profile: Browser profile (convenience kwarg)
             audit_metadata: Metadata to include in SIEM logging events
@@ -855,7 +855,7 @@ class FirecrawlClient:
             max_age: Cache max age (convenience kwarg)
             store_in_cache: Cache results (convenience kwarg)
             lockdown: Serve only cached results (convenience kwarg)
-            check_prompt_injection: Scan the page content for prompt injection before LLM-backed formats run. Adds 4 credits when the check runs.
+            check_prompt_injection: Scan the page content for prompt injection before LLM-backed formats run. Adds 4 credits when the check scans the whole page.
             threat_protection: Enterprise threat protection override (convenience kwarg)
             profile: Browser profile (convenience kwarg)
             audit_metadata: Metadata to include in SIEM logging events
@@ -1397,7 +1397,7 @@ class FirecrawlClient:
             max_age: Cache max age
             store_in_cache: Whether to store results in cache
             lockdown: Serve only previously cached results; never make outbound requests.
-            check_prompt_injection: Scan the page content for prompt injection before LLM-backed formats run. Adds 4 credits when the check runs.
+            check_prompt_injection: Scan the page content for prompt injection before LLM-backed formats run. Adds 4 credits when the check scans the whole page.
             threat_protection: Enterprise per-request override of the team's threat protection policy
             audit_metadata: Metadata to include in SIEM logging events
             webhook: Webhook configuration

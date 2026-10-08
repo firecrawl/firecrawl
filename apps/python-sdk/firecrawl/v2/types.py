@@ -921,7 +921,8 @@ class ScrapeOptions(BaseModel):
     store_in_cache: Optional[bool] = None
     lockdown: Optional[bool] = None
     # Scans the page content for prompt injection before any LLM-backed format
-    # runs. A detection fails the scrape. Adds 4 credits when the check runs.
+    # runs. A detection fails the scrape. Adds 4 credits when the check scans
+    # the whole page.
     check_prompt_injection: Optional[bool] = Field(
         default=None, alias="checkPromptInjection"
     )

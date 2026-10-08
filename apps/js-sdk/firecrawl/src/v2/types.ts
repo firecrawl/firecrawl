@@ -280,7 +280,7 @@ export interface ScrapeOptions {
   /**
    * Scans the page content for prompt injection before any LLM-backed format
    * runs. A detection fails the scrape with SCRAPE_PROMPT_INJECTION_DETECTED.
-   * Adds 4 credits when the check runs.
+   * Adds 4 credits when the check scans the whole page.
    */
   checkPromptInjection?: boolean;
   redactPII?: boolean | RedactPIIOptions;
