@@ -317,6 +317,9 @@ export function authMiddleware(
           if (auth.status === 401 || auth.agentAuthDiscovery) {
             applyAgentAuthDiscoveryHeader(res);
           }
+          if (auth.retryAfterSeconds) {
+            res.setHeader("Retry-After", String(auth.retryAfterSeconds));
+          }
           return res.status(auth.status).json({
             success: false,
             error: auth.error,
