@@ -15,7 +15,7 @@ from firecrawl.v2.utils.error_handler import BadRequestError, FirecrawlError
 
 
 class FakeResponse:
-    """Minimal stand-in for an httpx/requests-style response."""
+    """Minimal stand-in for an httpx2/requests-style response."""
 
     def __init__(self, status_code=200, payload=None):
         self.status_code = status_code

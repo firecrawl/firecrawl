@@ -1,5 +1,5 @@
 requests
-httpx
+httpx2>=2.13.1,<3
 pytest
 pytest-asyncio
 python-dotenv

@@ -1,7 +1,7 @@
 import asyncio
 from unittest.mock import Mock
 
-import httpx
+import httpx2
 import pytest
 
 from firecrawl import AsyncFirecrawl, Firecrawl
@@ -109,10 +109,10 @@ def _run_async(handler, call):
         http = client._v2_client.async_http_client
         headers = http._client.headers
         await http.close()
-        http._client = httpx.AsyncClient(
+        http._client = httpx2.AsyncClient(
             base_url=API_URL,
             headers=headers,
-            transport=httpx.MockTransport(handler),
+            transport=httpx2.MockTransport(handler),
         )
         try:
             return await call(client)
@@ -125,9 +125,9 @@ def _run_async(handler, call):
 def test_get_parse_formats_async():
     requests_seen = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         requests_seen.append(request)
-        return httpx.Response(200, json=FORMATS_BODY)
+        return httpx2.Response(200, json=FORMATS_BODY)
 
     formats = _run_async(handler, lambda client: client.get_parse_formats())
 
@@ -141,7 +141,7 @@ def test_get_parse_formats_async():
 
 def test_get_parse_formats_async_v2_surface():
     formats = _run_async(
-        lambda request: httpx.Response(200, json=FORMATS_BODY),
+        lambda request: httpx2.Response(200, json=FORMATS_BODY),
         lambda client: client.v2.get_parse_formats(),
     )
     _assert_formats(formats)
@@ -150,7 +150,7 @@ def test_get_parse_formats_async_v2_surface():
 def test_get_parse_formats_async_server_error():
     with pytest.raises(InternalServerError):
         _run_async(
-            lambda request: httpx.Response(500, json={"success": False, "error": "boom"}),
+            lambda request: httpx2.Response(500, json={"success": False, "error": "boom"}),
             lambda client: client.get_parse_formats(),
         )
 
@@ -158,6 +158,6 @@ def test_get_parse_formats_async_server_error():
 def test_get_parse_formats_async_unsuccessful_body():
     with pytest.raises(FirecrawlError):
         _run_async(
-            lambda request: httpx.Response(200, json={"success": False, "error": "nope"}),
+            lambda request: httpx2.Response(200, json={"success": False, "error": "nope"}),
             lambda client: client.get_parse_formats(),
         )

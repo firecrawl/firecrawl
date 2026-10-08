@@ -7,10 +7,10 @@ dynamic = ["version"]
 name = "firecrawl-py"
 description = "Python SDK for the Firecrawl API: web scraping, crawling, web search, and scientific literature search over a research paper index of PubMed, bioRxiv, medRxiv and arXiv abstracts"
 readme = {file="README.md", content-type = "text/markdown"}
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
     "requests",
-    "httpx",
+    "httpx2>=2.13.1,<3",
     "python-dotenv",
     "websockets",
     "nest-asyncio",
@@ -30,8 +30,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Topic :: Internet",
     "Topic :: Internet :: WWW/HTTP",
