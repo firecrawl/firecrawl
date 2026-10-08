@@ -60,11 +60,11 @@ export function buildSearchQuery(
   domainOptions: DomainFilterOptions = {},
 ): QueryBuilderResult {
   baseQuery = baseQuery.replace(
-    /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\S+/g,
+    /(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s"'])+/g,
     token =>
       token.replace(
-        /^(-?)site\.((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})(\/[^\s]*)?$/i,
-        "$1site:$2$3",
+        /^(\(*-?)site\.((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})(\/[^\s"'()]*)?(\)*)$/i,
+        "$1site:$2$3$4",
       ),
   );
   const categoryMap = new Map<string, string>();
