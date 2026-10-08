@@ -75,6 +75,14 @@ public class ScrapeOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? StoreInCache { get; set; }
 
+    /// <summary>
+    /// Scans the page content for prompt injection with any format except rawBase64, before LLM-backed formats run.
+    /// A detection fails the scrape with SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check scans the whole page.
+    /// </summary>
+    [JsonPropertyName("checkPromptInjection")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CheckPromptInjection { get; set; }
+
     [JsonPropertyName("redactPII")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? RedactPII { get; set; }

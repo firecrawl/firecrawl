@@ -10,6 +10,7 @@ use Firecrawl\Models\MapData;
 use Firecrawl\Models\BatchScrapeJob;
 use Firecrawl\Models\CrawlJob;
 use Firecrawl\Models\HighlightsFormat;
+use Firecrawl\Models\JsonFormat;
 use Firecrawl\Models\AgentOptions;
 use Firecrawl\Models\AuditMetadata;
 use Firecrawl\Models\MapOptions;
@@ -399,6 +400,29 @@ it('serializes redactPII in ScrapeOptions', function (): void {
         'redactPII' => true,
     ]);
     expect(array_key_exists('formats', $options->toArray()))->toBeFalse();
+});
+
+it('serializes top-level checkPromptInjection in ScrapeOptions', function (): void {
+    $options = ScrapeOptions::with(
+        formats: [JsonFormat::with(prompt: 'Extract the title')],
+        checkPromptInjection: true,
+    );
+
+    expect($options->getCheckPromptInjection())->toBeTrue();
+    expect($options->toArray())->toMatchArray([
+        'checkPromptInjection' => true,
+    ]);
+    expect(array_key_exists('checkPromptInjection', $options->toArray()['formats'][0]))->toBeFalse();
+    expect(array_key_exists('checkPromptInjection', ScrapeOptions::with()->toArray()))->toBeFalse();
+});
+
+it('still serializes the deprecated JsonFormat checkPromptInjection', function (): void {
+    expect(JsonFormat::with(prompt: 'Extract the title', checkPromptInjection: true)->toArray())
+        ->toBe([
+            'type' => 'json',
+            'prompt' => 'Extract the title',
+            'checkPromptInjection' => true,
+        ]);
 });
 
 it('serializes audit metadata across request options', function (): void {

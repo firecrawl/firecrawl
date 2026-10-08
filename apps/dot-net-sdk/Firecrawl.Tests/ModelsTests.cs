@@ -18,6 +18,7 @@ public class ModelsTests
             Timeout = 30000,
             Mobile = false,
             RedactPII = true,
+            CheckPromptInjection = true,
             AuditMetadata = new AuditMetadata { Username = "alice@example.com" }
         };
 
@@ -29,6 +30,7 @@ public class ModelsTests
         Assert.Contains("\"timeout\":30000", json);
         Assert.Contains("\"mobile\":false", json);
         Assert.Contains("\"redactPII\":true", json);
+        Assert.Contains("\"checkPromptInjection\":true", json);
         Assert.Contains("\"auditMetadata\":{\"username\":\"alice@example.com\"}", json);
     }
 
@@ -45,6 +47,7 @@ public class ModelsTests
         Assert.DoesNotContain("\"timeout\"", json);
         Assert.DoesNotContain("\"mobile\"", json);
         Assert.DoesNotContain("\"headers\"", json);
+        Assert.DoesNotContain("\"checkPromptInjection\"", json);
     }
 
     [Fact]
