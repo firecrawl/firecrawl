@@ -13,6 +13,7 @@ describe("calculateCost", () => {
     ["openai/o3-mini", 1.1, 4.4],
     ["gemini-2.5-flash-lite", 0.1, 0.4],
     ["google/gemini-2.5-flash-lite", 0.1, 0.4],
+    ["gemini-3.5-flash", 1.5, 9],
     ["gemini-3.5-flash-lite", 0.3, 2.5],
     ["gpt-5-mini", 0.25, 2],
     ["fireworks_ai/accounts/fireworks/models/gpt-oss-20b", 0.05, 0.2],
