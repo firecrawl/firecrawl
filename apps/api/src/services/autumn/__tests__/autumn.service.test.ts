@@ -10,6 +10,7 @@
  */
 
 import { vi } from "vitest";
+import { AutumnDefaultError } from "autumn-js";
 
 // ---------------------------------------------------------------------------
 // Mocks — vi.mock is hoisted above the module body, so the mock backing objects
@@ -412,6 +413,74 @@ describe("team org change", () => {
 // ---------------------------------------------------------------------------
 
 describe("lockCredits", () => {
+  function sdkError(status: number, body: string) {
+    return new AutumnDefaultError("Reservation failed", {
+      request: new Request("https://example.com/check"),
+      response: new Response(body, { status }),
+      body,
+    });
+  }
+
+  it("rejects an existing direct reservation without claiming its hold", async () => {
+    mockCheck.mockRejectedValue(
+      sdkError(409, JSON.stringify({ code: "lock_already_exists" })),
+    );
+    await expect(
+      makeService().lockCredits({
+        teamId: "team-1",
+        orgId: "org-1",
+        value: 1,
+        lockId: "monitor_check-1",
+      }),
+    ).rejects.toMatchObject({
+      name: "ExistingCreditsLockError",
+      lockId: "monitor_check-1",
+    });
+    expect(mockFinalize).not.toHaveBeenCalled();
+    expect(mockTrack).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [409, JSON.stringify({ code: "other_conflict" })],
+    [409, JSON.stringify({ message: "lock_already_exists" })],
+    [409, "lock_already_exists"],
+    [409, "null"],
+    [500, JSON.stringify({ code: "lock_already_exists" })],
+  ])(
+    "retains the unavailable fallback for status %s and body %s",
+    async (status, body) => {
+      mockCheck.mockRejectedValue(sdkError(status, body));
+      await expect(
+        makeService().lockCredits({
+          teamId: "team-1",
+          orgId: "org-1",
+          value: 1,
+        }),
+      ).resolves.toEqual({ status: "skipped" });
+    },
+  );
+
+  it("does not identify contention from a plain error message", async () => {
+    mockCheck.mockRejectedValue(new Error("409 lock_already_exists"));
+    await expect(
+      makeService().lockCredits({ teamId: "team-1", orgId: "org-1", value: 1 }),
+    ).resolves.toEqual({ status: "skipped" });
+  });
+
+  it("preserves successful zero-credit reservations", async () => {
+    await expect(
+      makeService().lockCredits({
+        teamId: "team-1",
+        orgId: "org-1",
+        value: 0,
+        lockId: "monitor_check-1",
+      }),
+    ).resolves.toEqual({ status: "locked", lockId: "monitor_check-1" });
+    expect(mockCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ requiredBalance: 0 }),
+    );
+  });
+
   it("returns skipped when autumnClient is null", async () => {
     state.autumnClientRef = null;
     const svc = makeService();
