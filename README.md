@@ -519,7 +519,7 @@ Our SDKs provide a convenient way to use all Firecrawl features and automaticall
 
 Install the SDK:
 ```bash
-pip install firecrawl-py
+pip install firecrawl
 ```
 ```python
 from firecrawl import Firecrawl
