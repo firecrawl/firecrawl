@@ -835,7 +835,7 @@ defmodule FirecrawlTest do
     end)
   end
 
-  test "create_browser_session sends location" do
+  test "create_browser_session sends location only when set" do
     parent = self()
 
     adapter = fn request ->
@@ -850,23 +850,21 @@ defmodule FirecrawlTest do
       {request, resp}
     end
 
-    assert {:ok, %Req.Response{status: 200}} =
-             Firecrawl.create_browser_session(
-               [location: [country: "GB"]],
-               api_key: "test-key",
-               adapter: adapter
-             )
+    sent_body = fn params ->
+      assert {:ok, %Req.Response{status: 200}} =
+               Firecrawl.create_browser_session(params, api_key: "test-key", adapter: adapter)
 
-    assert_receive {:request, request}
+      assert_receive {:request, request}
 
-    body =
       cond do
         is_binary(request.body) -> Jason.decode!(request.body)
         is_map(request.body) -> request.body
         true -> request.options[:json]
       end
+    end
 
-    assert body["location"] == %{"country" => "GB"}
+    assert sent_body.(location: [country: "GB"])["location"] == %{"country" => "GB"}
+    refute Map.has_key?(sent_body.(ttl: 60), "location")
   end
 
   test "create_browser_session rejects a location without a country" do
