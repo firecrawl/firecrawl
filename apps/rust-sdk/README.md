@@ -168,12 +168,15 @@ let llm_extraction_options = ScrapeOptions {
     ..Default::default()
 };
 
-let llm_extraction_result = app
+let llm_extraction_result = client
     .scrape("https://news.ycombinator.com", llm_extraction_options)
     .await;
 
 match llm_extraction_result {
-    Ok(data) => println!("LLM Extraction Result:\n{:#?}", data.json.unwrap()),
+    Ok(data) => match data.json {
+        Some(json) => println!("LLM Extraction Result:\n{:#?}", json),
+        None => eprintln!("LLM Extraction returned no JSON"),
+    },
     Err(e) => eprintln!("LLM Extraction failed: {}", e),
 }
 ```
