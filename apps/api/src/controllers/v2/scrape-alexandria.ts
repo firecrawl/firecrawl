@@ -221,10 +221,15 @@ export async function providerScrapeController(
     const first = answer.results[0];
     if (first.error) {
       const status = first.error.status ?? 502;
+      const { retryable, retryAfterSeconds } = first.error;
+      if (typeof retryAfterSeconds === "number")
+        res.setHeader("Retry-After", String(retryAfterSeconds));
       return res.status(status >= 400 && status <= 599 ? status : 502).json({
         success: false,
         code: first.error.code,
         error: first.error.message,
+        ...(typeof retryable === "boolean" ? { retryable } : {}),
+        ...(typeof retryAfterSeconds === "number" ? { retryAfterSeconds } : {}),
       });
     }
     return res.json({ success: true, ...first });

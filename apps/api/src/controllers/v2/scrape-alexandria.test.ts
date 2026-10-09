@@ -136,6 +136,34 @@ it("relays a failed single legacy call as an error, not a success", async () => 
   });
 });
 
+it("passes retryable and the retry delay through on a failed single legacy call", async () => {
+  mocks.retrieve.mockResolvedValue(
+    result([
+      {
+        ...call,
+        creditsCost: 0,
+        error: {
+          code: "provider_unavailable",
+          message: "Try later.",
+          status: 503,
+          retryable: true,
+          retryAfterSeconds: 7,
+        },
+      },
+    ]),
+  );
+  const response = await request(app).post("/exchange/retrieve").send(call);
+  expect(response.status).toBe(503);
+  expect(response.headers["retry-after"]).toBe("7");
+  expect(response.body).toEqual({
+    success: false,
+    code: "provider_unavailable",
+    error: "Try later.",
+    retryable: true,
+    retryAfterSeconds: 7,
+  });
+});
+
 it("only lets trusted agent interop bypass billing, and prefers its request id", async () => {
   const untrusted = await request(app)
     .post("/v2/scrape")
