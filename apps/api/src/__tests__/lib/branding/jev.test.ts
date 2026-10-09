@@ -243,6 +243,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   config.TYPESAFE_API_KEY = saved.key;
   config.BRANDING_JEV = saved.global;
   config.BRANDING_JEV_TEAM_IDS = saved.teamIds;
@@ -380,8 +381,8 @@ describe("branding with Jev", () => {
   });
 
   it("stops calling Jev for a minute after repeated failures, then tries again", async () => {
-    let now = Date.parse("2026-10-08T12:00:00Z");
-    vi.spyOn(Date, "now").mockImplementation(() => now);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse("2026-10-08T12:00:00Z"));
     mocks.systemOne.mockRejectedValue(new Error("529 high traffic"));
 
     for (let i = 0; i < 5; i++) {
@@ -395,29 +396,50 @@ describe("branding with Jev", () => {
     expect(generateObject).toHaveBeenCalledTimes(6);
 
     // After the cooldown Jev is tried again, and a success keeps it in use.
-    now += 61_000;
+    vi.setSystemTime(Date.now() + 61_000);
     mocks.systemOne.mockReset().mockResolvedValue(jevResponse());
     await enhanceBrandingWithLLM(baseInput(new CostTracking()));
     await enhanceBrandingWithLLM(baseInput(new CostTracking()));
     expect(mocks.systemOne).toHaveBeenCalledTimes(2);
     expect(generateObject).toHaveBeenCalledTimes(6);
-    vi.mocked(Date.now).mockRestore();
   });
 
   it("reopens on the first failure after the cooldown", async () => {
-    let now = Date.parse("2026-10-08T12:00:00Z");
-    vi.spyOn(Date, "now").mockImplementation(() => now);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse("2026-10-08T12:00:00Z"));
     mocks.systemOne.mockRejectedValue(new Error("503 no healthy upstream"));
     for (let i = 0; i < 5; i++) {
       await enhanceBrandingWithLLM(baseInput(new CostTracking()));
     }
 
-    now += 61_000;
+    vi.setSystemTime(Date.now() + 61_000);
     await enhanceBrandingWithLLM(baseInput(new CostTracking()));
     await enhanceBrandingWithLLM(baseInput(new CostTracking()));
 
     expect(mocks.systemOne).toHaveBeenCalledTimes(6);
-    vi.mocked(Date.now).mockRestore();
+  });
+
+  it("reopens at once after the cooldown even if a call that started earlier succeeded late", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse("2026-10-08T12:00:00Z"));
+    let finishSlowCall!: (value: unknown) => void;
+    mocks.systemOne.mockImplementationOnce(
+      () => new Promise(resolve => (finishSlowCall = resolve)),
+    );
+    const slow = enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    mocks.systemOne.mockRejectedValue(new Error("529 high traffic"));
+    for (let i = 0; i < 5; i++) {
+      await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    }
+    finishSlowCall(jevResponse());
+    await slow;
+
+    vi.setSystemTime(Date.now() + 61_000);
+    await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+    await enhanceBrandingWithLLM(baseInput(new CostTracking()));
+
+    // the slow call, five failures, one failure after the cooldown; then open again
+    expect(mocks.systemOne).toHaveBeenCalledTimes(7);
   });
 
   it("does not count unusable answers as failures", async () => {

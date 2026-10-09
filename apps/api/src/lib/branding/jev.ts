@@ -867,7 +867,9 @@ export async function enhanceBrandingWithJev(
     );
     return null;
   }
-  consecutiveFailures = 0;
+  // A call that started before the breaker opened and succeeds late doesn't
+  // close it: the next failure after the cooldown should reopen it at once.
+  if (!isJevBreakerOpen()) consecutiveFailures = 0;
 
   const inputTokens = response.usage?.input_tokens ?? 0;
   const outputTokens = response.usage?.output_tokens ?? 0;
