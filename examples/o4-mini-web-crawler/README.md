@@ -58,4 +58,4 @@ The crawler will search for pages likely to contain this information, analyze th
 
 ## License
 
-[MIT](LICENSE)
+[MIT](../../LICENSE)
