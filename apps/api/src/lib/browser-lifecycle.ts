@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { recordRequestCredits } from "./request-credits-store";
+import type { BrowserOptions } from "./browser-options";
 import { upsertBrowserProfile } from "./browser-sessions";
 import { v7 as uuidv7 } from "uuid";
 import { config } from "../config";
@@ -118,14 +119,12 @@ export function invalidAgentInteropError(
 
 export async function createBrowserSession(
   req: RequestWithAuth<any, any, any>,
-  options: {
+  options: BrowserOptions & {
     ttl: number;
     activityTtl: number;
     streamWebView: boolean;
     recordSession: boolean;
     zeroDataRetention?: boolean;
-    blockAds: boolean;
-    profile?: { name: string; saveChanges: boolean };
     scrapeId?: string;
     shouldBill?: boolean;
     requestId?: string;
