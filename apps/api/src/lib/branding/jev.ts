@@ -263,6 +263,9 @@ type FontRole = BrandingEnhancement["cleanedFonts"][number]["role"];
 type FontCandidate = { family: string; count: number; role?: FontRole };
 
 /** Role from the page's own typography: the heading and body stacks it measured. */
+/** Matching key for a family: case and spacing don't make a different font. */
+const familyKey = (family: string) => family.toLowerCase().replace(/\s/g, "");
+
 function typographyRole(
   family: string,
   input: BrandingLLMInput,
@@ -270,9 +273,10 @@ function typographyRole(
   const t = input.jsAnalysis.typography;
   const first = (value?: string | string[]) => {
     const raw = Array.isArray(value) ? value[0] : value;
-    return raw ? cleanFontFamily(raw)?.toLowerCase() : undefined;
+    const cleaned = raw ? cleanFontFamily(raw) : undefined;
+    return cleaned ? familyKey(cleaned) : undefined;
   };
-  const name = family.toLowerCase();
+  const name = familyKey(family);
   if (/\b(mono|code)\b|consolas|menlo/i.test(family)) return "monospace";
   const body = [
     first(t?.fontFamilies?.primary),
@@ -301,7 +305,7 @@ function collectFonts(input: BrandingLLMInput): FontCandidate[] {
         : 1;
     // "CormorantGaramond" and "Cormorant Garamond" are one family; keep the
     // spaced name.
-    const key = family.toLowerCase().replace(/[\s-]/g, "");
+    const key = familyKey(family);
     const existing = byFamily.get(key);
     if (existing) {
       existing.count += count;

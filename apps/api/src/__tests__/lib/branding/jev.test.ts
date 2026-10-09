@@ -503,6 +503,29 @@ describe("branding with Jev", () => {
     expect(result.cleanedFonts).toEqual([{ family: "Inter", role: "body" }]);
   });
 
+  it("keeps the typography role of a family merged under its spaced name", async () => {
+    const input = baseInput(new CostTracking());
+    input.jsAnalysis.typography = {
+      fontFamilies: { primary: "Inter", heading: "CormorantGaramond" },
+    };
+    input.jsAnalysis.fonts = [
+      { family: "Inter", count: 40 },
+      { family: "CormorantGaramond", count: 10 },
+      { family: "Cormorant Garamond", count: 5 },
+      { family: "Open-Sans", count: 3 },
+      { family: "Open Sans", count: 2 },
+    ];
+
+    const request = buildJevRequest(input);
+
+    expect(request.fonts.map(f => [f.family, f.role])).toEqual([
+      ["Inter", "body"],
+      ["Cormorant Garamond", "heading"],
+      ["Open-Sans", undefined],
+      ["Open Sans", undefined],
+    ]);
+  });
+
   it("keeps a fallback font the page uses for text, or when it is all there is", async () => {
     const input = baseInput(new CostTracking());
     input.jsAnalysis.typography = { fontFamilies: { primary: "Arial" } };
