@@ -189,7 +189,7 @@ let crawl_options = CrawlOptions {
 };
 
 let crawl_result = app
-    .crawl_url("https://mendable.ai", crawl_options)
+    .crawl_url("https://firecrawl.dev", crawl_options)
     .await;
 
 match crawl_result {
@@ -203,7 +203,7 @@ match crawl_result {
 To crawl without waiting for the result, use the `crawl_url_async` method. It takes the same parameters, but it returns a `CrawlAsyncRespone` struct, containing the crawl's ID. You can use that ID with the `check_crawl_status` method to check the status at any time. Do note that completed crawls are deleted after 24 hours.
 
 ```rust
-let crawl_id = app.crawl_url_async("https://mendable.ai", None).await?.id;
+let crawl_id = app.crawl_url_async("https://firecrawl.dev", None).await?.id;
 
 // ... later ...
 
