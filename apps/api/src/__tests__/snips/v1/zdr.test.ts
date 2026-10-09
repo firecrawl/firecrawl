@@ -16,8 +16,9 @@ import {
   expectScrapesAreFullyCleanedAfterZDRCleaner,
   expectBatchScrapeIsCleanedUp,
 } from "../zdr-helpers";
+import { HAS_JOB_LOG } from "../job-log";
 
-describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
+describeIf(TEST_PRODUCTION && HAS_JOB_LOG)("Zero Data Retention", () => {
   describe.each(["Team-scoped", "Request-scoped"] as const)("%s", scope => {
     it("should clean up a scrape immediately", async () => {
       let identity = await idmux({

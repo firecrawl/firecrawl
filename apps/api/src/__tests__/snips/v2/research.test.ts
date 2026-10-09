@@ -3,7 +3,7 @@ import { config } from "../../../config";
 import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
 import { creditUsage, idmux, researchRaw } from "./lib";
 import { and, desc, eq, gt } from "drizzle-orm";
-import { waitForJobLogRow } from "../job-log";
+import { HAS_JOB_LOG, waitForJobLogRow } from "../job-log";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import { redisRateLimitClient } from "../../../services/rate-limiter";
@@ -245,7 +245,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
   });
 
   it("logs research origin from X-Origin and integration from query", async () => {
-    if (!config.USE_DB_AUTHENTICATION) return;
+    if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
 
     const identity = await idmux({
       name: "research/logs metadata",

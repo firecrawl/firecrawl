@@ -14,7 +14,7 @@ import request, {
   scrapeTimeout,
   TEST_API_URL,
 } from "./lib";
-import { jobLogRows, waitForJobLogRow } from "../job-log";
+import { HAS_JOB_LOG, jobLogRows, waitForJobLogRow } from "../job-log";
 import { config } from "../../../config";
 import { getRedisConnection } from "../../../services/queue-service";
 
@@ -713,7 +713,7 @@ describe("/v2/parse", () => {
   it(
     "logs parse metadata into the parses table",
     async () => {
-      if (!config.USE_DB_AUTHENTICATION) return;
+      if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
 
       const filename = `parse-log-${Date.now()}.html`;
       await parse(

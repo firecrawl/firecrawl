@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
-import { clickhouseClient } from "../../lib/clickhouse-client";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
+import { waitForJobLogRows } from "./job-log";
 
 type Identity = { apiKey: string; teamId: string };
 type ScrapeStatusRawFn = (
@@ -85,34 +85,7 @@ export async function getLogs() {
     );
 }
 
-// The job log lives in ClickHouse, fed by ClickPipes a few seconds behind the
-// publish. Each lookup polls until the row lands. Tables are ReplacingMergeTree
-// ordered by (team_id, id); FINAL keeps the latest publication of an id and
-// the day bound prunes partitions.
 type JobRow = Record<string, unknown>;
-
-async function queryJobRows(
-  table: string,
-  where: string,
-  params: Record<string, string>,
-  expectedMin = 1,
-): Promise<JobRow[]> {
-  if (clickhouseClient === null) {
-    throw new Error("CLICKHOUSE_ANALYTICS_URL is required to read the job log");
-  }
-  let rows: JobRow[] = [];
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const result = await clickhouseClient.query({
-      query: `SELECT * FROM ${table} FINAL WHERE ${where} AND created_at >= now() - INTERVAL 1 DAY`,
-      query_params: params,
-      format: "JSONEachRow",
-    });
-    rows = await result.json<JobRow>();
-    if (rows.length >= expectedMin) break;
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
-  return rows;
-}
 
 // Scrape and crawl options are stored as a JSON string; ZDR rows carry none.
 function expectNoStoredContent(row: JobRow) {
@@ -121,7 +94,7 @@ function expectNoStoredContent(row: JobRow) {
 }
 
 export async function expectScrapeIsCleanedUp(scrapeId: string) {
-  const scrapeData = await queryJobRows("scrapes", "id = {id: UUID}", {
+  const scrapeData = await waitForJobLogRows("scrapes", "id = {id: UUID}", {
     id: scrapeId,
   });
 
@@ -130,14 +103,14 @@ export async function expectScrapeIsCleanedUp(scrapeId: string) {
 }
 
 export async function expectCrawlIsCleanedUp(crawlId: string) {
-  const requestData = await queryJobRows("requests", "id = {id: UUID}", {
+  const requestData = await waitForJobLogRows("requests", "id = {id: UUID}", {
     id: crawlId,
   });
 
   expect(requestData).toHaveLength(1);
   expect(requestData[0].kind).toBe("crawl");
 
-  const crawlData = await queryJobRows("crawls", "id = {id: UUID}", {
+  const crawlData = await waitForJobLogRows("crawls", "id = {id: UUID}", {
     id: crawlId,
   });
 
@@ -146,14 +119,14 @@ export async function expectCrawlIsCleanedUp(crawlId: string) {
 }
 
 export async function expectBatchScrapeIsCleanedUp(batchScrapeId: string) {
-  const requestData = await queryJobRows("requests", "id = {id: UUID}", {
+  const requestData = await waitForJobLogRows("requests", "id = {id: UUID}", {
     id: batchScrapeId,
   });
 
   expect(requestData).toHaveLength(1);
   expect(requestData[0].kind).toBe("batch_scrape");
 
-  const batchScrapeData = await queryJobRows(
+  const batchScrapeData = await waitForJobLogRows(
     "batch_scrapes",
     "id = {id: UUID}",
     { id: batchScrapeId },
@@ -166,11 +139,11 @@ export async function expectScrapesOfRequestAreCleanedUp(
   requestId: string,
   expectedScrapeCount?: number,
 ) {
-  const scrapes = await queryJobRows(
+  const scrapes = await waitForJobLogRows(
     "scrapes",
     "request_id = {requestId: UUID}",
     { requestId },
-    expectedScrapeCount ?? 1,
+    { min: expectedScrapeCount ?? 1 },
   );
 
   if (expectedScrapeCount !== undefined) {
