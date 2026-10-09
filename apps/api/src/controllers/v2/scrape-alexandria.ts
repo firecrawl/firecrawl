@@ -221,10 +221,21 @@ export async function providerScrapeController(
     const first = answer.results[0];
     if (first.error) {
       const status = first.error.status ?? 502;
+      const { retryable } = first.error;
+      const retryAfterSeconds =
+        typeof first.error.retryAfterSeconds === "number" &&
+        Number.isSafeInteger(first.error.retryAfterSeconds) &&
+        first.error.retryAfterSeconds >= 0
+          ? first.error.retryAfterSeconds
+          : undefined;
+      if (retryAfterSeconds !== undefined)
+        res.setHeader("Retry-After", String(retryAfterSeconds));
       return res.status(status >= 400 && status <= 599 ? status : 502).json({
         success: false,
         code: first.error.code,
         error: first.error.message,
+        ...(typeof retryable === "boolean" ? { retryable } : {}),
+        ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
       });
     }
     return res.json({ success: true, ...first });
