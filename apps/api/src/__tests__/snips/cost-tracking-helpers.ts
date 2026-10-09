@@ -1,6 +1,4 @@
-import { eq } from "drizzle-orm";
-import { db } from "../../db/connection";
-import * as schema from "../../db/schema";
+import { jobLogJson, jobLogRows } from "./job-log";
 
 export type CostTrackingCall = {
   model: string;
@@ -9,23 +7,21 @@ export type CostTrackingCall = {
   tokens?: { input: number; output: number };
 };
 
-// The scrape row is written when the job finishes; give the insert a moment.
+// The scrape row is published when the job finishes and lands in ClickHouse a
+// few seconds later; poll until it carries parseable cost tracking.
 export async function getCostTrackingCalls(
   scrapeId: string,
 ): Promise<CostTrackingCall[]> {
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const rows = await db
-      .select({ cost_tracking: schema.scrapes.cost_tracking })
-      .from(schema.scrapes)
-      .where(eq(schema.scrapes.id, scrapeId))
-      .limit(1);
-    if (rows.length === 1) {
-      const costTracking = rows[0].cost_tracking as {
-        calls?: CostTrackingCall[];
-      } | null;
-      return costTracking?.calls ?? [];
-    }
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    const [row] = await jobLogRows("scrapes", "id = {id: UUID}", {
+      id: scrapeId,
+    });
+    const costTracking = jobLogJson(row?.cost_tracking) as {
+      calls?: CostTrackingCall[];
+    } | null;
+    if (costTracking) return costTracking.calls ?? [];
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
-  throw new Error(`No scrapes row for ${scrapeId}`);
+  throw new Error(`No cost tracking on the scrapes row for ${scrapeId}`);
 }

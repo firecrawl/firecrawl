@@ -4,8 +4,6 @@ import { vi } from "vitest";
 // vi.hoisted() (also hoisted).
 const {
   logger,
-  values,
-  insert,
   topic,
   publishes,
   publishMessage,
@@ -29,8 +27,6 @@ const {
     debug: vi.fn(),
     child: vi.fn(() => logger),
   };
-  const values = vi.fn<(data: any) => Promise<void>>();
-  const insert = vi.fn(() => ({ values }));
   const publishMessage = vi.fn(async (_message: any) => "message-id");
   const flush = vi.fn(async () => {});
   const close = vi.fn(async () => {});
@@ -53,8 +49,6 @@ const {
   });
   return {
     logger,
-    values,
-    insert,
     topic,
     publishes,
     publishMessage,
@@ -95,10 +89,6 @@ vi.mock("../../config", () => ({
 
 vi.mock("../../lib/logger", () => ({
   logger,
-}));
-
-vi.mock("../../db/connection", () => ({
-  db: { insert },
 }));
 
 vi.mock("../../lib/change-tracking-store", () => ({
@@ -163,7 +153,6 @@ import {
   shutdownPubSubLogging,
   type LoggedSearch,
 } from "./log_job";
-import * as schema from "../../db/schema";
 import { config } from "../../config";
 
 function deferred<T>() {
@@ -199,7 +188,6 @@ function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
 describe("logSearch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    values.mockResolvedValue(undefined);
     publishMessage.mockResolvedValue("message-id");
     publishes.length = 0;
     spans.length = 0;
@@ -216,8 +204,9 @@ describe("logSearch", () => {
 
     await logSearch(search);
 
-    expect(insert).toHaveBeenCalledWith(schema.searches);
-    const inserted = values.mock.calls[0][0];
+    const inserted = JSON.parse(
+      publishMessage.mock.calls[0][0].data.toString(),
+    );
     expect(inserted.query).toBe("helloworld");
     expect(inserted.options.query).toBe("nestedquery");
     expect(inserted.options.sources[0].location).toBe("NewYork");
@@ -241,7 +230,6 @@ describe("logSearch", () => {
 
     await logSearch(makeSearch({ query: options.query, options }));
 
-    expect(values.mock.calls[0][0].options).toMatchObject(options);
     const published = JSON.parse(
       publishMessage.mock.calls[0][0].data.toString(),
     );
@@ -261,8 +249,6 @@ describe("logSearch", () => {
       }),
     );
 
-    expect(values.mock.calls[0][0].options).not.toHaveProperty("objective");
-    expect(values.mock.calls[0][0].options).not.toHaveProperty("clientModel");
     const published = JSON.parse(
       publishMessage.mock.calls[0][0].data.toString(),
     );
@@ -270,12 +256,11 @@ describe("logSearch", () => {
     expect(published.options).not.toHaveProperty("clientModel");
   });
 
-  it("fails the log call on a serialization failure before touching PostgreSQL", async () => {
+  it("fails the log call on a serialization failure", async () => {
     const search = makeSearch({ options: { unsupported: 1n } });
 
     await expect(logSearch(search)).rejects.toThrow();
 
-    expect(values).not.toHaveBeenCalled();
     expect(publishMessage).not.toHaveBeenCalled();
     expect(metricInc).toHaveBeenCalledWith({
       table: "searches",
@@ -292,7 +277,7 @@ describe("logSearch", () => {
 
     await expect(logSearch(makeSearch())).resolves.toBeUndefined();
 
-    expect(values).toHaveBeenCalledOnce();
+    expect(publishMessage).toHaveBeenCalledOnce();
     expect(logger.error).toHaveBeenCalledWith(
       "Failed to write feedback job to Bigtable",
       expect.objectContaining({
@@ -302,13 +287,12 @@ describe("logSearch", () => {
     );
   });
 
-  it("profiles the log, PostgreSQL insert, and Pub/Sub publish", async () => {
+  it("profiles the log and the Pub/Sub publish", async () => {
     await logSearch(makeSearch());
 
     expect(spans).toEqual(
       expect.arrayContaining([
         { name: "log_job.search", options: { zeroDataRetention: false } },
-        { name: "log_job.postgres.insert", options: undefined },
         { name: "log_job.pubsub.publish", options: undefined },
       ]),
     );
@@ -327,7 +311,6 @@ describe("logSearch", () => {
 describe("operational job state logging", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    values.mockResolvedValue(undefined);
     publishMessage.mockResolvedValue("message-id");
   });
 
@@ -356,13 +339,13 @@ describe("operational job state logging", () => {
     );
   });
 
-  it("reports the state written before the PostgreSQL insert starts", async () => {
+  it("reports the state written before the Pub/Sub publish starts", async () => {
     const id = "019e6f45-7778-727d-adf0-0abe9d5062b8";
     const stateWrite = deferred<boolean>();
     writeScrapeJobState.mockReturnValueOnce(stateWrite.promise);
     let insertsWhenStateWritten = -1;
     const onStateWritten = vi.fn(() => {
-      insertsWhenStateWritten = values.mock.calls.length;
+      insertsWhenStateWritten = publishMessage.mock.calls.length;
     });
 
     const logging = logScrape(
@@ -378,21 +361,20 @@ describe("operational job state logging", () => {
         skipNuq: true,
         zeroDataRetention: false,
       },
-      false,
       { onStateWritten },
     );
     await Promise.resolve();
 
     expect(writeScrapeJobState).toHaveBeenCalledTimes(1);
     expect(onStateWritten).not.toHaveBeenCalled();
-    expect(values).not.toHaveBeenCalled();
+    expect(publishMessage).not.toHaveBeenCalled();
 
     stateWrite.resolve(true);
     await logging;
 
     expect(onStateWritten).toHaveBeenCalledWith("written");
     expect(insertsWhenStateWritten).toBe(0);
-    expect(values).toHaveBeenCalledTimes(1);
+    expect(publishMessage).toHaveBeenCalledTimes(1);
   });
 
   it("reports a failed state write and keeps logging", async () => {
@@ -413,12 +395,11 @@ describe("operational job state logging", () => {
         skipNuq: true,
         zeroDataRetention: false,
       },
-      false,
       { onStateWritten },
     );
 
     expect(onStateWritten).toHaveBeenCalledWith("failed");
-    expect(values).toHaveBeenCalledTimes(1);
+    expect(publishMessage).toHaveBeenCalledTimes(1);
   });
 
   it("reports a skipped state write for a parse, which stores none", async () => {
@@ -439,7 +420,6 @@ describe("operational job state logging", () => {
         zeroDataRetention: false,
         is_parse: true,
       },
-      false,
       { onStateWritten },
     );
 
@@ -465,7 +445,6 @@ describe("operational job state logging", () => {
         skipNuq: true,
         zeroDataRetention: false,
       },
-      false,
       { onStateWritten },
     );
 
@@ -558,7 +537,6 @@ describe("operational job state logging", () => {
 describe("logRequest", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    values.mockResolvedValue(undefined);
     publishMessage.mockResolvedValue("message-id");
     publishes.length = 0;
   });
@@ -580,10 +558,10 @@ describe("logRequest", () => {
   it("stores the caller's external_request_id verbatim", async () => {
     await logRequest(makeRequest("op_integration_42"));
 
-    expect(insert).toHaveBeenCalledWith(schema.requests);
-    expect(values.mock.calls[0][0].external_request_id).toBe(
-      "op_integration_42",
+    const published = JSON.parse(
+      publishMessage.mock.calls[0][0].data.toString(),
     );
+    expect(published.external_request_id).toBe("op_integration_42");
   });
 
   it("prefixes the Pub/Sub topic name with PUBSUB_TOPIC_PREFIX", async () => {
@@ -607,10 +585,9 @@ describe("logRequest", () => {
     );
   });
 
-  it("writes the request to the database and its Pub/Sub topic", async () => {
+  it("publishes the request to its Pub/Sub topic", async () => {
     await logRequest(makeRequest("op_integration_42"));
 
-    expect(insert).toHaveBeenCalledWith(schema.requests);
     expect(publishes[0].name).toBe("requests");
     const gaxOpts = publishes[0].options.gaxOpts;
     // A bare `timeout` would collapse the retry budget to one attempt.
@@ -631,9 +608,6 @@ describe("logRequest", () => {
     expect(new Date(published.created_at).toISOString()).toBe(
       published.created_at,
     );
-    expect(values.mock.calls[0][0].created_at.toISOString()).toBe(
-      published.created_at,
-    );
     expect(writeApiJobAccess).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "019e6f45-7778-727d-adf0-0abe9d5062b6",
@@ -645,7 +619,7 @@ describe("logRequest", () => {
     );
   });
 
-  it("durably queues ZDR cleanup before writing the request", async () => {
+  it("durably queues ZDR cleanup before publishing the request", async () => {
     await logRequest({
       ...makeRequest("op_integration_42"),
       zeroDataRetention: true,
@@ -655,12 +629,15 @@ describe("logRequest", () => {
       "019e6f45-7778-727d-adf0-0abe9d5062b6",
     );
     expect(enqueueZdrCleanupJob.mock.invocationCallOrder[0]).toBeLessThan(
-      values.mock.invocationCallOrder[0],
+      publishMessage.mock.invocationCallOrder[0],
     );
-    expect(values.mock.calls[0][0]).not.toHaveProperty("dr_clean_by");
+    const published = JSON.parse(
+      publishMessage.mock.calls[0][0].data.toString(),
+    );
+    expect(published).not.toHaveProperty("dr_clean_by");
   });
 
-  it("does not write a ZDR request unless its cleanup job was confirmed", async () => {
+  it("does not publish a ZDR request unless its cleanup job was confirmed", async () => {
     enqueueZdrCleanupJob.mockRejectedValueOnce(
       new Error("RabbitMQ unavailable"),
     );
@@ -668,17 +645,16 @@ describe("logRequest", () => {
     await expect(
       logRequest({ ...makeRequest(null), zeroDataRetention: true }),
     ).rejects.toThrow("RabbitMQ unavailable");
-    expect(values).not.toHaveBeenCalled();
+    expect(publishMessage).not.toHaveBeenCalled();
   });
 
-  it("fails the log call and skips PostgreSQL when Pub/Sub fails", async () => {
+  it("fails the log call when Pub/Sub fails", async () => {
     publishMessage.mockRejectedValueOnce(new Error("Pub/Sub unavailable"));
 
     await expect(logRequest(makeRequest(null))).rejects.toThrow(
       "Pub/Sub unavailable",
     );
 
-    expect(values).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith(
       "Failed to publish log to Pub/Sub",
       expect.objectContaining({ error: expect.any(Error) }),
@@ -690,7 +666,7 @@ describe("logRequest", () => {
 
     await expect(logRequest(makeRequest(null))).resolves.toBeUndefined();
 
-    expect(values).toHaveBeenCalled();
+    expect(publishMessage).toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith(
       "Failed to write API job access to Bigtable",
       expect.objectContaining({ error: expect.any(Error), kind: "scrape" }),
@@ -701,7 +677,7 @@ describe("logRequest", () => {
     await logRequest({ ...makeRequest(null), jobAccess: false });
 
     expect(writeApiJobAccess).not.toHaveBeenCalled();
-    expect(values).toHaveBeenCalledOnce();
+    expect(publishMessage).toHaveBeenCalledOnce();
   });
 
   it("uses a job's explicit operational expiry", async () => {
@@ -728,44 +704,27 @@ describe("logRequest", () => {
 
     await new Promise(resolve => setImmediate(resolve));
     expect(publishMessage).toHaveBeenCalledOnce();
-    expect(values).not.toHaveBeenCalled();
     expect(finished).toBe(false);
 
     publication.resolve("message-id");
     await logging;
-    expect(values).toHaveBeenCalled();
     expect(metricInc).toHaveBeenCalledWith({
       table: "requests",
       outcome: "published",
     });
   });
 
-  it("waits for PostgreSQL when publication finishes first", async () => {
-    const insertion = deferred<void>();
-    values.mockReturnValueOnce(insertion.promise);
-    let finished = false;
-    const logging = logRequest(makeRequest(null)).then(() => {
-      finished = true;
-    });
-
-    await new Promise(resolve => setImmediate(resolve));
-    expect(publishMessage).toHaveBeenCalledOnce();
-    expect(finished).toBe(false);
-
-    insertion.resolve();
-    await logging;
-    expect(finished).toBe(true);
-  });
-
   it("stores null, not a truncation, when the id exceeds the byte cap", async () => {
     // The header helper already drops these; this asserts the bound holds at
-    // the insert boundary too, for any writer that bypasses the helper. Null
-    // rather than a DB constraint, which would fail the whole requests row
+    // the log boundary too, for any writer that bypasses the helper. Null
+    // rather than a rejected row, which would lose the whole requests row
     // (and its scrapes/crawls children) over a telemetry field — and null
     // rather than truncation, which would hand a wrong id back downstream.
     await logRequest(makeRequest("x".repeat(2049)));
 
-    const inserted = values.mock.calls[0][0];
+    const inserted = JSON.parse(
+      publishMessage.mock.calls[0][0].data.toString(),
+    );
     expect(inserted.external_request_id).toBeNull();
     expect(inserted.id).toBe("019e6f45-7778-727d-adf0-0abe9d5062b6");
     expect(logger.warn).toHaveBeenCalled();
@@ -774,18 +733,19 @@ describe("logRequest", () => {
   it("counts the cap in bytes, not characters", async () => {
     // 1025 two-byte characters: 1025 chars, 2050 bytes — over.
     await logRequest(makeRequest("é".repeat(1025)));
-    expect(values.mock.calls[0][0].external_request_id).toBeNull();
+    const first = JSON.parse(publishMessage.mock.calls[0][0].data.toString());
+    expect(first.external_request_id).toBeNull();
 
     // 1024 two-byte characters: 2048 bytes exactly — allowed.
     await logRequest(makeRequest("é".repeat(1024)));
-    expect(values.mock.calls[1][0].external_request_id).toBe("é".repeat(1024));
+    const second = JSON.parse(publishMessage.mock.calls[1][0].data.toString());
+    expect(second.external_request_id).toBe("é".repeat(1024));
   });
 
-  it("cleans NUL bytes and unpaired surrogates for both stores", async () => {
+  it("cleans NUL bytes and unpaired surrogates before publishing", async () => {
     // "Łódź" mis-decoded by a client arrives as a lone low surrogate, which
     // JSON.stringify would emit as "\udc81" and ClickPipes would reject as
-    // invalid JSON; PostgreSQL's driver stores it as U+FFFD. The row must
-    // reach both stores already cleaned, and identical.
+    // invalid JSON. The row must be published already cleaned.
     const replacement = String.fromCharCode(0xfffd);
     await logRequest({
       ...makeRequest(null),
@@ -793,15 +753,11 @@ describe("logRequest", () => {
       origin: "api" + String.fromCharCode(0),
     });
 
-    const inserted = values.mock.calls[0][0];
-    expect(inserted.target_hint).toBe("wyciek Å" + replacement + "Ã³dÅº!");
-    expect(inserted.origin).toBe("api");
-
     const raw = publishMessage.mock.calls[0][0].data.toString("utf8");
     expect(raw).not.toMatch(/\\u[dD][89a-fA-F]/);
     expect(raw).not.toMatch(/\\u0{4}/);
     const published = JSON.parse(raw);
-    expect(published.target_hint).toBe(inserted.target_hint);
+    expect(published.target_hint).toBe("wyciek Å" + replacement + "Ã³dÅº!");
     expect(published.origin).toBe("api");
   });
 
@@ -826,8 +782,6 @@ describe("logRequest", () => {
       await fresh.shutdownPubSubLogging();
     }
 
-    // The refused row never reaches PostgreSQL either.
-    expect(values).toHaveBeenCalledTimes(2);
     expect(publishMessage).toHaveBeenCalledTimes(2);
     expect(metricInc).toHaveBeenCalledWith({
       table: "requests",
@@ -900,7 +854,6 @@ describe("logRequest", () => {
 describe("shutdownPubSubLogging deadline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    values.mockResolvedValue(undefined);
     publishMessage.mockResolvedValue("message-id");
     publishes.length = 0;
   });
@@ -1007,7 +960,6 @@ describe("shutdownPubSubLogging deadline", () => {
       "shutting down",
     );
     expect(publishMessage).toHaveBeenCalledOnce();
-    expect(values).toHaveBeenCalledTimes(1);
     expect(metricInc).toHaveBeenCalledWith({
       table: "searches",
       outcome: "failed",

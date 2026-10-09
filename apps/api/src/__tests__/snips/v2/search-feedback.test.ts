@@ -7,9 +7,14 @@ import {
   idmux,
   Identity,
 } from "./lib";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
+import { clickhouseClient } from "../../../lib/clickhouse-client";
+import {
+  readFeedbackJob,
+  writeFeedbackJob,
+} from "../../../lib/feedback-job-store";
 
 let identity: Identity;
 let secondaryIdentity: Identity;
@@ -47,19 +52,18 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
       expect(typeof raw.body.id).toBe("string");
       expect((raw.body.data?.web ?? []).length).toBeGreaterThan(0);
 
+      // The searches row lands in ClickHouse a few seconds after the publish.
       let searchRow: { options: unknown } | undefined;
-      for (let attempt = 0; attempt < 20 && !searchRow; attempt++) {
-        [searchRow] = await db
-          .select({ options: schema.searches.options })
-          .from(schema.searches)
-          .where(
-            and(
-              eq(schema.searches.id, raw.body.id),
-              eq(schema.searches.team_id, identity.teamId),
-            ),
-          )
-          .limit(1);
-        if (!searchRow) await new Promise(resolve => setTimeout(resolve, 100));
+      for (let attempt = 0; attempt < 30 && !searchRow; attempt++) {
+        const result = await clickhouseClient!.query({
+          query:
+            "SELECT options FROM searches FINAL WHERE id = {id: UUID} AND team_id = {teamId: UUID} AND created_at >= now() - INTERVAL 1 DAY",
+          query_params: { id: raw.body.id, teamId: identity.teamId },
+          format: "JSONEachRow",
+        });
+        const [row] = await result.json<{ options: string | null }>();
+        if (row) searchRow = { options: JSON.parse(row.options ?? "null") };
+        else await new Promise(resolve => setTimeout(resolve, 1000));
       }
       expect(searchRow?.options).toMatchObject({
         objective: "Find official Firecrawl information",
@@ -450,17 +454,26 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
       expect(raw.statusCode).toBe(200);
       const searchId = raw.body.id;
 
-      await new Promise(r => setTimeout(r, 750));
-      const aged = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      await db
-        .update(schema.searches)
-        .set({ created_at: aged })
-        .where(
-          and(
-            eq(schema.searches.id, searchId),
-            eq(schema.searches.team_id, identity.teamId),
-          ),
-        );
+      // Back-date the feedback job (its deadline enforces the window) rather
+      // than waiting out the configured window.
+      let job = await readFeedbackJob(searchId);
+      for (let attempt = 0; attempt < 30 && !job; attempt++) {
+        await new Promise(r => setTimeout(r, 1000));
+        job = await readFeedbackJob(searchId);
+      }
+      expect(job).not.toBeNull();
+      expect(
+        await writeFeedbackJob({
+          endpoint: "search",
+          jobId: searchId,
+          requestId: job!.requestId,
+          teamId: identity.teamId,
+          succeeded: job!.succeeded,
+          creditsBilled: job!.creditsBilled,
+          zeroDataRetention: job!.zeroDataRetention,
+          completedAt: new Date(Date.now() - 60 * 60 * 1000),
+        }),
+      ).toBe(true);
 
       const failed = await searchFeedbackWithFailure(
         searchId,

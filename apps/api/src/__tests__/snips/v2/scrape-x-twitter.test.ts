@@ -1,4 +1,5 @@
 import { getCostTrackingCalls } from "../cost-tracking-helpers";
+import { HAS_JOB_LOG } from "../job-log";
 import { concurrentIf, HAS_XAI, TEST_PRODUCTION } from "../lib";
 import { scrape, scrapeTimeout, idmux, Identity } from "./lib";
 
@@ -15,7 +16,7 @@ beforeAll(async () => {
 // X/Twitter scrapes go through xAI's X Search, which bills per profile and
 // post fetched.
 describe("X/Twitter profile scrape", () => {
-  concurrentIf(TEST_PRODUCTION && HAS_XAI)(
+  concurrentIf(TEST_PRODUCTION && HAS_XAI && HAS_JOB_LOG)(
     "returns the profile and its latest posts from a single profile lookup",
     async () => {
       const response = await scrape(
