@@ -234,6 +234,7 @@ jobs:
         run: >-
           pnpm exec vitest run
           src/services/monitoring/runner.finalization.test.ts
+          src/services/monitoring/runner.reservation.test.ts
           src/services/monitoring/store.finalization.test.ts
           src/services/monitoring/scheduler.test.ts
           --reporter=default
